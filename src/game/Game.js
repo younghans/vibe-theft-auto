@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { Input } from './Input.js';
 import { Hud } from '../ui/Hud.js';
+import {
+  WORLD_FOG_FAR,
+  WORLD_FOG_NEAR,
+  WORLD_GROUND_RADIUS,
+  WORLD_SHADOW_EXTENT
+} from '../shared/worldConstants.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
@@ -19,7 +25,7 @@ export class Game {
     this.clock = new THREE.Clock();
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x7da6c8);
-    this.scene.fog = new THREE.Fog(0x7da6c8, 70, 170);
+    this.scene.fog = new THREE.Fog(0x7da6c8, WORLD_FOG_NEAR, WORLD_FOG_FAR);
 
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 400);
     this.camera.position.copy(CAMERA_OFFSET);
@@ -160,18 +166,18 @@ export class Game {
     sun.position.set(45, 70, 30);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -90;
-    sun.shadow.camera.right = 90;
-    sun.shadow.camera.top = 90;
-    sun.shadow.camera.bottom = -90;
+    sun.shadow.camera.left = -WORLD_SHADOW_EXTENT;
+    sun.shadow.camera.right = WORLD_SHADOW_EXTENT;
+    sun.shadow.camera.top = WORLD_SHADOW_EXTENT;
+    sun.shadow.camera.bottom = -WORLD_SHADOW_EXTENT;
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 180;
+    sun.shadow.camera.far = WORLD_GROUND_RADIUS + 40;
     this.scene.add(sun);
   }
 
   setupAtmosphere() {
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(220, 32, 32),
+      new THREE.SphereGeometry(WORLD_GROUND_RADIUS + 60, 32, 32),
       new THREE.MeshBasicMaterial({ color: 0x95bfde, side: THREE.BackSide })
     );
     sky.position.y = 30;

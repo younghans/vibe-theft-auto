@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { getNpcModelById, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import {
+  WORLD_GRID_DIVISIONS,
+  WORLD_GRID_SIZE
+} from '../shared/worldConstants.js';
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
@@ -8,7 +12,6 @@ import { WorldRenderer } from './WorldRenderer.js';
 import { WorldState } from './WorldState.js';
 
 const EDITOR_CAMERA_OFFSET = new THREE.Vector3(0, 88, 44);
-const EDITOR_GRID_SIZE = BUILDER_TILE_SIZE * 18;
 const EDITOR_PAN_SPEED = 28;
 const EDITOR_ZOOM_MIN = 0.6;
 const EDITOR_ZOOM_MAX = 1.5;
@@ -185,7 +188,7 @@ export class WorldBuilder {
 
     this.previewRoot = new THREE.Group();
     this.previewRoot.visible = false;
-    this.gridHelper = new THREE.GridHelper(EDITOR_GRID_SIZE, 18, 0xf2c871, 0x406070);
+    this.gridHelper = new THREE.GridHelper(WORLD_GRID_SIZE, WORLD_GRID_DIVISIONS, 0xf2c871, 0x406070);
     this.gridHelper.position.y = 0.06;
     this.gridHelper.visible = false;
 
