@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import process from 'node:process';
 
 import { AnimationClip } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -8,9 +9,9 @@ import { retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 globalThis.self = globalThis;
 
-const CHARACTER_GLB = 'D:/projects/stickrpg/assets/PolygonStarter-web/Characters.glb';
-const SOURCE_FBX = 'D:/projects/stickrpg/animations/Walking.fbx';
-const OUTPUT_JSON = 'D:/projects/stickrpg/assets/PolygonStarter-web/animations/Walking.retargeted.json';
+const DEFAULT_CHARACTER_GLB = 'D:/projects/stickrpg/assets/PolygonStarter-web/Characters.glb';
+const DEFAULT_SOURCE_FBX = 'D:/projects/stickrpg/animations/Walking.fbx';
+const DEFAULT_OUTPUT_JSON = 'D:/projects/stickrpg/assets/PolygonStarter-web/animations/Walking.retargeted.json';
 
 const BONE_MAP = {
   Hips: 'mixamorigHips',
@@ -98,14 +99,19 @@ function renameTracksForBones(clip) {
   return new AnimationClip(clip.name, clip.duration, renamedTracks);
 }
 
-const targetGltf = await loadGlb(CHARACTER_GLB);
-const sourceFbx = await loadFbx(SOURCE_FBX);
+const [, , characterArg, fbxArg, outputArg, clipNameArg] = process.argv;
+const characterGlb = characterArg ?? DEFAULT_CHARACTER_GLB;
+const sourceFbxPath = fbxArg ?? DEFAULT_SOURCE_FBX;
+const outputJsonPath = outputArg ?? DEFAULT_OUTPUT_JSON;
+
+const targetGltf = await loadGlb(characterGlb);
+const sourceFbx = await loadFbx(sourceFbxPath);
 const targetMesh = getPrimarySkinnedMesh(targetGltf.scene);
 const sourceMesh = getPrimarySkinnedMesh(sourceFbx);
 const sourceClip = sourceFbx.animations.find((clip) => clip.tracks.length > 0);
 
 if (!sourceClip) {
-  throw new Error('No usable animation clip found in source FBX.');
+  throw new Error(`No usable animation clip found in source FBX: ${sourceFbxPath}`);
 }
 
 const retargeted = retargetClip(targetMesh, sourceMesh, sourceClip, {
@@ -115,14 +121,14 @@ const retargeted = retargetClip(targetMesh, sourceMesh, sourceClip, {
   useFirstFramePosition: true
 });
 
-retargeted.name = 'Walking';
+retargeted.name = clipNameArg ?? sourceClip.name ?? path.basename(sourceFbxPath, path.extname(sourceFbxPath));
 
 const runtimeClip = renameTracksForBones(retargeted);
 const json = AnimationClip.toJSON(runtimeClip);
 
-await fs.mkdir(path.dirname(OUTPUT_JSON), { recursive: true });
-await fs.writeFile(OUTPUT_JSON, JSON.stringify(json, null, 2));
+await fs.mkdir(path.dirname(outputJsonPath), { recursive: true });
+await fs.writeFile(outputJsonPath, JSON.stringify(json, null, 2));
 
-console.log(`Saved retargeted clip to ${OUTPUT_JSON}`);
+console.log(`Saved retargeted clip to ${outputJsonPath}`);
 console.log(`Track count: ${runtimeClip.tracks.length}`);
 console.log(`First tracks: ${runtimeClip.tracks.slice(0, 8).map((track) => track.name).join(', ')}`);

@@ -40,5 +40,6 @@ await copyDirectory(path.join(root, 'src'), path.join(dist, 'src'));
 await copyDirectory(path.join(root, 'vendor'), path.join(dist, 'vendor'));
 await copyDirectory(path.join(root, 'assets', 'KayKit_City_Builder_Bits_1.0_FREE'), path.join(dist, 'assets', 'KayKit_City_Builder_Bits_1.0_FREE'));
 await copyDirectory(path.join(root, 'assets', 'PolygonStarter-web'), path.join(dist, 'assets', 'PolygonStarter-web'));
+await copyDirectory(path.join(root, 'assets', 'mixamo'), path.join(dist, 'assets', 'mixamo'));
 
 console.log(`Built static app into ${dist}`);

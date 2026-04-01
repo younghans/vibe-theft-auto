@@ -1,5 +1,5 @@
 {
-  "name": "Walking",
+  "name": "mixamo.com",
   "duration": 1.0333333015441895,
   "tracks": [
     {
@@ -7195,7 +7195,7 @@
       "type": "quaternion"
     }
   ],
-  "uuid": "56491a14-d7d2-4d41-8f96-7152cc43d0f5",
+  "uuid": "28469766-2f75-45aa-9c56-7a82a1f718f9",
   "blendMode": 2500,
   "userData": "{}"
 }

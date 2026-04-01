@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import { getMixamoClip } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
 
 const PLAYER_HEIGHT = 4.5;
@@ -75,7 +77,21 @@ function createPlayerIndicator() {
 }
 
 export async function createPlayer(library) {
-  const character = await library.instantiate(assets.playerVisible);
+  const character = await library.instantiate(assets.player.character);
+  const humanoid = validateMixamoHumanoid(character);
+
+  if (!humanoid.isHumanoid) {
+    throw new Error(`Mixamo player character is invalid. Missing bones: ${humanoid.missingBones.join(', ')}`);
+  }
+
+  const sockets = ensureMixamoSockets(character);
+  const walkClip = createInPlaceClip(getMixamoClip(assets.player.walkClip), MIXAMO_BONES.hips);
+  const mixer = new THREE.AnimationMixer(character);
+  const walkAction = mixer.clipAction(walkClip);
+  walkAction.play();
+  walkAction.enabled = true;
+  walkAction.setEffectiveWeight(0);
+
   hideUnusedMeshes(character);
   normalizeCharacter(character);
 
@@ -85,12 +101,12 @@ export async function createPlayer(library) {
   anchor.add(createPlayerIndicator());
   anchor.add(visual);
 
-  let walkPhase = 0;
-
+  let walkWeight = 0;
   return {
     object: anchor,
     radius: PLAYER_RADIUS,
     position: anchor.position,
+    sockets,
     update(deltaSeconds, input, camera, collisionBoxes, cityBounds) {
       const rawInput = input.getMovementVector();
       const moving = rawInput.x !== 0 || rawInput.z !== 0;
@@ -110,16 +126,15 @@ export async function createPlayer(library) {
 
         const targetYaw = Math.atan2(movement.x, movement.z);
         anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
-        walkPhase += deltaSeconds * 10;
-      } else {
-        walkPhase = 0;
       }
 
-      const bob = moving ? Math.abs(Math.sin(walkPhase)) * 0.42 : 0;
-      const sway = moving ? Math.sin(walkPhase) * 0.08 : 0;
-      visual.position.y = bob;
-      visual.rotation.z = sway;
-      visual.rotation.x = moving ? Math.cos(walkPhase * 0.5) * 0.05 : 0;
+      walkWeight = THREE.MathUtils.damp(walkWeight, moving ? 1 : 0, 12, deltaSeconds);
+      walkAction.setEffectiveWeight(walkWeight);
+      walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
+      mixer.update(deltaSeconds);
+      visual.position.y = 0;
+      visual.rotation.z = 0;
+      visual.rotation.x = 0;
     }
   };
 }

@@ -6,7 +6,9 @@
     "dev": "node scripts/dev-server.mjs . 4173",
     "build": "node scripts/build-web.mjs",
     "preview": "node scripts/dev-server.mjs dist 4174",
-    "validate": "node scripts/validate-world-editor.mjs"
+    "validate": "node scripts/validate-world-editor.mjs",
+    "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/mixamo/characters/X Bot.fbx\" \"assets/mixamo/animations/Walking.json\"",
+    "extract:mixamo-animation": "node scripts/extract-fbx-animation.mjs \"assets/mixamo/animations/Walking.fbx\" \"assets/mixamo/animations/Walking.json\" Walking"
   },
   "keywords": [],
   "author": "",

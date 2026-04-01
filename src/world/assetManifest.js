@@ -1,9 +1,18 @@
 ﻿export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`, import.meta.url).href;
 
 export const assets = {
-  playerCharacter: assetUrl('PolygonStarter-web', 'Characters.glb'),
-  playerVisible: assetUrl('PolygonStarter-web', 'SM_Bean_Cowboy_01.glb'),
-  walkingClip: assetUrl('PolygonStarter-web', 'animations', 'Walking.retargeted.json'),
+  mixamo: {
+    characters: {
+      xBot: assetUrl('mixamo', 'characters', 'X Bot.fbx')
+    },
+    animations: {
+      walking: assetUrl('mixamo', 'animations', 'Walking.json')
+    }
+  },
+  player: {
+    character: assetUrl('mixamo', 'characters', 'X Bot.fbx'),
+    walkClip: 'walking'
+  },
   city: {
     base: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'base.gltf'),
     bench: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'bench.gltf'),
