@@ -10,7 +10,8 @@ const CHAT_COOLDOWN_MS = 900;
 
 const PlayerState = schema({
   x: 'number',
-  z: 'number'
+  z: 'number',
+  rotationY: 'number'
 });
 
 const NpcState = schema({
@@ -81,6 +82,10 @@ export class WorldRoom extends Room {
 
       player.x = Number(message.x) || 0;
       player.z = Number(message.z) || 0;
+      const rotationY = Number(message.rotationY);
+      if (Number.isFinite(rotationY)) {
+        player.rotationY = rotationY;
+      }
     });
 
     this.onMessage('npc:syncDefinitions', (client, message) => {
@@ -155,7 +160,11 @@ export class WorldRoom extends Room {
   }
 
   onJoin(client) {
-    this.state.players.set(client.sessionId, new PlayerState());
+    const player = new PlayerState();
+    player.x = 0;
+    player.z = 0;
+    player.rotationY = 0;
+    this.state.players.set(client.sessionId, player);
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,

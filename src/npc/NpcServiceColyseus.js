@@ -29,6 +29,18 @@ function cloneNpcState(npc) {
   };
 }
 
+function clonePlayerState(player) {
+  return {
+    x: player.x,
+    z: player.z,
+    rotationY: player.rotationY ?? 0
+  };
+}
+
+function angleDifference(a, b) {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+}
+
 export class NpcServiceColyseus {
   constructor({ endpoint }) {
     const ClientCtor = globalThis.Colyseus?.Client;
@@ -45,6 +57,7 @@ export class NpcServiceColyseus {
       transport: 'colyseus',
       connected: false,
       sessionId: null,
+      players: new Map(),
       npcs: new Map(),
       transcripts: new Map()
     };
@@ -63,12 +76,19 @@ export class NpcServiceColyseus {
     });
 
     this.room.onStateChange((state) => {
+      const nextPlayers = new Map();
+      for (const [id, player] of schemaMapToEntries(state.players)) {
+        nextPlayers.set(id, clonePlayerState(player));
+      }
+
       const nextNpcs = new Map();
       for (const [id, npc] of schemaMapToEntries(state.npcs)) {
         nextNpcs.set(id, cloneNpcState(npc));
       }
+      this.state.players = nextPlayers;
       this.state.npcs = nextNpcs;
       console.debug('[NPC] Colyseus state update.', {
+        playerCount: nextPlayers.size,
         npcCount: nextNpcs.size
       });
       this.emit();
@@ -102,6 +122,7 @@ export class NpcServiceColyseus {
 
     this.room.onLeave(() => {
       this.state.connected = false;
+      this.state.players = new Map();
       console.warn('[NPC] Left Colyseus room.');
       this.emit();
     });
@@ -125,6 +146,7 @@ export class NpcServiceColyseus {
   getState() {
     return {
       ...this.state,
+      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
       transcripts: new Map([...this.state.transcripts.entries()].map(([id, entries]) => [id, entries.map((entry) => ({ ...entry }))]))
     };
@@ -172,7 +194,7 @@ export class NpcServiceColyseus {
     });
   }
 
-  setPlayerTransform(position) {
+  setPlayerTransform(position, rotationY = 0) {
     if (!this.room) {
       return;
     }
@@ -180,13 +202,16 @@ export class NpcServiceColyseus {
     const now = performance.now();
     const next = {
       x: Number(position.x.toFixed(2)),
-      z: Number(position.z.toFixed(2))
+      z: Number(position.z.toFixed(2)),
+      rotationY: Number(rotationY.toFixed(3))
     };
-    const changed = !this.lastTransform
+    const moved = !this.lastTransform
       || Math.abs(this.lastTransform.x - next.x) > 0.15
       || Math.abs(this.lastTransform.z - next.z) > 0.15;
+    const rotated = !this.lastTransform
+      || Math.abs(angleDifference(this.lastTransform.rotationY, next.rotationY)) > 0.08;
 
-    if (!changed || now - this.lastTransformSentAt < 90) {
+    if ((!moved && !rotated) || now - this.lastTransformSentAt < 90) {
       return;
     }
 

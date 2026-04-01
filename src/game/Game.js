@@ -38,6 +38,8 @@ export class Game {
     this.hud = new Hud(this.root);
     this.input = new Input();
     this.library = new ModelLibrary();
+    this.remotePlayers = new Map();
+    this.pendingRemotePlayers = new Set();
     this.currentInteractable = null;
     this.currentLayout = null;
     this.currentNpcInteraction = null;
@@ -49,6 +51,7 @@ export class Game {
       transport: 'mock',
       connected: true,
       sessionId: 'local-player',
+      players: new Map(),
       npcs: new Map(),
       transcripts: new Map()
     };
@@ -112,14 +115,15 @@ export class Game {
         this.npcServiceState = state;
         this.reportNpcTransportState();
         this.applyNpcRuntimeState();
+        void this.syncRemotePlayers();
         this.refreshNpcUi();
       });
       await this.syncNpcDefinitions(cityState.layout);
 
       if (this.npcServiceState.transport === 'colyseus') {
-        this.hud.showToast('Connected to local NPC room. Public NPC chat is live.');
+        this.hud.showToast('Connected to local Colyseus room. Shared NPC chat and player presence are live.');
       } else {
-        this.hud.showToast('Running NPC chat locally. Start Colyseus to test shared public conversations.');
+        this.hud.showToast('Running NPC chat locally. Start Colyseus to test shared NPC chat and player presence.');
       }
 
       this.hud.hideLoading();
@@ -193,6 +197,89 @@ export class Game {
       runtime.set(npcId, { busy: npc.busy });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);
+  }
+
+  async ensureRemotePlayer(sessionId, initialState) {
+    if (this.remotePlayers.has(sessionId) || this.pendingRemotePlayers.has(sessionId)) {
+      return;
+    }
+
+    this.pendingRemotePlayers.add(sessionId);
+    try {
+      const avatar = await createPlayer(this.library, {
+        indicatorColor: 0x68c7ff,
+        indicatorOpacity: 0.65
+      });
+      const latestState = this.npcServiceState.players.get(sessionId) ?? initialState;
+      const stillPresent = this.npcServiceState.players.has(sessionId) && sessionId !== this.npcServiceState.sessionId;
+      if (!stillPresent) {
+        return;
+      }
+
+      avatar.position.set(
+        Number(latestState?.x ?? 0),
+        0,
+        Number(latestState?.z ?? 0)
+      );
+      avatar.object.rotation.y = Number(latestState?.rotationY ?? 0) || 0;
+      avatar.position.y = this.worldBuilder?.getGroundHeightAt(avatar.position) ?? 0;
+      this.scene.add(avatar.object);
+      this.remotePlayers.set(sessionId, avatar);
+    } catch (error) {
+      console.error('[Multiplayer] Failed to create remote player avatar.', {
+        sessionId,
+        error
+      });
+    } finally {
+      this.pendingRemotePlayers.delete(sessionId);
+    }
+  }
+
+  removeRemotePlayer(sessionId) {
+    const avatar = this.remotePlayers.get(sessionId);
+    if (!avatar) {
+      return;
+    }
+
+    this.scene.remove(avatar.object);
+    this.remotePlayers.delete(sessionId);
+  }
+
+  async syncRemotePlayers() {
+    if (!this.player) {
+      return;
+    }
+
+    const desiredSessionIds = new Set();
+    for (const [sessionId, playerState] of this.npcServiceState.players.entries()) {
+      if (sessionId === this.npcServiceState.sessionId) {
+        continue;
+      }
+
+      desiredSessionIds.add(sessionId);
+      if (!this.remotePlayers.has(sessionId) && !this.pendingRemotePlayers.has(sessionId)) {
+        void this.ensureRemotePlayer(sessionId, playerState);
+      }
+    }
+
+    for (const sessionId of [...this.remotePlayers.keys()]) {
+      if (!desiredSessionIds.has(sessionId)) {
+        this.removeRemotePlayer(sessionId);
+      }
+    }
+  }
+
+  updateRemotePlayers(deltaSeconds) {
+    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+      const state = this.npcServiceState.players.get(sessionId);
+      if (!state) {
+        continue;
+      }
+
+      const groundProbe = new THREE.Vector3(state.x, avatar.position.y, state.z);
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(groundProbe) ?? 0;
+      avatar.applyRemoteState(state, deltaSeconds, groundHeight);
+    }
   }
 
   reportNpcTransportState() {
@@ -284,7 +371,7 @@ export class Game {
       const playerInput = (emoteMenuActive || this.isNpcUiOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
       this.updateCamera();
-      this.npcService?.setPlayerTransform(this.player.position);
+      this.npcService?.setPlayerTransform(this.player.position, this.player.object.rotation.y);
 
       if (emoteMenuActive || this.isNpcUiOpen()) {
         this.hud.setPrompt(null);
@@ -293,6 +380,7 @@ export class Game {
       }
     }
 
+    this.updateRemotePlayers(deltaSeconds);
     this.renderer.render(this.scene, this.camera);
     this.input.endFrame();
   }

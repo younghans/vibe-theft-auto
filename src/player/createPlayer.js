@@ -64,13 +64,13 @@ function dampAngle(current, target, smoothing) {
   return current + delta * smoothing;
 }
 
-function createPlayerIndicator() {
+function createPlayerIndicator({ color = 0xf2c871, opacity = 0.85 } = {}) {
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(1.35, 1.9, 32),
     new THREE.MeshBasicMaterial({
-      color: 0xf2c871,
+      color,
       transparent: true,
-      opacity: 0.85,
+      opacity,
       side: THREE.DoubleSide
     })
   );
@@ -79,7 +79,10 @@ function createPlayerIndicator() {
   return ring;
 }
 
-export async function createPlayer(library) {
+export async function createPlayer(library, {
+  indicatorColor = 0xf2c871,
+  indicatorOpacity = 0.85
+} = {}) {
   const character = await library.instantiate(assets.player.character);
   const humanoid = validateMixamoHumanoid(character);
 
@@ -102,7 +105,10 @@ export async function createPlayer(library) {
   const anchor = new THREE.Group();
   const visual = new THREE.Group();
   visual.add(character);
-  anchor.add(createPlayerIndicator());
+  anchor.add(createPlayerIndicator({
+    color: indicatorColor,
+    opacity: indicatorOpacity
+  }));
   anchor.add(visual);
 
   let walkWeight = 0;
@@ -147,6 +153,17 @@ export async function createPlayer(library) {
       stopActiveEmote();
     }
   });
+
+  function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
+    walkWeight = THREE.MathUtils.damp(walkWeight, moving ? 1 : 0, 12, deltaSeconds);
+    walkAction.setEffectiveWeight(walkWeight);
+    walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
+    mixer.update(deltaSeconds);
+    anchor.position.y = groundHeight;
+    visual.position.y = 0;
+    visual.rotation.z = 0;
+    visual.rotation.x = 0;
+  }
 
   return {
     object: anchor,
@@ -213,14 +230,28 @@ export async function createPlayer(library) {
         anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
       }
 
-      walkWeight = THREE.MathUtils.damp(walkWeight, moving ? 1 : 0, 12, deltaSeconds);
-      walkAction.setEffectiveWeight(walkWeight);
-      walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
-      mixer.update(deltaSeconds);
-      anchor.position.y = groundHeight;
-      visual.position.y = 0;
-      visual.rotation.z = 0;
-      visual.rotation.x = 0;
+      updateAnimationState(deltaSeconds, moving, groundHeight);
+    },
+    applyRemoteState(state, deltaSeconds, groundHeight = 0) {
+      const targetX = Number.isFinite(state?.x) ? state.x : anchor.position.x;
+      const targetZ = Number.isFinite(state?.z) ? state.z : anchor.position.z;
+      const targetRotationY = Number.isFinite(state?.rotationY) ? state.rotationY : anchor.rotation.y;
+      const deltaX = targetX - anchor.position.x;
+      const deltaZ = targetZ - anchor.position.z;
+      const distance = Math.hypot(deltaX, deltaZ);
+
+      if (distance > 8) {
+        anchor.position.x = targetX;
+        anchor.position.z = targetZ;
+      } else {
+        const positionLerp = 1 - Math.exp(-deltaSeconds * 12);
+        anchor.position.x = THREE.MathUtils.lerp(anchor.position.x, targetX, positionLerp);
+        anchor.position.z = THREE.MathUtils.lerp(anchor.position.z, targetZ, positionLerp);
+      }
+
+      const rotationLerp = 1 - Math.exp(-deltaSeconds * 14);
+      anchor.rotation.y = dampAngle(anchor.rotation.y, targetRotationY, rotationLerp);
+      updateAnimationState(deltaSeconds, distance > 0.05, groundHeight);
     }
   };
 }

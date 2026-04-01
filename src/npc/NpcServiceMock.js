@@ -30,6 +30,7 @@ export class NpcServiceMock {
       transport: 'mock',
       connected: true,
       sessionId: 'local-player',
+      players: new Map(),
       npcs: new Map(),
       transcripts: new Map()
     };
@@ -46,6 +47,7 @@ export class NpcServiceMock {
   getState() {
     return {
       ...this.state,
+      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
       transcripts: new Map([...this.state.transcripts.entries()].map(([id, entries]) => [id, entries.map((entry) => ({ ...entry }))]))
     };
@@ -97,10 +99,11 @@ export class NpcServiceMock {
     this.emit();
   }
 
-  setPlayerTransform(position) {
+  setPlayerTransform(position, rotationY = 0) {
     this.playerPosition = {
       x: position.x,
-      z: position.z
+      z: position.z,
+      rotationY
     };
   }
 
