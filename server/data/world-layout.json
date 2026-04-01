@@ -286,6 +286,15 @@
       }
     },
     {
+      "id": "placement_146",
+      "itemId": "lot_base",
+      "cell": [
+        -5,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_28",
       "itemId": "lot_base",
       "cell": [
@@ -363,6 +372,15 @@
       "cell": [
         4,
         -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_147",
+      "itemId": "lot_base",
+      "cell": [
+        -5,
+        0
       ],
       "rotationQuarterTurns": 0
     },
