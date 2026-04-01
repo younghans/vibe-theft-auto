@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { getNpcModelByItemId } from '../npc/npcCatalog.js';
+import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 
 const REMOTE_PREVIEW_COLOR = new THREE.Color(0x68c7ff);
@@ -43,6 +45,20 @@ function fitToFootprint(root, targetWidth, targetDepth) {
 function snapToGround(root) {
   const bounds = new THREE.Box3().setFromObject(root);
   root.position.y -= bounds.min.y;
+}
+
+function preparePreviewObject(root, item) {
+  const npcModel = item.layer === 'npc'
+    ? getNpcModelByItemId(item.id)
+    : null;
+
+  if (npcModel) {
+    prepareNpcRenderObject(root, npcModel, { enableShadows: false });
+    return;
+  }
+
+  fitToFootprint(root, item.size[0], item.size[1]);
+  snapToGround(root);
 }
 
 function toRotationY(rotationQuarterTurns) {
@@ -168,8 +184,7 @@ export class RemoteBuilderRenderer {
     }
 
     applyPreviewMaterial(preview);
-    fitToFootprint(preview, item.size[0], item.size[1]);
-    snapToGround(preview);
+    preparePreviewObject(preview, item);
     preview.position.y = 0.08;
 
     if (entry.previewObject) {

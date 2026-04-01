@@ -1,25 +1,5 @@
 import * as THREE from 'three';
-
-function normalizeCharacter(root, targetHeight) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scale = size.y > 0 ? targetHeight / size.y : 1;
-  root.scale.multiplyScalar(scale);
-
-  const groundedBounds = new THREE.Box3().setFromObject(root);
-  root.position.y -= groundedBounds.min.y;
-}
-
-function markRenderable(root) {
-  root.traverse((node) => {
-    if (!node.isMesh) {
-      return;
-    }
-
-    node.castShadow = true;
-    node.receiveShadow = true;
-  });
-}
+import { prepareNpcRenderObject } from './npcRenderUtils.js';
 
 function createIndicator(color) {
   const ring = new THREE.Mesh(
@@ -49,8 +29,7 @@ export class NpcActor {
     this.busyIndicator.scale.setScalar(1.2);
     this.busyIndicator.position.y = 0.03;
 
-    markRenderable(this.character);
-    normalizeCharacter(this.character, model.height);
+    prepareNpcRenderObject(this.character, model);
 
     this.visual.add(this.character);
     this.anchor.add(this.busyIndicator);

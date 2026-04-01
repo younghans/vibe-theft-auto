@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { getNpcModelById, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import { getNpcModelById, getNpcModelByItemId, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
 import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
@@ -59,6 +60,20 @@ function fitToFootprint(root, targetWidth, targetDepth) {
 function snapToGround(root) {
   const bounds = new THREE.Box3().setFromObject(root);
   root.position.y -= bounds.min.y;
+}
+
+function preparePreviewObject(root, item) {
+  const npcModel = item.layer === 'npc'
+    ? getNpcModelByItemId(item.id)
+    : null;
+
+  if (npcModel) {
+    prepareNpcRenderObject(root, npcModel, { enableShadows: false });
+    return;
+  }
+
+  fitToFootprint(root, item.size[0], item.size[1]);
+  snapToGround(root);
 }
 
 function snapToCell(worldPosition) {
@@ -676,8 +691,7 @@ export class WorldBuilder {
     }
 
     applyPreviewMaterial(preview, previewTarget.opacity);
-    fitToFootprint(preview, previewTarget.item.size[0], previewTarget.item.size[1]);
-    snapToGround(preview);
+    preparePreviewObject(preview, previewTarget.item);
     preview.position.y = 0.08;
 
     this.previewRoot.clear();
