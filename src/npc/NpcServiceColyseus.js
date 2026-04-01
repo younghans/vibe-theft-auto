@@ -237,30 +237,10 @@ export class NpcServiceColyseus {
     return response.layout ?? { tiles: [], props: [], npcs: [] };
   }
 
-  async placeTile(payload) {
-    return this.rpc('world:placeTile', payload);
-  }
-
-  async placeProp(payload) {
-    return this.rpc('world:placeProp', payload);
-  }
-
-  async placeNpc(payload) {
-    return this.rpc('world:placeNpc', payload);
-  }
-
-  async rotatePlacement(placementId) {
-    return this.rpc('world:rotatePlacement', { placementId });
-  }
-
-  async deletePlacement(placementId) {
-    return this.rpc('world:deletePlacement', { placementId });
-  }
-
-  async updateNpc(placementId, updates = {}) {
-    return this.rpc('world:updateNpc', {
-      placementId,
-      ...updates
+  async editWorld(op, payload = {}) {
+    return this.rpc('world:edit', {
+      op,
+      payload
     });
   }
 

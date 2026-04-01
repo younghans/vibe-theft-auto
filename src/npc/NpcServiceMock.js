@@ -127,140 +127,136 @@ export class NpcServiceMock {
     return cloneLayout(this.worldState.serializeLayout());
   }
 
-  async placeTile(payload) {
-    const item = getBuilderItemById(payload?.itemId);
-    if (!item || item.layer !== 'tile') {
-      return { ok: false, error: 'That tile is not available.' };
-    }
-    const result = this.worldState.placeTile(
-      item,
-      Math.round(Number(payload.cellX ?? 0)),
-      Math.round(Number(payload.cellZ ?? 0)),
-      Number(payload.rotationQuarterTurns ?? 0)
-    );
-    const patch = {
-      type: 'upsertPlacement',
-      placement: this.worldState.serializePlacement(result.placement.id),
-      replacedPlacementId: result.replacedPlacementId
-    };
-    this.emitWorldPatch(patch);
-    return { ok: true, placementId: result.placement.id };
-  }
-
-  async placeProp(payload) {
-    const item = getBuilderItemById(payload?.itemId);
-    if (!item || item.layer !== 'prop') {
-      return { ok: false, error: 'That prop is not available.' };
-    }
-    const placement = this.worldState.placeProp(
-      item,
-      Number(payload.x ?? 0),
-      Number(payload.z ?? 0),
-      Number(payload.rotationQuarterTurns ?? 0)
-    );
-    const patch = {
-      type: 'upsertPlacement',
-      placement: this.worldState.serializePlacement(placement.id),
-      replacedPlacementId: null
-    };
-    this.emitWorldPatch(patch);
-    return { ok: true, placementId: placement.id };
-  }
-
-  async placeNpc(payload) {
-    const model = getNpcModelById(payload.modelId);
-    const item = model ? getBuilderItemById(model.itemId) : null;
-    if (!item || item.layer !== 'npc') {
-      return { ok: false, error: 'That NPC model is not available.' };
-    }
-
-    const placement = this.worldState.placeNpc(
-      item,
-      Number(payload.x ?? 0),
-      Number(payload.z ?? 0),
-      Number(payload.rotationQuarterTurns ?? 0),
-      {
-        modelId: payload.modelId,
-        name: payload.name,
-        prompt: payload.prompt,
-        interactRadius: payload.interactRadius,
-        active: payload.active !== false
+  async editWorld(op, payload = {}) {
+    switch (op) {
+      case 'placeTile': {
+        const item = getBuilderItemById(payload?.itemId);
+        if (!item || item.layer !== 'tile') {
+          return { ok: false, error: 'That tile is not available.' };
+        }
+        const result = this.worldState.placeTile(
+          item,
+          Math.round(Number(payload.cellX ?? 0)),
+          Math.round(Number(payload.cellZ ?? 0)),
+          Number(payload.rotationQuarterTurns ?? 0)
+        );
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementId: result.replacedPlacementId
+        });
+        return { ok: true, placementId: result.placement.id };
       }
-    );
-    this.syncNpcStateFromWorld();
-    const patch = {
-      type: 'upsertPlacement',
-      placement: this.worldState.serializePlacement(placement.id),
-      replacedPlacementId: null
-    };
-    this.emitWorldPatch(patch);
-    this.emit();
-    return { ok: true, placementId: placement.id };
-  }
-
-  async rotatePlacement(placementId) {
-    const placement = this.worldState.rotatePlacement(placementId);
-    if (!placement) {
-      return { ok: false, error: 'That placement is not available.' };
-    }
-
-    if (placement.layer === 'npc') {
-      this.syncNpcStateFromWorld();
-      this.emit();
-    }
-
-    const patch = {
-      type: 'upsertPlacement',
-      placement: this.worldState.serializePlacement(placement.id),
-      replacedPlacementId: null
-    };
-    this.emitWorldPatch(patch);
-    return { ok: true, placementId };
-  }
-
-  async deletePlacement(placementId) {
-    const placement = this.worldState.deletePlacement(placementId);
-    if (!placement) {
-      return { ok: false, error: 'That placement is not available.' };
-    }
-
-    if (placement.layer === 'npc') {
-      this.syncNpcStateFromWorld();
-      this.emit();
-    }
-
-    const patch = {
-      type: 'deletePlacement',
-      placementId
-    };
-    this.emitWorldPatch(patch);
-    return { ok: true, placementId };
-  }
-
-  async updateNpc(placementId, updates = {}) {
-    const nextUpdates = { ...updates };
-    if (updates.modelId) {
-      const model = getNpcModelById(updates.modelId);
-      if (!model) {
-        return { ok: false, error: 'That NPC model is not available.' };
+      case 'placeProp': {
+        const item = getBuilderItemById(payload?.itemId);
+        if (!item || item.layer !== 'prop') {
+          return { ok: false, error: 'That prop is not available.' };
+        }
+        const placement = this.worldState.placeProp(
+          item,
+          Number(payload.x ?? 0),
+          Number(payload.z ?? 0),
+          Number(payload.rotationQuarterTurns ?? 0)
+        );
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        return { ok: true, placementId: placement.id };
       }
-      nextUpdates.itemId = model.itemId;
-    }
+      case 'placeNpc': {
+        const model = getNpcModelById(payload.modelId);
+        const item = model ? getBuilderItemById(model.itemId) : null;
+        if (!item || item.layer !== 'npc') {
+          return { ok: false, error: 'That NPC model is not available.' };
+        }
 
-    const placement = this.worldState.updateNpc(placementId, nextUpdates);
-    if (!placement) {
-      return { ok: false, error: 'That NPC is not available.' };
-    }
+        const placement = this.worldState.placeNpc(
+          item,
+          Number(payload.x ?? 0),
+          Number(payload.z ?? 0),
+          Number(payload.rotationQuarterTurns ?? 0),
+          {
+            modelId: payload.modelId,
+            name: payload.name,
+            prompt: payload.prompt,
+            interactRadius: payload.interactRadius,
+            active: payload.active !== false
+          }
+        );
+        this.syncNpcStateFromWorld();
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        this.emit();
+        return { ok: true, placementId: placement.id };
+      }
+      case 'rotatePlacement': {
+        const placement = this.worldState.rotatePlacement(payload.placementId);
+        if (!placement) {
+          return { ok: false, error: 'That placement is not available.' };
+        }
 
-    this.syncNpcStateFromWorld();
-    const patch = {
-      type: 'upsertPlacement',
-      placement: this.worldState.serializePlacement(placement.id),
-      replacedPlacementId: null
-    };
-    this.emitWorldPatch(patch);
-    this.emit();
-    return { ok: true, placementId };
+        if (placement.layer === 'npc') {
+          this.syncNpcStateFromWorld();
+          this.emit();
+        }
+
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        return { ok: true, placementId: payload.placementId };
+      }
+      case 'deletePlacement': {
+        const placement = this.worldState.deletePlacement(payload.placementId);
+        if (!placement) {
+          return { ok: false, error: 'That placement is not available.' };
+        }
+
+        if (placement.layer === 'npc') {
+          this.syncNpcStateFromWorld();
+          this.emit();
+        }
+
+        this.emitWorldPatch({
+          type: 'deletePlacement',
+          placementId: payload.placementId
+        });
+        return { ok: true, placementId: payload.placementId };
+      }
+      case 'updateNpc': {
+        const nextUpdates = { ...payload };
+        delete nextUpdates.placementId;
+        if (nextUpdates.modelId) {
+          const model = getNpcModelById(nextUpdates.modelId);
+          if (!model) {
+            return { ok: false, error: 'That NPC model is not available.' };
+          }
+          nextUpdates.itemId = model.itemId;
+        }
+
+        const placement = this.worldState.updateNpc(payload.placementId, nextUpdates);
+        if (!placement) {
+          return { ok: false, error: 'That NPC is not available.' };
+        }
+
+        this.syncNpcStateFromWorld();
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        this.emit();
+        return { ok: true, placementId: payload.placementId };
+      }
+      default:
+        return { ok: false, error: 'That world edit is not supported.' };
+    }
   }
 
   setPlayerTransform(position, rotationY = 0) {

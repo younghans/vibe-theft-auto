@@ -158,104 +158,8 @@ export class WorldRoom extends Room {
       }));
     });
 
-    this.onMessage('world:placeTile', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const payload = this.sanitizeTilePlacement(message);
-        const result = this.worldState.placeTile(
-          payload.item,
-          payload.cellX,
-          payload.cellZ,
-          payload.rotationQuarterTurns
-        );
-        return this.commitWorldPatch({
-          type: 'upsertPlacement',
-          placement: this.worldState.serializePlacement(result.placement.id),
-          replacedPlacementId: result.replacedPlacementId
-        });
-      });
-    });
-
-    this.onMessage('world:placeProp', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const payload = this.sanitizePropPlacement(message);
-        const placement = this.worldState.placeProp(
-          payload.item,
-          payload.x,
-          payload.z,
-          payload.rotationQuarterTurns
-        );
-        return this.commitWorldPatch({
-          type: 'upsertPlacement',
-          placement: this.worldState.serializePlacement(placement.id),
-          replacedPlacementId: null
-        });
-      });
-    });
-
-    this.onMessage('world:placeNpc', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const payload = this.sanitizeNpcPlacement(message);
-        const placement = this.worldState.placeNpc(
-          payload.item,
-          payload.x,
-          payload.z,
-          payload.rotationQuarterTurns,
-          payload.npc
-        );
-        this.syncNpcDefinitionsFromWorld();
-        return this.commitWorldPatch({
-          type: 'upsertPlacement',
-          placement: this.worldState.serializePlacement(placement.id),
-          replacedPlacementId: null
-        });
-      });
-    });
-
-    this.onMessage('world:rotatePlacement', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const placement = this.assertEditablePlacement(message.placementId);
-        const rotated = this.worldState.rotatePlacement(placement.id);
-        if (rotated?.layer === 'npc') {
-          this.syncNpcDefinitionsFromWorld();
-        }
-        return this.commitWorldPatch({
-          type: 'upsertPlacement',
-          placement: this.worldState.serializePlacement(rotated.id),
-          replacedPlacementId: null
-        });
-      });
-    });
-
-    this.onMessage('world:deletePlacement', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const placement = this.assertEditablePlacement(message.placementId);
-        this.worldState.deletePlacement(placement.id);
-        if (placement.layer === 'npc') {
-          this.syncNpcDefinitionsFromWorld();
-        }
-        return this.commitWorldPatch({
-          type: 'deletePlacement',
-          placementId: placement.id
-        });
-      });
-    });
-
-    this.onMessage('world:updateNpc', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const placement = this.assertEditablePlacement(message.placementId, 'npc');
-        const updates = this.sanitizeNpcUpdates(message);
-        const updatedPlacement = this.worldState.updateNpc(placement.id, updates);
-        if (!updatedPlacement) {
-          throw new Error('That NPC is not available.');
-        }
-
-        this.syncNpcDefinitionsFromWorld();
-        return this.commitWorldPatch({
-          type: 'upsertPlacement',
-          placement: this.worldState.serializePlacement(updatedPlacement.id),
-          replacedPlacementId: null
-        });
-      });
+    this.onMessage('world:edit', (client, message) => {
+      this.handleRpc(client, message.requestId, () => this.handleWorldEdit(message));
     });
 
     this.onMessage('npc:beginInteract', (client, message) => {
@@ -405,6 +309,97 @@ export class WorldRoom extends Room {
     return {
       placementId: patch.placement?.id ?? patch.placementId ?? null
     };
+  }
+
+  handleWorldEdit(message = {}) {
+    const { op, payload = {} } = message;
+
+    switch (op) {
+      case 'placeTile': {
+        const next = this.sanitizeTilePlacement(payload);
+        const result = this.worldState.placeTile(
+          next.item,
+          next.cellX,
+          next.cellZ,
+          next.rotationQuarterTurns
+        );
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementId: result.replacedPlacementId
+        });
+      }
+      case 'placeProp': {
+        const next = this.sanitizePropPlacement(payload);
+        const placement = this.worldState.placeProp(
+          next.item,
+          next.x,
+          next.z,
+          next.rotationQuarterTurns
+        );
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+      }
+      case 'placeNpc': {
+        const next = this.sanitizeNpcPlacement(payload);
+        const placement = this.worldState.placeNpc(
+          next.item,
+          next.x,
+          next.z,
+          next.rotationQuarterTurns,
+          next.npc
+        );
+        this.syncNpcDefinitionsFromWorld();
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+      }
+      case 'rotatePlacement': {
+        const placement = this.assertEditablePlacement(payload.placementId);
+        const rotated = this.worldState.rotatePlacement(placement.id);
+        if (rotated?.layer === 'npc') {
+          this.syncNpcDefinitionsFromWorld();
+        }
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(rotated.id),
+          replacedPlacementId: null
+        });
+      }
+      case 'deletePlacement': {
+        const placement = this.assertEditablePlacement(payload.placementId);
+        this.worldState.deletePlacement(placement.id);
+        if (placement.layer === 'npc') {
+          this.syncNpcDefinitionsFromWorld();
+        }
+        return this.commitWorldPatch({
+          type: 'deletePlacement',
+          placementId: placement.id
+        });
+      }
+      case 'updateNpc': {
+        const placement = this.assertEditablePlacement(payload.placementId, 'npc');
+        const updates = this.sanitizeNpcUpdates(payload);
+        const updatedPlacement = this.worldState.updateNpc(placement.id, updates);
+        if (!updatedPlacement) {
+          throw new Error('That NPC is not available.');
+        }
+
+        this.syncNpcDefinitionsFromWorld();
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(updatedPlacement.id),
+          replacedPlacementId: null
+        });
+      }
+      default:
+        throw new Error('That world edit is not supported.');
+    }
   }
 
   updateBuilderPresence(client, message) {

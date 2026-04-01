@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getNpcModelById, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
+import { createWorldEditAdapter } from './createWorldEditAdapter.js';
 import { RemoteBuilderRenderer } from './RemoteBuilderRenderer.js';
 import { WorldRenderer } from './WorldRenderer.js';
 import { WorldState } from './WorldState.js';
@@ -174,6 +175,11 @@ export class WorldBuilder {
     this.pendingNpcUpdateTimeouts = new Map();
     this.worldState = new WorldState();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
+    this.worldEditAdapter = createWorldEditAdapter({
+      transport: this.worldTransport,
+      worldState: this.worldState,
+      worldRenderer: this.worldRenderer
+    });
     this.remoteBuilderRenderer = new RemoteBuilderRenderer({ scene, library, worldRenderer: this.worldRenderer });
     this.builderPreviewRenderer = new BuilderPreviewRenderer({ library });
 
@@ -792,100 +798,83 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.worldTransport?.placeTile) {
-      const result = await this.worldTransport.placeTile({
-        itemId: item.id,
-        cellX: cell.x,
-        cellZ: cell.z,
-        rotationQuarterTurns: this.state.rotationQuarterTurns
-      });
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not place tile.');
-        return;
-      }
-
-      this.hud.showToast(`Placed ${item.label}`);
+    const result = await this.worldEditAdapter.edit({
+      op: 'placeTile',
+      item,
+      cellX: cell.x,
+      cellZ: cell.z,
+      rotationQuarterTurns: this.state.rotationQuarterTurns
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not place tile.');
       return;
     }
 
-    const result = this.worldState.placeTile(item, cell.x, cell.z, this.state.rotationQuarterTurns);
-    if (result.replacedPlacementId) {
-      this.worldRenderer.removePlacement(result.replacedPlacementId);
+    if (result.appliedImmediately) {
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.updateSelectionVisual();
+      this.notifyLayoutChanged();
     }
-    await this.worldRenderer.addPlacement(result.placement);
+
     this.hud.showToast(`Placed ${item.label}`);
-    this.notifyLayoutChanged();
   }
 
   async placeProp(item) {
-    if (this.worldTransport?.placeProp) {
-      const result = await this.worldTransport.placeProp({
-        itemId: item.id,
-        x: this.state.hover.point.x,
-        z: this.state.hover.point.z,
-        rotationQuarterTurns: this.state.rotationQuarterTurns
-      });
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not place prop.');
-        return;
-      }
-
-      this.hud.showToast(`Placed ${item.label}`);
+    const result = await this.worldEditAdapter.edit({
+      op: 'placeProp',
+      item,
+      x: this.state.hover.point.x,
+      z: this.state.hover.point.z,
+      rotationQuarterTurns: this.state.rotationQuarterTurns
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not place prop.');
       return;
     }
 
-    const placement = this.worldState.placeProp(
-      item,
-      this.state.hover.point.x,
-      this.state.hover.point.z,
-      this.state.rotationQuarterTurns
-    );
-    await this.worldRenderer.addPlacement(placement);
+    if (result.appliedImmediately) {
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.updateSelectionVisual();
+      this.notifyLayoutChanged();
+    }
+
     this.hud.showToast(`Placed ${item.label}`);
-    this.notifyLayoutChanged();
   }
 
   async placeNpc(item) {
-    if (this.worldTransport?.placeNpc) {
-      const result = await this.worldTransport.placeNpc({
+    const result = await this.worldEditAdapter.edit({
+      op: 'placeNpc',
+      item,
+      x: this.state.hover.point.x,
+      z: this.state.hover.point.z,
+      rotationQuarterTurns: this.state.rotationQuarterTurns,
+      npc: {
         modelId: item.modelId,
-        x: this.state.hover.point.x,
-        z: this.state.hover.point.z,
-        rotationQuarterTurns: this.state.rotationQuarterTurns,
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
         interactRadius: item.interactionRadius ?? 4.2,
         active: false
-      });
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not place NPC.');
-        return;
       }
-
-      if (result.placementId) {
-        this.selectPlacement(result.placementId);
-      }
-      this.hud.showToast(`Placed ${item.label}. Confirm the NPC to make them active.`);
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not place NPC.');
       return;
     }
 
-    const placement = this.worldState.placeNpc(
-      item,
-      this.state.hover.point.x,
-      this.state.hover.point.z,
-      this.state.rotationQuarterTurns,
-      {
-        modelId: item.modelId,
-        name: item.label,
-        prompt: `You are ${item.label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
-        interactRadius: item.interactionRadius ?? 4.2,
-        active: false
-      }
-    );
-    await this.worldRenderer.addPlacement(placement);
-    this.selectPlacement(placement.id);
+    if (result.placementId) {
+      this.selectPlacement(result.placementId);
+    }
+    if (result.appliedImmediately) {
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.updateSelectionVisual();
+      this.updateBuilderNpcEditor();
+      this.notifyLayoutChanged();
+    }
+
     this.hud.showToast(`Placed ${item.label}. Confirm the NPC to make them active.`);
-    this.notifyLayoutChanged();
   }
 
   async loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
@@ -1013,26 +1002,24 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.worldTransport?.rotatePlacement) {
-      const result = await this.worldTransport.rotatePlacement(placement.id);
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not rotate that piece.');
-        return;
-      }
-
-      const item = getBuilderItemById(placement.itemId);
-      this.hud.showToast(`Rotated ${item?.label ?? 'piece'}`);
+    const result = await this.worldEditAdapter.edit({
+      op: 'rotatePlacement',
+      placementId: placement.id
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not rotate that piece.');
       return;
     }
 
-    const rotatedPlacement = this.worldState.rotatePlacement(placement.id);
-    this.worldRenderer.updatePlacement(rotatedPlacement);
-    this.updateSelectionVisual();
-    this.resolveHoverState();
-    void this.syncPreviewToState(true);
+    if (result.appliedImmediately) {
+      this.updateSelectionVisual();
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.notifyLayoutChanged();
+    }
+
     const item = getBuilderItemById(placement.itemId);
     this.hud.showToast(`Rotated ${item?.label ?? 'piece'}`);
-    this.notifyLayoutChanged();
   }
 
   async deleteSelectedPlacement() {
@@ -1041,26 +1028,24 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.worldTransport?.deletePlacement) {
-      const result = await this.worldTransport.deletePlacement(placement.id);
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not delete that piece.');
-        return;
-      }
-
-      const item = getBuilderItemById(placement.itemId);
-      this.hud.showToast(`Deleted ${item?.label ?? 'piece'}`);
+    const result = await this.worldEditAdapter.edit({
+      op: 'deletePlacement',
+      placementId: placement.id
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not delete that piece.');
       return;
     }
 
-    this.worldState.deletePlacement(placement.id);
-    this.worldRenderer.removePlacement(placement.id);
-    this.clearSelection();
-    this.resolveHoverState();
-    void this.syncPreviewToState(true);
+    if (result.appliedImmediately) {
+      this.clearSelection();
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.notifyLayoutChanged();
+    }
+
     const item = getBuilderItemById(placement.itemId);
     this.hud.showToast(`Deleted ${item?.label ?? 'piece'}`);
-    this.notifyLayoutChanged();
   }
 
   updateSelectionVisual() {
@@ -1133,13 +1118,24 @@ export class WorldBuilder {
     window.clearTimeout(this.pendingNpcUpdateTimeouts.get(placementId));
     this.pendingNpcUpdateTimeouts.delete(placementId);
 
-    if (!changes || !this.worldTransport?.updateNpc) {
+    if (!changes) {
       return;
     }
 
-    const result = await this.worldTransport.updateNpc(placementId, changes);
+    const result = await this.worldEditAdapter.edit({
+      op: 'updateNpc',
+      placementId,
+      changes
+    });
     if (!result?.ok) {
       this.hud.showToast(result?.error ?? 'Could not update NPC.');
+      return;
+    }
+
+    if (result.appliedImmediately) {
+      this.updateSelectionVisual();
+      this.updateBuilderNpcEditor();
+      this.notifyLayoutChanged();
     }
   }
 
@@ -1162,20 +1158,7 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.worldTransport?.updateNpc) {
-      this.queueNpcUpdate(placement.id, nextChanges);
-      return;
-    }
-
-    const updatedPlacement = this.worldState.updateNpc(placement.id, nextChanges);
-    if (!updatedPlacement) {
-      return;
-    }
-
-    this.worldRenderer.updatePlacement(updatedPlacement);
-    this.updateSelectionVisual();
-    this.updateBuilderNpcEditor();
-    this.notifyLayoutChanged();
+    this.queueNpcUpdate(placement.id, nextChanges);
   }
 
   async changeSelectedNpcModel(modelId) {
@@ -1184,64 +1167,51 @@ export class WorldBuilder {
       return;
     }
 
-    const model = getNpcModelById(modelId);
-    if (!model) {
+    if (!getNpcModelById(modelId)) {
       return;
     }
 
-    if (this.worldTransport?.updateNpc) {
-      await this.flushNpcUpdate(placement.id);
-      const result = await this.worldTransport.updateNpc(placement.id, { modelId });
-      if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not change NPC model.');
-      }
-      return;
-    }
-
-    const updatedPlacement = this.worldState.updateNpc(placement.id, {
-      modelId,
-      itemId: model.itemId
+    await this.flushNpcUpdate(placement.id);
+    const result = await this.worldEditAdapter.edit({
+      op: 'updateNpc',
+      placementId: placement.id,
+      changes: { modelId }
     });
-    if (!updatedPlacement) {
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not change NPC model.');
       return;
     }
 
-    updatedPlacement.itemId = model.itemId;
-    updatedPlacement.npc.modelId = modelId;
-    this.worldRenderer.removePlacement(placement.id);
-    await this.worldRenderer.addPlacement(updatedPlacement);
-    this.updateSelectionVisual();
-    this.updateBuilderNpcEditor();
-    this.notifyLayoutChanged();
+    if (result.appliedImmediately) {
+      this.updateSelectionVisual();
+      this.updateBuilderNpcEditor();
+      this.notifyLayoutChanged();
+    }
   }
 
-  confirmSelectedNpc() {
+  async confirmSelectedNpc() {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc' || !placement.npc || placement.npc.active !== false) {
       return;
     }
 
-    if (this.worldTransport?.updateNpc) {
-      void this.flushNpcUpdate(placement.id).then(async () => {
-        const result = await this.worldTransport.updateNpc(placement.id, { active: true });
-        if (!result?.ok) {
-          this.hud.showToast(result?.error ?? 'Could not confirm NPC.');
-          return;
-        }
-
-        this.hud.showToast(`${placement.npc.name} is now active.`);
-      });
+    await this.flushNpcUpdate(placement.id);
+    const result = await this.worldEditAdapter.edit({
+      op: 'updateNpc',
+      placementId: placement.id,
+      changes: { active: true }
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not confirm NPC.');
       return;
     }
 
-    const updatedPlacement = this.worldState.updateNpc(placement.id, { active: true });
-    if (!updatedPlacement) {
-      return;
+    if (result.appliedImmediately) {
+      this.updateBuilderNpcEditor();
+      this.notifyLayoutChanged();
     }
 
-    this.updateBuilderNpcEditor();
-    this.hud.showToast(`${updatedPlacement.npc.name} is now active.`);
-    this.notifyLayoutChanged();
+    this.hud.showToast(`${placement.npc.name} is now active.`);
   }
 
   notifyLayoutChanged() {

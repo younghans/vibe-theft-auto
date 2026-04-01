@@ -821,6 +821,15 @@
         5
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_145",
+      "itemId": "road_corner_curved",
+      "cell": [
+        1,
+        5
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "props": [
