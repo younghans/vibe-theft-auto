@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:client",
+    "dev": "npm run dev:stack",
     "dev:client": "node scripts/dev-server.mjs . 4173",
     "dev:server": "node server/index.mjs",
     "dev:stack": "concurrently \"npm:dev:client\" \"npm:dev:server\"",

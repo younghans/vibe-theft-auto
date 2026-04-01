@@ -1,6 +1,40 @@
 import OpenAI from 'openai';
 import { logServer, logServerError } from './logger.js';
 
+function createTraceId() {
+  return `npc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function summarizeUsage(usage) {
+  if (!usage || typeof usage !== 'object') {
+    return null;
+  }
+
+  return {
+    inputTokens: usage.input_tokens ?? null,
+    outputTokens: usage.output_tokens ?? null,
+    totalTokens: usage.total_tokens ?? null
+  };
+}
+
+function summarizeResponse(response, text) {
+  return {
+    responseId: response?.id ?? null,
+    status: response?.status ?? null,
+    outputItemCount: Array.isArray(response?.output) ? response.output.length : 0,
+    responseLength: text?.length ?? 0,
+    incompleteDetails: response?.incomplete_details ?? null,
+    usage: summarizeUsage(response?.usage)
+  };
+}
+
+function previewText(text, limit = 96) {
+  const normalized = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return normalized.length > limit
+    ? `${normalized.slice(0, limit - 3)}...`
+    : normalized;
+}
+
 function hashText(text) {
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) {
@@ -29,12 +63,14 @@ export class NpcChatEngine {
   }
 
   async generateReply({ npc, transcript, playerMessage }) {
+    const traceId = createTraceId();
     if (!this.client) {
-      logServer('npc-chat', 'Using fallback reply because OPENAI_API_KEY is not configured.', {
-        npcId: npc.id,
-        npcName: npc.name
+      return this.generateFallbackReply({
+        npc,
+        playerMessage,
+        traceId,
+        reason: 'missing_api_key'
       });
-      return this.generateFallbackReply({ npc, playerMessage });
     }
 
     const transcriptWindow = transcript.slice(-10)
@@ -43,10 +79,12 @@ export class NpcChatEngine {
 
     try {
       logServer('npc-chat', 'Requesting OpenAI NPC reply.', {
+        traceId,
         npcId: npc.id,
         npcName: npc.name,
         transcriptEntries: transcript.length,
         playerMessageLength: playerMessage.length,
+        playerMessagePreview: previewText(playerMessage),
         model: this.model
       });
 
@@ -85,23 +123,37 @@ export class NpcChatEngine {
       });
 
       const text = response.output_text?.trim();
+      if (!text) {
+        return this.generateFallbackReply({
+          npc,
+          playerMessage,
+          traceId,
+          reason: 'empty_output_text',
+          meta: summarizeResponse(response, text)
+        });
+      }
+
       logServer('npc-chat', 'Received OpenAI NPC reply.', {
+        traceId,
         npcId: npc.id,
         npcName: npc.name,
-        responseLength: text?.length ?? 0
+        ...summarizeResponse(response, text)
       });
-      return text || this.generateFallbackReply({ npc, playerMessage });
+      return text;
     } catch (error) {
       logServerError('npc-chat', 'OpenAI NPC reply failed.', error, {
+        traceId,
         npcId: npc.id,
         npcName: npc.name,
-        model: this.model
+        model: this.model,
+        transcriptEntries: transcript.length,
+        playerMessagePreview: previewText(playerMessage)
       });
       throw error;
     }
   }
 
-  generateFallbackReply({ npc, playerMessage }) {
+  generateFallbackReply({ npc, playerMessage, traceId = null, reason = 'unknown', meta = null }) {
     const signatures = [
       'This city rewards nerve more than comfort.',
       'Keep your ears open and your story straight.',
@@ -109,6 +161,16 @@ export class NpcChatEngine {
       'That sounds like the kind of move people remember.'
     ];
     const signature = signatures[hashText(`${npc.name}:${playerMessage}`) % signatures.length];
-    return `${playerMessage}? ${signature}`;
+    const reply = `${playerMessage}? ${signature}`;
+    logServer('npc-chat', 'Using deterministic fallback reply.', {
+      traceId,
+      npcId: npc.id,
+      npcName: npc.name,
+      reason,
+      playerMessagePreview: previewText(playerMessage),
+      fallbackLength: reply.length,
+      ...(meta ?? {})
+    });
+    return reply;
   }
 }

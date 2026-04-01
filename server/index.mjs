@@ -1,7 +1,7 @@
 import server from './app.config.js';
 import { logServer } from './src/logger.js';
 
-const port = Number(process.env.COLOSEUS_PORT || 2567);
+const port = Number(process.env.COLYSEUS_PORT || process.env.COLOSEUS_PORT || 2567);
 
 server.listen(port);
 logServer('server', 'Colyseus NPC server listening.', {

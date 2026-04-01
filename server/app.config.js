@@ -1,3 +1,4 @@
+import './src/loadEnv.js';
 import { defineRoom, defineServer } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { WorldRoom } from './src/WorldRoom.js';

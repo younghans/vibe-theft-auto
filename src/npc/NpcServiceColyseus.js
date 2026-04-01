@@ -53,6 +53,7 @@ export class NpcServiceColyseus {
     this.pendingRequests = new Map();
     this.sequence = 0;
     this.client = new ClientCtor(endpoint);
+    this.destroyed = false;
     this.state = {
       transport: 'colyseus',
       connected: false,
@@ -67,6 +68,12 @@ export class NpcServiceColyseus {
 
   async connect() {
     this.room = await this.client.joinOrCreate('world');
+    if (this.destroyed) {
+      this.room.leave();
+      this.room = null;
+      return;
+    }
+
     this.state.connected = true;
     this.state.sessionId = this.room.sessionId;
     console.info('[NPC] Joined Colyseus room.', {
@@ -87,27 +94,16 @@ export class NpcServiceColyseus {
       }
       this.state.players = nextPlayers;
       this.state.npcs = nextNpcs;
-      console.debug('[NPC] Colyseus state update.', {
-        playerCount: nextPlayers.size,
-        npcCount: nextNpcs.size
-      });
       this.emit();
     });
 
     this.room.onMessage('npc:transcripts', (message) => {
       this.state.transcripts = new Map(Object.entries(message.transcripts ?? {}));
-      console.debug('[NPC] Received transcript snapshot.', {
-        npcCount: this.state.transcripts.size
-      });
       this.emit();
     });
 
     this.room.onMessage('npc:transcript', (message) => {
       this.state.transcripts.set(message.npcId, message.entries ?? []);
-      console.debug('[NPC] Received transcript update.', {
-        npcId: message.npcId,
-        entryCount: message.entries?.length ?? 0
-      });
       this.emit();
     });
 
@@ -123,7 +119,6 @@ export class NpcServiceColyseus {
     this.room.onLeave(() => {
       this.state.connected = false;
       this.state.players = new Map();
-      console.warn('[NPC] Left Colyseus room.');
       this.emit();
     });
 
@@ -186,9 +181,6 @@ export class NpcServiceColyseus {
       return;
     }
 
-    console.info('[NPC] Syncing NPC definitions to Colyseus.', {
-      npcCount: npcs.length
-    });
     await this.rpc('npc:syncDefinitions', {
       npcs
     });
@@ -221,26 +213,22 @@ export class NpcServiceColyseus {
   }
 
   async beginInteract(npcId) {
-    console.info('[NPC] Colyseus beginInteract.', { npcId });
     return this.rpc('npc:beginInteract', { npcId });
   }
 
   async sendChat(npcId, message) {
-    console.info('[NPC] Colyseus sendChat.', {
-      npcId,
-      messageLength: message.trim().length
-    });
     return this.rpc('npc:chat', { npcId, message });
   }
 
   async endInteract(npcId) {
-    console.info('[NPC] Colyseus endInteract.', { npcId });
     return this.rpc('npc:endInteract', { npcId });
   }
 
   async destroy() {
+    this.destroyed = true;
     if (this.room) {
       this.room.leave();
+      this.room = null;
     }
     this.listeners.clear();
   }
