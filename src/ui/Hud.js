@@ -1,3 +1,5 @@
+import { EMOTE_SLOTS } from '../player/emotes.js';
+
 export class Hud {
   constructor(root) {
     this.root = root;
@@ -16,7 +18,13 @@ export class Hud {
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
     this.builderSelectionConfirm = this.overlay.querySelector('[data-builder-selection-confirm]');
+    this.emoteMenu = this.overlay.querySelector('[data-emote-menu]');
+    this.emoteWheel = this.overlay.querySelector('[data-emote-wheel]');
+    this.emoteSelection = this.overlay.querySelector('[data-emote-selection]');
+    this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
+    this.emoteSliceNodes = [];
     this.toastTimeout = 0;
+    this.buildEmoteWheel();
   }
 
   createLoading() {
@@ -33,6 +41,21 @@ export class Hud {
     return node;
   }
 
+  buildEmoteWheel() {
+    const markup = EMOTE_SLOTS.map((entry, index) => `
+      <div
+        class="hud__emote-slice${entry ? ' is-filled' : ' is-empty'}"
+        data-emote-slice
+        style="--slot-angle:${index * 45}deg"
+      >
+        <span class="hud__emote-label">${entry?.label ?? ''}</span>
+      </div>
+    `).join('');
+
+    this.emoteWheel.insertAdjacentHTML('beforeend', markup);
+    this.emoteSliceNodes = Array.from(this.emoteWheel.querySelectorAll('[data-emote-slice]'));
+  }
+
   createOverlay() {
     const node = document.createElement('div');
     node.className = 'hud';
@@ -40,7 +63,7 @@ export class Hud {
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Stick RPG 3D</h1>
-        <p class="hud__body">WASD to move through the city. Press E near doors, ATMs, and storefront markers. Press B for the world builder.</p>
+        <p class="hud__body">WASD to move through the city. Press E near doors, ATMs, and storefront markers. Hold B for emotes.</p>
       </section>
       <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle build mode" title="Toggle build mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -59,11 +82,17 @@ export class Hud {
       </section>
       <section class="hud__builder" data-builder>
         <p class="hud__eyebrow">World Builder</p>
-        <p class="hud__body" data-builder-status>Press B to enter builder mode.</p>
+        <p class="hud__body" data-builder-status>Use the hammer button to enter builder mode.</p>
         <p class="hud__body hud__builder-meta" data-builder-meta></p>
         <div class="hud__builder-tabs" data-builder-tabs></div>
         <div class="hud__builder-grid" data-builder-tiles></div>
         <button class="hud__builder-button hud__builder-copy" type="button" data-builder-copy>Copy Layout JSON</button>
+      </section>
+      <section class="hud__emote-menu" data-emote-menu>
+        <div class="hud__emote-wheel" data-emote-wheel>
+          <div class="hud__emote-selection" data-emote-selection></div>
+        </div>
+        <p class="hud__emote-hint" data-emote-hint>Hold B, push the cursor into a slice, release B to emote.</p>
       </section>
       <section class="hud__selection" data-builder-selection>
         <div class="hud__selection-actions">
@@ -168,7 +197,7 @@ export class Hud {
     const items = activeCategory?.items ?? [];
     this.builderStatus.textContent = enabled
       ? 'Builder active. Left click places the selected piece. Click any existing tile or prop to edit it.'
-      : 'Press B to enter builder mode.';
+      : 'Use the hammer button to enter builder mode.';
     this.builderMeta.textContent = enabled
       ? `${activeCategory?.description ?? ''} Rotation: ${rotationQuarterTurns * 90}deg | WASD pans | Mouse wheel zooms | Delete removes selected`
       : 'When active, use tabs to switch layers and 1-9 to choose a piece.';
@@ -205,5 +234,27 @@ export class Hud {
     node.classList.add('is-visible');
     node.style.left = `${selection.screenX}px`;
     node.style.top = `${selection.screenY}px`;
+  }
+
+  setEmoteMenuState({ open, activeIndex = -1, selectedLabel = '', hasSelection = false }) {
+    this.emoteMenu.classList.toggle('is-visible', open);
+
+    if (!open) {
+      this.emoteSliceNodes.forEach((node) => node.classList.remove('is-active'));
+      this.emoteSelection.classList.remove('is-visible');
+      this.emoteSelection.style.setProperty('--emote-angle', '0deg');
+      this.emoteHint.textContent = 'Hold B, push the cursor into a slice, release B to emote.';
+      return;
+    }
+
+    this.emoteSliceNodes.forEach((node, index) => {
+      node.classList.toggle('is-active', index === activeIndex && hasSelection);
+    });
+    this.emoteSelection.classList.toggle('is-visible', hasSelection);
+    this.emoteSelection.style.setProperty('--emote-angle', `${Math.max(activeIndex, 0) * 45}deg`);
+
+    this.emoteHint.textContent = hasSelection
+      ? `Release B to play ${selectedLabel}.`
+      : 'Move farther from center to choose an emote.';
   }
 }

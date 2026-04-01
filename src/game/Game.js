@@ -5,10 +5,11 @@ import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
+import { EMOTE_SLOTS } from '../player/emotes.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
-
+const EMOTE_MENU_DEADZONE = 54;
 export class Game {
   constructor(root) {
     this.root = root;
@@ -35,6 +36,7 @@ export class Game {
     this.input = new Input();
     this.library = new ModelLibrary();
     this.currentInteractable = null;
+    this.emoteMenuOpen = false;
 
     window.addEventListener('resize', () => this.onResize());
   }
@@ -114,12 +116,57 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  getActiveEmoteSelection() {
+    const pointer = this.input.getPointerPosition();
+    const centerX = window.innerWidth * 0.5;
+    const centerY = window.innerHeight * 0.5;
+    const offsetX = pointer.x - centerX;
+    const offsetY = pointer.y - centerY;
+    const distance = Math.hypot(offsetX, offsetY);
+
+    if (distance < EMOTE_MENU_DEADZONE) {
+      return { index: -1, entry: null, hasSelection: false };
+    }
+
+    const angle = Math.atan2(offsetY, offsetX);
+    const normalizedAngle = (angle + Math.PI * 2 + Math.PI / 8) % (Math.PI * 2);
+    const index = Math.floor(normalizedAngle / (Math.PI / 4));
+    const entry = EMOTE_SLOTS[index] ?? null;
+    const hasSelection = Boolean(entry?.id);
+    return { index, entry, hasSelection };
+  }
+
+  updateEmoteMenu() {
+    const holdingEmoteKey = this.input.isPressed('KeyB');
+
+    if (holdingEmoteKey && !this.worldBuilder.enabled) {
+      const selection = this.getActiveEmoteSelection();
+      this.emoteMenuOpen = true;
+      this.hud.setEmoteMenuState({
+        open: true,
+        activeIndex: selection.index,
+        selectedLabel: selection.entry?.label ?? '',
+        hasSelection: selection.hasSelection
+      });
+      return true;
+    }
+
+    if (this.emoteMenuOpen) {
+      const selection = this.getActiveEmoteSelection();
+      if (selection.hasSelection) {
+        const played = this.player.playEmote(selection.entry.id);
+        this.hud.showToast(played ? `${selection.entry.label} emote` : `${selection.entry.label} is unavailable right now.`);
+      }
+    }
+
+    this.emoteMenuOpen = false;
+    this.hud.setEmoteMenuState({ open: false });
+    return false;
+  }
+
   frame() {
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
-
-    if (this.input.consume('KeyB')) {
-      this.toggleBuildMode();
-    }
+    const emoteMenuActive = this.updateEmoteMenu();
 
     this.worldBuilder.update(deltaSeconds, this.input);
 
@@ -132,9 +179,14 @@ export class Game {
         ...this.worldBuilder.getCollisionBoxes()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
-      this.player.update(deltaSeconds, this.input, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
+      const playerInput = emoteMenuActive ? { getMovementVector: () => ({ x: 0, z: 0 }) } : this.input;
+      this.player.update(deltaSeconds, playerInput, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
       this.updateCamera();
-      this.updateInteraction();
+      if (emoteMenuActive) {
+        this.hud.setPrompt(null);
+      } else {
+        this.updateInteraction();
+      }
     }
 
     this.renderer.render(this.scene, this.camera);

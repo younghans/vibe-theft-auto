@@ -2,6 +2,10 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.justPressed = new Set();
+    this.pointerPosition = {
+      x: window.innerWidth * 0.5,
+      y: window.innerHeight * 0.5
+    };
 
     window.addEventListener('keydown', (event) => {
       if (!this.keys.has(event.code)) {
@@ -19,6 +23,11 @@ export class Input {
       this.keys.clear();
       this.justPressed.clear();
     });
+
+    window.addEventListener('pointermove', (event) => {
+      this.pointerPosition.x = event.clientX;
+      this.pointerPosition.y = event.clientY;
+    });
   }
 
   getMovementVector() {
@@ -31,6 +40,14 @@ export class Input {
     const pressed = this.justPressed.has(code);
     this.justPressed.delete(code);
     return pressed;
+  }
+
+  isPressed(code) {
+    return this.keys.has(code);
+  }
+
+  getPointerPosition() {
+    return { ...this.pointerPosition };
   }
 
   endFrame() {

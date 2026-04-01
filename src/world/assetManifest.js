@@ -1,4 +1,6 @@
-﻿export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`, import.meta.url).href;
+import { EMOTES_BY_ID } from '../player/emotes.js';
+
+export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`, import.meta.url).href;
 
 export const assets = {
   mixamo: {
@@ -6,12 +8,20 @@ export const assets = {
       xBot: assetUrl('mixamo', 'characters', 'X Bot.fbx')
     },
     animations: {
-      walking: assetUrl('mixamo', 'animations', 'Walking.json')
+      walking: assetUrl('mixamo', 'animations', 'Walking.json'),
+      snakeHipHopDance: assetUrl('mixamo', 'animations', 'Snake Hip Hop Dance.json'),
+      waveHipHopDance: assetUrl('mixamo', 'animations', 'Wave Hip Hop Dance.json'),
+      waving: assetUrl('mixamo', 'animations', 'Waving.json')
     }
   },
   player: {
     character: assetUrl('mixamo', 'characters', 'X Bot.fbx'),
-    walkClip: 'walking'
+    walkClip: 'walking',
+    emotes: Object.freeze(
+      Object.fromEntries(
+        Object.entries(EMOTES_BY_ID).map(([emoteId, emote]) => [emoteId, emote.clipName])
+      )
+    )
   },
   city: {
     base: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'base.gltf'),

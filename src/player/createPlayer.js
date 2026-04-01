@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
+import { EMOTES_BY_ID } from './emotes.js';
 
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
+const EMOTE_FADE_IN = 0.12;
+const EMOTE_FADE_OUT = 0.18;
 
 function normalizeCharacter(root) {
   const bounds = new THREE.Box3().setFromObject(root);
@@ -88,6 +91,7 @@ export async function createPlayer(library) {
   const walkClip = createInPlaceClip(getMixamoClip(assets.player.walkClip), MIXAMO_BONES.hips);
   const mixer = new THREE.AnimationMixer(character);
   const walkAction = mixer.clipAction(walkClip);
+  const emoteActions = new Map();
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
@@ -102,14 +106,78 @@ export async function createPlayer(library) {
   anchor.add(visual);
 
   let walkWeight = 0;
+  let activeEmoteId = null;
+
+  function getEmoteAction(emoteId) {
+    if (emoteActions.has(emoteId)) {
+      return emoteActions.get(emoteId);
+    }
+
+    const clipName = EMOTES_BY_ID[emoteId]?.clipName ?? assets.player.emotes?.[emoteId];
+    if (!clipName) {
+      return null;
+    }
+
+    const sourceClip = getMixamoClip(clipName);
+    const clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+    const action = mixer.clipAction(clip);
+    action.enabled = true;
+    action.clampWhenFinished = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.setEffectiveWeight(0);
+    emoteActions.set(emoteId, action);
+    return action;
+  }
+
+  function stopActiveEmote() {
+    if (!activeEmoteId) {
+      return;
+    }
+
+    const action = getEmoteAction(activeEmoteId);
+    action?.fadeOut(EMOTE_FADE_OUT);
+    activeEmoteId = null;
+  }
+
+  mixer.addEventListener('finished', (event) => {
+    if (activeEmoteId && getEmoteAction(activeEmoteId) === event.action) {
+      stopActiveEmote();
+    }
+  });
+
   return {
     object: anchor,
     radius: PLAYER_RADIUS,
     position: anchor.position,
     sockets,
+    playEmote(emoteId) {
+      const action = getEmoteAction(emoteId);
+      if (!action) {
+        return false;
+      }
+
+      if (activeEmoteId && activeEmoteId !== emoteId) {
+        getEmoteAction(activeEmoteId)?.fadeOut(EMOTE_FADE_OUT);
+      }
+
+      activeEmoteId = emoteId;
+      action.reset();
+      action.enabled = true;
+      action.setEffectiveTimeScale(1);
+      action.setEffectiveWeight(1);
+      action.fadeIn(EMOTE_FADE_IN);
+      action.play();
+      return true;
+    },
     update(deltaSeconds, input, camera, collisionBoxes, cityBounds, groundHeight = 0) {
       const rawInput = input.getMovementVector();
-      const moving = rawInput.x !== 0 || rawInput.z !== 0;
+      const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
+
+      if (wantsToMove) {
+        stopActiveEmote();
+      }
+
+      const moving = wantsToMove;
       const movement = moving ? projectMoveOnCamera(camera, rawInput) : new THREE.Vector3();
 
       if (moving) {

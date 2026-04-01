@@ -328,6 +328,149 @@ body {
   background: rgba(87, 201, 120, 0.18);
 }
 
+.hud__emote-menu {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.hud__emote-menu.is-visible {
+  opacity: 1;
+}
+
+.hud__emote-menu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(12, 18, 29, 0.16) 0%, rgba(6, 10, 18, 0.66) 100%);
+}
+
+.hud__emote-wheel {
+  --wheel-size: min(52vw, 420px);
+  position: relative;
+  width: var(--wheel-size);
+  height: var(--wheel-size);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(15, 21, 33, 0.94) 0 17%, rgba(15, 21, 33, 0.72) 17% 28%, transparent 28%),
+    repeating-conic-gradient(
+      from -22.5deg,
+      rgba(255, 255, 255, 0.05) 0deg 43deg,
+      rgba(255, 255, 255, 0.14) 43deg 45deg
+    ),
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.04), rgba(9, 14, 22, 0.42));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+  z-index: 1;
+  overflow: hidden;
+}
+
+.hud__emote-wheel::after {
+  content: "B";
+  position: absolute;
+  inset: 50%;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(242, 200, 113, 0.42);
+  background: rgba(15, 21, 33, 0.94);
+  color: #f8d98d;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  z-index: 3;
+}
+
+.hud__emote-selection {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 67.5deg,
+    rgba(242, 200, 113, 0.68) 0deg 45deg,
+    transparent 45deg 360deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 0 27%, #000 27% 100%);
+  mask: radial-gradient(circle, transparent 0 27%, #000 27% 100%);
+  transform: rotate(var(--emote-angle, 0deg));
+  filter: drop-shadow(0 0 26px rgba(242, 200, 113, 0.24));
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 1;
+}
+
+.hud__emote-selection.is-visible {
+  opacity: 1;
+}
+
+.hud__emote-slice {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(var(--slot-angle)) translateX(calc(var(--wheel-size) * 0.31)) rotate(calc(var(--slot-angle) * -1));
+  z-index: 2;
+}
+
+.hud__emote-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #f7efe0;
+  background: rgba(11, 17, 26, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+}
+
+.hud__emote-slice.is-filled.is-active .hud__emote-label {
+  border-color: rgba(249, 221, 139, 0.78);
+  background: rgba(242, 200, 113, 0.18);
+  color: #fff2c8;
+}
+
+.hud__emote-slice.is-empty .hud__emote-label {
+  display: none;
+}
+
+.hud__emote-wheel::before {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
+  z-index: 0;
+}
+
+.hud__emote-hint {
+  position: absolute;
+  left: 50%;
+  bottom: max(24px, 8vh);
+  width: min(440px, calc(100vw - 32px));
+  margin: 0;
+  padding: 12px 16px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 16, 24, 0.86);
+  color: rgba(244, 238, 226, 0.92);
+  text-align: center;
+  backdrop-filter: blur(8px);
+  z-index: 1;
+}
+
 .loading {
   position: fixed;
   inset: 0;
@@ -370,5 +513,20 @@ canvas {
 @media (max-width: 800px) {
   .hud__builder-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hud__emote-wheel {
+    --wheel-size: min(76vw, 360px);
+  }
+
+  .hud__emote-wheel::after {
+    width: 60px;
+    height: 60px;
+    font-size: 20px;
+  }
+
+  .hud__emote-label {
+    min-width: 72px;
+    font-size: 11px;
   }
 }
