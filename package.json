@@ -1,0 +1,19 @@
+﻿{
+  "name": "stickrpg",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs . 4173",
+    "build": "node scripts/build-web.mjs",
+    "preview": "node scripts/dev-server.mjs dist 4174",
+    "validate": "node scripts/validate-world-editor.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "fbx2gltf": "^0.9.7-p1",
+    "three": "^0.183.2"
+  }
+}
