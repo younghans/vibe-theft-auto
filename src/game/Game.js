@@ -125,9 +125,9 @@ export class Game {
       await this.syncNpcDefinitions(cityState.layout);
 
       if (this.npcServiceState.transport === 'colyseus') {
-        this.hud.showToast('Connected to local Colyseus room. Shared NPC chat and player presence are live.');
+        this.hud.showToast('Connected to the multiplayer room. Shared NPC chat and player presence are live.');
       } else {
-        this.hud.showToast('Running NPC chat locally. Start Colyseus to test shared NPC chat and player presence.');
+        this.hud.showToast('Running local mock NPC chat. Start Colyseus to test shared multiplayer.');
       }
 
       this.hud.hideLoading();

@@ -65,6 +65,7 @@ export class WorldRoom extends Room {
     this.npcDefinitions = new Map();
     this.transcripts = new Map();
     this.cooldowns = new Map();
+    this.disconnectedSessionsNeedingRelease = new Set();
     this.sequence = 0;
 
     this.replaceNpcDefinitions(defaultWorldLayout.npcs ?? []);
@@ -174,16 +175,43 @@ export class WorldRoom extends Room {
 
   onLeave(client) {
     this.state.players.delete(client.sessionId);
+    let needsDeferredRelease = false;
     for (const npc of this.state.npcs.values()) {
-      if (npc.currentSpeakerSessionId === client.sessionId && !npc.busy) {
+      if (npc.currentSpeakerSessionId !== client.sessionId) {
+        continue;
+      }
+
+      if (npc.busy) {
+        needsDeferredRelease = true;
+      } else {
         npc.currentSpeakerSessionId = '';
       }
+    }
+    if (needsDeferredRelease) {
+      this.disconnectedSessionsNeedingRelease.add(client.sessionId);
     }
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
       connectedClients: this.clients.length
     });
+  }
+
+  releaseDisconnectedSpeakerSession(sessionId) {
+    if (!this.disconnectedSessionsNeedingRelease.has(sessionId)) {
+      return;
+    }
+
+    for (const npc of this.state.npcs.values()) {
+      if (npc.currentSpeakerSessionId === sessionId && !npc.busy) {
+        npc.currentSpeakerSessionId = '';
+      }
+    }
+
+    const stillBusy = [...this.state.npcs.values()].some((npc) => npc.currentSpeakerSessionId === sessionId && npc.busy);
+    if (!stillBusy) {
+      this.disconnectedSessionsNeedingRelease.delete(sessionId);
+    }
   }
 
   handleRpc(client, requestId, handler) {
@@ -373,6 +401,7 @@ export class WorldRoom extends Room {
       });
     } finally {
       npc.busy = false;
+      this.releaseDisconnectedSpeakerSession(client.sessionId);
     }
 
     return { npcId: npc.id };
