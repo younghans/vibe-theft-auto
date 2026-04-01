@@ -34,7 +34,8 @@ function toPlacementRecord(entry, item, id) {
           modelId: entry.modelId,
           name: entry.name,
           prompt: entry.prompt,
-          interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2
+          interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2,
+          active: entry.active !== false
         }
       : null
   };
@@ -160,7 +161,8 @@ export class WorldState {
         modelId: npc.modelId,
         name: npc.name,
         prompt: npc.prompt,
-        interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2
+        interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2,
+        active: npc.active !== false
       }
     };
 
@@ -174,13 +176,15 @@ export class WorldState {
       return null;
     }
 
-    if (updates.itemId && updates.itemId !== placement.itemId) {
-      placement.itemId = updates.itemId;
+    const { itemId, ...npcUpdates } = updates;
+
+    if (itemId && itemId !== placement.itemId) {
+      placement.itemId = itemId;
     }
 
     placement.npc = {
       ...placement.npc,
-      ...updates
+      ...npcUpdates
     };
 
     return clonePlacement(placement);
@@ -242,7 +246,8 @@ export class WorldState {
         rotationQuarterTurns: placement.rotationQuarterTurns,
         name: placement.npc.name,
         prompt: placement.npc.prompt,
-        interactRadius: placement.npc.interactRadius
+        interactRadius: placement.npc.interactRadius,
+        active: placement.npc.active !== false
       }));
 
     return { tiles, props, npcs };

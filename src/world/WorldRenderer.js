@@ -222,6 +222,10 @@ export class WorldRenderer {
         }
 
         if (placement.layer === 'npc' && placement.npc) {
+          if (placement.npc.active === false) {
+            return null;
+          }
+
           const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
             new THREE.Vector3(0, 1, 0),
             toRotationY(placement.rotationQuarterTurns)

@@ -43,6 +43,7 @@ export class Hud {
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
+    this.builderNpcConfirm = this.overlay.querySelector('[data-builder-npc-confirm]');
     this.interactionRoot = this.overlay.querySelector('[data-interaction]');
     this.interactionTitle = this.overlay.querySelector('[data-interaction-title]');
     this.interactionSubtitle = this.overlay.querySelector('[data-interaction-subtitle]');
@@ -159,6 +160,7 @@ export class Hud {
               <span class="hud__field-label">Prompt</span>
               <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
             </label>
+            <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Confirm NPC</button>
           </section>
         </div>
       </section>
@@ -260,7 +262,8 @@ export class Hud {
     onNpcNameChange,
     onNpcPromptChange,
     onNpcRadiusChange,
-    onNpcModelChange
+    onNpcModelChange,
+    onConfirmNpc
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -324,6 +327,10 @@ export class Hud {
 
     this.builderNpcModel.addEventListener('change', () => {
       onNpcModelChange(this.builderNpcModel.value);
+    });
+
+    this.builderNpcConfirm.addEventListener('click', () => {
+      onConfirmNpc();
     });
   }
 
@@ -472,6 +479,8 @@ export class Hud {
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
+    this.builderNpcConfirm.disabled = editorState.active;
+    this.builderNpcConfirm.textContent = editorState.active ? 'NPC Active' : 'Confirm NPC';
 
     this.lastNpcEditorState = structuredClone(editorState);
   }

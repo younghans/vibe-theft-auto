@@ -235,7 +235,8 @@ export class WorldBuilder {
       onNpcRadiusChange: (value) => void this.updateSelectedNpc({
         interactRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
       }),
-      onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId)
+      onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
+      onConfirmNpc: () => this.confirmSelectedNpc()
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
@@ -393,6 +394,11 @@ export class WorldBuilder {
     if (event.target.closest('.hud__builder') || event.target.closest('.hud__selection')) {
       return;
     }
+
+    const bounds = this.domElement.getBoundingClientRect();
+    this.state.pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+    this.state.pointer.y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
+    this.resolveHoverState();
 
     const hoveredPlacement = this.getHoveredPlacement();
 
@@ -767,12 +773,13 @@ export class WorldBuilder {
         modelId: item.modelId,
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
-        interactRadius: item.interactionRadius ?? 4.2
+        interactRadius: item.interactionRadius ?? 4.2,
+        active: false
       }
     );
     await this.worldRenderer.addPlacement(placement);
     this.selectPlacement(placement.id);
-    this.hud.showToast(`Placed ${item.label}`);
+    this.hud.showToast(`Placed ${item.label}. Confirm the NPC to make them active.`);
     this.notifyLayoutChanged();
   }
 
@@ -791,6 +798,20 @@ export class WorldBuilder {
 
   selectPlacement(placementId) {
     this.state.selection.placementId = placementId;
+    const placement = this.getSelectedPlacement();
+
+    if (placement?.layer === 'npc') {
+      const npcCategory = BUILDER_CATEGORIES.find((entry) => entry.id === 'npcs');
+      const npcItemIndex = npcCategory?.items.findIndex((item) => item.id === placement.itemId) ?? -1;
+      const switchedCategory = this.state.activeCategoryId !== 'npcs';
+
+      this.state.activeCategoryId = 'npcs';
+      if (npcItemIndex >= 0) {
+        this.state.activeItemIndex = npcItemIndex;
+      }
+      this.updateBuilderHud({ syncPreviews: switchedCategory });
+    }
+
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
   }
@@ -876,6 +897,7 @@ export class WorldBuilder {
       name: placement.npc.name,
       prompt: placement.npc.prompt,
       interactRadius: placement.npc.interactRadius,
+      active: placement.npc.active !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,
         label: entry.label
@@ -932,6 +954,22 @@ export class WorldBuilder {
     await this.worldRenderer.addPlacement(updatedPlacement);
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
+    this.notifyLayoutChanged();
+  }
+
+  confirmSelectedNpc() {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc || placement.npc.active !== false) {
+      return;
+    }
+
+    const updatedPlacement = this.worldState.updateNpc(placement.id, { active: true });
+    if (!updatedPlacement) {
+      return;
+    }
+
+    this.updateBuilderNpcEditor();
+    this.hud.showToast(`${updatedPlacement.npc.name} is now active.`);
     this.notifyLayoutChanged();
   }
 

@@ -13,6 +13,10 @@ const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const EMOTE_MENU_DEADZONE = 54;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 
+function getActiveNpcDefinitions(layout) {
+  return (layout?.npcs ?? []).filter((npc) => npc.active !== false);
+}
+
 export class Game {
   constructor(root) {
     this.root = root;
@@ -173,7 +177,7 @@ export class Game {
     }
 
     try {
-      await this.npcService.syncDefinitions(layout.npcs);
+      await this.npcService.syncDefinitions(getActiveNpcDefinitions(layout));
     } catch (error) {
       console.error(error);
       this.hud.showToast('Could not sync NPC definitions to the local room.');

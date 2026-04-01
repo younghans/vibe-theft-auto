@@ -8,6 +8,12 @@ export class Input {
     };
 
     window.addEventListener('keydown', (event) => {
+      if (this.isEditableTarget(event.target)) {
+        this.keys.delete(event.code);
+        this.justPressed.delete(event.code);
+        return;
+      }
+
       if (!this.keys.has(event.code)) {
         this.justPressed.add(event.code);
       }
@@ -15,8 +21,21 @@ export class Input {
     });
 
     window.addEventListener('keyup', (event) => {
+      if (this.isEditableTarget(event.target)) {
+        this.keys.delete(event.code);
+        this.justPressed.delete(event.code);
+        return;
+      }
+
       this.keys.delete(event.code);
       this.justPressed.delete(event.code);
+    });
+
+    window.addEventListener('focusin', (event) => {
+      if (this.isEditableTarget(event.target)) {
+        this.keys.clear();
+        this.justPressed.clear();
+      }
     });
 
     window.addEventListener('blur', () => {
@@ -30,19 +49,44 @@ export class Input {
     });
   }
 
+  isEditableTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return target.matches('input, textarea, select, [contenteditable="true"]');
+  }
+
+  isKeyboardSuspended() {
+    return this.isEditableTarget(document.activeElement);
+  }
+
   getMovementVector() {
+    if (this.isKeyboardSuspended()) {
+      return { x: 0, z: 0 };
+    }
+
     const x = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
     const z = (this.keys.has('KeyS') ? 1 : 0) - (this.keys.has('KeyW') ? 1 : 0);
     return { x, z };
   }
 
   consume(code) {
+    if (this.isKeyboardSuspended()) {
+      this.justPressed.delete(code);
+      return false;
+    }
+
     const pressed = this.justPressed.has(code);
     this.justPressed.delete(code);
     return pressed;
   }
 
   isPressed(code) {
+    if (this.isKeyboardSuspended()) {
+      return false;
+    }
+
     return this.keys.has(code);
   }
 
