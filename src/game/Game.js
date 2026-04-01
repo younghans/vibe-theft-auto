@@ -13,10 +13,6 @@ const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const EMOTE_MENU_DEADZONE = 54;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 
-function getActiveNpcDefinitions(layout) {
-  return (layout?.npcs ?? []).filter((npc) => npc.active !== false);
-}
-
 export class Game {
   constructor(root) {
     this.root = root;
@@ -48,14 +44,17 @@ export class Game {
     this.currentLayout = null;
     this.currentNpcInteraction = null;
     this.activeChatNpcId = null;
-    this.npcSyncTimeout = 0;
     this.lastNpcTransportSignature = '';
+    this.pendingWorldPatches = [];
+    this.worldLayoutReady = false;
+    this.worldPatchUnsubscribe = null;
     this.npcService = null;
     this.npcServiceState = {
       transport: 'mock',
       connected: true,
       sessionId: 'local-player',
       players: new Map(),
+      builders: new Map(),
       npcs: new Map(),
       transcripts: new Map()
     };
@@ -94,7 +93,15 @@ export class Game {
       this.baseCollisionBoxes = cityState.collisionBoxes;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
-      this.currentLayout = cityState.layout;
+      this.npcService = await createNpcService();
+      this.worldPatchUnsubscribe = this.npcService.subscribeWorldPatches((patch) => {
+        if (!this.worldBuilder || !this.worldLayoutReady) {
+          this.pendingWorldPatches.push(patch);
+          return;
+        }
+
+        void this.handleWorldPatch(patch);
+      });
 
       this.worldBuilder = new WorldBuilder({
         scene: this.scene,
@@ -102,32 +109,38 @@ export class Game {
         domElement: this.renderer.domElement,
         library: this.library,
         hud: this.hud,
+        worldTransport: this.npcService,
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
-          this.scheduleNpcDefinitionSync(layout);
         }
       });
-      await this.worldBuilder.loadLayout(cityState.layout);
+
+      this.npcService.subscribe((state) => {
+        this.npcServiceState = state;
+        this.reportNpcTransportState();
+        this.applyNpcRuntimeState();
+        this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
+        void this.syncRemotePlayers();
+        this.refreshNpcUi();
+      });
+
+      const sharedLayout = await this.npcService.getWorldLayout();
+      this.currentLayout = sharedLayout;
+      await this.worldBuilder.loadLayout(sharedLayout);
+      this.worldLayoutReady = true;
+      for (const patch of this.pendingWorldPatches.splice(0)) {
+        await this.handleWorldPatch(patch);
+      }
 
       this.player = await createPlayer(this.library);
       this.player.position.copy(cityState.spawnPoint);
       this.scene.add(this.player.object);
 
-      this.npcService = await createNpcService();
-      this.npcService.subscribe((state) => {
-        this.npcServiceState = state;
-        this.reportNpcTransportState();
-        this.applyNpcRuntimeState();
-        void this.syncRemotePlayers();
-        this.refreshNpcUi();
-      });
-      await this.syncNpcDefinitions(cityState.layout);
-
       if (this.npcServiceState.transport === 'colyseus') {
-        this.hud.showToast('Connected to the multiplayer room. Shared NPC chat and player presence are live.');
+        this.hud.showToast('Connected to the multiplayer room. Shared building, NPC chat, and player presence are live.');
       } else {
-        this.hud.showToast('Running local mock NPC chat. Start Colyseus to test shared multiplayer.');
+        this.hud.showToast('Running local mock multiplayer. Shared world edits work locally without Colyseus.');
       }
 
       this.hud.hideLoading();
@@ -171,26 +184,6 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  async syncNpcDefinitions(layout = this.currentLayout) {
-    if (!this.npcService || !layout?.npcs) {
-      return;
-    }
-
-    try {
-      await this.npcService.syncDefinitions(getActiveNpcDefinitions(layout));
-    } catch (error) {
-      console.error(error);
-      this.hud.showToast('Could not sync NPC definitions to the local room.');
-    }
-  }
-
-  scheduleNpcDefinitionSync(layout = this.currentLayout) {
-    window.clearTimeout(this.npcSyncTimeout);
-    this.npcSyncTimeout = window.setTimeout(() => {
-      void this.syncNpcDefinitions(layout);
-    }, 180);
-  }
-
   applyNpcRuntimeState() {
     if (!this.worldBuilder) {
       return;
@@ -201,6 +194,15 @@ export class Game {
       runtime.set(npcId, { busy: npc.busy });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);
+  }
+
+  async handleWorldPatch(patch) {
+    if (!this.worldBuilder) {
+      return;
+    }
+
+    await this.worldBuilder.applyWorldPatch(patch);
+    this.currentLayout = this.worldBuilder.getLayout();
   }
 
   async ensureRemotePlayer(sessionId, initialState) {

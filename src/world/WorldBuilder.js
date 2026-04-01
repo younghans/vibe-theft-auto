@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getNpcModelById, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
+import { RemoteBuilderRenderer } from './RemoteBuilderRenderer.js';
 import { WorldRenderer } from './WorldRenderer.js';
 import { WorldState } from './WorldState.js';
 
@@ -152,7 +153,7 @@ function createDefaultEditorState() {
 }
 
 export class WorldBuilder {
-  constructor({ scene, camera, domElement, library, hud, onToggleBuildMode, onLayoutChanged }) {
+  constructor({ scene, camera, domElement, library, hud, onToggleBuildMode, onLayoutChanged, worldTransport }) {
     this.scene = scene;
     this.camera = camera;
     this.domElement = domElement;
@@ -160,6 +161,7 @@ export class WorldBuilder {
     this.hud = hud;
     this.onToggleBuildMode = onToggleBuildMode ?? (() => {});
     this.onLayoutChanged = onLayoutChanged ?? (() => {});
+    this.worldTransport = worldTransport ?? null;
 
     this.state = createDefaultEditorState();
     this.raycaster = new THREE.Raycaster();
@@ -168,8 +170,11 @@ export class WorldBuilder {
     this.builderPreviewCategoryId = null;
     this.builderPreviewGroupId = null;
     this.builderPreviewGeneration = 0;
+    this.pendingNpcUpdateByPlacementId = new Map();
+    this.pendingNpcUpdateTimeouts = new Map();
     this.worldState = new WorldState();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
+    this.remoteBuilderRenderer = new RemoteBuilderRenderer({ scene, library, worldRenderer: this.worldRenderer });
     this.builderPreviewRenderer = new BuilderPreviewRenderer({ library });
 
     this.previewRoot = new THREE.Group();
@@ -380,6 +385,17 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  setRemoteBuilders(builders = new Map(), localSessionId = '') {
+    const remoteBuilders = new Map();
+    for (const [sessionId, presence] of builders.entries()) {
+      if (!presence?.active || sessionId === localSessionId) {
+        continue;
+      }
+      remoteBuilders.set(sessionId, presence);
+    }
+    this.remoteBuilderRenderer.sync(remoteBuilders);
+  }
+
   onPointerMove(event) {
     const bounds = this.domElement.getBoundingClientRect();
     this.state.pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
@@ -466,6 +482,8 @@ export class WorldBuilder {
       this.builderPreviewGroupId = null;
       this.hud.setBuilderSelection(null);
     }
+
+    this.reportBuilderPresence(true);
   }
 
   selectCategory(categoryId) {
@@ -565,6 +583,7 @@ export class WorldBuilder {
     void this.syncPreviewToState();
     this.updatePreviewTransform();
     this.updateSelectionVisual();
+    this.reportBuilderPresence();
   }
 
   resolveHoverState() {
@@ -718,6 +737,37 @@ export class WorldBuilder {
     camera.lookAt(this.state.focus);
   }
 
+  reportBuilderPresence(force = false) {
+    if (!this.worldTransport?.setBuilderPresence) {
+      return;
+    }
+
+    if (!this.state.enabled || !this.activeItem) {
+      this.worldTransport.setBuilderPresence({ active: false, force });
+      return;
+    }
+
+    const hoverPoint = this.state.hover.point;
+    const hoverCell = this.state.hover.cell;
+    const selectedPlacement = this.getSelectedPlacement();
+    const fallbackPosition = selectedPlacement?.position
+      ? { x: selectedPlacement.position[0], z: selectedPlacement.position[1] }
+      : { x: this.state.focus.x, z: this.state.focus.z };
+
+    this.worldTransport.setBuilderPresence({
+      active: true,
+      itemId: this.activeItem.id,
+      layer: this.activeItem.layer,
+      rotationQuarterTurns: this.state.rotationQuarterTurns,
+      cellX: hoverCell?.x ?? selectedPlacement?.cellX ?? 0,
+      cellZ: hoverCell?.z ?? selectedPlacement?.cellZ ?? 0,
+      x: hoverPoint?.x ?? fallbackPosition.x,
+      z: hoverPoint?.z ?? fallbackPosition.z,
+      selectionPlacementId: this.state.selection.placementId ?? '',
+      force
+    });
+  }
+
   async placeCurrentItem() {
     if (!this.activeItem || !this.state.hover.point) {
       return;
@@ -742,6 +792,22 @@ export class WorldBuilder {
       return;
     }
 
+    if (this.worldTransport?.placeTile) {
+      const result = await this.worldTransport.placeTile({
+        itemId: item.id,
+        cellX: cell.x,
+        cellZ: cell.z,
+        rotationQuarterTurns: this.state.rotationQuarterTurns
+      });
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not place tile.');
+        return;
+      }
+
+      this.hud.showToast(`Placed ${item.label}`);
+      return;
+    }
+
     const result = this.worldState.placeTile(item, cell.x, cell.z, this.state.rotationQuarterTurns);
     if (result.replacedPlacementId) {
       this.worldRenderer.removePlacement(result.replacedPlacementId);
@@ -752,6 +818,22 @@ export class WorldBuilder {
   }
 
   async placeProp(item) {
+    if (this.worldTransport?.placeProp) {
+      const result = await this.worldTransport.placeProp({
+        itemId: item.id,
+        x: this.state.hover.point.x,
+        z: this.state.hover.point.z,
+        rotationQuarterTurns: this.state.rotationQuarterTurns
+      });
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not place prop.');
+        return;
+      }
+
+      this.hud.showToast(`Placed ${item.label}`);
+      return;
+    }
+
     const placement = this.worldState.placeProp(
       item,
       this.state.hover.point.x,
@@ -764,6 +846,29 @@ export class WorldBuilder {
   }
 
   async placeNpc(item) {
+    if (this.worldTransport?.placeNpc) {
+      const result = await this.worldTransport.placeNpc({
+        modelId: item.modelId,
+        x: this.state.hover.point.x,
+        z: this.state.hover.point.z,
+        rotationQuarterTurns: this.state.rotationQuarterTurns,
+        name: item.label,
+        prompt: `You are ${item.label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
+        interactRadius: item.interactionRadius ?? 4.2,
+        active: false
+      });
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not place NPC.');
+        return;
+      }
+
+      if (result.placementId) {
+        this.selectPlacement(result.placementId);
+      }
+      this.hud.showToast(`Placed ${item.label}. Confirm the NPC to make them active.`);
+      return;
+    }
+
     const placement = this.worldState.placeNpc(
       item,
       this.state.hover.point.x,
@@ -791,9 +896,86 @@ export class WorldBuilder {
     await this.syncPreviewToState(true);
   }
 
+  async applyWorldPatch(patch) {
+    if (!patch || typeof patch.type !== 'string') {
+      return;
+    }
+
+    if (patch.type === 'upsertPlacement') {
+      await this.applyUpsertPlacementPatch(patch);
+    } else if (patch.type === 'deletePlacement') {
+      this.applyDeletePlacementPatch(patch);
+    } else {
+      return;
+    }
+
+    this.resolveHoverState();
+    await this.syncPreviewToState(true);
+    this.updateSelectionVisual();
+    this.updateBuilderNpcEditor();
+    this.notifyLayoutChanged();
+  }
+
+  async applyUpsertPlacementPatch(patch) {
+    const placementId = patch.placement?.id;
+    if (!placementId) {
+      return;
+    }
+
+    const previousPlacement = this.worldState.getPlacement(placementId);
+    const previousSignature = previousPlacement
+      ? { layer: previousPlacement.layer, itemId: previousPlacement.itemId }
+      : null;
+
+    if (patch.replacedPlacementId && patch.replacedPlacementId !== placementId) {
+      this.worldState.deletePlacement(patch.replacedPlacementId);
+      this.worldRenderer.removePlacement(patch.replacedPlacementId);
+      if (this.state.selection.placementId === patch.replacedPlacementId) {
+        this.clearSelection();
+      }
+    }
+
+    const result = this.worldState.upsertSerializedPlacement(patch.placement);
+    if (!result) {
+      return;
+    }
+
+    const nextPlacement = result.placement;
+    if (!previousSignature) {
+      await this.worldRenderer.addPlacement(nextPlacement);
+    } else if (
+      previousSignature.layer !== nextPlacement.layer
+      || previousSignature.itemId !== nextPlacement.itemId
+    ) {
+      this.worldRenderer.removePlacement(nextPlacement.id);
+      await this.worldRenderer.addPlacement(nextPlacement);
+    } else {
+      this.worldRenderer.updatePlacement(nextPlacement);
+    }
+
+    if (this.state.selection.placementId === nextPlacement.id) {
+      this.selectPlacement(nextPlacement.id);
+    }
+  }
+
+  applyDeletePlacementPatch(patch) {
+    const placementId = patch.placementId;
+    if (!placementId) {
+      return;
+    }
+
+    this.clearPendingNpcUpdate(placementId);
+    this.worldState.deletePlacement(placementId);
+    this.worldRenderer.removePlacement(placementId);
+    if (this.state.selection.placementId === placementId) {
+      this.clearSelection();
+    }
+  }
+
   clearPlacements() {
     this.worldState.clear();
     this.worldRenderer.clear();
+    this.remoteBuilderRenderer.clear();
   }
 
   selectPlacement(placementId) {
@@ -814,6 +996,7 @@ export class WorldBuilder {
 
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
+    this.reportBuilderPresence(true);
   }
 
   clearSelection() {
@@ -821,11 +1004,24 @@ export class WorldBuilder {
     this.selectionRing.visible = false;
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
+    this.reportBuilderPresence(true);
   }
 
-  rotateSelectedPlacement() {
+  async rotateSelectedPlacement() {
     const placement = this.getSelectedPlacement();
     if (!placement) {
+      return;
+    }
+
+    if (this.worldTransport?.rotatePlacement) {
+      const result = await this.worldTransport.rotatePlacement(placement.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not rotate that piece.');
+        return;
+      }
+
+      const item = getBuilderItemById(placement.itemId);
+      this.hud.showToast(`Rotated ${item?.label ?? 'piece'}`);
       return;
     }
 
@@ -839,9 +1035,21 @@ export class WorldBuilder {
     this.notifyLayoutChanged();
   }
 
-  deleteSelectedPlacement() {
+  async deleteSelectedPlacement() {
     const placement = this.getSelectedPlacement();
     if (!placement) {
+      return;
+    }
+
+    if (this.worldTransport?.deletePlacement) {
+      const result = await this.worldTransport.deletePlacement(placement.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not delete that piece.');
+        return;
+      }
+
+      const item = getBuilderItemById(placement.itemId);
+      this.hud.showToast(`Deleted ${item?.label ?? 'piece'}`);
       return;
     }
 
@@ -905,6 +1113,42 @@ export class WorldBuilder {
     });
   }
 
+  queueNpcUpdate(placementId, changes = {}) {
+    const current = this.pendingNpcUpdateByPlacementId.get(placementId) ?? {};
+    this.pendingNpcUpdateByPlacementId.set(placementId, {
+      ...current,
+      ...changes
+    });
+
+    window.clearTimeout(this.pendingNpcUpdateTimeouts.get(placementId));
+    const timeoutId = window.setTimeout(() => {
+      void this.flushNpcUpdate(placementId);
+    }, 150);
+    this.pendingNpcUpdateTimeouts.set(placementId, timeoutId);
+  }
+
+  async flushNpcUpdate(placementId) {
+    const changes = this.pendingNpcUpdateByPlacementId.get(placementId);
+    this.pendingNpcUpdateByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingNpcUpdateTimeouts.get(placementId));
+    this.pendingNpcUpdateTimeouts.delete(placementId);
+
+    if (!changes || !this.worldTransport?.updateNpc) {
+      return;
+    }
+
+    const result = await this.worldTransport.updateNpc(placementId, changes);
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not update NPC.');
+    }
+  }
+
+  clearPendingNpcUpdate(placementId) {
+    this.pendingNpcUpdateByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingNpcUpdateTimeouts.get(placementId));
+    this.pendingNpcUpdateTimeouts.delete(placementId);
+  }
+
   async updateSelectedNpc(changes = {}) {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc') {
@@ -915,6 +1159,11 @@ export class WorldBuilder {
       Object.entries(changes).filter(([, value]) => value !== undefined)
     );
     if (!Object.keys(nextChanges).length) {
+      return;
+    }
+
+    if (this.worldTransport?.updateNpc) {
+      this.queueNpcUpdate(placement.id, nextChanges);
       return;
     }
 
@@ -940,6 +1189,15 @@ export class WorldBuilder {
       return;
     }
 
+    if (this.worldTransport?.updateNpc) {
+      await this.flushNpcUpdate(placement.id);
+      const result = await this.worldTransport.updateNpc(placement.id, { modelId });
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not change NPC model.');
+      }
+      return;
+    }
+
     const updatedPlacement = this.worldState.updateNpc(placement.id, {
       modelId,
       itemId: model.itemId
@@ -960,6 +1218,19 @@ export class WorldBuilder {
   confirmSelectedNpc() {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc' || !placement.npc || placement.npc.active !== false) {
+      return;
+    }
+
+    if (this.worldTransport?.updateNpc) {
+      void this.flushNpcUpdate(placement.id).then(async () => {
+        const result = await this.worldTransport.updateNpc(placement.id, { active: true });
+        if (!result?.ok) {
+          this.hud.showToast(result?.error ?? 'Could not confirm NPC.');
+          return;
+        }
+
+        this.hud.showToast(`${placement.npc.name} is now active.`);
+      });
       return;
     }
 

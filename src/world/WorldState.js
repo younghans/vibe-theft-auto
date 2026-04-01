@@ -19,15 +19,33 @@ function clonePlacement(placement) {
   };
 }
 
+function normalizeRotationQuarterTurns(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  return ((Math.round(numeric) % 4) + 4) % 4;
+}
+
+function normalizePositionValue(value) {
+  return Number(Number(value ?? 0).toFixed(2));
+}
+
 function toPlacementRecord(entry, item, id) {
   return {
     id,
     itemId: item.id,
     layer: item.layer,
-    rotationQuarterTurns: entry.rotationQuarterTurns ?? 0,
+    rotationQuarterTurns: normalizeRotationQuarterTurns(entry.rotationQuarterTurns),
     cellX: item.layer === 'tile' ? entry.cell[0] : null,
     cellZ: item.layer === 'tile' ? entry.cell[1] : null,
-    position: item.layer === 'tile' ? null : [entry.position[0], entry.position[1]],
+    position: item.layer === 'tile'
+      ? null
+      : [
+          normalizePositionValue(entry.position[0]),
+          normalizePositionValue(entry.position[1])
+        ],
     interactable: cloneInteractable(entry.interactable),
     npc: item.layer === 'npc'
       ? {
@@ -38,6 +56,61 @@ function toPlacementRecord(entry, item, id) {
           active: entry.active !== false
         }
       : null
+  };
+}
+
+function getSerializedPlacementItem(entry) {
+  if (entry.layer === 'npc') {
+    const model = getNpcModelById(entry.modelId);
+    return model ? getBuilderItemById(model.itemId) : null;
+  }
+
+  return getBuilderItemById(entry.itemId);
+}
+
+function toSerializedPlacement(placement) {
+  if (!placement) {
+    return null;
+  }
+
+  if (placement.layer === 'tile') {
+    return {
+      id: placement.id,
+      layer: 'tile',
+      itemId: placement.itemId,
+      cell: [placement.cellX, placement.cellZ],
+      rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
+      ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
+    };
+  }
+
+  if (placement.layer === 'npc' && placement.npc) {
+    return {
+      id: placement.id,
+      layer: 'npc',
+      modelId: placement.npc.modelId,
+      position: [
+        normalizePositionValue(placement.position[0]),
+        normalizePositionValue(placement.position[1])
+      ],
+      rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
+      name: placement.npc.name,
+      prompt: placement.npc.prompt,
+      interactRadius: placement.npc.interactRadius,
+      active: placement.npc.active !== false
+    };
+  }
+
+  return {
+    id: placement.id,
+    layer: 'prop',
+    itemId: placement.itemId,
+    position: [
+      normalizePositionValue(placement.position[0]),
+      normalizePositionValue(placement.position[1])
+    ],
+    rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
+    ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
   };
 }
 
@@ -103,6 +176,44 @@ export class WorldState {
       const placement = toPlacementRecord(entry, placementItem, this.reservePlacementId(entry.id));
       this.registerPlacement(placement);
     }
+  }
+
+  upsertSerializedPlacement(entry) {
+    if (!entry || typeof entry !== 'object' || typeof entry.layer !== 'string') {
+      return null;
+    }
+
+    const item = getSerializedPlacementItem(entry);
+    if (!item || item.layer !== entry.layer) {
+      return null;
+    }
+
+    const placementId = this.reservePlacementId(entry.id);
+    const nextEntry = {
+      ...entry,
+      id: placementId
+    };
+    const placement = toPlacementRecord(nextEntry, item, placementId);
+    const existing = this.getPlacement(placementId);
+
+    if (existing) {
+      this.unregisterPlacement(placementId);
+    }
+
+    let replacedPlacementId = null;
+    if (placement.layer === 'tile') {
+      const occupiedPlacement = this.getPlacementAtCell(placement.cellX, placement.cellZ);
+      if (occupiedPlacement && occupiedPlacement.id !== placement.id) {
+        replacedPlacementId = occupiedPlacement.id;
+        this.unregisterPlacement(occupiedPlacement.id);
+      }
+    }
+
+    this.registerPlacement(placement);
+    return {
+      placement: clonePlacement(placement),
+      replacedPlacementId
+    };
   }
 
   placeTile(item, cellX, cellZ, rotationQuarterTurns, interactable = null) {
@@ -251,6 +362,13 @@ export class WorldState {
       }));
 
     return { tiles, props, npcs };
+  }
+
+  serializePlacement(idOrPlacement) {
+    const placement = typeof idOrPlacement === 'string'
+      ? this.getPlacement(idOrPlacement)
+      : idOrPlacement;
+    return toSerializedPlacement(placement);
   }
 
   registerPlacement(placement) {

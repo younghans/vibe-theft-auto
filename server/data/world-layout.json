@@ -1,0 +1,1301 @@
+{
+  "tiles": [
+    {
+      "id": "placement_82",
+      "itemId": "building_d",
+      "cell": [
+        -4,
+        -4
+      ],
+      "rotationQuarterTurns": 1,
+      "interactable": {
+        "label": "Loan office",
+        "actionText": "Debt and hustle systems will live here later.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_2",
+      "itemId": "lot_base",
+      "cell": [
+        -3,
+        -4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_83",
+      "itemId": "building_b",
+      "cell": [
+        -2,
+        -4
+      ],
+      "rotationQuarterTurns": 0,
+      "interactable": {
+        "label": "Greasy spoon diner",
+        "actionText": "The coffee is not implemented yet, but the sign is trying.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_4",
+      "itemId": "lot_base",
+      "cell": [
+        -1,
+        -4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_5",
+      "itemId": "lot_base",
+      "cell": [
+        0,
+        -4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_6",
+      "itemId": "lot_base",
+      "cell": [
+        1,
+        -4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_84",
+      "itemId": "building_f",
+      "cell": [
+        2,
+        -4
+      ],
+      "rotationQuarterTurns": 0,
+      "interactable": {
+        "label": "Convenience mart",
+        "actionText": "Shelves and item pickups are a future pass.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_8",
+      "itemId": "lot_base",
+      "cell": [
+        3,
+        -4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_85",
+      "itemId": "building_h",
+      "cell": [
+        4,
+        -4
+      ],
+      "rotationQuarterTurns": 3,
+      "interactable": {
+        "label": "Pawn and trade",
+        "actionText": "Trading hooks will branch out from this corner.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_10",
+      "itemId": "lot_base",
+      "cell": [
+        -4,
+        -3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_11",
+      "itemId": "road_corner",
+      "cell": [
+        -3,
+        -3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_12",
+      "itemId": "road_straight",
+      "cell": [
+        -2,
+        -3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_13",
+      "itemId": "road_straight",
+      "cell": [
+        -1,
+        -3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_14",
+      "itemId": "road_tsplit",
+      "cell": [
+        0,
+        -3
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_15",
+      "itemId": "road_tsplit",
+      "cell": [
+        1,
+        -3
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_16",
+      "itemId": "road_straight",
+      "cell": [
+        2,
+        -3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_17",
+      "itemId": "road_corner",
+      "cell": [
+        3,
+        -3
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_18",
+      "itemId": "lot_base",
+      "cell": [
+        4,
+        -3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_86",
+      "itemId": "building_a",
+      "cell": [
+        -4,
+        -2
+      ],
+      "rotationQuarterTurns": 1,
+      "interactable": {
+        "label": "Motel strip",
+        "actionText": "Room rentals are on the roadmap.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_20",
+      "itemId": "road_straight",
+      "cell": [
+        -3,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_95",
+      "itemId": "building_c",
+      "cell": [
+        -2,
+        -2
+      ],
+      "rotationQuarterTurns": 0,
+      "interactable": {
+        "label": "Quick cash loans",
+        "actionText": "This slot is ready for shady finance interactions.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_22",
+      "itemId": "lot_base",
+      "cell": [
+        -1,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_23",
+      "itemId": "road_tsplit",
+      "cell": [
+        0,
+        -2
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_24",
+      "itemId": "road_tsplit",
+      "cell": [
+        1,
+        -2
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_25",
+      "itemId": "lot_base",
+      "cell": [
+        2,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_26",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_87",
+      "itemId": "building_g",
+      "cell": [
+        4,
+        -2
+      ],
+      "rotationQuarterTurns": 3,
+      "interactable": {
+        "label": "Arcade block",
+        "actionText": "The arcade is all atmosphere for now.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_28",
+      "itemId": "lot_base",
+      "cell": [
+        -4,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_29",
+      "itemId": "road_straight",
+      "cell": [
+        -3,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_30",
+      "itemId": "lot_base",
+      "cell": [
+        -2,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_31",
+      "itemId": "road_corner",
+      "cell": [
+        -1,
+        -1
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_32",
+      "itemId": "road_cross",
+      "cell": [
+        0,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_33",
+      "itemId": "road_tsplit",
+      "cell": [
+        1,
+        -1
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_34",
+      "itemId": "lot_base",
+      "cell": [
+        2,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_35",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_36",
+      "itemId": "lot_base",
+      "cell": [
+        4,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_37",
+      "itemId": "lot_base",
+      "cell": [
+        -4,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_38",
+      "itemId": "road_tsplit",
+      "cell": [
+        -3,
+        0
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_39",
+      "itemId": "road_straight",
+      "cell": [
+        -2,
+        0
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_40",
+      "itemId": "road_cross",
+      "cell": [
+        -1,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_41",
+      "itemId": "road_cross",
+      "cell": [
+        0,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_42",
+      "itemId": "road_cross",
+      "cell": [
+        1,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_43",
+      "itemId": "road_straight",
+      "cell": [
+        2,
+        0
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_44",
+      "itemId": "road_tsplit",
+      "cell": [
+        3,
+        0
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_45",
+      "itemId": "lot_base",
+      "cell": [
+        4,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_46",
+      "itemId": "lot_base",
+      "cell": [
+        -4,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_47",
+      "itemId": "road_straight",
+      "cell": [
+        -3,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_48",
+      "itemId": "lot_base",
+      "cell": [
+        -2,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_49",
+      "itemId": "road_tsplit",
+      "cell": [
+        -1,
+        1
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_50",
+      "itemId": "road_cross",
+      "cell": [
+        0,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_51",
+      "itemId": "road_corner",
+      "cell": [
+        1,
+        1
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_52",
+      "itemId": "lot_base",
+      "cell": [
+        2,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_53",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_54",
+      "itemId": "lot_base",
+      "cell": [
+        4,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_88",
+      "itemId": "building_e",
+      "cell": [
+        -4,
+        2
+      ],
+      "rotationQuarterTurns": 1,
+      "interactable": {
+        "label": "Corner pharmacy",
+        "actionText": "Health items can plug into this storefront later.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_56",
+      "itemId": "road_straight",
+      "cell": [
+        -3,
+        2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_57",
+      "itemId": "lot_base",
+      "cell": [
+        -2,
+        2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_58",
+      "itemId": "road_tsplit",
+      "cell": [
+        -1,
+        2
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_59",
+      "itemId": "road_tsplit",
+      "cell": [
+        0,
+        2
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_60",
+      "itemId": "lot_base",
+      "cell": [
+        1,
+        2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_94",
+      "itemId": "building_h",
+      "cell": [
+        2,
+        2
+      ],
+      "rotationQuarterTurns": 2,
+      "interactable": {
+        "label": "Downtown apartments",
+        "actionText": "Interiors will open up in a later milestone.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_62",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_89",
+      "itemId": "building_c",
+      "cell": [
+        4,
+        2
+      ],
+      "rotationQuarterTurns": 3,
+      "interactable": {
+        "label": "ATM lobby",
+        "actionText": "The ATM prompt is ready for a money system.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_64",
+      "itemId": "lot_base",
+      "cell": [
+        -4,
+        3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_65",
+      "itemId": "road_corner",
+      "cell": [
+        -3,
+        3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_66",
+      "itemId": "road_straight",
+      "cell": [
+        -2,
+        3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_67",
+      "itemId": "road_tsplit",
+      "cell": [
+        -1,
+        3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_68",
+      "itemId": "road_tsplit",
+      "cell": [
+        0,
+        3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_69",
+      "itemId": "road_straight",
+      "cell": [
+        1,
+        3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_70",
+      "itemId": "road_straight",
+      "cell": [
+        2,
+        3
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_71",
+      "itemId": "road_corner",
+      "cell": [
+        3,
+        3
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_72",
+      "itemId": "lot_base",
+      "cell": [
+        4,
+        3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_90",
+      "itemId": "building_g",
+      "cell": [
+        -4,
+        4
+      ],
+      "rotationQuarterTurns": 2,
+      "interactable": {
+        "label": "Night club",
+        "actionText": "The club is closed until nightlife systems exist.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_74",
+      "itemId": "lot_base",
+      "cell": [
+        -3,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_91",
+      "itemId": "building_a",
+      "cell": [
+        -2,
+        4
+      ],
+      "rotationQuarterTurns": 2,
+      "interactable": {
+        "label": "Coffee loft",
+        "actionText": "A social hub can grow out of this block.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_76",
+      "itemId": "lot_base",
+      "cell": [
+        -1,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_77",
+      "itemId": "lot_base",
+      "cell": [
+        0,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_78",
+      "itemId": "lot_base",
+      "cell": [
+        1,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_92",
+      "itemId": "building_e",
+      "cell": [
+        2,
+        4
+      ],
+      "rotationQuarterTurns": 2,
+      "interactable": {
+        "label": "Taxi dispatch",
+        "actionText": "Taxi missions can route through this office.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_80",
+      "itemId": "lot_base",
+      "cell": [
+        3,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_93",
+      "itemId": "building_b",
+      "cell": [
+        4,
+        4
+      ],
+      "rotationQuarterTurns": 3,
+      "interactable": {
+        "label": "Pool hall",
+        "actionText": "Mini-games can anchor this corner later.",
+        "radius": 4,
+        "distance": 6.16
+      }
+    },
+    {
+      "id": "placement_142",
+      "itemId": "road_straight",
+      "cell": [
+        0,
+        5
+      ],
+      "rotationQuarterTurns": 0
+    }
+  ],
+  "props": [
+    {
+      "id": "placement_135",
+      "itemId": "bush",
+      "position": [
+        -46.62,
+        -59.22
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_136",
+      "itemId": "bush",
+      "position": [
+        55.44,
+        -56.7
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_134",
+      "itemId": "bush",
+      "position": [
+        -57.96,
+        -55.44
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_109",
+      "itemId": "car_sedan",
+      "position": [
+        -24.5,
+        -49.7
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_116",
+      "itemId": "hydrant",
+      "position": [
+        -7.7,
+        -48.3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_118",
+      "itemId": "streetlight",
+      "position": [
+        -46.9,
+        -46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_119",
+      "itemId": "streetlight",
+      "position": [
+        -4.9,
+        -46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_120",
+      "itemId": "streetlight",
+      "position": [
+        46.9,
+        -46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_130",
+      "itemId": "traffic_light",
+      "position": [
+        4.76,
+        -46.76
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_137",
+      "itemId": "bush",
+      "position": [
+        60.48,
+        -42.84
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_115",
+      "itemId": "bench",
+      "position": [
+        30.8,
+        -38.5
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_101",
+      "itemId": "bush",
+      "position": [
+        14,
+        -34.3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_100",
+      "itemId": "bush",
+      "position": [
+        29.4,
+        -25.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_107",
+      "itemId": "car_sedan",
+      "position": [
+        49.7,
+        -25.2
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_105",
+      "itemId": "car_taxi",
+      "position": [
+        -49.7,
+        -23.8
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_127",
+      "itemId": "streetlight",
+      "position": [
+        18.9,
+        -18.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_104",
+      "itemId": "hydrant",
+      "position": [
+        7.7,
+        -16.8
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_103",
+      "itemId": "bench",
+      "position": [
+        23.8,
+        -15.4
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_112",
+      "itemId": "dumpster",
+      "position": [
+        -58.1,
+        -11.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_102",
+      "itemId": "bush",
+      "position": [
+        35.7,
+        -11.2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_111",
+      "itemId": "tower",
+      "position": [
+        57.4,
+        -5.6
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_128",
+      "itemId": "traffic_light",
+      "position": [
+        -37.24,
+        -4.76
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_132",
+      "itemId": "traffic_light",
+      "position": [
+        -9.24,
+        -4.76
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_133",
+      "itemId": "traffic_light",
+      "position": [
+        18.76,
+        -4.76
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_129",
+      "itemId": "traffic_light",
+      "position": [
+        46.76,
+        -4.76
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_121",
+      "itemId": "streetlight",
+      "position": [
+        -46.9,
+        4.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_122",
+      "itemId": "streetlight",
+      "position": [
+        46.9,
+        4.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_98",
+      "itemId": "bench",
+      "position": [
+        -28,
+        7
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_113",
+      "itemId": "dumpster",
+      "position": [
+        56,
+        12.6
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_99",
+      "itemId": "bench",
+      "position": [
+        -9.8,
+        14
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_126",
+      "itemId": "streetlight",
+      "position": [
+        -18.9,
+        18.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_108",
+      "itemId": "car_taxi",
+      "position": [
+        49.7,
+        23.8
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_106",
+      "itemId": "car_sedan",
+      "position": [
+        -49.7,
+        25.2
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_96",
+      "itemId": "crate_a",
+      "position": [
+        -33.6,
+        25.2
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_97",
+      "itemId": "crate_b",
+      "position": [
+        -14,
+        33.6
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_131",
+      "itemId": "traffic_light",
+      "position": [
+        4.76,
+        37.24
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_114",
+      "itemId": "bench",
+      "position": [
+        -30.1,
+        38.5
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_123",
+      "itemId": "streetlight",
+      "position": [
+        -46.9,
+        46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_124",
+      "itemId": "streetlight",
+      "position": [
+        -4.9,
+        46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_125",
+      "itemId": "streetlight",
+      "position": [
+        46.9,
+        46.9
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_117",
+      "itemId": "hydrant",
+      "position": [
+        7.7,
+        48.3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_110",
+      "itemId": "car_taxi",
+      "position": [
+        24.5,
+        49.7
+      ],
+      "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_138",
+      "itemId": "bush",
+      "position": [
+        -59.22,
+        54.18
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_144",
+      "itemId": "bush_a",
+      "position": [
+        9.91,
+        54.47
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_140",
+      "itemId": "bush",
+      "position": [
+        56.07,
+        57.33
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_143",
+      "itemId": "bush",
+      "position": [
+        10.67,
+        59.67
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_139",
+      "itemId": "bush",
+      "position": [
+        -42.84,
+        59.85
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_141",
+      "itemId": "bush",
+      "position": [
+        42.21,
+        60.48
+      ],
+      "rotationQuarterTurns": 0
+    }
+  ],
+  "npcs": [
+    {
+      "id": "npc_maya",
+      "modelId": "ch18NonPbr",
+      "position": [
+        18.2,
+        -28.7
+      ],
+      "rotationQuarterTurns": 2,
+      "name": "Maya",
+      "prompt": "You are Maya, a quick-thinking hustler who knows every rumor in town. Be playful, observant, and a little sarcastic, but stay helpful.",
+      "interactRadius": 4.4,
+      "active": true
+    },
+    {
+      "id": "npc_sketch",
+      "modelId": "xBot",
+      "position": [
+        32.9,
+        21
+      ],
+      "rotationQuarterTurns": 3,
+      "name": "Sketch",
+      "prompt": "You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.",
+      "interactRadius": 4.2,
+      "active": true
+    },
+    {
+      "id": "npc_bruno",
+      "modelId": "brute",
+      "position": [
+        -18.9,
+        30.1
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "Bruno",
+      "prompt": "You are Bruno, a broad-shouldered neighborhood bouncer with a surprising soft side. Speak like a streetwise local, keep answers short, and gently point people toward the city nightlife.",
+      "interactRadius": 4.8,
+      "active": true
+    }
+  ]
+}

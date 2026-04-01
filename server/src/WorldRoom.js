@@ -1,17 +1,34 @@
 import { Room } from 'colyseus';
 import { MapSchema, schema } from '@colyseus/schema';
-import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
+import { getNpcModelById } from '../../src/npc/npcCatalog.js';
+import { getBuilderItemById } from '../../src/world/builderCatalog.js';
+import { WorldState } from '../../src/world/WorldState.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
 import { logServer, logServerError } from './logger.js';
+import { WorldLayoutPersistence, loadPersistedWorldLayoutSync } from './worldPersistence.js';
 
 const MAX_MESSAGE_LENGTH = 280;
 const MAX_TRANSCRIPT_ENTRIES = 18;
 const CHAT_COOLDOWN_MS = 900;
+const NPC_NAME_MAX_LENGTH = 40;
+const NPC_PROMPT_MAX_LENGTH = 1600;
 
 const PlayerState = schema({
   x: 'number',
   z: 'number',
   rotationY: 'number'
+});
+
+const BuilderPresenceState = schema({
+  active: 'boolean',
+  itemId: 'string',
+  layer: 'string',
+  rotationQuarterTurns: 'number',
+  cellX: 'number',
+  cellZ: 'number',
+  x: 'number',
+  z: 'number',
+  selectionPlacementId: 'string'
 });
 
 const NpcState = schema({
@@ -22,6 +39,7 @@ const NpcState = schema({
   z: 'number',
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
+  active: 'boolean',
   busy: 'boolean',
   currentSpeakerSessionId: 'string',
   latestUtterance: 'string',
@@ -31,6 +49,10 @@ const NpcState = schema({
 const WorldRoomState = schema({
   players: {
     map: PlayerState,
+    default: new MapSchema()
+  },
+  builders: {
+    map: BuilderPresenceState,
     default: new MapSchema()
   },
   npcs: {
@@ -57,22 +79,52 @@ function createTranscriptEntry(id, speaker, author, text) {
   };
 }
 
+function normalizeRotationQuarterTurns(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  return ((Math.round(numeric) % 4) + 4) % 4;
+}
+
+function quantizePosition(value) {
+  const numeric = Number(value ?? 0);
+  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
+}
+
+function clampNpcRadius(value) {
+  const numeric = Number(value ?? 4.2);
+  return Math.max(1.5, Math.min(12, Number.isFinite(numeric) ? numeric : 4.2));
+}
+
+function serializeTranscripts(transcripts) {
+  return Object.fromEntries(transcripts.entries());
+}
+
+function defaultNpcPrompt(label) {
+  return `You are ${label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`;
+}
+
 export class WorldRoom extends Room {
   onCreate() {
     this.maxClients = 16;
     this.setState(new WorldRoomState());
     this.chatEngine = new NpcChatEngine();
+    this.worldState = new WorldState();
+    this.worldPersistence = new WorldLayoutPersistence();
     this.npcDefinitions = new Map();
     this.transcripts = new Map();
     this.cooldowns = new Map();
     this.disconnectedSessionsNeedingRelease = new Set();
     this.sequence = 0;
 
-    this.replaceNpcDefinitions(defaultWorldLayout.npcs ?? []);
+    this.worldState.loadLayout(loadPersistedWorldLayoutSync());
+    this.syncNpcDefinitionsFromWorld();
     logServer('room', 'World room created.', {
       roomId: this.roomId,
       maxClients: this.maxClients,
-      defaultNpcCount: this.state.npcs.size
+      npcCount: this.state.npcs.size
     });
 
     this.onMessage('player:updateTransform', (client, message) => {
@@ -89,17 +141,120 @@ export class WorldRoom extends Room {
       }
     });
 
-    this.onMessage('npc:syncDefinitions', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const definitions = this.sanitizeNpcDefinitions(message.npcs ?? []);
-        this.replaceNpcDefinitions(definitions);
-        this.broadcastTranscriptSnapshot();
-        logServer('room', 'NPC definitions synchronized.', {
+    this.onMessage('builder:updatePresence', (client, message) => {
+      try {
+        this.updateBuilderPresence(client, message);
+      } catch (error) {
+        logServerError('room', 'Builder presence update failed.', error, {
           roomId: this.roomId,
-          sessionId: client.sessionId,
-          npcCount: definitions.length
+          sessionId: client.sessionId
         });
-        return { count: definitions.length };
+      }
+    });
+
+    this.onMessage('world:getLayout', (client, message) => {
+      this.handleRpc(client, message.requestId, () => ({
+        layout: this.worldState.serializeLayout()
+      }));
+    });
+
+    this.onMessage('world:placeTile', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const payload = this.sanitizeTilePlacement(message);
+        const result = this.worldState.placeTile(
+          payload.item,
+          payload.cellX,
+          payload.cellZ,
+          payload.rotationQuarterTurns
+        );
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementId: result.replacedPlacementId
+        });
+      });
+    });
+
+    this.onMessage('world:placeProp', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const payload = this.sanitizePropPlacement(message);
+        const placement = this.worldState.placeProp(
+          payload.item,
+          payload.x,
+          payload.z,
+          payload.rotationQuarterTurns
+        );
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+      });
+    });
+
+    this.onMessage('world:placeNpc', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const payload = this.sanitizeNpcPlacement(message);
+        const placement = this.worldState.placeNpc(
+          payload.item,
+          payload.x,
+          payload.z,
+          payload.rotationQuarterTurns,
+          payload.npc
+        );
+        this.syncNpcDefinitionsFromWorld();
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+      });
+    });
+
+    this.onMessage('world:rotatePlacement', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const placement = this.assertEditablePlacement(message.placementId);
+        const rotated = this.worldState.rotatePlacement(placement.id);
+        if (rotated?.layer === 'npc') {
+          this.syncNpcDefinitionsFromWorld();
+        }
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(rotated.id),
+          replacedPlacementId: null
+        });
+      });
+    });
+
+    this.onMessage('world:deletePlacement', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const placement = this.assertEditablePlacement(message.placementId);
+        this.worldState.deletePlacement(placement.id);
+        if (placement.layer === 'npc') {
+          this.syncNpcDefinitionsFromWorld();
+        }
+        return this.commitWorldPatch({
+          type: 'deletePlacement',
+          placementId: placement.id
+        });
+      });
+    });
+
+    this.onMessage('world:updateNpc', (client, message) => {
+      this.handleRpc(client, message.requestId, () => {
+        const placement = this.assertEditablePlacement(message.placementId, 'npc');
+        const updates = this.sanitizeNpcUpdates(message);
+        const updatedPlacement = this.worldState.updateNpc(placement.id, updates);
+        if (!updatedPlacement) {
+          throw new Error('That NPC is not available.');
+        }
+
+        this.syncNpcDefinitionsFromWorld();
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(updatedPlacement.id),
+          replacedPlacementId: null
+        });
       });
     });
 
@@ -166,6 +321,9 @@ export class WorldRoom extends Room {
     player.z = 0;
     player.rotationY = 0;
     this.state.players.set(client.sessionId, player);
+    client.send('npc:transcripts', {
+      transcripts: serializeTranscripts(this.transcripts)
+    });
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -175,6 +333,7 @@ export class WorldRoom extends Room {
 
   onLeave(client) {
     this.state.players.delete(client.sessionId);
+    this.state.builders.delete(client.sessionId);
     let needsDeferredRelease = false;
     for (const npc of this.state.npcs.values()) {
       if (npc.currentSpeakerSessionId !== client.sessionId) {
@@ -195,6 +354,10 @@ export class WorldRoom extends Room {
       sessionId: client.sessionId,
       connectedClients: this.clients.length
     });
+  }
+
+  async onDispose() {
+    await this.worldPersistence.dispose();
   }
 
   releaseDisconnectedSpeakerSession(sessionId) {
@@ -236,24 +399,160 @@ export class WorldRoom extends Room {
     }
   }
 
-  sanitizeNpcDefinitions(definitions) {
-    return definitions
-      .filter((entry) => entry && typeof entry.id === 'string' && typeof entry.modelId === 'string')
-      .map((entry) => ({
-        id: entry.id,
-        modelId: entry.modelId,
-        position: [
-          Number(entry.position?.[0] ?? 0),
-          Number(entry.position?.[1] ?? 0)
-        ],
-        rotationQuarterTurns: Number(entry.rotationQuarterTurns ?? 0),
-        name: String(entry.name ?? 'NPC').slice(0, 40),
-        prompt: String(entry.prompt ?? '').slice(0, 1600),
-        interactRadius: Math.max(1.5, Math.min(12, Number(entry.interactRadius ?? 4.2)))
-      }));
+  commitWorldPatch(patch) {
+    this.broadcast('world:patch', patch);
+    this.worldPersistence.scheduleSave(this.worldState.serializeLayout());
+    return {
+      placementId: patch.placement?.id ?? patch.placementId ?? null
+    };
   }
 
-  replaceNpcDefinitions(definitions) {
+  updateBuilderPresence(client, message) {
+    const sanitized = this.sanitizeBuilderPresence(message);
+    if (!sanitized.active) {
+      this.state.builders.delete(client.sessionId);
+      return { active: false };
+    }
+
+    const presence = this.state.builders.get(client.sessionId) ?? new BuilderPresenceState();
+    presence.active = true;
+    presence.itemId = sanitized.itemId;
+    presence.layer = sanitized.layer;
+    presence.rotationQuarterTurns = sanitized.rotationQuarterTurns;
+    presence.cellX = sanitized.cellX;
+    presence.cellZ = sanitized.cellZ;
+    presence.x = sanitized.x;
+    presence.z = sanitized.z;
+    presence.selectionPlacementId = sanitized.selectionPlacementId;
+    this.state.builders.set(client.sessionId, presence);
+    return { active: true };
+  }
+
+  sanitizeBuilderPresence(message = {}) {
+    const active = Boolean(message.active);
+    if (!active) {
+      return { active: false };
+    }
+
+    const item = getBuilderItemById(message.itemId);
+    if (!item) {
+      throw new Error('That builder item is not available.');
+    }
+
+    return {
+      active: true,
+      itemId: item.id,
+      layer: item.layer,
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      cellX: Math.round(Number(message.cellX ?? 0)),
+      cellZ: Math.round(Number(message.cellZ ?? 0)),
+      x: quantizePosition(message.x),
+      z: quantizePosition(message.z),
+      selectionPlacementId: typeof message.selectionPlacementId === 'string' ? message.selectionPlacementId : ''
+    };
+  }
+
+  sanitizeTilePlacement(message = {}) {
+    const item = getBuilderItemById(message.itemId);
+    if (!item || item.layer !== 'tile') {
+      throw new Error('That tile is not available.');
+    }
+
+    return {
+      item,
+      cellX: Math.round(Number(message.cellX ?? message.cell?.[0] ?? 0)),
+      cellZ: Math.round(Number(message.cellZ ?? message.cell?.[1] ?? 0)),
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+    };
+  }
+
+  sanitizePropPlacement(message = {}) {
+    const item = getBuilderItemById(message.itemId);
+    if (!item || item.layer !== 'prop') {
+      throw new Error('That prop is not available.');
+    }
+
+    return {
+      item,
+      x: quantizePosition(message.x ?? message.position?.[0]),
+      z: quantizePosition(message.z ?? message.position?.[1]),
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+    };
+  }
+
+  sanitizeNpcPlacement(message = {}) {
+    const model = getNpcModelById(message.modelId);
+    if (!model) {
+      throw new Error('That NPC model is not available.');
+    }
+
+    const item = getBuilderItemById(model.itemId);
+    if (!item || item.layer !== 'npc') {
+      throw new Error('That NPC is not available.');
+    }
+
+    const name = String(message.name ?? item.label ?? 'NPC').trim().slice(0, NPC_NAME_MAX_LENGTH) || 'NPC';
+    return {
+      item,
+      x: quantizePosition(message.x ?? message.position?.[0]),
+      z: quantizePosition(message.z ?? message.position?.[1]),
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      npc: {
+        modelId: model.id,
+        name,
+        prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
+        interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
+        active: message.active !== false
+      }
+    };
+  }
+
+  sanitizeNpcUpdates(message = {}) {
+    const updates = {};
+
+    if (Object.hasOwn(message, 'name')) {
+      updates.name = String(message.name ?? 'NPC').trim().slice(0, NPC_NAME_MAX_LENGTH) || 'NPC';
+    }
+    if (Object.hasOwn(message, 'prompt')) {
+      updates.prompt = String(message.prompt ?? '').slice(0, NPC_PROMPT_MAX_LENGTH);
+    }
+    if (Object.hasOwn(message, 'interactRadius')) {
+      updates.interactRadius = clampNpcRadius(message.interactRadius);
+    }
+    if (Object.hasOwn(message, 'active')) {
+      updates.active = message.active !== false;
+    }
+    if (Object.hasOwn(message, 'modelId')) {
+      const model = getNpcModelById(message.modelId);
+      if (!model) {
+        throw new Error('That NPC model is not available.');
+      }
+      updates.modelId = model.id;
+      updates.itemId = model.itemId;
+    }
+
+    if (!Object.keys(updates).length) {
+      throw new Error('No NPC changes were provided.');
+    }
+
+    return updates;
+  }
+
+  assertEditablePlacement(placementId, expectedLayer = null) {
+    const placement = this.worldState.getPlacement(String(placementId ?? ''));
+    if (!placement) {
+      throw new Error('That placement is not available.');
+    }
+
+    if (expectedLayer && placement.layer !== expectedLayer) {
+      throw new Error('That placement cannot be edited this way.');
+    }
+
+    return placement;
+  }
+
+  syncNpcDefinitionsFromWorld() {
+    const definitions = this.worldState.serializeLayout().npcs ?? [];
     const nextIds = new Set(definitions.map((entry) => entry.id));
 
     for (const definition of definitions) {
@@ -264,10 +563,11 @@ export class WorldRoom extends Room {
       existing.name = definition.name;
       existing.x = definition.position[0];
       existing.z = definition.position[1];
-      existing.rotationQuarterTurns = definition.rotationQuarterTurns;
-      existing.interactRadius = definition.interactRadius;
-      existing.busy = Boolean(existing.busy);
-      existing.currentSpeakerSessionId = existing.currentSpeakerSessionId || '';
+      existing.rotationQuarterTurns = normalizeRotationQuarterTurns(definition.rotationQuarterTurns);
+      existing.interactRadius = clampNpcRadius(definition.interactRadius);
+      existing.active = definition.active !== false;
+      existing.busy = existing.active ? Boolean(existing.busy) : false;
+      existing.currentSpeakerSessionId = existing.active ? (existing.currentSpeakerSessionId || '') : '';
       existing.latestUtterance = existing.latestUtterance || '';
       existing.transcriptVersion = Number(existing.transcriptVersion || 0);
       if (!this.transcripts.has(definition.id)) {
@@ -284,13 +584,18 @@ export class WorldRoom extends Room {
       this.state.npcs.delete(npcId);
       this.npcDefinitions.delete(npcId);
       this.transcripts.delete(npcId);
+      for (const cooldownKey of [...this.cooldowns.keys()]) {
+        if (cooldownKey.endsWith(`:${npcId}`)) {
+          this.cooldowns.delete(cooldownKey);
+        }
+      }
     }
   }
 
   assertNpcAvailable(client, npcId) {
     const npc = this.state.npcs.get(npcId);
     const player = this.state.players.get(client.sessionId);
-    if (!npc || !player) {
+    if (!npc || !player || !npc.active) {
       throw new Error('That NPC is not available.');
     }
 
@@ -309,16 +614,6 @@ export class WorldRoom extends Room {
     this.broadcast('npc:transcript', {
       npcId,
       entries: next
-    });
-  }
-
-  broadcastTranscriptSnapshot() {
-    logServer('room', 'Broadcasting transcript snapshot.', {
-      roomId: this.roomId,
-      npcCount: this.transcripts.size
-    });
-    this.broadcast('npc:transcripts', {
-      transcripts: Object.fromEntries(this.transcripts.entries())
     });
   }
 
@@ -373,12 +668,15 @@ export class WorldRoom extends Room {
         playerMessage: trimmedMessage
       });
 
-      npc.latestUtterance = reply;
-      this.appendTranscript(
-        npc.id,
-        createTranscriptEntry(`entry_${++this.sequence}`, 'npc', npc.name, reply),
-        npc
-      );
+      const liveNpc = this.state.npcs.get(npc.id);
+      if (liveNpc) {
+        liveNpc.latestUtterance = reply;
+        this.appendTranscript(
+          liveNpc.id,
+          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, reply),
+          liveNpc
+        );
+      }
       logServer('room', 'NPC chat completed.', {
         roomId: this.roomId,
         sessionId: client.sessionId,
@@ -386,13 +684,16 @@ export class WorldRoom extends Room {
         npcName: npc.name
       });
     } catch (error) {
-      const fallback = `${npc.name} pauses, then says they need a moment to gather their thoughts.`;
-      npc.latestUtterance = fallback;
-      this.appendTranscript(
-        npc.id,
-        createTranscriptEntry(`entry_${++this.sequence}`, 'npc', npc.name, fallback),
-        npc
-      );
+      const liveNpc = this.state.npcs.get(npc.id);
+      if (liveNpc) {
+        const fallback = `${liveNpc.name} pauses, then says they need a moment to gather their thoughts.`;
+        liveNpc.latestUtterance = fallback;
+        this.appendTranscript(
+          liveNpc.id,
+          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, fallback),
+          liveNpc
+        );
+      }
       logServerError('room', 'NPC chat provider failed; fallback reply used.', error, {
         roomId: this.roomId,
         sessionId: client.sessionId,
@@ -400,7 +701,10 @@ export class WorldRoom extends Room {
         npcName: npc.name
       });
     } finally {
-      npc.busy = false;
+      const liveNpc = this.state.npcs.get(npc.id);
+      if (liveNpc) {
+        liveNpc.busy = false;
+      }
       this.releaseDisconnectedSpeakerSession(client.sessionId);
     }
 
