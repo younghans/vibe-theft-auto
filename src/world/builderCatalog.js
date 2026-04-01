@@ -1,6 +1,8 @@
 import { assets } from './assetManifest.js';
+import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
-export const BUILDER_TILE_SIZE = 14;
+export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
 export const BUILDER_CATEGORIES = [
   {
@@ -41,6 +43,24 @@ export const BUILDER_CATEGORIES = [
       { id: 'traffic_light', label: 'Traffic Light', asset: assets.city.trafficLight, size: [2.3, 2.3], layer: 'prop', collision: false },
       { id: 'tower', label: 'Watertower', asset: assets.city.watertower, size: [9, 9], layer: 'prop', collision: true, padding: 0.3 }
     ]
+  },
+  {
+    id: 'npcs',
+    label: 'NPCs',
+    description: 'Author character models with names and prompts for AI-driven interactions.',
+    items: NPC_MODEL_CATALOG.map((model) => ({
+      id: model.itemId,
+      modelId: model.id,
+      label: model.label,
+      asset: model.asset,
+      size: model.footprint,
+      layer: 'npc',
+      collision: true,
+      padding: 0.1,
+      interactionOffset: model.interactionOffset,
+      interactionRadius: model.interactionRadius,
+      collisionRadius: model.collisionRadius
+    }))
   }
 ];
 

@@ -1,5 +1,13 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 
+function setFieldValue(field, value) {
+  if (!field || document.activeElement === field) {
+    return;
+  }
+
+  field.value = value;
+}
+
 export class Hud {
   constructor(root) {
     this.root = root;
@@ -18,12 +26,32 @@ export class Hud {
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
     this.builderSelectionConfirm = this.overlay.querySelector('[data-builder-selection-confirm]');
+    this.builderNpcEditor = this.overlay.querySelector('[data-builder-npc-editor]');
+    this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
+    this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
+    this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
+    this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
+    this.interactionRoot = this.overlay.querySelector('[data-interaction]');
+    this.interactionTitle = this.overlay.querySelector('[data-interaction-title]');
+    this.interactionSubtitle = this.overlay.querySelector('[data-interaction-subtitle]');
+    this.interactionActions = this.overlay.querySelector('[data-interaction-actions]');
+    this.chatRoot = this.overlay.querySelector('[data-chat]');
+    this.chatTitle = this.overlay.querySelector('[data-chat-title]');
+    this.chatSubtitle = this.overlay.querySelector('[data-chat-subtitle]');
+    this.chatLog = this.overlay.querySelector('[data-chat-log]');
+    this.chatForm = this.overlay.querySelector('[data-chat-form]');
+    this.chatInput = this.overlay.querySelector('[data-chat-input]');
+    this.chatSend = this.overlay.querySelector('[data-chat-send]');
+    this.chatStatus = this.overlay.querySelector('[data-chat-status]');
+    this.chatClose = this.overlay.querySelector('[data-chat-close]');
     this.emoteMenu = this.overlay.querySelector('[data-emote-menu]');
     this.emoteWheel = this.overlay.querySelector('[data-emote-wheel]');
     this.emoteSelection = this.overlay.querySelector('[data-emote-selection]');
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
     this.emoteSliceNodes = [];
     this.toastTimeout = 0;
+    this.lastInteractionState = null;
+    this.lastNpcEditorState = null;
     this.buildEmoteWheel();
   }
 
@@ -34,7 +62,7 @@ export class Hud {
       <div class="loading__card">
         <p class="hud__eyebrow">Booting</p>
         <h1 class="loading__title">Stick RPG 3D</h1>
-        <p class="loading__subtitle">Streaming city blocks and player assets...</p>
+        <p class="loading__subtitle">Streaming city blocks, NPCs, and player assets...</p>
       </div>
     `;
     this.root.append(node);
@@ -63,7 +91,7 @@ export class Hud {
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Stick RPG 3D</h1>
-        <p class="hud__body">WASD to move through the city. Press E near doors, ATMs, and storefront markers. Hold B for emotes.</p>
+        <p class="hud__body">WASD to move. Press E near an NPC, door, ATM, or marker. Hold B for emotes.</p>
       </section>
       <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle build mode" title="Toggle build mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -87,6 +115,49 @@ export class Hud {
         <div class="hud__builder-tabs" data-builder-tabs></div>
         <div class="hud__builder-grid" data-builder-tiles></div>
         <button class="hud__builder-button hud__builder-copy" type="button" data-builder-copy>Copy Layout JSON</button>
+        <section class="hud__builder-editor" data-builder-npc-editor>
+          <p class="hud__eyebrow">NPC Editor</p>
+          <label class="hud__field">
+            <span class="hud__field-label">Model</span>
+            <select class="hud__field-control" data-builder-npc-model></select>
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Name</span>
+            <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Interact Radius</span>
+            <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Prompt</span>
+            <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
+          </label>
+        </section>
+      </section>
+      <section class="hud__interaction" data-interaction>
+        <p class="hud__eyebrow">Interaction</p>
+        <h2 class="hud__dialog-title" data-interaction-title></h2>
+        <p class="hud__body" data-interaction-subtitle></p>
+        <div class="hud__dialog-actions" data-interaction-actions></div>
+      </section>
+      <section class="hud__chat" data-chat>
+        <div class="hud__chat-header">
+          <div>
+            <p class="hud__eyebrow">Conversation</p>
+            <h2 class="hud__dialog-title" data-chat-title></h2>
+            <p class="hud__body" data-chat-subtitle></p>
+          </div>
+          <button class="hud__chat-close" type="button" data-chat-close aria-label="Close chat">Close</button>
+        </div>
+        <div class="hud__chat-log" data-chat-log></div>
+        <form class="hud__chat-form" data-chat-form>
+          <textarea class="hud__field-control hud__field-control--textarea hud__chat-input" rows="3" maxlength="280" data-chat-input placeholder="Say something..."></textarea>
+          <div class="hud__chat-footer">
+            <p class="hud__chat-status" data-chat-status></p>
+            <button class="hud__chat-send" type="submit" data-chat-send>Send</button>
+          </div>
+        </form>
       </section>
       <section class="hud__emote-menu" data-emote-menu>
         <div class="hud__emote-wheel" data-emote-wheel>
@@ -150,7 +221,19 @@ export class Hud {
     }, 2200);
   }
 
-  bindBuilderEvents({ onToggleBuildMode, onSelectCategory, onSelectTile, onCopyLayout, onRotateSelection, onDeleteSelection, onConfirmSelection }) {
+  bindBuilderEvents({
+    onToggleBuildMode,
+    onSelectCategory,
+    onSelectTile,
+    onCopyLayout,
+    onRotateSelection,
+    onDeleteSelection,
+    onConfirmSelection,
+    onNpcNameChange,
+    onNpcPromptChange,
+    onNpcRadiusChange,
+    onNpcModelChange
+  }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
     });
@@ -186,6 +269,47 @@ export class Hud {
     this.builderSelectionConfirm.addEventListener('click', () => {
       onConfirmSelection();
     });
+
+    this.builderNpcName.addEventListener('input', () => {
+      onNpcNameChange(this.builderNpcName.value);
+    });
+
+    this.builderNpcPrompt.addEventListener('input', () => {
+      onNpcPromptChange(this.builderNpcPrompt.value);
+    });
+
+    this.builderNpcRadius.addEventListener('input', () => {
+      onNpcRadiusChange(Number(this.builderNpcRadius.value));
+    });
+
+    this.builderNpcModel.addEventListener('change', () => {
+      onNpcModelChange(this.builderNpcModel.value);
+    });
+  }
+
+  bindInteractionEvents({ onAction, onCloseInteraction, onSendChat, onCloseChat }) {
+    this.interactionActions.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-interaction-action]');
+      if (!button) {
+        return;
+      }
+      onAction(button.dataset.interactionAction);
+    });
+
+    this.interactionRoot.addEventListener('click', (event) => {
+      if (event.target === this.interactionRoot) {
+        onCloseInteraction();
+      }
+    });
+
+    this.chatForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      onSendChat(this.chatInput.value);
+    });
+
+    this.chatClose.addEventListener('click', () => {
+      onCloseChat();
+    });
   }
 
   setBuilderState({ enabled, rotationQuarterTurns, selectedIndex, categories, activeCategoryId }) {
@@ -196,7 +320,7 @@ export class Hud {
     const activeCategory = categories.find((entry) => entry.id === activeCategoryId) ?? categories[0];
     const items = activeCategory?.items ?? [];
     this.builderStatus.textContent = enabled
-      ? 'Builder active. Left click places the selected piece. Click any existing tile or prop to edit it.'
+      ? 'Builder active. Left click places the selected piece. Click any existing tile, prop, or NPC to edit it.'
       : 'Use the hammer button to enter builder mode.';
     this.builderMeta.textContent = enabled
       ? `${activeCategory?.description ?? ''} Rotation: ${rotationQuarterTurns * 90}deg | WASD pans | Mouse wheel zooms | Delete removes selected`
@@ -234,6 +358,99 @@ export class Hud {
     node.classList.add('is-visible');
     node.style.left = `${selection.screenX}px`;
     node.style.top = `${selection.screenY}px`;
+  }
+
+  setBuilderNpcEditor(editorState) {
+    if (!editorState) {
+      this.lastNpcEditorState = null;
+      this.builderNpcEditor.classList.remove('is-visible');
+      return;
+    }
+
+    this.builderNpcEditor.classList.add('is-visible');
+
+    const modelsChanged = this.lastNpcEditorState?.models?.length !== editorState.models.length
+      || this.lastNpcEditorState?.models?.some((entry, index) => entry.id !== editorState.models[index].id);
+
+    if (modelsChanged) {
+      this.builderNpcModel.innerHTML = editorState.models.map((model) => `
+        <option value="${model.id}">${model.label}</option>
+      `).join('');
+    }
+
+    if (document.activeElement !== this.builderNpcModel) {
+      this.builderNpcModel.value = editorState.modelId;
+    }
+    setFieldValue(this.builderNpcName, editorState.name);
+    setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
+    setFieldValue(this.builderNpcPrompt, editorState.prompt);
+
+    this.lastNpcEditorState = structuredClone(editorState);
+  }
+
+  showInteractionMenu({ title, subtitle, actions }) {
+    this.lastInteractionState = { title, subtitle, actions };
+    this.interactionTitle.textContent = title;
+    this.interactionSubtitle.textContent = subtitle;
+    this.interactionActions.innerHTML = actions.map((action) => `
+      <button
+        class="hud__dialog-button${action.primary ? ' is-primary' : ''}"
+        type="button"
+        data-interaction-action="${action.id}"
+        ${action.disabled ? 'disabled' : ''}
+      >
+        ${action.label}
+      </button>
+    `).join('');
+    this.interactionRoot.classList.add('is-visible');
+  }
+
+  hideInteractionMenu() {
+    this.lastInteractionState = null;
+    this.interactionRoot.classList.remove('is-visible');
+  }
+
+  setChatState({ visible, title = '', subtitle = '', entries = [], busy = false, error = '', canSend = true }) {
+    this.chatRoot.classList.toggle('is-visible', visible);
+    if (!visible) {
+      return;
+    }
+
+    this.chatTitle.textContent = title;
+    this.chatSubtitle.textContent = subtitle;
+    this.chatStatus.textContent = error || (busy ? 'Waiting for reply...' : 'Public room chat. Everyone in the room sees this conversation.');
+    this.chatStatus.classList.toggle('is-error', Boolean(error));
+    this.chatInput.disabled = busy || !canSend;
+    this.chatSend.disabled = busy || !canSend;
+
+    const fragment = document.createDocumentFragment();
+    for (const entry of entries) {
+      const row = document.createElement('article');
+      row.className = `hud__chat-entry is-${entry.speaker}`;
+
+      const author = document.createElement('p');
+      author.className = 'hud__chat-author';
+      author.textContent = entry.author;
+
+      const text = document.createElement('p');
+      text.className = 'hud__chat-text';
+      text.textContent = entry.text;
+
+      row.append(author, text);
+      fragment.append(row);
+    }
+
+    this.chatLog.replaceChildren(fragment);
+    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  }
+
+  clearChatInput() {
+    this.chatInput.value = '';
+  }
+
+  focusChatInput() {
+    this.chatInput.focus();
+    this.chatInput.select();
   }
 
   setEmoteMenuState({ open, activeIndex = -1, selectedLabel = '', hasSelection = false }) {

@@ -6,6 +6,14 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 globalThis.self = globalThis;
+globalThis.window = {
+  URL: {
+    createObjectURL() {
+      return 'blob:mock';
+    },
+    revokeObjectURL() {}
+  }
+};
 globalThis.document = {
   createElementNS() {
     return {

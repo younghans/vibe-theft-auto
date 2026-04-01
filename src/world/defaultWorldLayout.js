@@ -1,4 +1,4 @@
-import { BUILDER_TILE_SIZE } from './builderCatalog.js';
+import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
 export const DEFAULT_WORLD_SPAWN = [0, 0, BUILDER_TILE_SIZE * 4.1];
 
@@ -89,6 +89,36 @@ const SIGNAL_CELLS = [
 const PERIMETER_BUSHES = [
   [-4.6, -4.4], [-3.7, -4.7], [4.4, -4.5], [4.8, -3.4],
   [-4.7, 4.3], [-3.4, 4.75], [4.45, 4.55], [3.35, 4.8]
+];
+
+const NPC_PLANS = [
+  {
+    id: 'npc_bruno',
+    modelId: 'brute',
+    position: [-1.35 * BUILDER_TILE_SIZE, 2.15 * BUILDER_TILE_SIZE],
+    angle: 0,
+    name: 'Bruno',
+    prompt: 'You are Bruno, a broad-shouldered neighborhood bouncer with a surprising soft side. Speak like a streetwise local, keep answers short, and gently point people toward the city nightlife.',
+    interactRadius: 4.8
+  },
+  {
+    id: 'npc_maya',
+    modelId: 'ch18NonPbr',
+    position: [1.3 * BUILDER_TILE_SIZE, -2.05 * BUILDER_TILE_SIZE],
+    angle: Math.PI,
+    name: 'Maya',
+    prompt: 'You are Maya, a quick-thinking hustler who knows every rumor in town. Be playful, observant, and a little sarcastic, but stay helpful.',
+    interactRadius: 4.4
+  },
+  {
+    id: 'npc_sketch',
+    modelId: 'xBot',
+    position: [2.35 * BUILDER_TILE_SIZE, 1.5 * BUILDER_TILE_SIZE],
+    angle: -Math.PI / 2,
+    name: 'Sketch',
+    prompt: 'You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.',
+    interactRadius: 4.2
+  }
 ];
 
 function key(x, z) {
@@ -218,7 +248,20 @@ function createPropLayout() {
   return props;
 }
 
+function createNpcLayout() {
+  return NPC_PLANS.map((plan) => ({
+    id: plan.id,
+    modelId: plan.modelId,
+    position: [...plan.position],
+    rotationQuarterTurns: toQuarterTurns(plan.angle),
+    name: plan.name,
+    prompt: plan.prompt,
+    interactRadius: plan.interactRadius
+  }));
+}
+
 export const defaultWorldLayout = Object.freeze({
   tiles: createTileLayout(),
-  props: createPropLayout()
+  props: createPropLayout(),
+  npcs: createNpcLayout()
 });

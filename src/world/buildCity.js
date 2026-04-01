@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BUILDER_TILE_SIZE } from './builderCatalog.js';
+import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import { defaultWorldLayout, DEFAULT_WORLD_SPAWN } from './defaultWorldLayout.js';
 
 export async function buildCity(scene) {

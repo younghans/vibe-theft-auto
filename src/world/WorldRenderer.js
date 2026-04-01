@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { NpcActor } from '../npc/NpcActor.js';
+import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 
 function setShadowFlags(root) {
@@ -55,6 +57,7 @@ export class WorldRenderer {
     this.scene.add(this.propRoot);
 
     this.renderedPlacements = new Map();
+    this.npcRuntimeState = new Map();
   }
 
   async syncFromState(worldState) {
@@ -80,22 +83,30 @@ export class WorldRenderer {
       return null;
     }
 
-    const object = await this.library.instantiate(item.asset);
-    setShadowFlags(object);
-    fitToFootprint(object, item.size[0], item.size[1]);
-    snapToGround(object);
+    const actor = placement.layer === 'npc'
+      ? await this.createNpcActor(placement, item)
+      : null;
+    const object = actor?.object ?? await this.library.instantiate(item.asset);
 
-    if (placement.layer === 'tile') {
-      object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
-    } else {
-      object.position.set(placement.position[0], 0, placement.position[1]);
+    if (!actor) {
+      setShadowFlags(object);
+      fitToFootprint(object, item.size[0], item.size[1]);
+      snapToGround(object);
+
+      if (placement.layer === 'tile') {
+        object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
+      } else {
+        object.position.set(placement.position[0], 0, placement.position[1]);
+      }
+      object.rotation.y = toRotationY(placement.rotationQuarterTurns);
     }
-    object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+
     object.userData.editorPlacementId = placement.id;
 
     const renderedPlacement = {
       id: placement.id,
       object,
+      actor,
       item,
       layer: placement.layer,
       collisionBox: item.collision ? createCollisionBox(object, item.padding ?? 0.2) : null
@@ -111,18 +122,46 @@ export class WorldRenderer {
     return renderedPlacement;
   }
 
+  async createNpcActor(placement, item) {
+    const model = getNpcModelByItemId(item.id);
+    if (!model) {
+      return null;
+    }
+
+    const object = await this.library.instantiate(item.asset);
+    const actor = new NpcActor({
+      model,
+      object,
+      definition: {
+        position: placement.position,
+        rotationQuarterTurns: placement.rotationQuarterTurns
+      }
+    });
+    actor.object.userData.editorPlacementId = placement.id;
+    actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
+    return actor;
+  }
+
   updatePlacement(placement) {
     const rendered = this.renderedPlacements.get(placement.id);
     if (!rendered) {
       return;
     }
 
-    if (placement.layer === 'tile') {
+    if (rendered.actor) {
+      rendered.actor.applyPlacement({
+        position: placement.position,
+        rotationQuarterTurns: placement.rotationQuarterTurns
+      });
+    } else if (placement.layer === 'tile') {
       rendered.object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
     } else {
       rendered.object.position.set(placement.position[0], 0, placement.position[1]);
     }
-    rendered.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+
+    if (!rendered.actor) {
+      rendered.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+    }
 
     if (rendered.item.collision) {
       rendered.collisionBox = createCollisionBox(rendered.object, rendered.item.padding ?? 0.2);
@@ -174,12 +213,30 @@ export class WorldRenderer {
 
   getInteractables(worldState) {
     return worldState.getPlacements()
-      .filter((placement) => placement.interactable)
+      .filter((placement) => placement.interactable || placement.layer === 'npc')
       .map((placement) => {
         const rendered = this.renderedPlacements.get(placement.id);
         const item = getBuilderItemById(placement.itemId);
         if (!rendered || !item) {
           return null;
+        }
+
+        if (placement.layer === 'npc' && placement.npc) {
+          const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            toRotationY(placement.rotationQuarterTurns)
+          );
+          const distance = item.interactionOffset ?? BUILDER_TILE_SIZE * 0.16;
+          return {
+            kind: 'npc',
+            placementId: placement.id,
+            npcId: placement.id,
+            npc: { ...placement.npc },
+            position: rendered.object.position.clone().addScaledVector(forward, distance),
+            radius: placement.npc.interactRadius ?? item.interactionRadius ?? 4.2,
+            prompt: `Talk to ${placement.npc.name}`,
+            actionText: `Talk to ${placement.npc.name}`
+          };
         }
 
         const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -190,6 +247,8 @@ export class WorldRenderer {
         const position = rendered.object.position.clone().addScaledVector(forward, distance);
 
         return {
+          kind: 'world',
+          placementId: placement.id,
           position,
           radius: placement.interactable.radius ?? 4,
           prompt: placement.interactable.prompt ?? `Enter ${placement.interactable.label ?? item.label}`,
@@ -197,6 +256,17 @@ export class WorldRenderer {
         };
       })
       .filter(Boolean);
+  }
+
+  applyNpcRuntimeState(npcStateMap = new Map()) {
+    this.npcRuntimeState = new Map(npcStateMap);
+
+    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
+      if (!rendered.actor) {
+        continue;
+      }
+      rendered.actor.setBusy(this.npcRuntimeState.get(placementId)?.busy ?? false);
+    }
   }
 
   pickPlacementId(pointer, camera = this.camera) {

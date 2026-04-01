@@ -1,3 +1,4 @@
+import { getNpcModelById } from '../npc/npcCatalog.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
 function cloneInteractable(interactable) {
@@ -13,7 +14,8 @@ function clonePlacement(placement) {
     cellX: placement.cellX,
     cellZ: placement.cellZ,
     position: placement.position ? [...placement.position] : null,
-    interactable: cloneInteractable(placement.interactable)
+    interactable: cloneInteractable(placement.interactable),
+    npc: placement.npc ? { ...placement.npc } : null
   };
 }
 
@@ -25,8 +27,16 @@ function toPlacementRecord(entry, item, id) {
     rotationQuarterTurns: entry.rotationQuarterTurns ?? 0,
     cellX: item.layer === 'tile' ? entry.cell[0] : null,
     cellZ: item.layer === 'tile' ? entry.cell[1] : null,
-    position: item.layer === 'prop' ? [entry.position[0], entry.position[1]] : null,
-    interactable: cloneInteractable(entry.interactable)
+    position: item.layer === 'tile' ? null : [entry.position[0], entry.position[1]],
+    interactable: cloneInteractable(entry.interactable),
+    npc: item.layer === 'npc'
+      ? {
+          modelId: entry.modelId,
+          name: entry.name,
+          prompt: entry.prompt,
+          interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2
+        }
+      : null
   };
 }
 
@@ -34,6 +44,7 @@ export class WorldState {
   constructor() {
     this.tilePlacements = new Map();
     this.propPlacements = new Map();
+    this.npcPlacements = new Map();
     this.placementsById = new Map();
     this.placementSequence = 0;
   }
@@ -41,6 +52,7 @@ export class WorldState {
   clear() {
     this.tilePlacements.clear();
     this.propPlacements.clear();
+    this.npcPlacements.clear();
     this.placementsById.clear();
     this.placementSequence = 0;
   }
@@ -57,7 +69,7 @@ export class WorldState {
     return this.tilePlacements.get(this.getCellKey(cellX, cellZ)) ?? null;
   }
 
-  loadLayout(layout = { tiles: [], props: [] }) {
+  loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
     this.clear();
 
     for (const entry of layout.tiles ?? []) {
@@ -79,6 +91,17 @@ export class WorldState {
       const placement = toPlacementRecord(entry, item, this.reservePlacementId(entry.id));
       this.registerPlacement(placement);
     }
+
+    for (const entry of layout.npcs ?? []) {
+      const model = getNpcModelById(entry.modelId);
+      const placementItem = model ? getBuilderItemById(model.itemId) : null;
+      if (!placementItem || placementItem.layer !== 'npc') {
+        continue;
+      }
+
+      const placement = toPlacementRecord(entry, placementItem, this.reservePlacementId(entry.id));
+      this.registerPlacement(placement);
+    }
   }
 
   placeTile(item, cellX, cellZ, rotationQuarterTurns, interactable = null) {
@@ -95,7 +118,8 @@ export class WorldState {
       cellX,
       cellZ,
       position: null,
-      interactable: cloneInteractable(interactable)
+      interactable: cloneInteractable(interactable),
+      npc: null
     };
 
     this.registerPlacement(placement);
@@ -114,10 +138,51 @@ export class WorldState {
       cellX: null,
       cellZ: null,
       position: [x, z],
-      interactable: cloneInteractable(interactable)
+      interactable: cloneInteractable(interactable),
+      npc: null
     };
 
     this.registerPlacement(placement);
+    return clonePlacement(placement);
+  }
+
+  placeNpc(item, x, z, rotationQuarterTurns, npc) {
+    const placement = {
+      id: this.createPlacementId(),
+      itemId: item.id,
+      layer: item.layer,
+      rotationQuarterTurns,
+      cellX: null,
+      cellZ: null,
+      position: [x, z],
+      interactable: null,
+      npc: {
+        modelId: npc.modelId,
+        name: npc.name,
+        prompt: npc.prompt,
+        interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2
+      }
+    };
+
+    this.registerPlacement(placement);
+    return clonePlacement(placement);
+  }
+
+  updateNpc(id, updates = {}) {
+    const placement = this.getPlacement(id);
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return null;
+    }
+
+    if (updates.itemId && updates.itemId !== placement.itemId) {
+      placement.itemId = updates.itemId;
+    }
+
+    placement.npc = {
+      ...placement.npc,
+      ...updates
+    };
+
     return clonePlacement(placement);
   }
 
@@ -165,7 +230,22 @@ export class WorldState {
         ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
       }));
 
-    return { tiles, props };
+    const npcs = [...this.npcPlacements.values()]
+      .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))
+      .map((placement) => ({
+        id: placement.id,
+        modelId: placement.npc.modelId,
+        position: [
+          Number(placement.position[0].toFixed(2)),
+          Number(placement.position[1].toFixed(2))
+        ],
+        rotationQuarterTurns: placement.rotationQuarterTurns,
+        name: placement.npc.name,
+        prompt: placement.npc.prompt,
+        interactRadius: placement.npc.interactRadius
+      }));
+
+    return { tiles, props, npcs };
   }
 
   registerPlacement(placement) {
@@ -173,6 +253,11 @@ export class WorldState {
 
     if (placement.layer === 'tile') {
       this.tilePlacements.set(this.getCellKey(placement.cellX, placement.cellZ), placement);
+      return;
+    }
+
+    if (placement.layer === 'npc') {
+      this.npcPlacements.set(placement.id, placement);
       return;
     }
 
@@ -188,6 +273,11 @@ export class WorldState {
     this.placementsById.delete(id);
     if (placement.layer === 'tile') {
       this.tilePlacements.delete(this.getCellKey(placement.cellX, placement.cellZ));
+      return;
+    }
+
+    if (placement.layer === 'npc') {
+      this.npcPlacements.delete(id);
       return;
     }
 

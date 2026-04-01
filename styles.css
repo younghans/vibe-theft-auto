@@ -33,7 +33,9 @@ body {
 .hud__panel,
 .hud__toast,
 .hud__prompt,
-.hud__builder {
+.hud__builder,
+.hud__interaction,
+.hud__chat {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 16, 24, 0.78);
@@ -253,6 +255,213 @@ body {
 
 .hud__builder-copy {
   margin-top: 14px;
+}
+
+.hud__builder-editor {
+  display: none;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hud__builder-editor.is-visible {
+  display: block;
+}
+
+.hud__field {
+  display: block;
+  margin-top: 10px;
+}
+
+.hud__field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(242, 200, 113, 0.9);
+}
+
+.hud__field-control {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4eee2;
+  font: inherit;
+  pointer-events: auto;
+}
+
+.hud__field-control--textarea {
+  resize: vertical;
+  min-height: 108px;
+}
+
+.hud__field-control:focus {
+  outline: none;
+  border-color: rgba(242, 200, 113, 0.72);
+  box-shadow: 0 0 0 3px rgba(242, 200, 113, 0.12);
+}
+
+.hud__interaction {
+  left: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 48px));
+  padding: 16px;
+  border-radius: 18px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+.hud__interaction.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.hud__dialog-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.hud__dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.hud__dialog-button,
+.hud__chat-close,
+.hud__chat-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 110px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4eee2;
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hud__dialog-button.is-primary,
+.hud__chat-send {
+  border-color: rgba(242, 200, 113, 0.72);
+  background: rgba(242, 200, 113, 0.18);
+  color: #fff2c8;
+}
+
+.hud__dialog-button:disabled,
+.hud__chat-send:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.hud__chat {
+  right: 24px;
+  top: 24px;
+  width: min(460px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 16px;
+  border-radius: 20px;
+  display: none;
+  pointer-events: auto;
+}
+
+.hud__chat.is-visible {
+  display: flex;
+  flex-direction: column;
+}
+
+.hud__chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hud__chat-close {
+  min-width: 88px;
+}
+
+.hud__chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding-right: 4px;
+  overflow-y: auto;
+  min-height: 180px;
+  max-height: 42vh;
+}
+
+.hud__chat-entry {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hud__chat-entry.is-player {
+  align-self: flex-end;
+  background: rgba(242, 200, 113, 0.12);
+  border-color: rgba(242, 200, 113, 0.28);
+}
+
+.hud__chat-entry.is-npc {
+  align-self: stretch;
+}
+
+.hud__chat-author,
+.hud__chat-text,
+.hud__chat-status {
+  margin: 0;
+}
+
+.hud__chat-author {
+  margin-bottom: 4px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(242, 200, 113, 0.9);
+}
+
+.hud__chat-text {
+  line-height: 1.45;
+  color: rgba(244, 238, 226, 0.92);
+}
+
+.hud__chat-form {
+  margin-top: 14px;
+}
+
+.hud__chat-input {
+  min-height: 92px;
+}
+
+.hud__chat-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.hud__chat-status {
+  color: rgba(244, 238, 226, 0.72);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hud__chat-status.is-error {
+  color: #ffb4b4;
 }
 
 .hud__selection {
@@ -511,8 +720,28 @@ canvas {
 }
 
 @media (max-width: 800px) {
+  .hud__panel {
+    max-width: calc(100vw - 48px);
+  }
+
   .hud__builder-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hud__interaction,
+  .hud__chat {
+    width: calc(100vw - 32px);
+    left: 16px;
+    right: 16px;
+  }
+
+  .hud__interaction {
+    bottom: 16px;
+  }
+
+  .hud__chat {
+    top: 16px;
+    max-height: calc(100vh - 32px);
   }
 
   .hud__emote-wheel {

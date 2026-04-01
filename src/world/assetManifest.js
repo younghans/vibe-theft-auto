@@ -5,7 +5,9 @@ export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`,
 export const assets = {
   mixamo: {
     characters: {
-      xBot: assetUrl('mixamo', 'characters', 'X Bot.fbx')
+      xBot: assetUrl('mixamo', 'characters', 'X Bot.fbx'),
+      brute: assetUrl('mixamo', 'characters', 'Brute.fbx'),
+      ch18NonPbr: assetUrl('mixamo', 'characters', 'Ch18_nonPBR.fbx')
     },
     animations: {
       walking: assetUrl('mixamo', 'animations', 'Walking.json'),
