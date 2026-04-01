@@ -1,6 +1,7 @@
 import { Room } from 'colyseus';
 import { MapSchema, schema } from '@colyseus/schema';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
+import { EMOTES_BY_ID } from '../../src/player/emotes.js';
 import { getBuilderItemById } from '../../src/world/builderCatalog.js';
 import { WorldState } from '../../src/world/WorldState.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
@@ -16,7 +17,11 @@ const NPC_PROMPT_MAX_LENGTH = 1600;
 const PlayerState = schema({
   x: 'number',
   z: 'number',
-  rotationY: 'number'
+  rotationY: 'number',
+  emoteId: 'string',
+  emoteActive: 'boolean',
+  emoteStartedAt: 'number',
+  emoteSeq: 'number'
 });
 
 const BuilderPresenceState = schema({
@@ -93,6 +98,21 @@ function quantizePosition(value) {
   return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
 }
 
+function sanitizePlayerAnimationState(message = {}) {
+  const emoteId = typeof message.emoteId === 'string' ? message.emoteId.trim() : '';
+  const hasValidEmote = Object.hasOwn(EMOTES_BY_ID, emoteId);
+  const emoteActive = Boolean(message.emoteActive && hasValidEmote);
+  const emoteStartedAt = Number(message.emoteStartedAt);
+  const emoteSeq = Number(message.emoteSeq);
+
+  return {
+    emoteId: emoteActive ? emoteId : '',
+    emoteActive,
+    emoteStartedAt: emoteActive && Number.isFinite(emoteStartedAt) ? Math.max(0, Math.floor(emoteStartedAt)) : 0,
+    emoteSeq: Number.isFinite(emoteSeq) ? Math.max(0, Math.floor(emoteSeq)) : 0
+  };
+}
+
 function clampNpcRadius(value) {
   const numeric = Number(value ?? 4.2);
   return Math.max(1.5, Math.min(12, Number.isFinite(numeric) ? numeric : 4.2));
@@ -139,6 +159,12 @@ export class WorldRoom extends Room {
       if (Number.isFinite(rotationY)) {
         player.rotationY = rotationY;
       }
+
+      const animationState = sanitizePlayerAnimationState(message);
+      player.emoteId = animationState.emoteId;
+      player.emoteActive = animationState.emoteActive;
+      player.emoteStartedAt = animationState.emoteStartedAt;
+      player.emoteSeq = animationState.emoteSeq;
     });
 
     this.onMessage('builder:updatePresence', (client, message) => {
@@ -224,6 +250,10 @@ export class WorldRoom extends Room {
     player.x = 0;
     player.z = 0;
     player.rotationY = 0;
+    player.emoteId = '';
+    player.emoteActive = false;
+    player.emoteStartedAt = 0;
+    player.emoteSeq = 0;
     this.state.players.set(client.sessionId, player);
     client.send('npc:transcripts', {
       transcripts: serializeTranscripts(this.transcripts)

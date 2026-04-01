@@ -235,6 +235,7 @@ export class Game {
       );
       avatar.object.rotation.y = Number(latestState?.rotationY ?? 0) || 0;
       avatar.position.y = this.worldBuilder?.getGroundHeightAt(avatar.position) ?? 0;
+      avatar.applyRemoteState(latestState, 0, avatar.position.y);
       this.scene.add(avatar.object);
       this.remotePlayers.set(sessionId, avatar);
     } catch (error) {
@@ -383,7 +384,11 @@ export class Game {
       const playerInput = (emoteMenuActive || this.isNpcUiOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
       this.updateCamera();
-      this.npcService?.setPlayerTransform(this.player.position, this.player.object.rotation.y);
+      this.npcService?.setPlayerTransform(
+        this.player.position,
+        this.player.object.rotation.y,
+        this.player.getAnimationSyncState()
+      );
 
       if (emoteMenuActive || this.isNpcUiOpen()) {
         this.hud.setPrompt(null);

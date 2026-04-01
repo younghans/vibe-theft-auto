@@ -30,6 +30,17 @@ function cloneLayout(layout) {
   return structuredClone(layout);
 }
 
+function sanitizePlayerAnimationState(animationState = {}) {
+  const emoteId = typeof animationState.emoteId === 'string' ? animationState.emoteId : '';
+
+  return {
+    emoteId,
+    emoteActive: Boolean(animationState.emoteActive && emoteId),
+    emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
+    emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0
+  };
+}
+
 export class NpcServiceMock {
   constructor() {
     console.info('[NPC] Mock NPC service initialized.');
@@ -49,6 +60,15 @@ export class NpcServiceMock {
     };
     this.sequence = 0;
     this.playerPosition = { x: 0, z: 0 };
+    this.state.players.set(this.state.sessionId, {
+      x: 0,
+      z: 0,
+      rotationY: 0,
+      emoteId: '',
+      emoteActive: false,
+      emoteStartedAt: 0,
+      emoteSeq: 0
+    });
     this.syncNpcStateFromWorld();
   }
 
@@ -259,12 +279,23 @@ export class NpcServiceMock {
     }
   }
 
-  setPlayerTransform(position, rotationY = 0) {
+  setPlayerTransform(position, rotationY = 0, animationState = {}) {
+    const player = this.state.players.get(this.state.sessionId) ?? {};
+    const nextAnimation = sanitizePlayerAnimationState(animationState);
+
     this.playerPosition = {
       x: position.x,
       z: position.z,
       rotationY
     };
+    player.x = position.x;
+    player.z = position.z;
+    player.rotationY = rotationY;
+    player.emoteId = nextAnimation.emoteId;
+    player.emoteActive = nextAnimation.emoteActive;
+    player.emoteStartedAt = nextAnimation.emoteStartedAt;
+    player.emoteSeq = nextAnimation.emoteSeq;
+    this.state.players.set(this.state.sessionId, player);
   }
 
   setBuilderPresence(presence = {}) {

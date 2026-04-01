@@ -10,6 +10,32 @@ const PLAYER_RADIUS = 1.4;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 
+function getEmoteConfig(emoteId) {
+  return EMOTES_BY_ID[emoteId] ?? {
+    fadeIn: EMOTE_FADE_IN,
+    fadeOut: EMOTE_FADE_OUT,
+    loop: false,
+    playbackRate: 1
+  };
+}
+
+function applyEmoteStartOffset(action, emoteConfig, startedAtMs) {
+  if (!Number.isFinite(startedAtMs) || startedAtMs <= 0) {
+    return;
+  }
+
+  const clip = typeof action.getClip === 'function' ? action.getClip() : null;
+  const duration = clip?.duration;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return;
+  }
+
+  const elapsedSeconds = Math.max(0, (Date.now() - startedAtMs) / 1000);
+  action.time = emoteConfig.loop
+    ? elapsedSeconds % duration
+    : Math.min(elapsedSeconds, duration);
+}
+
 function normalizeCharacter(root) {
   const bounds = new THREE.Box3().setFromObject(root);
   const size = bounds.getSize(new THREE.Vector3());
@@ -114,6 +140,9 @@ export async function createPlayer(library, {
   let walkWeight = 0;
   let activeEmoteId = null;
   let activeEmoteConfig = null;
+  let activeEmoteStartedAt = 0;
+  let emoteSequence = 0;
+  let lastRemoteEmoteSignature = '';
 
   function getEmoteAction(emoteId) {
     if (emoteActions.has(emoteId)) {
@@ -146,6 +175,7 @@ export async function createPlayer(library, {
     action?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     activeEmoteId = null;
     activeEmoteConfig = null;
+    activeEmoteStartedAt = 0;
   }
 
   mixer.addEventListener('finished', (event) => {
@@ -170,18 +200,21 @@ export async function createPlayer(library, {
     radius: PLAYER_RADIUS,
     position: anchor.position,
     sockets,
-    playEmote(emoteId) {
+    getAnimationSyncState() {
+      return {
+        emoteId: activeEmoteId ?? '',
+        emoteActive: Boolean(activeEmoteId),
+        emoteStartedAt: activeEmoteId ? activeEmoteStartedAt : 0,
+        emoteSeq: emoteSequence
+      };
+    },
+    playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
       const action = getEmoteAction(emoteId);
       if (!action) {
         return false;
       }
 
-      const emoteConfig = EMOTES_BY_ID[emoteId] ?? {
-        fadeIn: EMOTE_FADE_IN,
-        fadeOut: EMOTE_FADE_OUT,
-        loop: false,
-        playbackRate: 1
-      };
+      const emoteConfig = getEmoteConfig(emoteId);
 
       if (activeEmoteId === emoteId && emoteConfig.loop) {
         return true;
@@ -193,12 +226,17 @@ export async function createPlayer(library, {
 
       activeEmoteId = emoteId;
       activeEmoteConfig = emoteConfig;
+      activeEmoteStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+      if (trackSync) {
+        emoteSequence += 1;
+      }
       action.reset();
       action.enabled = true;
       action.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
       action.clampWhenFinished = !emoteConfig.loop;
       action.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
       action.setEffectiveWeight(1);
+      applyEmoteStartOffset(action, emoteConfig, activeEmoteStartedAt);
       action.fadeIn(emoteConfig.fadeIn ?? EMOTE_FADE_IN);
       action.play();
       return true;
@@ -233,6 +271,29 @@ export async function createPlayer(library, {
       updateAnimationState(deltaSeconds, moving, groundHeight);
     },
     applyRemoteState(state, deltaSeconds, groundHeight = 0) {
+      const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
+      const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
+      const remoteEmoteSeq = Number.isFinite(state?.emoteSeq) ? Math.max(0, Math.floor(state.emoteSeq)) : 0;
+      const remoteEmoteSignature = `${Number(remoteEmoteActive)}:${remoteEmoteId}:${remoteEmoteSeq}`;
+
+      if (
+        remoteEmoteSignature !== lastRemoteEmoteSignature
+        || (remoteEmoteActive && activeEmoteId !== remoteEmoteId)
+        || (!remoteEmoteActive && activeEmoteId)
+      ) {
+        lastRemoteEmoteSignature = remoteEmoteSignature;
+        if (remoteEmoteActive) {
+          this.playEmote(remoteEmoteId, {
+            startedAtMs: Number.isFinite(state?.emoteStartedAt) ? state.emoteStartedAt : Date.now(),
+            trackSync: false
+          });
+        } else {
+          stopActiveEmote();
+        }
+      }
+
+      const showingRemoteEmote = remoteEmoteActive && activeEmoteId === remoteEmoteId;
+
       const targetX = Number.isFinite(state?.x) ? state.x : anchor.position.x;
       const targetZ = Number.isFinite(state?.z) ? state.z : anchor.position.z;
       const targetRotationY = Number.isFinite(state?.rotationY) ? state.rotationY : anchor.rotation.y;
@@ -251,7 +312,7 @@ export async function createPlayer(library, {
 
       const rotationLerp = 1 - Math.exp(-deltaSeconds * 14);
       anchor.rotation.y = dampAngle(anchor.rotation.y, targetRotationY, rotationLerp);
-      updateAnimationState(deltaSeconds, distance > 0.05, groundHeight);
+      updateAnimationState(deltaSeconds, !showingRemoteEmote && distance > 0.05, groundHeight);
     }
   };
 }
