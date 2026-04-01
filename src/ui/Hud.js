@@ -8,9 +8,19 @@ function setFieldValue(field, value) {
   field.value = value;
 }
 
+function getBuilderPlaceholder(label) {
+  return String(label ?? '??')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
 export class Hud {
   constructor(root) {
     this.root = root;
+    this.builderPreviewImages = new Map();
     this.loading = this.createLoading();
     this.overlay = this.createOverlay();
     this.promptText = this.overlay.querySelector('[data-prompt]');
@@ -20,8 +30,10 @@ export class Hud {
     this.builderStatus = this.overlay.querySelector('[data-builder-status]');
     this.builderMeta = this.overlay.querySelector('[data-builder-meta]');
     this.builderTabs = this.overlay.querySelector('[data-builder-tabs]');
+    this.builderGroups = this.overlay.querySelector('[data-builder-groups]');
     this.builderTiles = this.overlay.querySelector('[data-builder-tiles]');
     this.builderCopy = this.overlay.querySelector('[data-builder-copy]');
+    this.builderClose = this.overlay.querySelector('[data-builder-close]');
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
@@ -109,31 +121,46 @@ export class Hud {
         <span class="hud__prompt-text" data-prompt></span>
       </section>
       <section class="hud__builder" data-builder>
-        <p class="hud__eyebrow">World Builder</p>
-        <p class="hud__body" data-builder-status>Use the hammer button to enter builder mode.</p>
-        <p class="hud__body hud__builder-meta" data-builder-meta></p>
+        <div class="hud__builder-header">
+          <div>
+            <p class="hud__eyebrow">World Builder</p>
+            <p class="hud__body" data-builder-status>Use the hammer button to enter builder mode.</p>
+            <p class="hud__body hud__builder-meta" data-builder-meta></p>
+          </div>
+          <div class="hud__builder-actions">
+            <button class="hud__builder-action hud__builder-copy" type="button" data-builder-copy>Copy Layout JSON</button>
+            <button class="hud__builder-icon-button" type="button" data-builder-close aria-label="Close world builder" title="Close world builder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <div class="hud__builder-tabs" data-builder-tabs></div>
-        <div class="hud__builder-grid" data-builder-tiles></div>
-        <button class="hud__builder-button hud__builder-copy" type="button" data-builder-copy>Copy Layout JSON</button>
-        <section class="hud__builder-editor" data-builder-npc-editor>
-          <p class="hud__eyebrow">NPC Editor</p>
-          <label class="hud__field">
-            <span class="hud__field-label">Model</span>
-            <select class="hud__field-control" data-builder-npc-model></select>
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">Name</span>
-            <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">Interact Radius</span>
-            <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">Prompt</span>
-            <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
-          </label>
-        </section>
+        <div class="hud__builder-subtabs" data-builder-groups></div>
+        <div class="hud__builder-scroll">
+          <div class="hud__builder-grid" data-builder-tiles></div>
+          <section class="hud__builder-editor" data-builder-npc-editor>
+            <p class="hud__eyebrow">NPC Editor</p>
+            <label class="hud__field">
+              <span class="hud__field-label">Model</span>
+              <select class="hud__field-control" data-builder-npc-model></select>
+            </label>
+            <label class="hud__field">
+              <span class="hud__field-label">Name</span>
+              <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
+            </label>
+            <label class="hud__field">
+              <span class="hud__field-label">Interact Radius</span>
+              <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+            </label>
+            <label class="hud__field">
+              <span class="hud__field-label">Prompt</span>
+              <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
+            </label>
+          </section>
+        </div>
       </section>
       <section class="hud__interaction" data-interaction>
         <p class="hud__eyebrow">Interaction</p>
@@ -224,6 +251,7 @@ export class Hud {
   bindBuilderEvents({
     onToggleBuildMode,
     onSelectCategory,
+    onSelectGroup,
     onSelectTile,
     onCopyLayout,
     onRotateSelection,
@@ -246,6 +274,14 @@ export class Hud {
       onSelectCategory(button.dataset.builderCategory);
     });
 
+    this.builderGroups.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-builder-group]');
+      if (!button) {
+        return;
+      }
+      onSelectGroup(button.dataset.builderGroup);
+    });
+
     this.builderTiles.addEventListener('click', (event) => {
       const button = event.target.closest('[data-builder-index]');
       if (!button) {
@@ -256,6 +292,10 @@ export class Hud {
 
     this.builderCopy.addEventListener('click', () => {
       onCopyLayout();
+    });
+
+    this.builderClose.addEventListener('click', () => {
+      onToggleBuildMode();
     });
 
     this.builderSelectionRotate.addEventListener('click', () => {
@@ -312,40 +352,88 @@ export class Hud {
     });
   }
 
-  setBuilderState({ enabled, rotationQuarterTurns, selectedIndex, categories, activeCategoryId }) {
+  setBuilderState({
+    enabled,
+    statusText,
+    metaText,
+    tabs = [],
+    groupTabs = [],
+    sections = []
+  }) {
     this.builderRoot.classList.toggle('is-visible', enabled);
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter build mode';
-    const activeCategory = categories.find((entry) => entry.id === activeCategoryId) ?? categories[0];
-    const items = activeCategory?.items ?? [];
-    this.builderStatus.textContent = enabled
-      ? 'Builder active. Left click places the selected piece. Click any existing tile, prop, or NPC to edit it.'
-      : 'Use the hammer button to enter builder mode.';
-    this.builderMeta.textContent = enabled
-      ? `${activeCategory?.description ?? ''} Rotation: ${rotationQuarterTurns * 90}deg | WASD pans | Mouse wheel zooms | Delete removes selected`
-      : 'When active, use tabs to switch layers and 1-9 to choose a piece.';
+    this.builderStatus.textContent = statusText;
+    this.builderMeta.textContent = metaText;
 
-    this.builderTabs.innerHTML = categories.map((category) => `
+    this.builderTabs.innerHTML = tabs.map((tab) => `
       <button
-        class="hud__builder-chip${category.id === activeCategoryId ? ' is-active' : ''}"
+        class="hud__builder-chip${tab.active ? ' is-active' : ''}"
         type="button"
-        data-builder-category="${category.id}"
+        data-builder-category="${tab.id}"
       >
-        ${category.label}
+        <span>${tab.label}</span>
+        <span class="hud__builder-chip-count">${tab.count}</span>
       </button>
     `).join('');
 
-    this.builderTiles.innerHTML = items.map((tile, index) => `
-      <button
-        class="hud__builder-button${index === selectedIndex ? ' is-active' : ''}"
-        type="button"
-        data-builder-index="${index}"
-      >
-        ${index < 9 ? `<span class="hud__builder-key">${index + 1}</span>` : ''}
-        <span>${tile.label}</span>
-      </button>
+    this.builderGroups.innerHTML = groupTabs.map((group) => `
+        <button
+          class="hud__builder-subchip${group.active ? ' is-active' : ''}"
+          type="button"
+          data-builder-group="${group.id}"
+        >
+          <span>${group.label}</span>
+          <span class="hud__builder-chip-count">${group.count ?? 0}</span>
+        </button>
+      `).join('');
+
+    this.builderTiles.innerHTML = sections.map((section) => `
+      <section class="hud__builder-section">
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">${section.label}</p>
+          <span class="hud__builder-section-count">${section.count}</span>
+        </div>
+        <div class="hud__builder-card-grid">
+          ${section.cards.map((card) => {
+            const preview = this.builderPreviewImages.get(card.previewId);
+            return `
+              <button
+                class="hud__builder-card${card.selected ? ' is-active' : ''}"
+                type="button"
+                data-builder-index="${card.sourceIndex}"
+              >
+                ${card.shortcut ? `<span class="hud__builder-key hud__builder-card-key">${card.shortcut}</span>` : ''}
+                <span class="hud__builder-thumb" data-builder-preview="${card.previewId}">
+                  ${preview
+                    ? `<img class="hud__builder-thumb-image" src="${preview}" alt="${card.label}" loading="lazy" />`
+                    : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(card.label)}</span>`}
+                </span>
+                <span class="hud__builder-card-copy">
+                  <span class="hud__builder-card-title">${card.label}</span>
+                </span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </section>
     `).join('');
+  }
+
+  setBuilderPreviewImage(itemId, src) {
+    if (!itemId || !src) {
+      return;
+    }
+
+    this.builderPreviewImages.set(itemId, src);
+
+    const node = this.builderTiles.querySelector(`[data-builder-preview="${itemId}"]`);
+    if (!node) {
+      return;
+    }
+
+    node.innerHTML = `<img class="hud__builder-thumb-image" src="${src}" alt="" loading="lazy" />`;
   }
 
   setBuilderSelection(selection) {

@@ -1,48 +1,240 @@
-import { assets } from './assetManifest.js';
+import { cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
 export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
+const TILE_GROUPS = Object.freeze({
+  streets: 'Streets',
+  lots: 'Lots & Buildings',
+  parks: 'Parks'
+});
+
+const PROP_GROUPS = Object.freeze({
+  street: 'Street',
+  greenery: 'Greenery',
+  storage: 'Storage',
+  vehicles: 'Vehicles',
+  utilities: 'Utilities'
+});
+
+const CITY_TILE_DEFINITIONS = Object.freeze([
+  { id: 'road_straight', assetName: 'road_straight', group: 'streets' },
+  { id: 'road_corner', assetName: 'road_corner', group: 'streets' },
+  { assetName: 'road_corner_curved', group: 'streets' },
+  { id: 'road_tsplit', assetName: 'road_tsplit', group: 'streets' },
+  { id: 'road_cross', assetName: 'road_straight_crossing', label: 'Road Cross', group: 'streets' },
+  { id: 'road_junction', assetName: 'road_junction', label: 'Road Junction', group: 'streets' },
+  { id: 'lot_base', assetName: 'base', label: 'Base Lot', group: 'lots' },
+  { id: 'building_a', assetName: 'building_A', group: 'lots' },
+  { id: 'building_a_without_base', assetName: 'building_A_withoutBase', group: 'lots' },
+  { id: 'building_b', assetName: 'building_B', group: 'lots' },
+  { id: 'building_b_without_base', assetName: 'building_B_withoutBase', group: 'lots' },
+  { id: 'building_c', assetName: 'building_C', group: 'lots' },
+  { id: 'building_c_without_base', assetName: 'building_C_withoutBase', group: 'lots' },
+  { id: 'building_d', assetName: 'building_D', group: 'lots' },
+  { id: 'building_d_without_base', assetName: 'building_D_withoutBase', group: 'lots' },
+  { id: 'building_e', assetName: 'building_E', group: 'lots' },
+  { id: 'building_e_without_base', assetName: 'building_E_withoutBase', group: 'lots' },
+  { id: 'building_f', assetName: 'building_F', group: 'lots' },
+  { id: 'building_f_without_base', assetName: 'building_F_withoutBase', group: 'lots' },
+  { id: 'building_g', assetName: 'building_G', group: 'lots' },
+  { id: 'building_g_without_base', assetName: 'building_G_withoutBase', group: 'lots' },
+  { id: 'building_h', assetName: 'building_H', group: 'lots' },
+  { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots' },
+  { assetName: 'park_base', group: 'parks' },
+  { assetName: 'park_base_decorated_bushes', group: 'parks' },
+  { assetName: 'park_base_decorated_trees', group: 'parks' },
+  { assetName: 'park_road_corner', group: 'parks' },
+  { assetName: 'park_road_corner_decorated', group: 'parks' },
+  { assetName: 'park_road_junction', group: 'parks' },
+  { assetName: 'park_road_junction_decorated_A', group: 'parks' },
+  { assetName: 'park_road_junction_decorated_B', group: 'parks' },
+  { assetName: 'park_road_junction_decorated_C', group: 'parks' },
+  { assetName: 'park_road_straight', group: 'parks' },
+  { assetName: 'park_road_straight_decorated_A', group: 'parks' },
+  { assetName: 'park_road_straight_decorated_B', group: 'parks' },
+  { assetName: 'park_road_tsplit', group: 'parks' },
+  { assetName: 'park_road_tsplit_decorated', group: 'parks' },
+  { assetName: 'park_wall_entry', group: 'parks' },
+  { assetName: 'park_wall_entry_decorated', group: 'parks' },
+  { assetName: 'park_wall_innerCorner', group: 'parks' },
+  { assetName: 'park_wall_innerCorner_decorated', group: 'parks' },
+  { assetName: 'park_wall_outerCorner', group: 'parks' },
+  { assetName: 'park_wall_outerCorner_decorated', group: 'parks' },
+  { assetName: 'park_wall_straight', group: 'parks' },
+  { assetName: 'park_wall_straight_decorated', group: 'parks' }
+]);
+
+const CITY_PROP_DEFINITIONS = Object.freeze([
+  { id: 'bench', assetName: 'bench', group: 'street', collision: false },
+  { id: 'bush', assetName: 'bush', group: 'greenery', collision: false },
+  { assetName: 'bush_A', group: 'greenery', collision: false },
+  { assetName: 'bush_B', group: 'greenery', collision: false },
+  { assetName: 'bush_C', group: 'greenery', collision: false },
+  { id: 'crate_a', assetName: 'box_A', group: 'storage' },
+  { id: 'crate_b', assetName: 'box_B', group: 'storage' },
+  { assetName: 'trash_A', group: 'storage' },
+  { assetName: 'trash_B', group: 'storage' },
+  { id: 'car_hatchback', assetName: 'car_hatchback', group: 'vehicles' },
+  { id: 'car_police', assetName: 'car_police', group: 'vehicles' },
+  { id: 'car_sedan', assetName: 'car_sedan', group: 'vehicles' },
+  { id: 'car_stationwagon', assetName: 'car_stationwagon', group: 'vehicles' },
+  { id: 'car_taxi', assetName: 'car_taxi', group: 'vehicles' },
+  { id: 'dumpster', assetName: 'dumpster', group: 'storage' },
+  { id: 'hydrant', assetName: 'firehydrant', label: 'Hydrant', group: 'utilities', collision: false },
+  { id: 'streetlight', assetName: 'streetlight', group: 'utilities', collision: false },
+  { assetName: 'streetlight_old_single', group: 'utilities', collision: false },
+  { assetName: 'streetlight_old_double', group: 'utilities', collision: false },
+  { id: 'traffic_light', assetName: 'trafficlight_A', label: 'Traffic Light A', group: 'utilities', collision: false },
+  { assetName: 'trafficlight_B', group: 'utilities', collision: false },
+  { assetName: 'trafficlight_C', group: 'utilities', collision: false },
+  { assetName: 'tree_A', group: 'greenery' },
+  { assetName: 'tree_B', group: 'greenery' },
+  { assetName: 'tree_C', group: 'greenery' },
+  { assetName: 'tree_D', group: 'greenery' },
+  { assetName: 'tree_E', group: 'greenery' },
+  { id: 'tower', assetName: 'watertower', label: 'Water Tower', group: 'utilities' }
+]);
+
+function titleCaseWords(value) {
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+
+      if (lower === 'tsplit') return 'T-Split';
+      if (lower === 'watertower') return 'Water Tower';
+      if (lower === 'firehydrant') return 'Fire Hydrant';
+      if (lower === 'streetlight') return 'Streetlight';
+      if (lower === 'trafficlight') return 'Traffic Light';
+      if (lower === 'without') return 'Without';
+      if (lower === 'base') return 'Base';
+      if (/^[a-h]$/i.test(part)) return part.toUpperCase();
+
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
+function formatCityLabel(assetName) {
+  return titleCaseWords(assetName).replace('Without Base', 'Without Base');
+}
+
+function tileSizeForAsset(assetName) {
+  return assetName.startsWith('building_')
+    ? [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]
+    : [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE];
+}
+
+function tileCollisionForAsset(assetName) {
+  return assetName.startsWith('building_')
+    || assetName.includes('_withoutBase')
+    || assetName.startsWith('park_wall_')
+    || assetName.includes('_decorated')
+    || assetName.endsWith('_trees');
+}
+
+function tilePaddingForAsset(assetName) {
+  if (assetName.startsWith('building_') || assetName.includes('_withoutBase')) {
+    return 0.5;
+  }
+
+  return tileCollisionForAsset(assetName) ? 0.24 : undefined;
+}
+
+function propSizeForAsset(assetName) {
+  if (assetName === 'bench') return [5, 2];
+  if (assetName === 'box_A' || assetName === 'box_B') return [3.2, 3.2];
+  if (assetName === 'dumpster') return [4.2, 4.2];
+  if (assetName === 'firehydrant') return [1.6, 1.6];
+  if (assetName.startsWith('car_')) return [6.5, 12];
+  if (assetName.startsWith('bush')) return [4, 4];
+  if (assetName.startsWith('tree_')) return [5.2, 5.2];
+  if (assetName.startsWith('streetlight_old_double')) return [3.8, 2.8];
+  if (assetName.startsWith('streetlight_old_single')) return [2.6, 2.6];
+  if (assetName.startsWith('streetlight')) return [2.3, 2.3];
+  if (assetName.startsWith('trafficlight')) return [2.3, 2.3];
+  if (assetName.startsWith('trash_')) return [1.8, 1.8];
+  if (assetName === 'watertower') return [9, 9];
+  return [4, 4];
+}
+
+function propCollisionForAsset(assetName) {
+  return assetName === 'box_A'
+    || assetName === 'box_B'
+    || assetName.startsWith('car_')
+    || assetName === 'dumpster'
+    || assetName.startsWith('tree_')
+    || assetName.startsWith('trash_')
+    || assetName === 'watertower';
+}
+
+function propPaddingForAsset(assetName) {
+  if (assetName.startsWith('car_')) {
+    return 0.25;
+  }
+
+  if (assetName === 'box_A' || assetName === 'box_B' || assetName === 'dumpster') {
+    return 0.2;
+  }
+
+  if (assetName === 'watertower') {
+    return 0.3;
+  }
+
+  if (assetName.startsWith('tree_') || assetName.startsWith('trash_')) {
+    return 0.18;
+  }
+
+  return undefined;
+}
+
+function createCityTile(definition) {
+  return {
+    id: definition.id ?? definition.assetName.toLowerCase(),
+    assetName: definition.assetName,
+    label: definition.label ?? formatCityLabel(definition.assetName),
+    asset: cityAsset(definition.assetName),
+    size: definition.size ?? tileSizeForAsset(definition.assetName),
+    layer: 'tile',
+    collision: definition.collision ?? tileCollisionForAsset(definition.assetName),
+    padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
+    groupId: definition.group,
+    groupLabel: TILE_GROUPS[definition.group]
+  };
+}
+
+function createCityProp(definition) {
+  return {
+    id: definition.id ?? definition.assetName.toLowerCase(),
+    assetName: definition.assetName,
+    label: definition.label ?? formatCityLabel(definition.assetName),
+    asset: cityAsset(definition.assetName),
+    size: definition.size ?? propSizeForAsset(definition.assetName),
+    layer: 'prop',
+    collision: definition.collision ?? propCollisionForAsset(definition.assetName),
+    padding: definition.padding ?? propPaddingForAsset(definition.assetName),
+    groupId: definition.group,
+    groupLabel: PROP_GROUPS[definition.group]
+  };
+}
+
 export const BUILDER_CATEGORIES = [
   {
     id: 'tiles',
     label: 'Tiles',
-    description: 'Snapped tilemap pieces for roads, lots, and buildings.',
-    items: [
-      { id: 'road_straight', label: 'Road Straight', asset: assets.city.roadStraight, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'road_corner', label: 'Road Corner', asset: assets.city.roadCorner, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'road_tsplit', label: 'Road T', asset: assets.city.roadTSplit, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'road_cross', label: 'Road Cross', asset: assets.city.roadCrossing, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'road_junction', label: 'Road End', asset: assets.city.roadJunction, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'lot_base', label: 'Base Lot', asset: assets.city.base, size: [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE], layer: 'tile', collision: false },
-      { id: 'building_a', label: 'Building A', asset: assets.city.buildingA, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_b', label: 'Building B', asset: assets.city.buildingB, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_c', label: 'Building C', asset: assets.city.buildingC, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_d', label: 'Building D', asset: assets.city.buildingD, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_e', label: 'Building E', asset: assets.city.buildingE, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_f', label: 'Building F', asset: assets.city.buildingF, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_g', label: 'Building G', asset: assets.city.buildingG, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 },
-      { id: 'building_h', label: 'Building H', asset: assets.city.buildingH, size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82], layer: 'tile', collision: true, padding: 0.5 }
-    ]
+    description: 'Snapped tile pieces for roads, lots, parks, and blockout structures.',
+    items: CITY_TILE_DEFINITIONS.map(createCityTile)
   },
   {
     id: 'props',
     label: 'Props',
-    description: 'Freely placed street dressing that sits on top of the tilemap.',
-    items: [
-      { id: 'bench', label: 'Bench', asset: assets.city.bench, size: [5, 2], layer: 'prop', collision: false },
-      { id: 'bush', label: 'Bush', asset: assets.city.bush, size: [4, 4], layer: 'prop', collision: false },
-      { id: 'crate_a', label: 'Crate A', asset: assets.city.boxA, size: [3.2, 3.2], layer: 'prop', collision: true, padding: 0.2 },
-      { id: 'crate_b', label: 'Crate B', asset: assets.city.boxB, size: [3.2, 3.2], layer: 'prop', collision: true, padding: 0.2 },
-      { id: 'car_sedan', label: 'Car Sedan', asset: assets.city.carSedan, size: [6.5, 12], layer: 'prop', collision: true, padding: 0.25 },
-      { id: 'car_taxi', label: 'Car Taxi', asset: assets.city.carTaxi, size: [6.5, 12], layer: 'prop', collision: true, padding: 0.25 },
-      { id: 'dumpster', label: 'Dumpster', asset: assets.city.dumpster, size: [4.2, 4.2], layer: 'prop', collision: true, padding: 0.2 },
-      { id: 'hydrant', label: 'Hydrant', asset: assets.city.firehydrant, size: [1.6, 1.6], layer: 'prop', collision: false },
-      { id: 'streetlight', label: 'Streetlight', asset: assets.city.streetlight, size: [2.3, 2.3], layer: 'prop', collision: false },
-      { id: 'traffic_light', label: 'Traffic Light', asset: assets.city.trafficLight, size: [2.3, 2.3], layer: 'prop', collision: false },
-      { id: 'tower', label: 'Watertower', asset: assets.city.watertower, size: [9, 9], layer: 'prop', collision: true, padding: 0.3 }
-    ]
+    description: 'Free-place dressing pieces for streets, greenery, storage, vehicles, and utilities.',
+    items: CITY_PROP_DEFINITIONS.map(createCityProp)
   },
   {
     id: 'npcs',
@@ -57,6 +249,8 @@ export const BUILDER_CATEGORIES = [
       layer: 'npc',
       collision: true,
       padding: 0.1,
+      groupId: 'citizens',
+      groupLabel: 'Citizens',
       interactionOffset: model.interactionOffset,
       interactionRadius: model.interactionRadius,
       collisionRadius: model.collisionRadius

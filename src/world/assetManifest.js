@@ -1,6 +1,8 @@
 import { EMOTES_BY_ID } from '../player/emotes.js';
 
 export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`, import.meta.url).href;
+export const cityAsset = (modelName) =>
+  assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', `${modelName}.gltf`);
 
 export const assets = {
   mixamo: {
@@ -26,30 +28,30 @@ export const assets = {
     )
   },
   city: {
-    base: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'base.gltf'),
-    bench: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'bench.gltf'),
-    boxA: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'box_A.gltf'),
-    boxB: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'box_B.gltf'),
-    bush: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'bush.gltf'),
-    buildingA: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_A.gltf'),
-    buildingB: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_B.gltf'),
-    buildingC: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_C.gltf'),
-    buildingD: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_D.gltf'),
-    buildingE: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_E.gltf'),
-    buildingF: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_F.gltf'),
-    buildingG: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_G.gltf'),
-    buildingH: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'building_H.gltf'),
-    carSedan: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'car_sedan.gltf'),
-    carTaxi: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'car_taxi.gltf'),
-    dumpster: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'dumpster.gltf'),
-    firehydrant: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'firehydrant.gltf'),
-    roadCorner: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'road_corner.gltf'),
-    roadCrossing: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'road_straight_crossing.gltf'),
-    roadJunction: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'road_junction.gltf'),
-    roadStraight: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'road_straight.gltf'),
-    roadTSplit: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'road_tsplit.gltf'),
-    streetlight: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'streetlight.gltf'),
-    trafficLight: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'trafficlight_A.gltf'),
-    watertower: assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', 'watertower.gltf')
+    base: cityAsset('base'),
+    bench: cityAsset('bench'),
+    boxA: cityAsset('box_A'),
+    boxB: cityAsset('box_B'),
+    bush: cityAsset('bush'),
+    buildingA: cityAsset('building_A'),
+    buildingB: cityAsset('building_B'),
+    buildingC: cityAsset('building_C'),
+    buildingD: cityAsset('building_D'),
+    buildingE: cityAsset('building_E'),
+    buildingF: cityAsset('building_F'),
+    buildingG: cityAsset('building_G'),
+    buildingH: cityAsset('building_H'),
+    carSedan: cityAsset('car_sedan'),
+    carTaxi: cityAsset('car_taxi'),
+    dumpster: cityAsset('dumpster'),
+    firehydrant: cityAsset('firehydrant'),
+    roadCorner: cityAsset('road_corner'),
+    roadCrossing: cityAsset('road_straight_crossing'),
+    roadJunction: cityAsset('road_junction'),
+    roadStraight: cityAsset('road_straight'),
+    roadTSplit: cityAsset('road_tsplit'),
+    streetlight: cityAsset('streetlight'),
+    trafficLight: cityAsset('trafficlight_A'),
+    watertower: cityAsset('watertower')
   }
 };

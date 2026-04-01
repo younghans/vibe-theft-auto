@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getNpcModelById, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
 import { WorldRenderer } from './WorldRenderer.js';
 import { WorldState } from './WorldState.js';
@@ -70,6 +71,60 @@ function toRotationY(rotationQuarterTurns) {
   return rotationQuarterTurns * (Math.PI / 2);
 }
 
+function collectBuilderGroups(items) {
+  const groups = [];
+  const groupMap = new Map();
+
+  for (const item of items) {
+    const id = item.groupId ?? 'misc';
+    if (!groupMap.has(id)) {
+      const group = {
+        id,
+        label: item.groupLabel ?? 'Misc',
+        count: 0
+      };
+      groupMap.set(id, group);
+      groups.push(group);
+    }
+
+    groupMap.get(id).count += 1;
+  }
+
+  return groups;
+}
+
+function groupVisibleEntries(entries) {
+  const sections = [];
+  const sectionMap = new Map();
+
+  for (const entry of entries) {
+    const id = entry.item.groupId ?? 'misc';
+    if (!sectionMap.has(id)) {
+      const section = {
+        id,
+        label: entry.item.groupLabel ?? 'Misc',
+        cards: []
+      };
+      sectionMap.set(id, section);
+      sections.push(section);
+    }
+
+    sectionMap.get(id).cards.push({
+      id: entry.item.id,
+      label: entry.item.label,
+      previewId: entry.item.id,
+      sourceIndex: entry.index,
+      selected: false,
+      shortcut: entry.visibleIndex < 9 ? entry.visibleIndex + 1 : null
+    });
+  }
+
+  return sections.map((section) => ({
+    ...section,
+    count: section.cards.length
+  }));
+}
+
 function createDefaultEditorState() {
   return {
     enabled: false,
@@ -77,6 +132,7 @@ function createDefaultEditorState() {
     zoom: 1,
     pointer: new THREE.Vector2(2, 2),
     activeCategoryId: BUILDER_CATEGORIES[0].id,
+    activeGroupIdByCategory: Object.fromEntries(BUILDER_CATEGORIES.map((category) => [category.id, 'all'])),
     activeItemIndex: 0,
     rotationQuarterTurns: 0,
     hover: {
@@ -109,8 +165,12 @@ export class WorldBuilder {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.previewLoadToken = 0;
+    this.builderPreviewCategoryId = null;
+    this.builderPreviewGroupId = null;
+    this.builderPreviewGeneration = 0;
     this.worldState = new WorldState();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
+    this.builderPreviewRenderer = new BuilderPreviewRenderer({ library });
 
     this.previewRoot = new THREE.Group();
     this.previewRoot.visible = false;
@@ -164,6 +224,7 @@ export class WorldBuilder {
     this.hud.bindBuilderEvents({
       onToggleBuildMode: () => this.onToggleBuildMode(),
       onSelectCategory: (categoryId) => this.selectCategory(categoryId),
+      onSelectGroup: (groupId) => this.selectGroup(groupId),
       onSelectTile: (index) => this.selectItem(index),
       onCopyLayout: () => this.copyLayoutToClipboard(),
       onRotateSelection: () => this.rotateSelectedPlacement(),
@@ -176,7 +237,7 @@ export class WorldBuilder {
       }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId)
     });
-    this.hud.setBuilderState(this.getHudState());
+    this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
   }
@@ -193,14 +254,109 @@ export class WorldBuilder {
     return getBuilderItem(this.state.activeCategoryId, this.state.activeItemIndex);
   }
 
-  getHudState() {
+  get canEditHoveredTiles() {
+    return this.state.activeCategoryId === 'tiles';
+  }
+
+  get activeGroupId() {
+    return this.state.activeGroupIdByCategory[this.state.activeCategoryId] ?? 'all';
+  }
+
+  getVisibleCategoryEntries(categoryId = this.state.activeCategoryId) {
+    const category = BUILDER_CATEGORIES.find((entry) => entry.id === categoryId) ?? BUILDER_CATEGORIES[0];
+    const activeGroupId = this.state.activeGroupIdByCategory[category.id] ?? 'all';
+    const entries = category.items.map((item, index) => ({ item, index }));
+
+    if (activeGroupId === 'all') {
+      return entries;
+    }
+
+    return entries.filter(({ item }) => item.groupId === activeGroupId);
+  }
+
+  getBuilderViewModel() {
+    const activeCategory = this.activeCategory;
+    const visibleEntries = this.getVisibleCategoryEntries()
+      .map((entry, visibleIndex) => ({ ...entry, visibleIndex }));
+    const selectedEntry = visibleEntries.find((entry) => entry.index === this.state.activeItemIndex) ?? visibleEntries[0] ?? null;
+    const selectedItem = selectedEntry?.item ?? this.activeItem ?? null;
+    const tabs = BUILDER_CATEGORIES.map((category) => ({
+      id: category.id,
+      label: category.label,
+      count: category.items.length,
+      active: category.id === this.state.activeCategoryId
+    }));
+    const groupTabs = [
+      {
+        id: 'all',
+        label: 'All',
+        count: activeCategory.items.length,
+        active: this.activeGroupId === 'all'
+      },
+      ...collectBuilderGroups(activeCategory.items).map((group) => ({
+        ...group,
+        active: group.id === this.activeGroupId
+      }))
+    ];
+    const sections = groupVisibleEntries(visibleEntries).map((section) => ({
+      ...section,
+      cards: section.cards.map((card) => ({
+        ...card,
+        selected: card.sourceIndex === this.state.activeItemIndex
+      }))
+    }));
+
     return {
       enabled: this.state.enabled,
-      rotationQuarterTurns: this.state.rotationQuarterTurns,
-      selectedIndex: this.state.activeItemIndex,
-      categories: BUILDER_CATEGORIES,
-      activeCategoryId: this.state.activeCategoryId
+      statusText: this.state.enabled
+        ? 'Builder active. Left click places the selected piece. Click any existing tile, prop, or NPC to edit it.'
+        : 'Use the hammer button to enter builder mode.',
+      metaText: this.state.enabled
+        ? `${activeCategory.description} Selected: ${selectedItem?.label ?? 'None'} | ${visibleEntries.length} items | Rotation ${this.state.rotationQuarterTurns * 90}deg`
+        : 'When active, use tabs to switch layers and 1-9 to choose a piece.',
+      tabs,
+      groupTabs,
+      sections
     };
+  }
+
+  updateBuilderHud({ syncPreviews = false } = {}) {
+    this.hud.setBuilderState(this.getBuilderViewModel());
+    if (
+      this.state.enabled
+      && (
+        syncPreviews
+        || this.builderPreviewCategoryId !== this.state.activeCategoryId
+        || this.builderPreviewGroupId !== this.activeGroupId
+      )
+    ) {
+      this.builderPreviewCategoryId = this.state.activeCategoryId;
+      this.builderPreviewGroupId = this.activeGroupId;
+      void this.syncBuilderCatalogPreviews();
+    }
+  }
+
+  async syncBuilderCatalogPreviews() {
+    const categoryId = this.state.activeCategoryId;
+    const groupId = this.activeGroupId;
+    const items = this.getVisibleCategoryEntries(categoryId).map(({ item }) => item);
+    const generation = ++this.builderPreviewGeneration;
+
+    for (const item of items) {
+      try {
+        const preview = await this.builderPreviewRenderer.render(item);
+        if (
+          generation !== this.builderPreviewGeneration
+          || categoryId !== this.state.activeCategoryId
+          || groupId !== this.activeGroupId
+        ) {
+          return;
+        }
+        this.hud.setBuilderPreviewImage(item.id, preview);
+      } catch (error) {
+        console.warn(`Could not render builder preview for ${item.id}.`, error);
+      }
+    }
   }
 
   getCollisionBoxes() {
@@ -293,34 +449,66 @@ export class WorldBuilder {
       this.state.pointer.set(0, 0);
     }
 
-    this.hud.setBuilderState(this.getHudState());
+    this.updateBuilderHud({ syncPreviews: enabled });
 
     if (enabled) {
       this.resolveHoverState();
       await this.syncPreviewToState(true);
       this.updatePreviewTransform();
     } else {
+      this.builderPreviewCategoryId = null;
+      this.builderPreviewGroupId = null;
       this.hud.setBuilderSelection(null);
     }
   }
 
   selectCategory(categoryId) {
     this.state.activeCategoryId = categoryId;
-    this.state.activeItemIndex = 0;
-    this.hud.setBuilderState(this.getHudState());
+    this.state.activeItemIndex = this.getVisibleCategoryEntries(categoryId)[0]?.index ?? 0;
+    this.updateBuilderHud({ syncPreviews: true });
+    void this.syncPreviewToState(true);
+  }
+
+  selectGroup(groupId) {
+    this.state.activeGroupIdByCategory[this.state.activeCategoryId] = groupId;
+    this.ensureActiveItemVisible();
+    this.updateBuilderHud({ syncPreviews: true });
     void this.syncPreviewToState(true);
   }
 
   selectItem(index) {
     const maxIndex = this.activeCategory.items.length - 1;
     this.state.activeItemIndex = THREE.MathUtils.clamp(index, 0, maxIndex);
-    this.hud.setBuilderState(this.getHudState());
+    this.updateBuilderHud();
     void this.syncPreviewToState(true);
+  }
+
+  ensureActiveItemVisible() {
+    const visibleEntries = this.getVisibleCategoryEntries();
+
+    if (visibleEntries.length === 0) {
+      this.state.activeItemIndex = 0;
+      return;
+    }
+
+    if (!visibleEntries.some(({ index }) => index === this.state.activeItemIndex)) {
+      this.state.activeItemIndex = visibleEntries[0].index;
+    }
+  }
+
+  selectVisibleItem(visibleIndex) {
+    const visibleEntries = this.getVisibleCategoryEntries();
+    const entry = visibleEntries[visibleIndex];
+    if (!entry) {
+      return;
+    }
+
+    this.selectItem(entry.index);
   }
 
   rotate(delta) {
     this.state.rotationQuarterTurns = (this.state.rotationQuarterTurns + delta + 4) % 4;
-    this.hud.setBuilderState(this.getHudState());
+    this.updateBuilderHud();
   }
 
   update(deltaSeconds, input) {
@@ -341,10 +529,14 @@ export class WorldBuilder {
       this.deleteSelectedPlacement();
     }
     if (input.consume('BracketRight')) {
-      this.selectItem((this.state.activeItemIndex + 1) % this.activeCategory.items.length);
+      const visibleEntries = this.getVisibleCategoryEntries();
+      const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+      this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
     }
     if (input.consume('BracketLeft')) {
-      this.selectItem((this.state.activeItemIndex - 1 + this.activeCategory.items.length) % this.activeCategory.items.length);
+      const visibleEntries = this.getVisibleCategoryEntries();
+      const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+      this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
     }
     if (input.consume('Tab')) {
       const currentIndex = BUILDER_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
@@ -352,9 +544,10 @@ export class WorldBuilder {
       this.selectCategory(nextCategory.id);
     }
 
-    for (let i = 0; i < Math.min(9, this.activeCategory.items.length); i += 1) {
+    const visibleEntries = this.getVisibleCategoryEntries();
+    for (let i = 0; i < Math.min(9, visibleEntries.length); i += 1) {
       if (input.consume(`Digit${i + 1}`)) {
-        this.selectItem(i);
+        this.selectVisibleItem(i);
       }
     }
 
@@ -382,7 +575,9 @@ export class WorldBuilder {
 
     const hoverCell = snapToCell(hit);
     const hoveredPropId = this.worldRenderer.pickPlacementId(this.state.pointer, this.camera);
-    const hoveredTile = this.worldState.getPlacementAtCell(hoverCell.x, hoverCell.z);
+    const hoveredTile = this.canEditHoveredTiles
+      ? this.worldState.getPlacementAtCell(hoverCell.x, hoverCell.z)
+      : null;
 
     this.state.hover.point = hit;
     this.state.hover.cell = hoverCell;

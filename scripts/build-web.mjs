@@ -4,49 +4,6 @@ import process from 'node:process';
 
 const root = process.cwd();
 const dist = path.join(root, 'dist');
-const KAYKIT_CITY_MODELS = [
-  'base',
-  'bench',
-  'box_A',
-  'box_B',
-  'bush',
-  'building_A',
-  'building_A_withoutBase',
-  'building_B',
-  'building_B_withoutBase',
-  'building_C',
-  'building_C_withoutBase',
-  'building_D',
-  'building_D_withoutBase',
-  'building_E',
-  'building_E_withoutBase',
-  'building_F',
-  'building_F_withoutBase',
-  'building_G',
-  'building_G_withoutBase',
-  'building_H',
-  'building_H_withoutBase',
-  'car_hatchback',
-  'car_police',
-  'car_sedan',
-  'car_stationwagon',
-  'car_taxi',
-  'dumpster',
-  'firehydrant',
-  'road_corner',
-  'road_corner_curved',
-  'road_junction',
-  'road_straight',
-  'road_straight_crossing',
-  'road_tsplit',
-  'streetlight',
-  'trafficlight_A',
-  'trafficlight_B',
-  'trafficlight_C',
-  'trash_A',
-  'trash_B',
-  'watertower'
-];
 
 async function resetDist() {
   await fs.rm(dist, { recursive: true, force: true });
@@ -81,12 +38,7 @@ async function copyKayKitCityBits() {
   const targetGltf = path.join(targetRoot, 'Assets', 'gltf');
 
   await copyFile(path.join(sourceRoot, 'License.txt'), path.join(targetRoot, 'License.txt'));
-  await copyFile(path.join(sourceGltf, 'citybits_texture.png'), path.join(targetGltf, 'citybits_texture.png'));
-
-  for (const modelName of KAYKIT_CITY_MODELS) {
-    await copyFile(path.join(sourceGltf, `${modelName}.gltf`), path.join(targetGltf, `${modelName}.gltf`));
-    await copyFile(path.join(sourceGltf, `${modelName}.bin`), path.join(targetGltf, `${modelName}.bin`));
-  }
+  await copyDirectory(sourceGltf, targetGltf);
 }
 
 await resetDist();
