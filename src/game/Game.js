@@ -17,6 +17,7 @@ import { createNpcService } from '../npc/createNpcService.js';
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const EMOTE_MENU_DEADZONE = 54;
+const CHAT_BUBBLE_LIFETIME_MS = 5000;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 
 export class Game {
@@ -48,8 +49,6 @@ export class Game {
     this.pendingRemotePlayers = new Set();
     this.currentInteractable = null;
     this.currentLayout = null;
-    this.currentNpcInteraction = null;
-    this.activeChatNpcId = null;
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
@@ -61,16 +60,18 @@ export class Game {
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),
-      npcs: new Map(),
-      transcripts: new Map()
+      npcs: new Map()
     };
     this.emoteMenuOpen = false;
+    this.projectedSpeechPosition = new THREE.Vector3();
 
     this.hud.bindInteractionEvents({
-      onAction: (actionId) => void this.handleInteractionAction(actionId),
-      onCloseInteraction: () => this.closeNpcInteraction(),
-      onSendChat: (message) => void this.handleChatSubmit(message),
-      onCloseChat: () => void this.closeNpcChat()
+      onAction: () => {},
+      onCloseInteraction: () => this.hud.hideInteractionMenu()
+    });
+    this.hud.bindQuickChatEvents({
+      onSubmit: (message) => void this.handleQuickChatSubmit(message),
+      onCancel: () => this.closeQuickChat()
     });
 
     window.addEventListener('resize', () => this.onResize());
@@ -83,8 +84,7 @@ export class Game {
 
     const nextEnabled = !this.worldBuilder.enabled;
     if (nextEnabled) {
-      void this.closeNpcChat();
-      this.closeNpcInteraction();
+      this.closeQuickChat();
     }
     void this.worldBuilder.setEnabled(nextEnabled);
     this.hud.showToast(nextEnabled ? 'World builder enabled.' : 'World builder disabled.');
@@ -128,7 +128,6 @@ export class Game {
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
         void this.syncRemotePlayers();
-        this.refreshNpcUi();
       });
 
       const sharedLayout = await this.npcService.getWorldLayout();
@@ -144,9 +143,9 @@ export class Game {
       this.scene.add(this.player.object);
 
       if (this.npcServiceState.transport === 'colyseus') {
-        this.hud.showToast('Connected to the multiplayer room. Shared building, NPC chat, and player presence are live.');
+        this.hud.showToast('Connected to the multiplayer room. Shared building, world chat, NPC replies, and player presence are live.');
       } else {
-        this.hud.showToast('Running local mock multiplayer. Shared world edits work locally without Colyseus.');
+        this.hud.showToast('Running local mock multiplayer. World chat and NPC replies work locally without Colyseus.');
       }
 
       this.hud.hideLoading();
@@ -333,7 +332,7 @@ export class Game {
   updateEmoteMenu() {
     const holdingEmoteKey = this.input.isPressed('KeyB');
 
-    if (holdingEmoteKey && !this.worldBuilder.enabled && !this.isNpcUiOpen()) {
+    if (holdingEmoteKey && !this.worldBuilder.enabled && !this.hud.isQuickChatOpen()) {
       const selection = this.getActiveEmoteSelection();
       this.emoteMenuOpen = true;
       this.hud.setEmoteMenuState({
@@ -362,12 +361,12 @@ export class Game {
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
     const emoteMenuActive = this.updateEmoteMenu();
 
-    if (this.input.consume('Escape')) {
-      if (this.activeChatNpcId) {
-        void this.closeNpcChat();
-      } else if (this.currentNpcInteraction) {
-        this.closeNpcInteraction();
-      }
+    if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
+      this.closeQuickChat();
+    }
+
+    if (this.input.consume('Enter') && !this.worldBuilder.enabled && !emoteMenuActive && !this.hud.isQuickChatOpen()) {
+      this.openQuickChat();
     }
 
     this.worldBuilder.update(deltaSeconds, this.input);
@@ -381,7 +380,7 @@ export class Game {
         ...this.worldBuilder.getCollisionBoxes()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
-      const playerInput = (emoteMenuActive || this.isNpcUiOpen()) ? ZERO_INPUT : this.input;
+      const playerInput = (emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
       this.updateCamera();
       this.npcService?.setPlayerTransform(
@@ -390,7 +389,7 @@ export class Game {
         this.player.getAnimationSyncState()
       );
 
-      if (emoteMenuActive || this.isNpcUiOpen()) {
+      if (emoteMenuActive || this.hud.isQuickChatOpen()) {
         this.hud.setPrompt(null);
       } else {
         this.updateInteraction();
@@ -398,6 +397,7 @@ export class Game {
     }
 
     this.updateRemotePlayers(deltaSeconds);
+    this.updateSpeechBubbles();
     this.renderer.render(this.scene, this.camera);
     this.input.endFrame();
   }
@@ -412,15 +412,11 @@ export class Game {
     this.worldBuilder.updateCamera(this.camera);
   }
 
-  isNpcUiOpen() {
-    return Boolean(this.currentNpcInteraction || this.activeChatNpcId);
-  }
-
   updateInteraction() {
     const interactables = [
       ...(this.staticInteractables ?? []),
       ...this.worldBuilder.getInteractables()
-    ];
+    ].filter((interactable) => interactable.kind !== 'npc');
     let nearest = null;
     let nearestDistance = Infinity;
 
@@ -439,125 +435,131 @@ export class Game {
       return;
     }
 
-    if (nearest.kind === 'npc') {
-      this.openNpcInteraction(nearest);
-      return;
-    }
-
     this.hud.showToast(nearest.actionText);
   }
 
-  openNpcInteraction(interactable) {
-    this.currentNpcInteraction = interactable;
-    this.refreshNpcUi();
+  openQuickChat() {
+    this.hud.setQuickChatState({ visible: true });
+    this.hud.focusQuickChatInput();
   }
 
-  closeNpcInteraction() {
-    this.currentNpcInteraction = null;
-    this.hud.hideInteractionMenu();
+  closeQuickChat() {
+    this.hud.setQuickChatState({ visible: false });
+    this.hud.clearQuickChatInput();
+    this.hud.blurQuickChatInput();
   }
 
-  async handleInteractionAction(actionId) {
-    if (actionId === 'close') {
-      this.closeNpcInteraction();
-      return;
-    }
-
-    if (actionId !== 'chat' || !this.currentNpcInteraction) {
-      return;
-    }
-
-    const result = await this.npcService.beginInteract(this.currentNpcInteraction.npcId);
-    if (!result.ok) {
-      this.hud.showToast(result.error);
-      return;
-    }
-
-    this.activeChatNpcId = this.currentNpcInteraction.npcId;
-    this.closeNpcInteraction();
-    this.refreshNpcUi();
-    this.hud.focusChatInput();
-  }
-
-  async handleChatSubmit(message) {
+  async handleQuickChatSubmit(message) {
     const trimmed = message.trim();
-    if (!trimmed || !this.activeChatNpcId) {
+    if (!trimmed) {
+      this.closeQuickChat();
       return;
     }
 
-    const result = await this.npcService.sendChat(this.activeChatNpcId, trimmed);
+    const result = await this.npcService.say(trimmed);
     if (!result.ok) {
       this.hud.showToast(result.error);
-      this.refreshNpcUi(result.error);
       return;
     }
 
-    this.hud.clearChatInput();
-    this.refreshNpcUi();
+    this.closeQuickChat();
   }
 
-  async closeNpcChat() {
-    if (!this.activeChatNpcId) {
-      this.hud.setChatState({ visible: false });
-      return;
+  collectSpeechBubble(id, text, startedAt, anchor, variant, label = '') {
+    if (!text || !startedAt || (Date.now() - startedAt) > CHAT_BUBBLE_LIFETIME_MS) {
+      return null;
     }
 
-    const npcId = this.activeChatNpcId;
-    this.activeChatNpcId = null;
-    this.hud.setChatState({ visible: false });
-    await this.npcService.endInteract(npcId);
-  }
-
-  refreshNpcUi(error = '') {
-    if (this.currentNpcInteraction) {
-      const npcState = this.npcServiceState.npcs.get(this.currentNpcInteraction.npcId) ?? this.currentNpcInteraction.npc;
-      const occupiedByOther = npcState.currentSpeakerSessionId && npcState.currentSpeakerSessionId !== this.npcServiceState.sessionId;
-      this.hud.showInteractionMenu({
-        title: npcState.name,
-        subtitle: occupiedByOther
-          ? `${npcState.name} is already in a public conversation.`
-          : `Public ${this.npcServiceState.transport === 'colyseus' ? 'room' : 'local'} chat. Everyone in the room sees the transcript.`,
-        actions: [
-          {
-            id: 'chat',
-            label: occupiedByOther ? 'Occupied' : 'Chat',
-            primary: true,
-            disabled: Boolean(occupiedByOther)
-          },
-          {
-            id: 'close',
-            label: 'Close',
-            primary: false,
-            disabled: false
-          }
-        ]
-      });
-    } else {
-      this.hud.hideInteractionMenu();
+    const projected = this.projectSpeechAnchor(anchor);
+    if (!projected) {
+      return null;
     }
 
-    if (!this.activeChatNpcId) {
-      this.hud.setChatState({ visible: false });
-      return;
-    }
-
-    const npc = this.npcServiceState.npcs.get(this.activeChatNpcId);
-    if (!npc) {
-      this.activeChatNpcId = null;
-      this.hud.setChatState({ visible: false });
-      return;
-    }
-
-    const transcript = this.npcServiceState.transcripts.get(this.activeChatNpcId) ?? [];
-    const occupiedByOther = npc.currentSpeakerSessionId && npc.currentSpeakerSessionId !== this.npcServiceState.sessionId;
-    this.hud.setChatState({
+    return {
+      id,
+      text,
+      label,
+      variant,
       visible: true,
-      title: npc.name,
-      subtitle: `Model: ${npc.modelId} | ${this.npcServiceState.transport === 'colyseus' ? 'Shared room' : 'Local mock'} conversation`,
-      entries: transcript,
-      busy: npc.busy,
-      error,
-      canSend: !occupiedByOther
-    });
+      screenX: projected.x,
+      screenY: projected.y
+    };
+  }
+
+  projectSpeechAnchor(worldPosition) {
+    const projected = this.projectedSpeechPosition.copy(worldPosition).project(this.camera);
+    if (projected.z < -1 || projected.z > 1) {
+      return null;
+    }
+
+    const x = ((projected.x + 1) * 0.5) * window.innerWidth;
+    const y = ((-projected.y + 1) * 0.5) * window.innerHeight;
+    if (x < -160 || x > window.innerWidth + 160 || y < -160 || y > window.innerHeight + 160) {
+      return null;
+    }
+
+    return { x, y };
+  }
+
+  updateSpeechBubbles() {
+    if (!this.player || !this.worldBuilder) {
+      this.hud.setSpeechBubbles([]);
+      return;
+    }
+
+    const bubbles = [];
+    const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
+    if (localPlayerState) {
+      const bubble = this.collectSpeechBubble(
+        `player:${this.npcServiceState.sessionId}`,
+        localPlayerState.chatText,
+        localPlayerState.chatStartedAt,
+        this.player.getSpeechAnchorWorldPosition(),
+        'self'
+      );
+      if (bubble) {
+        bubbles.push(bubble);
+      }
+    }
+
+    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+      const playerState = this.npcServiceState.players.get(sessionId);
+      if (!playerState) {
+        continue;
+      }
+
+      const bubble = this.collectSpeechBubble(
+        `player:${sessionId}`,
+        playerState.chatText,
+        playerState.chatStartedAt,
+        avatar.getSpeechAnchorWorldPosition(),
+        'player'
+      );
+      if (bubble) {
+        bubbles.push(bubble);
+      }
+    }
+
+    const npcSpeechAnchors = this.worldBuilder.getNpcSpeechAnchors();
+    for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
+      const anchor = npcSpeechAnchors.get(npcId);
+      if (!anchor) {
+        continue;
+      }
+
+      const bubble = this.collectSpeechBubble(
+        `npc:${npcId}`,
+        npcState.chatText,
+        npcState.chatStartedAt,
+        anchor,
+        'npc',
+        npcState.name
+      );
+      if (bubble) {
+        bubbles.push(bubble);
+      }
+    }
+
+    this.hud.setSpeechBubbles(bubbles);
   }
 }

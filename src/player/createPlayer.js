@@ -200,6 +200,11 @@ export async function createPlayer(library, {
     radius: PLAYER_RADIUS,
     position: anchor.position,
     sockets,
+    getSpeechAnchorWorldPosition(target = new THREE.Vector3()) {
+      anchor.getWorldPosition(target);
+      target.y += PLAYER_HEIGHT + 1.4;
+      return target;
+    },
     getAnimationSyncState() {
       return {
         emoteId: activeEmoteId ?? '',

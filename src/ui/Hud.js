@@ -48,20 +48,17 @@ export class Hud {
     this.interactionTitle = this.overlay.querySelector('[data-interaction-title]');
     this.interactionSubtitle = this.overlay.querySelector('[data-interaction-subtitle]');
     this.interactionActions = this.overlay.querySelector('[data-interaction-actions]');
-    this.chatRoot = this.overlay.querySelector('[data-chat]');
-    this.chatTitle = this.overlay.querySelector('[data-chat-title]');
-    this.chatSubtitle = this.overlay.querySelector('[data-chat-subtitle]');
-    this.chatLog = this.overlay.querySelector('[data-chat-log]');
-    this.chatForm = this.overlay.querySelector('[data-chat-form]');
-    this.chatInput = this.overlay.querySelector('[data-chat-input]');
-    this.chatSend = this.overlay.querySelector('[data-chat-send]');
-    this.chatStatus = this.overlay.querySelector('[data-chat-status]');
-    this.chatClose = this.overlay.querySelector('[data-chat-close]');
+    this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
+    this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
+    this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
+    this.quickChatHint = this.overlay.querySelector('[data-quick-chat-hint]');
+    this.speechLayer = this.overlay.querySelector('[data-speech-layer]');
     this.emoteMenu = this.overlay.querySelector('[data-emote-menu]');
     this.emoteWheel = this.overlay.querySelector('[data-emote-wheel]');
     this.emoteSelection = this.overlay.querySelector('[data-emote-selection]');
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
     this.emoteSliceNodes = [];
+    this.speechBubbleNodes = new Map();
     this.toastTimeout = 0;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
@@ -104,7 +101,7 @@ export class Hud {
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Stick RPG 3D</h1>
-        <p class="hud__body">WASD to move. Press E near an NPC, door, ATM, or marker. Hold B for emotes.</p>
+        <p class="hud__body">WASD to move. Press Enter to chat, E near props, and hold B for emotes.</p>
       </section>
       <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle build mode" title="Toggle build mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -170,24 +167,12 @@ export class Hud {
         <p class="hud__body" data-interaction-subtitle></p>
         <div class="hud__dialog-actions" data-interaction-actions></div>
       </section>
-      <section class="hud__chat" data-chat>
-        <div class="hud__chat-header">
-          <div>
-            <p class="hud__eyebrow">Conversation</p>
-            <h2 class="hud__dialog-title" data-chat-title></h2>
-            <p class="hud__body" data-chat-subtitle></p>
-          </div>
-          <button class="hud__chat-close" type="button" data-chat-close aria-label="Close chat">Close</button>
-        </div>
-        <div class="hud__chat-log" data-chat-log></div>
-        <form class="hud__chat-form" data-chat-form>
-          <textarea class="hud__field-control hud__field-control--textarea hud__chat-input" rows="3" maxlength="280" data-chat-input placeholder="Say something..."></textarea>
-          <div class="hud__chat-footer">
-            <p class="hud__chat-status" data-chat-status></p>
-            <button class="hud__chat-send" type="submit" data-chat-send>Send</button>
-          </div>
-        </form>
-      </section>
+      <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
+        <span class="hud__key">Enter</span>
+        <input class="hud__field-control hud__quick-chat-input" type="text" maxlength="280" data-quick-chat-input placeholder="Say something..." />
+        <p class="hud__quick-chat-hint" data-quick-chat-hint>Enter to send. Escape to cancel.</p>
+      </form>
+      <section class="hud__speech-layer" data-speech-layer></section>
       <section class="hud__emote-menu" data-emote-menu>
         <div class="hud__emote-wheel" data-emote-wheel>
           <div class="hud__emote-selection" data-emote-selection></div>
@@ -334,7 +319,7 @@ export class Hud {
     });
   }
 
-  bindInteractionEvents({ onAction, onCloseInteraction, onSendChat, onCloseChat }) {
+  bindInteractionEvents({ onAction, onCloseInteraction }) {
     this.interactionActions.addEventListener('click', (event) => {
       const button = event.target.closest('[data-interaction-action]');
       if (!button) {
@@ -348,14 +333,21 @@ export class Hud {
         onCloseInteraction();
       }
     });
+  }
 
-    this.chatForm.addEventListener('submit', (event) => {
+  bindQuickChatEvents({ onSubmit, onCancel }) {
+    this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      onSendChat(this.chatInput.value);
+      onSubmit(this.quickChatInput.value);
     });
 
-    this.chatClose.addEventListener('click', () => {
-      onCloseChat();
+    this.quickChatInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      onCancel();
     });
   }
 
@@ -507,47 +499,74 @@ export class Hud {
     this.interactionRoot.classList.remove('is-visible');
   }
 
-  setChatState({ visible, title = '', subtitle = '', entries = [], busy = false, error = '', canSend = true }) {
-    this.chatRoot.classList.toggle('is-visible', visible);
-    if (!visible) {
-      return;
-    }
-
-    this.chatTitle.textContent = title;
-    this.chatSubtitle.textContent = subtitle;
-    this.chatStatus.textContent = error || (busy ? 'Waiting for reply...' : 'Public room chat. Everyone in the room sees this conversation.');
-    this.chatStatus.classList.toggle('is-error', Boolean(error));
-    this.chatInput.disabled = busy || !canSend;
-    this.chatSend.disabled = busy || !canSend;
-
-    const fragment = document.createDocumentFragment();
-    for (const entry of entries) {
-      const row = document.createElement('article');
-      row.className = `hud__chat-entry is-${entry.speaker}`;
-
-      const author = document.createElement('p');
-      author.className = 'hud__chat-author';
-      author.textContent = entry.author;
-
-      const text = document.createElement('p');
-      text.className = 'hud__chat-text';
-      text.textContent = entry.text;
-
-      row.append(author, text);
-      fragment.append(row);
-    }
-
-    this.chatLog.replaceChildren(fragment);
-    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  setQuickChatState({ visible, disabled = false, hint = 'Enter to send. Escape to cancel.' }) {
+    this.quickChatRoot.classList.toggle('is-visible', visible);
+    this.quickChatInput.disabled = disabled;
+    this.quickChatHint.textContent = hint;
   }
 
-  clearChatInput() {
-    this.chatInput.value = '';
+  clearQuickChatInput() {
+    this.quickChatInput.value = '';
   }
 
-  focusChatInput() {
-    this.chatInput.focus();
-    this.chatInput.select();
+  focusQuickChatInput() {
+    this.quickChatInput.focus();
+    this.quickChatInput.select();
+  }
+
+  blurQuickChatInput() {
+    this.quickChatInput.blur();
+  }
+
+  isQuickChatOpen() {
+    return this.quickChatRoot.classList.contains('is-visible');
+  }
+
+  setSpeechBubbles(bubbles = []) {
+    const activeIds = new Set();
+
+    for (const bubble of bubbles) {
+      if (!bubble?.id || !bubble.visible) {
+        continue;
+      }
+
+      activeIds.add(bubble.id);
+      let node = this.speechBubbleNodes.get(bubble.id);
+      if (!node) {
+        node = document.createElement('article');
+        node.className = 'hud__speech-bubble';
+
+        const label = document.createElement('p');
+        label.className = 'hud__speech-label';
+
+        const text = document.createElement('p');
+        text.className = 'hud__speech-text';
+
+        node.append(label, text);
+        this.speechLayer.append(node);
+        this.speechBubbleNodes.set(bubble.id, node);
+      }
+
+      node.classList.toggle('is-self', bubble.variant === 'self');
+      node.classList.toggle('is-npc', bubble.variant === 'npc');
+      node.classList.toggle('is-player', bubble.variant === 'player');
+      node.style.left = `${bubble.screenX}px`;
+      node.style.top = `${bubble.screenY}px`;
+
+      const [labelNode, textNode] = node.children;
+      labelNode.textContent = bubble.label ?? '';
+      labelNode.hidden = !bubble.label;
+      textNode.textContent = bubble.text ?? '';
+    }
+
+    for (const [id, node] of this.speechBubbleNodes.entries()) {
+      if (activeIds.has(id)) {
+        continue;
+      }
+
+      node.remove();
+      this.speechBubbleNodes.delete(id);
+    }
   }
 
   setEmoteMenuState({ open, activeIndex = -1, selectedLabel = '', hasSelection = false }) {

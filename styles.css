@@ -35,7 +35,7 @@ body {
 .hud__prompt,
 .hud__builder,
 .hud__interaction,
-.hud__chat {
+.hud__quick-chat {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 16, 24, 0.78);
@@ -564,6 +564,111 @@ body {
   pointer-events: auto;
 }
 
+.hud__quick-chat {
+  left: 50%;
+  bottom: 24px;
+  width: min(540px, calc(100vw - 48px));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 18px;
+  opacity: 0;
+  transform: translate(-50%, 14px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+.hud__quick-chat.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.hud__quick-chat-input {
+  min-width: 0;
+}
+
+.hud__quick-chat-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(244, 238, 226, 0.72);
+}
+
+.hud__speech-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud__speech-bubble {
+  position: absolute;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 18, 28, 0.9);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+  transform: translate(-50%, calc(-100% - 18px));
+}
+
+.hud__speech-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 14px;
+  height: 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.hud__speech-bubble.is-self {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.hud__speech-bubble.is-player {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.hud__speech-bubble.is-npc {
+  border-color: rgba(104, 199, 255, 0.36);
+  background: rgba(10, 26, 34, 0.92);
+}
+
+.hud__speech-label,
+.hud__speech-text {
+  margin: 0;
+}
+
+.hud__speech-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(242, 200, 113, 0.9);
+}
+
+.hud__speech-text {
+  line-height: 1.4;
+  color: rgba(244, 238, 226, 0.94);
+  word-break: break-word;
+}
+
+.hud__speech-bubble.is-self .hud__speech-label,
+.hud__speech-bubble.is-self .hud__speech-text,
+.hud__speech-bubble.is-player .hud__speech-label,
+.hud__speech-bubble.is-player .hud__speech-text {
+  color: rgba(16, 24, 34, 0.92);
+}
+
 .hud__dialog-title {
   margin: 0 0 8px;
   font-size: 24px;
@@ -1000,7 +1105,7 @@ canvas {
   }
 
   .hud__interaction,
-  .hud__chat {
+  .hud__quick-chat {
     width: calc(100vw - 32px);
     left: 16px;
     right: 16px;
@@ -1010,9 +1115,13 @@ canvas {
     bottom: 16px;
   }
 
-  .hud__chat {
-    top: 16px;
-    max-height: calc(100vh - 32px);
+  .hud__quick-chat {
+    bottom: 16px;
+    transform: translateY(14px);
+  }
+
+  .hud__quick-chat.is-visible {
+    transform: translateY(0);
   }
 
   .hud__emote-wheel {

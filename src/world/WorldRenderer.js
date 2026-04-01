@@ -58,6 +58,7 @@ export class WorldRenderer {
 
     this.renderedPlacements = new Map();
     this.npcRuntimeState = new Map();
+    this.npcInteractRadiusVisible = false;
   }
 
   async syncFromState(worldState) {
@@ -75,6 +76,23 @@ export class WorldRenderer {
     this.renderedPlacements.clear();
     this.tileRoot.clear();
     this.propRoot.clear();
+  }
+
+  getSurfaceHeightAtPosition(x, z) {
+    let surfaceHeight = 0;
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (rendered.layer !== 'tile') {
+        continue;
+      }
+
+      const bounds = new THREE.Box3().setFromObject(rendered.object);
+      if (x >= bounds.min.x && x <= bounds.max.x && z >= bounds.min.z && z <= bounds.max.z) {
+        surfaceHeight = Math.max(surfaceHeight, bounds.max.y);
+      }
+    }
+
+    return surfaceHeight;
   }
 
   async addPlacement(placement) {
@@ -96,7 +114,11 @@ export class WorldRenderer {
       if (placement.layer === 'tile') {
         object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
       } else {
-        object.position.set(placement.position[0], 0, placement.position[1]);
+        object.position.set(
+          placement.position[0],
+          this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
+          placement.position[1]
+        );
       }
       object.rotation.y = toRotationY(placement.rotationQuarterTurns);
     }
@@ -134,11 +156,14 @@ export class WorldRenderer {
       object,
       definition: {
         position: placement.position,
-        rotationQuarterTurns: placement.rotationQuarterTurns
+        y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
+        rotationQuarterTurns: placement.rotationQuarterTurns,
+        interactRadius: placement.npc?.interactRadius ?? item.interactionRadius ?? model.interactionRadius
       }
     });
     actor.object.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
+    actor.setInteractRadiusVisible(this.npcInteractRadiusVisible);
     return actor;
   }
 
@@ -151,12 +176,18 @@ export class WorldRenderer {
     if (rendered.actor) {
       rendered.actor.applyPlacement({
         position: placement.position,
-        rotationQuarterTurns: placement.rotationQuarterTurns
+        y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
+        rotationQuarterTurns: placement.rotationQuarterTurns,
+        interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius
       });
     } else if (placement.layer === 'tile') {
       rendered.object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
     } else {
-      rendered.object.position.set(placement.position[0], 0, placement.position[1]);
+      rendered.object.position.set(
+        placement.position[0],
+        this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
+        placement.position[1]
+      );
     }
 
     if (!rendered.actor) {
@@ -185,30 +216,7 @@ export class WorldRenderer {
   }
 
   getGroundHeightAt(worldPosition, worldState) {
-    let surfaceHeight = 0;
-
-    for (const placement of worldState.getPlacements()) {
-      if (placement.layer !== 'tile') {
-        continue;
-      }
-
-      const rendered = this.renderedPlacements.get(placement.id);
-      if (!rendered) {
-        continue;
-      }
-
-      const bounds = new THREE.Box3().setFromObject(rendered.object);
-      if (
-        worldPosition.x >= bounds.min.x &&
-        worldPosition.x <= bounds.max.x &&
-        worldPosition.z >= bounds.min.z &&
-        worldPosition.z <= bounds.max.z
-      ) {
-        surfaceHeight = Math.max(surfaceHeight, bounds.max.y);
-      }
-    }
-
-    return surfaceHeight;
+    return this.getSurfaceHeightAtPosition(worldPosition.x, worldPosition.z);
   }
 
   getInteractables(worldState) {
@@ -273,6 +281,14 @@ export class WorldRenderer {
     }
   }
 
+  setNpcInteractRadiusVisible(visible) {
+    this.npcInteractRadiusVisible = Boolean(visible);
+
+    for (const rendered of this.renderedPlacements.values()) {
+      rendered.actor?.setInteractRadiusVisible(this.npcInteractRadiusVisible);
+    }
+  }
+
   pickPlacementId(pointer, camera = this.camera) {
     if (!this.propRoot.children.length) {
       return null;
@@ -285,6 +301,24 @@ export class WorldRenderer {
 
   getPlacementBounds(id) {
     const rendered = this.renderedPlacements.get(id);
-    return rendered ? new THREE.Box3().setFromObject(rendered.object) : null;
+    if (!rendered) {
+      return null;
+    }
+
+    return new THREE.Box3().setFromObject(rendered.actor?.boundsObject ?? rendered.object);
+  }
+
+  getNpcSpeechAnchors() {
+    const anchors = new Map();
+
+    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
+      if (!rendered.actor) {
+        continue;
+      }
+
+      anchors.set(placementId, rendered.actor.getSpeechAnchorWorldPosition(new THREE.Vector3()));
+    }
+
+    return anchors;
   }
 }

@@ -24,9 +24,9 @@ function cloneNpcState(npc) {
     interactRadius: npc.interactRadius,
     active: npc.active !== false,
     busy: npc.busy,
-    currentSpeakerSessionId: npc.currentSpeakerSessionId || null,
-    latestUtterance: npc.latestUtterance || '',
-    transcriptVersion: npc.transcriptVersion || 0
+    chatText: npc.chatText || '',
+    chatStartedAt: npc.chatStartedAt || 0,
+    chatSeq: npc.chatSeq || 0
   };
 }
 
@@ -38,7 +38,10 @@ function clonePlayerState(player) {
     emoteId: player.emoteId || '',
     emoteActive: Boolean(player.emoteActive && player.emoteId),
     emoteStartedAt: player.emoteStartedAt ?? 0,
-    emoteSeq: player.emoteSeq ?? 0
+    emoteSeq: player.emoteSeq ?? 0,
+    chatText: player.chatText || '',
+    chatStartedAt: player.chatStartedAt || 0,
+    chatSeq: player.chatSeq || 0
   };
 }
 
@@ -89,8 +92,7 @@ export class NpcServiceColyseus {
       sessionId: null,
       players: new Map(),
       builders: new Map(),
-      npcs: new Map(),
-      transcripts: new Map()
+      npcs: new Map()
     };
     this.lastTransformSentAt = 0;
     this.lastTransform = null;
@@ -143,16 +145,6 @@ export class NpcServiceColyseus {
       }
     });
 
-    this.room.onMessage('npc:transcripts', (message) => {
-      this.state.transcripts = new Map(Object.entries(message.transcripts ?? {}));
-      this.emit();
-    });
-
-    this.room.onMessage('npc:transcript', (message) => {
-      this.state.transcripts.set(message.npcId, message.entries ?? []);
-      this.emit();
-    });
-
     this.room.onMessage('rpc:response', (message) => {
       const pending = this.pendingRequests.get(message.requestId);
       if (!pending) {
@@ -166,6 +158,7 @@ export class NpcServiceColyseus {
       this.state.connected = false;
       this.state.players = new Map();
       this.state.builders = new Map();
+      this.state.npcs = new Map();
       this.emit();
     });
 
@@ -195,8 +188,7 @@ export class NpcServiceColyseus {
       ...this.state,
       players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
-      transcripts: new Map([...this.state.transcripts.entries()].map(([id, entries]) => [id, entries.map((entry) => ({ ...entry }))]))
+      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }]))
     };
   }
 
@@ -311,16 +303,8 @@ export class NpcServiceColyseus {
     this.room.send('builder:updatePresence', next);
   }
 
-  async beginInteract(npcId) {
-    return this.rpc('npc:beginInteract', { npcId });
-  }
-
-  async sendChat(npcId, message) {
-    return this.rpc('npc:chat', { npcId, message });
-  }
-
-  async endInteract(npcId) {
-    return this.rpc('npc:endInteract', { npcId });
+  async say(message) {
+    return this.rpc('chat:say', { message });
   }
 
   async destroy() {

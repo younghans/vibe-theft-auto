@@ -41,12 +41,19 @@ function sanitizePlayerAnimationState(animationState = {}) {
   };
 }
 
+function distanceBetween(a, b) {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
 export class NpcServiceMock {
   constructor() {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
     this.definitions = new Map();
+    this.transcripts = new Map();
+    this.playerAliases = new Map();
+    this.cooldowns = new Map();
     this.worldState = new WorldState();
     this.worldState.loadLayout(defaultWorldLayout);
     this.state = {
@@ -55,11 +62,13 @@ export class NpcServiceMock {
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),
-      npcs: new Map(),
-      transcripts: new Map()
+      npcs: new Map()
     };
     this.sequence = 0;
+    this.playerAliasSequence = 0;
     this.playerPosition = { x: 0, z: 0 };
+    this.playerAliasSequence += 1;
+    this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
     this.state.players.set(this.state.sessionId, {
       x: 0,
       z: 0,
@@ -67,7 +76,10 @@ export class NpcServiceMock {
       emoteId: '',
       emoteActive: false,
       emoteStartedAt: 0,
-      emoteSeq: 0
+      emoteSeq: 0,
+      chatText: '',
+      chatStartedAt: 0,
+      chatSeq: 0
     });
     this.syncNpcStateFromWorld();
   }
@@ -88,8 +100,7 @@ export class NpcServiceMock {
       ...this.state,
       players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc, position: [...npc.position] }])),
-      transcripts: new Map([...this.state.transcripts.entries()].map(([id, entries]) => [id, entries.map((entry) => ({ ...entry }))]))
+      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc, position: [...npc.position] }]))
     };
   }
 
@@ -123,12 +134,12 @@ export class NpcServiceMock {
         interactRadius: npc.interactRadius,
         active: npc.active !== false,
         busy: previous?.busy ?? false,
-        currentSpeakerSessionId: previous?.currentSpeakerSessionId ?? null,
-        latestUtterance: previous?.latestUtterance ?? '',
-        transcriptVersion: previous?.transcriptVersion ?? 0
+        chatText: previous?.chatText ?? '',
+        chatStartedAt: previous?.chatStartedAt ?? 0,
+        chatSeq: previous?.chatSeq ?? 0
       });
-      if (!this.state.transcripts.has(npc.id)) {
-        this.state.transcripts.set(npc.id, []);
+      if (!this.transcripts.has(npc.id)) {
+        this.transcripts.set(npc.id, []);
       }
     }
 
@@ -139,7 +150,7 @@ export class NpcServiceMock {
 
       this.definitions.delete(npcId);
       this.state.npcs.delete(npcId);
-      this.state.transcripts.delete(npcId);
+      this.transcripts.delete(npcId);
     }
   }
 
@@ -319,54 +330,119 @@ export class NpcServiceMock {
     this.emit();
   }
 
-  async beginInteract(npcId) {
-    console.info('[NPC] Mock beginInteract.', { npcId });
-    const npc = this.state.npcs.get(npcId);
-    if (!npc || npc.active === false) {
-      return { ok: false, error: 'That NPC is not available.' };
-    }
-
-    if (npc.currentSpeakerSessionId && npc.currentSpeakerSessionId !== this.state.sessionId) {
-      return { ok: false, error: `${npc.name} is already talking to someone else.` };
-    }
-
-    npc.currentSpeakerSessionId = this.state.sessionId;
-    this.emit();
-    return { ok: true };
+  setPlayerSpeech(player, text) {
+    player.chatText = text;
+    player.chatStartedAt = Date.now();
+    player.chatSeq = (player.chatSeq ?? 0) + 1;
   }
 
-  async sendChat(npcId, message) {
-    console.info('[NPC] Mock sendChat.', {
-      npcId,
-      messageLength: message.trim().length
+  setNpcSpeech(npc, text) {
+    npc.chatText = text;
+    npc.chatStartedAt = Date.now();
+    npc.chatSeq = (npc.chatSeq ?? 0) + 1;
+  }
+
+  getPlayerAlias(sessionId) {
+    if (!this.playerAliases.has(sessionId)) {
+      this.playerAliasSequence += 1;
+      this.playerAliases.set(sessionId, `Player ${this.playerAliasSequence}`);
+    }
+
+    return this.playerAliases.get(sessionId);
+  }
+
+  appendTranscript(npcId, entry) {
+    const transcript = this.transcripts.get(npcId) ?? [];
+    transcript.push(entry);
+    this.transcripts.set(npcId, clampTranscript(transcript));
+  }
+
+  findNearestHeardNpc(player) {
+    let nearestNpc = null;
+    let nearestDistance = Infinity;
+
+    for (const npc of this.state.npcs.values()) {
+      if (npc.active === false) {
+        continue;
+      }
+
+      const distance = distanceBetween({ x: npc.position[0], z: npc.position[1] }, player);
+      if (distance > npc.interactRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearestNpc = npc;
+      nearestDistance = distance;
+    }
+
+    return nearestNpc;
+  }
+
+  sanitizeChatMessage(message) {
+    const trimmed = String(message ?? '').trim();
+    if (!trimmed) {
+      return { ok: false, error: 'Say something first.' };
+    }
+
+    if (trimmed.length > 280) {
+      return { ok: false, error: 'Messages are capped at 280 characters.' };
+    }
+
+    const cooldownKey = `${this.state.sessionId}:chat`;
+    const lastSentAt = this.cooldowns.get(cooldownKey) ?? 0;
+    if (Date.now() - lastSentAt < 900) {
+      return { ok: false, error: 'Take a breath before sending another message.' };
+    }
+
+    this.cooldowns.set(cooldownKey, Date.now());
+    return { ok: true, message: trimmed };
+  }
+
+  async say(message) {
+    const sanitized = this.sanitizeChatMessage(message);
+    if (!sanitized.ok) {
+      return sanitized;
+    }
+
+    console.info('[NPC] Mock say.', {
+      messageLength: sanitized.message.length
     });
-    const npc = this.state.npcs.get(npcId);
-    const definition = this.definitions.get(npcId);
-    if (!npc || !definition || npc.active === false) {
-      return { ok: false, error: 'That NPC is not available.' };
+
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player) {
+      return { ok: false, error: 'Your player is not connected.' };
     }
 
-    if (npc.currentSpeakerSessionId && npc.currentSpeakerSessionId !== this.state.sessionId) {
-      return { ok: false, error: `${npc.name} is already talking to someone else.` };
+    this.setPlayerSpeech(player, sanitized.message);
+    this.state.players.set(this.state.sessionId, player);
+    this.emit();
+
+    const npc = this.findNearestHeardNpc(player);
+    if (!npc || npc.busy) {
+      return { ok: true };
     }
 
-    const transcript = this.state.transcripts.get(npcId) ?? [];
-    transcript.push(makeTranscriptEntry(`local_${++this.sequence}`, 'player', 'You', message.trim()));
-    npc.currentSpeakerSessionId = this.state.sessionId;
+    const definition = this.definitions.get(npc.id);
+    if (!definition) {
+      return { ok: true };
+    }
+
     npc.busy = true;
-    npc.transcriptVersion += 1;
-    this.state.transcripts.set(npcId, clampTranscript(transcript));
+    this.appendTranscript(
+      npc.id,
+      makeTranscriptEntry(`local_${++this.sequence}`, 'player', this.getPlayerAlias(this.state.sessionId), sanitized.message)
+    );
     this.emit();
 
     await new Promise((resolve) => window.setTimeout(resolve, 420));
 
-    const reply = this.buildReply(definition, message);
-    const nextTranscript = this.state.transcripts.get(npcId) ?? [];
-    nextTranscript.push(makeTranscriptEntry(`local_${++this.sequence}`, 'npc', npc.name, reply));
-    this.state.transcripts.set(npcId, clampTranscript(nextTranscript));
-    npc.latestUtterance = reply;
+    const reply = this.buildReply(definition, sanitized.message);
+    this.appendTranscript(
+      npc.id,
+      makeTranscriptEntry(`local_${++this.sequence}`, 'npc', npc.name, reply)
+    );
+    this.setNpcSpeech(npc, reply);
     npc.busy = false;
-    npc.transcriptVersion += 1;
     this.emit();
     return { ok: true };
   }
@@ -379,23 +455,7 @@ export class NpcServiceMock {
       'You did not hear this from me, but that sounds like a real opportunity.'
     ];
     const signature = signatures[hashText(`${definition.name}:${message}`) % signatures.length];
-    return `${definition.name}: ${message.trim()}? ${signature}`;
-  }
-
-  async endInteract(npcId) {
-    console.info('[NPC] Mock endInteract.', { npcId });
-    const npc = this.state.npcs.get(npcId);
-    if (!npc) {
-      return { ok: true };
-    }
-
-    if (npc.currentSpeakerSessionId === this.state.sessionId) {
-      npc.currentSpeakerSessionId = null;
-      npc.busy = false;
-      this.emit();
-    }
-
-    return { ok: true };
+    return `${message.trim()}? ${signature}`;
   }
 
   async destroy() {

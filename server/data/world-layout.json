@@ -1321,7 +1321,7 @@
       "rotationQuarterTurns": 0,
       "name": "Bruno",
       "prompt": "You are Bruno, a broad-shouldered neighborhood bouncer with a surprising soft side. Speak like a streetwise local, keep answers short, and gently point people toward the city nightlife.",
-      "interactRadius": 4.8,
+      "interactRadius": 10,
       "active": true
     }
   ]

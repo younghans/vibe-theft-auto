@@ -405,6 +405,10 @@ export class WorldBuilder {
     return this.worldState.serializeLayout();
   }
 
+  getNpcSpeechAnchors() {
+    return this.worldRenderer.getNpcSpeechAnchors();
+  }
+
   setNpcRuntimeState(npcStateMap) {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
@@ -488,6 +492,7 @@ export class WorldBuilder {
     this.state.enabled = enabled;
     this.gridHelper.visible = enabled;
     this.previewRoot.visible = enabled;
+    this.worldRenderer.setNpcInteractRadiusVisible(enabled);
 
     if (!enabled) {
       this.clearSelection();

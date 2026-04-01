@@ -21,7 +21,10 @@ const PlayerState = schema({
   emoteId: 'string',
   emoteActive: 'boolean',
   emoteStartedAt: 'number',
-  emoteSeq: 'number'
+  emoteSeq: 'number',
+  chatText: 'string',
+  chatStartedAt: 'number',
+  chatSeq: 'number'
 });
 
 const BuilderPresenceState = schema({
@@ -46,9 +49,9 @@ const NpcState = schema({
   interactRadius: 'number',
   active: 'boolean',
   busy: 'boolean',
-  currentSpeakerSessionId: 'string',
-  latestUtterance: 'string',
-  transcriptVersion: 'number'
+  chatText: 'string',
+  chatStartedAt: 'number',
+  chatSeq: 'number'
 });
 
 const WorldRoomState = schema({
@@ -118,10 +121,6 @@ function clampNpcRadius(value) {
   return Math.max(1.5, Math.min(12, Number.isFinite(numeric) ? numeric : 4.2));
 }
 
-function serializeTranscripts(transcripts) {
-  return Object.fromEntries(transcripts.entries());
-}
-
 function defaultNpcPrompt(label) {
   return `You are ${label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`;
 }
@@ -135,9 +134,10 @@ export class WorldRoom extends Room {
     this.worldPersistence = new WorldLayoutPersistence();
     this.npcDefinitions = new Map();
     this.transcripts = new Map();
+    this.playerAliases = new Map();
     this.cooldowns = new Map();
-    this.disconnectedSessionsNeedingRelease = new Set();
     this.sequence = 0;
+    this.playerAliasSequence = 0;
 
     this.worldState.loadLayout(loadPersistedWorldLayoutSync());
     this.syncNpcDefinitionsFromWorld();
@@ -188,58 +188,23 @@ export class WorldRoom extends Room {
       this.handleRpc(client, message.requestId, () => this.handleWorldEdit(message));
     });
 
-    this.onMessage('npc:beginInteract', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const npc = this.assertNpcAvailable(client, message.npcId);
-        if (npc.currentSpeakerSessionId && npc.currentSpeakerSessionId !== client.sessionId) {
-          throw new Error(`${npc.name} is already talking to someone else.`);
-        }
-
-        npc.currentSpeakerSessionId = client.sessionId;
-        logServer('room', 'NPC interaction started.', {
-          roomId: this.roomId,
-          sessionId: client.sessionId,
-          npcId: npc.id,
-          npcName: npc.name
-        });
-        return { npcId: npc.id };
-      });
-    });
-
-    this.onMessage('npc:endInteract', (client, message) => {
-      this.handleRpc(client, message.requestId, () => {
-        const npc = this.state.npcs.get(message.npcId);
-        if (npc && npc.currentSpeakerSessionId === client.sessionId && !npc.busy) {
-          npc.currentSpeakerSessionId = '';
-          logServer('room', 'NPC interaction ended.', {
-            roomId: this.roomId,
-            sessionId: client.sessionId,
-            npcId: npc.id,
-            npcName: npc.name
-          });
-        }
-        return { npcId: message.npcId };
-      });
-    });
-
-    this.onMessage('npc:chat', async (client, message) => {
+    this.onMessage('chat:say', async (client, message) => {
       try {
-        const result = await this.handleNpcChat(client, message);
+        const result = await this.handlePublicChat(client, message);
         client.send('rpc:response', {
           requestId: message.requestId,
           ok: true,
           ...result
         });
       } catch (error) {
-        logServerError('room', 'NPC chat request failed.', error, {
+        logServerError('room', 'Public chat request failed.', error, {
           roomId: this.roomId,
-          sessionId: client.sessionId,
-          npcId: message.npcId
+          sessionId: client.sessionId
         });
         client.send('rpc:response', {
           requestId: message.requestId,
           ok: false,
-          error: error.message || 'NPC chat failed.'
+          error: error.message || 'Chat failed.'
         });
       }
     });
@@ -254,10 +219,12 @@ export class WorldRoom extends Room {
     player.emoteActive = false;
     player.emoteStartedAt = 0;
     player.emoteSeq = 0;
+    player.chatText = '';
+    player.chatStartedAt = 0;
+    player.chatSeq = 0;
     this.state.players.set(client.sessionId, player);
-    client.send('npc:transcripts', {
-      transcripts: serializeTranscripts(this.transcripts)
-    });
+    this.playerAliasSequence += 1;
+    this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -268,21 +235,7 @@ export class WorldRoom extends Room {
   onLeave(client) {
     this.state.players.delete(client.sessionId);
     this.state.builders.delete(client.sessionId);
-    let needsDeferredRelease = false;
-    for (const npc of this.state.npcs.values()) {
-      if (npc.currentSpeakerSessionId !== client.sessionId) {
-        continue;
-      }
-
-      if (npc.busy) {
-        needsDeferredRelease = true;
-      } else {
-        npc.currentSpeakerSessionId = '';
-      }
-    }
-    if (needsDeferredRelease) {
-      this.disconnectedSessionsNeedingRelease.add(client.sessionId);
-    }
+    this.playerAliases.delete(client.sessionId);
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -292,23 +245,6 @@ export class WorldRoom extends Room {
 
   async onDispose() {
     await this.worldPersistence.dispose();
-  }
-
-  releaseDisconnectedSpeakerSession(sessionId) {
-    if (!this.disconnectedSessionsNeedingRelease.has(sessionId)) {
-      return;
-    }
-
-    for (const npc of this.state.npcs.values()) {
-      if (npc.currentSpeakerSessionId === sessionId && !npc.busy) {
-        npc.currentSpeakerSessionId = '';
-      }
-    }
-
-    const stillBusy = [...this.state.npcs.values()].some((npc) => npc.currentSpeakerSessionId === sessionId && npc.busy);
-    if (!stillBusy) {
-      this.disconnectedSessionsNeedingRelease.delete(sessionId);
-    }
   }
 
   handleRpc(client, requestId, handler) {
@@ -592,9 +528,9 @@ export class WorldRoom extends Room {
       existing.interactRadius = clampNpcRadius(definition.interactRadius);
       existing.active = definition.active !== false;
       existing.busy = existing.active ? Boolean(existing.busy) : false;
-      existing.currentSpeakerSessionId = existing.active ? (existing.currentSpeakerSessionId || '') : '';
-      existing.latestUtterance = existing.latestUtterance || '';
-      existing.transcriptVersion = Number(existing.transcriptVersion || 0);
+      existing.chatText = existing.chatText || '';
+      existing.chatStartedAt = Number(existing.chatStartedAt || 0);
+      existing.chatSeq = Number(existing.chatSeq || 0);
       if (!this.transcripts.has(definition.id)) {
         this.transcripts.set(definition.id, []);
       }
@@ -617,35 +553,48 @@ export class WorldRoom extends Room {
     }
   }
 
-  assertNpcAvailable(client, npcId) {
+  assertNpcAvailableAtPosition(player, npcId) {
     const npc = this.state.npcs.get(npcId);
-    const player = this.state.players.get(client.sessionId);
     if (!npc || !player || !npc.active) {
       throw new Error('That NPC is not available.');
     }
 
-    if (distanceBetween({ x: npc.x, z: npc.z }, player) > npc.interactRadius + 1) {
+    if (distanceBetween({ x: npc.x, z: npc.z }, player) > npc.interactRadius) {
       throw new Error(`Move closer to ${npc.name} first.`);
     }
 
     return npc;
   }
 
-  appendTranscript(npcId, entry, npc) {
+  appendTranscript(npcId, entry) {
     const current = this.transcripts.get(npcId) ?? [];
     const next = trimTranscript([...current, entry]);
     this.transcripts.set(npcId, next);
-    npc.transcriptVersion += 1;
-    this.broadcast('npc:transcript', {
-      npcId,
-      entries: next
-    });
   }
 
-  async handleNpcChat(client, message) {
-    const npc = this.assertNpcAvailable(client, message.npcId);
-    const definition = this.npcDefinitions.get(message.npcId);
-    const trimmedMessage = String(message.message ?? '').trim();
+  setPlayerSpeech(player, text) {
+    player.chatText = text;
+    player.chatStartedAt = Date.now();
+    player.chatSeq += 1;
+  }
+
+  setNpcSpeech(npc, text) {
+    npc.chatText = text;
+    npc.chatStartedAt = Date.now();
+    npc.chatSeq += 1;
+  }
+
+  getPlayerAlias(sessionId) {
+    if (!this.playerAliases.has(sessionId)) {
+      this.playerAliasSequence += 1;
+      this.playerAliases.set(sessionId, `Player ${this.playerAliasSequence}`);
+    }
+
+    return this.playerAliases.get(sessionId);
+  }
+
+  sanitizeChatMessage(message) {
+    const trimmedMessage = String(message ?? '').trim();
     if (!trimmedMessage) {
       throw new Error('Say something first.');
     }
@@ -654,55 +603,100 @@ export class WorldRoom extends Room {
       throw new Error(`Messages are capped at ${MAX_MESSAGE_LENGTH} characters.`);
     }
 
-    if (npc.currentSpeakerSessionId && npc.currentSpeakerSessionId !== client.sessionId) {
-      throw new Error(`${npc.name} is already talking to someone else.`);
+    return trimmedMessage;
+  }
+
+  findNearestHeardNpc(player) {
+    let nearestNpc = null;
+    let nearestDistance = Infinity;
+
+    for (const npc of this.state.npcs.values()) {
+      if (!npc.active) {
+        continue;
+      }
+
+      const distance = distanceBetween({ x: npc.x, z: npc.z }, player);
+      if (distance > npc.interactRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearestNpc = npc;
+      nearestDistance = distance;
     }
 
-    const cooldownKey = `${client.sessionId}:${npc.id}`;
+    return nearestNpc;
+  }
+
+  async handlePublicChat(client, message) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      throw new Error('Your player is not connected.');
+    }
+
+    const trimmedMessage = this.sanitizeChatMessage(message.message);
+    const cooldownKey = `${client.sessionId}:chat`;
     const lastSentAt = this.cooldowns.get(cooldownKey) ?? 0;
     if (Date.now() - lastSentAt < CHAT_COOLDOWN_MS) {
       throw new Error('Take a breath before sending another message.');
     }
 
-    if (npc.busy) {
-      throw new Error(`${npc.name} is thinking right now.`);
-    }
+    this.cooldowns.set(cooldownKey, Date.now());
+    this.setPlayerSpeech(player, trimmedMessage);
+    const playerAlias = this.getPlayerAlias(client.sessionId);
 
-    logServer('room', 'NPC chat accepted.', {
+    logServer('room', 'Public chat accepted.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
-      npcId: npc.id,
-      npcName: npc.name,
       messageLength: trimmedMessage.length
     });
-    this.cooldowns.set(cooldownKey, Date.now());
-    npc.currentSpeakerSessionId = client.sessionId;
-    npc.busy = true;
 
-    this.appendTranscript(
-      npc.id,
-      createTranscriptEntry(`entry_${++this.sequence}`, 'player', 'You', trimmedMessage),
-      npc
-    );
+    const npc = this.findNearestHeardNpc(player);
+    if (npc && !npc.busy) {
+      npc.busy = true;
+      void this.handleNpcReply({
+        client,
+        npcId: npc.id,
+        playerMessage: trimmedMessage,
+        playerAlias
+      });
+    }
+
+    return {};
+  }
+
+  async handleNpcReply({ client, npcId, playerMessage, playerAlias }) {
+    const npc = this.state.npcs.get(npcId);
+    const definition = this.npcDefinitions.get(npcId);
+    if (!npc) {
+      return;
+    }
+    if (!definition || !npc.active) {
+      npc.busy = false;
+      return;
+    }
 
     try {
+      this.appendTranscript(
+        npc.id,
+        createTranscriptEntry(`entry_${++this.sequence}`, 'player', playerAlias, playerMessage)
+      );
+
       const transcript = this.transcripts.get(npc.id) ?? [];
       const reply = await this.chatEngine.generateReply({
         npc: definition,
         transcript,
-        playerMessage: trimmedMessage
+        playerMessage
       });
 
       const liveNpc = this.state.npcs.get(npc.id);
       if (liveNpc) {
-        liveNpc.latestUtterance = reply;
+        this.setNpcSpeech(liveNpc, reply);
         this.appendTranscript(
           liveNpc.id,
-          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, reply),
-          liveNpc
+          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, reply)
         );
       }
-      logServer('room', 'NPC chat completed.', {
+      logServer('room', 'NPC ambient reply completed.', {
         roomId: this.roomId,
         sessionId: client.sessionId,
         npcId: npc.id,
@@ -712,11 +706,10 @@ export class WorldRoom extends Room {
       const liveNpc = this.state.npcs.get(npc.id);
       if (liveNpc) {
         const fallback = `${liveNpc.name} pauses, then says they need a moment to gather their thoughts.`;
-        liveNpc.latestUtterance = fallback;
+        this.setNpcSpeech(liveNpc, fallback);
         this.appendTranscript(
           liveNpc.id,
-          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, fallback),
-          liveNpc
+          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, fallback)
         );
       }
       logServerError('room', 'NPC chat provider failed; fallback reply used.', error, {
@@ -730,9 +723,6 @@ export class WorldRoom extends Room {
       if (liveNpc) {
         liveNpc.busy = false;
       }
-      this.releaseDisconnectedSpeakerSession(client.sessionId);
     }
-
-    return { npcId: npc.id };
   }
 }

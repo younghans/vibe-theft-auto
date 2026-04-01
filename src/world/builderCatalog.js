@@ -247,7 +247,7 @@ export const BUILDER_CATEGORIES = [
       asset: model.asset,
       size: model.footprint,
       layer: 'npc',
-      collision: true,
+      collision: false,
       padding: 0.1,
       groupId: 'citizens',
       groupLabel: 'Citizens',
