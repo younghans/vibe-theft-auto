@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
+import { WorldRenderer } from './WorldRenderer.js';
+import { WorldState } from './WorldState.js';
 
 const EDITOR_CAMERA_OFFSET = new THREE.Vector3(0, 88, 44);
 const EDITOR_GRID_SIZE = BUILDER_TILE_SIZE * 18;
@@ -39,15 +41,6 @@ function applyPreviewMaterial(root, opacity) {
   });
 }
 
-function setShadowFlags(root) {
-  root.traverse((node) => {
-    if (node.isMesh) {
-      node.castShadow = true;
-      node.receiveShadow = true;
-    }
-  });
-}
-
 function fitToFootprint(root, targetWidth, targetDepth) {
   const bounds = new THREE.Box3().setFromObject(root);
   const size = bounds.getSize(new THREE.Vector3());
@@ -61,30 +54,11 @@ function snapToGround(root) {
   root.position.y -= bounds.min.y;
 }
 
-function createCollisionBox(object, padding = 0.2) {
-  return new THREE.Box3().setFromObject(object).expandByScalar(padding);
-}
-
-function getCellKey(x, z) {
-  return `${x},${z}`;
-}
-
 function snapToCell(worldPosition) {
   return {
     x: Math.round(worldPosition.x / BUILDER_TILE_SIZE),
     z: Math.round(worldPosition.z / BUILDER_TILE_SIZE)
   };
-}
-
-function extractPlacementId(node) {
-  let current = node;
-  while (current) {
-    if (current.userData?.editorPlacementId) {
-      return current.userData.editorPlacementId;
-    }
-    current = current.parent;
-  }
-  return null;
 }
 
 function screenClamp(value, min, max) {
@@ -133,9 +107,9 @@ export class WorldBuilder {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.previewLoadToken = 0;
+    this.worldState = new WorldState();
+    this.worldRenderer = new WorldRenderer({ scene, camera, library });
 
-    this.tileRoot = new THREE.Group();
-    this.propRoot = new THREE.Group();
     this.previewRoot = new THREE.Group();
     this.previewRoot.visible = false;
     this.gridHelper = new THREE.GridHelper(EDITOR_GRID_SIZE, 18, 0xf2c871, 0x406070);
@@ -172,16 +146,8 @@ export class WorldBuilder {
     this.selectionRing.visible = false;
 
     this.scene.add(this.gridHelper);
-    this.scene.add(this.tileRoot);
-    this.scene.add(this.propRoot);
     this.scene.add(this.previewRoot);
     this.scene.add(this.selectionRing);
-
-    this.tilePlacements = new Map();
-    this.propPlacements = new Map();
-    this.placementsById = new Map();
-    this.placementSequence = 0;
-    this.builderCollisions = [];
 
     this.onPointerMove = this.onPointerMove.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -229,43 +195,15 @@ export class WorldBuilder {
   }
 
   getCollisionBoxes() {
-    return this.builderCollisions;
+    return this.worldRenderer.getCollisionBoxes();
   }
 
   getGroundHeightAt(worldPosition) {
-    let surfaceHeight = 0;
-
-    for (const placement of this.tilePlacements.values()) {
-      const bounds = new THREE.Box3().setFromObject(placement.object);
-      if (
-        worldPosition.x >= bounds.min.x &&
-        worldPosition.x <= bounds.max.x &&
-        worldPosition.z >= bounds.min.z &&
-        worldPosition.z <= bounds.max.z
-      ) {
-        surfaceHeight = Math.max(surfaceHeight, bounds.max.y);
-      }
-    }
-
-    return surfaceHeight;
+    return this.worldRenderer.getGroundHeightAt(worldPosition, this.worldState);
   }
 
   getInteractables() {
-    return [...this.placementsById.values()]
-      .filter((placement) => placement.interactable)
-      .map((placement) => {
-        const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          toRotationY(placement.rotationQuarterTurns)
-        );
-        const distance = placement.interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
-        return {
-          position: placement.position.clone().addScaledVector(forward, distance),
-          radius: placement.interactable.radius ?? 4,
-          prompt: placement.interactable.prompt ?? `Enter ${placement.interactable.label ?? placement.catalogItem.label}`,
-          actionText: placement.interactable.actionText ?? `${placement.catalogItem.label} is not hooked up yet.`
-        };
-      });
+    return this.worldRenderer.getInteractables(this.worldState);
   }
 
   onPointerMove(event) {
@@ -426,8 +364,8 @@ export class WorldBuilder {
     }
 
     const hoverCell = snapToCell(hit);
-    const hoveredPropId = this.pickPlacementId(this.propRoot.children);
-    const hoveredTile = this.tilePlacements.get(getCellKey(hoverCell.x, hoverCell.z)) ?? null;
+    const hoveredPropId = this.worldRenderer.pickPlacementId(this.state.pointer, this.camera);
+    const hoveredTile = this.worldState.getPlacementAtCell(hoverCell.x, hoverCell.z);
 
     this.state.hover.point = hit;
     this.state.hover.cell = hoverCell;
@@ -435,24 +373,25 @@ export class WorldBuilder {
   }
 
   getHoveredPlacement() {
-    return this.state.hover.placementId
-      ? this.placementsById.get(this.state.hover.placementId) ?? null
-      : null;
+    return this.worldState.getPlacement(this.state.hover.placementId);
   }
 
   getSelectedPlacement() {
-    return this.state.selection.placementId
-      ? this.placementsById.get(this.state.selection.placementId) ?? null
-      : null;
+    return this.worldState.getPlacement(this.state.selection.placementId);
   }
 
   getPreviewTarget() {
     const hoveredPlacement = this.getHoveredPlacement();
     if (hoveredPlacement) {
+      const item = getBuilderItemById(hoveredPlacement.itemId);
+      if (!item) {
+        return null;
+      }
+
       return {
-        item: hoveredPlacement.catalogItem,
+        item,
         opacity: 0.5,
-        key: `placement:${hoveredPlacement.catalogItem.id}:0.5`
+        key: `placement:${hoveredPlacement.itemId}:0.5`
       };
     }
 
@@ -521,11 +460,16 @@ export class WorldBuilder {
           hoveredPlacement.cellZ * BUILDER_TILE_SIZE
         );
       } else {
-        this.previewRoot.position.set(hoveredPlacement.position.x, 0, hoveredPlacement.position.z);
+        this.previewRoot.position.set(hoveredPlacement.position[0], 0, hoveredPlacement.position[1]);
+      }
+      const item = getBuilderItemById(hoveredPlacement.itemId);
+      if (!item) {
+        this.previewRoot.visible = false;
+        return;
       }
       this.previewFootprint.scale.set(
-        hoveredPlacement.catalogItem.size[0] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
-        hoveredPlacement.catalogItem.size[1] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
+        item.size[0] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
+        item.size[1] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
         1
       );
       this.previewRoot.rotation.y = toRotationY(hoveredPlacement.rotationQuarterTurns);
@@ -556,16 +500,6 @@ export class WorldBuilder {
     camera.lookAt(this.state.focus);
   }
 
-  pickPlacementId(roots) {
-    if (!roots.length) {
-      return null;
-    }
-
-    this.raycaster.setFromCamera(this.state.pointer, this.camera);
-    const intersections = this.raycaster.intersectObjects([...roots], true);
-    return intersections.length ? extractPlacementId(intersections[0].object) : null;
-  }
-
   async placeCurrentItem() {
     if (!this.activeItem || !this.state.hover.point) {
       return;
@@ -585,133 +519,36 @@ export class WorldBuilder {
       return;
     }
 
-    const existing = this.tilePlacements.get(getCellKey(cell.x, cell.z));
-    if (existing) {
-      this.unregisterPlacement(existing);
+    const result = this.worldState.placeTile(item, cell.x, cell.z, this.state.rotationQuarterTurns);
+    if (result.replacedPlacementId) {
+      this.worldRenderer.removePlacement(result.replacedPlacementId);
     }
-
-    await this.createPlacement({
-      item,
-      position: new THREE.Vector3(cell.x * BUILDER_TILE_SIZE, 0, cell.z * BUILDER_TILE_SIZE),
-      rotationQuarterTurns: this.state.rotationQuarterTurns,
-      cellX: cell.x,
-      cellZ: cell.z
-    });
-    this.rebuildCollisionBoxes();
+    await this.worldRenderer.addPlacement(result.placement);
     this.hud.showToast(`Placed ${item.label}`);
   }
 
   async placeProp(item) {
-    await this.createPlacement({
+    const placement = this.worldState.placeProp(
       item,
-      position: new THREE.Vector3(this.state.hover.point.x, 0, this.state.hover.point.z),
-      rotationQuarterTurns: this.state.rotationQuarterTurns
-    });
-    this.rebuildCollisionBoxes();
+      this.state.hover.point.x,
+      this.state.hover.point.z,
+      this.state.rotationQuarterTurns
+    );
+    await this.worldRenderer.addPlacement(placement);
     this.hud.showToast(`Placed ${item.label}`);
-  }
-
-  async createPlacement({ item, position, rotationQuarterTurns, cellX = null, cellZ = null, interactable = null }) {
-    const object = await this.library.instantiate(item.asset);
-    setShadowFlags(object);
-    fitToFootprint(object, item.size[0], item.size[1]);
-    snapToGround(object);
-    object.position.set(position.x, 0, position.z);
-    object.rotation.y = toRotationY(rotationQuarterTurns);
-
-    const placement = {
-      id: `placement_${++this.placementSequence}`,
-      catalogItem: item,
-      layer: item.layer,
-      object,
-      position: object.position.clone(),
-      rotationQuarterTurns,
-      cellX,
-      cellZ,
-      interactable,
-      collisionBox: item.collision ? createCollisionBox(object, item.padding ?? 0.2) : null
-    };
-
-    object.userData.editorPlacementId = placement.id;
-    this.registerPlacement(placement);
-    return placement;
-  }
-
-  registerPlacement(placement) {
-    this.placementsById.set(placement.id, placement);
-
-    if (placement.layer === 'tile') {
-      this.tilePlacements.set(getCellKey(placement.cellX, placement.cellZ), placement);
-      this.tileRoot.add(placement.object);
-      return;
-    }
-
-    this.propPlacements.set(placement.id, placement);
-    this.propRoot.add(placement.object);
-  }
-
-  unregisterPlacement(placement) {
-    placement.object.parent?.remove(placement.object);
-    this.placementsById.delete(placement.id);
-
-    if (placement.layer === 'tile') {
-      this.tilePlacements.delete(getCellKey(placement.cellX, placement.cellZ));
-    } else {
-      this.propPlacements.delete(placement.id);
-    }
-
-    if (this.state.selection.placementId === placement.id) {
-      this.clearSelection();
-    }
   }
 
   async loadLayout(layout = { tiles: [], props: [] }) {
     this.clearSelection();
-    this.clearPlacements();
-
-    for (const entry of layout.tiles ?? []) {
-      const item = getBuilderItemById(entry.itemId);
-      if (!item) {
-        continue;
-      }
-
-      await this.createPlacement({
-        item,
-        position: new THREE.Vector3(entry.cell[0] * BUILDER_TILE_SIZE, 0, entry.cell[1] * BUILDER_TILE_SIZE),
-        rotationQuarterTurns: entry.rotationQuarterTurns ?? 0,
-        cellX: entry.cell[0],
-        cellZ: entry.cell[1],
-        interactable: entry.interactable ?? null
-      });
-    }
-
-    for (const entry of layout.props ?? []) {
-      const item = getBuilderItemById(entry.itemId);
-      if (!item) {
-        continue;
-      }
-
-      await this.createPlacement({
-        item,
-        position: new THREE.Vector3(entry.position[0], 0, entry.position[1]),
-        rotationQuarterTurns: entry.rotationQuarterTurns ?? 0,
-        interactable: entry.interactable ?? null
-      });
-    }
-
-    this.rebuildCollisionBoxes();
+    this.worldState.loadLayout(layout);
+    await this.worldRenderer.syncFromState(this.worldState);
     this.resolveHoverState();
     await this.syncPreviewToState(true);
   }
 
   clearPlacements() {
-    this.tilePlacements.clear();
-    this.propPlacements.clear();
-    this.placementsById.clear();
-    this.placementSequence = 0;
-    this.tileRoot.clear();
-    this.propRoot.clear();
-    this.builderCollisions = [];
+    this.worldState.clear();
+    this.worldRenderer.clear();
   }
 
   selectPlacement(placementId) {
@@ -731,16 +568,13 @@ export class WorldBuilder {
       return;
     }
 
-    placement.rotationQuarterTurns = (placement.rotationQuarterTurns + 1) % 4;
-    placement.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
-    if (placement.collisionBox) {
-      placement.collisionBox = createCollisionBox(placement.object, placement.catalogItem.padding ?? 0.2);
-      this.rebuildCollisionBoxes();
-    }
+    const rotatedPlacement = this.worldState.rotatePlacement(placement.id);
+    this.worldRenderer.updatePlacement(rotatedPlacement);
     this.updateSelectionVisual();
     this.resolveHoverState();
     void this.syncPreviewToState(true);
-    this.hud.showToast(`Rotated ${placement.catalogItem.label}`);
+    const item = getBuilderItemById(placement.itemId);
+    this.hud.showToast(`Rotated ${item?.label ?? 'piece'}`);
   }
 
   deleteSelectedPlacement() {
@@ -749,17 +583,13 @@ export class WorldBuilder {
       return;
     }
 
-    this.unregisterPlacement(placement);
-    this.rebuildCollisionBoxes();
+    this.worldState.deletePlacement(placement.id);
+    this.worldRenderer.removePlacement(placement.id);
+    this.clearSelection();
     this.resolveHoverState();
     void this.syncPreviewToState(true);
-    this.hud.showToast(`Deleted ${placement.catalogItem.label}`);
-  }
-
-  rebuildCollisionBoxes() {
-    this.builderCollisions = [...this.placementsById.values()]
-      .map((placement) => placement.collisionBox)
-      .filter(Boolean);
+    const item = getBuilderItemById(placement.itemId);
+    this.hud.showToast(`Deleted ${item?.label ?? 'piece'}`);
   }
 
   updateSelectionVisual() {
@@ -770,7 +600,12 @@ export class WorldBuilder {
       return;
     }
 
-    const bounds = new THREE.Box3().setFromObject(placement.object);
+    const bounds = this.worldRenderer.getPlacementBounds(placement.id);
+    if (!bounds) {
+      this.selectionRing.visible = false;
+      this.hud.setBuilderSelection(null);
+      return;
+    }
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
     const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
@@ -787,28 +622,7 @@ export class WorldBuilder {
   }
 
   async copyLayoutToClipboard() {
-    const tiles = [...this.tilePlacements.values()]
-      .sort((a, b) => (a.cellZ - b.cellZ) || (a.cellX - b.cellX))
-      .map((placement) => ({
-        itemId: placement.catalogItem.id,
-        cell: [placement.cellX, placement.cellZ],
-        rotationQuarterTurns: placement.rotationQuarterTurns,
-        ...(placement.interactable ? { interactable: placement.interactable } : {})
-      }));
-
-    const props = [...this.propPlacements.values()]
-      .sort((a, b) => (a.position.z - b.position.z) || (a.position.x - b.position.x))
-      .map((placement) => ({
-        itemId: placement.catalogItem.id,
-        position: [
-          Number(placement.position.x.toFixed(2)),
-          Number(placement.position.z.toFixed(2))
-        ],
-        rotationQuarterTurns: placement.rotationQuarterTurns,
-        ...(placement.interactable ? { interactable: placement.interactable } : {})
-      }));
-
-    const text = JSON.stringify({ tiles, props }, null, 2);
+    const text = JSON.stringify(this.worldState.serializeLayout(), null, 2);
     try {
       await navigator.clipboard.writeText(text);
       this.hud.showToast('Copied world editor layout JSON to clipboard.');

@@ -137,18 +137,21 @@ function createRoadTile(x, z) {
 
 function createTileLayout() {
   const tiles = new Map();
+  let tileSequence = 0;
 
   for (let z = -GRID_RADIUS; z <= GRID_RADIUS; z += 1) {
     for (let x = -GRID_RADIUS; x <= GRID_RADIUS; x += 1) {
       if (hasRoad(x, z)) {
         const roadTile = createRoadTile(x, z);
         tiles.set(key(x, z), {
+          id: `placement_${++tileSequence}`,
           itemId: roadTile.itemId,
           cell: [x, z],
           rotationQuarterTurns: roadTile.rotationQuarterTurns
         });
       } else {
         tiles.set(key(x, z), {
+          id: `placement_${++tileSequence}`,
           itemId: 'lot_base',
           cell: [x, z],
           rotationQuarterTurns: 0
@@ -159,6 +162,7 @@ function createTileLayout() {
 
   for (const plan of BUILDING_PLANS) {
     tiles.set(key(plan.cell[0], plan.cell[1]), {
+      id: `placement_${++tileSequence}`,
       itemId: plan.itemId,
       cell: [...plan.cell],
       rotationQuarterTurns: toQuarterTurns(plan.angle),
@@ -176,9 +180,11 @@ function createTileLayout() {
 
 function createPropLayout() {
   const props = [];
+  let propSequence = 95;
 
   const pushProp = (itemId, position, angle = 0) => {
     props.push({
+      id: `placement_${++propSequence}`,
       itemId,
       position: [...position],
       rotationQuarterTurns: toQuarterTurns(angle)
