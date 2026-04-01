@@ -107,7 +107,7 @@ export async function createPlayer(library) {
     radius: PLAYER_RADIUS,
     position: anchor.position,
     sockets,
-    update(deltaSeconds, input, camera, collisionBoxes, cityBounds) {
+    update(deltaSeconds, input, camera, collisionBoxes, cityBounds, groundHeight = 0) {
       const rawInput = input.getMovementVector();
       const moving = rawInput.x !== 0 || rawInput.z !== 0;
       const movement = moving ? projectMoveOnCamera(camera, rawInput) : new THREE.Vector3();
@@ -132,6 +132,7 @@ export async function createPlayer(library) {
       walkAction.setEffectiveWeight(walkWeight);
       walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
       mixer.update(deltaSeconds);
+      anchor.position.y = groundHeight;
       visual.position.y = 0;
       visual.rotation.z = 0;
       visual.rotation.x = 0;

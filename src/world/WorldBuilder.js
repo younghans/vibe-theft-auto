@@ -232,6 +232,24 @@ export class WorldBuilder {
     return this.builderCollisions;
   }
 
+  getGroundHeightAt(worldPosition) {
+    let surfaceHeight = 0;
+
+    for (const placement of this.tilePlacements.values()) {
+      const bounds = new THREE.Box3().setFromObject(placement.object);
+      if (
+        worldPosition.x >= bounds.min.x &&
+        worldPosition.x <= bounds.max.x &&
+        worldPosition.z >= bounds.min.z &&
+        worldPosition.z <= bounds.max.z
+      ) {
+        surfaceHeight = Math.max(surfaceHeight, bounds.max.y);
+      }
+    }
+
+    return surfaceHeight;
+  }
+
   getInteractables() {
     return [...this.placementsById.values()]
       .filter((placement) => placement.interactable)

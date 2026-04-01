@@ -131,7 +131,8 @@ export class Game {
         ...this.baseCollisionBoxes,
         ...this.worldBuilder.getCollisionBoxes()
       ];
-      this.player.update(deltaSeconds, this.input, this.camera, activeCollisionBoxes, this.cityBounds);
+      const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
+      this.player.update(deltaSeconds, this.input, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
       this.updateCamera();
       this.updateInteraction();
     }
