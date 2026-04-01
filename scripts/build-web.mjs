@@ -49,7 +49,6 @@ await copyFile(path.join(root, 'favicon.ico'), path.join(dist, 'favicon.ico'));
 await copyDirectory(path.join(root, 'src'), path.join(dist, 'src'));
 await copyDirectory(path.join(root, 'vendor'), path.join(dist, 'vendor'));
 await copyKayKitCityBits();
-await copyDirectory(path.join(root, 'assets', 'PolygonStarter-web'), path.join(dist, 'assets', 'PolygonStarter-web'));
 await copyDirectory(path.join(root, 'assets', 'mixamo'), path.join(dist, 'assets', 'mixamo'));
 
 console.log(`Built static app into ${dist}`);

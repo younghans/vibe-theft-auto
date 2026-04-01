@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "stickrpg",
   "version": "1.0.0",
   "type": "module",
@@ -19,12 +19,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@colyseus/sdk": "^0.17.35",
     "@colyseus/schema": "^4.0.19",
+    "@colyseus/sdk": "^0.17.35",
     "@colyseus/ws-transport": "^0.17.9",
     "colyseus": "^0.17.8",
     "concurrently": "^9.2.1",
-    "fbx2gltf": "^0.9.7-p1",
     "openai": "^6.33.0",
     "three": "^0.183.2"
   }
