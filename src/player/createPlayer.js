@@ -107,13 +107,15 @@ export async function createPlayer(library) {
 
   let walkWeight = 0;
   let activeEmoteId = null;
+  let activeEmoteConfig = null;
 
   function getEmoteAction(emoteId) {
     if (emoteActions.has(emoteId)) {
       return emoteActions.get(emoteId);
     }
 
-    const clipName = EMOTES_BY_ID[emoteId]?.clipName ?? assets.player.emotes?.[emoteId];
+    const emoteConfig = EMOTES_BY_ID[emoteId];
+    const clipName = emoteConfig?.clipName ?? assets.player.emotes?.[emoteId];
     if (!clipName) {
       return null;
     }
@@ -123,7 +125,7 @@ export async function createPlayer(library) {
     const action = mixer.clipAction(clip);
     action.enabled = true;
     action.clampWhenFinished = true;
-    action.setLoop(THREE.LoopOnce, 1);
+    action.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
     action.setEffectiveWeight(0);
     emoteActions.set(emoteId, action);
     return action;
@@ -135,8 +137,9 @@ export async function createPlayer(library) {
     }
 
     const action = getEmoteAction(activeEmoteId);
-    action?.fadeOut(EMOTE_FADE_OUT);
+    action?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     activeEmoteId = null;
+    activeEmoteConfig = null;
   }
 
   mixer.addEventListener('finished', (event) => {
@@ -156,16 +159,30 @@ export async function createPlayer(library) {
         return false;
       }
 
+      const emoteConfig = EMOTES_BY_ID[emoteId] ?? {
+        fadeIn: EMOTE_FADE_IN,
+        fadeOut: EMOTE_FADE_OUT,
+        loop: false,
+        playbackRate: 1
+      };
+
+      if (activeEmoteId === emoteId && emoteConfig.loop) {
+        return true;
+      }
+
       if (activeEmoteId && activeEmoteId !== emoteId) {
-        getEmoteAction(activeEmoteId)?.fadeOut(EMOTE_FADE_OUT);
+        getEmoteAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
       }
 
       activeEmoteId = emoteId;
+      activeEmoteConfig = emoteConfig;
       action.reset();
       action.enabled = true;
-      action.setEffectiveTimeScale(1);
+      action.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
+      action.clampWhenFinished = !emoteConfig.loop;
+      action.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
       action.setEffectiveWeight(1);
-      action.fadeIn(EMOTE_FADE_IN);
+      action.fadeIn(emoteConfig.fadeIn ?? EMOTE_FADE_IN);
       action.play();
       return true;
     },
