@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
-import { getMixamoClip } from '../animation/mixamoClips.js';
+import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
 import { EMOTES_BY_ID } from './emotes.js';
 
@@ -139,6 +139,13 @@ export async function createPlayer(library, {
   indicatorColor = 0xf2c871,
   indicatorOpacity = 0.85
 } = {}) {
+  const clipNamesToPreload = new Set([
+    assets.player.walkClip,
+    ...Object.values(assets.player.emotes ?? {})
+  ]);
+
+  await preloadMixamoClips([...clipNamesToPreload]);
+
   const character = await library.instantiate(assets.player.character);
   const humanoid = validateMixamoHumanoid(character);
 

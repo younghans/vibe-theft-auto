@@ -92,14 +92,22 @@ export class Game {
 
   async start() {
     try {
+      console.info('[Game] Starting game bootstrap.');
       this.setupLights();
       this.setupAtmosphere();
 
       const cityState = await buildCity(this.scene);
+      console.info('[Game] City built.', {
+        colliderCount: cityState.colliders?.length ?? 0,
+        interactableCount: cityState.interactables?.length ?? 0
+      });
       this.baseColliders = cityState.colliders;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
       this.npcService = await createNpcService();
+      console.info('[Game] NPC service ready.', {
+        transport: this.npcService?.getState?.()?.transport ?? 'unknown'
+      });
       this.worldPatchUnsubscribe = this.npcService.subscribeWorldPatches((patch) => {
         if (!this.worldBuilder || !this.worldLayoutReady) {
           this.pendingWorldPatches.push(patch);
@@ -131,6 +139,11 @@ export class Game {
       });
 
       const sharedLayout = await this.npcService.getWorldLayout();
+      console.info('[Game] Shared world layout loaded.', {
+        tiles: sharedLayout.tiles?.length ?? 0,
+        props: sharedLayout.props?.length ?? 0,
+        npcs: sharedLayout.npcs?.length ?? 0
+      });
       this.currentLayout = sharedLayout;
       await this.worldBuilder.loadLayout(sharedLayout);
       this.worldLayoutReady = true;
@@ -139,6 +152,7 @@ export class Game {
       }
 
       this.player = await createPlayer(this.library);
+      console.info('[Game] Local player loaded.');
       this.player.position.copy(cityState.spawnPoint);
       this.scene.add(this.player.object);
 
@@ -149,9 +163,10 @@ export class Game {
       }
 
       this.hud.hideLoading();
+      console.info('[Game] Entering render loop.');
       this.renderer.setAnimationLoop(() => this.frame());
     } catch (error) {
-      console.error(error);
+      console.error('[Game] Failed during bootstrap.', error);
       this.hud.showToast('Failed to load part of the city. Check the console for details.');
       throw error;
     }
