@@ -106,6 +106,24 @@
       }
     },
     {
+      "id": "placement_153",
+      "itemId": "kenney_building_l",
+      "cell": [
+        -6,
+        -3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_154",
+      "itemId": "kenney_building_m",
+      "cell": [
+        -5,
+        -3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_10",
       "itemId": "lot_base",
       "cell": [
@@ -183,6 +201,42 @@
       "cell": [
         4,
         -3
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_156",
+      "itemId": "kenney_building_skyscraper_b",
+      "cell": [
+        -8,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_155",
+      "itemId": "kenney_building_skyscraper_e",
+      "cell": [
+        -7,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_152",
+      "itemId": "kenney_building_j",
+      "cell": [
+        -6,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_151",
+      "itemId": "kenney_building_h",
+      "cell": [
+        -5,
+        -2
       ],
       "rotationQuarterTurns": 0
     },
@@ -832,6 +886,24 @@
       }
     },
     {
+      "id": "placement_150",
+      "itemId": "kenney_building_g",
+      "cell": [
+        -2,
+        5
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_149",
+      "itemId": "kenney_building_f",
+      "cell": [
+        -1,
+        5
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_142",
       "itemId": "road_straight",
       "cell": [
@@ -1077,6 +1149,42 @@
       "rotationQuarterTurns": 2
     },
     {
+      "id": "placement_158",
+      "itemId": "kenney_detail_overhang_wide",
+      "position": [
+        -70.1,
+        -4.14
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_157",
+      "itemId": "kenney_detail_overhang",
+      "position": [
+        -56.05,
+        -2.58
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_161",
+      "itemId": "kenney_detail_awning_wide",
+      "position": [
+        -59.87,
+        2.59
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_159",
+      "itemId": "kenney_detail_parasol_a",
+      "position": [
+        -52.68,
+        4.82
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_121",
       "itemId": "streetlight",
       "position": [
@@ -1095,6 +1203,15 @@
       "rotationQuarterTurns": 0
     },
     {
+      "id": "placement_160",
+      "itemId": "kenney_detail_awning_wide",
+      "position": [
+        -59.39,
+        5.42
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_98",
       "itemId": "bench",
       "position": [
@@ -1102,6 +1219,15 @@
         7
       ],
       "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_163",
+      "itemId": "kenney_detail_parasol_b",
+      "position": [
+        -51.76,
+        10.28
+      ],
+      "rotationQuarterTurns": 0
     },
     {
       "id": "placement_113",

@@ -14,6 +14,41 @@ function validateRotationQuarterTurns(value, context) {
   assert(value >= 0 && value <= 3, `${context}: rotationQuarterTurns must be between 0 and 3`);
 }
 
+function validateKenneyCatalogItems() {
+  const expectedIds = [
+    'kenney_building_a',
+    'kenney_building_b',
+    'kenney_building_c',
+    'kenney_building_d',
+    'kenney_building_e',
+    'kenney_building_f',
+    'kenney_building_g',
+    'kenney_building_h',
+    'kenney_building_i',
+    'kenney_building_j',
+    'kenney_building_k',
+    'kenney_building_l',
+    'kenney_building_m',
+    'kenney_building_n',
+    'kenney_building_skyscraper_a',
+    'kenney_building_skyscraper_b',
+    'kenney_building_skyscraper_c',
+    'kenney_building_skyscraper_d',
+    'kenney_building_skyscraper_e',
+    'kenney_detail_awning',
+    'kenney_detail_awning_wide',
+    'kenney_detail_overhang',
+    'kenney_detail_overhang_wide',
+    'kenney_detail_parasol_a',
+    'kenney_detail_parasol_b'
+  ];
+
+  for (const itemId of expectedIds) {
+    const item = getBuilderItemById(itemId);
+    assert(item, `Kenney catalog item "${itemId}" should exist`);
+  }
+}
+
 function validateTiles() {
   const seenCells = new Set();
 
@@ -49,6 +84,7 @@ async function validateBuildCity() {
 }
 
 async function main() {
+  validateKenneyCatalogItems();
   validateTiles();
   validateProps();
   await validateBuildCity();
