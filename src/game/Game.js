@@ -414,6 +414,10 @@ export class Game {
         ...this.worldBuilder.getColliders()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
+      if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
+        const isLimp = this.player.toggleLimp();
+        this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
+      }
       const playerInput = (emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
       this.updateCamera();

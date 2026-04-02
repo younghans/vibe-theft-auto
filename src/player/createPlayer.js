@@ -3,12 +3,15 @@ import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHum
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
 import { EMOTES_BY_ID } from './emotes.js';
+import { createRagdollController } from './ragdollController.js';
+import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
+const LIMP_EMOTE_ID = 'limp';
 
 function getEmoteConfig(emoteId) {
   return EMOTES_BY_ID[emoteId] ?? {
@@ -180,8 +183,19 @@ export async function createPlayer(library, {
   let activeEmoteStartedAt = 0;
   let emoteSequence = 0;
   let lastRemoteEmoteSignature = '';
+  let limpStartedAt = 0;
+  let limpRecoverUntilMs = 0;
+  const ragdoll = createRagdollController(character);
+
+  function isLimpTransitioning() {
+    return ragdoll.isActive() || Date.now() < limpRecoverUntilMs;
+  }
 
   function getEmoteAction(emoteId) {
+    if (emoteId === LIMP_EMOTE_ID) {
+      return null;
+    }
+
     if (emoteActions.has(emoteId)) {
       return emoteActions.get(emoteId);
     }
@@ -215,6 +229,31 @@ export async function createPlayer(library, {
     activeEmoteStartedAt = 0;
   }
 
+  function setLimpActive(nextActive, { startedAtMs = Date.now(), trackSync = true } = {}) {
+    if (nextActive) {
+      if (ragdoll.isActive()) {
+        return true;
+      }
+
+      stopActiveEmote();
+      limpStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+      limpRecoverUntilMs = 0;
+      ragdoll.activate({ startedAtMs: limpStartedAt });
+      if (trackSync) {
+        emoteSequence += 1;
+      }
+      return true;
+    }
+
+    if (!isLimpTransitioning()) {
+      return false;
+    }
+
+    ragdoll.deactivate();
+    limpRecoverUntilMs = Date.now() + (RAGDOLL_RECOVER_DURATION * 1000);
+    return false;
+  }
+
   mixer.addEventListener('finished', (event) => {
     if (activeEmoteId && getEmoteAction(activeEmoteId) === event.action) {
       stopActiveEmote();
@@ -227,9 +266,10 @@ export async function createPlayer(library, {
     walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
-    visual.position.y = 0;
-    visual.rotation.z = 0;
-    visual.rotation.x = 0;
+    ragdoll.update(deltaSeconds);
+    ragdoll.applyToSkeleton();
+    visual.position.set(0, 0, 0);
+    visual.rotation.set(0, 0, 0);
   }
 
   return {
@@ -243,6 +283,15 @@ export async function createPlayer(library, {
       return target;
     },
     getAnimationSyncState() {
+      if (ragdoll.isActive()) {
+        return {
+          emoteId: LIMP_EMOTE_ID,
+          emoteActive: true,
+          emoteStartedAt: limpStartedAt,
+          emoteSeq: emoteSequence
+        };
+      }
+
       return {
         emoteId: activeEmoteId ?? '',
         emoteActive: Boolean(activeEmoteId),
@@ -251,6 +300,14 @@ export async function createPlayer(library, {
       };
     },
     playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
+      if (emoteId === LIMP_EMOTE_ID) {
+        return setLimpActive(true, { startedAtMs, trackSync });
+      }
+
+      if (isLimpTransitioning()) {
+        setLimpActive(false, { trackSync: false });
+      }
+
       const action = getEmoteAction(emoteId);
       if (!action) {
         return false;
@@ -283,15 +340,28 @@ export async function createPlayer(library, {
       action.play();
       return true;
     },
+    toggleLimp({ startedAtMs = Date.now(), trackSync = true } = {}) {
+      return setLimpActive(!ragdoll.isActive(), { startedAtMs, trackSync });
+    },
+    clearLimp() {
+      return setLimpActive(false, { trackSync: false });
+    },
+    isLimp() {
+      return ragdoll.isActive();
+    },
     update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0) {
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
+
+      if (wantsToMove && isLimpTransitioning()) {
+        setLimpActive(false, { trackSync: false });
+      }
 
       if (wantsToMove) {
         stopActiveEmote();
       }
 
-      const moving = wantsToMove;
+      const moving = wantsToMove && !ragdoll.isActive();
       const movement = moving ? projectMoveOnCamera(camera, rawInput) : new THREE.Vector3();
 
       if (moving) {
@@ -317,14 +387,25 @@ export async function createPlayer(library, {
       const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
       const remoteEmoteSeq = Number.isFinite(state?.emoteSeq) ? Math.max(0, Math.floor(state.emoteSeq)) : 0;
       const remoteEmoteSignature = `${Number(remoteEmoteActive)}:${remoteEmoteId}:${remoteEmoteSeq}`;
+      const remoteIsLimp = remoteEmoteActive && remoteEmoteId === LIMP_EMOTE_ID;
 
       if (
         remoteEmoteSignature !== lastRemoteEmoteSignature
-        || (remoteEmoteActive && activeEmoteId !== remoteEmoteId)
+        || (remoteEmoteActive && !remoteIsLimp && activeEmoteId !== remoteEmoteId)
+        || (remoteIsLimp !== ragdoll.isActive())
         || (!remoteEmoteActive && activeEmoteId)
       ) {
         lastRemoteEmoteSignature = remoteEmoteSignature;
-        if (remoteEmoteActive) {
+        if (remoteIsLimp) {
+          setLimpActive(true, {
+            startedAtMs: Number.isFinite(state?.emoteStartedAt) ? state.emoteStartedAt : Date.now(),
+            trackSync: false
+          });
+        } else {
+          setLimpActive(false, { trackSync: false });
+        }
+
+        if (remoteEmoteActive && !remoteIsLimp) {
           this.playEmote(remoteEmoteId, {
             startedAtMs: Number.isFinite(state?.emoteStartedAt) ? state.emoteStartedAt : Date.now(),
             trackSync: false
@@ -334,6 +415,7 @@ export async function createPlayer(library, {
         }
       }
 
+      const showingRemoteLimp = remoteIsLimp && ragdoll.isActive();
       const showingRemoteEmote = remoteEmoteActive && activeEmoteId === remoteEmoteId;
 
       const targetX = Number.isFinite(state?.x) ? state.x : anchor.position.x;
@@ -354,7 +436,7 @@ export async function createPlayer(library, {
 
       const rotationLerp = 1 - Math.exp(-deltaSeconds * 14);
       anchor.rotation.y = dampAngle(anchor.rotation.y, targetRotationY, rotationLerp);
-      updateAnimationState(deltaSeconds, !showingRemoteEmote && distance > 0.05, groundHeight);
+      updateAnimationState(deltaSeconds, !showingRemoteLimp && !showingRemoteEmote && distance > 0.05, groundHeight);
     }
   };
 }
