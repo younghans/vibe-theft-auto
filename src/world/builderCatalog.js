@@ -18,6 +18,69 @@ const PROP_GROUPS = Object.freeze({
   utilities: 'Utilities'
 });
 
+const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
+const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
+const KENNEY_SKYSCRAPER_VARIANTS = Object.freeze('abcde'.split(''));
+const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
+  { key: 'awning', label: 'Kenney Awning', fileName: 'detail-awning.glb', size: [4.5, 1.6] },
+  { key: 'awning_wide', label: 'Kenney Awning Wide', fileName: 'detail-awning-wide.glb', size: [8, 1.6] },
+  { key: 'overhang', label: 'Kenney Overhang', fileName: 'detail-overhang.glb', size: [4.5, 1.6] },
+  { key: 'overhang_wide', label: 'Kenney Overhang Wide', fileName: 'detail-overhang-wide.glb', size: [8, 1.6] },
+  { key: 'parasol_a', label: 'Kenney Parasol A', fileName: 'detail-parasol-a.glb', size: [2.6, 2.6] },
+  { key: 'parasol_b', label: 'Kenney Parasol B', fileName: 'detail-parasol-b.glb', size: [2.6, 2.6] }
+]);
+
+function kenneyAsset(fileName) {
+  return assetUrl(KENNEY_CITY_PACK, 'Models', 'GLB format', fileName);
+}
+
+function createKenneyBuildingDefinition({ id, label, fileName }) {
+  return {
+    id,
+    assetName: id,
+    label,
+    asset: kenneyAsset(fileName),
+    group: 'lots',
+    size: KENNEY_TILE_SIZE,
+    collision: true,
+    padding: 0.5
+  };
+}
+
+function createKenneyPropDefinition({ key, label, fileName, size }) {
+  return {
+    id: `kenney_detail_${key}`,
+    assetName: `kenney_detail_${key}`,
+    label,
+    asset: kenneyAsset(fileName),
+    group: 'street',
+    size,
+    collision: false
+  };
+}
+
+const KENNEY_TILE_DEFINITIONS = Object.freeze([
+  ...KENNEY_BUILDING_VARIANTS.map((variant) =>
+    createKenneyBuildingDefinition({
+      id: `kenney_building_${variant}`,
+      label: `Kenney Building ${variant.toUpperCase()}`,
+      fileName: `building-${variant}.glb`
+    })
+  ),
+  ...KENNEY_SKYSCRAPER_VARIANTS.map((variant) =>
+    createKenneyBuildingDefinition({
+      id: `kenney_building_skyscraper_${variant}`,
+      label: `Kenney Skyscraper ${variant.toUpperCase()}`,
+      fileName: `building-skyscraper-${variant}.glb`
+    })
+  )
+]);
+
+const KENNEY_PROP_DEFINITIONS = Object.freeze(
+  KENNEY_DETAIL_DEFINITIONS.map(createKenneyPropDefinition)
+);
+
 const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'road_straight', assetName: 'road_straight', group: 'streets' },
   { id: 'road_corner', assetName: 'road_corner', group: 'streets' },
@@ -64,196 +127,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { assetName: 'park_wall_outerCorner_decorated', group: 'parks' },
   { assetName: 'park_wall_straight', group: 'parks' },
   { assetName: 'park_wall_straight_decorated', group: 'parks' },
-  {
-    id: 'kenney_building_a',
-    assetName: 'kenney_building_a',
-    label: 'Kenney Building A',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-a.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_b',
-    assetName: 'kenney_building_b',
-    label: 'Kenney Building B',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-b.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_c',
-    assetName: 'kenney_building_c',
-    label: 'Kenney Building C',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-c.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_d',
-    assetName: 'kenney_building_d',
-    label: 'Kenney Building D',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-d.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_e',
-    assetName: 'kenney_building_e',
-    label: 'Kenney Building E',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-e.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_f',
-    assetName: 'kenney_building_f',
-    label: 'Kenney Building F',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-f.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_g',
-    assetName: 'kenney_building_g',
-    label: 'Kenney Building G',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-g.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_h',
-    assetName: 'kenney_building_h',
-    label: 'Kenney Building H',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-h.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_i',
-    assetName: 'kenney_building_i',
-    label: 'Kenney Building I',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-i.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_j',
-    assetName: 'kenney_building_j',
-    label: 'Kenney Building J',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-j.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_k',
-    assetName: 'kenney_building_k',
-    label: 'Kenney Building K',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-k.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_l',
-    assetName: 'kenney_building_l',
-    label: 'Kenney Building L',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-l.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_m',
-    assetName: 'kenney_building_m',
-    label: 'Kenney Building M',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-m.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_n',
-    assetName: 'kenney_building_n',
-    label: 'Kenney Building N',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-n.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_skyscraper_a',
-    assetName: 'kenney_building_skyscraper_a',
-    label: 'Kenney Skyscraper A',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-skyscraper-a.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_skyscraper_b',
-    assetName: 'kenney_building_skyscraper_b',
-    label: 'Kenney Skyscraper B',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-skyscraper-b.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_skyscraper_c',
-    assetName: 'kenney_building_skyscraper_c',
-    label: 'Kenney Skyscraper C',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-skyscraper-c.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_skyscraper_d',
-    assetName: 'kenney_building_skyscraper_d',
-    label: 'Kenney Skyscraper D',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-skyscraper-d.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  },
-  {
-    id: 'kenney_building_skyscraper_e',
-    assetName: 'kenney_building_skyscraper_e',
-    label: 'Kenney Skyscraper E',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'building-skyscraper-e.glb'),
-    group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
-    collision: true,
-    padding: 0.5
-  }
+  ...KENNEY_TILE_DEFINITIONS
 ]);
 
 const CITY_PROP_DEFINITIONS = Object.freeze([
@@ -285,60 +159,7 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'tree_D', group: 'greenery' },
   { assetName: 'tree_E', group: 'greenery' },
   { id: 'tower', assetName: 'watertower', label: 'Water Tower', group: 'utilities' },
-  {
-    id: 'kenney_detail_awning',
-    assetName: 'kenney_detail_awning',
-    label: 'Kenney Awning',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-awning.glb'),
-    group: 'street',
-    size: [4.5, 1.6],
-    collision: false
-  },
-  {
-    id: 'kenney_detail_awning_wide',
-    assetName: 'kenney_detail_awning_wide',
-    label: 'Kenney Awning Wide',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-awning-wide.glb'),
-    group: 'street',
-    size: [8, 1.6],
-    collision: false
-  },
-  {
-    id: 'kenney_detail_overhang',
-    assetName: 'kenney_detail_overhang',
-    label: 'Kenney Overhang',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-overhang.glb'),
-    group: 'street',
-    size: [4.5, 1.6],
-    collision: false
-  },
-  {
-    id: 'kenney_detail_overhang_wide',
-    assetName: 'kenney_detail_overhang_wide',
-    label: 'Kenney Overhang Wide',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-overhang-wide.glb'),
-    group: 'street',
-    size: [8, 1.6],
-    collision: false
-  },
-  {
-    id: 'kenney_detail_parasol_a',
-    assetName: 'kenney_detail_parasol_a',
-    label: 'Kenney Parasol A',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-parasol-a.glb'),
-    group: 'street',
-    size: [2.6, 2.6],
-    collision: false
-  },
-  {
-    id: 'kenney_detail_parasol_b',
-    assetName: 'kenney_detail_parasol_b',
-    label: 'Kenney Parasol B',
-    asset: assetUrl('kenney_city-kit-commercial_2.1', 'Models', 'GLB format', 'detail-parasol-b.glb'),
-    group: 'street',
-    size: [2.6, 2.6],
-    collision: false
-  }
+  ...KENNEY_PROP_DEFINITIONS
 ]);
 
 function titleCaseWords(value) {
