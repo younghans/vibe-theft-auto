@@ -12,24 +12,43 @@ export class ModelLibrary {
 
   async load(url) {
     if (!this.cache.has(url)) {
-      this.cache.set(url, this.getLoader(url).loadAsync(url).then((asset) => {
-        const normalized = asset.scene ? asset : { scene: asset, animations: asset.animations ?? [] };
+      console.info('[Assets] Loading model.', {
+        url,
+        loader: this.getLoader(url) === this.fbxLoader ? 'fbx' : 'gltf'
+      });
+      this.cache.set(url, this.getLoader(url).loadAsync(url)
+        .then((asset) => {
+          const normalized = asset.scene ? asset : { scene: asset, animations: asset.animations ?? [] };
 
-        normalized.scene.traverse((node) => {
-          if (node.isMesh) {
-            node.castShadow = true;
-            node.receiveShadow = true;
-            node.frustumCulled = true;
-            if (node.material) {
-              const materials = Array.isArray(node.material) ? node.material : [node.material];
-              for (const material of materials) {
-                material.side = THREE.FrontSide;
+          normalized.scene.traverse((node) => {
+            if (node.isMesh) {
+              node.castShadow = true;
+              node.receiveShadow = true;
+              node.frustumCulled = true;
+              if (node.material) {
+                const materials = Array.isArray(node.material) ? node.material : [node.material];
+                for (const material of materials) {
+                  material.side = THREE.FrontSide;
+                }
               }
             }
-          }
-        });
-        return normalized;
-      }));
+          });
+
+          console.info('[Assets] Model loaded.', {
+            url,
+            animationCount: normalized.animations?.length ?? 0,
+            hasSkinnedMeshes: this.hasSkinnedMeshes(normalized.scene)
+          });
+          return normalized;
+        })
+        .catch((error) => {
+          console.error('[Assets] Model load failed.', {
+            url,
+            message: error?.message ?? String(error)
+          });
+          this.cache.delete(url);
+          throw error;
+        }));
     }
 
     return this.cache.get(url);
