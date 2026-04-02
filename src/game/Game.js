@@ -17,8 +17,27 @@ import { createNpcService } from '../npc/createNpcService.js';
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const EMOTE_MENU_DEADZONE = 54;
-const CHAT_BUBBLE_LIFETIME_MS = 5000;
+const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
+const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
+const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
+const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
+
+function getChatBubbleLifetimeMs(text) {
+  const normalized = String(text ?? '').trim();
+  if (!normalized) {
+    return CHAT_BUBBLE_MIN_LIFETIME_MS;
+  }
+
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  const estimatedWordCount = Math.max(wordCount, Math.ceil(normalized.length / 6));
+  const lifetime = CHAT_BUBBLE_BASE_LIFETIME_MS + estimatedWordCount * CHAT_BUBBLE_MS_PER_WORD;
+  return THREE.MathUtils.clamp(
+    lifetime,
+    CHAT_BUBBLE_MIN_LIFETIME_MS,
+    CHAT_BUBBLE_MAX_LIFETIME_MS
+  );
+}
 
 export class Game {
   constructor(root) {
@@ -497,7 +516,7 @@ export class Game {
       return null;
     }
 
-    if (!isBusy && (Date.now() - startedAt) > CHAT_BUBBLE_LIFETIME_MS) {
+    if (!isBusy && (Date.now() - startedAt) > getChatBubbleLifetimeMs(text)) {
       return null;
     }
 
