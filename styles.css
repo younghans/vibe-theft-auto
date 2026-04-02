@@ -643,6 +643,17 @@ body {
   background: rgba(10, 26, 34, 0.92);
 }
 
+.hud__speech-bubble.is-thinking {
+  min-width: 72px;
+}
+
+.hud__speech-bubble.is-thinking .hud__speech-text::before {
+  content: "...";
+  display: inline-block;
+  letter-spacing: 0.18em;
+  animation: hud-thinking-dots 1s steps(4, end) infinite;
+}
+
 .hud__speech-label,
 .hud__speech-text {
   margin: 0;
@@ -667,6 +678,25 @@ body {
 .hud__speech-bubble.is-player .hud__speech-label,
 .hud__speech-bubble.is-player .hud__speech-text {
   color: rgba(16, 24, 34, 0.92);
+}
+
+@keyframes hud-thinking-dots {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  25% {
+    clip-path: inset(0 66% 0 0);
+  }
+
+  50% {
+    clip-path: inset(0 33% 0 0);
+  }
+
+  75%,
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 .hud__dialog-title {

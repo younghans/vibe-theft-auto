@@ -550,13 +550,14 @@ export class Hud {
       node.classList.toggle('is-self', bubble.variant === 'self');
       node.classList.toggle('is-npc', bubble.variant === 'npc');
       node.classList.toggle('is-player', bubble.variant === 'player');
+      node.classList.toggle('is-thinking', bubble.status === 'thinking');
       node.style.left = `${bubble.screenX}px`;
       node.style.top = `${bubble.screenY}px`;
 
       const [labelNode, textNode] = node.children;
       labelNode.textContent = bubble.label ?? '';
       labelNode.hidden = !bubble.label;
-      textNode.textContent = bubble.text ?? '';
+      textNode.textContent = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
     }
 
     for (const [id, node] of this.speechBubbleNodes.entries()) {

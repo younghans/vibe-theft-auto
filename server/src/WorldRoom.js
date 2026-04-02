@@ -13,6 +13,7 @@ const MAX_TRANSCRIPT_ENTRIES = 18;
 const CHAT_COOLDOWN_MS = 900;
 const NPC_NAME_MAX_LENGTH = 40;
 const NPC_PROMPT_MAX_LENGTH = 1600;
+const NPC_STREAM_THROTTLE_MS = 80;
 
 const PlayerState = schema({
   x: 'number',
@@ -49,6 +50,7 @@ const NpcState = schema({
   interactRadius: 'number',
   active: 'boolean',
   busy: 'boolean',
+  chatStatus: 'string',
   chatText: 'string',
   chatStartedAt: 'number',
   chatSeq: 'number'
@@ -528,6 +530,7 @@ export class WorldRoom extends Room {
       existing.interactRadius = clampNpcRadius(definition.interactRadius);
       existing.active = definition.active !== false;
       existing.busy = existing.active ? Boolean(existing.busy) : false;
+      existing.chatStatus = existing.chatStatus || 'idle';
       existing.chatText = existing.chatText || '';
       existing.chatStartedAt = Number(existing.chatStartedAt || 0);
       existing.chatSeq = Number(existing.chatSeq || 0);
@@ -582,6 +585,15 @@ export class WorldRoom extends Room {
     npc.chatText = text;
     npc.chatStartedAt = Date.now();
     npc.chatSeq += 1;
+  }
+
+  setNpcChatPhase(npc, status, text = npc.chatText || '', { bumpSeq = false } = {}) {
+    npc.chatStatus = status;
+    npc.chatText = text;
+    npc.chatStartedAt = Date.now();
+    if (bumpSeq) {
+      npc.chatSeq += 1;
+    }
   }
 
   getPlayerAlias(sessionId) {
@@ -653,6 +665,7 @@ export class WorldRoom extends Room {
     const npc = this.findNearestHeardNpc(player);
     if (npc && !npc.busy) {
       npc.busy = true;
+      this.setNpcChatPhase(npc, 'thinking', '', { bumpSeq: true });
       void this.handleNpcReply({
         client,
         npcId: npc.id,
@@ -672,6 +685,7 @@ export class WorldRoom extends Room {
     }
     if (!definition || !npc.active) {
       npc.busy = false;
+      npc.chatStatus = 'idle';
       return;
     }
 
@@ -682,15 +696,33 @@ export class WorldRoom extends Room {
       );
 
       const transcript = this.transcripts.get(npc.id) ?? [];
-      const reply = await this.chatEngine.generateReply({
+      let lastPublishedText = '';
+      let lastPublishedAt = 0;
+      const replyResult = await this.chatEngine.streamReply({
         npc: definition,
         transcript,
-        playerMessage
+        playerMessage,
+        onDelta: async (partialText) => {
+          const liveNpc = this.state.npcs.get(npc.id);
+          if (!liveNpc || !liveNpc.busy) {
+            return;
+          }
+
+          const now = Date.now();
+          if (partialText === lastPublishedText || (now - lastPublishedAt) < NPC_STREAM_THROTTLE_MS) {
+            return;
+          }
+
+          lastPublishedText = partialText;
+          lastPublishedAt = now;
+          this.setNpcChatPhase(liveNpc, 'streaming', partialText);
+        }
       });
+      const reply = replyResult.text;
 
       const liveNpc = this.state.npcs.get(npc.id);
       if (liveNpc) {
-        this.setNpcSpeech(liveNpc, reply);
+        this.setNpcChatPhase(liveNpc, 'done', reply, { bumpSeq: true });
         this.appendTranscript(
           liveNpc.id,
           createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, reply)
@@ -700,13 +732,17 @@ export class WorldRoom extends Room {
         roomId: this.roomId,
         sessionId: client.sessionId,
         npcId: npc.id,
-        npcName: npc.name
+        npcName: npc.name,
+        usedFallback: replyResult.usedFallback,
+        usedRetry: replyResult.usedRetry,
+        endedWithPartial: replyResult.endedWithPartial,
+        attemptCount: replyResult.attemptCount
       });
     } catch (error) {
       const liveNpc = this.state.npcs.get(npc.id);
       if (liveNpc) {
         const fallback = `${liveNpc.name} pauses, then says they need a moment to gather their thoughts.`;
-        this.setNpcSpeech(liveNpc, fallback);
+        this.setNpcChatPhase(liveNpc, 'done', fallback, { bumpSeq: true });
         this.appendTranscript(
           liveNpc.id,
           createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, fallback)
@@ -722,6 +758,9 @@ export class WorldRoom extends Room {
       const liveNpc = this.state.npcs.get(npc.id);
       if (liveNpc) {
         liveNpc.busy = false;
+        if (!liveNpc.chatStatus) {
+          liveNpc.chatStatus = 'idle';
+        }
       }
     }
   }

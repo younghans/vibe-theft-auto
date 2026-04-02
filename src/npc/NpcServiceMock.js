@@ -134,6 +134,7 @@ export class NpcServiceMock {
         interactRadius: npc.interactRadius,
         active: npc.active !== false,
         busy: previous?.busy ?? false,
+        chatStatus: previous?.chatStatus ?? 'idle',
         chatText: previous?.chatText ?? '',
         chatStartedAt: previous?.chatStartedAt ?? 0,
         chatSeq: previous?.chatSeq ?? 0
@@ -342,6 +343,15 @@ export class NpcServiceMock {
     npc.chatSeq = (npc.chatSeq ?? 0) + 1;
   }
 
+  setNpcChatPhase(npc, status, text = npc.chatText ?? '', { bumpSeq = false } = {}) {
+    npc.chatStatus = status;
+    npc.chatText = text;
+    npc.chatStartedAt = Date.now();
+    if (bumpSeq) {
+      npc.chatSeq = (npc.chatSeq ?? 0) + 1;
+    }
+  }
+
   getPlayerAlias(sessionId) {
     if (!this.playerAliases.has(sessionId)) {
       this.playerAliasSequence += 1;
@@ -428,20 +438,30 @@ export class NpcServiceMock {
     }
 
     npc.busy = true;
+    this.setNpcChatPhase(npc, 'thinking', '', { bumpSeq: true });
     this.appendTranscript(
       npc.id,
       makeTranscriptEntry(`local_${++this.sequence}`, 'player', this.getPlayerAlias(this.state.sessionId), sanitized.message)
     );
     this.emit();
 
-    await new Promise((resolve) => window.setTimeout(resolve, 420));
+    await new Promise((resolve) => window.setTimeout(resolve, 320));
 
     const reply = this.buildReply(definition, sanitized.message);
+    const words = reply.split(/\s+/).filter(Boolean);
+    let partial = '';
+    for (const word of words) {
+      partial = partial ? `${partial} ${word}` : word;
+      this.setNpcChatPhase(npc, 'streaming', partial);
+      this.emit();
+      await new Promise((resolve) => window.setTimeout(resolve, 75));
+    }
+
     this.appendTranscript(
       npc.id,
       makeTranscriptEntry(`local_${++this.sequence}`, 'npc', npc.name, reply)
     );
-    this.setNpcSpeech(npc, reply);
+    this.setNpcChatPhase(npc, 'done', reply, { bumpSeq: true });
     npc.busy = false;
     this.emit();
     return { ok: true };

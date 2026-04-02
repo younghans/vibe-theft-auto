@@ -24,6 +24,7 @@ function cloneNpcState(npc) {
     interactRadius: npc.interactRadius,
     active: npc.active !== false,
     busy: npc.busy,
+    chatStatus: npc.chatStatus || 'idle',
     chatText: npc.chatText || '',
     chatStartedAt: npc.chatStartedAt || 0,
     chatSeq: npc.chatSeq || 0

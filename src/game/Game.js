@@ -465,8 +465,15 @@ export class Game {
     this.closeQuickChat();
   }
 
-  collectSpeechBubble(id, text, startedAt, anchor, variant, label = '') {
-    if (!text || !startedAt || (Date.now() - startedAt) > CHAT_BUBBLE_LIFETIME_MS) {
+  collectSpeechBubble(id, text, startedAt, anchor, variant, label = '', options = {}) {
+    const isThinking = options.status === 'thinking';
+    const isBusy = Boolean(options.busy);
+    const hasVisibleText = Boolean(text) || isThinking;
+    if (!hasVisibleText || !startedAt) {
+      return null;
+    }
+
+    if (!isBusy && (Date.now() - startedAt) > CHAT_BUBBLE_LIFETIME_MS) {
       return null;
     }
 
@@ -480,6 +487,7 @@ export class Game {
       text,
       label,
       variant,
+      status: options.status ?? 'done',
       visible: true,
       screenX: projected.x,
       screenY: projected.y
@@ -553,7 +561,11 @@ export class Game {
         npcState.chatStartedAt,
         anchor,
         'npc',
-        npcState.name
+        npcState.name,
+        {
+          status: npcState.chatStatus,
+          busy: npcState.busy
+        }
       );
       if (bubble) {
         bubbles.push(bubble);
