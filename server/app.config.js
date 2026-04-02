@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { defineRoom, defineServer } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { WorldRoom } from './src/WorldRoom.js';
+import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
@@ -59,10 +60,13 @@ const server = defineServer({
   },
   express: (app) => {
     app.get('/health', (_req, res) => {
+      const persistence = getWorldPersistenceInfo();
       res.json({
         ok: true,
         service: 'stickrpg-colyseus',
         transport: 'websocket',
+        persistenceMode: persistence.mode,
+        worldKey: persistence.worldKey,
         openAiEnabled: Boolean(process.env.OPENAI_API_KEY),
         openAiModel: process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini',
         timestamp: new Date().toISOString()

@@ -6,7 +6,7 @@ import { getBuilderItemById } from '../../src/world/builderCatalog.js';
 import { WorldState } from '../../src/world/WorldState.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
 import { logServer, logServerError } from './logger.js';
-import { WorldLayoutPersistence, loadPersistedWorldLayoutSync } from './worldPersistence.js';
+import { getWorldPersistence } from './worldPersistence.js';
 
 const MAX_MESSAGE_LENGTH = 280;
 const MAX_TRANSCRIPT_ENTRIES = 18;
@@ -133,7 +133,7 @@ export class WorldRoom extends Room {
     this.setState(new WorldRoomState());
     this.chatEngine = new NpcChatEngine();
     this.worldState = new WorldState();
-    this.worldPersistence = new WorldLayoutPersistence();
+    this.worldPersistence = getWorldPersistence();
     this.npcDefinitions = new Map();
     this.transcripts = new Map();
     this.playerAliases = new Map();
@@ -141,7 +141,7 @@ export class WorldRoom extends Room {
     this.sequence = 0;
     this.playerAliasSequence = 0;
 
-    this.worldState.loadLayout(loadPersistedWorldLayoutSync());
+    this.worldState.loadLayout(this.worldPersistence.getInitialLayout());
     this.syncNpcDefinitionsFromWorld();
     logServer('room', 'World room created.', {
       roomId: this.roomId,
@@ -181,13 +181,13 @@ export class WorldRoom extends Room {
     });
 
     this.onMessage('world:getLayout', (client, message) => {
-      this.handleRpc(client, message.requestId, () => ({
+      void this.handleRpc(client, message.requestId, () => ({
         layout: this.worldState.serializeLayout()
       }));
     });
 
     this.onMessage('world:edit', (client, message) => {
-      this.handleRpc(client, message.requestId, () => this.handleWorldEdit(message));
+      void this.handleRpc(client, message.requestId, () => this.handleWorldEdit(message));
     });
 
     this.onMessage('chat:say', async (client, message) => {
@@ -245,13 +245,11 @@ export class WorldRoom extends Room {
     });
   }
 
-  async onDispose() {
-    await this.worldPersistence.dispose();
-  }
+  async onDispose() {}
 
-  handleRpc(client, requestId, handler) {
+  async handleRpc(client, requestId, handler) {
     try {
-      const payload = handler();
+      const payload = await Promise.resolve().then(() => handler());
       client.send('rpc:response', {
         requestId,
         ok: true,
@@ -271,16 +269,26 @@ export class WorldRoom extends Room {
     }
   }
 
-  commitWorldPatch(patch) {
+  async commitWorldPatch(patch, previousLayout) {
+    const nextLayout = this.worldState.serializeLayout();
+
+    try {
+      await this.worldPersistence.save(nextLayout);
+    } catch (error) {
+      this.worldState.loadLayout(previousLayout);
+      this.syncNpcDefinitionsFromWorld();
+      throw error;
+    }
+
     this.broadcast('world:patch', patch);
-    this.worldPersistence.scheduleSave(this.worldState.serializeLayout());
     return {
       placementId: patch.placement?.id ?? patch.placementId ?? null
     };
   }
 
-  handleWorldEdit(message = {}) {
+  async handleWorldEdit(message = {}) {
     const { op, payload = {} } = message;
+    const previousLayout = this.worldState.serializeLayout();
 
     switch (op) {
       case 'placeTile': {
@@ -295,7 +303,7 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(result.placement.id),
           replacedPlacementId: result.replacedPlacementId
-        });
+        }, previousLayout);
       }
       case 'placeProp': {
         const next = this.sanitizePropPlacement(payload);
@@ -309,7 +317,7 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(placement.id),
           replacedPlacementId: null
-        });
+        }, previousLayout);
       }
       case 'placeNpc': {
         const next = this.sanitizeNpcPlacement(payload);
@@ -325,7 +333,7 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(placement.id),
           replacedPlacementId: null
-        });
+        }, previousLayout);
       }
       case 'rotatePlacement': {
         const placement = this.assertEditablePlacement(payload.placementId);
@@ -337,7 +345,7 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(rotated.id),
           replacedPlacementId: null
-        });
+        }, previousLayout);
       }
       case 'deletePlacement': {
         const placement = this.assertEditablePlacement(payload.placementId);
@@ -348,7 +356,7 @@ export class WorldRoom extends Room {
         return this.commitWorldPatch({
           type: 'deletePlacement',
           placementId: placement.id
-        });
+        }, previousLayout);
       }
       case 'updateNpc': {
         const placement = this.assertEditablePlacement(payload.placementId, 'npc');
@@ -363,7 +371,7 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(updatedPlacement.id),
           replacedPlacementId: null
-        });
+        }, previousLayout);
       }
       default:
         throw new Error('That world edit is not supported.');
