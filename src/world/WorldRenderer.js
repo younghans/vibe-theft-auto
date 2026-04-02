@@ -78,6 +78,24 @@ export class WorldRenderer {
     this.propRoot.clear();
   }
 
+  syncNpcInteractRadiusIndicators(worldState, playerPosition = null) {
+    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
+      if (!rendered.actor) {
+        continue;
+      }
+
+      const placement = worldState.getPlacement(placementId);
+      const withinRadius = Boolean(
+        playerPosition
+        && placement?.layer === 'npc'
+        && placement.npc?.active !== false
+        && rendered.object.position.distanceTo(playerPosition) < (placement.npc?.interactRadius ?? rendered.item.interactionRadius ?? 4.2)
+      );
+
+      rendered.actor.setInteractRadiusVisible(this.npcInteractRadiusVisible || withinRadius);
+    }
+  }
+
   getSurfaceHeightAtPosition(x, z) {
     let surfaceHeight = 0;
 
@@ -163,7 +181,6 @@ export class WorldRenderer {
     });
     actor.object.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
-    actor.setInteractRadiusVisible(this.npcInteractRadiusVisible);
     return actor;
   }
 
@@ -283,10 +300,6 @@ export class WorldRenderer {
 
   setNpcInteractRadiusVisible(visible) {
     this.npcInteractRadiusVisible = Boolean(visible);
-
-    for (const rendered of this.renderedPlacements.values()) {
-      rendered.actor?.setInteractRadiusVisible(this.npcInteractRadiusVisible);
-    }
   }
 
   pickPlacementId(pointer, camera = this.camera) {

@@ -413,6 +413,10 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  syncNpcInteractRadiusIndicators(playerPosition = null) {
+    this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
+  }
+
   setRemoteBuilders(builders = new Map(), localSessionId = '') {
     const remoteBuilders = new Map();
     for (const [sessionId, presence] of builders.entries()) {
@@ -493,6 +497,7 @@ export class WorldBuilder {
     this.gridHelper.visible = enabled;
     this.previewRoot.visible = enabled;
     this.worldRenderer.setNpcInteractRadiusVisible(enabled);
+    this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
 
     if (!enabled) {
       this.clearSelection();

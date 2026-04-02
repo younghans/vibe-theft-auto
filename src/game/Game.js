@@ -388,6 +388,7 @@ export class Game {
         this.player.object.rotation.y,
         this.player.getAnimationSyncState()
       );
+      this.updateNpcInteractRadiusIndicators();
 
       if (emoteMenuActive || this.hud.isQuickChatOpen()) {
         this.hud.setPrompt(null);
@@ -410,6 +411,14 @@ export class Game {
 
   updateBuilderCamera() {
     this.worldBuilder.updateCamera(this.camera);
+  }
+
+  updateNpcInteractRadiusIndicators() {
+    if (!this.player || !this.worldBuilder) {
+      return;
+    }
+
+    this.worldBuilder.syncNpcInteractRadiusIndicators(this.player.position);
   }
 
   updateInteraction() {
