@@ -11,7 +11,14 @@ const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
 const DIST_INDEX_PATH = path.join(DIST_ROOT, 'index.html');
 
 function normalizeAssetPath(requestPath = '/') {
-  const withoutLeadingSlash = String(requestPath).replace(/^\/+/, '');
+  let decodedPath = String(requestPath);
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    return null;
+  }
+
+  const withoutLeadingSlash = decodedPath.replace(/^\/+/, '');
   const normalized = path.posix.normalize(withoutLeadingSlash || '.');
   if (normalized === '..' || normalized.startsWith('../')) {
     return null;
