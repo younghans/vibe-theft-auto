@@ -337,12 +337,6 @@ export class NpcServiceMock {
     player.chatSeq = (player.chatSeq ?? 0) + 1;
   }
 
-  setNpcSpeech(npc, text) {
-    npc.chatText = text;
-    npc.chatStartedAt = Date.now();
-    npc.chatSeq = (npc.chatSeq ?? 0) + 1;
-  }
-
   setNpcChatPhase(npc, status, text = npc.chatText ?? '', { bumpSeq = false } = {}) {
     npc.chatStatus = status;
     npc.chatText = text;

@@ -494,6 +494,43 @@ export class Game {
     };
   }
 
+  pushSpeechBubble(bubbles, bubble) {
+    if (bubble) {
+      bubbles.push(bubble);
+    }
+  }
+
+  addPlayerSpeechBubble(bubbles, sessionId, playerState, anchor, variant) {
+    this.pushSpeechBubble(
+      bubbles,
+      this.collectSpeechBubble(
+        `player:${sessionId}`,
+        playerState.chatText,
+        playerState.chatStartedAt,
+        anchor,
+        variant
+      )
+    );
+  }
+
+  addNpcSpeechBubble(bubbles, npcId, npcState, anchor) {
+    this.pushSpeechBubble(
+      bubbles,
+      this.collectSpeechBubble(
+        `npc:${npcId}`,
+        npcState.chatText,
+        npcState.chatStartedAt,
+        anchor,
+        'npc',
+        npcState.name,
+        {
+          status: npcState.chatStatus,
+          busy: npcState.busy
+        }
+      )
+    );
+  }
+
   projectSpeechAnchor(worldPosition) {
     const projected = this.projectedSpeechPosition.copy(worldPosition).project(this.camera);
     if (projected.z < -1 || projected.z > 1) {
@@ -518,16 +555,13 @@ export class Game {
     const bubbles = [];
     const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
     if (localPlayerState) {
-      const bubble = this.collectSpeechBubble(
-        `player:${this.npcServiceState.sessionId}`,
-        localPlayerState.chatText,
-        localPlayerState.chatStartedAt,
+      this.addPlayerSpeechBubble(
+        bubbles,
+        this.npcServiceState.sessionId,
+        localPlayerState,
         this.player.getSpeechAnchorWorldPosition(),
         'self'
       );
-      if (bubble) {
-        bubbles.push(bubble);
-      }
     }
 
     for (const [sessionId, avatar] of this.remotePlayers.entries()) {
@@ -536,16 +570,13 @@ export class Game {
         continue;
       }
 
-      const bubble = this.collectSpeechBubble(
-        `player:${sessionId}`,
-        playerState.chatText,
-        playerState.chatStartedAt,
+      this.addPlayerSpeechBubble(
+        bubbles,
+        sessionId,
+        playerState,
         avatar.getSpeechAnchorWorldPosition(),
         'player'
       );
-      if (bubble) {
-        bubbles.push(bubble);
-      }
     }
 
     const npcSpeechAnchors = this.worldBuilder.getNpcSpeechAnchors();
@@ -555,21 +586,7 @@ export class Game {
         continue;
       }
 
-      const bubble = this.collectSpeechBubble(
-        `npc:${npcId}`,
-        npcState.chatText,
-        npcState.chatStartedAt,
-        anchor,
-        'npc',
-        npcState.name,
-        {
-          status: npcState.chatStatus,
-          busy: npcState.busy
-        }
-      );
-      if (bubble) {
-        bubbles.push(bubble);
-      }
+      this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor);
     }
 
     this.hud.setSpeechBubbles(bubbles);

@@ -556,19 +556,6 @@ export class WorldRoom extends Room {
     }
   }
 
-  assertNpcAvailableAtPosition(player, npcId) {
-    const npc = this.state.npcs.get(npcId);
-    if (!npc || !player || !npc.active) {
-      throw new Error('That NPC is not available.');
-    }
-
-    if (distanceBetween({ x: npc.x, z: npc.z }, player) > npc.interactRadius) {
-      throw new Error(`Move closer to ${npc.name} first.`);
-    }
-
-    return npc;
-  }
-
   appendTranscript(npcId, entry) {
     const current = this.transcripts.get(npcId) ?? [];
     const next = trimTranscript([...current, entry]);
@@ -579,12 +566,6 @@ export class WorldRoom extends Room {
     player.chatText = text;
     player.chatStartedAt = Date.now();
     player.chatSeq += 1;
-  }
-
-  setNpcSpeech(npc, text) {
-    npc.chatText = text;
-    npc.chatStartedAt = Date.now();
-    npc.chatSeq += 1;
   }
 
   setNpcChatPhase(npc, status, text = npc.chatText || '', { bumpSeq = false } = {}) {
@@ -637,6 +618,45 @@ export class WorldRoom extends Room {
     }
 
     return nearestNpc;
+  }
+
+  createNpcStreamPublisher(npcId) {
+    let lastPublishedText = '';
+    let lastPublishedAt = 0;
+
+    return async (partialText) => {
+      const liveNpc = this.state.npcs.get(npcId);
+      if (!liveNpc || !liveNpc.busy) {
+        return;
+      }
+
+      const now = Date.now();
+      if (partialText === lastPublishedText || (now - lastPublishedAt) < NPC_STREAM_THROTTLE_MS) {
+        return;
+      }
+
+      lastPublishedText = partialText;
+      lastPublishedAt = now;
+      this.setNpcChatPhase(liveNpc, 'streaming', partialText);
+    };
+  }
+
+  appendNpcReplyTranscript(npc, text) {
+    this.appendTranscript(
+      npc.id,
+      createTranscriptEntry(`entry_${++this.sequence}`, 'npc', npc.name, text)
+    );
+  }
+
+  finalizeNpcReply(npcId, text, { bumpSeq = true } = {}) {
+    const npc = this.state.npcs.get(npcId);
+    if (!npc) {
+      return null;
+    }
+
+    this.setNpcChatPhase(npc, 'done', text, { bumpSeq });
+    this.appendNpcReplyTranscript(npc, text);
+    return npc;
   }
 
   async handlePublicChat(client, message) {
@@ -695,59 +715,29 @@ export class WorldRoom extends Room {
         createTranscriptEntry(`entry_${++this.sequence}`, 'player', playerAlias, playerMessage)
       );
 
-      const transcript = this.transcripts.get(npc.id) ?? [];
-      let lastPublishedText = '';
-      let lastPublishedAt = 0;
       const replyResult = await this.chatEngine.streamReply({
         npc: definition,
-        transcript,
+        transcript: this.transcripts.get(npc.id) ?? [],
         playerMessage,
-        onDelta: async (partialText) => {
-          const liveNpc = this.state.npcs.get(npc.id);
-          if (!liveNpc || !liveNpc.busy) {
-            return;
-          }
-
-          const now = Date.now();
-          if (partialText === lastPublishedText || (now - lastPublishedAt) < NPC_STREAM_THROTTLE_MS) {
-            return;
-          }
-
-          lastPublishedText = partialText;
-          lastPublishedAt = now;
-          this.setNpcChatPhase(liveNpc, 'streaming', partialText);
-        }
+        onDelta: this.createNpcStreamPublisher(npc.id)
       });
-      const reply = replyResult.text;
 
-      const liveNpc = this.state.npcs.get(npc.id);
+      const liveNpc = this.finalizeNpcReply(npc.id, replyResult.text);
       if (liveNpc) {
-        this.setNpcChatPhase(liveNpc, 'done', reply, { bumpSeq: true });
-        this.appendTranscript(
-          liveNpc.id,
-          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, reply)
-        );
+        logServer('room', 'NPC ambient reply completed.', {
+          roomId: this.roomId,
+          sessionId: client.sessionId,
+          npcId: npc.id,
+          npcName: npc.name,
+          usedFallback: replyResult.usedFallback,
+          usedRetry: replyResult.usedRetry,
+          endedWithPartial: replyResult.endedWithPartial,
+          attemptCount: replyResult.attemptCount
+        });
       }
-      logServer('room', 'NPC ambient reply completed.', {
-        roomId: this.roomId,
-        sessionId: client.sessionId,
-        npcId: npc.id,
-        npcName: npc.name,
-        usedFallback: replyResult.usedFallback,
-        usedRetry: replyResult.usedRetry,
-        endedWithPartial: replyResult.endedWithPartial,
-        attemptCount: replyResult.attemptCount
-      });
     } catch (error) {
-      const liveNpc = this.state.npcs.get(npc.id);
-      if (liveNpc) {
-        const fallback = `${liveNpc.name} pauses, then says they need a moment to gather their thoughts.`;
-        this.setNpcChatPhase(liveNpc, 'done', fallback, { bumpSeq: true });
-        this.appendTranscript(
-          liveNpc.id,
-          createTranscriptEntry(`entry_${++this.sequence}`, 'npc', liveNpc.name, fallback)
-        );
-      }
+      const fallback = `${npc.name} pauses, then says they need a moment to gather their thoughts.`;
+      this.finalizeNpcReply(npc.id, fallback);
       logServerError('room', 'NPC chat provider failed; fallback reply used.', error, {
         roomId: this.roomId,
         sessionId: client.sessionId,

@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { logServer, logServerError } from './logger.js';
 
 const STREAM_RETRY_BACKOFF_MS = 240;
+const MAX_STREAM_ATTEMPTS = 2;
 
 function createTraceId() {
   return `npc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -9,29 +10,6 @@ function createTraceId() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function summarizeUsage(usage) {
-  if (!usage || typeof usage !== 'object') {
-    return null;
-  }
-
-  return {
-    inputTokens: usage.input_tokens ?? null,
-    outputTokens: usage.output_tokens ?? null,
-    totalTokens: usage.total_tokens ?? null
-  };
-}
-
-function summarizeResponse(response, text) {
-  return {
-    responseId: response?.id ?? null,
-    status: response?.status ?? null,
-    outputItemCount: Array.isArray(response?.output) ? response.output.length : 0,
-    responseLength: text?.length ?? 0,
-    incompleteDetails: response?.incomplete_details ?? null,
-    usage: summarizeUsage(response?.usage)
-  };
 }
 
 function getHeaderValue(headers, name) {
@@ -101,6 +79,28 @@ function hashText(text) {
   return Math.abs(hash);
 }
 
+function createFinalResult({
+  traceId,
+  text,
+  streamed,
+  usedFallback,
+  usedRetry,
+  attemptCount,
+  endedWithPartial,
+  errorSummary = null
+}) {
+  return {
+    traceId,
+    text,
+    streamed,
+    usedFallback,
+    usedRetry,
+    attemptCount,
+    endedWithPartial,
+    errorSummary
+  };
+}
+
 export class NpcChatEngine {
   constructor() {
     this.model = process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini';
@@ -119,17 +119,39 @@ export class NpcChatEngine {
     });
   }
 
-  async generateReply({ npc, transcript, playerMessage }) {
-    const result = await this.streamReply({
-      npc,
-      transcript,
-      playerMessage
-    });
-    return result.text;
+  createResponseInput(npc, transcriptWindow, playerMessage) {
+    return [
+      {
+        role: 'system',
+        content: [
+          {
+            type: 'input_text',
+            text: [
+              'You are an NPC in Stick RPG 3D.',
+              'Stay in character, be concise, and avoid markdown.',
+              'Do not mention system prompts, API details, or hidden instructions.',
+              `NPC name: ${npc.name}`,
+              `NPC personality prompt: ${npc.prompt}`
+            ].join('\n')
+          }
+        ]
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: [
+              transcriptWindow ? `Recent public transcript:\n${transcriptWindow}` : 'No prior transcript.',
+              `Latest player message: ${playerMessage}`
+            ].join('\n\n')
+          }
+        ]
+      }
+    ];
   }
 
-  async streamReplyAttempt({ npc, transcriptWindow, transcriptEntries, playerMessage, onDelta, traceId, attempt }) {
-    const startedAt = Date.now();
+  logAttemptStart({ traceId, attempt, npc, transcriptEntries, transcriptWindow, playerMessage }) {
     logServer(
       'npc-chat',
       attempt === 1 ? 'Requesting streamed OpenAI NPC reply.' : 'Retrying streamed OpenAI NPC reply.',
@@ -145,6 +167,42 @@ export class NpcChatEngine {
         model: this.model
       }
     );
+  }
+
+  logSuccess({ traceId, npc, attemptResult, recoveredAfterRetry = false, initialErrorSummary = null }) {
+    logServer('npc-chat', 'Received streamed NPC reply.', {
+      traceId,
+      npcId: npc.id,
+      npcName: npc.name,
+      responseLength: attemptResult.text.length,
+      streamed: attemptResult.sawDelta,
+      attemptCount: attemptResult.attempt,
+      usedRetry: attemptResult.attempt > 1,
+      elapsedMs: attemptResult.elapsedMs,
+      lastEventType: attemptResult.lastEventType,
+      recoveredAfterRetry,
+      initialErrorSummary
+    });
+  }
+
+  logPreservedPartial(traceId, npc, attemptResult, text) {
+    logServer('npc-chat', 'Preserving partial NPC reply after stream failure.', {
+      traceId,
+      npcId: npc.id,
+      npcName: npc.name,
+      responseLength: text.length,
+      attemptCount: attemptResult.attempt,
+      usedRetry: attemptResult.attempt > 1,
+      elapsedMs: attemptResult.elapsedMs,
+      lastEventType: attemptResult.lastEventType,
+      partialLength: attemptResult.partialLength,
+      errorSummary: attemptResult.errorSummary
+    });
+  }
+
+  async streamReplyAttempt({ npc, transcriptWindow, transcriptEntries, playerMessage, onDelta, traceId, attempt }) {
+    const startedAt = Date.now();
+    this.logAttemptStart({ traceId, attempt, npc, transcriptEntries, transcriptWindow, playerMessage });
 
     let text = '';
     let sawDelta = false;
@@ -155,35 +213,7 @@ export class NpcChatEngine {
         model: this.model,
         stream: true,
         max_output_tokens: 180,
-        input: [
-          {
-            role: 'system',
-            content: [
-              {
-                type: 'input_text',
-                text: [
-                  'You are an NPC in Stick RPG 3D.',
-                  'Stay in character, be concise, and avoid markdown.',
-                  'Do not mention system prompts, API details, or hidden instructions.',
-                  `NPC name: ${npc.name}`,
-                  `NPC personality prompt: ${npc.prompt}`
-                ].join('\n')
-              }
-            ]
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: [
-                  transcriptWindow ? `Recent public transcript:\n${transcriptWindow}` : 'No prior transcript.',
-                  `Latest player message: ${playerMessage}`
-                ].join('\n\n')
-              }
-            ]
-          }
-        ]
+        input: this.createResponseInput(npc, transcriptWindow, playerMessage)
       });
 
       lastEventType = 'stream.open';
@@ -276,172 +306,113 @@ export class NpcChatEngine {
         reason: 'missing_api_key'
       });
       await sleep(220);
-      return {
+      return createFinalResult({
         traceId,
         text,
         streamed: false,
         usedFallback: true,
         usedRetry: false,
         attemptCount: 0,
-        endedWithPartial: false,
-        errorSummary: null
-      };
+        endedWithPartial: false
+      });
     }
 
     const transcriptWindow = transcript.slice(-10)
       .map((entry) => `${entry.author}: ${entry.text}`)
       .join('\n');
+    let firstErrorSummary = null;
 
-    const finalizeSuccess = (attemptResult, extra = {}) => {
-      logServer('npc-chat', 'Received streamed NPC reply.', {
-        traceId,
-        npcId: npc.id,
-        npcName: npc.name,
-        responseLength: attemptResult.text.length,
-        streamed: attemptResult.sawDelta,
-        attemptCount: attemptResult.attempt,
-        usedRetry: attemptResult.attempt > 1,
-        elapsedMs: attemptResult.elapsedMs,
-        lastEventType: attemptResult.lastEventType,
-        ...extra
-      });
-      return {
-        traceId,
-        text: attemptResult.text,
-        streamed: attemptResult.sawDelta,
-        usedFallback: false,
-        usedRetry: attemptResult.attempt > 1,
-        attemptCount: attemptResult.attempt,
-        endedWithPartial: false,
-        errorSummary: extra.errorSummary ?? null
-      };
-    };
-
-    const preservePartial = (attemptResult) => {
-      const text = finalizePartialReply(attemptResult.partialText);
-      logServer('npc-chat', 'Preserving partial NPC reply after stream failure.', {
-        traceId,
-        npcId: npc.id,
-        npcName: npc.name,
-        responseLength: text.length,
-        attemptCount: attemptResult.attempt,
-        usedRetry: attemptResult.attempt > 1,
-        elapsedMs: attemptResult.elapsedMs,
-        lastEventType: attemptResult.lastEventType,
-        partialLength: attemptResult.partialLength,
-        errorSummary: attemptResult.errorSummary
-      });
-      return {
-        traceId,
-        text,
-        streamed: true,
-        usedFallback: false,
-        usedRetry: attemptResult.attempt > 1,
-        attemptCount: attemptResult.attempt,
-        endedWithPartial: true,
-        errorSummary: attemptResult.errorSummary
-      };
-    };
-
-    const firstAttempt = await this.streamReplyAttempt({
-      npc,
-      transcriptWindow,
-      transcriptEntries: transcript.length,
-      playerMessage,
-      onDelta,
-      traceId,
-      attempt: 1
-    });
-
-    if (firstAttempt.ok) {
-      return finalizeSuccess(firstAttempt);
-    }
-
-    if (firstAttempt.partialLength > 0) {
-      return preservePartial(firstAttempt);
-    }
-
-    if (firstAttempt.reason !== 'stream_error') {
-      return {
-        traceId,
-        text: this.generateFallbackReply({
-          npc,
-          playerMessage,
-          traceId,
-          reason: firstAttempt.reason,
-          meta: {
-            attemptCount: 1,
-            usedRetry: false,
-            streamed: firstAttempt.sawDelta,
-            elapsedMs: firstAttempt.elapsedMs,
-            lastEventType: firstAttempt.lastEventType
-          }
-        }),
-        streamed: false,
-        usedFallback: true,
-        usedRetry: false,
-        attemptCount: 1,
-        endedWithPartial: false,
-        errorSummary: firstAttempt.errorSummary
-      };
-    }
-
-    logServer('npc-chat', 'Retrying NPC stream after pre-token failure.', {
-      traceId,
-      npcId: npc.id,
-      npcName: npc.name,
-      backoffMs: STREAM_RETRY_BACKOFF_MS,
-      firstAttemptElapsedMs: firstAttempt.elapsedMs,
-      errorSummary: firstAttempt.errorSummary
-    });
-    await sleep(STREAM_RETRY_BACKOFF_MS);
-
-    const secondAttempt = await this.streamReplyAttempt({
-      npc,
-      transcriptWindow,
-      transcriptEntries: transcript.length,
-      playerMessage,
-      onDelta,
-      traceId,
-      attempt: 2
-    });
-
-    if (secondAttempt.ok) {
-      return finalizeSuccess(secondAttempt, {
-        recoveredAfterRetry: true,
-        initialErrorSummary: firstAttempt.errorSummary
-      });
-    }
-
-    if (secondAttempt.partialLength > 0) {
-      return preservePartial(secondAttempt);
-    }
-
-    await sleep(220);
-    return {
-      traceId,
-      text: this.generateFallbackReply({
+    for (let attempt = 1; attempt <= MAX_STREAM_ATTEMPTS; attempt += 1) {
+      const attemptResult = await this.streamReplyAttempt({
         npc,
+        transcriptWindow,
+        transcriptEntries: transcript.length,
         playerMessage,
+        onDelta,
         traceId,
-        reason: secondAttempt.reason,
-        meta: {
-          attemptCount: 2,
-          usedRetry: true,
-          streamed: secondAttempt.sawDelta,
-          elapsedMs: secondAttempt.elapsedMs,
-          lastEventType: secondAttempt.lastEventType,
-          firstErrorSummary: firstAttempt.errorSummary,
-          secondErrorSummary: secondAttempt.errorSummary
-        }
-      }),
-      streamed: false,
-      usedFallback: true,
-      usedRetry: true,
-      attemptCount: 2,
-      endedWithPartial: false,
-      errorSummary: secondAttempt.errorSummary ?? firstAttempt.errorSummary
-    };
+        attempt
+      });
+
+      if (attemptResult.ok) {
+        this.logSuccess({
+          traceId,
+          npc,
+          attemptResult,
+          recoveredAfterRetry: attempt > 1,
+          initialErrorSummary: firstErrorSummary
+        });
+        return createFinalResult({
+          traceId,
+          text: attemptResult.text,
+          streamed: attemptResult.sawDelta,
+          usedFallback: false,
+          usedRetry: attempt > 1,
+          attemptCount: attempt,
+          endedWithPartial: false,
+          errorSummary: attempt > 1 ? firstErrorSummary : null
+        });
+      }
+
+      if (attemptResult.partialLength > 0) {
+        const text = finalizePartialReply(attemptResult.partialText);
+        this.logPreservedPartial(traceId, npc, attemptResult, text);
+        return createFinalResult({
+          traceId,
+          text,
+          streamed: true,
+          usedFallback: false,
+          usedRetry: attempt > 1,
+          attemptCount: attempt,
+          endedWithPartial: true,
+          errorSummary: attemptResult.errorSummary
+        });
+      }
+
+      if (!firstErrorSummary) {
+        firstErrorSummary = attemptResult.errorSummary;
+      }
+
+      const isFinalAttempt = attempt >= MAX_STREAM_ATTEMPTS;
+      if (attemptResult.reason !== 'stream_error' || isFinalAttempt) {
+        await sleep(220);
+        return createFinalResult({
+          traceId,
+          text: this.generateFallbackReply({
+            npc,
+            playerMessage,
+            traceId,
+            reason: attemptResult.reason,
+            meta: {
+              attemptCount: attempt,
+              usedRetry: attempt > 1,
+              streamed: attemptResult.sawDelta,
+              elapsedMs: attemptResult.elapsedMs,
+              lastEventType: attemptResult.lastEventType,
+              firstErrorSummary,
+              latestErrorSummary: attemptResult.errorSummary
+            }
+          }),
+          streamed: false,
+          usedFallback: true,
+          usedRetry: attempt > 1,
+          attemptCount: attempt,
+          endedWithPartial: false,
+          errorSummary: attemptResult.errorSummary ?? firstErrorSummary
+        });
+      }
+
+      logServer('npc-chat', 'Retrying NPC stream after pre-token failure.', {
+        traceId,
+        npcId: npc.id,
+        npcName: npc.name,
+        backoffMs: STREAM_RETRY_BACKOFF_MS,
+        firstAttemptElapsedMs: attemptResult.elapsedMs,
+        errorSummary: attemptResult.errorSummary
+      });
+      await sleep(STREAM_RETRY_BACKOFF_MS);
+    }
+
+    throw new Error('NPC stream retry loop exited unexpectedly.');
   }
 
   generateFallbackReply({ npc, playerMessage, traceId = null, reason = 'unknown', meta = null }) {
