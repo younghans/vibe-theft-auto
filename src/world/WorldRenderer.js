@@ -25,8 +25,19 @@ function snapToGround(root) {
   root.position.y -= bounds.min.y;
 }
 
-function createCollisionBox(object, padding = 0.2) {
-  return new THREE.Box3().setFromObject(object).expandByScalar(padding);
+function createBoxCollider(object, padding = 0.2) {
+  return {
+    type: 'box',
+    box: new THREE.Box3().setFromObject(object).expandByScalar(padding)
+  };
+}
+
+function createNpcCollider(actor, placement) {
+  if (!actor || placement?.npc?.active === false) {
+    return null;
+  }
+
+  return actor.getCollider();
 }
 
 function toRotationY(rotationQuarterTurns) {
@@ -149,7 +160,9 @@ export class WorldRenderer {
       actor,
       item,
       layer: placement.layer,
-      collisionBox: item.collision ? createCollisionBox(object, item.padding ?? 0.2) : null
+      collider: actor
+        ? createNpcCollider(actor, placement)
+        : (item.collision ? createBoxCollider(object, item.padding ?? 0.2) : null)
     };
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
@@ -180,6 +193,7 @@ export class WorldRenderer {
       }
     });
     actor.object.userData.editorPlacementId = placement.id;
+    actor.pickProxy.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
     return actor;
   }
@@ -211,8 +225,12 @@ export class WorldRenderer {
       rendered.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
     }
 
-    if (rendered.item.collision) {
-      rendered.collisionBox = createCollisionBox(rendered.object, rendered.item.padding ?? 0.2);
+    if (rendered.actor) {
+      rendered.collider = createNpcCollider(rendered.actor, placement);
+    } else if (rendered.item.collision) {
+      rendered.collider = createBoxCollider(rendered.object, rendered.item.padding ?? 0.2);
+    } else {
+      rendered.collider = null;
     }
   }
 
@@ -226,9 +244,9 @@ export class WorldRenderer {
     this.renderedPlacements.delete(id);
   }
 
-  getCollisionBoxes() {
+  getColliders() {
     return [...this.renderedPlacements.values()]
-      .map((placement) => placement.collisionBox)
+      .map((placement) => placement.collider)
       .filter(Boolean);
   }
 

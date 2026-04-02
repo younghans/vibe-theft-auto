@@ -253,7 +253,8 @@ export const BUILDER_CATEGORIES = [
       groupLabel: 'Citizens',
       interactionOffset: model.interactionOffset,
       interactionRadius: model.interactionRadius,
-      collisionRadius: model.collisionRadius
+      collider: { ...model.collider },
+      pickCollider: { ...model.pickCollider }
     }))
   }
 ];

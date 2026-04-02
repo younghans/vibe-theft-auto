@@ -21,7 +21,7 @@ export async function buildCity(scene) {
   );
 
   return {
-    collisionBoxes: [],
+    colliders: [],
     interactables: [],
     cityBounds,
     layout: defaultWorldLayout,

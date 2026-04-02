@@ -38,6 +38,22 @@ function createInteractRadiusIndicator() {
   return ring;
 }
 
+function createPickProxy(collider) {
+  const pickProxy = new THREE.Mesh(
+    new THREE.CylinderGeometry(collider.radius, collider.radius, collider.height, 18, 1),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      colorWrite: false,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide
+    })
+  );
+  pickProxy.position.y = collider.height * 0.5;
+  return pickProxy;
+}
+
 export class NpcActor {
   constructor({ model, object, definition }) {
     this.model = model;
@@ -45,6 +61,7 @@ export class NpcActor {
     this.anchor = new THREE.Group();
     this.visual = new THREE.Group();
     this.character = object;
+    this.pickProxy = createPickProxy(model.pickCollider ?? model.collider);
     this.selectionIndicator = createIndicator(0xf2c871);
     this.busyIndicator = createIndicator(0xf6924c);
     this.interactRadiusIndicator = createInteractRadiusIndicator();
@@ -53,6 +70,7 @@ export class NpcActor {
 
     prepareNpcRenderObject(this.character, model);
 
+    this.anchor.add(this.pickProxy);
     this.anchor.add(this.interactRadiusIndicator);
     this.visual.add(this.character);
     this.anchor.add(this.busyIndicator);
@@ -67,6 +85,18 @@ export class NpcActor {
 
   get boundsObject() {
     return this.visual;
+  }
+
+  getCollider() {
+    const collider = this.model.collider ?? this.model.pickCollider;
+    return {
+      type: 'cylinder',
+      x: this.anchor.position.x,
+      z: this.anchor.position.z,
+      y: this.anchor.position.y,
+      radius: collider.radius,
+      height: collider.height
+    };
   }
 
   applyPlacement(definition) {

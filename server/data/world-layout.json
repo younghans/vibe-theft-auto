@@ -1299,6 +1299,19 @@
       "active": true
     },
     {
+      "id": "placement_148",
+      "modelId": "xBot",
+      "position": [
+        -25.32,
+        -12.96
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "donald trump",
+      "prompt": "you are donald trump",
+      "interactRadius": 10,
+      "active": true
+    },
+    {
       "id": "npc_sketch",
       "modelId": "xBot",
       "position": [

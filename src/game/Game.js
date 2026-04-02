@@ -96,7 +96,7 @@ export class Game {
       this.setupAtmosphere();
 
       const cityState = await buildCity(this.scene);
-      this.baseCollisionBoxes = cityState.collisionBoxes;
+      this.baseColliders = cityState.colliders;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
       this.npcService = await createNpcService();
@@ -375,13 +375,13 @@ export class Game {
       this.updateBuilderCamera();
       this.hud.setPrompt(null);
     } else {
-      const activeCollisionBoxes = [
-        ...this.baseCollisionBoxes,
-        ...this.worldBuilder.getCollisionBoxes()
+      const activeColliders = [
+        ...this.baseColliders,
+        ...this.worldBuilder.getColliders()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
       const playerInput = (emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
-      this.player.update(deltaSeconds, playerInput, this.camera, activeCollisionBoxes, this.cityBounds, groundHeight);
+      this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
       this.updateCamera();
       this.npcService?.setPlayerTransform(
         this.player.position,

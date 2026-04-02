@@ -389,8 +389,8 @@ export class WorldBuilder {
     }
   }
 
-  getCollisionBoxes() {
-    return this.worldRenderer.getCollisionBoxes();
+  getColliders() {
+    return this.worldRenderer.getColliders();
   }
 
   getGroundHeightAt(worldPosition) {

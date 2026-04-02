@@ -76,13 +76,43 @@ function projectMoveOnCamera(camera, inputVector) {
   return movement;
 }
 
-function collidesWithBoxes(candidate, boxes, radius) {
-  return boxes.some((box) => (
+function collidesWithBox(candidate, collider, radius) {
+  const box = collider?.box ?? collider;
+  if (!box?.min || !box?.max) {
+    return false;
+  }
+
+  return (
     candidate.x > box.min.x - radius &&
     candidate.x < box.max.x + radius &&
     candidate.z > box.min.z - radius &&
     candidate.z < box.max.z + radius
-  ));
+  );
+}
+
+function collidesWithCylinder(candidate, collider, radius) {
+  if (!collider || !Number.isFinite(collider.x) || !Number.isFinite(collider.z) || !Number.isFinite(collider.radius)) {
+    return false;
+  }
+
+  const combinedRadius = radius + collider.radius;
+  const deltaX = candidate.x - collider.x;
+  const deltaZ = candidate.z - collider.z;
+  return (deltaX * deltaX) + (deltaZ * deltaZ) < combinedRadius * combinedRadius;
+}
+
+function collidesWithColliders(candidate, colliders, radius) {
+  return colliders.some((collider) => {
+    if (!collider) {
+      return false;
+    }
+
+    if (collider.type === 'cylinder') {
+      return collidesWithCylinder(candidate, collider, radius);
+    }
+
+    return collidesWithBox(candidate, collider, radius);
+  });
 }
 
 function dampAngle(current, target, smoothing) {
@@ -246,7 +276,7 @@ export async function createPlayer(library, {
       action.play();
       return true;
     },
-    update(deltaSeconds, input, camera, collisionBoxes, cityBounds, groundHeight = 0) {
+    update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0) {
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
 
@@ -260,12 +290,12 @@ export async function createPlayer(library, {
       if (moving) {
         const step = PLAYER_SPEED * deltaSeconds;
         const proposedX = anchor.position.clone().addScaledVector(new THREE.Vector3(movement.x, 0, 0), step);
-        if (!collidesWithBoxes(proposedX, collisionBoxes, PLAYER_RADIUS)) {
+        if (!collidesWithColliders(proposedX, colliders, PLAYER_RADIUS)) {
           anchor.position.x = THREE.MathUtils.clamp(proposedX.x, cityBounds.min.x, cityBounds.max.x);
         }
 
         const proposedZ = anchor.position.clone().addScaledVector(new THREE.Vector3(0, 0, movement.z), step);
-        if (!collidesWithBoxes(proposedZ, collisionBoxes, PLAYER_RADIUS)) {
+        if (!collidesWithColliders(proposedZ, colliders, PLAYER_RADIUS)) {
           anchor.position.z = THREE.MathUtils.clamp(proposedZ.z, cityBounds.min.z, cityBounds.max.z);
         }
 

@@ -1,5 +1,27 @@
 import { assets } from '../world/assetManifest.js';
 
+function createNpcCollisionProfile({ height, colliderRadius }) {
+  const colliderHeight = Math.max(1.6, height * 0.82);
+  return {
+    collider: Object.freeze({
+      radius: colliderRadius,
+      height: colliderHeight
+    }),
+    pickCollider: Object.freeze({
+      radius: colliderRadius + 0.4,
+      height: Math.max(colliderHeight, height * 0.94)
+    })
+  };
+}
+
+function createNpcModel(definition) {
+  const collisionProfile = createNpcCollisionProfile(definition);
+  return Object.freeze({
+    ...definition,
+    ...collisionProfile
+  });
+}
+
 export const NPC_MODEL_CATALOG = Object.freeze([
   {
     id: 'xBot',
@@ -10,7 +32,7 @@ export const NPC_MODEL_CATALOG = Object.freeze([
     footprint: [3.2, 3.2],
     interactionOffset: 2.3,
     interactionRadius: 4.2,
-    collisionRadius: 1.35
+    colliderRadius: 1.35
   },
   {
     id: 'brute',
@@ -21,7 +43,7 @@ export const NPC_MODEL_CATALOG = Object.freeze([
     footprint: [4.4, 4.4],
     interactionOffset: 2.8,
     interactionRadius: 4.8,
-    collisionRadius: 1.65
+    colliderRadius: 1.65
   },
   {
     id: 'ch18NonPbr',
@@ -32,9 +54,9 @@ export const NPC_MODEL_CATALOG = Object.freeze([
     footprint: [3.6, 3.6],
     interactionOffset: 2.5,
     interactionRadius: 4.4,
-    collisionRadius: 1.45
+    colliderRadius: 1.45
   }
-]);
+].map(createNpcModel));
 
 export const NPC_MODELS_BY_ID = new Map(NPC_MODEL_CATALOG.map((entry) => [entry.id, entry]));
 export const NPC_MODELS_BY_ITEM_ID = new Map(NPC_MODEL_CATALOG.map((entry) => [entry.itemId, entry]));
