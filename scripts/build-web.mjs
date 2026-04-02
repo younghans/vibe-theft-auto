@@ -37,6 +37,61 @@ function isAssetUrl(value) {
   return typeof value === 'string' && value.startsWith('file:');
 }
 
+function parseGlbJsonChunk(buffer) {
+  const magic = buffer.toString('utf8', 0, 4);
+  if (magic !== 'glTF') {
+    throw new Error('Invalid GLB header.');
+  }
+
+  const version = buffer.readUInt32LE(4);
+  if (version !== 2) {
+    throw new Error(`Unsupported GLB version: ${version}`);
+  }
+
+  const totalLength = buffer.readUInt32LE(8);
+  let offset = 12;
+
+  while (offset + 8 <= totalLength) {
+    const chunkLength = buffer.readUInt32LE(offset);
+    const chunkType = buffer.toString('utf8', offset + 4, offset + 8);
+    const chunkStart = offset + 8;
+    const chunkEnd = chunkStart + chunkLength;
+
+    if (chunkType === 'JSON') {
+      const jsonText = buffer.toString('utf8', chunkStart, chunkEnd).replace(/\u0000+$/u, '');
+      return JSON.parse(jsonText);
+    }
+
+    offset = chunkEnd;
+  }
+
+  return null;
+}
+
+async function getReferencedAssetUris(normalizedPath) {
+  const extension = path.extname(normalizedPath).toLowerCase();
+
+  if (extension === '.gltf') {
+    const contents = await fs.readFile(normalizedPath, 'utf8');
+    const document = JSON.parse(contents);
+    return [
+      ...(document.buffers ?? []).map((entry) => entry.uri),
+      ...(document.images ?? []).map((entry) => entry.uri)
+    ];
+  }
+
+  if (extension === '.glb') {
+    const contents = await fs.readFile(normalizedPath);
+    const document = parseGlbJsonChunk(contents);
+    return [
+      ...(document?.buffers ?? []).map((entry) => entry.uri),
+      ...(document?.images ?? []).map((entry) => entry.uri)
+    ];
+  }
+
+  return [];
+}
+
 function collectAssetUrls(value, output = new Set()) {
   if (!value) {
     return output;
@@ -72,14 +127,8 @@ async function addRuntimeAsset(filePath, filesToCopy, copiedLicenses) {
   filesToCopy.add(normalizedPath);
 
   const extension = path.extname(normalizedPath).toLowerCase();
-  if (extension === '.gltf') {
-    const contents = await fs.readFile(normalizedPath, 'utf8');
-    const document = JSON.parse(contents);
-    const referencedUris = [
-      ...(document.buffers ?? []).map((entry) => entry.uri),
-      ...(document.images ?? []).map((entry) => entry.uri)
-    ];
-
+  if (extension === '.gltf' || extension === '.glb') {
+    const referencedUris = await getReferencedAssetUris(normalizedPath);
     for (const uri of referencedUris) {
       if (!uri || /^data:/i.test(uri)) {
         continue;
