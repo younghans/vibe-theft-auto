@@ -7,19 +7,19 @@ export const cityAsset = (modelName) =>
 export const assets = {
   mixamo: {
     characters: {
-      xBot: assetUrl('mixamo', 'characters', 'X Bot.fbx'),
-      brute: assetUrl('mixamo', 'characters', 'Brute.fbx'),
-      ch18NonPbr: assetUrl('mixamo', 'characters', 'Ch18_nonPBR.fbx')
+      xBot: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
+      brute: assetUrl('mixamo', 'characters', 'brute.fbx'),
+      ch18NonPbr: assetUrl('mixamo', 'characters', 'ch18-non-pbr.fbx')
     },
     animations: {
-      walking: assetUrl('mixamo', 'animations', 'Walking.json'),
-      snakeHipHopDance: assetUrl('mixamo', 'animations', 'Snake Hip Hop Dance.json'),
-      waveHipHopDance: assetUrl('mixamo', 'animations', 'Wave Hip Hop Dance.json'),
-      waving: assetUrl('mixamo', 'animations', 'Waving.json')
+      walking: assetUrl('mixamo', 'animations', 'walking.json'),
+      snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
+      waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
+      waving: assetUrl('mixamo', 'animations', 'waving.json')
     }
   },
   player: {
-    character: assetUrl('mixamo', 'characters', 'X Bot.fbx'),
+    character: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
     walkClip: 'walking',
     emotes: Object.freeze(
       Object.fromEntries(
