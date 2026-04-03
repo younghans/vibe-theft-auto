@@ -688,28 +688,17 @@ export class Game {
     }
 
     const direction = travel.clone().normalize();
-    const bulletMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffefad,
-      transparent: true,
-      opacity: 0.96
-    });
     const trailMaterial = new THREE.MeshBasicMaterial({
       color: 0xf6d87f,
       transparent: true,
-      opacity: 0.6
+      opacity: 0.92
     });
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 10, 10),
-      bulletMaterial
-    );
-    head.position.copy(start);
     const trailGeometry = new THREE.BufferGeometry().setFromPoints([start, start]);
     const trail = new THREE.Line(
       trailGeometry,
       trailMaterial
     );
     this.scene.add(trail);
-    this.scene.add(head);
     const durationMs = THREE.MathUtils.clamp(
       (distance / PROJECTILE_VISUAL_SPEED) * 1000,
       PROJECTILE_MIN_LIFETIME_MS,
@@ -717,11 +706,10 @@ export class Game {
     );
     this.combatEffects.push({
       type: 'projectile',
-      object: head,
+      object: trail,
       trail,
       trailGeometry,
-      material: bulletMaterial,
-      secondaryMaterial: trailMaterial,
+      material: trailMaterial,
       start: start.clone(),
       end: end.clone(),
       direction,
@@ -774,17 +762,14 @@ export class Game {
       if (effect.type === 'projectile') {
         const lifetime = Math.max(1, effect.expiresAt - effect.startedAt);
         const progress = THREE.MathUtils.clamp((now - effect.startedAt) / lifetime, 0, 1);
-        effect.object.position.lerpVectors(effect.start, effect.end, progress);
         if (effect.trail && effect.trailGeometry) {
           const travelledDistance = effect.distance * progress;
           const tailDistance = Math.max(0, travelledDistance - PROJECTILE_TRAIL_LENGTH);
           const tail = effect.start.clone().addScaledVector(effect.direction, tailDistance);
-          effect.trailGeometry.setFromPoints([tail, effect.object.position.clone()]);
+          const head = effect.start.clone().addScaledVector(effect.direction, travelledDistance);
+          effect.trailGeometry.setFromPoints([tail, head]);
         }
-        effect.material.opacity = THREE.MathUtils.lerp(0.95, 0.3, progress);
-        if (effect.secondaryMaterial) {
-          effect.secondaryMaterial.opacity = THREE.MathUtils.lerp(0.62, 0.12, progress);
-        }
+        effect.material.opacity = THREE.MathUtils.lerp(0.92, 0.18, progress);
       } else if (effect.type === 'impact') {
         if (now < effect.startAt) {
           next.push(effect);
