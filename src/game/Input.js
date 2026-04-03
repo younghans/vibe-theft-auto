@@ -8,6 +8,22 @@ export class Input {
       x: window.innerWidth * 0.5,
       y: window.innerHeight * 0.5
     };
+    this.onPointerButtonDown = (event) => {
+      if (this.isHudTarget(event.target)) {
+        this.pointerButtons.delete(event.button);
+        this.justPressedPointerButtons.delete(event.button);
+        return;
+      }
+
+      if (!this.pointerButtons.has(event.button)) {
+        this.justPressedPointerButtons.add(event.button);
+      }
+      this.pointerButtons.add(event.button);
+    };
+    this.onPointerButtonUp = (event) => {
+      this.pointerButtons.delete(event.button);
+      this.justPressedPointerButtons.delete(event.button);
+    };
 
     window.addEventListener('keydown', (event) => {
       if (this.isEditableTarget(event.target)) {
@@ -52,23 +68,10 @@ export class Input {
       this.pointerPosition.y = event.clientY;
     });
 
-    window.addEventListener('pointerdown', (event) => {
-      if (this.isHudTarget(event.target)) {
-        this.pointerButtons.delete(event.button);
-        this.justPressedPointerButtons.delete(event.button);
-        return;
-      }
-
-      if (!this.pointerButtons.has(event.button)) {
-        this.justPressedPointerButtons.add(event.button);
-      }
-      this.pointerButtons.add(event.button);
-    });
-
-    window.addEventListener('pointerup', (event) => {
-      this.pointerButtons.delete(event.button);
-      this.justPressedPointerButtons.delete(event.button);
-    });
+    window.addEventListener('pointerdown', this.onPointerButtonDown);
+    window.addEventListener('pointerup', this.onPointerButtonUp);
+    window.addEventListener('mousedown', this.onPointerButtonDown);
+    window.addEventListener('mouseup', this.onPointerButtonUp);
   }
 
   isEditableTarget(target) {

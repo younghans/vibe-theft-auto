@@ -6,7 +6,6 @@ import {
   ATTACHMENT_SLOTS,
   applyAttachmentTransform,
   applyHeldItemGripTransform,
-  getHeldItemAimPose,
   getHeldItemAssetUrl,
   getHeldItemAttachmentSlot,
   getHeldItemDefinition,
@@ -25,14 +24,6 @@ const PLAYER_RADIUS = 1.4;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
-const AIM_POSE_SMOOTHING = 14;
-
-const ARM_BONE_NAMES = Object.freeze({
-  rightArm: 'mixamorigRightArm',
-  rightForeArm: 'mixamorigRightForeArm',
-  leftArm: 'mixamorigLeftArm',
-  leftForeArm: 'mixamorigLeftForeArm'
-});
 
 const SLOT_MOTION_BASE = Object.freeze({
   position: Object.freeze([-0.12, 0.03, -0.08]),
@@ -227,14 +218,6 @@ export async function createPlayer(library, {
   let aliveState = true;
   let recoilAmount = 0;
   let aimingState = false;
-  let aimPoseWeight = 0;
-  const aimPoseBones = {
-    spineUpper: character.getObjectByName(MIXAMO_BONES.spineUpper),
-    rightArm: character.getObjectByName(ARM_BONE_NAMES.rightArm),
-    rightForeArm: character.getObjectByName(ARM_BONE_NAMES.rightForeArm),
-    leftArm: character.getObjectByName(ARM_BONE_NAMES.leftArm),
-    leftForeArm: character.getObjectByName(ARM_BONE_NAMES.leftForeArm)
-  };
 
   for (const slot of Object.values(ATTACHMENT_SLOTS)) {
     const socket = sockets[slot];
@@ -329,10 +312,6 @@ export async function createPlayer(library, {
 
   function getActiveHeldItemId(slot = ATTACHMENT_SLOTS.handRight) {
     return activeItemsBySlot.get(slot) ?? '';
-  }
-
-  function getCurrentAimPose() {
-    return getHeldItemAimPose(getActiveHeldItemId()) ?? null;
   }
 
   function getGripOverride(itemId) {
@@ -457,34 +436,21 @@ export async function createPlayer(library, {
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
-    aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, aimingState ? 1 : 0, AIM_POSE_SMOOTHING, deltaSeconds);
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
-    visual.position.set(0, recoilAmount * 0.03, aimingState ? -0.08 : 0);
+    visual.position.set(0, recoilAmount * 0.03, 0);
     visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
     const rightHandMotion = getSlotMotionRoot(ATTACHMENT_SLOTS.handRight);
     if (rightHandMotion) {
       rightHandMotion.position.set(
-        SLOT_MOTION_BASE.position[0] - (aimPoseWeight * 0.22) - (recoilAmount * 0.22),
-        SLOT_MOTION_BASE.position[1] + (aimPoseWeight * 0.04) + (recoilAmount * 0.02),
-        SLOT_MOTION_BASE.position[2] - (aimPoseWeight * 0.18) - (recoilAmount * 0.22)
+        SLOT_MOTION_BASE.position[0] - (recoilAmount * 0.22),
+        SLOT_MOTION_BASE.position[1] + (recoilAmount * 0.02),
+        SLOT_MOTION_BASE.position[2] - (recoilAmount * 0.22)
       );
       rightHandMotion.rotation.set(
-        SLOT_MOTION_BASE.rotation[0] - (aimPoseWeight * 0.12) - (recoilAmount * 0.05),
-        SLOT_MOTION_BASE.rotation[1] + (aimPoseWeight * 0.16) + (recoilAmount * 0.2),
-        SLOT_MOTION_BASE.rotation[2] + (aimPoseWeight * 0.08) + (recoilAmount * 0.1)
+        SLOT_MOTION_BASE.rotation[0] - (recoilAmount * 0.05),
+        SLOT_MOTION_BASE.rotation[1] + (recoilAmount * 0.2),
+        SLOT_MOTION_BASE.rotation[2] + (recoilAmount * 0.1)
       );
-    }
-
-    const aimPose = getCurrentAimPose();
-
-    if (!ragdoll.isActive() && aimPose) {
-      aimPoseBones.spineUpper?.rotateX(aimPoseWeight * (aimPose.spineUpperX ?? 0));
-      aimPoseBones.rightArm?.rotateX(aimPoseWeight * (aimPose.rightArmX ?? 0));
-      aimPoseBones.rightArm?.rotateZ(aimPoseWeight * (aimPose.rightArmZ ?? 0));
-      aimPoseBones.rightForeArm?.rotateX((aimPoseWeight * (aimPose.rightForeArmX ?? 0)) - (recoilAmount * 0.08));
-      aimPoseBones.leftArm?.rotateX(aimPoseWeight * (aimPose.leftArmX ?? 0));
-      aimPoseBones.leftArm?.rotateZ(aimPoseWeight * (aimPose.leftArmZ ?? 0));
-      aimPoseBones.leftForeArm?.rotateX(aimPoseWeight * (aimPose.leftForeArmX ?? 0));
     }
   }
 

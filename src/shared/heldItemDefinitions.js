@@ -42,21 +42,28 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
       })
     }),
     pickupDisplay: Object.freeze({
-      maxDimension: 2.6,
+      maxDimension: 0.4,
       transform: Object.freeze({
-        position: Object.freeze([0, 0.9, 0]),
-        rotation: Object.freeze([0, Math.PI / 2, Math.PI / 2]),
-        scale: DEFAULT_SCALE
+        position: Object.freeze([0, 0.35, 0]),
+        rotation: Object.freeze([Math.PI / 2, Math.PI / 2, -Math.PI / 2]),
+        scale: Object.freeze([0.4, 0.4, 0.4])
       })
     }),
     aimPose: Object.freeze({
-      spineUpperX: -0.14,
-      rightArmX: -0.75,
-      rightArmZ: -0.28,
-      rightForeArmX: -0.55,
-      leftArmX: -0.22,
-      leftArmZ: 0.08,
-      leftForeArmX: -0.12
+      spineUpperX: -0.02,
+      spineUpperY: 0.08,
+      rightArmX: -0.02,
+      rightArmY: -0.48,
+      rightArmZ: -0.04,
+      rightArmPositionZ: -0.1,
+      rightForeArmX: -0.01,
+      rightForeArmY: -0.24,
+      rightForeArmPositionZ: -0.18,
+      rightHandPositionZ: -0.08,
+      leftArmX: -0.02,
+      leftArmY: -0.08,
+      leftArmZ: 0.02,
+      leftForeArmX: -0.02
     })
   }),
   [HELD_ITEM_IDS.crateA]: Object.freeze({

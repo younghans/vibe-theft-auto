@@ -24,9 +24,8 @@ import { PLAYER_MAX_HEALTH } from '../shared/combatConstants.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
-const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.4, 19.1);
-const AIM_CAMERA_POSITION_BIAS = 2.2;
-const AIM_CAMERA_LOOK_DISTANCE = 6.2;
+const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
@@ -528,7 +527,8 @@ export class Game {
         object: group,
         ring,
         weapon,
-        phase: Math.random() * Math.PI * 2
+        phase: Math.random() * Math.PI * 2,
+        spin: Math.random() * Math.PI * 2
       });
     } catch (error) {
       console.warn(`[Combat] Failed to create pickup visual for ${pickupId}.`, error);
@@ -557,9 +557,10 @@ export class Game {
 
       const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(pickup.x, 0, pickup.z)) ?? 0;
       visual.phase += deltaSeconds * 2.4;
+      visual.spin += deltaSeconds * 1.8;
       visual.object.position.set(pickup.x, groundHeight, pickup.z);
+      visual.object.rotation.y = visual.spin;
       visual.weapon.position.y = 0.9 + Math.sin(visual.phase) * 0.12;
-      visual.weapon.rotation.y += deltaSeconds * 1.8;
       visual.ring.material.opacity = 0.56 + ((Math.sin(visual.phase * 1.6) + 1) * 0.12);
     }
   }
@@ -628,7 +629,7 @@ export class Game {
         0,
         this.aimTarget.z - this.player.position.z
       );
-      if (direction.lengthSq() > 0.0001) {
+      if (direction.lengthSq() > AIM_DIRECTION_MIN_DISTANCE * AIM_DIRECTION_MIN_DISTANCE) {
         direction.normalize();
         return direction;
       }
@@ -1002,11 +1003,6 @@ export class Game {
   updateCamera(aimDirection = this.currentAimDirection, isAiming = false) {
     const targetPosition = this.player.position.clone().add(isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET);
     const lookTarget = this.player.position.clone().add(CAMERA_LOOK_OFFSET);
-
-    if (isAiming && aimDirection?.lengthSq?.() > 0.0001) {
-      targetPosition.addScaledVector(aimDirection, AIM_CAMERA_POSITION_BIAS);
-      lookTarget.addScaledVector(aimDirection, AIM_CAMERA_LOOK_DISTANCE);
-    }
 
     this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
     this.camera.lookAt(lookTarget);
