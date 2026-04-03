@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
+import { getWeaponAssetUrl, prepareEquippedWeaponModel } from '../combat/weaponVisuals.js';
 import { assets } from '../world/assetManifest.js';
 import { EMOTES_BY_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
@@ -12,6 +13,14 @@ const PLAYER_RADIUS = 1.4;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
+const AIM_POSE_SMOOTHING = 14;
+
+const ARM_BONE_NAMES = Object.freeze({
+  rightArm: 'mixamorigRightArm',
+  rightForeArm: 'mixamorigRightForeArm',
+  leftArm: 'mixamorigLeftArm',
+  leftForeArm: 'mixamorigLeftForeArm'
+});
 
 function getEmoteConfig(emoteId) {
   return EMOTES_BY_ID[emoteId] ?? {
@@ -47,6 +56,7 @@ function normalizeCharacter(root) {
 
   const groundedBounds = new THREE.Box3().setFromObject(root);
   root.position.y -= groundedBounds.min.y;
+  return scale;
 }
 
 function hideUnusedMeshes(root) {
@@ -166,7 +176,7 @@ export async function createPlayer(library, {
   walkAction.setEffectiveWeight(0);
 
   hideUnusedMeshes(character);
-  normalizeCharacter(character);
+  const characterScale = normalizeCharacter(character);
 
   const anchor = new THREE.Group();
   const visual = new THREE.Group();
@@ -186,6 +196,32 @@ export async function createPlayer(library, {
   let limpStartedAt = 0;
   let limpRecoverUntilMs = 0;
   const ragdoll = createRagdollController(character);
+  const weaponGrip = new THREE.Group();
+  weaponGrip.position.set(0.34, 0.1, 0.08);
+  weaponGrip.rotation.set(Math.PI * 0.08, Math.PI * 0.52, Math.PI * 0.08);
+  weaponGrip.scale.setScalar(characterScale > 0 ? (1 / characterScale) : 1);
+  sockets.weaponRight?.add(weaponGrip);
+  const weaponRoot = new THREE.Group();
+  weaponGrip.add(weaponRoot);
+  const muzzleSocket = new THREE.Group();
+  muzzleSocket.position.set(0.62, 0.07, 0.1);
+  weaponRoot.add(muzzleSocket);
+  const weaponNodes = new Map();
+  const weaponLoads = new Map();
+  let activeWeaponId = '';
+  let desiredWeaponId = '';
+  let weaponShown = false;
+  let aliveState = true;
+  let recoilAmount = 0;
+  let aimingState = false;
+  let aimPoseWeight = 0;
+  const aimPoseBones = {
+    spineUpper: character.getObjectByName(MIXAMO_BONES.spineUpper),
+    rightArm: character.getObjectByName(ARM_BONE_NAMES.rightArm),
+    rightForeArm: character.getObjectByName(ARM_BONE_NAMES.rightForeArm),
+    leftArm: character.getObjectByName(ARM_BONE_NAMES.leftArm),
+    leftForeArm: character.getObjectByName(ARM_BONE_NAMES.leftForeArm)
+  };
 
   function isLimpTransitioning() {
     return ragdoll.isActive() || Date.now() < limpRecoverUntilMs;
@@ -268,8 +304,111 @@ export async function createPlayer(library, {
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
-    visual.position.set(0, 0, 0);
-    visual.rotation.set(0, 0, 0);
+    aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, aimingState ? 1 : 0, AIM_POSE_SMOOTHING, deltaSeconds);
+    recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
+    visual.position.set(0, recoilAmount * 0.03, aimingState ? -0.08 : 0);
+    visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
+    weaponRoot.position.set(
+      -0.12 - (aimPoseWeight * 0.22) - (recoilAmount * 0.22),
+      0.03 + (aimPoseWeight * 0.04) + (recoilAmount * 0.02),
+      -0.08 - (aimPoseWeight * 0.18) - (recoilAmount * 0.22)
+    );
+    weaponRoot.rotation.set(
+      -0.06 - (aimPoseWeight * 0.12) - (recoilAmount * 0.05),
+      (aimPoseWeight * 0.16) + (recoilAmount * 0.2),
+      0.05 + (aimPoseWeight * 0.08) + (recoilAmount * 0.1)
+    );
+
+    if (!ragdoll.isActive()) {
+      aimPoseBones.spineUpper?.rotateX(-aimPoseWeight * 0.14);
+      aimPoseBones.rightArm?.rotateX(-(aimPoseWeight * 0.75));
+      aimPoseBones.rightArm?.rotateZ(-(aimPoseWeight * 0.28));
+      aimPoseBones.rightForeArm?.rotateX(-(aimPoseWeight * 0.55) - (recoilAmount * 0.08));
+      aimPoseBones.leftArm?.rotateX(-(aimPoseWeight * 0.22));
+      aimPoseBones.leftArm?.rotateZ(aimPoseWeight * 0.08);
+      aimPoseBones.leftForeArm?.rotateX(-(aimPoseWeight * 0.12));
+    }
+  }
+
+  async function ensureWeaponNode(weaponId) {
+    if (weaponNodes.has(weaponId)) {
+      return weaponNodes.get(weaponId);
+    }
+
+    if (!weaponLoads.has(weaponId)) {
+      const assetUrl = getWeaponAssetUrl(weaponId);
+      if (!assetUrl) {
+        return null;
+      }
+
+      weaponLoads.set(weaponId, library.instantiate(assetUrl)
+        .then((object) => {
+          prepareEquippedWeaponModel(object);
+          object.visible = false;
+          weaponRoot.add(object);
+          weaponNodes.set(weaponId, object);
+          return object;
+        })
+        .catch((error) => {
+          weaponLoads.delete(weaponId);
+          console.warn(`[Player] Failed to load weapon ${weaponId}.`, error);
+          return null;
+        }));
+    }
+
+    return weaponLoads.get(weaponId);
+  }
+
+  function applyWeaponVisibility() {
+    for (const [weaponId, node] of weaponNodes.entries()) {
+      node.visible = weaponShown && weaponId === activeWeaponId;
+    }
+  }
+
+  async function setWeaponState(weaponId = '', { visible = true } = {}) {
+    const nextWeaponId = weaponId || '';
+    const nextVisible = Boolean(visible && nextWeaponId);
+    if (
+      nextWeaponId === desiredWeaponId
+      && nextVisible === weaponShown
+      && (!nextWeaponId || weaponNodes.has(nextWeaponId) || weaponLoads.has(nextWeaponId))
+    ) {
+      applyWeaponVisibility();
+      return;
+    }
+
+    desiredWeaponId = nextWeaponId;
+    weaponShown = nextVisible;
+    if (!desiredWeaponId) {
+      activeWeaponId = '';
+      applyWeaponVisibility();
+      return;
+    }
+
+    const node = await ensureWeaponNode(desiredWeaponId);
+    if (!node || desiredWeaponId !== weaponId) {
+      applyWeaponVisibility();
+      return;
+    }
+
+    activeWeaponId = desiredWeaponId;
+    applyWeaponVisibility();
+  }
+
+  function setAliveState(nextAlive, { startedAtMs = Date.now() } = {}) {
+    if (aliveState === nextAlive) {
+      return;
+    }
+
+    aliveState = nextAlive;
+    if (!nextAlive) {
+      setLimpActive(true, { startedAtMs, trackSync: false });
+      setWeaponState(activeWeaponId, { visible: false });
+      return;
+    }
+
+    setLimpActive(false, { trackSync: false });
+    setWeaponState(activeWeaponId, { visible: weaponShown });
   }
 
   return {
@@ -280,6 +419,24 @@ export async function createPlayer(library, {
     getSpeechAnchorWorldPosition(target = new THREE.Vector3()) {
       anchor.getWorldPosition(target);
       target.y += PLAYER_HEIGHT + 1.4;
+      return target;
+    },
+    getWeaponMuzzleWorldPosition(target = new THREE.Vector3()) {
+      if (weaponShown && activeWeaponId && sockets.weaponRight) {
+        muzzleSocket.getWorldPosition(target);
+        return target;
+      }
+
+      if (sockets.weaponRight) {
+        sockets.weaponRight.getWorldPosition(target);
+        target.x += 0.2;
+        target.y += 0.05;
+        target.z += 0.2;
+        return target;
+      }
+
+      anchor.getWorldPosition(target);
+      target.y += PLAYER_HEIGHT * 0.7;
       return target;
     },
     getAnimationSyncState() {
@@ -349,7 +506,29 @@ export async function createPlayer(library, {
     isLimp() {
       return ragdoll.isActive();
     },
+    setFacingRotation(rotationY) {
+      if (Number.isFinite(rotationY)) {
+        anchor.rotation.y = rotationY;
+      }
+    },
+    setAimingState(aiming) {
+      aimingState = Boolean(aiming);
+    },
+    triggerShotFeedback() {
+      recoilAmount = Math.max(recoilAmount, aimingState ? 1.2 : 1.05);
+    },
+    setWeaponState(weaponId, { visible = true } = {}) {
+      void setWeaponState(weaponId, { visible });
+    },
+    setAliveState(alive, options = {}) {
+      setAliveState(Boolean(alive), options);
+    },
     update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0) {
+      if (!aliveState) {
+        updateAnimationState(deltaSeconds, false, groundHeight);
+        return;
+      }
+
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
 
@@ -383,6 +562,22 @@ export async function createPlayer(library, {
       updateAnimationState(deltaSeconds, moving, groundHeight);
     },
     applyRemoteState(state, deltaSeconds, groundHeight = 0) {
+      const remoteAlive = state?.alive !== false;
+      setAliveState(remoteAlive, {
+        startedAtMs: Number.isFinite(state?.lastDamagedAt) && state.lastDamagedAt > 0
+          ? state.lastDamagedAt
+          : Date.now()
+      });
+      void setWeaponState(
+        remoteAlive ? (typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '') : '',
+        { visible: remoteAlive && Boolean(state?.equippedWeaponId) }
+      );
+
+      if (!remoteAlive) {
+        updateAnimationState(deltaSeconds, false, groundHeight);
+        return;
+      }
+
       const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
       const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
       const remoteEmoteSeq = Number.isFinite(state?.emoteSeq) ? Math.max(0, Math.floor(state.emoteSeq)) : 0;

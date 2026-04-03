@@ -42,7 +42,20 @@ function clonePlayerState(player) {
     emoteSeq: player.emoteSeq ?? 0,
     chatText: player.chatText || '',
     chatStartedAt: player.chatStartedAt || 0,
-    chatSeq: player.chatSeq || 0
+    chatSeq: player.chatSeq || 0,
+    health: player.health ?? 100,
+    maxHealth: player.maxHealth ?? 100,
+    alive: player.alive !== false,
+    respawnAt: player.respawnAt ?? 0,
+    spawnProtectedUntil: player.spawnProtectedUntil ?? 0,
+    equippedWeaponId: player.equippedWeaponId || '',
+    ammoInClip: player.ammoInClip ?? 0,
+    reserveAmmo: player.reserveAmmo ?? 0,
+    isReloading: Boolean(player.isReloading),
+    reloadEndsAt: player.reloadEndsAt ?? 0,
+    kills: player.kills ?? 0,
+    deaths: player.deaths ?? 0,
+    lastDamagedAt: player.lastDamagedAt ?? 0
   };
 }
 
@@ -57,6 +70,21 @@ function cloneBuilderState(builder) {
     x: builder.x ?? 0,
     z: builder.z ?? 0,
     selectionPlacementId: builder.selectionPlacementId || ''
+  };
+}
+
+function clonePickupState(pickup) {
+  return {
+    id: pickup.id,
+    weaponId: pickup.weaponId || '',
+    x: pickup.x ?? 0,
+    z: pickup.z ?? 0,
+    ammoInClip: pickup.ammoInClip ?? 0,
+    reserveAmmo: pickup.reserveAmmo ?? 0,
+    kind: pickup.kind || 'spawn',
+    active: pickup.active !== false,
+    respawnAt: pickup.respawnAt ?? 0,
+    despawnAt: pickup.despawnAt ?? 0
   };
 }
 
@@ -83,6 +111,7 @@ export class NpcServiceColyseus {
     this.endpoint = endpoint;
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
+    this.combatListeners = new Set();
     this.pendingRequests = new Map();
     this.sequence = 0;
     this.client = new ClientCtor(endpoint);
@@ -93,7 +122,8 @@ export class NpcServiceColyseus {
       sessionId: null,
       players: new Map(),
       builders: new Map(),
-      npcs: new Map()
+      npcs: new Map(),
+      pickups: new Map()
     };
     this.lastTransformSentAt = 0;
     this.lastTransform = null;
@@ -133,9 +163,15 @@ export class NpcServiceColyseus {
         nextNpcs.set(id, cloneNpcState(npc));
       }
 
+      const nextPickups = new Map();
+      for (const [id, pickup] of schemaMapToEntries(state.pickups)) {
+        nextPickups.set(id, clonePickupState(pickup));
+      }
+
       this.state.players = nextPlayers;
       this.state.builders = nextBuilders;
       this.state.npcs = nextNpcs;
+      this.state.pickups = nextPickups;
       this.emit();
     });
 
@@ -155,11 +191,19 @@ export class NpcServiceColyseus {
       pending.resolve(message);
     });
 
+    this.room.onMessage('combat:event', (message) => {
+      const snapshot = structuredClone(message);
+      for (const listener of this.combatListeners) {
+        listener(snapshot);
+      }
+    });
+
     this.room.onLeave(() => {
       this.state.connected = false;
       this.state.players = new Map();
       this.state.builders = new Map();
       this.state.npcs = new Map();
+      this.state.pickups = new Map();
       this.emit();
     });
 
@@ -177,6 +221,11 @@ export class NpcServiceColyseus {
     return () => this.worldPatchListeners.delete(listener);
   }
 
+  subscribeCombatEvents(listener) {
+    this.combatListeners.add(listener);
+    return () => this.combatListeners.delete(listener);
+  }
+
   emit() {
     const snapshot = this.getState();
     for (const listener of this.listeners) {
@@ -189,7 +238,8 @@ export class NpcServiceColyseus {
       ...this.state,
       players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }]))
+      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
+      pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, { ...pickup }]))
     };
   }
 
@@ -308,6 +358,24 @@ export class NpcServiceColyseus {
     return this.rpc('chat:say', { message });
   }
 
+  pickupWeapon(pickupId) {
+    this.room?.send('combat:pickupRequest', {
+      pickupId: String(pickupId ?? '')
+    });
+  }
+
+  fireWeapon(aimDirection = { x: 0, z: 0 }, clientShotAt = Date.now()) {
+    this.room?.send('combat:fireRequest', {
+      aimX: quantize(aimDirection.x, 4),
+      aimZ: quantize(aimDirection.z, 4),
+      clientShotAt: Number.isFinite(clientShotAt) ? Math.max(0, Math.floor(clientShotAt)) : Date.now()
+    });
+  }
+
+  reloadWeapon() {
+    this.room?.send('combat:reloadRequest', {});
+  }
+
   async destroy() {
     this.destroyed = true;
     if (this.room) {
@@ -316,5 +384,6 @@ export class NpcServiceColyseus {
     }
     this.listeners.clear();
     this.worldPatchListeners.clear();
+    this.combatListeners.clear();
   }
 }

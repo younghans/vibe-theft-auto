@@ -51,6 +51,47 @@ body {
   border-radius: 16px;
 }
 
+.hud__combat {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hud__combat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.hud__combat-label,
+.hud__combat-status,
+.hud__combat-score {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(244, 238, 226, 0.76);
+}
+
+.hud__combat-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__combat-value {
+  font-size: 14px;
+  color: #fff4d2;
+}
+
+.hud__combat-status {
+  margin-top: 10px;
+}
+
+.hud__combat-score {
+  margin-top: 6px;
+  color: rgba(242, 200, 113, 0.92);
+}
+
 .hud__mode-toggle {
   position: absolute;
   top: 24px;
@@ -602,6 +643,50 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.hud__respawn {
+  position: absolute;
+  left: 50%;
+  top: 18%;
+  margin: 0;
+  padding: 12px 18px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 16, 24, 0.88);
+  color: #fff1c3;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.hud__respawn.is-visible {
+  opacity: 1;
+}
+
+.hud__hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.hud__hitmarker::before,
+.hud__hitmarker::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(45deg, transparent 45%, rgba(255, 245, 214, 0.96) 45% 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, rgba(255, 245, 214, 0.96) 45% 55%, transparent 55%);
+}
+
+.hud__hitmarker.is-visible {
+  opacity: 1;
 }
 
 .hud__speech-bubble {

@@ -25,6 +25,13 @@ export class Hud {
     this.overlay = this.createOverlay();
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
+    this.combatRoot = this.overlay.querySelector('[data-combat-root]');
+    this.combatHealth = this.overlay.querySelector('[data-combat-health]');
+    this.combatAmmo = this.overlay.querySelector('[data-combat-ammo]');
+    this.combatStatus = this.overlay.querySelector('[data-combat-status]');
+    this.combatScore = this.overlay.querySelector('[data-combat-score]');
+    this.respawnText = this.overlay.querySelector('[data-respawn]');
+    this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.modeToggle = this.overlay.querySelector('[data-mode-toggle]');
     this.builderRoot = this.overlay.querySelector('[data-builder]');
     this.builderStatus = this.overlay.querySelector('[data-builder-status]');
@@ -101,7 +108,19 @@ export class Hud {
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Stick RPG 3D</h1>
-        <p class="hud__body">WASD to move. Press Enter to chat, E near props, and hold B for emotes.</p>
+        <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
+        <section class="hud__combat" data-combat-root>
+          <div class="hud__combat-row">
+            <span class="hud__combat-label">Health</span>
+            <strong class="hud__combat-value" data-combat-health>100 / 100</strong>
+          </div>
+          <div class="hud__combat-row">
+            <span class="hud__combat-label">Ammo</span>
+            <strong class="hud__combat-value" data-combat-ammo>Unarmed</strong>
+          </div>
+          <p class="hud__combat-status" data-combat-status>Find a pistol pickup to start blasting.</p>
+          <p class="hud__combat-score" data-combat-score>K 0 / D 0</p>
+        </section>
       </section>
       <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle build mode" title="Toggle build mode">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -173,6 +192,8 @@ export class Hud {
         <p class="hud__quick-chat-hint" data-quick-chat-hint>Enter to send. Escape to cancel.</p>
       </form>
       <section class="hud__speech-layer" data-speech-layer></section>
+      <p class="hud__respawn" data-respawn></p>
+      <div class="hud__hitmarker" data-hitmarker></div>
       <section class="hud__emote-menu" data-emote-menu>
         <div class="hud__emote-wheel" data-emote-wheel>
           <div class="hud__emote-selection" data-emote-selection></div>
@@ -520,6 +541,54 @@ export class Hud {
 
   isQuickChatOpen() {
     return this.quickChatRoot.classList.contains('is-visible');
+  }
+
+  setCombatState({
+    visible = true,
+    health = 100,
+    maxHealth = 100,
+    ammoInClip = 0,
+    reserveAmmo = 0,
+    isReloading = false,
+    reloadEndsAt = 0,
+    alive = true,
+    respawnAt = 0,
+    kills = 0,
+    deaths = 0,
+    armed = false
+  } = {}) {
+    this.combatRoot.hidden = !visible;
+    if (!visible) {
+      this.respawnText.classList.remove('is-visible');
+      return;
+    }
+
+    this.combatHealth.textContent = `${health} / ${maxHealth}`;
+    this.combatAmmo.textContent = armed ? `${ammoInClip} / ${reserveAmmo}` : 'Unarmed';
+    this.combatScore.textContent = `K ${kills} / D ${deaths}`;
+
+    if (!alive) {
+      const seconds = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
+      this.combatStatus.textContent = 'You are down.';
+      this.respawnText.textContent = seconds > 0 ? `Respawning in ${seconds}s` : 'Respawning...';
+      this.respawnText.classList.add('is-visible');
+      return;
+    }
+
+    this.respawnText.classList.remove('is-visible');
+    if (isReloading) {
+      const remainingMs = Math.max(0, reloadEndsAt - Date.now());
+      const seconds = (remainingMs / 1000).toFixed(1);
+      this.combatStatus.textContent = `Reloading${remainingMs > 0 ? ` (${seconds}s)` : '...'}`;
+    } else if (!armed) {
+      this.combatStatus.textContent = 'Find a pistol pickup to start blasting.';
+    } else {
+      this.combatStatus.textContent = 'Armed and ready.';
+    }
+  }
+
+  setHitMarkerVisible(visible) {
+    this.hitMarker.classList.toggle('is-visible', visible);
   }
 
   setSpeechBubbles(bubbles = []) {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getWeaponAssetUrl, preparePickupWeaponModel } from '../combat/weaponVisuals.js';
 import { Input } from './Input.js';
 import { Hud } from '../ui/Hud.js';
 import {
@@ -13,9 +14,18 @@ import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { createNpcService } from '../npc/createNpcService.js';
+import { PLAYER_MAX_HEALTH } from '../shared/combatConstants.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
+const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.4, 19.1);
+const AIM_CAMERA_POSITION_BIAS = 2.2;
+const AIM_CAMERA_LOOK_DISTANCE = 6.2;
+const PROJECTILE_VISUAL_SPEED = 48;
+const PROJECTILE_MIN_LIFETIME_MS = 120;
+const PROJECTILE_MAX_LIFETIME_MS = 260;
+const IMPACT_EFFECT_LIFETIME_MS = 140;
+const PROJECTILE_TRAIL_LENGTH = 1.9;
 const EMOTE_MENU_DEADZONE = 54;
 const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
@@ -60,18 +70,25 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.root.append(this.renderer.domElement);
+    this.renderer.domElement.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+    });
 
     this.hud = new Hud(this.root);
     this.input = new Input();
     this.library = new ModelLibrary();
     this.remotePlayers = new Map();
     this.pendingRemotePlayers = new Set();
+    this.pickupVisuals = new Map();
+    this.pendingPickupVisuals = new Set();
+    this.combatEffects = [];
     this.currentInteractable = null;
     this.currentLayout = null;
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
     this.worldPatchUnsubscribe = null;
+    this.combatEventUnsubscribe = null;
     this.npcService = null;
     this.npcServiceState = {
       transport: 'mock',
@@ -79,10 +96,20 @@ export class Game {
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),
-      npcs: new Map()
+      npcs: new Map(),
+      pickups: new Map()
     };
     this.emoteMenuOpen = false;
     this.projectedSpeechPosition = new THREE.Vector3();
+    this.aimRaycaster = new THREE.Raycaster();
+    this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this.aimTarget = new THREE.Vector3();
+    this.currentAimDirection = new THREE.Vector3(0, 0, 1);
+    this.currentAimMode = false;
+    this.localStateInitialized = false;
+    this.lastLocalAlive = true;
+    this.lastHudHitMarkerVisible = false;
+    this.hitMarkerUntil = 0;
 
     this.hud.bindInteractionEvents({
       onAction: () => {},
@@ -127,6 +154,9 @@ export class Game {
       console.info('[Game] NPC service ready.', {
         transport: this.npcService?.getState?.()?.transport ?? 'unknown'
       });
+      this.combatEventUnsubscribe = this.npcService.subscribeCombatEvents((event) => {
+        this.handleCombatEvent(event);
+      });
       this.worldPatchUnsubscribe = this.npcService.subscribeWorldPatches((patch) => {
         if (!this.worldBuilder || !this.worldLayoutReady) {
           this.pendingWorldPatches.push(patch);
@@ -154,6 +184,7 @@ export class Game {
         this.reportNpcTransportState();
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
+        void this.syncPickupVisuals();
         void this.syncRemotePlayers();
       });
 
@@ -172,8 +203,15 @@ export class Game {
 
       this.player = await createPlayer(this.library);
       console.info('[Game] Local player loaded.');
-      this.player.position.copy(cityState.spawnPoint);
+      const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
+      if (localPlayerState) {
+        this.player.position.set(localPlayerState.x, 0, localPlayerState.z);
+      } else {
+        this.player.position.copy(cityState.spawnPoint);
+      }
+      this.player.position.y = this.worldBuilder?.getGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
       this.scene.add(this.player.object);
+      void this.syncPickupVisuals();
 
       if (this.npcServiceState.transport === 'colyseus') {
         this.hud.showToast('Connected to the multiplayer room. Shared building, world chat, NPC replies, and player presence are live.');
@@ -328,6 +366,400 @@ export class Game {
     }
   }
 
+  getLocalPlayerState() {
+    return this.npcServiceState.players.get(this.npcServiceState.sessionId) ?? null;
+  }
+
+  getAvatarForSessionId(sessionId) {
+    if (!sessionId) {
+      return null;
+    }
+
+    if (sessionId === this.npcServiceState.sessionId) {
+      return this.player ?? null;
+    }
+
+    return this.remotePlayers.get(sessionId) ?? null;
+  }
+
+  async syncPickupVisuals() {
+    if (!this.library) {
+      return;
+    }
+
+    const desiredIds = new Set();
+    for (const [pickupId, pickup] of this.npcServiceState.pickups.entries()) {
+      if (!pickup?.active) {
+        continue;
+      }
+
+      desiredIds.add(pickupId);
+      if (!this.pickupVisuals.has(pickupId) && !this.pendingPickupVisuals.has(pickupId)) {
+        void this.ensurePickupVisual(pickupId, pickup);
+      }
+    }
+
+    for (const pickupId of [...this.pickupVisuals.keys()]) {
+      if (!desiredIds.has(pickupId)) {
+        this.removePickupVisual(pickupId);
+      }
+    }
+  }
+
+  async ensurePickupVisual(pickupId, pickup) {
+    const assetUrl = getWeaponAssetUrl(pickup.weaponId);
+    if (!assetUrl) {
+      return;
+    }
+
+    this.pendingPickupVisuals.add(pickupId);
+    try {
+      const weapon = await this.library.instantiate(assetUrl);
+      const latestPickup = this.npcServiceState.pickups.get(pickupId);
+      if (!latestPickup?.active) {
+        return;
+      }
+
+      preparePickupWeaponModel(weapon);
+      const group = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.05, 1.45, 28),
+        new THREE.MeshBasicMaterial({
+          color: 0xf2c871,
+          transparent: true,
+          opacity: 0.78,
+          side: THREE.DoubleSide
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.05;
+      group.add(ring);
+      group.add(weapon);
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(latestPickup.x, 0, latestPickup.z)) ?? 0;
+      group.position.set(latestPickup.x, groundHeight, latestPickup.z);
+      this.scene.add(group);
+      this.pickupVisuals.set(pickupId, {
+        object: group,
+        ring,
+        weapon,
+        phase: Math.random() * Math.PI * 2
+      });
+    } catch (error) {
+      console.warn(`[Combat] Failed to create pickup visual for ${pickupId}.`, error);
+    } finally {
+      this.pendingPickupVisuals.delete(pickupId);
+    }
+  }
+
+  removePickupVisual(pickupId) {
+    const visual = this.pickupVisuals.get(pickupId);
+    if (!visual) {
+      return;
+    }
+
+    this.scene.remove(visual.object);
+    this.pickupVisuals.delete(pickupId);
+  }
+
+  updatePickupVisuals(deltaSeconds) {
+    for (const [pickupId, visual] of this.pickupVisuals.entries()) {
+      const pickup = this.npcServiceState.pickups.get(pickupId);
+      if (!pickup?.active) {
+        this.removePickupVisual(pickupId);
+        continue;
+      }
+
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(pickup.x, 0, pickup.z)) ?? 0;
+      visual.phase += deltaSeconds * 2.4;
+      visual.object.position.set(pickup.x, groundHeight, pickup.z);
+      visual.weapon.position.y = 0.9 + Math.sin(visual.phase) * 0.12;
+      visual.weapon.rotation.y += deltaSeconds * 1.8;
+      visual.ring.material.opacity = 0.56 + ((Math.sin(visual.phase * 1.6) + 1) * 0.12);
+    }
+  }
+
+  syncLocalPlayerState(localPlayerState) {
+    if (!this.player || !localPlayerState) {
+      return;
+    }
+
+    const isAlive = localPlayerState.alive !== false;
+    const targetPosition = new THREE.Vector3(localPlayerState.x, this.player.position.y, localPlayerState.z);
+    const groundHeight = this.worldBuilder?.getGroundHeightAt(targetPosition) ?? 0;
+    const distance = this.player.position.distanceTo(targetPosition);
+    const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
+    const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
+
+    if (!this.localStateInitialized || respawned || died || distance > 2.5) {
+      this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
+    }
+
+    this.player.setAliveState(isAlive, {
+      startedAtMs: Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
+        ? localPlayerState.lastDamagedAt
+        : Date.now()
+    });
+    this.player.setWeaponState(
+      isAlive ? localPlayerState.equippedWeaponId : '',
+      { visible: isAlive && Boolean(localPlayerState.equippedWeaponId) }
+    );
+
+    this.hud.setCombatState({
+      visible: true,
+      health: localPlayerState.health ?? PLAYER_MAX_HEALTH,
+      maxHealth: localPlayerState.maxHealth ?? PLAYER_MAX_HEALTH,
+      ammoInClip: localPlayerState.ammoInClip ?? 0,
+      reserveAmmo: localPlayerState.reserveAmmo ?? 0,
+      isReloading: Boolean(localPlayerState.isReloading),
+      reloadEndsAt: localPlayerState.reloadEndsAt ?? 0,
+      alive: isAlive,
+      respawnAt: localPlayerState.respawnAt ?? 0,
+      kills: localPlayerState.kills ?? 0,
+      deaths: localPlayerState.deaths ?? 0,
+      armed: Boolean(localPlayerState.equippedWeaponId)
+    });
+
+    if (respawned) {
+      this.closeQuickChat();
+    }
+
+    this.lastLocalAlive = isAlive;
+    this.localStateInitialized = true;
+  }
+
+  getAimDirection() {
+    const pointer = this.input.getPointerPosition();
+    const ndc = new THREE.Vector2(
+      (pointer.x / window.innerWidth) * 2 - 1,
+      -((pointer.y / window.innerHeight) * 2 - 1)
+    );
+    this.aimRaycaster.setFromCamera(ndc, this.camera);
+    const groundHeight = this.player?.position.y ?? 0;
+    this.aimPlane.constant = -groundHeight;
+    if (this.aimRaycaster.ray.intersectPlane(this.aimPlane, this.aimTarget)) {
+      const direction = new THREE.Vector3(
+        this.aimTarget.x - this.player.position.x,
+        0,
+        this.aimTarget.z - this.player.position.z
+      );
+      if (direction.lengthSq() > 0.0001) {
+        direction.normalize();
+        return direction;
+      }
+    }
+
+    return this.currentAimDirection.clone();
+  }
+
+  getShotVisualPoints(event = {}) {
+    const shooterAvatar = this.getAvatarForSessionId(event.shooterId);
+    const start = shooterAvatar?.getWeaponMuzzleWorldPosition(new THREE.Vector3())
+      ?? new THREE.Vector3(Number(event.fromX) || 0, 2.2, Number(event.fromZ) || 0);
+    const end = new THREE.Vector3(Number(event.toX) || start.x, start.y, Number(event.toZ) || start.z);
+
+    if (event.targetId) {
+      const targetAvatar = this.getAvatarForSessionId(event.targetId);
+      if (targetAvatar) {
+        end.y = targetAvatar.position.y + 2.4;
+      }
+    }
+
+    return { start, end };
+  }
+
+  getImpactEffectSpec(event = {}) {
+    const shooterAvatar = this.getAvatarForSessionId(event.shooterId);
+    const origin = shooterAvatar?.getWeaponMuzzleWorldPosition(new THREE.Vector3())
+      ?? new THREE.Vector3(Number(event.x) || 0, 2.2, Number(event.z) || 0);
+    const point = new THREE.Vector3(Number(event.x) || origin.x, origin.y, Number(event.z) || origin.z);
+
+    if (event.kind === 'player' && event.targetId) {
+      const targetAvatar = this.getAvatarForSessionId(event.targetId);
+      if (targetAvatar) {
+        point.y = targetAvatar.position.y + 2.4;
+      }
+    } else {
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(point) ?? 0;
+      point.y = groundHeight + 1.05;
+    }
+
+    const travelDistance = origin.distanceTo(point);
+    const delayMs = THREE.MathUtils.clamp(
+      (travelDistance / PROJECTILE_VISUAL_SPEED) * 1000,
+      0,
+      PROJECTILE_MAX_LIFETIME_MS
+    );
+
+    return { point, delayMs };
+  }
+
+  createTracerEffect(start, end) {
+    const travel = end.clone().sub(start);
+    const distance = travel.length();
+    if (distance <= 0.001) {
+      return;
+    }
+
+    const direction = travel.clone().normalize();
+    const bulletMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffefad,
+      transparent: true,
+      opacity: 0.96
+    });
+    const trailMaterial = new THREE.MeshBasicMaterial({
+      color: 0xf6d87f,
+      transparent: true,
+      opacity: 0.6
+    });
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 10, 10),
+      bulletMaterial
+    );
+    head.position.copy(start);
+    const trailGeometry = new THREE.BufferGeometry().setFromPoints([start, start]);
+    const trail = new THREE.Line(
+      trailGeometry,
+      trailMaterial
+    );
+    this.scene.add(trail);
+    this.scene.add(head);
+    const durationMs = THREE.MathUtils.clamp(
+      (distance / PROJECTILE_VISUAL_SPEED) * 1000,
+      PROJECTILE_MIN_LIFETIME_MS,
+      PROJECTILE_MAX_LIFETIME_MS
+    );
+    this.combatEffects.push({
+      type: 'projectile',
+      object: head,
+      trail,
+      trailGeometry,
+      material: bulletMaterial,
+      secondaryMaterial: trailMaterial,
+      start: start.clone(),
+      end: end.clone(),
+      direction,
+      distance,
+      startedAt: performance.now(),
+      expiresAt: performance.now() + durationMs
+    });
+  }
+
+  createImpactEffect(position, kind = 'world', delayMs = 0) {
+    const now = performance.now();
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 10, 10),
+      new THREE.MeshBasicMaterial({
+        color: kind === 'player' ? 0xff8f7a : 0xf2c871,
+        transparent: true,
+        opacity: 0.9
+      })
+    );
+    mesh.position.copy(position);
+    mesh.visible = delayMs <= 0;
+    this.scene.add(mesh);
+    this.combatEffects.push({
+      type: 'impact',
+      object: mesh,
+      material: mesh.material,
+      startAt: now + delayMs,
+      expiresAt: now + delayMs + IMPACT_EFFECT_LIFETIME_MS
+    });
+  }
+
+  updateCombatEffects() {
+    const now = performance.now();
+    const next = [];
+    for (const effect of this.combatEffects) {
+      if (now >= effect.expiresAt) {
+        this.scene.remove(effect.object);
+        if (effect.trail) {
+          this.scene.remove(effect.trail);
+        }
+        effect.object.traverse?.((node) => {
+          node.geometry?.dispose?.();
+        });
+        effect.trailGeometry?.dispose?.();
+        effect.material?.dispose?.();
+        effect.secondaryMaterial?.dispose?.();
+        continue;
+      }
+
+      if (effect.type === 'projectile') {
+        const lifetime = Math.max(1, effect.expiresAt - effect.startedAt);
+        const progress = THREE.MathUtils.clamp((now - effect.startedAt) / lifetime, 0, 1);
+        effect.object.position.lerpVectors(effect.start, effect.end, progress);
+        if (effect.trail && effect.trailGeometry) {
+          const travelledDistance = effect.distance * progress;
+          const tailDistance = Math.max(0, travelledDistance - PROJECTILE_TRAIL_LENGTH);
+          const tail = effect.start.clone().addScaledVector(effect.direction, tailDistance);
+          effect.trailGeometry.setFromPoints([tail, effect.object.position.clone()]);
+        }
+        effect.material.opacity = THREE.MathUtils.lerp(0.95, 0.3, progress);
+        if (effect.secondaryMaterial) {
+          effect.secondaryMaterial.opacity = THREE.MathUtils.lerp(0.62, 0.12, progress);
+        }
+      } else if (effect.type === 'impact') {
+        if (now < effect.startAt) {
+          next.push(effect);
+          continue;
+        }
+
+        if (!effect.object.visible) {
+          effect.object.visible = true;
+        }
+
+        const lifetime = Math.max(1, effect.expiresAt - effect.startAt);
+        const progress = THREE.MathUtils.clamp((now - effect.startAt) / lifetime, 0, 1);
+        effect.object.scale.setScalar(1 + (progress * 0.75));
+        effect.material.opacity = Math.max(0, 1 - progress);
+      }
+      next.push(effect);
+    }
+    this.combatEffects = next;
+  }
+
+  handleCombatEvent(event = {}) {
+    if (!event?.type) {
+      return;
+    }
+
+    switch (event.type) {
+      case 'shot':
+        this.getAvatarForSessionId(event.shooterId)?.triggerShotFeedback?.();
+        {
+          const { start, end } = this.getShotVisualPoints(event);
+          this.createTracerEffect(start, end);
+        }
+        break;
+      case 'impact':
+        {
+          const { point, delayMs } = this.getImpactEffectSpec(event);
+          this.createImpactEffect(point, event.kind, delayMs);
+        }
+        if (event.kind === 'player' && event.shooterId === this.npcServiceState.sessionId) {
+          this.hitMarkerUntil = performance.now() + 120;
+        }
+        break;
+      case 'pickup':
+        if (event.playerId === this.npcServiceState.sessionId) {
+          this.hud.showToast('Pistol equipped.');
+        }
+        break;
+      case 'death':
+        if (event.victimId === this.npcServiceState.sessionId) {
+          this.hud.showToast('You are down.');
+        }
+        break;
+      case 'respawn':
+        if (event.playerId === this.npcServiceState.sessionId) {
+          this.hud.showToast('Respawned.');
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
   reportNpcTransportState() {
     const signature = `${this.npcServiceState.transport}:${this.npcServiceState.connected}:${this.npcServiceState.sessionId ?? ''}`;
     if (signature === this.lastNpcTransportSignature) {
@@ -394,33 +826,66 @@ export class Game {
   frame() {
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
     const emoteMenuActive = this.updateEmoteMenu();
+    const localPlayerState = this.getLocalPlayerState();
 
     if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
       this.closeQuickChat();
     }
 
-    if (this.input.consume('Enter') && !this.worldBuilder.enabled && !emoteMenuActive && !this.hud.isQuickChatOpen()) {
+    if (
+      this.input.consume('Enter')
+      && localPlayerState?.alive !== false
+      && !this.worldBuilder.enabled
+      && !emoteMenuActive
+      && !this.hud.isQuickChatOpen()
+    ) {
       this.openQuickChat();
+    }
+
+    if (localPlayerState) {
+      this.syncLocalPlayerState(localPlayerState);
     }
 
     this.worldBuilder.update(deltaSeconds, this.input);
 
     if (this.worldBuilder.enabled) {
+      this.currentAimMode = false;
+      this.player?.setAimingState(false);
       this.updateBuilderCamera();
       this.hud.setPrompt(null);
     } else {
+      const localAlive = localPlayerState?.alive !== false;
+      const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
       const activeColliders = [
         ...this.baseColliders,
         ...this.worldBuilder.getColliders()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
-      if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
-      this.updateCamera();
+      let aimingMode = false;
+      if (armed) {
+        const aimDirection = this.getAimDirection();
+        aimingMode = !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.isPointerPressed(2);
+        this.currentAimDirection.copy(aimDirection);
+        this.currentAimMode = aimingMode;
+        this.player.setAimingState(aimingMode);
+        this.player.setFacingRotation(Math.atan2(aimDirection.x, aimDirection.z));
+        if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
+          this.npcService?.fireWeapon({ x: aimDirection.x, z: aimDirection.z }, Date.now());
+        }
+        if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyR')) {
+          this.npcService?.reloadWeapon();
+        }
+      } else {
+        this.currentAimMode = false;
+        this.player.setAimingState(false);
+      }
+      this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       this.npcService?.setPlayerTransform(
         this.player.position,
         this.player.object.rotation.y,
@@ -428,7 +893,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (emoteMenuActive || this.hud.isQuickChatOpen()) {
+      if (localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen()) {
         this.hud.setPrompt(null);
       } else {
         this.updateInteraction();
@@ -436,15 +901,29 @@ export class Game {
     }
 
     this.updateRemotePlayers(deltaSeconds);
+    this.updatePickupVisuals(deltaSeconds);
+    this.updateCombatEffects();
+    const hitMarkerVisible = performance.now() < this.hitMarkerUntil;
+    if (hitMarkerVisible !== this.lastHudHitMarkerVisible) {
+      this.hud.setHitMarkerVisible(hitMarkerVisible);
+      this.lastHudHitMarkerVisible = hitMarkerVisible;
+    }
     this.updateSpeechBubbles();
     this.renderer.render(this.scene, this.camera);
     this.input.endFrame();
   }
 
-  updateCamera() {
-    const targetPosition = this.player.position.clone().add(CAMERA_OFFSET);
-    this.camera.position.lerp(targetPosition, 0.08);
-    this.camera.lookAt(this.player.position.clone().add(CAMERA_LOOK_OFFSET));
+  updateCamera(aimDirection = this.currentAimDirection, isAiming = false) {
+    const targetPosition = this.player.position.clone().add(isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET);
+    const lookTarget = this.player.position.clone().add(CAMERA_LOOK_OFFSET);
+
+    if (isAiming && aimDirection?.lengthSq?.() > 0.0001) {
+      targetPosition.addScaledVector(aimDirection, AIM_CAMERA_POSITION_BIAS);
+      lookTarget.addScaledVector(aimDirection, AIM_CAMERA_LOOK_DISTANCE);
+    }
+
+    this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
+    this.camera.lookAt(lookTarget);
   }
 
   updateBuilderCamera() {
@@ -462,7 +941,17 @@ export class Game {
   updateInteraction() {
     const interactables = [
       ...(this.staticInteractables ?? []),
-      ...this.worldBuilder.getInteractables()
+      ...this.worldBuilder.getInteractables(),
+      ...[...this.npcServiceState.pickups.values()]
+        .filter((pickup) => pickup.active)
+        .map((pickup) => ({
+          kind: 'pickup',
+          pickupId: pickup.id,
+          position: new THREE.Vector3(pickup.x, this.worldBuilder.getGroundHeightAt({ x: pickup.x, z: pickup.z }), pickup.z),
+          radius: 3.2,
+          prompt: 'Pick up pistol',
+          actionText: 'Pistol secured.'
+        }))
     ].filter((interactable) => interactable.kind !== 'npc');
     let nearest = null;
     let nearestDistance = Infinity;
@@ -479,6 +968,11 @@ export class Game {
     this.hud.setPrompt(nearest);
 
     if (!nearest || !this.input.consume('KeyE')) {
+      return;
+    }
+
+    if (nearest.kind === 'pickup') {
+      this.npcService?.pickupWeapon(nearest.pickupId);
       return;
     }
 

@@ -27,6 +27,9 @@ export const assets = {
       )
     )
   },
+  combat: {
+    pistol: assetUrl('objects', 'low-poly_g17_pistol.glb')
+  },
   city: {
     base: cityAsset('base'),
     bench: cityAsset('bench'),

@@ -2,6 +2,8 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.justPressed = new Set();
+    this.pointerButtons = new Set();
+    this.justPressedPointerButtons = new Set();
     this.pointerPosition = {
       x: window.innerWidth * 0.5,
       y: window.innerHeight * 0.5
@@ -41,11 +43,31 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.justPressed.clear();
+      this.pointerButtons.clear();
+      this.justPressedPointerButtons.clear();
     });
 
     window.addEventListener('pointermove', (event) => {
       this.pointerPosition.x = event.clientX;
       this.pointerPosition.y = event.clientY;
+    });
+
+    window.addEventListener('pointerdown', (event) => {
+      if (this.isHudTarget(event.target)) {
+        this.pointerButtons.delete(event.button);
+        this.justPressedPointerButtons.delete(event.button);
+        return;
+      }
+
+      if (!this.pointerButtons.has(event.button)) {
+        this.justPressedPointerButtons.add(event.button);
+      }
+      this.pointerButtons.add(event.button);
+    });
+
+    window.addEventListener('pointerup', (event) => {
+      this.pointerButtons.delete(event.button);
+      this.justPressedPointerButtons.delete(event.button);
     });
   }
 
@@ -59,6 +81,10 @@ export class Input {
 
   isKeyboardSuspended() {
     return this.isEditableTarget(document.activeElement);
+  }
+
+  isHudTarget(target) {
+    return target instanceof HTMLElement && Boolean(target.closest('.hud'));
   }
 
   getMovementVector() {
@@ -90,11 +116,22 @@ export class Input {
     return this.keys.has(code);
   }
 
+  consumePointer(button = 0) {
+    const pressed = this.justPressedPointerButtons.has(button);
+    this.justPressedPointerButtons.delete(button);
+    return pressed;
+  }
+
+  isPointerPressed(button = 0) {
+    return this.pointerButtons.has(button);
+  }
+
   getPointerPosition() {
     return { ...this.pointerPosition };
   }
 
   endFrame() {
     this.justPressed.clear();
+    this.justPressedPointerButtons.clear();
   }
 }

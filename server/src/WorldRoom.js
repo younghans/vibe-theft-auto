@@ -1,5 +1,33 @@
 import { Room } from 'colyseus';
 import { MapSchema, schema } from '@colyseus/schema';
+import {
+  COMBAT_PICKUP_SPAWNS,
+  COMBAT_RESPAWN_POINTS,
+  DROPPED_PICKUP_DESPAWN_MS,
+  PICKUP_INTERACT_RADIUS,
+  PICKUP_RESPAWN_MS,
+  PLAYER_MAX_ACCEPTED_SPEED,
+  PLAYER_MAX_HEALTH,
+  PLAYER_POSITION_FORGIVENESS,
+  PLAYER_RADIUS,
+  PLAYER_RESPAWN_MS,
+  WEAPON_CLIP_SIZE,
+  WEAPON_DAMAGE,
+  WEAPON_FIRE_INTERVAL_MS,
+  WEAPON_IDS,
+  WEAPON_RANGE,
+  WEAPON_RELOAD_MS,
+  WEAPON_RESERVE_CAP
+} from '../../src/shared/combatConstants.js';
+import {
+  chooseFarthestSpawnPoint,
+  clampToWorldBounds,
+  distance2D,
+  normalizeAimVector,
+  placementToCollisionRect,
+  rayCircleIntersectionDistance,
+  rayRectIntersectionDistance
+} from '../../src/shared/combatMath.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
 import { EMOTES_BY_ID } from '../../src/player/emotes.js';
 import { getBuilderItemById } from '../../src/world/builderCatalog.js';
@@ -14,6 +42,9 @@ const CHAT_COOLDOWN_MS = 900;
 const NPC_NAME_MAX_LENGTH = 40;
 const NPC_PROMPT_MAX_LENGTH = 1600;
 const NPC_STREAM_THROTTLE_MS = 80;
+const COMBAT_TICK_MS = 100;
+const LIMP_EMOTE_ID = 'limp';
+const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 
 const PlayerState = schema({
   x: 'number',
@@ -25,7 +56,33 @@ const PlayerState = schema({
   emoteSeq: 'number',
   chatText: 'string',
   chatStartedAt: 'number',
-  chatSeq: 'number'
+  chatSeq: 'number',
+  health: 'number',
+  maxHealth: 'number',
+  alive: 'boolean',
+  respawnAt: 'number',
+  spawnProtectedUntil: 'number',
+  equippedWeaponId: 'string',
+  ammoInClip: 'number',
+  reserveAmmo: 'number',
+  isReloading: 'boolean',
+  reloadEndsAt: 'number',
+  kills: 'number',
+  deaths: 'number',
+  lastDamagedAt: 'number'
+});
+
+const PickupState = schema({
+  id: 'string',
+  weaponId: 'string',
+  x: 'number',
+  z: 'number',
+  ammoInClip: 'number',
+  reserveAmmo: 'number',
+  kind: 'string',
+  active: 'boolean',
+  respawnAt: 'number',
+  despawnAt: 'number'
 });
 
 const BuilderPresenceState = schema({
@@ -68,12 +125,12 @@ const WorldRoomState = schema({
   npcs: {
     map: NpcState,
     default: new MapSchema()
+  },
+  pickups: {
+    map: PickupState,
+    default: new MapSchema()
   }
 });
-
-function distanceBetween(a, b) {
-  return Math.hypot(a.x - b.x, a.z - b.z);
-}
 
 function trimTranscript(entries) {
   return entries.slice(Math.max(0, entries.length - MAX_TRANSCRIPT_ENTRIES));
@@ -103,9 +160,14 @@ function quantizePosition(value) {
   return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
 }
 
+function quantizeRotation(value) {
+  const numeric = Number(value ?? 0);
+  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(3));
+}
+
 function sanitizePlayerAnimationState(message = {}) {
   const emoteId = typeof message.emoteId === 'string' ? message.emoteId.trim() : '';
-  const hasValidEmote = Object.hasOwn(EMOTES_BY_ID, emoteId);
+  const hasValidEmote = emoteId === LIMP_EMOTE_ID || Object.hasOwn(EMOTES_BY_ID, emoteId);
   const emoteActive = Boolean(message.emoteActive && hasValidEmote);
   const emoteStartedAt = Number(message.emoteStartedAt);
   const emoteSeq = Number(message.emoteSeq);
@@ -127,6 +189,26 @@ function defaultNpcPrompt(label) {
   return `You are ${label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`;
 }
 
+function createPickupState(definition, {
+  kind = 'spawn',
+  active = true,
+  respawnAt = 0,
+  despawnAt = 0
+} = {}) {
+  const pickup = new PickupState();
+  pickup.id = definition.id;
+  pickup.weaponId = definition.weaponId;
+  pickup.x = quantizePosition(definition.x ?? definition.position?.[0]);
+  pickup.z = quantizePosition(definition.z ?? definition.position?.[1]);
+  pickup.ammoInClip = Math.max(0, Math.floor(definition.ammoInClip ?? 0));
+  pickup.reserveAmmo = Math.max(0, Math.floor(definition.reserveAmmo ?? 0));
+  pickup.kind = kind;
+  pickup.active = active;
+  pickup.respawnAt = Math.max(0, Math.floor(respawnAt));
+  pickup.despawnAt = Math.max(0, Math.floor(despawnAt));
+  return pickup;
+}
+
 export class WorldRoom extends Room {
   onCreate() {
     this.maxClients = 16;
@@ -140,33 +222,24 @@ export class WorldRoom extends Room {
     this.cooldowns = new Map();
     this.sequence = 0;
     this.playerAliasSequence = 0;
+    this.playerPositionMeta = new Map();
+    this.pickupSequence = 0;
 
     this.worldState.loadLayout(this.worldPersistence.getInitialLayout());
     this.syncNpcDefinitionsFromWorld();
+    this.seedCombatPickups();
+    this.clock.setInterval(() => {
+      this.updateCombatTimers();
+    }, COMBAT_TICK_MS);
     logServer('room', 'World room created.', {
       roomId: this.roomId,
       maxClients: this.maxClients,
-      npcCount: this.state.npcs.size
+      npcCount: this.state.npcs.size,
+      pickupCount: this.state.pickups.size
     });
 
     this.onMessage('player:updateTransform', (client, message) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player) {
-        return;
-      }
-
-      player.x = Number(message.x) || 0;
-      player.z = Number(message.z) || 0;
-      const rotationY = Number(message.rotationY);
-      if (Number.isFinite(rotationY)) {
-        player.rotationY = rotationY;
-      }
-
-      const animationState = sanitizePlayerAnimationState(message);
-      player.emoteId = animationState.emoteId;
-      player.emoteActive = animationState.emoteActive;
-      player.emoteStartedAt = animationState.emoteStartedAt;
-      player.emoteSeq = animationState.emoteSeq;
+      this.updatePlayerTransform(client, message);
     });
 
     this.onMessage('builder:updatePresence', (client, message) => {
@@ -210,12 +283,46 @@ export class WorldRoom extends Room {
         });
       }
     });
+
+    this.onMessage('combat:pickupRequest', (client, message) => {
+      try {
+        this.handlePickupRequest(client, message);
+      } catch (error) {
+        logServerError('room', 'Pickup request failed.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId
+        });
+      }
+    });
+
+    this.onMessage('combat:fireRequest', (client, message) => {
+      try {
+        this.handleFireRequest(client, message);
+      } catch (error) {
+        logServerError('room', 'Fire request failed.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId
+        });
+      }
+    });
+
+    this.onMessage('combat:reloadRequest', (client) => {
+      try {
+        this.handleReloadRequest(client);
+      } catch (error) {
+        logServerError('room', 'Reload request failed.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId
+        });
+      }
+    });
   }
 
   onJoin(client) {
     const player = new PlayerState();
-    player.x = 0;
-    player.z = 0;
+    const [spawnX, spawnZ] = this.chooseRespawnPoint(client.sessionId);
+    player.x = quantizePosition(spawnX);
+    player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
     player.emoteId = '';
     player.emoteActive = false;
@@ -224,7 +331,26 @@ export class WorldRoom extends Room {
     player.chatText = '';
     player.chatStartedAt = 0;
     player.chatSeq = 0;
+    player.health = PLAYER_MAX_HEALTH;
+    player.maxHealth = PLAYER_MAX_HEALTH;
+    player.alive = true;
+    player.respawnAt = 0;
+    player.spawnProtectedUntil = 0;
+    player.equippedWeaponId = '';
+    player.ammoInClip = 0;
+    player.reserveAmmo = 0;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    player.kills = 0;
+    player.deaths = 0;
+    player.lastDamagedAt = 0;
     this.state.players.set(client.sessionId, player);
+    this.playerPositionMeta.set(client.sessionId, {
+      x: player.x,
+      z: player.z,
+      acceptedAt: Date.now(),
+      lastShotAt: 0
+    });
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
     logServer('room', 'Client joined world room.', {
@@ -238,6 +364,7 @@ export class WorldRoom extends Room {
     this.state.players.delete(client.sessionId);
     this.state.builders.delete(client.sessionId);
     this.playerAliases.delete(client.sessionId);
+    this.playerPositionMeta.delete(client.sessionId);
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -246,6 +373,409 @@ export class WorldRoom extends Room {
   }
 
   async onDispose() {}
+
+  seedCombatPickups() {
+    this.state.pickups.clear();
+    for (const spawn of COMBAT_PICKUP_SPAWNS) {
+      const pickup = createPickupState({
+        id: spawn.id,
+        weaponId: spawn.weaponId,
+        position: spawn.position,
+        ammoInClip: spawn.ammoInClip,
+        reserveAmmo: spawn.reserveAmmo
+      });
+      this.state.pickups.set(pickup.id, pickup);
+    }
+  }
+
+  chooseRespawnPoint(exceptSessionId = '') {
+    const livingPlayers = [...this.state.players.entries()]
+      .filter(([sessionId, player]) => sessionId !== exceptSessionId && player.alive !== false)
+      .map(([, player]) => ({ x: player.x, z: player.z }));
+    return chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingPlayers);
+  }
+
+  getPlayerMeta(sessionId) {
+    if (!this.playerPositionMeta.has(sessionId)) {
+      const player = this.state.players.get(sessionId);
+      this.playerPositionMeta.set(sessionId, {
+        x: player?.x ?? 0,
+        z: player?.z ?? 0,
+        acceptedAt: Date.now(),
+        lastShotAt: 0
+      });
+    }
+
+    return this.playerPositionMeta.get(sessionId);
+  }
+
+  updatePlayerTransform(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    const now = Date.now();
+    const nextPosition = clampToWorldBounds(Number(message.x), Number(message.z));
+    const meta = this.getPlayerMeta(client.sessionId);
+    const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
+    const maxDistance = PLAYER_POSITION_FORGIVENESS + (PLAYER_MAX_ACCEPTED_SPEED * elapsedSeconds);
+    const travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
+    if (travelled > maxDistance) {
+      return;
+    }
+
+    player.x = quantizePosition(nextPosition.x);
+    player.z = quantizePosition(nextPosition.z);
+    meta.x = player.x;
+    meta.z = player.z;
+    meta.acceptedAt = now;
+
+    const rotationY = Number(message.rotationY);
+    if (Number.isFinite(rotationY)) {
+      player.rotationY = quantizeRotation(rotationY);
+    }
+
+    const animationState = sanitizePlayerAnimationState(message);
+    player.emoteId = animationState.emoteId;
+    player.emoteActive = animationState.emoteActive;
+    player.emoteStartedAt = animationState.emoteStartedAt;
+    player.emoteSeq = animationState.emoteSeq;
+  }
+
+  updateCombatTimers() {
+    const now = Date.now();
+
+    for (const [sessionId, player] of this.state.players.entries()) {
+      if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
+        this.completeReload(player);
+      }
+
+      if (player.alive === false && player.respawnAt && now >= player.respawnAt) {
+        this.finishRespawn(sessionId, player);
+      }
+    }
+
+    for (const pickup of [...this.state.pickups.values()]) {
+      if (!pickup.active && pickup.kind === 'spawn' && pickup.respawnAt && now >= pickup.respawnAt) {
+        pickup.active = true;
+        pickup.respawnAt = 0;
+      }
+
+      if (pickup.kind === 'drop' && pickup.despawnAt && now >= pickup.despawnAt) {
+        this.state.pickups.delete(pickup.id);
+      }
+    }
+  }
+
+  completeReload(player) {
+    const needed = Math.max(0, WEAPON_CLIP_SIZE - player.ammoInClip);
+    const loaded = Math.min(needed, player.reserveAmmo);
+    player.ammoInClip += loaded;
+    player.reserveAmmo -= loaded;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+  }
+
+  finishRespawn(sessionId, player) {
+    const [spawnX, spawnZ] = this.chooseRespawnPoint(sessionId);
+    player.x = quantizePosition(spawnX);
+    player.z = quantizePosition(spawnZ);
+    player.rotationY = 0;
+    player.health = PLAYER_MAX_HEALTH;
+    player.maxHealth = PLAYER_MAX_HEALTH;
+    player.alive = true;
+    player.respawnAt = 0;
+    player.spawnProtectedUntil = 0;
+    player.equippedWeaponId = '';
+    player.ammoInClip = 0;
+    player.reserveAmmo = 0;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    player.lastDamagedAt = 0;
+    player.emoteId = '';
+    player.emoteActive = false;
+    player.emoteStartedAt = 0;
+    player.emoteSeq += 1;
+    const meta = this.getPlayerMeta(sessionId);
+    meta.x = player.x;
+    meta.z = player.z;
+    meta.acceptedAt = Date.now();
+    this.broadcastCombatEvent({
+      type: 'respawn',
+      playerId: sessionId,
+      x: player.x,
+      z: player.z
+    });
+  }
+
+  startReload(sessionId, player, { emitEvent = true } = {}) {
+    if (
+      !player
+      || player.alive === false
+      || !player.equippedWeaponId
+      || player.isReloading
+      || player.ammoInClip >= WEAPON_CLIP_SIZE
+      || player.reserveAmmo <= 0
+    ) {
+      return false;
+    }
+
+    const now = Date.now();
+    player.isReloading = true;
+    player.reloadEndsAt = now + WEAPON_RELOAD_MS;
+    if (emitEvent) {
+      this.broadcastCombatEvent({
+        type: 'reload',
+        playerId: sessionId,
+        weaponId: player.equippedWeaponId,
+        startedAt: now,
+        endsAt: player.reloadEndsAt
+      });
+    }
+    return true;
+  }
+
+  handleReloadRequest(client) {
+    const player = this.state.players.get(client.sessionId);
+    this.startReload(client.sessionId, player);
+  }
+
+  handlePickupRequest(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    const pickup = this.state.pickups.get(String(message.pickupId ?? ''));
+    if (!pickup?.active) {
+      return;
+    }
+
+    const meta = this.getPlayerMeta(client.sessionId);
+    if (distance2D(meta.x, meta.z, pickup.x, pickup.z) > PICKUP_INTERACT_RADIUS) {
+      return;
+    }
+
+    if (player.equippedWeaponId && player.equippedWeaponId !== pickup.weaponId) {
+      return;
+    }
+
+    if (pickup.weaponId === WEAPON_IDS.pistol && player.equippedWeaponId === WEAPON_IDS.pistol) {
+      const nextClip = Math.min(WEAPON_CLIP_SIZE, player.ammoInClip + pickup.ammoInClip);
+      const clipDelta = nextClip - player.ammoInClip;
+      const remainingReserveFromPickup = Math.max(0, pickup.ammoInClip - clipDelta) + pickup.reserveAmmo;
+      const nextReserve = Math.min(WEAPON_RESERVE_CAP, player.reserveAmmo + remainingReserveFromPickup);
+      if (nextClip === player.ammoInClip && nextReserve === player.reserveAmmo) {
+        return;
+      }
+      player.ammoInClip = nextClip;
+      player.reserveAmmo = nextReserve;
+    } else {
+      player.equippedWeaponId = pickup.weaponId;
+      player.ammoInClip = Math.min(WEAPON_CLIP_SIZE, pickup.ammoInClip);
+      player.reserveAmmo = Math.min(WEAPON_RESERVE_CAP, pickup.reserveAmmo);
+    }
+
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    this.consumePickup(pickup);
+    this.broadcastCombatEvent({
+      type: 'pickup',
+      playerId: client.sessionId,
+      pickupId: pickup.id,
+      weaponId: pickup.weaponId
+    });
+  }
+
+  handleFireRequest(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+
+    const meta = this.getPlayerMeta(client.sessionId);
+    const now = Date.now();
+    if (player.ammoInClip <= 0 || (now - (meta.lastShotAt ?? 0)) < WEAPON_FIRE_INTERVAL_MS) {
+      return;
+    }
+
+    const aim = normalizeAimVector(Number(message.aimX), Number(message.aimZ));
+    meta.lastShotAt = now;
+    player.ammoInClip = Math.max(0, player.ammoInClip - 1);
+
+    const shot = this.resolveShot(client.sessionId, player, aim);
+    this.broadcastCombatEvent({
+      type: 'shot',
+      shooterId: client.sessionId,
+      weaponId: player.equippedWeaponId,
+      fromX: player.x,
+      fromZ: player.z,
+      toX: shot.hitX,
+      toZ: shot.hitZ,
+      clientShotAt: Number.isFinite(message.clientShotAt) ? Math.max(0, Math.floor(message.clientShotAt)) : now
+    });
+
+    if (shot.kind !== 'miss') {
+      this.broadcastCombatEvent({
+        type: 'impact',
+        shooterId: client.sessionId,
+        kind: shot.kind,
+        targetId: shot.targetId ?? '',
+        x: shot.hitX,
+        z: shot.hitZ
+      });
+    }
+
+    if (shot.kind === 'player' && shot.targetId) {
+      const target = this.state.players.get(shot.targetId);
+      if (target?.alive !== false) {
+        target.health = Math.max(0, target.health - WEAPON_DAMAGE);
+        target.lastDamagedAt = now;
+        if (target.health <= 0) {
+          this.handlePlayerDeath(shot.targetId, client.sessionId);
+        }
+      }
+    }
+
+    if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
+      this.startReload(client.sessionId, player);
+    }
+  }
+
+  handlePlayerDeath(victimId, killerId = '') {
+    const player = this.state.players.get(victimId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    player.alive = false;
+    player.health = 0;
+    player.respawnAt = Date.now() + PLAYER_RESPAWN_MS;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    player.deaths += 1;
+    player.emoteId = LIMP_EMOTE_ID;
+    player.emoteActive = true;
+    player.emoteStartedAt = Date.now();
+    player.emoteSeq += 1;
+    this.dropWeaponPickup(player);
+    player.equippedWeaponId = '';
+    player.ammoInClip = 0;
+    player.reserveAmmo = 0;
+
+    if (killerId && killerId !== victimId) {
+      const killer = this.state.players.get(killerId);
+      if (killer) {
+        killer.kills += 1;
+      }
+    }
+
+    this.broadcastCombatEvent({
+      type: 'death',
+      victimId,
+      killerId,
+      x: player.x,
+      z: player.z
+    });
+  }
+
+  dropWeaponPickup(player) {
+    const totalAmmo = player.ammoInClip + player.reserveAmmo;
+    if (!player.equippedWeaponId || totalAmmo <= 0) {
+      return;
+    }
+
+    const pickup = createPickupState({
+      id: `pickup_drop_${++this.pickupSequence}`,
+      weaponId: player.equippedWeaponId,
+      x: player.x,
+      z: player.z,
+      ammoInClip: player.ammoInClip,
+      reserveAmmo: player.reserveAmmo
+    }, {
+      kind: 'drop',
+      active: true,
+      despawnAt: Date.now() + DROPPED_PICKUP_DESPAWN_MS
+    });
+    this.state.pickups.set(pickup.id, pickup);
+  }
+
+  consumePickup(pickup) {
+    if (pickup.kind === 'spawn') {
+      pickup.active = false;
+      pickup.respawnAt = Date.now() + PICKUP_RESPAWN_MS;
+      pickup.despawnAt = 0;
+      return;
+    }
+
+    this.state.pickups.delete(pickup.id);
+  }
+
+  resolveShot(shooterSessionId, player, aim) {
+    let nearestDistance = WEAPON_RANGE;
+    let result = {
+      kind: 'miss',
+      hitX: player.x + aim.x * WEAPON_RANGE,
+      hitZ: player.z + aim.z * WEAPON_RANGE,
+      targetId: ''
+    };
+
+    for (const placement of this.worldState.getPlacements()) {
+      const item = getBuilderItemById(placement.itemId);
+      const rect = placementToCollisionRect(placement, item);
+      if (!rect) {
+        continue;
+      }
+
+      const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, WEAPON_RANGE, rect);
+      if (hitDistance == null || hitDistance <= SHOT_BLOCKER_EPSILON || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
+        targetId: placement.id
+      };
+    }
+
+    for (const [sessionId, target] of this.state.players.entries()) {
+      if (sessionId === shooterSessionId || target.alive === false) {
+        continue;
+      }
+
+      const hitDistance = rayCircleIntersectionDistance(
+        player.x,
+        player.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        PLAYER_RADIUS
+      );
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'player',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
+        targetId: sessionId
+      };
+    }
+
+    return result;
+  }
+
+  broadcastCombatEvent(event) {
+    this.broadcast('combat:event', event);
+  }
 
   async handleRpc(client, requestId, handler) {
     try {
@@ -616,7 +1146,7 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distanceBetween({ x: npc.x, z: npc.z }, player);
+      const distance = distance2D(npc.x, npc.z, player.x, player.z);
       if (distance > npc.interactRadius || distance >= nearestDistance) {
         continue;
       }

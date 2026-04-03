@@ -1,7 +1,35 @@
+import {
+  COMBAT_PICKUP_SPAWNS,
+  COMBAT_RESPAWN_POINTS,
+  DROPPED_PICKUP_DESPAWN_MS,
+  PICKUP_INTERACT_RADIUS,
+  PICKUP_RESPAWN_MS,
+  PLAYER_MAX_HEALTH,
+  PLAYER_RADIUS,
+  PLAYER_RESPAWN_MS,
+  WEAPON_CLIP_SIZE,
+  WEAPON_DAMAGE,
+  WEAPON_FIRE_INTERVAL_MS,
+  WEAPON_IDS,
+  WEAPON_RANGE,
+  WEAPON_RELOAD_MS,
+  WEAPON_RESERVE_CAP
+} from '../shared/combatConstants.js';
+import {
+  chooseFarthestSpawnPoint,
+  clampToWorldBounds,
+  distance2D,
+  normalizeAimVector,
+  placementToCollisionRect,
+  rayCircleIntersectionDistance,
+  rayRectIntersectionDistance
+} from '../shared/combatMath.js';
 import { getNpcModelById } from './npcCatalog.js';
 import { WorldState } from '../world/WorldState.js';
 import { defaultWorldLayout } from '../world/defaultWorldLayout.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
+
+const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -41,8 +69,42 @@ function sanitizePlayerAnimationState(animationState = {}) {
   };
 }
 
-function distanceBetween(a, b) {
-  return Math.hypot(a.x - b.x, a.z - b.z);
+function createDefaultPlayerState(overrides = {}) {
+  return {
+    x: 0,
+    z: 0,
+    rotationY: 0,
+    emoteId: '',
+    emoteActive: false,
+    emoteStartedAt: 0,
+    emoteSeq: 0,
+    chatText: '',
+    chatStartedAt: 0,
+    chatSeq: 0,
+    health: PLAYER_MAX_HEALTH,
+    maxHealth: PLAYER_MAX_HEALTH,
+    alive: true,
+    respawnAt: 0,
+    spawnProtectedUntil: 0,
+    equippedWeaponId: '',
+    ammoInClip: 0,
+    reserveAmmo: 0,
+    isReloading: false,
+    reloadEndsAt: 0,
+    kills: 0,
+    deaths: 0,
+    lastDamagedAt: 0,
+    lastShotAt: 0,
+    ...overrides
+  };
+}
+
+function clonePlayerState(player) {
+  return { ...player };
+}
+
+function clonePickupState(pickup) {
+  return { ...pickup };
 }
 
 export class NpcServiceMock {
@@ -50,6 +112,7 @@ export class NpcServiceMock {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
+    this.combatListeners = new Set();
     this.definitions = new Map();
     this.transcripts = new Map();
     this.playerAliases = new Map();
@@ -62,26 +125,24 @@ export class NpcServiceMock {
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),
-      npcs: new Map()
+      npcs: new Map(),
+      pickups: new Map()
     };
     this.sequence = 0;
+    this.pickupSequence = 0;
     this.playerAliasSequence = 0;
-    this.playerPosition = { x: 0, z: 0 };
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
-    this.state.players.set(this.state.sessionId, {
-      x: 0,
-      z: 0,
-      rotationY: 0,
-      emoteId: '',
-      emoteActive: false,
-      emoteStartedAt: 0,
-      emoteSeq: 0,
-      chatText: '',
-      chatStartedAt: 0,
-      chatSeq: 0
-    });
+    const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
+    this.state.players.set(this.state.sessionId, createDefaultPlayerState({
+      x: spawnX,
+      z: spawnZ
+    }));
+    this.seedCombatPickups();
     this.syncNpcStateFromWorld();
+    this.combatTick = window.setInterval(() => {
+      this.updateCombatTimers();
+    }, 100);
   }
 
   subscribe(listener) {
@@ -95,12 +156,18 @@ export class NpcServiceMock {
     return () => this.worldPatchListeners.delete(listener);
   }
 
+  subscribeCombatEvents(listener) {
+    this.combatListeners.add(listener);
+    return () => this.combatListeners.delete(listener);
+  }
+
   getState() {
     return {
       ...this.state,
-      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
+      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, clonePlayerState(player)])),
       builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc, position: [...npc.position] }]))
+      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc, position: [...npc.position] }])),
+      pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, clonePickupState(pickup)]))
     };
   }
 
@@ -115,6 +182,31 @@ export class NpcServiceMock {
     const snapshot = structuredClone(patch);
     for (const listener of this.worldPatchListeners) {
       listener(snapshot);
+    }
+  }
+
+  emitCombatEvent(event) {
+    const snapshot = structuredClone(event);
+    for (const listener of this.combatListeners) {
+      listener(snapshot);
+    }
+  }
+
+  seedCombatPickups() {
+    this.state.pickups.clear();
+    for (const spawn of COMBAT_PICKUP_SPAWNS) {
+      this.state.pickups.set(spawn.id, {
+        id: spawn.id,
+        weaponId: spawn.weaponId,
+        x: spawn.position[0],
+        z: spawn.position[1],
+        ammoInClip: spawn.ammoInClip,
+        reserveAmmo: spawn.reserveAmmo,
+        kind: 'spawn',
+        active: true,
+        respawnAt: 0,
+        despawnAt: 0
+      });
     }
   }
 
@@ -292,22 +384,20 @@ export class NpcServiceMock {
   }
 
   setPlayerTransform(position, rotationY = 0, animationState = {}) {
-    const player = this.state.players.get(this.state.sessionId) ?? {};
-    const nextAnimation = sanitizePlayerAnimationState(animationState);
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return;
+    }
 
-    this.playerPosition = {
-      x: position.x,
-      z: position.z,
-      rotationY
-    };
-    player.x = position.x;
-    player.z = position.z;
-    player.rotationY = rotationY;
+    const nextAnimation = sanitizePlayerAnimationState(animationState);
+    const clamped = clampToWorldBounds(position.x, position.z);
+    player.x = clamped.x;
+    player.z = clamped.z;
+    player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
     player.emoteSeq = nextAnimation.emoteSeq;
-    this.state.players.set(this.state.sessionId, player);
   }
 
   setBuilderPresence(presence = {}) {
@@ -370,7 +460,7 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distanceBetween({ x: npc.position[0], z: npc.position[1] }, player);
+      const distance = distance2D(npc.position[0], npc.position[1], player.x, player.z);
       if (distance > npc.interactRadius || distance >= nearestDistance) {
         continue;
       }
@@ -472,8 +562,346 @@ export class NpcServiceMock {
     return `${message.trim()}? ${signature}`;
   }
 
+  pickupWeapon(pickupId) {
+    const player = this.state.players.get(this.state.sessionId);
+    const pickup = this.state.pickups.get(String(pickupId ?? ''));
+    if (!player || !pickup?.active || player.alive === false) {
+      return;
+    }
+
+    const distance = distance2D(player.x, player.z, pickup.x, pickup.z);
+    if (distance > PICKUP_INTERACT_RADIUS) {
+      return;
+    }
+
+    if (player.equippedWeaponId && player.equippedWeaponId !== pickup.weaponId) {
+      return;
+    }
+
+    if (pickup.weaponId === WEAPON_IDS.pistol && player.equippedWeaponId === WEAPON_IDS.pistol) {
+      const nextClip = Math.min(WEAPON_CLIP_SIZE, player.ammoInClip + pickup.ammoInClip);
+      const clipDelta = nextClip - player.ammoInClip;
+      const remainingReserveFromPickup = Math.max(0, pickup.ammoInClip - clipDelta) + pickup.reserveAmmo;
+      const nextReserve = Math.min(WEAPON_RESERVE_CAP, player.reserveAmmo + remainingReserveFromPickup);
+      if (nextClip === player.ammoInClip && nextReserve === player.reserveAmmo) {
+        return;
+      }
+      player.ammoInClip = nextClip;
+      player.reserveAmmo = nextReserve;
+    } else {
+      player.equippedWeaponId = pickup.weaponId;
+      player.ammoInClip = Math.min(WEAPON_CLIP_SIZE, pickup.ammoInClip);
+      player.reserveAmmo = Math.min(WEAPON_RESERVE_CAP, pickup.reserveAmmo);
+    }
+
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    this.consumePickup(pickup);
+    this.emitCombatEvent({
+      type: 'pickup',
+      playerId: this.state.sessionId,
+      pickupId: pickup.id,
+      weaponId: pickup.weaponId
+    });
+    this.emit();
+  }
+
+  fireWeapon(aimDirection = { x: 0, z: 1 }, clientShotAt = Date.now()) {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+
+    const now = Date.now();
+    if (player.ammoInClip <= 0 || (now - (player.lastShotAt ?? 0)) < WEAPON_FIRE_INTERVAL_MS) {
+      return;
+    }
+
+    const aim = normalizeAimVector(aimDirection.x, aimDirection.z);
+    player.lastShotAt = now;
+    player.ammoInClip = Math.max(0, player.ammoInClip - 1);
+
+    const shot = this.resolveShot(player, aim);
+    this.emitCombatEvent({
+      type: 'shot',
+      shooterId: this.state.sessionId,
+      weaponId: player.equippedWeaponId,
+      fromX: player.x,
+      fromZ: player.z,
+      toX: shot.hitX,
+      toZ: shot.hitZ,
+      clientShotAt
+    });
+    this.emitCombatEvent({
+      type: 'impact',
+      shooterId: this.state.sessionId,
+      kind: shot.kind,
+      targetId: shot.targetId ?? '',
+      x: shot.hitX,
+      z: shot.hitZ
+    });
+
+    if (shot.player) {
+      shot.player.health = Math.max(0, shot.player.health - WEAPON_DAMAGE);
+      shot.player.lastDamagedAt = now;
+      if (shot.player.health <= 0) {
+        this.handlePlayerDeath(shot.playerId, this.state.sessionId);
+      }
+    }
+
+    if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
+      this.startReload(player);
+    }
+
+    this.emit();
+  }
+
+  reloadWeapon() {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player) {
+      return;
+    }
+    this.startReload(player);
+  }
+
+  startReload(player, { emitEvent = true } = {}) {
+    if (
+      !player
+      || player.alive === false
+      || !player.equippedWeaponId
+      || player.isReloading
+      || player.ammoInClip >= WEAPON_CLIP_SIZE
+      || player.reserveAmmo <= 0
+    ) {
+      return false;
+    }
+
+    player.isReloading = true;
+    player.reloadEndsAt = Date.now() + WEAPON_RELOAD_MS;
+    if (emitEvent) {
+      this.emitCombatEvent({
+        type: 'reload',
+        playerId: this.state.sessionId,
+        weaponId: player.equippedWeaponId,
+        startedAt: Date.now(),
+        endsAt: player.reloadEndsAt
+      });
+      this.emit();
+    }
+    return true;
+  }
+
+  updateCombatTimers() {
+    const now = Date.now();
+    let stateChanged = false;
+
+    for (const player of this.state.players.values()) {
+      if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
+        this.completeReload(player);
+        stateChanged = true;
+      }
+
+      if (player.alive === false && player.respawnAt && now >= player.respawnAt) {
+        this.finishRespawn(player);
+        stateChanged = true;
+      }
+    }
+
+    for (const pickup of this.state.pickups.values()) {
+      if (!pickup.active && pickup.kind === 'spawn' && pickup.respawnAt && now >= pickup.respawnAt) {
+        pickup.active = true;
+        pickup.respawnAt = 0;
+        stateChanged = true;
+      }
+
+      if (!pickup.active && pickup.kind === 'drop' && pickup.despawnAt && now >= pickup.despawnAt) {
+        this.state.pickups.delete(pickup.id);
+        stateChanged = true;
+      }
+    }
+
+    if (stateChanged) {
+      this.emit();
+    }
+  }
+
+  completeReload(player) {
+    const needed = Math.max(0, WEAPON_CLIP_SIZE - player.ammoInClip);
+    const loaded = Math.min(needed, player.reserveAmmo);
+    player.ammoInClip += loaded;
+    player.reserveAmmo -= loaded;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+  }
+
+  finishRespawn(player) {
+    const livingOthers = [...this.state.players.entries()]
+      .filter(([id, candidate]) => id !== this.state.sessionId && candidate.alive !== false)
+      .map(([, candidate]) => candidate);
+    const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingOthers);
+    player.x = spawnX;
+    player.z = spawnZ;
+    player.rotationY = 0;
+    player.health = PLAYER_MAX_HEALTH;
+    player.maxHealth = PLAYER_MAX_HEALTH;
+    player.alive = true;
+    player.respawnAt = 0;
+    player.spawnProtectedUntil = 0;
+    player.equippedWeaponId = '';
+    player.ammoInClip = 0;
+    player.reserveAmmo = 0;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    player.lastDamagedAt = 0;
+    player.emoteId = '';
+    player.emoteActive = false;
+    player.emoteStartedAt = 0;
+    player.emoteSeq += 1;
+    this.emitCombatEvent({
+      type: 'respawn',
+      playerId: this.state.sessionId,
+      x: spawnX,
+      z: spawnZ
+    });
+  }
+
+  handlePlayerDeath(playerId, killerId = '') {
+    const player = this.state.players.get(playerId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    player.alive = false;
+    player.health = 0;
+    player.respawnAt = Date.now() + PLAYER_RESPAWN_MS;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
+    player.deaths += 1;
+    player.emoteId = 'limp';
+    player.emoteActive = true;
+    player.emoteStartedAt = Date.now();
+    player.emoteSeq += 1;
+
+    if (killerId && killerId !== playerId) {
+      const killer = this.state.players.get(killerId);
+      if (killer) {
+        killer.kills += 1;
+      }
+    }
+
+    this.dropWeaponPickup(player);
+    player.equippedWeaponId = '';
+    player.ammoInClip = 0;
+    player.reserveAmmo = 0;
+    this.emitCombatEvent({
+      type: 'death',
+      victimId: playerId,
+      killerId,
+      x: player.x,
+      z: player.z
+    });
+  }
+
+  dropWeaponPickup(player) {
+    const totalAmmo = player.ammoInClip + player.reserveAmmo;
+    if (!player.equippedWeaponId || totalAmmo <= 0) {
+      return;
+    }
+
+    const id = `pickup_drop_${++this.pickupSequence}`;
+    this.state.pickups.set(id, {
+      id,
+      weaponId: player.equippedWeaponId,
+      x: player.x,
+      z: player.z,
+      ammoInClip: player.ammoInClip,
+      reserveAmmo: player.reserveAmmo,
+      kind: 'drop',
+      active: true,
+      respawnAt: 0,
+      despawnAt: Date.now() + DROPPED_PICKUP_DESPAWN_MS
+    });
+  }
+
+  consumePickup(pickup) {
+    if (pickup.kind === 'spawn') {
+      pickup.active = false;
+      pickup.respawnAt = Date.now() + PICKUP_RESPAWN_MS;
+      pickup.despawnAt = 0;
+      return;
+    }
+
+    this.state.pickups.delete(pickup.id);
+  }
+
+  resolveShot(player, aim) {
+    let nearestDistance = WEAPON_RANGE;
+    let result = {
+      kind: 'miss',
+      hitX: player.x + aim.x * WEAPON_RANGE,
+      hitZ: player.z + aim.z * WEAPON_RANGE,
+      targetId: ''
+    };
+
+    for (const placement of this.worldState.getPlacements()) {
+      const item = getBuilderItemById(placement.itemId);
+      const rect = placementToCollisionRect(placement, item);
+      if (!rect) {
+        continue;
+      }
+
+      const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, WEAPON_RANGE, rect);
+      if (hitDistance == null || hitDistance <= SHOT_BLOCKER_EPSILON || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
+        targetId: placement.id
+      };
+    }
+
+    for (const [id, target] of this.state.players.entries()) {
+      if (id === this.state.sessionId || target.alive === false) {
+        continue;
+      }
+
+      const hitDistance = rayCircleIntersectionDistance(
+        player.x,
+        player.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        PLAYER_RADIUS
+      );
+
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'player',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
+        targetId: id,
+        player: target,
+        playerId: id
+      };
+    }
+
+    return result;
+  }
+
   async destroy() {
     this.listeners.clear();
     this.worldPatchListeners.clear();
+    this.combatListeners.clear();
+    window.clearInterval(this.combatTick);
   }
 }
