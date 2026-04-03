@@ -1,8 +1,20 @@
 import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
-import { getWeaponAssetUrl, prepareEquippedWeaponModel } from '../combat/weaponVisuals.js';
 import { assets } from '../world/assetManifest.js';
+import {
+  ATTACHMENT_SLOTS,
+  applyAttachmentTransform,
+  applyHeldItemGripTransform,
+  getHeldItemAimPose,
+  getHeldItemAssetUrl,
+  getHeldItemAttachmentSlot,
+  getHeldItemDefinition,
+  getHeldItemGripProfile,
+  getHeldItemPointOffset,
+  mergeAttachmentTransform,
+  prepareHeldItemModel
+} from '../shared/heldItemDefinitions.js';
 import { EMOTES_BY_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
@@ -21,6 +33,13 @@ const ARM_BONE_NAMES = Object.freeze({
   leftArm: 'mixamorigLeftArm',
   leftForeArm: 'mixamorigLeftForeArm'
 });
+
+const SLOT_MOTION_BASE = Object.freeze({
+  position: Object.freeze([-0.12, 0.03, -0.08]),
+  rotation: Object.freeze([-0.06, 0, 0.05])
+});
+
+const EMPTY_VECTOR_OVERRIDE = Object.freeze([0, 0, 0]);
 
 function getEmoteConfig(emoteId) {
   return EMOTES_BY_ID[emoteId] ?? {
@@ -196,21 +215,15 @@ export async function createPlayer(library, {
   let limpStartedAt = 0;
   let limpRecoverUntilMs = 0;
   const ragdoll = createRagdollController(character);
-  const weaponGrip = new THREE.Group();
-  weaponGrip.position.set(0.34, 0.1, 0.08);
-  weaponGrip.rotation.set(Math.PI * 0.08, Math.PI * 0.52, Math.PI * 0.08);
-  weaponGrip.scale.setScalar(characterScale > 0 ? (1 / characterScale) : 1);
-  sockets.weaponRight?.add(weaponGrip);
-  const weaponRoot = new THREE.Group();
-  weaponGrip.add(weaponRoot);
-  const muzzleSocket = new THREE.Group();
-  muzzleSocket.position.set(0.62, 0.07, 0.1);
-  weaponRoot.add(muzzleSocket);
-  const weaponNodes = new Map();
-  const weaponLoads = new Map();
-  let activeWeaponId = '';
+  const inverseCharacterScale = characterScale > 0 ? (1 / characterScale) : 1;
+  const equipmentRoots = {};
+  const equipmentMotionRoots = {};
+  const heldItemEntries = new Map();
+  const heldItemLoads = new Map();
+  const activeItemsBySlot = new Map();
+  const slotVisibility = new Map();
+  const gripOverrides = new Map();
   let desiredWeaponId = '';
-  let weaponShown = false;
   let aliveState = true;
   let recoilAmount = 0;
   let aimingState = false;
@@ -222,6 +235,20 @@ export async function createPlayer(library, {
     leftArm: character.getObjectByName(ARM_BONE_NAMES.leftArm),
     leftForeArm: character.getObjectByName(ARM_BONE_NAMES.leftForeArm)
   };
+
+  for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+    const socket = sockets[slot];
+    const root = new THREE.Group();
+    root.name = `EquipmentRoot_${slot}`;
+    root.scale.setScalar(inverseCharacterScale);
+    const motionRoot = new THREE.Group();
+    motionRoot.name = `EquipmentMotion_${slot}`;
+    root.add(motionRoot);
+    socket?.add(root);
+    equipmentRoots[slot] = root;
+    equipmentMotionRoots[slot] = motionRoot;
+    slotVisibility.set(slot, true);
+  }
 
   function isLimpTransitioning() {
     return ragdoll.isActive() || Date.now() < limpRecoverUntilMs;
@@ -296,6 +323,132 @@ export async function createPlayer(library, {
     }
   });
 
+  function getSlotMotionRoot(slot) {
+    return equipmentMotionRoots[slot] ?? null;
+  }
+
+  function getActiveHeldItemId(slot = ATTACHMENT_SLOTS.handRight) {
+    return activeItemsBySlot.get(slot) ?? '';
+  }
+
+  function getCurrentAimPose() {
+    return getHeldItemAimPose(getActiveHeldItemId()) ?? null;
+  }
+
+  function getGripOverride(itemId) {
+    const override = gripOverrides.get(itemId);
+    if (!override) {
+      return null;
+    }
+
+    return {
+      position: [...(override.position ?? EMPTY_VECTOR_OVERRIDE)],
+      rotation: [...(override.rotation ?? EMPTY_VECTOR_OVERRIDE)],
+      scale: [...(override.scale ?? [1, 1, 1])]
+    };
+  }
+
+  function getMergedGripProfile(itemId) {
+    return mergeAttachmentTransform(getHeldItemGripProfile(itemId), getGripOverride(itemId));
+  }
+
+  function applyHeldItemProfile(itemId) {
+    const entry = heldItemEntries.get(itemId);
+    if (!entry) {
+      return null;
+    }
+
+    return applyHeldItemGripTransform(entry.container, itemId, getGripOverride(itemId));
+  }
+
+  function updateHeldItemVisibility() {
+    for (const [itemId, entry] of heldItemEntries.entries()) {
+      const activeItemId = activeItemsBySlot.get(entry.slot);
+      const slotShown = slotVisibility.get(entry.slot) !== false;
+      entry.container.visible = aliveState && itemId === activeItemId && slotShown;
+    }
+  }
+
+  async function ensureHeldItemEntry(itemId) {
+    if (heldItemEntries.has(itemId)) {
+      return heldItemEntries.get(itemId);
+    }
+
+    if (!heldItemLoads.has(itemId)) {
+      const definition = getHeldItemDefinition(itemId);
+      const assetUrl = getHeldItemAssetUrl(itemId);
+      const slot = getHeldItemAttachmentSlot(itemId);
+      const motionRoot = getSlotMotionRoot(slot);
+      if (!definition || !assetUrl || !motionRoot) {
+        return null;
+      }
+
+      heldItemLoads.set(itemId, library.instantiate(assetUrl)
+        .then((object) => {
+          prepareHeldItemModel(object, itemId, 'equipped');
+          const container = new THREE.Group();
+          container.name = `HeldItem_${itemId}`;
+          container.visible = false;
+          container.add(object);
+
+          const points = new Map();
+          for (const pointName of Object.keys(definition.points ?? {})) {
+            const pointNode = new THREE.Group();
+            pointNode.name = `HeldItemPoint_${pointName}`;
+            applyAttachmentTransform(pointNode, getHeldItemPointOffset(itemId, pointName));
+            container.add(pointNode);
+            points.set(pointName, pointNode);
+          }
+
+          motionRoot.add(container);
+          heldItemEntries.set(itemId, {
+            id: itemId,
+            slot,
+            container,
+            object,
+            points
+          });
+          applyHeldItemProfile(itemId);
+          return heldItemEntries.get(itemId);
+        })
+        .catch((error) => {
+          heldItemLoads.delete(itemId);
+          console.warn(`[Player] Failed to load held item ${itemId}.`, error);
+          return null;
+        }));
+    }
+
+    return heldItemLoads.get(itemId);
+  }
+
+  function detachHeldItem(slot = ATTACHMENT_SLOTS.handRight) {
+    activeItemsBySlot.delete(slot);
+    slotVisibility.set(slot, false);
+    if (slot === ATTACHMENT_SLOTS.handRight) {
+      desiredWeaponId = '';
+    }
+    updateHeldItemVisibility();
+  }
+
+  async function attachHeldItem(itemId, { visible = true } = {}) {
+    const definition = getHeldItemDefinition(itemId);
+    if (!definition) {
+      return null;
+    }
+
+    const slot = definition.attachmentSlot;
+    const entry = await ensureHeldItemEntry(itemId);
+    if (!entry) {
+      return null;
+    }
+
+    activeItemsBySlot.set(slot, itemId);
+    slotVisibility.set(slot, Boolean(visible && itemId));
+    applyHeldItemProfile(itemId);
+    updateHeldItemVisibility();
+    return entry;
+  }
+
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     walkWeight = THREE.MathUtils.damp(walkWeight, moving ? 1 : 0, 12, deltaSeconds);
     walkAction.setEffectiveWeight(walkWeight);
@@ -308,91 +461,48 @@ export async function createPlayer(library, {
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
     visual.position.set(0, recoilAmount * 0.03, aimingState ? -0.08 : 0);
     visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
-    weaponRoot.position.set(
-      -0.12 - (aimPoseWeight * 0.22) - (recoilAmount * 0.22),
-      0.03 + (aimPoseWeight * 0.04) + (recoilAmount * 0.02),
-      -0.08 - (aimPoseWeight * 0.18) - (recoilAmount * 0.22)
-    );
-    weaponRoot.rotation.set(
-      -0.06 - (aimPoseWeight * 0.12) - (recoilAmount * 0.05),
-      (aimPoseWeight * 0.16) + (recoilAmount * 0.2),
-      0.05 + (aimPoseWeight * 0.08) + (recoilAmount * 0.1)
-    );
-
-    if (!ragdoll.isActive()) {
-      aimPoseBones.spineUpper?.rotateX(-aimPoseWeight * 0.14);
-      aimPoseBones.rightArm?.rotateX(-(aimPoseWeight * 0.75));
-      aimPoseBones.rightArm?.rotateZ(-(aimPoseWeight * 0.28));
-      aimPoseBones.rightForeArm?.rotateX(-(aimPoseWeight * 0.55) - (recoilAmount * 0.08));
-      aimPoseBones.leftArm?.rotateX(-(aimPoseWeight * 0.22));
-      aimPoseBones.leftArm?.rotateZ(aimPoseWeight * 0.08);
-      aimPoseBones.leftForeArm?.rotateX(-(aimPoseWeight * 0.12));
-    }
-  }
-
-  async function ensureWeaponNode(weaponId) {
-    if (weaponNodes.has(weaponId)) {
-      return weaponNodes.get(weaponId);
+    const rightHandMotion = getSlotMotionRoot(ATTACHMENT_SLOTS.handRight);
+    if (rightHandMotion) {
+      rightHandMotion.position.set(
+        SLOT_MOTION_BASE.position[0] - (aimPoseWeight * 0.22) - (recoilAmount * 0.22),
+        SLOT_MOTION_BASE.position[1] + (aimPoseWeight * 0.04) + (recoilAmount * 0.02),
+        SLOT_MOTION_BASE.position[2] - (aimPoseWeight * 0.18) - (recoilAmount * 0.22)
+      );
+      rightHandMotion.rotation.set(
+        SLOT_MOTION_BASE.rotation[0] - (aimPoseWeight * 0.12) - (recoilAmount * 0.05),
+        SLOT_MOTION_BASE.rotation[1] + (aimPoseWeight * 0.16) + (recoilAmount * 0.2),
+        SLOT_MOTION_BASE.rotation[2] + (aimPoseWeight * 0.08) + (recoilAmount * 0.1)
+      );
     }
 
-    if (!weaponLoads.has(weaponId)) {
-      const assetUrl = getWeaponAssetUrl(weaponId);
-      if (!assetUrl) {
-        return null;
-      }
+    const aimPose = getCurrentAimPose();
 
-      weaponLoads.set(weaponId, library.instantiate(assetUrl)
-        .then((object) => {
-          prepareEquippedWeaponModel(object);
-          object.visible = false;
-          weaponRoot.add(object);
-          weaponNodes.set(weaponId, object);
-          return object;
-        })
-        .catch((error) => {
-          weaponLoads.delete(weaponId);
-          console.warn(`[Player] Failed to load weapon ${weaponId}.`, error);
-          return null;
-        }));
-    }
-
-    return weaponLoads.get(weaponId);
-  }
-
-  function applyWeaponVisibility() {
-    for (const [weaponId, node] of weaponNodes.entries()) {
-      node.visible = weaponShown && weaponId === activeWeaponId;
+    if (!ragdoll.isActive() && aimPose) {
+      aimPoseBones.spineUpper?.rotateX(aimPoseWeight * (aimPose.spineUpperX ?? 0));
+      aimPoseBones.rightArm?.rotateX(aimPoseWeight * (aimPose.rightArmX ?? 0));
+      aimPoseBones.rightArm?.rotateZ(aimPoseWeight * (aimPose.rightArmZ ?? 0));
+      aimPoseBones.rightForeArm?.rotateX((aimPoseWeight * (aimPose.rightForeArmX ?? 0)) - (recoilAmount * 0.08));
+      aimPoseBones.leftArm?.rotateX(aimPoseWeight * (aimPose.leftArmX ?? 0));
+      aimPoseBones.leftArm?.rotateZ(aimPoseWeight * (aimPose.leftArmZ ?? 0));
+      aimPoseBones.leftForeArm?.rotateX(aimPoseWeight * (aimPose.leftForeArmX ?? 0));
     }
   }
 
   async function setWeaponState(weaponId = '', { visible = true } = {}) {
     const nextWeaponId = weaponId || '';
     const nextVisible = Boolean(visible && nextWeaponId);
-    if (
-      nextWeaponId === desiredWeaponId
-      && nextVisible === weaponShown
-      && (!nextWeaponId || weaponNodes.has(nextWeaponId) || weaponLoads.has(nextWeaponId))
-    ) {
-      applyWeaponVisibility();
+    if (desiredWeaponId === nextWeaponId && slotVisibility.get(ATTACHMENT_SLOTS.handRight) === nextVisible) {
+      updateHeldItemVisibility();
       return;
     }
 
     desiredWeaponId = nextWeaponId;
-    weaponShown = nextVisible;
     if (!desiredWeaponId) {
-      activeWeaponId = '';
-      applyWeaponVisibility();
+      detachHeldItem(ATTACHMENT_SLOTS.handRight);
       return;
     }
 
-    const node = await ensureWeaponNode(desiredWeaponId);
-    if (!node || desiredWeaponId !== weaponId) {
-      applyWeaponVisibility();
-      return;
-    }
-
-    activeWeaponId = desiredWeaponId;
-    applyWeaponVisibility();
+    await attachHeldItem(desiredWeaponId, { visible: nextVisible });
   }
 
   function setAliveState(nextAlive, { startedAtMs = Date.now() } = {}) {
@@ -403,12 +513,41 @@ export async function createPlayer(library, {
     aliveState = nextAlive;
     if (!nextAlive) {
       setLimpActive(true, { startedAtMs, trackSync: false });
-      setWeaponState(activeWeaponId, { visible: false });
+      if (desiredWeaponId) {
+        void setWeaponState(desiredWeaponId, { visible: false });
+      }
       return;
     }
 
     setLimpActive(false, { trackSync: false });
-    setWeaponState(activeWeaponId, { visible: weaponShown });
+    if (desiredWeaponId) {
+      void setWeaponState(desiredWeaponId, { visible: true });
+    }
+  }
+
+  function getAttachmentSocket(slot) {
+    return sockets[slot] ?? null;
+  }
+
+  function nudgeHeldItemGripOverride(itemId, delta = {}) {
+    if (!itemId) {
+      return null;
+    }
+
+    const existing = getGripOverride(itemId) ?? {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1]
+    };
+    const nextOverride = {
+      position: [0, 1, 2].map((index) => (existing.position?.[index] ?? 0) + (delta.position?.[index] ?? 0)),
+      rotation: [0, 1, 2].map((index) => (existing.rotation?.[index] ?? 0) + (delta.rotation?.[index] ?? 0)),
+      scale: [0, 1, 2].map((index) => (existing.scale?.[index] ?? 1) * (delta.scale?.[index] ?? 1))
+    };
+    gripOverrides.set(itemId, nextOverride);
+    applyHeldItemProfile(itemId);
+    updateHeldItemVisibility();
+    return getMergedGripProfile(itemId);
   }
 
   return {
@@ -421,14 +560,24 @@ export async function createPlayer(library, {
       target.y += PLAYER_HEIGHT + 1.4;
       return target;
     },
-    getWeaponMuzzleWorldPosition(target = new THREE.Vector3()) {
-      if (weaponShown && activeWeaponId && sockets.weaponRight) {
-        muzzleSocket.getWorldPosition(target);
-        return target;
+    getAttachmentWorldPoint(pointName = 'muzzle', target = new THREE.Vector3()) {
+      for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+        const activeItemId = activeItemsBySlot.get(slot);
+        if (!activeItemId || slotVisibility.get(slot) === false) {
+          continue;
+        }
+
+        const entry = heldItemEntries.get(activeItemId);
+        const pointNode = entry?.points?.get(pointName);
+        if (pointNode) {
+          pointNode.getWorldPosition(target);
+          return target;
+        }
       }
 
-      if (sockets.weaponRight) {
-        sockets.weaponRight.getWorldPosition(target);
+      const handSocket = getAttachmentSocket(ATTACHMENT_SLOTS.handRight);
+      if (handSocket) {
+        handSocket.getWorldPosition(target);
         target.x += 0.2;
         target.y += 0.05;
         target.z += 0.2;
@@ -438,6 +587,12 @@ export async function createPlayer(library, {
       anchor.getWorldPosition(target);
       target.y += PLAYER_HEIGHT * 0.7;
       return target;
+    },
+    getHeldItemMuzzleWorldPosition(target = new THREE.Vector3()) {
+      return this.getAttachmentWorldPoint('muzzle', target);
+    },
+    getWeaponMuzzleWorldPosition(target = new THREE.Vector3()) {
+      return this.getAttachmentWorldPoint('muzzle', target);
     },
     getAnimationSyncState() {
       if (ragdoll.isActive()) {
@@ -516,6 +671,48 @@ export async function createPlayer(library, {
     },
     triggerShotFeedback() {
       recoilAmount = Math.max(recoilAmount, aimingState ? 1.2 : 1.05);
+    },
+    attachHeldItem(itemId, options = {}) {
+      return attachHeldItem(itemId, options);
+    },
+    detachHeldItem(slot = ATTACHMENT_SLOTS.handRight) {
+      detachHeldItem(slot);
+    },
+    getHeldItemGripProfile(itemId = desiredWeaponId) {
+      return itemId ? getMergedGripProfile(itemId) : null;
+    },
+    setHeldItemGripOverride(itemId, override = null) {
+      if (!itemId) {
+        return null;
+      }
+
+      if (!override) {
+        gripOverrides.delete(itemId);
+        applyHeldItemProfile(itemId);
+        updateHeldItemVisibility();
+        return this.getHeldItemGripProfile(itemId);
+      }
+
+      gripOverrides.set(itemId, {
+        position: [...(override.position ?? EMPTY_VECTOR_OVERRIDE)],
+        rotation: [...(override.rotation ?? EMPTY_VECTOR_OVERRIDE)],
+        scale: [...(override.scale ?? [1, 1, 1])]
+      });
+      applyHeldItemProfile(itemId);
+      updateHeldItemVisibility();
+      return this.getHeldItemGripProfile(itemId);
+    },
+    nudgeHeldItemGripOverride(itemId, delta = {}) {
+      return nudgeHeldItemGripOverride(itemId, delta);
+    },
+    clearHeldItemGripOverride(itemId) {
+      if (!itemId) {
+        return;
+      }
+
+      gripOverrides.delete(itemId);
+      applyHeldItemProfile(itemId);
+      updateHeldItemVisibility();
     },
     setWeaponState(weaponId, { visible = true } = {}) {
       void setWeaponState(weaponId, { visible });

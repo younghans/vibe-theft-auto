@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 
-export const HUMANOID_SOCKETS = Object.freeze({
-  weaponRight: 'Socket_Weapon_R',
-  weaponLeft: 'Socket_Weapon_L',
+export const HUMANOID_ATTACHMENT_SOCKETS = Object.freeze({
+  handRight: 'Socket_Hand_R',
+  handLeft: 'Socket_Hand_L',
   back: 'Socket_Back'
+});
+
+export const HUMANOID_SOCKETS = Object.freeze({
+  weaponRight: HUMANOID_ATTACHMENT_SOCKETS.handRight,
+  weaponLeft: HUMANOID_ATTACHMENT_SOCKETS.handLeft,
+  back: HUMANOID_ATTACHMENT_SOCKETS.back
 });
 
 export const MIXAMO_BONES = Object.freeze({
@@ -51,9 +57,11 @@ export function validateMixamoHumanoid(root) {
 export function ensureMixamoSockets(root) {
   const sockets = {};
 
-  sockets.weaponRight = ensureSocket(root, MIXAMO_BONES.rightHand, HUMANOID_SOCKETS.weaponRight);
-  sockets.weaponLeft = ensureSocket(root, MIXAMO_BONES.leftHand, HUMANOID_SOCKETS.weaponLeft);
-  sockets.back = ensureSocket(root, MIXAMO_BONES.spineUpper, HUMANOID_SOCKETS.back, new THREE.Vector3(0, 0.12, -0.18));
+  sockets.handRight = ensureSocket(root, MIXAMO_BONES.rightHand, HUMANOID_ATTACHMENT_SOCKETS.handRight);
+  sockets.handLeft = ensureSocket(root, MIXAMO_BONES.leftHand, HUMANOID_ATTACHMENT_SOCKETS.handLeft);
+  sockets.back = ensureSocket(root, MIXAMO_BONES.spineUpper, HUMANOID_ATTACHMENT_SOCKETS.back, new THREE.Vector3(0, 0.12, -0.18));
+  sockets.weaponRight = sockets.handRight;
+  sockets.weaponLeft = sockets.handLeft;
 
   return sockets;
 }

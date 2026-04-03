@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import { getWeaponAssetUrl, preparePickupWeaponModel } from '../combat/weaponVisuals.js';
 import { Input } from './Input.js';
 import { Hud } from '../ui/Hud.js';
+import {
+  ATTACHMENT_SLOTS,
+  HELD_ITEM_IDS,
+  getHeldItemAssetUrl,
+  listHeldItemDefinitions,
+  prepareHeldItemModel
+} from '../shared/heldItemDefinitions.js';
 import {
   WORLD_FOG_FAR,
   WORLD_FOG_NEAR,
@@ -32,6 +38,11 @@ const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
+
+function isLocalDebugHost() {
+  const hostname = globalThis.location?.hostname ?? '';
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
 
 function getChatBubbleLifetimeMs(text) {
   const normalized = String(text ?? '').trim();
@@ -211,6 +222,7 @@ export class Game {
       }
       this.player.position.y = this.worldBuilder?.getGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
       this.scene.add(this.player.object);
+      this.registerHeldItemDebugTools();
       void this.syncPickupVisuals();
 
       if (this.npcServiceState.transport === 'colyseus') {
@@ -259,6 +271,80 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  registerHeldItemDebugTools() {
+    if (!this.player || !isLocalDebugHost()) {
+      return;
+    }
+
+    const getActiveItemId = () => this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
+    const clampVector = (values, fallback = [0, 0, 0]) => [0, 1, 2].map((index) => Number(values?.[index] ?? fallback[index] ?? 0));
+    const printGrip = (itemId = getActiveItemId()) => {
+      const profile = this.player.getHeldItemGripProfile(itemId);
+      if (!profile) {
+        console.info('[HeldItemDebug] No grip profile found.', { itemId });
+        return null;
+      }
+
+      const printable = {
+        id: itemId,
+        gripOffset: {
+          position: profile.position.map((value) => Number(value.toFixed(4))),
+          rotation: profile.rotation.map((value) => Number(value.toFixed(4))),
+          scale: profile.scale.map((value) => Number(value.toFixed(4)))
+        }
+      };
+      console.info('[HeldItemDebug] Current grip profile.', printable);
+      return printable;
+    };
+
+    globalThis.__stickRpgHeldItemDebug = {
+      items: listHeldItemDefinitions().map((definition) => definition.id),
+      printGrip,
+      nudgePosition: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
+        const next = this.player.nudgeHeldItemGripOverride(itemId, {
+          position: clampVector([deltaX, deltaY, deltaZ]),
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1]
+        });
+        console.info('[HeldItemDebug] Nudged grip position.', { itemId, gripOffset: next });
+        return next;
+      },
+      nudgeRotation: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
+        const next = this.player.nudgeHeldItemGripOverride(itemId, {
+          position: [0, 0, 0],
+          rotation: clampVector([deltaX, deltaY, deltaZ]),
+          scale: [1, 1, 1]
+        });
+        console.info('[HeldItemDebug] Nudged grip rotation.', { itemId, gripOffset: next });
+        return next;
+      },
+      scaleBy: (scaleX = 1, scaleY = scaleX, scaleZ = scaleX, itemId = getActiveItemId()) => {
+        const next = this.player.nudgeHeldItemGripOverride(itemId, {
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: clampVector([scaleX, scaleY, scaleZ], [1, 1, 1])
+        });
+        console.info('[HeldItemDebug] Adjusted grip scale.', { itemId, gripOffset: next });
+        return next;
+      },
+      reset: (itemId = getActiveItemId()) => {
+        this.player.clearHeldItemGripOverride(itemId);
+        return printGrip(itemId);
+      },
+      previewCrateLeftHand: () => this.player.attachHeldItem(HELD_ITEM_IDS.crateA, { visible: true }),
+      clearLeftHand: () => this.player.detachHeldItem(ATTACHMENT_SLOTS.handLeft)
+    };
+    globalThis.printGrip = (...args) => globalThis.__stickRpgHeldItemDebug.printGrip(...args);
+    globalThis.nudgePosition = (...args) => globalThis.__stickRpgHeldItemDebug.nudgePosition(...args);
+    globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
+    globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
+    globalThis.resetGrip = (...args) => globalThis.__stickRpgHeldItemDebug.reset(...args);
+
+    console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
+      items: listHeldItemDefinitions().map((definition) => definition.id)
+    });
   }
 
   applyNpcRuntimeState() {
@@ -407,7 +493,7 @@ export class Game {
   }
 
   async ensurePickupVisual(pickupId, pickup) {
-    const assetUrl = getWeaponAssetUrl(pickup.weaponId);
+    const assetUrl = getHeldItemAssetUrl(pickup.weaponId);
     if (!assetUrl) {
       return;
     }
@@ -420,7 +506,7 @@ export class Game {
         return;
       }
 
-      preparePickupWeaponModel(weapon);
+      prepareHeldItemModel(weapon, pickup.weaponId, 'pickup');
       const group = new THREE.Group();
       const ring = new THREE.Mesh(
         new THREE.RingGeometry(1.05, 1.45, 28),
