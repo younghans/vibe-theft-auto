@@ -3,6 +3,7 @@ import { Input } from './Input.js';
 import { Hud } from '../ui/Hud.js';
 import {
   ATTACHMENT_SLOTS,
+  HELD_ITEM_AIM_POSE_FIELDS,
   HELD_ITEM_IDS,
   getHeldItemAssetUrl,
   listHeldItemDefinitions,
@@ -31,6 +32,8 @@ const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
+const HIP_FIRE_AIM_LEAD_MS = 90;
+const HIP_FIRE_AIM_HOLD_MS = 120;
 const EMOTE_MENU_DEADZONE = 54;
 const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
@@ -116,6 +119,9 @@ export class Game {
     this.aimTarget = new THREE.Vector3();
     this.currentAimDirection = new THREE.Vector3(0, 0, 1);
     this.currentAimMode = false;
+    this.pendingHipFireShot = null;
+    this.aimPoseDebugVisible = isLocalDebugHost();
+    this.aimPoseDebugShowSkeleton = false;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastHudHitMarkerVisible = false;
@@ -128,6 +134,12 @@ export class Game {
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
       onCancel: () => this.closeQuickChat()
+    });
+    this.hud.bindAimPoseDebugEvents({
+      onFieldChange: (fieldKey, value) => this.setAimPoseDebugField(fieldKey, value),
+      onReset: () => this.resetAimPoseDebug(),
+      onPrint: () => this.printAimPoseDebug(),
+      onToggleBones: () => this.toggleAimPoseSkeletonDebug()
     });
 
     window.addEventListener('resize', () => this.onResize());
@@ -221,7 +233,13 @@ export class Game {
       }
       this.player.position.y = this.worldBuilder?.getGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
       this.scene.add(this.player.object);
+      const aimPoseDebugHelper = this.player.getAimPoseDebugHelper?.();
+      if (aimPoseDebugHelper) {
+        this.scene.add(aimPoseDebugHelper);
+      }
       this.registerHeldItemDebugTools();
+      this.player.setAimPoseDebugVisible(this.aimPoseDebugShowSkeleton);
+      this.refreshAimPoseDebugHud();
       void this.syncPickupVisuals();
 
       if (this.npcServiceState.transport === 'colyseus') {
@@ -340,10 +358,121 @@ export class Game {
     globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
     globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
     globalThis.resetGrip = (...args) => globalThis.__stickRpgHeldItemDebug.reset(...args);
+    globalThis.__stickRpgAimPoseDebug = {
+      fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key),
+      print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
+      setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
+      reset: (itemId = getActiveItemId()) => this.resetAimPoseDebug(itemId),
+      togglePanel: (visible = !this.aimPoseDebugVisible) => this.setAimPoseDebugVisible(visible),
+      toggleBones: (visible = !this.aimPoseDebugShowSkeleton) => this.setAimPoseSkeletonDebugVisible(visible)
+    };
+
+    globalThis.printAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.print(...args);
+    globalThis.setAimPoseField = (...args) => globalThis.__stickRpgAimPoseDebug.setField(...args);
+    globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
 
     console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
       items: listHeldItemDefinitions().map((definition) => definition.id)
     });
+    console.info('[AimPoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
+      fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)
+    });
+  }
+
+  getActiveAimPoseDebugItemId() {
+    return this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
+  }
+
+  setAimPoseDebugVisible(visible) {
+    this.aimPoseDebugVisible = Boolean(visible && isLocalDebugHost());
+    this.refreshAimPoseDebugHud();
+    return this.aimPoseDebugVisible;
+  }
+
+  setAimPoseSkeletonDebugVisible(visible) {
+    this.aimPoseDebugShowSkeleton = Boolean(visible && isLocalDebugHost());
+    this.player?.setAimPoseDebugVisible(this.aimPoseDebugShowSkeleton);
+    this.refreshAimPoseDebugHud();
+    return this.aimPoseDebugShowSkeleton;
+  }
+
+  toggleAimPoseSkeletonDebug() {
+    const nextVisible = !this.aimPoseDebugShowSkeleton;
+    this.setAimPoseSkeletonDebugVisible(nextVisible);
+    this.hud.showToast(nextVisible ? 'Aim skeleton helper enabled.' : 'Aim skeleton helper hidden.');
+  }
+
+  setAimPoseDebugField(fieldKey, value, itemId = this.getActiveAimPoseDebugItemId()) {
+    if (!this.player || !itemId) {
+      return null;
+    }
+
+    const nextPose = this.player.setHeldItemAimPoseFieldOverride(itemId, fieldKey, value);
+    this.refreshAimPoseDebugHud();
+    return nextPose;
+  }
+
+  resetAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
+    if (!this.player || !itemId) {
+      return null;
+    }
+
+    this.player.clearHeldItemAimPoseOverride(itemId);
+    const nextPose = this.player.getHeldItemAimPoseProfile(itemId);
+    this.refreshAimPoseDebugHud();
+    this.hud.showToast('Aim pose overrides reset.');
+    return nextPose;
+  }
+
+  printAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
+    if (!this.player || !itemId) {
+      return null;
+    }
+
+    const pose = this.player.getHeldItemAimPoseProfile(itemId);
+    const printable = {
+      id: itemId,
+      aimPose: Object.fromEntries(
+        HELD_ITEM_AIM_POSE_FIELDS
+          .map((field) => [field.key, Number(pose?.[field.key] ?? 0)])
+          .filter(([, value]) => Math.abs(value) > 0.000001)
+          .map(([key, value]) => [key, Number(value.toFixed(4))])
+      )
+    };
+    console.info('[AimPoseDebug] Current aim pose.', printable);
+    return printable;
+  }
+
+  refreshAimPoseDebugHud() {
+    const itemId = this.getActiveAimPoseDebugItemId();
+    const pose = this.player?.getHeldItemAimPoseProfile(itemId) ?? {};
+    const statusParts = [];
+    statusParts.push(`Weapon: ${itemId || 'none'}`);
+    statusParts.push(this.currentAimMode ? 'Previewing right-click aim' : 'Press O to hide. Hold right click to preview.');
+    this.hud.setAimPoseDebugState({
+      visible: Boolean(this.aimPoseDebugVisible && this.player && isLocalDebugHost()),
+      statusText: statusParts.join(' • '),
+      showSkeleton: this.aimPoseDebugShowSkeleton,
+      values: pose
+    });
+  }
+
+  queueHipFireShot(aimDirection) {
+    if (!aimDirection) {
+      return;
+    }
+
+    const now = performance.now();
+    this.pendingHipFireShot = {
+      direction: { x: aimDirection.x, z: aimDirection.z },
+      fireAt: now + HIP_FIRE_AIM_LEAD_MS,
+      releaseAt: now + HIP_FIRE_AIM_LEAD_MS + HIP_FIRE_AIM_HOLD_MS,
+      fired: false
+    };
+  }
+
+  clearPendingHipFireShot() {
+    this.pendingHipFireShot = null;
   }
 
   applyNpcRuntimeState() {
@@ -900,6 +1029,11 @@ export class Game {
     const emoteMenuActive = this.updateEmoteMenu();
     const localPlayerState = this.getLocalPlayerState();
 
+    if (this.input.consume('KeyO') && isLocalDebugHost()) {
+      const nextVisible = this.setAimPoseDebugVisible(!this.aimPoseDebugVisible);
+      this.hud.showToast(nextVisible ? 'Aim pose debug opened.' : 'Aim pose debug hidden.');
+    }
+
     if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
       this.closeQuickChat();
     }
@@ -921,6 +1055,7 @@ export class Game {
     this.worldBuilder.update(deltaSeconds, this.input);
 
     if (this.worldBuilder.enabled) {
+      this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
       this.updateBuilderCamera();
@@ -933,6 +1068,8 @@ export class Game {
         ...this.worldBuilder.getColliders()
       ];
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
+      const hipFirePending = this.pendingHipFireShot;
+      const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
       if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
@@ -945,17 +1082,37 @@ export class Game {
         aimingMode = !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.isPointerPressed(2);
         this.currentAimDirection.copy(aimDirection);
         this.currentAimMode = aimingMode;
-        this.player.setAimingState(aimingMode);
+        this.player.setAimingState(aimingMode || hipFirePoseActive);
         this.player.setFacingRotation(Math.atan2(aimDirection.x, aimDirection.z));
         if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
-          this.npcService?.fireWeapon({ x: aimDirection.x, z: aimDirection.z }, Date.now());
+          if (aimingMode) {
+            this.npcService?.fireWeapon({ x: aimDirection.x, z: aimDirection.z }, Date.now());
+          } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
+            this.queueHipFireShot(aimDirection);
+          }
         }
         if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyR')) {
           this.npcService?.reloadWeapon();
         }
       } else {
+        this.clearPendingHipFireShot();
         this.currentAimMode = false;
         this.player.setAimingState(false);
+      }
+      if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) {
+        this.clearPendingHipFireShot();
+      } else if (this.pendingHipFireShot) {
+        const now = performance.now();
+        this.player.setAimingState(aimingMode || now < this.pendingHipFireShot.releaseAt);
+        this.player.setFacingRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
+        if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
+          this.pendingHipFireShot.fired = true;
+          this.npcService?.fireWeapon(this.pendingHipFireShot.direction, Date.now());
+        }
+        if (now >= this.pendingHipFireShot.releaseAt) {
+          this.clearPendingHipFireShot();
+          this.player.setAimingState(aimingMode);
+        }
       }
       this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       this.npcService?.setPlayerTransform(
@@ -981,6 +1138,7 @@ export class Game {
       this.lastHudHitMarkerVisible = hitMarkerVisible;
     }
     this.updateSpeechBubbles();
+    this.refreshAimPoseDebugHud();
     this.renderer.render(this.scene, this.camera);
     this.input.endFrame();
   }

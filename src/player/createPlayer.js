@@ -4,13 +4,16 @@ import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
 import {
   ATTACHMENT_SLOTS,
+  HELD_ITEM_AIM_POSE_FIELDS,
   applyAttachmentTransform,
   applyHeldItemGripTransform,
   getHeldItemAssetUrl,
   getHeldItemAttachmentSlot,
+  getHeldItemAimPose,
   getHeldItemDefinition,
   getHeldItemGripProfile,
   getHeldItemPointOffset,
+  mergeAimPose,
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
@@ -181,6 +184,7 @@ export async function createPlayer(library, {
   const mixer = new THREE.AnimationMixer(character);
   const walkAction = mixer.clipAction(walkClip);
   const emoteActions = new Map();
+  const skeletonHelper = new THREE.SkeletonHelper(character);
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
@@ -214,10 +218,31 @@ export async function createPlayer(library, {
   const activeItemsBySlot = new Map();
   const slotVisibility = new Map();
   const gripOverrides = new Map();
+  const aimPoseOverrides = new Map();
+  const aimPoseBones = {
+    spineUpper: character.getObjectByName(MIXAMO_BONES.spineUpper) ?? null,
+    rightShoulder: character.getObjectByName(MIXAMO_BONES.rightShoulder) ?? null,
+    rightArm: character.getObjectByName(MIXAMO_BONES.rightArm) ?? null,
+    rightForeArm: character.getObjectByName(MIXAMO_BONES.rightForeArm) ?? null,
+    rightHand: character.getObjectByName(MIXAMO_BONES.rightHand) ?? null,
+    leftArm: character.getObjectByName(MIXAMO_BONES.leftArm) ?? null,
+    leftForeArm: character.getObjectByName(MIXAMO_BONES.leftForeArm) ?? null
+  };
+  const aimPoseBoneBases = Object.fromEntries(
+    Object.entries(aimPoseBones).map(([key, bone]) => [key, bone ? { quaternion: bone.quaternion.clone() } : null])
+  );
+  const aimPoseEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+  const aimPoseQuaternion = new THREE.Quaternion();
   let desiredWeaponId = '';
   let aliveState = true;
   let recoilAmount = 0;
   let aimingState = false;
+  let aimPoseWeight = 0;
+
+  skeletonHelper.visible = false;
+  skeletonHelper.material.depthTest = false;
+  skeletonHelper.material.transparent = true;
+  skeletonHelper.material.opacity = 0.9;
 
   for (const slot of Object.values(ATTACHMENT_SLOTS)) {
     const socket = sockets[slot];
@@ -331,6 +356,27 @@ export async function createPlayer(library, {
     return mergeAttachmentTransform(getHeldItemGripProfile(itemId), getGripOverride(itemId));
   }
 
+  function getAimPoseOverride(itemId) {
+    const override = aimPoseOverrides.get(itemId);
+    if (!override) {
+      return null;
+    }
+
+    const next = {};
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      const value = Number(override[field.key]);
+      if (Number.isFinite(value) && Math.abs(value) > 0.000001) {
+        next[field.key] = value;
+      }
+    }
+
+    return Object.keys(next).length > 0 ? next : null;
+  }
+
+  function getMergedAimPose(itemId) {
+    return mergeAimPose(getHeldItemAimPose(itemId), getAimPoseOverride(itemId));
+  }
+
   function applyHeldItemProfile(itemId) {
     const entry = heldItemEntries.get(itemId);
     if (!entry) {
@@ -345,6 +391,66 @@ export async function createPlayer(library, {
       const activeItemId = activeItemsBySlot.get(entry.slot);
       const slotShown = slotVisibility.get(entry.slot) !== false;
       entry.container.visible = aliveState && itemId === activeItemId && slotShown;
+    }
+  }
+
+  function setHeldItemAimPoseFieldOverride(itemId, fieldKey, value = 0) {
+    if (!itemId || !HELD_ITEM_AIM_POSE_FIELDS.some((field) => field.key === fieldKey)) {
+      return itemId ? getMergedAimPose(itemId) : null;
+    }
+
+    const nextOverride = {
+      ...(getAimPoseOverride(itemId) ?? {})
+    };
+    const baseValue = Number(getHeldItemAimPose(itemId)?.[fieldKey] ?? 0);
+    const numericValue = Number(value);
+    const overrideValue = numericValue - baseValue;
+    if (!Number.isFinite(overrideValue) || Math.abs(overrideValue) < 0.000001) {
+      delete nextOverride[fieldKey];
+    } else {
+      nextOverride[fieldKey] = overrideValue;
+    }
+
+    if (Object.keys(nextOverride).length === 0) {
+      aimPoseOverrides.delete(itemId);
+    } else {
+      aimPoseOverrides.set(itemId, nextOverride);
+    }
+
+    return getMergedAimPose(itemId);
+  }
+
+  function applyAimPose() {
+    const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
+    const pose = activeItemId ? getMergedAimPose(activeItemId) : null;
+    const hasPose = Boolean(pose) && aliveState && !ragdoll.isActive();
+
+    if (!hasPose || aimPoseWeight <= 0.0001) {
+      return;
+    }
+
+    const rotationsByBone = new Map();
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      const value = Number(pose?.[field.key] ?? 0);
+      if (!Number.isFinite(value) || Math.abs(value) < 0.000001) {
+        continue;
+      }
+
+      const nextRotation = rotationsByBone.get(field.bone) ?? { x: 0, y: 0, z: 0 };
+      nextRotation[field.axis] = value;
+      rotationsByBone.set(field.bone, nextRotation);
+    }
+
+    for (const [boneKey, rotation] of rotationsByBone.entries()) {
+      const bone = aimPoseBones[boneKey];
+      const base = aimPoseBoneBases[boneKey];
+      if (!bone || !base) {
+        continue;
+      }
+
+      aimPoseEuler.set(rotation.x ?? 0, rotation.y ?? 0, rotation.z ?? 0);
+      aimPoseQuaternion.setFromEuler(aimPoseEuler);
+      bone.quaternion.slerp(base.quaternion.clone().multiply(aimPoseQuaternion), aimPoseWeight);
     }
   }
 
@@ -436,6 +542,11 @@ export async function createPlayer(library, {
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
+    const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
+    const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
+    const wantsAimPose = aimingState && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
+    aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
+    applyAimPose();
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
     visual.position.set(0, recoilAmount * 0.03, 0);
     visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
@@ -647,6 +758,9 @@ export async function createPlayer(library, {
     getHeldItemGripProfile(itemId = desiredWeaponId) {
       return itemId ? getMergedGripProfile(itemId) : null;
     },
+    getHeldItemAimPoseProfile(itemId = desiredWeaponId) {
+      return itemId ? getMergedAimPose(itemId) : null;
+    },
     setHeldItemGripOverride(itemId, override = null) {
       if (!itemId) {
         return null;
@@ -679,6 +793,22 @@ export async function createPlayer(library, {
       gripOverrides.delete(itemId);
       applyHeldItemProfile(itemId);
       updateHeldItemVisibility();
+    },
+    setHeldItemAimPoseFieldOverride(itemId, fieldKey, value = 0) {
+      return setHeldItemAimPoseFieldOverride(itemId, fieldKey, value);
+    },
+    clearHeldItemAimPoseOverride(itemId) {
+      if (!itemId) {
+        return;
+      }
+
+      aimPoseOverrides.delete(itemId);
+    },
+    setAimPoseDebugVisible(visible) {
+      skeletonHelper.visible = Boolean(visible);
+    },
+    getAimPoseDebugHelper() {
+      return skeletonHelper;
     },
     setWeaponState(weaponId, { visible = true } = {}) {
       void setWeaponState(weaponId, { visible });

@@ -15,6 +15,12 @@ export const HUMANOID_SOCKETS = Object.freeze({
 export const MIXAMO_BONES = Object.freeze({
   hips: 'mixamorigHips',
   head: 'mixamorigHead',
+  rightShoulder: 'mixamorigRightShoulder',
+  leftShoulder: 'mixamorigLeftShoulder',
+  rightArm: 'mixamorigRightArm',
+  leftArm: 'mixamorigLeftArm',
+  rightForeArm: 'mixamorigRightForeArm',
+  leftForeArm: 'mixamorigLeftForeArm',
   rightHand: 'mixamorigRightHand',
   leftHand: 'mixamorigLeftHand',
   spineUpper: 'mixamorigSpine2'
@@ -28,7 +34,13 @@ const NON_BODY_MESH_PATTERNS = [
   /lash/iu
 ];
 
-const REQUIRED_BONES = Object.values(MIXAMO_BONES);
+const REQUIRED_BONES = [
+  MIXAMO_BONES.hips,
+  MIXAMO_BONES.head,
+  MIXAMO_BONES.rightHand,
+  MIXAMO_BONES.leftHand,
+  MIXAMO_BONES.spineUpper
+];
 
 export function validateMixamoHumanoid(root) {
   const missingBones = REQUIRED_BONES.filter((boneName) => !root.getObjectByName(boneName));

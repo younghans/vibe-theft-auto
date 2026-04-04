@@ -1,4 +1,5 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
+import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 
 function setFieldValue(field, value) {
   if (!field || document.activeElement === field) {
@@ -25,6 +26,12 @@ export class Hud {
     this.overlay = this.createOverlay();
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
+    this.aimDebugRoot = this.overlay.querySelector('[data-aim-debug]');
+    this.aimDebugStatus = this.overlay.querySelector('[data-aim-debug-status]');
+    this.aimDebugFields = this.overlay.querySelector('[data-aim-debug-fields]');
+    this.aimDebugBoneToggle = this.overlay.querySelector('[data-aim-debug-bones]');
+    this.aimDebugReset = this.overlay.querySelector('[data-aim-debug-reset]');
+    this.aimDebugPrint = this.overlay.querySelector('[data-aim-debug-print]');
     this.combatRoot = this.overlay.querySelector('[data-combat-root]');
     this.combatHealth = this.overlay.querySelector('[data-combat-health]');
     this.combatAmmo = this.overlay.querySelector('[data-combat-ammo]');
@@ -66,9 +73,11 @@ export class Hud {
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
     this.emoteSliceNodes = [];
     this.speechBubbleNodes = new Map();
+    this.aimDebugInputs = new Map();
     this.toastTimeout = 0;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
+    this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
   }
 
@@ -99,6 +108,48 @@ export class Hud {
 
     this.emoteWheel.insertAdjacentHTML('beforeend', markup);
     this.emoteSliceNodes = Array.from(this.emoteWheel.querySelectorAll('[data-emote-slice]'));
+  }
+
+  buildAimPoseDebugFields() {
+    if (!this.aimDebugFields) {
+      return;
+    }
+
+    this.aimDebugFields.innerHTML = HELD_ITEM_AIM_POSE_FIELDS.map((field) => `
+      <label class="hud__aim-debug-field">
+        <span class="hud__aim-debug-label">${field.label}</span>
+        <div class="hud__aim-debug-inputs">
+          <input
+            class="hud__aim-debug-range"
+            type="range"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="range"
+          />
+          <input
+            class="hud__field-control hud__aim-debug-number"
+            type="number"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="number"
+          />
+        </div>
+      </label>
+    `).join('');
+
+    this.aimDebugInputs.clear();
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      this.aimDebugInputs.set(field.key, {
+        range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
+        number: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="number"]`)
+      });
+    }
   }
 
   createOverlay() {
@@ -132,6 +183,20 @@ export class Hud {
       </button>
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
+      </section>
+      <section class="hud__aim-debug" data-aim-debug>
+        <div class="hud__aim-debug-header">
+          <div>
+            <p class="hud__eyebrow">Aim Pose Debug</p>
+            <p class="hud__body hud__aim-debug-status" data-aim-debug-status>Hold right click to preview the live aim pose.</p>
+          </div>
+          <div class="hud__aim-debug-actions">
+            <button class="hud__builder-icon-button" type="button" data-aim-debug-bones title="Toggle skeleton helper">Bones</button>
+            <button class="hud__builder-icon-button" type="button" data-aim-debug-print title="Print current pose">Print</button>
+            <button class="hud__builder-icon-button" type="button" data-aim-debug-reset title="Reset aim pose overrides">Reset</button>
+          </div>
+        </div>
+        <div class="hud__aim-debug-fields" data-aim-debug-fields></div>
       </section>
       <section class="hud__prompt">
         <span class="hud__key">E</span>
@@ -254,6 +319,39 @@ export class Hud {
     this.toastTimeout = window.setTimeout(() => {
       toast.classList.remove('is-visible');
     }, 2200);
+  }
+
+  bindAimPoseDebugEvents({
+    onFieldChange,
+    onReset,
+    onPrint,
+    onToggleBones
+  }) {
+    this.aimDebugFields?.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const fieldKey = target.dataset.aimDebugInput;
+      if (!fieldKey) {
+        return;
+      }
+
+      onFieldChange(fieldKey, Number(target.value));
+    });
+
+    this.aimDebugReset?.addEventListener('click', () => {
+      onReset();
+    });
+
+    this.aimDebugPrint?.addEventListener('click', () => {
+      onPrint();
+    });
+
+    this.aimDebugBoneToggle?.addEventListener('click', () => {
+      onToggleBones();
+    });
   }
 
   bindBuilderEvents({
@@ -589,6 +687,30 @@ export class Hud {
 
   setHitMarkerVisible(visible) {
     this.hitMarker.classList.toggle('is-visible', visible);
+  }
+
+  setAimPoseDebugState({
+    visible = false,
+    statusText = '',
+    showSkeleton = false,
+    values = {}
+  } = {}) {
+    if (!this.aimDebugRoot) {
+      return;
+    }
+
+    this.aimDebugRoot.classList.toggle('is-visible', visible);
+    this.aimDebugStatus.textContent = statusText;
+    this.aimDebugBoneToggle.classList.toggle('is-active', showSkeleton);
+    this.aimDebugBoneToggle.setAttribute('aria-pressed', showSkeleton ? 'true' : 'false');
+
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      const value = Number(values?.[field.key] ?? 0);
+      const formattedValue = Number.isFinite(value) ? value.toFixed(2) : '0.00';
+      const inputs = this.aimDebugInputs.get(field.key);
+      setFieldValue(inputs?.range, formattedValue);
+      setFieldValue(inputs?.number, formattedValue);
+    }
   }
 
   setSpeechBubbles(bubbles = []) {

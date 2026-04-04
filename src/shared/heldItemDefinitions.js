@@ -13,6 +13,30 @@ export const HELD_ITEM_IDS = Object.freeze({
   crateA: 'crate_a'
 });
 
+export const HELD_ITEM_AIM_POSE_FIELDS = Object.freeze([
+  Object.freeze({ key: 'spineUpperX', label: 'Spine Pitch', bone: 'spineUpper', mode: 'rotation', axis: 'x', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'spineUpperY', label: 'Spine Yaw', bone: 'spineUpper', mode: 'rotation', axis: 'y', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'spineUpperZ', label: 'Spine Roll', bone: 'spineUpper', mode: 'rotation', axis: 'z', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'rightShoulderX', label: 'R Shoulder Pitch', bone: 'rightShoulder', mode: 'rotation', axis: 'x', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'rightShoulderY', label: 'R Shoulder Yaw', bone: 'rightShoulder', mode: 'rotation', axis: 'y', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'rightShoulderZ', label: 'R Shoulder Roll', bone: 'rightShoulder', mode: 'rotation', axis: 'z', min: -1.2, max: 1.2, step: 0.01 }),
+  Object.freeze({ key: 'rightArmX', label: 'R Arm Pitch', bone: 'rightArm', mode: 'rotation', axis: 'x', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightArmY', label: 'R Arm Yaw', bone: 'rightArm', mode: 'rotation', axis: 'y', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightArmZ', label: 'R Arm Roll', bone: 'rightArm', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightForeArmX', label: 'R Forearm Pitch', bone: 'rightForeArm', mode: 'rotation', axis: 'x', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightForeArmY', label: 'R Forearm Yaw', bone: 'rightForeArm', mode: 'rotation', axis: 'y', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightForeArmZ', label: 'R Forearm Roll', bone: 'rightForeArm', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightHandX', label: 'R Hand Pitch', bone: 'rightHand', mode: 'rotation', axis: 'x', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightHandY', label: 'R Hand Yaw', bone: 'rightHand', mode: 'rotation', axis: 'y', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'rightHandZ', label: 'R Hand Roll', bone: 'rightHand', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftArmX', label: 'L Arm Pitch', bone: 'leftArm', mode: 'rotation', axis: 'x', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftArmY', label: 'L Arm Yaw', bone: 'leftArm', mode: 'rotation', axis: 'y', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftArmZ', label: 'L Arm Roll', bone: 'leftArm', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftForeArmX', label: 'L Forearm Pitch', bone: 'leftForeArm', mode: 'rotation', axis: 'x', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftForeArmY', label: 'L Forearm Yaw', bone: 'leftForeArm', mode: 'rotation', axis: 'y', min: -1.4, max: 1.4, step: 0.01 }),
+  Object.freeze({ key: 'leftForeArmZ', label: 'L Forearm Roll', bone: 'leftForeArm', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 })
+]);
+
 const DEFAULT_SCALE = Object.freeze([1, 1, 1]);
 const EMPTY_TRANSFORM = Object.freeze({
   position: Object.freeze([0, 0, 0]),
@@ -52,14 +76,15 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
     aimPose: Object.freeze({
       spineUpperX: -0.02,
       spineUpperY: 0.08,
+      rightShoulderX: 1.2,
+      rightShoulderY: -0.42,
+      rightShoulderZ: -1.2,
       rightArmX: -0.02,
       rightArmY: -0.48,
       rightArmZ: -0.04,
-      rightArmPositionZ: -0.1,
-      rightForeArmX: -0.01,
-      rightForeArmY: -0.24,
-      rightForeArmPositionZ: -0.18,
-      rightHandPositionZ: -0.08,
+      rightForeArmX: -0.02,
+      rightForeArmY: 0.8,
+      rightForeArmZ: -0.29,
       leftArmX: -0.02,
       leftArmY: -0.08,
       leftArmZ: 0.02,
@@ -156,7 +181,7 @@ export function getHeldItemGripProfile(itemId) {
 }
 
 export function getHeldItemAimPose(itemId) {
-  return getHeldItemDefinition(itemId)?.aimPose ?? null;
+  return cloneAimPose(getHeldItemDefinition(itemId)?.aimPose ?? null);
 }
 
 export function getHeldItemPointOffset(itemId, pointName) {
@@ -227,4 +252,33 @@ export function mergeAttachmentTransform(base = EMPTY_TRANSFORM, override = null
     rotation: [0, 1, 2].map((index) => (base.rotation?.[index] ?? EMPTY_TRANSFORM.rotation[index]) + (override.rotation?.[index] ?? 0)),
     scale: [0, 1, 2].map((index) => (base.scale?.[index] ?? EMPTY_TRANSFORM.scale[index]) * (override.scale?.[index] ?? 1))
   };
+}
+
+export function cloneAimPose(pose = null) {
+  if (!pose) {
+    return null;
+  }
+
+  const next = {};
+  for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+    const value = Number(pose[field.key]);
+    if (Number.isFinite(value)) {
+      next[field.key] = value;
+    }
+  }
+
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+export function mergeAimPose(base = null, override = null) {
+  const merged = {};
+
+  for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+    const value = Number(base?.[field.key] ?? 0) + Number(override?.[field.key] ?? 0);
+    if (Number.isFinite(value) && Math.abs(value) > 0.000001) {
+      merged[field.key] = value;
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null;
 }
