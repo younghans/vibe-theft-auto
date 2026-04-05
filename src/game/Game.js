@@ -26,6 +26,8 @@ import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+const CAMERA_ZOOM_LEVELS = [0.82, 0.92, 1, 1.12, 1.26];
+const DEFAULT_CAMERA_ZOOM_INDEX = 2;
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
@@ -123,6 +125,7 @@ export class Game {
     this.pendingHipFireShot = null;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
+    this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastHudHitMarkerVisible = false;
@@ -143,6 +146,11 @@ export class Game {
       onPrint: () => this.printAimPoseDebug(),
       onToggleBones: () => this.toggleAimPoseSkeletonDebug()
     });
+    this.hud.bindZoomEvents({
+      onZoomIn: () => this.stepCameraZoom(-1),
+      onZoomOut: () => this.stepCameraZoom(1)
+    });
+    this.refreshZoomHud();
 
     window.addEventListener('resize', () => this.onResize());
   }
@@ -157,6 +165,7 @@ export class Game {
       this.closeQuickChat();
     }
     void this.worldBuilder.setEnabled(nextEnabled);
+    this.refreshZoomHud();
     this.hud.showToast(nextEnabled ? 'World builder enabled.' : 'World builder disabled.');
   }
 
@@ -202,6 +211,7 @@ export class Game {
           this.currentLayout = layout;
         }
       });
+      this.refreshZoomHud();
 
       this.npcService.subscribe((state) => {
         this.npcServiceState = state;
@@ -1047,6 +1057,58 @@ export class Game {
     return false;
   }
 
+  getCameraZoomLevel() {
+    return CAMERA_ZOOM_LEVELS[this.cameraZoomIndex] ?? CAMERA_ZOOM_LEVELS[DEFAULT_CAMERA_ZOOM_INDEX];
+  }
+
+  setCameraZoomIndex(nextIndex) {
+    const clampedIndex = THREE.MathUtils.clamp(nextIndex, 0, CAMERA_ZOOM_LEVELS.length - 1);
+    if (clampedIndex === this.cameraZoomIndex) {
+      this.refreshZoomHud();
+      return false;
+    }
+
+    this.cameraZoomIndex = clampedIndex;
+    this.refreshZoomHud();
+    return true;
+  }
+
+  stepCameraZoom(step) {
+    return this.setCameraZoomIndex(this.cameraZoomIndex + step);
+  }
+
+  refreshZoomHud() {
+    const zoomPercent = Math.round(this.getCameraZoomLevel() * 100);
+    const builderEnabled = Boolean(this.worldBuilder?.enabled);
+    this.hud.setZoomState({
+      label: `${zoomPercent}%`,
+      hint: builderEnabled ? 'Builder wheel' : 'Wheel / +/-',
+      disabled: builderEnabled,
+      canZoomIn: this.cameraZoomIndex > 0,
+      canZoomOut: this.cameraZoomIndex < CAMERA_ZOOM_LEVELS.length - 1
+    });
+  }
+
+  handleCameraZoomInput() {
+    if (this.worldBuilder?.enabled) {
+      this.input.consumeWheelDirection();
+      return;
+    }
+
+    if (this.input.consume('Equal') || this.input.consume('NumpadAdd')) {
+      this.stepCameraZoom(-1);
+    }
+
+    if (this.input.consume('Minus') || this.input.consume('NumpadSubtract')) {
+      this.stepCameraZoom(1);
+    }
+
+    const wheelDirection = this.input.consumeWheelDirection();
+    if (wheelDirection !== 0) {
+      this.stepCameraZoom(Math.sign(wheelDirection));
+    }
+  }
+
   frame() {
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
     const emoteMenuActive = this.updateEmoteMenu();
@@ -1059,6 +1121,8 @@ export class Game {
     if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
       this.closeQuickChat();
     }
+
+    this.handleCameraZoomInput();
 
     if (
       this.input.consume('Enter')
@@ -1170,7 +1234,9 @@ export class Game {
   }
 
   updateCamera(aimDirection = this.currentAimDirection, isAiming = false) {
-    const targetPosition = this.player.position.clone().add(isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET);
+    const zoomLevel = this.getCameraZoomLevel();
+    const cameraOffset = (isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET).clone().multiplyScalar(zoomLevel);
+    const targetPosition = this.player.position.clone().add(cameraOffset);
     const lookTarget = this.player.position.clone().add(CAMERA_LOOK_OFFSET);
 
     this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);

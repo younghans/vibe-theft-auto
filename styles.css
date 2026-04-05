@@ -103,6 +103,77 @@ body {
   pointer-events: none;
 }
 
+.hud__zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 16, 24, 0.82);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  transition: opacity 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.hud__zoom-controls.is-disabled {
+  opacity: 0.7;
+}
+
+.hud__zoom-readout {
+  display: flex;
+  min-width: 90px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.hud__zoom-label {
+  font-size: 14px;
+  line-height: 1;
+  color: #fff4d2;
+}
+
+.hud__zoom-hint {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 226, 0.68);
+}
+
+.hud__zoom-button {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4eee2;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.hud__zoom-button:hover {
+  border-color: rgba(242, 200, 113, 0.55);
+  background: rgba(242, 200, 113, 0.12);
+  transform: translateY(-1px);
+}
+
+.hud__zoom-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+
 .hud__mode-toggle,
 .hud__aim-debug-toggle {
   position: static;
@@ -1297,6 +1368,25 @@ canvas {
     top: 16px;
     right: 16px;
     gap: 8px;
+  }
+
+  .hud__zoom-controls {
+    gap: 6px;
+    padding: 5px;
+  }
+
+  .hud__zoom-readout {
+    min-width: 72px;
+  }
+
+  .hud__zoom-hint {
+    display: none;
+  }
+
+  .hud__zoom-button {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
   }
 
   .hud__panel {

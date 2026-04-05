@@ -40,6 +40,11 @@ export class Hud {
     this.combatScore = this.overlay.querySelector('[data-combat-score]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
+    this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
+    this.zoomOutButton = this.overlay.querySelector('[data-zoom-out]');
+    this.zoomInButton = this.overlay.querySelector('[data-zoom-in]');
+    this.zoomLabel = this.overlay.querySelector('[data-zoom-label]');
+    this.zoomHint = this.overlay.querySelector('[data-zoom-hint]');
     this.modeToggle = this.overlay.querySelector('[data-mode-toggle]');
     this.builderRoot = this.overlay.querySelector('[data-builder]');
     this.builderStatus = this.overlay.querySelector('[data-builder-status]');
@@ -160,7 +165,7 @@ export class Hud {
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Vibe Theft Auto</h1>
-        <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
+        <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, mouse wheel or +/- zooms, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
         <section class="hud__combat" data-combat-root>
           <div class="hud__combat-row">
             <span class="hud__combat-label">Health</span>
@@ -175,6 +180,30 @@ export class Hud {
         </section>
       </section>
       <div class="hud__top-actions">
+        <div class="hud__zoom-controls" data-zoom-controls>
+          <button
+            class="hud__zoom-button"
+            type="button"
+            data-zoom-out
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            -
+          </button>
+          <div class="hud__zoom-readout">
+            <strong class="hud__zoom-label" data-zoom-label>100%</strong>
+            <span class="hud__zoom-hint" data-zoom-hint>Wheel / +/-</span>
+          </div>
+          <button
+            class="hud__zoom-button"
+            type="button"
+            data-zoom-in
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            +
+          </button>
+        </div>
         <button
           class="hud__aim-debug-toggle"
           type="button"
@@ -377,6 +406,16 @@ export class Hud {
 
     this.aimDebugBoneToggle?.addEventListener('click', () => {
       onToggleBones();
+    });
+  }
+
+  bindZoomEvents({ onZoomIn, onZoomOut }) {
+    this.zoomInButton?.addEventListener('click', () => {
+      onZoomIn();
+    });
+
+    this.zoomOutButton?.addEventListener('click', () => {
+      onZoomOut();
     });
   }
 
@@ -713,6 +752,26 @@ export class Hud {
 
   setHitMarkerVisible(visible) {
     this.hitMarker.classList.toggle('is-visible', visible);
+  }
+
+  setZoomState({
+    label = '100%',
+    hint = 'Wheel / +/-',
+    disabled = false,
+    canZoomIn = true,
+    canZoomOut = true
+  } = {}) {
+    this.zoomLabel.textContent = label;
+    this.zoomHint.textContent = hint;
+    this.zoomControls?.classList.toggle('is-disabled', disabled);
+
+    if (this.zoomInButton) {
+      this.zoomInButton.disabled = disabled || !canZoomIn;
+    }
+
+    if (this.zoomOutButton) {
+      this.zoomOutButton.disabled = disabled || !canZoomOut;
+    }
   }
 
   setAimPoseDebugState({

@@ -4,6 +4,7 @@ export class Input {
     this.justPressed = new Set();
     this.pointerButtons = new Set();
     this.justPressedPointerButtons = new Set();
+    this.wheelDirection = 0;
     this.pointerPosition = {
       x: window.innerWidth * 0.5,
       y: window.innerHeight * 0.5
@@ -67,6 +68,16 @@ export class Input {
       this.pointerPosition.x = event.clientX;
       this.pointerPosition.y = event.clientY;
     });
+    window.addEventListener('wheel', (event) => {
+      if (this.isHudTarget(event.target)) {
+        return;
+      }
+
+      const direction = Math.sign(event.deltaY);
+      if (direction !== 0) {
+        this.wheelDirection += direction;
+      }
+    }, { passive: true });
 
     window.addEventListener('pointerdown', this.onPointerButtonDown);
     window.addEventListener('pointerup', this.onPointerButtonUp);
@@ -129,6 +140,12 @@ export class Input {
     return this.pointerButtons.has(button);
   }
 
+  consumeWheelDirection() {
+    const direction = Math.sign(this.wheelDirection);
+    this.wheelDirection = 0;
+    return direction;
+  }
+
   getPointerPosition() {
     return { ...this.pointerPosition };
   }
@@ -136,5 +153,6 @@ export class Input {
   endFrame() {
     this.justPressed.clear();
     this.justPressedPointerButtons.clear();
+    this.wheelDirection = 0;
   }
 }
