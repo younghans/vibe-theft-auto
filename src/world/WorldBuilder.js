@@ -570,6 +570,8 @@ export class WorldBuilder {
   }
 
   update(deltaSeconds, input) {
+    this.worldRenderer.update(deltaSeconds);
+
     if (!this.state.enabled) {
       return;
     }
@@ -880,7 +882,7 @@ export class WorldBuilder {
       npc: {
         modelId: item.modelId,
         name: item.label,
-        prompt: `You are ${item.label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
+        prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
         interactRadius: item.interactionRadius ?? 4.2,
         active: false
       }

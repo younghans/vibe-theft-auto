@@ -12,6 +12,7 @@ export const assets = {
       ch18NonPbr: assetUrl('mixamo', 'characters', 'ch18-non-pbr.fbx')
     },
     animations: {
+      idle: assetUrl('mixamo', 'animations', 'idle.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
@@ -20,6 +21,7 @@ export const assets = {
   },
   player: {
     character: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
+    idleClip: 'idle',
     walkClip: 'walking',
     emotes: Object.freeze(
       Object.fromEntries(

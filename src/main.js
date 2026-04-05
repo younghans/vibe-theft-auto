@@ -9,7 +9,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 const root = document.querySelector('#app');
-console.info('[Boot] StickRPG booting.', {
+console.info('[Boot] Vibe Theft Auto booting.', {
   href: window.location.href,
   rootFound: Boolean(root)
 });

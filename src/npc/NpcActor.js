@@ -1,5 +1,18 @@
 import * as THREE from 'three';
+import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import { getMixamoClip } from '../animation/mixamoClips.js';
+import { assets } from '../world/assetManifest.js';
 import { prepareNpcRenderObject } from './npcRenderUtils.js';
+
+let sharedIdleClip = null;
+
+function getSharedIdleClip() {
+  if (!sharedIdleClip) {
+    sharedIdleClip = createInPlaceClip(getMixamoClip(assets.player.idleClip), MIXAMO_BONES.hips);
+  }
+
+  return sharedIdleClip;
+}
 
 function createIndicator(color) {
   const ring = new THREE.Mesh(
@@ -69,6 +82,20 @@ export class NpcActor {
     this.busyIndicator.position.y = 0.03;
 
     prepareNpcRenderObject(this.character, model);
+    this.mixer = null;
+
+    const humanoid = validateMixamoHumanoid(this.character);
+    if (humanoid.isHumanoid) {
+      this.mixer = new THREE.AnimationMixer(this.character);
+      this.idleAction = this.mixer.clipAction(getSharedIdleClip());
+      this.idleAction.enabled = true;
+      this.idleAction.play();
+    } else {
+      this.idleAction = null;
+      console.warn(`[NPC] ${model.label} is missing Mixamo humanoid bones for idle animation.`, {
+        missingBones: humanoid.missingBones
+      });
+    }
 
     this.anchor.add(this.pickProxy);
     this.anchor.add(this.interactRadiusIndicator);
@@ -127,5 +154,9 @@ export class NpcActor {
     this.anchor.getWorldPosition(target);
     target.y += this.model.height + 1;
     return target;
+  }
+
+  update(deltaSeconds) {
+    this.mixer?.update(deltaSeconds);
   }
 }

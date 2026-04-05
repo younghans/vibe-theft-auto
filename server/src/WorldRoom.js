@@ -188,7 +188,7 @@ function clampNpcRadius(value) {
 }
 
 function defaultNpcPrompt(label) {
-  return `You are ${label}, an NPC in Stick RPG 3D. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`;
+  return `You are ${label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`;
 }
 
 function createPickupState(definition, {

@@ -1412,19 +1412,6 @@
   ],
   "npcs": [
     {
-      "id": "npc_maya",
-      "modelId": "ch18NonPbr",
-      "position": [
-        18.2,
-        -28.7
-      ],
-      "rotationQuarterTurns": 2,
-      "name": "Maya",
-      "prompt": "You are Maya, a quick-thinking hustler who knows every rumor in town. Be playful, observant, and a little sarcastic, but stay helpful.",
-      "interactRadius": 4.4,
-      "active": true
-    },
-    {
       "id": "placement_148",
       "modelId": "xBot",
       "position": [
@@ -1435,6 +1422,19 @@
       "name": "donald trump",
       "prompt": "you are donald trump",
       "interactRadius": 10,
+      "active": true
+    },
+    {
+      "id": "placement_164",
+      "modelId": "ch18NonPbr",
+      "position": [
+        30.27,
+        -9.13
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "Gary",
+      "prompt": "You are Gary,  police chief in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.",
+      "interactRadius": 4.4,
       "active": true
     },
     {

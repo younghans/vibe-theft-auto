@@ -88,7 +88,7 @@ export class Hud {
     node.innerHTML = `
       <div class="loading__card">
         <p class="hud__eyebrow">Booting</p>
-        <h1 class="loading__title">Stick RPG 3D</h1>
+        <h1 class="loading__title">Vibe Theft Auto</h1>
         <p class="loading__subtitle">Streaming city blocks, NPCs, and player assets...</p>
       </div>
     `;
@@ -159,7 +159,7 @@ export class Hud {
     node.innerHTML = `
       <section class="hud__panel">
         <p class="hud__eyebrow">Prototype</p>
-        <h1 class="hud__title">Stick RPG 3D</h1>
+        <h1 class="hud__title">Vibe Theft Auto</h1>
         <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
         <section class="hud__combat" data-combat-root>
           <div class="hud__combat-row">

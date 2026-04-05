@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { assets } from '../world/assetManifest.js';
 
 const clipSourceUrls = Object.freeze({
+  idle: assets.mixamo.animations.idle,
   walking: assets.mixamo.animations.walking,
   snakeHipHopDance: assets.mixamo.animations.snakeHipHopDance,
   waveHipHopDance: assets.mixamo.animations.waveHipHopDance,

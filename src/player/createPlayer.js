@@ -166,6 +166,7 @@ export async function createPlayer(library, {
   indicatorOpacity = 0.85
 } = {}) {
   const clipNamesToPreload = new Set([
+    assets.player.idleClip,
     assets.player.walkClip,
     ...Object.values(assets.player.emotes ?? {})
   ]);
@@ -180,11 +181,16 @@ export async function createPlayer(library, {
   }
 
   const sockets = ensureMixamoSockets(character);
+  const idleClip = createInPlaceClip(getMixamoClip(assets.player.idleClip), MIXAMO_BONES.hips);
   const walkClip = createInPlaceClip(getMixamoClip(assets.player.walkClip), MIXAMO_BONES.hips);
   const mixer = new THREE.AnimationMixer(character);
+  const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
   const emoteActions = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
+  idleAction.play();
+  idleAction.enabled = true;
+  idleAction.setEffectiveWeight(1);
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
@@ -201,6 +207,7 @@ export async function createPlayer(library, {
   }));
   anchor.add(visual);
 
+  let idleWeight = 1;
   let walkWeight = 0;
   let activeEmoteId = null;
   let activeEmoteConfig = null;
@@ -535,9 +542,14 @@ export async function createPlayer(library, {
   }
 
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
-    walkWeight = THREE.MathUtils.damp(walkWeight, moving ? 1 : 0, 12, deltaSeconds);
+    const locomotionEnabled = aliveState && !activeEmoteId && !isLimpTransitioning();
+    const smoothing = locomotionEnabled ? 12 : 22;
+    idleWeight = THREE.MathUtils.damp(idleWeight, locomotionEnabled && !moving ? 1 : 0, smoothing, deltaSeconds);
+    walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving ? 1 : 0, smoothing, deltaSeconds);
+    idleAction.setEffectiveWeight(idleWeight);
     walkAction.setEffectiveWeight(walkWeight);
-    walkAction.setEffectiveTimeScale(moving ? 1 : 0.35);
+    idleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
+    walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);

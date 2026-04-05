@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
+import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 
 function setShadowFlags(root) {
@@ -193,6 +195,7 @@ export class WorldRenderer {
       return null;
     }
 
+    await preloadMixamoClips([assets.player.idleClip]);
     const object = await this.library.instantiate(item.asset);
     const actor = new NpcActor({
       model,
@@ -208,6 +211,12 @@ export class WorldRenderer {
     actor.pickProxy.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
     return actor;
+  }
+
+  update(deltaSeconds) {
+    for (const rendered of this.renderedPlacements.values()) {
+      rendered.actor?.update(deltaSeconds);
+    }
   }
 
   updatePlacement(placement) {
