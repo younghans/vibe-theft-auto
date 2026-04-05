@@ -1,6 +1,33 @@
 {
   "tiles": [
     {
+      "id": "placement_170",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        -6
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_166",
+      "itemId": "lot_base",
+      "cell": [
+        0,
+        -5
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_165",
+      "itemId": "lot_base",
+      "cell": [
+        1,
+        -5
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_82",
       "itemId": "building_d",
       "cell": [
@@ -280,8 +307,8 @@
       }
     },
     {
-      "id": "placement_22",
-      "itemId": "lot_base",
+      "id": "placement_171",
+      "itemId": "building_c_without_base",
       "cell": [
         -1,
         -2
@@ -289,13 +316,13 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_23",
-      "itemId": "road_tsplit",
+      "id": "placement_172",
+      "itemId": "building_d",
       "cell": [
         0,
         -2
       ],
-      "rotationQuarterTurns": 1
+      "rotationQuarterTurns": 0
     },
     {
       "id": "placement_24",
@@ -1434,7 +1461,7 @@
       "rotationQuarterTurns": 0,
       "name": "Gary",
       "prompt": "You are Gary,  police chief in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.",
-      "interactRadius": 4.4,
+      "interactRadius": 10,
       "active": true
     },
     {
