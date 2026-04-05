@@ -21,7 +21,7 @@ import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { createNpcService } from '../npc/createNpcService.js';
-import { PLAYER_MAX_HEALTH } from '../shared/combatConstants.js';
+import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -34,6 +34,7 @@ const IMPACT_EFFECT_LIFETIME_MS = 140;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
 const HIP_FIRE_AIM_LEAD_MS = 90;
 const HIP_FIRE_AIM_HOLD_MS = 120;
+const SHOT_COLLISION_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
 const EMOTE_MENU_DEADZONE = 54;
 const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
@@ -465,6 +466,7 @@ export class Game {
     const now = performance.now();
     this.pendingHipFireShot = {
       direction: { x: aimDirection.x, z: aimDirection.z },
+      origin: this.getShotCollisionOrigin(aimDirection),
       fireAt: now + HIP_FIRE_AIM_LEAD_MS,
       releaseAt: now + HIP_FIRE_AIM_LEAD_MS + HIP_FIRE_AIM_HOLD_MS,
       fired: false
@@ -473,6 +475,17 @@ export class Game {
 
   clearPendingHipFireShot() {
     this.pendingHipFireShot = null;
+  }
+
+  getShotCollisionOrigin(aimDirection) {
+    if (!this.player || !aimDirection) {
+      return null;
+    }
+
+    return {
+      x: this.player.position.x + (aimDirection.x * SHOT_COLLISION_ORIGIN_FORWARD_OFFSET),
+      z: this.player.position.z + (aimDirection.z * SHOT_COLLISION_ORIGIN_FORWARD_OFFSET)
+    };
   }
 
   applyNpcRuntimeState() {
@@ -1086,7 +1099,11 @@ export class Game {
         this.player.setFacingRotation(Math.atan2(aimDirection.x, aimDirection.z));
         if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
           if (aimingMode) {
-            this.npcService?.fireWeapon({ x: aimDirection.x, z: aimDirection.z }, Date.now());
+            this.npcService?.fireWeapon(
+              { x: aimDirection.x, z: aimDirection.z },
+              Date.now(),
+              this.getShotCollisionOrigin(aimDirection)
+            );
           } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
             this.queueHipFireShot(aimDirection);
           }
@@ -1107,7 +1124,7 @@ export class Game {
         this.player.setFacingRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
         if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
           this.pendingHipFireShot.fired = true;
-          this.npcService?.fireWeapon(this.pendingHipFireShot.direction, Date.now());
+          this.npcService?.fireWeapon(this.pendingHipFireShot.direction, Date.now(), this.pendingHipFireShot.origin);
         }
         if (now >= this.pendingHipFireShot.releaseAt) {
           this.clearPendingHipFireShot();

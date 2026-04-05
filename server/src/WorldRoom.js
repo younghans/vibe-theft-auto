@@ -45,6 +45,8 @@ const NPC_STREAM_THROTTLE_MS = 80;
 const COMBAT_TICK_MS = 100;
 const LIMP_EMOTE_ID = 'limp';
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
+const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
+const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
 
 const PlayerState = schema({
   x: 'number',
@@ -601,16 +603,20 @@ export class WorldRoom extends Room {
     }
 
     const aim = normalizeAimVector(Number(message.aimX), Number(message.aimZ));
+    const shotOrigin = this.resolveShotOrigin(player, {
+      x: Number(message.originX),
+      z: Number(message.originZ)
+    });
     meta.lastShotAt = now;
     player.ammoInClip = Math.max(0, player.ammoInClip - 1);
 
-    const shot = this.resolveShot(client.sessionId, player, aim);
+    const shot = this.resolveShot(client.sessionId, player, aim, shotOrigin);
     this.broadcastCombatEvent({
       type: 'shot',
       shooterId: client.sessionId,
       weaponId: player.equippedWeaponId,
-      fromX: player.x,
-      fromZ: player.z,
+      fromX: shotOrigin.x,
+      fromZ: shotOrigin.z,
       toX: shot.hitX,
       toZ: shot.hitZ,
       clientShotAt: Number.isFinite(message.clientShotAt) ? Math.max(0, Math.floor(message.clientShotAt)) : now
@@ -712,35 +718,58 @@ export class WorldRoom extends Room {
     this.state.pickups.delete(pickup.id);
   }
 
-  resolveShot(shooterSessionId, player, aim) {
+  resolveShotOrigin(player, origin = null) {
+    const nextOrigin = {
+      x: Number.isFinite(origin?.x) ? origin.x : player.x,
+      z: Number.isFinite(origin?.z) ? origin.z : player.z
+    };
+    const offsetX = nextOrigin.x - player.x;
+    const offsetZ = nextOrigin.z - player.z;
+    const offsetLength = Math.hypot(offsetX, offsetZ);
+    if (offsetLength > SHOT_ORIGIN_MAX_OFFSET && offsetLength > 0.0001) {
+      const scale = SHOT_ORIGIN_MAX_OFFSET / offsetLength;
+      nextOrigin.x = player.x + offsetX * scale;
+      nextOrigin.z = player.z + offsetZ * scale;
+    }
+
+    return nextOrigin;
+  }
+
+  resolveShot(shooterSessionId, player, aim, origin = player) {
     let nearestDistance = WEAPON_RANGE;
     let result = {
       kind: 'miss',
-      hitX: player.x + aim.x * WEAPON_RANGE,
-      hitZ: player.z + aim.z * WEAPON_RANGE,
+      hitX: origin.x + aim.x * WEAPON_RANGE,
+      hitZ: origin.z + aim.z * WEAPON_RANGE,
       targetId: ''
     };
 
     for (const placement of this.worldState.getPlacements()) {
       const item = getBuilderItemById(placement.itemId);
-      const rect = placementToCollisionRect(placement, item);
+      const rect = placementToCollisionRect(placement, item, {
+        collisionKey: 'blocksShots'
+      });
       if (!rect) {
         continue;
       }
 
-      const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, WEAPON_RANGE, rect);
-      if (hitDistance == null || hitDistance <= SHOT_BLOCKER_EPSILON || hitDistance >= nearestDistance) {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
         continue;
       }
 
       nearestDistance = hitDistance;
-      result = {
-        kind: 'world',
-        hitX: player.x + aim.x * hitDistance,
-        hitZ: player.z + aim.z * hitDistance,
-        targetId: placement.id
-      };
-    }
+        result = {
+          kind: 'world',
+          hitX: origin.x + aim.x * hitDistance,
+          hitZ: origin.z + aim.z * hitDistance,
+          targetId: placement.id
+        };
+      }
 
     for (const [sessionId, target] of this.state.players.entries()) {
       if (sessionId === shooterSessionId || target.alive === false) {
@@ -748,8 +777,8 @@ export class WorldRoom extends Room {
       }
 
       const hitDistance = rayCircleIntersectionDistance(
-        player.x,
-        player.z,
+        origin.x,
+        origin.z,
         aim.x,
         aim.z,
         nearestDistance,
@@ -764,8 +793,8 @@ export class WorldRoom extends Room {
       nearestDistance = hitDistance;
       result = {
         kind: 'player',
-        hitX: player.x + aim.x * hitDistance,
-        hitZ: player.z + aim.z * hitDistance,
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
         targetId: sessionId
       };
     }

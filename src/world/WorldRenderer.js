@@ -32,6 +32,18 @@ function createBoxCollider(object, padding = 0.2) {
   };
 }
 
+function itemBlocksMovement(item) {
+  if (!item) {
+    return false;
+  }
+
+  if (typeof item.blocksMovement === 'boolean') {
+    return item.blocksMovement;
+  }
+
+  return item.collision === true;
+}
+
 function createNpcCollider(actor, placement) {
   if (!actor || placement?.npc?.active === false) {
     return null;
@@ -162,7 +174,7 @@ export class WorldRenderer {
       layer: placement.layer,
       collider: actor
         ? createNpcCollider(actor, placement)
-        : (item.collision ? createBoxCollider(object, item.padding ?? 0.2) : null)
+        : (itemBlocksMovement(item) ? createBoxCollider(object, item.padding ?? 0.2) : null)
     };
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
@@ -227,7 +239,7 @@ export class WorldRenderer {
 
     if (rendered.actor) {
       rendered.collider = createNpcCollider(rendered.actor, placement);
-    } else if (rendered.item.collision) {
+    } else if (itemBlocksMovement(rendered.item)) {
       rendered.collider = createBoxCollider(rendered.object, rendered.item.padding ?? 0.2);
     } else {
       rendered.collider = null;

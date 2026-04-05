@@ -203,6 +203,13 @@ function tileCollisionForAsset(assetName) {
     || assetName.endsWith('_trees');
 }
 
+function tileBallisticCollisionForAsset(assetName) {
+  return assetName.startsWith('building_')
+    || assetName.includes('_withoutBase')
+    || assetName.startsWith('park_wall_')
+    || assetName.startsWith('kenney_building_');
+}
+
 function tilePaddingForAsset(assetName) {
   if (assetName.startsWith('building_') || assetName.includes('_withoutBase')) {
     return 0.5;
@@ -259,6 +266,9 @@ function propPaddingForAsset(assetName) {
 }
 
 function createCityTile(definition) {
+  const blocksMovement = definition.blocksMovement ?? definition.collision ?? tileCollisionForAsset(definition.assetName);
+  const blocksShots = definition.blocksShots ?? definition.collision ?? tileBallisticCollisionForAsset(definition.assetName);
+
   return {
     id: definition.id ?? definition.assetName.toLowerCase(),
     assetName: definition.assetName,
@@ -266,7 +276,9 @@ function createCityTile(definition) {
     asset: definition.asset ?? cityAsset(definition.assetName),
     size: definition.size ?? tileSizeForAsset(definition.assetName),
     layer: 'tile',
-    collision: definition.collision ?? tileCollisionForAsset(definition.assetName),
+    collision: blocksMovement,
+    blocksMovement,
+    blocksShots,
     padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]
@@ -274,6 +286,9 @@ function createCityTile(definition) {
 }
 
 function createCityProp(definition) {
+  const blocksMovement = definition.blocksMovement ?? definition.collision ?? propCollisionForAsset(definition.assetName);
+  const blocksShots = definition.blocksShots ?? definition.collision ?? propCollisionForAsset(definition.assetName);
+
   return {
     id: definition.id ?? definition.assetName.toLowerCase(),
     assetName: definition.assetName,
@@ -281,7 +296,9 @@ function createCityProp(definition) {
     asset: definition.asset ?? cityAsset(definition.assetName),
     size: definition.size ?? propSizeForAsset(definition.assetName),
     layer: 'prop',
-    collision: definition.collision ?? propCollisionForAsset(definition.assetName),
+    collision: blocksMovement,
+    blocksMovement,
+    blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
@@ -313,6 +330,8 @@ export const BUILDER_CATEGORIES = [
       size: model.footprint,
       layer: 'npc',
       collision: false,
+      blocksMovement: false,
+      blocksShots: false,
       padding: 0.1,
       groupId: 'citizens',
       groupLabel: 'Citizens',

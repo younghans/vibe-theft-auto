@@ -30,6 +30,8 @@ import { defaultWorldLayout } from '../world/defaultWorldLayout.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
 
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
+const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
+const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -606,7 +608,7 @@ export class NpcServiceMock {
     this.emit();
   }
 
-  fireWeapon(aimDirection = { x: 0, z: 1 }, clientShotAt = Date.now()) {
+  fireWeapon(aimDirection = { x: 0, z: 1 }, clientShotAt = Date.now(), origin = null) {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
       return;
@@ -618,16 +620,17 @@ export class NpcServiceMock {
     }
 
     const aim = normalizeAimVector(aimDirection.x, aimDirection.z);
+    const shotOrigin = this.resolveShotOrigin(player, origin);
     player.lastShotAt = now;
     player.ammoInClip = Math.max(0, player.ammoInClip - 1);
 
-    const shot = this.resolveShot(player, aim);
+    const shot = this.resolveShot(player, aim, shotOrigin);
     this.emitCombatEvent({
       type: 'shot',
       shooterId: this.state.sessionId,
       weaponId: player.equippedWeaponId,
-      fromX: player.x,
-      fromZ: player.z,
+      fromX: shotOrigin.x,
+      fromZ: shotOrigin.z,
       toX: shot.hitX,
       toZ: shot.hitZ,
       clientShotAt
@@ -834,35 +837,58 @@ export class NpcServiceMock {
     this.state.pickups.delete(pickup.id);
   }
 
-  resolveShot(player, aim) {
+  resolveShotOrigin(player, origin = null) {
+    const nextOrigin = {
+      x: Number.isFinite(origin?.x) ? Number(origin.x) : player.x,
+      z: Number.isFinite(origin?.z) ? Number(origin.z) : player.z
+    };
+    const offsetX = nextOrigin.x - player.x;
+    const offsetZ = nextOrigin.z - player.z;
+    const offsetLength = Math.hypot(offsetX, offsetZ);
+    if (offsetLength > SHOT_ORIGIN_MAX_OFFSET && offsetLength > 0.0001) {
+      const scale = SHOT_ORIGIN_MAX_OFFSET / offsetLength;
+      nextOrigin.x = player.x + offsetX * scale;
+      nextOrigin.z = player.z + offsetZ * scale;
+    }
+
+    return nextOrigin;
+  }
+
+  resolveShot(player, aim, origin = player) {
     let nearestDistance = WEAPON_RANGE;
     let result = {
       kind: 'miss',
-      hitX: player.x + aim.x * WEAPON_RANGE,
-      hitZ: player.z + aim.z * WEAPON_RANGE,
+      hitX: origin.x + aim.x * WEAPON_RANGE,
+      hitZ: origin.z + aim.z * WEAPON_RANGE,
       targetId: ''
     };
 
     for (const placement of this.worldState.getPlacements()) {
       const item = getBuilderItemById(placement.itemId);
-      const rect = placementToCollisionRect(placement, item);
+      const rect = placementToCollisionRect(placement, item, {
+        collisionKey: 'blocksShots'
+      });
       if (!rect) {
         continue;
       }
 
-      const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, WEAPON_RANGE, rect);
-      if (hitDistance == null || hitDistance <= SHOT_BLOCKER_EPSILON || hitDistance >= nearestDistance) {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
         continue;
       }
 
       nearestDistance = hitDistance;
-      result = {
-        kind: 'world',
-        hitX: player.x + aim.x * hitDistance,
-        hitZ: player.z + aim.z * hitDistance,
-        targetId: placement.id
-      };
-    }
+        result = {
+          kind: 'world',
+          hitX: origin.x + aim.x * hitDistance,
+          hitZ: origin.z + aim.z * hitDistance,
+          targetId: placement.id
+        };
+      }
 
     for (const [id, target] of this.state.players.entries()) {
       if (id === this.state.sessionId || target.alive === false) {
@@ -870,8 +896,8 @@ export class NpcServiceMock {
       }
 
       const hitDistance = rayCircleIntersectionDistance(
-        player.x,
-        player.z,
+        origin.x,
+        origin.z,
         aim.x,
         aim.z,
         nearestDistance,
@@ -887,8 +913,8 @@ export class NpcServiceMock {
       nearestDistance = hitDistance;
       result = {
         kind: 'player',
-        hitX: player.x + aim.x * hitDistance,
-        hitZ: player.z + aim.z * hitDistance,
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
         targetId: id,
         player: target,
         playerId: id

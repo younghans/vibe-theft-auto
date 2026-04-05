@@ -44,8 +44,20 @@ export function chooseFarthestSpawnPoint(spawnPoints, livingPlayers = []) {
   return [...bestSpawn];
 }
 
-export function placementToCollisionRect(placement, item) {
-  if (!placement || !item?.collision) {
+function itemBlocksCollision(item, collisionKey = 'blocksShots') {
+  if (!item) {
+    return false;
+  }
+
+  if (typeof item[collisionKey] === 'boolean') {
+    return item[collisionKey];
+  }
+
+  return item.collision === true;
+}
+
+export function placementToCollisionRect(placement, item, { collisionKey = 'blocksShots' } = {}) {
+  if (!placement || !itemBlocksCollision(item, collisionKey)) {
     return null;
   }
 
@@ -144,8 +156,10 @@ function clipRayToAxis(origin, direction, min, max, tMin, tMax) {
     [nextMin, nextMax] = [nextMax, nextMin];
   }
 
-  return {
+  const clipped = {
     tMin: Math.max(tMin, nextMin),
     tMax: Math.min(tMax, nextMax)
   };
+
+  return clipped.tMin <= clipped.tMax ? clipped : null;
 }

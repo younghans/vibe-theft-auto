@@ -364,10 +364,12 @@ export class NpcServiceColyseus {
     });
   }
 
-  fireWeapon(aimDirection = { x: 0, z: 0 }, clientShotAt = Date.now()) {
+  fireWeapon(aimDirection = { x: 0, z: 0 }, clientShotAt = Date.now(), origin = null) {
     this.room?.send('combat:fireRequest', {
       aimX: quantize(aimDirection.x, 4),
       aimZ: quantize(aimDirection.z, 4),
+      originX: Number.isFinite(origin?.x) ? quantize(origin.x, 4) : undefined,
+      originZ: Number.isFinite(origin?.z) ? quantize(origin.z, 4) : undefined,
       clientShotAt: Number.isFinite(clientShotAt) ? Math.max(0, Math.floor(clientShotAt)) : Date.now()
     });
   }
