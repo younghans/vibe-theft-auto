@@ -27,6 +27,7 @@ export class Hud {
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
     this.aimDebugRoot = this.overlay.querySelector('[data-aim-debug]');
+    this.aimDebugToggle = this.overlay.querySelector('[data-aim-debug-toggle]');
     this.aimDebugStatus = this.overlay.querySelector('[data-aim-debug-status]');
     this.aimDebugFields = this.overlay.querySelector('[data-aim-debug-fields]');
     this.aimDebugBoneToggle = this.overlay.querySelector('[data-aim-debug-bones]');
@@ -173,14 +174,34 @@ export class Hud {
           <p class="hud__combat-score" data-combat-score>K 0 / D 0</p>
         </section>
       </section>
-      <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle build mode" title="Toggle build mode">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14.5 3.5l6 6" />
-          <path d="M13 5l4.5-1.5-1.5 4.5" />
-          <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
-          <path d="M9.5 14.5l3.5 3.5" />
-        </svg>
-      </button>
+      <div class="hud__top-actions">
+        <button
+          class="hud__aim-debug-toggle"
+          type="button"
+          data-aim-debug-toggle
+          aria-label="Toggle Aim Pose debug"
+          aria-pressed="false"
+          title="Show Aim Pose debug"
+          hidden
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <circle cx="12" cy="12" r="8" />
+            <path d="M12 2v3" />
+            <path d="M12 19v3" />
+            <path d="M2 12h3" />
+            <path d="M19 12h3" />
+          </svg>
+        </button>
+        <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14.5 3.5l6 6" />
+            <path d="M13 5l4.5-1.5-1.5 4.5" />
+            <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
+            <path d="M9.5 14.5l3.5 3.5" />
+          </svg>
+        </button>
+      </div>
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
       </section>
@@ -322,11 +343,16 @@ export class Hud {
   }
 
   bindAimPoseDebugEvents({
+    onTogglePanel,
     onFieldChange,
     onReset,
     onPrint,
     onToggleBones
   }) {
+    this.aimDebugToggle?.addEventListener('click', () => {
+      onTogglePanel();
+    });
+
     this.aimDebugFields?.addEventListener('input', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement)) {
@@ -481,7 +507,7 @@ export class Hud {
     this.builderRoot.classList.toggle('is-visible', enabled);
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter build mode';
+    this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
     this.builderStatus.textContent = statusText;
     this.builderMeta.textContent = metaText;
 
@@ -690,6 +716,7 @@ export class Hud {
   }
 
   setAimPoseDebugState({
+    available = false,
     visible = false,
     statusText = '',
     showSkeleton = false,
@@ -697,6 +724,13 @@ export class Hud {
   } = {}) {
     if (!this.aimDebugRoot) {
       return;
+    }
+
+    if (this.aimDebugToggle) {
+      this.aimDebugToggle.hidden = !available;
+      this.aimDebugToggle.classList.toggle('is-active', visible);
+      this.aimDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      this.aimDebugToggle.title = visible ? 'Hide Aim Pose debug' : 'Show Aim Pose debug';
     }
 
     this.aimDebugRoot.classList.toggle('is-visible', visible);

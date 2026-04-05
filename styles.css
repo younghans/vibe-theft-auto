@@ -93,10 +93,19 @@ body {
   color: rgba(242, 200, 113, 0.92);
 }
 
-.hud__mode-toggle {
+.hud__top-actions {
   position: absolute;
   top: 24px;
   right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.hud__mode-toggle,
+.hud__aim-debug-toggle {
+  position: static;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -113,19 +122,22 @@ body {
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease, color 140ms ease;
 }
 
-.hud__mode-toggle:hover {
+.hud__mode-toggle:hover,
+.hud__aim-debug-toggle:hover {
   border-color: rgba(242, 200, 113, 0.55);
   background: rgba(242, 200, 113, 0.12);
   transform: translateY(-1px);
 }
 
-.hud__mode-toggle.is-active {
+.hud__mode-toggle.is-active,
+.hud__aim-debug-toggle.is-active {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #f8d98d;
 }
 
-.hud__mode-toggle svg {
+.hud__mode-toggle svg,
+.hud__aim-debug-toggle svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -1281,6 +1293,12 @@ canvas {
 }
 
 @media (max-width: 800px) {
+  .hud__top-actions {
+    top: 16px;
+    right: 16px;
+    gap: 8px;
+  }
+
   .hud__panel {
     max-width: calc(100vw - 48px);
   }

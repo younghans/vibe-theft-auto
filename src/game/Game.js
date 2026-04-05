@@ -121,7 +121,7 @@ export class Game {
     this.currentAimDirection = new THREE.Vector3(0, 0, 1);
     this.currentAimMode = false;
     this.pendingHipFireShot = null;
-    this.aimPoseDebugVisible = isLocalDebugHost();
+    this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
@@ -137,6 +137,7 @@ export class Game {
       onCancel: () => this.closeQuickChat()
     });
     this.hud.bindAimPoseDebugEvents({
+      onTogglePanel: () => this.toggleAimPoseDebugPanel(),
       onFieldChange: (fieldKey, value) => this.setAimPoseDebugField(fieldKey, value),
       onReset: () => this.resetAimPoseDebug(),
       onPrint: () => this.printAimPoseDebug(),
@@ -390,6 +391,12 @@ export class Game {
     return this.aimPoseDebugVisible;
   }
 
+  toggleAimPoseDebugPanel() {
+    const nextVisible = this.setAimPoseDebugVisible(!this.aimPoseDebugVisible);
+    this.hud.showToast(nextVisible ? 'Aim pose debug opened.' : 'Aim pose debug hidden.');
+    return nextVisible;
+  }
+
   setAimPoseSkeletonDebugVisible(visible) {
     this.aimPoseDebugShowSkeleton = Boolean(visible && isLocalDebugHost());
     this.player?.setAimPoseDebugVisible(this.aimPoseDebugShowSkeleton);
@@ -445,14 +452,17 @@ export class Game {
   }
 
   refreshAimPoseDebugHud() {
+    const debugAvailable = Boolean(this.player && isLocalDebugHost());
     const itemId = this.getActiveAimPoseDebugItemId();
     const pose = this.player?.getHeldItemAimPoseProfile(itemId) ?? {};
     const statusParts = [];
     statusParts.push(`Weapon: ${itemId || 'none'}`);
-    statusParts.push(this.currentAimMode ? 'Previewing right-click aim' : 'Press O to hide. Hold right click to preview.');
+    statusParts.push(this.currentAimMode ? 'Previewing right-click aim' : 'Use the Aim Pose button or press O. Hold right click to preview.');
     this.hud.setAimPoseDebugState({
-      visible: Boolean(this.aimPoseDebugVisible && this.player && isLocalDebugHost()),
+      available: debugAvailable,
+      visible: Boolean(this.aimPoseDebugVisible && debugAvailable),
       statusText: statusParts.join(' • '),
+      statusText: statusParts.join(' | '),
       showSkeleton: this.aimPoseDebugShowSkeleton,
       values: pose
     });
@@ -1043,8 +1053,7 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
 
     if (this.input.consume('KeyO') && isLocalDebugHost()) {
-      const nextVisible = this.setAimPoseDebugVisible(!this.aimPoseDebugVisible);
-      this.hud.showToast(nextVisible ? 'Aim pose debug opened.' : 'Aim pose debug hidden.');
+      this.toggleAimPoseDebugPanel();
     }
 
     if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
