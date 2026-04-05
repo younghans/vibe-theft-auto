@@ -1105,7 +1105,7 @@ export class Game {
         this.currentAimDirection.copy(aimDirection);
         this.currentAimMode = aimingMode;
         this.player.setAimingState(aimingMode || hipFirePoseActive);
-        this.player.setFacingRotation(Math.atan2(aimDirection.x, aimDirection.z));
+        this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
         if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
           if (aimingMode) {
             this.npcService?.fireWeapon(
@@ -1130,7 +1130,7 @@ export class Game {
       } else if (this.pendingHipFireShot) {
         const now = performance.now();
         this.player.setAimingState(aimingMode || now < this.pendingHipFireShot.releaseAt);
-        this.player.setFacingRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
+        this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
         if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
           this.pendingHipFireShot.fired = true;
           this.npcService?.fireWeapon(this.pendingHipFireShot.direction, Date.now(), this.pendingHipFireShot.origin);

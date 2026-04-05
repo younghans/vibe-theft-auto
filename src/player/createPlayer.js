@@ -28,6 +28,14 @@ const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
 
+const LOOK_YAW_DISTRIBUTION = Object.freeze([
+  Object.freeze({ bone: 'spine', weight: 0.12 }),
+  Object.freeze({ bone: 'spineMiddle', weight: 0.2 }),
+  Object.freeze({ bone: 'spineUpper', weight: 0.28 }),
+  Object.freeze({ bone: 'neck', weight: 0.18 }),
+  Object.freeze({ bone: 'head', weight: 0.22 })
+]);
+
 const SLOT_MOTION_BASE = Object.freeze({
   position: Object.freeze([-0.12, 0.03, -0.08]),
   rotation: Object.freeze([-0.06, 0, 0.05])
@@ -146,6 +154,10 @@ function dampAngle(current, target, smoothing) {
   return current + delta * smoothing;
 }
 
+function normalizeAngle(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
 function createPlayerIndicator({ color = 0xf2c871, opacity = 0.85 } = {}) {
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(1.35, 1.9, 32),
@@ -227,7 +239,12 @@ export async function createPlayer(library, {
   const gripOverrides = new Map();
   const aimPoseOverrides = new Map();
   const aimPoseBones = {
+    spine: character.getObjectByName(MIXAMO_BONES.spine) ?? null,
+    spineMiddle: character.getObjectByName(MIXAMO_BONES.spineMiddle) ?? null,
+    head: character.getObjectByName(MIXAMO_BONES.head) ?? null,
+    neck: character.getObjectByName(MIXAMO_BONES.neck) ?? null,
     spineUpper: character.getObjectByName(MIXAMO_BONES.spineUpper) ?? null,
+    leftShoulder: character.getObjectByName(MIXAMO_BONES.leftShoulder) ?? null,
     rightShoulder: character.getObjectByName(MIXAMO_BONES.rightShoulder) ?? null,
     rightArm: character.getObjectByName(MIXAMO_BONES.rightArm) ?? null,
     rightForeArm: character.getObjectByName(MIXAMO_BONES.rightForeArm) ?? null,
@@ -245,6 +262,8 @@ export async function createPlayer(library, {
   let recoilAmount = 0;
   let aimingState = false;
   let aimPoseWeight = 0;
+  let upperBodyLookWeight = 0;
+  let aimRotationY = 0;
 
   skeletonHelper.visible = false;
   skeletonHelper.material.depthTest = false;
@@ -427,25 +446,48 @@ export async function createPlayer(library, {
     return getMergedAimPose(itemId);
   }
 
-  function applyAimPose() {
+  function addBoneRotation(rotationsByBone, boneKey, axis, value) {
+    if (!Number.isFinite(value) || Math.abs(value) < 0.000001) {
+      return;
+    }
+
+    const nextRotation = rotationsByBone.get(boneKey) ?? { x: 0, y: 0, z: 0 };
+    nextRotation[axis] = (nextRotation[axis] ?? 0) + value;
+    rotationsByBone.set(boneKey, nextRotation);
+  }
+
+  function applyUpperBodyPose() {
     const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const pose = activeItemId ? getMergedAimPose(activeItemId) : null;
-    const hasPose = Boolean(pose) && aliveState && !ragdoll.isActive();
+    const hasLookPose = upperBodyLookWeight > 0.0001 && Boolean(activeItemId);
+    const hasAimPose = aimPoseWeight > 0.0001 && Boolean(pose);
 
-    if (!hasPose || aimPoseWeight <= 0.0001) {
+    if ((!hasLookPose && !hasAimPose) || !aliveState || ragdoll.isActive()) {
       return;
     }
 
     const rotationsByBone = new Map();
-    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
-      const value = Number(pose?.[field.key] ?? 0);
-      if (!Number.isFinite(value) || Math.abs(value) < 0.000001) {
-        continue;
+    if (hasLookPose) {
+      const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y);
+      for (const entry of LOOK_YAW_DISTRIBUTION) {
+        addBoneRotation(
+          rotationsByBone,
+          entry.bone,
+          'y',
+          aimDelta * entry.weight * upperBodyLookWeight
+        );
       }
+    }
 
-      const nextRotation = rotationsByBone.get(field.bone) ?? { x: 0, y: 0, z: 0 };
-      nextRotation[field.axis] = value;
-      rotationsByBone.set(field.bone, nextRotation);
+    if (hasAimPose) {
+      for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+        const value = Number(pose?.[field.key] ?? 0) * aimPoseWeight;
+        if (!Number.isFinite(value) || Math.abs(value) < 0.000001) {
+          continue;
+        }
+
+        addBoneRotation(rotationsByBone, field.bone, field.axis, value);
+      }
     }
 
     for (const [boneKey, rotation] of rotationsByBone.entries()) {
@@ -457,7 +499,7 @@ export async function createPlayer(library, {
 
       aimPoseEuler.set(rotation.x ?? 0, rotation.y ?? 0, rotation.z ?? 0);
       aimPoseQuaternion.setFromEuler(aimPoseEuler);
-      bone.quaternion.slerp(base.quaternion.clone().multiply(aimPoseQuaternion), aimPoseWeight);
+      bone.quaternion.copy(base.quaternion).multiply(aimPoseQuaternion);
     }
   }
 
@@ -557,8 +599,10 @@ export async function createPlayer(library, {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const wantsAimPose = aimingState && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
+    const wantsUpperBodyLook = aliveState && !activeEmoteId && !isLimpTransitioning() && Boolean(activeAimItemId);
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
-    applyAimPose();
+    upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
+    applyUpperBodyPose();
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
     visual.position.set(0, recoilAmount * 0.03, 0);
     visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
@@ -689,7 +733,8 @@ export async function createPlayer(library, {
           emoteId: LIMP_EMOTE_ID,
           emoteActive: true,
           emoteStartedAt: limpStartedAt,
-          emoteSeq: emoteSequence
+          emoteSeq: emoteSequence,
+          aimRotationY
         };
       }
 
@@ -697,7 +742,8 @@ export async function createPlayer(library, {
         emoteId: activeEmoteId ?? '',
         emoteActive: Boolean(activeEmoteId),
         emoteStartedAt: activeEmoteId ? activeEmoteStartedAt : 0,
-        emoteSeq: emoteSequence
+        emoteSeq: emoteSequence,
+        aimRotationY
       };
     },
     playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
@@ -750,10 +796,13 @@ export async function createPlayer(library, {
     isLimp() {
       return ragdoll.isActive();
     },
-    setFacingRotation(rotationY) {
+    setAimRotation(rotationY) {
       if (Number.isFinite(rotationY)) {
-        anchor.rotation.y = rotationY;
+        aimRotationY = rotationY;
       }
+    },
+    getAimRotation() {
+      return aimRotationY;
     },
     setAimingState(aiming) {
       aimingState = Boolean(aiming);
@@ -862,6 +911,8 @@ export async function createPlayer(library, {
 
         const targetYaw = Math.atan2(movement.x, movement.z);
         anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
+      } else if (desiredWeaponId || getActiveHeldItemId(ATTACHMENT_SLOTS.handRight)) {
+        anchor.rotation.y = dampAngle(anchor.rotation.y, aimRotationY, 0.12);
       }
 
       updateAnimationState(deltaSeconds, moving, groundHeight);
@@ -917,6 +968,10 @@ export async function createPlayer(library, {
 
       const showingRemoteLimp = remoteIsLimp && ragdoll.isActive();
       const showingRemoteEmote = remoteEmoteActive && activeEmoteId === remoteEmoteId;
+
+      if (Number.isFinite(state?.aimRotationY)) {
+        aimRotationY = state.aimRotationY;
+      }
 
       const targetX = Number.isFinite(state?.x) ? state.x : anchor.position.x;
       const targetZ = Number.isFinite(state?.z) ? state.z : anchor.position.z;

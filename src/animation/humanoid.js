@@ -14,6 +14,9 @@ export const HUMANOID_SOCKETS = Object.freeze({
 
 export const MIXAMO_BONES = Object.freeze({
   hips: 'mixamorigHips',
+  spine: 'mixamorigSpine',
+  spineMiddle: 'mixamorigSpine1',
+  neck: 'mixamorigNeck',
   head: 'mixamorigHead',
   rightShoulder: 'mixamorigRightShoulder',
   leftShoulder: 'mixamorigLeftShoulder',

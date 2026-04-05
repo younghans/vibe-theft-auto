@@ -52,6 +52,7 @@ const PlayerState = schema({
   x: 'number',
   z: 'number',
   rotationY: 'number',
+  aimRotationY: 'number',
   emoteId: 'string',
   emoteActive: 'boolean',
   emoteStartedAt: 'number',
@@ -173,12 +174,14 @@ function sanitizePlayerAnimationState(message = {}) {
   const emoteActive = Boolean(message.emoteActive && hasValidEmote);
   const emoteStartedAt = Number(message.emoteStartedAt);
   const emoteSeq = Number(message.emoteSeq);
+  const aimRotationY = Number(message.aimRotationY);
 
   return {
     emoteId: emoteActive ? emoteId : '',
     emoteActive,
     emoteStartedAt: emoteActive && Number.isFinite(emoteStartedAt) ? Math.max(0, Math.floor(emoteStartedAt)) : 0,
-    emoteSeq: Number.isFinite(emoteSeq) ? Math.max(0, Math.floor(emoteSeq)) : 0
+    emoteSeq: Number.isFinite(emoteSeq) ? Math.max(0, Math.floor(emoteSeq)) : 0,
+    aimRotationY: Number.isFinite(aimRotationY) ? quantizeRotation(aimRotationY) : 0
   };
 }
 
@@ -326,6 +329,7 @@ export class WorldRoom extends Room {
     player.x = quantizePosition(spawnX);
     player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
+    player.aimRotationY = 0;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -443,6 +447,7 @@ export class WorldRoom extends Room {
     player.emoteActive = animationState.emoteActive;
     player.emoteStartedAt = animationState.emoteStartedAt;
     player.emoteSeq = animationState.emoteSeq;
+    player.aimRotationY = animationState.aimRotationY;
   }
 
   updateCombatTimers() {
@@ -484,6 +489,7 @@ export class WorldRoom extends Room {
     player.x = quantizePosition(spawnX);
     player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
+    player.aimRotationY = 0;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;

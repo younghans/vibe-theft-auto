@@ -36,6 +36,7 @@ function clonePlayerState(player) {
     x: player.x,
     z: player.z,
     rotationY: player.rotationY ?? 0,
+    aimRotationY: player.aimRotationY ?? player.rotationY ?? 0,
     emoteId: player.emoteId || '',
     emoteActive: Boolean(player.emoteActive && player.emoteId),
     emoteStartedAt: player.emoteStartedAt ?? 0,
@@ -298,10 +299,12 @@ export class NpcServiceColyseus {
 
     const now = performance.now();
     const emoteId = typeof animationState.emoteId === 'string' ? animationState.emoteId : '';
+    const aimRotationY = Number(animationState.aimRotationY);
     const next = {
       x: quantize(position.x),
       z: quantize(position.z),
       rotationY: quantize(rotationY, 3),
+      aimRotationY: quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3),
       emoteId,
       emoteActive: Boolean(animationState.emoteActive && emoteId),
       emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
@@ -312,13 +315,15 @@ export class NpcServiceColyseus {
       || Math.abs(this.lastTransform.z - next.z) > 0.15;
     const rotated = !this.lastTransform
       || Math.abs(angleDifference(this.lastTransform.rotationY, next.rotationY)) > 0.08;
+    const aimRotated = !this.lastTransform
+      || Math.abs(angleDifference(this.lastTransform.aimRotationY, next.aimRotationY)) > 0.08;
     const emoteChanged = !this.lastTransform
       || this.lastTransform.emoteId !== next.emoteId
       || this.lastTransform.emoteActive !== next.emoteActive
       || this.lastTransform.emoteStartedAt !== next.emoteStartedAt
       || this.lastTransform.emoteSeq !== next.emoteSeq;
 
-    if ((!moved && !rotated && !emoteChanged) || (!emoteChanged && now - this.lastTransformSentAt < 90)) {
+    if ((!moved && !rotated && !aimRotated && !emoteChanged) || (!emoteChanged && !aimRotated && now - this.lastTransformSentAt < 90)) {
       return;
     }
 

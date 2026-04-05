@@ -62,12 +62,14 @@ function cloneLayout(layout) {
 
 function sanitizePlayerAnimationState(animationState = {}) {
   const emoteId = typeof animationState.emoteId === 'string' ? animationState.emoteId : '';
+  const aimRotationY = Number(animationState.aimRotationY);
 
   return {
     emoteId,
     emoteActive: Boolean(animationState.emoteActive && emoteId),
     emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
-    emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0
+    emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0,
+    aimRotationY: Number.isFinite(aimRotationY) ? aimRotationY : 0
   };
 }
 
@@ -76,6 +78,7 @@ function createDefaultPlayerState(overrides = {}) {
     x: 0,
     z: 0,
     rotationY: 0,
+    aimRotationY: 0,
     emoteId: '',
     emoteActive: false,
     emoteStartedAt: 0,
@@ -396,6 +399,7 @@ export class NpcServiceMock {
     player.x = clamped.x;
     player.z = clamped.z;
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
+    player.aimRotationY = nextAnimation.aimRotationY;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
@@ -745,6 +749,7 @@ export class NpcServiceMock {
     player.x = spawnX;
     player.z = spawnZ;
     player.rotationY = 0;
+    player.aimRotationY = 0;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;
