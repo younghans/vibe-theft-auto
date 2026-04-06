@@ -153,7 +153,7 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'streetlight_old_double', group: 'utilities', collision: false },
   { id: 'traffic_light', assetName: 'trafficlight_A', label: 'Traffic Light A', group: 'utilities', collision: false },
   { assetName: 'trafficlight_B', group: 'utilities', collision: false },
-  { assetName: 'trafficlight_C', group: 'utilities', collision: false },
+  { assetName: 'trafficlight_C', group: 'utilities', collision: false, size: [6.6, 2.3] },
   { assetName: 'tree_A', group: 'greenery' },
   { assetName: 'tree_B', group: 'greenery' },
   { assetName: 'tree_C', group: 'greenery' },

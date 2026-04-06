@@ -1230,6 +1230,15 @@
       "rotationQuarterTurns": 0
     },
     {
+      "id": "placement_196",
+      "itemId": "trafficlight_c",
+      "position": [
+        -34.6,
+        -7.67
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_111",
       "itemId": "tower",
       "position": [

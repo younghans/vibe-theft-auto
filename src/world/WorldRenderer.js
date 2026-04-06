@@ -34,6 +34,16 @@ function createBoxCollider(object, padding = 0.2) {
   };
 }
 
+function createBoxColliderFromBounds(minX, minZ, maxX, maxZ, minY = 0, maxY = 4) {
+  return {
+    type: 'box',
+    box: new THREE.Box3(
+      new THREE.Vector3(minX, minY, minZ),
+      new THREE.Vector3(maxX, maxY, maxZ)
+    )
+  };
+}
+
 function itemBlocksMovement(item) {
   if (!item) {
     return false;
@@ -69,6 +79,14 @@ function extractPlacementId(node) {
   return null;
 }
 
+const PARK_WALL_COLLIDER_CELL_SIZE = 1;
+const PARK_WALL_COLLIDER_MIN_Y = 1.1;
+const PARK_WALL_COLLIDER_MAX_Y = 4.2;
+
+function isParkWallItem(item) {
+  return item?.layer === 'tile' && item.assetName?.startsWith('park_wall_');
+}
+
 function tileContainsPosition(rendered, x, z) {
   const cellX = rendered.placement?.cellX ?? 0;
   const cellZ = rendered.placement?.cellZ ?? 0;
@@ -80,6 +98,137 @@ function tileContainsPosition(rendered, x, z) {
     && z >= (cellZ * BUILDER_TILE_SIZE) - halfTile
     && z <= (cellZ * BUILDER_TILE_SIZE) + halfTile
   );
+}
+
+function markParkWallTriangleCells(occupied, tileMinX, tileMinZ, minX, maxX, minZ, maxZ) {
+  const gridSize = occupied.length;
+  const startX = Math.max(0, Math.min(gridSize - 1, Math.floor(minX - tileMinX)));
+  const endX = Math.max(0, Math.min(gridSize - 1, Math.ceil(maxX - tileMinX) - 1));
+  const startZ = Math.max(0, Math.min(gridSize - 1, Math.floor(minZ - tileMinZ)));
+  const endZ = Math.max(0, Math.min(gridSize - 1, Math.ceil(maxZ - tileMinZ) - 1));
+
+  for (let z = startZ; z <= endZ; z += 1) {
+    for (let x = startX; x <= endX; x += 1) {
+      occupied[z][x] = true;
+    }
+  }
+}
+
+function buildParkWallColliders(object) {
+  const tileHalf = BUILDER_TILE_SIZE * 0.5;
+  const tileMinX = object.position.x - tileHalf;
+  const tileMinZ = object.position.z - tileHalf;
+  const tileMaxX = object.position.x + tileHalf;
+  const tileMaxZ = object.position.z + tileHalf;
+  const gridSize = Math.ceil(BUILDER_TILE_SIZE / PARK_WALL_COLLIDER_CELL_SIZE);
+  const occupied = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+
+  object.updateMatrixWorld(true);
+  object.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    const position = node.geometry?.attributes?.position;
+    if (!position) {
+      return;
+    }
+
+    const index = node.geometry.index;
+    const readIndex = (triangleIndex, offset) => index
+      ? index.getX(triangleIndex * 3 + offset)
+      : (triangleIndex * 3 + offset);
+    const triangleCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+
+    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
+      a.fromBufferAttribute(position, readIndex(triangleIndex, 0)).applyMatrix4(node.matrixWorld);
+      b.fromBufferAttribute(position, readIndex(triangleIndex, 1)).applyMatrix4(node.matrixWorld);
+      c.fromBufferAttribute(position, readIndex(triangleIndex, 2)).applyMatrix4(node.matrixWorld);
+
+      const triangleMinY = Math.min(a.y, b.y, c.y);
+      const triangleMaxY = Math.max(a.y, b.y, c.y);
+      if (triangleMaxY < PARK_WALL_COLLIDER_MIN_Y || triangleMinY > PARK_WALL_COLLIDER_MAX_Y) {
+        continue;
+      }
+
+      markParkWallTriangleCells(
+        occupied,
+        tileMinX,
+        tileMinZ,
+        Math.max(tileMinX, Math.min(a.x, b.x, c.x)),
+        Math.min(tileMaxX, Math.max(a.x, b.x, c.x)),
+        Math.max(tileMinZ, Math.min(a.z, b.z, c.z)),
+        Math.min(tileMaxZ, Math.max(a.z, b.z, c.z))
+      );
+    }
+  });
+
+  const colliders = [];
+  const consumed = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+
+  for (let z = 0; z < gridSize; z += 1) {
+    for (let x = 0; x < gridSize; x += 1) {
+      if (!occupied[z][x] || consumed[z][x]) {
+        continue;
+      }
+
+      let width = 1;
+      while (x + width < gridSize && occupied[z][x + width] && !consumed[z][x + width]) {
+        width += 1;
+      }
+
+      let height = 1;
+      let canGrow = true;
+      while (z + height < gridSize && canGrow) {
+        for (let dx = 0; dx < width; dx += 1) {
+          if (!occupied[z + height][x + dx] || consumed[z + height][x + dx]) {
+            canGrow = false;
+            break;
+          }
+        }
+        if (canGrow) {
+          height += 1;
+        }
+      }
+
+      for (let dz = 0; dz < height; dz += 1) {
+        for (let dx = 0; dx < width; dx += 1) {
+          consumed[z + dz][x + dx] = true;
+        }
+      }
+
+      colliders.push(
+        createBoxColliderFromBounds(
+          tileMinX + (x * PARK_WALL_COLLIDER_CELL_SIZE),
+          tileMinZ + (z * PARK_WALL_COLLIDER_CELL_SIZE),
+          tileMinX + ((x + width) * PARK_WALL_COLLIDER_CELL_SIZE),
+          tileMinZ + ((z + height) * PARK_WALL_COLLIDER_CELL_SIZE)
+        )
+      );
+    }
+  }
+
+  return colliders;
+}
+
+function createPlacementColliders(object, item, placement, actor) {
+  if (actor) {
+    const collider = createNpcCollider(actor, placement);
+    return collider ? [collider] : [];
+  }
+
+  if (isParkWallItem(item)) {
+    return buildParkWallColliders(object);
+  }
+
+  if (itemBlocksMovement(item)) {
+    return [createBoxCollider(object, item.padding ?? 0.2)];
+  }
+
+  return [];
 }
 
 export class WorldRenderer {
@@ -190,9 +339,7 @@ export class WorldRenderer {
       surfaceHeight: placement.layer === 'tile'
         ? (item.surfaceHeight ?? 0)
         : null,
-      collider: actor
-        ? createNpcCollider(actor, placement)
-        : (itemBlocksMovement(item) ? createBoxCollider(object, item.padding ?? 0.2) : null)
+      colliders: createPlacementColliders(object, item, placement, actor)
     };
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
@@ -268,11 +415,9 @@ export class WorldRenderer {
     }
 
     if (rendered.actor) {
-      rendered.collider = createNpcCollider(rendered.actor, placement);
-    } else if (itemBlocksMovement(rendered.item)) {
-      rendered.collider = createBoxCollider(rendered.object, rendered.item.padding ?? 0.2);
+      rendered.colliders = createPlacementColliders(rendered.object, rendered.item, placement, rendered.actor);
     } else {
-      rendered.collider = null;
+      rendered.colliders = createPlacementColliders(rendered.object, rendered.item, placement, null);
     }
   }
 
@@ -288,7 +433,7 @@ export class WorldRenderer {
 
   getColliders() {
     return [...this.renderedPlacements.values()]
-      .map((placement) => placement.collider)
+      .flatMap((placement) => placement.colliders ?? [])
       .filter(Boolean);
   }
 
