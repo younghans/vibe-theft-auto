@@ -8,6 +8,10 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[Boot] Unhandled promise rejection.', event.reason ?? event);
 });
 
+window.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+}, { capture: true });
+
 const root = document.querySelector('#app');
 console.info('[Boot] Vibe Theft Auto booting.', {
   href: window.location.href,
