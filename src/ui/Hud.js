@@ -467,7 +467,10 @@ export class Hud {
 
     this.shaderDebugList?.addEventListener('click', (event) => {
       event.stopPropagation();
-      const button = event.target.closest('[data-shader-preset]');
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-shader-preset]');
       if (!button) {
         return;
       }
