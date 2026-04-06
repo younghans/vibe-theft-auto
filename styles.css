@@ -101,7 +101,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  pointer-events: none;
+  pointer-events: auto;
+  z-index: 5;
 }
 
 .hud__zoom-controls {
@@ -284,6 +285,7 @@ body {
   opacity: 0;
   transform: translateY(-12px);
   transition: opacity 180ms ease, transform 180ms ease;
+  z-index: 7;
 }
 
 .hud__toast.is-visible {
@@ -305,6 +307,7 @@ body {
   transform: translateY(-10px);
   transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: none;
+  z-index: 6;
 }
 
 .hud__shader-debug.is-visible {
@@ -407,6 +410,7 @@ body {
   transform: translateY(-10px);
   transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: none;
+  z-index: 6;
 }
 
 .hud__aim-debug.is-visible {
@@ -492,10 +496,11 @@ body {
 }
 
 .hud__builder {
+  top: 96px;
   right: 24px;
   bottom: 24px;
   width: min(720px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 120px);
   padding: 16px;
   border-radius: 18px;
   pointer-events: none;
@@ -505,6 +510,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  z-index: 4;
 }
 
 .hud__builder.is-visible {
@@ -1501,11 +1507,12 @@ canvas {
   }
 
   .hud__builder {
+    top: 84px;
     left: 16px;
     right: 16px;
     bottom: 16px;
     width: auto;
-    max-height: min(74vh, 720px);
+    max-height: calc(100vh - 100px);
     padding: 14px;
   }
 

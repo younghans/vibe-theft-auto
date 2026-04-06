@@ -260,6 +260,11 @@ export class Game {
       this.closeQuickChat();
     }
     void this.worldBuilder.setEnabled(nextEnabled);
+    if (!nextEnabled) {
+      this.setShaderDebugMenuVisible(false);
+    } else {
+      this.refreshShaderDebugHud();
+    }
     this.refreshZoomHud();
     this.hud.showToast(nextEnabled ? 'World builder enabled.' : 'World builder disabled.');
   }

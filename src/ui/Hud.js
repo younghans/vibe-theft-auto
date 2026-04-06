@@ -216,6 +216,7 @@ export class Hud {
           aria-label="Toggle shader vibe menu"
           aria-pressed="false"
           title="Show shader vibe menu"
+          hidden
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
@@ -250,7 +251,7 @@ export class Hud {
           </svg>
         </button>
       </div>
-      <section class="hud__shader-debug" data-shader-debug>
+      <section class="hud__shader-debug" data-shader-debug hidden>
         <div class="hud__shader-debug-header">
           <div>
             <p class="hud__eyebrow">Shader Vibes</p>
@@ -448,15 +449,24 @@ export class Hud {
     onCloseMenu,
     onSelectPreset
   }) {
-    this.shaderDebugToggle?.addEventListener('click', () => {
+    this.shaderDebugToggle?.addEventListener('pointerdown', (event) => {
+      event.stopPropagation();
+    });
+
+    this.shaderDebugToggle?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       onToggleMenu();
     });
 
-    this.shaderDebugClose?.addEventListener('click', () => {
+    this.shaderDebugClose?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       onCloseMenu();
     });
 
     this.shaderDebugList?.addEventListener('click', (event) => {
+      event.stopPropagation();
       const button = event.target.closest('[data-shader-preset]');
       if (!button) {
         return;
@@ -604,6 +614,15 @@ export class Hud {
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
+    if (this.shaderDebugToggle) {
+      this.shaderDebugToggle.hidden = !enabled;
+    }
+    if (this.shaderDebugRoot) {
+      this.shaderDebugRoot.hidden = !enabled;
+      if (!enabled) {
+        this.shaderDebugRoot.classList.remove('is-visible');
+      }
+    }
     this.builderStatus.textContent = statusText;
     this.builderMeta.textContent = metaText;
 
