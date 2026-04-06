@@ -367,6 +367,24 @@
       }
     },
     {
+      "id": "placement_193",
+      "itemId": "park_base_decorated_bushes",
+      "cell": [
+        7,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_195",
+      "itemId": "park_base",
+      "cell": [
+        10,
+        -2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_146",
       "itemId": "lot_base",
       "cell": [
@@ -452,6 +470,24 @@
       "itemId": "lot_base",
       "cell": [
         4,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_191",
+      "itemId": "park_road_corner",
+      "cell": [
+        7,
+        -1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_192",
+      "itemId": "park_base_decorated_trees",
+      "cell": [
+        8,
         -1
       ],
       "rotationQuarterTurns": 0
@@ -547,6 +583,42 @@
       "rotationQuarterTurns": 0
     },
     {
+      "id": "placement_185",
+      "itemId": "park_road_corner_decorated",
+      "cell": [
+        5,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_186",
+      "itemId": "park_road_junction_decorated_a",
+      "cell": [
+        6,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_187",
+      "itemId": "park_road_junction_decorated_a",
+      "cell": [
+        7,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_190",
+      "itemId": "park_road_straight_decorated_a",
+      "cell": [
+        8,
+        0
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_46",
       "itemId": "lot_base",
       "cell": [
@@ -623,6 +695,24 @@
       "itemId": "lot_base",
       "cell": [
         4,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_188",
+      "itemId": "park_road_straight",
+      "cell": [
+        6,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_189",
+      "itemId": "park_road_straight_decorated_a",
+      "cell": [
+        7,
         1
       ],
       "rotationQuarterTurns": 0
@@ -725,6 +815,15 @@
         "radius": 4,
         "distance": 6.16
       }
+    },
+    {
+      "id": "placement_194",
+      "itemId": "park_wall_entry",
+      "cell": [
+        7,
+        2
+      ],
+      "rotationQuarterTurns": 0
     },
     {
       "id": "placement_64",

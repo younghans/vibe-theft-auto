@@ -20,6 +20,7 @@ const PROP_GROUPS = Object.freeze({
 
 const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;
 const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
 const KENNEY_SKYSCRAPER_VARIANTS = Object.freeze('abcde'.split(''));
 const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
@@ -196,14 +197,20 @@ function tileSizeForAsset(assetName) {
 }
 
 function tileCollisionForAsset(assetName) {
+  if (assetName.startsWith('park_wall_entry')) {
+    return false;
+  }
+
   return assetName.startsWith('building_')
     || assetName.includes('_withoutBase')
-    || assetName.startsWith('park_wall_')
-    || assetName.includes('_decorated')
-    || assetName.endsWith('_trees');
+    || assetName.startsWith('park_wall_');
 }
 
 function tileBallisticCollisionForAsset(assetName) {
+  if (assetName.startsWith('park_wall_entry')) {
+    return false;
+  }
+
   return assetName.startsWith('building_')
     || assetName.includes('_withoutBase')
     || assetName.startsWith('park_wall_')
@@ -275,6 +282,7 @@ function createCityTile(definition) {
     label: definition.label ?? formatCityLabel(definition.assetName),
     asset: definition.asset ?? cityAsset(definition.assetName),
     size: definition.size ?? tileSizeForAsset(definition.assetName),
+    surfaceHeight: definition.surfaceHeight ?? DEFAULT_TILE_SURFACE_HEIGHT,
     layer: 'tile',
     collision: blocksMovement,
     blocksMovement,

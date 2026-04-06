@@ -69,6 +69,19 @@ function extractPlacementId(node) {
   return null;
 }
 
+function tileContainsPosition(rendered, x, z) {
+  const cellX = rendered.placement?.cellX ?? 0;
+  const cellZ = rendered.placement?.cellZ ?? 0;
+  const halfTile = BUILDER_TILE_SIZE * 0.5;
+
+  return (
+    x >= (cellX * BUILDER_TILE_SIZE) - halfTile
+    && x <= (cellX * BUILDER_TILE_SIZE) + halfTile
+    && z >= (cellZ * BUILDER_TILE_SIZE) - halfTile
+    && z <= (cellZ * BUILDER_TILE_SIZE) + halfTile
+  );
+}
+
 export class WorldRenderer {
   constructor({ scene, camera, library }) {
     this.scene = scene;
@@ -129,9 +142,8 @@ export class WorldRenderer {
         continue;
       }
 
-      const bounds = new THREE.Box3().setFromObject(rendered.object);
-      if (x >= bounds.min.x && x <= bounds.max.x && z >= bounds.min.z && z <= bounds.max.z) {
-        surfaceHeight = Math.max(surfaceHeight, bounds.max.y);
+      if (tileContainsPosition(rendered, x, z)) {
+        surfaceHeight = Math.max(surfaceHeight, rendered.surfaceHeight ?? 0);
       }
     }
 
@@ -170,10 +182,14 @@ export class WorldRenderer {
 
     const renderedPlacement = {
       id: placement.id,
+      placement,
       object,
       actor,
       item,
       layer: placement.layer,
+      surfaceHeight: placement.layer === 'tile'
+        ? (item.surfaceHeight ?? 0)
+        : null,
       collider: actor
         ? createNpcCollider(actor, placement)
         : (itemBlocksMovement(item) ? createBoxCollider(object, item.padding ?? 0.2) : null)
@@ -224,6 +240,11 @@ export class WorldRenderer {
     if (!rendered) {
       return;
     }
+
+    rendered.placement = placement;
+    rendered.surfaceHeight = placement.layer === 'tile'
+      ? (rendered.item.surfaceHeight ?? 0)
+      : null;
 
     if (rendered.actor) {
       rendered.actor.applyPlacement({
