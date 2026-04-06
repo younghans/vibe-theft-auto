@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
@@ -181,9 +182,11 @@ export class Game {
 
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.vibeShaderPass = new ShaderPass(createVibeShaderDefinition());
+    this.outputPass = new OutputPass();
 
     this.composer.addPass(this.renderPass);
     this.composer.addPass(this.vibeShaderPass);
+    this.composer.addPass(this.outputPass);
     this.updatePostProcessingResolution();
   }
 
