@@ -19,6 +19,7 @@ const PROP_GROUPS = Object.freeze({
 });
 
 const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
+const CUSTOM_CITY_PACK = 'stickrpg_custom';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;
 const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
@@ -34,6 +35,10 @@ const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
 
 function kenneyAsset(fileName) {
   return assetUrl(KENNEY_CITY_PACK, 'Models', 'GLB format', fileName);
+}
+
+function customCityAsset(...parts) {
+  return assetUrl(CUSTOM_CITY_PACK, ...parts);
 }
 
 function createKenneyBuildingDefinition({ id, label, fileName }) {
@@ -106,6 +111,17 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'building_g_without_base', assetName: 'building_G_withoutBase', group: 'lots' },
   { id: 'building_h', assetName: 'building_H', group: 'lots' },
   { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots' },
+  {
+    id: 'hospital_building',
+    assetName: 'hospital_building',
+    label: 'Hospital',
+    asset: customCityAsset('models', 'hospital-building.glb'),
+    group: 'lots',
+    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
+    collision: true,
+    blocksShots: true,
+    padding: 0.5
+  },
   { assetName: 'park_base', group: 'parks' },
   { assetName: 'park_base_decorated_bushes', group: 'parks' },
   { assetName: 'park_base_decorated_trees', group: 'parks' },

@@ -16,6 +16,7 @@ function validateRotationQuarterTurns(value, context) {
 
 function validateKenneyCatalogItems() {
   const expectedIds = [
+    'hospital_building',
     ...'abcdefghijklmn'.split('').map((variant) => `kenney_building_${variant}`),
     ...'abcde'.split('').map((variant) => `kenney_building_skyscraper_${variant}`),
     'kenney_detail_awning',

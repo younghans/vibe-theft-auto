@@ -991,39 +991,6 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_181",
-      "itemId": "lot_base",
-      "cell": [
-        1,
-        4
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_92",
-      "itemId": "building_e",
-      "cell": [
-        2,
-        4
-      ],
-      "rotationQuarterTurns": 2,
-      "interactable": {
-        "label": "Taxi dispatch",
-        "actionText": "Taxi missions can route through this office.",
-        "radius": 4,
-        "distance": 6.16
-      }
-    },
-    {
-      "id": "placement_80",
-      "itemId": "lot_base",
-      "cell": [
-        3,
-        4
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
       "id": "placement_93",
       "itemId": "building_b",
       "cell": [
@@ -1066,10 +1033,10 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_145",
-      "itemId": "road_corner_curved",
+      "id": "placement_200",
+      "itemId": "hospital_building",
       "cell": [
-        1,
+        2,
         5
       ],
       "rotationQuarterTurns": 0
@@ -1500,29 +1467,11 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_110",
-      "itemId": "car_taxi",
-      "position": [
-        24.5,
-        49.7
-      ],
-      "rotationQuarterTurns": 2
-    },
-    {
       "id": "placement_138",
       "itemId": "bush",
       "position": [
         -59.22,
         54.18
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_144",
-      "itemId": "bush_a",
-      "position": [
-        9.91,
-        54.47
       ],
       "rotationQuarterTurns": 0
     },
@@ -1536,29 +1485,11 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_143",
-      "itemId": "bush",
-      "position": [
-        10.67,
-        59.67
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
       "id": "placement_139",
       "itemId": "bush",
       "position": [
         -42.84,
         59.85
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_141",
-      "itemId": "bush",
-      "position": [
-        42.21,
-        60.48
       ],
       "rotationQuarterTurns": 0
     }
