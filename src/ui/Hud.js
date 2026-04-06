@@ -185,30 +185,6 @@ export class Hud {
         </section>
       </section>
       <div class="hud__top-actions">
-        <div class="hud__zoom-controls" data-zoom-controls>
-          <button
-            class="hud__zoom-button"
-            type="button"
-            data-zoom-out
-            aria-label="Zoom out"
-            title="Zoom out"
-          >
-            -
-          </button>
-          <div class="hud__zoom-readout">
-            <strong class="hud__zoom-label" data-zoom-label>100%</strong>
-            <span class="hud__zoom-hint" data-zoom-hint>Wheel / +/-</span>
-          </div>
-          <button
-            class="hud__zoom-button"
-            type="button"
-            data-zoom-in
-            aria-label="Zoom in"
-            title="Zoom in"
-          >
-            +
-          </button>
-        </div>
         <button
           class="hud__shader-debug-toggle"
           type="button"
@@ -840,6 +816,10 @@ export class Hud {
     canZoomIn = true,
     canZoomOut = true
   } = {}) {
+    if (!this.zoomControls || !this.zoomLabel || !this.zoomHint) {
+      return;
+    }
+
     this.zoomLabel.textContent = label;
     this.zoomHint.textContent = hint;
     this.zoomControls?.classList.toggle('is-disabled', disabled);
