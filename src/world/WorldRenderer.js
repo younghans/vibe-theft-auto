@@ -44,6 +44,38 @@ function createBoxColliderFromBounds(minX, minZ, maxX, maxZ, minY = 0, maxY = 4)
   };
 }
 
+function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
+  switch (((rotationQuarterTurns % 4) + 4) % 4) {
+    case 1:
+      return { x: z, z: -x };
+    case 2:
+      return { x: -x, z: -z };
+    case 3:
+      return { x: -z, z: x };
+    default:
+      return { x, z };
+  }
+}
+
+function createColliderFromLocalRect(rect, placement, minY = 0, maxY = 4) {
+  const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
+  const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
+  const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
+  const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
+  const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
+  const centerX = (placement?.cellX ?? 0) * BUILDER_TILE_SIZE + rotatedCenter.x;
+  const centerZ = (placement?.cellZ ?? 0) * BUILDER_TILE_SIZE + rotatedCenter.z;
+
+  return createBoxColliderFromBounds(
+    centerX - halfWidth,
+    centerZ - halfDepth,
+    centerX + halfWidth,
+    centerZ + halfDepth,
+    rect.minY ?? minY,
+    rect.maxY ?? maxY
+  );
+}
+
 function itemBlocksMovement(item) {
   if (!item) {
     return false;
@@ -218,6 +250,10 @@ function createPlacementColliders(object, item, placement, actor) {
   if (actor) {
     const collider = createNpcCollider(actor, placement);
     return collider ? [collider] : [];
+  }
+
+  if (item?.movementCollisionRects?.length && placement?.layer === 'tile') {
+    return item.movementCollisionRects.map((rect) => createColliderFromLocalRect(rect, placement));
   }
 
   if (isParkWallItem(item)) {

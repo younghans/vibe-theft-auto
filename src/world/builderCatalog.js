@@ -114,7 +114,16 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { assetName: 'park_road_junction', group: 'parks' },
   { assetName: 'park_road_junction_decorated_A', group: 'parks' },
   { assetName: 'park_road_junction_decorated_B', group: 'parks' },
-  { assetName: 'park_road_junction_decorated_C', group: 'parks' },
+  {
+    assetName: 'park_road_junction_decorated_C',
+    group: 'parks',
+    movementCollisionRects: [
+      { centerX: 0, centerZ: 0, halfWidth: 3.2, halfDepth: 3.2 }
+    ],
+    shotCollisionRects: [
+      { centerX: 0, centerZ: 0, halfWidth: 3.2, halfDepth: 3.2 }
+    ]
+  },
   { assetName: 'park_road_straight', group: 'parks' },
   { assetName: 'park_road_straight_decorated_A', group: 'parks' },
   { assetName: 'park_road_straight_decorated_B', group: 'parks' },
@@ -283,6 +292,8 @@ function createCityTile(definition) {
     asset: definition.asset ?? cityAsset(definition.assetName),
     size: definition.size ?? tileSizeForAsset(definition.assetName),
     surfaceHeight: definition.surfaceHeight ?? DEFAULT_TILE_SURFACE_HEIGHT,
+    movementCollisionRects: definition.movementCollisionRects?.map((rect) => ({ ...rect })) ?? null,
+    shotCollisionRects: definition.shotCollisionRects?.map((rect) => ({ ...rect })) ?? null,
     layer: 'tile',
     collision: blocksMovement,
     blocksMovement,

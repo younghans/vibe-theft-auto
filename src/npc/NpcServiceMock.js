@@ -20,7 +20,7 @@ import {
   clampToWorldBounds,
   distance2D,
   normalizeAimVector,
-  placementToCollisionRect,
+  placementToCollisionRects,
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../shared/combatMath.js';
@@ -873,23 +873,20 @@ export class NpcServiceMock {
 
     for (const placement of this.worldState.getPlacements()) {
       const item = getBuilderItemById(placement.itemId);
-      const rect = placementToCollisionRect(placement, item, {
+      const rects = placementToCollisionRects(placement, item, {
         collisionKey: 'blocksShots'
       });
-      if (!rect) {
-        continue;
-      }
+      for (const rect of rects) {
+        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
+        if (
+          hitDistance == null
+          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+          || hitDistance >= nearestDistance
+        ) {
+          continue;
+        }
 
-      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
-      if (
-        hitDistance == null
-        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
-        || hitDistance >= nearestDistance
-      ) {
-        continue;
-      }
-
-      nearestDistance = hitDistance;
+        nearestDistance = hitDistance;
         result = {
           kind: 'world',
           hitX: origin.x + aim.x * hitDistance,
@@ -897,6 +894,7 @@ export class NpcServiceMock {
           targetId: placement.id
         };
       }
+    }
 
     for (const [id, target] of this.state.players.entries()) {
       if (id === this.state.sessionId || target.alive === false) {

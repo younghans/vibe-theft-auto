@@ -718,6 +718,15 @@
       "rotationQuarterTurns": 0
     },
     {
+      "id": "placement_197",
+      "itemId": "park_road_junction_decorated_c",
+      "cell": [
+        8,
+        1
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_88",
       "itemId": "building_e",
       "cell": [
@@ -821,6 +830,24 @@
       "itemId": "park_wall_entry",
       "cell": [
         7,
+        2
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_198",
+      "itemId": "park_wall_straight",
+      "cell": [
+        8,
+        2
+      ],
+      "rotationQuarterTurns": 3
+    },
+    {
+      "id": "placement_199",
+      "itemId": "park_wall_outercorner",
+      "cell": [
+        9,
         2
       ],
       "rotationQuarterTurns": 0

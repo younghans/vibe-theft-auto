@@ -56,9 +56,69 @@ function itemBlocksCollision(item, collisionKey = 'blocksShots') {
   return item.collision === true;
 }
 
-export function placementToCollisionRect(placement, item, { collisionKey = 'blocksShots' } = {}) {
-  if (!placement || !itemBlocksCollision(item, collisionKey)) {
+function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
+  switch (((rotationQuarterTurns % 4) + 4) % 4) {
+    case 1:
+      return { x: z, z: -x };
+    case 2:
+      return { x: -x, z: -z };
+    case 3:
+      return { x: -z, z: x };
+    default:
+      return { x, z };
+  }
+}
+
+function getCustomCollisionRects(item, collisionKey = 'blocksShots') {
+  if (!item) {
     return null;
+  }
+
+  if (collisionKey === 'blocksMovement') {
+    return item.movementCollisionRects ?? null;
+  }
+
+  if (collisionKey === 'blocksShots') {
+    return item.shotCollisionRects ?? null;
+  }
+
+  return null;
+}
+
+function localRectToWorldRect(placement, rect) {
+  const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
+  const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
+  const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
+  const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
+  const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
+  const centerX = placement.layer === 'tile'
+    ? placement.cellX * BUILDER_TILE_SIZE + rotatedCenter.x
+    : placement.position[0] + rotatedCenter.x;
+  const centerZ = placement.layer === 'tile'
+    ? placement.cellZ * BUILDER_TILE_SIZE + rotatedCenter.z
+    : placement.position[1] + rotatedCenter.z;
+
+  return {
+    x: centerX,
+    z: centerZ,
+    halfWidth,
+    halfDepth,
+    rotationQuarterTurns: 0
+  };
+}
+
+export function placementToCollisionRects(placement, item, { collisionKey = 'blocksShots' } = {}) {
+  if (!placement) {
+    return [];
+  }
+
+  const customRects = getCustomCollisionRects(item, collisionKey);
+  if (customRects?.length) {
+    return customRects.map((rect) => localRectToWorldRect(placement, rect));
+  }
+
+  if (!itemBlocksCollision(item, collisionKey)) {
+    return [];
   }
 
   const size = item.size ?? [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE];
@@ -72,13 +132,17 @@ export function placementToCollisionRect(placement, item, { collisionKey = 'bloc
     ? placement.cellZ * BUILDER_TILE_SIZE
     : placement.position[1];
 
-  return {
+  return [{
     x: centerX,
     z: centerZ,
     halfWidth: width * 0.5,
     halfDepth: depth * 0.5,
     rotationQuarterTurns: placement.rotationQuarterTurns ?? 0
-  };
+  }];
+}
+
+export function placementToCollisionRect(placement, item, options = {}) {
+  return placementToCollisionRects(placement, item, options)[0] ?? null;
 }
 
 export function rayCircleIntersectionDistance(originX, originZ, dirX, dirZ, maxDistance, circleX, circleZ, radius) {
