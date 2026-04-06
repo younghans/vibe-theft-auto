@@ -53,6 +53,7 @@ const PlayerState = schema({
   z: 'number',
   rotationY: 'number',
   aimRotationY: 'number',
+  aiming: 'boolean',
   emoteId: 'string',
   emoteActive: 'boolean',
   emoteStartedAt: 'number',
@@ -181,7 +182,8 @@ function sanitizePlayerAnimationState(message = {}) {
     emoteActive,
     emoteStartedAt: emoteActive && Number.isFinite(emoteStartedAt) ? Math.max(0, Math.floor(emoteStartedAt)) : 0,
     emoteSeq: Number.isFinite(emoteSeq) ? Math.max(0, Math.floor(emoteSeq)) : 0,
-    aimRotationY: Number.isFinite(aimRotationY) ? quantizeRotation(aimRotationY) : 0
+    aimRotationY: Number.isFinite(aimRotationY) ? quantizeRotation(aimRotationY) : 0,
+    aiming: Boolean(message.aiming)
   };
 }
 
@@ -330,6 +332,7 @@ export class WorldRoom extends Room {
     player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
     player.aimRotationY = 0;
+    player.aiming = false;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -448,6 +451,7 @@ export class WorldRoom extends Room {
     player.emoteStartedAt = animationState.emoteStartedAt;
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
+    player.aiming = animationState.aiming;
   }
 
   updateCombatTimers() {
@@ -490,6 +494,7 @@ export class WorldRoom extends Room {
     player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
     player.aimRotationY = 0;
+    player.aiming = false;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;

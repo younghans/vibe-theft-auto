@@ -37,6 +37,7 @@ function clonePlayerState(player) {
     z: player.z,
     rotationY: player.rotationY ?? 0,
     aimRotationY: player.aimRotationY ?? player.rotationY ?? 0,
+    aiming: Boolean(player.aiming),
     emoteId: player.emoteId || '',
     emoteActive: Boolean(player.emoteActive && player.emoteId),
     emoteStartedAt: player.emoteStartedAt ?? 0,
@@ -305,6 +306,7 @@ export class NpcServiceColyseus {
       z: quantize(position.z),
       rotationY: quantize(rotationY, 3),
       aimRotationY: quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3),
+      aiming: Boolean(animationState.aiming),
       emoteId,
       emoteActive: Boolean(animationState.emoteActive && emoteId),
       emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
@@ -322,8 +324,10 @@ export class NpcServiceColyseus {
       || this.lastTransform.emoteActive !== next.emoteActive
       || this.lastTransform.emoteStartedAt !== next.emoteStartedAt
       || this.lastTransform.emoteSeq !== next.emoteSeq;
+    const aimStateChanged = !this.lastTransform
+      || this.lastTransform.aiming !== next.aiming;
 
-    if ((!moved && !rotated && !aimRotated && !emoteChanged) || (!emoteChanged && !aimRotated && now - this.lastTransformSentAt < 90)) {
+    if ((!moved && !rotated && !aimRotated && !emoteChanged && !aimStateChanged) || (!emoteChanged && !aimRotated && !aimStateChanged && now - this.lastTransformSentAt < 90)) {
       return;
     }
 

@@ -1319,7 +1319,10 @@ export class Game {
       this.npcService?.setPlayerTransform(
         this.player.position,
         this.player.object.rotation.y,
-        this.player.getAnimationSyncState()
+        {
+          ...this.player.getAnimationSyncState(),
+          aiming: Boolean(this.currentAimMode && armed)
+        }
       );
       this.updateNpcInteractRadiusIndicators();
 

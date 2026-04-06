@@ -970,6 +970,7 @@ export async function createPlayer(library, {
       );
 
       if (!remoteAlive) {
+        aimingState = false;
         updateAnimationState(deltaSeconds, false, groundHeight);
         return;
       }
@@ -1008,6 +1009,7 @@ export async function createPlayer(library, {
 
       const showingRemoteLimp = remoteIsLimp && ragdoll.isActive();
       const showingRemoteEmote = remoteEmoteActive && activeEmoteId === remoteEmoteId;
+      aimingState = remoteAlive && Boolean(state?.aiming);
 
       if (Number.isFinite(state?.aimRotationY)) {
         aimRotationY = state.aimRotationY;

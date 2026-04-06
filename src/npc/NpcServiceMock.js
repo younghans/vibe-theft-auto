@@ -69,7 +69,8 @@ function sanitizePlayerAnimationState(animationState = {}) {
     emoteActive: Boolean(animationState.emoteActive && emoteId),
     emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
     emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0,
-    aimRotationY: Number.isFinite(aimRotationY) ? aimRotationY : 0
+    aimRotationY: Number.isFinite(aimRotationY) ? aimRotationY : 0,
+    aiming: Boolean(animationState.aiming)
   };
 }
 
@@ -79,6 +80,7 @@ function createDefaultPlayerState(overrides = {}) {
     z: 0,
     rotationY: 0,
     aimRotationY: 0,
+    aiming: false,
     emoteId: '',
     emoteActive: false,
     emoteStartedAt: 0,
@@ -400,6 +402,7 @@ export class NpcServiceMock {
     player.z = clamped.z;
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
+    player.aiming = nextAnimation.aiming;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
