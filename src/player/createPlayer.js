@@ -48,6 +48,13 @@ const AIM_IDLE_LOCK_FIELD_KEYS = new Set(
     .filter((field) => AIM_IDLE_LOCK_BONES.includes(field.bone))
     .map((field) => field.key)
 );
+const AIM_STABILIZE_BONES = Object.freeze(
+  Array.from(new Set([
+    ...LOOK_YAW_DISTRIBUTION.map((entry) => entry.bone),
+    'leftShoulder',
+    ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.bone)
+  ]))
+);
 
 function getEmoteConfig(emoteId) {
   return EMOTES_BY_ID[emoteId] ?? {
@@ -482,6 +489,7 @@ export async function createPlayer(library, {
     const pose = activeItemId ? getMergedAimPose(activeItemId) : null;
     const hasLookPose = upperBodyLookWeight > 0.0001;
     const hasAimPose = aimPoseWeight > 0.0001 && Boolean(pose);
+    const stabilizeUpperBody = aimingState && Boolean(pose);
     const leftArmIdleLockActive = hasAimPose
       && !Object.keys(pose ?? {}).some((fieldKey) => AIM_IDLE_LOCK_FIELD_KEYS.has(fieldKey));
 
@@ -513,6 +521,18 @@ export async function createPlayer(library, {
 
         addBoneRotation(rotationsByBone, field.bone, field.axis, value);
         setBoneBlendWeight(blendWeightsByBone, field.bone, aimPoseWeight);
+      }
+    }
+
+    if (stabilizeUpperBody) {
+      for (const boneKey of AIM_STABILIZE_BONES) {
+        const bone = aimPoseBones[boneKey];
+        const base = aimPoseBoneBases[boneKey];
+        if (!bone || !base) {
+          continue;
+        }
+
+        bone.quaternion.copy(base.quaternion);
       }
     }
 
