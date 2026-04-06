@@ -32,6 +32,7 @@ body {
 
 .hud__panel,
 .hud__toast,
+.hud__shader-debug,
 .hud__aim-debug,
 .hud__prompt,
 .hud__builder,
@@ -175,7 +176,8 @@ body {
 }
 
 .hud__mode-toggle,
-.hud__aim-debug-toggle {
+.hud__aim-debug-toggle,
+.hud__shader-debug-toggle {
   position: static;
   display: inline-flex;
   align-items: center;
@@ -194,21 +196,24 @@ body {
 }
 
 .hud__mode-toggle:hover,
-.hud__aim-debug-toggle:hover {
+.hud__aim-debug-toggle:hover,
+.hud__shader-debug-toggle:hover {
   border-color: rgba(242, 200, 113, 0.55);
   background: rgba(242, 200, 113, 0.12);
   transform: translateY(-1px);
 }
 
 .hud__mode-toggle.is-active,
-.hud__aim-debug-toggle.is-active {
+.hud__aim-debug-toggle.is-active,
+.hud__shader-debug-toggle.is-active {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #f8d98d;
 }
 
 .hud__mode-toggle svg,
-.hud__aim-debug-toggle svg {
+.hud__aim-debug-toggle svg,
+.hud__shader-debug-toggle svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -284,6 +289,108 @@ body {
 .hud__toast.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.hud__shader-debug {
+  top: 88px;
+  right: 24px;
+  width: min(360px, calc(100vw - 48px));
+  max-height: min(62vh, 640px);
+  padding: 12px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+.hud__shader-debug.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.hud__shader-debug-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud__shader-debug-status {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(242, 200, 113, 0.92);
+}
+
+.hud__shader-debug-list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.hud__shader-debug-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4eee2;
+  cursor: pointer;
+  pointer-events: auto;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.hud__shader-debug-card:hover {
+  border-color: rgba(242, 200, 113, 0.55);
+  background: rgba(242, 200, 113, 0.1);
+  transform: translateY(-1px);
+}
+
+.hud__shader-debug-card.is-active {
+  border-color: rgba(242, 200, 113, 0.72);
+  background: linear-gradient(135deg, rgba(242, 200, 113, 0.22), rgba(242, 200, 113, 0.08));
+}
+
+.hud__shader-debug-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud__shader-debug-card-title {
+  font-size: 14px;
+  color: #fff4d2;
+}
+
+.hud__shader-debug-card-tag {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.16);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 226, 0.72);
+}
+
+.hud__shader-debug-card.is-active .hud__shader-debug-card-tag {
+  border-color: rgba(242, 200, 113, 0.48);
+  color: #fff2c8;
+}
+
+.hud__shader-debug-card-copy {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(244, 238, 226, 0.78);
 }
 
 .hud__aim-debug {
@@ -1428,6 +1535,7 @@ canvas {
 
   .hud__interaction,
   .hud__quick-chat,
+  .hud__shader-debug,
   .hud__aim-debug {
     width: calc(100vw - 32px);
     left: 16px;
@@ -1436,6 +1544,10 @@ canvas {
 
   .hud__interaction {
     bottom: 16px;
+  }
+
+  .hud__shader-debug {
+    top: 84px;
   }
 
   .hud__aim-debug {

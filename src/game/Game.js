@@ -1,5 +1,14 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
+import {
+  DEFAULT_VIBE_SHADER_PRESET_ID,
+  VIBE_SHADER_PRESETS,
+  createVibeShaderDefinition,
+  getVibeShaderPreset
+} from './vibeShaderPresets.js';
 import { Hud } from '../ui/Hud.js';
 import {
   ATTACHMENT_SLOTS,
@@ -84,6 +93,8 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.postProcessingResolution = new THREE.Vector2();
+    this.setupPostProcessing();
 
     this.root.append(this.renderer.domElement);
     this.renderer.domElement.addEventListener('contextmenu', (event) => {
@@ -125,6 +136,8 @@ export class Game {
     this.pendingHipFireShot = null;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
+    this.shaderDebugMenuVisible = false;
+    this.activeVibeShaderPresetId = DEFAULT_VIBE_SHADER_PRESET_ID;
     this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
@@ -146,13 +159,92 @@ export class Game {
       onPrint: () => this.printAimPoseDebug(),
       onToggleBones: () => this.toggleAimPoseSkeletonDebug()
     });
+    this.hud.bindShaderDebugEvents({
+      onToggleMenu: () => this.toggleShaderDebugMenu(),
+      onCloseMenu: () => this.setShaderDebugMenuVisible(false),
+      onSelectPreset: (presetId) => this.setVibeShaderPreset(presetId)
+    });
     this.hud.bindZoomEvents({
       onZoomIn: () => this.stepCameraZoom(-1),
       onZoomOut: () => this.stepCameraZoom(1)
     });
     this.refreshZoomHud();
+    this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
 
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  setupPostProcessing() {
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.vibeShaderPass = new ShaderPass(createVibeShaderDefinition());
+
+    this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.vibeShaderPass);
+    this.updatePostProcessingResolution();
+  }
+
+  updatePostProcessingResolution() {
+    if (!this.vibeShaderPass?.uniforms?.uResolution) {
+      return;
+    }
+
+    this.renderer.getDrawingBufferSize(this.postProcessingResolution);
+    this.vibeShaderPass.uniforms.uResolution.value.copy(this.postProcessingResolution);
+  }
+
+  getActiveVibeShaderPreset() {
+    return getVibeShaderPreset(this.activeVibeShaderPresetId);
+  }
+
+  setShaderDebugMenuVisible(visible) {
+    this.shaderDebugMenuVisible = Boolean(visible);
+    this.refreshShaderDebugHud();
+    return this.shaderDebugMenuVisible;
+  }
+
+  toggleShaderDebugMenu() {
+    const nextVisible = this.setShaderDebugMenuVisible(!this.shaderDebugMenuVisible);
+    this.hud.showToast(nextVisible ? 'Shader vibe menu opened.' : 'Shader vibe menu hidden.');
+    return nextVisible;
+  }
+
+  setVibeShaderPreset(presetId, { announce = true } = {}) {
+    const preset = getVibeShaderPreset(presetId);
+    this.activeVibeShaderPresetId = preset.id;
+
+    if (this.vibeShaderPass?.uniforms?.uPreset) {
+      this.vibeShaderPass.uniforms.uPreset.value = preset.index;
+    }
+
+    this.refreshShaderDebugHud();
+
+    if (announce) {
+      if (preset.id === DEFAULT_VIBE_SHADER_PRESET_ID) {
+        this.hud.showToast('Default render pipeline restored.');
+      } else {
+        this.hud.showToast(`${preset.label} vibe enabled.`);
+      }
+    }
+
+    return preset;
+  }
+
+  refreshShaderDebugHud() {
+    const activePreset = this.getActiveVibeShaderPreset();
+    const statusText = activePreset.id === DEFAULT_VIBE_SHADER_PRESET_ID
+      ? 'Default render pipeline active. Pick a preset to remix the whole scene.'
+      : `${activePreset.label} is live. Switch presets anytime to totally restyle the city.`;
+
+    this.hud.setShaderDebugState({
+      visible: this.shaderDebugMenuVisible,
+      activePresetId: activePreset.id,
+      statusText,
+      presets: VIBE_SHADER_PRESETS
+    });
   }
 
   toggleBuildMode() {
@@ -299,7 +391,11 @@ export class Game {
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer?.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer?.setSize(window.innerWidth, window.innerHeight);
+    this.updatePostProcessingResolution();
   }
 
   registerHeldItemDebugTools() {
@@ -378,6 +474,12 @@ export class Game {
       togglePanel: (visible = !this.aimPoseDebugVisible) => this.setAimPoseDebugVisible(visible),
       toggleBones: (visible = !this.aimPoseDebugShowSkeleton) => this.setAimPoseSkeletonDebugVisible(visible)
     };
+    globalThis.__stickRpgShaderDebug = {
+      presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
+      getActivePreset: () => this.getActiveVibeShaderPreset().id,
+      setPreset: (presetId = DEFAULT_VIBE_SHADER_PRESET_ID) => this.setVibeShaderPreset(presetId, { announce: false }),
+      toggleMenu: (visible = !this.shaderDebugMenuVisible) => this.setShaderDebugMenuVisible(visible)
+    };
 
     globalThis.printAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.print(...args);
     globalThis.setAimPoseField = (...args) => globalThis.__stickRpgAimPoseDebug.setField(...args);
@@ -388,6 +490,9 @@ export class Game {
     });
     console.info('[AimPoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
       fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)
+    });
+    console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
+      presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
     });
   }
 
@@ -471,7 +576,6 @@ export class Game {
     this.hud.setAimPoseDebugState({
       available: debugAvailable,
       visible: Boolean(this.aimPoseDebugVisible && debugAvailable),
-      statusText: statusParts.join(' • '),
       statusText: statusParts.join(' | '),
       showSkeleton: this.aimPoseDebugShowSkeleton,
       values: pose
@@ -1118,8 +1222,12 @@ export class Game {
       this.toggleAimPoseDebugPanel();
     }
 
-    if (this.input.consume('Escape') && this.hud.isQuickChatOpen()) {
-      this.closeQuickChat();
+    if (this.input.consume('Escape')) {
+      if (this.hud.isQuickChatOpen()) {
+        this.closeQuickChat();
+      } else if (this.shaderDebugMenuVisible) {
+        this.setShaderDebugMenuVisible(false);
+      }
     }
 
     this.handleCameraZoomInput();
@@ -1229,7 +1337,15 @@ export class Game {
     }
     this.updateSpeechBubbles();
     this.refreshAimPoseDebugHud();
-    this.renderer.render(this.scene, this.camera);
+    if (this.vibeShaderPass?.uniforms?.uTime) {
+      this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
+    }
+
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
     this.input.endFrame();
   }
 

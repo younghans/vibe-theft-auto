@@ -33,6 +33,11 @@ export class Hud {
     this.aimDebugBoneToggle = this.overlay.querySelector('[data-aim-debug-bones]');
     this.aimDebugReset = this.overlay.querySelector('[data-aim-debug-reset]');
     this.aimDebugPrint = this.overlay.querySelector('[data-aim-debug-print]');
+    this.shaderDebugRoot = this.overlay.querySelector('[data-shader-debug]');
+    this.shaderDebugToggle = this.overlay.querySelector('[data-shader-debug-toggle]');
+    this.shaderDebugClose = this.overlay.querySelector('[data-shader-debug-close]');
+    this.shaderDebugStatus = this.overlay.querySelector('[data-shader-debug-status]');
+    this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
     this.combatRoot = this.overlay.querySelector('[data-combat-root]');
     this.combatHealth = this.overlay.querySelector('[data-combat-health]');
     this.combatAmmo = this.overlay.querySelector('[data-combat-ammo]');
@@ -205,6 +210,20 @@ export class Hud {
           </button>
         </div>
         <button
+          class="hud__shader-debug-toggle"
+          type="button"
+          data-shader-debug-toggle
+          aria-label="Toggle shader vibe menu"
+          aria-pressed="false"
+          title="Show shader vibe menu"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
+            <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
+            <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
+          </svg>
+        </button>
+        <button
           class="hud__aim-debug-toggle"
           type="button"
           data-aim-debug-toggle
@@ -231,6 +250,21 @@ export class Hud {
           </svg>
         </button>
       </div>
+      <section class="hud__shader-debug" data-shader-debug>
+        <div class="hud__shader-debug-header">
+          <div>
+            <p class="hud__eyebrow">Shader Vibes</p>
+            <p class="hud__body hud__shader-debug-status" data-shader-debug-status>Default render pipeline active.</p>
+          </div>
+          <button class="hud__builder-icon-button" type="button" data-shader-debug-close aria-label="Close shader vibe menu" title="Close shader vibe menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="hud__shader-debug-list" data-shader-debug-list></div>
+      </section>
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
       </section>
@@ -406,6 +440,29 @@ export class Hud {
 
     this.aimDebugBoneToggle?.addEventListener('click', () => {
       onToggleBones();
+    });
+  }
+
+  bindShaderDebugEvents({
+    onToggleMenu,
+    onCloseMenu,
+    onSelectPreset
+  }) {
+    this.shaderDebugToggle?.addEventListener('click', () => {
+      onToggleMenu();
+    });
+
+    this.shaderDebugClose?.addEventListener('click', () => {
+      onCloseMenu();
+    });
+
+    this.shaderDebugList?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-shader-preset]');
+      if (!button) {
+        return;
+      }
+
+      onSelectPreset(button.dataset.shaderPreset);
     });
   }
 
@@ -804,6 +861,44 @@ export class Hud {
       setFieldValue(inputs?.range, formattedValue);
       setFieldValue(inputs?.number, formattedValue);
     }
+  }
+
+  setShaderDebugState({
+    visible = false,
+    activePresetId = '',
+    statusText = '',
+    presets = []
+  } = {}) {
+    if (!this.shaderDebugRoot) {
+      return;
+    }
+
+    this.shaderDebugRoot.classList.toggle('is-visible', visible);
+    this.shaderDebugStatus.textContent = statusText;
+
+    if (this.shaderDebugToggle) {
+      const highlightToggle = visible || (activePresetId && activePresetId !== 'default');
+      this.shaderDebugToggle.classList.toggle('is-active', highlightToggle);
+      this.shaderDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      this.shaderDebugToggle.title = visible ? 'Hide shader vibe menu' : 'Show shader vibe menu';
+    }
+
+    this.shaderDebugList.innerHTML = presets.map((preset) => {
+      const active = preset.id === activePresetId;
+      return `
+        <button
+          class="hud__shader-debug-card${active ? ' is-active' : ''}"
+          type="button"
+          data-shader-preset="${preset.id}"
+        >
+          <span class="hud__shader-debug-card-top">
+            <strong class="hud__shader-debug-card-title">${preset.label}</strong>
+            <span class="hud__shader-debug-card-tag">${active ? 'Live' : 'Switch'}</span>
+          </span>
+          <span class="hud__shader-debug-card-copy">${preset.description}</span>
+        </button>
+      `;
+    }).join('');
   }
 
   setSpeechBubbles(bubbles = []) {
