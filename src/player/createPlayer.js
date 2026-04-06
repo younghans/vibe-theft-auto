@@ -480,7 +480,7 @@ export async function createPlayer(library, {
   function applyUpperBodyPose() {
     const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const pose = activeItemId ? getMergedAimPose(activeItemId) : null;
-    const hasLookPose = upperBodyLookWeight > 0.0001 && Boolean(activeItemId);
+    const hasLookPose = upperBodyLookWeight > 0.0001;
     const hasAimPose = aimPoseWeight > 0.0001 && Boolean(pose);
     const leftArmIdleLockActive = hasAimPose
       && !Object.keys(pose ?? {}).some((fieldKey) => AIM_IDLE_LOCK_FIELD_KEYS.has(fieldKey));
@@ -639,7 +639,7 @@ export async function createPlayer(library, {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const wantsAimPose = aimingState && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
-    const wantsUpperBodyLook = aliveState && !activeEmoteId && !isLimpTransitioning() && Boolean(activeAimItemId);
+    const wantsUpperBodyLook = aliveState && !activeEmoteId && !isLimpTransitioning();
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     applyUpperBodyPose();
@@ -951,8 +951,6 @@ export async function createPlayer(library, {
 
         const targetYaw = Math.atan2(movement.x, movement.z);
         anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
-      } else if (desiredWeaponId || getActiveHeldItemId(ATTACHMENT_SLOTS.handRight)) {
-        anchor.rotation.y = dampAngle(anchor.rotation.y, aimRotationY, 0.12);
       }
 
       updateAnimationState(deltaSeconds, moving, groundHeight);

@@ -1260,6 +1260,7 @@ export class Game {
     } else {
       const localAlive = localPlayerState?.alive !== false;
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
       const activeColliders = [
         ...this.baseColliders,
         ...this.worldBuilder.getColliders()
@@ -1267,6 +1268,9 @@ export class Game {
       const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
       const hipFirePending = this.pendingHipFireShot;
       const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
+      const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
+      this.currentAimDirection.copy(aimDirection);
+      this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
       if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
@@ -1275,12 +1279,9 @@ export class Game {
       this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
       let aimingMode = false;
       if (armed) {
-        const aimDirection = this.getAimDirection();
         aimingMode = !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.isPointerPressed(2);
-        this.currentAimDirection.copy(aimDirection);
         this.currentAimMode = aimingMode;
         this.player.setAimingState(aimingMode || hipFirePoseActive);
-        this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
         if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
           if (aimingMode) {
             this.npcService?.fireWeapon(
