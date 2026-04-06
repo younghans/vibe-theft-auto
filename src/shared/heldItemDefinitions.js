@@ -84,11 +84,7 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
       rightArmZ: -0.04,
       rightForeArmX: -0.02,
       rightForeArmY: 0.8,
-      rightForeArmZ: -0.29,
-      leftArmX: -0.02,
-      leftArmY: -0.08,
-      leftArmZ: 0.02,
-      leftForeArmX: -0.02
+      rightForeArmZ: -0.29
     })
   }),
   [HELD_ITEM_IDS.crateA]: Object.freeze({

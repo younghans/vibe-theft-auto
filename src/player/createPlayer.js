@@ -42,6 +42,12 @@ const SLOT_MOTION_BASE = Object.freeze({
 });
 
 const EMPTY_VECTOR_OVERRIDE = Object.freeze([0, 0, 0]);
+const AIM_IDLE_LOCK_BONES = Object.freeze(['leftArm', 'leftForeArm']);
+const AIM_IDLE_LOCK_FIELD_KEYS = new Set(
+  HELD_ITEM_AIM_POSE_FIELDS
+    .filter((field) => AIM_IDLE_LOCK_BONES.includes(field.bone))
+    .map((field) => field.key)
+);
 
 function getEmoteConfig(emoteId) {
   return EMOTES_BY_ID[emoteId] ?? {
@@ -255,6 +261,13 @@ export async function createPlayer(library, {
   const aimPoseBoneBases = Object.fromEntries(
     Object.entries(aimPoseBones).map(([key, bone]) => [key, bone ? { quaternion: bone.quaternion.clone() } : null])
   );
+  mixer.setTime(0);
+  const aimPoseIdleBases = Object.fromEntries(
+    AIM_IDLE_LOCK_BONES.map((boneKey) => {
+      const bone = aimPoseBones[boneKey];
+      return [boneKey, bone ? { quaternion: bone.quaternion.clone() } : null];
+    })
+  );
   const aimPoseEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const aimPoseQuaternion = new THREE.Quaternion();
   let desiredWeaponId = '';
@@ -456,17 +469,28 @@ export async function createPlayer(library, {
     rotationsByBone.set(boneKey, nextRotation);
   }
 
+  function setBoneBlendWeight(weightsByBone, boneKey, value) {
+    if (!Number.isFinite(value) || value <= 0.0001) {
+      return;
+    }
+
+    weightsByBone.set(boneKey, Math.max(weightsByBone.get(boneKey) ?? 0, value));
+  }
+
   function applyUpperBodyPose() {
     const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const pose = activeItemId ? getMergedAimPose(activeItemId) : null;
     const hasLookPose = upperBodyLookWeight > 0.0001 && Boolean(activeItemId);
     const hasAimPose = aimPoseWeight > 0.0001 && Boolean(pose);
+    const leftArmIdleLockActive = hasAimPose
+      && !Object.keys(pose ?? {}).some((fieldKey) => AIM_IDLE_LOCK_FIELD_KEYS.has(fieldKey));
 
     if ((!hasLookPose && !hasAimPose) || !aliveState || ragdoll.isActive()) {
       return;
     }
 
     const rotationsByBone = new Map();
+    const blendWeightsByBone = new Map();
     if (hasLookPose) {
       const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y);
       for (const entry of LOOK_YAW_DISTRIBUTION) {
@@ -474,32 +498,48 @@ export async function createPlayer(library, {
           rotationsByBone,
           entry.bone,
           'y',
-          aimDelta * entry.weight * upperBodyLookWeight
+          aimDelta * entry.weight
         );
+        setBoneBlendWeight(blendWeightsByBone, entry.bone, upperBodyLookWeight);
       }
     }
 
     if (hasAimPose) {
       for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
-        const value = Number(pose?.[field.key] ?? 0) * aimPoseWeight;
+        const value = Number(pose?.[field.key] ?? 0);
         if (!Number.isFinite(value) || Math.abs(value) < 0.000001) {
           continue;
         }
 
         addBoneRotation(rotationsByBone, field.bone, field.axis, value);
+        setBoneBlendWeight(blendWeightsByBone, field.bone, aimPoseWeight);
       }
     }
 
     for (const [boneKey, rotation] of rotationsByBone.entries()) {
       const bone = aimPoseBones[boneKey];
       const base = aimPoseBoneBases[boneKey];
-      if (!bone || !base) {
+      const blendWeight = blendWeightsByBone.get(boneKey) ?? 0;
+      if (!bone || !base || blendWeight <= 0.0001) {
         continue;
       }
 
       aimPoseEuler.set(rotation.x ?? 0, rotation.y ?? 0, rotation.z ?? 0);
       aimPoseQuaternion.setFromEuler(aimPoseEuler);
-      bone.quaternion.copy(base.quaternion).multiply(aimPoseQuaternion);
+      const targetQuaternion = base.quaternion.clone().multiply(aimPoseQuaternion);
+      bone.quaternion.slerp(targetQuaternion, blendWeight);
+    }
+
+    if (leftArmIdleLockActive) {
+      for (const boneKey of AIM_IDLE_LOCK_BONES) {
+        const bone = aimPoseBones[boneKey];
+        const base = aimPoseIdleBases[boneKey];
+        if (!bone || !base) {
+          continue;
+        }
+
+        bone.quaternion.slerp(base.quaternion, aimPoseWeight);
+      }
     }
   }
 
