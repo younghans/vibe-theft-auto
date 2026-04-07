@@ -37,8 +37,8 @@ import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
-const CAMERA_ZOOM_LEVELS = [0.82, 0.92, 1, 1.12, 1.26];
-const DEFAULT_CAMERA_ZOOM_INDEX = 2;
+const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
+const DEFAULT_CAMERA_ZOOM_INDEX = 4;
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
@@ -1261,7 +1261,7 @@ export class Game {
   }
 
   refreshZoomHud() {
-    const zoomPercent = Math.round(this.getCameraZoomLevel() * 100);
+    const zoomPercent = Math.round((1 / this.getCameraZoomLevel()) * 100);
     const builderEnabled = Boolean(this.worldBuilder?.enabled);
     this.hud.setZoomState({
       label: `${zoomPercent}%`,
