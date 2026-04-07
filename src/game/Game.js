@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
 import {
   DEFAULT_VIBE_SHADER_PRESET_ID,
+  NO_VIBE_SHADER_PRESET_ID,
   VIBE_SHADER_PRESETS,
   createVibeShaderDefinition,
   getVibeShaderPreset
@@ -234,7 +235,7 @@ export class Game {
 
     this.refreshShaderDebugHud();
 
-    if (announce && preset.id !== DEFAULT_VIBE_SHADER_PRESET_ID) {
+    if (announce && preset.id !== NO_VIBE_SHADER_PRESET_ID) {
       this.hud.showToast(`${preset.label} intensity set to ${Math.round(nextIntensity * 100)}%.`);
     }
 
@@ -280,7 +281,7 @@ export class Game {
     this.refreshShaderDebugHud();
 
     if (announce) {
-      if (preset.id === DEFAULT_VIBE_SHADER_PRESET_ID) {
+      if (preset.id === NO_VIBE_SHADER_PRESET_ID) {
         this.hud.showToast('Default render pipeline restored.');
       } else {
         this.hud.showToast(`${preset.label} vibe enabled.`);
@@ -293,7 +294,7 @@ export class Game {
   refreshShaderDebugHud() {
     const activePreset = this.getActiveVibeShaderPreset();
     const intensity = this.getVibeShaderIntensity(activePreset.id);
-    const statusText = activePreset.id === DEFAULT_VIBE_SHADER_PRESET_ID
+    const statusText = activePreset.id === NO_VIBE_SHADER_PRESET_ID
       ? 'Default render pipeline active. Pick a preset to remix the whole scene.'
       : `${activePreset.label} is live at ${Math.round(intensity * 100)}%. Switch presets anytime to totally restyle the city.`;
 
@@ -303,7 +304,7 @@ export class Game {
       statusText,
       presets: VIBE_SHADER_PRESETS,
       intensity,
-      intensityEnabled: activePreset.id !== DEFAULT_VIBE_SHADER_PRESET_ID
+      intensityEnabled: activePreset.id !== NO_VIBE_SHADER_PRESET_ID
     });
   }
 

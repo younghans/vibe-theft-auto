@@ -2,13 +2,8 @@ import * as THREE from 'three';
 
 const PRESETS = [
   {
-    id: 'default',
-    label: 'Default',
-    description: 'The original look with the game’s native lighting, fog, and color balance.'
-  },
-  {
     id: 'borderlands',
-    label: 'Borderlands-ish',
+    label: 'VIBES',
     description: 'Comic-book ink edges, crunchy posterized shading, and warmer hero colors.'
   },
   {
@@ -28,18 +23,24 @@ const PRESETS = [
   },
   {
     id: 'grand-theft-auto',
-    label: 'Grand Theft Auto',
-    description: 'Sun-baked contrast, teal shadows, heat-haze shimmer, and a gritty crime-drama grade.'
+    label: 'Warm',
+    description: 'Dusty amber mids, sun-bleached highlights, and a heavier San Andreas heat grade.'
   },
   {
     id: 'surveillance',
     label: 'Surveillance',
     description: 'Cold blue security-cam vibes with scanlines, noise, and a harsher vignette.'
+  },
+  {
+    id: 'none',
+    label: 'None',
+    description: 'The original look with the game\'s native lighting, fog, and color balance.'
   }
 ].map((preset, index) => ({ ...preset, index }));
 
 export const VIBE_SHADER_PRESETS = PRESETS;
 export const DEFAULT_VIBE_SHADER_PRESET_ID = PRESETS[0].id;
+export const NO_VIBE_SHADER_PRESET_ID = 'none';
 
 export function getVibeShaderPreset(presetId) {
   return PRESETS.find((preset) => preset.id === presetId) ?? PRESETS[0];
@@ -175,7 +176,7 @@ export function createVibeShaderDefinition() {
       vec3 applyGrandTheftAuto(vec2 uv, vec2 texel, vec3 baseColor) {
         float heatBand = smoothstep(0.35, 0.92, uv.y);
         vec2 shimmerUv = uv + vec2(
-          sin((uv.y * 24.0) + (uTime * 0.75)) * texel.x * 0.9,
+          sin((uv.y * 24.0) + (uTime * 0.75)) * texel.x * 1.3,
           0.0
         ) * heatBand;
         vec3 shimmered = texture2D(tDiffuse, clamp(shimmerUv, 0.0, 1.0)).rgb;
@@ -183,31 +184,31 @@ export function createVibeShaderDefinition() {
         float shadowMask = 1.0 - smoothstep(0.18, 0.52, value);
         float highlightMask = smoothstep(0.58, 0.96, value);
 
-        vec3 graded = mix(baseColor, shimmered, 0.18);
-        vec3 coolGrade = graded * vec3(0.97, 0.99, 0.94) + vec3(0.012, 0.01, 0.002);
-        vec3 warmGrade = graded * vec3(1.12, 1.05, 0.86) + vec3(0.04, 0.02, 0.0);
-        graded = mix(graded, coolGrade, shadowMask * 0.18);
-        graded = mix(graded, warmGrade, highlightMask * 0.42);
+        vec3 graded = mix(baseColor, shimmered, 0.28);
+        vec3 coolGrade = graded * vec3(1.0, 0.97, 0.88) + vec3(0.03, 0.02, 0.004);
+        vec3 warmGrade = graded * vec3(1.24, 1.08, 0.78) + vec3(0.075, 0.03, 0.0);
+        graded = mix(graded, coolGrade, shadowMask * 0.28);
+        graded = mix(graded, warmGrade, highlightMask * 0.62);
 
         vec3 bloomSample =
-          texture2D(tDiffuse, clamp(uv + texel * vec2(1.5, 0.0), 0.0, 1.0)).rgb +
-          texture2D(tDiffuse, clamp(uv + texel * vec2(-1.5, 0.0), 0.0, 1.0)).rgb +
-          texture2D(tDiffuse, clamp(uv + texel * vec2(0.0, 1.5), 0.0, 1.0)).rgb +
-          texture2D(tDiffuse, clamp(uv + texel * vec2(0.0, -1.5), 0.0, 1.0)).rgb;
+          texture2D(tDiffuse, clamp(uv + texel * vec2(2.0, 0.0), 0.0, 1.0)).rgb +
+          texture2D(tDiffuse, clamp(uv + texel * vec2(-2.0, 0.0), 0.0, 1.0)).rgb +
+          texture2D(tDiffuse, clamp(uv + texel * vec2(0.0, 2.0), 0.0, 1.0)).rgb +
+          texture2D(tDiffuse, clamp(uv + texel * vec2(0.0, -2.0), 0.0, 1.0)).rgb;
         bloomSample *= 0.25;
-        graded += bloomSample * highlightMask * 0.05;
+        graded += bloomSample * highlightMask * 0.08;
 
-        float dustMask = smoothstep(0.18, 0.82, 1.0 - uv.y);
-        vec3 dustTint = vec3(0.78, 0.69, 0.53);
-        graded = mix(graded, mix(graded, dustTint, 0.12), dustMask * 0.32);
+        float dustMask = smoothstep(0.12, 0.9, 1.0 - uv.y);
+        vec3 dustTint = vec3(0.84, 0.72, 0.5);
+        graded = mix(graded, mix(graded, dustTint, 0.2), dustMask * 0.48);
 
         float sun = 1.0 - smoothstep(0.0, 0.75, length((uv - vec2(0.22, 0.2)) * vec2(1.0, 1.35)));
-        graded += vec3(0.11, 0.06, 0.015) * pow(sun, 2.2) * 0.24;
+        graded += vec3(0.16, 0.09, 0.02) * pow(sun, 2.1) * 0.34;
 
-        graded = saturateColor(graded, 1.03);
-        graded = (graded - 0.5) * 1.03 + 0.5;
-        graded *= screenVignette(uv, 0.11);
-        graded += (grain((uv * vec2(1.35, 1.1)) + 1.9) - 0.5) * 0.01;
+        graded = saturateColor(graded, 1.16);
+        graded = (graded - 0.5) * 1.14 + 0.5;
+        graded *= screenVignette(uv, 0.16);
+        graded += (grain((uv * vec2(1.35, 1.1)) + 1.9) - 0.5) * 0.016;
         return graded;
       }
 
@@ -231,22 +232,22 @@ export function createVibeShaderDefinition() {
         float intensity = clamp(uIntensity, 0.0, 1.0);
 
         if (uPreset < 0.5) {
-          color = baseColor;
-        } else if (uPreset < 1.5) {
           color = applyBorderlands(uv, texel, baseColor);
-        } else if (uPreset < 2.5) {
+        } else if (uPreset < 1.5) {
           color = applyNeonNoir(uv, texel);
-        } else if (uPreset < 3.5) {
+        } else if (uPreset < 2.5) {
           color = applyRetroArcade(uv, resolution);
-        } else if (uPreset < 4.5) {
+        } else if (uPreset < 3.5) {
           color = applyDreamwave(uv);
-        } else if (uPreset < 5.5) {
+        } else if (uPreset < 4.5) {
           color = applyGrandTheftAuto(uv, texel, baseColor);
-        } else {
+        } else if (uPreset < 5.5) {
           color = applySurveillance(uv, texel, baseColor);
+        } else {
+          color = baseColor;
         }
 
-        if (uPreset >= 0.5) {
+        if (uPreset < 5.5) {
           color = mix(baseColor, color, intensity);
         }
 

@@ -1138,7 +1138,7 @@ export class Hud {
 
     if (this.shaderDebugToggle) {
       this.shaderDebugToggle.hidden = false;
-      const highlightToggle = visible || (activePresetId && activePresetId !== 'default');
+      const highlightToggle = visible || intensityEnabled;
       this.shaderDebugToggle.classList.toggle('is-active', highlightToggle);
       this.shaderDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
       this.shaderDebugToggle.title = visible ? 'Hide shader vibe menu' : 'Show shader vibe menu';
