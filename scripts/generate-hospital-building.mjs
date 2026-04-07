@@ -103,11 +103,11 @@ function addCross(group, position, material, backingMaterial = null) {
   const [x, y, z] = position;
 
   if (backingMaterial) {
-    group.add(createBox([1.9, 1.9, 0.28], [x, y, z - 0.02], backingMaterial));
+    group.add(createBox([1.9, 1.9, 0.24], [x, y, z - 0.08], backingMaterial));
   }
 
-  group.add(createBox([0.46, 1.44, 0.24], [x, y, z], material));
-  group.add(createBox([1.28, 0.46, 0.24], [x, y, z], material));
+  group.add(createBox([0.46, 1.44, 0.18], [x, y, z + 0.1], material));
+  group.add(createBox([1.28, 0.46, 0.18], [x, y, z + 0.1], material));
 }
 
 function buildHospital() {
@@ -146,9 +146,6 @@ function buildHospital() {
     { size: [0.22, 2.32, 0.22], position: [2.1, 1.7, 4.94], material: materials.accent },
     { size: [1.12, 2.02, 0.18], position: [-0.78, 1.22, 5.18], material: materials.door },
     { size: [1.12, 2.02, 0.18], position: [0.78, 1.22, 5.18], material: materials.door },
-    { size: [2.25, 1.65, 0.26], position: [0, 5.2, 4.1], material: materials.accent },
-    { size: [0.52, 1.18, 0.3], position: [0, 5.2, 4.24], material: materials.trim },
-    { size: [1.32, 0.52, 0.3], position: [0, 5.2, 4.24], material: materials.trim },
     { size: [9.12, 0.2, 0.22], position: [0.1, 4.75, 3.24], material: materials.trim },
     { size: [9.12, 0.18, 0.22], position: [0.1, 2.55, 3.24], material: materials.trimDark },
     { size: [6.08, 0.18, 0.22], position: [-1.65, 12.65, 0.88], material: materials.trim },
@@ -156,10 +153,10 @@ function buildHospital() {
     { size: [3.72, 0.18, 0.22], position: [-1.7, 16.18, 0.06], material: materials.trim },
     { size: [3.05, 0.18, 0.22], position: [3.92, 7.5, 2.02], material: materials.trim },
     { size: [3.05, 0.18, 0.22], position: [3.92, 5.15, 2.02], material: materials.trimDark },
-    { size: [0.24, 13.8, 4.95], position: [-4.48, 7.48, -1.55], material: materials.accent },
-    { size: [0.24, 13.8, 4.95], position: [1.18, 7.48, -1.55], material: materials.accent },
-    { size: [0.24, 2.3, 3.2], position: [-3.38, 15.03, -1.6], material: materials.accent },
-    { size: [0.24, 2.3, 3.2], position: [-0.02, 15.03, -1.6], material: materials.accent },
+    { size: [0.24, 13.8, 4.95], position: [-4.72, 7.48, -1.55], material: materials.accent },
+    { size: [0.24, 13.8, 4.95], position: [1.42, 7.48, -1.55], material: materials.accent },
+    { size: [0.24, 2.3, 3.2], position: [-3.62, 15.03, -1.6], material: materials.accent },
+    { size: [0.24, 2.3, 3.2], position: [0.22, 15.03, -1.6], material: materials.accent },
     { size: [0.24, 7.1, 3.7], position: [2.58, 4.15, 0.25], material: materials.accent },
     { size: [0.24, 7.1, 3.7], position: [5.26, 4.15, 0.25], material: materials.accent },
     { size: [0.65, 1.1, 0.65], position: [1.7, 6.55, -2.45], material: materials.concreteDark },
@@ -188,14 +185,27 @@ function buildHospital() {
 
   for (const [y, material] of [
     [6.45, materials.glassLite],
-    [8.55, materials.glass],
-    [10.65, materials.glassLite],
     [12.75, materials.glass]
   ]) {
     addWindowRow(hospital, {
       startX: -3.35,
       count: 3,
       spacing: 1.75,
+      size: [1.12, 0.9, 0.18],
+      y,
+      z: 0.98,
+      material
+    });
+  }
+
+  for (const [y, material] of [
+    [8.55, materials.glass],
+    [10.65, materials.glassLite]
+  ]) {
+    addWindowRow(hospital, {
+      startX: -3.25,
+      count: 2,
+      spacing: 3.2,
       size: [1.12, 0.9, 0.18],
       y,
       z: 0.98,
@@ -212,6 +222,8 @@ function buildHospital() {
     z: 0.18,
     material: materials.glassLite
   });
+
+  addCross(hospital, [-1.65, 9.6, 1.02], materials.trim, materials.accent);
 
   addWindowRow(hospital, {
     startX: 3.12,
@@ -250,7 +262,7 @@ function buildHospital() {
     material: materials.glassLite
   });
   addWindowColumn(hospital, {
-    x: -4.5,
+    x: -4.68,
     startY: 2.05,
     count: 5,
     spacing: 2.0,
@@ -280,8 +292,6 @@ function buildHospital() {
   hospital.add(createCylinder(1.72, 1.72, 0.12, 22, [-1.72, 16.26, -1.7], materials.pad));
   hospital.add(createCylinder(1.46, 1.46, 0.05, 22, [-1.72, 16.35, -1.7], materials.glassDark));
   hospital.add(createCylinder(1.32, 1.32, 0.03, 22, [-1.72, 16.41, -1.7], materials.pad));
-  hospital.add(createBox([0.3, 1.08, 0.08], [-1.72, 16.45, -1.7], materials.accent));
-  hospital.add(createBox([1.04, 0.3, 0.08], [-1.72, 16.45, -1.7], materials.accent));
 
   scene.add(hospital);
   return scene;
