@@ -29,13 +29,7 @@ const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
 
-const LOOK_YAW_DISTRIBUTION = Object.freeze([
-  Object.freeze({ bone: 'spine', weight: 0.12 }),
-  Object.freeze({ bone: 'spineMiddle', weight: 0.2 }),
-  Object.freeze({ bone: 'spineUpper', weight: 0.28 }),
-  Object.freeze({ bone: 'neck', weight: 0.18 }),
-  Object.freeze({ bone: 'head', weight: 0.22 })
-]);
+const UPPER_BODY_ROOT_BONE = 'spine';
 
 const SLOT_MOTION_BASE = Object.freeze({
   position: Object.freeze([-0.12, 0.03, -0.08]),
@@ -51,8 +45,7 @@ const AIM_IDLE_LOCK_FIELD_KEYS = new Set(
 );
 const AIM_STABILIZE_BONES = Object.freeze(
   Array.from(new Set([
-    ...LOOK_YAW_DISTRIBUTION.map((entry) => entry.bone),
-    'leftShoulder',
+    UPPER_BODY_ROOT_BONE,
     ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.bone)
   ]))
 );
@@ -505,15 +498,8 @@ export async function createPlayer(library, {
     const blendWeightsByBone = new Map();
     if (hasLookPose) {
       const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y);
-      for (const entry of LOOK_YAW_DISTRIBUTION) {
-        addBoneRotation(
-          rotationsByBone,
-          entry.bone,
-          'y',
-          aimDelta * entry.weight
-        );
-        setBoneBlendWeight(blendWeightsByBone, entry.bone, upperBodyLookWeight);
-      }
+      addBoneRotation(rotationsByBone, UPPER_BODY_ROOT_BONE, 'y', aimDelta);
+      setBoneBlendWeight(blendWeightsByBone, UPPER_BODY_ROOT_BONE, upperBodyLookWeight);
     }
 
     if (hasAimPose) {
