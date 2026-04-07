@@ -172,6 +172,7 @@ export class WorldBuilder {
     this.onToggleBuildMode = onToggleBuildMode ?? (() => {});
     this.onLayoutChanged = onLayoutChanged ?? (() => {});
     this.worldTransport = worldTransport ?? null;
+    this.canEdit = false;
 
     this.state = createDefaultEditorState();
     this.raycaster = new THREE.Raycaster();
@@ -328,11 +329,16 @@ export class WorldBuilder {
     }));
 
     return {
+      available: this.canEdit,
       enabled: this.state.enabled,
-      statusText: this.state.enabled
+      statusText: !this.canEdit
+        ? 'World builder is available to admins only.'
+        : this.state.enabled
         ? 'Builder active. Left click places the selected piece. Click any existing tile, prop, or NPC to edit it.'
         : 'Use the hammer button to enter builder mode.',
-      metaText: this.state.enabled
+      metaText: !this.canEdit
+        ? 'Ask an admin for an access link if you need to edit the shared world.'
+        : this.state.enabled
         ? `${activeCategory.description} Selected: ${selectedItem?.label ?? 'None'} | ${visibleEntries.length} items | Rotation ${this.state.rotationQuarterTurns * 90}deg`
         : 'When active, use tabs to switch layers and 1-9 to choose a piece.',
       tabs,
@@ -483,22 +489,46 @@ export class WorldBuilder {
     );
   }
 
+  async setCanEdit(canEdit) {
+    const nextCanEdit = Boolean(canEdit);
+    if (nextCanEdit === this.canEdit) {
+      return;
+    }
+
+    this.canEdit = nextCanEdit;
+    if (!this.canEdit && this.state.enabled) {
+      await this.setEnabled(false);
+      return;
+    }
+
+    this.updateBuilderHud({ syncPreviews: this.canEdit && this.state.enabled });
+    this.reportBuilderPresence(true);
+  }
+
   async setEnabled(enabled) {
-    this.state.enabled = enabled;
-    this.gridHelper.visible = enabled;
-    this.previewRoot.visible = enabled;
-    this.worldRenderer.setNpcInteractRadiusVisible(enabled);
+    const nextEnabled = Boolean(enabled && this.canEdit);
+
+    if (enabled && !nextEnabled) {
+      this.updateBuilderHud();
+      this.reportBuilderPresence(true);
+      return false;
+    }
+
+    this.state.enabled = nextEnabled;
+    this.gridHelper.visible = nextEnabled;
+    this.previewRoot.visible = nextEnabled;
+    this.worldRenderer.setNpcInteractRadiusVisible(nextEnabled);
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
 
-    if (!enabled) {
+    if (!nextEnabled) {
       this.clearSelection();
     } else if (Math.abs(this.state.pointer.x) > 1.2 || Math.abs(this.state.pointer.y) > 1.2) {
       this.state.pointer.set(0, 0);
     }
 
-    this.updateBuilderHud({ syncPreviews: enabled });
+    this.updateBuilderHud({ syncPreviews: nextEnabled });
 
-    if (enabled) {
+    if (nextEnabled) {
       this.resolveHoverState();
       await this.syncPreviewToState(true);
       this.updatePreviewTransform();
@@ -509,6 +539,7 @@ export class WorldBuilder {
     }
 
     this.reportBuilderPresence(true);
+    return this.state.enabled;
   }
 
   selectCategory(categoryId) {
@@ -791,7 +822,7 @@ export class WorldBuilder {
       return;
     }
 
-    if (!this.state.enabled || !this.activeItem) {
+    if (!this.canEdit || !this.state.enabled || !this.activeItem) {
       this.worldTransport.setBuilderPresence({ active: false, force });
       return;
     }

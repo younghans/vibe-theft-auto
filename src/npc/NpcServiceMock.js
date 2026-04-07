@@ -102,6 +102,7 @@ function createDefaultPlayerState(overrides = {}) {
     deaths: 0,
     lastDamagedAt: 0,
     lastShotAt: 0,
+    isAdmin: false,
     ...overrides
   };
 }
@@ -115,7 +116,7 @@ function clonePickupState(pickup) {
 }
 
 export class NpcServiceMock {
-  constructor() {
+  constructor({ adminKey = '' } = {}) {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
@@ -138,10 +139,12 @@ export class NpcServiceMock {
     this.sequence = 0;
     this.pickupSequence = 0;
     this.playerAliasSequence = 0;
+    this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
     this.state.players.set(this.state.sessionId, createDefaultPlayerState({
+      isAdmin: Boolean(this.adminKey),
       x: spawnX,
       z: spawnZ
     }));
@@ -259,6 +262,10 @@ export class NpcServiceMock {
   }
 
   async editWorld(op, payload = {}) {
+    if (!this.isAdmin()) {
+      return { ok: false, error: 'Admin access required.' };
+    }
+
     switch (op) {
       case 'placeTile': {
         const item = getBuilderItemById(payload?.itemId);
@@ -412,6 +419,12 @@ export class NpcServiceMock {
   }
 
   setBuilderPresence(presence = {}) {
+    if (!this.isAdmin()) {
+      this.state.builders.delete(this.state.sessionId);
+      this.emit();
+      return;
+    }
+
     if (!presence.active) {
       this.state.builders.delete(this.state.sessionId);
       this.emit();
@@ -937,5 +950,9 @@ export class NpcServiceMock {
     this.worldPatchListeners.clear();
     this.combatListeners.clear();
     window.clearInterval(this.combatTick);
+  }
+
+  isAdmin() {
+    return this.state.players.get(this.state.sessionId)?.isAdmin === true;
   }
 }

@@ -313,6 +313,11 @@ export class Game {
       return;
     }
 
+    if (!this.isLocalAdmin()) {
+      this.hud.showToast('World builder is admin only.');
+      return;
+    }
+
     const nextEnabled = !this.worldBuilder.enabled;
     if (nextEnabled) {
       this.closeQuickChat();
@@ -325,6 +330,27 @@ export class Game {
     }
     this.refreshZoomHud();
     this.hud.showToast(nextEnabled ? 'World builder enabled.' : 'World builder disabled.');
+  }
+
+  isLocalAdmin() {
+    return this.getLocalPlayerState()?.isAdmin === true;
+  }
+
+  canUseAimPoseDebug() {
+    return this.isLocalAdmin();
+  }
+
+  syncAdminAccess() {
+    const isAdmin = this.isLocalAdmin();
+    void this.worldBuilder?.setCanEdit(isAdmin);
+
+    if (!this.canUseAimPoseDebug()) {
+      this.aimPoseDebugVisible = false;
+      this.aimPoseDebugShowSkeleton = false;
+      this.player?.setAimPoseDebugVisible(false);
+    }
+
+    this.refreshAimPoseDebugHud();
   }
 
   async start() {
@@ -374,6 +400,8 @@ export class Game {
       this.npcService.subscribe((state) => {
         this.npcServiceState = state;
         this.reportNpcTransportState();
+        this.syncAdminAccess();
+        this.registerHeldItemDebugTools();
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
         void this.syncPickupVisuals();
@@ -407,8 +435,9 @@ export class Game {
       if (aimPoseDebugHelper) {
         this.scene.add(aimPoseDebugHelper);
       }
+      this.syncAdminAccess();
       this.registerHeldItemDebugTools();
-      this.player.setAimPoseDebugVisible(this.aimPoseDebugShowSkeleton);
+      this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
       this.refreshAimPoseDebugHud();
       void this.syncPickupVisuals();
 
@@ -468,106 +497,113 @@ export class Game {
   }
 
   registerHeldItemDebugTools() {
-    if (!this.player || !isLocalDebugHost()) {
+    if (!this.player) {
       return;
     }
 
+    const localDebugHost = isLocalDebugHost();
+    const adminAimPoseDebug = this.canUseAimPoseDebug();
     const getActiveItemId = () => this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
     const clampVector = (values, fallback = [0, 0, 0]) => [0, 1, 2].map((index) => Number(values?.[index] ?? fallback[index] ?? 0));
-    const printGrip = (itemId = getActiveItemId()) => {
-      const profile = this.player.getHeldItemGripProfile(itemId);
-      if (!profile) {
-        console.info('[HeldItemDebug] No grip profile found.', { itemId });
-        return null;
-      }
-
-      const printable = {
-        id: itemId,
-        gripOffset: {
-          position: profile.position.map((value) => Number(value.toFixed(4))),
-          rotation: profile.rotation.map((value) => Number(value.toFixed(4))),
-          scale: profile.scale.map((value) => Number(value.toFixed(4)))
+    if (localDebugHost) {
+      const printGrip = (itemId = getActiveItemId()) => {
+        const profile = this.player.getHeldItemGripProfile(itemId);
+        if (!profile) {
+          console.info('[HeldItemDebug] No grip profile found.', { itemId });
+          return null;
         }
+
+        const printable = {
+          id: itemId,
+          gripOffset: {
+            position: profile.position.map((value) => Number(value.toFixed(4))),
+            rotation: profile.rotation.map((value) => Number(value.toFixed(4))),
+            scale: profile.scale.map((value) => Number(value.toFixed(4)))
+          }
+        };
+        console.info('[HeldItemDebug] Current grip profile.', printable);
+        return printable;
       };
-      console.info('[HeldItemDebug] Current grip profile.', printable);
-      return printable;
-    };
 
-    globalThis.__stickRpgHeldItemDebug = {
-      items: listHeldItemDefinitions().map((definition) => definition.id),
-      printGrip,
-      nudgePosition: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
-        const next = this.player.nudgeHeldItemGripOverride(itemId, {
-          position: clampVector([deltaX, deltaY, deltaZ]),
-          rotation: [0, 0, 0],
-          scale: [1, 1, 1]
-        });
-        console.info('[HeldItemDebug] Nudged grip position.', { itemId, gripOffset: next });
-        return next;
-      },
-      nudgeRotation: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
-        const next = this.player.nudgeHeldItemGripOverride(itemId, {
-          position: [0, 0, 0],
-          rotation: clampVector([deltaX, deltaY, deltaZ]),
-          scale: [1, 1, 1]
-        });
-        console.info('[HeldItemDebug] Nudged grip rotation.', { itemId, gripOffset: next });
-        return next;
-      },
-      scaleBy: (scaleX = 1, scaleY = scaleX, scaleZ = scaleX, itemId = getActiveItemId()) => {
-        const next = this.player.nudgeHeldItemGripOverride(itemId, {
-          position: [0, 0, 0],
-          rotation: [0, 0, 0],
-          scale: clampVector([scaleX, scaleY, scaleZ], [1, 1, 1])
-        });
-        console.info('[HeldItemDebug] Adjusted grip scale.', { itemId, gripOffset: next });
-        return next;
-      },
-      reset: (itemId = getActiveItemId()) => {
-        this.player.clearHeldItemGripOverride(itemId);
-        return printGrip(itemId);
-      },
-      previewCrateLeftHand: () => this.player.attachHeldItem(HELD_ITEM_IDS.crateA, { visible: true }),
-      clearLeftHand: () => this.player.detachHeldItem(ATTACHMENT_SLOTS.handLeft)
-    };
-    globalThis.printGrip = (...args) => globalThis.__stickRpgHeldItemDebug.printGrip(...args);
-    globalThis.nudgePosition = (...args) => globalThis.__stickRpgHeldItemDebug.nudgePosition(...args);
-    globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
-    globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
-    globalThis.resetGrip = (...args) => globalThis.__stickRpgHeldItemDebug.reset(...args);
-    globalThis.__stickRpgAimPoseDebug = {
-      fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key),
-      print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
-      setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
-      reset: (itemId = getActiveItemId()) => this.resetAimPoseDebug(itemId),
-      togglePanel: (visible = !this.aimPoseDebugVisible) => this.setAimPoseDebugVisible(visible),
-      toggleBones: (visible = !this.aimPoseDebugShowSkeleton) => this.setAimPoseSkeletonDebugVisible(visible)
-    };
-    globalThis.__stickRpgShaderDebug = {
-      presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
-      getActivePreset: () => this.getActiveVibeShaderPreset().id,
-      setPreset: (presetId = DEFAULT_VIBE_SHADER_PRESET_ID) => this.setVibeShaderPreset(presetId, { announce: false }),
-      getIntensity: (presetId = this.activeVibeShaderPresetId) => this.getVibeShaderIntensity(presetId),
-      setIntensity: (intensity = DEFAULT_VIBE_SHADER_INTENSITY, presetId = this.activeVibeShaderPresetId) =>
-        this.setVibeShaderIntensity(intensity, { presetId }),
-      resetIntensity: (presetId = this.activeVibeShaderPresetId) =>
-        this.resetVibeShaderIntensity({ presetId }),
-      toggleMenu: (visible = !this.shaderDebugMenuVisible) => this.setShaderDebugMenuVisible(visible)
-    };
+      globalThis.__stickRpgHeldItemDebug = {
+        items: listHeldItemDefinitions().map((definition) => definition.id),
+        printGrip,
+        nudgePosition: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
+          const next = this.player.nudgeHeldItemGripOverride(itemId, {
+            position: clampVector([deltaX, deltaY, deltaZ]),
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1]
+          });
+          console.info('[HeldItemDebug] Nudged grip position.', { itemId, gripOffset: next });
+          return next;
+        },
+        nudgeRotation: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
+          const next = this.player.nudgeHeldItemGripOverride(itemId, {
+            position: [0, 0, 0],
+            rotation: clampVector([deltaX, deltaY, deltaZ]),
+            scale: [1, 1, 1]
+          });
+          console.info('[HeldItemDebug] Nudged grip rotation.', { itemId, gripOffset: next });
+          return next;
+        },
+        scaleBy: (scaleX = 1, scaleY = scaleX, scaleZ = scaleX, itemId = getActiveItemId()) => {
+          const next = this.player.nudgeHeldItemGripOverride(itemId, {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: clampVector([scaleX, scaleY, scaleZ], [1, 1, 1])
+          });
+          console.info('[HeldItemDebug] Adjusted grip scale.', { itemId, gripOffset: next });
+          return next;
+        },
+        reset: (itemId = getActiveItemId()) => {
+          this.player.clearHeldItemGripOverride(itemId);
+          return printGrip(itemId);
+        },
+        previewCrateLeftHand: () => this.player.attachHeldItem(HELD_ITEM_IDS.crateA, { visible: true }),
+        clearLeftHand: () => this.player.detachHeldItem(ATTACHMENT_SLOTS.handLeft)
+      };
+      globalThis.printGrip = (...args) => globalThis.__stickRpgHeldItemDebug.printGrip(...args);
+      globalThis.nudgePosition = (...args) => globalThis.__stickRpgHeldItemDebug.nudgePosition(...args);
+      globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
+      globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
+      globalThis.resetGrip = (...args) => globalThis.__stickRpgHeldItemDebug.reset(...args);
+      globalThis.__stickRpgShaderDebug = {
+        presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
+        getActivePreset: () => this.getActiveVibeShaderPreset().id,
+        setPreset: (presetId = DEFAULT_VIBE_SHADER_PRESET_ID) => this.setVibeShaderPreset(presetId, { announce: false }),
+        getIntensity: (presetId = this.activeVibeShaderPresetId) => this.getVibeShaderIntensity(presetId),
+        setIntensity: (intensity = DEFAULT_VIBE_SHADER_INTENSITY, presetId = this.activeVibeShaderPresetId) =>
+          this.setVibeShaderIntensity(intensity, { presetId }),
+        resetIntensity: (presetId = this.activeVibeShaderPresetId) =>
+          this.resetVibeShaderIntensity({ presetId }),
+        toggleMenu: (visible = !this.shaderDebugMenuVisible) => this.setShaderDebugMenuVisible(visible)
+      };
 
-    globalThis.printAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.print(...args);
-    globalThis.setAimPoseField = (...args) => globalThis.__stickRpgAimPoseDebug.setField(...args);
-    globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
+      console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
+        items: listHeldItemDefinitions().map((definition) => definition.id)
+      });
+      console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
+        presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
+      });
+    }
 
-    console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
-      items: listHeldItemDefinitions().map((definition) => definition.id)
-    });
-    console.info('[AimPoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
-      fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)
-    });
-    console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
-      presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
-    });
+    if (adminAimPoseDebug) {
+      globalThis.__stickRpgAimPoseDebug = {
+        fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key),
+        print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
+        setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
+        reset: (itemId = getActiveItemId()) => this.resetAimPoseDebug(itemId),
+        togglePanel: (visible = !this.aimPoseDebugVisible) => this.setAimPoseDebugVisible(visible),
+        toggleBones: (visible = !this.aimPoseDebugShowSkeleton) => this.setAimPoseSkeletonDebugVisible(visible)
+      };
+      globalThis.printAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.print(...args);
+      globalThis.setAimPoseField = (...args) => globalThis.__stickRpgAimPoseDebug.setField(...args);
+      globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
+
+      console.info('[AimPoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
+        fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)
+      });
+    }
   }
 
   getActiveAimPoseDebugItemId() {
@@ -575,7 +611,7 @@ export class Game {
   }
 
   setAimPoseDebugVisible(visible) {
-    const nextVisible = Boolean(visible && isLocalDebugHost());
+    const nextVisible = Boolean(visible && this.canUseAimPoseDebug());
     if (nextVisible) {
       this.setShaderDebugMenuVisible(false);
       if (this.worldBuilder?.enabled) {
@@ -595,7 +631,7 @@ export class Game {
   }
 
   setAimPoseSkeletonDebugVisible(visible) {
-    this.aimPoseDebugShowSkeleton = Boolean(visible && isLocalDebugHost());
+    this.aimPoseDebugShowSkeleton = Boolean(visible && this.canUseAimPoseDebug());
     this.player?.setAimPoseDebugVisible(this.aimPoseDebugShowSkeleton);
     this.refreshAimPoseDebugHud();
     return this.aimPoseDebugShowSkeleton;
@@ -608,7 +644,7 @@ export class Game {
   }
 
   setAimPoseDebugField(fieldKey, value, itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId) {
+    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
       return null;
     }
 
@@ -618,7 +654,7 @@ export class Game {
   }
 
   resetAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId) {
+    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
       return null;
     }
 
@@ -630,7 +666,7 @@ export class Game {
   }
 
   printAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId) {
+    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
       return null;
     }
 
@@ -649,7 +685,7 @@ export class Game {
   }
 
   refreshAimPoseDebugHud() {
-    const debugAvailable = Boolean(this.player && isLocalDebugHost());
+    const debugAvailable = Boolean(this.player && this.canUseAimPoseDebug());
     const itemId = this.getActiveAimPoseDebugItemId();
     const pose = this.player?.getHeldItemAimPoseProfile(itemId) ?? {};
     const statusParts = [];
@@ -1300,7 +1336,7 @@ export class Game {
     const emoteMenuActive = this.updateEmoteMenu();
     const localPlayerState = this.getLocalPlayerState();
 
-    if (this.input.consume('KeyO') && isLocalDebugHost()) {
+    if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
     }
 

@@ -48,6 +48,15 @@ const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
 const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
 
+function parseAdminKeys(value = '') {
+  return new Set(
+    String(value)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+}
+
 const PlayerState = schema({
   x: 'number',
   z: 'number',
@@ -73,7 +82,8 @@ const PlayerState = schema({
   reloadEndsAt: 'number',
   kills: 'number',
   deaths: 'number',
-  lastDamagedAt: 'number'
+  lastDamagedAt: 'number',
+  isAdmin: 'boolean'
 });
 
 const PickupState = schema({
@@ -220,6 +230,7 @@ export class WorldRoom extends Room {
   onCreate() {
     this.maxClients = 16;
     this.setState(new WorldRoomState());
+    this.adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
     this.chatEngine = new NpcChatEngine();
     this.worldState = new WorldState();
     this.worldPersistence = getWorldPersistence();
@@ -267,7 +278,7 @@ export class WorldRoom extends Room {
     });
 
     this.onMessage('world:edit', (client, message) => {
-      void this.handleRpc(client, message.requestId, () => this.handleWorldEdit(message));
+      void this.handleRpc(client, message.requestId, () => this.handleWorldEdit(client, message));
     });
 
     this.onMessage('chat:say', async (client, message) => {
@@ -325,9 +336,10 @@ export class WorldRoom extends Room {
     });
   }
 
-  onJoin(client) {
+  onJoin(client, options = {}) {
     const player = new PlayerState();
     const [spawnX, spawnZ] = this.chooseRespawnPoint(client.sessionId);
+    const isAdmin = this.isAdminJoin(options);
     player.x = quantizePosition(spawnX);
     player.z = quantizePosition(spawnZ);
     player.rotationY = 0;
@@ -353,6 +365,7 @@ export class WorldRoom extends Room {
     player.kills = 0;
     player.deaths = 0;
     player.lastDamagedAt = 0;
+    player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
     this.playerPositionMeta.set(client.sessionId, {
       x: player.x,
@@ -365,6 +378,7 @@ export class WorldRoom extends Room {
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
+      isAdmin,
       connectedClients: this.clients.length
     });
   }
@@ -382,6 +396,24 @@ export class WorldRoom extends Room {
   }
 
   async onDispose() {}
+
+  isAdminJoin(options = {}) {
+    const providedKey = typeof options.adminKey === 'string'
+      ? options.adminKey.trim()
+      : '';
+
+    return Boolean(providedKey && this.adminKeys.size > 0 && this.adminKeys.has(providedKey));
+  }
+
+  isAdminClient(client) {
+    return this.state.players.get(client.sessionId)?.isAdmin === true;
+  }
+
+  assertAdminClient(client) {
+    if (!this.isAdminClient(client)) {
+      throw new Error('Admin access required.');
+    }
+  }
 
   seedCombatPickups() {
     this.state.pickups.clear();
@@ -854,7 +886,8 @@ export class WorldRoom extends Room {
     };
   }
 
-  async handleWorldEdit(message = {}) {
+  async handleWorldEdit(client, message = {}) {
+    this.assertAdminClient(client);
     const { op, payload = {} } = message;
     const previousLayout = this.worldState.serializeLayout();
 
@@ -952,6 +985,7 @@ export class WorldRoom extends Room {
   }
 
   updateBuilderPresence(client, message) {
+    this.assertAdminClient(client);
     const sanitized = this.sanitizeBuilderPresence(message);
     if (!sanitized.active) {
       this.state.builders.delete(client.sessionId);

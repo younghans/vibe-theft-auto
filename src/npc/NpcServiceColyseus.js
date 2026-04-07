@@ -57,7 +57,8 @@ function clonePlayerState(player) {
     reloadEndsAt: player.reloadEndsAt ?? 0,
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
-    lastDamagedAt: player.lastDamagedAt ?? 0
+    lastDamagedAt: player.lastDamagedAt ?? 0,
+    isAdmin: player.isAdmin === true
   };
 }
 
@@ -104,13 +105,14 @@ function stableStringify(value) {
 }
 
 export class NpcServiceColyseus {
-  constructor({ endpoint }) {
+  constructor({ endpoint, adminKey = '' }) {
     const ClientCtor = globalThis.Colyseus?.Client;
     if (!ClientCtor) {
       throw new Error('Colyseus browser SDK is not loaded.');
     }
 
     this.endpoint = endpoint;
+    this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
     this.combatListeners = new Set();
@@ -134,7 +136,7 @@ export class NpcServiceColyseus {
   }
 
   async connect() {
-    this.room = await this.client.joinOrCreate('world');
+    this.room = await this.client.joinOrCreate('world', this.adminKey ? { adminKey: this.adminKey } : {});
     if (this.destroyed) {
       this.room.leave();
       this.room = null;

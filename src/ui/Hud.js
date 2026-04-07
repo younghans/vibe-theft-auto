@@ -267,7 +267,7 @@ export class Hud {
             <path d="M19 12h3" />
           </svg>
         </button>
-        <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode">
+        <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M14.5 3.5l6 6" />
             <path d="M13 5l4.5-1.5-1.5 4.5" />
@@ -753,6 +753,7 @@ export class Hud {
   }
 
   setBuilderState({
+    available = false,
     enabled,
     statusText,
     metaText,
@@ -760,7 +761,8 @@ export class Hud {
     groupTabs = [],
     sections = []
   }) {
-    this.builderRoot.hidden = !enabled;
+    this.modeToggle.hidden = !available;
+    this.builderRoot.hidden = !available || !enabled;
     this.builderRoot.classList.toggle('is-visible', enabled);
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
