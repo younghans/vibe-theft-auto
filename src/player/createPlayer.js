@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
+import { createClassicBotCharacter } from './classicBotCharacter.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_AIM_POSE_FIELDS,
@@ -198,7 +199,10 @@ export async function createPlayer(library, {
 
   await preloadMixamoClips([...clipNamesToPreload]);
 
-  const character = await library.instantiate(assets.player.character);
+  const characterRig = await library.instantiate(assets.player.characterRig);
+  const character = assets.player.characterVariant === 'classicBot'
+    ? createClassicBotCharacter(characterRig)
+    : characterRig;
   const humanoid = validateMixamoHumanoid(character);
 
   if (!humanoid.isHumanoid) {

@@ -20,7 +20,8 @@ export const assets = {
     }
   },
   player: {
-    character: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
+    characterRig: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
+    characterVariant: 'classicBot',
     idleClip: 'idle',
     walkClip: 'walking',
     emotes: Object.freeze(
