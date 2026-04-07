@@ -18,6 +18,52 @@ function getBuilderPlaceholder(label) {
     .join('');
 }
 
+const HUD_CONTROLS = Object.freeze([
+  { label: 'Move', key: 'WASD' },
+  { label: 'Fire', mouseButton: 'left' },
+  { label: 'Aim', mouseButton: 'right' },
+  { label: 'Interact', key: 'E' },
+  { label: 'Reload', key: 'R' },
+  { label: 'Chat', key: 'Enter' },
+  { label: 'Emote', key: 'B' }
+]);
+
+function getMouseControlIconMarkup(side) {
+  const leftActive = side === 'left' ? ' is-active' : '';
+  const rightActive = side === 'right' ? ' is-active' : '';
+  return `
+    <span class="hud__control-badge hud__control-badge--mouse" aria-hidden="true">
+      <svg class="hud__control-mouse" viewBox="0 0 32 40">
+        <path
+          class="hud__control-mouse-button${leftActive}"
+          d="M16 5H11.4a3.7 3.7 0 0 0-3.7 3.7V16H16V5z"
+        />
+        <path
+          class="hud__control-mouse-button${rightActive}"
+          d="M16 5h4.6a3.7 3.7 0 0 1 3.7 3.7V16H16V5z"
+        />
+        <path
+          class="hud__control-mouse-shell"
+          d="M16 2C9.4 2 5 6.9 5 13.4v13.2C5 33.1 9.7 38 16 38s11-4.9 11-11.4V13.4C27 6.9 22.6 2 16 2z"
+        />
+        <path class="hud__control-mouse-divider" d="M16 4.8V16" />
+        <path class="hud__control-mouse-divider" d="M8 16h16" />
+      </svg>
+    </span>
+  `;
+}
+
+function getHudControlsMarkup() {
+  return HUD_CONTROLS.map((control) => `
+    <div class="hud__controls-row">
+      ${control.mouseButton
+        ? getMouseControlIconMarkup(control.mouseButton)
+        : `<span class="hud__control-badge hud__control-badge--key">${control.key}</span>`}
+      <span class="hud__controls-label">${control.label}</span>
+    </div>
+  `).join('');
+}
+
 export class Hud {
   constructor(root) {
     this.root = root;
@@ -172,9 +218,9 @@ export class Hud {
     node.className = 'hud';
     node.innerHTML = `
       <section class="hud__panel">
-        <p class="hud__eyebrow">Prototype</p>
-        <h1 class="hud__title">Vibe Theft Auto</h1>
-        <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, mouse wheel or +/- zooms, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
+        <div class="hud__controls-list">
+          ${getHudControlsMarkup()}
+        </div>
       </section>
       <section class="hud__combat" data-combat-root role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
         <div class="hud__combat-meter" data-combat-meter aria-hidden="true">
