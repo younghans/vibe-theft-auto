@@ -6,7 +6,10 @@ import {
   shutdownWorldPersistence
 } from './src/worldPersistence.js';
 
-const port = Number(process.env.COLYSEUS_PORT || process.env.COLOSEUS_PORT || 2567);
+const cliPort = Number(process.argv[2]);
+const port = Number.isFinite(cliPort) && cliPort > 0
+  ? cliPort
+  : Number(process.env.COLYSEUS_PORT || process.env.COLOSEUS_PORT || 2567);
 const resolvedPort = Number(process.env.PORT || port);
 await initializeWorldPersistence();
 const persistence = getWorldPersistenceInfo();

@@ -8,8 +8,11 @@
   "scripts": {
     "dev": "npm run dev:stack",
     "dev:client": "node scripts/dev-server.mjs . 4173",
+    "dev:client:worktree": "node scripts/dev-server.mjs . 4273 ws://localhost:2667",
     "dev:server": "node server/index.mjs",
+    "dev:server:worktree": "node server/index.mjs 2667",
     "dev:stack": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:worktree": "concurrently \"npm:dev:client:worktree\" \"npm:dev:server:worktree\"",
     "start": "node server/index.mjs",
     "build": "node scripts/build-web.mjs",
     "deploy:colyseus": "npx @colyseus/cloud deploy",

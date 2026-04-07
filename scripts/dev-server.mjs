@@ -5,6 +5,7 @@ import process from 'node:process';
 
 const root = path.resolve(process.argv[2] ?? '.');
 const port = Number(process.env.PORT || process.argv[3] || 4173);
+const configuredServerUrl = (process.env.STICKRPG_SERVER_URL || process.argv[4] || '').trim();
 
 const mimeTypes = {
   '.bin': 'application/octet-stream',
@@ -30,8 +31,19 @@ const server = http.createServer(async (request, response) => {
 
     const contents = await fs.readFile(filePath);
     const extension = path.extname(filePath).toLowerCase();
+    let body = contents;
+
+    if (configuredServerUrl && extension === '.html') {
+      const html = contents.toString('utf8');
+      const injectedHtml = html.replace(
+        '</head>',
+        `    <script>globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(configuredServerUrl)};</script>\n  </head>`
+      );
+      body = Buffer.from(injectedHtml, 'utf8');
+    }
+
     response.writeHead(200, { 'Content-Type': mimeTypes[extension] ?? 'application/octet-stream' });
-    response.end(contents);
+    response.end(body);
   } catch {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('Not found');
@@ -40,4 +52,7 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, () => {
   console.log(`Serving ${root} at http://localhost:${port}`);
+  if (configuredServerUrl) {
+    console.log(`Using multiplayer server ${configuredServerUrl}`);
+  }
 });
