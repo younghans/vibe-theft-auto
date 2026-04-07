@@ -274,6 +274,7 @@ export class NpcServiceMock {
         this.emitWorldPatch({
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementIds: result.replacedPlacementIds ?? [],
           replacedPlacementId: result.replacedPlacementId
         });
         return { ok: true, placementId: result.placement.id };
@@ -326,10 +327,11 @@ export class NpcServiceMock {
         return { ok: true, placementId: placement.id };
       }
       case 'rotatePlacement': {
-        const placement = this.worldState.rotatePlacement(payload.placementId);
-        if (!placement) {
-          return { ok: false, error: 'That placement is not available.' };
+        const result = this.worldState.rotatePlacement(payload.placementId);
+        if (!result?.placement) {
+          return { ok: false, error: result?.error ?? 'That placement is not available.' };
         }
+        const placement = result.placement;
 
         if (placement.layer === 'npc') {
           this.syncNpcStateFromWorld();

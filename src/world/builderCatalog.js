@@ -50,6 +50,7 @@ function createKenneyBuildingDefinition({ id, label, fileName }) {
     asset: kenneyAsset(fileName),
     group: 'lots',
     size: KENNEY_TILE_SIZE,
+    tileFootprint: [1, 1],
     collision: true,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
@@ -120,6 +121,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     asset: customCityAsset('models', 'hospital-building.glb'),
     group: 'lots',
     size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
+    tileFootprint: [1, 1],
     collision: true,
     blocksShots: true,
     movementCollisionRects: [
@@ -132,6 +134,19 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       { centerX: 3.92, centerZ: 0.25, halfWidth: 1.43, halfDepth: 1.78 },
       { centerX: 1.2, centerZ: 3.85, halfWidth: 3.8, halfDepth: 1.55 }
     ],
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
+    id: 'hospital_building_wide',
+    assetName: 'hospital_building_wide',
+    label: 'Hospital Wide',
+    asset: customCityAsset('models', 'hospital-building-wide.glb'),
+    group: 'lots',
+    size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82],
+    tileFootprint: [2, 1],
+    collision: true,
+    blocksShots: true,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -320,6 +335,7 @@ function createCityTile(definition) {
     label: definition.label ?? formatCityLabel(definition.assetName),
     asset: definition.asset ?? cityAsset(definition.assetName),
     size: definition.size ?? tileSizeForAsset(definition.assetName),
+    tileFootprint: definition.tileFootprint ?? [1, 1],
     surfaceHeight: definition.surfaceHeight ?? DEFAULT_TILE_SURFACE_HEIGHT,
     movementCollisionRects: definition.movementCollisionRects?.map((rect) => ({ ...rect })) ?? null,
     shotCollisionRects: definition.shotCollisionRects?.map((rect) => ({ ...rect })) ?? null,

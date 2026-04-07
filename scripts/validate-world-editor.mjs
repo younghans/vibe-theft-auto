@@ -1,4 +1,5 @@
 import { Scene } from 'three';
+import { getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
@@ -17,6 +18,7 @@ function validateRotationQuarterTurns(value, context) {
 function validateKenneyCatalogItems() {
   const expectedIds = [
     'hospital_building',
+    'hospital_building_wide',
     ...'abcdefghijklmn'.split('').map((variant) => `kenney_building_${variant}`),
     ...'abcde'.split('').map((variant) => `kenney_building_skyscraper_${variant}`),
     'kenney_detail_awning',
@@ -43,9 +45,11 @@ function validateTiles() {
     assert(Array.isArray(tile.cell) && tile.cell.length === 2, `Tile ${index}: cell must be [x, z]`);
     validateRotationQuarterTurns(tile.rotationQuarterTurns, `Tile ${index}`);
 
-    const cellKey = `${tile.cell[0]},${tile.cell[1]}`;
-    assert(!seenCells.has(cellKey), `Duplicate tile cell found at ${cellKey}`);
-    seenCells.add(cellKey);
+    for (const occupiedCell of getTileOccupiedCells(item, tile.cell[0], tile.cell[1], tile.rotationQuarterTurns)) {
+      const cellKey = `${occupiedCell.x},${occupiedCell.z}`;
+      assert(!seenCells.has(cellKey), `Duplicate tile cell found at ${cellKey}`);
+      seenCells.add(cellKey);
+    }
   }
 }
 

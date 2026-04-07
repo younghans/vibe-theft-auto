@@ -1,4 +1,5 @@
 import { getNpcModelById } from '../npc/npcCatalog.js';
+import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
 function cloneInteractable(interactable) {
@@ -117,6 +118,7 @@ function toSerializedPlacement(placement) {
 export class WorldState {
   constructor() {
     this.tilePlacements = new Map();
+    this.tileCells = new Map();
     this.propPlacements = new Map();
     this.npcPlacements = new Map();
     this.placementsById = new Map();
@@ -125,6 +127,7 @@ export class WorldState {
 
   clear() {
     this.tilePlacements.clear();
+    this.tileCells.clear();
     this.propPlacements.clear();
     this.npcPlacements.clear();
     this.placementsById.clear();
@@ -140,7 +143,8 @@ export class WorldState {
   }
 
   getPlacementAtCell(cellX, cellZ) {
-    return this.tilePlacements.get(this.getCellKey(cellX, cellZ)) ?? null;
+    const placementId = this.tileCells.get(this.getCellKey(cellX, cellZ));
+    return placementId ? (this.tilePlacements.get(placementId) ?? null) : null;
   }
 
   loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
@@ -200,26 +204,32 @@ export class WorldState {
       this.unregisterPlacement(placementId);
     }
 
-    let replacedPlacementId = null;
+    let replacedPlacementIds = [];
     if (placement.layer === 'tile') {
-      const occupiedPlacement = this.getPlacementAtCell(placement.cellX, placement.cellZ);
-      if (occupiedPlacement && occupiedPlacement.id !== placement.id) {
-        replacedPlacementId = occupiedPlacement.id;
-        this.unregisterPlacement(occupiedPlacement.id);
+      replacedPlacementIds = this.getOverlappingTilePlacementIds(
+        item,
+        placement.cellX,
+        placement.cellZ,
+        placement.rotationQuarterTurns,
+        placement.id
+      );
+      for (const replacedPlacementId of replacedPlacementIds) {
+        this.unregisterPlacement(replacedPlacementId);
       }
     }
 
     this.registerPlacement(placement);
     return {
       placement: clonePlacement(placement),
-      replacedPlacementId
+      replacedPlacementIds,
+      replacedPlacementId: replacedPlacementIds[0] ?? null
     };
   }
 
   placeTile(item, cellX, cellZ, rotationQuarterTurns, interactable = null) {
-    const existing = this.getPlacementAtCell(cellX, cellZ);
-    if (existing) {
-      this.unregisterPlacement(existing.id);
+    const replacedPlacementIds = this.getOverlappingTilePlacementIds(item, cellX, cellZ, rotationQuarterTurns);
+    for (const placementId of replacedPlacementIds) {
+      this.unregisterPlacement(placementId);
     }
 
     const placement = {
@@ -237,7 +247,8 @@ export class WorldState {
     this.registerPlacement(placement);
     return {
       placement: clonePlacement(placement),
-      replacedPlacementId: existing?.id ?? null
+      replacedPlacementIds,
+      replacedPlacementId: replacedPlacementIds[0] ?? null
     };
   }
 
@@ -304,11 +315,37 @@ export class WorldState {
   rotatePlacement(id, delta = 1) {
     const placement = this.getPlacement(id);
     if (!placement) {
-      return null;
+      return { placement: null, error: 'That placement is not available.' };
     }
 
-    placement.rotationQuarterTurns = (placement.rotationQuarterTurns + delta + 4) % 4;
-    return clonePlacement(placement);
+    const nextRotationQuarterTurns = (placement.rotationQuarterTurns + delta + 4) % 4;
+    if (placement.layer === 'tile') {
+      const item = getBuilderItemById(placement.itemId);
+      if (!item) {
+        return { placement: null, error: 'That placement is not available.' };
+      }
+
+      const conflicts = this.getOverlappingTilePlacementIds(
+        item,
+        placement.cellX,
+        placement.cellZ,
+        nextRotationQuarterTurns,
+        placement.id
+      );
+      if (conflicts.length) {
+        return { placement: null, error: 'That piece needs more empty tiles before it can rotate.' };
+      }
+    }
+
+    if (placement.layer === 'tile') {
+      this.unregisterPlacement(placement.id);
+      placement.rotationQuarterTurns = nextRotationQuarterTurns;
+      this.registerPlacement(placement);
+    } else {
+      placement.rotationQuarterTurns = nextRotationQuarterTurns;
+    }
+
+    return { placement: clonePlacement(placement), error: null };
   }
 
   deletePlacement(id) {
@@ -375,7 +412,12 @@ export class WorldState {
     this.placementsById.set(placement.id, placement);
 
     if (placement.layer === 'tile') {
-      this.tilePlacements.set(this.getCellKey(placement.cellX, placement.cellZ), placement);
+      this.tilePlacements.set(placement.id, placement);
+      const item = getBuilderItemById(placement.itemId);
+      const occupiedCells = getTileOccupiedCells(item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
+      for (const cell of occupiedCells) {
+        this.tileCells.set(this.getCellKey(cell.x, cell.z), placement.id);
+      }
       return;
     }
 
@@ -395,7 +437,15 @@ export class WorldState {
 
     this.placementsById.delete(id);
     if (placement.layer === 'tile') {
-      this.tilePlacements.delete(this.getCellKey(placement.cellX, placement.cellZ));
+      this.tilePlacements.delete(id);
+      const item = getBuilderItemById(placement.itemId);
+      const occupiedCells = getTileOccupiedCells(item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
+      for (const cell of occupiedCells) {
+        const key = this.getCellKey(cell.x, cell.z);
+        if (this.tileCells.get(key) === placement.id) {
+          this.tileCells.delete(key);
+        }
+      }
       return;
     }
 
@@ -409,6 +459,21 @@ export class WorldState {
 
   getCellKey(x, z) {
     return `${x},${z}`;
+  }
+
+  getOverlappingTilePlacementIds(item, cellX, cellZ, rotationQuarterTurns, ignorePlacementId = null) {
+    const overlappingIds = new Set();
+    const occupiedCells = getTileOccupiedCells(item, cellX, cellZ, rotationQuarterTurns);
+
+    for (const cell of occupiedCells) {
+      const placement = this.getPlacementAtCell(cell.x, cell.z);
+      if (!placement || placement.id === ignorePlacementId) {
+        continue;
+      }
+      overlappingIds.add(placement.id);
+    }
+
+    return [...overlappingIds];
   }
 
   createPlacementId() {

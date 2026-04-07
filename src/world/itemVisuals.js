@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
 export function fitObjectToFootprint(root, targetWidth, targetDepth) {
@@ -26,25 +27,43 @@ function getUnderlayItem(item) {
 export async function instantiateItemVisual(library, item) {
   const underlayItem = getUnderlayItem(item);
   const primaryObject = await library.instantiate(item.asset);
+  const needsTileRoot = item?.layer === 'tile';
+  const root = needsTileRoot ? new THREE.Group() : primaryObject;
+  const tileCenterOffset = needsTileRoot ? getTileLocalCenterOffset(item) : { x: 0, z: 0 };
+
+  if (needsTileRoot) {
+    root.add(primaryObject);
+  }
 
   if (!underlayItem) {
     return {
-      root: primaryObject,
+      root,
       colliderObject: primaryObject,
       parts: [{ object: primaryObject, item, role: 'primary' }]
     };
   }
 
-  const underlayObject = await library.instantiate(underlayItem.asset);
-  const root = new THREE.Group();
-  root.add(underlayObject);
-  root.add(primaryObject);
+  const underlayOffsets = item?.layer === 'tile'
+    ? getTileLocalCellOffsets(item)
+    : [{ x: 0, z: 0 }];
+  const underlayObjects = await Promise.all(
+    underlayOffsets.map(async (offset) => {
+      const underlayObject = await library.instantiate(underlayItem.asset);
+      underlayObject.position.set(
+        offset.x - tileCenterOffset.x,
+        0,
+        offset.z - tileCenterOffset.z
+      );
+      root.add(underlayObject);
+      return underlayObject;
+    })
+  );
 
   return {
     root,
     colliderObject: primaryObject,
     parts: [
-      { object: underlayObject, item: underlayItem, role: 'underlay' },
+      ...underlayObjects.map((object) => ({ object, item: underlayItem, role: 'underlay' })),
       { object: primaryObject, item, role: 'primary' }
     ]
   };

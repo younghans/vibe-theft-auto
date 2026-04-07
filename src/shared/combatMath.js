@@ -1,4 +1,5 @@
 import { BUILDER_TILE_SIZE, WORLD_HALF_EXTENT } from './worldConstants.js';
+import { getTileCenterWorldPosition } from './tileFootprint.js';
 
 export function distance2D(ax, az, bx, bz) {
   return Math.hypot(ax - bx, az - bz);
@@ -85,17 +86,25 @@ function getCustomCollisionRects(item, collisionKey = 'blocksShots') {
   return null;
 }
 
-function localRectToWorldRect(placement, rect) {
+function localRectToWorldRect(placement, item, rect) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
   const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
   const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
   const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
   const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
+  const tileCenter = placement.layer === 'tile'
+    ? getTileCenterWorldPosition(
+        item,
+        placement.cellX ?? 0,
+        placement.cellZ ?? 0,
+        0
+      )
+    : null;
   const centerX = placement.layer === 'tile'
-    ? placement.cellX * BUILDER_TILE_SIZE + rotatedCenter.x
+    ? tileCenter.x + rotatedCenter.x
     : placement.position[0] + rotatedCenter.x;
   const centerZ = placement.layer === 'tile'
-    ? placement.cellZ * BUILDER_TILE_SIZE + rotatedCenter.z
+    ? tileCenter.z + rotatedCenter.z
     : placement.position[1] + rotatedCenter.z;
 
   return {
@@ -114,7 +123,7 @@ export function placementToCollisionRects(placement, item, { collisionKey = 'blo
 
   const customRects = getCustomCollisionRects(item, collisionKey);
   if (customRects?.length) {
-    return customRects.map((rect) => localRectToWorldRect(placement, rect));
+    return customRects.map((rect) => localRectToWorldRect(placement, item, rect));
   }
 
   if (!itemBlocksCollision(item, collisionKey)) {
@@ -125,11 +134,19 @@ export function placementToCollisionRects(placement, item, { collisionKey = 'blo
   const padding = item.padding ?? 0;
   const width = size[0] + padding * 2;
   const depth = size[1] + padding * 2;
+  const tileCenter = placement.layer === 'tile'
+    ? getTileCenterWorldPosition(
+        item,
+        placement.cellX ?? 0,
+        placement.cellZ ?? 0,
+        placement.rotationQuarterTurns ?? 0
+      )
+    : null;
   const centerX = placement.layer === 'tile'
-    ? placement.cellX * BUILDER_TILE_SIZE
+    ? tileCenter.x
     : placement.position[0];
   const centerZ = placement.layer === 'tile'
-    ? placement.cellZ * BUILDER_TILE_SIZE
+    ? tileCenter.z
     : placement.position[1];
 
   return [{

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getNpcModelById, getNpcModelByItemId, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
+import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
@@ -715,36 +716,60 @@ export class WorldBuilder {
 
     if (hoveredPlacement) {
       if (hoveredPlacement.layer === 'tile') {
+        const item = getBuilderItemById(hoveredPlacement.itemId);
+        if (!item) {
+          this.previewRoot.visible = false;
+          return;
+        }
+        const [footprintWidth, footprintDepth] = getTileFootprintWorldSize(item, hoveredPlacement.rotationQuarterTurns);
+        const center = getTileCenterWorldPosition(
+          item,
+          hoveredPlacement.cellX,
+          hoveredPlacement.cellZ,
+          hoveredPlacement.rotationQuarterTurns
+        );
         this.previewRoot.position.set(
-          hoveredPlacement.cellX * BUILDER_TILE_SIZE,
+          center.x,
           0,
-          hoveredPlacement.cellZ * BUILDER_TILE_SIZE
+          center.z
+        );
+        this.previewFootprint.scale.set(
+          Math.max(0.4, footprintWidth - 0.6),
+          Math.max(0.4, footprintDepth - 0.6),
+          1
         );
       } else {
         this.previewRoot.position.set(hoveredPlacement.position[0], 0, hoveredPlacement.position[1]);
+        const item = getBuilderItemById(hoveredPlacement.itemId);
+        if (!item) {
+          this.previewRoot.visible = false;
+          return;
+        }
+        this.previewFootprint.scale.set(item.size[0] + 0.35, item.size[1] + 0.35, 1);
       }
-      const item = getBuilderItemById(hoveredPlacement.itemId);
-      if (!item) {
-        this.previewRoot.visible = false;
-        return;
-      }
-      this.previewFootprint.scale.set(
-        item.size[0] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
-        item.size[1] + (hoveredPlacement.layer === 'tile' ? -0.6 : 0.35),
-        1
-      );
       this.previewRoot.rotation.y = toRotationY(hoveredPlacement.rotationQuarterTurns);
       this.previewRoot.visible = true;
       return;
     }
 
     if (this.activeItem.layer === 'tile') {
-      this.previewRoot.position.set(
-        this.state.hover.cell.x * BUILDER_TILE_SIZE,
-        0,
-        this.state.hover.cell.z * BUILDER_TILE_SIZE
+      const center = getTileCenterWorldPosition(
+        this.activeItem,
+        this.state.hover.cell.x,
+        this.state.hover.cell.z,
+        this.state.rotationQuarterTurns
       );
-      this.previewFootprint.scale.set(BUILDER_TILE_SIZE - 0.6, BUILDER_TILE_SIZE - 0.6, 1);
+      const [footprintWidth, footprintDepth] = getTileFootprintWorldSize(this.activeItem, this.state.rotationQuarterTurns);
+      this.previewRoot.position.set(
+        center.x,
+        0,
+        center.z
+      );
+      this.previewFootprint.scale.set(
+        Math.max(0.4, footprintWidth - 0.6),
+        Math.max(0.4, footprintDepth - 0.6),
+        1
+      );
     } else {
       this.previewRoot.position.set(this.state.hover.point.x, 0, this.state.hover.point.z);
       this.previewFootprint.scale.set(this.activeItem.size[0] + 0.35, this.activeItem.size[1] + 0.35, 1);
@@ -938,6 +963,17 @@ export class WorldBuilder {
       this.worldState.deletePlacement(patch.replacedPlacementId);
       this.worldRenderer.removePlacement(patch.replacedPlacementId);
       if (this.state.selection.placementId === patch.replacedPlacementId) {
+        this.clearSelection();
+      }
+    }
+
+    for (const replacedPlacementId of patch.replacedPlacementIds ?? []) {
+      if (!replacedPlacementId || replacedPlacementId === placementId || replacedPlacementId === patch.replacedPlacementId) {
+        continue;
+      }
+      this.worldState.deletePlacement(replacedPlacementId);
+      this.worldRenderer.removePlacement(replacedPlacementId);
+      if (this.state.selection.placementId === replacedPlacementId) {
         this.clearSelection();
       }
     }

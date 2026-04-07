@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
+import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
@@ -60,8 +61,14 @@ function createColliderFromLocalRect(rect, placement, minY = 0, maxY = 4) {
   const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
   const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
   const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
-  const centerX = (placement?.cellX ?? 0) * BUILDER_TILE_SIZE + rotatedCenter.x;
-  const centerZ = (placement?.cellZ ?? 0) * BUILDER_TILE_SIZE + rotatedCenter.z;
+  const tileCenter = getTileCenterWorldPosition(
+    getBuilderItemById(placement?.itemId),
+    placement?.cellX ?? 0,
+    placement?.cellZ ?? 0,
+    0
+  );
+  const centerX = tileCenter.x + rotatedCenter.x;
+  const centerZ = tileCenter.z + rotatedCenter.z;
 
   return createBoxColliderFromBounds(
     centerX - halfWidth,
@@ -117,16 +124,20 @@ function isParkWallItem(item) {
 }
 
 function tileContainsPosition(rendered, x, z) {
-  const cellX = rendered.placement?.cellX ?? 0;
-  const cellZ = rendered.placement?.cellZ ?? 0;
+  const occupiedCells = getTileOccupiedCells(
+    rendered.item,
+    rendered.placement?.cellX ?? 0,
+    rendered.placement?.cellZ ?? 0,
+    rendered.placement?.rotationQuarterTurns ?? 0
+  );
   const halfTile = BUILDER_TILE_SIZE * 0.5;
 
-  return (
-    x >= (cellX * BUILDER_TILE_SIZE) - halfTile
-    && x <= (cellX * BUILDER_TILE_SIZE) + halfTile
-    && z >= (cellZ * BUILDER_TILE_SIZE) - halfTile
-    && z <= (cellZ * BUILDER_TILE_SIZE) + halfTile
-  );
+  return occupiedCells.some((cell) => (
+    x >= (cell.x * BUILDER_TILE_SIZE) - halfTile
+    && x <= (cell.x * BUILDER_TILE_SIZE) + halfTile
+    && z >= (cell.z * BUILDER_TILE_SIZE) - halfTile
+    && z <= (cell.z * BUILDER_TILE_SIZE) + halfTile
+  ));
 }
 
 function markParkWallTriangleCells(occupied, tileMinX, tileMinZ, minX, maxX, minZ, maxZ) {
@@ -347,7 +358,8 @@ export class WorldRenderer {
 
     if (!actor) {
       if (placement.layer === 'tile') {
-        object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
+        const center = getTileCenterWorldPosition(item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
+        object.position.set(center.x, 0, center.z);
       } else {
         object.position.set(
           placement.position[0],
@@ -433,7 +445,8 @@ export class WorldRenderer {
         interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius
       });
     } else if (placement.layer === 'tile') {
-      rendered.object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
+      const center = getTileCenterWorldPosition(rendered.item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
+      rendered.object.position.set(center.x, 0, center.z);
     } else {
       rendered.object.position.set(
         placement.position[0],

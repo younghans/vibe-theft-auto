@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
+import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
@@ -185,12 +186,23 @@ export class RemoteBuilderRenderer {
 
   updateTransform(entry, item, presence) {
     if (item.layer === 'tile') {
-      entry.root.position.set(
-        presence.cellX * BUILDER_TILE_SIZE,
-        0,
-        presence.cellZ * BUILDER_TILE_SIZE
+      const center = getTileCenterWorldPosition(
+        item,
+        presence.cellX ?? 0,
+        presence.cellZ ?? 0,
+        presence.rotationQuarterTurns ?? 0
       );
-      entry.footprint.scale.set(BUILDER_TILE_SIZE - 0.5, BUILDER_TILE_SIZE - 0.5, 1);
+      const [footprintWidth, footprintDepth] = getTileFootprintWorldSize(item, presence.rotationQuarterTurns ?? 0);
+      entry.root.position.set(
+        center.x,
+        0,
+        center.z
+      );
+      entry.footprint.scale.set(
+        Math.max(0.4, footprintWidth - 0.5),
+        Math.max(0.4, footprintDepth - 0.5),
+        1
+      );
     } else {
       entry.root.position.set(presence.x ?? 0, 0, presence.z ?? 0);
       entry.footprint.scale.set(item.size[0] + 0.25, item.size[1] + 0.25, 1);

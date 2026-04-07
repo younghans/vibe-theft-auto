@@ -96,8 +96,8 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
         edit.cellZ,
         edit.rotationQuarterTurns
       );
-      if (result.replacedPlacementId) {
-        worldRenderer.removePlacement(result.replacedPlacementId);
+      for (const replacedPlacementId of result.replacedPlacementIds ?? []) {
+        worldRenderer.removePlacement(replacedPlacementId);
       }
       await worldRenderer.addPlacement(result.placement);
       return successResult(result.placement.id);
@@ -124,12 +124,12 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
       return successResult(placement.id);
     }
     case 'rotatePlacement': {
-      const placement = worldState.rotatePlacement(edit.placementId);
-      if (!placement) {
-        return errorResult('That placement is not available.');
+      const result = worldState.rotatePlacement(edit.placementId);
+      if (!result?.placement) {
+        return errorResult(result?.error ?? 'That placement is not available.');
       }
-      worldRenderer.updatePlacement(placement);
-      return successResult(placement.id);
+      worldRenderer.updatePlacement(result.placement);
+      return successResult(result.placement.id);
     }
     case 'deletePlacement': {
       const placement = worldState.deletePlacement(edit.placementId);

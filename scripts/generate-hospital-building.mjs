@@ -39,6 +39,7 @@ globalThis.FileReader = globalThis.FileReader ?? NodeFileReader;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const outputPath = path.join(projectRoot, 'assets', 'stickrpg_custom', 'models', 'hospital-building.glb');
+const wideOutputPath = path.join(projectRoot, 'assets', 'stickrpg_custom', 'models', 'hospital-building-wide.glb');
 
 function createMaterial(color) {
   return new THREE.MeshStandardMaterial({
@@ -186,12 +187,8 @@ function addParapetRect(group, {
   group.add(createBox([thickness, parapetHeight, depth], [centerX + ((width - thickness) * 0.5), centerY, centerZ], material));
 }
 
-function buildHospital() {
-  const scene = new THREE.Scene();
-  const hospital = new THREE.Group();
-  hospital.name = 'hospital_building';
-
-  const materials = {
+function createHospitalMaterials() {
+  return {
     concrete: createMaterial(0xd9d6d2),
     concreteDark: createMaterial(0xa8afb8),
     trim: createMaterial(0xc84646),
@@ -204,6 +201,14 @@ function buildHospital() {
     pad: createMaterial(0xbcc3cb),
     asphalt: createMaterial(0x30363c)
   };
+}
+
+function buildHospital() {
+  const scene = new THREE.Scene();
+  const hospital = new THREE.Group();
+  hospital.name = 'hospital_building';
+
+  const materials = createHospitalMaterials();
 
   addBoxes(hospital, [
     { size: [11.4, 0.58, 11.1], position: [0, 0.29, 0], material: materials.concreteDark },
@@ -541,15 +546,254 @@ function buildHospital() {
   return scene;
 }
 
+function buildWideHospital() {
+  const scene = new THREE.Scene();
+  const hospital = new THREE.Group();
+  hospital.name = 'hospital_building_wide';
+  const materials = createHospitalMaterials();
+
+  addBoxes(hospital, [
+    { size: [22.6, 0.58, 11.1], position: [0, 0.29, 0], material: materials.concreteDark },
+    { size: [20.4, 0.14, 2.9], position: [1.1, 0.66, 4.04], material: materials.accent },
+    { size: [6.1, 0.14, 2.2], position: [-8.15, 0.67, 4.16], material: materials.asphalt },
+    { size: [16.9, 6.2, 7.15], position: [1.15, 3.39, -0.42], material: materials.concrete },
+    { size: [6.1, 13.2, 4.85], position: [-7.4, 7.18, -1.2], material: materials.concreteDark },
+    { size: [3.8, 2.5, 3.1], position: [-7.55, 15.05, -1.2], material: materials.concrete },
+    { size: [4.8, 8.4, 4.45], position: [8.65, 4.5, -0.55], material: materials.concreteDark },
+    { size: [7.8, 3.05, 2.75], position: [1.45, 1.85, 4.02], material: materials.accent },
+    { size: [5.15, 2.55, 2.9], position: [-8.3, 1.58, 3.92], material: materials.concrete },
+    { size: [8.5, 0.28, 2.42], position: [1.45, 3.1, 4.94], material: materials.trim },
+    { size: [7.82, 0.12, 2.08], position: [1.45, 3.28, 4.88], material: materials.accent },
+    { size: [5.5, 0.22, 2.18], position: [-8.3, 2.76, 4.82], material: materials.trim },
+    { size: [0.22, 2.28, 0.22], position: [-1.05, 1.75, 4.98], material: materials.accent },
+    { size: [0.22, 2.28, 0.22], position: [4.05, 1.75, 4.98], material: materials.accent },
+    { size: [1.22, 2.02, 0.18], position: [0.15, 1.2, 5.18], material: materials.door },
+    { size: [1.22, 2.02, 0.18], position: [2.3, 1.2, 5.18], material: materials.door },
+    { size: [8.6, 0.2, 0.22], position: [1.15, 4.86, 3.24], material: materials.trim },
+    { size: [8.6, 0.18, 0.22], position: [1.15, 2.62, 3.24], material: materials.trimDark },
+    { size: [6.2, 0.18, 0.22], position: [-7.4, 12.32, 0.9], material: materials.trim },
+    { size: [6.2, 0.18, 0.22], position: [-7.4, 9.98, 0.9], material: materials.trimDark },
+    { size: [3.85, 0.18, 0.22], position: [-7.55, 16.32, 0.05], material: materials.trim },
+    { size: [4.9, 0.18, 0.22], position: [8.65, 7.05, 1.88], material: materials.trim },
+    { size: [4.9, 0.18, 0.22], position: [8.65, 4.25, 1.88], material: materials.trimDark },
+    { size: [0.24, 13.2, 4.95], position: [-10.58, 7.18, -1.2], material: materials.accent },
+    { size: [0.24, 13.2, 4.95], position: [-4.22, 7.18, -1.2], material: materials.accent },
+    { size: [0.24, 8.4, 4.65], position: [6.22, 4.5, -0.55], material: materials.accent },
+    { size: [0.24, 8.4, 4.65], position: [11.08, 4.5, -0.55], material: materials.accent },
+    { size: [0.24, 2.55, 2.95], position: [-10.8, 1.58, 3.92], material: materials.accent },
+    { size: [0.24, 2.55, 2.95], position: [-5.8, 1.58, 3.92], material: materials.accent },
+    { size: [0.9, 0.65, 1.15], position: [4.75, 6.72, -2.1], material: materials.concreteDark },
+    { size: [1.15, 0.5, 0.9], position: [-8.6, 13.35, -0.9], material: materials.concreteDark },
+    { size: [0.42, 0.95, 0.42], position: [-5.55, 13.75, -0.72], material: materials.trimDark },
+    { size: [0.88, 0.6, 0.88], position: [8.55, 8.9, -0.95], material: materials.concreteDark },
+    { size: [0.42, 0.82, 0.42], position: [9.9, 9.15, -0.55], material: materials.trimDark },
+    { size: [0.74, 1.2, 0.74], position: [6.2, 6.9, -2.55], material: materials.concreteDark },
+    { size: [0.96, 1.95, 0.2], position: [-7.15, 1.72, 4.92], material: materials.glassDark },
+    { size: [5.6, 0.09, 0.34], position: [-7.4, 5.58, 1.08], material: materials.accent },
+    { size: [5.6, 0.09, 0.34], position: [-7.4, 7.65, 1.08], material: materials.accent },
+    { size: [5.6, 0.09, 0.34], position: [-7.4, 11.82, 1.08], material: materials.accent },
+    { size: [10.4, 0.09, 0.34], position: [1.15, 5.62, 1.1], material: materials.accent },
+    { size: [4.25, 0.08, 0.28], position: [8.65, 2.5, 2.08], material: materials.accent },
+    { size: [4.25, 0.08, 0.28], position: [8.65, 4.25, 2.08], material: materials.accent },
+    { size: [4.25, 0.08, 0.28], position: [8.65, 6.0, 2.08], material: materials.accent }
+  ]);
+
+  addParapetRect(hospital, {
+    centerX: 1.15,
+    centerY: 6.63,
+    centerZ: -0.42,
+    width: 16.4,
+    depth: 6.8,
+    parapetHeight: 0.22,
+    thickness: 0.18,
+    material: materials.accent
+  });
+  addParapetRect(hospital, {
+    centerX: -7.4,
+    centerY: 13.88,
+    centerZ: -1.2,
+    width: 5.8,
+    depth: 4.55,
+    parapetHeight: 0.22,
+    thickness: 0.18,
+    material: materials.accent
+  });
+  addParapetRect(hospital, {
+    centerX: 8.65,
+    centerY: 8.82,
+    centerZ: -0.55,
+    width: 4.2,
+    depth: 3.9,
+    parapetHeight: 0.18,
+    thickness: 0.16,
+    material: materials.accent
+  });
+
+  addCross(hospital, [1.55, 3.18, 4.98], materials.trim, materials.accent);
+  addCross(hospital, [-7.4, 9.4, 1.04], materials.trim, materials.accent);
+
+  for (const y of [1.82, 3.34, 4.86]) {
+    addWindowRow(hospital, {
+      startX: -5.05,
+      count: 6,
+      spacing: 2.35,
+      size: [1.45, 0.92, 0.18],
+      y,
+      z: 3.36,
+      material: y === 3.34 ? materials.glassLite : materials.glass
+    });
+    addFrontWindowDetailRow(hospital, {
+      startX: -5.05,
+      count: 6,
+      spacing: 2.35,
+      windowSize: [1.45, 0.92, 0.18],
+      y,
+      z: 3.36,
+      backingMaterial: materials.accent,
+      trimMaterial: materials.trimDark,
+      sillMaterial: materials.accent
+    });
+  }
+
+  for (const [y, material] of [
+    [6.48, materials.glassLite],
+    [8.58, materials.glass],
+    [10.68, materials.glassLite],
+    [12.78, materials.glass]
+  ]) {
+    addWindowRow(hospital, {
+      startX: -8.95,
+      count: 2,
+      spacing: 3.1,
+      size: [1.18, 0.92, 0.18],
+      y,
+      z: 0.98,
+      material
+    });
+    addFrontWindowDetailRow(hospital, {
+      startX: -8.95,
+      count: 2,
+      spacing: 3.1,
+      windowSize: [1.18, 0.92, 0.18],
+      y,
+      z: 0.98,
+      backingMaterial: materials.accent,
+      trimMaterial: materials.trimDark,
+      sillMaterial: materials.accent
+    });
+  }
+
+  addWindowRow(hospital, {
+    startX: -8.38,
+    count: 2,
+    spacing: 1.62,
+    size: [0.94, 0.84, 0.16],
+    y: 15.4,
+    z: 0.18,
+    material: materials.glassLite
+  });
+  addFrontWindowDetailRow(hospital, {
+    startX: -8.38,
+    count: 2,
+    spacing: 1.62,
+    windowSize: [0.94, 0.84, 0.16],
+    y: 15.4,
+    z: 0.18,
+    backingMaterial: materials.accent,
+    trimMaterial: materials.trimDark,
+    sillMaterial: materials.accent
+  });
+
+  for (const [y, material] of [
+    [2.02, materials.glass],
+    [3.82, materials.glassLite],
+    [5.62, materials.glass],
+    [7.42, materials.glassLite]
+  ]) {
+    addWindowRow(hospital, {
+      startX: 7.55,
+      count: 2,
+      spacing: 1.78,
+      size: [1.02, 0.9, 0.16],
+      y,
+      z: 2.02,
+      material
+    });
+    addFrontWindowDetailRow(hospital, {
+      startX: 7.55,
+      count: 2,
+      spacing: 1.78,
+      windowSize: [1.02, 0.9, 0.16],
+      y,
+      z: 2.02,
+      backingMaterial: materials.accent,
+      trimMaterial: materials.trimDark,
+      sillMaterial: materials.accent
+    });
+  }
+
+  addWindowColumn(hospital, {
+    x: -10.52,
+    startY: 2.1,
+    count: 5,
+    spacing: 2.0,
+    size: [0.16, 1.08, 1.08],
+    z: 0.82,
+    material: materials.glass
+  });
+  addSideWindowDetailColumn(hospital, {
+    x: -10.52,
+    startY: 2.1,
+    count: 5,
+    spacing: 2.0,
+    windowSize: [0.16, 1.08, 1.08],
+    z: 0.82,
+    backingMaterial: materials.accent,
+    trimMaterial: materials.trimDark,
+    sillMaterial: materials.accent
+  });
+  addWindowColumn(hospital, {
+    x: 6.25,
+    startY: 2.0,
+    count: 4,
+    spacing: 1.8,
+    size: [0.16, 1.0, 1.0],
+    z: 0.65,
+    material: materials.glassLite
+  });
+  addSideWindowDetailColumn(hospital, {
+    x: 6.25,
+    startY: 2.0,
+    count: 4,
+    spacing: 1.8,
+    windowSize: [0.16, 1.0, 1.0],
+    z: 0.65,
+    backingMaterial: materials.accent,
+    trimMaterial: materials.trimDark,
+    sillMaterial: materials.accent
+  });
+
+  hospital.add(createCylinder(1.82, 1.82, 0.12, 24, [-7.45, 16.38, -1.26], materials.pad));
+  hospital.add(createCylinder(1.56, 1.56, 0.05, 24, [-7.45, 16.46, -1.26], materials.glassDark));
+  hospital.add(createCylinder(1.38, 1.38, 0.03, 24, [-7.45, 16.52, -1.26], materials.pad));
+
+  scene.add(hospital);
+  return scene;
+}
+
 async function main() {
   const exporter = new GLTFExporter();
-  const hospitalScene = buildHospital();
-  const arrayBuffer = await exporter.parseAsync(hospitalScene, { binary: true });
-
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, Buffer.from(arrayBuffer));
 
-  console.log(`Generated ${path.relative(projectRoot, outputPath)}`);
+  for (const [sceneBuilder, targetPath] of [
+    [buildHospital, outputPath],
+    [buildWideHospital, wideOutputPath]
+  ]) {
+    const scene = sceneBuilder();
+    const arrayBuffer = await exporter.parseAsync(scene, { binary: true });
+    await fs.writeFile(targetPath, Buffer.from(arrayBuffer));
+    console.log(`Generated ${path.relative(projectRoot, targetPath)}`);
+  }
 }
 
 await main();

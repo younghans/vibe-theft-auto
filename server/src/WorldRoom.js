@@ -24,7 +24,7 @@ import {
   clampToWorldBounds,
   distance2D,
   normalizeAimVector,
-  placementToCollisionRect,
+  placementToCollisionRects,
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
@@ -757,23 +757,20 @@ export class WorldRoom extends Room {
 
     for (const placement of this.worldState.getPlacements()) {
       const item = getBuilderItemById(placement.itemId);
-      const rect = placementToCollisionRect(placement, item, {
+      const rects = placementToCollisionRects(placement, item, {
         collisionKey: 'blocksShots'
       });
-      if (!rect) {
-        continue;
-      }
+      for (const rect of rects) {
+        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
+        if (
+          hitDistance == null
+          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+          || hitDistance >= nearestDistance
+        ) {
+          continue;
+        }
 
-      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
-      if (
-        hitDistance == null
-        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
-        || hitDistance >= nearestDistance
-      ) {
-        continue;
-      }
-
-      nearestDistance = hitDistance;
+        nearestDistance = hitDistance;
         result = {
           kind: 'world',
           hitX: origin.x + aim.x * hitDistance,
@@ -781,6 +778,7 @@ export class WorldRoom extends Room {
           targetId: placement.id
         };
       }
+    }
 
     for (const [sessionId, target] of this.state.players.entries()) {
       if (sessionId === shooterSessionId || target.alive === false) {
@@ -872,6 +870,7 @@ export class WorldRoom extends Room {
         return this.commitWorldPatch({
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementIds: result.replacedPlacementIds ?? [],
           replacedPlacementId: result.replacedPlacementId
         }, previousLayout);
       }
@@ -907,8 +906,12 @@ export class WorldRoom extends Room {
       }
       case 'rotatePlacement': {
         const placement = this.assertEditablePlacement(payload.placementId);
-        const rotated = this.worldState.rotatePlacement(placement.id);
-        if (rotated?.layer === 'npc') {
+        const result = this.worldState.rotatePlacement(placement.id);
+        if (!result?.placement) {
+          throw new Error(result?.error ?? 'That placement is not available.');
+        }
+        const rotated = result.placement;
+        if (rotated.layer === 'npc') {
           this.syncNpcDefinitionsFromWorld();
         }
         return this.commitWorldPatch({

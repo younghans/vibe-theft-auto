@@ -1069,6 +1069,15 @@
       "rotationQuarterTurns": 0
     },
     {
+      "id": "placement_217",
+      "itemId": "hospital_building_wide",
+      "cell": [
+        3,
+        5
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_208",
       "itemId": "road_straight",
       "cell": [
