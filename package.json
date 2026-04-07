@@ -16,6 +16,7 @@
     "start": "node server/index.mjs",
     "build": "node scripts/build-web.mjs",
     "deploy:colyseus": "npx @colyseus/cloud deploy",
+    "inspect:buildings": "node scripts/inspect-building-assets.mjs",
     "preview": "node scripts/dev-server.mjs dist 4174",
     "validate": "node scripts/validate-world-editor.mjs",
     "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/mixamo/characters/x-bot.fbx\" \"assets/mixamo/animations/walking.json\"",

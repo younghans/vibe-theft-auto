@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
+import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
 const REMOTE_PREVIEW_COLOR = new THREE.Color(0x68c7ff);
 
@@ -34,31 +35,20 @@ function applyPreviewMaterial(root) {
   });
 }
 
-function fitToFootprint(root, targetWidth, targetDepth) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scaleX = size.x > 0 ? targetWidth / size.x : 1;
-  const scaleZ = size.z > 0 ? targetDepth / size.z : 1;
-  root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
-}
-
-function snapToGround(root) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  root.position.y -= bounds.min.y;
-}
-
-function preparePreviewObject(root, item) {
+async function createPreviewObject(library, item) {
   const npcModel = item.layer === 'npc'
     ? getNpcModelByItemId(item.id)
     : null;
 
   if (npcModel) {
+    const root = await library.instantiate(item.asset);
     prepareNpcRenderObject(root, npcModel, { enableShadows: false });
-    return;
+    return root;
   }
 
-  fitToFootprint(root, item.size[0], item.size[1]);
-  snapToGround(root);
+  const visual = await instantiateItemVisual(library, item);
+  prepareItemVisual(visual);
+  return visual.root;
 }
 
 function toRotationY(rotationQuarterTurns) {
@@ -178,13 +168,12 @@ export class RemoteBuilderRenderer {
   async loadPreview(entry, item) {
     const token = (this.loadTokens.get(entry.sessionId) ?? 0) + 1;
     this.loadTokens.set(entry.sessionId, token);
-    const preview = await this.library.instantiate(item.asset);
+    const preview = await createPreviewObject(this.library, item);
     if (this.loadTokens.get(entry.sessionId) !== token) {
       return;
     }
 
     applyPreviewMaterial(preview);
-    preparePreviewObject(preview, item);
     preview.position.y = 0.08;
 
     if (entry.previewObject) {

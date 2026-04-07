@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { instantiateItemVisual, prepareItemVisual } from '../world/itemVisuals.js';
 
 const PREVIEW_WIDTH = 208;
 const PREVIEW_HEIGHT = 132;
@@ -28,18 +29,6 @@ function getPreviewProfile(item) {
     floorScale: 0.66,
     view: 'isometric'
   };
-}
-
-function fitObjectToPreview(object, item, profile) {
-  if (!item?.size) {
-    return;
-  }
-
-  const bounds = new THREE.Box3().setFromObject(object);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scaleX = size.x > 0 ? item.size[0] / size.x : 1;
-  const scaleZ = size.z > 0 ? item.size[1] / size.z : 1;
-  object.scale.multiplyScalar(Math.min(scaleX, scaleZ) * (profile?.fitZoom ?? 1));
 }
 
 function groundObject(object) {
@@ -143,10 +132,11 @@ export class BuilderPreviewRenderer {
     this.objectRoot.clear();
     const profile = getPreviewProfile(item);
 
-    const object = await this.library.instantiate(item.asset);
+    const visual = await instantiateItemVisual(this.library, item);
+    prepareItemVisual(visual);
+    const object = visual.root;
     object.rotation.y = profile.rotationY;
-
-    fitObjectToPreview(object, item, profile);
+    object.scale.multiplyScalar(profile?.fitZoom ?? 1);
     groundObject(object);
     this.objectRoot.add(object);
 

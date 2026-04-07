@@ -215,7 +215,6 @@ function buildHospital() {
     { size: [2.85, 7.1, 3.55], position: [3.92, 4.15, 0.25], material: materials.concrete },
     { size: [5.2, 3.15, 2.7], position: [0, 1.95, 4.08], material: materials.accent },
     { size: [2.45, 2.6, 2.7], position: [3.75, 1.7, 3.65], material: materials.concrete },
-    { size: [2.15, 1.7, 2.2], position: [-4.0, 1.25, 2.9], material: materials.concrete },
     { size: [5.8, 0.28, 2.35], position: [0, 3.08, 4.96], material: materials.trim },
     { size: [5.25, 0.12, 2.0], position: [0, 3.28, 4.9], material: materials.accent },
     { size: [0.22, 2.32, 0.22], position: [-2.1, 1.7, 4.94], material: materials.accent },
@@ -258,16 +257,6 @@ function buildHospital() {
 
   addCross(hospital, [3.75, 3.16, 4.98], materials.trim, materials.accent);
 
-  addParapetRect(hospital, {
-    centerX: 0,
-    centerY: 0.92,
-    centerZ: 0,
-    width: 11.0,
-    depth: 10.7,
-    parapetHeight: 0.22,
-    thickness: 0.18,
-    material: materials.accent
-  });
   addParapetRect(hospital, {
     centerX: 0.1,
     centerY: 6.53,

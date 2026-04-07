@@ -4,6 +4,7 @@ import { NpcActor } from '../npc/NpcActor.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
+import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
 function setShadowFlags(root) {
   root.traverse((node) => {
@@ -14,20 +15,16 @@ function setShadowFlags(root) {
   });
 }
 
-function fitToFootprint(root, targetWidth, targetDepth) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scaleX = size.x > 0 ? targetWidth / size.x : 1;
-  const scaleZ = size.z > 0 ? targetDepth / size.z : 1;
-  root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
-}
-
-function snapToGround(root) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  root.position.y -= bounds.min.y;
+async function createPlacementVisual(library, item) {
+  const visual = await instantiateItemVisual(library, item);
+  prepareItemVisual(visual, (object) => {
+    setShadowFlags(object);
+  });
+  return visual;
 }
 
 function createBoxCollider(object, padding = 0.2) {
+  object.updateWorldMatrix(true, true);
   return {
     type: 'box',
     box: new THREE.Box3().setFromObject(object).expandByScalar(padding)
@@ -158,7 +155,7 @@ function buildParkWallColliders(object) {
   const b = new THREE.Vector3();
   const c = new THREE.Vector3();
 
-  object.updateMatrixWorld(true);
+  object.updateWorldMatrix(true, true);
   object.traverse((node) => {
     if (!node.isMesh) {
       return;
@@ -344,13 +341,11 @@ export class WorldRenderer {
     const actor = placement.layer === 'npc'
       ? await this.createNpcActor(placement, item)
       : null;
-    const object = actor?.object ?? await this.library.instantiate(item.asset);
+    const visual = actor ? null : await createPlacementVisual(this.library, item);
+    const object = actor?.object ?? visual.root;
+    const colliderObject = actor?.object ?? visual.colliderObject;
 
     if (!actor) {
-      setShadowFlags(object);
-      fitToFootprint(object, item.size[0], item.size[1]);
-      snapToGround(object);
-
       if (placement.layer === 'tile') {
         object.position.set(placement.cellX * BUILDER_TILE_SIZE, 0, placement.cellZ * BUILDER_TILE_SIZE);
       } else {
@@ -375,7 +370,8 @@ export class WorldRenderer {
       surfaceHeight: placement.layer === 'tile'
         ? (item.surfaceHeight ?? 0)
         : null,
-      colliders: createPlacementColliders(object, item, placement, actor)
+      colliderObject,
+      colliders: createPlacementColliders(colliderObject, item, placement, actor)
     };
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
@@ -453,7 +449,7 @@ export class WorldRenderer {
     if (rendered.actor) {
       rendered.colliders = createPlacementColliders(rendered.object, rendered.item, placement, rendered.actor);
     } else {
-      rendered.colliders = createPlacementColliders(rendered.object, rendered.item, placement, null);
+      rendered.colliders = createPlacementColliders(rendered.colliderObject, rendered.item, placement, null);
     }
   }
 

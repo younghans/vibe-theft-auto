@@ -8,6 +8,7 @@ import {
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
+import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import { RemoteBuilderRenderer } from './RemoteBuilderRenderer.js';
 import { WorldRenderer } from './WorldRenderer.js';
 import { WorldState } from './WorldState.js';
@@ -49,31 +50,20 @@ function applyPreviewMaterial(root, opacity) {
   });
 }
 
-function fitToFootprint(root, targetWidth, targetDepth) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scaleX = size.x > 0 ? targetWidth / size.x : 1;
-  const scaleZ = size.z > 0 ? targetDepth / size.z : 1;
-  root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
-}
-
-function snapToGround(root) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  root.position.y -= bounds.min.y;
-}
-
-function preparePreviewObject(root, item) {
+async function createPreviewObject(library, item) {
   const npcModel = item.layer === 'npc'
     ? getNpcModelByItemId(item.id)
     : null;
 
   if (npcModel) {
+    const root = await library.instantiate(item.asset);
     prepareNpcRenderObject(root, npcModel, { enableShadows: false });
-    return;
+    return root;
   }
 
-  fitToFootprint(root, item.size[0], item.size[1]);
-  snapToGround(root);
+  const visual = await instantiateItemVisual(library, item);
+  prepareItemVisual(visual);
+  return visual.root;
 }
 
 function snapToCell(worldPosition) {
@@ -697,13 +687,12 @@ export class WorldBuilder {
 
     this.state.preview.loadingKey = previewTarget.key;
     const token = ++this.previewLoadToken;
-    const preview = await this.library.instantiate(previewTarget.item.asset);
+    const preview = await createPreviewObject(this.library, previewTarget.item);
     if (token !== this.previewLoadToken || this.state.preview.loadingKey !== previewTarget.key) {
       return;
     }
 
     applyPreviewMaterial(preview, previewTarget.opacity);
-    preparePreviewObject(preview, previewTarget.item);
     preview.position.y = 0.08;
 
     this.previewRoot.clear();

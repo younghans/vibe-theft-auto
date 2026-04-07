@@ -22,6 +22,7 @@ const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
 const CUSTOM_CITY_PACK = 'stickrpg_custom';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;
+const BUILDING_UNDERLAY_TILE_ID = 'lot_base';
 const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
 const KENNEY_SKYSCRAPER_VARIANTS = Object.freeze('abcde'.split(''));
 const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
@@ -50,7 +51,8 @@ function createKenneyBuildingDefinition({ id, label, fileName }) {
     group: 'lots',
     size: KENNEY_TILE_SIZE,
     collision: true,
-    padding: 0.5
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
   };
 }
 
@@ -95,22 +97,22 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'road_cross', assetName: 'road_straight_crossing', label: 'Road Cross', group: 'streets' },
   { id: 'road_junction', assetName: 'road_junction', label: 'Road Junction', group: 'streets' },
   { id: 'lot_base', assetName: 'base', label: 'Base Lot', group: 'lots' },
-  { id: 'building_a', assetName: 'building_A', group: 'lots' },
-  { id: 'building_a_without_base', assetName: 'building_A_withoutBase', group: 'lots' },
-  { id: 'building_b', assetName: 'building_B', group: 'lots' },
-  { id: 'building_b_without_base', assetName: 'building_B_withoutBase', group: 'lots' },
-  { id: 'building_c', assetName: 'building_C', group: 'lots' },
-  { id: 'building_c_without_base', assetName: 'building_C_withoutBase', group: 'lots' },
-  { id: 'building_d', assetName: 'building_D', group: 'lots' },
-  { id: 'building_d_without_base', assetName: 'building_D_withoutBase', group: 'lots' },
-  { id: 'building_e', assetName: 'building_E', group: 'lots' },
-  { id: 'building_e_without_base', assetName: 'building_E_withoutBase', group: 'lots' },
-  { id: 'building_f', assetName: 'building_F', group: 'lots' },
-  { id: 'building_f_without_base', assetName: 'building_F_withoutBase', group: 'lots' },
-  { id: 'building_g', assetName: 'building_G', group: 'lots' },
-  { id: 'building_g_without_base', assetName: 'building_G_withoutBase', group: 'lots' },
-  { id: 'building_h', assetName: 'building_H', group: 'lots' },
-  { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots' },
+  { id: 'building_a', assetName: 'building_A_withoutBase', label: 'Building A', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_a_without_base', assetName: 'building_A_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_b', assetName: 'building_B_withoutBase', label: 'Building B', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_b_without_base', assetName: 'building_B_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_c', assetName: 'building_C_withoutBase', label: 'Building C', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_c_without_base', assetName: 'building_C_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_d', assetName: 'building_D_withoutBase', label: 'Building D', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_d_without_base', assetName: 'building_D_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_e', assetName: 'building_E_withoutBase', label: 'Building E', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_e_without_base', assetName: 'building_E_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_f', assetName: 'building_F_withoutBase', label: 'Building F', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_f_without_base', assetName: 'building_F_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_g', assetName: 'building_G_withoutBase', label: 'Building G', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_g_without_base', assetName: 'building_G_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_h', assetName: 'building_H_withoutBase', label: 'Building H', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
   {
     id: 'hospital_building',
     assetName: 'hospital_building',
@@ -120,7 +122,18 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
     collision: true,
     blocksShots: true,
-    padding: 0.5
+    movementCollisionRects: [
+      { centerX: 0.1, centerZ: -0.35, halfWidth: 4.5, halfDepth: 3.55, minY: 0, maxY: 18 },
+      { centerX: 3.92, centerZ: 0.25, halfWidth: 1.43, halfDepth: 1.78, minY: 0, maxY: 18 },
+      { centerX: 1.2, centerZ: 3.85, halfWidth: 3.8, halfDepth: 1.55, minY: 0, maxY: 18 }
+    ],
+    shotCollisionRects: [
+      { centerX: 0.1, centerZ: -0.35, halfWidth: 4.5, halfDepth: 3.55 },
+      { centerX: 3.92, centerZ: 0.25, halfWidth: 1.43, halfDepth: 1.78 },
+      { centerX: 1.2, centerZ: 3.85, halfWidth: 3.8, halfDepth: 1.55 }
+    ],
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
   { assetName: 'park_base', group: 'parks' },
   { assetName: 'park_base_decorated_bushes', group: 'parks' },
@@ -315,6 +328,7 @@ function createCityTile(definition) {
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
+    underlayTileId: definition.underlayTileId ?? null,
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]
   };
