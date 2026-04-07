@@ -53,6 +53,15 @@ const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
+const DEFAULT_VIBE_SHADER_INTENSITY = 1;
+
+function clampVibeShaderIntensity(value) {
+  return THREE.MathUtils.clamp(
+    Number.isFinite(value) ? value : DEFAULT_VIBE_SHADER_INTENSITY,
+    0,
+    1
+  );
+}
 
 function isLocalDebugHost() {
   const hostname = globalThis.location?.hostname ?? '';
@@ -139,6 +148,9 @@ export class Game {
     this.aimPoseDebugShowSkeleton = false;
     this.shaderDebugMenuVisible = false;
     this.activeVibeShaderPresetId = DEFAULT_VIBE_SHADER_PRESET_ID;
+    this.vibeShaderPresetIntensities = new Map(
+      VIBE_SHADER_PRESETS.map((preset) => [preset.id, DEFAULT_VIBE_SHADER_INTENSITY])
+    );
     this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
@@ -163,7 +175,9 @@ export class Game {
     this.hud.bindShaderDebugEvents({
       onToggleMenu: () => this.toggleShaderDebugMenu(),
       onCloseMenu: () => this.setShaderDebugMenuVisible(false),
-      onSelectPreset: (presetId) => this.setVibeShaderPreset(presetId)
+      onSelectPreset: (presetId) => this.setVibeShaderPreset(presetId),
+      onSetIntensity: (intensity) => this.setVibeShaderIntensity(intensity),
+      onResetIntensity: () => this.resetVibeShaderIntensity()
     });
     this.hud.bindZoomEvents({
       onZoomIn: () => this.stepCameraZoom(-1),
@@ -203,6 +217,34 @@ export class Game {
     return getVibeShaderPreset(this.activeVibeShaderPresetId);
   }
 
+  getVibeShaderIntensity(presetId = this.activeVibeShaderPresetId) {
+    return clampVibeShaderIntensity(
+      this.vibeShaderPresetIntensities.get(getVibeShaderPreset(presetId).id)
+    );
+  }
+
+  setVibeShaderIntensity(intensity, { presetId = this.activeVibeShaderPresetId, announce = false } = {}) {
+    const preset = getVibeShaderPreset(presetId);
+    const nextIntensity = clampVibeShaderIntensity(intensity);
+    this.vibeShaderPresetIntensities.set(preset.id, nextIntensity);
+
+    if (preset.id === this.activeVibeShaderPresetId && this.vibeShaderPass?.uniforms?.uIntensity) {
+      this.vibeShaderPass.uniforms.uIntensity.value = nextIntensity;
+    }
+
+    this.refreshShaderDebugHud();
+
+    if (announce && preset.id !== DEFAULT_VIBE_SHADER_PRESET_ID) {
+      this.hud.showToast(`${preset.label} intensity set to ${Math.round(nextIntensity * 100)}%.`);
+    }
+
+    return nextIntensity;
+  }
+
+  resetVibeShaderIntensity(options = {}) {
+    return this.setVibeShaderIntensity(DEFAULT_VIBE_SHADER_INTENSITY, options);
+  }
+
   setShaderDebugMenuVisible(visible) {
     const nextVisible = Boolean(visible);
     if (nextVisible) {
@@ -226,9 +268,13 @@ export class Game {
   setVibeShaderPreset(presetId, { announce = true } = {}) {
     const preset = getVibeShaderPreset(presetId);
     this.activeVibeShaderPresetId = preset.id;
+    const intensity = this.getVibeShaderIntensity(preset.id);
 
     if (this.vibeShaderPass?.uniforms?.uPreset) {
       this.vibeShaderPass.uniforms.uPreset.value = preset.index;
+    }
+    if (this.vibeShaderPass?.uniforms?.uIntensity) {
+      this.vibeShaderPass.uniforms.uIntensity.value = intensity;
     }
 
     this.refreshShaderDebugHud();
@@ -246,15 +292,18 @@ export class Game {
 
   refreshShaderDebugHud() {
     const activePreset = this.getActiveVibeShaderPreset();
+    const intensity = this.getVibeShaderIntensity(activePreset.id);
     const statusText = activePreset.id === DEFAULT_VIBE_SHADER_PRESET_ID
       ? 'Default render pipeline active. Pick a preset to remix the whole scene.'
-      : `${activePreset.label} is live. Switch presets anytime to totally restyle the city.`;
+      : `${activePreset.label} is live at ${Math.round(intensity * 100)}%. Switch presets anytime to totally restyle the city.`;
 
     this.hud.setShaderDebugState({
       visible: this.shaderDebugMenuVisible,
       activePresetId: activePreset.id,
       statusText,
-      presets: VIBE_SHADER_PRESETS
+      presets: VIBE_SHADER_PRESETS,
+      intensity,
+      intensityEnabled: activePreset.id !== DEFAULT_VIBE_SHADER_PRESET_ID
     });
   }
 
@@ -494,6 +543,11 @@ export class Game {
       presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
       getActivePreset: () => this.getActiveVibeShaderPreset().id,
       setPreset: (presetId = DEFAULT_VIBE_SHADER_PRESET_ID) => this.setVibeShaderPreset(presetId, { announce: false }),
+      getIntensity: (presetId = this.activeVibeShaderPresetId) => this.getVibeShaderIntensity(presetId),
+      setIntensity: (intensity = DEFAULT_VIBE_SHADER_INTENSITY, presetId = this.activeVibeShaderPresetId) =>
+        this.setVibeShaderIntensity(intensity, { presetId }),
+      resetIntensity: (presetId = this.activeVibeShaderPresetId) =>
+        this.resetVibeShaderIntensity({ presetId }),
       toggleMenu: (visible = !this.shaderDebugMenuVisible) => this.setShaderDebugMenuVisible(visible)
     };
 

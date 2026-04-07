@@ -83,6 +83,9 @@ export class Hud {
     this.shaderDebugToggle = this.overlay.querySelector('[data-shader-debug-toggle]');
     this.shaderDebugClose = this.overlay.querySelector('[data-shader-debug-close]');
     this.shaderDebugStatus = this.overlay.querySelector('[data-shader-debug-status]');
+    this.shaderDebugIntensity = this.overlay.querySelector('[data-shader-debug-intensity]');
+    this.shaderDebugIntensityValue = this.overlay.querySelector('[data-shader-debug-intensity-value]');
+    this.shaderDebugIntensityReset = this.overlay.querySelector('[data-shader-debug-intensity-reset]');
     this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
     this.combatRoot = this.overlay.querySelector('[data-combat-root]');
     this.combatMeter = this.overlay.querySelector('[data-combat-meter]');
@@ -283,6 +286,24 @@ export class Hud {
               <path d="M18 6L6 18" />
             </svg>
           </button>
+        </div>
+        <div class="hud__shader-debug-controls">
+          <label class="hud__shader-debug-intensity">
+            <span class="hud__shader-debug-intensity-label">Intensity</span>
+            <div class="hud__shader-debug-intensity-row">
+              <input
+                class="hud__shader-debug-intensity-range"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="1"
+                data-shader-debug-intensity
+              />
+              <span class="hud__shader-debug-intensity-value" data-shader-debug-intensity-value>100%</span>
+            </div>
+          </label>
+          <button class="hud__builder-icon-button hud__shader-debug-reset" type="button" data-shader-debug-intensity-reset title="Reset active vibe intensity">Reset</button>
         </div>
         <div class="hud__shader-debug-list" data-shader-debug-list></div>
       </section>
@@ -487,7 +508,9 @@ export class Hud {
   bindShaderDebugEvents({
     onToggleMenu,
     onCloseMenu,
-    onSelectPreset
+    onSelectPreset,
+    onSetIntensity,
+    onResetIntensity
   }) {
     this.shaderDebugToggle?.addEventListener('pointerdown', (event) => {
       event.stopPropagation();
@@ -524,6 +547,29 @@ export class Hud {
       }
 
       onSelectPreset(button.dataset.shaderPreset);
+    });
+
+    this.shaderDebugIntensity?.addEventListener('input', (event) => {
+      if (!this.isElementInteractive(this.shaderDebugRoot)) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      onSetIntensity(Number(target.value));
+    });
+
+    this.shaderDebugIntensityReset?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.shaderDebugRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onResetIntensity();
     });
   }
 
@@ -1078,7 +1124,9 @@ export class Hud {
     visible = false,
     activePresetId = '',
     statusText = '',
-    presets = []
+    presets = [],
+    intensity = 1,
+    intensityEnabled = false
   } = {}) {
     if (!this.shaderDebugRoot) {
       return;
@@ -1095,6 +1143,17 @@ export class Hud {
       this.shaderDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
       this.shaderDebugToggle.title = visible ? 'Hide shader vibe menu' : 'Show shader vibe menu';
     }
+
+    const clampedIntensity = Math.max(0, Math.min(1, Number.isFinite(intensity) ? intensity : 1));
+    if (this.shaderDebugIntensity instanceof HTMLInputElement) {
+      setFieldValue(this.shaderDebugIntensity, clampedIntensity.toFixed(2));
+      this.shaderDebugIntensity.disabled = !intensityEnabled;
+    }
+    if (this.shaderDebugIntensityValue) {
+      this.shaderDebugIntensityValue.textContent = `${Math.round(clampedIntensity * 100)}%`;
+      this.shaderDebugIntensityValue.classList.toggle('is-disabled', !intensityEnabled);
+    }
+    this.shaderDebugIntensityReset?.toggleAttribute('disabled', !intensityEnabled);
 
     this.shaderDebugList.innerHTML = presets.map((preset) => {
       const active = preset.id === activePresetId;

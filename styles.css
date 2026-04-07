@@ -656,6 +656,54 @@ body {
   color: rgba(242, 200, 113, 0.92);
 }
 
+.hud__shader-debug-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.hud__shader-debug-intensity {
+  display: grid;
+  gap: 6px;
+}
+
+.hud__shader-debug-intensity-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 226, 0.64);
+}
+
+.hud__shader-debug-intensity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.hud__shader-debug-intensity-range {
+  width: 100%;
+  accent-color: #f2c871;
+  pointer-events: auto;
+}
+
+.hud__shader-debug-intensity-range:disabled {
+  opacity: 0.45;
+}
+
+.hud__shader-debug-intensity-value {
+  min-width: 44px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff1c0;
+  text-align: right;
+}
+
+.hud__shader-debug-intensity-value.is-disabled {
+  color: rgba(244, 238, 226, 0.42);
+}
+
 .hud__shader-debug-list {
   display: grid;
   gap: 8px;
@@ -1154,6 +1202,21 @@ body {
   border-color: rgba(242, 200, 113, 0.55);
   background: rgba(242, 200, 113, 0.12);
   transform: translateY(-1px);
+}
+
+.hud__builder-icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.hud__shader-debug-reset {
+  width: auto;
+  min-width: 68px;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .hud__builder-icon-button svg {
@@ -1905,6 +1968,10 @@ canvas {
 
   .hud__shader-debug {
     top: 84px;
+  }
+
+  .hud__shader-debug-controls {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hud__aim-debug {
