@@ -204,7 +204,15 @@ export class Game {
   }
 
   setShaderDebugMenuVisible(visible) {
-    this.shaderDebugMenuVisible = Boolean(visible);
+    const nextVisible = Boolean(visible);
+    if (nextVisible) {
+      this.setAimPoseDebugVisible(false);
+      if (this.worldBuilder?.enabled) {
+        void this.worldBuilder.setEnabled(false);
+      }
+    }
+
+    this.shaderDebugMenuVisible = nextVisible;
     this.refreshShaderDebugHud();
     return this.shaderDebugMenuVisible;
   }
@@ -258,11 +266,11 @@ export class Game {
     const nextEnabled = !this.worldBuilder.enabled;
     if (nextEnabled) {
       this.closeQuickChat();
+      this.setShaderDebugMenuVisible(false);
+      this.setAimPoseDebugVisible(false);
     }
     void this.worldBuilder.setEnabled(nextEnabled);
-    if (!nextEnabled) {
-      this.setShaderDebugMenuVisible(false);
-    } else {
+    if (nextEnabled) {
       this.refreshShaderDebugHud();
     }
     this.refreshZoomHud();
@@ -509,7 +517,15 @@ export class Game {
   }
 
   setAimPoseDebugVisible(visible) {
-    this.aimPoseDebugVisible = Boolean(visible && isLocalDebugHost());
+    const nextVisible = Boolean(visible && isLocalDebugHost());
+    if (nextVisible) {
+      this.setShaderDebugMenuVisible(false);
+      if (this.worldBuilder?.enabled) {
+        void this.worldBuilder.setEnabled(false);
+      }
+    }
+
+    this.aimPoseDebugVisible = nextVisible;
     this.refreshAimPoseDebugHud();
     return this.aimPoseDebugVisible;
   }

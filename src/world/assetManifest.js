@@ -4,6 +4,31 @@ export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`,
 export const cityAsset = (modelName) =>
   assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', `${modelName}.gltf`);
 
+const PLAYER_EMOTES = Object.freeze(
+  Object.fromEntries(
+    Object.entries(EMOTES_BY_ID).map(([emoteId, emote]) => [emoteId, emote.clipName])
+  )
+);
+
+const PLAYER_PRESETS = Object.freeze({
+  defaultMixamo: Object.freeze({
+    characterRig: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
+    characterVariant: 'mixamo',
+    idleClip: 'idle',
+    walkClip: 'walking',
+    emotes: PLAYER_EMOTES
+  }),
+  osrsBob: Object.freeze({
+    characterRig: assetUrl('bob-from-runescape', 'source', 'Bob.fbx'),
+    characterVariant: 'mixamo',
+    idleClip: 'idle',
+    walkClip: 'walking',
+    emotes: PLAYER_EMOTES
+  })
+});
+
+const ACTIVE_PLAYER_PRESET_ID = 'defaultMixamo';
+
 export const assets = {
   mixamo: {
     characters: {
@@ -19,17 +44,9 @@ export const assets = {
       waving: assetUrl('mixamo', 'animations', 'waving.json')
     }
   },
-  player: {
-    characterRig: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
-    characterVariant: 'classicBot',
-    idleClip: 'idle',
-    walkClip: 'walking',
-    emotes: Object.freeze(
-      Object.fromEntries(
-        Object.entries(EMOTES_BY_ID).map(([emoteId, emote]) => [emoteId, emote.clipName])
-      )
-    )
-  },
+  playerPresetId: ACTIVE_PLAYER_PRESET_ID,
+  playerPresets: PLAYER_PRESETS,
+  player: PLAYER_PRESETS[ACTIVE_PLAYER_PRESET_ID],
   combat: {
     pistol: assetUrl('objects', 'low-poly_g17_pistol.glb')
   },

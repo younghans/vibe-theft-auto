@@ -24,6 +24,10 @@ body {
   background: #090f18;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .hud {
   position: fixed;
   inset: 0;

@@ -237,7 +237,6 @@ export class Hud {
           aria-label="Toggle shader vibe menu"
           aria-pressed="false"
           title="Show shader vibe menu"
-          hidden
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
@@ -290,7 +289,7 @@ export class Hud {
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
       </section>
-      <section class="hud__aim-debug" data-aim-debug>
+      <section class="hud__aim-debug" data-aim-debug hidden>
         <div class="hud__aim-debug-header">
           <div>
             <p class="hud__eyebrow">Aim Pose Debug</p>
@@ -308,7 +307,7 @@ export class Hud {
         <span class="hud__key">E</span>
         <span class="hud__prompt-text" data-prompt></span>
       </section>
-      <section class="hud__builder" data-builder>
+      <section class="hud__builder" data-builder hidden>
         <div class="hud__builder-header">
           <div>
             <p class="hud__eyebrow">World Builder</p>
@@ -404,6 +403,10 @@ export class Hud {
     this.loading.classList.add('is-hidden');
   }
 
+  isElementInteractive(element) {
+    return Boolean(element) && !element.hidden && element.classList.contains('is-visible');
+  }
+
   setPrompt(interactable) {
     const prompt = this.overlay.querySelector('.hud__prompt');
     if (!interactable) {
@@ -439,6 +442,10 @@ export class Hud {
     });
 
     this.aimDebugFields?.addEventListener('input', (event) => {
+      if (!this.isElementInteractive(this.aimDebugRoot)) {
+        return;
+      }
+
       const target = event.target;
       if (!(target instanceof HTMLInputElement)) {
         return;
@@ -453,14 +460,26 @@ export class Hud {
     });
 
     this.aimDebugReset?.addEventListener('click', () => {
+      if (!this.isElementInteractive(this.aimDebugRoot)) {
+        return;
+      }
+
       onReset();
     });
 
     this.aimDebugPrint?.addEventListener('click', () => {
+      if (!this.isElementInteractive(this.aimDebugRoot)) {
+        return;
+      }
+
       onPrint();
     });
 
     this.aimDebugBoneToggle?.addEventListener('click', () => {
+      if (!this.isElementInteractive(this.aimDebugRoot)) {
+        return;
+      }
+
       onToggleBones();
     });
   }
@@ -481,12 +500,20 @@ export class Hud {
     });
 
     this.shaderDebugClose?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.shaderDebugRoot)) {
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
       onCloseMenu();
     });
 
     this.shaderDebugList?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.shaderDebugRoot)) {
+        return;
+      }
+
       event.stopPropagation();
       const target = event.target instanceof Element
         ? event.target
@@ -530,6 +557,10 @@ export class Hud {
     });
 
     this.builderTabs.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
       const button = event.target.closest('[data-builder-category]');
       if (!button) {
         return;
@@ -538,6 +569,10 @@ export class Hud {
     });
 
     this.builderGroups.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
       const button = event.target.closest('[data-builder-group]');
       if (!button) {
         return;
@@ -546,6 +581,10 @@ export class Hud {
     });
 
     this.builderTiles.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
       const button = event.target.closest('[data-builder-index]');
       if (!button) {
         return;
@@ -554,10 +593,18 @@ export class Hud {
     });
 
     this.builderCopy.addEventListener('click', () => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
       onCopyLayout();
     });
 
     this.builderClose.addEventListener('click', () => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
       onToggleBuildMode();
     });
 
@@ -634,19 +681,11 @@ export class Hud {
     groupTabs = [],
     sections = []
   }) {
+    this.builderRoot.hidden = !enabled;
     this.builderRoot.classList.toggle('is-visible', enabled);
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
-    if (this.shaderDebugToggle) {
-      this.shaderDebugToggle.hidden = !enabled;
-    }
-    if (this.shaderDebugRoot) {
-      this.shaderDebugRoot.hidden = !enabled;
-      if (!enabled) {
-        this.shaderDebugRoot.classList.remove('is-visible');
-      }
-    }
     this.builderStatus.textContent = statusText;
     this.builderMeta.textContent = metaText;
 
@@ -1020,6 +1059,7 @@ export class Hud {
       this.aimDebugToggle.title = visible ? 'Hide Aim Pose debug' : 'Show Aim Pose debug';
     }
 
+    this.aimDebugRoot.hidden = !visible;
     this.aimDebugRoot.classList.toggle('is-visible', visible);
     this.aimDebugStatus.textContent = statusText;
     this.aimDebugBoneToggle.classList.toggle('is-active', showSkeleton);
@@ -1044,10 +1084,12 @@ export class Hud {
       return;
     }
 
+    this.shaderDebugRoot.hidden = !visible;
     this.shaderDebugRoot.classList.toggle('is-visible', visible);
     this.shaderDebugStatus.textContent = statusText;
 
     if (this.shaderDebugToggle) {
+      this.shaderDebugToggle.hidden = false;
       const highlightToggle = visible || (activePresetId && activePresetId !== 'default');
       this.shaderDebugToggle.classList.toggle('is-active', highlightToggle);
       this.shaderDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
