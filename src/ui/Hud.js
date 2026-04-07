@@ -70,6 +70,7 @@ export class Hud {
     this.builderPreviewImages = new Map();
     this.loading = this.createLoading();
     this.overlay = this.createOverlay();
+    this.joinTitle = this.overlay.querySelector('[data-join-title]');
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
     this.aimDebugRoot = this.overlay.querySelector('[data-aim-debug]');
@@ -134,6 +135,7 @@ export class Hud {
     this.emoteSliceNodes = [];
     this.speechBubbleNodes = new Map();
     this.aimDebugInputs = new Map();
+    this.joinTitleTimeout = 0;
     this.toastTimeout = 0;
     this.healthTrailFrame = 0;
     this.healthTrailTimeout = 0;
@@ -310,6 +312,22 @@ export class Hud {
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
       </section>
+      <section class="hud__join-title" data-join-title aria-hidden="true">
+        <div class="hud__join-title-stack">
+          <span
+            class="hud__join-title-word"
+            style="--join-order:0; --join-direction:-1; --join-tilt:-7deg;"
+          >Vibe</span>
+          <span
+            class="hud__join-title-word"
+            style="--join-order:1; --join-direction:1; --join-tilt:5deg;"
+          >Theft</span>
+          <span
+            class="hud__join-title-word"
+            style="--join-order:2; --join-direction:-1; --join-tilt:-4deg;"
+          >Auto</span>
+        </div>
+      </section>
       <section class="hud__aim-debug" data-aim-debug hidden>
         <div class="hud__aim-debug-header">
           <div>
@@ -422,6 +440,21 @@ export class Hud {
 
   hideLoading() {
     this.loading.classList.add('is-hidden');
+  }
+
+  playJoinTitleAnimation() {
+    if (!this.joinTitle) {
+      return;
+    }
+
+    window.clearTimeout(this.joinTitleTimeout);
+    this.joinTitle.classList.remove('is-active');
+    void this.joinTitle.offsetWidth;
+    this.joinTitle.classList.add('is-active');
+
+    this.joinTitleTimeout = window.setTimeout(() => {
+      this.joinTitle.classList.remove('is-active');
+    }, 2400);
   }
 
   isElementInteractive(element) {

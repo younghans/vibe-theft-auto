@@ -419,6 +419,9 @@ export class Game {
       }
 
       this.hud.hideLoading();
+      window.setTimeout(() => {
+        this.hud.playJoinTitleAnimation();
+      }, 160);
       console.info('[Game] Entering render loop.');
       this.renderer.setAnimationLoop(() => this.frame());
     } catch (error) {
