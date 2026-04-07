@@ -39,10 +39,10 @@ export class Hud {
     this.shaderDebugStatus = this.overlay.querySelector('[data-shader-debug-status]');
     this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
     this.combatRoot = this.overlay.querySelector('[data-combat-root]');
-    this.combatHealth = this.overlay.querySelector('[data-combat-health]');
-    this.combatAmmo = this.overlay.querySelector('[data-combat-ammo]');
-    this.combatStatus = this.overlay.querySelector('[data-combat-status]');
-    this.combatScore = this.overlay.querySelector('[data-combat-score]');
+    this.combatMeter = this.overlay.querySelector('[data-combat-meter]');
+    this.combatHealthTrail = this.overlay.querySelector('[data-combat-health-trail]');
+    this.combatHealthFill = this.overlay.querySelector('[data-combat-health-fill]');
+    this.combatHealthBurst = this.overlay.querySelector('[data-combat-health-burst]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
@@ -86,6 +86,10 @@ export class Hud {
     this.speechBubbleNodes = new Map();
     this.aimDebugInputs = new Map();
     this.toastTimeout = 0;
+    this.healthTrailFrame = 0;
+    this.healthTrailTimeout = 0;
+    this.healthHitTimeout = 0;
+    this.lastCombatHealthPercent = null;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
     this.buildAimPoseDebugFields();
@@ -171,18 +175,13 @@ export class Hud {
         <p class="hud__eyebrow">Prototype</p>
         <h1 class="hud__title">Vibe Theft Auto</h1>
         <p class="hud__body">WASD to move. Mouse steers aim when armed, left click fires, hold right click to aim in, mouse wheel or +/- zooms, R reloads, Enter chats, E interacts, and hold B for emotes.</p>
-        <section class="hud__combat" data-combat-root>
-          <div class="hud__combat-row">
-            <span class="hud__combat-label">Health</span>
-            <strong class="hud__combat-value" data-combat-health>100 / 100</strong>
-          </div>
-          <div class="hud__combat-row">
-            <span class="hud__combat-label">Ammo</span>
-            <strong class="hud__combat-value" data-combat-ammo>Unarmed</strong>
-          </div>
-          <p class="hud__combat-status" data-combat-status>Find a pistol pickup to start blasting.</p>
-          <p class="hud__combat-score" data-combat-score>K 0 / D 0</p>
-        </section>
+      </section>
+      <section class="hud__combat" data-combat-root role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+        <div class="hud__combat-meter" data-combat-meter aria-hidden="true">
+          <div class="hud__combat-meter-trail" data-combat-health-trail></div>
+          <div class="hud__combat-meter-fill" data-combat-health-fill></div>
+          <div class="hud__combat-meter-burst" data-combat-health-burst></div>
+        </div>
       </section>
       <div class="hud__top-actions">
         <button
@@ -761,6 +760,112 @@ export class Hud {
     return this.quickChatRoot.classList.contains('is-visible');
   }
 
+  syncCombatTrail(healthPercent) {
+    if (!this.combatHealthTrail) {
+      return;
+    }
+
+    window.cancelAnimationFrame(this.healthTrailFrame);
+    this.combatHealthTrail.style.transition = 'none';
+    this.combatHealthTrail.style.width = `${healthPercent}%`;
+    this.combatHealthTrail.style.opacity = '0';
+    this.combatHealthTrail.style.transform = 'translateY(0)';
+    void this.combatHealthTrail.offsetWidth;
+    this.combatHealthTrail.style.transition = '';
+  }
+
+  triggerCombatHitAnimation() {
+    window.clearTimeout(this.healthHitTimeout);
+    this.combatRoot.classList.remove('is-hit');
+    void this.combatRoot.offsetWidth;
+    this.combatRoot.classList.add('is-hit');
+    this.healthHitTimeout = window.setTimeout(() => {
+      this.combatRoot.classList.remove('is-hit');
+    }, 380);
+  }
+
+  spawnCombatHealthSparks(previousPercent, healthPercent) {
+    if (!this.combatMeter || !this.combatHealthBurst) {
+      return;
+    }
+
+    const lostPercent = previousPercent - healthPercent;
+    if (lostPercent <= 0.5) {
+      return;
+    }
+
+    const meterBounds = this.combatMeter.getBoundingClientRect();
+    const meterWidth = meterBounds.width;
+    const meterHeight = meterBounds.height;
+    const anchorX = meterWidth * (healthPercent / 100);
+    const sparkCount = Math.min(16, Math.max(6, Math.round(lostPercent / 2.4)));
+
+    for (let index = 0; index < sparkCount; index += 1) {
+      const spark = document.createElement('span');
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 24 + Math.random() * 42;
+      const midDistance = distance * (0.38 + Math.random() * 0.2);
+      const endDistance = distance * (0.95 + Math.random() * 0.3);
+      const driftX = Math.cos(angle) * endDistance;
+      const driftY = (Math.sin(angle) * endDistance) + (6 + Math.random() * 18);
+      const midX = Math.cos(angle) * midDistance;
+      const midY = Math.sin(angle) * midDistance;
+      const angleDeg = ((angle * 180) / Math.PI).toFixed(2);
+      const duration = 420 + Math.random() * 220;
+      const length = 14 + Math.random() * 18;
+      const thickness = 2 + Math.random() * 2.2;
+      const scaleEnd = (0.24 + Math.random() * 0.3).toFixed(2);
+      const flareScale = (0.85 + Math.random() * 0.9).toFixed(2);
+      const brightness = (0.92 + Math.random() * 0.32).toFixed(2);
+
+      spark.className = 'hud__combat-spark';
+      spark.style.left = `${anchorX}px`;
+      spark.style.top = `${(meterHeight * 0.5) + ((Math.random() - 0.5) * 8)}px`;
+      spark.style.width = `${length}px`;
+      spark.style.height = `${thickness}px`;
+      spark.style.setProperty('--spark-mid-x', `${midX}px`);
+      spark.style.setProperty('--spark-mid-y', `${midY}px`);
+      spark.style.setProperty('--spark-x', `${driftX}px`);
+      spark.style.setProperty('--spark-y', `${driftY}px`);
+      spark.style.setProperty('--spark-angle', `${angleDeg}deg`);
+      spark.style.setProperty('--spark-scale-end', scaleEnd);
+      spark.style.setProperty('--spark-flare-scale', flareScale);
+      spark.style.setProperty('--spark-brightness', brightness);
+      spark.style.setProperty('--spark-duration', `${duration}ms`);
+      spark.style.animationDelay = `${index * 12}ms`;
+      this.combatHealthBurst.append(spark);
+      spark.addEventListener('animationend', () => {
+        spark.remove();
+      }, { once: true });
+    }
+  }
+
+  animateCombatHealthDrop(previousPercent, healthPercent) {
+    if (!this.combatHealthTrail) {
+      return;
+    }
+
+    window.clearTimeout(this.healthTrailTimeout);
+    window.cancelAnimationFrame(this.healthTrailFrame);
+    this.combatHealthTrail.style.transition = 'none';
+    this.combatHealthTrail.style.width = `${previousPercent}%`;
+    this.combatHealthTrail.style.opacity = '0.96';
+    this.combatHealthTrail.style.transform = 'translateY(0)';
+    void this.combatHealthTrail.offsetWidth;
+    this.combatHealthTrail.style.transition = '';
+    this.healthTrailFrame = window.requestAnimationFrame(() => {
+      this.combatHealthTrail.style.width = `${healthPercent}%`;
+      this.combatHealthTrail.style.opacity = '0';
+      this.combatHealthTrail.style.transform = 'translateY(12px)';
+    });
+    this.triggerCombatHitAnimation();
+    this.spawnCombatHealthSparks(previousPercent, healthPercent);
+
+    this.healthTrailTimeout = window.setTimeout(() => {
+      this.syncCombatTrail(healthPercent);
+    }, 760);
+  }
+
   setCombatState({
     visible = true,
     health = 100,
@@ -777,32 +882,50 @@ export class Hud {
   } = {}) {
     this.combatRoot.hidden = !visible;
     if (!visible) {
+      this.lastCombatHealthPercent = null;
+      this.syncCombatTrail(0);
       this.respawnText.classList.remove('is-visible');
       return;
     }
 
-    this.combatHealth.textContent = `${health} / ${maxHealth}`;
-    this.combatAmmo.textContent = armed ? `${ammoInClip} / ${reserveAmmo}` : 'Unarmed';
-    this.combatScore.textContent = `K ${kills} / D ${deaths}`;
+    const safeMaxHealth = Math.max(1, maxHealth);
+    const healthRatio = Math.min(Math.max(health / safeMaxHealth, 0), 1);
+    const healthPercent = Math.round(healthRatio * 100);
+    const hue = Math.round(healthRatio * 120);
+    const startHue = Math.max(0, hue - 18);
+    const endHue = Math.min(120, hue + 8);
+    const currentHealth = Math.max(0, Math.min(health, safeMaxHealth));
+    const previousPercent = this.lastCombatHealthPercent ?? healthPercent;
+    const tookDamage = healthPercent < previousPercent;
+
+    this.combatRoot.classList.toggle('is-critical', alive && healthRatio <= 0.28);
+    this.combatRoot.classList.toggle('is-down', !alive);
+    this.combatRoot.style.setProperty('--health-hue-start', `${startHue}`);
+    this.combatRoot.style.setProperty('--health-hue-end', `${endHue}`);
+    this.combatRoot.style.setProperty('--health-ratio', `${healthRatio}`);
+    this.combatHealthFill.style.width = `${healthPercent}%`;
+    this.combatHealthFill.style.background = alive
+      ? `linear-gradient(90deg, hsl(${startHue} 78% 34%), hsl(${hue} 88% 44%) 55%, hsl(${endHue} 84% 56%))`
+      : 'linear-gradient(90deg, hsl(0 48% 28%), hsl(0 58% 40%))';
+    this.combatRoot.setAttribute('aria-valuemax', `${safeMaxHealth}`);
+    this.combatRoot.setAttribute('aria-valuenow', `${currentHealth}`);
+    this.combatRoot.setAttribute('aria-valuetext', `${health} of ${maxHealth}`);
+    this.combatRoot.title = `${health} / ${maxHealth}`;
+    if (tookDamage) {
+      this.animateCombatHealthDrop(previousPercent, healthPercent);
+    } else {
+      this.syncCombatTrail(healthPercent);
+    }
+    this.lastCombatHealthPercent = healthPercent;
 
     if (!alive) {
       const seconds = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
-      this.combatStatus.textContent = 'You are down.';
       this.respawnText.textContent = seconds > 0 ? `Respawning in ${seconds}s` : 'Respawning...';
       this.respawnText.classList.add('is-visible');
       return;
     }
 
     this.respawnText.classList.remove('is-visible');
-    if (isReloading) {
-      const remainingMs = Math.max(0, reloadEndsAt - Date.now());
-      const seconds = (remainingMs / 1000).toFixed(1);
-      this.combatStatus.textContent = `Reloading${remainingMs > 0 ? ` (${seconds}s)` : '...'}`;
-    } else if (!armed) {
-      this.combatStatus.textContent = 'Find a pistol pickup to start blasting.';
-    } else {
-      this.combatStatus.textContent = 'Armed and ready.';
-    }
   }
 
   setHitMarkerVisible(visible) {

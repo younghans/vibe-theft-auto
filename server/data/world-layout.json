@@ -1000,6 +1000,15 @@
       "rotationQuarterTurns": 2
     },
     {
+      "id": "placement_216",
+      "itemId": "road_straight",
+      "cell": [
+        3,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_93",
       "itemId": "building_b",
       "cell": [
