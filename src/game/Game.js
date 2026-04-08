@@ -44,6 +44,7 @@ const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
+const MUZZLE_FLASH_LIFETIME_MS = 95;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
 const HIP_FIRE_AIM_LEAD_MS = 90;
 const HIP_FIRE_AIM_HOLD_MS = 120;
@@ -83,6 +84,22 @@ function getChatBubbleLifetimeMs(text) {
     CHAT_BUBBLE_MIN_LIFETIME_MS,
     CHAT_BUBBLE_MAX_LIFETIME_MS
   );
+}
+
+function disposeMaterial(material) {
+  if (Array.isArray(material)) {
+    material.forEach((entry) => entry?.dispose?.());
+    return;
+  }
+
+  material?.dispose?.();
+}
+
+function disposeObjectResources(root) {
+  root?.traverse?.((node) => {
+    node.geometry?.dispose?.();
+    disposeMaterial(node.material);
+  });
 }
 
 export class Game {
@@ -1125,21 +1142,114 @@ export class Game {
     });
   }
 
+  createMuzzleFlashEffect(avatar, start, end) {
+    const direction = end.clone().sub(start);
+    if (direction.lengthSq() <= 0.0001) {
+      direction.set(0, 0, 1);
+    } else {
+      direction.normalize();
+    }
+
+    const flashGroup = new THREE.Group();
+    const attachmentNode = avatar?.getAttachmentPointNode?.('muzzle') ?? null;
+    if (attachmentNode) {
+      const parentWorldQuaternion = attachmentNode.getWorldQuaternion(new THREE.Quaternion());
+      const localDirection = direction.clone().applyQuaternion(parentWorldQuaternion.invert()).normalize();
+      flashGroup.position.copy(localDirection).multiplyScalar(0.04);
+      flashGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localDirection);
+      attachmentNode.add(flashGroup);
+    } else {
+      flashGroup.position.copy(start).addScaledVector(direction, 0.04);
+      flashGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      this.scene.add(flashGroup);
+    }
+
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfff1bf,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const flareMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff9a3d,
+      transparent: true,
+      opacity: 0.82,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const sparkMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffdf8a,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), flashMaterial);
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.82, 12, 1, true), flareMaterial);
+    plume.position.y = 0.28;
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), flareMaterial.clone());
+    bloom.position.y = 0.11;
+    bloom.scale.set(0.9, 0.52, 0.9);
+
+    const sparkGeometries = [
+      new THREE.BoxGeometry(0.035, 0.58, 0.035),
+      new THREE.BoxGeometry(0.028, 0.48, 0.028),
+      new THREE.BoxGeometry(0.024, 0.38, 0.024)
+    ];
+    const sparkOffsets = [
+      { x: 0.12, y: 0.22, z: 0.04, zRot: 0.42 },
+      { x: -0.1, y: 0.18, z: -0.05, zRot: -0.55 },
+      { x: 0.03, y: 0.3, z: -0.1, zRot: 0.18 }
+    ];
+    const sparks = sparkGeometries.map((geometry, index) => {
+      const spark = new THREE.Mesh(geometry, sparkMaterial.clone());
+      const offset = sparkOffsets[index];
+      spark.position.set(offset.x, offset.y, offset.z);
+      spark.rotation.z = offset.zRot;
+      return spark;
+    });
+
+    const light = new THREE.PointLight(0xffb347, 1.9, 4.8, 2);
+    light.position.y = 0.18;
+
+    flashGroup.add(core);
+    flashGroup.add(plume);
+    flashGroup.add(bloom);
+    sparks.forEach((spark) => flashGroup.add(spark));
+    flashGroup.add(light);
+    const now = performance.now();
+    this.combatEffects.push({
+      type: 'muzzleFlash',
+      object: flashGroup,
+      core,
+      plume,
+      bloom,
+      sparks,
+      sparkOffsets,
+      light,
+      startedAt: now,
+      expiresAt: now + MUZZLE_FLASH_LIFETIME_MS
+    });
+  }
+
   updateCombatEffects() {
     const now = performance.now();
     const next = [];
     for (const effect of this.combatEffects) {
       if (now >= effect.expiresAt) {
-        this.scene.remove(effect.object);
+        effect.object.parent?.remove(effect.object);
         if (effect.trail) {
-          this.scene.remove(effect.trail);
+          effect.trail.parent?.remove(effect.trail);
         }
-        effect.object.traverse?.((node) => {
-          node.geometry?.dispose?.();
-        });
+        disposeObjectResources(effect.object);
         effect.trailGeometry?.dispose?.();
-        effect.material?.dispose?.();
-        effect.secondaryMaterial?.dispose?.();
+        disposeMaterial(effect.material);
+        disposeMaterial(effect.secondaryMaterial);
         continue;
       }
 
@@ -1168,6 +1278,33 @@ export class Game {
         const progress = THREE.MathUtils.clamp((now - effect.startAt) / lifetime, 0, 1);
         effect.object.scale.setScalar(1 + (progress * 0.75));
         effect.material.opacity = Math.max(0, 1 - progress);
+      } else if (effect.type === 'muzzleFlash') {
+        const lifetime = Math.max(1, effect.expiresAt - effect.startedAt);
+        const progress = THREE.MathUtils.clamp((now - effect.startedAt) / lifetime, 0, 1);
+        const burst = 1 + Math.sin(progress * Math.PI) * 0.75;
+        const taper = Math.max(0, 1 - progress);
+
+        effect.core.scale.setScalar(0.58 + burst * 0.55);
+        effect.bloom.scale.set(0.8 + burst * 0.52, 0.4 + taper * 0.36, 0.8 + burst * 0.52);
+        effect.plume.scale.set(1.02 - progress * 0.1, 0.58 + burst * 0.6, 1.02 - progress * 0.1);
+        effect.plume.position.y = 0.24 + progress * 0.18;
+        effect.bloom.position.y = 0.08 + progress * 0.06;
+        effect.object.scale.setScalar(1 + progress * 0.08);
+
+        for (const [index, spark] of effect.sparks.entries()) {
+          const offset = effect.sparkOffsets[index];
+          const sparkGrowth = 1 + progress * (1.2 + index * 0.28);
+          spark.scale.set(1, sparkGrowth, 1);
+          spark.position.set(offset.x, offset.y + progress * (0.12 + index * 0.035), offset.z);
+        }
+
+        effect.core.material.opacity = 0.95 * taper;
+        effect.bloom.material.opacity = 0.6 * taper;
+        effect.plume.material.opacity = 0.82 * Math.max(0, 1 - progress * 1.15);
+        effect.sparks.forEach((spark, index) => {
+          spark.material.opacity = Math.max(0, 0.9 - progress * (1.15 + index * 0.12));
+        });
+        effect.light.intensity = 1.9 * Math.max(0, 1 - progress * 1.35);
       }
       next.push(effect);
     }
@@ -1181,9 +1318,13 @@ export class Game {
 
     switch (event.type) {
       case 'shot':
-        this.getAvatarForSessionId(event.shooterId)?.triggerShotFeedback?.();
         {
+          const shooterAvatar = this.getAvatarForSessionId(event.shooterId);
+          shooterAvatar?.triggerShotFeedback?.();
           const { start, end } = this.getShotVisualPoints(event);
+          if (event.weaponId === HELD_ITEM_IDS.pistol) {
+            this.createMuzzleFlashEffect(shooterAvatar, start, end);
+          }
           this.createTracerEffect(start, end);
         }
         break;

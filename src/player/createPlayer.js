@@ -771,6 +771,22 @@ export async function createPlayer(library, {
       target.y += PLAYER_HEIGHT * 0.7;
       return target;
     },
+    getAttachmentPointNode(pointName = 'muzzle') {
+      for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+        const activeItemId = activeItemsBySlot.get(slot);
+        if (!activeItemId || slotVisibility.get(slot) === false) {
+          continue;
+        }
+
+        const entry = heldItemEntries.get(activeItemId);
+        const pointNode = entry?.points?.get(pointName);
+        if (pointNode) {
+          return pointNode;
+        }
+      }
+
+      return getAttachmentSocket(ATTACHMENT_SLOTS.handRight) ?? anchor;
+    },
     getHeldItemMuzzleWorldPosition(target = new THREE.Vector3()) {
       return this.getAttachmentWorldPoint('muzzle', target);
     },
