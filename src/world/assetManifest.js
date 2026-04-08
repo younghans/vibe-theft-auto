@@ -10,26 +10,13 @@ const PLAYER_EMOTES = Object.freeze(
   )
 );
 
-const PLAYER_PRESETS = Object.freeze({
-  defaultMixamo: Object.freeze({
-    characterRig: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
-    characterVariant: 'mixamo',
-    idleClip: 'idle',
-    walkClip: 'walking',
-    emotes: PLAYER_EMOTES
-  }),
-  osrsBob: Object.freeze({
-    characterRig: assetUrl('bob-from-runescape', 'source', 'Bob.fbx'),
-    characterVariant: 'mixamo',
-    idleClip: 'idle',
-    walkClip: 'walking',
-    emotes: PLAYER_EMOTES
-  })
-});
-
-const ACTIVE_PLAYER_PRESET_ID = 'defaultMixamo';
-
 export const assets = {
+  playerAnimationSet: {
+    idle: 'idle',
+    fightingIdle: 'fightingIdle',
+    walking: 'walking',
+    emotes: PLAYER_EMOTES
+  },
   mixamo: {
     characters: {
       xBot: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
@@ -38,15 +25,13 @@ export const assets = {
     },
     animations: {
       idle: assetUrl('mixamo', 'animations', 'idle.json'),
+      fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
       waving: assetUrl('mixamo', 'animations', 'waving.json')
     }
   },
-  playerPresetId: ACTIVE_PLAYER_PRESET_ID,
-  playerPresets: PLAYER_PRESETS,
-  player: PLAYER_PRESETS[ACTIVE_PLAYER_PRESET_ID],
   combat: {
     pistol: assetUrl('objects', 'low-poly_g17_pistol.glb'),
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')

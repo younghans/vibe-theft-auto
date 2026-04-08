@@ -100,6 +100,16 @@ export class Hud {
     this.zoomInButton = this.overlay.querySelector('[data-zoom-in]');
     this.zoomLabel = this.overlay.querySelector('[data-zoom-label]');
     this.zoomHint = this.overlay.querySelector('[data-zoom-hint]');
+    this.characterSelectorRoot = this.overlay.querySelector('[data-character-selector]');
+    this.characterSelectorToggle = this.overlay.querySelector('[data-character-selector-toggle]');
+    this.characterSelectorClose = this.overlay.querySelector('[data-character-selector-close]');
+    this.characterSelectorName = this.overlay.querySelector('[data-character-selector-name]');
+    this.characterSelectorSubtitle = this.overlay.querySelector('[data-character-selector-subtitle]');
+    this.characterSelectorStatus = this.overlay.querySelector('[data-character-selector-status]');
+    this.characterSelectorPreview = this.overlay.querySelector('[data-character-preview]');
+    this.characterSelectorPrev = this.overlay.querySelector('[data-character-selector-prev]');
+    this.characterSelectorNext = this.overlay.querySelector('[data-character-selector-next]');
+    this.characterSelectorGrid = this.overlay.querySelector('[data-character-selector-grid]');
     this.modeToggle = this.overlay.querySelector('[data-mode-toggle]');
     this.builderRoot = this.overlay.querySelector('[data-builder]');
     this.builderStatus = this.overlay.querySelector('[data-builder-status]');
@@ -143,6 +153,7 @@ export class Hud {
     this.lastCombatHealthPercent = null;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
+    this.lastCharacterSelectorSignature = '';
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
   }
@@ -236,6 +247,21 @@ export class Hud {
       </section>
       <div class="hud__top-actions">
         <button
+          class="hud__character-selector-toggle"
+          type="button"
+          data-character-selector-toggle
+          aria-label="Toggle character selector"
+          aria-pressed="false"
+          title="Choose your character"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4.5c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" />
+            <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
+            <path d="M4 8.5h2.5" />
+            <path d="M17.5 8.5H20" />
+          </svg>
+        </button>
+        <button
           class="hud__shader-debug-toggle"
           type="button"
           data-shader-debug-toggle
@@ -276,6 +302,35 @@ export class Hud {
           </svg>
         </button>
       </div>
+      <section class="hud__character-selector" data-character-selector hidden>
+        <div class="hud__character-selector-header">
+          <div>
+            <p class="hud__eyebrow">Character Select</p>
+            <h2 class="hud__character-selector-name" data-character-selector-name>X Bot</h2>
+            <p class="hud__body hud__character-selector-subtitle" data-character-selector-subtitle>Balanced Rookie</p>
+          </div>
+          <button class="hud__builder-icon-button" type="button" data-character-selector-close aria-label="Close character selector" title="Close character selector">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div class="hud__character-stage-shell">
+          <button class="hud__character-nav" type="button" data-character-selector-prev aria-label="Previous character" title="Previous character">
+            <span aria-hidden="true">&#8249;</span>
+          </button>
+          <div class="hud__character-stage">
+            <div class="hud__character-stage-glow"></div>
+            <div class="hud__character-stage-canvas-wrap" data-character-preview></div>
+          </div>
+          <button class="hud__character-nav" type="button" data-character-selector-next aria-label="Next character" title="Next character">
+            <span aria-hidden="true">&#8250;</span>
+          </button>
+        </div>
+        <div class="hud__character-selection-status" data-character-selector-status>Currently selected</div>
+        <div class="hud__character-grid" data-character-selector-grid></div>
+      </section>
       <section class="hud__shader-debug" data-shader-debug hidden>
         <div class="hud__shader-debug-header">
           <div>
@@ -613,6 +668,66 @@ export class Hud {
 
     this.zoomOutButton?.addEventListener('click', () => {
       onZoomOut();
+    });
+  }
+
+  bindCharacterSelectorEvents({
+    onTogglePanel,
+    onCycleCharacter,
+    onSelectCharacter
+  }) {
+    this.characterSelectorToggle?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onTogglePanel();
+    });
+
+    this.characterSelectorClose?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.characterSelectorRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onTogglePanel(false);
+    });
+
+    this.characterSelectorPrev?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.characterSelectorRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onCycleCharacter(-1);
+    });
+
+    this.characterSelectorNext?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.characterSelectorRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onCycleCharacter(1);
+    });
+
+    this.characterSelectorGrid?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.characterSelectorRoot)) {
+        return;
+      }
+
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-character-id]');
+      if (!button) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onSelectCharacter(button.dataset.characterId);
     });
   }
 
@@ -1120,6 +1235,88 @@ export class Hud {
     if (this.zoomOutButton) {
       this.zoomOutButton.disabled = disabled || !canZoomOut;
     }
+  }
+
+  setCharacterSelectorPreviewCanvas(node) {
+    if (!this.characterSelectorPreview || !node) {
+      return;
+    }
+
+    if (this.characterSelectorPreview.contains(node)) {
+      return;
+    }
+
+    this.characterSelectorPreview.replaceChildren(node);
+  }
+
+  setCharacterSelectorState({
+    visible = false,
+    selectedId = '',
+    statusText = 'Currently selected',
+    entries = []
+  } = {}) {
+    if (!this.characterSelectorRoot) {
+      return;
+    }
+
+    const selectedEntry = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
+
+    if (this.characterSelectorToggle) {
+      this.characterSelectorToggle.hidden = false;
+      this.characterSelectorToggle.classList.toggle('is-active', visible);
+      this.characterSelectorToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      this.characterSelectorToggle.title = visible ? 'Hide character selector' : 'Choose your character';
+    }
+
+    this.characterSelectorRoot.hidden = !visible;
+    this.characterSelectorRoot.classList.toggle('is-visible', visible);
+
+    if (this.characterSelectorName) {
+      this.characterSelectorName.textContent = selectedEntry?.label ?? 'Unknown Fighter';
+    }
+
+    if (this.characterSelectorSubtitle) {
+      this.characterSelectorSubtitle.textContent = selectedEntry?.subtitle ?? '';
+    }
+
+    if (this.characterSelectorStatus) {
+      this.characterSelectorStatus.textContent = statusText;
+    }
+
+    const signature = JSON.stringify(entries.map((entry) => ({
+      id: entry.id,
+      selected: entry.id === selectedId,
+      label: entry.label,
+      subtitle: entry.subtitle ?? ''
+    })));
+
+    if (signature === this.lastCharacterSelectorSignature) {
+      return;
+    }
+
+    this.lastCharacterSelectorSignature = signature;
+    this.characterSelectorGrid.innerHTML = entries.map((entry) => `
+      <button
+        class="hud__character-card${entry.id === selectedId ? ' is-selected' : ''}"
+        type="button"
+        data-character-id="${entry.id}"
+      >
+        <span class="hud__character-card-frame">
+          <span class="hud__character-card-preview" data-character-preview-card="${entry.id}">
+            <span class="hud__character-card-placeholder">${entry.label}</span>
+          </span>
+        </span>
+        <span class="hud__character-card-label">${entry.label}</span>
+      </button>
+    `).join('');
+  }
+
+  getCharacterSelectorCardPreviewMount(characterId) {
+    return this.characterSelectorGrid?.querySelector(`[data-character-preview-card="${characterId}"]`) ?? null;
+  }
+
+  isCharacterSelectorOpen() {
+    return this.characterSelectorRoot?.classList.contains('is-visible') ?? false;
   }
 
   setAimPoseDebugState({

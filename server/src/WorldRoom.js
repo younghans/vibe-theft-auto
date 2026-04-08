@@ -30,6 +30,11 @@ import {
 } from '../../src/shared/combatMath.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
 import { EMOTES_BY_ID } from '../../src/player/emotes.js';
+import {
+  DEFAULT_PLAYABLE_CHARACTER_ID,
+  getPlayableCharacterById,
+  isPlayableCharacterId
+} from '../../src/player/playableCharacterCatalog.js';
 import { getBuilderItemById } from '../../src/world/builderCatalog.js';
 import { WorldState } from '../../src/world/WorldState.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
@@ -83,6 +88,7 @@ const PlayerState = schema({
   kills: 'number',
   deaths: 'number',
   lastDamagedAt: 'number',
+  characterId: 'string',
   isAdmin: 'boolean'
 });
 
@@ -197,6 +203,17 @@ function sanitizePlayerAnimationState(message = {}) {
   };
 }
 
+function sanitizeCharacterId(characterId) {
+  if (typeof characterId !== 'string') {
+    return DEFAULT_PLAYABLE_CHARACTER_ID;
+  }
+
+  const normalized = characterId.trim();
+  return isPlayableCharacterId(normalized)
+    ? normalized
+    : getPlayableCharacterById(DEFAULT_PLAYABLE_CHARACTER_ID).id;
+}
+
 function clampNpcRadius(value) {
   const numeric = Number(value ?? 4.2);
   return Math.max(1.5, Math.min(12, Number.isFinite(numeric) ? numeric : 4.2));
@@ -258,6 +275,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('player:updateTransform', (client, message) => {
       this.updatePlayerTransform(client, message);
+    });
+
+    this.onMessage('player:setCharacter', (client, message) => {
+      this.updatePlayerCharacter(client, message);
     });
 
     this.onMessage('builder:updatePresence', (client, message) => {
@@ -365,6 +386,7 @@ export class WorldRoom extends Room {
     player.kills = 0;
     player.deaths = 0;
     player.lastDamagedAt = 0;
+    player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
     this.playerPositionMeta.set(client.sessionId, {
@@ -484,6 +506,15 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
+  }
+
+  updatePlayerCharacter(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      return;
+    }
+
+    player.characterId = sanitizeCharacterId(message?.characterId);
   }
 
   updateCombatTimers() {

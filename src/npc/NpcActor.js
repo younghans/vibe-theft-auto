@@ -8,7 +8,7 @@ let sharedIdleClip = null;
 
 function getSharedIdleClip() {
   if (!sharedIdleClip) {
-    sharedIdleClip = createInPlaceClip(getMixamoClip(assets.player.idleClip), MIXAMO_BONES.hips);
+    sharedIdleClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.idle), MIXAMO_BONES.hips);
   }
 
   return sharedIdleClip;

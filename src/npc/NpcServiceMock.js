@@ -15,6 +15,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../shared/combatConstants.js';
+import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
   chooseFarthestSpawnPoint,
   clampToWorldBounds,
@@ -102,6 +103,7 @@ function createDefaultPlayerState(overrides = {}) {
     deaths: 0,
     lastDamagedAt: 0,
     lastShotAt: 0,
+    characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
     isAdmin: false,
     ...overrides
   };
@@ -416,6 +418,21 @@ export class NpcServiceMock {
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
     player.emoteSeq = nextAnimation.emoteSeq;
+  }
+
+  setCharacter(characterId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player) {
+      return;
+    }
+
+    const normalized = getPlayableCharacterById(characterId).id;
+    if (player.characterId === normalized) {
+      return;
+    }
+
+    player.characterId = normalized;
+    this.emit();
   }
 
   setBuilderPresence(presence = {}) {

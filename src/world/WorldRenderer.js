@@ -402,7 +402,7 @@ export class WorldRenderer {
       return null;
     }
 
-    await preloadMixamoClips([assets.player.idleClip]);
+    await preloadMixamoClips([assets.playerAnimationSet.idle]);
     const object = await this.library.instantiate(item.asset);
     const actor = new NpcActor({
       model,

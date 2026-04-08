@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
-import { assets } from '../world/assetManifest.js';
 import { createClassicBotCharacter } from './classicBotCharacter.js';
+import {
+  DEFAULT_PLAYABLE_CHARACTER_ID,
+  getPlayableCharacterById
+} from './playableCharacterCatalog.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_AIM_POSE_FIELDS,
@@ -232,19 +235,21 @@ function collectDamageTintMaterials(root) {
 }
 
 export async function createPlayer(library, {
+  characterId = DEFAULT_PLAYABLE_CHARACTER_ID,
   indicatorColor = 0xf2c871,
   indicatorOpacity = 0.85
 } = {}) {
+  const characterDefinition = getPlayableCharacterById(characterId);
   const clipNamesToPreload = new Set([
-    assets.player.idleClip,
-    assets.player.walkClip,
-    ...Object.values(assets.player.emotes ?? {})
+    characterDefinition.idleClip,
+    characterDefinition.walkClip,
+    ...Object.values(characterDefinition.emotes ?? {})
   ]);
 
   await preloadMixamoClips([...clipNamesToPreload]);
 
-  const characterRig = await library.instantiate(assets.player.characterRig);
-  const character = assets.player.characterVariant === 'classicBot'
+  const characterRig = await library.instantiate(characterDefinition.characterRig);
+  const character = characterDefinition.characterVariant === 'classicBot'
     ? createClassicBotCharacter(characterRig)
     : characterRig;
   const humanoid = validateMixamoHumanoid(character);
@@ -254,8 +259,8 @@ export async function createPlayer(library, {
   }
 
   const sockets = ensureMixamoSockets(character);
-  const idleClip = createInPlaceClip(getMixamoClip(assets.player.idleClip), MIXAMO_BONES.hips);
-  const walkClip = createInPlaceClip(getMixamoClip(assets.player.walkClip), MIXAMO_BONES.hips);
+  const idleClip = createInPlaceClip(getMixamoClip(characterDefinition.idleClip), MIXAMO_BONES.hips);
+  const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
@@ -398,7 +403,7 @@ export async function createPlayer(library, {
     }
 
     const emoteConfig = EMOTES_BY_ID[emoteId];
-    const clipName = emoteConfig?.clipName ?? assets.player.emotes?.[emoteId];
+    const clipName = emoteConfig?.clipName ?? characterDefinition.emotes?.[emoteId];
     if (!clipName) {
       return null;
     }
@@ -889,6 +894,8 @@ export async function createPlayer(library, {
   }
 
   return {
+    characterId: characterDefinition.id,
+    characterDefinition,
     object: anchor,
     radius: PLAYER_RADIUS,
     position: anchor.position,

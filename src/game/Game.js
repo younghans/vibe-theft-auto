@@ -32,8 +32,14 @@ import { buildCity } from '../world/buildCity.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { EMOTE_SLOTS } from '../player/emotes.js';
+import {
+  DEFAULT_PLAYABLE_CHARACTER_ID,
+  getPlayableCharacterById,
+  listPlayableCharacters
+} from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
 import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
+import { CharacterPreviewRenderer } from '../ui/CharacterPreviewRenderer.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -58,6 +64,7 @@ const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const DEFAULT_VIBE_SHADER_INTENSITY = 1;
+const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -65,6 +72,15 @@ function clampVibeShaderIntensity(value) {
     0,
     1
   );
+}
+
+function readStoredCharacterId() {
+  try {
+    const stored = window.localStorage?.getItem(CHARACTER_STORAGE_KEY) ?? '';
+    return getPlayableCharacterById(stored).id;
+  } catch {
+    return DEFAULT_PLAYABLE_CHARACTER_ID;
+  }
 }
 
 function isLocalDebugHost() {
@@ -144,6 +160,14 @@ export class Game {
     this.hud = new Hud(this.root);
     this.input = new Input();
     this.library = new ModelLibrary();
+    this.characterRoster = listPlayableCharacters();
+    this.desiredLocalCharacterId = readStoredCharacterId();
+    this.pendingCharacterRequestId = '';
+    this.characterSelectorVisible = false;
+    this.localCharacterSwapSequence = 0;
+    this.remoteAvatarBuildRequests = new Map();
+    this.characterPreviewRenderer = new CharacterPreviewRenderer({ library: this.library });
+    this.hud.setCharacterSelectorPreviewCanvas(this.characterPreviewRenderer.livePreview.renderer.domElement);
     this.remotePlayers = new Map();
     this.pendingRemotePlayers = new Set();
     this.pickupVisuals = new Map();
@@ -219,7 +243,14 @@ export class Game {
       onZoomIn: () => this.stepCameraZoom(-1),
       onZoomOut: () => this.stepCameraZoom(1)
     });
+    this.hud.bindCharacterSelectorEvents({
+      onTogglePanel: (visible) => this.toggleCharacterSelector(visible),
+      onCycleCharacter: (step) => this.cycleCharacterSelection(step),
+      onSelectCharacter: (characterId) => this.selectCharacter(characterId)
+    });
     this.refreshZoomHud();
+    this.refreshCharacterSelectorHud();
+    void this.characterPreviewRenderer.setCharacter(this.desiredLocalCharacterId);
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
 
     window.addEventListener('resize', () => this.onResize());
@@ -458,6 +489,111 @@ export class Game {
     });
   }
 
+  storeSelectedCharacterId(characterId) {
+    try {
+      window.localStorage?.setItem(CHARACTER_STORAGE_KEY, characterId);
+    } catch {
+      // Ignore storage failures and keep the in-memory selection.
+    }
+  }
+
+  getCharacterSelectorStatusText() {
+    const localPlayerState = this.getLocalPlayerState();
+    if (!this.player) {
+      return 'Loading fighter';
+    }
+
+    if (this.pendingCharacterRequestId && localPlayerState?.characterId !== this.pendingCharacterRequestId) {
+      return 'Switching fighter';
+    }
+
+    return 'Currently selected';
+  }
+
+  refreshCharacterSelectorHud() {
+    const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+    const entries = this.characterRoster.map((entry) => ({ ...entry }));
+    this.hud.setCharacterSelectorState({
+      visible: this.characterSelectorVisible,
+      selectedId,
+      statusText: this.getCharacterSelectorStatusText(),
+      entries
+    });
+    void this.characterPreviewRenderer.setCharacter(selectedId);
+    for (const entry of entries) {
+      const mount = this.hud.getCharacterSelectorCardPreviewMount(entry.id);
+      void this.characterPreviewRenderer.mountPortraitCanvas(entry.id, mount);
+    }
+  }
+
+  async preloadCharacterSelectorPortraits() {
+    for (const entry of this.characterRoster) {
+      try {
+        await this.characterPreviewRenderer.ensurePortraitPreview(entry.id);
+        this.refreshCharacterSelectorHud();
+      } catch (error) {
+        console.error('[CharacterSelector] Failed to render portrait.', {
+          characterId: entry.id,
+          error
+        });
+      }
+    }
+  }
+
+  setCharacterSelectorVisible(visible) {
+    this.characterSelectorVisible = Boolean(visible);
+    this.refreshCharacterSelectorHud();
+    return this.characterSelectorVisible;
+  }
+
+  toggleCharacterSelector(visible = !this.characterSelectorVisible) {
+    return this.setCharacterSelectorVisible(visible);
+  }
+
+  cycleCharacterSelection(step = 1) {
+    const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+    const currentIndex = this.characterRoster.findIndex((entry) => entry.id === selectedId);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (safeIndex + step + this.characterRoster.length) % this.characterRoster.length;
+    this.selectCharacter(this.characterRoster[nextIndex]?.id ?? selectedId);
+  }
+
+  syncPreferredCharacterSelection() {
+    const localPlayerState = this.getLocalPlayerState();
+    if (!this.npcService || !this.npcServiceState.sessionId) {
+      return;
+    }
+
+    const desiredId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+    if (localPlayerState?.characterId === desiredId) {
+      this.pendingCharacterRequestId = '';
+      return;
+    }
+
+    if (this.pendingCharacterRequestId === desiredId) {
+      return;
+    }
+
+    this.pendingCharacterRequestId = desiredId;
+    this.npcService.setCharacter?.(desiredId);
+    this.refreshCharacterSelectorHud();
+  }
+
+  selectCharacter(characterId) {
+    const nextCharacterId = getPlayableCharacterById(characterId).id;
+    if (this.desiredLocalCharacterId === nextCharacterId && this.player?.characterId === nextCharacterId) {
+      this.refreshCharacterSelectorHud();
+      return;
+    }
+
+    this.desiredLocalCharacterId = nextCharacterId;
+    this.storeSelectedCharacterId(nextCharacterId);
+    this.pendingCharacterRequestId = '';
+    this.refreshCharacterSelectorHud();
+    void this.swapLocalPlayerCharacter(nextCharacterId);
+    this.syncPreferredCharacterSelection();
+  }
+
   toggleBuildMode() {
     if (!this.worldBuilder) {
       return;
@@ -471,6 +607,7 @@ export class Game {
     const nextEnabled = !this.worldBuilder.enabled;
     if (nextEnabled) {
       this.closeQuickChat();
+      this.setCharacterSelectorVisible(false);
       this.setShaderDebugMenuVisible(false);
       this.setAimPoseDebugVisible(false);
     }
@@ -550,12 +687,14 @@ export class Game {
       this.npcService.subscribe((state) => {
         this.npcServiceState = state;
         this.reportNpcTransportState();
+        this.syncPreferredCharacterSelection();
         this.syncAdminAccess();
         this.registerHeldItemDebugTools();
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
         void this.syncPickupVisuals();
         void this.syncRemotePlayers();
+        this.refreshCharacterSelectorHud();
       });
 
       const sharedLayout = await this.npcService.getWorldLayout();
@@ -571,7 +710,7 @@ export class Game {
         await this.handleWorldPatch(patch);
       }
 
-      this.player = await createPlayer(this.library);
+      this.player = await this.buildAvatar(this.desiredLocalCharacterId);
       console.info('[Game] Local player loaded.');
       const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
       if (localPlayerState) {
@@ -590,6 +729,7 @@ export class Game {
       this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
       this.refreshAimPoseDebugHud();
       void this.syncPickupVisuals();
+      void this.preloadCharacterSelectorPortraits();
       this.prewarmMuzzleFlashEffect();
 
       if (this.npcServiceState.transport === 'colyseus') {
@@ -893,6 +1033,145 @@ export class Game {
     this.worldBuilder.setNpcRuntimeState(runtime);
   }
 
+  captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {
+    const fallbackX = Number(fallbackState?.x ?? 0);
+    const fallbackZ = Number(fallbackState?.z ?? 0);
+    const fallbackRotationY = Number(fallbackState?.rotationY ?? 0);
+    const fallbackAimRotationY = Number(fallbackState?.aimRotationY ?? fallbackRotationY);
+
+    return {
+      x: Number.isFinite(overrides.x) ? overrides.x : (avatar?.position.x ?? fallbackX),
+      z: Number.isFinite(overrides.z) ? overrides.z : (avatar?.position.z ?? fallbackZ),
+      y: Number.isFinite(overrides.y) ? overrides.y : (avatar?.position.y ?? 0),
+      rotationY: Number.isFinite(overrides.rotationY) ? overrides.rotationY : (avatar?.object.rotation.y ?? fallbackRotationY),
+      aimRotationY: Number.isFinite(overrides.aimRotationY) ? overrides.aimRotationY : (avatar?.getAimRotation?.() ?? fallbackAimRotationY),
+      aiming: overrides.aiming ?? fallbackState?.aiming ?? false
+    };
+  }
+
+  applyAvatarSnapshot(avatar, snapshot, playerState = null) {
+    const targetPosition = new THREE.Vector3(snapshot.x, snapshot.y, snapshot.z);
+    const groundHeight = this.worldBuilder?.getGroundHeightAt(targetPosition) ?? snapshot.y ?? 0;
+    const appliedState = playerState
+      ? {
+        ...playerState,
+        x: snapshot.x,
+        z: snapshot.z,
+        rotationY: snapshot.rotationY,
+        aimRotationY: snapshot.aimRotationY,
+        aiming: snapshot.aiming
+      }
+      : null;
+
+    if (appliedState) {
+      avatar.applyRemoteState(appliedState, 0, groundHeight);
+    }
+
+    avatar.position.set(snapshot.x, groundHeight, snapshot.z);
+    avatar.object.rotation.y = snapshot.rotationY;
+    avatar.setAimRotation(snapshot.aimRotationY);
+    avatar.setAimingState(Boolean(snapshot.aiming));
+  }
+
+  async buildAvatar(characterId, options = {}) {
+    return createPlayer(this.library, {
+      characterId,
+      ...options
+    });
+  }
+
+  removeAvatarFromScene(avatar) {
+    if (!avatar) {
+      return;
+    }
+
+    this.scene.remove(avatar.object);
+    disposeObjectResources(avatar.object);
+  }
+
+  async swapLocalPlayerCharacter(characterId) {
+    if (!this.worldBuilder) {
+      return;
+    }
+
+    const targetCharacterId = getPlayableCharacterById(characterId).id;
+    const requestId = ++this.localCharacterSwapSequence;
+    const currentPlayer = this.player ?? null;
+    const localPlayerState = this.getLocalPlayerState();
+    const snapshot = this.captureAvatarSnapshot(currentPlayer, localPlayerState, {
+      aiming: this.currentAimMode && Boolean(localPlayerState?.equippedWeaponId)
+    });
+    const nextAvatar = await this.buildAvatar(targetCharacterId);
+
+    if (requestId !== this.localCharacterSwapSequence) {
+      disposeObjectResources(nextAvatar.object);
+      return;
+    }
+
+    const previousDebugHelper = currentPlayer?.getAimPoseDebugHelper?.() ?? null;
+    if (previousDebugHelper) {
+      this.scene.remove(previousDebugHelper);
+    }
+
+    if (currentPlayer) {
+      this.removeAvatarFromScene(currentPlayer);
+    }
+
+    this.player = nextAvatar;
+    this.applyAvatarSnapshot(nextAvatar, snapshot, localPlayerState);
+    this.scene.add(nextAvatar.object);
+
+    const nextDebugHelper = nextAvatar.getAimPoseDebugHelper?.();
+    if (nextDebugHelper) {
+      this.scene.add(nextDebugHelper);
+    }
+
+    this.registerHeldItemDebugTools();
+    this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
+    this.refreshAimPoseDebugHud();
+    this.refreshCharacterSelectorHud();
+  }
+
+  async swapRemotePlayerCharacter(sessionId, state, {
+    indicatorColor = 0x68c7ff,
+    indicatorOpacity = 0.65
+  } = {}) {
+    const targetCharacterId = getPlayableCharacterById(state?.characterId).id;
+    const requestId = (this.remoteAvatarBuildRequests.get(sessionId) ?? 0) + 1;
+    this.remoteAvatarBuildRequests.set(sessionId, requestId);
+    this.pendingRemotePlayers.add(sessionId);
+
+    try {
+      const previousAvatar = this.remotePlayers.get(sessionId) ?? null;
+      const snapshot = this.captureAvatarSnapshot(previousAvatar, state, {
+        x: Number(state?.x ?? previousAvatar?.position.x ?? 0),
+        z: Number(state?.z ?? previousAvatar?.position.z ?? 0),
+        rotationY: Number(state?.rotationY ?? previousAvatar?.object.rotation.y ?? 0),
+        aimRotationY: Number(state?.aimRotationY ?? previousAvatar?.getAimRotation?.() ?? 0),
+        aiming: Boolean(state?.aiming)
+      });
+      const nextAvatar = await this.buildAvatar(targetCharacterId, {
+        indicatorColor,
+        indicatorOpacity
+      });
+
+      if (this.remoteAvatarBuildRequests.get(sessionId) !== requestId) {
+        disposeObjectResources(nextAvatar.object);
+        return;
+      }
+
+      if (previousAvatar) {
+        this.removeAvatarFromScene(previousAvatar);
+      }
+
+      this.applyAvatarSnapshot(nextAvatar, snapshot, state);
+      this.scene.add(nextAvatar.object);
+      this.remotePlayers.set(sessionId, nextAvatar);
+    } finally {
+      this.pendingRemotePlayers.delete(sessionId);
+    }
+  }
+
   async handleWorldPatch(patch) {
     if (!this.worldBuilder) {
       return;
@@ -909,26 +1188,12 @@ export class Game {
 
     this.pendingRemotePlayers.add(sessionId);
     try {
-      const avatar = await createPlayer(this.library, {
-        indicatorColor: 0x68c7ff,
-        indicatorOpacity: 0.65
-      });
       const latestState = this.npcServiceState.players.get(sessionId) ?? initialState;
       const stillPresent = this.npcServiceState.players.has(sessionId) && sessionId !== this.npcServiceState.sessionId;
       if (!stillPresent) {
         return;
       }
-
-      avatar.position.set(
-        Number(latestState?.x ?? 0),
-        0,
-        Number(latestState?.z ?? 0)
-      );
-      avatar.object.rotation.y = Number(latestState?.rotationY ?? 0) || 0;
-      avatar.position.y = this.worldBuilder?.getGroundHeightAt(avatar.position) ?? 0;
-      avatar.applyRemoteState(latestState, 0, avatar.position.y);
-      this.scene.add(avatar.object);
-      this.remotePlayers.set(sessionId, avatar);
+      await this.swapRemotePlayerCharacter(sessionId, latestState);
     } catch (error) {
       console.error('[Multiplayer] Failed to create remote player avatar.', {
         sessionId,
@@ -945,8 +1210,9 @@ export class Game {
       return;
     }
 
-    this.scene.remove(avatar.object);
+    this.removeAvatarFromScene(avatar);
     this.remotePlayers.delete(sessionId);
+    this.remoteAvatarBuildRequests.delete(sessionId);
   }
 
   async syncRemotePlayers() {
@@ -963,6 +1229,12 @@ export class Game {
       desiredSessionIds.add(sessionId);
       if (!this.remotePlayers.has(sessionId) && !this.pendingRemotePlayers.has(sessionId)) {
         void this.ensureRemotePlayer(sessionId, playerState);
+        continue;
+      }
+
+      const avatar = this.remotePlayers.get(sessionId);
+      if (avatar && avatar.characterId !== getPlayableCharacterById(playerState?.characterId).id && !this.pendingRemotePlayers.has(sessionId)) {
+        void this.swapRemotePlayerCharacter(sessionId, playerState);
       }
     }
 
@@ -1103,6 +1375,21 @@ export class Game {
   syncLocalPlayerState(localPlayerState) {
     if (!this.player || !localPlayerState) {
       return;
+    }
+
+    const authoritativeCharacterId = getPlayableCharacterById(localPlayerState.characterId).id;
+    if (authoritativeCharacterId === this.desiredLocalCharacterId) {
+      this.pendingCharacterRequestId = '';
+    }
+
+    if (this.player.characterId !== authoritativeCharacterId) {
+      if (!this.pendingCharacterRequestId || authoritativeCharacterId === this.desiredLocalCharacterId) {
+        this.desiredLocalCharacterId = authoritativeCharacterId;
+        this.storeSelectedCharacterId(authoritativeCharacterId);
+        this.refreshCharacterSelectorHud();
+        void this.swapLocalPlayerCharacter(authoritativeCharacterId);
+        return;
+      }
     }
 
     const isAlive = localPlayerState.alive !== false;
@@ -1727,6 +2014,8 @@ export class Game {
     if (this.input.consume('Escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
+      } else if (this.characterSelectorVisible) {
+        this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
         this.setShaderDebugMenuVisible(false);
       }
@@ -1842,6 +2131,7 @@ export class Game {
     }
     this.updateSpeechBubbles();
     this.refreshAimPoseDebugHud();
+    this.characterPreviewRenderer.update(deltaSeconds);
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }

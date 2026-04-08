@@ -60,6 +60,7 @@ function clonePlayerState(player) {
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
     lastDamagedAt: player.lastDamagedAt ?? 0,
+    characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };
 }
@@ -339,6 +340,22 @@ export class NpcServiceColyseus {
     this.lastTransform = next;
     this.lastTransformSentAt = now;
     this.room.send('player:updateTransform', next);
+  }
+
+  setCharacter(characterId = '') {
+    const normalized = typeof characterId === 'string' ? characterId.trim() : '';
+    if (!this.room || !normalized) {
+      return;
+    }
+
+    const localPlayer = this.state.players.get(this.state.sessionId);
+    if (localPlayer?.characterId === normalized) {
+      return;
+    }
+
+    this.room.send('player:setCharacter', {
+      characterId: normalized
+    });
   }
 
   setBuilderPresence(presence = {}) {
