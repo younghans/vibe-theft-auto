@@ -31,7 +31,7 @@ import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { EMOTE_SLOTS } from '../player/emotes.js';
+import { EMOTE_SLOTS, PUNCH_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -454,6 +454,19 @@ export class Game {
     }
 
     return didFire;
+  }
+
+  punchLocal(aimDirection) {
+    const didPunch = this.npcService?.punch?.(
+      { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
+      Date.now()
+    ) === true;
+
+    if (didPunch) {
+      this.player?.playEmote(PUNCH_EMOTE_ID);
+    }
+
+    return didPunch;
   }
 
   updatePostProcessingResolution() {
@@ -2468,6 +2481,9 @@ export class Game {
         this.clearPendingHipFireShot();
         this.currentAimMode = false;
         this.player.setAimingState(false);
+        if (combatInputEnabled && primaryFirePressed) {
+          this.punchLocal(aimDirection);
+        }
       }
       if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) {
         this.clearPendingHipFireShot();

@@ -1,4 +1,4 @@
-import { WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
+import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
 
 function schemaMapToEntries(schemaMap) {
   const entries = [];
@@ -137,6 +137,7 @@ export class NpcServiceColyseus {
     this.lastBuilderPresenceSentAt = 0;
     this.lastBuilderPresenceSignature = '';
     this.lastFireSentAt = 0;
+    this.lastPunchSentAt = 0;
   }
 
   async connect() {
@@ -416,6 +417,25 @@ export class NpcServiceColyseus {
     return true;
   }
 
+  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now()) {
+    const player = this.state.players.get(this.state.sessionId);
+    const now = Date.now();
+    if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
+      return false;
+    }
+    if ((now - this.lastPunchSentAt) < PUNCH_INTERVAL_MS) {
+      return false;
+    }
+
+    this.lastPunchSentAt = now;
+    this.room?.send('combat:punchRequest', {
+      aimX: quantize(aimDirection.x, 4),
+      aimZ: quantize(aimDirection.z, 4),
+      clientPunchAt: Number.isFinite(clientPunchAt) ? Math.max(0, Math.floor(clientPunchAt)) : now
+    });
+    return true;
+  }
+
   reloadWeapon() {
     this.room?.send('combat:reloadRequest', {});
   }
@@ -423,6 +443,7 @@ export class NpcServiceColyseus {
   async destroy() {
     this.destroyed = true;
     this.lastFireSentAt = 0;
+    this.lastPunchSentAt = 0;
     if (this.room) {
       this.room.leave();
       this.room = null;

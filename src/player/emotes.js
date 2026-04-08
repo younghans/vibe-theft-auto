@@ -9,7 +9,19 @@ export const EMOTE_SLOTS = Object.freeze([
   null
 ]);
 
+export const PUNCH_EMOTE_ID = 'punching';
+
 export const EMOTES_BY_ID = Object.freeze({
+  [PUNCH_EMOTE_ID]: {
+    label: 'Punching',
+    clipName: 'punching',
+    loop: false,
+    fadeIn: 0.06,
+    fadeOut: 0.1,
+    playbackRate: 1,
+    cancelOnMove: false,
+    upperBodyOnly: true
+  },
   waving: {
     label: 'Waving',
     clipName: 'waving',

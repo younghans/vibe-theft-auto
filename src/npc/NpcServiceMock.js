@@ -3,6 +3,9 @@ import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
+  PUNCH_DAMAGE,
+  PUNCH_INTERVAL_MS,
+  PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
   PLAYER_MAX_HEALTH,
   PLAYER_RADIUS,
@@ -15,6 +18,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../shared/combatConstants.js';
+import { PUNCH_EMOTE_ID } from '../player/emotes.js';
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
   chooseFarthestSpawnPoint,
@@ -33,6 +37,7 @@ import { getBuilderItemById } from '../world/builderCatalog.js';
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
 const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
+const PUNCH_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 0.55;
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -102,6 +107,7 @@ function createDefaultPlayerState(overrides = {}) {
     kills: 0,
     deaths: 0,
     lastDamagedAt: 0,
+    lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
     isAdmin: false,
@@ -699,6 +705,49 @@ export class NpcServiceMock {
     return true;
   }
 
+  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now()) {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
+      return false;
+    }
+
+    const now = Date.now();
+    if ((now - (player.lastPunchAt ?? 0)) < PUNCH_INTERVAL_MS) {
+      return false;
+    }
+
+    const aim = normalizeAimVector(aimDirection.x, aimDirection.z);
+    player.lastPunchAt = now;
+    player.emoteId = PUNCH_EMOTE_ID;
+    player.emoteActive = true;
+    player.emoteStartedAt = now;
+    player.emoteSeq = (player.emoteSeq ?? 0) + 1;
+
+    const hit = this.resolvePunch(this.state.sessionId, player, aim);
+    if (hit.kind !== 'miss') {
+      this.emitCombatEvent({
+        type: 'impact',
+        shooterId: this.state.sessionId,
+        kind: hit.kind,
+        targetId: hit.targetId ?? '',
+        x: hit.hitX,
+        z: hit.hitZ,
+        clientPunchAt
+      });
+    }
+
+    if (hit.player) {
+      hit.player.health = Math.max(0, hit.player.health - PUNCH_DAMAGE);
+      hit.player.lastDamagedAt = now;
+      if (hit.player.health <= 0) {
+        this.handlePlayerDeath(hit.playerId, this.state.sessionId);
+      }
+    }
+
+    this.emit();
+    return true;
+  }
+
   reloadWeapon() {
     const player = this.state.players.get(this.state.sessionId);
     if (!player) {
@@ -797,6 +846,8 @@ export class NpcServiceMock {
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.lastDamagedAt = 0;
+    player.lastPunchAt = 0;
+    player.lastShotAt = 0;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -957,6 +1008,77 @@ export class NpcServiceMock {
         targetId: id,
         player: target,
         playerId: id
+      };
+    }
+
+    return result;
+  }
+
+  resolvePunch(attackerId, player, aim) {
+    let nearestDistance = PUNCH_RANGE;
+    let result = {
+      kind: 'miss',
+      hitX: player.x + aim.x * PUNCH_RANGE,
+      hitZ: player.z + aim.z * PUNCH_RANGE,
+      targetId: '',
+      player: null,
+      playerId: ''
+    };
+
+    for (const placement of this.worldState.getPlacements()) {
+      const item = getBuilderItemById(placement.itemId);
+      const rects = placementToCollisionRects(placement, item, {
+        collisionKey: 'blocksShots'
+      });
+      for (const rect of rects) {
+        const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, PUNCH_RANGE, rect);
+        if (
+          hitDistance == null
+          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
+          || hitDistance >= nearestDistance
+        ) {
+          continue;
+        }
+
+        nearestDistance = hitDistance;
+        result = {
+          kind: 'world',
+          hitX: player.x + aim.x * hitDistance,
+          hitZ: player.z + aim.z * hitDistance,
+          targetId: placement.id,
+          player: null,
+          playerId: ''
+        };
+      }
+    }
+
+    for (const [sessionId, target] of this.state.players.entries()) {
+      if (sessionId === attackerId || target.alive === false) {
+        continue;
+      }
+
+      const hitDistance = rayCircleIntersectionDistance(
+        player.x,
+        player.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        PLAYER_RADIUS
+      );
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'player',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
+        targetId: sessionId,
+        player: target,
+        playerId: sessionId
       };
     }
 

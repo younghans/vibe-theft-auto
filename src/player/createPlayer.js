@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import {
+  createBoneFilteredClip,
+  createInPlaceClip,
+  ensureMixamoSockets,
+  MIXAMO_BONES,
+  validateMixamoHumanoid
+} from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { createClassicBotCharacter } from './classicBotCharacter.js';
 import {
@@ -22,7 +28,7 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import { WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
@@ -61,6 +67,32 @@ const AIM_STABILIZE_BONES = Object.freeze(
 );
 const RELOAD_POSE_BONES = Object.freeze(['spineUpper', 'leftShoulder', 'leftArm', 'leftForeArm', 'leftHand']);
 const RELOAD_IK_DRIVEN_BONES = new Set(['leftArm', 'leftForeArm', 'leftHand']);
+const UPPER_BODY_EMOTE_BONES = Object.freeze([
+  MIXAMO_BONES.spine,
+  MIXAMO_BONES.spineMiddle,
+  MIXAMO_BONES.spineUpper,
+  MIXAMO_BONES.neck,
+  MIXAMO_BONES.head,
+  MIXAMO_BONES.leftShoulder,
+  MIXAMO_BONES.rightShoulder,
+  MIXAMO_BONES.leftArm,
+  MIXAMO_BONES.rightArm,
+  MIXAMO_BONES.leftForeArm,
+  MIXAMO_BONES.rightForeArm,
+  MIXAMO_BONES.leftHand,
+  MIXAMO_BONES.rightHand
+]);
+const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
+  MIXAMO_BONES.hips,
+  'mixamorigLeftUpLeg',
+  'mixamorigLeftLeg',
+  'mixamorigLeftFoot',
+  'mixamorigLeftToeBase',
+  'mixamorigRightUpLeg',
+  'mixamorigRightLeg',
+  'mixamorigRightFoot',
+  'mixamorigRightToeBase'
+]);
 
 function clamp01(value) {
   return THREE.MathUtils.clamp(value, 0, 1);
@@ -281,6 +313,10 @@ export async function createPlayer(library, {
     characterDefinition.idleClip,
     characterDefinition.walkClip
   ]);
+  const punchClipName = characterDefinition.emotes?.[PUNCH_EMOTE_ID];
+  if (punchClipName) {
+    clipNamesToPreload.add(punchClipName);
+  }
 
   await preloadMixamoClips([...clipNamesToPreload]);
 
@@ -297,9 +333,13 @@ export async function createPlayer(library, {
   const sockets = ensureMixamoSockets(character);
   const idleClip = createInPlaceClip(getMixamoClip(characterDefinition.idleClip), MIXAMO_BONES.hips);
   const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
+  const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
+  const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
+  const idleLowerBodyAction = mixer.clipAction(idleLowerBodyClip);
+  const walkLowerBodyAction = mixer.clipAction(walkLowerBodyClip);
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
@@ -309,6 +349,12 @@ export async function createPlayer(library, {
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
+  idleLowerBodyAction.play();
+  idleLowerBodyAction.enabled = true;
+  idleLowerBodyAction.setEffectiveWeight(0);
+  walkLowerBodyAction.play();
+  walkLowerBodyAction.enabled = true;
+  walkLowerBodyAction.setEffectiveWeight(0);
 
   hideUnusedMeshes(character);
   const characterScale = normalizeCharacter(character);
@@ -491,7 +537,9 @@ export async function createPlayer(library, {
         preloadMixamoClips([clipName])
           .then(() => {
             const sourceClip = getMixamoClip(clipName);
-            const clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+            const clip = emoteConfig?.upperBodyOnly
+              ? createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`)
+              : createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
             const action = mixer.clipAction(clip);
             action.enabled = true;
             action.clampWhenFinished = true;
@@ -1249,14 +1297,21 @@ export async function createPlayer(library, {
   }
 
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
-    const locomotionEnabled = aliveState && !activeEmoteId && !isLimpTransitioning();
+    const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
+    const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOnlyEmoteActive) && !isLimpTransitioning();
     const smoothing = locomotionEnabled ? 12 : 22;
     idleWeight = THREE.MathUtils.damp(idleWeight, locomotionEnabled && !moving ? 1 : 0, smoothing, deltaSeconds);
     walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving ? 1 : 0, smoothing, deltaSeconds);
-    idleAction.setEffectiveWeight(idleWeight);
-    walkAction.setEffectiveWeight(walkWeight);
+    const fullBodyLocomotionWeight = upperBodyOnlyEmoteActive ? 0 : 1;
+    const lowerBodyLocomotionWeight = upperBodyOnlyEmoteActive ? 1 : 0;
+    idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight);
+    walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight);
+    idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight);
+    walkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight);
     idleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    idleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
+    walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
@@ -1266,7 +1321,7 @@ export async function createPlayer(library, {
     const reloadProfile = updateReloadOverlayState(deltaSeconds, activeAimItemId);
     const reloadForcesAimPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile);
     const wantsAimPose = (aimingState || reloadForcesAimPose) && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
-    const wantsUpperBodyLook = aliveState && !activeEmoteId && !isLimpTransitioning();
+    const wantsUpperBodyLook = aliveState && (!activeEmoteId || upperBodyOnlyEmoteActive) && !isLimpTransitioning();
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     applyUpperBodyPose();
@@ -1716,7 +1771,7 @@ export async function createPlayer(library, {
         setLimpActive(false, { trackSync: false });
       }
 
-      if (wantsToMove) {
+      if (wantsToMove && (activeEmoteConfig?.cancelOnMove ?? true)) {
         stopActiveEmote();
       }
 

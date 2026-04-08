@@ -5,6 +5,9 @@ import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
+  PUNCH_DAMAGE,
+  PUNCH_INTERVAL_MS,
+  PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
   PLAYER_MAX_ACCEPTED_SPEED,
   PLAYER_MAX_HEALTH,
@@ -29,7 +32,7 @@ import {
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
-import { EMOTES_BY_ID } from '../../src/player/emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID } from '../../src/player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -52,6 +55,7 @@ const LIMP_EMOTE_ID = 'limp';
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
 const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
+const PUNCH_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 0.55;
 
 function parseAdminKeys(value = '') {
   return new Set(
@@ -345,6 +349,17 @@ export class WorldRoom extends Room {
       }
     });
 
+    this.onMessage('combat:punchRequest', (client, message) => {
+      try {
+        this.handlePunchRequest(client, message);
+      } catch (error) {
+        logServerError('room', 'Punch request failed.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId
+        });
+      }
+    });
+
     this.onMessage('combat:reloadRequest', (client) => {
       try {
         this.handleReloadRequest(client);
@@ -393,6 +408,7 @@ export class WorldRoom extends Room {
       x: player.x,
       z: player.z,
       acceptedAt: Date.now(),
+      lastPunchAt: 0,
       lastShotAt: 0
     });
     this.playerAliasSequence += 1;
@@ -465,6 +481,7 @@ export class WorldRoom extends Room {
         x: player?.x ?? 0,
         z: player?.z ?? 0,
         acceptedAt: Date.now(),
+        lastPunchAt: 0,
         lastShotAt: 0
       });
     }
@@ -577,6 +594,8 @@ export class WorldRoom extends Room {
     meta.x = player.x;
     meta.z = player.z;
     meta.acceptedAt = Date.now();
+    meta.lastPunchAt = 0;
+    meta.lastShotAt = 0;
     this.broadcastCombatEvent({
       type: 'respawn',
       playerId: sessionId,
@@ -720,6 +739,50 @@ export class WorldRoom extends Room {
 
     if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
       this.startReload(client.sessionId, player);
+    }
+  }
+
+  handlePunchRequest(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+
+    const meta = this.getPlayerMeta(client.sessionId);
+    const now = Date.now();
+    if ((now - (meta.lastPunchAt ?? 0)) < PUNCH_INTERVAL_MS) {
+      return;
+    }
+
+    const aim = normalizeAimVector(Number(message.aimX), Number(message.aimZ));
+    meta.lastPunchAt = now;
+    player.emoteId = PUNCH_EMOTE_ID;
+    player.emoteActive = true;
+    player.emoteStartedAt = now;
+    player.emoteSeq += 1;
+
+    const hit = this.resolvePunch(client.sessionId, player, aim);
+    if (hit.kind !== 'miss') {
+      this.broadcastCombatEvent({
+        type: 'impact',
+        shooterId: client.sessionId,
+        kind: hit.kind,
+        targetId: hit.targetId ?? '',
+        x: hit.hitX,
+        z: hit.hitZ,
+        clientPunchAt: Number.isFinite(message.clientPunchAt) ? Math.max(0, Math.floor(message.clientPunchAt)) : now
+      });
+    }
+
+    if (hit.kind === 'player' && hit.targetId) {
+      const target = this.state.players.get(hit.targetId);
+      if (target?.alive !== false) {
+        target.health = Math.max(0, target.health - PUNCH_DAMAGE);
+        target.lastDamagedAt = now;
+        if (target.health <= 0) {
+          this.handlePlayerDeath(hit.targetId, client.sessionId);
+        }
+      }
     }
   }
 
@@ -867,6 +930,71 @@ export class WorldRoom extends Room {
         kind: 'player',
         hitX: origin.x + aim.x * hitDistance,
         hitZ: origin.z + aim.z * hitDistance,
+        targetId: sessionId
+      };
+    }
+
+    return result;
+  }
+
+  resolvePunch(attackerSessionId, player, aim) {
+    let nearestDistance = PUNCH_RANGE;
+    let result = {
+      kind: 'miss',
+      hitX: player.x + aim.x * PUNCH_RANGE,
+      hitZ: player.z + aim.z * PUNCH_RANGE,
+      targetId: ''
+    };
+
+    for (const placement of this.worldState.getPlacements()) {
+      const item = getBuilderItemById(placement.itemId);
+      const rects = placementToCollisionRects(placement, item, {
+        collisionKey: 'blocksShots'
+      });
+      for (const rect of rects) {
+        const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, PUNCH_RANGE, rect);
+        if (
+          hitDistance == null
+          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
+          || hitDistance >= nearestDistance
+        ) {
+          continue;
+        }
+
+        nearestDistance = hitDistance;
+        result = {
+          kind: 'world',
+          hitX: player.x + aim.x * hitDistance,
+          hitZ: player.z + aim.z * hitDistance,
+          targetId: placement.id
+        };
+      }
+    }
+
+    for (const [sessionId, target] of this.state.players.entries()) {
+      if (sessionId === attackerSessionId || target.alive === false) {
+        continue;
+      }
+
+      const hitDistance = rayCircleIntersectionDistance(
+        player.x,
+        player.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        PLAYER_RADIUS
+      );
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'player',
+        hitX: player.x + aim.x * hitDistance,
+        hitZ: player.z + aim.z * hitDistance,
         targetId: sessionId
       };
     }

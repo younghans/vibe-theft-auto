@@ -137,6 +137,22 @@ export function createInPlaceClip(clip, rootBoneName) {
   return new THREE.AnimationClip(`${clip.name}_InPlace`, clip.duration, filteredTracks);
 }
 
+export function createBoneFilteredClip(clip, boneNames = [], clipName = `${clip?.name ?? 'Clip'}_Filtered`) {
+  if (!clip || !Array.isArray(clip.tracks)) {
+    throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
+  }
+
+  const allowedBoneNames = new Set(boneNames.filter(Boolean));
+  const filteredTracks = clip.tracks
+    .filter((track) => {
+      const trackTarget = String(track.name ?? '').split('.')[0];
+      return allowedBoneNames.has(trackTarget);
+    })
+    .map((track) => track.clone());
+
+  return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
+}
+
 function ensureSocket(root, boneName, socketName, position = null) {
   const bone = root.getObjectByName(boneName);
 
