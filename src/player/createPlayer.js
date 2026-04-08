@@ -421,6 +421,10 @@ export async function createPlayer(library, {
   let reloadPoseAmount = 0;
   let reloadSlideAmount = 0;
   let reloadWeaponMotionAmount = 0;
+  let reloadDisplayedPoseAmount = 0;
+  let reloadDisplayedSlideAmount = 0;
+  let reloadDisplayedWeaponMotionAmount = 0;
+  let lastReloadProfile = null;
   let reloadState = {
     active: false,
     weaponId: '',
@@ -787,7 +791,8 @@ export async function createPlayer(library, {
   function setReloadState(reloading, {
     weaponId = '',
     startedAtMs = 0,
-    endsAtMs = 0
+    endsAtMs = 0,
+    resetMotion = true
   } = {}) {
     const previousWeaponId = reloadState.weaponId;
 
@@ -798,7 +803,7 @@ export async function createPlayer(library, {
         startedAtMs: 0,
         endsAtMs: 0
       };
-      if (previousWeaponId) {
+      if (previousWeaponId && resetMotion) {
         resetHeldItemReloadMotion(previousWeaponId);
       }
       return false;
@@ -831,7 +836,8 @@ export async function createPlayer(library, {
   function setReloadPreviewState(previewing, {
     weaponId = '',
     startedAtMs = 0,
-    endsAtMs = 0
+    endsAtMs = 0,
+    resetMotion = true
   } = {}) {
     const previousWeaponId = reloadPreviewState.weaponId;
 
@@ -842,7 +848,7 @@ export async function createPlayer(library, {
         startedAtMs: 0,
         endsAtMs: 0
       };
-      if (previousWeaponId && !reloadState.active) {
+      if (previousWeaponId && !reloadState.active && resetMotion) {
         resetHeldItemReloadMotion(previousWeaponId);
       }
       return false;
@@ -894,9 +900,9 @@ export async function createPlayer(library, {
       && nowMs >= activeReloadState.endsAtMs;
     if (reloadExpired) {
       if (reloadPreviewState.active) {
-        setReloadPreviewState(false);
+        setReloadPreviewState(false, { resetMotion: false });
       } else {
-        setReloadState(false);
+        setReloadState(false, { resetMotion: false });
       }
     }
 
@@ -904,37 +910,50 @@ export async function createPlayer(library, {
     const targetWeight = activeProfile ? 1 : 0;
     reloadPoseWeight = THREE.MathUtils.damp(reloadPoseWeight, targetWeight, targetWeight > 0 ? 18 : 24, deltaSeconds);
 
-    if (!activeProfile) {
+    if (activeProfile) {
+      const durationMs = Math.max(1, activeReloadState.endsAtMs - activeReloadState.startedAtMs);
+      const reloadProgress = clamp01((nowMs - activeReloadState.startedAtMs) / durationMs);
+      const envelope = activeProfile.envelope ?? {};
+      const envelopeAmount = trianglePulse(
+        reloadProgress,
+        Number(envelope.start ?? 0.14),
+        Number(envelope.peak ?? 0.4),
+        Number(envelope.end ?? 0.88)
+      );
+      const slide = activeProfile.slide ?? {};
+      const slideAmount = trianglePulse(
+        reloadProgress,
+        Number(slide.start ?? 0.34),
+        Number(slide.peak ?? 0.48),
+        Number(slide.end ?? 0.68)
+      );
+
+      reloadPoseAmount = envelopeAmount * reloadPoseWeight;
+      reloadSlideAmount = slideAmount * reloadPoseWeight;
+      reloadWeaponMotionAmount = Math.max(reloadPoseAmount * 0.85, reloadSlideAmount);
+      lastReloadProfile = activeProfile;
+    } else {
       reloadPoseAmount = 0;
       reloadSlideAmount = 0;
       reloadWeaponMotionAmount = 0;
+    }
+
+    reloadDisplayedPoseAmount = THREE.MathUtils.damp(reloadDisplayedPoseAmount, reloadPoseAmount, activeProfile ? 18 : 12, deltaSeconds);
+    reloadDisplayedSlideAmount = THREE.MathUtils.damp(reloadDisplayedSlideAmount, reloadSlideAmount, activeProfile ? 22 : 14, deltaSeconds);
+    reloadDisplayedWeaponMotionAmount = THREE.MathUtils.damp(reloadDisplayedWeaponMotionAmount, reloadWeaponMotionAmount, activeProfile ? 18 : 12, deltaSeconds);
+
+    const displayActive = reloadDisplayedPoseAmount > 0.0001
+      || reloadDisplayedSlideAmount > 0.0001
+      || reloadDisplayedWeaponMotionAmount > 0.0001;
+    if (!displayActive) {
       if (activeItemId) {
         resetHeldItemReloadMotion(activeItemId);
       }
-      return null;
+      lastReloadProfile = activeProfile ?? null;
+      return activeProfile;
     }
 
-    const durationMs = Math.max(1, activeReloadState.endsAtMs - activeReloadState.startedAtMs);
-    const reloadProgress = clamp01((nowMs - activeReloadState.startedAtMs) / durationMs);
-    const envelope = activeProfile.envelope ?? {};
-    const envelopeAmount = trianglePulse(
-      reloadProgress,
-      Number(envelope.start ?? 0.14),
-      Number(envelope.peak ?? 0.4),
-      Number(envelope.end ?? 0.88)
-    );
-    const slide = activeProfile.slide ?? {};
-    const slideAmount = trianglePulse(
-      reloadProgress,
-      Number(slide.start ?? 0.34),
-      Number(slide.peak ?? 0.48),
-      Number(slide.end ?? 0.68)
-    );
-
-    reloadPoseAmount = envelopeAmount * reloadPoseWeight;
-    reloadSlideAmount = slideAmount * reloadPoseWeight;
-    reloadWeaponMotionAmount = Math.max(reloadPoseAmount * 0.85, reloadSlideAmount);
-    return activeProfile;
+    return activeProfile ?? lastReloadProfile;
   }
 
   function applyHeldItemReloadMotion(itemId, profile) {
@@ -961,7 +980,7 @@ export async function createPlayer(library, {
   }
 
   function applyReloadArmIk(itemId, profile) {
-    if (!itemId || !profile || reloadPoseAmount <= 0.0001) {
+    if (!itemId || !profile || reloadDisplayedPoseAmount <= 0.0001) {
       return;
     }
 
@@ -1012,7 +1031,7 @@ export async function createPlayer(library, {
 
         reloadIkDeltaQuaternion.setFromAxisAngle(
           reloadIkAxisLocal,
-          Math.min(angle, 0.65) * reloadPoseWeight
+          Math.min(angle, 0.65) * reloadDisplayedPoseAmount
         );
         bone.quaternion.premultiply(reloadIkDeltaQuaternion);
         bone.updateMatrixWorld(true);
@@ -1028,7 +1047,7 @@ export async function createPlayer(library, {
     if (leftHand.parent) {
       leftHand.parent.getWorldQuaternion(reloadIkParentInverseQuaternion).invert();
       reloadIkLocalTargetQuaternion.copy(reloadIkParentInverseQuaternion).multiply(reloadIkTargetQuaternion);
-      leftHand.quaternion.slerp(reloadIkLocalTargetQuaternion, 0.75 * reloadPoseWeight);
+      leftHand.quaternion.slerp(reloadIkLocalTargetQuaternion, 0.75 * reloadDisplayedPoseAmount);
     }
   }
 
@@ -1038,7 +1057,7 @@ export async function createPlayer(library, {
     const hasLookPose = upperBodyLookWeight > 0.0001;
     const hasAimPose = aimPoseWeight > 0.0001 && Boolean(pose);
     const reloadProfile = activeItemId ? getMergedReloadProfile(activeItemId) : null;
-    const hasReloadPose = reloadPoseAmount > 0.0001 && Boolean(reloadProfile?.pose);
+    const hasReloadPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile?.pose);
     const stabilizeUpperBody = aimingState && Boolean(pose);
     const leftArmIdleLockActive = hasAimPose
       && !hasReloadPose
@@ -1079,10 +1098,10 @@ export async function createPlayer(library, {
           continue;
         }
 
-        addBoneRotation(rotationsByBone, boneKey, 'x', Number(rotation[0] ?? 0) * reloadPoseAmount);
-        addBoneRotation(rotationsByBone, boneKey, 'y', Number(rotation[1] ?? 0) * reloadPoseAmount);
-        addBoneRotation(rotationsByBone, boneKey, 'z', Number(rotation[2] ?? 0) * reloadPoseAmount);
-        setBoneBlendWeight(blendWeightsByBone, boneKey, reloadPoseWeight);
+        addBoneRotation(rotationsByBone, boneKey, 'x', Number(rotation[0] ?? 0) * reloadDisplayedPoseAmount);
+        addBoneRotation(rotationsByBone, boneKey, 'y', Number(rotation[1] ?? 0) * reloadDisplayedPoseAmount);
+        addBoneRotation(rotationsByBone, boneKey, 'z', Number(rotation[2] ?? 0) * reloadDisplayedPoseAmount);
+        setBoneBlendWeight(blendWeightsByBone, boneKey, reloadDisplayedPoseAmount);
       }
     }
 
@@ -1242,14 +1261,15 @@ export async function createPlayer(library, {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const reloadProfile = updateReloadOverlayState(deltaSeconds, activeAimItemId);
-    const wantsAimPose = aimingState && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
+    const reloadForcesAimPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile);
+    const wantsAimPose = (aimingState || reloadForcesAimPose) && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
     const wantsUpperBodyLook = aliveState && !activeEmoteId && !isLimpTransitioning();
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     applyUpperBodyPose();
     applyHeldItemReloadMotion(activeAimItemId, reloadProfile);
     applyReloadArmIk(activeAimItemId, reloadProfile);
-    recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
+    recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, wantsAimPose ? 22 : 18, deltaSeconds);
     const now = performance.now();
     const damageLifetime = Math.max(1, damageFeedbackEndsAt - damageFeedbackStartedAt);
     const damageProgress = THREE.MathUtils.clamp((now - damageFeedbackStartedAt) / damageLifetime, 0, 1);
@@ -1312,14 +1332,14 @@ export async function createPlayer(library, {
       const reloadMotionPosition = reloadProfile?.weaponMotion?.position ?? EMPTY_VECTOR_OVERRIDE;
       const reloadMotionRotation = reloadProfile?.weaponMotion?.rotation ?? EMPTY_VECTOR_OVERRIDE;
       rightHandMotion.position.set(
-        SLOT_MOTION_BASE.position[0] - (recoilAmount * 0.22) + ((reloadMotionPosition[0] ?? 0) * reloadWeaponMotionAmount),
-        SLOT_MOTION_BASE.position[1] + (recoilAmount * 0.02) + ((reloadMotionPosition[1] ?? 0) * reloadWeaponMotionAmount),
-        SLOT_MOTION_BASE.position[2] - (recoilAmount * 0.22) + ((reloadMotionPosition[2] ?? 0) * reloadWeaponMotionAmount)
+        SLOT_MOTION_BASE.position[0] - (recoilAmount * 0.22) + ((reloadMotionPosition[0] ?? 0) * reloadDisplayedWeaponMotionAmount),
+        SLOT_MOTION_BASE.position[1] + (recoilAmount * 0.02) + ((reloadMotionPosition[1] ?? 0) * reloadDisplayedWeaponMotionAmount),
+        SLOT_MOTION_BASE.position[2] - (recoilAmount * 0.22) + ((reloadMotionPosition[2] ?? 0) * reloadDisplayedWeaponMotionAmount)
       );
       rightHandMotion.rotation.set(
-        SLOT_MOTION_BASE.rotation[0] - (recoilAmount * 0.05) + ((reloadMotionRotation[0] ?? 0) * reloadWeaponMotionAmount),
-        SLOT_MOTION_BASE.rotation[1] + (recoilAmount * 0.2) + ((reloadMotionRotation[1] ?? 0) * reloadWeaponMotionAmount),
-        SLOT_MOTION_BASE.rotation[2] + (recoilAmount * 0.1) + ((reloadMotionRotation[2] ?? 0) * reloadWeaponMotionAmount)
+        SLOT_MOTION_BASE.rotation[0] - (recoilAmount * 0.05) + ((reloadMotionRotation[0] ?? 0) * reloadDisplayedWeaponMotionAmount),
+        SLOT_MOTION_BASE.rotation[1] + (recoilAmount * 0.2) + ((reloadMotionRotation[1] ?? 0) * reloadDisplayedWeaponMotionAmount),
+        SLOT_MOTION_BASE.rotation[2] + (recoilAmount * 0.1) + ((reloadMotionRotation[2] ?? 0) * reloadDisplayedWeaponMotionAmount)
       );
     }
   }

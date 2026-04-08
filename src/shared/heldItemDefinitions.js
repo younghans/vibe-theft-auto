@@ -89,30 +89,30 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
     }),
     reloadProfile: Object.freeze({
       envelope: Object.freeze({
-        start: 0.12,
-        peak: 0.38,
+        start: 0.1,
+        peak: 0.34,
         end: 0.9
       }),
       handTarget: Object.freeze({
         nodeName: 'slide_Armature',
-        position: Object.freeze([-0.015, 0.095, 0.075]),
-        rotation: Object.freeze([-0.2, 0.08, -0.3]),
+        position: Object.freeze([0.075, 0.175, 0]),
+        rotation: Object.freeze([-0.34, 0, -0.08]),
         scale: DEFAULT_SCALE
       }),
       slide: Object.freeze({
         nodeName: 'slide_Armature',
-        start: 0.28,
-        peak: 0.5,
-        end: 0.78,
-        position: Object.freeze([-0.14, 0.01, 0])
+        start: 0.2,
+        peak: 0.52,
+        end: 0.84,
+        position: Object.freeze([-0.28, 0.02, 0])
       }),
       weaponMotion: Object.freeze({
-        position: Object.freeze([0.055, 0.03, 0.08]),
-        rotation: Object.freeze([0.18, -0.2, -0.14])
+        position: Object.freeze([0.075, 0.04, 0.1]),
+        rotation: Object.freeze([0.24, -0.24, -0.1])
       }),
       pose: Object.freeze({
-        spineUpper: Object.freeze([0.12, 0.2, 0.08]),
-        leftShoulder: Object.freeze([-0.04, 0.28, 0.34])
+        spineUpper: Object.freeze([0.14, 0.24, 0.1]),
+        leftShoulder: Object.freeze([-0.06, 0.32, 0.38])
       })
     })
   }),
