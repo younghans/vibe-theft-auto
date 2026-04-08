@@ -9,6 +9,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const TARGET_FOOTPRINT = BUILDER_TILE_SIZE * 0.82;
 
 const DEFAULT_REFERENCE_FILES = [
+  'assets/stickrpg_custom/models/bar-building-wide.glb',
   'assets/stickrpg_custom/models/hospital-building.glb',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_A.gltf',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_B.gltf',

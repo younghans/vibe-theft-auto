@@ -115,6 +115,19 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'building_h', assetName: 'building_H_withoutBase', label: 'Building H', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
   { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
   {
+    id: 'bar_building_wide',
+    assetName: 'bar_building_wide',
+    label: 'Bar',
+    asset: customCityAsset('models', 'bar-building-wide.glb'),
+    group: 'lots',
+    size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82],
+    tileFootprint: [2, 1],
+    collision: true,
+    blocksShots: true,
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
     id: 'hospital_building',
     assetName: 'hospital_building',
     label: 'Hospital',

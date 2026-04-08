@@ -1000,6 +1000,15 @@
       "rotationQuarterTurns": 2
     },
     {
+      "id": "placement_218",
+      "itemId": "bar_building_wide",
+      "cell": [
+        1,
+        4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
       "id": "placement_216",
       "itemId": "road_straight",
       "cell": [
@@ -1139,6 +1148,24 @@
         6
       ],
       "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_219",
+      "itemId": "bar_building_wide",
+      "cell": [
+        1,
+        7
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_220",
+      "itemId": "bar_building_wide",
+      "cell": [
+        -3,
+        9
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "props": [
