@@ -48,7 +48,8 @@ export const assets = {
   playerPresets: PLAYER_PRESETS,
   player: PLAYER_PRESETS[ACTIVE_PLAYER_PRESET_ID],
   combat: {
-    pistol: assetUrl('objects', 'low-poly_g17_pistol.glb')
+    pistol: assetUrl('objects', 'low-poly_g17_pistol.glb'),
+    pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')
   },
   city: {
     base: cityAsset('base'),

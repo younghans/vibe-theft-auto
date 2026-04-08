@@ -633,12 +633,12 @@ export class NpcServiceMock {
   fireWeapon(aimDirection = { x: 0, z: 1 }, clientShotAt = Date.now(), origin = null) {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
-      return;
+      return false;
     }
 
     const now = Date.now();
     if (player.ammoInClip <= 0 || (now - (player.lastShotAt ?? 0)) < WEAPON_FIRE_INTERVAL_MS) {
-      return;
+      return false;
     }
 
     const aim = normalizeAimVector(aimDirection.x, aimDirection.z);
@@ -679,6 +679,7 @@ export class NpcServiceMock {
     }
 
     this.emit();
+    return true;
   }
 
   reloadWeapon() {

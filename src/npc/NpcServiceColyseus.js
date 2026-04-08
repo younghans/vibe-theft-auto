@@ -382,10 +382,10 @@ export class NpcServiceColyseus {
     const player = this.state.players.get(this.state.sessionId);
     const now = Date.now();
     if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
-      return;
+      return false;
     }
     if (player.ammoInClip <= 0 || (now - this.lastFireSentAt) < WEAPON_FIRE_INTERVAL_MS) {
-      return;
+      return false;
     }
 
     this.lastFireSentAt = now;
@@ -396,6 +396,7 @@ export class NpcServiceColyseus {
       originZ: Number.isFinite(origin?.z) ? quantize(origin.z, 4) : undefined,
       clientShotAt: Number.isFinite(clientShotAt) ? Math.max(0, Math.floor(clientShotAt)) : now
     });
+    return true;
   }
 
   reloadWeapon() {

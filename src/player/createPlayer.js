@@ -28,6 +28,11 @@ const PLAYER_RADIUS = 1.4;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
+const DAMAGE_FEEDBACK_DURATION_MS = 380;
+const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
+const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
+const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
+const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
 
 const UPPER_BODY_ROOT_BONE = 'spine';
 
@@ -180,6 +185,52 @@ function createPlayerIndicator({ color = 0xf2c871, opacity = 0.85 } = {}) {
   return ring;
 }
 
+function cloneTrackedMaterial(material) {
+  if (!material?.clone) {
+    return { material, tracked: null };
+  }
+
+  const cloned = material.clone();
+  return {
+    material: cloned,
+    tracked: {
+      material: cloned,
+      baseColor: cloned.color?.clone?.() ?? null,
+      baseEmissive: cloned.emissive?.clone?.() ?? null,
+      baseEmissiveIntensity: Number.isFinite(cloned.emissiveIntensity) ? cloned.emissiveIntensity : 1
+    }
+  };
+}
+
+function collectDamageTintMaterials(root) {
+  const trackedMaterials = [];
+
+  root.traverse((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    if (Array.isArray(node.material)) {
+      node.material = node.material.map((entry) => {
+        const { material, tracked } = cloneTrackedMaterial(entry);
+        if (tracked) {
+          trackedMaterials.push(tracked);
+        }
+        return material;
+      });
+      return;
+    }
+
+    const { material, tracked } = cloneTrackedMaterial(node.material);
+    node.material = material;
+    if (tracked) {
+      trackedMaterials.push(tracked);
+    }
+  });
+
+  return trackedMaterials;
+}
+
 export async function createPlayer(library, {
   indicatorColor = 0xf2c871,
   indicatorOpacity = 0.85
@@ -219,14 +270,42 @@ export async function createPlayer(library, {
 
   hideUnusedMeshes(character);
   const characterScale = normalizeCharacter(character);
+  const damageTintMaterials = collectDamageTintMaterials(character);
 
   const anchor = new THREE.Group();
   const visual = new THREE.Group();
   visual.add(character);
-  anchor.add(createPlayerIndicator({
+  const indicatorRing = createPlayerIndicator({
     color: indicatorColor,
     opacity: indicatorOpacity
-  }));
+  });
+  anchor.add(indicatorRing);
+  const damageRipple = new THREE.Mesh(
+    new THREE.RingGeometry(1.65, 2.55, 36),
+    new THREE.MeshBasicMaterial({
+      color: DAMAGE_RING_COLOR,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  damageRipple.rotation.x = -Math.PI / 2;
+  damageRipple.position.y = 0.06;
+  damageRipple.visible = false;
+  anchor.add(damageRipple);
+  const damageBurst = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.34, 0),
+    new THREE.MeshBasicMaterial({
+      color: DAMAGE_BURST_COLOR,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    })
+  );
+  damageBurst.position.set(0, PLAYER_HEIGHT * 0.58, 0);
+  damageBurst.visible = false;
+  visual.add(damageBurst);
   anchor.add(visual);
 
   let idleWeight = 1;
@@ -281,6 +360,10 @@ export async function createPlayer(library, {
   let aimPoseWeight = 0;
   let upperBodyLookWeight = 0;
   let aimRotationY = 0;
+  let damageFeedbackStartedAt = -Infinity;
+  let damageFeedbackEndsAt = -Infinity;
+  const damageDirection = new THREE.Vector3(0, 0, 1);
+  const indicatorBaseColor = new THREE.Color(indicatorColor);
 
   skeletonHelper.visible = false;
   skeletonHelper.material.depthTest = false;
@@ -654,8 +737,63 @@ export async function createPlayer(library, {
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     applyUpperBodyPose();
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, aimingState ? 22 : 18, deltaSeconds);
-    visual.position.set(0, recoilAmount * 0.03, 0);
-    visual.rotation.set(-recoilAmount * 0.08, 0, recoilAmount * 0.015);
+    const now = performance.now();
+    const damageLifetime = Math.max(1, damageFeedbackEndsAt - damageFeedbackStartedAt);
+    const damageProgress = THREE.MathUtils.clamp((now - damageFeedbackStartedAt) / damageLifetime, 0, 1);
+    const damageActive = damageProgress < 1;
+    const damageEnvelope = damageActive ? Math.pow(1 - damageProgress, 1.25) : 0;
+    const damageWave = damageActive ? Math.sin(damageProgress * Math.PI * 3.4) : 0;
+    const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
+    const damageSideX = -damageDirection.z;
+    const damageSideZ = damageDirection.x;
+    const damageJolt = damageEnvelope * 0.18;
+    const damageShimmy = damageWave * damageEnvelope * 0.09;
+    const damageFlashAmount = damageActive
+      ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
+      : 0;
+
+    visual.position.set(
+      (damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
+      (recoilAmount * 0.03) + (damagePulse * 0.12),
+      (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
+    );
+    visual.rotation.set(
+      (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
+      damageWave * damageEnvelope * 0.025,
+      (recoilAmount * 0.015) + (damageDirection.x * damageEnvelope * 0.14) + (damageWave * 0.045)
+    );
+
+    indicatorRing.material.color.copy(indicatorBaseColor).lerp(DAMAGE_FLASH_COLOR, damageFlashAmount * 0.85);
+    indicatorRing.material.opacity = THREE.MathUtils.lerp(indicatorOpacity, 1, damageFlashAmount * 0.5);
+    indicatorRing.scale.setScalar(1 + (damagePulse * 0.24));
+
+    damageRipple.visible = damageActive;
+    damageRipple.material.opacity = damageActive ? Math.max(0, 0.78 - (damageProgress * 0.92)) : 0;
+    damageRipple.scale.setScalar(0.82 + (damageProgress * 1.45));
+    damageRipple.position.x = damageDirection.x * 0.08;
+    damageRipple.position.z = damageDirection.z * 0.08;
+
+    damageBurst.visible = damageActive;
+    damageBurst.material.opacity = damageActive ? Math.max(0, 0.88 - (damageProgress * 1.08)) : 0;
+    damageBurst.position.set(
+      damageDirection.x * 0.18,
+      (PLAYER_HEIGHT * 0.58) + (damagePulse * 0.16),
+      damageDirection.z * 0.18
+    );
+    damageBurst.scale.setScalar(0.6 + (damagePulse * 1.45));
+    damageBurst.rotation.x = damageProgress * 1.8;
+    damageBurst.rotation.y = damageProgress * 3.1;
+
+    for (const trackedMaterial of damageTintMaterials) {
+      if (trackedMaterial.baseColor) {
+        trackedMaterial.material.color.copy(trackedMaterial.baseColor).lerp(DAMAGE_FLASH_COLOR, damageFlashAmount * 0.3);
+      }
+      if (trackedMaterial.baseEmissive) {
+        trackedMaterial.material.emissive.copy(trackedMaterial.baseEmissive).lerp(DAMAGE_EMISSIVE_COLOR, damageFlashAmount);
+        trackedMaterial.material.emissiveIntensity = trackedMaterial.baseEmissiveIntensity + (damageFlashAmount * 1.45);
+      }
+    }
+
     const rightHandMotion = getSlotMotionRoot(ATTACHMENT_SLOTS.handRight);
     if (rightHandMotion) {
       rightHandMotion.position.set(
@@ -705,6 +843,23 @@ export async function createPlayer(library, {
     setLimpActive(false, { trackSync: false });
     if (desiredWeaponId) {
       void setWeaponState(desiredWeaponId, { visible: true });
+    }
+  }
+
+  function triggerDamageFeedback({ direction = null } = {}) {
+    damageFeedbackStartedAt = performance.now();
+    damageFeedbackEndsAt = damageFeedbackStartedAt + DAMAGE_FEEDBACK_DURATION_MS;
+
+    if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
+      damageDirection.set(direction.x, 0, direction.z);
+    } else {
+      damageDirection.set(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y));
+    }
+
+    if (damageDirection.lengthSq() <= 0.0001) {
+      damageDirection.set(0, 0, 1);
+    } else {
+      damageDirection.normalize();
     }
   }
 
@@ -875,6 +1030,9 @@ export async function createPlayer(library, {
     },
     triggerShotFeedback() {
       recoilAmount = Math.max(recoilAmount, aimingState ? 1.2 : 1.05);
+    },
+    triggerDamageFeedback(options = {}) {
+      triggerDamageFeedback(options);
     },
     attachHeldItem(itemId, options = {}) {
       return attachHeldItem(itemId, options);

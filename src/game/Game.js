@@ -12,6 +12,7 @@ import {
   getVibeShaderPreset
 } from './vibeShaderPresets.js';
 import { Hud } from '../ui/Hud.js';
+import { assets } from '../world/assetManifest.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_AIM_POSE_FIELDS,
@@ -45,6 +46,7 @@ const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
+const DAMAGE_CAMERA_KICK_MS = 260;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
 const HIP_FIRE_AIM_LEAD_MS = 90;
 const HIP_FIRE_AIM_HOLD_MS = 120;
@@ -182,10 +184,14 @@ export class Game {
       VIBE_SHADER_PRESETS.map((preset) => [preset.id, DEFAULT_VIBE_SHADER_INTENSITY])
     );
     this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
+    this.damageCameraKickStartedAt = -Infinity;
+    this.damageCameraKickEndsAt = -Infinity;
+    this.damageCameraDirection = new THREE.Vector3(0, 0, 1);
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
+    this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
 
     this.hud.bindInteractionEvents({
       onAction: () => {},
@@ -311,6 +317,42 @@ export class Game {
     }
     this.updateCombatEffects();
     this.muzzleFlashPrewarmed = true;
+  }
+
+  createSoundEffect(url, { volume = 1 } = {}) {
+    if (!url) {
+      return null;
+    }
+
+    const sound = new Audio(url);
+    sound.preload = 'auto';
+    sound.volume = THREE.MathUtils.clamp(volume, 0, 1);
+    sound.load();
+    return sound;
+  }
+
+  playSoundEffect(template) {
+    if (!template) {
+      return;
+    }
+
+    const sound = template.cloneNode();
+    sound.volume = template.volume;
+    void sound.play().catch(() => {});
+  }
+
+  fireLocalWeapon(aimDirection, origin = null) {
+    const didFire = this.npcService?.fireWeapon(
+      { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
+      Date.now(),
+      origin
+    ) === true;
+
+    if (didFire && this.getLocalPlayerState()?.equippedWeaponId === HELD_ITEM_IDS.pistol) {
+      this.playSoundEffect(this.pistolShotSound);
+    }
+
+    return didFire;
   }
 
   updatePostProcessingResolution() {
@@ -1170,7 +1212,7 @@ export class Game {
       PROJECTILE_MAX_LIFETIME_MS
     );
 
-    return { point, delayMs };
+    return { origin, point, delayMs };
   }
 
   createTracerEffect(start, end) {
@@ -1214,21 +1256,72 @@ export class Game {
 
   createImpactEffect(position, kind = 'world', delayMs = 0) {
     const now = performance.now();
-    const mesh = new THREE.Mesh(
+    let object = null;
+
+    if (kind === 'player') {
+      const group = new THREE.Group();
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 12, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xff8f7a,
+          transparent: true,
+          opacity: 0.92
+        })
+      );
+      const spark = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.23, 0),
+        new THREE.MeshBasicMaterial({
+          color: 0xffddd5,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false
+        })
+      );
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.12, 0.28, 28),
+        new THREE.MeshBasicMaterial({
+          color: 0xff6d80,
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        })
+      );
+      ring.rotation.x = Math.PI / 2;
+      group.add(core);
+      group.add(spark);
+      group.add(ring);
+      group.position.copy(position);
+      group.visible = delayMs <= 0;
+      object = group;
+      this.scene.add(group);
+      this.combatEffects.push({
+        type: 'impact',
+        object: group,
+        core,
+        spark,
+        ring,
+        startAt: now + delayMs,
+        expiresAt: now + delayMs + IMPACT_EFFECT_LIFETIME_MS
+      });
+      return;
+    }
+
+    object = new THREE.Mesh(
       new THREE.SphereGeometry(0.18, 10, 10),
       new THREE.MeshBasicMaterial({
-        color: kind === 'player' ? 0xff8f7a : 0xf2c871,
+        color: 0xf2c871,
         transparent: true,
         opacity: 0.9
       })
     );
-    mesh.position.copy(position);
-    mesh.visible = delayMs <= 0;
-    this.scene.add(mesh);
+    object.position.copy(position);
+    object.visible = delayMs <= 0;
+    this.scene.add(object);
     this.combatEffects.push({
       type: 'impact',
-      object: mesh,
-      material: mesh.material,
+      object,
+      material: object.material,
       startAt: now + delayMs,
       expiresAt: now + delayMs + IMPACT_EFFECT_LIFETIME_MS
     });
@@ -1372,8 +1465,22 @@ export class Game {
 
         const lifetime = Math.max(1, effect.expiresAt - effect.startAt);
         const progress = THREE.MathUtils.clamp((now - effect.startAt) / lifetime, 0, 1);
-        effect.object.scale.setScalar(1 + (progress * 0.75));
-        effect.material.opacity = Math.max(0, 1 - progress);
+        if (effect.core && effect.spark && effect.ring) {
+          const burst = 1 + Math.sin(progress * Math.PI) * 0.85;
+          effect.object.scale.setScalar(1 + (progress * 0.16));
+          effect.core.scale.setScalar(0.92 + (progress * 0.58));
+          effect.spark.scale.set(0.78 + (burst * 0.92), 1.18 + (progress * 0.2), 0.78 + (burst * 0.92));
+          effect.spark.rotation.x = progress * 1.35;
+          effect.spark.rotation.y = progress * 2.6;
+          effect.ring.scale.setScalar(0.7 + (progress * 2.35));
+          effect.ring.position.y = 0.02 + (progress * 0.06);
+          effect.core.material.opacity = Math.max(0, 0.92 - (progress * 1.1));
+          effect.spark.material.opacity = Math.max(0, 0.85 - (progress * 1.04));
+          effect.ring.material.opacity = Math.max(0, 0.8 - (progress * 1.24));
+        } else {
+          effect.object.scale.setScalar(1 + (progress * 0.75));
+          effect.material.opacity = Math.max(0, 1 - progress);
+        }
       } else if (effect.type === 'muzzleFlash') {
         const lifetime = Math.max(1, effect.expiresAt - effect.startedAt);
         const progress = THREE.MathUtils.clamp((now - effect.startedAt) / lifetime, 0, 1);
@@ -1439,8 +1546,35 @@ export class Game {
         break;
       case 'impact':
         {
-          const { point, delayMs } = this.getImpactEffectSpec(event);
+          const { origin, point, delayMs } = this.getImpactEffectSpec(event);
           this.createImpactEffect(point, event.kind, delayMs);
+          if (event.kind === 'player' && event.targetId) {
+            const runFeedback = () => {
+              const targetAvatar = this.getAvatarForSessionId(event.targetId);
+              const damageDirection = point.clone().sub(origin);
+              damageDirection.y = 0;
+              if (damageDirection.lengthSq() <= 0.0001 && targetAvatar?.position) {
+                damageDirection.subVectors(targetAvatar.position, origin);
+                damageDirection.y = 0;
+              }
+              if (damageDirection.lengthSq() <= 0.0001) {
+                damageDirection.set(0, 0, 1);
+              } else {
+                damageDirection.normalize();
+              }
+
+              targetAvatar?.triggerDamageFeedback?.({ direction: damageDirection });
+              if (event.targetId === this.npcServiceState.sessionId) {
+                this.triggerDamageCameraFeedback(damageDirection);
+              }
+            };
+
+            if (delayMs > 0) {
+              window.setTimeout(runFeedback, delayMs);
+            } else {
+              runFeedback();
+            }
+          }
         }
         if (event.kind === 'player' && event.shooterId === this.npcServiceState.sessionId) {
           this.hitMarkerUntil = performance.now() + 120;
@@ -1652,11 +1786,7 @@ export class Game {
         this.player.setAimingState(aimingMode || hipFirePoseActive);
         if (aimingMode ? primaryFireHeld : primaryFirePressed) {
           if (aimingMode) {
-            this.npcService?.fireWeapon(
-              { x: aimDirection.x, z: aimDirection.z },
-              Date.now(),
-              this.getShotCollisionOrigin(aimDirection)
-            );
+            this.fireLocalWeapon(aimDirection, this.getShotCollisionOrigin(aimDirection));
           } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
             this.queueHipFireShot(aimDirection);
           }
@@ -1677,7 +1807,7 @@ export class Game {
         this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
         if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
           this.pendingHipFireShot.fired = true;
-          this.npcService?.fireWeapon(this.pendingHipFireShot.direction, Date.now(), this.pendingHipFireShot.origin);
+          this.fireLocalWeapon(this.pendingHipFireShot.direction, this.pendingHipFireShot.origin);
         }
         if (now >= this.pendingHipFireShot.releaseAt) {
           this.clearPendingHipFireShot();
@@ -1729,9 +1859,40 @@ export class Game {
     const cameraOffset = (isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET).clone().multiplyScalar(zoomLevel);
     const targetPosition = this.player.position.clone().add(cameraOffset);
     const lookTarget = this.player.position.clone().add(CAMERA_LOOK_OFFSET);
+    const now = performance.now();
+
+    if (now < this.damageCameraKickEndsAt) {
+      const lifetime = Math.max(1, this.damageCameraKickEndsAt - this.damageCameraKickStartedAt);
+      const progress = THREE.MathUtils.clamp((now - this.damageCameraKickStartedAt) / lifetime, 0, 1);
+      const envelope = Math.pow(1 - progress, 1.35);
+      const wave = Math.sin(progress * Math.PI * 3.2);
+      const side = new THREE.Vector3(-this.damageCameraDirection.z, 0, this.damageCameraDirection.x);
+      targetPosition.addScaledVector(this.damageCameraDirection, envelope * 0.72);
+      targetPosition.addScaledVector(side, wave * envelope * 0.26);
+      targetPosition.y += Math.sin(progress * Math.PI) * envelope * 0.38;
+      lookTarget.addScaledVector(this.damageCameraDirection, envelope * 0.16);
+      lookTarget.addScaledVector(side, wave * envelope * -0.14);
+      lookTarget.y += envelope * 0.12;
+    }
 
     this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
     this.camera.lookAt(lookTarget);
+  }
+
+  triggerDamageCameraFeedback(direction = null) {
+    this.damageCameraKickStartedAt = performance.now();
+    this.damageCameraKickEndsAt = this.damageCameraKickStartedAt + DAMAGE_CAMERA_KICK_MS;
+    if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
+      this.damageCameraDirection.set(direction.x, 0, direction.z);
+    } else {
+      this.damageCameraDirection.set(this.currentAimDirection.x, 0, this.currentAimDirection.z);
+    }
+
+    if (this.damageCameraDirection.lengthSq() <= 0.0001) {
+      this.damageCameraDirection.set(0, 0, 1);
+    } else {
+      this.damageCameraDirection.normalize();
+    }
   }
 
   updateBuilderCamera() {
