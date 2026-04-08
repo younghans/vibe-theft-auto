@@ -47,7 +47,7 @@ const SLOT_MOTION_BASE = Object.freeze({
 });
 
 const EMPTY_VECTOR_OVERRIDE = Object.freeze([0, 0, 0]);
-const AIM_IDLE_LOCK_BONES = Object.freeze(['leftArm', 'leftForeArm']);
+const AIM_IDLE_LOCK_BONES = Object.freeze(['leftArm', 'leftForeArm', 'leftHand']);
 const AIM_IDLE_LOCK_FIELD_KEYS = new Set(
   HELD_ITEM_AIM_POSE_FIELDS
     .filter((field) => AIM_IDLE_LOCK_BONES.includes(field.bone))
@@ -1069,6 +1069,7 @@ export async function createPlayer(library, {
 
     const rotationsByBone = new Map();
     const blendWeightsByBone = new Map();
+    const activeAimBones = new Set();
     if (hasLookPose) {
       const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y);
       addBoneRotation(rotationsByBone, UPPER_BODY_ROOT_BONE, 'y', aimDelta);
@@ -1084,6 +1085,7 @@ export async function createPlayer(library, {
 
         addBoneRotation(rotationsByBone, field.bone, field.axis, value);
         setBoneBlendWeight(blendWeightsByBone, field.bone, aimPoseWeight);
+        activeAimBones.add(field.bone);
       }
     }
 
@@ -1106,7 +1108,8 @@ export async function createPlayer(library, {
     }
 
     if (stabilizeUpperBody) {
-      for (const boneKey of AIM_STABILIZE_BONES) {
+      const bonesToStabilize = new Set([UPPER_BODY_ROOT_BONE, ...activeAimBones]);
+      for (const boneKey of bonesToStabilize) {
         const bone = aimPoseBones[boneKey];
         const base = aimPoseBoneBases[boneKey];
         if (!bone || !base) {
