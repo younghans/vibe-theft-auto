@@ -222,6 +222,7 @@ export class Game {
     this.firstFrameMarked = false;
     this.lastAimPoseDebugSignature = '';
     this.bootMeasureLabels = [];
+    this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
 
     this.hud.bindInteractionEvents({
@@ -981,6 +982,60 @@ export class Game {
         return printable;
       };
 
+      const cloneDebugValue = (value) => {
+        if (typeof structuredClone === 'function') {
+          return structuredClone(value);
+        }
+
+        return JSON.parse(JSON.stringify(value));
+      };
+
+      const roundDebugValue = (value) => {
+        if (Array.isArray(value)) {
+          return value.map((entry) => roundDebugValue(entry));
+        }
+
+        if (value && typeof value === 'object') {
+          return Object.fromEntries(
+            Object.entries(value).map(([key, entry]) => [key, roundDebugValue(entry)])
+          );
+        }
+
+        return Number.isFinite(value) ? Number(value.toFixed(4)) : value;
+      };
+
+      const printReload = (itemId = getActiveItemId()) => {
+        const profile = this.player.getHeldItemReloadProfile?.(itemId);
+        if (!profile) {
+          console.info('[ReloadDebug] No reload profile found.', { itemId });
+          return null;
+        }
+
+        const printable = {
+          id: itemId,
+          reloadProfile: roundDebugValue(profile)
+        };
+        console.info('[ReloadDebug] Current reload profile.', printable);
+        return printable;
+      };
+
+      const updateReloadProfile = (mutator, itemId = getActiveItemId()) => {
+        const current = this.player.getHeldItemReloadProfile?.(itemId);
+        if (!current) {
+          console.info('[ReloadDebug] No reload profile found.', { itemId });
+          return null;
+        }
+
+        const nextProfile = cloneDebugValue(current);
+        mutator(nextProfile);
+        const applied = this.player.setHeldItemReloadProfileOverride?.(itemId, nextProfile) ?? null;
+        console.info('[ReloadDebug] Updated reload profile.', {
+          itemId,
+          reloadProfile: roundDebugValue(applied)
+        });
+        return applied;
+      };
+
       globalThis.__stickRpgHeldItemDebug = {
         items: listHeldItemDefinitions().map((definition) => definition.id),
         printGrip,
@@ -1015,10 +1070,75 @@ export class Game {
           this.player.clearHeldItemGripOverride(itemId);
           return printGrip(itemId);
         },
+        printReload,
+        previewReload: (itemId = getActiveItemId(), durationMs = 1200) => {
+          const previewed = this.player.previewReload?.(itemId, durationMs) === true;
+          if (previewed && itemId === HELD_ITEM_IDS.pistol) {
+            this.playSoundEffect(this.pistolCockSound);
+          }
+          return previewed;
+        },
+        stopReloadPreview: () => this.player.stopReloadPreview?.(),
+        setReloadPose: (boneKey = 'leftArm', x = 0, y = 0, z = 0, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.pose ??= {};
+            profile.pose[boneKey] = clampVector([x, y, z]);
+          }, itemId),
+        nudgeReloadPose: (boneKey = 'leftArm', deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.pose ??= {};
+            const current = profile.pose[boneKey] ?? [0, 0, 0];
+            profile.pose[boneKey] = [0, 1, 2].map((index) => Number(current[index] ?? 0) + Number([deltaX, deltaY, deltaZ][index] ?? 0));
+          }, itemId),
+        setReloadEnvelope: (start = 0.14, peak = 0.4, end = 0.88, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.envelope = {
+              start: Number(start),
+              peak: Number(peak),
+              end: Number(end)
+            };
+          }, itemId),
+        setReloadSlideTiming: (start = 0.34, peak = 0.48, end = 0.68, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.slide ??= { nodeName: 'slide_Armature', position: [0, 0, 0] };
+            profile.slide.start = Number(start);
+            profile.slide.peak = Number(peak);
+            profile.slide.end = Number(end);
+          }, itemId),
+        setReloadSlidePosition: (x = 0, y = 0, z = 0, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.slide ??= { nodeName: 'slide_Armature', start: 0.34, peak: 0.48, end: 0.68 };
+            profile.slide.position = clampVector([x, y, z]);
+          }, itemId),
+        setReloadWeaponPosition: (x = 0, y = 0, z = 0, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.weaponMotion ??= { position: [0, 0, 0], rotation: [0, 0, 0] };
+            profile.weaponMotion.position = clampVector([x, y, z]);
+          }, itemId),
+        setReloadWeaponRotation: (x = 0, y = 0, z = 0, itemId = getActiveItemId()) =>
+          updateReloadProfile((profile) => {
+            profile.weaponMotion ??= { position: [0, 0, 0], rotation: [0, 0, 0] };
+            profile.weaponMotion.rotation = clampVector([x, y, z]);
+          }, itemId),
+        resetReload: (itemId = getActiveItemId()) => {
+          this.player.clearHeldItemReloadProfileOverride?.(itemId);
+          return printReload(itemId);
+        },
         previewCrateLeftHand: () => this.player.attachHeldItem(HELD_ITEM_IDS.crateA, { visible: true }),
         clearLeftHand: () => this.player.detachHeldItem(ATTACHMENT_SLOTS.handLeft)
       };
       globalThis.printGrip = (...args) => globalThis.__stickRpgHeldItemDebug.printGrip(...args);
+      globalThis.printReload = (...args) => globalThis.__stickRpgHeldItemDebug.printReload(...args);
+      globalThis.previewReload = (...args) => globalThis.__stickRpgHeldItemDebug.previewReload(...args);
+      globalThis.stopReloadPreview = (...args) => globalThis.__stickRpgHeldItemDebug.stopReloadPreview(...args);
+      globalThis.setReloadPose = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadPose(...args);
+      globalThis.nudgeReloadPose = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeReloadPose(...args);
+      globalThis.setReloadEnvelope = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadEnvelope(...args);
+      globalThis.setReloadSlideTiming = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadSlideTiming(...args);
+      globalThis.setReloadSlidePosition = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadSlidePosition(...args);
+      globalThis.setReloadWeaponPosition = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadWeaponPosition(...args);
+      globalThis.setReloadWeaponRotation = (...args) => globalThis.__stickRpgHeldItemDebug.setReloadWeaponRotation(...args);
+      globalThis.resetReload = (...args) => globalThis.__stickRpgHeldItemDebug.resetReload(...args);
       globalThis.nudgePosition = (...args) => globalThis.__stickRpgHeldItemDebug.nudgePosition(...args);
       globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
       globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
@@ -1037,6 +1157,21 @@ export class Game {
 
       console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
         items: listHeldItemDefinitions().map((definition) => definition.id)
+      });
+      console.info('[ReloadDebug] Attached window.__stickRpgHeldItemDebug reload helpers.', {
+        methods: [
+          'printReload',
+          'previewReload',
+          'stopReloadPreview',
+          'setReloadPose',
+          'nudgeReloadPose',
+          'setReloadEnvelope',
+          'setReloadSlideTiming',
+          'setReloadSlidePosition',
+          'setReloadWeaponPosition',
+          'setReloadWeaponRotation',
+          'resetReload'
+        ]
       });
       console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
         presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
@@ -1594,6 +1729,10 @@ export class Game {
       isAlive ? localPlayerState.equippedWeaponId : '',
       { visible: isAlive && Boolean(localPlayerState.equippedWeaponId) }
     );
+    this.player.setReloadState(Boolean(isAlive && localPlayerState.isReloading), {
+      weaponId: isAlive ? localPlayerState.equippedWeaponId : '',
+      endsAtMs: localPlayerState.reloadEndsAt ?? 0
+    });
 
     this.hud.setCombatState({
       visible: true,
@@ -2052,6 +2191,19 @@ export class Game {
       case 'pickup':
         if (event.playerId === this.npcServiceState.sessionId) {
           this.hud.showToast('Pistol equipped.');
+        }
+        break;
+      case 'reload':
+        {
+          const avatar = this.getAvatarForSessionId(event.playerId);
+          avatar?.setReloadState?.(true, {
+            weaponId: event.weaponId,
+            startedAtMs: Number(event.startedAt ?? 0),
+            endsAtMs: Number(event.endsAt ?? 0)
+          });
+          if (event.weaponId === HELD_ITEM_IDS.pistol) {
+            this.playSoundEffect(this.pistolCockSound);
+          }
         }
         break;
       case 'death':

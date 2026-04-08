@@ -42,6 +42,7 @@ export const assets = {
   },
   combat: {
     pistol: assetUrl('objects', 'low-poly_g17_pistol.glb'),
+    pistolCock: assetUrl('audio', 'combat', 'pistol_cock.wav'),
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')
   },
   city: {
