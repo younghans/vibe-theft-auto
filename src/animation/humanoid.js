@@ -45,7 +45,49 @@ const REQUIRED_BONES = [
   MIXAMO_BONES.spineUpper
 ];
 
+function getCanonicalMixamoBoneName(name) {
+  const match = /^mixamorig\d+(.+)$/.exec(name ?? '');
+  if (!match) {
+    return name;
+  }
+
+  return `mixamorig${match[1]}`;
+}
+
+function normalizeMixamoBoneNames(root) {
+  const renamedBones = [];
+  const occupiedNames = new Set();
+
+  root.traverse((node) => {
+    if (node?.name) {
+      occupiedNames.add(node.name);
+    }
+  });
+
+  root.traverse((node) => {
+    if (!node?.isBone || !node.name) {
+      return;
+    }
+
+    const canonicalName = getCanonicalMixamoBoneName(node.name);
+    if (!canonicalName || canonicalName === node.name || occupiedNames.has(canonicalName)) {
+      return;
+    }
+
+    occupiedNames.delete(node.name);
+    occupiedNames.add(canonicalName);
+    renamedBones.push({
+      from: node.name,
+      to: canonicalName
+    });
+    node.name = canonicalName;
+  });
+
+  return renamedBones;
+}
+
 export function validateMixamoHumanoid(root) {
+  const renamedBones = normalizeMixamoBoneNames(root);
   const missingBones = REQUIRED_BONES.filter((boneName) => !root.getObjectByName(boneName));
   const skinnedMeshes = [];
   const bodyMeshes = [];
@@ -64,12 +106,14 @@ export function validateMixamoHumanoid(root) {
   return {
     isHumanoid: missingBones.length === 0 && bodyMeshes.length > 0,
     missingBones,
+    renamedBones,
     skinnedMeshes,
     bodyMeshes
   };
 }
 
 export function ensureMixamoSockets(root) {
+  normalizeMixamoBoneNames(root);
   const sockets = {};
 
   sockets.handRight = ensureSocket(root, MIXAMO_BONES.rightHand, HUMANOID_ATTACHMENT_SOCKETS.handRight);

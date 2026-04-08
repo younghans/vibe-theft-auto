@@ -1,4 +1,5 @@
 import { EMOTES_BY_ID } from '../player/emotes.js';
+import { MIXAMO_CHARACTER_DEFINITIONS } from '../shared/mixamoCharacterCatalog.js';
 
 const assetBaseUrl = (() => {
   if (typeof window === 'undefined') {
@@ -26,11 +27,12 @@ export const assets = {
     emotes: PLAYER_EMOTES
   },
   mixamo: {
-    characters: {
-      xBot: assetUrl('mixamo', 'characters', 'x-bot.fbx'),
-      brute: assetUrl('mixamo', 'characters', 'brute.fbx'),
-      ch18NonPbr: assetUrl('mixamo', 'characters', 'ch18-non-pbr.fbx')
-    },
+    characters: Object.fromEntries(
+      MIXAMO_CHARACTER_DEFINITIONS.map((entry) => [
+        entry.id,
+        assetUrl('mixamo', 'characters', entry.fileName)
+      ])
+    ),
     animations: {
       idle: assetUrl('mixamo', 'animations', 'idle.json'),
       fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),

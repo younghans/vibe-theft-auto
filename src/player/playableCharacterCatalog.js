@@ -1,44 +1,25 @@
 import { assets } from '../world/assetManifest.js';
+import { MIXAMO_CHARACTER_DEFINITIONS } from '../shared/mixamoCharacterCatalog.js';
 
 export const DEFAULT_PLAYABLE_CHARACTER_ID = 'xBot';
 
+function createPlayableCharacter(definition) {
+  return Object.freeze({
+    id: definition.id,
+    label: definition.label,
+    subtitle: definition.subtitle,
+    characterRig: assets.mixamo.characters[definition.id],
+    characterVariant: 'mixamo',
+    idleClip: assets.playerAnimationSet.idle,
+    previewClip: assets.playerAnimationSet.fightingIdle,
+    portraitClip: assets.playerAnimationSet.idle,
+    walkClip: assets.playerAnimationSet.walking,
+    emotes: assets.playerAnimationSet.emotes
+  });
+}
+
 export const PLAYABLE_CHARACTER_CATALOG = Object.freeze([
-  Object.freeze({
-    id: 'xBot',
-    label: 'X Bot',
-    subtitle: 'Balanced Rookie',
-    characterRig: assets.mixamo.characters.xBot,
-    characterVariant: 'mixamo',
-    idleClip: assets.playerAnimationSet.idle,
-    previewClip: assets.playerAnimationSet.fightingIdle,
-    portraitClip: assets.playerAnimationSet.idle,
-    walkClip: assets.playerAnimationSet.walking,
-    emotes: assets.playerAnimationSet.emotes
-  }),
-  Object.freeze({
-    id: 'brute',
-    label: 'Brute',
-    subtitle: 'Heavy Hitter',
-    characterRig: assets.mixamo.characters.brute,
-    characterVariant: 'mixamo',
-    idleClip: assets.playerAnimationSet.idle,
-    previewClip: assets.playerAnimationSet.fightingIdle,
-    portraitClip: assets.playerAnimationSet.idle,
-    walkClip: assets.playerAnimationSet.walking,
-    emotes: assets.playerAnimationSet.emotes
-  }),
-  Object.freeze({
-    id: 'ch18NonPbr',
-    label: 'Ch18',
-    subtitle: 'Street Specialist',
-    characterRig: assets.mixamo.characters.ch18NonPbr,
-    characterVariant: 'mixamo',
-    idleClip: assets.playerAnimationSet.idle,
-    previewClip: assets.playerAnimationSet.fightingIdle,
-    portraitClip: assets.playerAnimationSet.idle,
-    walkClip: assets.playerAnimationSet.walking,
-    emotes: assets.playerAnimationSet.emotes
-  }),
+  ...MIXAMO_CHARACTER_DEFINITIONS.map(createPlayableCharacter),
   Object.freeze({
     id: 'classicBot',
     label: 'OSRS Bot',
