@@ -102,6 +102,16 @@ function disposeObjectResources(root) {
   });
 }
 
+function disposeObjectMaterials(root) {
+  root?.traverse?.((node) => {
+    disposeMaterial(node.material);
+  });
+}
+
+function cloneVector3Like(point = { x: 0, y: 0, z: 0 }) {
+  return new THREE.Vector3(point.x ?? 0, point.y ?? 0, point.z ?? 0);
+}
+
 export class Game {
   constructor(root) {
     this.root = root;
@@ -160,6 +170,8 @@ export class Game {
     this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.aimTarget = new THREE.Vector3();
     this.currentAimDirection = new THREE.Vector3(0, 0, 1);
+    this.muzzleFlashResources = this.createMuzzleFlashResources();
+    this.muzzleFlashPrewarmed = false;
     this.currentAimMode = false;
     this.pendingHipFireShot = null;
     this.aimPoseDebugVisible = false;
@@ -220,6 +232,85 @@ export class Game {
     this.composer.addPass(this.vibeShaderPass);
     this.composer.addPass(this.outputPass);
     this.updatePostProcessingResolution();
+  }
+
+  createMuzzleFlashResources() {
+    return {
+      flashMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xfff0c4,
+        transparent: true,
+        opacity: 0.98,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      }),
+      flareMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xff7a24,
+        transparent: true,
+        opacity: 0.88,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      }),
+      emberMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xff4a24,
+        transparent: true,
+        opacity: 0.62,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      }),
+      sparkMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xffb161,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      }),
+      coreGeometry: new THREE.SphereGeometry(0.1, 12, 12),
+      plumeGeometry: new THREE.ConeGeometry(0.24, 0.9, 12, 1, true),
+      bloomGeometry: new THREE.SphereGeometry(0.19, 12, 12),
+      emberShellGeometry: new THREE.SphereGeometry(0.21, 10, 10),
+      shockRingGeometry: new THREE.TorusGeometry(0.12, 0.022, 8, 20),
+      sideFlareAGeometry: new THREE.BoxGeometry(0.045, 0.46, 0.045),
+      sideFlareBGeometry: new THREE.BoxGeometry(0.04, 0.4, 0.04),
+      sparkGeometries: [
+        new THREE.BoxGeometry(0.035, 0.58, 0.035),
+        new THREE.BoxGeometry(0.028, 0.48, 0.028),
+        new THREE.BoxGeometry(0.024, 0.38, 0.024)
+      ],
+      sparkOffsets: [
+        Object.freeze({ x: 0.12, y: 0.22, z: 0.04, zRot: 0.42 }),
+        Object.freeze({ x: -0.1, y: 0.18, z: -0.05, zRot: -0.55 }),
+        Object.freeze({ x: 0.03, y: 0.3, z: -0.1, zRot: 0.18 })
+      ]
+    };
+  }
+
+  prewarmMuzzleFlashEffect() {
+    if (this.muzzleFlashPrewarmed || !this.player) {
+      return;
+    }
+
+    const start = this.player.position.clone().add(new THREE.Vector3(0, 2.1, 0.55));
+    const end = start.clone().add(new THREE.Vector3(0, 0, 1));
+    this.createMuzzleFlashEffect(null, start, end);
+    this.updateCamera();
+
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+
+    for (const effect of this.combatEffects) {
+      if (effect.type === 'muzzleFlash') {
+        effect.expiresAt = performance.now() - 1;
+      }
+    }
+    this.updateCombatEffects();
+    this.muzzleFlashPrewarmed = true;
   }
 
   updatePostProcessingResolution() {
@@ -457,6 +548,7 @@ export class Game {
       this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
       this.refreshAimPoseDebugHud();
       void this.syncPickupVisuals();
+      this.prewarmMuzzleFlashEffect();
 
       if (this.npcServiceState.transport === 'colyseus') {
         this.hud.showToast('Connected to the multiplayer room. Shared building, world chat, NPC replies, and player presence are live.');
@@ -1164,80 +1256,42 @@ export class Game {
       this.scene.add(flashGroup);
     }
 
-    const flashMaterial = new THREE.MeshBasicMaterial({
-      color: 0xfff0c4,
-      transparent: true,
-      opacity: 0.98,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false
-    });
-    const flareMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff7a24,
-      transparent: true,
-      opacity: 0.88,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false
-    });
-    const emberMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff4a24,
-      transparent: true,
-      opacity: 0.62,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false
-    });
-    const sparkMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffb161,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      toneMapped: false
-    });
+    const resources = this.muzzleFlashResources;
+    const flashMaterial = resources.flashMaterialTemplate.clone();
+    const flareMaterial = resources.flareMaterialTemplate.clone();
+    const emberMaterial = resources.emberMaterialTemplate.clone();
 
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), flashMaterial);
-    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.9, 12, 1, true), flareMaterial);
+    const core = new THREE.Mesh(resources.coreGeometry, flashMaterial);
+    const plume = new THREE.Mesh(resources.plumeGeometry, flareMaterial);
     plume.position.y = 0.3;
-    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), flareMaterial.clone());
+    const bloom = new THREE.Mesh(resources.bloomGeometry, flareMaterial.clone());
     bloom.position.y = 0.12;
     bloom.scale.set(0.95, 0.54, 0.95);
-    const emberShell = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 10), emberMaterial);
+    const emberShell = new THREE.Mesh(resources.emberShellGeometry, emberMaterial);
     emberShell.position.y = 0.08;
     emberShell.scale.set(1.08, 0.42, 1.08);
     const shockRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.12, 0.022, 8, 20),
+      resources.shockRingGeometry,
       flareMaterial.clone()
     );
     shockRing.position.y = 0.12;
     shockRing.rotation.x = Math.PI / 2;
     const sideFlareA = new THREE.Mesh(
-      new THREE.BoxGeometry(0.045, 0.46, 0.045),
+      resources.sideFlareAGeometry,
       flareMaterial.clone()
     );
     sideFlareA.position.set(0.08, 0.2, 0.02);
     sideFlareA.rotation.z = 0.68;
     const sideFlareB = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.4, 0.04),
+      resources.sideFlareBGeometry,
       emberMaterial.clone()
     );
     sideFlareB.position.set(-0.075, 0.18, -0.03);
     sideFlareB.rotation.z = -0.78;
 
-    const sparkGeometries = [
-      new THREE.BoxGeometry(0.035, 0.58, 0.035),
-      new THREE.BoxGeometry(0.028, 0.48, 0.028),
-      new THREE.BoxGeometry(0.024, 0.38, 0.024)
-    ];
-    const sparkOffsets = [
-      { x: 0.12, y: 0.22, z: 0.04, zRot: 0.42 },
-      { x: -0.1, y: 0.18, z: -0.05, zRot: -0.55 },
-      { x: 0.03, y: 0.3, z: -0.1, zRot: 0.18 }
-    ];
-    const sparks = sparkGeometries.map((geometry, index) => {
-      const spark = new THREE.Mesh(geometry, sparkMaterial.clone());
-      const offset = sparkOffsets[index];
+    const sparks = resources.sparkGeometries.map((geometry, index) => {
+      const spark = new THREE.Mesh(geometry, resources.sparkMaterialTemplate.clone());
+      const offset = resources.sparkOffsets[index];
       spark.position.set(offset.x, offset.y, offset.z);
       spark.rotation.z = offset.zRot;
       return spark;
@@ -1259,6 +1313,7 @@ export class Game {
     this.combatEffects.push({
       type: 'muzzleFlash',
       object: flashGroup,
+      sharedGeometry: true,
       core,
       plume,
       bloom,
@@ -1267,7 +1322,7 @@ export class Game {
       sideFlareA,
       sideFlareB,
       sparks,
-      sparkOffsets,
+      sparkOffsets: resources.sparkOffsets.map((offset) => cloneVector3Like(offset)),
       light,
       startedAt: now,
       expiresAt: now + MUZZLE_FLASH_LIFETIME_MS
@@ -1283,7 +1338,11 @@ export class Game {
         if (effect.trail) {
           effect.trail.parent?.remove(effect.trail);
         }
-        disposeObjectResources(effect.object);
+        if (effect.sharedGeometry) {
+          disposeObjectMaterials(effect.object);
+        } else {
+          disposeObjectResources(effect.object);
+        }
         effect.trailGeometry?.dispose?.();
         disposeMaterial(effect.material);
         disposeMaterial(effect.secondaryMaterial);
