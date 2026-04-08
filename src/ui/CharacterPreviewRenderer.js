@@ -25,17 +25,21 @@ const PREVIEW_BACKGROUND_COLORS = Object.freeze({
   portrait: 0x000000
 });
 const LIVE_PREVIEW_PROFILE = Object.freeze({
-  framedHeightRatio: 0.9,
-  distanceMultiplier: 1.14,
-  focusYRatio: 0.56,
-  cameraHeightRatio: 0.12,
+  fitHeightFraction: 0.88,
+  fitWidthFraction: 0.72,
+  topPaddingRatio: 0.08,
+  bottomPaddingRatio: 0.05,
+  distanceMultiplier: 1.03,
+  cameraLiftRatio: 0.02,
   cameraXRatio: 0.04
 });
 const PORTRAIT_PREVIEW_PROFILE = Object.freeze({
-  framedHeightRatio: 0.52,
-  distanceMultiplier: 1.3,
-  focusYRatio: 0.68,
-  cameraHeightRatio: 0.12,
+  fitHeightFraction: 0.82,
+  fitWidthFraction: 0.72,
+  topPaddingRatio: 0.08,
+  bottomPaddingRatio: 0.08,
+  distanceMultiplier: 1.18,
+  cameraLiftRatio: 0.02,
   cameraXRatio: 0
 });
 
@@ -88,12 +92,18 @@ function frameCamera(camera, object, profile = LIVE_PREVIEW_PROFILE) {
   const bounds = new THREE.Box3().setFromObject(object);
   const size = bounds.getSize(new THREE.Vector3());
   const focus = bounds.getCenter(new THREE.Vector3());
-  const framedHeight = Math.max(size.y * profile.framedHeightRatio, 1.2);
-  const distance = (framedHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) * profile.distanceMultiplier;
-  const focusY = bounds.min.y + (size.y * profile.focusYRatio);
+  const fitHeightFraction = THREE.MathUtils.clamp(profile.fitHeightFraction ?? 0.88, 0.1, 0.98);
+  const fitWidthFraction = THREE.MathUtils.clamp(profile.fitWidthFraction ?? 0.72, 0.1, 0.98);
+  const visibleHeightFromHeight = size.y / fitHeightFraction;
+  const visibleHeightFromWidth = size.x / Math.max(fitWidthFraction * camera.aspect, 0.01);
+  const visibleHeight = Math.max(visibleHeightFromHeight, visibleHeightFromWidth, 1.2);
+  const distance = (visibleHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) * (profile.distanceMultiplier ?? 1);
+  const bottomPaddingRatio = THREE.MathUtils.clamp(profile.bottomPaddingRatio ?? 0.05, 0, 0.45);
+  const focusY = bounds.min.y + (visibleHeight * (0.5 - bottomPaddingRatio));
+  const cameraLift = visibleHeight * (profile.cameraLiftRatio ?? 0);
   camera.position.set(
     focus.x + (size.x * profile.cameraXRatio),
-    focusY + (size.y * profile.cameraHeightRatio),
+    focusY + cameraLift,
     focus.z + distance
   );
   camera.lookAt(focus.x, focusY, focus.z);
