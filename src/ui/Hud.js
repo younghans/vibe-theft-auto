@@ -674,7 +674,8 @@ export class Hud {
   bindCharacterSelectorEvents({
     onTogglePanel,
     onCycleCharacter,
-    onSelectCharacter
+    onSelectCharacter,
+    onViewportChange
   }) {
     this.characterSelectorToggle?.addEventListener('click', (event) => {
       event.preventDefault();
@@ -729,6 +730,10 @@ export class Hud {
       event.stopPropagation();
       onSelectCharacter(button.dataset.characterId);
     });
+
+    this.characterSelectorGrid?.addEventListener('scroll', () => {
+      onViewportChange?.();
+    }, { passive: true });
   }
 
   bindBuilderEvents({
@@ -1285,34 +1290,55 @@ export class Hud {
 
     const signature = JSON.stringify(entries.map((entry) => ({
       id: entry.id,
-      selected: entry.id === selectedId,
       label: entry.label,
       subtitle: entry.subtitle ?? ''
     })));
 
-    if (signature === this.lastCharacterSelectorSignature) {
-      return;
+    if (signature !== this.lastCharacterSelectorSignature) {
+      this.lastCharacterSelectorSignature = signature;
+      this.characterSelectorGrid.innerHTML = entries.map((entry) => `
+        <button
+          class="hud__character-card"
+          type="button"
+          data-character-id="${entry.id}"
+        >
+          <span class="hud__character-card-frame">
+            <span class="hud__character-card-preview" data-character-preview-card="${entry.id}">
+              <span class="hud__character-card-placeholder">${entry.label}</span>
+            </span>
+          </span>
+          <span class="hud__character-card-label">${entry.label}</span>
+        </button>
+      `).join('');
     }
 
-    this.lastCharacterSelectorSignature = signature;
-    this.characterSelectorGrid.innerHTML = entries.map((entry) => `
-      <button
-        class="hud__character-card${entry.id === selectedId ? ' is-selected' : ''}"
-        type="button"
-        data-character-id="${entry.id}"
-      >
-        <span class="hud__character-card-frame">
-          <span class="hud__character-card-preview" data-character-preview-card="${entry.id}">
-            <span class="hud__character-card-placeholder">${entry.label}</span>
-          </span>
-        </span>
-        <span class="hud__character-card-label">${entry.label}</span>
-      </button>
-    `).join('');
+    for (const button of this.characterSelectorGrid?.querySelectorAll('[data-character-id]') ?? []) {
+      button.classList.toggle('is-selected', button.dataset.characterId === selectedId);
+    }
   }
 
   getCharacterSelectorCardPreviewMount(characterId) {
     return this.characterSelectorGrid?.querySelector(`[data-character-preview-card="${characterId}"]`) ?? null;
+  }
+
+  getVisibleCharacterSelectorCardIds({ overscanPx = 0 } = {}) {
+    if (!this.characterSelectorGrid) {
+      return [];
+    }
+
+    const gridBounds = this.characterSelectorGrid.getBoundingClientRect();
+    return Array.from(this.characterSelectorGrid.querySelectorAll('[data-character-id]'))
+      .filter((button) => {
+        const bounds = button.getBoundingClientRect();
+        return (
+          bounds.bottom >= gridBounds.top - overscanPx
+          && bounds.top <= gridBounds.bottom + overscanPx
+          && bounds.right >= gridBounds.left
+          && bounds.left <= gridBounds.right
+        );
+      })
+      .map((button) => button.dataset.characterId)
+      .filter(Boolean);
   }
 
   isCharacterSelectorOpen() {

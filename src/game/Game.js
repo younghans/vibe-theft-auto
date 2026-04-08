@@ -167,6 +167,7 @@ export class Game {
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
     this.characterSelectorSyncRequestId = 0;
+    this.characterSelectorViewportSyncFrame = 0;
     this.localCharacterSwapSequence = 0;
     this.remoteAvatarBuildRequests = new Map();
     this.remotePlayers = new Map();
@@ -254,7 +255,8 @@ export class Game {
     this.hud.bindCharacterSelectorEvents({
       onTogglePanel: (visible) => this.toggleCharacterSelector(visible),
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
-      onSelectCharacter: (characterId) => this.selectCharacter(characterId)
+      onSelectCharacter: (characterId) => this.selectCharacter(characterId),
+      onViewportChange: () => this.queueCharacterSelectorViewportSync()
     });
     this.refreshZoomHud();
     this.refreshCharacterSelectorHud();
@@ -623,8 +625,40 @@ export class Game {
       return;
     }
 
-    void renderer.refreshPortraits(entries.map((entry) => entry.id));
+    this.syncVisibleCharacterSelectorPortraits(entries, renderer, selectedId);
+  }
+
+  queueCharacterSelectorViewportSync() {
+    if (!this.characterSelectorVisible || this.characterSelectorViewportSyncFrame) {
+      return;
+    }
+
+    this.characterSelectorViewportSyncFrame = window.requestAnimationFrame(() => {
+      this.characterSelectorViewportSyncFrame = 0;
+      if (!this.characterSelectorVisible || !this.characterPreviewRenderer) {
+        return;
+      }
+
+      const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+      this.syncVisibleCharacterSelectorPortraits(
+        this.characterRoster,
+        this.characterPreviewRenderer,
+        selectedId
+      );
+    });
+  }
+
+  syncVisibleCharacterSelectorPortraits(entries, renderer, selectedId) {
+    const visibleIds = new Set(
+      this.hud.getVisibleCharacterSelectorCardIds({ overscanPx: 180 })
+    );
+    visibleIds.add(selectedId);
+
     for (const entry of entries) {
+      if (!visibleIds.has(entry.id)) {
+        continue;
+      }
+
       const mount = this.hud.getCharacterSelectorCardPreviewMount(entry.id);
       void renderer.mountPortraitCanvas(entry.id, mount);
     }
@@ -642,6 +676,10 @@ export class Game {
 
     if (!this.characterSelectorVisible) {
       this.characterSelectorSyncRequestId += 1;
+      if (this.characterSelectorViewportSyncFrame) {
+        window.cancelAnimationFrame(this.characterSelectorViewportSyncFrame);
+        this.characterSelectorViewportSyncFrame = 0;
+      }
       this.characterPreviewRenderer?.setActive(false);
       return;
     }
