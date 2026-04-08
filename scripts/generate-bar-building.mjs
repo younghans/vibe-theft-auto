@@ -182,41 +182,53 @@ function addBeerMug(group, position, materials) {
 }
 
 function addBarLetters(group, centerX, y, z, materials) {
-  const letterMaterial = materials.signAccent;
-  const thickness = 0.58;
+  const faceMaterial = materials.signAccent;
+  const shadowMaterial = materials.signShadow;
+  const faceDepth = 0.72;
+  const shadowDepth = 0.4;
 
-  const add = (size, position, rotation = [0, 0, 0]) => {
-    group.add(createBox(size, position, letterMaterial, rotation));
-  };
+  function addPart(size, position, rotation = [0, 0, 0]) {
+    group.add(createBox(
+      [size[0] * 1.14, size[1] * 1.14, shadowDepth],
+      [position[0] + 0.08, position[1] - 0.14, z - 0.24],
+      shadowMaterial,
+      rotation
+    ));
+    group.add(createBox(
+      [size[0], size[1], faceDepth],
+      [position[0], position[1], z],
+      faceMaterial,
+      rotation
+    ));
+  }
 
   function addB(x) {
-    add([0.58, 3.5, thickness], [x - 0.96, y, z]);
-    add([2.0, 0.52, thickness], [x, y + 1.5, z]);
-    add([1.8, 0.48, thickness], [x - 0.06, y + 0.1, z]);
-    add([2.0, 0.52, thickness], [x, y - 1.4, z]);
-    add([0.56, 1.06, thickness], [x + 0.7, y + 0.9, z]);
-    add([0.56, 1.08, thickness], [x + 0.7, y - 0.9, z]);
+    addPart([0.82, 4.2], [x - 1.18, y]);
+    addPart([2.72, 0.84], [x + 0.06, y + 1.82]);
+    addPart([2.42, 0.74], [x - 0.02, y + 0.06]);
+    addPart([2.82, 0.86], [x + 0.1, y - 1.82]);
+    addPart([0.78, 1.34], [x + 1.14, y + 1.0]);
+    addPart([0.8, 1.42], [x + 1.14, y - 1.02]);
   }
 
   function addA(x) {
-    add([0.58, 3.38, thickness], [x - 0.96, y - 0.02, z], [0, 0, 0.18]);
-    add([0.58, 3.38, thickness], [x + 0.96, y - 0.02, z], [0, 0, -0.18]);
-    add([2.08, 0.54, thickness], [x, y + 1.42, z]);
-    add([1.52, 0.46, thickness], [x, y + 0.02, z]);
+    addPart([0.82, 4.35], [x - 1.14, y - 0.04], [0, 0, 0.16]);
+    addPart([0.82, 4.35], [x + 1.14, y - 0.04], [0, 0, -0.16]);
+    addPart([2.44, 0.84], [x, y + 1.8]);
+    addPart([1.88, 0.72], [x, y + 0.06]);
   }
 
   function addR(x) {
-    add([0.58, 3.5, thickness], [x - 1.0, y, z]);
-    add([2.06, 0.52, thickness], [x + 0.04, y + 1.5, z]);
-    add([1.82, 0.48, thickness], [x - 0.08, y + 0.08, z]);
-    add([0.58, 1.08, thickness], [x + 0.76, y + 0.92, z]);
-    add([1.56, 0.48, thickness], [x - 0.02, y + 0.84, z]);
-    add([0.58, 2.08, thickness], [x + 0.24, y - 0.82, z], [0, 0, -0.68]);
+    addPart([0.82, 4.2], [x - 1.18, y]);
+    addPart([2.8, 0.84], [x + 0.12, y + 1.82]);
+    addPart([2.46, 0.74], [x, y + 0.08]);
+    addPart([0.8, 1.38], [x + 1.16, y + 1.02]);
+    addPart([0.86, 2.56], [x + 0.52, y - 1.08], [0, 0, 0.62]);
   }
 
-  addB(centerX - 4.2);
+  addB(centerX - 4.6);
   addA(centerX);
-  addR(centerX + 4.2);
+  addR(centerX + 4.6);
 }
 
 function createBarMaterials() {
@@ -233,7 +245,8 @@ function createBarMaterials() {
     awning: createMaterial(0x7a5531),
     awningDark: createMaterial(0x4b2f1d),
     sign: createMaterial(0x6a3d20),
-    signAccent: createMaterial(0xf1c24d),
+    signShadow: createMaterial(0x180d08),
+    signAccent: createMaterial(0xf8f8f6),
     door: createMaterial(0x2d180f),
     barrelWood: createMaterial(0x8b633d),
     barrelBand: createMaterial(0x3e454c),
@@ -259,9 +272,9 @@ function buildBar() {
     { size: [8.2, 4.3, 4.1], position: [0, 8.65, -0.32], material: materials.stucco },
     { size: [4.9, 6.6, 4.75], position: [-7.2, 3.8, -0.82], material: materials.brickDark },
     { size: [4.9, 6.2, 4.45], position: [7.2, 3.6, -0.52], material: materials.brickDark },
-    { size: [13.8, 3.45, 0.7], position: [0, 5.12, 3.02], material: materials.sign },
-    { size: [14.2, 0.24, 0.28], position: [0, 7.0, 2.9], material: materials.trim },
-    { size: [14.0, 0.24, 0.28], position: [0, 3.2, 2.9], material: materials.awningDark },
+    { size: [16.2, 4.2, 0.9], position: [0, 5.18, 2.94], material: materials.sign },
+    { size: [16.5, 0.26, 0.3], position: [0, 7.48, 2.88], material: materials.trim },
+    { size: [16.3, 0.26, 0.3], position: [0, 2.9, 2.88], material: materials.awningDark },
     { size: [8.5, 0.22, 0.28], position: [0, 10.62, 1.76], material: materials.trim },
     { size: [4.0, 0.22, 4.0], position: [0, 12.12, -0.55], material: materials.awningDark },
     { size: [1.26, 2.18, 0.18], position: [-0.8, 1.28, 4.88], material: materials.door },
@@ -282,7 +295,7 @@ function buildBar() {
   bar.add(createBox([8.8, 0.42, 3.1], [0, 10.98, -1.9], materials.awning, [-0.56, 0, 0]));
   bar.add(createBox([18.5, 0.26, 0.28], [0, 9.02, -0.48], materials.trim));
   bar.add(createBox([8.6, 0.24, 0.26], [0, 11.98, -0.66], materials.trim));
-  bar.add(createBox([18.1, 0.34, 2.7], [0, 4.2, 4.25], materials.awning, [-0.24, 0, 0]));
+  bar.add(createBox([18.1, 0.3, 2.3], [0, 3.12, 4.88], materials.awning, [-0.14, 0, 0]));
 
   addWindowRow(bar, {
     startX: -6.0,
@@ -390,12 +403,12 @@ function buildBar() {
     bar.add(createBox([0.22, 6.4, 0.18], [x, 4.0, 2.84], materials.awningDark));
   }
 
-  bar.add(createBox([14.0, 0.24, 0.24], [0, 6.95, 3.44], materials.trim));
-  bar.add(createBox([14.0, 0.24, 0.24], [0, 3.3, 3.44], materials.trim));
-  bar.add(createBox([0.24, 3.65, 0.24], [-6.9, 5.12, 3.44], materials.trim));
-  bar.add(createBox([0.24, 3.65, 0.24], [6.9, 5.12, 3.44], materials.trim));
+  bar.add(createBox([16.2, 0.26, 0.26], [0, 7.34, 3.46], materials.trim));
+  bar.add(createBox([16.2, 0.26, 0.26], [0, 3.02, 3.46], materials.trim));
+  bar.add(createBox([0.28, 4.18, 0.26], [-8.0, 5.18, 3.46], materials.trim));
+  bar.add(createBox([0.28, 4.18, 0.26], [8.0, 5.18, 3.46], materials.trim));
 
-  addBarLetters(bar, 0, 5.1, 3.55, materials);
+  addBarLetters(bar, 0, 5.48, 3.72, materials);
   addBeerMug(bar, [0, 14.0, -0.52], materials);
   addBarrel(bar, [-9.0, 1.1, 4.1], materials);
   addBarrel(bar, [8.95, 1.1, 4.1], materials);
