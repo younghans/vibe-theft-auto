@@ -1,11 +1,25 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { promisify } from 'node:util';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
+import { build } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const dist = path.join(root, 'dist');
 const assetsRoot = path.join(root, 'assets');
+const gzipAsync = promisify(gzip);
+const brotliCompressAsync = promisify(brotliCompress);
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.css',
+  '.html',
+  '.js',
+  '.json',
+  '.map',
+  '.svg',
+  '.txt'
+]);
 
 async function resetDist() {
   await fs.rm(dist, { recursive: true, force: true });
@@ -15,22 +29,6 @@ async function resetDist() {
 async function copyFile(source, target) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.copyFile(source, target);
-}
-
-async function copyDirectory(source, target) {
-  await fs.mkdir(target, { recursive: true });
-  const entries = await fs.readdir(source, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const sourcePath = path.join(source, entry.name);
-    const targetPath = path.join(target, entry.name);
-
-    if (entry.isDirectory()) {
-      await copyDirectory(sourcePath, targetPath);
-    } else {
-      await copyFile(sourcePath, targetPath);
-    }
-  }
 }
 
 function isAssetUrl(value) {
@@ -185,13 +183,132 @@ async function copyRuntimeAssets() {
   }
 }
 
+function toPosixRelative(filePath) {
+  return path.relative(dist, filePath).split(path.sep).join('/');
+}
+
+function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
+  let html = template;
+  html = html.replace(/\s*<link\s+rel="stylesheet"\s+href="\.\/styles\.css"\s*\/?>\s*/u, '\n');
+  html = html.replace(/\s*<script type="importmap">[\s\S]*?<\/script>\s*/u, '\n');
+  html = html.replace(
+    /\s*<script type="module" src="\.\/src\/main\.js"><\/script>\s*/u,
+    `\n    <script type="module" src="./${appScript}"></script>\n`
+  );
+
+  if (stylesheet) {
+    html = html.replace(
+      '</head>',
+      `    <link rel="stylesheet" href="./${stylesheet}" />\n  </head>`
+    );
+  }
+
+  return html;
+}
+
+async function bundleClient() {
+  const result = await build({
+    absWorkingDir: root,
+    bundle: true,
+    chunkNames: 'assets/chunks/[name]-[hash]',
+    entryNames: 'assets/[name]-[hash]',
+    entryPoints: {
+      app: path.join(root, 'src', 'main.js'),
+      styles: path.join(root, 'styles.css')
+    },
+    format: 'esm',
+    logLevel: 'silent',
+    metafile: true,
+    minify: true,
+    outdir: dist,
+    platform: 'browser',
+    sourcemap: false,
+    splitting: true,
+    target: ['es2022']
+  });
+
+  const outputs = Object.keys(result.metafile.outputs)
+    .map((file) => file.split(path.sep).join('/'));
+  const appScript = outputs.find((file) => /assets\/app-[^/]+\.js$/u.test(file));
+  const stylesheet = outputs.find((file) => /assets\/styles-[^/]+\.css$/u.test(file));
+
+  if (!appScript) {
+    throw new Error('Bundled app entry was not generated.');
+  }
+
+  return {
+    appScript: appScript.replace(/^dist\//u, ''),
+    stylesheet: (stylesheet ?? '').replace(/^dist\//u, '')
+  };
+}
+
+async function copyStaticShell({ appScript, stylesheet }) {
+  const htmlTemplate = await fs.readFile(path.join(root, 'index.html'), 'utf8');
+  const builtHtml = buildHtmlFromTemplate(htmlTemplate, { appScript, stylesheet });
+  await fs.writeFile(path.join(dist, 'index.html'), builtHtml, 'utf8');
+  await copyFile(path.join(root, 'favicon.ico'), path.join(dist, 'favicon.ico'));
+  await copyFile(
+    path.join(root, 'vendor', 'colyseus-sdk', 'colyseus.js'),
+    path.join(dist, 'vendor', 'colyseus-sdk', 'colyseus.js')
+  );
+}
+
+async function walkFiles(directory) {
+  const files = [];
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await walkFiles(fullPath));
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+async function writeCompressedVariant(filePath, encoding) {
+  const source = await fs.readFile(filePath);
+  const compressed = encoding === 'br'
+    ? await brotliCompressAsync(source, {
+      params: {
+        [zlibConstants.BROTLI_PARAM_QUALITY]: 11
+      }
+    })
+    : await gzipAsync(source, { level: 9 });
+  await fs.writeFile(`${filePath}.${encoding}`, compressed);
+}
+
+async function compressDistFiles() {
+  const files = await walkFiles(dist);
+
+  for (const filePath of files) {
+    const extension = path.extname(filePath).toLowerCase();
+    if (!COMPRESSIBLE_EXTENSIONS.has(extension)) {
+      continue;
+    }
+
+    await writeCompressedVariant(filePath, 'gz');
+    await writeCompressedVariant(filePath, 'br');
+  }
+}
+
 await resetDist();
 
-await copyFile(path.join(root, 'index.html'), path.join(dist, 'index.html'));
-await copyFile(path.join(root, 'styles.css'), path.join(dist, 'styles.css'));
-await copyFile(path.join(root, 'favicon.ico'), path.join(dist, 'favicon.ico'));
-await copyDirectory(path.join(root, 'src'), path.join(dist, 'src'));
-await copyDirectory(path.join(root, 'vendor'), path.join(dist, 'vendor'));
+const bundleOutputs = await bundleClient();
+await copyStaticShell(bundleOutputs);
 await copyRuntimeAssets();
+await compressDistFiles();
 
-console.log(`Built static app into ${dist}`);
+const distFiles = await walkFiles(dist);
+const totalBytes = distFiles
+  .filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'))
+  .reduce(async (sumPromise, filePath) => {
+    const sum = await sumPromise;
+    const stats = await fs.stat(filePath);
+    return sum + stats.size;
+  }, Promise.resolve(0));
+
+console.log(`Built bundled web app into ${dist} (${Math.round((await totalBytes) / 1024)} KiB before precompressed variants).`);

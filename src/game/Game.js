@@ -39,7 +39,6 @@ import {
 } from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
 import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
-import { CharacterPreviewRenderer } from '../ui/CharacterPreviewRenderer.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -65,6 +64,8 @@ const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const DEFAULT_VIBE_SHADER_INTENSITY = 1;
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
+const BOOT_PIXEL_RATIO_CAP = 1.25;
+const RUNTIME_PIXEL_RATIO_CAP = 2;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -145,12 +146,11 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.getTargetPixelRatio());
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.postProcessingResolution = new THREE.Vector2();
-    this.setupPostProcessing();
 
     this.root.append(this.renderer.domElement);
     this.renderer.domElement.addEventListener('contextmenu', (event) => {
@@ -164,10 +164,11 @@ export class Game {
     this.desiredLocalCharacterId = readStoredCharacterId();
     this.pendingCharacterRequestId = '';
     this.characterSelectorVisible = false;
+    this.characterPreviewRenderer = null;
+    this.characterPreviewRendererPromise = null;
+    this.characterSelectorSyncRequestId = 0;
     this.localCharacterSwapSequence = 0;
     this.remoteAvatarBuildRequests = new Map();
-    this.characterPreviewRenderer = new CharacterPreviewRenderer({ library: this.library });
-    this.hud.setCharacterSelectorPreviewCanvas(this.characterPreviewRenderer.livePreview.renderer.domElement);
     this.remotePlayers = new Map();
     this.pendingRemotePlayers = new Set();
     this.pickupVisuals = new Map();
@@ -215,6 +216,12 @@ export class Game {
     this.lastLocalAlive = true;
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
+    this.bootCriticalReady = false;
+    this.deferredStartupPromise = null;
+    this.detailedRenderingEnabled = false;
+    this.firstFrameMarked = false;
+    this.lastAimPoseDebugSignature = '';
+    this.bootMeasureLabels = [];
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
 
     this.hud.bindInteractionEvents({
@@ -250,15 +257,57 @@ export class Game {
     });
     this.refreshZoomHud();
     this.refreshCharacterSelectorHud();
-    void this.characterPreviewRenderer.setCharacter(this.desiredLocalCharacterId);
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
 
     window.addEventListener('resize', () => this.onResize());
   }
 
+  getTargetPixelRatio() {
+    const cap = this.detailedRenderingEnabled ? RUNTIME_PIXEL_RATIO_CAP : BOOT_PIXEL_RATIO_CAP;
+    return Math.min(window.devicePixelRatio || 1, cap);
+  }
+
+  markBoot(name) {
+    try {
+      performance.mark(name);
+    } catch {
+      // Ignore mark errors in unsupported environments.
+    }
+  }
+
+  measureBoot(label, startMark, endMark) {
+    try {
+      performance.measure(label, startMark, endMark);
+      this.bootMeasureLabels.push(label);
+    } catch {
+      // Ignore measure errors when a mark is missing.
+    }
+  }
+
+  reportBootMetrics() {
+    if (!this.bootMeasureLabels.length) {
+      return;
+    }
+
+    const measures = performance.getEntriesByType('measure')
+      .filter((entry) => this.bootMeasureLabels.includes(entry.name))
+      .map((entry) => ({
+        name: entry.name,
+        durationMs: Number(entry.duration.toFixed(1))
+      }));
+
+    if (measures.length) {
+      console.info('[Boot] Performance measures.', measures);
+    }
+  }
+
   setupPostProcessing() {
+    if (this.composer) {
+      return;
+    }
+
     this.composer = new EffectComposer(this.renderer);
-    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setPixelRatio(this.getTargetPixelRatio());
     this.composer.setSize(window.innerWidth, window.innerHeight);
 
     this.renderPass = new RenderPass(this.scene, this.camera);
@@ -269,6 +318,7 @@ export class Game {
     this.composer.addPass(this.vibeShaderPass);
     this.composer.addPass(this.outputPass);
     this.updatePostProcessingResolution();
+    this.setVibeShaderPreset(this.activeVibeShaderPresetId, { announce: false });
   }
 
   createMuzzleFlashResources() {
@@ -355,14 +405,31 @@ export class Game {
       return null;
     }
 
-    const sound = new Audio(url);
-    sound.preload = 'auto';
-    sound.volume = THREE.MathUtils.clamp(volume, 0, 1);
-    sound.load();
-    return sound;
+    return {
+      url,
+      volume: THREE.MathUtils.clamp(volume, 0, 1),
+      template: null
+    };
   }
 
-  playSoundEffect(template) {
+  getSoundEffectTemplate(soundEffect) {
+    if (!soundEffect) {
+      return null;
+    }
+
+    if (!soundEffect.template) {
+      const sound = new Audio(soundEffect.url);
+      sound.preload = 'auto';
+      sound.volume = soundEffect.volume;
+      sound.load();
+      soundEffect.template = sound;
+    }
+
+    return soundEffect.template;
+  }
+
+  playSoundEffect(soundEffect) {
+    const template = this.getSoundEffectTemplate(soundEffect);
     if (!template) {
       return;
     }
@@ -518,6 +585,50 @@ export class Game {
     return 'Currently selected';
   }
 
+  async ensureCharacterPreviewRenderer() {
+    if (this.characterPreviewRenderer) {
+      return this.characterPreviewRenderer;
+    }
+
+    if (!this.characterPreviewRendererPromise) {
+      this.characterPreviewRendererPromise = import('../ui/CharacterPreviewRenderer.js')
+        .then(({ CharacterPreviewRenderer }) => {
+          this.characterPreviewRenderer = new CharacterPreviewRenderer({ library: this.library });
+          this.hud.setCharacterSelectorPreviewCanvas(this.characterPreviewRenderer.livePreview.renderer.domElement);
+          this.characterPreviewRenderer.setVibeShaderState({
+            presetId: this.activeVibeShaderPresetId,
+            intensity: this.getVibeShaderIntensity(this.activeVibeShaderPresetId)
+          });
+          return this.characterPreviewRenderer;
+        })
+        .finally(() => {
+          this.characterPreviewRendererPromise = null;
+        });
+    }
+
+    return this.characterPreviewRendererPromise;
+  }
+
+  async syncCharacterSelectorPreview(entries, selectedId) {
+    const requestId = ++this.characterSelectorSyncRequestId;
+    const renderer = await this.ensureCharacterPreviewRenderer();
+    if (requestId !== this.characterSelectorSyncRequestId) {
+      return;
+    }
+
+    renderer.setActive(this.characterSelectorVisible);
+    await renderer.setCharacter(selectedId);
+    if (requestId !== this.characterSelectorSyncRequestId || !this.characterSelectorVisible) {
+      return;
+    }
+
+    void renderer.refreshPortraits(entries.map((entry) => entry.id));
+    for (const entry of entries) {
+      const mount = this.hud.getCharacterSelectorCardPreviewMount(entry.id);
+      void renderer.mountPortraitCanvas(entry.id, mount);
+    }
+  }
+
   refreshCharacterSelectorHud() {
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
     const entries = this.characterRoster.map((entry) => ({ ...entry }));
@@ -527,26 +638,14 @@ export class Game {
       statusText: this.getCharacterSelectorStatusText(),
       entries
     });
-    this.characterPreviewRenderer.setActive(this.characterSelectorVisible);
-    void this.characterPreviewRenderer.setCharacter(selectedId);
 
     if (!this.characterSelectorVisible) {
+      this.characterSelectorSyncRequestId += 1;
+      this.characterPreviewRenderer?.setActive(false);
       return;
     }
 
-    void this.characterPreviewRenderer.refreshPortraits(entries.map((entry) => entry.id));
-    for (const entry of entries) {
-      const mount = this.hud.getCharacterSelectorCardPreviewMount(entry.id);
-      void this.characterPreviewRenderer.mountPortraitCanvas(entry.id, mount);
-    }
-  }
-
-  async preloadCharacterSelectorPortraits() {
-    this.characterPreviewRenderer.invalidatePortraits(this.characterRoster.map((entry) => entry.id));
-    if (this.characterSelectorVisible) {
-      await this.characterPreviewRenderer.refreshPortraits(this.characterRoster.map((entry) => entry.id));
-      this.refreshCharacterSelectorHud();
-    }
+    void this.syncCharacterSelectorPreview(entries, selectedId);
   }
 
   setCharacterSelectorVisible(visible) {
@@ -649,8 +748,42 @@ export class Game {
     this.refreshAimPoseDebugHud();
   }
 
+  async drainPendingWorldPatches() {
+    if (!this.worldBuilder || !this.worldLayoutReady) {
+      return;
+    }
+
+    for (const patch of this.pendingWorldPatches.splice(0)) {
+      await this.handleWorldPatch(patch);
+    }
+  }
+
+  scheduleDeferredStartup() {
+    if (this.deferredStartupPromise) {
+      return this.deferredStartupPromise;
+    }
+
+    this.deferredStartupPromise = (async () => {
+      this.markBoot('boot:deferred:start');
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      this.enableDetailedRendering();
+      await this.drainPendingWorldPatches();
+      await Promise.allSettled([
+        this.syncPickupVisuals(),
+        this.syncRemotePlayers()
+      ]);
+      this.prewarmMuzzleFlashEffect();
+      this.markBoot('boot:deferred:end');
+      this.measureBoot('deferredStartup', 'boot:deferred:start', 'boot:deferred:end');
+      this.reportBootMetrics();
+    })();
+
+    return this.deferredStartupPromise;
+  }
+
   async start() {
     try {
+      this.markBoot('boot:start');
       console.info('[Game] Starting game bootstrap.');
       this.setupLights();
       this.setupAtmosphere();
@@ -663,7 +796,10 @@ export class Game {
       this.baseColliders = cityState.colliders;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
+      this.markBoot('boot:npc-service:start');
       this.npcService = await createNpcService();
+      this.markBoot('boot:npc-service:end');
+      this.measureBoot('npcServiceReady', 'boot:npc-service:start', 'boot:npc-service:end');
       console.info('[Game] NPC service ready.', {
         transport: this.npcService?.getState?.()?.transport ?? 'unknown'
       });
@@ -671,7 +807,7 @@ export class Game {
         this.handleCombatEvent(event);
       });
       this.worldPatchUnsubscribe = this.npcService.subscribeWorldPatches((patch) => {
-        if (!this.worldBuilder || !this.worldLayoutReady) {
+        if (!this.worldBuilder || !this.worldLayoutReady || !this.bootCriticalReady) {
           this.pendingWorldPatches.push(patch);
           return;
         }
@@ -701,12 +837,17 @@ export class Game {
         this.registerHeldItemDebugTools();
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
-        void this.syncPickupVisuals();
-        void this.syncRemotePlayers();
+        if (this.bootCriticalReady) {
+          void this.syncPickupVisuals();
+          void this.syncRemotePlayers();
+        }
         this.refreshCharacterSelectorHud();
       });
 
+      this.markBoot('boot:layout:start');
       const sharedLayout = await this.npcService.getWorldLayout();
+      this.markBoot('boot:layout:end');
+      this.measureBoot('worldLayoutReady', 'boot:layout:start', 'boot:layout:end');
       console.info('[Game] Shared world layout loaded.', {
         tiles: sharedLayout.tiles?.length ?? 0,
         props: sharedLayout.props?.length ?? 0,
@@ -715,11 +856,11 @@ export class Game {
       this.currentLayout = sharedLayout;
       await this.worldBuilder.loadLayout(sharedLayout);
       this.worldLayoutReady = true;
-      for (const patch of this.pendingWorldPatches.splice(0)) {
-        await this.handleWorldPatch(patch);
-      }
 
+      this.markBoot('boot:avatar:start');
       this.player = await this.buildAvatar(this.desiredLocalCharacterId);
+      this.markBoot('boot:avatar:end');
+      this.measureBoot('localAvatarReady', 'boot:avatar:start', 'boot:avatar:end');
       console.info('[Game] Local player loaded.');
       const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
       if (localPlayerState) {
@@ -737,9 +878,7 @@ export class Game {
       this.registerHeldItemDebugTools();
       this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
       this.refreshAimPoseDebugHud();
-      void this.syncPickupVisuals();
-      void this.preloadCharacterSelectorPortraits();
-      this.prewarmMuzzleFlashEffect();
+      this.bootCriticalReady = true;
 
       if (this.npcServiceState.transport === 'colyseus') {
         this.hud.showToast('Connected to the multiplayer room. Shared building, world chat, NPC replies, and player presence are live.');
@@ -747,12 +886,15 @@ export class Game {
         this.hud.showToast('Running local mock multiplayer. World chat and NPC replies work locally without Colyseus.');
       }
 
+      console.info('[Game] Entering render loop.');
+      this.renderer.setAnimationLoop(() => this.frame());
+      this.markBoot('boot:loading-hide');
       this.hud.hideLoading();
+      this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
       window.setTimeout(() => {
         this.hud.playJoinTitleAnimation();
       }, 160);
-      console.info('[Game] Entering render loop.');
-      this.renderer.setAnimationLoop(() => this.frame());
+      void this.scheduleDeferredStartup();
     } catch (error) {
       console.error('[Game] Failed during bootstrap.', error);
       this.hud.showToast('Failed to load part of the city. Check the console for details.');
@@ -761,20 +903,20 @@ export class Game {
   }
 
   setupLights() {
-    const hemi = new THREE.HemisphereLight(0xd8efff, 0x35503d, 1.9);
-    this.scene.add(hemi);
+    this.hemiLight = new THREE.HemisphereLight(0xd8efff, 0x35503d, 1.9);
+    this.scene.add(this.hemiLight);
 
-    const sun = new THREE.DirectionalLight(0xfff0cf, 2.6);
-    sun.position.set(45, 70, 30);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -WORLD_SHADOW_EXTENT;
-    sun.shadow.camera.right = WORLD_SHADOW_EXTENT;
-    sun.shadow.camera.top = WORLD_SHADOW_EXTENT;
-    sun.shadow.camera.bottom = -WORLD_SHADOW_EXTENT;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = WORLD_GROUND_RADIUS + 40;
-    this.scene.add(sun);
+    this.sunLight = new THREE.DirectionalLight(0xfff0cf, 2.6);
+    this.sunLight.position.set(45, 70, 30);
+    this.sunLight.castShadow = this.detailedRenderingEnabled;
+    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.camera.left = -WORLD_SHADOW_EXTENT;
+    this.sunLight.shadow.camera.right = WORLD_SHADOW_EXTENT;
+    this.sunLight.shadow.camera.top = WORLD_SHADOW_EXTENT;
+    this.sunLight.shadow.camera.bottom = -WORLD_SHADOW_EXTENT;
+    this.sunLight.shadow.camera.near = 1;
+    this.sunLight.shadow.camera.far = WORLD_GROUND_RADIUS + 40;
+    this.scene.add(this.sunLight);
   }
 
   setupAtmosphere() {
@@ -786,12 +928,26 @@ export class Game {
     this.scene.add(sky);
   }
 
+  enableDetailedRendering() {
+    if (this.detailedRenderingEnabled) {
+      return;
+    }
+
+    this.detailedRenderingEnabled = true;
+    this.renderer.shadowMap.enabled = true;
+    if (this.sunLight) {
+      this.sunLight.castShadow = true;
+    }
+    this.setupPostProcessing();
+    this.onResize();
+  }
+
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(this.getTargetPixelRatio());
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.composer?.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer?.setPixelRatio(this.getTargetPixelRatio());
     this.composer?.setSize(window.innerWidth, window.innerHeight);
     this.updatePostProcessingResolution();
   }
@@ -991,13 +1147,30 @@ export class Game {
     const statusParts = [];
     statusParts.push(`Weapon: ${itemId || 'none'}`);
     statusParts.push(this.currentAimMode ? 'Previewing right-click aim' : 'Use the Aim Pose button or press O. Hold right click to preview.');
-    this.hud.setAimPoseDebugState({
+    const nextState = {
       available: debugAvailable,
       visible: Boolean(this.aimPoseDebugVisible && debugAvailable),
       statusText: statusParts.join(' | '),
       showSkeleton: this.aimPoseDebugShowSkeleton,
       values: pose
-    });
+    };
+    const valueSignature = HELD_ITEM_AIM_POSE_FIELDS
+      .map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3))
+      .join('|');
+    const signature = [
+      Number(nextState.available),
+      Number(nextState.visible),
+      Number(nextState.showSkeleton),
+      nextState.statusText,
+      valueSignature
+    ].join('::');
+
+    if (signature === this.lastAimPoseDebugSignature) {
+      return;
+    }
+
+    this.lastAimPoseDebugSignature = signature;
+    this.hud.setAimPoseDebugState(nextState);
   }
 
   queueHipFireShot(aimDirection) {
@@ -2012,6 +2185,15 @@ export class Game {
   }
 
   frame() {
+    if (!this.firstFrameMarked) {
+      this.firstFrameMarked = true;
+      this.markBoot('boot:first-frame');
+      this.measureBoot('timeToFirstFrame', 'boot:start', 'boot:first-frame');
+      if (this.deferredStartupPromise) {
+        queueMicrotask(() => this.reportBootMetrics());
+      }
+    }
+
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
     const emoteMenuActive = this.updateEmoteMenu();
     const localPlayerState = this.getLocalPlayerState();
@@ -2139,8 +2321,10 @@ export class Game {
       this.lastHudHitMarkerVisible = hitMarkerVisible;
     }
     this.updateSpeechBubbles();
-    this.refreshAimPoseDebugHud();
-    this.characterPreviewRenderer.update(deltaSeconds);
+    if (this.aimPoseDebugVisible) {
+      this.refreshAimPoseDebugHud();
+    }
+    this.characterPreviewRenderer?.update(deltaSeconds);
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }

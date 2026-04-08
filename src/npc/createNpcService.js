@@ -46,9 +46,9 @@ function readAdminKey(url) {
 
 export async function createNpcService({
   endpoint = null,
-  connectTimeoutMs = 1500,
-  retryWindowMs = 8000,
-  retryDelayMs = 500
+  connectTimeoutMs = 1200,
+  retryWindowMs = 2500,
+  retryDelayMs = 250
 } = {}) {
   const url = new URL(window.location.href);
   const resolvedEndpoint = endpoint ?? readConfiguredEndpoint(url);

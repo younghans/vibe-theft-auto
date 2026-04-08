@@ -6,7 +6,6 @@ import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
 } from '../shared/worldConstants.js';
-import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
@@ -191,7 +190,8 @@ export class WorldBuilder {
       worldRenderer: this.worldRenderer
     });
     this.remoteBuilderRenderer = new RemoteBuilderRenderer({ scene, library, worldRenderer: this.worldRenderer });
-    this.builderPreviewRenderer = new BuilderPreviewRenderer({ library });
+    this.builderPreviewRenderer = null;
+    this.builderPreviewRendererPromise = null;
 
     this.previewRoot = new THREE.Group();
     this.previewRoot.visible = false;
@@ -368,10 +368,11 @@ export class WorldBuilder {
     const groupId = this.activeGroupId;
     const items = this.getVisibleCategoryEntries(categoryId).map(({ item }) => item);
     const generation = ++this.builderPreviewGeneration;
+    const previewRenderer = await this.ensureBuilderPreviewRenderer();
 
     for (const item of items) {
       try {
-        const preview = await this.builderPreviewRenderer.render(item);
+        const preview = await previewRenderer.render(item);
         if (
           generation !== this.builderPreviewGeneration
           || categoryId !== this.state.activeCategoryId
@@ -384,6 +385,25 @@ export class WorldBuilder {
         console.warn(`Could not render builder preview for ${item.id}.`, error);
       }
     }
+  }
+
+  async ensureBuilderPreviewRenderer() {
+    if (this.builderPreviewRenderer) {
+      return this.builderPreviewRenderer;
+    }
+
+    if (!this.builderPreviewRendererPromise) {
+      this.builderPreviewRendererPromise = import('../ui/BuilderPreviewRenderer.js')
+        .then(({ BuilderPreviewRenderer }) => {
+          this.builderPreviewRenderer = new BuilderPreviewRenderer({ library: this.library });
+          return this.builderPreviewRenderer;
+        })
+        .finally(() => {
+          this.builderPreviewRendererPromise = null;
+        });
+    }
+
+    return this.builderPreviewRendererPromise;
   }
 
   getColliders() {

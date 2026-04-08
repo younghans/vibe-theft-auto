@@ -36,5 +36,8 @@
     "openai": "^6.33.0",
     "pg": "^8.20.0",
     "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }

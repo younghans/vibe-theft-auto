@@ -10,6 +10,21 @@ import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
 const DIST_INDEX_PATH = path.join(DIST_ROOT, 'index.html');
+const MIME_TYPES = {
+  '.bin': 'application/octet-stream',
+  '.css': 'text/css; charset=utf-8',
+  '.fbx': 'application/octet-stream',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.txt': 'text/plain; charset=utf-8',
+  '.wav': 'audio/wav'
+};
+const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt']);
 
 function normalizeAssetPath(requestPath = '/') {
   let decodedPath = String(requestPath);
@@ -50,6 +65,61 @@ async function resolveDistAssetPath(requestPath) {
   return candidatePath;
 }
 
+function isFingerprinted(filePath) {
+  return /-[a-z0-9]{8,}\./iu.test(path.basename(filePath));
+}
+
+function getCacheControl(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.html') {
+    return 'no-cache';
+  }
+
+  if (isFingerprinted(filePath)) {
+    return 'public, max-age=31536000, immutable';
+  }
+
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    return 'public, max-age=86400';
+  }
+
+  return 'public, max-age=3600';
+}
+
+async function resolveCompressedVariant(filePath, acceptEncoding = '') {
+  const extension = path.extname(filePath).toLowerCase();
+  if (!COMPRESSIBLE_EXTENSIONS.has(extension)) {
+    return { path: filePath, encoding: null };
+  }
+
+  if (/\bbr\b/u.test(acceptEncoding)) {
+    const brotliPath = `${filePath}.br`;
+    if (await fsp.stat(brotliPath).catch(() => null)) {
+      return { path: brotliPath, encoding: 'br' };
+    }
+  }
+
+  if (/\bgzip\b/u.test(acceptEncoding)) {
+    const gzipPath = `${filePath}.gz`;
+    if (await fsp.stat(gzipPath).catch(() => null)) {
+      return { path: gzipPath, encoding: 'gzip' };
+    }
+  }
+
+  return { path: filePath, encoding: null };
+}
+
+async function sendDistAsset(req, res, filePath) {
+  const variant = await resolveCompressedVariant(filePath, req.headers['accept-encoding'] ?? '');
+  res.setHeader('Cache-Control', getCacheControl(filePath));
+  res.setHeader('Content-Type', MIME_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream');
+  res.setHeader('Vary', 'Accept-Encoding');
+  if (variant.encoding) {
+    res.setHeader('Content-Encoding', variant.encoding);
+  }
+  res.sendFile(variant.path);
+}
+
 const server = defineServer({
   gracefullyShutdown: false,
   transport: new WebSocketTransport({
@@ -77,7 +147,7 @@ const server = defineServer({
       try {
         const assetPath = await resolveDistAssetPath(req.path);
         if (assetPath) {
-          res.sendFile(assetPath);
+          await sendDistAsset(req, res, assetPath);
           return;
         }
 
@@ -91,7 +161,7 @@ const server = defineServer({
             return;
           }
 
-          res.sendFile(DIST_INDEX_PATH);
+          await sendDistAsset(req, res, DIST_INDEX_PATH);
           return;
         }
 

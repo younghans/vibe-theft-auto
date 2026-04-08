@@ -242,8 +242,7 @@ export async function createPlayer(library, {
   const characterDefinition = getPlayableCharacterById(characterId);
   const clipNamesToPreload = new Set([
     characterDefinition.idleClip,
-    characterDefinition.walkClip,
-    ...Object.values(characterDefinition.emotes ?? {})
+    characterDefinition.walkClip
   ]);
 
   await preloadMixamoClips([...clipNamesToPreload]);
@@ -265,6 +264,7 @@ export async function createPlayer(library, {
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
   const emoteActions = new Map();
+  const emoteLoadPromises = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
   idleAction.play();
   idleAction.enabled = true;
@@ -319,6 +319,7 @@ export async function createPlayer(library, {
   let activeEmoteConfig = null;
   let activeEmoteStartedAt = 0;
   let emoteSequence = 0;
+  let emotePlaybackRequestId = 0;
   let lastRemoteEmoteSignature = '';
   let limpStartedAt = 0;
   let limpRecoverUntilMs = 0;
@@ -393,38 +394,57 @@ export async function createPlayer(library, {
     return ragdoll.isActive() || Date.now() < limpRecoverUntilMs;
   }
 
-  function getEmoteAction(emoteId) {
+  function getLoadedEmoteAction(emoteId) {
     if (emoteId === LIMP_EMOTE_ID) {
       return null;
     }
 
-    if (emoteActions.has(emoteId)) {
-      return emoteActions.get(emoteId);
+    return emoteActions.get(emoteId) ?? null;
+  }
+
+  function ensureEmoteAction(emoteId) {
+    const loadedAction = getLoadedEmoteAction(emoteId);
+    if (loadedAction) {
+      return Promise.resolve(loadedAction);
     }
 
     const emoteConfig = EMOTES_BY_ID[emoteId];
     const clipName = emoteConfig?.clipName ?? characterDefinition.emotes?.[emoteId];
     if (!clipName) {
-      return null;
+      return Promise.resolve(null);
     }
 
-    const sourceClip = getMixamoClip(clipName);
-    const clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
-    const action = mixer.clipAction(clip);
-    action.enabled = true;
-    action.clampWhenFinished = true;
-    action.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
-    action.setEffectiveWeight(0);
-    emoteActions.set(emoteId, action);
-    return action;
+    if (!emoteLoadPromises.has(emoteId)) {
+      emoteLoadPromises.set(
+        emoteId,
+        preloadMixamoClips([clipName])
+          .then(() => {
+            const sourceClip = getMixamoClip(clipName);
+            const clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+            const action = mixer.clipAction(clip);
+            action.enabled = true;
+            action.clampWhenFinished = true;
+            action.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
+            action.setEffectiveWeight(0);
+            emoteActions.set(emoteId, action);
+            return action;
+          })
+          .finally(() => {
+            emoteLoadPromises.delete(emoteId);
+          })
+      );
+    }
+
+    return emoteLoadPromises.get(emoteId);
   }
 
   function stopActiveEmote() {
+    emotePlaybackRequestId += 1;
     if (!activeEmoteId) {
       return;
     }
 
-    const action = getEmoteAction(activeEmoteId);
+    const action = getLoadedEmoteAction(activeEmoteId);
     action?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     activeEmoteId = null;
     activeEmoteConfig = null;
@@ -457,7 +477,7 @@ export async function createPlayer(library, {
   }
 
   mixer.addEventListener('finished', (event) => {
-    if (activeEmoteId && getEmoteAction(activeEmoteId) === event.action) {
+    if (activeEmoteId && getLoadedEmoteAction(activeEmoteId) === event.action) {
       stopActiveEmote();
     }
   });
@@ -983,36 +1003,51 @@ export async function createPlayer(library, {
         setLimpActive(false, { trackSync: false });
       }
 
-      const action = getEmoteAction(emoteId);
-      if (!action) {
+      const emoteConfig = getEmoteConfig(emoteId);
+      const clipName = emoteConfig?.clipName ?? characterDefinition.emotes?.[emoteId];
+      if (!clipName) {
         return false;
       }
 
-      const emoteConfig = getEmoteConfig(emoteId);
+      const playbackRequestId = ++emotePlaybackRequestId;
+      void ensureEmoteAction(emoteId)
+        .then((action) => {
+          if (!action || playbackRequestId !== emotePlaybackRequestId) {
+            return;
+          }
 
-      if (activeEmoteId === emoteId && emoteConfig.loop) {
-        return true;
-      }
+          if (activeEmoteId === emoteId && emoteConfig.loop) {
+            return;
+          }
 
-      if (activeEmoteId && activeEmoteId !== emoteId) {
-        getEmoteAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
-      }
+          if (activeEmoteId && activeEmoteId !== emoteId) {
+            getLoadedEmoteAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
+          }
 
-      activeEmoteId = emoteId;
-      activeEmoteConfig = emoteConfig;
-      activeEmoteStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
-      if (trackSync) {
-        emoteSequence += 1;
-      }
-      action.reset();
-      action.enabled = true;
-      action.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
-      action.clampWhenFinished = !emoteConfig.loop;
-      action.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
-      action.setEffectiveWeight(1);
-      applyEmoteStartOffset(action, emoteConfig, activeEmoteStartedAt);
-      action.fadeIn(emoteConfig.fadeIn ?? EMOTE_FADE_IN);
-      action.play();
+          activeEmoteId = emoteId;
+          activeEmoteConfig = emoteConfig;
+          activeEmoteStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+          if (trackSync) {
+            emoteSequence += 1;
+          }
+          action.reset();
+          action.enabled = true;
+          action.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
+          action.clampWhenFinished = !emoteConfig.loop;
+          action.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
+          action.setEffectiveWeight(1);
+          applyEmoteStartOffset(action, emoteConfig, activeEmoteStartedAt);
+          action.fadeIn(emoteConfig.fadeIn ?? EMOTE_FADE_IN);
+          action.play();
+        })
+        .catch((error) => {
+          console.error('[Player] Failed to load emote clip.', {
+            characterId: characterDefinition.id,
+            emoteId,
+            error
+          });
+        });
+
       return true;
     },
     toggleLimp({ startedAtMs = Date.now(), trackSync = true } = {}) {

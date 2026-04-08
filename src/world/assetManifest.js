@@ -1,6 +1,14 @@
 import { EMOTES_BY_ID } from '../player/emotes.js';
 
-export const assetUrl = (...parts) => new URL(`../../assets/${parts.join('/')}`, import.meta.url).href;
+const assetBaseUrl = (() => {
+  if (typeof window === 'undefined') {
+    return new URL('../../assets/', import.meta.url).href;
+  }
+
+  return new URL('/assets/', window.location.origin).href;
+})();
+
+export const assetUrl = (...parts) => new URL(parts.join('/'), assetBaseUrl).href;
 export const cityAsset = (modelName) =>
   assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', `${modelName}.gltf`);
 
