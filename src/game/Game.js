@@ -412,6 +412,10 @@ export class Game {
 
     if (preset.id === this.activeVibeShaderPresetId && this.vibeShaderPass?.uniforms?.uIntensity) {
       this.vibeShaderPass.uniforms.uIntensity.value = nextIntensity;
+      this.characterPreviewRenderer?.setVibeShaderState({
+        presetId: preset.id,
+        intensity: nextIntensity
+      });
     }
 
     this.refreshShaderDebugHud();
@@ -458,6 +462,10 @@ export class Game {
     if (this.vibeShaderPass?.uniforms?.uIntensity) {
       this.vibeShaderPass.uniforms.uIntensity.value = intensity;
     }
+    this.characterPreviewRenderer?.setVibeShaderState({
+      presetId: preset.id,
+      intensity
+    });
 
     this.refreshShaderDebugHud();
 
@@ -519,7 +527,14 @@ export class Game {
       statusText: this.getCharacterSelectorStatusText(),
       entries
     });
+    this.characterPreviewRenderer.setActive(this.characterSelectorVisible);
     void this.characterPreviewRenderer.setCharacter(selectedId);
+
+    if (!this.characterSelectorVisible) {
+      return;
+    }
+
+    void this.characterPreviewRenderer.refreshPortraits(entries.map((entry) => entry.id));
     for (const entry of entries) {
       const mount = this.hud.getCharacterSelectorCardPreviewMount(entry.id);
       void this.characterPreviewRenderer.mountPortraitCanvas(entry.id, mount);
@@ -527,16 +542,10 @@ export class Game {
   }
 
   async preloadCharacterSelectorPortraits() {
-    for (const entry of this.characterRoster) {
-      try {
-        await this.characterPreviewRenderer.ensurePortraitPreview(entry.id);
-        this.refreshCharacterSelectorHud();
-      } catch (error) {
-        console.error('[CharacterSelector] Failed to render portrait.', {
-          characterId: entry.id,
-          error
-        });
-      }
+    this.characterPreviewRenderer.invalidatePortraits(this.characterRoster.map((entry) => entry.id));
+    if (this.characterSelectorVisible) {
+      await this.characterPreviewRenderer.refreshPortraits(this.characterRoster.map((entry) => entry.id));
+      this.refreshCharacterSelectorHud();
     }
   }
 
