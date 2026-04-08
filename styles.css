@@ -441,13 +441,15 @@ body {
   width: min(680px, calc(100vw - 32px));
   max-height: min(92vh, 860px);
   padding: clamp(18px, 2.2vw, 24px);
+  border: 3px solid rgba(21, 18, 12, 0.96);
   border-radius: 22px;
   background:
-    linear-gradient(135deg, rgba(255, 191, 73, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(22, 32, 49, 0.96), rgba(7, 11, 17, 0.94));
+    linear-gradient(145deg, rgba(250, 214, 132, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(34, 42, 56, 0.97), rgba(12, 16, 22, 0.96));
   box-shadow:
-    0 28px 56px rgba(0, 0, 0, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 24px 0 rgba(0, 0, 0, 0.28),
+    0 32px 60px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 2px rgba(244, 214, 146, 0.08);
   overflow: hidden;
   transform: translate(-50%, -50%);
   z-index: 6;
@@ -458,12 +460,22 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.06), transparent 28%),
+    radial-gradient(circle at 18% 12%, rgba(247, 203, 107, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 22%),
     repeating-linear-gradient(
-      -38deg,
-      rgba(255, 255, 255, 0.025) 0 12px,
-      transparent 12px 28px
+      -35deg,
+      rgba(255, 255, 255, 0.02) 0 10px,
+      transparent 10px 24px
     );
+  pointer-events: none;
+}
+
+.hud__character-selector::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(255, 238, 192, 0.08);
+  border-radius: 16px;
   pointer-events: none;
 }
 
@@ -483,25 +495,48 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .hud__character-selector-name {
   margin: 0;
-  font-size: 33px;
-  line-height: 0.94;
+  font-size: 34px;
+  line-height: 0.92;
   font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #fff4d2;
+  color: #fff0bf;
   text-shadow:
-    0 2px 0 rgba(34, 17, 0, 0.9),
-    0 10px 24px rgba(0, 0, 0, 0.3);
+    0 2px 0 rgba(29, 17, 5, 0.95),
+    2px 0 0 rgba(29, 17, 5, 0.95),
+    -2px 0 0 rgba(29, 17, 5, 0.95),
+    0 10px 24px rgba(0, 0, 0, 0.24);
 }
 
 .hud__character-selector-subtitle {
   margin-top: 8px;
-  color: rgba(244, 238, 226, 0.76);
+  color: rgba(244, 235, 214, 0.86);
+}
+
+.hud__character-selector .hud__eyebrow {
+  margin-bottom: 8px;
+  color: #f6c04e;
+  text-shadow: 0 1px 0 rgba(16, 10, 3, 0.85);
+}
+
+.hud__character-selector .hud__builder-icon-button {
+  border: 2px solid rgba(20, 17, 12, 0.9);
+  background:
+    linear-gradient(180deg, rgba(58, 68, 84, 0.96), rgba(25, 30, 41, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 211, 0.08),
+    0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.hud__character-selector .hud__builder-icon-button:hover {
+  border-color: rgba(245, 195, 84, 0.88);
+  background:
+    linear-gradient(180deg, rgba(86, 98, 118, 0.96), rgba(33, 39, 52, 0.96));
 }
 
 .hud__character-stage-shell {
@@ -518,12 +553,13 @@ body {
   border-radius: 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 14%, rgba(255, 232, 166, 0.28), transparent 26%),
-    linear-gradient(180deg, rgba(20, 36, 57, 0.98), rgba(7, 14, 24, 0.98));
-  border: 1px solid rgba(255, 255, 255, 0.14);
+    radial-gradient(circle at 50% 12%, rgba(255, 227, 146, 0.25), transparent 24%),
+    linear-gradient(180deg, rgba(22, 45, 73, 0.98), rgba(8, 19, 34, 0.98));
+  border: 3px solid rgba(21, 18, 12, 0.96);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -24px 48px rgba(0, 0, 0, 0.22);
+    inset 0 0 0 1px rgba(255, 241, 207, 0.06),
+    inset 0 -34px 56px rgba(0, 0, 0, 0.24),
+    0 14px 28px rgba(0, 0, 0, 0.18);
 }
 
 .hud__character-stage::before {
@@ -531,8 +567,20 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 24%),
-    linear-gradient(135deg, rgba(242, 200, 113, 0.18), transparent 42%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 20%),
+    radial-gradient(circle at 22% 84%, rgba(240, 92, 56, 0.14), transparent 28%),
+    radial-gradient(circle at 78% 80%, rgba(247, 195, 70, 0.16), transparent 26%);
+  pointer-events: none;
+}
+
+.hud__character-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 100%);
+  background-size: 12px 12px;
+  opacity: 0.22;
   pointer-events: none;
 }
 
@@ -542,8 +590,8 @@ body {
   width: 68%;
   height: 44%;
   transform: translateX(50%);
-  background: radial-gradient(circle, rgba(255, 197, 82, 0.26), rgba(255, 125, 63, 0.12) 44%, transparent 72%);
-  filter: blur(16px);
+  background: radial-gradient(circle, rgba(255, 177, 54, 0.24), rgba(237, 88, 39, 0.12) 42%, transparent 72%);
+  filter: blur(20px);
   pointer-events: none;
 }
 
@@ -570,15 +618,21 @@ body {
   width: min(320px, 100%);
   padding: 12px 16px;
   border-radius: 14px;
-  background: linear-gradient(90deg, rgba(255, 187, 64, 0.2), rgba(255, 95, 76, 0.16));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(90deg, rgba(243, 191, 73, 0.26), rgba(210, 86, 54, 0.2));
+  border: 2px solid rgba(27, 21, 12, 0.94);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #fff1d0;
+  color: #fff4d4;
   text-align: center;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  text-shadow:
+    0 1px 0 rgba(27, 18, 7, 0.95),
+    1px 0 0 rgba(27, 18, 7, 0.8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 206, 0.12),
+    0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .hud__zoom-controls {
@@ -679,13 +733,23 @@ body {
   height: 92px;
   padding: 0;
   border-radius: 18px;
+  border-width: 2px;
+  border-color: rgba(20, 17, 12, 0.92);
+  background:
+    linear-gradient(180deg, rgba(20, 28, 40, 0.96), rgba(11, 15, 22, 0.96));
   font: inherit;
   font-size: 36px;
   line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 210, 0.06),
+    0 10px 18px rgba(0, 0, 0, 0.18);
 }
 
 .hud__character-nav span {
   transform: translateY(-2px);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.9),
+    1px 0 0 rgba(0, 0, 0, 0.7);
 }
 
 .hud__character-selector-toggle:hover,
@@ -731,29 +795,35 @@ body {
   gap: 7px;
   align-items: start;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(22, 18, 12, 0.92);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
+  background:
+    linear-gradient(180deg, rgba(47, 56, 72, 0.66), rgba(18, 24, 34, 0.72));
   color: #f4eee2;
   cursor: pointer;
   pointer-events: auto;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 206, 0.05),
+    0 10px 18px rgba(0, 0, 0, 0.14);
   transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 
 .hud__character-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 204, 112, 0.52);
-  background: rgba(255, 204, 112, 0.1);
+  border-color: rgba(245, 194, 88, 0.8);
+  background:
+    linear-gradient(180deg, rgba(73, 84, 104, 0.72), rgba(27, 34, 46, 0.78));
 }
 
 .hud__character-card.is-selected {
-  border-color: rgba(255, 208, 122, 0.82);
+  border-color: rgba(247, 198, 89, 0.96);
   background:
-    linear-gradient(180deg, rgba(255, 196, 83, 0.18), rgba(255, 112, 74, 0.14)),
-    rgba(255, 255, 255, 0.04);
+    linear-gradient(180deg, rgba(244, 188, 75, 0.28), rgba(209, 86, 49, 0.2)),
+    linear-gradient(180deg, rgba(47, 56, 72, 0.7), rgba(18, 24, 34, 0.76));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(255, 214, 147, 0.14);
+    inset 0 1px 0 rgba(255, 244, 206, 0.14),
+    0 0 0 2px rgba(28, 20, 9, 0.4),
+    0 12px 22px rgba(0, 0, 0, 0.18);
 }
 
 .hud__character-card-frame {
@@ -762,9 +832,19 @@ body {
   aspect-ratio: 1.04;
   overflow: hidden;
   border-radius: 14px;
+  border: 2px solid rgba(20, 17, 12, 0.92);
   background:
-    radial-gradient(circle at 50% 18%, rgba(255, 234, 183, 0.22), transparent 28%),
-    linear-gradient(180deg, rgba(20, 34, 55, 0.96), rgba(8, 13, 21, 0.96));
+    radial-gradient(circle at 50% 16%, rgba(255, 223, 143, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(17, 39, 66, 0.98), rgba(8, 17, 30, 0.98));
+}
+
+.hud__character-card-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 24%);
+  pointer-events: none;
 }
 
 .hud__character-card-preview,
@@ -800,9 +880,12 @@ body {
   display: block;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #f9f0d6;
+  color: #fff0c9;
+  text-shadow:
+    0 1px 0 rgba(19, 13, 6, 0.95),
+    1px 0 0 rgba(19, 13, 6, 0.72);
 }
 
 .hud__eyebrow {

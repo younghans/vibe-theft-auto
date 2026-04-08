@@ -59,20 +59,8 @@ function frameCamera(camera, object, profile = LIVE_PREVIEW_PROFILE) {
   camera.updateProjectionMatrix();
 }
 
-function disposeMaterial(material) {
-  if (Array.isArray(material)) {
-    material.forEach((entry) => entry?.dispose?.());
-    return;
-  }
-
-  material?.dispose?.();
-}
-
-function disposeObject(root) {
-  root?.traverse?.((node) => {
-    node.geometry?.dispose?.();
-    disposeMaterial(node.material);
-  });
+function detachObject(root) {
+  root?.parent?.remove(root);
 }
 
 function createPreviewRig({ width, height }) {
@@ -160,12 +148,14 @@ export class CharacterPreviewRenderer {
   constructor({ library }) {
     this.library = library;
     this.livePreview = createPreviewRig(LIVE_PREVIEW_SIZE);
+    this.portraitSnapshotRig = createPreviewRig(PORTRAIT_SIZE);
     this.liveCharacter = null;
     this.liveCharacterPromise = null;
     this.liveCharacterRequestId = 0;
     this.portraitEntries = new Map();
 
     this.livePreview.renderer.domElement.className = 'hud__character-stage-canvas';
+    this.portraitSnapshotRig.renderer.domElement.className = 'hud__character-card-canvas';
     this.livePreview.renderer.render(this.livePreview.scene, this.livePreview.camera);
   }
 
@@ -187,13 +177,13 @@ export class CharacterPreviewRenderer {
     const request = instantiatePreviewCharacter(this.library, target.id, target.previewClip)
       .then((previewCharacter) => {
         if (requestId !== this.liveCharacterRequestId) {
-          disposeObject(previewCharacter.character);
+          detachObject(previewCharacter.character);
           return this.liveCharacter;
         }
 
         if (this.liveCharacter) {
           this.livePreview.objectRoot.remove(this.liveCharacter.character);
-          disposeObject(this.liveCharacter.character);
+          detachObject(this.liveCharacter.character);
         }
 
         this.liveCharacter = previewCharacter;
@@ -221,15 +211,6 @@ export class CharacterPreviewRenderer {
       this.liveCharacter.mixer.update(deltaSeconds);
       this.livePreview.renderer.render(this.livePreview.scene, this.livePreview.camera);
     }
-
-    for (const entry of this.portraitEntries.values()) {
-      if (!entry.previewCharacter) {
-        continue;
-      }
-
-      entry.previewCharacter.mixer.update(deltaSeconds);
-      entry.rig.renderer.render(entry.rig.scene, entry.rig.camera);
-    }
   }
 
   async ensurePortraitPreview(characterId) {
@@ -238,25 +219,35 @@ export class CharacterPreviewRenderer {
       return this.portraitEntries.get(target.id);
     }
 
-    const rig = createPreviewRig(PORTRAIT_SIZE);
-    rig.renderer.domElement.className = 'hud__character-card-canvas';
+    const rig = this.portraitSnapshotRig;
     const previewCharacter = await instantiatePreviewCharacter(
       this.library,
       target.id,
       target.portraitClip ?? target.idleClip
     );
+    rig.objectRoot.clear();
     rig.objectRoot.add(previewCharacter.character);
 
     const bounds = new THREE.Box3().setFromObject(previewCharacter.character);
     const size = bounds.getSize(new THREE.Vector3());
     rig.floor.scale.setScalar(Math.max(size.x, size.z, 2.2) * 0.82);
     frameCamera(rig.camera, previewCharacter.character, PORTRAIT_PREVIEW_PROFILE);
+    previewCharacter.mixer.update(0.01);
     rig.renderer.render(rig.scene, rig.camera);
+    const imageSrc = rig.renderer.domElement.toDataURL('image/png');
+    rig.objectRoot.remove(previewCharacter.character);
+    detachObject(previewCharacter.character);
+
+    const imageNode = document.createElement('img');
+    imageNode.className = 'hud__character-card-canvas';
+    imageNode.src = imageSrc;
+    imageNode.alt = `${target.label} portrait`;
+    imageNode.loading = 'lazy';
 
     const entry = {
       characterId: target.id,
-      rig,
-      previewCharacter
+      imageSrc,
+      node: imageNode
     };
     this.portraitEntries.set(target.id, entry);
     return entry;
@@ -268,7 +259,7 @@ export class CharacterPreviewRenderer {
     }
 
     const entry = await this.ensurePortraitPreview(characterId);
-    const node = entry.rig.renderer.domElement;
+    const node = entry.node;
     if (!container.contains(node)) {
       container.replaceChildren(node);
     }
