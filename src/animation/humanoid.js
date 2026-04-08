@@ -153,6 +153,29 @@ export function createBoneFilteredClip(clip, boneNames = [], clipName = `${clip?
   return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
 }
 
+export function createPoseClip(clip, sampleTimeSeconds = 0, clipName = `${clip?.name ?? 'Clip'}_Pose`) {
+  if (!clip || !Array.isArray(clip.tracks)) {
+    throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
+  }
+
+  const clipDuration = Math.max(0, Number(clip.duration) || 0);
+  const sampleTime = THREE.MathUtils.clamp(
+    Number.isFinite(sampleTimeSeconds) ? sampleTimeSeconds : 0,
+    0,
+    clipDuration
+  );
+  const poseDuration = 1 / 30;
+  const poseTracks = clip.tracks.map((track) => {
+    const valueSize = track.getValueSize();
+    const resultBuffer = new track.ValueBufferType(valueSize);
+    const sampledValues = Array.from(track.createInterpolant(resultBuffer).evaluate(sampleTime)).slice(0, valueSize);
+    const heldValues = [...sampledValues, ...sampledValues];
+    return new track.constructor(track.name, [0, poseDuration], heldValues, track.getInterpolation());
+  });
+
+  return new THREE.AnimationClip(clipName, poseDuration, poseTracks);
+}
+
 function ensureSocket(root, boneName, socketName, position = null) {
   const bone = root.getObjectByName(boneName);
 

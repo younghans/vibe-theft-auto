@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   createBoneFilteredClip,
   createInPlaceClip,
+  createPoseClip,
   ensureMixamoSockets,
   MIXAMO_BONES,
   validateMixamoHumanoid
@@ -335,11 +336,18 @@ export async function createPlayer(library, {
   const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
   const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
+  const punchUpperBodyClip = punchClipName
+    ? createBoneFilteredClip(getMixamoClip(punchClipName), UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
+    : null;
+  const punchGuardClip = punchUpperBodyClip
+    ? createPoseClip(punchUpperBodyClip, 0, `${punchClipName}_UpperBodyGuard`)
+    : null;
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
   const idleLowerBodyAction = mixer.clipAction(idleLowerBodyClip);
   const walkLowerBodyAction = mixer.clipAction(walkLowerBodyClip);
+  const punchGuardAction = punchGuardClip ? mixer.clipAction(punchGuardClip) : null;
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
   const emoteConfigOverrides = new Map();
@@ -356,6 +364,14 @@ export async function createPlayer(library, {
   walkLowerBodyAction.play();
   walkLowerBodyAction.enabled = true;
   walkLowerBodyAction.setEffectiveWeight(0);
+  if (punchGuardAction) {
+    punchGuardAction.enabled = true;
+    punchGuardAction.clampWhenFinished = true;
+    punchGuardAction.setLoop(THREE.LoopRepeat, Infinity);
+    punchGuardAction.setEffectiveTimeScale(0);
+    punchGuardAction.setEffectiveWeight(0);
+    punchGuardAction.play();
+  }
 
   hideUnusedMeshes(character);
   const characterScale = normalizeCharacter(character);
@@ -462,6 +478,7 @@ export async function createPlayer(library, {
   let recoilAmount = 0;
   let aimingState = false;
   let aimPoseWeight = 0;
+  let guardPoseWeight = 0;
   let upperBodyLookWeight = 0;
   let aimRotationY = 0;
   let reloadPoseWeight = 0;
@@ -545,7 +562,9 @@ export async function createPlayer(library, {
           .then(() => {
             const sourceClip = getMixamoClip(clipName);
             const clip = emoteConfig?.upperBodyOnly
-              ? createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`)
+              ? (emoteId === PUNCH_EMOTE_ID && punchUpperBodyClip
+                ? punchUpperBodyClip
+                : createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`))
               : createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
             const action = mixer.clipAction(clip);
             action.enabled = true;
@@ -1126,7 +1145,11 @@ export async function createPlayer(library, {
     const blendWeightsByBone = new Map();
     const activeAimBones = new Set();
     if (hasLookPose) {
-      const emoteAimYawOffset = Number(activeEmoteConfig?.aimYawOffset ?? 0);
+      const emoteAimYawOffset = Number(
+        activeEmoteConfig?.aimYawOffset
+        ?? (!activeItemId && aimingState ? getResolvedEmoteConfig(PUNCH_EMOTE_ID)?.aimYawOffset : 0)
+        ?? 0
+      );
       const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y + emoteAimYawOffset);
       addBoneRotation(rotationsByBone, UPPER_BODY_ROOT_BONE, 'y', aimDelta);
       setBoneBlendWeight(blendWeightsByBone, UPPER_BODY_ROOT_BONE, upperBodyLookWeight);
@@ -1305,13 +1328,24 @@ export async function createPlayer(library, {
   }
 
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
+    const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
-    const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOnlyEmoteActive) && !isLimpTransitioning();
+    const wantsGuardPose = Boolean(
+      punchGuardAction
+      && aimingState
+      && !activeAimItemId
+      && !activeEmoteId
+      && aliveState
+      && !isLimpTransitioning()
+    );
+    guardPoseWeight = THREE.MathUtils.damp(guardPoseWeight, wantsGuardPose ? 1 : 0, wantsGuardPose ? 18 : 14, deltaSeconds);
+    const upperBodyOverlayActive = upperBodyOnlyEmoteActive || wantsGuardPose || guardPoseWeight > 0.0001;
+    const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     const smoothing = locomotionEnabled ? 12 : 22;
     idleWeight = THREE.MathUtils.damp(idleWeight, locomotionEnabled && !moving ? 1 : 0, smoothing, deltaSeconds);
     walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving ? 1 : 0, smoothing, deltaSeconds);
-    const fullBodyLocomotionWeight = upperBodyOnlyEmoteActive ? 0 : 1;
-    const lowerBodyLocomotionWeight = upperBodyOnlyEmoteActive ? 1 : 0;
+    const fullBodyLocomotionWeight = upperBodyOverlayActive ? 0 : 1;
+    const lowerBodyLocomotionWeight = upperBodyOverlayActive ? 1 : 0;
     idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight);
     walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight);
     idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight);
@@ -1320,16 +1354,19 @@ export async function createPlayer(library, {
     walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     idleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    if (punchGuardAction) {
+      punchGuardAction.setEffectiveWeight(guardPoseWeight);
+      punchGuardAction.setEffectiveTimeScale(0);
+    }
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
-    const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const reloadProfile = updateReloadOverlayState(deltaSeconds, activeAimItemId);
     const reloadForcesAimPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile);
     const wantsAimPose = (aimingState || reloadForcesAimPose) && aliveState && !ragdoll.isActive() && Boolean(activeAimPose);
-    const wantsUpperBodyLook = aliveState && (!activeEmoteId || upperBodyOnlyEmoteActive) && !isLimpTransitioning();
+    const wantsUpperBodyLook = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     applyUpperBodyPose();

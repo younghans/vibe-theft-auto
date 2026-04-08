@@ -2508,11 +2508,12 @@ export class Game {
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
       let aimingMode = false;
-      const combatInputEnabled = !emoteMenuActive && !this.hud.isQuickChatOpen();
+      const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
       const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
       const primaryFireHeld = combatInputEnabled && this.input.isPointerPressed(0);
+      const secondaryAimHeld = combatInputEnabled && this.input.isPointerPressed(2);
       if (armed) {
-        aimingMode = combatInputEnabled && this.input.isPointerPressed(2);
+        aimingMode = secondaryAimHeld;
         this.currentAimMode = aimingMode;
         this.player.setAimingState(aimingMode || hipFirePoseActive);
         if (aimingMode ? primaryFireHeld : primaryFirePressed) {
@@ -2527,9 +2528,10 @@ export class Game {
         }
       } else {
         this.clearPendingHipFireShot();
-        this.currentAimMode = false;
-        this.player.setAimingState(false);
-        if (combatInputEnabled && primaryFirePressed) {
+        aimingMode = secondaryAimHeld;
+        this.currentAimMode = aimingMode;
+        this.player.setAimingState(aimingMode);
+        if (primaryFirePressed) {
           this.punchLocal(aimDirection);
         }
       }
@@ -2554,7 +2556,7 @@ export class Game {
         this.player.object.rotation.y,
         {
           ...this.player.getAnimationSyncState(),
-          aiming: Boolean(this.currentAimMode && armed)
+          aiming: Boolean(this.currentAimMode || hipFirePoseActive)
         }
       );
       this.updateNpcInteractRadiusIndicators();
