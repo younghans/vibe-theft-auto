@@ -1165,23 +1165,31 @@ export class Game {
     }
 
     const flashMaterial = new THREE.MeshBasicMaterial({
-      color: 0xfff1bf,
+      color: 0xfff0c4,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.98,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false
     });
     const flareMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff9a3d,
+      color: 0xff7a24,
       transparent: true,
-      opacity: 0.82,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const emberMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff4a24,
+      transparent: true,
+      opacity: 0.62,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false
     });
     const sparkMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffdf8a,
+      color: 0xffb161,
       transparent: true,
       opacity: 0.9,
       blending: THREE.AdditiveBlending,
@@ -1190,11 +1198,32 @@ export class Game {
     });
 
     const core = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), flashMaterial);
-    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.82, 12, 1, true), flareMaterial);
-    plume.position.y = 0.28;
-    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), flareMaterial.clone());
-    bloom.position.y = 0.11;
-    bloom.scale.set(0.9, 0.52, 0.9);
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.9, 12, 1, true), flareMaterial);
+    plume.position.y = 0.3;
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 12), flareMaterial.clone());
+    bloom.position.y = 0.12;
+    bloom.scale.set(0.95, 0.54, 0.95);
+    const emberShell = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 10), emberMaterial);
+    emberShell.position.y = 0.08;
+    emberShell.scale.set(1.08, 0.42, 1.08);
+    const shockRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.12, 0.022, 8, 20),
+      flareMaterial.clone()
+    );
+    shockRing.position.y = 0.12;
+    shockRing.rotation.x = Math.PI / 2;
+    const sideFlareA = new THREE.Mesh(
+      new THREE.BoxGeometry(0.045, 0.46, 0.045),
+      flareMaterial.clone()
+    );
+    sideFlareA.position.set(0.08, 0.2, 0.02);
+    sideFlareA.rotation.z = 0.68;
+    const sideFlareB = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.4, 0.04),
+      emberMaterial.clone()
+    );
+    sideFlareB.position.set(-0.075, 0.18, -0.03);
+    sideFlareB.rotation.z = -0.78;
 
     const sparkGeometries = [
       new THREE.BoxGeometry(0.035, 0.58, 0.035),
@@ -1214,12 +1243,16 @@ export class Game {
       return spark;
     });
 
-    const light = new THREE.PointLight(0xffb347, 1.9, 4.8, 2);
+    const light = new THREE.PointLight(0xff7a24, 2.4, 5.3, 2);
     light.position.y = 0.18;
 
     flashGroup.add(core);
     flashGroup.add(plume);
     flashGroup.add(bloom);
+    flashGroup.add(emberShell);
+    flashGroup.add(shockRing);
+    flashGroup.add(sideFlareA);
+    flashGroup.add(sideFlareB);
     sparks.forEach((spark) => flashGroup.add(spark));
     flashGroup.add(light);
     const now = performance.now();
@@ -1229,6 +1262,10 @@ export class Game {
       core,
       plume,
       bloom,
+      emberShell,
+      shockRing,
+      sideFlareA,
+      sideFlareB,
       sparks,
       sparkOffsets,
       light,
@@ -1281,30 +1318,43 @@ export class Game {
       } else if (effect.type === 'muzzleFlash') {
         const lifetime = Math.max(1, effect.expiresAt - effect.startedAt);
         const progress = THREE.MathUtils.clamp((now - effect.startedAt) / lifetime, 0, 1);
-        const burst = 1 + Math.sin(progress * Math.PI) * 0.75;
+        const burst = 1 + Math.sin(progress * Math.PI) * 0.92;
         const taper = Math.max(0, 1 - progress);
 
-        effect.core.scale.setScalar(0.58 + burst * 0.55);
-        effect.bloom.scale.set(0.8 + burst * 0.52, 0.4 + taper * 0.36, 0.8 + burst * 0.52);
-        effect.plume.scale.set(1.02 - progress * 0.1, 0.58 + burst * 0.6, 1.02 - progress * 0.1);
-        effect.plume.position.y = 0.24 + progress * 0.18;
-        effect.bloom.position.y = 0.08 + progress * 0.06;
-        effect.object.scale.setScalar(1 + progress * 0.08);
+        effect.core.scale.setScalar(0.56 + burst * 0.62);
+        effect.bloom.scale.set(0.86 + burst * 0.62, 0.4 + taper * 0.42, 0.86 + burst * 0.62);
+        effect.emberShell.scale.set(0.9 + burst * 0.74, 0.32 + taper * 0.34, 0.9 + burst * 0.74);
+        effect.plume.scale.set(1.05 - progress * 0.08, 0.62 + burst * 0.72, 1.05 - progress * 0.08);
+        effect.plume.position.y = 0.25 + progress * 0.22;
+        effect.bloom.position.y = 0.08 + progress * 0.08;
+        effect.emberShell.position.y = 0.04 + progress * 0.05;
+        effect.shockRing.scale.setScalar(0.68 + progress * 1.35);
+        effect.shockRing.position.y = 0.1 + progress * 0.07;
+        effect.shockRing.rotation.z = progress * 0.45;
+        effect.sideFlareA.scale.set(1, 0.9 + burst * 0.52, 1);
+        effect.sideFlareB.scale.set(1, 0.84 + burst * 0.44, 1);
+        effect.sideFlareA.position.y = 0.18 + progress * 0.12;
+        effect.sideFlareB.position.y = 0.16 + progress * 0.11;
+        effect.object.scale.setScalar(1 + progress * 0.12);
 
         for (const [index, spark] of effect.sparks.entries()) {
           const offset = effect.sparkOffsets[index];
-          const sparkGrowth = 1 + progress * (1.2 + index * 0.28);
+          const sparkGrowth = 1 + progress * (1.45 + index * 0.34);
           spark.scale.set(1, sparkGrowth, 1);
-          spark.position.set(offset.x, offset.y + progress * (0.12 + index * 0.035), offset.z);
+          spark.position.set(offset.x, offset.y + progress * (0.16 + index * 0.045), offset.z);
         }
 
-        effect.core.material.opacity = 0.95 * taper;
-        effect.bloom.material.opacity = 0.6 * taper;
-        effect.plume.material.opacity = 0.82 * Math.max(0, 1 - progress * 1.15);
+        effect.core.material.opacity = 0.98 * taper;
+        effect.bloom.material.opacity = 0.72 * taper;
+        effect.emberShell.material.opacity = 0.62 * Math.max(0, 1 - progress * 0.9);
+        effect.shockRing.material.opacity = 0.66 * Math.max(0, 1 - progress * 1.25);
+        effect.sideFlareA.material.opacity = 0.74 * Math.max(0, 1 - progress * 1.15);
+        effect.sideFlareB.material.opacity = 0.55 * Math.max(0, 1 - progress);
+        effect.plume.material.opacity = 0.88 * Math.max(0, 1 - progress * 1.2);
         effect.sparks.forEach((spark, index) => {
-          spark.material.opacity = Math.max(0, 0.9 - progress * (1.15 + index * 0.12));
+          spark.material.opacity = Math.max(0, 0.95 - progress * (1.2 + index * 0.14));
         });
-        effect.light.intensity = 1.9 * Math.max(0, 1 - progress * 1.35);
+        effect.light.intensity = 2.4 * Math.max(0, 1 - progress * 1.28);
       }
       next.push(effect);
     }
