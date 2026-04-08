@@ -1584,11 +1584,14 @@ export class Game {
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
       this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
       let aimingMode = false;
+      const combatInputEnabled = !emoteMenuActive && !this.hud.isQuickChatOpen();
+      const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
+      const primaryFireHeld = combatInputEnabled && this.input.isPointerPressed(0);
       if (armed) {
-        aimingMode = !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.isPointerPressed(2);
+        aimingMode = combatInputEnabled && this.input.isPointerPressed(2);
         this.currentAimMode = aimingMode;
         this.player.setAimingState(aimingMode || hipFirePoseActive);
-        if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consumePointer(0)) {
+        if (aimingMode ? primaryFireHeld : primaryFirePressed) {
           if (aimingMode) {
             this.npcService?.fireWeapon(
               { x: aimDirection.x, z: aimDirection.z },
@@ -1599,7 +1602,7 @@ export class Game {
             this.queueHipFireShot(aimDirection);
           }
         }
-        if (!emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyR')) {
+        if (combatInputEnabled && this.input.consume('KeyR')) {
           this.npcService?.reloadWeapon();
         }
       } else {

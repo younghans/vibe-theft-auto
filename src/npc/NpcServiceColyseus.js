@@ -1,3 +1,5 @@
+import { WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
+
 function schemaMapToEntries(schemaMap) {
   const entries = [];
   if (!schemaMap) {
@@ -133,6 +135,7 @@ export class NpcServiceColyseus {
     this.lastTransform = null;
     this.lastBuilderPresenceSentAt = 0;
     this.lastBuilderPresenceSignature = '';
+    this.lastFireSentAt = 0;
   }
 
   async connect() {
@@ -376,12 +379,22 @@ export class NpcServiceColyseus {
   }
 
   fireWeapon(aimDirection = { x: 0, z: 0 }, clientShotAt = Date.now(), origin = null) {
+    const player = this.state.players.get(this.state.sessionId);
+    const now = Date.now();
+    if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+    if (player.ammoInClip <= 0 || (now - this.lastFireSentAt) < WEAPON_FIRE_INTERVAL_MS) {
+      return;
+    }
+
+    this.lastFireSentAt = now;
     this.room?.send('combat:fireRequest', {
       aimX: quantize(aimDirection.x, 4),
       aimZ: quantize(aimDirection.z, 4),
       originX: Number.isFinite(origin?.x) ? quantize(origin.x, 4) : undefined,
       originZ: Number.isFinite(origin?.z) ? quantize(origin.z, 4) : undefined,
-      clientShotAt: Number.isFinite(clientShotAt) ? Math.max(0, Math.floor(clientShotAt)) : Date.now()
+      clientShotAt: Number.isFinite(clientShotAt) ? Math.max(0, Math.floor(clientShotAt)) : now
     });
   }
 
@@ -391,6 +404,7 @@ export class NpcServiceColyseus {
 
   async destroy() {
     this.destroyed = true;
+    this.lastFireSentAt = 0;
     if (this.room) {
       this.room.leave();
       this.room = null;
