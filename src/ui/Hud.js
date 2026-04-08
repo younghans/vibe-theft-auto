@@ -1,6 +1,16 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 
+const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
+  Object.freeze({
+    key: 'punchAimYawOffset',
+    label: 'Punch Facing Offset',
+    min: -1,
+    max: 1,
+    step: 0.01
+  })
+]);
+
 function setFieldValue(field, value) {
   if (!field || document.activeElement === field) {
     return;
@@ -145,6 +155,7 @@ export class Hud {
     this.emoteSliceNodes = [];
     this.speechBubbleNodes = new Map();
     this.aimDebugInputs = new Map();
+    this.poseDebugExtraInputs = new Map();
     this.joinTitleTimeout = 0;
     this.toastTimeout = 0;
     this.healthTrailFrame = 0;
@@ -192,7 +203,7 @@ export class Hud {
       return;
     }
 
-    this.aimDebugFields.innerHTML = HELD_ITEM_AIM_POSE_FIELDS.map((field) => `
+    const extraMarkup = POSE_DEBUG_EXTRA_FIELDS.map((field) => `
       <label class="hud__aim-debug-field">
         <span class="hud__aim-debug-label">${field.label}</span>
         <div class="hud__aim-debug-inputs">
@@ -220,7 +231,61 @@ export class Hud {
       </label>
     `).join('');
 
+    const aimPoseMarkup = HELD_ITEM_AIM_POSE_FIELDS.map((field) => `
+      <label class="hud__aim-debug-field">
+        <span class="hud__aim-debug-label">${field.label}</span>
+        <div class="hud__aim-debug-inputs">
+          <input
+            class="hud__aim-debug-range"
+            type="range"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="range"
+          />
+          <input
+            class="hud__field-control hud__aim-debug-number"
+            type="number"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="number"
+          />
+        </div>
+      </label>
+    `).join('');
+
+    this.aimDebugFields.innerHTML = `
+      <div class="hud__builder-tabs hud__aim-debug-sections" data-aim-debug-sections>
+        <button class="hud__builder-chip" type="button" data-aim-debug-section="unarmed">Unarmed Pose</button>
+        <button class="hud__builder-chip" type="button" data-aim-debug-section="weaponAim">Weapon Aim Pose</button>
+      </div>
+      <section class="hud__builder-section" data-aim-debug-section-panel="unarmed">
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Unarmed Pose</p>
+        </div>
+        <div class="hud__aim-debug-group">${extraMarkup}</div>
+      </section>
+      <section class="hud__builder-section" data-aim-debug-section-panel="weaponAim">
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Weapon Aim Pose</p>
+        </div>
+        <div class="hud__aim-debug-group">${aimPoseMarkup}</div>
+      </section>
+    `;
+
     this.aimDebugInputs.clear();
+    this.poseDebugExtraInputs.clear();
+    for (const field of POSE_DEBUG_EXTRA_FIELDS) {
+      this.poseDebugExtraInputs.set(field.key, {
+        range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
+        number: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="number"]`)
+      });
+    }
     for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
       this.aimDebugInputs.set(field.key, {
         range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
@@ -279,9 +344,9 @@ export class Hud {
           class="hud__aim-debug-toggle"
           type="button"
           data-aim-debug-toggle
-          aria-label="Toggle Aim Pose debug"
+          aria-label="Toggle pose debug"
           aria-pressed="false"
-          title="Show Aim Pose debug"
+          title="Show pose debug"
           hidden
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -386,13 +451,13 @@ export class Hud {
       <section class="hud__aim-debug" data-aim-debug hidden>
         <div class="hud__aim-debug-header">
           <div>
-            <p class="hud__eyebrow">Aim Pose Debug</p>
-            <p class="hud__body hud__aim-debug-status" data-aim-debug-status>Hold right click to preview the live aim pose.</p>
+            <p class="hud__eyebrow">Pose Debug</p>
+            <p class="hud__body hud__aim-debug-status" data-aim-debug-status>Adjust weapon aim poses and unarmed punch facing.</p>
           </div>
           <div class="hud__aim-debug-actions">
             <button class="hud__builder-icon-button" type="button" data-aim-debug-bones title="Toggle skeleton helper">Bones</button>
-            <button class="hud__builder-icon-button" type="button" data-aim-debug-print title="Print current pose">Print</button>
-            <button class="hud__builder-icon-button" type="button" data-aim-debug-reset title="Reset aim pose overrides">Reset</button>
+            <button class="hud__builder-icon-button" type="button" data-aim-debug-print title="Print current pose settings">Print</button>
+            <button class="hud__builder-icon-button" type="button" data-aim-debug-reset title="Reset pose debug overrides">Reset</button>
           </div>
         </div>
         <div class="hud__aim-debug-fields" data-aim-debug-fields></div>
@@ -544,10 +609,27 @@ export class Hud {
     onFieldChange,
     onReset,
     onPrint,
-    onToggleBones
+    onToggleBones,
+    onSelectSection
   }) {
     this.aimDebugToggle?.addEventListener('click', () => {
       onTogglePanel();
+    });
+
+    this.aimDebugFields?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.aimDebugRoot)) {
+        return;
+      }
+
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-aim-debug-section]');
+      if (!button) {
+        return;
+      }
+
+      onSelectSection(button.dataset.aimDebugSection);
     });
 
     this.aimDebugFields?.addEventListener('input', (event) => {
@@ -1350,7 +1432,9 @@ export class Hud {
     visible = false,
     statusText = '',
     showSkeleton = false,
-    values = {}
+    values = {},
+    extraValues = {},
+    selectedSection = 'unarmed'
   } = {}) {
     if (!this.aimDebugRoot) {
       return;
@@ -1360,7 +1444,7 @@ export class Hud {
       this.aimDebugToggle.hidden = !available;
       this.aimDebugToggle.classList.toggle('is-active', visible);
       this.aimDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      this.aimDebugToggle.title = visible ? 'Hide Aim Pose debug' : 'Show Aim Pose debug';
+      this.aimDebugToggle.title = visible ? 'Hide pose debug' : 'Show pose debug';
     }
 
     this.aimDebugRoot.hidden = !visible;
@@ -1368,6 +1452,23 @@ export class Hud {
     this.aimDebugStatus.textContent = statusText;
     this.aimDebugBoneToggle.classList.toggle('is-active', showSkeleton);
     this.aimDebugBoneToggle.setAttribute('aria-pressed', showSkeleton ? 'true' : 'false');
+
+    for (const button of this.aimDebugFields?.querySelectorAll('[data-aim-debug-section]') ?? []) {
+      const active = button.dataset.aimDebugSection === selectedSection;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    for (const panel of this.aimDebugFields?.querySelectorAll('[data-aim-debug-section-panel]') ?? []) {
+      panel.hidden = panel.dataset.aimDebugSectionPanel !== selectedSection;
+    }
+
+    for (const field of POSE_DEBUG_EXTRA_FIELDS) {
+      const value = Number(extraValues?.[field.key] ?? 0);
+      const formattedValue = Number.isFinite(value) ? value.toFixed(2) : '0.00';
+      const inputs = this.poseDebugExtraInputs.get(field.key);
+      setFieldValue(inputs?.range, formattedValue);
+      setFieldValue(inputs?.number, formattedValue);
+    }
 
     for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
       const value = Number(values?.[field.key] ?? 0);

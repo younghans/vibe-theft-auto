@@ -204,6 +204,7 @@ export class Game {
     this.pendingHipFireShot = null;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
+    this.poseDebugSection = 'unarmed';
     this.shaderDebugMenuVisible = false;
     this.activeVibeShaderPresetId = DEFAULT_VIBE_SHADER_PRESET_ID;
     this.vibeShaderPresetIntensities = new Map(
@@ -239,7 +240,8 @@ export class Game {
       onFieldChange: (fieldKey, value) => this.setAimPoseDebugField(fieldKey, value),
       onReset: () => this.resetAimPoseDebug(),
       onPrint: () => this.printAimPoseDebug(),
-      onToggleBones: () => this.toggleAimPoseSkeletonDebug()
+      onToggleBones: () => this.toggleAimPoseSkeletonDebug(),
+      onSelectSection: (section) => this.setPoseDebugSection(section)
     });
     this.hud.bindShaderDebugEvents({
       onToggleMenu: () => this.toggleShaderDebugMenu(),
@@ -1231,7 +1233,8 @@ export class Game {
 
     if (adminAimPoseDebug) {
       globalThis.__stickRpgAimPoseDebug = {
-        fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key),
+        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)],
+        setSection: (section = 'unarmed') => this.setPoseDebugSection(section),
         print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
         setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
         reset: (itemId = getActiveItemId()) => this.resetAimPoseDebug(itemId),
@@ -1242,8 +1245,8 @@ export class Game {
       globalThis.setAimPoseField = (...args) => globalThis.__stickRpgAimPoseDebug.setField(...args);
       globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
 
-      console.info('[AimPoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
-        fields: HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)
+      console.info('[PoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
+        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)]
       });
     }
   }
@@ -1268,8 +1271,19 @@ export class Game {
 
   toggleAimPoseDebugPanel() {
     const nextVisible = this.setAimPoseDebugVisible(!this.aimPoseDebugVisible);
-    this.hud.showToast(nextVisible ? 'Aim pose debug opened.' : 'Aim pose debug hidden.');
+    this.hud.showToast(nextVisible ? 'Pose debug opened.' : 'Pose debug hidden.');
     return nextVisible;
+  }
+
+  setPoseDebugSection(section = 'unarmed') {
+    const nextSection = section === 'weaponAim' ? 'weaponAim' : 'unarmed';
+    if (this.poseDebugSection === nextSection) {
+      return this.poseDebugSection;
+    }
+
+    this.poseDebugSection = nextSection;
+    this.refreshAimPoseDebugHud();
+    return this.poseDebugSection;
   }
 
   setAimPoseSkeletonDebugVisible(visible) {
@@ -1286,7 +1300,17 @@ export class Game {
   }
 
   setAimPoseDebugField(fieldKey, value, itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
+    if (!this.player || !this.canUseAimPoseDebug()) {
+      return null;
+    }
+
+    if (fieldKey === 'punchAimYawOffset') {
+      const nextConfig = this.player.setEmoteDebugConfigField?.(PUNCH_EMOTE_ID, 'aimYawOffset', value) ?? null;
+      this.refreshAimPoseDebugHud();
+      return nextConfig;
+    }
+
+    if (!itemId) {
       return null;
     }
 
@@ -1296,14 +1320,25 @@ export class Game {
   }
 
   resetAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
+    if (!this.player || !this.canUseAimPoseDebug()) {
+      return null;
+    }
+
+    if (this.poseDebugSection === 'unarmed') {
+      const nextConfig = this.player.clearEmoteDebugConfig?.(PUNCH_EMOTE_ID) ?? null;
+      this.refreshAimPoseDebugHud();
+      this.hud.showToast('Unarmed pose debug reset.');
+      return nextConfig;
+    }
+
+    if (!itemId) {
       return null;
     }
 
     this.player.clearHeldItemAimPoseOverride(itemId);
     const nextPose = this.player.getHeldItemAimPoseProfile(itemId);
     this.refreshAimPoseDebugHud();
-    this.hud.showToast('Aim pose overrides reset.');
+    this.hud.showToast('Weapon aim pose debug reset.');
     return nextPose;
   }
 
@@ -1313,16 +1348,22 @@ export class Game {
     }
 
     const pose = this.player.getHeldItemAimPoseProfile(itemId);
-    const printable = {
-      id: itemId,
-      aimPose: Object.fromEntries(
-        HELD_ITEM_AIM_POSE_FIELDS
-          .map((field) => [field.key, Number(pose?.[field.key] ?? 0)])
-          .filter(([, value]) => Math.abs(value) > 0.000001)
-          .map(([key, value]) => [key, Number(value.toFixed(4))])
-      )
-    };
-    console.info('[AimPoseDebug] Current aim pose.', printable);
+    const printable = this.poseDebugSection === 'unarmed'
+      ? {
+        section: 'unarmed',
+        punchFacingOffset: Number(this.player.getEmoteDebugConfig?.(PUNCH_EMOTE_ID)?.aimYawOffset ?? 0)
+      }
+      : {
+        section: 'weaponAim',
+        id: itemId,
+        aimPose: Object.fromEntries(
+          HELD_ITEM_AIM_POSE_FIELDS
+            .map((field) => [field.key, Number(pose?.[field.key] ?? 0)])
+            .filter(([, value]) => Math.abs(value) > 0.000001)
+            .map(([key, value]) => [key, Number(value.toFixed(4))])
+        )
+      };
+    console.info('[PoseDebug] Current pose settings.', printable);
     return printable;
   }
 
@@ -1330,19 +1371,26 @@ export class Game {
     const debugAvailable = Boolean(this.player && this.canUseAimPoseDebug());
     const itemId = this.getActiveAimPoseDebugItemId();
     const pose = this.player?.getHeldItemAimPoseProfile(itemId) ?? {};
+    const punchFacingOffset = Number(this.player?.getEmoteDebugConfig?.(PUNCH_EMOTE_ID)?.aimYawOffset ?? 0);
     const statusParts = [];
     statusParts.push(`Weapon: ${itemId || 'none'}`);
-    statusParts.push(this.currentAimMode ? 'Previewing right-click aim' : 'Use the Aim Pose button or press O. Hold right click to preview.');
+    statusParts.push(`Punch offset: ${punchFacingOffset.toFixed(2)}`);
+    statusParts.push(this.currentAimMode ? 'Previewing right-click aim.' : 'Press O to open pose debug. Left click punch to test facing.');
     const nextState = {
       available: debugAvailable,
       visible: Boolean(this.aimPoseDebugVisible && debugAvailable),
       statusText: statusParts.join(' | '),
       showSkeleton: this.aimPoseDebugShowSkeleton,
-      values: pose
+      values: pose,
+      extraValues: {
+        punchAimYawOffset: punchFacingOffset
+      },
+      selectedSection: this.poseDebugSection
     };
-    const valueSignature = HELD_ITEM_AIM_POSE_FIELDS
-      .map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3))
-      .join('|');
+    const valueSignature = [
+      punchFacingOffset.toFixed(3),
+      ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3))
+    ].join('|');
     const signature = [
       Number(nextState.available),
       Number(nextState.visible),

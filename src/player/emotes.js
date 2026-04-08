@@ -20,7 +20,8 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeOut: 0.1,
     playbackRate: 1,
     cancelOnMove: false,
-    upperBodyOnly: true
+    upperBodyOnly: true,
+    aimYawOffset: -1
   },
   waving: {
     label: 'Waving',

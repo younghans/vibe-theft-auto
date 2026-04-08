@@ -342,6 +342,7 @@ export async function createPlayer(library, {
   const walkLowerBodyAction = mixer.clipAction(walkLowerBodyClip);
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
+  const emoteConfigOverrides = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
   idleAction.play();
   idleAction.enabled = true;
@@ -511,6 +512,12 @@ export async function createPlayer(library, {
     return ragdoll.isActive() || Date.now() < limpRecoverUntilMs;
   }
 
+  function getResolvedEmoteConfig(emoteId) {
+    const baseConfig = getEmoteConfig(emoteId);
+    const overrideConfig = emoteConfigOverrides.get(emoteId) ?? null;
+    return overrideConfig ? { ...baseConfig, ...overrideConfig } : baseConfig;
+  }
+
   function getLoadedEmoteAction(emoteId) {
     if (emoteId === LIMP_EMOTE_ID) {
       return null;
@@ -525,7 +532,7 @@ export async function createPlayer(library, {
       return Promise.resolve(loadedAction);
     }
 
-    const emoteConfig = EMOTES_BY_ID[emoteId];
+    const emoteConfig = getResolvedEmoteConfig(emoteId);
     const clipName = emoteConfig?.clipName ?? characterDefinition.emotes?.[emoteId];
     if (!clipName) {
       return Promise.resolve(null);
@@ -1119,7 +1126,8 @@ export async function createPlayer(library, {
     const blendWeightsByBone = new Map();
     const activeAimBones = new Set();
     if (hasLookPose) {
-      const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y);
+      const emoteAimYawOffset = Number(activeEmoteConfig?.aimYawOffset ?? 0);
+      const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y + emoteAimYawOffset);
       addBoneRotation(rotationsByBone, UPPER_BODY_ROOT_BONE, 'y', aimDelta);
       setBoneBlendWeight(blendWeightsByBone, UPPER_BODY_ROOT_BONE, upperBodyLookWeight);
     }
@@ -1575,7 +1583,7 @@ export async function createPlayer(library, {
         setLimpActive(false, { trackSync: false });
       }
 
-      const emoteConfig = getEmoteConfig(emoteId);
+      const emoteConfig = getResolvedEmoteConfig(emoteId);
       const clipName = emoteConfig?.clipName ?? characterDefinition.emotes?.[emoteId];
       if (!clipName) {
         return false;
@@ -1638,6 +1646,52 @@ export async function createPlayer(library, {
     },
     getAimRotation() {
       return aimRotationY;
+    },
+    getEmoteDebugConfig(emoteId = '') {
+      return emoteId ? getResolvedEmoteConfig(emoteId) : null;
+    },
+    setEmoteDebugConfigField(emoteId = '', fieldKey = '', value = 0) {
+      if (!emoteId || !fieldKey) {
+        return null;
+      }
+
+      const baseConfig = EMOTES_BY_ID[emoteId];
+      if (!baseConfig) {
+        return null;
+      }
+
+      const numericValue = Number(value);
+      const nextOverride = {
+        ...(emoteConfigOverrides.get(emoteId) ?? {})
+      };
+      if (!Number.isFinite(numericValue)) {
+        delete nextOverride[fieldKey];
+      } else {
+        nextOverride[fieldKey] = numericValue;
+      }
+
+      if (Object.keys(nextOverride).length === 0) {
+        emoteConfigOverrides.delete(emoteId);
+      } else {
+        emoteConfigOverrides.set(emoteId, nextOverride);
+      }
+
+      if (activeEmoteId === emoteId) {
+        activeEmoteConfig = getResolvedEmoteConfig(emoteId);
+      }
+
+      return getResolvedEmoteConfig(emoteId);
+    },
+    clearEmoteDebugConfig(emoteId = '') {
+      if (!emoteId) {
+        return null;
+      }
+
+      emoteConfigOverrides.delete(emoteId);
+      if (activeEmoteId === emoteId) {
+        activeEmoteConfig = getResolvedEmoteConfig(emoteId);
+      }
+      return getResolvedEmoteConfig(emoteId);
     },
     setAimingState(aiming) {
       aimingState = Boolean(aiming);
