@@ -1,15 +1,51 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const TARGET_FOOTPRINT = BUILDER_TILE_SIZE * 0.82;
+const gltfLoader = new GLTFLoader();
+
+class NodeFileReader {
+  constructor() {
+    this.result = null;
+    this.onloadend = null;
+    this.onerror = null;
+  }
+
+  async readAsArrayBuffer(blob) {
+    try {
+      this.result = await blob.arrayBuffer();
+      this.onloadend?.({ target: this });
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+  }
+
+  async readAsDataURL(blob) {
+    try {
+      const buffer = Buffer.from(await blob.arrayBuffer());
+      const mime = blob.type || 'application/octet-stream';
+      this.result = `data:${mime};base64,${buffer.toString('base64')}`;
+      this.onloadend?.({ target: this });
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+  }
+}
+
+globalThis.FileReader = globalThis.FileReader ?? NodeFileReader;
 
 const DEFAULT_REFERENCE_FILES = [
   'assets/stickrpg_custom/models/bar-building-wide.glb',
+  'assets/stickrpg_custom/models/gym-building.glb',
   'assets/stickrpg_custom/models/hospital-building.glb',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_A.gltf',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_B.gltf',
@@ -131,6 +167,26 @@ function inspectAsset(filePath) {
   const width = max[0] - min[0];
   const height = max[1] - min[1];
   const depth = max[2] - min[2];
+
+  return buildInspectionRow(filePath, json, primitiveCount, width, height, depth);
+}
+
+async function inspectCustomGlbAsset(filePath) {
+  const json = readGlbJson(filePath);
+  const primitiveCount = (json.meshes ?? []).reduce(
+    (sum, mesh) => sum + (mesh.primitives?.length ?? 0),
+    0
+  );
+  const buffer = fs.readFileSync(filePath);
+  const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  const asset = await gltfLoader.parseAsync(arrayBuffer, '');
+  const bounds = new THREE.Box3().setFromObject(asset.scene ?? asset.scenes?.[0]);
+  const size = bounds.getSize(new THREE.Vector3());
+
+  return buildInspectionRow(filePath, json, primitiveCount, size.x, size.y, size.z);
+}
+
+function buildInspectionRow(filePath, json, primitiveCount, width, height, depth) {
   const fitScale = Math.min(
     width > 0 ? TARGET_FOOTPRINT / width : 1,
     depth > 0 ? TARGET_FOOTPRINT / depth : 1
@@ -148,6 +204,14 @@ function inspectAsset(filePath) {
     meshes: json.meshes?.length ?? 0,
     primitives: primitiveCount
   };
+}
+
+async function inspectAssetAccurately(filePath) {
+  if (getFamilyLabel(filePath) === 'custom' && filePath.toLowerCase().endsWith('.glb')) {
+    return inspectCustomGlbAsset(filePath);
+  }
+
+  return inspectAsset(filePath);
 }
 
 function summarizeFamily(rows) {
@@ -177,7 +241,7 @@ function summarizeFamily(rows) {
   return summaries;
 }
 
-function main() {
+async function main() {
   const files = resolveInputFiles(process.argv.slice(2));
   const missing = files.filter((file) => !fs.existsSync(file));
 
@@ -189,7 +253,7 @@ function main() {
     process.exit(1);
   }
 
-  const rows = files.map(inspectAsset);
+  const rows = await Promise.all(files.map(inspectAssetAccurately));
   console.log(`Target lot footprint: ${TARGET_FOOTPRINT.toFixed(2)} x ${TARGET_FOOTPRINT.toFixed(2)}`);
   console.log('');
   console.table(rows);
@@ -197,4 +261,4 @@ function main() {
   console.table(summarizeFamily(rows));
 }
 
-main();
+await main();

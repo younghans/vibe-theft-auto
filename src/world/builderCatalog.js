@@ -151,6 +151,19 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
   {
+    id: 'gym_building',
+    assetName: 'gym_building',
+    label: 'Fitness Gym',
+    asset: customCityAsset('models', 'gym-building.glb'),
+    group: 'lots',
+    size: [BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82],
+    tileFootprint: [1, 1],
+    collision: true,
+    blocksShots: true,
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
     id: 'hospital_building_wide',
     assetName: 'hospital_building_wide',
     label: 'Hospital Wide',
