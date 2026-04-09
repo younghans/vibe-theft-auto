@@ -486,55 +486,6 @@ export class WorldRenderer {
       .filter(Boolean);
   }
 
-  getColliderDebugEntries() {
-    const entries = [];
-
-    for (const rendered of this.renderedPlacements.values()) {
-      for (const collider of rendered.colliders ?? []) {
-        if (!collider) {
-          continue;
-        }
-
-        if (collider.type === 'cylinder') {
-          entries.push({
-            source: 'world',
-            placementId: rendered.id,
-            itemId: rendered.item?.id ?? rendered.placement?.itemId ?? '',
-            layer: rendered.layer,
-            colliderType: 'cylinder',
-            x: collider.x,
-            y: collider.y ?? 0,
-            z: collider.z,
-            radius: collider.radius,
-            height: collider.height ?? 0
-          });
-          continue;
-        }
-
-        const box = collider.box ?? collider;
-        if (!box?.min || !box?.max) {
-          continue;
-        }
-
-        entries.push({
-          source: 'world',
-          placementId: rendered.id,
-          itemId: rendered.item?.id ?? rendered.placement?.itemId ?? '',
-          layer: rendered.layer,
-          colliderType: 'box',
-          minX: box.min.x,
-          minY: box.min.y,
-          minZ: box.min.z,
-          maxX: box.max.x,
-          maxY: box.max.y,
-          maxZ: box.max.z
-        });
-      }
-    }
-
-    return entries;
-  }
-
   getGroundHeightAt(worldPosition, worldState) {
     return this.getSurfaceHeightAtPosition(worldPosition.x, worldPosition.z);
   }
