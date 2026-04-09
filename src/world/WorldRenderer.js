@@ -265,7 +265,11 @@ function createPlacementColliders(object, item, placement, actor) {
   }
 
   if (isParkWallItem(item)) {
-    return buildParkWallColliders(object);
+    // Park-wall colliders must be generated from the tile root transform. For
+    // tiles, `object` is often the primary mesh under a positioned root group.
+    // Using the child mesh position here snaps collider bounds back toward the
+    // origin even when the actual placement is far away.
+    return buildParkWallColliders(object.parent ?? object);
   }
 
   if (itemBlocksMovement(item)) {
@@ -480,6 +484,55 @@ export class WorldRenderer {
     return [...this.renderedPlacements.values()]
       .flatMap((placement) => placement.colliders ?? [])
       .filter(Boolean);
+  }
+
+  getColliderDebugEntries() {
+    const entries = [];
+
+    for (const rendered of this.renderedPlacements.values()) {
+      for (const collider of rendered.colliders ?? []) {
+        if (!collider) {
+          continue;
+        }
+
+        if (collider.type === 'cylinder') {
+          entries.push({
+            source: 'world',
+            placementId: rendered.id,
+            itemId: rendered.item?.id ?? rendered.placement?.itemId ?? '',
+            layer: rendered.layer,
+            colliderType: 'cylinder',
+            x: collider.x,
+            y: collider.y ?? 0,
+            z: collider.z,
+            radius: collider.radius,
+            height: collider.height ?? 0
+          });
+          continue;
+        }
+
+        const box = collider.box ?? collider;
+        if (!box?.min || !box?.max) {
+          continue;
+        }
+
+        entries.push({
+          source: 'world',
+          placementId: rendered.id,
+          itemId: rendered.item?.id ?? rendered.placement?.itemId ?? '',
+          layer: rendered.layer,
+          colliderType: 'box',
+          minX: box.min.x,
+          minY: box.min.y,
+          minZ: box.min.z,
+          maxX: box.max.x,
+          maxY: box.max.y,
+          maxZ: box.max.z
+        });
+      }
+    }
+
+    return entries;
   }
 
   getGroundHeightAt(worldPosition, worldState) {

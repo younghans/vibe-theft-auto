@@ -410,6 +410,10 @@ export class WorldBuilder {
     return this.worldRenderer.getColliders();
   }
 
+  getColliderDebugEntries() {
+    return this.worldRenderer.getColliderDebugEntries();
+  }
+
   getGroundHeightAt(worldPosition) {
     return this.worldRenderer.getGroundHeightAt(worldPosition, this.worldState);
   }

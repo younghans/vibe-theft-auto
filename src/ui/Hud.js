@@ -98,6 +98,9 @@ export class Hud {
     this.shaderDebugIntensityValue = this.overlay.querySelector('[data-shader-debug-intensity-value]');
     this.shaderDebugIntensityReset = this.overlay.querySelector('[data-shader-debug-intensity-reset]');
     this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
+    this.adminPositionRoot = this.overlay.querySelector('[data-admin-position]');
+    this.adminPositionValue = this.overlay.querySelector('[data-admin-position-value]');
+    this.adminPositionHint = this.overlay.querySelector('[data-admin-position-hint]');
     this.combatRoot = this.overlay.querySelector('[data-combat-root]');
     this.combatMeter = this.overlay.querySelector('[data-combat-meter]');
     this.combatHealthTrail = this.overlay.querySelector('[data-combat-health-trail]');
@@ -165,6 +168,7 @@ export class Hud {
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
     this.lastCharacterSelectorSignature = '';
+    this.lastAdminPositionSignature = '';
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
   }
@@ -431,6 +435,11 @@ export class Hud {
       </section>
       <section class="hud__toast">
         <p class="hud__toast-text" data-toast></p>
+      </section>
+      <section class="hud__admin-position" data-admin-position hidden>
+        <p class="hud__eyebrow">Admin Position</p>
+        <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
+        <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
       </section>
       <section class="hud__join-title" data-join-title aria-hidden="true">
         <div class="hud__join-title-stack">
@@ -1322,6 +1331,41 @@ export class Hud {
     if (this.zoomOutButton) {
       this.zoomOutButton.disabled = disabled || !canZoomOut;
     }
+  }
+
+  setAdminPositionState({
+    visible = false,
+    x = 0,
+    y = 0,
+    z = 0,
+    heading = 0
+  } = {}) {
+    if (!this.adminPositionRoot || !this.adminPositionValue || !this.adminPositionHint) {
+      return;
+    }
+
+    if (!visible) {
+      this.adminPositionRoot.hidden = true;
+      this.lastAdminPositionSignature = '';
+      return;
+    }
+
+    const signature = [
+      Number(x).toFixed(2),
+      Number(y).toFixed(2),
+      Number(z).toFixed(2),
+      Number(heading).toFixed(1)
+    ].join('|');
+
+    if (signature === this.lastAdminPositionSignature) {
+      this.adminPositionRoot.hidden = false;
+      return;
+    }
+
+    this.lastAdminPositionSignature = signature;
+    this.adminPositionRoot.hidden = false;
+    this.adminPositionValue.textContent = `X ${Number(x).toFixed(2)}  Y ${Number(y).toFixed(2)}  Z ${Number(z).toFixed(2)}`;
+    this.adminPositionHint.textContent = `Heading ${Number(heading).toFixed(1)}°`;
   }
 
   setCharacterSelectorPreviewCanvas(node) {

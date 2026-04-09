@@ -808,6 +808,21 @@ export class Game {
     }
 
     this.refreshAimPoseDebugHud();
+    this.refreshAdminPositionHud();
+  }
+
+  refreshAdminPositionHud() {
+    const isAdmin = this.isLocalAdmin();
+    const position = this.player?.position;
+    const rotationY = this.player?.object?.rotation?.y ?? 0;
+
+    this.hud.setAdminPositionState({
+      visible: Boolean(isAdmin && position),
+      x: position?.x ?? 0,
+      y: position?.y ?? 0,
+      z: position?.z ?? 0,
+      heading: THREE.MathUtils.radToDeg(rotationY)
+    });
   }
 
   async drainPendingWorldPatches() {
@@ -1143,6 +1158,7 @@ export class Game {
 
     const localDebugHost = isLocalDebugHost();
     const adminAimPoseDebug = this.canUseAimPoseDebug();
+    const adminCollisionDebug = this.isLocalAdmin();
     const getActiveItemId = () => this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
     const clampVector = (values, fallback = [0, 0, 0]) => [0, 1, 2].map((index) => Number(values?.[index] ?? fallback[index] ?? 0));
     if (localDebugHost) {
@@ -1358,6 +1374,189 @@ export class Game {
       });
       console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
         presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
+      });
+    }
+
+    if (adminCollisionDebug) {
+      const roundValue = (value, digits = 2) => Number(Number(value ?? 0).toFixed(digits));
+      const getColliderDebugEntries = () => {
+        const worldEntries = this.worldBuilder?.getColliderDebugEntries?.() ?? [];
+        const baseEntries = (this.baseColliders ?? []).map((collider, index) => {
+          if (collider?.type === 'cylinder') {
+            return {
+              source: 'base',
+              placementId: `base_${index}`,
+              itemId: '',
+              layer: 'base',
+              colliderType: 'cylinder',
+              x: collider.x,
+              y: collider.y ?? 0,
+              z: collider.z,
+              radius: collider.radius,
+              height: collider.height ?? 0
+            };
+          }
+
+          const box = collider?.box ?? collider;
+          if (!box?.min || !box?.max) {
+            return null;
+          }
+
+          return {
+            source: 'base',
+            placementId: `base_${index}`,
+            itemId: '',
+            layer: 'base',
+            colliderType: 'box',
+            minX: box.min.x,
+            minY: box.min.y,
+            minZ: box.min.z,
+            maxX: box.max.x,
+            maxY: box.max.y,
+            maxZ: box.max.z
+          };
+        }).filter(Boolean);
+
+        return [...baseEntries, ...worldEntries];
+      };
+      const colliderTouchesPoint = (entry, x, z, radius = PLAYER_RADIUS) => {
+        if (!entry) {
+          return false;
+        }
+
+        if (entry.colliderType === 'cylinder') {
+          const combinedRadius = radius + Number(entry.radius ?? 0);
+          const deltaX = Number(x) - Number(entry.x ?? 0);
+          const deltaZ = Number(z) - Number(entry.z ?? 0);
+          return (deltaX * deltaX) + (deltaZ * deltaZ) < combinedRadius * combinedRadius;
+        }
+
+        return (
+          Number(x) > Number(entry.minX ?? 0) - radius
+          && Number(x) < Number(entry.maxX ?? 0) + radius
+          && Number(z) > Number(entry.minZ ?? 0) - radius
+          && Number(z) < Number(entry.maxZ ?? 0) + radius
+        );
+      };
+      const normalizeEntry = (entry) => {
+        if (entry.colliderType === 'cylinder') {
+          return {
+            ...entry,
+            x: roundValue(entry.x),
+            y: roundValue(entry.y),
+            z: roundValue(entry.z),
+            radius: roundValue(entry.radius),
+            height: roundValue(entry.height)
+          };
+        }
+
+        return {
+          ...entry,
+          minX: roundValue(entry.minX),
+          minY: roundValue(entry.minY),
+          minZ: roundValue(entry.minZ),
+          maxX: roundValue(entry.maxX),
+          maxY: roundValue(entry.maxY),
+          maxZ: roundValue(entry.maxZ)
+        };
+      };
+
+      globalThis.__stickRpgCollisionDebug = {
+        list: () => getColliderDebugEntries().map(normalizeEntry),
+        nearPlayer: (radius = 12) => {
+          const position = this.player?.position;
+          if (!position) {
+            console.info('[CollisionDebug] Player is not ready yet.');
+            return [];
+          }
+
+          const entries = getColliderDebugEntries().filter((entry) => {
+            if (entry.colliderType === 'cylinder') {
+              return Math.hypot(entry.x - position.x, entry.z - position.z) <= radius + (entry.radius ?? 0);
+            }
+
+            const clampedX = THREE.MathUtils.clamp(position.x, entry.minX, entry.maxX);
+            const clampedZ = THREE.MathUtils.clamp(position.z, entry.minZ, entry.maxZ);
+            return Math.hypot(clampedX - position.x, clampedZ - position.z) <= radius;
+          }).map(normalizeEntry);
+          console.info('[CollisionDebug] Nearby colliders.', {
+            player: {
+              x: roundValue(position.x),
+              y: roundValue(position.y),
+              z: roundValue(position.z)
+            },
+            radius: roundValue(radius),
+            colliders: entries
+          });
+          return entries;
+        },
+        probe: (x = this.player?.position?.x ?? 0, z = this.player?.position?.z ?? 0, radius = PLAYER_RADIUS) => {
+          const entries = getColliderDebugEntries()
+            .filter((entry) => colliderTouchesPoint(entry, Number(x), Number(z), Number(radius)))
+            .map(normalizeEntry);
+          console.info('[CollisionDebug] Probe result.', {
+            probe: {
+              x: roundValue(x),
+              z: roundValue(z),
+              radius: roundValue(radius)
+            },
+            colliders: entries
+          });
+          return entries;
+        }
+      };
+
+      console.info('[CollisionDebug] Attached window.__stickRpgCollisionDebug helpers.', {
+        methods: ['list', 'nearPlayer', 'probe']
+      });
+
+      globalThis.__stickRpgWorldDebug = {
+        transport: () => ({
+          transport: this.npcServiceState.transport,
+          connected: this.npcServiceState.connected,
+          sessionId: this.npcServiceState.sessionId
+        }),
+        getPlacement: (placementId = '') => {
+          const currentLayoutPlacement = this.currentLayout?.tiles?.find((entry) => entry.id === placementId)
+            ?? this.currentLayout?.props?.find((entry) => entry.id === placementId)
+            ?? this.currentLayout?.npcs?.find((entry) => entry.id === placementId)
+            ?? null;
+          const worldStatePlacement = this.worldBuilder?.worldState?.getPlacement?.(placementId) ?? null;
+          const renderedPlacement = this.worldBuilder?.worldRenderer?.renderedPlacements?.get?.(placementId) ?? null;
+          const renderedObject = renderedPlacement?.object ?? null;
+          const summary = {
+            placementId,
+            transport: this.npcServiceState.transport,
+            currentLayoutPlacement,
+            worldStatePlacement,
+            renderedPlacement: renderedPlacement
+              ? {
+                  id: renderedPlacement.id,
+                  itemId: renderedPlacement.item?.id ?? '',
+                  layer: renderedPlacement.layer,
+                  objectPosition: renderedObject
+                    ? {
+                        x: roundValue(renderedObject.position.x),
+                        y: roundValue(renderedObject.position.y),
+                        z: roundValue(renderedObject.position.z)
+                      }
+                    : null,
+                  colliderCount: renderedPlacement.colliders?.length ?? 0
+                }
+              : null
+          };
+          console.info('[WorldDebug] Placement snapshot.', summary);
+          return summary;
+        },
+        refreshLayout: async () => {
+          const layout = await this.npcService?.getWorldLayout?.();
+          console.info('[WorldDebug] Refetched layout from transport.', layout);
+          return layout;
+        }
+      };
+
+      console.info('[WorldDebug] Attached window.__stickRpgWorldDebug helpers.', {
+        methods: ['transport', 'getPlacement', 'refreshLayout']
       });
     }
 
@@ -2743,6 +2942,7 @@ export class Game {
     if (this.aimPoseDebugVisible) {
       this.refreshAimPoseDebugHud();
     }
+    this.refreshAdminPositionHud();
     this.characterPreviewRenderer?.update(deltaSeconds);
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;

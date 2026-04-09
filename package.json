@@ -13,6 +13,8 @@
     "dev:server:worktree": "node server/index.mjs 2667",
     "dev:stack": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
     "dev:worktree": "concurrently \"npm:dev:client:worktree\" \"npm:dev:server:worktree\"",
+    "world:inspect": "node scripts/world-snapshot-tool.mjs inspect",
+    "world:remove-placement": "node scripts/world-snapshot-tool.mjs remove-placement",
     "world:copy": "node scripts/copy-world-snapshot.mjs",
     "world:copy:primary-to-staging": "node scripts/copy-world-snapshot.mjs primary staging",
     "world:promote:staging-to-primary": "node scripts/copy-world-snapshot.mjs staging primary",
