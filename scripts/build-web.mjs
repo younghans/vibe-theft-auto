@@ -6,7 +6,7 @@ import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import { build } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const root = process.cwd();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const assetsRoot = path.join(root, 'assets');
 const gzipAsync = promisify(gzip);
@@ -278,7 +278,9 @@ async function writeCompressedVariant(filePath, encoding) {
       }
     })
     : await gzipAsync(source, { level: 9 });
-  await fs.writeFile(`${filePath}.${encoding}`, compressed);
+  const compressedPath = `${filePath}.${encoding}`;
+  await fs.mkdir(path.dirname(compressedPath), { recursive: true });
+  await fs.writeFile(compressedPath, compressed);
 }
 
 async function compressDistFiles() {
