@@ -198,10 +198,10 @@ function addBarbellEmblem(group, position, materials) {
   emblem.add(createBox([0.2, 0.42, 0.22], [0.95, 0, 0], materials.metalDark));
 
   for (const [x, radius, depth] of [
-    [-2.18, 0.92, 0.26],
-    [-1.48, 0.62, 0.22],
-    [1.48, 0.62, 0.22],
-    [2.18, 0.92, 0.26]
+    [-1.88, 0.92, 0.26],
+    [-2.14, 0.62, 0.22],
+    [1.88, 0.92, 0.26],
+    [2.14, 0.62, 0.22]
   ]) {
     emblem.add(createCylinder(radius, radius, depth, 18, [x, 0, 0], materials.weight, [0, 0, Math.PI * 0.5]));
   }
@@ -247,8 +247,8 @@ function addGymLetters(group, centerX, y, z, materials) {
   function addM(x) {
     addPart([0.38, 2.0], [x - 0.82, y]);
     addPart([0.38, 2.0], [x + 0.82, y]);
-    addPart([0.34, 1.46], [x - 0.3, y + 0.24], [0, 0, -0.34]);
-    addPart([0.34, 1.46], [x + 0.3, y + 0.24], [0, 0, 0.34]);
+    addPart([0.34, 1.46], [x - 0.3, y + 0.24], [0, 0, 0.34]);
+    addPart([0.34, 1.46], [x + 0.3, y + 0.24], [0, 0, -0.34]);
   }
 
   addG(centerX - 1.95);
@@ -269,10 +269,10 @@ function addSquatRack(group, position, materials) {
   rack.add(createBox([3.1, 0.18, 0.18], [0, 1.88, 0], materials.metal));
 
   for (const [x, radius] of [
-    [-1.35, 0.52],
-    [-0.86, 0.34],
-    [0.86, 0.34],
-    [1.35, 0.52]
+    [-1.18, 0.52],
+    [-1.42, 0.34],
+    [1.18, 0.52],
+    [1.42, 0.34]
   ]) {
     rack.add(createCylinder(radius, radius, 0.22, 16, [x, 1.88, 0], materials.weight, [0, 0, Math.PI * 0.5]));
   }
@@ -349,9 +349,6 @@ function buildGym() {
     { size: [0.24, 7.05, 4.18], position: [-2.46, 4.02, 0.08], material: materials.trim },
     { size: [0.24, 5.85, 4.08], position: [2.36, 3.42, -0.46], material: materials.trim },
     { size: [0.24, 5.85, 4.08], position: [5.28, 3.42, -0.46], material: materials.trim },
-    { size: [0.16, 2.1, 0.18], position: [-1.45, 9.7, 1.52], material: materials.accent },
-    { size: [0.16, 2.1, 0.18], position: [0.15, 9.7, 1.52], material: materials.trim },
-    { size: [0.16, 2.1, 0.18], position: [1.75, 9.7, 1.52], material: materials.accent },
     { size: [0.98, 0.58, 0.96], position: [2.65, 9.08, -2.0], material: materials.facadeDeep },
     { size: [0.42, 1.1, 0.42], position: [2.65, 9.92, -2.0], material: materials.metalDark },
     { size: [1.18, 0.5, 0.9], position: [-3.28, 11.08, -0.85], material: materials.facadeDeep },
