@@ -375,8 +375,8 @@ export class Hud {
         <div class="hud__character-selector-header">
           <div>
             <p class="hud__eyebrow">Character Select</p>
-            <h2 class="hud__character-selector-name" data-character-selector-name>X Bot</h2>
-            <p class="hud__body hud__character-selector-subtitle" data-character-selector-subtitle>Balanced Rookie</p>
+            <h2 class="hud__character-selector-name" data-character-selector-name>Ch08</h2>
+            <p class="hud__body hud__character-selector-subtitle" data-character-selector-subtitle>Roster Variant</p>
           </div>
           <button class="hud__builder-icon-button" type="button" data-character-selector-close aria-label="Close character selector" title="Close character selector">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1381,6 +1381,7 @@ export class Hud {
   }
 
   setCharacterSelectorState({
+    available = false,
     visible = false,
     selectedId = '',
     statusText = 'Currently selected',
@@ -1392,15 +1393,17 @@ export class Hud {
 
     const selectedEntry = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
 
+    const panelVisible = Boolean(available && visible);
+
     if (this.characterSelectorToggle) {
-      this.characterSelectorToggle.hidden = false;
-      this.characterSelectorToggle.classList.toggle('is-active', visible);
-      this.characterSelectorToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      this.characterSelectorToggle.title = visible ? 'Hide character selector' : 'Choose your character';
+      this.characterSelectorToggle.hidden = !available;
+      this.characterSelectorToggle.classList.toggle('is-active', panelVisible);
+      this.characterSelectorToggle.setAttribute('aria-pressed', panelVisible ? 'true' : 'false');
+      this.characterSelectorToggle.title = panelVisible ? 'Hide character selector' : 'Choose your character';
     }
 
-    this.characterSelectorRoot.hidden = !visible;
-    this.characterSelectorRoot.classList.toggle('is-visible', visible);
+    this.characterSelectorRoot.hidden = !panelVisible;
+    this.characterSelectorRoot.classList.toggle('is-visible', panelVisible);
 
     if (this.characterSelectorName) {
       this.characterSelectorName.textContent = selectedEntry?.label ?? 'Unknown Fighter';

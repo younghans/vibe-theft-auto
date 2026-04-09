@@ -350,6 +350,10 @@ export class NpcServiceColyseus {
     }
 
     const localPlayer = this.state.players.get(this.state.sessionId);
+    if (localPlayer?.isAdmin !== true) {
+      return;
+    }
+
     if (localPlayer?.characterId === normalized) {
       return;
     }

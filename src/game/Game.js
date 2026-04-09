@@ -688,16 +688,19 @@ export class Game {
   }
 
   refreshCharacterSelectorHud() {
+    const available = this.canUseCharacterSelector();
+    const visible = available && this.characterSelectorVisible;
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
     const entries = this.characterRoster.map((entry) => ({ ...entry }));
     this.hud.setCharacterSelectorState({
-      visible: this.characterSelectorVisible,
+      available,
+      visible,
       selectedId,
       statusText: this.getCharacterSelectorStatusText(),
       entries
     });
 
-    if (!this.characterSelectorVisible) {
+    if (!visible) {
       this.characterSelectorSyncRequestId += 1;
       if (this.characterSelectorViewportSyncFrame) {
         window.cancelAnimationFrame(this.characterSelectorViewportSyncFrame);
@@ -711,16 +714,26 @@ export class Game {
   }
 
   setCharacterSelectorVisible(visible) {
-    this.characterSelectorVisible = Boolean(visible);
+    this.characterSelectorVisible = Boolean(visible) && this.canUseCharacterSelector();
     this.refreshCharacterSelectorHud();
     return this.characterSelectorVisible;
   }
 
   toggleCharacterSelector(visible = !this.characterSelectorVisible) {
+    if (visible && !this.canUseCharacterSelector()) {
+      this.hud.showToast('Character selector is admin only.');
+      return this.setCharacterSelectorVisible(false);
+    }
+
     return this.setCharacterSelectorVisible(visible);
   }
 
   cycleCharacterSelection(step = 1) {
+    if (!this.canUseCharacterSelector()) {
+      this.hud.showToast('Character selector is admin only.');
+      return;
+    }
+
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
     const currentIndex = this.characterRoster.findIndex((entry) => entry.id === selectedId);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -730,6 +743,16 @@ export class Game {
 
   syncPreferredCharacterSelection() {
     const localPlayerState = this.getLocalPlayerState();
+    if (!this.canUseCharacterSelector()) {
+      this.pendingCharacterRequestId = '';
+      const authoritativeCharacterId = getPlayableCharacterById(localPlayerState?.characterId).id;
+      if (this.desiredLocalCharacterId !== authoritativeCharacterId) {
+        this.desiredLocalCharacterId = authoritativeCharacterId;
+        this.storeSelectedCharacterId(authoritativeCharacterId);
+      }
+      return;
+    }
+
     if (!this.npcService || !this.npcServiceState.sessionId) {
       return;
     }
@@ -750,6 +773,11 @@ export class Game {
   }
 
   selectCharacter(characterId) {
+    if (!this.canUseCharacterSelector()) {
+      this.hud.showToast('Character selector is admin only.');
+      return;
+    }
+
     const nextCharacterId = getPlayableCharacterById(characterId).id;
     if (this.desiredLocalCharacterId === nextCharacterId && this.player?.characterId === nextCharacterId) {
       this.refreshCharacterSelectorHud();
@@ -793,6 +821,10 @@ export class Game {
     return this.getLocalPlayerState()?.isAdmin === true;
   }
 
+  canUseCharacterSelector() {
+    return this.isLocalAdmin();
+  }
+
   canUseAimPoseDebug() {
     return this.isLocalAdmin();
   }
@@ -800,6 +832,11 @@ export class Game {
   syncAdminAccess() {
     const isAdmin = this.isLocalAdmin();
     void this.worldBuilder?.setCanEdit(isAdmin);
+
+    if (!this.canUseCharacterSelector()) {
+      this.characterSelectorVisible = false;
+      this.pendingCharacterRequestId = '';
+    }
 
     if (!this.canUseAimPoseDebug()) {
       this.aimPoseDebugVisible = false;

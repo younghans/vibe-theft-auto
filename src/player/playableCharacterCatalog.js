@@ -1,7 +1,7 @@
 import { assets } from '../world/assetManifest.js';
 import { MIXAMO_CHARACTER_DEFINITIONS } from '../shared/mixamoCharacterCatalog.js';
 
-export const DEFAULT_PLAYABLE_CHARACTER_ID = 'xBot';
+export const DEFAULT_PLAYABLE_CHARACTER_ID = 'ch08NonPbr';
 
 function createPlayableCharacter(definition) {
   return Object.freeze({
