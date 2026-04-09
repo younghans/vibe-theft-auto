@@ -189,6 +189,29 @@ function addPlateStack(group, position, materials) {
   group.add(createCylinder(0.14, 0.14, 1.02, 10, [x, y + 0.72, z], materials.metal));
 }
 
+function addDumbbell(group, position, materials, rotationY = 0) {
+  const dumbbell = new THREE.Group();
+  dumbbell.position.set(...position);
+  dumbbell.rotation.y = rotationY;
+
+  dumbbell.add(createBox([1.46, 0.12, 0.12], [0, 0, 0], materials.metalDark));
+  dumbbell.add(createBox([0.16, 0.18, 0.18], [-0.52, 0, 0], materials.metal));
+  dumbbell.add(createBox([0.16, 0.18, 0.18], [0.52, 0, 0], materials.metal));
+
+  for (const [x, radius, width] of [
+    [-0.82, 0.46, 0.18],
+    [-1.05, 0.34, 0.14],
+    [0.82, 0.46, 0.18],
+    [1.05, 0.34, 0.14]
+  ]) {
+    dumbbell.add(
+      createCylinder(radius, radius, width, 18, [x, 0, 0], materials.weight, [0, 0, Math.PI * 0.5])
+    );
+  }
+
+  group.add(dumbbell);
+}
+
 function addBarbellEmblem(group, position, materials) {
   const emblem = new THREE.Group();
   emblem.position.set(...position);
@@ -301,6 +324,7 @@ function createGymMaterials() {
     signLight: createMaterial(0xf5f5ef),
     glass: createMaterial(0x84b5c9),
     glassLite: createMaterial(0xbfe4ef),
+    glassDark: createMaterial(0x6f9eb7),
     door: createMaterial(0x203749),
     metal: createMaterial(0xc5ccd2),
     metalDark: createMaterial(0x68737c),
@@ -332,11 +356,22 @@ function buildGym() {
     { size: [5.0, 0.08, 1.66], position: [0.1, 3.18, 4.82], material: materials.trimDark, rotation: [-0.08, 0, 0] },
     { size: [5.52, 0.18, 0.2], position: [0.1, 3.18, 5.76], material: materials.accentDark },
     { size: [5.6, 2.5, 0.18], position: [0.15, 6.52, 3.28], material: materials.facade },
-    { size: [0.22, 2.36, 0.22], position: [-2.26, 1.74, 4.98], material: materials.trim },
-    { size: [0.22, 2.36, 0.22], position: [2.46, 1.74, 4.98], material: materials.trim },
-    { size: [1.12, 2.02, 0.18], position: [-0.72, 1.22, 5.18], material: materials.door },
-    { size: [1.12, 2.02, 0.18], position: [0.92, 1.22, 5.18], material: materials.door },
-    { size: [2.92, 0.34, 0.16], position: [0.1, 2.55, 5.04], material: materials.glassLite },
+    { size: [0.22, 2.5, 0.22], position: [-2.04, 1.74, 5.5], material: materials.trim },
+    { size: [0.22, 2.5, 0.22], position: [2.24, 1.74, 5.5], material: materials.trim },
+    { size: [4.32, 0.18, 0.22], position: [0.1, 2.94, 5.5], material: materials.trim },
+    { size: [4.32, 0.12, 0.22], position: [0.1, 0.74, 5.5], material: materials.metalDark },
+    { size: [4.1, 2.46, 0.14], position: [0.1, 1.62, 5.56], material: materials.door },
+    { size: [0.7, 2.02, 0.08], position: [-1.36, 1.22, 5.62], material: materials.glassLite },
+    { size: [0.86, 2.02, 0.08], position: [-0.38, 1.22, 5.64], material: materials.glassDark },
+    { size: [0.86, 2.02, 0.08], position: [0.58, 1.22, 5.64], material: materials.glassDark },
+    { size: [0.7, 2.02, 0.08], position: [1.56, 1.22, 5.62], material: materials.glassLite },
+    { size: [0.08, 2.06, 0.12], position: [0.1, 1.22, 5.66], material: materials.metalDark },
+    { size: [3.18, 0.4, 0.08], position: [0.1, 2.42, 5.61], material: materials.glassLite },
+    { size: [3.42, 0.1, 0.16], position: [0.1, 2.68, 5.66], material: materials.metal },
+    { size: [3.42, 0.1, 0.16], position: [0.1, 2.28, 5.66], material: materials.metalDark },
+    { size: [0.58, 0.12, 0.16], position: [0.1, 2.78, 5.72], material: materials.accentDark },
+    { size: [0.1, 0.46, 0.12], position: [-0.06, 1.22, 5.7], material: materials.metal },
+    { size: [0.1, 0.46, 0.12], position: [0.26, 1.22, 5.7], material: materials.metal },
     { size: [9.28, 0.18, 0.22], position: [0.15, 4.72, 3.22], material: materials.accent },
     { size: [9.28, 0.12, 0.22], position: [0.15, 2.56, 3.22], material: materials.trimDark },
     { size: [5.98, 0.18, 0.22], position: [0.15, 10.98, 1.36], material: materials.accent },
@@ -575,6 +610,7 @@ function buildGym() {
   addSquatRack(gym, [0.15, 0.2, 2.6], materials);
   addPlateStack(gym, [-4.72, 0.84, 4.08], materials);
   addPlateStack(gym, [4.88, 0.84, 4.08], materials);
+  addDumbbell(gym, [1.78, 12.02, 0.28], materials, 0.38);
 
   scene.add(gym);
   return scene;
