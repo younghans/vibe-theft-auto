@@ -176,6 +176,48 @@ export function createPoseClip(clip, sampleTimeSeconds = 0, clipName = `${clip?.
   return new THREE.AnimationClip(clipName, poseDuration, poseTracks);
 }
 
+export function createMirroredClip(clip, boneNameMap = new Map(), clipName = `${clip?.name ?? 'Clip'}_Mirrored`) {
+  if (!clip || !Array.isArray(clip.tracks)) {
+    throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
+  }
+
+  const mirrorMatrix = new THREE.Matrix4().makeScale(-1, 1, 1);
+  const sourceRotationMatrix = new THREE.Matrix4();
+  const mirroredRotationMatrix = new THREE.Matrix4();
+  const mirroredQuaternion = new THREE.Quaternion();
+  const mirroredTracks = clip.tracks.map((track) => {
+    const mirroredTrack = track.clone();
+    const [trackTarget = '', propertyPath = ''] = String(track.name ?? '').split('.');
+    const mirroredTarget = boneNameMap.get(trackTarget) ?? trackTarget;
+    mirroredTrack.name = propertyPath ? `${mirroredTarget}.${propertyPath}` : mirroredTarget;
+
+    if (propertyPath === 'quaternion') {
+      for (let index = 0; index < mirroredTrack.values.length; index += 4) {
+        mirroredQuaternion.fromArray(mirroredTrack.values, index).normalize();
+        sourceRotationMatrix.makeRotationFromQuaternion(mirroredQuaternion);
+        mirroredRotationMatrix.copy(mirrorMatrix).multiply(sourceRotationMatrix).multiply(mirrorMatrix);
+        mirroredQuaternion.setFromRotationMatrix(mirroredRotationMatrix).normalize();
+        mirroredTrack.values[index] = mirroredQuaternion.x;
+        mirroredTrack.values[index + 1] = mirroredQuaternion.y;
+        mirroredTrack.values[index + 2] = mirroredQuaternion.z;
+        mirroredTrack.values[index + 3] = mirroredQuaternion.w;
+      }
+      return mirroredTrack;
+    }
+
+    if (propertyPath === 'position' || propertyPath === 'scale') {
+      const valueSize = mirroredTrack.getValueSize();
+      for (let index = 0; index < mirroredTrack.values.length; index += valueSize) {
+        mirroredTrack.values[index] *= -1;
+      }
+    }
+
+    return mirroredTrack;
+  });
+
+  return new THREE.AnimationClip(clipName, clip.duration, mirroredTracks);
+}
+
 function ensureSocket(root, boneName, socketName, position = null) {
   const bone = root.getObjectByName(boneName);
 

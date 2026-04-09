@@ -31,7 +31,7 @@ import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { EMOTE_SLOTS, PUNCH_EMOTE_ID } from '../player/emotes.js';
+import { EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -201,6 +201,7 @@ export class Game {
     this.muzzleFlashResources = this.createMuzzleFlashResources();
     this.muzzleFlashPrewarmed = false;
     this.currentAimMode = false;
+    this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
@@ -465,7 +466,9 @@ export class Game {
     ) === true;
 
     if (didPunch) {
-      this.player?.playEmote(PUNCH_EMOTE_ID);
+      const emoteId = this.nextPunchEmoteId;
+      this.player?.playEmote(emoteId);
+      this.nextPunchEmoteId = emoteId === PUNCH_EMOTE_ID ? PUNCH_ALT_EMOTE_ID : PUNCH_EMOTE_ID;
     }
 
     return didPunch;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   createBoneFilteredClip,
   createInPlaceClip,
+  createMirroredClip,
   createPoseClip,
   ensureMixamoSockets,
   MIXAMO_BONES,
@@ -29,7 +30,7 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import { WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
@@ -93,6 +94,12 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   'mixamorigRightLeg',
   'mixamorigRightFoot',
   'mixamorigRightToeBase'
+]);
+const UPPER_BODY_MIRROR_BONE_PAIRS = Object.freeze([
+  [MIXAMO_BONES.leftShoulder, MIXAMO_BONES.rightShoulder],
+  [MIXAMO_BONES.leftArm, MIXAMO_BONES.rightArm],
+  [MIXAMO_BONES.leftForeArm, MIXAMO_BONES.rightForeArm],
+  [MIXAMO_BONES.leftHand, MIXAMO_BONES.rightHand]
 ]);
 
 function clamp01(value) {
@@ -336,8 +343,15 @@ export async function createPlayer(library, {
   const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
   const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
+  const upperBodyMirrorMap = new Map(UPPER_BODY_MIRROR_BONE_PAIRS.flatMap(([leftBone, rightBone]) => ([
+    [leftBone, rightBone],
+    [rightBone, leftBone]
+  ])));
   const punchUpperBodyClip = punchClipName
     ? createBoneFilteredClip(getMixamoClip(punchClipName), UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
+    : null;
+  const punchMirroredUpperBodyClip = punchUpperBodyClip
+    ? createMirroredClip(punchUpperBodyClip, upperBodyMirrorMap, `${punchClipName}_UpperBodyMirrored`)
     : null;
   const punchGuardClip = punchUpperBodyClip
     ? createPoseClip(punchUpperBodyClip, 0, `${punchClipName}_UpperBodyGuard`)
@@ -561,11 +575,18 @@ export async function createPlayer(library, {
         preloadMixamoClips([clipName])
           .then(() => {
             const sourceClip = getMixamoClip(clipName);
-            const clip = emoteConfig?.upperBodyOnly
-              ? (emoteId === PUNCH_EMOTE_ID && punchUpperBodyClip
-                ? punchUpperBodyClip
-                : createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`))
-              : createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+            let clip = null;
+            if (emoteConfig?.upperBodyOnly) {
+              if (emoteId === PUNCH_EMOTE_ID && punchUpperBodyClip) {
+                clip = punchUpperBodyClip;
+              } else if (emoteId === PUNCH_ALT_EMOTE_ID && punchMirroredUpperBodyClip) {
+                clip = punchMirroredUpperBodyClip;
+              } else {
+                clip = createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`);
+              }
+            } else {
+              clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+            }
             const action = mixer.clipAction(clip);
             action.enabled = true;
             action.clampWhenFinished = true;

@@ -10,18 +10,31 @@ export const EMOTE_SLOTS = Object.freeze([
 ]);
 
 export const PUNCH_EMOTE_ID = 'punching';
+export const PUNCH_ALT_EMOTE_ID = 'punchingMirrored';
 
 export const EMOTES_BY_ID = Object.freeze({
   [PUNCH_EMOTE_ID]: {
     label: 'Punching',
     clipName: 'punching',
     loop: false,
-    fadeIn: 0.06,
-    fadeOut: 0.1,
-    playbackRate: 1,
+    fadeIn: 0.025,
+    fadeOut: 0.055,
+    playbackRate: 1.28,
     cancelOnMove: false,
     upperBodyOnly: true,
     aimYawOffset: -1
+  },
+  [PUNCH_ALT_EMOTE_ID]: {
+    label: 'Punching Mirrored',
+    clipName: 'punching',
+    loop: false,
+    fadeIn: 0.025,
+    fadeOut: 0.055,
+    playbackRate: 1.28,
+    cancelOnMove: false,
+    upperBodyOnly: true,
+    aimYawOffset: 1,
+    mirrorOf: PUNCH_EMOTE_ID
   },
   waving: {
     label: 'Waving',

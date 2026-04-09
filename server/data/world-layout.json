@@ -1639,19 +1639,6 @@
       "active": true
     },
     {
-      "id": "placement_222",
-      "modelId": "ch16NonPbr",
-      "position": [
-        -18.6,
-        3.89
-      ],
-      "rotationQuarterTurns": 0,
-      "name": "Ch16 Non-PBR",
-      "prompt": "You are Ch16 Non-PBR, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.",
-      "interactRadius": 4.4,
-      "active": false
-    },
-    {
       "id": "npc_sketch",
       "modelId": "xBot",
       "position": [
