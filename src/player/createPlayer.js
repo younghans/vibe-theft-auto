@@ -1850,7 +1850,14 @@ export async function createPlayer(library, {
       return skeletonHelper;
     },
     setWeaponState(weaponId, { visible = true } = {}) {
-      void setWeaponState(weaponId, { visible });
+      return setWeaponState(weaponId, { visible });
+    },
+    preloadWeapon(weaponId, { visible = true } = {}) {
+      if (!weaponId) {
+        return Promise.resolve(null);
+      }
+
+      return attachHeldItem(weaponId, { visible });
     },
     setAliveState(alive, options = {}) {
       setAliveState(Boolean(alive), options);

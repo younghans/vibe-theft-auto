@@ -225,6 +225,11 @@ export class Game {
     this.firstFrameMarked = false;
     this.lastAimPoseDebugSignature = '';
     this.bootMeasureLabels = [];
+    this.worldPatchSyncRequested = false;
+    this.worldPatchDrainPromise = null;
+    this.remotePlayerSyncRequested = false;
+    this.pickupVisualSyncRequested = false;
+    this.deferredMuzzleFlashWarmupId = 0;
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
 
@@ -815,6 +820,76 @@ export class Game {
     }
   }
 
+  requestDeferredSceneSync({ worldPatches = false, pickups = false, remotePlayers = false } = {}) {
+    this.worldPatchSyncRequested = this.worldPatchSyncRequested || Boolean(worldPatches);
+    this.pickupVisualSyncRequested = this.pickupVisualSyncRequested || Boolean(pickups);
+    this.remotePlayerSyncRequested = this.remotePlayerSyncRequested || Boolean(remotePlayers);
+  }
+
+  processDeferredWorldPatch() {
+    if (
+      !this.worldPatchSyncRequested
+      || this.worldPatchDrainPromise
+      || !this.worldBuilder
+      || !this.worldLayoutReady
+    ) {
+      return;
+    }
+
+    const nextPatch = this.pendingWorldPatches.shift();
+    if (!nextPatch) {
+      this.worldPatchSyncRequested = false;
+      return;
+    }
+
+    this.worldPatchDrainPromise = this.handleWorldPatch(nextPatch)
+      .catch((error) => {
+        console.error('[World] Failed to apply deferred world patch.', error);
+      })
+      .finally(() => {
+        this.worldPatchDrainPromise = null;
+        this.worldPatchSyncRequested = this.pendingWorldPatches.length > 0;
+      });
+  }
+
+  processDeferredSceneWork() {
+    if (!this.bootCriticalReady) {
+      return;
+    }
+
+    this.processDeferredWorldPatch();
+
+    if (this.pickupVisualSyncRequested) {
+      this.pickupVisualSyncRequested = !this.syncPickupVisuals({ maxCreates: 1 });
+    }
+
+    if (this.remotePlayerSyncRequested) {
+      this.remotePlayerSyncRequested = !this.syncRemotePlayers({ maxCreates: 1, maxSwaps: 1 });
+    }
+  }
+
+  scheduleMuzzleFlashWarmup() {
+    if (this.muzzleFlashPrewarmed || this.deferredMuzzleFlashWarmupId || !this.player) {
+      return;
+    }
+
+    const runWarmup = () => {
+      this.deferredMuzzleFlashWarmupId = 0;
+      if (!this.bootCriticalReady) {
+        return;
+      }
+
+      this.prewarmMuzzleFlashEffect();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      this.deferredMuzzleFlashWarmupId = window.requestIdleCallback(runWarmup, { timeout: 1500 });
+      return;
+    }
+
+    this.deferredMuzzleFlashWarmupId = window.setTimeout(runWarmup, 900);
+  }
+
   scheduleDeferredStartup() {
     if (this.deferredStartupPromise) {
       return this.deferredStartupPromise;
@@ -823,19 +898,52 @@ export class Game {
     this.deferredStartupPromise = (async () => {
       this.markBoot('boot:deferred:start');
       await new Promise((resolve) => window.setTimeout(resolve, 0));
-      this.enableDetailedRendering();
-      await this.drainPendingWorldPatches();
-      await Promise.allSettled([
-        this.syncPickupVisuals(),
-        this.syncRemotePlayers()
-      ]);
-      this.prewarmMuzzleFlashEffect();
+      this.requestDeferredSceneSync({
+        worldPatches: true,
+        pickups: true,
+        remotePlayers: true
+      });
+      this.scheduleMuzzleFlashWarmup();
       this.markBoot('boot:deferred:end');
-      this.measureBoot('deferredStartup', 'boot:deferred:start', 'boot:deferred:end');
+      this.measureBoot('deferredStartupQueued', 'boot:deferred:start', 'boot:deferred:end');
       this.reportBootMetrics();
     })();
 
     return this.deferredStartupPromise;
+  }
+
+  syncInitialCameraState(localPlayerState = null) {
+    if (!this.player) {
+      return;
+    }
+
+    const baseRotation = Number.isFinite(localPlayerState?.rotationY)
+      ? localPlayerState.rotationY
+      : this.player.object.rotation.y;
+    const aimRotation = Number.isFinite(localPlayerState?.aimRotationY)
+      ? localPlayerState.aimRotationY
+      : baseRotation;
+
+    this.player.object.rotation.y = baseRotation;
+    this.player.setAimRotation(aimRotation);
+    this.currentAimDirection.set(Math.sin(aimRotation), 0, Math.cos(aimRotation));
+    if (this.currentAimDirection.lengthSq() <= 0.0001) {
+      this.currentAimDirection.set(0, 0, 1);
+    } else {
+      this.currentAimDirection.normalize();
+    }
+    this.currentAimMode = false;
+    this.player.setAimingState(false);
+    this.updateCamera(this.currentAimDirection, false, { snap: true });
+  }
+
+  renderCurrentView() {
+    if (this.composer) {
+      this.composer.render();
+      return;
+    }
+
+    this.renderer.render(this.scene, this.camera);
   }
 
   async start() {
@@ -864,12 +972,10 @@ export class Game {
         this.handleCombatEvent(event);
       });
       this.worldPatchUnsubscribe = this.npcService.subscribeWorldPatches((patch) => {
-        if (!this.worldBuilder || !this.worldLayoutReady || !this.bootCriticalReady) {
-          this.pendingWorldPatches.push(patch);
-          return;
+        this.pendingWorldPatches.push(patch);
+        if (this.bootCriticalReady) {
+          this.requestDeferredSceneSync({ worldPatches: true });
         }
-
-        void this.handleWorldPatch(patch);
       });
 
       this.worldBuilder = new WorldBuilder({
@@ -895,8 +1001,10 @@ export class Game {
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
         if (this.bootCriticalReady) {
-          void this.syncPickupVisuals();
-          void this.syncRemotePlayers();
+          this.requestDeferredSceneSync({
+            pickups: true,
+            remotePlayers: true
+          });
         }
         this.refreshCharacterSelectorHud();
       });
@@ -935,6 +1043,25 @@ export class Game {
       this.registerHeldItemDebugTools();
       this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
       this.refreshAimPoseDebugHud();
+      if (localPlayerState) {
+        const localAlive = localPlayerState.alive !== false;
+        this.player.setAliveState(localAlive, {
+          startedAtMs: Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
+            ? localPlayerState.lastDamagedAt
+            : Date.now()
+        });
+        await this.player.setWeaponState(
+          localAlive ? localPlayerState.equippedWeaponId : '',
+          { visible: localAlive && Boolean(localPlayerState.equippedWeaponId) }
+        );
+        this.player.setReloadState(Boolean(localAlive && localPlayerState.isReloading), {
+          weaponId: localAlive ? localPlayerState.equippedWeaponId : '',
+          endsAtMs: localPlayerState.reloadEndsAt ?? 0
+        });
+      }
+      this.syncInitialCameraState(localPlayerState);
+      this.enableDetailedRendering();
+      this.renderCurrentView();
       this.bootCriticalReady = true;
 
       if (this.npcServiceState.transport === 'colyseus') {
@@ -1588,6 +1715,9 @@ export class Game {
       this.remotePlayers.set(sessionId, nextAvatar);
     } finally {
       this.pendingRemotePlayers.delete(sessionId);
+      if (this.bootCriticalReady) {
+        this.requestDeferredSceneSync({ remotePlayers: true });
+      }
     }
   }
 
@@ -1620,6 +1750,9 @@ export class Game {
       });
     } finally {
       this.pendingRemotePlayers.delete(sessionId);
+      if (this.bootCriticalReady) {
+        this.requestDeferredSceneSync({ remotePlayers: true });
+      }
     }
   }
 
@@ -1634,11 +1767,14 @@ export class Game {
     this.remoteAvatarBuildRequests.delete(sessionId);
   }
 
-  async syncRemotePlayers() {
+  syncRemotePlayers({ maxCreates = Infinity, maxSwaps = Infinity } = {}) {
     if (!this.player) {
-      return;
+      return true;
     }
 
+    let createsStarted = 0;
+    let swapsStarted = 0;
+    let hasMoreWork = false;
     const desiredSessionIds = new Set();
     for (const [sessionId, playerState] of this.npcServiceState.players.entries()) {
       if (sessionId === this.npcServiceState.sessionId) {
@@ -1647,13 +1783,23 @@ export class Game {
 
       desiredSessionIds.add(sessionId);
       if (!this.remotePlayers.has(sessionId) && !this.pendingRemotePlayers.has(sessionId)) {
-        void this.ensureRemotePlayer(sessionId, playerState);
+        if (createsStarted < maxCreates) {
+          createsStarted += 1;
+          void this.ensureRemotePlayer(sessionId, playerState);
+        } else {
+          hasMoreWork = true;
+        }
         continue;
       }
 
       const avatar = this.remotePlayers.get(sessionId);
       if (avatar && avatar.characterId !== getPlayableCharacterById(playerState?.characterId).id && !this.pendingRemotePlayers.has(sessionId)) {
-        void this.swapRemotePlayerCharacter(sessionId, playerState);
+        if (swapsStarted < maxSwaps) {
+          swapsStarted += 1;
+          void this.swapRemotePlayerCharacter(sessionId, playerState);
+        } else {
+          hasMoreWork = true;
+        }
       }
     }
 
@@ -1662,6 +1808,8 @@ export class Game {
         this.removeRemotePlayer(sessionId);
       }
     }
+
+    return !hasMoreWork;
   }
 
   updateRemotePlayers(deltaSeconds) {
@@ -1693,11 +1841,13 @@ export class Game {
     return this.remotePlayers.get(sessionId) ?? null;
   }
 
-  async syncPickupVisuals() {
+  syncPickupVisuals({ maxCreates = Infinity } = {}) {
     if (!this.library) {
-      return;
+      return true;
     }
 
+    let createsStarted = 0;
+    let hasMoreWork = false;
     const desiredIds = new Set();
     for (const [pickupId, pickup] of this.npcServiceState.pickups.entries()) {
       if (!pickup?.active) {
@@ -1706,7 +1856,12 @@ export class Game {
 
       desiredIds.add(pickupId);
       if (!this.pickupVisuals.has(pickupId) && !this.pendingPickupVisuals.has(pickupId)) {
-        void this.ensurePickupVisual(pickupId, pickup);
+        if (createsStarted < maxCreates) {
+          createsStarted += 1;
+          void this.ensurePickupVisual(pickupId, pickup);
+        } else {
+          hasMoreWork = true;
+        }
       }
     }
 
@@ -1715,6 +1870,8 @@ export class Game {
         this.removePickupVisual(pickupId);
       }
     }
+
+    return !hasMoreWork;
   }
 
   async ensurePickupVisual(pickupId, pickup) {
@@ -1760,6 +1917,9 @@ export class Game {
       console.warn(`[Combat] Failed to create pickup visual for ${pickupId}.`, error);
     } finally {
       this.pendingPickupVisuals.delete(pickupId);
+      if (this.bootCriticalReady) {
+        this.requestDeferredSceneSync({ pickups: true });
+      }
     }
   }
 
@@ -2593,10 +2753,11 @@ export class Game {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+    this.processDeferredSceneWork();
     this.input.endFrame();
   }
 
-  updateCamera(aimDirection = this.currentAimDirection, isAiming = false) {
+  updateCamera(aimDirection = this.currentAimDirection, isAiming = false, { snap = false } = {}) {
     const zoomLevel = this.getCameraZoomLevel();
     const cameraOffset = (isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET).clone().multiplyScalar(zoomLevel);
     const targetPosition = this.player.position.clone().add(cameraOffset);
@@ -2617,7 +2778,11 @@ export class Game {
       lookTarget.y += envelope * 0.12;
     }
 
-    this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
+    if (snap) {
+      this.camera.position.copy(targetPosition);
+    } else {
+      this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
+    }
     this.camera.lookAt(lookTarget);
   }
 

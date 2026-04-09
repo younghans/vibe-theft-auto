@@ -1650,19 +1650,6 @@
       "prompt": "You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.",
       "interactRadius": 4.2,
       "active": true
-    },
-    {
-      "id": "npc_bruno",
-      "modelId": "brute",
-      "position": [
-        -18.9,
-        30.1
-      ],
-      "rotationQuarterTurns": 0,
-      "name": "Bruno",
-      "prompt": "You are Bruno, a broad-shouldered neighborhood bouncer with a surprising soft side. Speak like a streetwise local, keep answers short, and gently point people toward the city nightlife.",
-      "interactRadius": 10,
-      "active": true
     }
   ]
 }
