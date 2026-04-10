@@ -191,6 +191,7 @@ export class Game {
     this.interiorScenes = new Map();
     this.activeInlineShell = null;
     this.inlineShellScenes = new Map();
+    this.inlineInteriorLight = null;
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
@@ -1056,6 +1057,8 @@ export class Game {
     if (this.activeInlineShell?.placementId === placementId) {
       if (this.activeInlineShell.mode === 'inline-cutaway') {
         this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
+        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+        this.setInlineInteriorLightActive(false);
       } else {
         this.worldBuilder?.setPlacementVisualHidden(placementId, false);
       }
@@ -1108,6 +1111,22 @@ export class Game {
     return shellScene;
   }
 
+  setInlineInteriorLightActive(active, shellScene = null) {
+    if (!this.inlineInteriorLight) {
+      return;
+    }
+
+    if (!active || !shellScene?.bounds) {
+      this.inlineInteriorLight.visible = false;
+      return;
+    }
+
+    const center = shellScene.bounds.getCenter(new THREE.Vector3());
+    const height = Math.max(4.5, shellScene.bounds.max.y - 2.2);
+    this.inlineInteriorLight.position.set(center.x, height, center.z);
+    this.inlineInteriorLight.visible = true;
+  }
+
   deactivateInlineShell() {
     if (!this.activeInlineShell) {
       return false;
@@ -1117,6 +1136,8 @@ export class Game {
     scene?.setVisible(false);
     if (mode === 'inline-cutaway') {
       this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
+      this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+      this.setInlineInteriorLightActive(false);
     } else {
       this.worldBuilder?.setPlacementVisualHidden(placementId, false);
     }
@@ -1146,6 +1167,11 @@ export class Game {
         entry.placementId,
         entry?.interior?.cutawayNodeNames ?? []
       );
+      this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
+        castShadow: false,
+        receiveShadow: false
+      });
+      this.setInlineInteriorLightActive(true, shellScene);
     } else {
       shellScene.setVisible(true);
       this.worldBuilder?.setPlacementVisualHidden(entry.placementId, true);
@@ -1500,6 +1526,11 @@ export class Game {
     this.sunLight.shadow.camera.near = 1;
     this.sunLight.shadow.camera.far = WORLD_GROUND_RADIUS + 40;
     this.scene.add(this.sunLight);
+
+    this.inlineInteriorLight = new THREE.PointLight(0xfff6ea, 7.5, 30, 2);
+    this.inlineInteriorLight.castShadow = false;
+    this.inlineInteriorLight.visible = false;
+    this.scene.add(this.inlineInteriorLight);
   }
 
   setupAtmosphere() {

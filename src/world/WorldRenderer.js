@@ -10,10 +10,26 @@ import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 function setShadowFlags(root) {
   root.traverse((node) => {
     if (node.isMesh) {
+      node.userData.defaultCastShadow = true;
+      node.userData.defaultReceiveShadow = true;
       node.castShadow = true;
       node.receiveShadow = true;
     }
   });
+}
+
+function applyShadowOverridesToNode(node, rendered, visible) {
+  if (!node.isMesh) {
+    return;
+  }
+
+  const defaultCastShadow = node.userData.defaultCastShadow ?? true;
+  const defaultReceiveShadow = node.userData.defaultReceiveShadow ?? true;
+  const castShadow = rendered.shadowOverrides?.castShadow ?? defaultCastShadow;
+  const receiveShadow = rendered.shadowOverrides?.receiveShadow ?? defaultReceiveShadow;
+
+  node.castShadow = visible ? castShadow : false;
+  node.receiveShadow = visible ? receiveShadow : false;
 }
 
 async function createPlacementVisual(library, item) {
@@ -475,6 +491,7 @@ export class WorldRenderer {
       hidden: false,
       visualHidden: false,
       hiddenNodeNames: new Set(),
+      shadowOverrides: null,
       item,
       layer: placement.layer,
       surfaceHeight: placement.layer === 'tile'
@@ -594,6 +611,21 @@ export class WorldRenderer {
     this.applyPlacementVisibility(rendered);
   }
 
+  setPlacementShadowOverrides(id, overrides = null) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
+    }
+
+    rendered.shadowOverrides = overrides
+      ? {
+          castShadow: overrides.castShadow,
+          receiveShadow: overrides.receiveShadow
+        }
+      : null;
+    this.applyPlacementVisibility(rendered);
+  }
+
   removePlacement(id) {
     const rendered = this.renderedPlacements.get(id);
     if (!rendered) {
@@ -686,12 +718,13 @@ export class WorldRenderer {
     const visible = !rendered.hidden && !rendered.visualHidden;
     rendered.object.visible = visible;
     rendered.object.traverse((node) => {
-      if (node === rendered.object) {
-        return;
-      }
       const nodeHidden = [...(rendered.hiddenNodeNames ?? [])]
         .some((pattern) => node.name === pattern || node.name.startsWith(`${pattern}_`));
-      node.visible = !nodeHidden;
+      const nodeVisible = visible && !nodeHidden;
+      if (node !== rendered.object) {
+        node.visible = !nodeHidden;
+      }
+      applyShadowOverridesToNode(node, rendered, nodeVisible);
     });
     if (rendered.actor?.pickProxy) {
       rendered.actor.pickProxy.visible = visible;

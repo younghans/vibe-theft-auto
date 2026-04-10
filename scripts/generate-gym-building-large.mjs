@@ -81,6 +81,33 @@ function addBoxes(group, specs) {
   }
 }
 
+function addWoodFloorPanels(group, {
+  width,
+  depth,
+  centerX,
+  centerY,
+  centerZ,
+  panelCount = 12,
+  panelGap = 0.08,
+  baseMaterial,
+  seamMaterial,
+  accentMaterial
+}) {
+  group.add(createBox([width, 0.14, depth], [centerX, centerY, centerZ], baseMaterial));
+
+  const panelWidth = (width - (panelGap * (panelCount - 1))) / panelCount;
+  const startX = centerX - (width * 0.5) + (panelWidth * 0.5);
+
+  for (let index = 0; index < panelCount; index += 1) {
+    const x = startX + (index * (panelWidth + panelGap));
+    const material = index % 2 === 0 ? seamMaterial : accentMaterial;
+    group.add(createBox([panelWidth, 0.02, depth - 0.28], [x, centerY + 0.08, centerZ], material));
+  }
+
+  group.add(createBox([width - 0.36, 0.03, 0.16], [centerX, centerY + 0.09, centerZ - (depth * 0.5) + 0.34], seamMaterial));
+  group.add(createBox([width - 0.36, 0.03, 0.16], [centerX, centerY + 0.09, centerZ + (depth * 0.5) - 0.34], seamMaterial));
+}
+
 function tagGroupMeshes(group, prefix) {
   let index = 0;
   group.traverse((node) => {
@@ -375,9 +402,11 @@ function addElliptical(group, position, materials, rotationY = 0) {
   group.add(machine);
 }
 
-function addBarbellEmblem(group, position, materials) {
+function addBarbellEmblem(group, position, materials, scale = 1, rotationY = 0) {
   const emblem = new THREE.Group();
   emblem.position.set(...position);
+  emblem.scale.setScalar(scale);
+  emblem.rotation.y = rotationY;
 
   emblem.add(createBox([7.1, 0.24, 0.24], [0, 0, 0], materials.metal));
   emblem.add(createBox([0.24, 0.46, 0.24], [-1.26, 0, 0], materials.metalDark));
@@ -447,6 +476,9 @@ function createGymMaterials() {
     slab: createMaterial(0x5d6369),
     pavement: createMaterial(0xd9d4c9),
     rubberFloor: createMaterial(0x2e363d),
+    woodFloor: createMaterial(0xd8c09b),
+    woodFloorLite: createMaterial(0xe7d4b5),
+    woodFloorWarm: createMaterial(0xcda87d),
     facade: createMaterial(0xc9dbe4),
     facadeDark: createMaterial(0x7ea1b7),
     facadeDeep: createMaterial(0x7098b1),
@@ -503,9 +535,18 @@ function buildGym() {
     { size: [22.7, 0.62, 22.2], position: [0, 0.31, 0], material: materials.slab }
   ]);
 
-  addBoxes(interiorGroup, [
-    { size: [20.6, 0.14, 18.2], position: [0, 0.69, 1.55], material: materials.rubberFloor }
-  ]);
+  addWoodFloorPanels(interiorGroup, {
+    width: 20.6,
+    depth: 18.2,
+    centerX: 0,
+    centerY: 0.69,
+    centerZ: 1.55,
+    panelCount: 14,
+    panelGap: 0.08,
+    baseMaterial: materials.woodFloor,
+    seamMaterial: materials.woodFloorLite,
+    accentMaterial: materials.woodFloorWarm
+  });
 
   addShellBlock(shellGroup, {
     centerX: 0,
@@ -551,7 +592,6 @@ function buildGym() {
     roofGroup
   });
   addBoxes(exteriorGroup, [
-    { size: [11.8, 3.08, 0.16], position: [0, 6.74, 10.58], material: materials.sign },
     { size: [21.1, 0.18, 0.18], position: [0, 1.02, 10.86], material: materials.trimDark },
     { size: [0.36, 6.24, 0.18], position: [-10.0, 3.2, 10.86], material: materials.trim },
     { size: [0.36, 6.24, 0.18], position: [10.0, 3.2, 10.86], material: materials.trim },
@@ -727,7 +767,8 @@ function buildGym() {
     frameMaterial: materials.trim
   });
 
-  addBarbellEmblem(roofGroup, [0, 8.42, 10.18], materials);
+  addBarbellEmblem(roofGroup, [0, 8.64, 8.72], materials, 1.14);
+  addBarbellEmblem(roofGroup, [2.4, 12.58, 0.3], materials, 0.52, 0.72);
   addGymLetters(exteriorGroup, 0, 6.76, 10.76, materials);
   addRooftopUnit(roofGroup, [-4.7, 7.96, -2.8], materials, 0.18);
   addRooftopUnit(roofGroup, [4.8, 7.96, -1.64], materials, -0.12);

@@ -467,6 +467,10 @@ export class WorldBuilder {
     this.worldRenderer.setPlacementHiddenNodeNames(id, nodeNames);
   }
 
+  setPlacementShadowOverrides(id, overrides = null) {
+    this.worldRenderer.setPlacementShadowOverrides(id, overrides);
+  }
+
   syncNpcInteractRadiusIndicators(playerPosition = null) {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
   }
