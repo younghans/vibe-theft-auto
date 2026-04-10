@@ -95,6 +95,12 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   'mixamorigRightFoot',
   'mixamorigRightToeBase'
 ]);
+const FOOT_PLANT_BONE_NAMES = Object.freeze([
+  'mixamorigLeftFoot',
+  'mixamorigLeftToeBase',
+  'mixamorigRightFoot',
+  'mixamorigRightToeBase'
+]);
 const UPPER_BODY_MIRROR_BONE_PAIRS = Object.freeze([
   [MIXAMO_BONES.leftShoulder, MIXAMO_BONES.rightShoulder],
   [MIXAMO_BONES.leftArm, MIXAMO_BONES.rightArm],
@@ -487,6 +493,11 @@ export async function createPlayer(library, {
   );
   const aimPoseEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const aimPoseQuaternion = new THREE.Quaternion();
+  const footPlantBones = FOOT_PLANT_BONE_NAMES
+    .map((boneName) => character.getObjectByName(boneName))
+    .filter(Boolean);
+  const footPlantWorldPosition = new THREE.Vector3();
+  const footPlantLocalPosition = new THREE.Vector3();
   const reloadIkTargetPosition = new THREE.Vector3();
   const reloadIkBonePosition = new THREE.Vector3();
   const reloadIkEndPosition = new THREE.Vector3();
@@ -1413,19 +1424,20 @@ export async function createPlayer(library, {
     const damageEnvelope = damageActive ? Math.pow(1 - damageProgress, 1.25) : 0;
     const damageWave = damageActive ? Math.sin(damageProgress * Math.PI * 3.4) : 0;
     const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
-    const damageSideX = -damageDirection.z;
-    const damageSideZ = damageDirection.x;
-    const damageJolt = damageEnvelope * 0.18;
-    const damageShimmy = damageWave * damageEnvelope * 0.09;
-    const damageFlashAmount = damageActive
-      ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
-      : 0;
+      const damageSideX = -damageDirection.z;
+      const damageSideZ = damageDirection.x;
+      const damageJolt = damageEnvelope * 0.18;
+      const damageShimmy = damageWave * damageEnvelope * 0.09;
+      const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
+      const damageFlashAmount = damageActive
+        ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
+        : 0;
 
-    visual.position.set(
-      (damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
-      (recoilAmount * 0.03) + (damagePulse * 0.12),
-      (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
-    );
+      visual.position.set(
+        (damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
+        (recoilAmount * 0.03) + (damagePulse * 0.12) - footPlantGroundingOffsetY,
+        (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
+      );
     visual.rotation.set(
       (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
       damageWave * damageEnvelope * 0.025,
@@ -1561,6 +1573,29 @@ export async function createPlayer(library, {
     applyHeldItemProfile(itemId);
     updateHeldItemVisibility();
     return getMergedGripProfile(itemId);
+  }
+
+  function getFootPlantGroundingOffset() {
+    if (!activeEmoteConfig?.groundFeet || footPlantBones.length === 0) {
+      return 0;
+    }
+
+    character.updateWorldMatrix(true, true);
+    visual.updateWorldMatrix(true, true);
+
+    let lowestLocalY = Infinity;
+    for (const bone of footPlantBones) {
+      bone.getWorldPosition(footPlantWorldPosition);
+      footPlantLocalPosition.copy(footPlantWorldPosition);
+      visual.worldToLocal(footPlantLocalPosition);
+      lowestLocalY = Math.min(lowestLocalY, footPlantLocalPosition.y);
+    }
+
+    if (!Number.isFinite(lowestLocalY)) {
+      return 0;
+    }
+
+    return Math.max(0, lowestLocalY);
   }
 
   function moveWithWorldVector(direction, deltaSeconds, colliders, cityBounds, speedScale = 1) {

@@ -67,6 +67,7 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeIn: 0.08,
     fadeOut: 0.16,
     playbackRate: 1,
-    cancelOnMove: false
+    cancelOnMove: false,
+    groundFeet: true
   }
 });
