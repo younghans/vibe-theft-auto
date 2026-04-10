@@ -1162,6 +1162,17 @@ export class Game {
     return true;
   }
 
+  suspendInlineShellForBuilder() {
+    if (!this.activeInlineShell) {
+      return false;
+    }
+
+    this.activeInlineShell.scene?.setVisible(false);
+    this.activeInlineShell = null;
+    this.setInlineInteriorLightActive(false);
+    return true;
+  }
+
   clearBuilderInlineShellPreview() {
     if (!this.builderInlineShellPreviewPlacementIds.size) {
       return;
@@ -3348,7 +3359,8 @@ export class Game {
     this.worldBuilder.update(deltaSeconds, this.input);
 
     if (this.worldBuilder.enabled) {
-      this.deactivateInlineShell();
+      this.suspendInlineShellForBuilder();
+      this.worldBuilder.syncInteriorPlacementPreview();
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);

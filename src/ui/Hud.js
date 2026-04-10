@@ -342,61 +342,66 @@ export class Hud {
         </div>
       </section>
       <div class="hud__top-actions">
-        <button
-          class="hud__character-selector-toggle"
-          type="button"
-          data-character-selector-toggle
-          aria-label="Toggle character selector"
-          aria-pressed="false"
-          title="Choose your character"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 4.5c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" />
-            <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
-            <path d="M4 8.5h2.5" />
-            <path d="M17.5 8.5H20" />
-          </svg>
-        </button>
-        <button
-          class="hud__shader-debug-toggle"
-          type="button"
-          data-shader-debug-toggle
-          aria-label="Toggle shader vibe menu"
-          aria-pressed="false"
-          title="Show shader vibe menu"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
-            <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
-            <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
-          </svg>
-        </button>
-        <button
-          class="hud__aim-debug-toggle"
-          type="button"
-          data-aim-debug-toggle
-          aria-label="Toggle pose debug"
-          aria-pressed="false"
-          title="Show pose debug"
-          hidden
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <circle cx="12" cy="12" r="8" />
-            <path d="M12 2v3" />
-            <path d="M12 19v3" />
-            <path d="M2 12h3" />
-            <path d="M19 12h3" />
-          </svg>
-        </button>
-        <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M14.5 3.5l6 6" />
-            <path d="M13 5l4.5-1.5-1.5 4.5" />
-            <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
-            <path d="M9.5 14.5l3.5 3.5" />
-          </svg>
-        </button>
+        <section class="hud__toast">
+          <p class="hud__toast-text" data-toast></p>
+        </section>
+        <div class="hud__top-actions-buttons">
+          <button
+            class="hud__character-selector-toggle"
+            type="button"
+            data-character-selector-toggle
+            aria-label="Toggle character selector"
+            aria-pressed="false"
+            title="Choose your character"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4.5c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" />
+              <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
+              <path d="M4 8.5h2.5" />
+              <path d="M17.5 8.5H20" />
+            </svg>
+          </button>
+          <button
+            class="hud__shader-debug-toggle"
+            type="button"
+            data-shader-debug-toggle
+            aria-label="Toggle shader vibe menu"
+            aria-pressed="false"
+            title="Show shader vibe menu"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
+              <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
+              <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
+            </svg>
+          </button>
+          <button
+            class="hud__aim-debug-toggle"
+            type="button"
+            data-aim-debug-toggle
+            aria-label="Toggle pose debug"
+            aria-pressed="false"
+            title="Show pose debug"
+            hidden
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <circle cx="12" cy="12" r="8" />
+              <path d="M12 2v3" />
+              <path d="M12 19v3" />
+              <path d="M2 12h3" />
+              <path d="M19 12h3" />
+            </svg>
+          </button>
+          <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14.5 3.5l6 6" />
+              <path d="M13 5l4.5-1.5-1.5 4.5" />
+              <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
+              <path d="M9.5 14.5l3.5 3.5" />
+            </svg>
+          </button>
+        </div>
       </div>
       <section class="hud__character-selector" data-character-selector hidden>
         <div class="hud__character-selector-header">
@@ -459,9 +464,6 @@ export class Hud {
           <button class="hud__builder-icon-button hud__shader-debug-reset" type="button" data-shader-debug-intensity-reset title="Reset active vibe intensity">Reset</button>
         </div>
         <div class="hud__shader-debug-list" data-shader-debug-list></div>
-      </section>
-      <section class="hud__toast">
-        <p class="hud__toast-text" data-toast></p>
       </section>
       <section class="hud__admin-position" data-admin-position hidden>
         <p class="hud__eyebrow">Admin Position</p>
