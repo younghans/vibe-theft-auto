@@ -255,7 +255,6 @@ export class WorldBuilder {
       onSelectCategory: (categoryId) => this.selectCategory(categoryId),
       onSelectGroup: (groupId) => this.selectGroup(groupId),
       onSelectTile: (index) => this.selectItem(index),
-      onCopyLayout: () => this.copyLayoutToClipboard(),
       onRotateSelection: () => this.rotateSelectedPlacement(),
       onDeleteSelection: () => this.deleteSelectedPlacement(),
       onConfirmSelection: () => this.clearSelection(),
@@ -320,8 +319,6 @@ export class WorldBuilder {
     const activeCategory = this.activeCategory;
     const visibleEntries = this.getVisibleCategoryEntries()
       .map((entry, visibleIndex) => ({ ...entry, visibleIndex }));
-    const selectedEntry = visibleEntries.find((entry) => entry.index === this.state.activeItemIndex) ?? visibleEntries[0] ?? null;
-    const selectedItem = selectedEntry?.item ?? this.activeItem ?? null;
     const tabs = BUILDER_CATEGORIES.map((category) => ({
       id: category.id,
       label: category.label,
@@ -351,16 +348,6 @@ export class WorldBuilder {
     return {
       available: this.canEdit,
       enabled: this.state.enabled,
-      statusText: !this.canEdit
-        ? 'World builder is available to admins only.'
-        : this.state.enabled
-        ? 'Builder active. Left click places the selected piece. Click any existing tile, prop, or NPC to edit it.'
-        : 'Use the hammer button to enter builder mode.',
-      metaText: !this.canEdit
-        ? 'Ask an admin for an access link if you need to edit the shared world.'
-        : this.state.enabled
-        ? `${activeCategory.description} Selected: ${selectedItem?.label ?? 'None'} | ${visibleEntries.length} items | Rotation ${this.state.rotationQuarterTurns * 90}deg`
-        : 'When active, use tabs to switch layers and 1-9 to choose a piece.',
       tabs,
       groupTabs,
       sections
@@ -665,9 +652,6 @@ export class WorldBuilder {
       }
       if (input.consume('KeyQ')) {
         this.rotate(-1);
-      }
-      if (input.consume('KeyC')) {
-        void this.copyLayoutToClipboard();
       }
       if (input.consume('Delete') || input.consume('Backspace')) {
         this.deleteSelectedPlacement();
@@ -1615,16 +1599,5 @@ export class WorldBuilder {
 
   notifyLayoutChanged() {
     this.onLayoutChanged(this.worldState.serializeLayout());
-  }
-
-  async copyLayoutToClipboard() {
-    const text = JSON.stringify(this.worldState.serializeLayout(), null, 2);
-    try {
-      await navigator.clipboard.writeText(text);
-      this.hud.showToast('Copied world editor layout JSON to clipboard.');
-    } catch (error) {
-      console.error(error);
-      this.hud.showToast('Could not copy layout. Clipboard access was denied.');
-    }
   }
 }

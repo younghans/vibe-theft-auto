@@ -130,12 +130,9 @@ export class Hud {
     this.characterSelectorGrid = this.overlay.querySelector('[data-character-selector-grid]');
     this.modeToggle = this.overlay.querySelector('[data-mode-toggle]');
     this.builderRoot = this.overlay.querySelector('[data-builder]');
-    this.builderStatus = this.overlay.querySelector('[data-builder-status]');
-    this.builderMeta = this.overlay.querySelector('[data-builder-meta]');
     this.builderTabs = this.overlay.querySelector('[data-builder-tabs]');
     this.builderGroups = this.overlay.querySelector('[data-builder-groups]');
     this.builderTiles = this.overlay.querySelector('[data-builder-tiles]');
-    this.builderCopy = this.overlay.querySelector('[data-builder-copy]');
     this.builderClose = this.overlay.querySelector('[data-builder-close]');
     this.builderResizeHandles = Array.from(this.overlay.querySelectorAll('[data-builder-resize-handle]'));
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
@@ -509,11 +506,8 @@ export class Hud {
         <div class="hud__builder-header">
           <div>
             <p class="hud__eyebrow">World Builder</p>
-            <p class="hud__body" data-builder-status>Use the hammer button to enter builder mode.</p>
-            <p class="hud__body hud__builder-meta" data-builder-meta></p>
           </div>
           <div class="hud__builder-actions">
-            <button class="hud__builder-action hud__builder-copy" type="button" data-builder-copy>Copy Layout JSON</button>
             <button class="hud__builder-icon-button" type="button" data-builder-close aria-label="Close world builder" title="Close world builder">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 6l12 12" />
@@ -989,7 +983,6 @@ export class Hud {
     onSelectCategory,
     onSelectGroup,
     onSelectTile,
-    onCopyLayout,
     onRotateSelection,
     onDeleteSelection,
     onConfirmSelection,
@@ -1044,14 +1037,6 @@ export class Hud {
         return;
       }
       onSelectTile(Number(button.dataset.builderIndex));
-    });
-
-    this.builderCopy.addEventListener('click', () => {
-      if (!this.isElementInteractive(this.builderRoot)) {
-        return;
-      }
-
-      onCopyLayout();
     });
 
     this.builderClose.addEventListener('click', () => {
@@ -1158,8 +1143,6 @@ export class Hud {
   setBuilderState({
     available = false,
     enabled,
-    statusText,
-    metaText,
     tabs = [],
     groupTabs = [],
     sections = []
@@ -1171,8 +1154,6 @@ export class Hud {
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
-    this.builderStatus.textContent = statusText;
-    this.builderMeta.textContent = metaText;
 
     this.builderTabs.innerHTML = tabs.map((tab) => `
       <button

@@ -1492,13 +1492,6 @@ body.is-builder-resizing * {
   opacity: 0.9;
 }
 
-.hud__builder-meta {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: rgba(242, 200, 113, 0.92);
-}
-
 .hud__builder-header {
   display: flex;
   align-items: flex-start;
@@ -1773,10 +1766,6 @@ body.is-builder-resizing * {
   transform: translateY(-1px);
 }
 
-.hud__builder-copy {
-  flex-shrink: 0;
-}
-
 .hud__builder-confirm {
   width: 100%;
   margin-top: 12px;
@@ -1831,17 +1820,6 @@ body.is-builder-resizing * {
   fill: none;
   stroke-width: 2;
   stroke-linecap: round;
-}
-
-.hud__builder-editor {
-  display: none;
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.hud__builder-editor.is-visible {
-  display: block;
 }
 
 .hud__builder-instance-subtitle {
