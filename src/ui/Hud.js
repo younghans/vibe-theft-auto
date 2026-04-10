@@ -636,12 +636,12 @@ export class Hud {
           </button>
           <button class="hud__selection-icon-button hud__selection-move" type="button" data-builder-selection-move aria-label="Move selected piece" title="Move selected piece">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3v18" />
-              <path d="M3 12h18" />
-              <path d="M8 7l4-4 4 4" />
-              <path d="M8 17l4 4 4-4" />
-              <path d="M7 8l-4 4 4 4" />
-              <path d="M17 8l4 4-4 4" />
+              <path d="M12 4v16" />
+              <path d="M4 12h16" />
+              <path d="M9.5 6.5L12 4l2.5 2.5" />
+              <path d="M9.5 17.5L12 20l2.5-2.5" />
+              <path d="M6.5 9.5L4 12l2.5 2.5" />
+              <path d="M17.5 9.5L20 12l-2.5 2.5" />
             </svg>
           </button>
           <button class="hud__selection-icon-button hud__selection-delete" type="button" data-builder-selection-delete aria-label="Delete selected piece" title="Delete selected piece">
