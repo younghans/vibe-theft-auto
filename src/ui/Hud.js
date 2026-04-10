@@ -38,6 +38,11 @@ const HUD_CONTROLS = Object.freeze([
   { label: 'Emote', key: 'B' }
 ]);
 
+const BUILDER_PANEL_DEFAULT_WIDTH = 620;
+const BUILDER_PANEL_MIN_WIDTH = 320;
+const BUILDER_PANEL_MAX_WIDTH = 860;
+const BUILDER_PANEL_MOBILE_BREAKPOINT = 900;
+
 function getMouseControlIconMarkup(side) {
   const leftActive = side === 'left' ? ' is-active' : '';
   const rightActive = side === 'right' ? ' is-active' : '';
@@ -132,6 +137,7 @@ export class Hud {
     this.builderTiles = this.overlay.querySelector('[data-builder-tiles]');
     this.builderCopy = this.overlay.querySelector('[data-builder-copy]');
     this.builderClose = this.overlay.querySelector('[data-builder-close]');
+    this.builderResizeHandles = Array.from(this.overlay.querySelectorAll('[data-builder-resize-handle]'));
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
@@ -184,10 +190,16 @@ export class Hud {
     this.lastAdminPositionSignature = '';
     this.builderAvailable = false;
     this.builderEnabled = false;
+    this.builderPanelWidth = BUILDER_PANEL_DEFAULT_WIDTH;
+    this.activeBuilderResizePointerId = null;
+    this.builderResizeRightEdge = 0;
     this.builderNpcEditorVisible = false;
     this.builderBuildingEditorVisible = false;
+    this.onBuilderResizePointerMove = this.onBuilderResizePointerMove.bind(this);
+    this.onBuilderResizePointerUp = this.onBuilderResizePointerUp.bind(this);
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
+    this.initializeBuilderPanelResize();
   }
 
   createLoading() {
@@ -493,6 +505,7 @@ export class Hud {
         <span class="hud__prompt-text" data-prompt></span>
       </section>
       <section class="hud__builder" data-builder hidden>
+        <div class="hud__builder-resize-handle" data-builder-resize-handle aria-hidden="true"></div>
         <div class="hud__builder-header">
           <div>
             <p class="hud__eyebrow">World Builder</p>
@@ -516,6 +529,7 @@ export class Hud {
         </div>
       </section>
       <section class="hud__builder-instance" data-builder-npc-editor hidden>
+        <div class="hud__builder-resize-handle" data-builder-resize-handle aria-hidden="true"></div>
         <div class="hud__builder-header">
           <div>
             <p class="hud__eyebrow">NPC Details</p>
@@ -555,6 +569,7 @@ export class Hud {
         </div>
       </section>
       <section class="hud__builder-instance" data-builder-building-editor hidden>
+        <div class="hud__builder-resize-handle" data-builder-resize-handle aria-hidden="true"></div>
         <div class="hud__builder-header">
           <div>
             <p class="hud__eyebrow">Building Instance</p>
@@ -647,6 +662,70 @@ export class Hud {
 
   hideLoading() {
     this.loading.classList.add('is-hidden');
+  }
+
+  clampBuilderPanelWidth(width) {
+    const viewportLimit = Math.max(BUILDER_PANEL_MIN_WIDTH, window.innerWidth - 48);
+    return Math.min(
+      Math.max(Math.round(width), BUILDER_PANEL_MIN_WIDTH),
+      Math.min(BUILDER_PANEL_MAX_WIDTH, viewportLimit)
+    );
+  }
+
+  setBuilderPanelWidth(width) {
+    this.builderPanelWidth = this.clampBuilderPanelWidth(width);
+    this.overlay.style.setProperty('--builder-panel-width', `${this.builderPanelWidth}px`);
+  }
+
+  initializeBuilderPanelResize() {
+    this.setBuilderPanelWidth(this.builderPanelWidth);
+    for (const handle of this.builderResizeHandles) {
+      handle.addEventListener('pointerdown', (event) => {
+        if (window.innerWidth <= BUILDER_PANEL_MOBILE_BREAKPOINT) {
+          return;
+        }
+
+        const panel = event.currentTarget.closest('.hud__builder, .hud__builder-instance');
+        if (!(panel instanceof HTMLElement)) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        this.activeBuilderResizePointerId = event.pointerId;
+        this.builderResizeRightEdge = panel.getBoundingClientRect().right;
+        panel.classList.add('is-resizing');
+        handle.setPointerCapture?.(event.pointerId);
+        document.body.classList.add('is-builder-resizing');
+        window.addEventListener('pointermove', this.onBuilderResizePointerMove);
+        window.addEventListener('pointerup', this.onBuilderResizePointerUp);
+        window.addEventListener('pointercancel', this.onBuilderResizePointerUp);
+      });
+    }
+  }
+
+  onBuilderResizePointerMove(event) {
+    if (event.pointerId !== this.activeBuilderResizePointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    this.setBuilderPanelWidth(this.builderResizeRightEdge - event.clientX);
+  }
+
+  onBuilderResizePointerUp(event) {
+    if (event.pointerId !== this.activeBuilderResizePointerId) {
+      return;
+    }
+
+    this.activeBuilderResizePointerId = null;
+    document.body.classList.remove('is-builder-resizing');
+    this.builderRoot.classList.remove('is-resizing');
+    this.builderNpcEditor.classList.remove('is-resizing');
+    this.builderBuildingEditor.classList.remove('is-resizing');
+    window.removeEventListener('pointermove', this.onBuilderResizePointerMove);
+    window.removeEventListener('pointerup', this.onBuilderResizePointerUp);
+    window.removeEventListener('pointercancel', this.onBuilderResizePointerUp);
   }
 
   playJoinTitleAnimation() {
