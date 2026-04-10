@@ -196,6 +196,7 @@ export class Game {
     this.interiorScenes = new Map();
     this.activeInlineShell = null;
     this.inlineShellScenes = new Map();
+    this.builderInlineShellPreviewPlacementIds = new Set();
     this.inlineInteriorLight = null;
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
@@ -1077,6 +1078,8 @@ export class Game {
       this.activeInlineShell = null;
     }
 
+    this.builderInlineShellPreviewPlacementIds.delete(placementId);
+
     if (instance.attached) {
       this.scene.remove(instance.scene.group);
     }
@@ -1118,7 +1121,8 @@ export class Game {
     this.inlineShellScenes.set(placementId, {
       signature,
       scene: shellScene,
-      attached
+      attached,
+      mode
     });
     return shellScene;
   }
@@ -1155,6 +1159,76 @@ export class Game {
     }
     this.activeInlineShell = null;
     return true;
+  }
+
+  clearBuilderInlineShellPreview() {
+    if (!this.builderInlineShellPreviewPlacementIds.size) {
+      return;
+    }
+
+    for (const placementId of [...this.builderInlineShellPreviewPlacementIds]) {
+      const instance = this.inlineShellScenes.get(placementId);
+      instance?.scene?.setVisible(false);
+      if (instance?.mode === 'inline-cutaway') {
+        this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
+        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+      } else {
+        this.worldBuilder?.setPlacementVisualHidden(placementId, false);
+      }
+    }
+
+    this.builderInlineShellPreviewPlacementIds.clear();
+    this.setInlineInteriorLightActive(false);
+  }
+
+  syncBuilderInlineShellPreview(entries = []) {
+    const nextPlacementIds = new Set(entries.map((entry) => entry.placementId));
+
+    for (const placementId of [...this.builderInlineShellPreviewPlacementIds]) {
+      if (nextPlacementIds.has(placementId)) {
+        continue;
+      }
+
+      const instance = this.inlineShellScenes.get(placementId);
+      instance?.scene?.setVisible(false);
+      if (instance?.mode === 'inline-cutaway') {
+        this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
+        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+      } else {
+        this.worldBuilder?.setPlacementVisualHidden(placementId, false);
+      }
+      this.builderInlineShellPreviewPlacementIds.delete(placementId);
+    }
+
+    for (const entry of entries) {
+      const shellScene = this.getOrCreateInlineShellScene(entry);
+      if (!shellScene) {
+        continue;
+      }
+
+      const mode = this.getInlineInteriorMode(entry);
+      shellScene.setVisible(mode !== 'inline-cutaway');
+      if (mode === 'inline-cutaway') {
+        this.worldBuilder?.setPlacementHiddenNodeNames(
+          entry.placementId,
+          entry?.interior?.cutawayNodeNames ?? []
+        );
+        this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
+          castShadow: false,
+          receiveShadow: false
+        });
+      } else {
+        this.worldBuilder?.setPlacementVisualHidden(entry.placementId, true);
+      }
+
+      const instance = this.inlineShellScenes.get(entry.placementId);
+      if (instance) {
+        instance.mode = mode;
+      }
+      this.builderInlineShellPreviewPlacementIds.add(entry.placementId);
+    }
+
+    this.setInlineInteriorLightActive(false);
   }
 
   activateInlineShell(entry) {
@@ -1226,6 +1300,7 @@ export class Game {
   syncInlineShellState() {
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
       this.deactivateInlineShell();
+      this.clearBuilderInlineShellPreview();
       return;
     }
 
@@ -1236,6 +1311,14 @@ export class Game {
         this.removeInlineShellScene(placementId);
       }
     }
+
+    if (this.worldBuilder.enabled) {
+      this.deactivateInlineShell();
+      this.syncBuilderInlineShellPreview(entries);
+      return;
+    }
+
+    this.clearBuilderInlineShellPreview();
 
     const desiredEntry = this.findInlineShellTarget(entries);
     if (!desiredEntry) {
@@ -1417,7 +1500,7 @@ export class Game {
 
     const { interactable } = this.activeWorkout;
     interactable?.barbellObject && (interactable.barbellObject.visible = false);
-    const carriedBarbell = createOlympicBarbellVisual();
+    const carriedBarbell = createOlympicBarbellVisual({ origin: 'center' });
     this.scene.add(carriedBarbell);
     this.activeWorkout.phase = 'lifting';
     this.activeWorkout.carriedBarbell = carriedBarbell;

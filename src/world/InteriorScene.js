@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { createOlympicBarbellVisual, OLYMPIC_BARBELL_PLATE_RADIUS } from './proceduralProps.js';
+import {
+  createOlympicBarbellVisual
+} from './proceduralProps.js';
 
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
@@ -320,7 +322,7 @@ export function createInteriorScene(interiorId, options = {}) {
     const floorBarbell = createOlympicBarbellVisual();
     floorBarbell.position.set(
       station.barbellPosition?.[0] ?? 0,
-      OLYMPIC_BARBELL_PLATE_RADIUS,
+      0,
       station.barbellPosition?.[1] ?? 0
     );
     group.add(floorBarbell);

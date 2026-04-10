@@ -81,6 +81,10 @@ function toRotationY(rotationQuarterTurns) {
   return rotationQuarterTurns * (Math.PI / 2);
 }
 
+function toGroundProbe(x, z) {
+  return new THREE.Vector3(x, 0, z);
+}
+
 function collectBuilderGroups(items) {
   const groups = [];
   const groupMap = new Map();
@@ -191,6 +195,7 @@ export class WorldBuilder {
     this.pendingBuildingUpdateTimeouts = new Map();
     this.activeMovePlacementId = null;
     this.awaitingMovedPlacementIds = new Set();
+    this.builderInteriorPreviewPlacementIds = new Set();
     this.activeNpcEditorPlacementId = null;
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
@@ -471,6 +476,62 @@ export class WorldBuilder {
     this.worldRenderer.setPlacementShadowOverrides(id, overrides);
   }
 
+  clearInteriorPlacementPreview() {
+    if (!this.builderInteriorPreviewPlacementIds.size) {
+      return;
+    }
+
+    for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
+      this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
+      this.worldRenderer.setPlacementShadowOverrides(placementId, null);
+      this.worldRenderer.setPlacementVisualHidden(placementId, false);
+    }
+
+    this.builderInteriorPreviewPlacementIds.clear();
+  }
+
+  syncInteriorPlacementPreview() {
+    if (!this.state.enabled) {
+      this.clearInteriorPlacementPreview();
+      return;
+    }
+
+    const entries = this.getInlineShellEntries();
+    const nextPlacementIds = new Set(entries.map((entry) => entry.placementId));
+
+    for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
+      if (nextPlacementIds.has(placementId)) {
+        continue;
+      }
+
+      this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
+      this.worldRenderer.setPlacementShadowOverrides(placementId, null);
+      this.worldRenderer.setPlacementVisualHidden(placementId, false);
+      this.builderInteriorPreviewPlacementIds.delete(placementId);
+    }
+
+    for (const entry of entries) {
+      this.worldRenderer.setPlacementVisualHidden(entry.placementId, false);
+      this.worldRenderer.setPlacementHiddenNodeNames(entry.placementId, []);
+      this.worldRenderer.setPlacementShadowOverrides(entry.placementId, null);
+
+      if (entry?.interior?.mode === 'inline-cutaway') {
+        this.worldRenderer.setPlacementHiddenNodeNames(
+          entry.placementId,
+          entry?.interior?.cutawayNodeNames ?? []
+        );
+        this.worldRenderer.setPlacementShadowOverrides(entry.placementId, {
+          castShadow: false,
+          receiveShadow: false
+        });
+      } else if (entry?.interior?.mode === 'inline-shell') {
+        this.worldRenderer.setPlacementVisualHidden(entry.placementId, true);
+      }
+
+      this.builderInteriorPreviewPlacementIds.add(entry.placementId);
+    }
+  }
+
   syncNpcInteractRadiusIndicators(playerPosition = null) {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
   }
@@ -615,10 +676,12 @@ export class WorldBuilder {
       this.resolveHoverState();
       await this.syncPreviewToState(true);
       this.updatePreviewTransform();
+      this.syncInteriorPlacementPreview();
     } else {
       this.builderPreviewCategoryId = null;
       this.builderPreviewGroupId = null;
       this.hud.setBuilderSelection(null);
+      this.clearInteriorPlacementPreview();
     }
 
     this.reportBuilderPresence(true);
@@ -880,7 +943,11 @@ export class WorldBuilder {
           1
         );
       } else {
-        this.previewRoot.position.set(this.state.hover.point.x, 0, this.state.hover.point.z);
+        this.previewRoot.position.set(
+          this.state.hover.point.x,
+          this.getGroundHeightAt(toGroundProbe(this.state.hover.point.x, this.state.hover.point.z)),
+          this.state.hover.point.z
+        );
         this.previewFootprint.scale.set(movingItem.size[0] + 0.35, movingItem.size[1] + 0.35, 1);
       }
 
@@ -916,7 +983,11 @@ export class WorldBuilder {
           1
         );
       } else {
-        this.previewRoot.position.set(hoveredPlacement.position[0], 0, hoveredPlacement.position[1]);
+        this.previewRoot.position.set(
+          hoveredPlacement.position[0],
+          this.getGroundHeightAt(toGroundProbe(hoveredPlacement.position[0], hoveredPlacement.position[1])),
+          hoveredPlacement.position[1]
+        );
         const item = getBuilderItemById(hoveredPlacement.itemId);
         if (!item) {
           this.previewRoot.visible = false;
@@ -948,7 +1019,11 @@ export class WorldBuilder {
         1
       );
     } else {
-      this.previewRoot.position.set(this.state.hover.point.x, 0, this.state.hover.point.z);
+      this.previewRoot.position.set(
+        this.state.hover.point.x,
+        this.getGroundHeightAt(toGroundProbe(this.state.hover.point.x, this.state.hover.point.z)),
+        this.state.hover.point.z
+      );
       this.previewFootprint.scale.set(this.activeItem.size[0] + 0.35, this.activeItem.size[1] + 0.35, 1);
     }
 
@@ -1032,6 +1107,7 @@ export class WorldBuilder {
 
     if (result.appliedImmediately) {
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.updateSelectionVisual();
       this.notifyLayoutChanged();
@@ -1055,6 +1131,7 @@ export class WorldBuilder {
 
     if (result.appliedImmediately) {
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.updateSelectionVisual();
       this.notifyLayoutChanged();
@@ -1088,6 +1165,7 @@ export class WorldBuilder {
     }
     if (result.appliedImmediately) {
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.updateSelectionVisual();
       this.updateBuilderNpcEditor();
@@ -1101,6 +1179,7 @@ export class WorldBuilder {
     this.clearSelection();
     this.worldState.loadLayout(layout);
     await this.worldRenderer.syncFromState(this.worldState);
+    this.syncInteriorPlacementPreview();
     this.resolveHoverState();
     await this.syncPreviewToState(true);
   }
@@ -1119,6 +1198,7 @@ export class WorldBuilder {
     }
 
     this.resolveHoverState();
+    this.syncInteriorPlacementPreview();
     await this.syncPreviewToState(true);
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
@@ -1204,6 +1284,7 @@ export class WorldBuilder {
   }
 
   clearPlacements() {
+    this.clearInteriorPlacementPreview();
     this.worldState.clear();
     this.worldRenderer.clear();
     this.remoteBuilderRenderer.clear();
@@ -1289,6 +1370,7 @@ export class WorldBuilder {
     if (result.appliedImmediately) {
       this.updateSelectionVisual();
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.notifyLayoutChanged();
     }
@@ -1315,6 +1397,7 @@ export class WorldBuilder {
     if (result.appliedImmediately) {
       this.clearSelection();
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.notifyLayoutChanged();
     }
@@ -1431,6 +1514,7 @@ export class WorldBuilder {
 
     if (result.appliedImmediately) {
       this.resolveHoverState();
+      this.syncInteriorPlacementPreview();
       await this.syncPreviewToState(true);
       this.updateSelectionVisual();
       this.updateBuilderNpcEditor();
@@ -1461,7 +1545,7 @@ export class WorldBuilder {
       const size = bounds.getSize(new THREE.Vector3());
       const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
       this.selectionRing.visible = true;
-      this.selectionRing.position.set(center.x, 0.08, center.z);
+      this.selectionRing.position.set(center.x, bounds.min.y + 0.08, center.z);
       this.selectionRing.scale.setScalar(ringScale);
 
       const anchor = new THREE.Vector3(center.x, bounds.max.y + 2.2, center.z);
@@ -1489,7 +1573,7 @@ export class WorldBuilder {
     const size = bounds.getSize(new THREE.Vector3());
     const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
     this.selectionRing.visible = true;
-    this.selectionRing.position.set(center.x, 0.08, center.z);
+    this.selectionRing.position.set(center.x, bounds.min.y + 0.08, center.z);
     this.selectionRing.scale.setScalar(ringScale);
 
     const anchor = new THREE.Vector3(center.x, bounds.max.y + 2.2, center.z);

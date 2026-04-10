@@ -11,9 +11,10 @@ export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
 }
 
-export function snapObjectToGround(root) {
+export function snapObjectToGround(root, clearance = 0) {
   const bounds = new THREE.Box3().setFromObject(root);
   root.position.y -= bounds.min.y;
+  root.position.y += Number(clearance) || 0;
 }
 
 function getUnderlayItem(item) {
@@ -85,7 +86,7 @@ export function prepareItemVisual(visual, applyObjectSetup = null) {
   for (const part of visual.parts) {
     applyObjectSetup?.(part.object, part);
     fitObjectToFootprint(part.object, part.item.size[0], part.item.size[1]);
-    snapObjectToGround(part.object);
+    snapObjectToGround(part.object, part.item.groundClearance);
   }
 
   return visual.root;

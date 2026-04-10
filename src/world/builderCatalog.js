@@ -1,7 +1,10 @@
 import { assetUrl, cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
-import { createOlympicBarbellVisual, OLYMPIC_BARBELL_FOOTPRINT } from './proceduralProps.js';
+import {
+  createOlympicBarbellVisual,
+  OLYMPIC_BARBELL_FOOTPRINT
+} from './proceduralProps.js';
 
 export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
@@ -173,6 +176,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     group: 'lots',
     size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2],
     tileFootprint: [2, 2],
+    surfaceHeight: 0.76,
     collision: true,
     blocksShots: true,
     movementCollisionRects: [

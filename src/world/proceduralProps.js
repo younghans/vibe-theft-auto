@@ -41,9 +41,13 @@ function buildPlateStack(side, material) {
   return group;
 }
 
-export function createOlympicBarbellVisual() {
+export function createOlympicBarbellVisual(options = {}) {
+  const { origin = 'ground' } = options;
   const root = new THREE.Group();
   root.name = 'OlympicBarbell';
+  const assembly = new THREE.Group();
+  assembly.position.y = origin === 'ground' ? OLYMPIC_BARBELL_PLATE_RADIUS : 0;
+  root.add(assembly);
 
   const steelMaterial = createMaterial(0xc2c8d0, 0.28, 0.7);
   const sleeveMaterial = createMaterial(0x949ca8, 0.34, 0.58);
@@ -54,7 +58,7 @@ export function createOlympicBarbellVisual() {
   shaft.rotation.z = Math.PI * 0.5;
   shaft.castShadow = true;
   shaft.receiveShadow = true;
-  root.add(shaft);
+  assembly.add(shaft);
 
   for (const side of [-1, 1]) {
     const sleeve = createCylinder(0.09, 0.09, 0.62, 18, sleeveMaterial);
@@ -62,16 +66,16 @@ export function createOlympicBarbellVisual() {
     sleeve.position.x = side * 2.18;
     sleeve.castShadow = true;
     sleeve.receiveShadow = true;
-    root.add(sleeve);
+    assembly.add(sleeve);
 
     const collar = createCylinder(0.11, 0.11, 0.08, 18, collarMaterial);
     collar.rotation.z = Math.PI * 0.5;
     collar.position.x = side * 1.78;
     collar.castShadow = true;
     collar.receiveShadow = true;
-    root.add(collar);
+    assembly.add(collar);
 
-    root.add(buildPlateStack(side, plateMaterial));
+    assembly.add(buildPlateStack(side, plateMaterial));
   }
 
   return root;
