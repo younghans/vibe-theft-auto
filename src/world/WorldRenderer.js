@@ -381,6 +381,7 @@ export class WorldRenderer {
       placement,
       object,
       actor,
+      hidden: false,
       item,
       layer: placement.layer,
       surfaceHeight: placement.layer === 'tile'
@@ -470,6 +471,19 @@ export class WorldRenderer {
     }
   }
 
+  setPlacementHidden(id, hidden) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
+    }
+
+    rendered.hidden = Boolean(hidden);
+    rendered.object.visible = !rendered.hidden;
+    if (rendered.actor?.pickProxy) {
+      rendered.actor.pickProxy.visible = !rendered.hidden;
+    }
+  }
+
   removePlacement(id) {
     const rendered = this.renderedPlacements.get(id);
     if (!rendered) {
@@ -482,6 +496,7 @@ export class WorldRenderer {
 
   getColliders() {
     return [...this.renderedPlacements.values()]
+      .filter((placement) => !placement.hidden)
       .flatMap((placement) => placement.colliders ?? [])
       .filter(Boolean);
   }
@@ -496,7 +511,7 @@ export class WorldRenderer {
       .map((placement) => {
         const rendered = this.renderedPlacements.get(placement.id);
         const item = getBuilderItemById(placement.itemId);
-        if (!rendered || !item) {
+        if (!rendered || rendered.hidden || !item) {
           return null;
         }
 
@@ -568,7 +583,7 @@ export class WorldRenderer {
 
   getPlacementBounds(id) {
     const rendered = this.renderedPlacements.get(id);
-    if (!rendered) {
+    if (!rendered || rendered.hidden) {
       return null;
     }
 

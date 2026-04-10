@@ -188,6 +188,8 @@ export class WorldBuilder {
     this.pendingNpcUpdateTimeouts = new Map();
     this.pendingBuildingUpdateByPlacementId = new Map();
     this.pendingBuildingUpdateTimeouts = new Map();
+    this.activeMovePlacementId = null;
+    this.awaitingMovedPlacementIds = new Set();
     this.activeNpcEditorPlacementId = null;
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
@@ -256,6 +258,7 @@ export class WorldBuilder {
       onSelectGroup: (groupId) => this.selectGroup(groupId),
       onSelectTile: (index) => this.selectItem(index),
       onRotateSelection: () => this.rotateSelectedPlacement(),
+      onMoveSelection: () => this.startMovingSelectedPlacement(),
       onDeleteSelection: () => this.deleteSelectedPlacement(),
       onConfirmSelection: () => this.clearSelection(),
       onNpcNameChange: (value) => void this.updateSelectedNpc({ name: value }),
@@ -476,6 +479,10 @@ export class WorldBuilder {
 
     if (event.button === 2) {
       event.preventDefault();
+      if (this.isMovingSelection()) {
+        this.cancelMoveSelection();
+        return;
+      }
       if (hoveredPlacement) {
         this.selectPlacement(hoveredPlacement.id);
       } else {
@@ -485,6 +492,11 @@ export class WorldBuilder {
     }
 
     if (event.button !== 0) {
+      return;
+    }
+
+    if (this.isMovingSelection()) {
+      void this.commitSelectedPlacementMove();
       return;
     }
 
@@ -553,6 +565,7 @@ export class WorldBuilder {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
 
     if (!nextEnabled) {
+      this.cancelMoveSelection();
       this.closeNpcInstanceEditor();
       this.closeBuildingInstanceEditor();
       this.clearSelection();
@@ -645,8 +658,9 @@ export class WorldBuilder {
     }
 
     const instanceEditorOpen = this.isNpcInstanceEditorOpen() || this.isBuildingInstanceEditorOpen();
+    const movingSelection = this.isMovingSelection();
 
-    if (!instanceEditorOpen) {
+    if (!instanceEditorOpen && !movingSelection) {
       if (input.consume('KeyR') || input.consume('KeyE')) {
         this.rotate(1);
       }
@@ -684,17 +698,15 @@ export class WorldBuilder {
     this.state.focus.x += pan.x * deltaSeconds * EDITOR_PAN_SPEED;
     this.state.focus.z += pan.z * deltaSeconds * EDITOR_PAN_SPEED;
 
-    if (instanceEditorOpen) {
-      this.updateSelectionVisual();
-      this.reportBuilderPresence();
-      return;
-    }
-
     this.resolveHoverState();
     void this.syncPreviewToState();
     this.updatePreviewTransform();
     this.updateSelectionVisual();
     this.reportBuilderPresence();
+
+    if (instanceEditorOpen && !movingSelection) {
+      return;
+    }
   }
 
   resolveHoverState() {
@@ -729,6 +741,20 @@ export class WorldBuilder {
   }
 
   getPreviewTarget() {
+    const movingPlacement = this.getMovingPlacement();
+    if (movingPlacement) {
+      const item = getBuilderItemById(movingPlacement.itemId);
+      if (!item) {
+        return null;
+      }
+
+      return {
+        item,
+        opacity: 0.92,
+        key: `move:${movingPlacement.id}:${movingPlacement.itemId}`
+      };
+    }
+
     const hoveredPlacement = this.getHoveredPlacement();
     if (hoveredPlacement) {
       const item = getBuilderItemById(hoveredPlacement.itemId);
@@ -791,8 +817,39 @@ export class WorldBuilder {
   }
 
   updatePreviewTransform() {
-    if (!this.state.enabled || !this.state.preview.object || !this.state.hover.point || !this.activeItem) {
+    const movingPlacement = this.getMovingPlacement();
+    const movingItem = movingPlacement ? getBuilderItemById(movingPlacement.itemId) : null;
+    if (!this.state.enabled || !this.state.preview.object || !this.state.hover.point || (!this.activeItem && !movingPlacement)) {
       this.previewRoot.visible = false;
+      return;
+    }
+
+    if (movingPlacement && movingItem) {
+      if (movingPlacement.layer === 'tile') {
+        if (!this.state.hover.cell) {
+          this.previewRoot.visible = false;
+          return;
+        }
+        const center = getTileCenterWorldPosition(
+          movingItem,
+          this.state.hover.cell.x,
+          this.state.hover.cell.z,
+          movingPlacement.rotationQuarterTurns
+        );
+        const [footprintWidth, footprintDepth] = getTileFootprintWorldSize(movingItem, movingPlacement.rotationQuarterTurns);
+        this.previewRoot.position.set(center.x, 0, center.z);
+        this.previewFootprint.scale.set(
+          Math.max(0.4, footprintWidth - 0.6),
+          Math.max(0.4, footprintDepth - 0.6),
+          1
+        );
+      } else {
+        this.previewRoot.position.set(this.state.hover.point.x, 0, this.state.hover.point.z);
+        this.previewFootprint.scale.set(movingItem.size[0] + 0.35, movingItem.size[1] + 0.35, 1);
+      }
+
+      this.previewRoot.rotation.y = toRotationY(movingPlacement.rotationQuarterTurns);
+      this.previewRoot.visible = true;
       return;
     }
 
@@ -1081,6 +1138,11 @@ export class WorldBuilder {
       this.worldRenderer.updatePlacement(nextPlacement);
     }
 
+    if (this.awaitingMovedPlacementIds.has(nextPlacement.id)) {
+      this.awaitingMovedPlacementIds.delete(nextPlacement.id);
+      this.worldRenderer.setPlacementHidden(nextPlacement.id, false);
+    }
+
     if (this.state.selection.placementId === nextPlacement.id) {
       this.selectPlacement(nextPlacement.id);
     }
@@ -1092,6 +1154,10 @@ export class WorldBuilder {
       return;
     }
 
+    if (this.activeMovePlacementId === placementId) {
+      this.activeMovePlacementId = null;
+    }
+    this.awaitingMovedPlacementIds.delete(placementId);
     this.clearPendingNpcUpdate(placementId);
     this.clearPendingBuildingUpdate(placementId);
     this.worldState.deletePlacement(placementId);
@@ -1108,6 +1174,10 @@ export class WorldBuilder {
   }
 
   selectPlacement(placementId) {
+    if (this.isMovingSelection() && this.activeMovePlacementId !== placementId) {
+      this.cancelMoveSelection();
+    }
+
     this.state.selection.placementId = placementId;
     const placement = this.getSelectedPlacement();
 
@@ -1148,6 +1218,9 @@ export class WorldBuilder {
   }
 
   clearSelection() {
+    if (this.activeMovePlacementId) {
+      this.cancelMoveSelection();
+    }
     if (this.activeNpcEditorPlacementId) {
       this.closeNpcInstanceEditor();
     }
@@ -1214,7 +1287,148 @@ export class WorldBuilder {
     this.hud.showToast(`Deleted ${item?.label ?? 'piece'}`);
   }
 
+  isMovingSelection() {
+    return Boolean(this.activeMovePlacementId);
+  }
+
+  getMovingPlacement() {
+    return this.worldState.getPlacement(this.activeMovePlacementId);
+  }
+
+  startMovingSelectedPlacement() {
+    const placement = this.getSelectedPlacement();
+    if (!placement) {
+      return;
+    }
+
+    if (this.activeMovePlacementId && this.activeMovePlacementId !== placement.id) {
+      this.cancelMoveSelection();
+    }
+    if (this.activeMovePlacementId === placement.id) {
+      return;
+    }
+
+    this.activeMovePlacementId = placement.id;
+    this.worldRenderer.setPlacementHidden(placement.id, true);
+    this.resolveHoverState();
+    void this.syncPreviewToState(true);
+    this.updatePreviewTransform();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  cancelMoveSelection() {
+    const placementId = this.activeMovePlacementId;
+    this.activeMovePlacementId = null;
+    if (placementId && !this.awaitingMovedPlacementIds.has(placementId)) {
+      this.worldRenderer.setPlacementHidden(placementId, false);
+    }
+    this.resolveHoverState();
+    void this.syncPreviewToState(true);
+    this.updatePreviewTransform();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  finishMoveSelection({ awaitPatch = false } = {}) {
+    const placementId = this.activeMovePlacementId;
+    this.activeMovePlacementId = null;
+    if (!placementId) {
+      return;
+    }
+
+    if (awaitPatch) {
+      this.awaitingMovedPlacementIds.add(placementId);
+    } else {
+      this.worldRenderer.setPlacementHidden(placementId, false);
+    }
+
+    this.resolveHoverState();
+    void this.syncPreviewToState(true);
+    this.updatePreviewTransform();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  async commitSelectedPlacementMove() {
+    const placement = this.getSelectedPlacement();
+    if (!placement || this.activeMovePlacementId !== placement.id) {
+      return;
+    }
+
+    const edit = placement.layer === 'tile'
+      ? (this.state.hover.cell
+        ? {
+            op: 'movePlacement',
+            placementId: placement.id,
+            cellX: this.state.hover.cell.x,
+            cellZ: this.state.hover.cell.z
+          }
+        : null)
+      : (this.state.hover.point
+        ? {
+            op: 'movePlacement',
+            placementId: placement.id,
+            x: this.state.hover.point.x,
+            z: this.state.hover.point.z
+          }
+        : null);
+
+    if (!edit) {
+      return;
+    }
+
+    const result = await this.worldEditAdapter.edit(edit);
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not move that piece.');
+      return;
+    }
+
+    this.finishMoveSelection({ awaitPatch: !result.appliedImmediately });
+
+    if (result.appliedImmediately) {
+      this.resolveHoverState();
+      await this.syncPreviewToState(true);
+      this.updateSelectionVisual();
+      this.updateBuilderNpcEditor();
+      this.updateBuildingInstanceEditor();
+      this.notifyLayoutChanged();
+    }
+
+    const item = getBuilderItemById(placement.itemId);
+    this.hud.showToast(`Moved ${item?.label ?? 'piece'}`);
+  }
+
   updateSelectionVisual() {
+    if (this.isMovingSelection()) {
+      if (!this.previewRoot.visible) {
+        this.selectionRing.visible = false;
+        this.hud.setBuilderSelection(null);
+        return;
+      }
+
+      const bounds = new THREE.Box3().setFromObject(this.previewRoot);
+      if (bounds.isEmpty()) {
+        this.selectionRing.visible = false;
+        this.hud.setBuilderSelection(null);
+        return;
+      }
+
+      const center = bounds.getCenter(new THREE.Vector3());
+      const size = bounds.getSize(new THREE.Vector3());
+      const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
+      this.selectionRing.visible = true;
+      this.selectionRing.position.set(center.x, 0.08, center.z);
+      this.selectionRing.scale.setScalar(ringScale);
+
+      const anchor = new THREE.Vector3(center.x, bounds.max.y + 2.2, center.z);
+      const projected = anchor.project(this.camera);
+      const screenX = screenClamp(((projected.x + 1) * 0.5) * window.innerWidth, 100, window.innerWidth - 100);
+      const screenY = screenClamp(((-projected.y + 1) * 0.5) * window.innerHeight, 80, window.innerHeight - 100);
+      this.hud.setBuilderSelection({ screenX, screenY, moving: true });
+      return;
+    }
+
     const placement = this.getSelectedPlacement();
     if (!placement) {
       this.selectionRing.visible = false;
@@ -1240,7 +1454,7 @@ export class WorldBuilder {
     const screenX = screenClamp(((projected.x + 1) * 0.5) * window.innerWidth, 100, window.innerWidth - 100);
     const screenY = screenClamp(((-projected.y + 1) * 0.5) * window.innerHeight, 80, window.innerHeight - 100);
 
-    this.hud.setBuilderSelection({ screenX, screenY });
+    this.hud.setBuilderSelection({ screenX, screenY, moving: false });
   }
 
   updateBuilderNpcEditor() {

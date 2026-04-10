@@ -2272,6 +2272,12 @@ body.is-builder-resizing * {
   transform: translateY(-2px) scale(1.04);
 }
 
+.hud__selection-icon-button.is-active {
+  border-color: rgba(104, 199, 255, 0.76);
+  background: rgba(104, 199, 255, 0.16);
+  color: #d3f2ff;
+}
+
 .hud__selection-icon-button svg {
   width: 18px;
   height: 18px;
@@ -2291,6 +2297,17 @@ body.is-builder-resizing * {
 .hud__selection-delete:hover {
   border-color: rgba(225, 110, 110, 0.72);
   background: rgba(225, 110, 110, 0.14);
+}
+
+.hud__selection-move {
+  border-color: rgba(104, 199, 255, 0.42);
+  color: #cceeff;
+  background: rgba(104, 199, 255, 0.08);
+}
+
+.hud__selection-move:hover {
+  border-color: rgba(104, 199, 255, 0.72);
+  background: rgba(104, 199, 255, 0.14);
 }
 
 .hud__selection-confirm {

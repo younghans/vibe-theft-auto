@@ -136,6 +136,7 @@ export class Hud {
     this.builderClose = this.overlay.querySelector('[data-builder-close]');
     this.builderResizeHandles = Array.from(this.overlay.querySelectorAll('[data-builder-resize-handle]'));
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
+    this.builderSelectionMove = this.overlay.querySelector('[data-builder-selection-move]');
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
     this.builderSelectionConfirm = this.overlay.querySelector('[data-builder-selection-confirm]');
@@ -633,6 +634,16 @@ export class Hud {
               <path d="M20 4v6h-6" />
             </svg>
           </button>
+          <button class="hud__selection-icon-button hud__selection-move" type="button" data-builder-selection-move aria-label="Move selected piece" title="Move selected piece">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v18" />
+              <path d="M3 12h18" />
+              <path d="M8 7l4-4 4 4" />
+              <path d="M8 17l4 4 4-4" />
+              <path d="M7 8l-4 4 4 4" />
+              <path d="M17 8l4 4-4 4" />
+            </svg>
+          </button>
           <button class="hud__selection-icon-button hud__selection-delete" type="button" data-builder-selection-delete aria-label="Delete selected piece" title="Delete selected piece">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 7h16" />
@@ -984,6 +995,7 @@ export class Hud {
     onSelectGroup,
     onSelectTile,
     onRotateSelection,
+    onMoveSelection,
     onDeleteSelection,
     onConfirmSelection,
     onNpcNameChange,
@@ -1049,6 +1061,10 @@ export class Hud {
 
     this.builderSelectionRotate.addEventListener('click', () => {
       onRotateSelection();
+    });
+
+    this.builderSelectionMove.addEventListener('click', () => {
+      onMoveSelection();
     });
 
     this.builderSelectionDelete.addEventListener('click', () => {
@@ -1239,7 +1255,7 @@ export class Hud {
 
   setBuilderSelection(selection) {
     const node = this.builderSelection;
-    if (!selection || this.builderNpcEditorVisible || this.builderBuildingEditorVisible) {
+    if (!selection) {
       node.classList.remove('is-visible');
       return;
     }
@@ -1247,6 +1263,7 @@ export class Hud {
     node.classList.add('is-visible');
     node.style.left = `${selection.screenX}px`;
     node.style.top = `${selection.screenY}px`;
+    this.builderSelectionMove?.classList.toggle('is-active', Boolean(selection.moving));
   }
 
   setBuilderNpcEditor(editorState) {

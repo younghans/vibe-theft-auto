@@ -43,6 +43,12 @@ function toTransportPayload(edit) {
       return {
         placementId: edit.placementId
       };
+    case 'movePlacement':
+      return {
+        placementId: edit.placementId,
+        ...(Object.hasOwn(edit, 'cellX') ? { cellX: edit.cellX, cellZ: edit.cellZ } : {}),
+        ...(Object.hasOwn(edit, 'x') ? { x: edit.x, z: edit.z } : {})
+      };
     case 'deletePlacement':
       return {
         placementId: edit.placementId
@@ -132,6 +138,17 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
       const result = worldState.rotatePlacement(edit.placementId);
       if (!result?.placement) {
         return errorResult(result?.error ?? 'That placement is not available.');
+      }
+      worldRenderer.updatePlacement(result.placement);
+      return successResult(result.placement.id);
+    }
+    case 'movePlacement': {
+      const result = worldState.movePlacement(edit.placementId, edit);
+      if (!result?.placement) {
+        return errorResult(result?.error ?? 'That placement is not available.');
+      }
+      for (const replacedPlacementId of result.replacedPlacementIds ?? []) {
+        worldRenderer.removePlacement(replacedPlacementId);
       }
       worldRenderer.updatePlacement(result.placement);
       return successResult(result.placement.id);

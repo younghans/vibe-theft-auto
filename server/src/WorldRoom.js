@@ -1112,6 +1112,25 @@ export class WorldRoom extends Room {
           replacedPlacementId: null
         }, previousLayout);
       }
+      case 'movePlacement': {
+        const placement = this.assertEditablePlacement(payload.placementId);
+        const next = placement.layer === 'tile'
+          ? this.sanitizeMovedTilePlacement(payload)
+          : this.sanitizeMovedFreePlacement(payload);
+        const result = this.worldState.movePlacement(placement.id, next);
+        if (!result?.placement) {
+          throw new Error(result?.error ?? 'That placement is not available.');
+        }
+        if (placement.layer === 'npc') {
+          this.syncNpcDefinitionsFromWorld();
+        }
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementIds: result.replacedPlacementIds ?? [],
+          replacedPlacementId: result.replacedPlacementId ?? null
+        }, previousLayout);
+      }
       case 'deletePlacement': {
         const placement = this.assertEditablePlacement(payload.placementId);
         this.worldState.deletePlacement(placement.id);
@@ -1291,6 +1310,20 @@ export class WorldRoom extends Room {
     }
 
     return updates;
+  }
+
+  sanitizeMovedTilePlacement(message = {}) {
+    return {
+      cellX: Math.round(Number(message.cellX ?? message.cell?.[0] ?? 0)),
+      cellZ: Math.round(Number(message.cellZ ?? message.cell?.[1] ?? 0))
+    };
+  }
+
+  sanitizeMovedFreePlacement(message = {}) {
+    return {
+      x: quantizePosition(message.x ?? message.position?.[0]),
+      z: quantizePosition(message.z ?? message.position?.[1])
+    };
   }
 
   sanitizePlacementInteractable(interactable = {}) {

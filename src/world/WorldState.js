@@ -322,6 +322,63 @@ export class WorldState {
     return clonePlacement(placement);
   }
 
+  movePlacement(id, target = {}) {
+    const placement = this.getPlacement(id);
+    if (!placement) {
+      return { placement: null, error: 'That placement is not available.' };
+    }
+
+    if (placement.layer === 'tile') {
+      const item = getBuilderItemById(placement.itemId);
+      if (!item) {
+        return { placement: null, error: 'That placement is not available.' };
+      }
+
+      const cellX = Math.round(Number(target.cellX ?? placement.cellX ?? 0));
+      const cellZ = Math.round(Number(target.cellZ ?? placement.cellZ ?? 0));
+      const replacedPlacementIds = this.getOverlappingTilePlacementIds(
+        item,
+        cellX,
+        cellZ,
+        placement.rotationQuarterTurns,
+        placement.id
+      );
+
+      this.unregisterPlacement(placement.id);
+      for (const replacedPlacementId of replacedPlacementIds) {
+        this.unregisterPlacement(replacedPlacementId);
+      }
+
+      placement.cellX = cellX;
+      placement.cellZ = cellZ;
+      placement.position = null;
+      this.registerPlacement(placement);
+
+      return {
+        placement: clonePlacement(placement),
+        error: null,
+        replacedPlacementIds,
+        replacedPlacementId: replacedPlacementIds[0] ?? null
+      };
+    }
+
+    const x = Number(target.x ?? target.position?.[0]);
+    const z = Number(target.z ?? target.position?.[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return { placement: null, error: 'That placement needs a valid destination.' };
+    }
+
+    placement.cellX = null;
+    placement.cellZ = null;
+    placement.position = [x, z];
+    return {
+      placement: clonePlacement(placement),
+      error: null,
+      replacedPlacementIds: [],
+      replacedPlacementId: null
+    };
+  }
+
   rotatePlacement(id, delta = 1) {
     const placement = this.getPlacement(id);
     if (!placement) {

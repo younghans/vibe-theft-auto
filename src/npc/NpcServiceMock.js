@@ -360,6 +360,26 @@ export class NpcServiceMock {
         });
         return { ok: true, placementId: payload.placementId };
       }
+      case 'movePlacement': {
+        const previousPlacement = this.worldState.getPlacement(payload.placementId);
+        const result = this.worldState.movePlacement(payload.placementId, payload);
+        if (!result?.placement) {
+          return { ok: false, error: result?.error ?? 'That placement is not available.' };
+        }
+
+        if (previousPlacement?.layer === 'npc') {
+          this.syncNpcStateFromWorld();
+          this.emit();
+        }
+
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(result.placement.id),
+          replacedPlacementIds: result.replacedPlacementIds ?? [],
+          replacedPlacementId: result.replacedPlacementId ?? null
+        });
+        return { ok: true, placementId: payload.placementId };
+      }
       case 'deletePlacement': {
         const placement = this.worldState.deletePlacement(payload.placementId);
         if (!placement) {
