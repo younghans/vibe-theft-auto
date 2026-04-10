@@ -62,6 +62,7 @@ function cloneInteriorDefinition(interior) {
 
   return {
     ...interior,
+    cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
     exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
     exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
   };
@@ -473,6 +474,7 @@ export class WorldRenderer {
       actor,
       hidden: false,
       visualHidden: false,
+      hiddenNodeNames: new Set(),
       item,
       layer: placement.layer,
       surfaceHeight: placement.layer === 'tile'
@@ -582,6 +584,16 @@ export class WorldRenderer {
     this.applyPlacementVisibility(rendered);
   }
 
+  setPlacementHiddenNodeNames(id, nodeNames = []) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
+    }
+
+    rendered.hiddenNodeNames = new Set((nodeNames ?? []).filter(Boolean));
+    this.applyPlacementVisibility(rendered);
+  }
+
   removePlacement(id) {
     const rendered = this.renderedPlacements.get(id);
     if (!rendered) {
@@ -647,7 +659,7 @@ export class WorldRenderer {
           return null;
         }
 
-        if (interactable.interior?.mode === 'inline-shell') {
+        if (['inline-shell', 'inline-cutaway'].includes(interactable.interior?.mode)) {
           return null;
         }
 
@@ -673,6 +685,14 @@ export class WorldRenderer {
   applyPlacementVisibility(rendered) {
     const visible = !rendered.hidden && !rendered.visualHidden;
     rendered.object.visible = visible;
+    rendered.object.traverse((node) => {
+      if (node === rendered.object) {
+        return;
+      }
+      const nodeHidden = [...(rendered.hiddenNodeNames ?? [])]
+        .some((pattern) => node.name === pattern || node.name.startsWith(`${pattern}_`));
+      node.visible = !nodeHidden;
+    });
     if (rendered.actor?.pickProxy) {
       rendered.actor.pickProxy.visible = visible;
     }
@@ -688,7 +708,10 @@ export class WorldRenderer {
         }
 
         const interactable = resolvePlacementInteractable(placement, item);
-        if (!interactable?.interior?.id || interactable.interior.mode !== 'inline-shell') {
+        if (
+          !interactable?.interior?.id
+          || !['inline-shell', 'inline-cutaway'].includes(interactable.interior.mode)
+        ) {
           return null;
         }
 

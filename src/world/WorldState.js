@@ -9,6 +9,7 @@ function cloneInterior(interior) {
 
   return {
     ...interior,
+    cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
     exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
     exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
   };

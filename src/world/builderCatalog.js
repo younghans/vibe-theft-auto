@@ -174,21 +174,22 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     collision: true,
     blocksShots: true,
     movementCollisionRects: [
-      { centerX: 0, centerZ: -10.55, halfWidth: 11, halfDepth: 0.45, minY: 0, maxY: 18 },
-      { centerX: -10.55, centerZ: 0, halfWidth: 0.45, halfDepth: 11, minY: 0, maxY: 18 },
-      { centerX: 10.55, centerZ: 0, halfWidth: 0.45, halfDepth: 11, minY: 0, maxY: 18 },
-      { centerX: -6.8, centerZ: 10.55, halfWidth: 4.2, halfDepth: 0.45, minY: 0, maxY: 18 },
-      { centerX: 6.8, centerZ: 10.55, halfWidth: 4.2, halfDepth: 0.45, minY: 0, maxY: 18 }
+      { centerX: 0, centerZ: -7.63, halfWidth: 10.83, halfDepth: 0.34, minY: 0, maxY: 7.4 },
+      { centerX: -10.83, centerZ: 1.65, halfWidth: 0.34, halfDepth: 9.28, minY: 0, maxY: 7.4 },
+      { centerX: 10.83, centerZ: 1.65, halfWidth: 0.34, halfDepth: 9.28, minY: 0, maxY: 7.4 },
+      { centerX: -7.2, centerZ: 10.93, halfWidth: 3.8, halfDepth: 0.34, minY: 0, maxY: 3.7 },
+      { centerX: 7.2, centerZ: 10.93, halfWidth: 3.8, halfDepth: 0.34, minY: 0, maxY: 3.7 }
     ],
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
     interior: {
       id: 'gym_large_blank',
-      mode: 'inline-shell',
+      mode: 'inline-cutaway',
       label: 'Fitness Gym',
       prompt: 'Enter gym',
-      exteriorDoorOffset: [0, 10.4],
-      exteriorSpawnOffset: [0, 15.4],
+      cutawayNodeNames: ['gym_cutaway_roof', 'gym_cutaway_upper', 'gym_cutaway_corner'],
+      exteriorDoorOffset: [0, 10.95],
+      exteriorSpawnOffset: [0, 16.05],
       exteriorInteractRadius: 4.8
     }
   },

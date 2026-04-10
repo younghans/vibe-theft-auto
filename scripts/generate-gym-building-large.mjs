@@ -81,6 +81,121 @@ function addBoxes(group, specs) {
   }
 }
 
+function tagGroupMeshes(group, prefix) {
+  let index = 0;
+  group.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    node.name = `${prefix}_${index}`;
+    index += 1;
+  });
+}
+
+function addShellBlock(group, {
+  centerX,
+  centerY,
+  centerZ,
+  width,
+  height,
+  depth,
+  material,
+  roofGroup = null,
+  roofMaterial = material,
+  wallThickness = 0.34,
+  roofThickness = 0.34,
+  omitFrontWall = false,
+  omitBackWall = false,
+  omitLeftWall = false,
+  omitRightWall = false,
+  doorwaySide = '',
+  doorwayWidth = 0,
+  doorwayHeight = 0,
+  doorwayOffset = 0
+}) {
+  const targetRoofGroup = roofGroup ?? group;
+  const halfWidth = width * 0.5;
+  const halfHeight = height * 0.5;
+  const halfDepth = depth * 0.5;
+  const clampedDoorwayHeight = Math.max(0, Math.min(height - 0.2, doorwayHeight));
+  const clampedDoorwayWidth = Math.max(0, Math.min(width - (wallThickness * 2) - 0.2, doorwayWidth));
+  const doorwayCenterX = THREE.MathUtils.clamp(
+    doorwayOffset,
+    -halfWidth + wallThickness + (clampedDoorwayWidth * 0.5),
+    halfWidth - wallThickness - (clampedDoorwayWidth * 0.5)
+  );
+
+  const addFrontOrBackWall = (side) => {
+    const z = centerZ + ((side === 'front' ? 1 : -1) * (halfDepth - (wallThickness * 0.5)));
+    const hasDoorway = doorwaySide === side && clampedDoorwayWidth > 0.2 && clampedDoorwayHeight > 0.2;
+
+    if (!hasDoorway) {
+      group.add(createBox([width, height, wallThickness], [centerX, centerY, z], material));
+      return;
+    }
+
+    const leftBoundary = -halfWidth;
+    const rightBoundary = halfWidth;
+    const doorMin = doorwayCenterX - (clampedDoorwayWidth * 0.5);
+    const doorMax = doorwayCenterX + (clampedDoorwayWidth * 0.5);
+    const leftWidth = doorMin - leftBoundary;
+    const rightWidth = rightBoundary - doorMax;
+    const topHeight = height - clampedDoorwayHeight;
+
+    if (leftWidth > 0.08) {
+      group.add(createBox(
+        [leftWidth, height, wallThickness],
+        [centerX + ((leftBoundary + doorMin) * 0.5), centerY, z],
+        material
+      ));
+    }
+
+    if (rightWidth > 0.08) {
+      group.add(createBox(
+        [rightWidth, height, wallThickness],
+        [centerX + ((doorMax + rightBoundary) * 0.5), centerY, z],
+        material
+      ));
+    }
+
+    if (topHeight > 0.08) {
+      group.add(createBox(
+        [clampedDoorwayWidth, topHeight, wallThickness],
+        [centerX + doorwayCenterX, centerY - halfHeight + clampedDoorwayHeight + (topHeight * 0.5), z],
+        material
+      ));
+    }
+  };
+
+  if (!omitBackWall) {
+    addFrontOrBackWall('back');
+  }
+  if (!omitFrontWall) {
+    addFrontOrBackWall('front');
+  }
+  if (!omitLeftWall) {
+    group.add(createBox(
+      [wallThickness, height, depth],
+      [centerX - halfWidth + (wallThickness * 0.5), centerY, centerZ],
+      material
+    ));
+  }
+  if (!omitRightWall) {
+    group.add(createBox(
+      [wallThickness, height, depth],
+      [centerX + halfWidth - (wallThickness * 0.5), centerY, centerZ],
+      material
+    ));
+  }
+
+  targetRoofGroup.add(createBox(
+    [width, roofThickness, depth],
+    [centerX, centerY + halfHeight - (roofThickness * 0.5), centerZ],
+    roofMaterial
+  ));
+}
+
 function addParapetRect(group, {
   centerX,
   centerY,
@@ -359,25 +474,90 @@ function buildGym() {
   const scene = new THREE.Scene();
   const gym = new THREE.Group();
   gym.name = 'gym_building_large';
+  const foundationGroup = new THREE.Group();
+  foundationGroup.name = 'gym_foundation';
+  const shellGroup = new THREE.Group();
+  shellGroup.name = 'gym_shell';
+  const roofGroup = new THREE.Group();
+  roofGroup.name = 'gym_cutaway_roof';
+  const upperCutawayGroup = new THREE.Group();
+  upperCutawayGroup.name = 'gym_cutaway_upper';
+  const cornerCutawayGroup = new THREE.Group();
+  cornerCutawayGroup.name = 'gym_cutaway_corner';
+  const exteriorGroup = new THREE.Group();
+  exteriorGroup.name = 'gym_exterior_detail';
+  const interiorGroup = new THREE.Group();
+  interiorGroup.name = 'gym_interior';
 
   const materials = createGymMaterials();
 
-  addBoxes(gym, [
-    { size: [22.7, 0.62, 22.2], position: [0, 0.31, 0], material: materials.slab },
-    { size: [14.6, 0.18, 4.4], position: [0, 0.72, 8.48], material: materials.pavement },
-    { size: [8.2, 0.08, 1.6], position: [0, 0.77, 10.0], material: materials.rubberFloor },
-    { size: [20.4, 7.2, 13.2], position: [0, 4.04, -1.2], material: materials.facade },
-    { size: [11.8, 4.8, 7.0], position: [0, 9.8, -5.2], material: materials.facadeDark },
-    { size: [5.2, 6.2, 8.6], position: [-7.5, 3.56, 3.4], material: materials.facadeDeep },
-    { size: [5.2, 5.4, 8.4], position: [7.5, 3.16, 3.55], material: materials.facadeDeep },
-    { size: [10.2, 3.5, 3.5], position: [0, 2.06, 8.72], material: materials.trim },
-    { size: [6.2, 0.26, 2.2], position: [0, 4.22, 10.16], material: materials.accent, rotation: [-0.1, 0, 0] },
-    { size: [6.0, 0.08, 1.9], position: [0, 4.1, 10.02], material: materials.trimDark, rotation: [-0.1, 0, 0] },
-    { size: [6.4, 0.18, 0.2], position: [0, 4.06, 11.1], material: materials.accentDark },
-    { size: [20.6, 0.18, 0.22], position: [0, 7.74, 5.42], material: materials.accent },
-    { size: [20.6, 0.12, 0.22], position: [0, 4.18, 5.42], material: materials.trimDark },
+  gym.add(foundationGroup);
+  gym.add(shellGroup);
+  gym.add(roofGroup);
+  gym.add(upperCutawayGroup);
+  gym.add(cornerCutawayGroup);
+  gym.add(exteriorGroup);
+  gym.add(interiorGroup);
+
+  addBoxes(foundationGroup, [
+    { size: [22.7, 0.62, 22.2], position: [0, 0.31, 0], material: materials.slab }
+  ]);
+
+  addBoxes(interiorGroup, [
+    { size: [20.6, 0.14, 18.2], position: [0, 0.69, 1.55], material: materials.rubberFloor }
+  ]);
+
+  addShellBlock(shellGroup, {
+    centerX: 0,
+    centerY: 4.04,
+    centerZ: 1.55,
+    width: 21.66,
+    height: 7.2,
+    depth: 18.78,
+    material: materials.facade,
+    roofGroup,
+    doorwaySide: 'front',
+    doorwayWidth: 6.8,
+    doorwayHeight: 3.4
+  });
+  addShellBlock(upperCutawayGroup, {
+    centerX: 0,
+    centerY: 9.8,
+    centerZ: -5.2,
+    width: 11.8,
+    height: 4.8,
+    depth: 7.0,
+    material: materials.facadeDark,
+    roofGroup
+  });
+  addShellBlock(cornerCutawayGroup, {
+    centerX: -7.5,
+    centerY: 3.56,
+    centerZ: 3.4,
+    width: 5.2,
+    height: 6.2,
+    depth: 8.6,
+    material: materials.facadeDeep,
+    roofGroup
+  });
+  addShellBlock(cornerCutawayGroup, {
+    centerX: 7.5,
+    centerY: 3.16,
+    centerZ: 3.55,
+    width: 5.2,
+    height: 5.4,
+    depth: 8.4,
+    material: materials.facadeDeep,
+    roofGroup
+  });
+  addBoxes(upperCutawayGroup, [
     { size: [11.9, 0.18, 0.22], position: [0, 11.98, -1.72], material: materials.accent },
     { size: [11.9, 0.12, 0.22], position: [0, 9.08, -1.72], material: materials.trimDark },
+    { size: [0.26, 4.9, 0.26], position: [-5.88, 9.84, -1.56], material: materials.trim },
+    { size: [0.26, 4.9, 0.26], position: [5.88, 9.84, -1.56], material: materials.trim }
+  ]);
+
+  addBoxes(cornerCutawayGroup, [
     { size: [5.4, 0.16, 0.22], position: [-7.5, 6.86, 7.54], material: materials.accent },
     { size: [5.4, 0.12, 0.22], position: [-7.5, 4.1, 7.54], material: materials.trimDark },
     { size: [5.4, 0.16, 0.22], position: [7.5, 6.1, 7.36], material: materials.accent },
@@ -386,49 +566,27 @@ function buildGym() {
     { size: [0.24, 6.2, 8.62], position: [-4.92, 3.56, 3.4], material: materials.trim },
     { size: [0.24, 5.4, 8.42], position: [4.92, 3.16, 3.55], material: materials.trim },
     { size: [0.24, 5.4, 8.42], position: [10.08, 3.16, 3.55], material: materials.trim },
-    { size: [3.9, 2.7, 0.16], position: [0, 1.72, 11.18], material: materials.door },
-    { size: [0.08, 2.3, 0.12], position: [0, 1.22, 11.26], material: materials.metalDark },
-    { size: [3.2, 0.34, 0.08], position: [0, 2.46, 11.22], material: materials.glassLite },
-    { size: [0.74, 2.0, 0.08], position: [-1.36, 1.2, 11.22], material: materials.glassLite },
-    { size: [0.88, 2.0, 0.08], position: [-0.36, 1.2, 11.26], material: materials.glassDark },
-    { size: [0.88, 2.0, 0.08], position: [0.6, 1.2, 11.26], material: materials.glassDark },
-    { size: [0.74, 2.0, 0.08], position: [1.58, 1.2, 11.22], material: materials.glassLite },
-    { size: [7.4, 0.22, 0.22], position: [0, 2.98, 11.02], material: materials.trim },
-    { size: [7.4, 0.14, 0.22], position: [0, 0.82, 11.02], material: materials.metalDark },
-    { size: [12.2, 0.22, 0.28], position: [0, 3.58, 10.7], material: materials.trim },
-    { size: [12.6, 0.16, 0.28], position: [0, 3.76, 10.86], material: materials.accentDark },
-    { size: [12.8, 0.26, 0.3], position: [0, 8.04, 6.22], material: materials.trim },
-    { size: [12.8, 0.26, 0.3], position: [0, 4.22, 6.22], material: materials.trim },
-    { size: [12.0, 0.24, 0.28], position: [0, 12.26, -0.72], material: materials.trim },
-    { size: [20.8, 0.14, 0.22], position: [0, 1.14, 10.7], material: materials.accentDark },
     { size: [0.42, 7.26, 0.26], position: [-10.24, 4.08, 5.94], material: materials.accentDark },
     { size: [0.42, 7.26, 0.26], position: [10.24, 4.08, 5.94], material: materials.accentDark },
-    { size: [0.26, 4.9, 0.26], position: [-5.88, 9.84, -1.56], material: materials.trim },
-    { size: [0.26, 4.9, 0.26], position: [5.88, 9.84, -1.56], material: materials.trim },
-    { size: [2.0, 0.7, 1.8], position: [-7.52, 6.86, 0.3], material: materials.facadeDeep },
-    { size: [2.2, 0.72, 1.9], position: [7.5, 6.22, 0.8], material: materials.facadeDeep },
-    { size: [1.3, 0.38, 1.2], position: [-1.8, 12.34, -5.4], material: materials.facadeDeep },
-    { size: [1.4, 0.42, 1.3], position: [1.7, 12.3, -4.5], material: materials.facadeDeep },
-    { size: [0.6, 1.1, 0.6], position: [-1.8, 13.1, -5.4], material: materials.metalDark },
-    { size: [0.6, 1.1, 0.6], position: [1.7, 13.16, -4.5], material: materials.metalDark },
     { size: [0.6, 2.4, 0.28], position: [-5.84, 2.34, 9.72], material: materials.trim },
     { size: [0.6, 2.4, 0.28], position: [5.84, 2.34, 9.72], material: materials.trim },
     { size: [4.6, 0.18, 0.18], position: [-7.5, 7.18, 7.88], material: materials.trim },
     { size: [4.6, 0.18, 0.18], position: [7.5, 6.42, 7.72], material: materials.trim }
   ]);
 
-  gym.add(createBox([11.4, 0.44, 3.4], [0, 4.72, 9.54], materials.accent, [-0.24, 0, 0]));
-  gym.add(createBox([11.0, 0.16, 3.0], [0, 4.62, 9.4], materials.trimDark, [-0.24, 0, 0]));
-  gym.add(createBox([18.4, 0.2, 0.26], [0, 6.08, 5.96], materials.accentDark));
-  gym.add(createBox([10.8, 0.2, 0.26], [0, 10.46, -1.04], materials.accentDark));
-  gym.add(createBox([14.8, 0.3, 4.1], [0, 4.44, 10.08], materials.sign, [-0.18, 0, 0]));
-  gym.add(createBox([15.2, 0.1, 4.26], [0, 4.58, 10.14], materials.accent, [-0.18, 0, 0]));
-  gym.add(createBox([14.8, 0.14, 0.28], [0, 2.92, 10.82], materials.trim));
-  gym.add(createBox([3.2, 0.1, 1.0], [-4.8, 12.48, -5.02], materials.glassLite));
-  gym.add(createBox([3.2, 0.1, 1.0], [0, 12.48, -5.02], materials.glassLite));
-  gym.add(createBox([3.2, 0.1, 1.0], [4.8, 12.48, -5.02], materials.glassLite));
+  addBoxes(roofGroup, [
+    { size: [2.0, 0.7, 1.8], position: [-7.52, 6.86, 0.3], material: materials.facadeDeep },
+    { size: [2.2, 0.72, 1.9], position: [7.5, 6.22, 0.8], material: materials.facadeDeep },
+    { size: [1.3, 0.38, 1.2], position: [-1.8, 12.34, -5.4], material: materials.facadeDeep },
+    { size: [1.4, 0.42, 1.3], position: [1.7, 12.3, -4.5], material: materials.facadeDeep },
+    { size: [0.6, 1.1, 0.6], position: [-1.8, 13.1, -5.4], material: materials.metalDark },
+    { size: [0.6, 1.1, 0.6], position: [1.7, 13.16, -4.5], material: materials.metalDark },
+    { size: [3.2, 0.1, 1.0], position: [-4.8, 12.48, -5.02], material: materials.glassLite },
+    { size: [3.2, 0.1, 1.0], position: [0, 12.48, -5.02], material: materials.glassLite },
+    { size: [3.2, 0.1, 1.0], position: [4.8, 12.48, -5.02], material: materials.glassLite }
+  ]);
 
-  addParapetRect(gym, {
+  addParapetRect(roofGroup, {
     centerX: 0,
     centerY: 7.78,
     centerZ: -1.2,
@@ -438,7 +596,7 @@ function buildGym() {
     thickness: 0.18,
     material: materials.trim
   });
-  addParapetRect(gym, {
+  addParapetRect(roofGroup, {
     centerX: 0,
     centerY: 12.16,
     centerZ: -5.2,
@@ -448,7 +606,7 @@ function buildGym() {
     thickness: 0.18,
     material: materials.trim
   });
-  addParapetRect(gym, {
+  addParapetRect(roofGroup, {
     centerX: -7.5,
     centerY: 6.9,
     centerZ: 3.4,
@@ -458,7 +616,7 @@ function buildGym() {
     thickness: 0.16,
     material: materials.trim
   });
-  addParapetRect(gym, {
+  addParapetRect(roofGroup, {
     centerX: 7.5,
     centerY: 6.14,
     centerZ: 3.55,
@@ -469,7 +627,7 @@ function buildGym() {
     material: materials.trim
   });
 
-  addWindowRow(gym, {
+  addWindowRow(cornerCutawayGroup, {
     startX: -7.5,
     count: 6,
     spacing: 3.0,
@@ -481,7 +639,7 @@ function buildGym() {
     ledgeMaterial: materials.trim
   });
 
-  addWindowRow(gym, {
+  addWindowRow(upperCutawayGroup, {
     startX: -3.7,
     count: 4,
     spacing: 2.48,
@@ -493,7 +651,7 @@ function buildGym() {
     ledgeMaterial: materials.trim
   });
 
-  addSideWindowColumn(gym, {
+  addSideWindowColumn(cornerCutawayGroup, {
     x: -10.34,
     startY: 2.3,
     count: 3,
@@ -503,7 +661,7 @@ function buildGym() {
     windowMaterial: materials.glass,
     frameMaterial: materials.trim
   });
-  addSideWindowColumn(gym, {
+  addSideWindowColumn(cornerCutawayGroup, {
     x: 4.64,
     startY: 2.0,
     count: 3,
@@ -514,24 +672,13 @@ function buildGym() {
     frameMaterial: materials.trim
   });
 
-  addFrontCanopySupports(gym, [-5.0, -2.4, 2.4, 5.0], 2.0, 10.12, materials);
-  addBarbellEmblem(gym, [0, 8.34, 3.72], materials);
-  addGymLetters(gym, 0, 6.76, 6.42, materials);
+  addGymLetters(exteriorGroup, 0, 6.76, 10.76, materials);
+  addRooftopUnit(roofGroup, [-4.7, 7.96, -2.8], materials, 0.18);
+  addRooftopUnit(roofGroup, [4.8, 7.96, -1.64], materials, -0.12);
 
-  addTreadmill(gym, [-4.8, 0.18, 2.6], materials, Math.PI);
-  addTreadmill(gym, [-1.6, 0.18, 2.6], materials, Math.PI);
-  addElliptical(gym, [1.9, 0.18, 2.8], materials, Math.PI);
-  addExerciseBike(gym, [4.7, 0.18, 3.1], materials, Math.PI * 0.92);
-  addExerciseBike(gym, [7.2, 0.18, 2.9], materials, Math.PI * 0.92);
-  addBench(gym, [-7.5, 0.18, 9.0], materials, 0.16);
-  addBench(gym, [7.5, 0.18, 8.72], materials, -0.16);
-  addPlanter(gym, [-8.7, 0.02, 10.06], materials, 0.1);
-  addPlanter(gym, [8.7, 0.02, 10.02], materials, -0.1);
-  addPlateStack(gym, [-9.3, 0.9, 8.6], materials);
-  addPlateStack(gym, [9.36, 0.9, 8.46], materials);
-  addDumbbell(gym, [0, 12.62, -2.08], materials, 0.24);
-  addRooftopUnit(gym, [-4.7, 7.96, -2.8], materials, 0.18);
-  addRooftopUnit(gym, [4.8, 7.96, -1.64], materials, -0.12);
+  tagGroupMeshes(roofGroup, 'gym_cutaway_roof');
+  tagGroupMeshes(upperCutawayGroup, 'gym_cutaway_upper');
+  tagGroupMeshes(cornerCutawayGroup, 'gym_cutaway_corner');
 
   scene.add(gym);
   return scene;

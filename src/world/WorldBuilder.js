@@ -463,6 +463,10 @@ export class WorldBuilder {
     this.worldRenderer.setPlacementVisualHidden(id, hidden);
   }
 
+  setPlacementHiddenNodeNames(id, nodeNames = []) {
+    this.worldRenderer.setPlacementHiddenNodeNames(id, nodeNames);
+  }
+
   syncNpcInteractRadiusIndicators(playerPosition = null) {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
   }
