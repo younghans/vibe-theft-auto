@@ -87,7 +87,7 @@ function addWoodFloorPanels(group, {
   centerX,
   centerY,
   centerZ,
-  panelCount = 12,
+  panelCount = 10,
   panelGap = 0.08,
   baseMaterial,
   seamMaterial,
@@ -95,17 +95,41 @@ function addWoodFloorPanels(group, {
 }) {
   group.add(createBox([width, 0.14, depth], [centerX, centerY, centerZ], baseMaterial));
 
-  const panelWidth = (width - (panelGap * (panelCount - 1))) / panelCount;
-  const startX = centerX - (width * 0.5) + (panelWidth * 0.5);
+  const rowDepth = (depth - (panelGap * (panelCount - 1))) / panelCount;
+  const startZ = centerZ - (depth * 0.5) + (rowDepth * 0.5);
+  const usableWidth = width - 0.36;
+  const fullPlankLength = 6.4;
+  const mediumPlankLength = 4.2;
 
-  for (let index = 0; index < panelCount; index += 1) {
-    const x = startX + (index * (panelWidth + panelGap));
-    const material = index % 2 === 0 ? seamMaterial : accentMaterial;
-    group.add(createBox([panelWidth, 0.02, depth - 0.28], [x, centerY + 0.08, centerZ], material));
+  for (let row = 0; row < panelCount; row += 1) {
+    const z = startZ + (row * (rowDepth + panelGap));
+    const staggerOffset = row % 3 === 0
+      ? 0
+      : row % 3 === 1
+        ? (fullPlankLength * 0.5)
+        : (mediumPlankLength * 0.5);
+    let cursor = -usableWidth * 0.5 - staggerOffset;
+    let plankIndex = 0;
+
+    while (cursor < usableWidth * 0.5) {
+      const preferredLength = plankIndex % 3 === 1 ? mediumPlankLength : fullPlankLength;
+      const clampedStart = Math.max(cursor, -usableWidth * 0.5);
+      const clampedEnd = Math.min(cursor + preferredLength, usableWidth * 0.5);
+      const plankLength = clampedEnd - clampedStart;
+
+      if (plankLength > 1.1) {
+        const x = centerX + ((clampedStart + clampedEnd) * 0.5);
+        const material = (row + plankIndex) % 2 === 0 ? seamMaterial : accentMaterial;
+        group.add(createBox([plankLength, 0.022, rowDepth], [x, centerY + 0.08, z], material));
+      }
+
+      cursor += preferredLength + panelGap;
+      plankIndex += 1;
+    }
   }
 
-  group.add(createBox([width - 0.36, 0.03, 0.16], [centerX, centerY + 0.09, centerZ - (depth * 0.5) + 0.34], seamMaterial));
-  group.add(createBox([width - 0.36, 0.03, 0.16], [centerX, centerY + 0.09, centerZ + (depth * 0.5) - 0.34], seamMaterial));
+  group.add(createBox([width, 0.02, 0.18], [centerX, centerY + 0.085, centerZ - (depth * 0.5) + 0.24], accentMaterial));
+  group.add(createBox([width, 0.02, 0.18], [centerX, centerY + 0.085, centerZ + (depth * 0.5) - 0.24], accentMaterial));
 }
 
 function tagGroupMeshes(group, prefix) {
@@ -476,9 +500,9 @@ function createGymMaterials() {
     slab: createMaterial(0x5d6369),
     pavement: createMaterial(0xd9d4c9),
     rubberFloor: createMaterial(0x2e363d),
-    woodFloor: createMaterial(0xd8c09b),
-    woodFloorLite: createMaterial(0xe7d4b5),
-    woodFloorWarm: createMaterial(0xcda87d),
+    woodFloor: createMaterial(0xb48556),
+    woodFloorLite: createMaterial(0xc99764),
+    woodFloorWarm: createMaterial(0x9a6c40),
     facade: createMaterial(0xc9dbe4),
     facadeDark: createMaterial(0x7ea1b7),
     facadeDeep: createMaterial(0x7098b1),
