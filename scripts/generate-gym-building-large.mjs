@@ -284,6 +284,42 @@ function addWindowRow(group, {
   }
 }
 
+function addDetailedFacadeWindow(group, {
+  x,
+  y,
+  z,
+  width,
+  height,
+  glassMaterial,
+  frameMaterial,
+  sillMaterial,
+  accentMaterial,
+  mullionCount = 0
+}) {
+  const frameDepth = 0.08;
+  const glassDepth = 0.08;
+  const mullionWidth = 0.07;
+  const sideFrameWidth = 0.1;
+  const topBottomFrameHeight = 0.1;
+  const innerWidth = Math.max(0.4, width - 0.24);
+  const innerHeight = Math.max(0.4, height - 0.22);
+
+  group.add(createBox([width + 0.14, height + 0.14, 0.04], [x, y, z - 0.08], accentMaterial));
+  group.add(createBox([innerWidth, innerHeight, glassDepth], [x, y, z], glassMaterial));
+  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x - (width * 0.5) + 0.05, y, z - 0.01], frameMaterial));
+  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x + (width * 0.5) - 0.05, y, z - 0.01], frameMaterial));
+  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y + (height * 0.5) - 0.05, z - 0.01], frameMaterial));
+  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y - (height * 0.5) + 0.05, z - 0.01], frameMaterial));
+  group.add(createBox([width + 0.12, 0.08, 0.16], [x, y - (height * 0.5) - 0.08, z + 0.03], sillMaterial));
+  group.add(createBox([width + 0.08, 0.06, 0.12], [x, y + (height * 0.5) + 0.08, z], accentMaterial));
+
+  for (let index = 1; index <= mullionCount; index += 1) {
+    const t = index / (mullionCount + 1);
+    const mullionX = x - (innerWidth * 0.5) + (innerWidth * t);
+    group.add(createBox([mullionWidth, innerHeight + 0.04, 0.1], [mullionX, y, z + 0.01], frameMaterial));
+  }
+}
+
 function addSideWindowColumn(group, {
   x,
   startY,
@@ -616,59 +652,49 @@ function buildGym() {
     roofGroup
   });
   addBoxes(exteriorGroup, [
+    { size: [21.22, 0.26, 0.2], position: [0, 7.98, 10.84], material: materials.trim },
+    { size: [21.18, 0.18, 0.18], position: [0, 0.92, 10.86], material: materials.trimDark },
     { size: [21.1, 0.18, 0.18], position: [0, 1.02, 10.86], material: materials.trimDark },
-    { size: [0.36, 6.24, 0.18], position: [-10.0, 3.2, 10.86], material: materials.trim },
-    { size: [0.36, 6.24, 0.18], position: [10.0, 3.2, 10.86], material: materials.trim },
-    { size: [0.3, 3.5, 0.16], position: [-3.56, 1.75, 10.86], material: materials.trim },
-    { size: [0.3, 3.5, 0.16], position: [3.56, 1.75, 10.86], material: materials.trim },
-    { size: [7.1, 0.24, 0.16], position: [0, 3.54, 10.86], material: materials.accentDark },
-    { size: [7.1, 0.14, 0.16], position: [0, 0.88, 10.86], material: materials.metalDark }
+    { size: [0.42, 6.5, 0.18], position: [-10.1, 3.25, 10.86], material: materials.trim },
+    { size: [0.42, 6.5, 0.18], position: [10.1, 3.25, 10.86], material: materials.trim },
+    { size: [0.28, 6.16, 0.16], position: [-8.88, 3.14, 10.88], material: materials.trimDark },
+    { size: [0.28, 6.16, 0.16], position: [8.88, 3.14, 10.88], material: materials.trimDark },
+    { size: [0.34, 4.18, 0.16], position: [-3.56, 2.06, 10.88], material: materials.trim },
+    { size: [0.34, 4.18, 0.16], position: [3.56, 2.06, 10.88], material: materials.trim },
+    { size: [7.54, 0.26, 0.16], position: [0, 3.6, 10.88], material: materials.accentDark },
+    { size: [7.54, 0.16, 0.16], position: [0, 0.96, 10.88], material: materials.metalDark },
+    { size: [7.38, 0.14, 0.14], position: [0, 6.06, 10.88], material: materials.trimDark },
+    { size: [7.92, 0.18, 0.16], position: [0, 6.92, 10.84], material: materials.accent },
+    { size: [21.0, 0.12, 0.16], position: [0, 4.22, 10.84], material: materials.trimDark }
   ]);
-
-  addWindowRow(exteriorGroup, {
-    startX: -7.9,
-    count: 2,
-    spacing: 2.34,
-    size: [1.54, 2.36, 0.12],
-    y: 2.34,
-    z: 10.9,
-    windowMaterial: materials.glassLite,
-    frameMaterial: materials.trim,
-    ledgeMaterial: materials.trimDark
-  });
-  addWindowRow(exteriorGroup, {
-    startX: 5.56,
-    count: 2,
-    spacing: 2.34,
-    size: [1.54, 2.36, 0.12],
-    y: 2.34,
-    z: 10.9,
-    windowMaterial: materials.glassLite,
-    frameMaterial: materials.trim,
-    ledgeMaterial: materials.trimDark
-  });
-  addWindowRow(exteriorGroup, {
-    startX: -7.9,
-    count: 2,
-    spacing: 2.34,
-    size: [1.54, 0.86, 0.12],
-    y: 5.98,
-    z: 10.9,
-    windowMaterial: materials.glass,
-    frameMaterial: materials.trim,
-    ledgeMaterial: materials.accentDark
-  });
-  addWindowRow(exteriorGroup, {
-    startX: 5.56,
-    count: 2,
-    spacing: 2.34,
-    size: [1.54, 0.86, 0.12],
-    y: 5.98,
-    z: 10.9,
-    windowMaterial: materials.glass,
-    frameMaterial: materials.trim,
-    ledgeMaterial: materials.accentDark
-  });
+  for (const x of [-7.52, -5.08, 5.08, 7.52]) {
+    addDetailedFacadeWindow(exteriorGroup, {
+      x,
+      y: 2.46,
+      z: 10.92,
+      width: 2.02,
+      height: 2.62,
+      glassMaterial: materials.glassLite,
+      frameMaterial: materials.metalDark,
+      sillMaterial: materials.trimDark,
+      accentMaterial: materials.trimDark,
+      mullionCount: 0
+    });
+  }
+  for (const x of [-7.52, -5.08, 5.08, 7.52]) {
+    addDetailedFacadeWindow(exteriorGroup, {
+      x,
+      y: 6.04,
+      z: 10.9,
+      width: 2.02,
+      height: 0.92,
+      glassMaterial: materials.glass,
+      frameMaterial: materials.metalDark,
+      sillMaterial: materials.trimDark,
+      accentMaterial: materials.trimDark,
+      mullionCount: 0
+    });
+  }
   addBoxes(upperCutawayGroup, [
     { size: [14.7, 0.18, 0.22], position: [0, 11.98, 2.02], material: materials.accent },
     { size: [14.7, 0.12, 0.22], position: [0, 9.08, 2.02], material: materials.trimDark },
