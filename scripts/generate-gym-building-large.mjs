@@ -98,8 +98,8 @@ function addWoodFloorPanels(group, {
   const rowDepth = (depth - (panelGap * (panelCount - 1))) / panelCount;
   const startZ = centerZ - (depth * 0.5) + (rowDepth * 0.5);
   const usableWidth = width - 0.36;
-  const fullPlankLength = 6.4;
-  const mediumPlankLength = 4.2;
+  const fullPlankLength = 3.6;
+  const mediumPlankLength = 2.2;
 
   for (let row = 0; row < panelCount; row += 1) {
     const z = startZ + (row * (rowDepth + panelGap));
@@ -500,9 +500,9 @@ function createGymMaterials() {
     slab: createMaterial(0x5d6369),
     pavement: createMaterial(0xd9d4c9),
     rubberFloor: createMaterial(0x2e363d),
-    woodFloor: createMaterial(0xb48556),
-    woodFloorLite: createMaterial(0xc99764),
-    woodFloorWarm: createMaterial(0x9a6c40),
+    woodFloor: createMaterial(0xcfd3d8),
+    woodFloorLite: createMaterial(0xe1e4e8),
+    woodFloorWarm: createMaterial(0xb9bec6),
     facade: createMaterial(0xc9dbe4),
     facadeDark: createMaterial(0x7ea1b7),
     facadeDeep: createMaterial(0x7098b1),
@@ -565,7 +565,7 @@ function buildGym() {
     centerX: 0,
     centerY: 0.69,
     centerZ: 1.55,
-    panelCount: 14,
+    panelCount: 15,
     panelGap: 0.08,
     baseMaterial: materials.woodFloor,
     seamMaterial: materials.woodFloorLite,
