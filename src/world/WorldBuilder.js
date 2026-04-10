@@ -1330,16 +1330,14 @@ export class WorldBuilder {
     this.reportBuilderPresence(true);
   }
 
-  finishMoveSelection({ awaitPatch = false } = {}) {
+  finishMoveSelection({ restoreVisibility = true } = {}) {
     const placementId = this.activeMovePlacementId;
     this.activeMovePlacementId = null;
     if (!placementId) {
       return;
     }
 
-    if (awaitPatch) {
-      this.awaitingMovedPlacementIds.add(placementId);
-    } else {
+    if (restoreVisibility && !this.awaitingMovedPlacementIds.has(placementId)) {
       this.worldRenderer.setPlacementHidden(placementId, false);
     }
 
@@ -1378,13 +1376,22 @@ export class WorldBuilder {
       return;
     }
 
+    const movesViaPatch = Boolean(this.worldTransport?.editWorld);
+    if (movesViaPatch) {
+      this.awaitingMovedPlacementIds.add(placement.id);
+    }
+
     const result = await this.worldEditAdapter.edit(edit);
     if (!result?.ok) {
+      this.awaitingMovedPlacementIds.delete(placement.id);
+      this.worldRenderer.setPlacementHidden(placement.id, false);
       this.hud.showToast(result?.error ?? 'Could not move that piece.');
       return;
     }
 
-    this.finishMoveSelection({ awaitPatch: !result.appliedImmediately });
+    this.finishMoveSelection({
+      restoreVisibility: Boolean(result.appliedImmediately) || !movesViaPatch
+    });
 
     if (result.appliedImmediately) {
       this.resolveHoverState();
