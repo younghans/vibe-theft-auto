@@ -5,6 +5,7 @@ const clipSourceUrls = Object.freeze({
   idle: assets.mixamo.animations.idle,
   fightingIdle: assets.mixamo.animations.fightingIdle,
   punching: assets.mixamo.animations.punching,
+  snatch: assets.mixamo.animations.snatch,
   walking: assets.mixamo.animations.walking,
   snakeHipHopDance: assets.mixamo.animations.snakeHipHopDance,
   waveHipHopDance: assets.mixamo.animations.waveHipHopDance,

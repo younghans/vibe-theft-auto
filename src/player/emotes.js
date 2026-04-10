@@ -59,5 +59,14 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeIn: 0.18,
     fadeOut: 0.22,
     playbackRate: 1
+  },
+  snatch: {
+    label: 'Snatch',
+    clipName: 'snatch',
+    loop: false,
+    fadeIn: 0.08,
+    fadeOut: 0.16,
+    playbackRate: 1,
+    cancelOnMove: false
   }
 });

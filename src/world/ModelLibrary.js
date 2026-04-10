@@ -60,6 +60,10 @@ export class ModelLibrary {
   }
 
   getLoader(url) {
+    if (typeof url !== 'string' || !url) {
+      throw new Error(`ModelLibrary expected a non-empty asset URL, received ${String(url)}.`);
+    }
+
     return url.toLowerCase().endsWith('.fbx') ? this.fbxLoader : this.loader;
   }
 

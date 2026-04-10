@@ -1175,6 +1175,15 @@
         9
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_222",
+      "itemId": "gym_building_large",
+      "cell": [
+        6,
+        3
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "props": [

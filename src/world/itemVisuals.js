@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
+import { createOlympicBarbellVisual } from './proceduralProps.js';
 
 export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   const bounds = new THREE.Box3().setFromObject(root);
@@ -26,7 +27,18 @@ function getUnderlayItem(item) {
 
 export async function instantiateItemVisual(library, item) {
   const underlayItem = getUnderlayItem(item);
-  const primaryObject = await library.instantiate(item.asset);
+  let primaryObject = null;
+
+  if (typeof item?.createVisual === 'function') {
+    primaryObject = item.createVisual();
+  } else if (item?.id === 'olympic_barbell' || item?.assetName === 'olympic_barbell') {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createOlympicBarbellVisual();
+  } else if (typeof item?.asset === 'string' && item.asset) {
+    primaryObject = await library.instantiate(item.asset);
+  } else {
+    throw new Error(`Item "${item?.id ?? item?.assetName ?? 'unknown'}" does not define a usable visual source.`);
+  }
   const needsTileRoot = item?.layer === 'tile';
   const root = needsTileRoot ? new THREE.Group() : primaryObject;
   const tileCenterOffset = needsTileRoot ? getTileLocalCenterOffset(item) : { x: 0, z: 0 };

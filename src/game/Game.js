@@ -11,6 +11,7 @@ import {
   createVibeShaderDefinition,
   getVibeShaderPreset
 } from './vibeShaderPresets.js';
+import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
 import { assets } from '../world/assetManifest.js';
 import {
@@ -31,6 +32,7 @@ import { rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { createInteriorScene } from '../world/InteriorScene.js';
+import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
@@ -68,6 +70,9 @@ const DEFAULT_VIBE_SHADER_INTENSITY = 1;
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const BOOT_PIXEL_RATIO_CAP = 1.25;
 const RUNTIME_PIXEL_RATIO_CAP = 2;
+const SNATCH_WORKOUT_EMOTE_ID = 'snatch';
+const SNATCH_WORKOUT_DURATION_MS = 5435;
+const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -218,6 +223,7 @@ export class Game {
     this.currentAimMode = false;
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
+    this.activeWorkout = null;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -247,6 +253,12 @@ export class Game {
     this.deferredMuzzleFlashWarmupId = 0;
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
+    this.workoutLeftHandPosition = new THREE.Vector3();
+    this.workoutRightHandPosition = new THREE.Vector3();
+    this.workoutBarbellMidpoint = new THREE.Vector3();
+    this.workoutBarbellAxis = new THREE.Vector3();
+    this.workoutForward = new THREE.Vector3();
+    this.workoutBarbellQuaternion = new THREE.Quaternion();
 
     this.hud.bindInteractionEvents({
       onAction: () => {},
@@ -1323,6 +1335,7 @@ export class Game {
       return false;
     }
 
+    this.finishWorkout({ cancelled: true });
     if (this.currentInterior?.scene) {
       this.currentInterior.scene.setVisible(false);
     }
@@ -1354,6 +1367,7 @@ export class Game {
       return false;
     }
 
+    this.finishWorkout({ cancelled: true });
     const { scene, returnPosition } = this.currentInterior;
     scene.setVisible(false);
     this.currentInterior = null;
@@ -1367,6 +1381,171 @@ export class Game {
     if (showToast) {
       this.hud.showToast('Back outside.');
     }
+    return true;
+  }
+
+  startWorkout(interactable) {
+    if (!this.player || !interactable || this.activeWorkout) {
+      return false;
+    }
+
+    if (interactable.kind !== 'snatch-workout') {
+      return false;
+    }
+
+    void preloadMixamoClips([SNATCH_WORKOUT_EMOTE_ID]);
+    this.clearPendingHipFireShot();
+    this.currentAimMode = false;
+    this.player.setAimingState(false);
+    this.player.stopEmote?.();
+    this.activeWorkout = {
+      kind: interactable.kind,
+      phase: 'approach',
+      interactable,
+      carriedBarbell: null,
+      endsAt: 0
+    };
+    this.currentInteractable = null;
+    this.hud.setPrompt(null);
+    return true;
+  }
+
+  beginWorkoutLift() {
+    if (!this.activeWorkout || !this.player) {
+      return false;
+    }
+
+    const { interactable } = this.activeWorkout;
+    interactable?.barbellObject && (interactable.barbellObject.visible = false);
+    const carriedBarbell = createOlympicBarbellVisual();
+    this.scene.add(carriedBarbell);
+    this.activeWorkout.phase = 'lifting';
+    this.activeWorkout.carriedBarbell = carriedBarbell;
+    this.activeWorkout.endsAt = performance.now() + SNATCH_WORKOUT_DURATION_MS;
+    this.player.setFacing(interactable?.approachRotationY ?? this.player.object.rotation.y);
+    this.player.setAimRotation(interactable?.approachRotationY ?? this.player.object.rotation.y);
+    this.player.stopEmote?.();
+    this.player.playEmote(SNATCH_WORKOUT_EMOTE_ID);
+    this.syncWorkoutBarbell();
+    return true;
+  }
+
+  syncWorkoutBarbell() {
+    if (!this.activeWorkout?.carriedBarbell || !this.player?.sockets) {
+      return;
+    }
+
+    const leftHand = this.player.sockets.handLeft;
+    const rightHand = this.player.sockets.handRight;
+    if (!leftHand || !rightHand) {
+      return;
+    }
+
+    leftHand.getWorldPosition(this.workoutLeftHandPosition);
+    rightHand.getWorldPosition(this.workoutRightHandPosition);
+    this.workoutBarbellMidpoint
+      .copy(this.workoutLeftHandPosition)
+      .add(this.workoutRightHandPosition)
+      .multiplyScalar(0.5);
+    this.workoutBarbellAxis
+      .subVectors(this.workoutRightHandPosition, this.workoutLeftHandPosition)
+      .setY(0);
+
+    if (this.workoutBarbellAxis.lengthSq() <= 0.0001) {
+      const facing = this.player.object.rotation.y;
+      this.workoutBarbellAxis.set(Math.cos(facing), 0, -Math.sin(facing));
+    } else {
+      this.workoutBarbellAxis.normalize();
+    }
+
+    this.workoutForward.set(
+      Math.sin(this.player.object.rotation.y),
+      0,
+      Math.cos(this.player.object.rotation.y)
+    );
+    this.activeWorkout.carriedBarbell.position
+      .copy(this.workoutBarbellMidpoint)
+      .addScaledVector(this.workoutForward, 0.08);
+    this.workoutBarbellQuaternion.setFromUnitVectors(
+      new THREE.Vector3(1, 0, 0),
+      this.workoutBarbellAxis
+    );
+    this.activeWorkout.carriedBarbell.quaternion.copy(this.workoutBarbellQuaternion);
+  }
+
+  finishWorkout({ cancelled = false } = {}) {
+    if (!this.activeWorkout) {
+      return false;
+    }
+
+    const workout = this.activeWorkout;
+    this.activeWorkout = null;
+    if (cancelled) {
+      this.player?.stopEmote?.();
+    }
+    if (workout.carriedBarbell) {
+      workout.carriedBarbell.parent?.remove(workout.carriedBarbell);
+      disposeObjectResources(workout.carriedBarbell);
+    }
+    if (workout.interactable?.barbellObject) {
+      workout.interactable.barbellObject.visible = true;
+    }
+    if (!cancelled) {
+      this.hud.showToast('Snatch complete.');
+    }
+    return true;
+  }
+
+  updateActiveWorkout(deltaSeconds, { localAlive, colliders, sceneBounds, groundHeight } = {}) {
+    if (!this.activeWorkout || !this.player) {
+      return false;
+    }
+
+    if (localAlive === false) {
+      this.finishWorkout({ cancelled: true });
+      return false;
+    }
+
+    this.player.setAimingState(false);
+
+    if (this.activeWorkout.phase === 'approach') {
+      const movement = this.player.moveToward(
+        this.activeWorkout.interactable.approachPosition,
+        deltaSeconds,
+        colliders,
+        sceneBounds,
+        groundHeight,
+        {
+          speedScale: 0.82,
+          stopDistance: SNATCH_APPROACH_STOP_DISTANCE
+        }
+      );
+      if (movement.arrived) {
+        this.player.position.copy(this.activeWorkout.interactable.approachPosition);
+        this.player.position.y = groundHeight;
+        this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+        this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+        this.beginWorkoutLift();
+      }
+      return true;
+    }
+
+    this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+    this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+    this.player.update(
+      deltaSeconds,
+      ZERO_INPUT,
+      this.camera,
+      colliders,
+      sceneBounds,
+      groundHeight
+    );
+    this.syncWorkoutBarbell();
+
+    if (performance.now() >= this.activeWorkout.endsAt) {
+      this.finishWorkout();
+    }
+
     return true;
   }
 
@@ -3097,6 +3276,7 @@ export class Game {
       const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
+      const activeSceneBounds = this.getActiveSceneBounds();
       const hipFirePending = this.pendingHipFireShot;
       const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
@@ -3107,59 +3287,77 @@ export class Game {
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
-      this.player.update(
-        deltaSeconds,
-        playerInput,
-        this.camera,
-        activeColliders,
-        this.getActiveSceneBounds(),
+      const workoutActive = this.updateActiveWorkout(deltaSeconds, {
+        localAlive,
+        colliders: activeColliders,
+        sceneBounds: activeSceneBounds,
         groundHeight
-      );
-      this.syncInlineShellState();
+      });
       let aimingMode = false;
-      const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
-      const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
-      const primaryFireHeld = combatInputEnabled && this.input.isPointerPressed(0);
-      const secondaryAimHeld = combatInputEnabled && this.input.isPointerPressed(2);
-      if (armed) {
-        aimingMode = secondaryAimHeld;
-        this.currentAimMode = aimingMode;
-        this.player.setAimingState(aimingMode || hipFirePoseActive);
-        if (aimingMode ? primaryFireHeld : primaryFirePressed) {
-          if (aimingMode) {
-            this.fireLocalWeapon(aimDirection, this.getShotCollisionOrigin(aimDirection));
-          } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
-            this.queueHipFireShot(aimDirection);
+
+      if (workoutActive) {
+        this.clearPendingHipFireShot();
+        this.currentAimMode = false;
+        const facing = this.player.object.rotation.y;
+        this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
+        this.syncInlineShellState();
+        this.updateCamera(this.currentAimDirection, false);
+        this.currentInteractable = null;
+        this.hud.setPrompt(null);
+      } else {
+        this.player.update(
+          deltaSeconds,
+          playerInput,
+          this.camera,
+          activeColliders,
+          activeSceneBounds,
+          groundHeight
+        );
+        this.syncInlineShellState();
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
+        const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
+        const primaryFireHeld = combatInputEnabled && this.input.isPointerPressed(0);
+        const secondaryAimHeld = combatInputEnabled && this.input.isPointerPressed(2);
+        if (armed) {
+          aimingMode = secondaryAimHeld;
+          this.currentAimMode = aimingMode;
+          this.player.setAimingState(aimingMode || hipFirePoseActive);
+          if (aimingMode ? primaryFireHeld : primaryFirePressed) {
+            if (aimingMode) {
+              this.fireLocalWeapon(aimDirection, this.getShotCollisionOrigin(aimDirection));
+            } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
+              this.queueHipFireShot(aimDirection);
+            }
+          }
+          if (combatInputEnabled && this.input.consume('KeyR')) {
+            this.npcService?.reloadWeapon();
+          }
+        } else {
+          this.clearPendingHipFireShot();
+          aimingMode = secondaryAimHeld;
+          this.currentAimMode = aimingMode;
+          this.player.setAimingState(aimingMode);
+          if (primaryFirePressed) {
+            this.punchLocal(aimDirection);
           }
         }
-        if (combatInputEnabled && this.input.consume('KeyR')) {
-          this.npcService?.reloadWeapon();
-        }
-      } else {
-        this.clearPendingHipFireShot();
-        aimingMode = secondaryAimHeld;
-        this.currentAimMode = aimingMode;
-        this.player.setAimingState(aimingMode);
-        if (primaryFirePressed) {
-          this.punchLocal(aimDirection);
-        }
-      }
-      if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) {
-        this.clearPendingHipFireShot();
-      } else if (this.pendingHipFireShot) {
-        const now = performance.now();
-        this.player.setAimingState(aimingMode || now < this.pendingHipFireShot.releaseAt);
-        this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
-        if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
-          this.pendingHipFireShot.fired = true;
-          this.fireLocalWeapon(this.pendingHipFireShot.direction, this.pendingHipFireShot.origin);
-        }
-        if (now >= this.pendingHipFireShot.releaseAt) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) {
           this.clearPendingHipFireShot();
-          this.player.setAimingState(aimingMode);
+        } else if (this.pendingHipFireShot) {
+          const now = performance.now();
+          this.player.setAimingState(aimingMode || now < this.pendingHipFireShot.releaseAt);
+          this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
+          if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
+            this.pendingHipFireShot.fired = true;
+            this.fireLocalWeapon(this.pendingHipFireShot.direction, this.pendingHipFireShot.origin);
+          }
+          if (now >= this.pendingHipFireShot.releaseAt) {
+            this.clearPendingHipFireShot();
+            this.player.setAimingState(aimingMode);
+          }
         }
+        this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       }
-      this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       this.npcService?.setPlayerTransform(
         this.player.position,
         this.player.object.rotation.y,
@@ -3170,7 +3368,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen()) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen()) {
         this.hud.setPrompt(null);
       } else {
         this.updateInteraction();
@@ -3293,6 +3491,11 @@ export class Game {
 
     if (nearest.kind === 'world' && nearest.interior?.id) {
       this.enterInterior(nearest);
+      return;
+    }
+
+    if (nearest.kind === 'snatch-workout') {
+      this.startWorkout(nearest);
       return;
     }
 

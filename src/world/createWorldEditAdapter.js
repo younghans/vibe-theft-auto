@@ -15,19 +15,21 @@ function successResult(placementId = null) {
 function toTransportPayload(edit) {
   switch (edit.op) {
     case 'placeTile':
-      return {
-        itemId: edit.item.id,
-        cellX: edit.cellX,
-        cellZ: edit.cellZ,
-        rotationQuarterTurns: edit.rotationQuarterTurns
-      };
+        return {
+          itemId: edit.item.id,
+          cellX: edit.cellX,
+          cellZ: edit.cellZ,
+          rotationQuarterTurns: edit.rotationQuarterTurns,
+          interactable: edit.item.interactable ?? null
+        };
     case 'placeProp':
-      return {
-        itemId: edit.item.id,
-        x: edit.x,
-        z: edit.z,
-        rotationQuarterTurns: edit.rotationQuarterTurns
-      };
+        return {
+          itemId: edit.item.id,
+          x: edit.x,
+          z: edit.z,
+          rotationQuarterTurns: edit.rotationQuarterTurns,
+          interactable: edit.item.interactable ?? null
+        };
     case 'placeNpc':
       return {
         modelId: edit.item.modelId,
@@ -105,7 +107,8 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
         edit.item,
         edit.cellX,
         edit.cellZ,
-        edit.rotationQuarterTurns
+        edit.rotationQuarterTurns,
+        edit.item.interactable ?? null
       );
       for (const replacedPlacementId of result.replacedPlacementIds ?? []) {
         worldRenderer.removePlacement(replacedPlacementId);
@@ -118,7 +121,8 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
         edit.item,
         edit.x,
         edit.z,
-        edit.rotationQuarterTurns
+        edit.rotationQuarterTurns,
+        edit.item.interactable ?? null
       );
       await worldRenderer.addPlacement(placement);
       return successResult(placement.id);

@@ -84,6 +84,19 @@ function cloneInteriorDefinition(interior) {
   };
 }
 
+function cloneInteractableDefinition(interactable) {
+  if (!interactable) {
+    return null;
+  }
+
+  return {
+    ...interactable,
+    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : undefined,
+    approachLocalOffset: Array.isArray(interactable.approachLocalOffset) ? [...interactable.approachLocalOffset] : undefined,
+    interior: cloneInteriorDefinition(interactable.interior)
+  };
+}
+
 function resolvePlacementInteractable(placement, item) {
   const baseInteractable = item?.interior
     ? {
@@ -94,6 +107,8 @@ function resolvePlacementInteractable(placement, item) {
         localOffset: [...(item.interior.exteriorDoorOffset ?? [0, 0])],
         interior: cloneInteriorDefinition(item.interior)
       }
+    : item?.interactable
+      ? cloneInteractableDefinition(item.interactable)
     : null;
 
   if (!placement.interactable) {
@@ -116,6 +131,12 @@ function resolvePlacementInteractable(placement, item) {
     mergedInteractable.localOffset = [...placement.interactable.localOffset];
   } else if (Array.isArray(baseInteractable?.localOffset)) {
     mergedInteractable.localOffset = [...baseInteractable.localOffset];
+  }
+
+  if (Array.isArray(placement.interactable?.approachLocalOffset)) {
+    mergedInteractable.approachLocalOffset = [...placement.interactable.approachLocalOffset];
+  } else if (Array.isArray(baseInteractable?.approachLocalOffset)) {
+    mergedInteractable.approachLocalOffset = [...baseInteractable.approachLocalOffset];
   }
 
   return mergedInteractable;
@@ -655,7 +676,7 @@ export class WorldRenderer {
         }
 
         const item = getBuilderItemById(placement.itemId);
-        return Boolean(placement.interactable || item?.interior);
+        return Boolean(placement.interactable || item?.interior || item?.interactable);
       })
       .map((placement) => {
         const rendered = this.renderedPlacements.get(placement.id);
@@ -697,9 +718,18 @@ export class WorldRenderer {
 
         const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
         const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
+        const approachPosition = Array.isArray(interactable.approachLocalOffset)
+          ? getInteractableWorldPosition(
+            rendered,
+            placement,
+            { localOffset: interactable.approachLocalOffset },
+            distance
+          )
+          : null;
+        const workoutKind = interactable.workoutType ? `${interactable.workoutType}-workout` : 'world';
 
         return {
-          kind: 'world',
+          kind: workoutKind,
           placementId: placement.id,
           itemId: item.id,
           rotationQuarterTurns: placement.rotationQuarterTurns,
@@ -708,7 +738,12 @@ export class WorldRenderer {
           radius: interactable.radius ?? 4,
           prompt: interactable.prompt ?? `Enter ${interactable.label ?? item.label}`,
           actionText: interactable.actionText ?? `${item.label} is not hooked up yet.`,
-          interior: cloneInteriorDefinition(interactable.interior)
+          interior: cloneInteriorDefinition(interactable.interior),
+          approachPosition,
+          approachRotationY: Number.isFinite(interactable.approachRotationY)
+            ? toRotationY(placement.rotationQuarterTurns) + interactable.approachRotationY
+            : undefined,
+          barbellObject: interactable.workoutType ? rendered.object : null
         };
       })
       .filter(Boolean);

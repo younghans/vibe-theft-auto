@@ -246,6 +246,18 @@ function dampAngle(current, target, smoothing) {
   return current + delta * smoothing;
 }
 
+function clampBoundsX(cityBounds, fallback) {
+  return Number.isFinite(cityBounds?.min?.x) && Number.isFinite(cityBounds?.max?.x)
+    ? [cityBounds.min.x, cityBounds.max.x]
+    : [fallback, fallback];
+}
+
+function clampBoundsZ(cityBounds, fallback) {
+  return Number.isFinite(cityBounds?.min?.z) && Number.isFinite(cityBounds?.max?.z)
+    ? [cityBounds.min.z, cityBounds.max.z]
+    : [fallback, fallback];
+}
+
 function normalizeAngle(angle) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
@@ -1551,6 +1563,35 @@ export async function createPlayer(library, {
     return getMergedGripProfile(itemId);
   }
 
+  function moveWithWorldVector(direction, deltaSeconds, colliders, cityBounds, speedScale = 1) {
+    const movement = direction.clone();
+    movement.y = 0;
+    if (movement.lengthSq() > 1) {
+      movement.normalize();
+    }
+
+    if (movement.lengthSq() <= 0.000001) {
+      return false;
+    }
+
+    const step = PLAYER_SPEED * Math.max(0, speedScale) * deltaSeconds;
+    const [minX, maxX] = clampBoundsX(cityBounds, anchor.position.x);
+    const [minZ, maxZ] = clampBoundsZ(cityBounds, anchor.position.z);
+    const proposedX = anchor.position.clone().addScaledVector(new THREE.Vector3(movement.x, 0, 0), step);
+    if (!collidesWithColliders(proposedX, colliders, PLAYER_RADIUS)) {
+      anchor.position.x = THREE.MathUtils.clamp(proposedX.x, minX, maxX);
+    }
+
+    const proposedZ = anchor.position.clone().addScaledVector(new THREE.Vector3(0, 0, movement.z), step);
+    if (!collidesWithColliders(proposedZ, colliders, PLAYER_RADIUS)) {
+      anchor.position.z = THREE.MathUtils.clamp(proposedZ.z, minZ, maxZ);
+    }
+
+    const targetYaw = Math.atan2(movement.x, movement.z);
+    anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
+    return true;
+  }
+
   return {
     characterId: characterDefinition.id,
     characterDefinition,
@@ -1754,6 +1795,14 @@ export async function createPlayer(library, {
     setAimingState(aiming) {
       aimingState = Boolean(aiming);
     },
+    stopEmote() {
+      stopActiveEmote();
+    },
+    setFacing(rotationY) {
+      if (Number.isFinite(rotationY)) {
+        anchor.rotation.y = rotationY;
+      }
+    },
     setReloadState(reloading, options = {}) {
       return setReloadState(Boolean(reloading), options);
     },
@@ -1898,22 +1947,60 @@ export async function createPlayer(library, {
       const movement = moving ? projectMoveOnCamera(camera, rawInput) : new THREE.Vector3();
 
       if (moving) {
-        const step = PLAYER_SPEED * deltaSeconds;
-        const proposedX = anchor.position.clone().addScaledVector(new THREE.Vector3(movement.x, 0, 0), step);
-        if (!collidesWithColliders(proposedX, colliders, PLAYER_RADIUS)) {
-          anchor.position.x = THREE.MathUtils.clamp(proposedX.x, cityBounds.min.x, cityBounds.max.x);
-        }
-
-        const proposedZ = anchor.position.clone().addScaledVector(new THREE.Vector3(0, 0, movement.z), step);
-        if (!collidesWithColliders(proposedZ, colliders, PLAYER_RADIUS)) {
-          anchor.position.z = THREE.MathUtils.clamp(proposedZ.z, cityBounds.min.z, cityBounds.max.z);
-        }
-
-        const targetYaw = Math.atan2(movement.x, movement.z);
-        anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
+        moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds);
       }
 
       updateAnimationState(deltaSeconds, moving, groundHeight);
+    },
+    moveToward(targetPosition, deltaSeconds, colliders, cityBounds, groundHeight = 0, options = {}) {
+      if (!aliveState) {
+        updateAnimationState(deltaSeconds, false, groundHeight);
+        return {
+          arrived: false,
+          moving: false,
+          distance: Infinity
+        };
+      }
+
+      if (isLimpTransitioning()) {
+        setLimpActive(false, { trackSync: false });
+      }
+
+      if (activeEmoteConfig?.cancelOnMove ?? true) {
+        stopActiveEmote();
+      }
+
+      const target = targetPosition?.isVector3
+        ? targetPosition.clone()
+        : new THREE.Vector3(
+          targetPosition?.x ?? anchor.position.x,
+          targetPosition?.y ?? anchor.position.y,
+          targetPosition?.z ?? anchor.position.z
+        );
+      const stopDistance = Math.max(0.05, Number(options.stopDistance) || 0.18);
+      const speedScale = Number.isFinite(options.speedScale) ? options.speedScale : 1;
+      const toTarget = target.clone().sub(anchor.position);
+      toTarget.y = 0;
+      const distance = toTarget.length();
+
+      if (distance <= stopDistance) {
+        updateAnimationState(deltaSeconds, false, groundHeight);
+        return {
+          arrived: true,
+          moving: false,
+          distance
+        };
+      }
+
+      const moving = moveWithWorldVector(toTarget.normalize(), deltaSeconds, colliders, cityBounds, speedScale);
+      updateAnimationState(deltaSeconds, moving, groundHeight);
+
+      const remaining = target.clone().sub(anchor.position).setY(0).length();
+      return {
+        arrived: remaining <= stopDistance,
+        moving,
+        distance: remaining
+      };
     },
     applyRemoteState(state, deltaSeconds, groundHeight = 0) {
       const remoteAlive = state?.alive !== false;

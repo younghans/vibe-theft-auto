@@ -37,6 +37,7 @@ export const assets = {
       idle: assetUrl('mixamo', 'animations', 'idle.json'),
       fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),
       punching: assetUrl('mixamo', 'animations', 'punching.json'),
+      snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),

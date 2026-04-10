@@ -23,6 +23,9 @@ function cloneInteractable(interactable) {
   return {
     ...interactable,
     localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : interactable.localOffset,
+    approachLocalOffset: Array.isArray(interactable.approachLocalOffset)
+      ? [...interactable.approachLocalOffset]
+      : interactable.approachLocalOffset,
     interior: cloneInterior(interactable.interior)
   };
 }

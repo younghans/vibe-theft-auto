@@ -1,6 +1,7 @@
 import { assetUrl, cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
+import { createOlympicBarbellVisual, OLYMPIC_BARBELL_FOOTPRINT } from './proceduralProps.js';
 
 export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
@@ -13,6 +14,7 @@ const TILE_GROUPS = Object.freeze({
 const PROP_GROUPS = Object.freeze({
   street: 'Street',
   greenery: 'Greenery',
+  fitness: 'Fitness',
   storage: 'Storage',
   vehicles: 'Vehicles',
   utilities: 'Utilities'
@@ -269,6 +271,26 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'tree_D', group: 'greenery' },
   { assetName: 'tree_E', group: 'greenery' },
   { id: 'tower', assetName: 'watertower', label: 'Water Tower', group: 'utilities' },
+  {
+    id: 'olympic_barbell',
+    assetName: 'olympic_barbell',
+    label: 'Olympic Barbell',
+    asset: null,
+    group: 'fitness',
+    size: OLYMPIC_BARBELL_FOOTPRINT,
+    collision: false,
+    createVisual: createOlympicBarbellVisual,
+    interactable: {
+      label: 'Olympic Barbell',
+      prompt: 'Snatch barbell',
+      actionText: 'Step in and perform a snatch.',
+      radius: 3.6,
+      localOffset: [0, 0],
+      workoutType: 'snatch',
+      approachLocalOffset: [0, 1.2],
+      approachRotationY: Math.PI
+    }
+  },
   ...KENNEY_PROP_DEFINITIONS
 ]);
 
@@ -384,12 +406,15 @@ function propPaddingForAsset(assetName) {
 function createCityTile(definition) {
   const blocksMovement = definition.blocksMovement ?? definition.collision ?? tileCollisionForAsset(definition.assetName);
   const blocksShots = definition.blocksShots ?? definition.collision ?? tileBallisticCollisionForAsset(definition.assetName);
+  const asset = Object.prototype.hasOwnProperty.call(definition, 'asset')
+    ? definition.asset
+    : cityAsset(definition.assetName);
 
   return {
     id: definition.id ?? definition.assetName.toLowerCase(),
     assetName: definition.assetName,
     label: definition.label ?? formatCityLabel(definition.assetName),
-    asset: definition.asset ?? cityAsset(definition.assetName),
+    asset,
     size: definition.size ?? tileSizeForAsset(definition.assetName),
     tileFootprint: definition.tileFootprint ?? [1, 1],
     surfaceHeight: definition.surfaceHeight ?? DEFAULT_TILE_SURFACE_HEIGHT,
@@ -407,6 +432,18 @@ function createCityTile(definition) {
           exteriorSpawnOffset: [...(definition.interior.exteriorSpawnOffset ?? [0, 0])]
         }
       : null,
+    interactable: definition.interactable
+      ? {
+          ...definition.interactable,
+          localOffset: Array.isArray(definition.interactable.localOffset)
+            ? [...definition.interactable.localOffset]
+            : definition.interactable.localOffset,
+          approachLocalOffset: Array.isArray(definition.interactable.approachLocalOffset)
+            ? [...definition.interactable.approachLocalOffset]
+            : definition.interactable.approachLocalOffset
+        }
+      : null,
+    createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     underlayTileId: definition.underlayTileId ?? null,
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]
@@ -416,18 +453,33 @@ function createCityTile(definition) {
 function createCityProp(definition) {
   const blocksMovement = definition.blocksMovement ?? definition.collision ?? propCollisionForAsset(definition.assetName);
   const blocksShots = definition.blocksShots ?? definition.collision ?? propCollisionForAsset(definition.assetName);
+  const asset = Object.prototype.hasOwnProperty.call(definition, 'asset')
+    ? definition.asset
+    : cityAsset(definition.assetName);
 
   return {
     id: definition.id ?? definition.assetName.toLowerCase(),
     assetName: definition.assetName,
     label: definition.label ?? formatCityLabel(definition.assetName),
-    asset: definition.asset ?? cityAsset(definition.assetName),
+    asset,
     size: definition.size ?? propSizeForAsset(definition.assetName),
     layer: 'prop',
     collision: blocksMovement,
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
+    interactable: definition.interactable
+      ? {
+          ...definition.interactable,
+          localOffset: Array.isArray(definition.interactable.localOffset)
+            ? [...definition.interactable.localOffset]
+            : definition.interactable.localOffset,
+          approachLocalOffset: Array.isArray(definition.interactable.approachLocalOffset)
+            ? [...definition.interactable.approachLocalOffset]
+            : definition.interactable.approachLocalOffset
+        }
+      : null,
+    createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
   };

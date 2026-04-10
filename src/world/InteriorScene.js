@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createOlympicBarbellVisual, OLYMPIC_BARBELL_PLATE_RADIUS } from './proceduralProps.js';
 
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
@@ -15,6 +16,17 @@ const INTERIOR_TEMPLATES = Object.freeze([
     spawnOffset: [0, 5.9],
     exitOffset: [0, 8.2],
     boundsPadding: 1.25,
+    workoutStations: Object.freeze([
+      {
+        id: 'snatch_platform',
+        type: 'snatch',
+        platformSize: [7.2, 3.6],
+        platformPosition: [0, -1.15],
+        barbellPosition: [0, -1.15],
+        approachPosition: [0, 1.2],
+        approachRotationY: Math.PI
+      }
+    ]),
     palette: Object.freeze({
       floor: 0x50565d,
       wall: 0xd8d5ce,
@@ -60,6 +72,36 @@ function createWallSegment(width, depth, height, color) {
       metalness: 0.02
     })
   );
+}
+
+function createWorkoutPlatform(width, depth) {
+  const platform = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(width, 0.2, depth),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a2c30,
+      roughness: 0.94,
+      metalness: 0.02
+    })
+  );
+  base.position.y = 0.1;
+  base.receiveShadow = true;
+  platform.add(base);
+
+  const woodStrip = new THREE.Mesh(
+    new THREE.BoxGeometry(width * 0.32, 0.04, depth * 0.92),
+    new THREE.MeshStandardMaterial({
+      color: 0xa67c52,
+      roughness: 0.88,
+      metalness: 0.04
+    })
+  );
+  woodStrip.position.y = 0.22;
+  woodStrip.receiveShadow = true;
+  platform.add(woodStrip);
+
+  return platform;
 }
 
 function createColliderFromLocalRect(
@@ -261,6 +303,52 @@ export function createInteriorScene(interiorId, options = {}) {
     -1,
     template.wallHeight
   );
+  const interiorInteractables = [];
+
+  for (const station of template.workoutStations ?? []) {
+    const platform = createWorkoutPlatform(
+      station.platformSize?.[0] ?? 6.8,
+      station.platformSize?.[1] ?? 3.4
+    );
+    platform.position.set(
+      station.platformPosition?.[0] ?? 0,
+      0,
+      station.platformPosition?.[1] ?? 0
+    );
+    group.add(platform);
+
+    const floorBarbell = createOlympicBarbellVisual();
+    floorBarbell.position.set(
+      station.barbellPosition?.[0] ?? 0,
+      OLYMPIC_BARBELL_PLATE_RADIUS,
+      station.barbellPosition?.[1] ?? 0
+    );
+    group.add(floorBarbell);
+
+    interiorInteractables.push({
+      kind: `${station.type}-workout`,
+      stationId: station.id,
+      position: transformLocalPoint(
+        origin,
+        normalizedRotation,
+        station.barbellPosition?.[0] ?? 0,
+        0,
+        station.barbellPosition?.[1] ?? 0
+      ),
+      radius: 3.6,
+      prompt: 'Snatch barbell',
+      actionText: 'Step onto the platform and hit a snatch.',
+      approachPosition: transformLocalPoint(
+        origin,
+        normalizedRotation,
+        station.approachPosition?.[0] ?? 0,
+        0,
+        station.approachPosition?.[1] ?? 0
+      ),
+      approachRotationY: normalizedRotation * (Math.PI / 2) + (station.approachRotationY ?? 0),
+      barbellObject: floorBarbell
+    });
+  }
 
   const scene = {
     id: template.id,
@@ -271,15 +359,18 @@ export function createInteriorScene(interiorId, options = {}) {
     doorwayThresholdPosition,
     doorwayTriggerBounds,
     bounds,
-    interactables: includeExitInteractable
-      ? [{
-          kind: 'interior-exit',
-          position: exitPosition,
-          radius: 3.4,
-          prompt: `Leave ${template.label}`,
-          actionText: 'Step back outside.'
-        }]
-      : [],
+    interactables: [
+      ...interiorInteractables,
+      ...(includeExitInteractable
+        ? [{
+            kind: 'interior-exit',
+            position: exitPosition,
+            radius: 3.4,
+            prompt: `Leave ${template.label}`,
+            actionText: 'Step back outside.'
+          }]
+        : [])
+    ],
     getGroundHeightAt() {
       return origin[1] ?? 0;
     },

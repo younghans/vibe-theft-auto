@@ -1057,7 +1057,8 @@ export class WorldRoom extends Room {
           next.item,
           next.cellX,
           next.cellZ,
-          next.rotationQuarterTurns
+          next.rotationQuarterTurns,
+          next.interactable
         );
         return this.commitWorldPatch({
           type: 'upsertPlacement',
@@ -1072,7 +1073,8 @@ export class WorldRoom extends Room {
           next.item,
           next.x,
           next.z,
-          next.rotationQuarterTurns
+          next.rotationQuarterTurns,
+          next.interactable
         );
         return this.commitWorldPatch({
           type: 'upsertPlacement',
@@ -1236,7 +1238,8 @@ export class WorldRoom extends Room {
       item,
       cellX: Math.round(Number(message.cellX ?? message.cell?.[0] ?? 0)),
       cellZ: Math.round(Number(message.cellZ ?? message.cell?.[1] ?? 0)),
-      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      interactable: this.sanitizePlacementInteractable(message.interactable ?? item.interactable ?? null)
     };
   }
 
@@ -1250,7 +1253,8 @@ export class WorldRoom extends Room {
       item,
       x: quantizePosition(message.x ?? message.position?.[0]),
       z: quantizePosition(message.z ?? message.position?.[1]),
-      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      interactable: this.sanitizePlacementInteractable(message.interactable ?? item.interactable ?? null)
     };
   }
 
@@ -1326,7 +1330,11 @@ export class WorldRoom extends Room {
     };
   }
 
-  sanitizePlacementInteractable(interactable = {}) {
+  sanitizePlacementInteractable(interactable = null) {
+    if (!interactable || typeof interactable !== 'object') {
+      return null;
+    }
+
     const next = {};
 
     if (Object.hasOwn(interactable, 'label')) {
@@ -1350,6 +1358,29 @@ export class WorldRoom extends Room {
 
     next.radius = clampNpcRadius(interactable.radius ?? 4);
     next.distance = Math.max(1, Math.min(28, Number(interactable.distance ?? 6.16) || 6.16));
+
+    if (Array.isArray(interactable.localOffset) && interactable.localOffset.length >= 2) {
+      next.localOffset = [
+        quantizePosition(interactable.localOffset[0]),
+        quantizePosition(interactable.localOffset[1])
+      ];
+    }
+
+    if (Array.isArray(interactable.approachLocalOffset) && interactable.approachLocalOffset.length >= 2) {
+      next.approachLocalOffset = [
+        quantizePosition(interactable.approachLocalOffset[0]),
+        quantizePosition(interactable.approachLocalOffset[1])
+      ];
+    }
+
+    if (typeof interactable.workoutType === 'string' && interactable.workoutType.trim()) {
+      next.workoutType = interactable.workoutType.trim().slice(0, 32);
+    }
+
+    if (Number.isFinite(Number(interactable.approachRotationY))) {
+      next.approachRotationY = quantizeRotation(Number(interactable.approachRotationY));
+    }
+
     return next;
   }
 
