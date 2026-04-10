@@ -24,9 +24,9 @@ function buildPlateStack(side, material) {
   const direction = side >= 0 ? 1 : -1;
   const sleeveOffset = (OLYMPIC_BARBELL_LENGTH * 0.5) - 0.55;
   const plateConfigs = [
-    { radius: OLYMPIC_BARBELL_PLATE_RADIUS, thickness: 0.15, x: sleeveOffset + 0.02 },
+    { radius: OLYMPIC_BARBELL_PLATE_RADIUS, thickness: 0.15, x: sleeveOffset - 0.31 },
     { radius: 0.64, thickness: 0.11, x: sleeveOffset - 0.17 },
-    { radius: 0.52, thickness: 0.08, x: sleeveOffset - 0.31 }
+    { radius: 0.52, thickness: 0.08, x: sleeveOffset + 0.02 }
   ];
 
   for (const config of plateConfigs) {
