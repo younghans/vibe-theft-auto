@@ -173,10 +173,18 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     tileFootprint: [2, 2],
     collision: true,
     blocksShots: true,
+    movementCollisionRects: [
+      { centerX: 0, centerZ: -10.55, halfWidth: 11, halfDepth: 0.45, minY: 0, maxY: 18 },
+      { centerX: -10.55, centerZ: 0, halfWidth: 0.45, halfDepth: 11, minY: 0, maxY: 18 },
+      { centerX: 10.55, centerZ: 0, halfWidth: 0.45, halfDepth: 11, minY: 0, maxY: 18 },
+      { centerX: -6.8, centerZ: 10.55, halfWidth: 4.2, halfDepth: 0.45, minY: 0, maxY: 18 },
+      { centerX: 6.8, centerZ: 10.55, halfWidth: 4.2, halfDepth: 0.45, minY: 0, maxY: 18 }
+    ],
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
     interior: {
       id: 'gym_large_blank',
+      mode: 'inline-shell',
       label: 'Fitness Gym',
       prompt: 'Enter gym',
       exteriorDoorOffset: [0, 10.4],

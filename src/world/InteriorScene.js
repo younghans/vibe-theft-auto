@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
+const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
+const INLINE_SHELL_TRIGGER_WIDTH_PADDING = 0.8;
 
 const INTERIOR_TEMPLATES = Object.freeze([
   {
@@ -23,6 +25,32 @@ const INTERIOR_TEMPLATES = Object.freeze([
 
 const TEMPLATE_BY_ID = new Map(INTERIOR_TEMPLATES.map((template) => [template.id, template]));
 
+function normalizeRotationQuarterTurns(value = 0) {
+  return ((Math.round(Number(value) || 0) % 4) + 4) % 4;
+}
+
+function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
+  switch (normalizeRotationQuarterTurns(rotationQuarterTurns)) {
+    case 1:
+      return { x: z, z: -x };
+    case 2:
+      return { x: -x, z: -z };
+    case 3:
+      return { x: -z, z: x };
+    default:
+      return { x, z };
+  }
+}
+
+function transformLocalPoint(origin, rotationQuarterTurns, x, y, z) {
+  const rotated = rotateLocalOffset(x, z, rotationQuarterTurns);
+  return new THREE.Vector3(
+    (origin?.[0] ?? 0) + rotated.x,
+    (origin?.[1] ?? 0) + y,
+    (origin?.[2] ?? 0) + rotated.z
+  );
+}
+
 function createWallSegment(width, depth, height, color) {
   return new THREE.Mesh(
     new THREE.BoxGeometry(width, height, depth),
@@ -34,41 +62,96 @@ function createWallSegment(width, depth, height, color) {
   );
 }
 
-function createCollider(minX, minZ, maxX, maxZ, minY = 0, maxY = 14) {
+function createColliderFromLocalRect(
+  origin,
+  rotationQuarterTurns,
+  centerX,
+  centerZ,
+  halfWidth,
+  halfDepth,
+  minY = 0,
+  maxY = 14
+) {
+  const rotatedCenter = rotateLocalOffset(centerX, centerZ, rotationQuarterTurns);
+  const swapDimensions = Math.abs(normalizeRotationQuarterTurns(rotationQuarterTurns) % 2) === 1;
+  const worldHalfWidth = swapDimensions ? halfDepth : halfWidth;
+  const worldHalfDepth = swapDimensions ? halfWidth : halfDepth;
+  const worldCenterX = (origin?.[0] ?? 0) + rotatedCenter.x;
+  const worldCenterY = (origin?.[1] ?? 0) + ((minY + maxY) * 0.5);
+  const worldCenterZ = (origin?.[2] ?? 0) + rotatedCenter.z;
+
   return {
     type: 'box',
     box: new THREE.Box3(
-      new THREE.Vector3(minX, minY, minZ),
-      new THREE.Vector3(maxX, maxY, maxZ)
+      new THREE.Vector3(
+        worldCenterX - worldHalfWidth,
+        worldCenterY - ((maxY - minY) * 0.5),
+        worldCenterZ - worldHalfDepth
+      ),
+      new THREE.Vector3(
+        worldCenterX + worldHalfWidth,
+        worldCenterY + ((maxY - minY) * 0.5),
+        worldCenterZ + worldHalfDepth
+      )
     )
   };
+}
+
+function createBoundsFromLocalRect(
+  origin,
+  rotationQuarterTurns,
+  centerX,
+  centerZ,
+  halfWidth,
+  halfDepth,
+  minY = -1,
+  maxY = 14
+) {
+  return createColliderFromLocalRect(
+    origin,
+    rotationQuarterTurns,
+    centerX,
+    centerZ,
+    halfWidth,
+    halfDepth,
+    minY,
+    maxY
+  ).box;
 }
 
 export function getInteriorTemplateById(id) {
   return TEMPLATE_BY_ID.get(id) ?? null;
 }
 
-export function createInteriorScene(interiorId) {
+export function createInteriorScene(interiorId, options = {}) {
   const template = getInteriorTemplateById(interiorId);
   if (!template) {
     return null;
   }
 
-  const [originX, originY, originZ] = INTERIOR_WORLD_ORIGIN;
+  const {
+    origin = INTERIOR_WORLD_ORIGIN,
+    rotationQuarterTurns = 0,
+    visible = true,
+    includeExitInteractable = true
+  } = options;
+  const normalizedRotation = normalizeRotationQuarterTurns(rotationQuarterTurns);
   const [floorWidth, floorDepth] = template.floorSize;
   const halfWidth = floorWidth * 0.5;
   const halfDepth = floorDepth * 0.5;
   const halfDoorway = template.doorwayWidth * 0.5;
-  const wallY = originY + (template.wallHeight * 0.5);
+  const wallY = template.wallHeight * 0.5;
   const wallThickness = template.wallThickness;
-  const southWallZ = originZ + halfDepth - (wallThickness * 0.5);
-  const northWallZ = originZ - halfDepth + (wallThickness * 0.5);
-  const westWallX = originX - halfWidth + (wallThickness * 0.5);
-  const eastWallX = originX + halfWidth - (wallThickness * 0.5);
-  const sideWallDepth = Math.max(0.8, halfDepth - halfDoorway);
+  const southWallZ = halfDepth - (wallThickness * 0.5);
+  const northWallZ = -halfDepth + (wallThickness * 0.5);
+  const westWallX = -halfWidth + (wallThickness * 0.5);
+  const eastWallX = halfWidth - (wallThickness * 0.5);
+  const doorwaySegmentWidth = Math.max(0.8, halfWidth - halfDoorway);
 
   const group = new THREE.Group();
   group.name = `InteriorScene_${template.id}`;
+  group.position.set(origin[0] ?? 0, origin[1] ?? 0, origin[2] ?? 0);
+  group.rotation.y = normalizedRotation * (Math.PI / 2);
 
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(floorWidth, 0.25, floorDepth),
@@ -77,30 +160,30 @@ export function createInteriorScene(interiorId) {
       roughness: 1
     })
   );
-  floor.position.set(originX, originY - 0.125, originZ);
+  floor.position.set(0, -0.125, 0);
   floor.receiveShadow = true;
   group.add(floor);
 
   const northWall = createWallSegment(floorWidth, wallThickness, template.wallHeight, template.palette.wall);
-  northWall.position.set(originX, wallY, northWallZ);
+  northWall.position.set(0, wallY, northWallZ);
   const westWall = createWallSegment(wallThickness, floorDepth, template.wallHeight, template.palette.wall);
-  westWall.position.set(westWallX, wallY, originZ);
+  westWall.position.set(westWallX, wallY, 0);
   const eastWall = createWallSegment(wallThickness, floorDepth, template.wallHeight, template.palette.wall);
-  eastWall.position.set(eastWallX, wallY, originZ);
+  eastWall.position.set(eastWallX, wallY, 0);
   const southWallLeft = createWallSegment(
-    Math.max(0.8, halfWidth - halfDoorway),
+    doorwaySegmentWidth,
     wallThickness,
     template.wallHeight,
     template.palette.wall
   );
-  southWallLeft.position.set(originX - ((halfWidth + halfDoorway) * 0.5), wallY, southWallZ);
+  southWallLeft.position.set(-((halfWidth + halfDoorway) * 0.5), wallY, southWallZ);
   const southWallRight = createWallSegment(
-    Math.max(0.8, halfWidth - halfDoorway),
+    doorwaySegmentWidth,
     wallThickness,
     template.wallHeight,
     template.palette.wall
   );
-  southWallRight.position.set(originX + ((halfWidth + halfDoorway) * 0.5), wallY, southWallZ);
+  southWallRight.position.set(((halfWidth + halfDoorway) * 0.5), wallY, southWallZ);
 
   const trim = new THREE.Mesh(
     new THREE.BoxGeometry(template.doorwayWidth, 0.6, wallThickness),
@@ -109,7 +192,7 @@ export function createInteriorScene(interiorId) {
       roughness: 0.85
     })
   );
-  trim.position.set(originX, originY + template.wallHeight - 0.4, southWallZ);
+  trim.position.set(0, template.wallHeight - 0.4, southWallZ);
 
   for (const wall of [northWall, westWall, eastWall, southWallLeft, southWallRight, trim]) {
     wall.castShadow = true;
@@ -118,56 +201,93 @@ export function createInteriorScene(interiorId) {
   }
 
   const colliders = [
-    createCollider(originX - halfWidth, originZ - halfDepth, originX + halfWidth, originZ - halfDepth + wallThickness),
-    createCollider(originX - halfWidth, originZ - halfDepth, originX - halfWidth + wallThickness, originZ + halfDepth),
-    createCollider(originX + halfWidth - wallThickness, originZ - halfDepth, originX + halfWidth, originZ + halfDepth),
-    createCollider(originX - halfWidth, originZ + halfDepth - wallThickness, originX - halfDoorway, originZ + halfDepth),
-    createCollider(originX + halfDoorway, originZ + halfDepth - wallThickness, originX + halfWidth, originZ + halfDepth)
+    createColliderFromLocalRect(origin, normalizedRotation, 0, northWallZ, halfWidth, wallThickness * 0.5, 0, template.wallHeight),
+    createColliderFromLocalRect(origin, normalizedRotation, westWallX, 0, wallThickness * 0.5, halfDepth, 0, template.wallHeight),
+    createColliderFromLocalRect(origin, normalizedRotation, eastWallX, 0, wallThickness * 0.5, halfDepth, 0, template.wallHeight),
+    createColliderFromLocalRect(
+      origin,
+      normalizedRotation,
+      -((halfWidth + halfDoorway) * 0.5),
+      southWallZ,
+      doorwaySegmentWidth * 0.5,
+      wallThickness * 0.5,
+      0,
+      template.wallHeight
+    ),
+    createColliderFromLocalRect(
+      origin,
+      normalizedRotation,
+      ((halfWidth + halfDoorway) * 0.5),
+      southWallZ,
+      doorwaySegmentWidth * 0.5,
+      wallThickness * 0.5,
+      0,
+      template.wallHeight
+    )
   ];
 
-  const spawnPoint = new THREE.Vector3(
-    originX + (template.spawnOffset[0] ?? 0),
-    originY,
-    originZ + (template.spawnOffset[1] ?? 0)
+  const spawnPoint = transformLocalPoint(
+    origin,
+    normalizedRotation,
+    template.spawnOffset[0] ?? 0,
+    0,
+    template.spawnOffset[1] ?? 0
   );
-  const exitPosition = new THREE.Vector3(
-    originX + (template.exitOffset[0] ?? 0),
-    originY,
-    originZ + (template.exitOffset[1] ?? 0)
+  const exitPosition = transformLocalPoint(
+    origin,
+    normalizedRotation,
+    template.exitOffset[0] ?? 0,
+    0,
+    template.exitOffset[1] ?? 0
+  );
+  const doorwayThresholdPosition = transformLocalPoint(origin, normalizedRotation, 0, 0, southWallZ);
+  const bounds = createBoundsFromLocalRect(
+    origin,
+    normalizedRotation,
+    0,
+    0,
+    Math.max(0.2, halfWidth - template.boundsPadding),
+    Math.max(0.2, halfDepth - template.boundsPadding),
+    -1,
+    template.wallHeight
+  );
+  const doorwayTriggerBounds = createBoundsFromLocalRect(
+    origin,
+    normalizedRotation,
+    0,
+    southWallZ,
+    halfDoorway + INLINE_SHELL_TRIGGER_WIDTH_PADDING,
+    INLINE_SHELL_TRIGGER_DEPTH * 0.5,
+    -1,
+    template.wallHeight
   );
 
-  return {
+  const scene = {
     id: template.id,
     label: template.label,
     group,
     colliders,
     spawnPoint,
-    bounds: new THREE.Box3(
-      new THREE.Vector3(
-        originX - halfWidth + template.boundsPadding,
-        originY - 1,
-        originZ - halfDepth + template.boundsPadding
-      ),
-      new THREE.Vector3(
-        originX + halfWidth - template.boundsPadding,
-        originY + template.wallHeight,
-        originZ + halfDepth - template.boundsPadding
-      )
-    ),
-    interactables: [
-      {
-        kind: 'interior-exit',
-        position: exitPosition,
-        radius: 3.4,
-        prompt: `Leave ${template.label}`,
-        actionText: 'Step back outside.'
-      }
-    ],
+    doorwayThresholdPosition,
+    doorwayTriggerBounds,
+    bounds,
+    interactables: includeExitInteractable
+      ? [{
+          kind: 'interior-exit',
+          position: exitPosition,
+          radius: 3.4,
+          prompt: `Leave ${template.label}`,
+          actionText: 'Step back outside.'
+        }]
+      : [],
     getGroundHeightAt() {
-      return originY;
+      return origin[1] ?? 0;
     },
-    setVisible(visible) {
-      group.visible = Boolean(visible);
+    setVisible(nextVisible) {
+      group.visible = Boolean(nextVisible);
     }
   };
+
+  scene.setVisible(visible);
+  return scene;
 }

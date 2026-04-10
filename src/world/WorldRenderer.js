@@ -121,6 +121,30 @@ function getInteractableWorldPosition(rendered, placement, interactable, default
   return rendered.object.position.clone().addScaledVector(forward, defaultDistance);
 }
 
+function createInlineShellEntry(rendered, placement, interactable) {
+  if (!rendered || !placement || !interactable?.interior?.id) {
+    return null;
+  }
+
+  const doorPosition = getInteractableWorldPosition(
+    rendered,
+    placement,
+    {
+      localOffset: [...(interactable.localOffset ?? interactable.interior.exteriorDoorOffset ?? [0, 0])]
+    },
+    BUILDER_TILE_SIZE * 0.44
+  );
+
+  return {
+    placementId: placement.id,
+    itemId: placement.itemId,
+    rotationQuarterTurns: placement.rotationQuarterTurns,
+    originPosition: rendered.object.position.clone(),
+    doorPosition,
+    interior: cloneInteriorDefinition(interactable.interior)
+  };
+}
+
 function createColliderFromLocalRect(rect, placement, minY = 0, maxY = 4) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
   const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
@@ -448,6 +472,7 @@ export class WorldRenderer {
       object,
       actor,
       hidden: false,
+      visualHidden: false,
       item,
       layer: placement.layer,
       surfaceHeight: placement.layer === 'tile'
@@ -544,10 +569,17 @@ export class WorldRenderer {
     }
 
     rendered.hidden = Boolean(hidden);
-    rendered.object.visible = !rendered.hidden;
-    if (rendered.actor?.pickProxy) {
-      rendered.actor.pickProxy.visible = !rendered.hidden;
+    this.applyPlacementVisibility(rendered);
+  }
+
+  setPlacementVisualHidden(id, hidden) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
     }
+
+    rendered.visualHidden = Boolean(hidden);
+    this.applyPlacementVisibility(rendered);
   }
 
   removePlacement(id) {
@@ -615,6 +647,10 @@ export class WorldRenderer {
           return null;
         }
 
+        if (interactable.interior?.mode === 'inline-shell') {
+          return null;
+        }
+
         const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
         const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
 
@@ -630,6 +666,33 @@ export class WorldRenderer {
           actionText: interactable.actionText ?? `${item.label} is not hooked up yet.`,
           interior: cloneInteriorDefinition(interactable.interior)
         };
+      })
+      .filter(Boolean);
+  }
+
+  applyPlacementVisibility(rendered) {
+    const visible = !rendered.hidden && !rendered.visualHidden;
+    rendered.object.visible = visible;
+    if (rendered.actor?.pickProxy) {
+      rendered.actor.pickProxy.visible = visible;
+    }
+  }
+
+  getInlineShellEntries(worldState) {
+    return worldState.getPlacements()
+      .map((placement) => {
+        const rendered = this.renderedPlacements.get(placement.id);
+        const item = getBuilderItemById(placement.itemId);
+        if (!rendered || !item) {
+          return null;
+        }
+
+        const interactable = resolvePlacementInteractable(placement, item);
+        if (!interactable?.interior?.id || interactable.interior.mode !== 'inline-shell') {
+          return null;
+        }
+
+        return createInlineShellEntry(rendered, placement, interactable);
       })
       .filter(Boolean);
   }

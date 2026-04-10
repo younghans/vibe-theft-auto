@@ -429,6 +429,10 @@ export class WorldBuilder {
     return this.worldRenderer.getInteractables(this.worldState);
   }
 
+  getInlineShellEntries() {
+    return this.worldRenderer.getInlineShellEntries(this.worldState);
+  }
+
   getLayout() {
     return this.worldState.serializeLayout();
   }
@@ -449,6 +453,14 @@ export class WorldBuilder {
     this.previewRoot.visible = nextVisible && this.state.enabled;
     this.gridHelper.visible = nextVisible && this.state.enabled;
     this.selectionRing.visible = nextVisible && this.state.enabled && Boolean(this.state.selection.placementId);
+  }
+
+  setPlacementHidden(id, hidden) {
+    this.worldRenderer.setPlacementHidden(id, hidden);
+  }
+
+  setPlacementVisualHidden(id, hidden) {
+    this.worldRenderer.setPlacementVisualHidden(id, hidden);
   }
 
   syncNpcInteractRadiusIndicators(playerPosition = null) {

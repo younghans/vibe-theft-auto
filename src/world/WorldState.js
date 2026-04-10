@@ -2,8 +2,28 @@ import { getNpcModelById } from '../npc/npcCatalog.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
+function cloneInterior(interior) {
+  if (!interior) {
+    return null;
+  }
+
+  return {
+    ...interior,
+    exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
+    exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
+  };
+}
+
 function cloneInteractable(interactable) {
-  return interactable ? { ...interactable } : null;
+  if (!interactable) {
+    return null;
+  }
+
+  return {
+    ...interactable,
+    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : interactable.localOffset,
+    interior: cloneInterior(interactable.interior)
+  };
 }
 
 function clonePlacement(placement) {

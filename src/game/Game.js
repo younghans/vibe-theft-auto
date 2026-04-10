@@ -189,6 +189,8 @@ export class Game {
     this.cityVisualRoot = null;
     this.currentInterior = null;
     this.interiorScenes = new Map();
+    this.activeInlineShell = null;
+    this.inlineShellScenes = new Map();
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
@@ -1029,6 +1031,155 @@ export class Game {
     return this.interiorScenes.get(interiorId) ?? null;
   }
 
+  createInlineShellSignature(entry) {
+    const origin = entry?.originPosition ?? { x: 0, y: 0, z: 0 };
+    return [
+      entry?.placementId ?? '',
+      entry?.interior?.id ?? '',
+      entry?.rotationQuarterTurns ?? 0,
+      Number(origin.x ?? 0).toFixed(2),
+      Number(origin.y ?? 0).toFixed(2),
+      Number(origin.z ?? 0).toFixed(2)
+    ].join(':');
+  }
+
+  removeInlineShellScene(placementId) {
+    const instance = this.inlineShellScenes.get(placementId);
+    if (!instance) {
+      return;
+    }
+
+    if (this.activeInlineShell?.placementId === placementId) {
+      this.worldBuilder?.setPlacementVisualHidden(placementId, false);
+      this.activeInlineShell = null;
+    }
+
+    this.scene.remove(instance.scene.group);
+    disposeObjectResources(instance.scene.group);
+    this.inlineShellScenes.delete(placementId);
+  }
+
+  getOrCreateInlineShellScene(entry) {
+    const placementId = entry?.placementId ?? '';
+    const signature = this.createInlineShellSignature(entry);
+    const existing = this.inlineShellScenes.get(placementId) ?? null;
+    if (existing?.signature === signature) {
+      return existing.scene;
+    }
+
+    if (existing) {
+      this.removeInlineShellScene(placementId);
+    }
+
+    const shellScene = createInteriorScene(entry?.interior?.id, {
+      origin: [
+        entry?.originPosition?.x ?? 0,
+        entry?.originPosition?.y ?? 0,
+        entry?.originPosition?.z ?? 0
+      ],
+      rotationQuarterTurns: entry?.rotationQuarterTurns ?? 0,
+      visible: false,
+      includeExitInteractable: false
+    });
+    if (!shellScene) {
+      return null;
+    }
+
+    this.scene.add(shellScene.group);
+    this.inlineShellScenes.set(placementId, {
+      signature,
+      scene: shellScene
+    });
+    return shellScene;
+  }
+
+  deactivateInlineShell() {
+    if (!this.activeInlineShell) {
+      return false;
+    }
+
+    const { placementId, scene } = this.activeInlineShell;
+    scene?.setVisible(false);
+    this.worldBuilder?.setPlacementVisualHidden(placementId, false);
+    this.activeInlineShell = null;
+    return true;
+  }
+
+  activateInlineShell(entry) {
+    const shellScene = this.getOrCreateInlineShellScene(entry);
+    if (!shellScene) {
+      this.deactivateInlineShell();
+      return false;
+    }
+
+    if (this.activeInlineShell?.placementId !== entry.placementId) {
+      this.deactivateInlineShell();
+    }
+
+    this.activeInlineShell = {
+      placementId: entry.placementId,
+      scene: shellScene
+    };
+    shellScene.setVisible(true);
+    this.worldBuilder?.setPlacementVisualHidden(entry.placementId, true);
+    return true;
+  }
+
+  findInlineShellTarget(entries = []) {
+    if (!this.player) {
+      return null;
+    }
+
+    let nearestTriggerEntry = null;
+    let nearestTriggerDistance = Infinity;
+
+    for (const entry of entries) {
+      const shellScene = this.getOrCreateInlineShellScene(entry);
+      if (!shellScene) {
+        continue;
+      }
+
+      if (shellScene.bounds.containsPoint(this.player.position)) {
+        return entry;
+      }
+
+      if (!shellScene.doorwayTriggerBounds?.containsPoint(this.player.position)) {
+        continue;
+      }
+
+      const triggerDistance = shellScene.doorwayThresholdPosition.distanceToSquared(this.player.position);
+      if (triggerDistance < nearestTriggerDistance) {
+        nearestTriggerDistance = triggerDistance;
+        nearestTriggerEntry = entry;
+      }
+    }
+
+    return nearestTriggerEntry;
+  }
+
+  syncInlineShellState() {
+    if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
+      this.deactivateInlineShell();
+      return;
+    }
+
+    const entries = this.worldBuilder.getInlineShellEntries();
+    const placementIds = new Set(entries.map((entry) => entry.placementId));
+    for (const placementId of [...this.inlineShellScenes.keys()]) {
+      if (!placementIds.has(placementId)) {
+        this.removeInlineShellScene(placementId);
+      }
+    }
+
+    const desiredEntry = this.findInlineShellTarget(entries);
+    if (!desiredEntry) {
+      this.deactivateInlineShell();
+      return;
+    }
+
+    this.activateInlineShell(desiredEntry);
+  }
+
   setRemotePlayersVisible(visible) {
     const nextVisible = Boolean(visible);
     for (const avatar of this.remotePlayers.values()) {
@@ -1121,6 +1272,8 @@ export class Game {
     if (this.currentInterior?.scene) {
       this.currentInterior.scene.setVisible(false);
     }
+
+    this.deactivateInlineShell();
 
     const exteriorReturnPosition = this.resolveRotatedOffsetPosition(
       interactable.originPosition,
@@ -2201,6 +2354,10 @@ export class Game {
       this.exitInterior({ showToast: false });
     }
 
+    if (this.activeInlineShell && (died || respawned || !isAlive)) {
+      this.deactivateInlineShell();
+    }
+
     const groundHeight = this.getActiveGroundHeightAt(targetPosition);
     if ((!this.currentInterior?.scene) && (!this.localStateInitialized || respawned || died || distance > 2.5)) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
@@ -2869,6 +3026,7 @@ export class Game {
     this.worldBuilder.update(deltaSeconds, this.input);
 
     if (this.worldBuilder.enabled) {
+      this.deactivateInlineShell();
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
@@ -2898,6 +3056,7 @@ export class Game {
         this.getActiveSceneBounds(),
         groundHeight
       );
+      this.syncInlineShellState();
       let aimingMode = false;
       const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
       const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
