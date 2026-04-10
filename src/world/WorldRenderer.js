@@ -55,6 +55,72 @@ function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
   }
 }
 
+function cloneInteriorDefinition(interior) {
+  if (!interior) {
+    return null;
+  }
+
+  return {
+    ...interior,
+    exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
+    exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
+  };
+}
+
+function resolvePlacementInteractable(placement, item) {
+  const baseInteractable = item?.interior
+    ? {
+        label: item.interior.label ?? item.label,
+        prompt: item.interior.prompt ?? `Enter ${item.interior.label ?? item.label}`,
+        actionText: item.interior.actionText ?? `Enter ${item.interior.label ?? item.label}.`,
+        radius: item.interior.exteriorInteractRadius ?? 4.4,
+        localOffset: [...(item.interior.exteriorDoorOffset ?? [0, 0])],
+        interior: cloneInteriorDefinition(item.interior)
+      }
+    : null;
+
+  if (!placement.interactable) {
+    return baseInteractable;
+  }
+
+  const mergedInteractable = {
+    ...(baseInteractable ?? {}),
+    ...placement.interactable
+  };
+
+  if (baseInteractable?.interior || placement.interactable?.interior) {
+    mergedInteractable.interior = {
+      ...(baseInteractable?.interior ?? {}),
+      ...(placement.interactable?.interior ?? {})
+    };
+  }
+
+  if (Array.isArray(placement.interactable?.localOffset)) {
+    mergedInteractable.localOffset = [...placement.interactable.localOffset];
+  } else if (Array.isArray(baseInteractable?.localOffset)) {
+    mergedInteractable.localOffset = [...baseInteractable.localOffset];
+  }
+
+  return mergedInteractable;
+}
+
+function getInteractableWorldPosition(rendered, placement, interactable, defaultDistance) {
+  if (Array.isArray(interactable?.localOffset) && interactable.localOffset.length >= 2) {
+    const rotatedOffset = rotateLocalOffset(
+      Number(interactable.localOffset[0]) || 0,
+      Number(interactable.localOffset[1]) || 0,
+      placement.rotationQuarterTurns
+    );
+    return rendered.object.position.clone().add(new THREE.Vector3(rotatedOffset.x, 0, rotatedOffset.z));
+  }
+
+  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    toRotationY(placement.rotationQuarterTurns)
+  );
+  return rendered.object.position.clone().addScaledVector(forward, defaultDistance);
+}
+
 function createColliderFromLocalRect(rect, placement, minY = 0, maxY = 4) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
   const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
@@ -507,7 +573,14 @@ export class WorldRenderer {
 
   getInteractables(worldState) {
     return worldState.getPlacements()
-      .filter((placement) => placement.interactable || placement.layer === 'npc')
+      .filter((placement) => {
+        if (placement.layer === 'npc') {
+          return true;
+        }
+
+        const item = getBuilderItemById(placement.itemId);
+        return Boolean(placement.interactable || item?.interior);
+      })
       .map((placement) => {
         const rendered = this.renderedPlacements.get(placement.id);
         const item = getBuilderItemById(placement.itemId);
@@ -537,20 +610,25 @@ export class WorldRenderer {
           };
         }
 
-        const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          toRotationY(placement.rotationQuarterTurns)
-        );
-        const distance = placement.interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
-        const position = rendered.object.position.clone().addScaledVector(forward, distance);
+        const interactable = resolvePlacementInteractable(placement, item);
+        if (!interactable) {
+          return null;
+        }
+
+        const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
+        const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
 
         return {
           kind: 'world',
           placementId: placement.id,
+          itemId: item.id,
+          rotationQuarterTurns: placement.rotationQuarterTurns,
+          originPosition: rendered.object.position.clone(),
           position,
-          radius: placement.interactable.radius ?? 4,
-          prompt: placement.interactable.prompt ?? `Enter ${placement.interactable.label ?? item.label}`,
-          actionText: placement.interactable.actionText ?? `${item.label} is not hooked up yet.`
+          radius: interactable.radius ?? 4,
+          prompt: interactable.prompt ?? `Enter ${interactable.label ?? item.label}`,
+          actionText: interactable.actionText ?? `${item.label} is not hooked up yet.`,
+          interior: cloneInteriorDefinition(interactable.interior)
         };
       })
       .filter(Boolean);
@@ -569,6 +647,12 @@ export class WorldRenderer {
 
   setNpcInteractRadiusVisible(visible) {
     this.npcInteractRadiusVisible = Boolean(visible);
+  }
+
+  setVisible(visible) {
+    const nextVisible = Boolean(visible);
+    this.tileRoot.visible = nextVisible;
+    this.propRoot.visible = nextVisible;
   }
 
   pickPlacementId(pointer, camera = this.camera) {

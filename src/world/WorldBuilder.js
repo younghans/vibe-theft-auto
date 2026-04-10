@@ -176,6 +176,7 @@ export class WorldBuilder {
     this.onLayoutChanged = onLayoutChanged ?? (() => {});
     this.worldTransport = worldTransport ?? null;
     this.canEdit = false;
+    this.visible = true;
 
     this.state = createDefaultEditorState();
     this.raycaster = new THREE.Raycaster();
@@ -440,11 +441,26 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  setVisible(visible) {
+    const nextVisible = Boolean(visible);
+    this.visible = nextVisible;
+    this.worldRenderer.setVisible(nextVisible);
+    this.remoteBuilderRenderer.clear();
+    this.previewRoot.visible = nextVisible && this.state.enabled;
+    this.gridHelper.visible = nextVisible && this.state.enabled;
+    this.selectionRing.visible = nextVisible && this.state.enabled && Boolean(this.state.selection.placementId);
+  }
+
   syncNpcInteractRadiusIndicators(playerPosition = null) {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
   }
 
   setRemoteBuilders(builders = new Map(), localSessionId = '') {
+    if (!this.visible) {
+      this.remoteBuilderRenderer.clear();
+      return;
+    }
+
     const remoteBuilders = new Map();
     for (const [sessionId, presence] of builders.entries()) {
       if (!presence?.active || sessionId === localSessionId) {

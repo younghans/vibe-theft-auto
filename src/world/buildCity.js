@@ -6,6 +6,7 @@ import {
 import { defaultWorldLayout, DEFAULT_WORLD_SPAWN } from './defaultWorldLayout.js';
 
 export async function buildCity(scene) {
+  const root = new THREE.Group();
   const ambientGround = new THREE.Mesh(
     new THREE.CircleGeometry(WORLD_GROUND_RADIUS, 64),
     new THREE.MeshStandardMaterial({ color: 0x264633, roughness: 1 })
@@ -13,7 +14,8 @@ export async function buildCity(scene) {
   ambientGround.rotation.x = -Math.PI / 2;
   ambientGround.position.y = -0.03;
   ambientGround.receiveShadow = true;
-  scene.add(ambientGround);
+  root.add(ambientGround);
+  scene.add(root);
 
   const cityBounds = new THREE.Box3(
     new THREE.Vector3(-WORLD_HALF_EXTENT, -1, -WORLD_HALF_EXTENT),
@@ -21,6 +23,7 @@ export async function buildCity(scene) {
   );
 
   return {
+    root,
     colliders: [],
     interactables: [],
     cityBounds,

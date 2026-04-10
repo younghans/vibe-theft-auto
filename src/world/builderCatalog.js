@@ -174,7 +174,15 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     collision: true,
     blocksShots: true,
     padding: 0.5,
-    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID,
+    interior: {
+      id: 'gym_large_blank',
+      label: 'Fitness Gym',
+      prompt: 'Enter gym',
+      exteriorDoorOffset: [0, 10.4],
+      exteriorSpawnOffset: [0, 15.4],
+      exteriorInteractRadius: 4.8
+    }
   },
   {
     id: 'hospital_building_wide',
@@ -383,6 +391,13 @@ function createCityTile(definition) {
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
+    interior: definition.interior
+      ? {
+          ...definition.interior,
+          exteriorDoorOffset: [...(definition.interior.exteriorDoorOffset ?? [0, 0])],
+          exteriorSpawnOffset: [...(definition.interior.exteriorSpawnOffset ?? [0, 0])]
+        }
+      : null,
     underlayTileId: definition.underlayTileId ?? null,
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]

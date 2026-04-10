@@ -27,8 +27,10 @@ import {
   WORLD_GROUND_RADIUS,
   WORLD_SHADOW_EXTENT
 } from '../shared/worldConstants.js';
+import { rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
+import { createInteriorScene } from '../world/InteriorScene.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
@@ -131,6 +133,13 @@ function cloneVector3Like(point = { x: 0, y: 0, z: 0 }) {
   return new THREE.Vector3(point.x ?? 0, point.y ?? 0, point.z ?? 0);
 }
 
+function cloneOffset(offset = [0, 0]) {
+  return [
+    Number(offset?.[0]) || 0,
+    Number(offset?.[1]) || 0
+  ];
+}
+
 export class Game {
   constructor(root) {
     this.root = root;
@@ -177,6 +186,9 @@ export class Game {
     this.combatEffects = [];
     this.currentInteractable = null;
     this.currentLayout = null;
+    this.cityVisualRoot = null;
+    this.currentInterior = null;
+    this.interiorScenes = new Map();
     this.lastNpcTransportSignature = '';
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
@@ -998,6 +1010,159 @@ export class Game {
     this.renderer.render(this.scene, this.camera);
   }
 
+  getOrCreateInteriorScene(interiorId = '') {
+    if (!interiorId) {
+      return null;
+    }
+
+    if (!this.interiorScenes.has(interiorId)) {
+      const interiorScene = createInteriorScene(interiorId);
+      if (!interiorScene) {
+        return null;
+      }
+
+      interiorScene.setVisible(false);
+      this.scene.add(interiorScene.group);
+      this.interiorScenes.set(interiorId, interiorScene);
+    }
+
+    return this.interiorScenes.get(interiorId) ?? null;
+  }
+
+  setRemotePlayersVisible(visible) {
+    const nextVisible = Boolean(visible);
+    for (const avatar of this.remotePlayers.values()) {
+      avatar.object.visible = nextVisible;
+    }
+  }
+
+  setPickupVisualsVisible(visible) {
+    const nextVisible = Boolean(visible);
+    for (const visual of this.pickupVisuals.values()) {
+      visual.object.visible = nextVisible;
+    }
+  }
+
+  setOutdoorSceneVisible(visible) {
+    const nextVisible = Boolean(visible);
+    if (this.cityVisualRoot) {
+      this.cityVisualRoot.visible = nextVisible;
+    }
+    this.worldBuilder?.setVisible(nextVisible);
+    this.setRemotePlayersVisible(nextVisible);
+    this.setPickupVisualsVisible(nextVisible);
+  }
+
+  getActiveSceneBounds() {
+    return this.currentInterior?.scene?.bounds ?? this.cityBounds;
+  }
+
+  getActiveGroundHeightAt(worldPosition) {
+    if (this.currentInterior?.scene) {
+      return this.currentInterior.scene.getGroundHeightAt(worldPosition);
+    }
+
+    return this.worldBuilder?.getGroundHeightAt(worldPosition) ?? 0;
+  }
+
+  getActiveColliders() {
+    if (this.currentInterior?.scene) {
+      return this.currentInterior.scene.colliders ?? [];
+    }
+
+    return [
+      ...(this.baseColliders ?? []),
+      ...(this.worldBuilder?.getColliders() ?? [])
+    ];
+  }
+
+  getActiveInteractables() {
+    if (this.currentInterior?.scene) {
+      return [...(this.currentInterior.scene.interactables ?? [])];
+    }
+
+    return [
+      ...(this.staticInteractables ?? []),
+      ...(this.worldBuilder?.getInteractables() ?? []),
+      ...[...this.npcServiceState.pickups.values()]
+        .filter((pickup) => pickup.active)
+        .map((pickup) => ({
+          kind: 'pickup',
+          pickupId: pickup.id,
+          position: new THREE.Vector3(
+            pickup.x,
+            this.getActiveGroundHeightAt({ x: pickup.x, z: pickup.z }),
+            pickup.z
+          ),
+          radius: 3.2,
+          prompt: 'Pick up pistol',
+          actionText: 'Pistol secured.'
+        }))
+    ].filter((interactable) => interactable.kind !== 'npc');
+  }
+
+  resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
+    const [offsetX, offsetZ] = cloneOffset(offset);
+    const rotatedOffset = rotateFootprintOffset(offsetX, offsetZ, rotationQuarterTurns);
+    return new THREE.Vector3(
+      (originPosition?.x ?? 0) + rotatedOffset.x,
+      this.player?.position?.y ?? 0,
+      (originPosition?.z ?? 0) + rotatedOffset.z
+    );
+  }
+
+  enterInterior(interactable) {
+    const interiorId = interactable?.interior?.id ?? '';
+    const interiorScene = this.getOrCreateInteriorScene(interiorId);
+    if (!interiorScene || !this.player) {
+      return false;
+    }
+
+    if (this.currentInterior?.scene) {
+      this.currentInterior.scene.setVisible(false);
+    }
+
+    const exteriorReturnPosition = this.resolveRotatedOffsetPosition(
+      interactable.originPosition,
+      interactable.rotationQuarterTurns,
+      interactable.interior?.exteriorSpawnOffset ?? [0, 0]
+    );
+
+    this.currentInterior = {
+      scene: interiorScene,
+      returnPosition: exteriorReturnPosition
+    };
+    this.currentInterior.scene.setVisible(true);
+    this.setOutdoorSceneVisible(false);
+    this.player.position.copy(interiorScene.spawnPoint);
+    this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+    this.currentInteractable = null;
+    this.hud.setPrompt(null);
+    this.hud.showToast(`Entered ${interiorScene.label}.`);
+    return true;
+  }
+
+  exitInterior({ showToast = true } = {}) {
+    if (!this.currentInterior?.scene || !this.player) {
+      return false;
+    }
+
+    const { scene, returnPosition } = this.currentInterior;
+    scene.setVisible(false);
+    this.currentInterior = null;
+    this.setOutdoorSceneVisible(true);
+    if (returnPosition) {
+      this.player.position.copy(returnPosition);
+      this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+    }
+    this.currentInteractable = null;
+    this.hud.setPrompt(null);
+    if (showToast) {
+      this.hud.showToast('Back outside.');
+    }
+    return true;
+  }
+
   async start() {
     try {
       this.markBoot('boot:start');
@@ -1010,6 +1175,7 @@ export class Game {
         colliderCount: cityState.colliders?.length ?? 0,
         interactableCount: cityState.interactables?.length ?? 0
       });
+      this.cityVisualRoot = cityState.root ?? null;
       this.baseColliders = cityState.colliders;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
@@ -1085,7 +1251,7 @@ export class Game {
       } else {
         this.player.position.copy(cityState.spawnPoint);
       }
-      this.player.position.y = this.worldBuilder?.getGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
+      this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
       this.scene.add(this.player.object);
       const aimPoseDebugHelper = this.player.getAimPoseDebugHelper?.();
       if (aimPoseDebugHelper) {
@@ -1763,6 +1929,7 @@ export class Game {
       }
 
       this.applyAvatarSnapshot(nextAvatar, snapshot, state);
+      nextAvatar.object.visible = !this.currentInterior?.scene;
       this.scene.add(nextAvatar.object);
       this.remotePlayers.set(sessionId, nextAvatar);
     } finally {
@@ -1957,6 +2124,7 @@ export class Game {
       group.add(weapon);
       const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(latestPickup.x, 0, latestPickup.z)) ?? 0;
       group.position.set(latestPickup.x, groundHeight, latestPickup.z);
+      group.visible = !this.currentInterior?.scene;
       this.scene.add(group);
       this.pickupVisuals.set(pickupId, {
         object: group,
@@ -2025,12 +2193,16 @@ export class Game {
 
     const isAlive = localPlayerState.alive !== false;
     const targetPosition = new THREE.Vector3(localPlayerState.x, this.player.position.y, localPlayerState.z);
-    const groundHeight = this.worldBuilder?.getGroundHeightAt(targetPosition) ?? 0;
     const distance = this.player.position.distanceTo(targetPosition);
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
 
-    if (!this.localStateInitialized || respawned || died || distance > 2.5) {
+    if (this.currentInterior?.scene && (died || respawned || !isAlive)) {
+      this.exitInterior({ showToast: false });
+    }
+
+    const groundHeight = this.getActiveGroundHeightAt(targetPosition);
+    if ((!this.currentInterior?.scene) && (!this.localStateInitialized || respawned || died || distance > 2.5)) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
     }
 
@@ -2706,11 +2878,8 @@ export class Game {
       const localAlive = localPlayerState?.alive !== false;
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
       const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
-      const activeColliders = [
-        ...this.baseColliders,
-        ...this.worldBuilder.getColliders()
-      ];
-      const groundHeight = this.worldBuilder.getGroundHeightAt(this.player.position);
+      const activeColliders = this.getActiveColliders();
+      const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const hipFirePending = this.pendingHipFireShot;
       const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
@@ -2721,7 +2890,14 @@ export class Game {
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
-      this.player.update(deltaSeconds, playerInput, this.camera, activeColliders, this.cityBounds, groundHeight);
+      this.player.update(
+        deltaSeconds,
+        playerInput,
+        this.camera,
+        activeColliders,
+        this.getActiveSceneBounds(),
+        groundHeight
+      );
       let aimingMode = false;
       const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
       const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
@@ -2868,20 +3044,7 @@ export class Game {
   }
 
   updateInteraction() {
-    const interactables = [
-      ...(this.staticInteractables ?? []),
-      ...this.worldBuilder.getInteractables(),
-      ...[...this.npcServiceState.pickups.values()]
-        .filter((pickup) => pickup.active)
-        .map((pickup) => ({
-          kind: 'pickup',
-          pickupId: pickup.id,
-          position: new THREE.Vector3(pickup.x, this.worldBuilder.getGroundHeightAt({ x: pickup.x, z: pickup.z }), pickup.z),
-          radius: 3.2,
-          prompt: 'Pick up pistol',
-          actionText: 'Pistol secured.'
-        }))
-    ].filter((interactable) => interactable.kind !== 'npc');
+    const interactables = this.getActiveInteractables();
     let nearest = null;
     let nearestDistance = Infinity;
 
@@ -2902,6 +3065,16 @@ export class Game {
 
     if (nearest.kind === 'pickup') {
       this.npcService?.pickupWeapon(nearest.pickupId);
+      return;
+    }
+
+    if (nearest.kind === 'interior-exit') {
+      this.exitInterior();
+      return;
+    }
+
+    if (nearest.kind === 'world' && nearest.interior?.id) {
+      this.enterInterior(nearest);
       return;
     }
 
@@ -3017,7 +3190,7 @@ export class Game {
   }
 
   updateSpeechBubbles() {
-    if (!this.player || !this.worldBuilder) {
+    if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
       this.hud.setSpeechBubbles([]);
       return;
     }
