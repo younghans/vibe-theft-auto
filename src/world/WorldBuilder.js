@@ -474,10 +474,6 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.isBuildingInstanceEditorOpen()) {
-      return;
-    }
-
     if (event.target.closest('.hud__builder') || event.target.closest('.hud__selection') || event.target.closest('.hud__builder-instance')) {
       return;
     }
@@ -505,6 +501,11 @@ export class WorldBuilder {
 
     if (hoveredPlacement) {
       this.selectPlacement(hoveredPlacement.id);
+      return;
+    }
+
+    if (this.isBuildingInstanceEditorOpen()) {
+      this.clearSelection();
       return;
     }
 
@@ -645,49 +646,56 @@ export class WorldBuilder {
       if (input.consume('Escape')) {
         this.closeBuildingInstanceEditor();
       }
-      this.updateSelectionVisual();
-      this.reportBuilderPresence();
-      return;
     }
 
-    if (input.consume('KeyR') || input.consume('KeyE')) {
-      this.rotate(1);
-    }
-    if (input.consume('KeyQ')) {
-      this.rotate(-1);
-    }
-    if (input.consume('KeyC')) {
-      void this.copyLayoutToClipboard();
-    }
-    if (input.consume('Delete') || input.consume('Backspace')) {
-      this.deleteSelectedPlacement();
-    }
-    if (input.consume('BracketRight')) {
-      const visibleEntries = this.getVisibleCategoryEntries();
-      const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
-      this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
-    }
-    if (input.consume('BracketLeft')) {
-      const visibleEntries = this.getVisibleCategoryEntries();
-      const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
-      this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
-    }
-    if (input.consume('Tab')) {
-      const currentIndex = BUILDER_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
-      const nextCategory = BUILDER_CATEGORIES[(currentIndex + 1) % BUILDER_CATEGORIES.length];
-      this.selectCategory(nextCategory.id);
-    }
+    const buildingEditorOpen = this.isBuildingInstanceEditorOpen();
 
-    const visibleEntries = this.getVisibleCategoryEntries();
-    for (let i = 0; i < Math.min(9, visibleEntries.length); i += 1) {
-      if (input.consume(`Digit${i + 1}`)) {
-        this.selectVisibleItem(i);
+    if (!buildingEditorOpen) {
+      if (input.consume('KeyR') || input.consume('KeyE')) {
+        this.rotate(1);
+      }
+      if (input.consume('KeyQ')) {
+        this.rotate(-1);
+      }
+      if (input.consume('KeyC')) {
+        void this.copyLayoutToClipboard();
+      }
+      if (input.consume('Delete') || input.consume('Backspace')) {
+        this.deleteSelectedPlacement();
+      }
+      if (input.consume('BracketRight')) {
+        const visibleEntries = this.getVisibleCategoryEntries();
+        const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+        this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
+      }
+      if (input.consume('BracketLeft')) {
+        const visibleEntries = this.getVisibleCategoryEntries();
+        const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+        this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
+      }
+      if (input.consume('Tab')) {
+        const currentIndex = BUILDER_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
+        const nextCategory = BUILDER_CATEGORIES[(currentIndex + 1) % BUILDER_CATEGORIES.length];
+        this.selectCategory(nextCategory.id);
+      }
+
+      const visibleEntries = this.getVisibleCategoryEntries();
+      for (let i = 0; i < Math.min(9, visibleEntries.length); i += 1) {
+        if (input.consume(`Digit${i + 1}`)) {
+          this.selectVisibleItem(i);
+        }
       }
     }
 
     const pan = input.getMovementVector();
     this.state.focus.x += pan.x * deltaSeconds * EDITOR_PAN_SPEED;
     this.state.focus.z += pan.z * deltaSeconds * EDITOR_PAN_SPEED;
+
+    if (buildingEditorOpen) {
+      this.updateSelectionVisual();
+      this.reportBuilderPresence();
+      return;
+    }
 
     this.resolveHoverState();
     void this.syncPreviewToState();
