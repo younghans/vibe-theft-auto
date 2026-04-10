@@ -1138,6 +1138,24 @@ export class WorldRoom extends Room {
           replacedPlacementId: null
         }, previousLayout);
       }
+      case 'updatePlacementInteractable': {
+        const placement = this.assertEditablePlacement(payload.placementId);
+        if (placement.layer === 'npc') {
+          throw new Error('That placement cannot be edited this way.');
+        }
+
+        const interactable = this.sanitizePlacementInteractable(payload.interactable);
+        const updatedPlacement = this.worldState.updatePlacementInteractable(placement.id, interactable);
+        if (!updatedPlacement) {
+          throw new Error('That placement is not available.');
+        }
+
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(updatedPlacement.id),
+          replacedPlacementId: null
+        }, previousLayout);
+      }
       default:
         throw new Error('That world edit is not supported.');
     }
@@ -1273,6 +1291,33 @@ export class WorldRoom extends Room {
     }
 
     return updates;
+  }
+
+  sanitizePlacementInteractable(interactable = {}) {
+    const next = {};
+
+    if (Object.hasOwn(interactable, 'label')) {
+      const value = String(interactable.label ?? '').trim().slice(0, 48);
+      if (value) {
+        next.label = value;
+      }
+    }
+    if (Object.hasOwn(interactable, 'prompt')) {
+      const value = String(interactable.prompt ?? '').trim().slice(0, 80);
+      if (value) {
+        next.prompt = value;
+      }
+    }
+    if (Object.hasOwn(interactable, 'actionText')) {
+      const value = String(interactable.actionText ?? '').trim().slice(0, 240);
+      if (value) {
+        next.actionText = value;
+      }
+    }
+
+    next.radius = clampNpcRadius(interactable.radius ?? 4);
+    next.distance = Math.max(1, Math.min(28, Number(interactable.distance ?? 6.16) || 6.16));
+    return next;
   }
 
   assertEditablePlacement(placementId, expectedLayer = null) {

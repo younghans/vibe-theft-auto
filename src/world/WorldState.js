@@ -312,6 +312,16 @@ export class WorldState {
     return clonePlacement(placement);
   }
 
+  updatePlacementInteractable(id, interactable = null) {
+    const placement = this.getPlacement(id);
+    if (!placement || placement.layer === 'npc') {
+      return null;
+    }
+
+    placement.interactable = cloneInteractable(interactable);
+    return clonePlacement(placement);
+  }
+
   rotatePlacement(id, delta = 1) {
     const placement = this.getPlacement(id);
     if (!placement) {

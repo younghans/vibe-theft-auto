@@ -41,6 +41,7 @@ body {
 .hud__aim-debug,
 .hud__prompt,
 .hud__builder,
+.hud__builder-instance,
 .hud__interaction,
 .hud__quick-chat {
   position: absolute;
@@ -1406,6 +1407,30 @@ body {
   pointer-events: auto;
 }
 
+.hud__builder-instance {
+  top: 96px;
+  right: 24px;
+  bottom: 24px;
+  width: min(540px, calc(100vw - 48px));
+  max-height: calc(100vh - 120px);
+  padding: 16px;
+  border-radius: 18px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 4;
+}
+
+.hud__builder-instance.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .hud__builder-meta {
   margin-top: 6px;
   color: rgba(242, 200, 113, 0.92);
@@ -1497,6 +1522,11 @@ body {
 }
 
 .hud__builder-scroll {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.hud__builder-instance-scroll {
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1746,6 +1776,26 @@ body {
 
 .hud__builder-editor.is-visible {
   display: block;
+}
+
+.hud__builder-instance-subtitle {
+  margin-top: 6px;
+  color: rgba(242, 200, 113, 0.92);
+}
+
+.hud__builder-instance-card {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(242, 200, 113, 0.1), transparent 30%),
+    rgba(6, 11, 18, 0.38);
+}
+
+.hud__builder-instance-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .hud__field {
@@ -2438,6 +2488,16 @@ canvas {
     padding: 14px;
   }
 
+  .hud__builder-instance {
+    top: 84px;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
+    max-height: calc(100vh - 100px);
+    padding: 14px;
+  }
+
   .hud__builder-header {
     flex-direction: column;
     align-items: stretch;
@@ -2455,6 +2515,10 @@ canvas {
 
   .hud__builder-action {
     flex: 1;
+  }
+
+  .hud__builder-instance-metrics {
+    grid-template-columns: 1fr;
   }
 
   .hud__builder-card-grid {

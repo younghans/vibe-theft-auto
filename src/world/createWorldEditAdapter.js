@@ -52,6 +52,11 @@ function toTransportPayload(edit) {
         placementId: edit.placementId,
         ...edit.changes
       };
+    case 'updatePlacementInteractable':
+      return {
+        placementId: edit.placementId,
+        interactable: edit.interactable
+      };
     default:
       return {};
   }
@@ -141,6 +146,14 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
     }
     case 'updateNpc':
       return applyLocalNpcUpdate(edit, worldState, worldRenderer);
+    case 'updatePlacementInteractable': {
+      const updatedPlacement = worldState.updatePlacementInteractable(edit.placementId, edit.interactable);
+      if (!updatedPlacement) {
+        return errorResult('That placement is not available.');
+      }
+      worldRenderer.updatePlacement(updatedPlacement);
+      return successResult(updatedPlacement.id);
+    }
     default:
       return errorResult('That world edit is not supported.');
   }

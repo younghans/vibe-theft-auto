@@ -142,6 +142,15 @@ export class Hud {
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcConfirm = this.overlay.querySelector('[data-builder-npc-confirm]');
+    this.builderBuildingEditor = this.overlay.querySelector('[data-builder-building-editor]');
+    this.builderBuildingEditorClose = this.overlay.querySelector('[data-builder-building-close]');
+    this.builderBuildingEditorTitle = this.overlay.querySelector('[data-builder-building-title]');
+    this.builderBuildingEditorSubtitle = this.overlay.querySelector('[data-builder-building-subtitle]');
+    this.builderBuildingLabel = this.overlay.querySelector('[data-builder-building-label]');
+    this.builderBuildingPrompt = this.overlay.querySelector('[data-builder-building-prompt]');
+    this.builderBuildingActionText = this.overlay.querySelector('[data-builder-building-action]');
+    this.builderBuildingRadius = this.overlay.querySelector('[data-builder-building-radius]');
+    this.builderBuildingDistance = this.overlay.querySelector('[data-builder-building-distance]');
     this.interactionRoot = this.overlay.querySelector('[data-interaction]');
     this.interactionTitle = this.overlay.querySelector('[data-interaction-title]');
     this.interactionSubtitle = this.overlay.querySelector('[data-interaction-subtitle]');
@@ -167,8 +176,12 @@ export class Hud {
     this.lastCombatHealthPercent = null;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
+    this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
     this.lastAdminPositionSignature = '';
+    this.builderAvailable = false;
+    this.builderEnabled = false;
+    this.builderBuildingEditorVisible = false;
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
   }
@@ -518,6 +531,48 @@ export class Hud {
           </section>
         </div>
       </section>
+      <section class="hud__builder-instance" data-builder-building-editor hidden>
+        <div class="hud__builder-header">
+          <div>
+            <p class="hud__eyebrow">Building Instance</p>
+            <h2 class="hud__dialog-title" data-builder-building-title>Building</h2>
+            <p class="hud__body hud__builder-instance-subtitle" data-builder-building-subtitle>Configure placement-specific data for this building.</p>
+          </div>
+          <div class="hud__builder-actions">
+            <button class="hud__builder-icon-button" type="button" data-builder-building-close aria-label="Return to world builder" title="Return to world builder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="hud__builder-instance-scroll">
+          <div class="hud__builder-instance-card">
+            <label class="hud__field">
+              <span class="hud__field-label">Display Name</span>
+              <input class="hud__field-control" type="text" maxlength="48" data-builder-building-label />
+            </label>
+            <label class="hud__field">
+              <span class="hud__field-label">Prompt Text</span>
+              <input class="hud__field-control" type="text" maxlength="80" data-builder-building-prompt />
+            </label>
+            <label class="hud__field">
+              <span class="hud__field-label">Action Text</span>
+              <textarea class="hud__field-control hud__field-control--textarea" rows="4" data-builder-building-action></textarea>
+            </label>
+            <div class="hud__builder-instance-metrics">
+              <label class="hud__field">
+                <span class="hud__field-label">Interact Radius</span>
+                <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-building-radius />
+              </label>
+              <label class="hud__field">
+                <span class="hud__field-label">Prompt Offset</span>
+                <input class="hud__field-control" type="number" min="1" max="28" step="0.1" data-builder-building-distance />
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="hud__interaction" data-interaction>
         <p class="hud__eyebrow">Interaction</p>
         <h2 class="hud__dialog-title" data-interaction-title></h2>
@@ -840,7 +895,13 @@ export class Hud {
     onNpcPromptChange,
     onNpcRadiusChange,
     onNpcModelChange,
-    onConfirmNpc
+    onConfirmNpc,
+    onCloseBuildingEditor,
+    onBuildingLabelChange,
+    onBuildingPromptChange,
+    onBuildingActionTextChange,
+    onBuildingRadiusChange,
+    onBuildingDistanceChange
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -929,6 +990,30 @@ export class Hud {
     this.builderNpcConfirm.addEventListener('click', () => {
       onConfirmNpc();
     });
+
+    this.builderBuildingEditorClose.addEventListener('click', () => {
+      onCloseBuildingEditor();
+    });
+
+    this.builderBuildingLabel.addEventListener('input', () => {
+      onBuildingLabelChange(this.builderBuildingLabel.value);
+    });
+
+    this.builderBuildingPrompt.addEventListener('input', () => {
+      onBuildingPromptChange(this.builderBuildingPrompt.value);
+    });
+
+    this.builderBuildingActionText.addEventListener('input', () => {
+      onBuildingActionTextChange(this.builderBuildingActionText.value);
+    });
+
+    this.builderBuildingRadius.addEventListener('input', () => {
+      onBuildingRadiusChange(Number(this.builderBuildingRadius.value));
+    });
+
+    this.builderBuildingDistance.addEventListener('input', () => {
+      onBuildingDistanceChange(Number(this.builderBuildingDistance.value));
+    });
   }
 
   bindInteractionEvents({ onAction, onCloseInteraction }) {
@@ -972,9 +1057,10 @@ export class Hud {
     groupTabs = [],
     sections = []
   }) {
+    this.builderAvailable = available;
+    this.builderEnabled = enabled;
     this.modeToggle.hidden = !available;
-    this.builderRoot.hidden = !available || !enabled;
-    this.builderRoot.classList.toggle('is-visible', enabled);
+    this.syncBuilderVisibility();
     this.modeToggle.classList.toggle('is-active', enabled);
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
@@ -1035,6 +1121,15 @@ export class Hud {
     `).join('');
   }
 
+  syncBuilderVisibility() {
+    const builderVisible = this.builderAvailable && this.builderEnabled && !this.builderBuildingEditorVisible;
+    const buildingEditorVisible = this.builderAvailable && this.builderEnabled && this.builderBuildingEditorVisible;
+    this.builderRoot.hidden = !builderVisible;
+    this.builderRoot.classList.toggle('is-visible', builderVisible);
+    this.builderBuildingEditor.hidden = !buildingEditorVisible;
+    this.builderBuildingEditor.classList.toggle('is-visible', buildingEditorVisible);
+  }
+
   setBuilderPreviewImage(itemId, src) {
     if (!itemId || !src) {
       return;
@@ -1052,7 +1147,7 @@ export class Hud {
 
   setBuilderSelection(selection) {
     const node = this.builderSelection;
-    if (!selection) {
+    if (!selection || this.builderBuildingEditorVisible) {
       node.classList.remove('is-visible');
       return;
     }
@@ -1090,6 +1185,26 @@ export class Hud {
     this.builderNpcConfirm.textContent = editorState.active ? 'NPC Active' : 'Confirm NPC';
 
     this.lastNpcEditorState = structuredClone(editorState);
+  }
+
+  setBuilderBuildingEditor(editorState) {
+    if (!editorState) {
+      this.lastBuildingEditorState = null;
+      this.builderBuildingEditorVisible = false;
+      this.syncBuilderVisibility();
+      return;
+    }
+
+    this.builderBuildingEditorVisible = true;
+    this.syncBuilderVisibility();
+    this.builderBuildingEditorTitle.textContent = editorState.title;
+    this.builderBuildingEditorSubtitle.textContent = editorState.subtitle;
+    setFieldValue(this.builderBuildingLabel, editorState.label);
+    setFieldValue(this.builderBuildingPrompt, editorState.prompt);
+    setFieldValue(this.builderBuildingActionText, editorState.actionText);
+    setFieldValue(this.builderBuildingRadius, String(editorState.radius));
+    setFieldValue(this.builderBuildingDistance, String(editorState.distance));
+    this.lastBuildingEditorState = structuredClone(editorState);
   }
 
   showInteractionMenu({ title, subtitle, actions }) {

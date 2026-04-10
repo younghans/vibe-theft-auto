@@ -402,6 +402,19 @@ export class NpcServiceMock {
         this.emit();
         return { ok: true, placementId: payload.placementId };
       }
+      case 'updatePlacementInteractable': {
+        const placement = this.worldState.updatePlacementInteractable(payload.placementId, payload.interactable ?? null);
+        if (!placement) {
+          return { ok: false, error: 'That placement is not available.' };
+        }
+
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        return { ok: true, placementId: payload.placementId };
+      }
       default:
         return { ok: false, error: 'That world edit is not supported.' };
     }

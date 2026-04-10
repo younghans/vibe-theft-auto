@@ -135,6 +135,10 @@ function groupVisibleEntries(entries) {
   }));
 }
 
+function isFiniteNumber(value) {
+  return Number.isFinite(value);
+}
+
 function createDefaultEditorState() {
   return {
     enabled: false,
@@ -182,6 +186,9 @@ export class WorldBuilder {
     this.builderPreviewGeneration = 0;
     this.pendingNpcUpdateByPlacementId = new Map();
     this.pendingNpcUpdateTimeouts = new Map();
+    this.pendingBuildingUpdateByPlacementId = new Map();
+    this.pendingBuildingUpdateTimeouts = new Map();
+    this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
     this.worldEditAdapter = createWorldEditAdapter({
@@ -257,11 +264,22 @@ export class WorldBuilder {
         interactRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
       }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
-      onConfirmNpc: () => this.confirmSelectedNpc()
+      onConfirmNpc: () => this.confirmSelectedNpc(),
+      onCloseBuildingEditor: () => this.closeBuildingInstanceEditor(),
+      onBuildingLabelChange: (value) => void this.updateSelectedBuildingInstance({ label: value }),
+      onBuildingPromptChange: (value) => void this.updateSelectedBuildingInstance({ prompt: value }),
+      onBuildingActionTextChange: (value) => void this.updateSelectedBuildingInstance({ actionText: value }),
+      onBuildingRadiusChange: (value) => void this.updateSelectedBuildingInstance({
+        radius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
+      }),
+      onBuildingDistanceChange: (value) => void this.updateSelectedBuildingInstance({
+        distance: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1, BUILDER_TILE_SIZE * 2) : undefined
+      })
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
+    this.hud.setBuilderBuildingEditor(null);
   }
 
   get enabled() {
@@ -456,7 +474,11 @@ export class WorldBuilder {
       return;
     }
 
-    if (event.target.closest('.hud__builder') || event.target.closest('.hud__selection')) {
+    if (this.isBuildingInstanceEditorOpen()) {
+      return;
+    }
+
+    if (event.target.closest('.hud__builder') || event.target.closest('.hud__selection') || event.target.closest('.hud__builder-instance')) {
       return;
     }
 
@@ -541,6 +563,7 @@ export class WorldBuilder {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
 
     if (!nextEnabled) {
+      this.closeBuildingInstanceEditor();
       this.clearSelection();
     } else if (Math.abs(this.state.pointer.x) > 1.2 || Math.abs(this.state.pointer.y) > 1.2) {
       this.state.pointer.set(0, 0);
@@ -615,6 +638,15 @@ export class WorldBuilder {
     this.worldRenderer.update(deltaSeconds);
 
     if (!this.state.enabled) {
+      return;
+    }
+
+    if (this.isBuildingInstanceEditorOpen()) {
+      if (input.consume('Escape')) {
+        this.closeBuildingInstanceEditor();
+      }
+      this.updateSelectionVisual();
+      this.reportBuilderPresence();
       return;
     }
 
@@ -996,6 +1028,7 @@ export class WorldBuilder {
     await this.syncPreviewToState(true);
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
+    this.updateBuildingInstanceEditor();
     this.notifyLayoutChanged();
   }
 
@@ -1059,6 +1092,7 @@ export class WorldBuilder {
     }
 
     this.clearPendingNpcUpdate(placementId);
+    this.clearPendingBuildingUpdate(placementId);
     this.worldState.deletePlacement(placementId);
     this.worldRenderer.removePlacement(placementId);
     if (this.state.selection.placementId === placementId) {
@@ -1088,16 +1122,27 @@ export class WorldBuilder {
       this.updateBuilderHud({ syncPreviews: switchedCategory });
     }
 
+    if (this.isBuildingPlacement(placement)) {
+      this.openBuildingInstanceEditor();
+    } else if (this.isBuildingInstanceEditorOpen()) {
+      this.closeBuildingInstanceEditor();
+    }
+
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
+    this.updateBuildingInstanceEditor();
     this.reportBuilderPresence(true);
   }
 
   clearSelection() {
+    if (this.activeBuildingEditorPlacementId) {
+      this.closeBuildingInstanceEditor();
+    }
     this.state.selection.placementId = null;
     this.selectionRing.visible = false;
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
+    this.hud.setBuilderBuildingEditor(null);
     this.reportBuilderPresence(true);
   }
 
@@ -1203,6 +1248,157 @@ export class WorldBuilder {
     });
   }
 
+  isBuildingPlacement(placement) {
+    if (!placement || placement.layer !== 'tile') {
+      return false;
+    }
+
+    const item = getBuilderItemById(placement.itemId);
+    return Boolean(item?.groupId === 'lots' && item.underlayTileId);
+  }
+
+  isBuildingInstanceEditorOpen() {
+    return Boolean(this.activeBuildingEditorPlacementId);
+  }
+
+  getBuildingInteractableDraft(placement) {
+    const item = getBuilderItemById(placement?.itemId);
+    return {
+      label: placement?.interactable?.label ?? item?.label ?? 'Building',
+      prompt: placement?.interactable?.prompt ?? '',
+      actionText: placement?.interactable?.actionText ?? '',
+      radius: placement?.interactable?.radius ?? 4,
+      distance: placement?.interactable?.distance ?? BUILDER_TILE_SIZE * 0.44
+    };
+  }
+
+  buildPlacementInteractable(placement, overrides = {}) {
+    const draft = {
+      ...this.getBuildingInteractableDraft(placement),
+      ...overrides
+    };
+    const label = String(draft.label ?? '').trim();
+    const prompt = String(draft.prompt ?? '').trim();
+    const actionText = String(draft.actionText ?? '').trim();
+
+    return {
+      ...(label ? { label } : {}),
+      ...(prompt ? { prompt } : {}),
+      ...(actionText ? { actionText } : {}),
+      radius: isFiniteNumber(draft.radius) ? THREE.MathUtils.clamp(draft.radius, 1.5, 12) : 4,
+      distance: isFiniteNumber(draft.distance) ? THREE.MathUtils.clamp(draft.distance, 1, BUILDER_TILE_SIZE * 2) : BUILDER_TILE_SIZE * 0.44
+    };
+  }
+
+  updateBuildingInstanceEditor() {
+    const placement = this.getSelectedPlacement();
+    if (!placement || !this.isBuildingPlacement(placement)) {
+      this.activeBuildingEditorPlacementId = null;
+      this.hud.setBuilderBuildingEditor(null);
+      return;
+    }
+
+    if (!this.activeBuildingEditorPlacementId) {
+      return;
+    }
+
+    const item = getBuilderItemById(placement.itemId);
+    const draft = this.getBuildingInteractableDraft(placement);
+    this.hud.setBuilderBuildingEditor({
+      id: placement.id,
+      title: draft.label || item?.label || 'Building',
+      subtitle: `${item?.label ?? 'Building'} at cell ${placement.cellX}, ${placement.cellZ}`,
+      label: draft.label,
+      prompt: draft.prompt,
+      actionText: draft.actionText,
+      radius: Number(draft.radius.toFixed(2)),
+      distance: Number(draft.distance.toFixed(2))
+    });
+  }
+
+  openBuildingInstanceEditor() {
+    const placement = this.getSelectedPlacement();
+    if (!placement || !this.isBuildingPlacement(placement)) {
+      this.closeBuildingInstanceEditor();
+      return;
+    }
+
+    this.activeBuildingEditorPlacementId = placement.id;
+    this.previewRoot.visible = false;
+    this.updateBuildingInstanceEditor();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  closeBuildingInstanceEditor() {
+    const placementId = this.activeBuildingEditorPlacementId;
+    this.activeBuildingEditorPlacementId = null;
+    this.hud.setBuilderBuildingEditor(null);
+    if (placementId) {
+      void this.flushBuildingUpdate(placementId);
+    }
+    if (this.state.enabled) {
+      this.resolveHoverState();
+      void this.syncPreviewToState(true);
+      this.updatePreviewTransform();
+    }
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  queueBuildingUpdate(placementId, changes = {}) {
+    const current = this.pendingBuildingUpdateByPlacementId.get(placementId) ?? {};
+    this.pendingBuildingUpdateByPlacementId.set(placementId, {
+      ...current,
+      ...changes
+    });
+
+    window.clearTimeout(this.pendingBuildingUpdateTimeouts.get(placementId));
+    const timeoutId = window.setTimeout(() => {
+      void this.flushBuildingUpdate(placementId);
+    }, 150);
+    this.pendingBuildingUpdateTimeouts.set(placementId, timeoutId);
+  }
+
+  clearPendingBuildingUpdate(placementId) {
+    this.pendingBuildingUpdateByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingBuildingUpdateTimeouts.get(placementId));
+    this.pendingBuildingUpdateTimeouts.delete(placementId);
+  }
+
+  async flushBuildingUpdate(placementId) {
+    const changes = this.pendingBuildingUpdateByPlacementId.get(placementId);
+    this.pendingBuildingUpdateByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingBuildingUpdateTimeouts.get(placementId));
+    this.pendingBuildingUpdateTimeouts.delete(placementId);
+
+    if (!changes) {
+      return;
+    }
+
+    const placement = this.worldState.getPlacement(placementId);
+    if (!placement || !this.isBuildingPlacement(placement)) {
+      return;
+    }
+
+    const interactable = this.buildPlacementInteractable(placement, changes);
+    const result = await this.worldEditAdapter.edit({
+      op: 'updatePlacementInteractable',
+      placementId,
+      interactable
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not update building data.');
+      return;
+    }
+
+    if (result.appliedImmediately) {
+      this.updateSelectionVisual();
+      this.updateBuildingInstanceEditor();
+      this.notifyLayoutChanged();
+    }
+  }
+
   queueNpcUpdate(placementId, changes = {}) {
     const current = this.pendingNpcUpdateByPlacementId.get(placementId) ?? {};
     this.pendingNpcUpdateByPlacementId.set(placementId, {
@@ -1248,6 +1444,22 @@ export class WorldBuilder {
     this.pendingNpcUpdateByPlacementId.delete(placementId);
     window.clearTimeout(this.pendingNpcUpdateTimeouts.get(placementId));
     this.pendingNpcUpdateTimeouts.delete(placementId);
+  }
+
+  async updateSelectedBuildingInstance(changes = {}) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || !this.isBuildingPlacement(placement)) {
+      return;
+    }
+
+    const nextChanges = Object.fromEntries(
+      Object.entries(changes).filter(([, value]) => value !== undefined)
+    );
+    if (!Object.keys(nextChanges).length) {
+      return;
+    }
+
+    this.queueBuildingUpdate(placement.id, nextChanges);
   }
 
   async updateSelectedNpc(changes = {}) {
