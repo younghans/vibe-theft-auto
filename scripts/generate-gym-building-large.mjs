@@ -523,10 +523,10 @@ function buildGym() {
   addShellBlock(upperCutawayGroup, {
     centerX: 0,
     centerY: 9.8,
-    centerZ: -5.2,
-    width: 11.8,
+    centerZ: -1.8,
+    width: 14.6,
     height: 4.8,
-    depth: 7.0,
+    depth: 9.4,
     material: materials.facadeDark,
     roofGroup
   });
@@ -550,11 +550,66 @@ function buildGym() {
     material: materials.facadeDeep,
     roofGroup
   });
+  addBoxes(exteriorGroup, [
+    { size: [11.8, 3.08, 0.16], position: [0, 6.74, 10.58], material: materials.sign },
+    { size: [21.1, 0.18, 0.18], position: [0, 1.02, 10.86], material: materials.trimDark },
+    { size: [0.36, 6.24, 0.18], position: [-10.0, 3.2, 10.86], material: materials.trim },
+    { size: [0.36, 6.24, 0.18], position: [10.0, 3.2, 10.86], material: materials.trim },
+    { size: [0.3, 3.5, 0.16], position: [-3.56, 1.75, 10.86], material: materials.trim },
+    { size: [0.3, 3.5, 0.16], position: [3.56, 1.75, 10.86], material: materials.trim },
+    { size: [7.1, 0.24, 0.16], position: [0, 3.54, 10.86], material: materials.accentDark },
+    { size: [7.1, 0.14, 0.16], position: [0, 0.88, 10.86], material: materials.metalDark }
+  ]);
+
+  addWindowRow(exteriorGroup, {
+    startX: -7.9,
+    count: 2,
+    spacing: 2.34,
+    size: [1.54, 2.36, 0.12],
+    y: 2.34,
+    z: 10.9,
+    windowMaterial: materials.glassLite,
+    frameMaterial: materials.trim,
+    ledgeMaterial: materials.trimDark
+  });
+  addWindowRow(exteriorGroup, {
+    startX: 5.56,
+    count: 2,
+    spacing: 2.34,
+    size: [1.54, 2.36, 0.12],
+    y: 2.34,
+    z: 10.9,
+    windowMaterial: materials.glassLite,
+    frameMaterial: materials.trim,
+    ledgeMaterial: materials.trimDark
+  });
+  addWindowRow(exteriorGroup, {
+    startX: -7.9,
+    count: 2,
+    spacing: 2.34,
+    size: [1.54, 0.86, 0.12],
+    y: 5.98,
+    z: 10.9,
+    windowMaterial: materials.glass,
+    frameMaterial: materials.trim,
+    ledgeMaterial: materials.accentDark
+  });
+  addWindowRow(exteriorGroup, {
+    startX: 5.56,
+    count: 2,
+    spacing: 2.34,
+    size: [1.54, 0.86, 0.12],
+    y: 5.98,
+    z: 10.9,
+    windowMaterial: materials.glass,
+    frameMaterial: materials.trim,
+    ledgeMaterial: materials.accentDark
+  });
   addBoxes(upperCutawayGroup, [
-    { size: [11.9, 0.18, 0.22], position: [0, 11.98, -1.72], material: materials.accent },
-    { size: [11.9, 0.12, 0.22], position: [0, 9.08, -1.72], material: materials.trimDark },
-    { size: [0.26, 4.9, 0.26], position: [-5.88, 9.84, -1.56], material: materials.trim },
-    { size: [0.26, 4.9, 0.26], position: [5.88, 9.84, -1.56], material: materials.trim }
+    { size: [14.7, 0.18, 0.22], position: [0, 11.98, 2.02], material: materials.accent },
+    { size: [14.7, 0.12, 0.22], position: [0, 9.08, 2.02], material: materials.trimDark },
+    { size: [0.26, 4.9, 0.26], position: [-7.28, 9.84, 2.18], material: materials.trim },
+    { size: [0.26, 4.9, 0.26], position: [7.28, 9.84, 2.18], material: materials.trim }
   ]);
 
   addBoxes(cornerCutawayGroup, [
@@ -577,13 +632,13 @@ function buildGym() {
   addBoxes(roofGroup, [
     { size: [2.0, 0.7, 1.8], position: [-7.52, 6.86, 0.3], material: materials.facadeDeep },
     { size: [2.2, 0.72, 1.9], position: [7.5, 6.22, 0.8], material: materials.facadeDeep },
-    { size: [1.3, 0.38, 1.2], position: [-1.8, 12.34, -5.4], material: materials.facadeDeep },
-    { size: [1.4, 0.42, 1.3], position: [1.7, 12.3, -4.5], material: materials.facadeDeep },
-    { size: [0.6, 1.1, 0.6], position: [-1.8, 13.1, -5.4], material: materials.metalDark },
-    { size: [0.6, 1.1, 0.6], position: [1.7, 13.16, -4.5], material: materials.metalDark },
-    { size: [3.2, 0.1, 1.0], position: [-4.8, 12.48, -5.02], material: materials.glassLite },
-    { size: [3.2, 0.1, 1.0], position: [0, 12.48, -5.02], material: materials.glassLite },
-    { size: [3.2, 0.1, 1.0], position: [4.8, 12.48, -5.02], material: materials.glassLite }
+    { size: [1.5, 0.38, 1.3], position: [-2.2, 12.34, -1.95], material: materials.facadeDeep },
+    { size: [1.6, 0.42, 1.4], position: [2.2, 12.3, -0.95], material: materials.facadeDeep },
+    { size: [0.6, 1.1, 0.6], position: [-2.2, 13.1, -1.95], material: materials.metalDark },
+    { size: [0.6, 1.1, 0.6], position: [2.2, 13.16, -0.95], material: materials.metalDark },
+    { size: [3.4, 0.1, 1.0], position: [-4.8, 12.48, -1.62], material: materials.glassLite },
+    { size: [3.4, 0.1, 1.0], position: [0, 12.48, -1.62], material: materials.glassLite },
+    { size: [3.4, 0.1, 1.0], position: [4.8, 12.48, -1.62], material: materials.glassLite }
   ]);
 
   addParapetRect(roofGroup, {
@@ -599,9 +654,9 @@ function buildGym() {
   addParapetRect(roofGroup, {
     centerX: 0,
     centerY: 12.16,
-    centerZ: -5.2,
-    width: 11.3,
-    depth: 6.56,
+    centerZ: -1.8,
+    width: 14.1,
+    depth: 8.96,
     parapetHeight: 0.22,
     thickness: 0.18,
     material: materials.trim
@@ -640,12 +695,12 @@ function buildGym() {
   });
 
   addWindowRow(upperCutawayGroup, {
-    startX: -3.7,
-    count: 4,
+    startX: -4.96,
+    count: 5,
     spacing: 2.48,
     size: [1.5, 1.08, 0.16],
     y: 9.92,
-    z: -1.56,
+    z: 2.18,
     windowMaterial: materials.glass,
     frameMaterial: materials.trim,
     ledgeMaterial: materials.trim
@@ -672,6 +727,7 @@ function buildGym() {
     frameMaterial: materials.trim
   });
 
+  addBarbellEmblem(roofGroup, [0, 8.42, 10.18], materials);
   addGymLetters(exteriorGroup, 0, 6.76, 10.76, materials);
   addRooftopUnit(roofGroup, [-4.7, 7.96, -2.8], materials, 0.18);
   addRooftopUnit(roofGroup, [4.8, 7.96, -1.64], materials, -0.12);
