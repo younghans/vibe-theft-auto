@@ -137,6 +137,9 @@ export class Hud {
     this.builderSelectionDelete = this.overlay.querySelector('[data-builder-selection-delete]');
     this.builderSelectionConfirm = this.overlay.querySelector('[data-builder-selection-confirm]');
     this.builderNpcEditor = this.overlay.querySelector('[data-builder-npc-editor]');
+    this.builderNpcEditorClose = this.overlay.querySelector('[data-builder-npc-close]');
+    this.builderNpcEditorTitle = this.overlay.querySelector('[data-builder-npc-title]');
+    this.builderNpcEditorSubtitle = this.overlay.querySelector('[data-builder-npc-subtitle]');
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
@@ -181,6 +184,7 @@ export class Hud {
     this.lastAdminPositionSignature = '';
     this.builderAvailable = false;
     this.builderEnabled = false;
+    this.builderNpcEditorVisible = false;
     this.builderBuildingEditorVisible = false;
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
@@ -509,8 +513,25 @@ export class Hud {
         <div class="hud__builder-subtabs" data-builder-groups></div>
         <div class="hud__builder-scroll">
           <div class="hud__builder-grid" data-builder-tiles></div>
-          <section class="hud__builder-editor" data-builder-npc-editor>
-            <p class="hud__eyebrow">NPC Editor</p>
+        </div>
+      </section>
+      <section class="hud__builder-instance" data-builder-npc-editor hidden>
+        <div class="hud__builder-header">
+          <div>
+            <p class="hud__eyebrow">NPC Details</p>
+            <h2 class="hud__dialog-title" data-builder-npc-title>NPC</h2>
+            <p class="hud__body hud__builder-instance-subtitle" data-builder-npc-subtitle>Configure this NPC instance without leaving the world.</p>
+          </div>
+          <div class="hud__builder-actions">
+            <button class="hud__builder-icon-button" type="button" data-builder-npc-close aria-label="Return to world builder" title="Return to world builder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 6l-6 6 6 6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="hud__builder-instance-scroll">
+          <div class="hud__builder-instance-card">
             <label class="hud__field">
               <span class="hud__field-label">Model</span>
               <select class="hud__field-control" data-builder-npc-model></select>
@@ -519,16 +540,18 @@ export class Hud {
               <span class="hud__field-label">Name</span>
               <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
             </label>
-            <label class="hud__field">
-              <span class="hud__field-label">Interact Radius</span>
-              <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
-            </label>
+            <div class="hud__builder-instance-metrics">
+              <label class="hud__field">
+                <span class="hud__field-label">Interact Radius</span>
+                <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+              </label>
+            </div>
             <label class="hud__field">
               <span class="hud__field-label">Prompt</span>
               <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
             </label>
             <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Confirm NPC</button>
-          </section>
+          </div>
         </div>
       </section>
       <section class="hud__builder-instance" data-builder-building-editor hidden>
@@ -896,6 +919,7 @@ export class Hud {
     onNpcRadiusChange,
     onNpcModelChange,
     onConfirmNpc,
+    onCloseNpcEditor,
     onCloseBuildingEditor,
     onBuildingLabelChange,
     onBuildingPromptChange,
@@ -969,6 +993,10 @@ export class Hud {
 
     this.builderSelectionConfirm.addEventListener('click', () => {
       onConfirmSelection();
+    });
+
+    this.builderNpcEditorClose.addEventListener('click', () => {
+      onCloseNpcEditor();
     });
 
     this.builderNpcName.addEventListener('input', () => {
@@ -1122,10 +1150,14 @@ export class Hud {
   }
 
   syncBuilderVisibility() {
-    const builderVisible = this.builderAvailable && this.builderEnabled && !this.builderBuildingEditorVisible;
+    const instanceEditorVisible = this.builderNpcEditorVisible || this.builderBuildingEditorVisible;
+    const builderVisible = this.builderAvailable && this.builderEnabled && !instanceEditorVisible;
+    const npcEditorVisible = this.builderAvailable && this.builderEnabled && this.builderNpcEditorVisible;
     const buildingEditorVisible = this.builderAvailable && this.builderEnabled && this.builderBuildingEditorVisible;
     this.builderRoot.hidden = !builderVisible;
     this.builderRoot.classList.toggle('is-visible', builderVisible);
+    this.builderNpcEditor.hidden = !npcEditorVisible;
+    this.builderNpcEditor.classList.toggle('is-visible', npcEditorVisible);
     this.builderBuildingEditor.hidden = !buildingEditorVisible;
     this.builderBuildingEditor.classList.toggle('is-visible', buildingEditorVisible);
   }
@@ -1147,7 +1179,7 @@ export class Hud {
 
   setBuilderSelection(selection) {
     const node = this.builderSelection;
-    if (!selection || this.builderBuildingEditorVisible) {
+    if (!selection || this.builderNpcEditorVisible || this.builderBuildingEditorVisible) {
       node.classList.remove('is-visible');
       return;
     }
@@ -1160,11 +1192,15 @@ export class Hud {
   setBuilderNpcEditor(editorState) {
     if (!editorState) {
       this.lastNpcEditorState = null;
-      this.builderNpcEditor.classList.remove('is-visible');
+      this.builderNpcEditorVisible = false;
+      this.syncBuilderVisibility();
       return;
     }
 
-    this.builderNpcEditor.classList.add('is-visible');
+    this.builderNpcEditorVisible = true;
+    this.syncBuilderVisibility();
+    this.builderNpcEditorTitle.textContent = editorState.title;
+    this.builderNpcEditorSubtitle.textContent = editorState.subtitle;
 
     const modelsChanged = this.lastNpcEditorState?.models?.length !== editorState.models.length
       || this.lastNpcEditorState?.models?.some((entry, index) => entry.id !== editorState.models[index].id);

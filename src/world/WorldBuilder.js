@@ -188,6 +188,7 @@ export class WorldBuilder {
     this.pendingNpcUpdateTimeouts = new Map();
     this.pendingBuildingUpdateByPlacementId = new Map();
     this.pendingBuildingUpdateTimeouts = new Map();
+    this.activeNpcEditorPlacementId = null;
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
@@ -265,6 +266,7 @@ export class WorldBuilder {
       }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onConfirmNpc: () => this.confirmSelectedNpc(),
+      onCloseNpcEditor: () => this.closeNpcInstanceEditor(),
       onCloseBuildingEditor: () => this.closeBuildingInstanceEditor(),
       onBuildingLabelChange: (value) => void this.updateSelectedBuildingInstance({ label: value }),
       onBuildingPromptChange: (value) => void this.updateSelectedBuildingInstance({ prompt: value }),
@@ -504,7 +506,7 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.isBuildingInstanceEditorOpen()) {
+    if (this.isNpcInstanceEditorOpen() || this.isBuildingInstanceEditorOpen()) {
       this.clearSelection();
       return;
     }
@@ -564,6 +566,7 @@ export class WorldBuilder {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
 
     if (!nextEnabled) {
+      this.closeNpcInstanceEditor();
       this.closeBuildingInstanceEditor();
       this.clearSelection();
     } else if (Math.abs(this.state.pointer.x) > 1.2 || Math.abs(this.state.pointer.y) > 1.2) {
@@ -642,15 +645,21 @@ export class WorldBuilder {
       return;
     }
 
+    if (this.isNpcInstanceEditorOpen()) {
+      if (input.consume('Escape')) {
+        this.closeNpcInstanceEditor();
+      }
+    }
+
     if (this.isBuildingInstanceEditorOpen()) {
       if (input.consume('Escape')) {
         this.closeBuildingInstanceEditor();
       }
     }
 
-    const buildingEditorOpen = this.isBuildingInstanceEditorOpen();
+    const instanceEditorOpen = this.isNpcInstanceEditorOpen() || this.isBuildingInstanceEditorOpen();
 
-    if (!buildingEditorOpen) {
+    if (!instanceEditorOpen) {
       if (input.consume('KeyR') || input.consume('KeyE')) {
         this.rotate(1);
       }
@@ -691,7 +700,7 @@ export class WorldBuilder {
     this.state.focus.x += pan.x * deltaSeconds * EDITOR_PAN_SPEED;
     this.state.focus.z += pan.z * deltaSeconds * EDITOR_PAN_SPEED;
 
-    if (buildingEditorOpen) {
+    if (instanceEditorOpen) {
       this.updateSelectionVisual();
       this.reportBuilderPresence();
       return;
@@ -1130,7 +1139,19 @@ export class WorldBuilder {
       this.updateBuilderHud({ syncPreviews: switchedCategory });
     }
 
+    if (placement?.layer === 'npc') {
+      if (this.isBuildingInstanceEditorOpen()) {
+        this.closeBuildingInstanceEditor();
+      }
+      this.openNpcInstanceEditor();
+    } else if (this.isNpcInstanceEditorOpen()) {
+      this.closeNpcInstanceEditor();
+    }
+
     if (this.isBuildingPlacement(placement)) {
+      if (this.isNpcInstanceEditorOpen()) {
+        this.closeNpcInstanceEditor();
+      }
       this.openBuildingInstanceEditor();
     } else if (this.isBuildingInstanceEditorOpen()) {
       this.closeBuildingInstanceEditor();
@@ -1143,6 +1164,9 @@ export class WorldBuilder {
   }
 
   clearSelection() {
+    if (this.activeNpcEditorPlacementId) {
+      this.closeNpcInstanceEditor();
+    }
     if (this.activeBuildingEditorPlacementId) {
       this.closeBuildingInstanceEditor();
     }
@@ -1238,12 +1262,20 @@ export class WorldBuilder {
   updateBuilderNpcEditor() {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      this.activeNpcEditorPlacementId = null;
       this.hud.setBuilderNpcEditor(null);
       return;
     }
 
+    if (!this.activeNpcEditorPlacementId) {
+      return;
+    }
+
+    const model = getNpcModelById(placement.npc.modelId);
     this.hud.setBuilderNpcEditor({
       id: placement.id,
+      title: placement.npc.name || model?.label || 'NPC',
+      subtitle: `${model?.label ?? 'NPC'} at ${placement.position[0].toFixed(1)}, ${placement.position[1].toFixed(1)}`,
       modelId: placement.npc.modelId,
       name: placement.npc.name,
       prompt: placement.npc.prompt,
@@ -1254,6 +1286,10 @@ export class WorldBuilder {
         label: entry.label
       }))
     });
+  }
+
+  isNpcInstanceEditorOpen() {
+    return Boolean(this.activeNpcEditorPlacementId);
   }
 
   isBuildingPlacement(placement) {
@@ -1331,7 +1367,11 @@ export class WorldBuilder {
       return;
     }
 
+    const previousPlacementId = this.activeBuildingEditorPlacementId;
     this.activeBuildingEditorPlacementId = placement.id;
+    if (previousPlacementId && previousPlacementId !== placement.id) {
+      void this.flushBuildingUpdate(previousPlacementId);
+    }
     this.previewRoot.visible = false;
     this.updateBuildingInstanceEditor();
     this.updateSelectionVisual();
@@ -1344,6 +1384,40 @@ export class WorldBuilder {
     this.hud.setBuilderBuildingEditor(null);
     if (placementId) {
       void this.flushBuildingUpdate(placementId);
+    }
+    if (this.state.enabled) {
+      this.resolveHoverState();
+      void this.syncPreviewToState(true);
+      this.updatePreviewTransform();
+    }
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  openNpcInstanceEditor() {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      this.closeNpcInstanceEditor();
+      return;
+    }
+
+    const previousPlacementId = this.activeNpcEditorPlacementId;
+    this.activeNpcEditorPlacementId = placement.id;
+    if (previousPlacementId && previousPlacementId !== placement.id) {
+      void this.flushNpcUpdate(previousPlacementId);
+    }
+    this.previewRoot.visible = false;
+    this.updateBuilderNpcEditor();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  closeNpcInstanceEditor() {
+    const placementId = this.activeNpcEditorPlacementId;
+    this.activeNpcEditorPlacementId = null;
+    this.hud.setBuilderNpcEditor(null);
+    if (placementId) {
+      void this.flushNpcUpdate(placementId);
     }
     if (this.state.enabled) {
       this.resolveHoverState();
