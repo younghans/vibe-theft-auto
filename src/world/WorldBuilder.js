@@ -442,6 +442,14 @@ export class WorldBuilder {
     return this.worldState.serializeLayout();
   }
 
+  setFocusFromWorldPosition(position) {
+    if (!position) {
+      return;
+    }
+
+    this.state.focus.set(position.x ?? 0, 0, position.z ?? 0);
+  }
+
   getNpcSpeechAnchors() {
     return this.worldRenderer.getNpcSpeechAnchors();
   }

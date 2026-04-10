@@ -836,6 +836,7 @@ export class Game {
       this.setCharacterSelectorVisible(false);
       this.setShaderDebugMenuVisible(false);
       this.setAimPoseDebugVisible(false);
+      this.worldBuilder.setFocusFromWorldPosition(this.player?.position);
     }
     void this.worldBuilder.setEnabled(nextEnabled);
     if (nextEnabled) {
