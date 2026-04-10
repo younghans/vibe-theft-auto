@@ -1255,8 +1255,9 @@ export class Hud {
 
   setBuilderSelection(selection) {
     const node = this.builderSelection;
-    if (!selection) {
+    if (!selection || selection.moving) {
       node.classList.remove('is-visible');
+      this.builderSelectionMove?.classList.remove('is-active');
       return;
     }
 
