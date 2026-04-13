@@ -54,6 +54,32 @@ function formatNpcStepLabel(type) {
   }
 }
 
+function getNpcRoutineEditorSignature(editorState) {
+  if (!editorState) {
+    return '';
+  }
+
+  return JSON.stringify({
+    stepTypes: (editorState.stepTypes ?? []).map((entry) => ({
+      id: entry.id,
+      label: entry.label
+    })),
+    steps: (editorState.routine?.steps ?? []).map((step) => ({
+      type: step.type,
+      targetPlacementId: step.targetPlacementId ?? '',
+      durationMs: step.durationMs ?? '',
+      hiddenDurationMs: step.hiddenDurationMs ?? '',
+      radius: step.radius ?? '',
+      warning: step.warning ?? '',
+      pickModeActive: step.pickModeActive === true,
+      targetOptions: (step.targetOptions ?? []).map((option) => ({
+        id: option.id,
+        label: option.label
+      }))
+    }))
+  });
+}
+
 const HUD_CONTROLS = Object.freeze([
   { label: 'Move', key: 'WASD' },
   { label: 'Fire', mouseButton: 'left' },
@@ -1554,7 +1580,10 @@ export class Hud {
         : '';
     }
 
-    if (this.builderNpcRoutineSteps) {
+    const previousRoutineSignature = getNpcRoutineEditorSignature(this.lastNpcEditorState);
+    const nextRoutineSignature = getNpcRoutineEditorSignature(editorState);
+
+    if (this.builderNpcRoutineSteps && previousRoutineSignature !== nextRoutineSignature) {
       this.builderNpcRoutineSteps.innerHTML = editorState.routine.steps.length
         ? editorState.routine.steps.map((step, index) => {
             const targetOptions = step.targetOptions ?? [];

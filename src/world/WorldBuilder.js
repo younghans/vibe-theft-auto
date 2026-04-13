@@ -29,6 +29,9 @@ const EDITOR_ZOOM_MIN = 0.6;
 const EDITOR_ZOOM_MAX = 1.5;
 const PREVIEW_COLOR = new THREE.Color(0xf2c871);
 const PREVIEW_RENDER_ORDER = 10;
+const NPC_TARGET_PICK_VALID_COLOR = 0x6cff95;
+const NPC_TARGET_PICK_INVALID_COLOR = 0xff6b6b;
+const NPC_TARGET_PICK_UNSUPPORTED_COLOR = 0xffd166;
 
 function clonePreviewMaterial(material, opacity = 0.86) {
   const next = material.clone();
@@ -275,9 +278,65 @@ export class WorldBuilder {
     this.selectionRing.position.y = 0.08;
     this.selectionRing.visible = false;
 
+    this.npcTargetPickMarkerRingMaterial = new THREE.MeshBasicMaterial({
+      color: NPC_TARGET_PICK_VALID_COLOR,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false
+    });
+    this.npcTargetPickMarkerCoreMaterial = new THREE.MeshBasicMaterial({
+      color: NPC_TARGET_PICK_VALID_COLOR,
+      transparent: true,
+      opacity: 0.98,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false
+    });
+    this.npcTargetPickMarker = new THREE.Group();
+    this.npcTargetPickMarker.visible = false;
+
+    const npcTargetPickRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1.18, 36),
+      this.npcTargetPickMarkerRingMaterial
+    );
+    npcTargetPickRing.rotation.x = -Math.PI / 2;
+    npcTargetPickRing.position.y = 0.045;
+    npcTargetPickRing.renderOrder = PREVIEW_RENDER_ORDER + 5;
+    this.npcTargetPickMarker.add(npcTargetPickRing);
+
+    const npcTargetPickDot = new THREE.Mesh(
+      new THREE.CircleGeometry(0.15, 20),
+      this.npcTargetPickMarkerCoreMaterial
+    );
+    npcTargetPickDot.rotation.x = -Math.PI / 2;
+    npcTargetPickDot.position.y = 0.05;
+    npcTargetPickDot.renderOrder = PREVIEW_RENDER_ORDER + 6;
+    this.npcTargetPickMarker.add(npcTargetPickDot);
+
+    const npcTargetPickCrossVertical = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.12, 0.84),
+      this.npcTargetPickMarkerRingMaterial
+    );
+    npcTargetPickCrossVertical.rotation.x = -Math.PI / 2;
+    npcTargetPickCrossVertical.position.y = 0.048;
+    npcTargetPickCrossVertical.renderOrder = PREVIEW_RENDER_ORDER + 6;
+    this.npcTargetPickMarker.add(npcTargetPickCrossVertical);
+
+    const npcTargetPickCrossHorizontal = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.84, 0.12),
+      this.npcTargetPickMarkerRingMaterial
+    );
+    npcTargetPickCrossHorizontal.rotation.x = -Math.PI / 2;
+    npcTargetPickCrossHorizontal.position.y = 0.048;
+    npcTargetPickCrossHorizontal.renderOrder = PREVIEW_RENDER_ORDER + 6;
+    this.npcTargetPickMarker.add(npcTargetPickCrossHorizontal);
+
     this.scene.add(this.gridHelper);
     this.scene.add(this.previewRoot);
     this.scene.add(this.selectionRing);
+    this.scene.add(this.npcTargetPickMarker);
 
     this.onPointerMove = this.onPointerMove.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -520,6 +579,7 @@ export class WorldBuilder {
     this.previewRoot.visible = nextVisible && this.state.enabled;
     this.gridHelper.visible = nextVisible && this.state.enabled;
     this.selectionRing.visible = nextVisible && this.state.enabled && Boolean(this.state.selection.placementId);
+    this.updateNpcTargetPickVisual();
     this.syncNpcDebugTools();
   }
 
@@ -695,6 +755,10 @@ export class WorldBuilder {
       }
 
       event.preventDefault();
+      if (!hoveredPlacement) {
+        this.hud.showToast('Click a valid building or prop destination.');
+        return;
+      }
       void this.tryAssignNpcRoutineTargetFromWorld(hoveredPlacement);
       return;
     }
@@ -810,6 +874,7 @@ export class WorldBuilder {
       this.clearInteriorPlacementPreview();
     }
 
+    this.updateNpcTargetPickVisual();
     this.reportBuilderPresence(true);
     return this.state.enabled;
   }
@@ -953,13 +1018,29 @@ export class WorldBuilder {
 
     const hoverCell = snapToCell(hit);
     const hoveredPropId = this.worldRenderer.pickPlacementId(this.state.pointer, this.camera);
-    const hoveredTile = this.canEditHoveredTiles
+    const hoveredProp = hoveredPropId ? this.worldState.getPlacement(hoveredPropId) : null;
+    const hoveredTile = (this.canEditHoveredTiles || this.npcTargetPickState)
       ? this.worldState.getPlacementAtCell(hoverCell.x, hoverCell.z)
       : null;
+    const hoveredTargetableProp = hoveredProp && resolveNpcTargetOption(hoveredProp)
+      ? hoveredProp
+      : null;
+    const hoveredTargetableTile = hoveredTile && resolveNpcTargetOption(hoveredTile)
+      ? hoveredTile
+      : null;
+    const hoveredPlacementId = this.npcTargetPickState
+      ? (
+          hoveredTargetableProp?.id
+          ?? hoveredTargetableTile?.id
+          ?? hoveredProp?.id
+          ?? hoveredTile?.id
+          ?? null
+        )
+      : (hoveredPropId ?? hoveredTile?.id ?? null);
 
     this.state.hover.point = hit;
     this.state.hover.cell = hoverCell;
-    this.state.hover.placementId = hoveredPropId ?? hoveredTile?.id ?? null;
+    this.state.hover.placementId = hoveredPlacementId;
   }
 
   getHoveredPlacement() {
@@ -971,6 +1052,10 @@ export class WorldBuilder {
   }
 
   getPreviewTarget() {
+    if (this.npcTargetPickState) {
+      return null;
+    }
+
     const movingPlacement = this.getMovingPlacement();
     if (movingPlacement) {
       const item = getBuilderItemById(movingPlacement.itemId);
@@ -1661,6 +1746,15 @@ export class WorldBuilder {
   }
 
   updateSelectionVisual() {
+    if (this.npcTargetPickState) {
+      this.selectionRing.visible = false;
+      this.hud.setBuilderSelection(null);
+      this.updateNpcTargetPickVisual();
+      return;
+    }
+
+    this.updateNpcTargetPickVisual();
+
     if (this.isMovingSelection()) {
       if (!this.previewRoot.visible) {
         this.selectionRing.visible = false;
@@ -1718,6 +1812,40 @@ export class WorldBuilder {
     this.hud.setBuilderSelection({ screenX, screenY, moving: false });
   }
 
+  updateNpcTargetPickVisual() {
+    if (!this.npcTargetPickState || !this.visible || !this.state.enabled || !this.state.hover.point) {
+      this.npcTargetPickMarker.visible = false;
+      return;
+    }
+
+    const hoveredPlacement = this.getHoveredPlacement();
+    const target = hoveredPlacement ? resolveNpcTargetOption(hoveredPlacement) : null;
+    const supportsStep = Boolean(target?.supportedStepTypes?.includes(this.npcTargetPickState.stepType));
+    const markerColor = supportsStep
+      ? NPC_TARGET_PICK_VALID_COLOR
+      : target
+        ? NPC_TARGET_PICK_UNSUPPORTED_COLOR
+        : NPC_TARGET_PICK_INVALID_COLOR;
+
+    this.npcTargetPickMarkerRingMaterial.color.setHex(markerColor);
+    this.npcTargetPickMarkerRingMaterial.opacity = supportsStep ? 0.9 : 0.72;
+    this.npcTargetPickMarkerCoreMaterial.color.setHex(markerColor);
+    this.npcTargetPickMarkerCoreMaterial.opacity = supportsStep ? 0.98 : 0.84;
+
+    const hoverPoint = this.state.hover.point;
+    const groundHeight = this.getGroundHeightAt(toGroundProbe(hoverPoint.x, hoverPoint.z));
+    this.npcTargetPickMarker.position.set(hoverPoint.x, groundHeight + 0.06, hoverPoint.z);
+
+    let markerScale = 1;
+    const bounds = hoveredPlacement ? this.worldRenderer.getPlacementBounds(hoveredPlacement.id) : null;
+    if (bounds && !bounds.isEmpty()) {
+      const size = bounds.getSize(new THREE.Vector3());
+      markerScale = THREE.MathUtils.clamp(Math.max(size.x, size.z) / 4, 0.9, 1.8);
+    }
+    this.npcTargetPickMarker.scale.setScalar(markerScale);
+    this.npcTargetPickMarker.visible = true;
+  }
+
   getNpcTargetOptions() {
     return collectNpcTargetOptions(this.worldState).map((option) => ({
       ...option,
@@ -1737,7 +1865,13 @@ export class WorldBuilder {
     }
 
     this.npcTargetPickState = null;
+    if (this.state.enabled) {
+      this.resolveHoverState();
+      void this.syncPreviewToState(true);
+      this.updatePreviewTransform();
+    }
     this.updateBuilderNpcEditor();
+    this.updateSelectionVisual();
     this.syncNpcDebugTools();
   }
 
@@ -1764,7 +1898,13 @@ export class WorldBuilder {
       stepIndex,
       stepType: step.type
     };
+    if (this.state.enabled) {
+      this.resolveHoverState();
+      void this.syncPreviewToState(true);
+      this.updatePreviewTransform();
+    }
     this.updateBuilderNpcEditor();
+    this.updateSelectionVisual();
     this.syncNpcDebugTools();
     this.hud.showToast(`Click a destination in the world for step ${stepIndex + 1}.`);
   }
