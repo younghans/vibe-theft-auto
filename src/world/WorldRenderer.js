@@ -876,7 +876,7 @@ export class WorldRenderer {
     return anchors;
   }
 
-  triggerNpcDamageFeedback(npcId) {
-    this.renderedPlacements.get(npcId)?.actor?.triggerDamageFeedback?.();
+  triggerNpcDamageFeedback(npcId, options = {}) {
+    this.renderedPlacements.get(npcId)?.actor?.triggerDamageFeedback?.(options);
   }
 }

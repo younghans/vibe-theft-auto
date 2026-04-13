@@ -488,8 +488,8 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
-  triggerNpcDamageFeedback(npcId) {
-    this.worldRenderer.triggerNpcDamageFeedback(npcId);
+  triggerNpcDamageFeedback(npcId, options = {}) {
+    this.worldRenderer.triggerNpcDamageFeedback(npcId, options);
   }
 
   setVisible(visible) {

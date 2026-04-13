@@ -21,10 +21,14 @@ import {
 import {
   NPC_COMBAT_ARCHETYPES,
   NPC_DEFAULT_CALM_MS,
+  NPC_DEFAULT_IDLE_MAX_MS,
+  NPC_DEFAULT_IDLE_MIN_MS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_DEFAULT_MOVE_SPEED,
   NPC_RUNTIME_MODES,
   NPC_STEP_TYPES,
+  NPC_DEFAULT_WANDER_IDLE_MAX_MS,
+  NPC_DEFAULT_WANDER_IDLE_MIN_MS,
   normalizeNpcBehavior
 } from './npcBehavior.js';
 import { PUNCH_EMOTE_ID } from '../player/emotes.js';
@@ -174,6 +178,12 @@ function clonePoint(point = null) {
   };
 }
 
+function randomBetween(min, max) {
+  const safeMin = Math.max(0, Number(min) || 0);
+  const safeMax = Math.max(safeMin, Number(max) || safeMin);
+  return Math.round(safeMin + (Math.random() * (safeMax - safeMin)));
+}
+
 function createNpcRuntimeMeta(overrides = {}) {
   return {
     path: [],
@@ -181,6 +191,7 @@ function createNpcRuntimeMeta(overrides = {}) {
     pathKey: '',
     lastRepathAt: 0,
     stepStartedAt: 0,
+    idleUntil: 0,
     calmEndsAt: 0,
     lastAttackAt: 0,
     wanderPoint: null,
@@ -378,6 +389,29 @@ export class NpcServiceMock {
     meta.wanderPoint = null;
   }
 
+  beginNpcIdlePause(npcId, now, {
+    minMs = NPC_DEFAULT_IDLE_MIN_MS,
+    maxMs = NPC_DEFAULT_IDLE_MAX_MS
+  } = {}) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    if ((meta.idleUntil ?? 0) > now) {
+      return meta.idleUntil;
+    }
+
+    meta.idleUntil = now + randomBetween(minMs, maxMs);
+    return meta.idleUntil;
+  }
+
+  isNpcIdling(npcId, now) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    return (meta.idleUntil ?? 0) > now;
+  }
+
+  clearNpcIdlePause(npcId) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    meta.idleUntil = 0;
+  }
+
   getNpcDefinition(npcId) {
     return this.definitions.get(npcId) ?? null;
   }
@@ -433,6 +467,7 @@ export class NpcServiceMock {
     npc.targetPlacementId = '';
     npc.activity = '';
     this.clearNpcPath(npcId);
+    this.clearNpcIdlePause(npcId);
     const meta = this.getNpcRuntimeMeta(npcId);
     meta.stepStartedAt = 0;
   }
@@ -450,6 +485,9 @@ export class NpcServiceMock {
     npc.lastAttackerId = lastAttackerId;
     if (mode !== NPC_RUNTIME_MODES.hidden) {
       npc.hiddenUntil = 0;
+    }
+    if (mode !== NPC_RUNTIME_MODES.routine) {
+      this.clearNpcIdlePause(npcId);
     }
     if (mode === NPC_RUNTIME_MODES.dead) {
       npc.alive = false;
@@ -562,6 +600,11 @@ export class NpcServiceMock {
       const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
       npc.activity = '';
       if (arrived) {
+        this.beginNpcIdlePause(npcId, now);
+        if (this.isNpcIdling(npcId, now)) {
+          return true;
+        }
+        this.clearNpcIdlePause(npcId);
         this.advanceNpcRoutineStep(npcId, npc);
       }
       return true;
@@ -579,6 +622,11 @@ export class NpcServiceMock {
       const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
       npc.activity = '';
       if (arrived) {
+        this.beginNpcIdlePause(npcId, now);
+        if (this.isNpcIdling(npcId, now)) {
+          return true;
+        }
+        this.clearNpcIdlePause(npcId);
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.hidden, {
           targetPlacementId: npc.targetPlacementId,
           hiddenUntil: now + Math.max(500, Math.floor(Number(step.hiddenDurationMs ?? 0) || 0))
@@ -598,14 +646,22 @@ export class NpcServiceMock {
         { placementId: npc.targetPlacementId }
       );
       const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
-      npc.activity = target?.workoutType ?? 'use';
       if (arrived) {
+        this.beginNpcIdlePause(npcId, now);
+        if (this.isNpcIdling(npcId, now)) {
+          npc.activity = '';
+          return true;
+        }
+        this.clearNpcIdlePause(npcId);
+        npc.activity = target?.workoutType ?? 'use';
         if (!meta.stepStartedAt) {
           meta.stepStartedAt = now;
         }
         if ((now - meta.stepStartedAt) >= Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0))) {
           this.advanceNpcRoutineStep(npcId, npc);
         }
+      } else {
+        npc.activity = '';
       }
       return true;
     }
@@ -616,13 +672,7 @@ export class NpcServiceMock {
       }
       const radius = Math.max(1, Number(step.radius ?? 0) || 6);
       const durationMs = Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0));
-      if (
-        !meta.wanderPoint
-        || (
-          step.type === NPC_STEP_TYPES.wanderNearPlacement
-          && distance2D(npc.x, npc.z, meta.wanderPoint.x, meta.wanderPoint.z) <= NPC_TARGET_STOP_DISTANCE
-        )
-      ) {
+      if (!meta.wanderPoint) {
         meta.wanderPoint = this.pickNpcWanderPoint(targetAnchor, radius, npcId);
         this.ensureNpcPathToPosition(
           npcId,
@@ -632,8 +682,33 @@ export class NpcServiceMock {
           now
         );
       }
-      this.moveNpcAlongPath(npcId, npc, meta.wanderPoint, deltaMs);
+      const arrived = this.moveNpcAlongPath(npcId, npc, meta.wanderPoint, deltaMs);
       npc.activity = '';
+      if (arrived) {
+        this.beginNpcIdlePause(npcId, now, {
+          minMs: NPC_DEFAULT_WANDER_IDLE_MIN_MS,
+          maxMs: NPC_DEFAULT_WANDER_IDLE_MAX_MS
+        });
+        if (this.isNpcIdling(npcId, now)) {
+          if ((now - meta.stepStartedAt) >= durationMs) {
+            this.clearNpcIdlePause(npcId);
+            this.advanceNpcRoutineStep(npcId, npc);
+          }
+          return true;
+        }
+        this.clearNpcIdlePause(npcId);
+        if (step.type === NPC_STEP_TYPES.wanderNearPlacement) {
+          meta.wanderPoint = this.pickNpcWanderPoint(targetAnchor, radius, npcId);
+          this.ensureNpcPathToPosition(
+            npcId,
+            { x: npc.x, z: npc.z },
+            meta.wanderPoint,
+            `${step.type}:${npc.targetPlacementId}:${meta.wanderPoint.x},${meta.wanderPoint.z}`,
+            now,
+            { force: true }
+          );
+        }
+      }
       if ((now - meta.stepStartedAt) >= durationMs) {
         this.advanceNpcRoutineStep(npcId, npc);
       }

@@ -235,7 +235,7 @@ function collidesWithCylinder(candidate, collider, radius) {
 
 function collidesWithColliders(candidate, colliders, radius) {
   return colliders.some((collider) => {
-    if (!collider) {
+    if (!collider || collider.blocksMovement === false) {
       return false;
     }
 

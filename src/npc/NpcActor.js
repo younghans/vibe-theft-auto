@@ -5,6 +5,12 @@ import { NPC_RUNTIME_MODES } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { prepareNpcRenderObject } from './npcRenderUtils.js';
 
+const DAMAGE_FEEDBACK_DURATION_MS = 380;
+const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
+const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
+const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
+const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
+
 let sharedIdleClip = null;
 let sharedWalkClip = null;
 let sharedFightIdleClip = null;
@@ -104,6 +110,56 @@ function createPickProxy(collider) {
   return pickProxy;
 }
 
+function cloneColor(color) {
+  return color?.isColor ? color.clone() : null;
+}
+
+function cloneTrackedMaterial(material) {
+  if (!material?.clone) {
+    return { material, tracked: null };
+  }
+
+  const cloned = material.clone();
+  return {
+    material: cloned,
+    tracked: {
+      material: cloned,
+      baseColor: cloned.color?.clone?.() ?? null,
+      baseEmissive: cloned.emissive?.clone?.() ?? null,
+      baseEmissiveIntensity: Number.isFinite(cloned.emissiveIntensity) ? cloned.emissiveIntensity : 1
+    }
+  };
+}
+
+function collectDamageTintMaterials(root) {
+  const trackedMaterials = [];
+
+  root.traverse((node) => {
+    if (!node?.isMesh || !node.material) {
+      return;
+    }
+
+    if (Array.isArray(node.material)) {
+      node.material = node.material.map((entry) => {
+        const { material, tracked } = cloneTrackedMaterial(entry);
+        if (tracked) {
+          trackedMaterials.push(tracked);
+        }
+        return material;
+      });
+      return;
+    }
+
+    const { material, tracked } = cloneTrackedMaterial(node.material);
+    node.material = material;
+    if (tracked) {
+      trackedMaterials.push(tracked);
+    }
+  });
+
+  return trackedMaterials;
+}
+
 export class NpcActor {
   constructor({ model, object, definition }) {
     this.model = model;
@@ -121,7 +177,10 @@ export class NpcActor {
     prepareNpcRenderObject(this.character, model);
     this.mixer = null;
     this.activeAnimation = 'idle';
-    this.damagePulseUntil = 0;
+    this.damageFeedbackStartedAt = -Infinity;
+    this.damageFeedbackEndsAt = -Infinity;
+    this.damageDirection = new THREE.Vector3(0, 0, 1);
+    this.selected = false;
     this.runtimeState = {
       x: definition.position[0],
       z: definition.position[1],
@@ -132,6 +191,31 @@ export class NpcActor {
       alive: true,
       hidden: false
     };
+    this.materialFeedbackEntries = collectDamageTintMaterials(this.character);
+    this.damageRipple = new THREE.Mesh(
+      new THREE.RingGeometry(1.2, 1.85, 32),
+      new THREE.MeshBasicMaterial({
+        color: DAMAGE_RING_COLOR,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    this.damageRipple.rotation.x = -Math.PI / 2;
+    this.damageRipple.position.y = 0.06;
+    this.damageRipple.visible = false;
+    this.damageBurst = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.28, 0),
+      new THREE.MeshBasicMaterial({
+        color: DAMAGE_BURST_COLOR,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      })
+    );
+    this.damageBurst.position.set(0, this.model.height * 0.58, 0);
+    this.damageBurst.visible = false;
 
     const humanoid = validateMixamoHumanoid(this.character);
     if (humanoid.isHumanoid) {
@@ -163,7 +247,9 @@ export class NpcActor {
 
     this.anchor.add(this.pickProxy);
     this.anchor.add(this.interactRadiusIndicator);
+    this.anchor.add(this.damageRipple);
     this.visual.add(this.character);
+    this.visual.add(this.damageBurst);
     this.anchor.add(this.busyIndicator);
     this.anchor.add(this.selectionIndicator);
     this.anchor.add(this.visual);
@@ -181,6 +267,8 @@ export class NpcActor {
   getCollider() {
     const collider = this.model.collider ?? this.model.pickCollider;
     return {
+      kind: 'npc',
+      blocksMovement: false,
       type: 'cylinder',
       x: this.anchor.position.x,
       z: this.anchor.position.z,
@@ -201,7 +289,8 @@ export class NpcActor {
   }
 
   setSelected(selected) {
-    this.selectionIndicator.visible = selected;
+    this.selected = Boolean(selected);
+    this.selectionIndicator.visible = this.selected;
   }
 
   setBusy(busy) {
@@ -239,8 +328,21 @@ export class NpcActor {
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
   }
 
-  triggerDamageFeedback() {
-    this.damagePulseUntil = performance.now() + 240;
+  triggerDamageFeedback({ direction = null } = {}) {
+    this.damageFeedbackStartedAt = performance.now();
+    this.damageFeedbackEndsAt = this.damageFeedbackStartedAt + DAMAGE_FEEDBACK_DURATION_MS;
+
+    if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
+      this.damageDirection.set(direction.x, 0, direction.z);
+    } else {
+      this.damageDirection.set(Math.sin(this.anchor.rotation.y), 0, Math.cos(this.anchor.rotation.y));
+    }
+
+    if (this.damageDirection.lengthSq() <= 0.0001) {
+      this.damageDirection.set(0, 0, 1);
+    } else {
+      this.damageDirection.normalize();
+    }
   }
 
   syncAnimationState() {
@@ -289,12 +391,71 @@ export class NpcActor {
     );
     this.anchor.rotation.y += deltaYaw * lerp;
     this.anchor.visible = this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden;
-    this.visual.rotation.z = (!this.runtimeState.alive || this.runtimeState.mode === NPC_RUNTIME_MODES.dead)
-      ? -1.25
+    const now = performance.now();
+    const damageLifetime = Math.max(1, this.damageFeedbackEndsAt - this.damageFeedbackStartedAt);
+    const damageProgress = THREE.MathUtils.clamp((now - this.damageFeedbackStartedAt) / damageLifetime, 0, 1);
+    const damageActive = damageProgress < 1;
+    const damageEnvelope = damageActive ? Math.pow(1 - damageProgress, 1.25) : 0;
+    const damageWave = damageActive ? Math.sin(damageProgress * Math.PI * 3.4) : 0;
+    const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
+    const damageSideX = -this.damageDirection.z;
+    const damageSideZ = this.damageDirection.x;
+    const damageJolt = damageEnvelope * 0.18;
+    const damageShimmy = damageWave * damageEnvelope * 0.09;
+    const damageFlashAmount = damageActive
+      ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
       : 0;
-    const damagePulse = performance.now() < this.damagePulseUntil;
-    this.selectionIndicator.material.opacity = damagePulse ? 1 : 0.7;
-    this.selectionIndicator.material.color.setHex(damagePulse ? 0xff6d7d : 0xf2c871);
+
+    this.visual.position.set(
+      (this.damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
+      damagePulse * 0.12,
+      (this.damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
+    );
+    this.visual.rotation.set(
+      -(this.damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
+      damageWave * damageEnvelope * 0.025,
+      ((!this.runtimeState.alive || this.runtimeState.mode === NPC_RUNTIME_MODES.dead) ? -1.25 : 0)
+        + (this.damageDirection.x * damageEnvelope * 0.14)
+        + (damageWave * 0.045)
+    );
+
+    this.selectionIndicator.material.opacity = damageActive
+      ? THREE.MathUtils.lerp(0.7, 1, damageFlashAmount * 0.5)
+      : 0.7;
+    this.selectionIndicator.material.color.setHex(damageActive ? 0xff6d7d : 0xf2c871);
+    this.selectionIndicator.visible = this.selected || damageActive;
+    this.selectionIndicator.scale.setScalar(1 + (damagePulse * 0.24));
+
+    this.damageRipple.visible = damageActive;
+    this.damageRipple.material.opacity = damageActive ? Math.max(0, 0.78 - (damageProgress * 0.92)) : 0;
+    this.damageRipple.scale.setScalar(0.82 + (damageProgress * 1.45));
+    this.damageRipple.position.x = this.damageDirection.x * 0.08;
+    this.damageRipple.position.z = this.damageDirection.z * 0.08;
+
+    this.damageBurst.visible = damageActive;
+    this.damageBurst.material.opacity = damageActive ? Math.max(0, 0.88 - (damageProgress * 1.08)) : 0;
+    this.damageBurst.position.set(
+      this.damageDirection.x * 0.18,
+      (this.model.height * 0.58) + (damagePulse * 0.16),
+      this.damageDirection.z * 0.18
+    );
+    this.damageBurst.scale.setScalar(0.6 + (damagePulse * 1.45));
+    this.damageBurst.rotation.x = damageProgress * 1.8;
+    this.damageBurst.rotation.y = damageProgress * 3.1;
+
+    for (const entry of this.materialFeedbackEntries) {
+      const { material, baseColor, baseEmissive, baseEmissiveIntensity } = entry;
+      if (baseColor && material.color) {
+        material.color.copy(baseColor).lerp(DAMAGE_FLASH_COLOR, damageFlashAmount * 0.3);
+      }
+      if (baseEmissive && material.emissive) {
+        material.emissive.copy(baseEmissive).lerp(DAMAGE_EMISSIVE_COLOR, damageFlashAmount);
+      }
+      if (Number.isFinite(baseEmissiveIntensity) && Number.isFinite(material.emissiveIntensity)) {
+        material.emissiveIntensity = baseEmissiveIntensity + (damageFlashAmount * 1.45);
+      }
+    }
+
     this.syncAnimationState();
     this.mixer?.update(deltaSeconds);
   }

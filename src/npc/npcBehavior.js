@@ -28,7 +28,7 @@ export const NPC_RUNTIME_MODES = Object.freeze({
 });
 
 export const NPC_DEFAULT_MAX_HEALTH = 100;
-export const NPC_DEFAULT_MOVE_SPEED = 7.2;
+export const NPC_DEFAULT_MOVE_SPEED = 4.8;
 export const NPC_DEFAULT_CALM_MS = 5500;
 export const NPC_DEFAULT_HIDE_DURATION_MS = 6000;
 export const NPC_DEFAULT_USE_DURATION_MS = 3500;
@@ -38,6 +38,10 @@ export const NPC_DEFAULT_WANDER_RADIUS = 7;
 export const NPC_DEFAULT_AGGRO_RADIUS = 16;
 export const NPC_DEFAULT_LEASH_RADIUS = 24;
 export const NPC_DEFAULT_FLEE_HEALTH_THRESHOLD = 35;
+export const NPC_DEFAULT_IDLE_MIN_MS = 900;
+export const NPC_DEFAULT_IDLE_MAX_MS = 2200;
+export const NPC_DEFAULT_WANDER_IDLE_MIN_MS = 1200;
+export const NPC_DEFAULT_WANDER_IDLE_MAX_MS = 2800;
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);

@@ -3181,7 +3181,14 @@ export class Game {
             }
           } else if (event.kind === 'npc' && event.targetId) {
             const runFeedback = () => {
-              this.worldBuilder?.triggerNpcDamageFeedback(event.targetId);
+              const damageDirection = point.clone().sub(origin);
+              damageDirection.y = 0;
+              if (damageDirection.lengthSq() <= 0.0001) {
+                damageDirection.set(0, 0, 1);
+              } else {
+                damageDirection.normalize();
+              }
+              this.worldBuilder?.triggerNpcDamageFeedback(event.targetId, { direction: damageDirection });
             };
 
             if (delayMs > 0) {
