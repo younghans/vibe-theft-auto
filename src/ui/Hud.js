@@ -654,7 +654,7 @@ export class Hud {
                 </label>
               </div>
               <div class="hud__builder-instance-metrics">
-                <label class="hud__field">
+                <label class="hud__field" hidden>
                   <span class="hud__field-label">Flee Threshold</span>
                   <input class="hud__field-control" type="number" min="1" max="100" step="1" data-builder-npc-combat-flee />
                 </label>

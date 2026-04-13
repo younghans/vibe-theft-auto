@@ -1112,7 +1112,7 @@ export class NpcServiceMock {
     const distanceToThreat = distance2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
     const distanceFromHome = distance2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
-    if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive || combat.archetype === NPC_COMBAT_ARCHETYPES.flee) {
+    if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive) {
       const fleeTarget = findFarthestRouteNodeFrom(this.npcRouteGraph, threatPosition, homeAnchor) ?? homeAnchor;
       this.ensureNpcPathToPosition(
         npcId,
@@ -1246,8 +1246,7 @@ export class NpcServiceMock {
     }
 
     const combat = definition.combat ?? {};
-    const shouldFlee = combat.archetype === NPC_COMBAT_ARCHETYPES.passive
-      || combat.archetype === NPC_COMBAT_ARCHETYPES.flee;
+    const shouldFlee = combat.archetype === NPC_COMBAT_ARCHETYPES.passive;
     meta.combatAnchor = shouldFlee
       ? null
       : {

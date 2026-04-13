@@ -14,7 +14,6 @@ export const NPC_STEP_TYPES = Object.freeze({
 
 export const NPC_COMBAT_ARCHETYPES = Object.freeze({
   passive: 'passive',
-  flee: 'flee',
   hostile: 'hostile'
 });
 
@@ -244,7 +243,9 @@ export function normalizeNpcCombat(combat = null) {
     : {};
   const requestedArchetype = draft.archetype === 'guard'
     ? NPC_COMBAT_ARCHETYPES.hostile
-    : draft.archetype;
+    : draft.archetype === 'flee'
+      ? NPC_COMBAT_ARCHETYPES.passive
+      : draft.archetype;
   const archetype = Object.values(NPC_COMBAT_ARCHETYPES).includes(requestedArchetype)
     ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
@@ -309,7 +310,6 @@ export function listNpcStepTypes() {
 export function listNpcCombatArchetypes() {
   return [
     NPC_COMBAT_ARCHETYPES.passive,
-    NPC_COMBAT_ARCHETYPES.flee,
     NPC_COMBAT_ARCHETYPES.hostile
   ];
 }
