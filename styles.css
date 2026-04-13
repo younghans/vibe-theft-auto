@@ -1624,6 +1624,13 @@ body.is-builder-resizing * {
   gap: 6px;
 }
 
+.hud__builder-section-divider {
+  height: 1px;
+  margin: 6px 0 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(242, 200, 113, 0.08), rgba(242, 200, 113, 0.4), rgba(242, 200, 113, 0.08));
+}
+
 .hud__builder-section-header {
   display: flex;
   align-items: center;

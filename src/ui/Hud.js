@@ -627,30 +627,6 @@ export class Hud {
                   <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
                 </label>
               </div>
-              <label class="hud__field">
-                <span class="hud__field-label">Prompt</span>
-                <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
-              </label>
-            </section>
-            <section class="hud__builder-section">
-              <div class="hud__builder-section-header">
-                <p class="hud__builder-section-title">Routine</p>
-              </div>
-              <p class="hud__body" data-builder-npc-warnings hidden></p>
-              <p class="hud__body" data-builder-npc-pick-status hidden></p>
-              <div class="hud__builder-instance-metrics">
-                <label class="hud__field">
-                  <span class="hud__field-label">Add Step</span>
-                  <select class="hud__field-control" data-builder-npc-step-add-type></select>
-                </label>
-              </div>
-              <button class="hud__builder-action" type="button" data-builder-npc-step-add>Add Routine Step</button>
-              <div data-builder-npc-routine-steps></div>
-            </section>
-            <section class="hud__builder-section">
-              <div class="hud__builder-section-header">
-                <p class="hud__builder-section-title">Combat</p>
-              </div>
               <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Archetype</span>
@@ -677,6 +653,26 @@ export class Hud {
                   <input class="hud__field-control" type="number" min="1" max="100" step="1" data-builder-npc-combat-flee />
                 </label>
               </div>
+              <label class="hud__field">
+                <span class="hud__field-label">Prompt</span>
+                <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
+              </label>
+            </section>
+            <div class="hud__builder-section-divider" aria-hidden="true"></div>
+            <section class="hud__builder-section">
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Routine</p>
+              </div>
+              <p class="hud__body" data-builder-npc-warnings hidden></p>
+              <p class="hud__body" data-builder-npc-pick-status hidden></p>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Add Step</span>
+                  <select class="hud__field-control" data-builder-npc-step-add-type></select>
+                </label>
+              </div>
+              <button class="hud__builder-action" type="button" data-builder-npc-step-add>Add Routine Step</button>
+              <div data-builder-npc-routine-steps></div>
             </section>
             <section class="hud__builder-section">
               <div class="hud__builder-section-header">
