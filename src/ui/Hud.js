@@ -138,6 +138,7 @@ export class Hud {
     this.builderPreviewLoadPromises = new Map();
     this.builderPreviewFailedIds = new Set();
     this.loading = this.createLoading();
+    this.setLoadingProgress(0);
     this.overlay = this.createOverlay();
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
     this.promptText = this.overlay.querySelector('[data-prompt]');
@@ -245,6 +246,7 @@ export class Hud {
     this.aimDebugInputs = new Map();
     this.poseDebugExtraInputs = new Map();
     this.joinTitleTimeout = 0;
+    this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
     this.healthTrailFrame = 0;
     this.healthTrailTimeout = 0;
@@ -273,10 +275,33 @@ export class Hud {
     const node = document.createElement('div');
     node.className = 'loading';
     node.innerHTML = `
-      <div class="loading__card">
-        <p class="hud__eyebrow">Booting</p>
-        <h1 class="loading__title">Vibe Theft Auto</h1>
-        <p class="loading__subtitle">Streaming city blocks, NPCs, and player assets...</p>
+      <div class="loading__content">
+        <h1 class="loading__title" aria-label="Vibe Theft Auto">
+          <span
+            class="loading__word"
+            data-loading-word
+            style="--join-order:0; --join-direction:-1; --join-tilt:-7deg;"
+          >
+            <span class="loading__word-base">Vibe</span>
+            <span class="loading__word-liquid" aria-hidden="true">Vibe</span>
+          </span>
+          <span
+            class="loading__word"
+            data-loading-word
+            style="--join-order:1; --join-direction:1; --join-tilt:5deg;"
+          >
+            <span class="loading__word-base">Theft</span>
+            <span class="loading__word-liquid" aria-hidden="true">Theft</span>
+          </span>
+          <span
+            class="loading__word"
+            data-loading-word
+            style="--join-order:2; --join-direction:-1; --join-tilt:-4deg;"
+          >
+            <span class="loading__word-base">Auto</span>
+            <span class="loading__word-liquid" aria-hidden="true">Auto</span>
+          </span>
+        </h1>
       </div>
     `;
     this.root.append(node);
@@ -804,7 +829,22 @@ export class Hud {
   }
 
   hideLoading() {
+    window.clearTimeout(this.loadingHideTimeout);
+    this.setLoadingProgress(1);
     this.loading.classList.add('is-hidden');
+    this.loadingHideTimeout = window.setTimeout(() => {
+      this.loading.hidden = true;
+    }, 360);
+  }
+
+  setLoadingProgress(progress = 0) {
+    if (!this.loading) {
+      return;
+    }
+
+    const clampedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+    this.loading.hidden = false;
+    this.loading.style.setProperty('--loading-progress', clampedProgress.toFixed(4));
   }
 
   clampBuilderPanelWidth(width) {

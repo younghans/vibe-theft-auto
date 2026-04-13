@@ -2511,11 +2511,33 @@ body.is-builder-resizing * {
   inset: 0;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(3px) saturate(1.05);
+  --loading-progress: 0;
+  z-index: 12;
+  transition: opacity 320ms ease;
+}
+
+.loading::before,
+.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.loading::before {
   background:
-    radial-gradient(circle at top, rgba(244, 195, 80, 0.14), transparent 36%),
-    linear-gradient(180deg, rgba(17, 27, 40, 0.92), rgba(8, 12, 19, 0.96));
-  z-index: 2;
-  transition: opacity 220ms ease;
+    radial-gradient(circle at 50% 34%, rgba(255, 186, 95, 0.12), transparent 30%),
+    radial-gradient(circle at 50% 72%, rgba(88, 148, 255, 0.08), transparent 34%);
+  opacity: 0.92;
+}
+
+.loading::after {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.34)),
+    radial-gradient(circle at center, transparent 42%, rgba(0, 0, 0, 0.32) 100%);
 }
 
 .loading.is-hidden {
@@ -2523,22 +2545,106 @@ body.is-builder-resizing * {
   pointer-events: none;
 }
 
-.loading__card {
-  padding: 24px 28px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(7, 11, 17, 0.78);
+.loading__content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(760px, calc(100vw - 36px));
+  padding: clamp(28px, 6vw, 56px) clamp(18px, 4vw, 44px);
   text-align: center;
+  z-index: 1;
 }
 
 .loading__title {
-  margin: 0 0 8px;
-  font-size: 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(-0.12em, -0.35vw, -0.04em);
+  margin: 0;
+  padding: min(3vh, 24px) 0;
 }
 
-.loading__subtitle {
+.loading__word {
+  position: relative;
+  display: grid;
+  place-items: center;
   margin: 0;
-  color: rgba(244, 238, 226, 0.7);
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: clamp(4.2rem, 12vw, 9.3rem);
+  font-weight: 900;
+  line-height: 0.84;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  isolation: isolate;
+  opacity: 0;
+  filter: blur(14px) saturate(1.12);
+  transform:
+    translateX(calc(var(--join-direction, 1) * 42vw))
+    scale(1.9)
+    rotate(var(--join-tilt, 0deg));
+  will-change: transform, opacity, filter;
+  animation: hud-join-title-word 920ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(80ms + (var(--join-order, 0) * 180ms));
+}
+
+.loading__word-base,
+.loading__word-liquid {
+  grid-area: 1 / 1;
+  display: block;
+}
+
+.loading__word-base {
+  position: relative;
+  color: #f8f8f6;
+  -webkit-text-stroke: clamp(3px, 0.5vw, 8px) #180d08;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 0 #180d08,
+    0 0.04em 0 #180d08,
+    0 0.08em 0 #4a1c08,
+    0 0.14em 0 rgba(29, 11, 5, 0.86),
+    0 0.22em 0.24em rgba(0, 0, 0, 0.42);
+  z-index: 1;
+}
+
+.loading__word-liquid {
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0 transparent;
+  background:
+    radial-gradient(circle at 50% 6%, rgba(255, 255, 255, 0.56), transparent 26%),
+    linear-gradient(120deg, #ff4b9e 0%, #ff7b3d 16%, #ffd94d 32%, #39ecb0 50%, #36c7ff 66%, #7d82ff 83%, #ff52dd 100%);
+  background-size: 100% 160%, 180% 100%;
+  background-position: 50% 100%, 0% 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  clip-path: inset(calc((1 - var(--loading-progress)) * 100%) 0 0 0);
+  filter:
+    saturate(1.24)
+    brightness(1.08)
+    drop-shadow(0 0 10px rgba(255, 116, 177, 0.22))
+    drop-shadow(0 0 16px rgba(55, 210, 255, 0.18));
+  z-index: 2;
+  animation: loading-liquid-flow 2200ms linear infinite;
+}
+
+@keyframes loading-liquid-flow {
+  0% {
+    background-position: 50% 120%, 0% 0%;
+  }
+
+  50% {
+    background-position: 50% 40%, 100% 0%;
+  }
+
+  100% {
+    background-position: 50% 120%, 200% 0%;
+  }
 }
 
 canvas {
@@ -2546,6 +2652,11 @@ canvas {
 }
 
 @media (max-width: 800px) {
+  .loading__content {
+    width: calc(100vw - 24px);
+    padding: 22px 12px 28px;
+  }
+
   .hud__top-actions {
     top: 16px;
     left: 16px;

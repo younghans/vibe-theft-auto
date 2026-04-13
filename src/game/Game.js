@@ -243,6 +243,7 @@ export class Game {
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
     this.bootCriticalReady = false;
+    this.loadingProgress = 0;
     this.deferredStartupPromise = null;
     this.detailedRenderingEnabled = false;
     this.firstFrameMarked = false;
@@ -298,6 +299,7 @@ export class Game {
     this.refreshZoomHud();
     this.refreshCharacterSelectorHud();
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
+    this.hud.setLoadingProgress(0);
 
     window.addEventListener('resize', () => this.onResize());
   }
@@ -339,6 +341,46 @@ export class Game {
     if (measures.length) {
       console.info('[Boot] Performance measures.', measures);
     }
+  }
+
+  setBootLoadingProgress(progress, { render = false } = {}) {
+    const nextProgress = THREE.MathUtils.clamp(Number(progress) || 0, 0, 1);
+    const clampedProgress = Math.max(this.loadingProgress, nextProgress);
+    if (clampedProgress === this.loadingProgress) {
+      if (render) {
+        this.renderCurrentView();
+      }
+      return;
+    }
+
+    this.loadingProgress = clampedProgress;
+    this.hud.setLoadingProgress(clampedProgress);
+    if (render) {
+      this.renderCurrentView();
+    }
+  }
+
+  async warmBootPreviewFrames({ frames = 4, minDurationMs = 180 } = {}) {
+    const targetFrames = Math.max(1, Math.floor(frames));
+    const targetDuration = Math.max(0, Number(minDurationMs) || 0);
+    const startedAt = performance.now();
+
+    await new Promise((resolve) => {
+      let completedFrames = 0;
+
+      const step = () => {
+        completedFrames += 1;
+        const elapsed = performance.now() - startedAt;
+        if (completedFrames >= targetFrames && elapsed >= targetDuration) {
+          resolve();
+          return;
+        }
+
+        window.requestAnimationFrame(step);
+      };
+
+      window.requestAnimationFrame(step);
+    });
   }
 
   setupPostProcessing() {
@@ -1648,11 +1690,14 @@ export class Game {
   async start() {
     try {
       this.markBoot('boot:start');
+      this.setBootLoadingProgress(0.05);
       console.info('[Game] Starting game bootstrap.');
       this.setupLights();
       this.setupAtmosphere();
+      this.setBootLoadingProgress(0.12);
 
       const cityState = await buildCity(this.scene);
+      this.setBootLoadingProgress(0.24);
       console.info('[Game] City built.', {
         colliderCount: cityState.colliders?.length ?? 0,
         interactableCount: cityState.interactables?.length ?? 0
@@ -1663,6 +1708,7 @@ export class Game {
       this.cityBounds = cityState.cityBounds;
       this.markBoot('boot:npc-service:start');
       this.npcService = await createNpcService();
+      this.setBootLoadingProgress(0.36);
       this.markBoot('boot:npc-service:end');
       this.measureBoot('npcServiceReady', 'boot:npc-service:start', 'boot:npc-service:end');
       console.info('[Game] NPC service ready.', {
@@ -1711,6 +1757,7 @@ export class Game {
 
       this.markBoot('boot:layout:start');
       const sharedLayout = await this.npcService.getWorldLayout();
+      this.setBootLoadingProgress(0.5);
       this.markBoot('boot:layout:end');
       this.measureBoot('worldLayoutReady', 'boot:layout:start', 'boot:layout:end');
       console.info('[Game] Shared world layout loaded.', {
@@ -1721,9 +1768,11 @@ export class Game {
       this.currentLayout = sharedLayout;
       await this.worldBuilder.loadLayout(sharedLayout);
       this.worldLayoutReady = true;
+      this.setBootLoadingProgress(0.72);
 
       this.markBoot('boot:avatar:start');
       this.player = await this.buildAvatar(this.desiredLocalCharacterId);
+      this.setBootLoadingProgress(0.88);
       this.markBoot('boot:avatar:end');
       this.measureBoot('localAvatarReady', 'boot:avatar:start', 'boot:avatar:end');
       console.info('[Game] Local player loaded.');
@@ -1761,7 +1810,9 @@ export class Game {
       }
       this.syncInitialCameraState(localPlayerState);
       this.enableDetailedRendering();
-      this.renderCurrentView();
+      this.setBootLoadingProgress(0.96, {
+        render: true
+      });
       this.bootCriticalReady = true;
 
       if (this.npcServiceState.transport === 'colyseus') {
@@ -1772,13 +1823,17 @@ export class Game {
 
       console.info('[Game] Entering render loop.');
       this.renderer.setAnimationLoop(() => this.frame());
+      void this.scheduleDeferredStartup();
+      await this.warmBootPreviewFrames({
+        frames: 5,
+        minDurationMs: 220
+      });
       this.markBoot('boot:loading-hide');
+      this.setBootLoadingProgress(1, {
+        render: true
+      });
       this.hud.hideLoading();
       this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
-      window.setTimeout(() => {
-        this.hud.playJoinTitleAnimation();
-      }, 160);
-      void this.scheduleDeferredStartup();
     } catch (error) {
       console.error('[Game] Failed during bootstrap.', error);
       this.hud.showToast('Failed to load part of the city. Check the console for details.');
