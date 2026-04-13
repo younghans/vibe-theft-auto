@@ -169,6 +169,7 @@ const NpcState = schema({
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
+  respawnAt: 'number',
   active: 'boolean',
   mode: 'string',
   currentStepIndex: 'number',
@@ -1584,6 +1585,7 @@ export class WorldRoom extends Room {
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
         interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
         active: message.active !== false,
+        respawnDelayMs: message.respawnDelayMs,
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -1609,6 +1611,12 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'active')) {
       updates.active = message.active !== false;
+    }
+    if (Object.hasOwn(message, 'respawnDelayMs')) {
+      updates.respawnDelayMs = normalizeNpcBehavior({ respawnDelayMs: message.respawnDelayMs }, {
+        position: [0, 0],
+        rotationQuarterTurns: 0
+      }).respawnDelayMs;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -1750,6 +1758,7 @@ export class WorldRoom extends Room {
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;
+      existing.respawnAt = Math.max(0, Math.floor(existing.respawnAt || 0));
       existing.active = normalizedDefinition.active !== false;
       existing.mode = existing.active
         ? (existing.alive === false ? NPC_RUNTIME_MODES.dead : (existing.mode || NPC_RUNTIME_MODES.routine))
@@ -1878,6 +1887,59 @@ export class WorldRoom extends Room {
     });
   }
 
+  finishNpcRespawn(npcId, npc, definition, now = Date.now()) {
+    if (!npc || !definition) {
+      return false;
+    }
+
+    const respawnTarget = this.getNpcRespawnTarget(definition);
+    const respawnPosition = respawnTarget.position ?? this.getNpcSpawnPoint(definition);
+    npc.maxHealth = Math.max(1, Number(definition?.combat?.maxHealth ?? npc.maxHealth ?? NPC_DEFAULT_MAX_HEALTH));
+    npc.health = npc.maxHealth;
+    npc.alive = true;
+    npc.respawnAt = 0;
+    npc.active = definition.active !== false;
+    npc.lastDamagedAt = 0;
+    npc.lastAttackerId = '';
+    npc.hiddenUntil = 0;
+    npc.busy = false;
+    npc.chatStatus = 'idle';
+    npc.chatText = '';
+    npc.chatStartedAt = 0;
+    npc.chatSeq = Number(npc.chatSeq || 0);
+    npc.weaponId = definition.combat?.weaponId ?? '';
+    npc.x = quantizePosition(respawnPosition.x);
+    npc.z = quantizePosition(respawnPosition.z);
+    npc.rotationY = quantizeRotation(respawnTarget.rotationY ?? toRotationY(definition.spawnRotationQuarterTurns ?? 0));
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    this.resetNpcRuntimeState(npcId, { restartFromSpawn: false, reason: 'npc-respawned' });
+    npc.x = quantizePosition(respawnPosition.x);
+    npc.z = quantizePosition(respawnPosition.z);
+    npc.rotationY = quantizeRotation(respawnTarget.rotationY ?? npc.rotationY);
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    npc.mode = npc.active === false ? NPC_RUNTIME_MODES.dead : NPC_RUNTIME_MODES.routine;
+    npc.targetPlacementId = '';
+    npc.activity = '';
+    npc.respawnAt = 0;
+    this.logNpcDebugEvent(npcId, 'respawned', {
+      placementId: respawnTarget.placementId,
+      source: respawnTarget.source,
+      x: npc.x,
+      z: npc.z,
+      respawnDelayMs: Math.max(0, Number(definition.respawnDelayMs ?? 0)),
+      now
+    });
+    this.broadcastCombatEvent({
+      type: 'respawn',
+      victimId: npcId,
+      victimType: 'npc',
+      x: npc.x,
+      z: npc.z,
+      placementId: respawnTarget.placementId ?? ''
+    });
+    return true;
+  }
+
   getNpcDefinition(npcId) {
     return this.npcDefinitions.get(npcId) ?? null;
   }
@@ -1904,6 +1966,68 @@ export class WorldRoom extends Room {
     }
 
     return this.getNpcSpawnPoint(definition);
+  }
+
+  getNpcRespawnTarget(definition) {
+    const spawnPoint = this.getNpcSpawnPoint(definition);
+    const spawnRotationQuarterTurns = normalizeRotationQuarterTurns(
+      definition?.spawnRotationQuarterTurns ?? definition?.rotationQuarterTurns ?? 0
+    );
+    const routineSteps = definition?.routine?.steps ?? [];
+
+    for (const step of routineSteps) {
+      if (step?.type !== NPC_STEP_TYPES.enterHideAtPlacement || !step.targetPlacementId) {
+        continue;
+      }
+
+      const placement = this.worldState.getPlacement(step.targetPlacementId);
+      const target = placement ? resolveNpcTargetOption(placement) : null;
+      if (!placement || !target?.approachPosition) {
+        continue;
+      }
+
+      return {
+        placementId: placement.id,
+        source: 'enterHideAtPlacement',
+        position: clonePoint(target.approachPosition) ?? spawnPoint,
+        rotationY: quantizeRotation(toRotationY(placement.rotationQuarterTurns ?? 0))
+      };
+    }
+
+    const buildingTargets = collectNpcTargetOptions(this.worldState)
+      .filter((entry) => entry.hideCapable && entry.approachPosition);
+    let nearestBuildingTarget = null;
+    let nearestDistance = Infinity;
+    for (const target of buildingTargets) {
+      const distance = distance2D(
+        spawnPoint.x,
+        spawnPoint.z,
+        target.approachPosition.x,
+        target.approachPosition.z
+      );
+      if (distance >= nearestDistance) {
+        continue;
+      }
+      nearestBuildingTarget = target;
+      nearestDistance = distance;
+    }
+
+    if (nearestBuildingTarget) {
+      const placement = this.worldState.getPlacement(nearestBuildingTarget.placementId);
+      return {
+        placementId: nearestBuildingTarget.placementId,
+        source: 'nearestBuilding',
+        position: clonePoint(nearestBuildingTarget.approachPosition) ?? spawnPoint,
+        rotationY: quantizeRotation(toRotationY(placement?.rotationQuarterTurns ?? 0))
+      };
+    }
+
+    return {
+      placementId: '',
+      source: 'spawn',
+      position: spawnPoint,
+      rotationY: quantizeRotation(toRotationY(spawnRotationQuarterTurns))
+    };
   }
 
   getNpcTargetOption(targetPlacementId = '') {
@@ -2002,6 +2126,7 @@ export class WorldRoom extends Room {
       idleUntil: meta.idleUntil ?? 0,
       calmEndsAt: meta.calmEndsAt ?? 0,
       hiddenUntil: npc.hiddenUntil ?? 0,
+      respawnAt: npc.respawnAt ?? 0,
       wanderPoint: clonePoint(meta.wanderPoint),
       stepStartedAt: meta.stepStartedAt ?? 0,
       busy: Boolean(npc.busy),
@@ -2011,7 +2136,8 @@ export class WorldRoom extends Room {
       debugAgeMs: 0,
       idleRemainingMs: Math.max(0, Math.floor((meta.idleUntil ?? 0) - now)),
       calmRemainingMs: Math.max(0, Math.floor((meta.calmEndsAt ?? 0) - now)),
-      hiddenRemainingMs: Math.max(0, Math.floor((npc.hiddenUntil ?? 0) - now))
+      hiddenRemainingMs: Math.max(0, Math.floor((npc.hiddenUntil ?? 0) - now)),
+      respawnRemainingMs: Math.max(0, Math.floor((npc.respawnAt ?? 0) - now))
     };
   }
 
@@ -2508,6 +2634,10 @@ export class WorldRoom extends Room {
       }
 
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.dead) {
+        if (npc.respawnAt && now >= npc.respawnAt) {
+          this.finishNpcRespawn(npcId, npc, definition, now);
+          continue;
+        }
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead);
         continue;
       }
@@ -2580,17 +2710,27 @@ export class WorldRoom extends Room {
 
   handleNpcDeath(npcId, killerId = '') {
     const npc = this.state.npcs.get(npcId);
-    if (!npc || npc.alive === false) {
+    const definition = this.getNpcDefinition(npcId);
+    if (!npc || !definition || npc.alive === false) {
       return;
     }
 
+    const now = Date.now();
     npc.alive = false;
     npc.health = 0;
     npc.activity = '';
+    npc.busy = false;
+    npc.chatStatus = 'idle';
+    npc.chatText = '';
+    npc.chatStartedAt = 0;
+    npc.respawnAt = Math.max(0, Number(definition.respawnDelayMs ?? 0))
+      ? now + Math.max(0, Math.floor(Number(definition.respawnDelayMs ?? 0)))
+      : 0;
     this.logNpcDebugEvent(npcId, 'died', {
       killerId,
       x: npc.x,
-      z: npc.z
+      z: npc.z,
+      respawnAt: npc.respawnAt
     });
     this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead, { lastAttackerId: killerId });
     this.broadcastCombatEvent({

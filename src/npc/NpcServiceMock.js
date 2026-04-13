@@ -49,7 +49,7 @@ import {
   buildNpcRouteGraph,
   findFarthestRouteNodeFrom
 } from './npcRouteGraph.js';
-import { resolveNpcTargetOption } from './npcTargeting.js';
+import { collectNpcTargetOptions, resolveNpcTargetOption } from './npcTargeting.js';
 import { WorldState } from '../world/WorldState.js';
 import { defaultWorldLayout } from '../world/defaultWorldLayout.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
@@ -173,6 +173,7 @@ function cloneNpcDebugState(debug = {}) {
     idleUntil: debug.idleUntil ?? 0,
     calmEndsAt: debug.calmEndsAt ?? 0,
     hiddenUntil: debug.hiddenUntil ?? 0,
+    respawnAt: debug.respawnAt ?? 0,
     wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
     stepStartedAt: debug.stepStartedAt ?? 0,
     busy: Boolean(debug.busy),
@@ -182,7 +183,8 @@ function cloneNpcDebugState(debug = {}) {
     debugAgeMs: debug.debugAgeMs ?? 0,
     idleRemainingMs: debug.idleRemainingMs ?? 0,
     calmRemainingMs: debug.calmRemainingMs ?? 0,
-    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0
+    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0,
+    respawnRemainingMs: debug.respawnRemainingMs ?? 0
   };
 }
 
@@ -384,6 +386,7 @@ export class NpcServiceMock {
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
+        respawnAt: previous?.respawnAt ?? 0,
         active: definition.active !== false,
         mode: previous?.mode ?? NPC_RUNTIME_MODES.routine,
         currentStepIndex: previous?.currentStepIndex ?? 0,
@@ -498,6 +501,52 @@ export class NpcServiceMock {
     }
   }
 
+  finishNpcRespawn(npcId, npc, definition, now = Date.now()) {
+    if (!npc || !definition) {
+      return false;
+    }
+
+    const respawnTarget = this.getNpcRespawnTarget(definition);
+    const respawnPosition = respawnTarget.position ?? this.getNpcSpawnPoint(definition);
+    npc.maxHealth = Math.max(1, Number(npc.maxHealth ?? NPC_DEFAULT_MAX_HEALTH));
+    npc.health = npc.maxHealth;
+    npc.alive = true;
+    npc.respawnAt = 0;
+    npc.active = definition.active !== false;
+    npc.lastDamagedAt = 0;
+    npc.lastAttackerId = '';
+    npc.hiddenUntil = 0;
+    npc.activity = '';
+    npc.busy = false;
+    npc.chatStatus = 'idle';
+    npc.chatText = '';
+    npc.chatStartedAt = 0;
+    npc.weaponId = definition.combat?.weaponId ?? '';
+    npc.x = quantizePosition(respawnPosition.x);
+    npc.z = quantizePosition(respawnPosition.z);
+    npc.position = [npc.x, npc.z];
+    npc.rotationY = quantizeRotation(respawnTarget.rotationY ?? toRotationY(definition.spawnRotationQuarterTurns ?? 0));
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    this.resetNpcRuntimeState(npcId, { restartFromSpawn: false });
+    npc.x = quantizePosition(respawnPosition.x);
+    npc.z = quantizePosition(respawnPosition.z);
+    npc.position = [npc.x, npc.z];
+    npc.rotationY = quantizeRotation(respawnTarget.rotationY ?? npc.rotationY);
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    npc.mode = npc.active === false ? NPC_RUNTIME_MODES.dead : NPC_RUNTIME_MODES.routine;
+    npc.targetPlacementId = '';
+    npc.respawnAt = 0;
+    this.emitCombatEvent({
+      type: 'respawn',
+      victimId: npcId,
+      victimType: 'npc',
+      x: npc.x,
+      z: npc.z,
+      placementId: respawnTarget.placementId ?? ''
+    });
+    return true;
+  }
+
   getNpcDefinition(npcId) {
     return this.definitions.get(npcId) ?? null;
   }
@@ -523,6 +572,67 @@ export class NpcServiceMock {
     }
 
     return this.getNpcSpawnPoint(definition);
+  }
+
+  getNpcRespawnTarget(definition) {
+    const spawnPoint = this.getNpcSpawnPoint(definition);
+    const spawnRotationQuarterTurns = ((Math.round(Number(
+      definition?.spawnRotationQuarterTurns ?? definition?.rotationQuarterTurns ?? 0
+    )) % 4) + 4) % 4;
+
+    for (const step of definition?.routine?.steps ?? []) {
+      if (step?.type !== NPC_STEP_TYPES.enterHideAtPlacement || !step.targetPlacementId) {
+        continue;
+      }
+
+      const placement = this.worldState.getPlacement(step.targetPlacementId);
+      const target = placement ? resolveNpcTargetOption(placement) : null;
+      if (!placement || !target?.approachPosition) {
+        continue;
+      }
+
+      return {
+        placementId: placement.id,
+        source: 'enterHideAtPlacement',
+        position: clonePoint(target.approachPosition) ?? spawnPoint,
+        rotationY: quantizeRotation(toRotationY(placement.rotationQuarterTurns ?? 0))
+      };
+    }
+
+    const buildingTargets = collectNpcTargetOptions(this.worldState)
+      .filter((entry) => entry.hideCapable && entry.approachPosition);
+    let nearestBuildingTarget = null;
+    let nearestDistance = Infinity;
+    for (const target of buildingTargets) {
+      const distance = distance2D(
+        spawnPoint.x,
+        spawnPoint.z,
+        target.approachPosition.x,
+        target.approachPosition.z
+      );
+      if (distance >= nearestDistance) {
+        continue;
+      }
+      nearestBuildingTarget = target;
+      nearestDistance = distance;
+    }
+
+    if (nearestBuildingTarget) {
+      const placement = this.worldState.getPlacement(nearestBuildingTarget.placementId);
+      return {
+        placementId: nearestBuildingTarget.placementId,
+        source: 'nearestBuilding',
+        position: clonePoint(nearestBuildingTarget.approachPosition) ?? spawnPoint,
+        rotationY: quantizeRotation(toRotationY(placement?.rotationQuarterTurns ?? 0))
+      };
+    }
+
+    return {
+      placementId: '',
+      source: 'spawn',
+      position: spawnPoint,
+      rotationY: quantizeRotation(toRotationY(spawnRotationQuarterTurns))
+    };
   }
 
   getNpcTargetOption(targetPlacementId = '') {
@@ -608,6 +718,7 @@ export class NpcServiceMock {
       idleUntil: meta.idleUntil ?? 0,
       calmEndsAt: meta.calmEndsAt ?? 0,
       hiddenUntil: npc.hiddenUntil ?? 0,
+      respawnAt: npc.respawnAt ?? 0,
       wanderPoint: clonePoint(meta.wanderPoint),
       stepStartedAt: meta.stepStartedAt ?? 0,
       busy: Boolean(npc.busy),
@@ -617,7 +728,8 @@ export class NpcServiceMock {
       debugAgeMs: 0,
       idleRemainingMs: Math.max(0, Math.floor((meta.idleUntil ?? 0) - now)),
       calmRemainingMs: Math.max(0, Math.floor((meta.calmEndsAt ?? 0) - now)),
-      hiddenRemainingMs: Math.max(0, Math.floor((npc.hiddenUntil ?? 0) - now))
+      hiddenRemainingMs: Math.max(0, Math.floor((npc.hiddenUntil ?? 0) - now)),
+      respawnRemainingMs: Math.max(0, Math.floor((npc.respawnAt ?? 0) - now))
     };
   }
 
@@ -1068,6 +1180,11 @@ export class NpcServiceMock {
       }
 
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.dead) {
+        if (npc.respawnAt && now >= npc.respawnAt) {
+          changed = this.finishNpcRespawn(npcId, npc, definition, now) || changed;
+          npc.position = [npc.x, npc.z];
+          continue;
+        }
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead);
         npc.position = [npc.x, npc.z];
         continue;
@@ -1137,13 +1254,22 @@ export class NpcServiceMock {
 
   handleNpcDeath(npcId, killerId = '') {
     const npc = this.state.npcs.get(npcId);
-    if (!npc || npc.alive === false) {
+    const definition = this.getNpcDefinition(npcId);
+    if (!npc || !definition || npc.alive === false) {
       return;
     }
 
+    const now = Date.now();
     npc.alive = false;
     npc.health = 0;
     npc.activity = '';
+    npc.busy = false;
+    npc.chatStatus = 'idle';
+    npc.chatText = '';
+    npc.chatStartedAt = 0;
+    npc.respawnAt = Math.max(0, Number(definition.respawnDelayMs ?? 0))
+      ? now + Math.max(0, Math.floor(Number(definition.respawnDelayMs ?? 0)))
+      : 0;
     this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead, { lastAttackerId: killerId });
     this.emitCombatEvent({
       type: 'death',
@@ -1219,6 +1345,7 @@ export class NpcServiceMock {
             name: payload.name,
             prompt: payload.prompt,
             interactRadius: payload.interactRadius,
+            respawnDelayMs: payload.respawnDelayMs,
             active: payload.active !== false
           }
         );

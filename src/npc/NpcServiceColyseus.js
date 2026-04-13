@@ -37,6 +37,7 @@ function cloneNpcState(npc) {
     weaponId: npc.weaponId || '',
     lastAttackerId: npc.lastAttackerId || '',
     hiddenUntil: npc.hiddenUntil ?? 0,
+    respawnAt: npc.respawnAt ?? 0,
     activity: npc.activity || '',
     lastDamagedAt: npc.lastDamagedAt ?? 0,
     busy: npc.busy,
@@ -100,6 +101,7 @@ function cloneNpcDebugState(debug = {}) {
     idleUntil: debug.idleUntil ?? 0,
     calmEndsAt: debug.calmEndsAt ?? 0,
     hiddenUntil: debug.hiddenUntil ?? 0,
+    respawnAt: debug.respawnAt ?? 0,
     wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
     stepStartedAt: debug.stepStartedAt ?? 0,
     busy: Boolean(debug.busy),
@@ -109,7 +111,8 @@ function cloneNpcDebugState(debug = {}) {
     debugAgeMs: debug.debugAgeMs ?? 0,
     idleRemainingMs: debug.idleRemainingMs ?? 0,
     calmRemainingMs: debug.calmRemainingMs ?? 0,
-    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0
+    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0,
+    respawnRemainingMs: debug.respawnRemainingMs ?? 0
   };
 }
 

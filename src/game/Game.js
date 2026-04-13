@@ -2287,7 +2287,9 @@ export class Game {
         busy: npc.busy,
         mode: npc.mode,
         activity: npc.activity,
-        alive: npc.alive !== false
+        alive: npc.alive !== false,
+        lastDamagedAt: npc.lastDamagedAt ?? 0,
+        respawnAt: npc.respawnAt ?? 0
       });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);

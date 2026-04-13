@@ -143,6 +143,13 @@ export function createRagdollController(character) {
     }
   }
 
+  function resetPose() {
+    for (const node of nodes.values()) {
+      node.position.copy(node.basePosition);
+      node.previousPosition.copy(node.basePosition);
+    }
+  }
+
   function applyImpulse(nodeId, velocity) {
     const node = nodes.get(nodeId);
     if (!node) {
@@ -285,6 +292,17 @@ export function createRagdollController(character) {
       state.recovering = true;
       state.recoverTime = 0;
       return false;
+    },
+    reset() {
+      state.active = false;
+      state.recovering = false;
+      state.recoverTime = 0;
+      state.activeTime = 0;
+      resetPose();
+      if (hipsBone) {
+        hipsBone.position.copy(hipsBasePosition);
+      }
+      return true;
     },
     update(deltaSeconds) {
       if (state.active || state.recovering) {

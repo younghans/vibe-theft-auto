@@ -42,6 +42,7 @@ export const NPC_DEFAULT_IDLE_MIN_MS = 900;
 export const NPC_DEFAULT_IDLE_MAX_MS = 2200;
 export const NPC_DEFAULT_WANDER_IDLE_MIN_MS = 1200;
 export const NPC_DEFAULT_WANDER_IDLE_MAX_MS = 2800;
+export const NPC_DEFAULT_RESPAWN_DELAY_MS = 15000;
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);
@@ -262,6 +263,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
   return {
     routine: createDefaultNpcRoutine(),
     combat: createDefaultNpcCombat(),
+    respawnDelayMs: NPC_DEFAULT_RESPAWN_DELAY_MS,
     ...overrides
   };
 }
@@ -292,6 +294,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     ...npc,
     routine: normalizeNpcRoutine(npc.routine),
     combat: normalizeNpcCombat(npc.combat),
+    respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),
     spawnPosition,
     spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4
   };

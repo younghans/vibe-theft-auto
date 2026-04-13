@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
+import { createRagdollController } from '../player/ragdollController.js';
 import { NPC_RUNTIME_MODES } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { prepareNpcRenderObject } from './npcRenderUtils.js';
@@ -177,6 +178,7 @@ export class NpcActor {
     prepareNpcRenderObject(this.character, model);
     this.mixer = null;
     this.activeAnimation = 'idle';
+    this.ragdoll = null;
     this.damageFeedbackStartedAt = -Infinity;
     this.damageFeedbackEndsAt = -Infinity;
     this.damageDirection = new THREE.Vector3(0, 0, 1);
@@ -189,7 +191,9 @@ export class NpcActor {
       activity: '',
       busy: false,
       alive: true,
-      hidden: false
+      hidden: false,
+      lastDamagedAt: 0,
+      respawnAt: 0
     };
     this.materialFeedbackEntries = collectDamageTintMaterials(this.character);
     this.damageRipple = new THREE.Mesh(
@@ -220,6 +224,7 @@ export class NpcActor {
     const humanoid = validateMixamoHumanoid(this.character);
     if (humanoid.isHumanoid) {
       this.mixer = new THREE.AnimationMixer(this.character);
+      this.ragdoll = createRagdollController(this.character);
       this.animationActions = new Map([
         ['idle', this.mixer.clipAction(getSharedIdleClip())],
         ['walk', this.mixer.clipAction(getSharedWalkClip())],
@@ -314,6 +319,8 @@ export class NpcActor {
   }
 
   setRuntimeState(state = {}, groundY = this.anchor.position.y) {
+    const wasAlive = this.runtimeState.alive !== false;
+    const nextAlive = state.alive !== false;
     this.runtimeState = {
       ...this.runtimeState,
       ...state,
@@ -326,6 +333,23 @@ export class NpcActor {
     this.anchor.position.y = groundY;
     this.setBusy(Boolean(state.busy));
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
+
+    if (wasAlive && !nextAlive) {
+      this.ragdoll?.activate({
+        startedAtMs: Number.isFinite(state.lastDamagedAt) && state.lastDamagedAt > 0
+          ? state.lastDamagedAt
+          : Date.now()
+      });
+    } else if (!wasAlive && nextAlive) {
+      this.ragdoll?.reset();
+      this.anchor.position.x = this.runtimeState.x;
+      this.anchor.position.z = this.runtimeState.z;
+      this.anchor.rotation.y = this.runtimeState.rotationY;
+      this.visual.position.set(0, 0, 0);
+      this.visual.rotation.set(0, 0, 0);
+      this.damageFeedbackStartedAt = -Infinity;
+      this.damageFeedbackEndsAt = -Infinity;
+    }
   }
 
   triggerDamageFeedback({ direction = null } = {}) {
@@ -414,8 +438,7 @@ export class NpcActor {
     this.visual.rotation.set(
       -(this.damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
       damageWave * damageEnvelope * 0.025,
-      ((!this.runtimeState.alive || this.runtimeState.mode === NPC_RUNTIME_MODES.dead) ? -1.25 : 0)
-        + (this.damageDirection.x * damageEnvelope * 0.14)
+      (this.damageDirection.x * damageEnvelope * 0.14)
         + (damageWave * 0.045)
     );
 
@@ -458,5 +481,7 @@ export class NpcActor {
 
     this.syncAnimationState();
     this.mixer?.update(deltaSeconds);
+    this.ragdoll?.update(deltaSeconds);
+    this.ragdoll?.applyToSkeleton();
   }
 }

@@ -362,6 +362,9 @@ export class WorldBuilder {
       onNpcRadiusChange: (value) => void this.updateSelectedNpc({
         interactRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
       }),
+      onNpcRespawnDelayChange: (value) => void this.updateSelectedNpc({
+        respawnDelayMs: Number.isFinite(value) ? THREE.MathUtils.clamp(Math.round(value), 0, 600000) : undefined
+      }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
@@ -2068,6 +2071,7 @@ export class WorldBuilder {
       name: npcDraft?.name ?? placement.npc.name,
       prompt: npcDraft?.prompt ?? placement.npc.prompt,
       interactRadius: npcDraft?.interactRadius ?? placement.npc.interactRadius,
+      respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
       active: (npcDraft?.active ?? placement.npc.active) !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,

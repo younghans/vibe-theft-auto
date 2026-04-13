@@ -201,6 +201,7 @@ export class Hud {
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
+    this.builderNpcRespawnDelay = this.overlay.querySelector('[data-builder-npc-respawn-delay]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
@@ -625,6 +626,10 @@ export class Hud {
                 <label class="hud__field">
                   <span class="hud__field-label">Interact Radius</span>
                   <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+                </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Respawn Timer (ms)</span>
+                  <input class="hud__field-control" type="number" min="0" max="600000" step="100" data-builder-npc-respawn-delay />
                 </label>
               </div>
               <div class="hud__builder-instance-metrics">
@@ -1123,6 +1128,7 @@ export class Hud {
     onNpcNameChange,
     onNpcPromptChange,
     onNpcRadiusChange,
+    onNpcRespawnDelayChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
@@ -1216,6 +1222,10 @@ export class Hud {
 
     this.builderNpcRadius.addEventListener('input', () => {
       onNpcRadiusChange(Number(this.builderNpcRadius.value));
+    });
+
+    this.builderNpcRespawnDelay?.addEventListener('input', () => {
+      onNpcRespawnDelayChange?.(Number(this.builderNpcRespawnDelay.value));
     });
 
     this.builderNpcModel.addEventListener('change', () => {
@@ -1521,6 +1531,7 @@ export class Hud {
     }
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
+    setFieldValue(this.builderNpcRespawnDelay, String(editorState.respawnDelayMs ?? 0));
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 
     const stepTypesChanged = this.lastNpcEditorState?.stepTypes?.length !== editorState.stepTypes.length
@@ -1733,6 +1744,7 @@ export class Hud {
             ['Idle Left', `${Math.max(0, debug.idleRemainingMs ?? 0)} ms`],
             ['Calm Left', `${Math.max(0, debug.calmRemainingMs ?? 0)} ms`],
             ['Hidden Left', `${Math.max(0, debug.hiddenRemainingMs ?? 0)} ms`],
+            ['Respawn Left', `${Math.max(0, debug.respawnRemainingMs ?? 0)} ms`],
             ['Last Repath', `${Math.max(0, debug.lastRepathAgeMs ?? 0)} ms ago`],
             ['Next Point', debug.nextPathPoint ? `${debug.nextPathPoint.x.toFixed(2)}, ${debug.nextPathPoint.z.toFixed(2)}` : 'None'],
             ['Steering', debug.steeringTarget ? `${debug.steeringTarget.x.toFixed(2)}, ${debug.steeringTarget.z.toFixed(2)}` : 'None'],

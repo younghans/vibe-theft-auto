@@ -39,6 +39,7 @@ function toTransportPayload(edit) {
         name: edit.npc.name,
         prompt: edit.npc.prompt,
         interactRadius: edit.npc.interactRadius,
+        respawnDelayMs: edit.npc.respawnDelayMs,
         active: edit.npc.active
       };
     case 'rotatePlacement':

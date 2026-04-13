@@ -83,11 +83,12 @@ function toPlacementRecord(entry, item, id) {
           prompt: entry.prompt,
           interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2,
           active: entry.active !== false,
-          routine: entry.routine,
-          combat: entry.combat,
-          spawnPosition: entry.spawnPosition,
-          spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
-        }, {
+        routine: entry.routine,
+        combat: entry.combat,
+        respawnDelayMs: entry.respawnDelayMs,
+        spawnPosition: entry.spawnPosition,
+        spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
+      }, {
           position: item.layer === 'npc'
             ? [
                 normalizePositionValue(entry.position[0]),
@@ -141,6 +142,7 @@ function toSerializedPlacement(placement) {
         active: placement.npc.active !== false,
         routine: placement.npc.routine,
         combat: placement.npc.combat,
+        respawnDelayMs: placement.npc.respawnDelayMs,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),
@@ -339,6 +341,7 @@ export class WorldState {
           active: npc.active !== false,
           routine: npc.routine,
           combat: npc.combat,
+          respawnDelayMs: npc.respawnDelayMs,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
         }, {
@@ -534,6 +537,7 @@ export class WorldState {
         active: placement.npc.active !== false,
         routine: placement.npc.routine,
         combat: placement.npc.combat,
+        respawnDelayMs: placement.npc.respawnDelayMs,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               Number(placement.npc.spawnPosition[0].toFixed(2)),
