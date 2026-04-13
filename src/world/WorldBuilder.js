@@ -15,6 +15,7 @@ import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
 } from '../shared/worldConstants.js';
+import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
@@ -419,7 +420,7 @@ export class WorldBuilder {
     const groupId = this.activeGroupId;
     const items = this.getVisibleCategoryEntries(categoryId)
       .map(({ item }) => item)
-      .filter((item) => item.previewMode === 'render');
+      .filter((item) => (item.previewMode ?? 'render') === 'render');
     const generation = ++this.builderPreviewGeneration;
 
     if (!items.length) {
@@ -451,8 +452,8 @@ export class WorldBuilder {
     }
 
     if (!this.builderPreviewRendererPromise) {
-      this.builderPreviewRendererPromise = import('../ui/BuilderPreviewRenderer.js')
-        .then(({ BuilderPreviewRenderer }) => {
+      this.builderPreviewRendererPromise = Promise.resolve()
+        .then(() => {
           this.builderPreviewRenderer = new BuilderPreviewRenderer({ library: this.library });
           return this.builderPreviewRenderer;
         })

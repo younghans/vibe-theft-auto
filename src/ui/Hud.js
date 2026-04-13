@@ -1374,6 +1374,7 @@ export class Hud {
         <div class="hud__builder-card-grid">
           ${section.cards.map((card) => {
             const preview = this.builderPreviewImages.get(card.previewId) ?? '';
+            const imageSrc = preview || (card.previewMode === 'static' ? card.previewImageSrc : '');
             if (!preview && card.previewMode === 'static' && card.previewImageSrc) {
               this.queueBuilderStaticPreview(card.previewId, card.previewImageSrc);
             }
@@ -1385,8 +1386,8 @@ export class Hud {
               >
                 ${card.shortcut ? `<span class="hud__builder-key hud__builder-card-key">${card.shortcut}</span>` : ''}
                 <span class="hud__builder-thumb" data-builder-preview="${card.previewId}">
-                  ${preview
-                    ? `<img class="hud__builder-thumb-image" src="${preview}" alt="${card.label}" loading="lazy" />`
+                  ${imageSrc
+                    ? `<img class="hud__builder-thumb-image" src="${imageSrc}" alt="${card.label}" loading="lazy" />`
                     : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(card.label)}</span>`}
                 </span>
                 <span class="hud__builder-card-copy">

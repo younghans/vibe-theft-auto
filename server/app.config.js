@@ -10,6 +10,7 @@ import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
 const DIST_INDEX_PATH = path.join(DIST_ROOT, 'index.html');
+const ASSETS_ROOT = path.join(PROJECT_ROOT, 'assets');
 const MIME_TYPES = {
   '.bin': 'application/octet-stream',
   '.css': 'text/css; charset=utf-8',
@@ -59,6 +60,32 @@ async function resolveDistAssetPath(requestPath) {
 
   const distRelativePath = path.relative(DIST_ROOT, candidatePath);
   if (distRelativePath.startsWith('..') || path.isAbsolute(distRelativePath)) {
+    return null;
+  }
+
+  return candidatePath;
+}
+
+async function resolveSourceAssetPath(requestPath) {
+  const normalizedPath = normalizeAssetPath(requestPath);
+  if (normalizedPath == null || (!normalizedPath.startsWith('assets/') && normalizedPath !== 'assets')) {
+    return null;
+  }
+
+  const relativeAssetPath = normalizedPath === 'assets'
+    ? ''
+    : normalizedPath.slice('assets/'.length);
+  let candidatePath = path.join(ASSETS_ROOT, relativeAssetPath);
+  const stats = await fsp.stat(candidatePath).catch(() => null);
+  if (stats?.isDirectory()) {
+    return null;
+  }
+  if (!stats?.isFile()) {
+    return null;
+  }
+
+  const assetRelativePath = path.relative(ASSETS_ROOT, candidatePath);
+  if (assetRelativePath.startsWith('..') || path.isAbsolute(assetRelativePath)) {
     return null;
   }
 
@@ -148,6 +175,12 @@ const server = defineServer({
         const assetPath = await resolveDistAssetPath(req.path);
         if (assetPath) {
           await sendDistAsset(req, res, assetPath);
+          return;
+        }
+
+        const sourceAssetPath = await resolveSourceAssetPath(req.path);
+        if (sourceAssetPath) {
+          await sendDistAsset(req, res, sourceAssetPath);
           return;
         }
 
