@@ -2078,6 +2078,9 @@ export class WorldBuilder {
       interactRadius: npcDraft?.interactRadius ?? placement.npc.interactRadius,
       speed: npcDraft?.speed ?? placement.npc.speed ?? 'slow',
       respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
+      selectionActions: {
+        moving: this.activeMovePlacementId === placement.id
+      },
       active: (npcDraft?.active ?? placement.npc.active) !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,

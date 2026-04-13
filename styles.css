@@ -1800,6 +1800,35 @@ body.is-builder-resizing * {
   margin-top: 12px;
 }
 
+.hud__builder-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 18px 14px;
+}
+
+.hud__builder-action-row--compact .hud__builder-action {
+  flex: 1 1 132px;
+  min-width: 0;
+}
+
+.hud__builder-action.is-active {
+  border-color: rgba(104, 199, 255, 0.72);
+  background: rgba(104, 199, 255, 0.14);
+  color: #d7f4ff;
+}
+
+.hud__builder-action--danger {
+  border-color: rgba(225, 110, 110, 0.45);
+  color: #ffd0d0;
+  background: rgba(225, 110, 110, 0.08);
+}
+
+.hud__builder-action--danger:hover {
+  border-color: rgba(225, 110, 110, 0.72);
+  background: rgba(225, 110, 110, 0.14);
+}
+
 .hud__builder-confirm:disabled {
   opacity: 0.56;
   cursor: default;

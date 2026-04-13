@@ -206,6 +206,10 @@ export class Hud {
     this.builderNpcEditorClose = this.overlay.querySelector('[data-builder-npc-close]');
     this.builderNpcEditorTitle = this.overlay.querySelector('[data-builder-npc-title]');
     this.builderNpcEditorSubtitle = this.overlay.querySelector('[data-builder-npc-subtitle]');
+    this.builderNpcRotate = this.overlay.querySelector('[data-builder-npc-rotate]');
+    this.builderNpcMove = this.overlay.querySelector('[data-builder-npc-move]');
+    this.builderNpcDelete = this.overlay.querySelector('[data-builder-npc-delete]');
+    this.builderNpcDone = this.overlay.querySelector('[data-builder-npc-done]');
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
@@ -647,6 +651,12 @@ export class Hud {
               </svg>
             </button>
           </div>
+        </div>
+        <div class="hud__builder-action-row hud__builder-action-row--compact">
+          <button class="hud__builder-action" type="button" data-builder-npc-rotate>Rotate</button>
+          <button class="hud__builder-action" type="button" data-builder-npc-move>Move</button>
+          <button class="hud__builder-action hud__builder-action--danger" type="button" data-builder-npc-delete>Remove</button>
+          <button class="hud__builder-action" type="button" data-builder-npc-done>Accept</button>
         </div>
         <div class="hud__builder-instance-scroll">
           <div class="hud__builder-instance-card">
@@ -1342,6 +1352,22 @@ export class Hud {
       onConfirmSelection();
     });
 
+    this.builderNpcRotate?.addEventListener('click', () => {
+      onRotateSelection();
+    });
+
+    this.builderNpcMove?.addEventListener('click', () => {
+      onMoveSelection();
+    });
+
+    this.builderNpcDelete?.addEventListener('click', () => {
+      onDeleteSelection();
+    });
+
+    this.builderNpcDone?.addEventListener('click', () => {
+      onConfirmSelection();
+    });
+
     this.builderNpcEditorClose.addEventListener('click', () => {
       onCloseNpcEditor();
     });
@@ -1654,6 +1680,7 @@ export class Hud {
     this.syncBuilderVisibility();
     this.builderNpcEditorTitle.textContent = editorState.title;
     this.builderNpcEditorSubtitle.textContent = editorState.subtitle;
+    this.builderNpcMove?.classList.toggle('is-active', Boolean(editorState.selectionActions?.moving));
 
     const modelsChanged = this.lastNpcEditorState?.models?.length !== editorState.models.length
       || this.lastNpcEditorState?.models?.some((entry, index) => entry.id !== editorState.models[index].id);
