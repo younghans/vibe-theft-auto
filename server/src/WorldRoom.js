@@ -259,6 +259,7 @@ function createNpcRuntimeMeta(overrides = {}) {
     wanderPoint: null,
     attackTargetPlayerId: '',
     attackTargetNpcId: '',
+    combatAnchor: null,
     ...overrides
   };
 }
@@ -1864,6 +1865,7 @@ export class WorldRoom extends Room {
     meta.wanderPoint = null;
     meta.attackTargetPlayerId = '';
     meta.attackTargetNpcId = '';
+    meta.combatAnchor = null;
 
     npc.currentStepIndex = 0;
     npc.targetPlacementId = '';
@@ -2551,11 +2553,13 @@ export class WorldRoom extends Room {
     const meta = this.getNpcRuntimeMeta(npcId);
     const targetPlayer = npc.lastAttackerId ? this.state.players.get(npc.lastAttackerId) : null;
     const homeAnchor = this.getNpcHomeAnchor(definition);
+    const leashAnchor = meta.combatAnchor ?? homeAnchor;
 
     if (!targetPlayer || targetPlayer.alive === false) {
       if (meta.calmEndsAt && now < meta.calmEndsAt) {
         return;
       }
+      meta.combatAnchor = null;
       this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine, { targetPlacementId: '', activity: '' });
       this.clearNpcPath(npcId);
       return;
@@ -2563,7 +2567,7 @@ export class WorldRoom extends Room {
 
     const threatPosition = { x: targetPlayer.x, z: targetPlayer.z };
     const distanceToThreat = distance2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
-    const distanceFromHome = distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z);
+    const distanceFromHome = distance2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
     if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive || combat.archetype === NPC_COMBAT_ARCHETYPES.flee) {
       const fleeTarget = findFarthestRouteNodeFrom(this.npcRouteGraph, threatPosition, homeAnchor) ?? homeAnchor;
@@ -2585,6 +2589,7 @@ export class WorldRoom extends Room {
 
     if (distanceFromHome > combat.leashRadius) {
       meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+      meta.combatAnchor = null;
       this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
       this.clearNpcPath(npcId);
       return;
@@ -2697,8 +2702,13 @@ export class WorldRoom extends Room {
 
     const combat = definition.combat ?? {};
     const shouldFlee = combat.archetype === NPC_COMBAT_ARCHETYPES.passive
-      || combat.archetype === NPC_COMBAT_ARCHETYPES.flee
-      || npc.health <= Math.max(1, combat.fleeHealthThreshold ?? 0);
+      || combat.archetype === NPC_COMBAT_ARCHETYPES.flee;
+    meta.combatAnchor = shouldFlee
+      ? null
+      : {
+          x: quantizePosition(npc.x),
+          z: quantizePosition(npc.z)
+        };
     this.setNpcMode(
       npcId,
       npc,

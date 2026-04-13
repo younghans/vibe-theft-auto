@@ -563,6 +563,10 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  setNpcFocusTargets(npcFocusTargets = new Map()) {
+    this.worldRenderer.applyNpcFocusTargets(npcFocusTargets);
+  }
+
   setNpcDebugState(npcDebugMap = new Map()) {
     this.npcDebugState = new Map(npcDebugMap);
     this.worldRenderer.applyNpcDebugState(this.npcDebugState);

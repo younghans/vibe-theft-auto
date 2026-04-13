@@ -2296,6 +2296,46 @@ export class Game {
     this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? new Map());
   }
 
+  updateNpcFocusTargets() {
+    if (!this.worldBuilder) {
+      return;
+    }
+
+    const focusTargets = new Map();
+    for (const [npcId, npc] of this.npcServiceState.npcs.entries()) {
+      if (
+        !npc
+        || npc.alive === false
+        || npc.mode !== 'combat'
+        || typeof npc.lastAttackerId !== 'string'
+        || !npc.lastAttackerId
+      ) {
+        continue;
+      }
+
+      const targetAvatar = this.getAvatarForSessionId(npc.lastAttackerId);
+      if (targetAvatar?.position) {
+        focusTargets.set(npcId, {
+          x: targetAvatar.position.x,
+          z: targetAvatar.position.z
+        });
+        continue;
+      }
+
+      const targetPlayerState = this.npcServiceState.players.get(npc.lastAttackerId);
+      if (!targetPlayerState || targetPlayerState.alive === false) {
+        continue;
+      }
+
+      focusTargets.set(npcId, {
+        x: Number(targetPlayerState.x ?? 0),
+        z: Number(targetPlayerState.z ?? 0)
+      });
+    }
+
+    this.worldBuilder.setNpcFocusTargets(focusTargets);
+  }
+
   captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {
     const fallbackX = Number(fallbackState?.x ?? 0);
     const fallbackZ = Number(fallbackState?.z ?? 0);
@@ -3385,6 +3425,7 @@ export class Game {
     }
 
     this.handleCameraZoomInput();
+    this.updateNpcFocusTargets();
 
     if (
       this.input.consume('Enter')

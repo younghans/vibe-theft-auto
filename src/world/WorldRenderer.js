@@ -503,6 +503,7 @@ export class WorldRenderer {
 
     this.renderedPlacements = new Map();
     this.npcRuntimeState = new Map();
+    this.npcFocusTargets = new Map();
     this.npcDebugState = new Map();
     this.npcRoutinePreview = [];
     this.npcInteractRadiusVisible = false;
@@ -669,6 +670,7 @@ export class WorldRenderer {
     actor.object.userData.editorPlacementId = placement.id;
     actor.pickProxy.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
+    actor.setFocusTarget(this.npcFocusTargets.get(placement.id) ?? null);
     const runtimeState = this.npcRuntimeState.get(placement.id);
     if (runtimeState) {
       actor.setRuntimeState(runtimeState, this.getSurfaceHeightAtPosition(runtimeState.x ?? placement.position[0], runtimeState.z ?? placement.position[1]));
@@ -709,6 +711,7 @@ export class WorldRenderer {
           this.getSurfaceHeightAtPosition(runtimeState.x ?? placement.position[0], runtimeState.z ?? placement.position[1])
         );
       }
+      rendered.actor.setFocusTarget(this.npcFocusTargets.get(placement.id) ?? null);
     } else if (placement.layer === 'tile') {
       const center = getTileCenterWorldPosition(rendered.item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
       rendered.object.position.set(center.x, 0, center.z);
@@ -936,6 +939,7 @@ export class WorldRenderer {
       }
       const runtimeState = this.npcRuntimeState.get(placementId) ?? {};
       rendered.actor.setBusy(runtimeState.busy ?? false);
+      rendered.actor.setFocusTarget(this.npcFocusTargets.get(placementId) ?? null);
       rendered.actor.setRuntimeState(
         runtimeState,
         this.getSurfaceHeightAtPosition(
@@ -946,6 +950,22 @@ export class WorldRenderer {
     }
 
     this.refreshNpcDebugGizmos();
+  }
+
+  applyNpcFocusTargets(npcFocusTargets = new Map()) {
+    this.npcFocusTargets = new Map(
+      [...npcFocusTargets.entries()]
+        .filter(([, target]) => target && Number.isFinite(target.x) && Number.isFinite(target.z))
+        .map(([npcId, target]) => [npcId, { x: Number(target.x), z: Number(target.z) }])
+    );
+
+    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
+      if (!rendered.actor) {
+        continue;
+      }
+
+      rendered.actor.setFocusTarget(this.npcFocusTargets.get(placementId) ?? null);
+    }
   }
 
   applyNpcDebugState(npcDebugMap = new Map()) {

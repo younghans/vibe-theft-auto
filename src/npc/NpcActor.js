@@ -11,6 +11,7 @@ const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
 const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
+const NPC_FOCUS_MIN_DISTANCE = 0.18;
 
 let sharedIdleClip = null;
 let sharedWalkClip = null;
@@ -183,6 +184,7 @@ export class NpcActor {
     this.damageFeedbackEndsAt = -Infinity;
     this.damageDirection = new THREE.Vector3(0, 0, 1);
     this.selected = false;
+    this.focusTarget = null;
     this.runtimeState = {
       x: definition.position[0],
       z: definition.position[1],
@@ -312,6 +314,18 @@ export class NpcActor {
     this.interactRadiusIndicator.visible = visible;
   }
 
+  setFocusTarget(target = null) {
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) {
+      this.focusTarget = null;
+      return;
+    }
+
+    this.focusTarget = {
+      x: Number(target.x),
+      z: Number(target.z)
+    };
+  }
+
   getSpeechAnchorWorldPosition(target = new THREE.Vector3()) {
     this.anchor.getWorldPosition(target);
     target.y += this.model.height + 1;
@@ -405,7 +419,19 @@ export class NpcActor {
   update(deltaSeconds) {
     const targetX = this.runtimeState.x ?? this.anchor.position.x;
     const targetZ = this.runtimeState.z ?? this.anchor.position.z;
-    const targetRotationY = this.runtimeState.rotationY ?? this.anchor.rotation.y;
+    let targetRotationY = this.runtimeState.rotationY ?? this.anchor.rotation.y;
+    if (
+      this.focusTarget
+      && this.runtimeState.alive !== false
+      && this.runtimeState.mode === NPC_RUNTIME_MODES.combat
+      && this.ragdoll?.isActive?.() !== true
+    ) {
+      const focusDeltaX = this.focusTarget.x - this.anchor.position.x;
+      const focusDeltaZ = this.focusTarget.z - this.anchor.position.z;
+      if (Math.hypot(focusDeltaX, focusDeltaZ) > NPC_FOCUS_MIN_DISTANCE) {
+        targetRotationY = Math.atan2(focusDeltaX, focusDeltaZ);
+      }
+    }
     const lerp = 1 - Math.exp(-deltaSeconds * 10);
     this.anchor.position.x = THREE.MathUtils.lerp(this.anchor.position.x, targetX, lerp);
     this.anchor.position.z = THREE.MathUtils.lerp(this.anchor.position.z, targetZ, lerp);
