@@ -193,6 +193,7 @@ export class NpcActor {
     this.interactRadiusIndicator = createInteractRadiusIndicator();
     this.busyIndicator.scale.setScalar(1.2);
     this.busyIndicator.position.y = 0.03;
+    this.interactRadiusVisible = false;
 
     prepareNpcRenderObject(this.character, model);
     this.mixer = null;
@@ -331,7 +332,13 @@ export class NpcActor {
   }
 
   setInteractRadiusVisible(visible) {
-    this.interactRadiusIndicator.visible = visible;
+    this.interactRadiusVisible = Boolean(visible);
+    this.syncInteractRadiusVisibility();
+  }
+
+  syncInteractRadiusVisibility() {
+    const isInteractable = this.runtimeState.alive !== false && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead;
+    this.interactRadiusIndicator.visible = this.interactRadiusVisible && isInteractable;
   }
 
   setFocusTarget(target = null) {
@@ -367,6 +374,7 @@ export class NpcActor {
     this.anchor.position.y = groundY;
     this.setBusy(Boolean(state.busy));
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
+    this.syncInteractRadiusVisibility();
 
     if (wasAlive && !nextAlive) {
       this.ragdoll?.activate({
