@@ -1130,7 +1130,8 @@ export class NpcServiceMock {
       return true;
     }
 
-    if (distanceFromHome > (combat.leashRadius ?? Number.POSITIVE_INFINITY)) {
+    const leashRadius = Number(combat.leashRadius ?? 0);
+    if (leashRadius > 0 && distanceFromHome > leashRadius) {
       meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
       meta.combatAnchor = null;
       this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);

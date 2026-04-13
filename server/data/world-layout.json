@@ -1714,7 +1714,7 @@
         ]
       },
       "combat": {
-        "archetype": "guard",
+        "archetype": "hostile",
         "aggroRadius": 14,
         "leashRadius": 22,
         "fleeHealthThreshold": 24,

@@ -103,7 +103,7 @@ const NPC_PLANS = [
     interactRadius: 4.8,
     routineKey: 'brunoGymLoop',
     combat: {
-      archetype: 'guard',
+        archetype: 'hostile',
       aggroRadius: 14,
       leashRadius: 22,
       fleeHealthThreshold: 24,

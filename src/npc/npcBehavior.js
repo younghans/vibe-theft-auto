@@ -15,7 +15,6 @@ export const NPC_STEP_TYPES = Object.freeze({
 export const NPC_COMBAT_ARCHETYPES = Object.freeze({
   passive: 'passive',
   flee: 'flee',
-  guard: 'guard',
   hostile: 'hostile'
 });
 
@@ -243,17 +242,20 @@ export function normalizeNpcCombat(combat = null) {
   const draft = combat && typeof combat === 'object'
     ? combat
     : {};
-  const archetype = Object.values(NPC_COMBAT_ARCHETYPES).includes(draft.archetype)
-    ? draft.archetype
+  const requestedArchetype = draft.archetype === 'guard'
+    ? NPC_COMBAT_ARCHETYPES.hostile
+    : draft.archetype;
+  const archetype = Object.values(NPC_COMBAT_ARCHETYPES).includes(requestedArchetype)
+    ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
-  const defaultWeaponId = archetype === NPC_COMBAT_ARCHETYPES.hostile || archetype === NPC_COMBAT_ARCHETYPES.guard
+  const defaultWeaponId = archetype === NPC_COMBAT_ARCHETYPES.hostile
     ? WEAPON_IDS.pistol
     : '';
 
   return {
     archetype,
     aggroRadius: Number(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }).toFixed(2)),
-    leashRadius: Number(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 3, max: 120 }).toFixed(2)),
+    leashRadius: Number(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }).toFixed(2)),
     fleeHealthThreshold: Math.round(clampPositiveNumber(draft.fleeHealthThreshold, NPC_DEFAULT_FLEE_HEALTH_THRESHOLD, { min: 1, max: NPC_DEFAULT_MAX_HEALTH })),
     weaponId: normalizeWeaponId(draft.weaponId, defaultWeaponId)
   };
@@ -305,5 +307,9 @@ export function listNpcStepTypes() {
 }
 
 export function listNpcCombatArchetypes() {
-  return Object.values(NPC_COMBAT_ARCHETYPES);
+  return [
+    NPC_COMBAT_ARCHETYPES.passive,
+    NPC_COMBAT_ARCHETYPES.flee,
+    NPC_COMBAT_ARCHETYPES.hostile
+  ];
 }
