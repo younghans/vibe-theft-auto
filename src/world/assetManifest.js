@@ -24,6 +24,8 @@ export const assets = {
     idle: 'idle',
     fightingIdle: 'fightingIdle',
     walking: 'walking',
+    punching: 'punching',
+    snatch: 'snatch',
     emotes: PLAYER_EMOTES
   },
   mixamo: {

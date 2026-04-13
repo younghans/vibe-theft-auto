@@ -4,6 +4,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
+import { logServer } from './logger.js';
 
 const { Pool } = pg;
 
@@ -116,7 +117,7 @@ class FileWorldPersistenceStore {
     }
 
     await writeLayoutFile(this.runtimeUrl, seedLayout);
-    console.info('[world-persistence] Seeded runtime world layout.', this.getInfo());
+    logServer('world-persistence', 'Seeded runtime world layout.', this.getInfo());
   }
 
   async load() {
@@ -267,7 +268,7 @@ export async function initializeWorldPersistence() {
   const initialLayout = await store.load() ?? seedLayout;
   worldPersistenceManager = new WorldPersistenceManager(store, initialLayout);
 
-  console.info('[world-persistence] Initialized world persistence.', worldPersistenceManager.getInfo());
+  logServer('world-persistence', 'Initialized world persistence.', worldPersistenceManager.getInfo());
   return worldPersistenceManager;
 }
 

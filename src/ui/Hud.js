@@ -28,6 +28,32 @@ function getBuilderPlaceholder(label) {
     .join('');
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function formatNpcStepLabel(type) {
+  switch (type) {
+    case 'travelToPlacement':
+      return 'Travel';
+    case 'usePlacement':
+      return 'Use Spot';
+    case 'loiterNearPlacement':
+      return 'Loiter';
+    case 'enterHideAtPlacement':
+      return 'Hide Inside';
+    case 'wanderNearPlacement':
+      return 'Wander';
+    default:
+      return 'Step';
+  }
+}
+
 const HUD_CONTROLS = Object.freeze([
   { label: 'Move', key: 'WASD' },
   { label: 'Fire', mouseButton: 'left' },
@@ -148,6 +174,15 @@ export class Hud {
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
+    this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
+    this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
+    this.builderNpcStepAddType = this.overlay.querySelector('[data-builder-npc-step-add-type]');
+    this.builderNpcStepAdd = this.overlay.querySelector('[data-builder-npc-step-add]');
+    this.builderNpcCombatArchetype = this.overlay.querySelector('[data-builder-npc-combat-archetype]');
+    this.builderNpcCombatAggroRadius = this.overlay.querySelector('[data-builder-npc-combat-aggro]');
+    this.builderNpcCombatLeashRadius = this.overlay.querySelector('[data-builder-npc-combat-leash]');
+    this.builderNpcCombatFleeHealth = this.overlay.querySelector('[data-builder-npc-combat-flee]');
+    this.builderNpcCombatWeapon = this.overlay.querySelector('[data-builder-npc-combat-weapon]');
     this.builderNpcConfirm = this.overlay.querySelector('[data-builder-npc-confirm]');
     this.builderBuildingEditor = this.overlay.querySelector('[data-builder-building-editor]');
     this.builderBuildingEditorClose = this.overlay.querySelector('[data-builder-building-close]');
@@ -543,24 +578,74 @@ export class Hud {
         </div>
         <div class="hud__builder-instance-scroll">
           <div class="hud__builder-instance-card">
-            <label class="hud__field">
-              <span class="hud__field-label">Model</span>
-              <select class="hud__field-control" data-builder-npc-model></select>
-            </label>
-            <label class="hud__field">
-              <span class="hud__field-label">Name</span>
-              <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
-            </label>
-            <div class="hud__builder-instance-metrics">
+            <section class="hud__builder-section">
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Identity</p>
+              </div>
               <label class="hud__field">
-                <span class="hud__field-label">Interact Radius</span>
-                <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+                <span class="hud__field-label">Model</span>
+                <select class="hud__field-control" data-builder-npc-model></select>
               </label>
-            </div>
-            <label class="hud__field">
-              <span class="hud__field-label">Prompt</span>
-              <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
-            </label>
+              <label class="hud__field">
+                <span class="hud__field-label">Name</span>
+                <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
+              </label>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Interact Radius</span>
+                  <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
+                </label>
+              </div>
+              <label class="hud__field">
+                <span class="hud__field-label">Prompt</span>
+                <textarea class="hud__field-control hud__field-control--textarea" rows="5" data-builder-npc-prompt></textarea>
+              </label>
+            </section>
+            <section class="hud__builder-section">
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Routine</p>
+              </div>
+              <p class="hud__body" data-builder-npc-warnings hidden></p>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Add Step</span>
+                  <select class="hud__field-control" data-builder-npc-step-add-type></select>
+                </label>
+              </div>
+              <button class="hud__builder-action" type="button" data-builder-npc-step-add>Add Routine Step</button>
+              <div data-builder-npc-routine-steps></div>
+            </section>
+            <section class="hud__builder-section">
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Combat</p>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Archetype</span>
+                  <select class="hud__field-control" data-builder-npc-combat-archetype></select>
+                </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Weapon</span>
+                  <select class="hud__field-control" data-builder-npc-combat-weapon></select>
+                </label>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Aggro Radius</span>
+                  <input class="hud__field-control" type="number" min="2" max="80" step="0.1" data-builder-npc-combat-aggro />
+                </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Leash Radius</span>
+                  <input class="hud__field-control" type="number" min="3" max="120" step="0.1" data-builder-npc-combat-leash />
+                </label>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Flee Threshold</span>
+                  <input class="hud__field-control" type="number" min="1" max="100" step="1" data-builder-npc-combat-flee />
+                </label>
+              </div>
+            </section>
             <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Confirm NPC</button>
           </div>
         </div>
@@ -1004,6 +1089,10 @@ export class Hud {
     onNpcPromptChange,
     onNpcRadiusChange,
     onNpcModelChange,
+    onNpcRoutineAddStep,
+    onNpcRoutineRemoveStep,
+    onNpcRoutineStepChange,
+    onNpcCombatChange,
     onConfirmNpc,
     onCloseNpcEditor,
     onCloseBuildingEditor,
@@ -1095,6 +1184,63 @@ export class Hud {
 
     this.builderNpcModel.addEventListener('change', () => {
       onNpcModelChange(this.builderNpcModel.value);
+    });
+
+    this.builderNpcStepAdd?.addEventListener('click', () => {
+      onNpcRoutineAddStep(this.builderNpcStepAddType?.value ?? '');
+    });
+
+    this.builderNpcRoutineSteps?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-builder-npc-step-remove]');
+      if (!button) {
+        return;
+      }
+
+      onNpcRoutineRemoveStep(Number(button.dataset.builderNpcStepRemove));
+    });
+
+    const handleNpcRoutineStepFieldChange = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+        return;
+      }
+
+      const stepIndex = Number(target.dataset.builderNpcStepIndex);
+      const field = target.dataset.builderNpcStepField;
+      if (!Number.isFinite(stepIndex) || !field) {
+        return;
+      }
+
+      const value = target instanceof HTMLInputElement && target.type === 'number'
+        ? Number(target.value)
+        : target.value;
+      onNpcRoutineStepChange(stepIndex, field, value);
+    };
+
+    this.builderNpcRoutineSteps?.addEventListener('input', handleNpcRoutineStepFieldChange);
+    this.builderNpcRoutineSteps?.addEventListener('change', handleNpcRoutineStepFieldChange);
+
+    this.builderNpcCombatArchetype?.addEventListener('change', () => {
+      onNpcCombatChange('archetype', this.builderNpcCombatArchetype.value);
+    });
+
+    this.builderNpcCombatWeapon?.addEventListener('change', () => {
+      onNpcCombatChange('weaponId', this.builderNpcCombatWeapon.value);
+    });
+
+    this.builderNpcCombatAggroRadius?.addEventListener('input', () => {
+      onNpcCombatChange('aggroRadius', Number(this.builderNpcCombatAggroRadius.value));
+    });
+
+    this.builderNpcCombatLeashRadius?.addEventListener('input', () => {
+      onNpcCombatChange('leashRadius', Number(this.builderNpcCombatLeashRadius.value));
+    });
+
+    this.builderNpcCombatFleeHealth?.addEventListener('input', () => {
+      onNpcCombatChange('fleeHealthThreshold', Number(this.builderNpcCombatFleeHealth.value));
     });
 
     this.builderNpcConfirm.addEventListener('click', () => {
@@ -1297,6 +1443,171 @@ export class Hud {
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
+
+    const stepTypesChanged = this.lastNpcEditorState?.stepTypes?.length !== editorState.stepTypes.length
+      || this.lastNpcEditorState?.stepTypes?.some((entry, index) => entry.id !== editorState.stepTypes[index].id);
+    if (stepTypesChanged && this.builderNpcStepAddType) {
+      this.builderNpcStepAddType.innerHTML = editorState.stepTypes.map((stepType) => `
+        <option value="${escapeHtml(stepType.id)}">${escapeHtml(stepType.label)}</option>
+      `).join('');
+    }
+    if (this.builderNpcStepAddType && document.activeElement !== this.builderNpcStepAddType) {
+      this.builderNpcStepAddType.value = editorState.stepTypes.some((entry) => entry.id === editorState.newStepType)
+        ? editorState.newStepType
+        : editorState.stepTypes[0]?.id ?? '';
+    }
+
+    const archetypesChanged = this.lastNpcEditorState?.combatArchetypes?.length !== editorState.combatArchetypes.length
+      || this.lastNpcEditorState?.combatArchetypes?.some((entry, index) => entry.id !== editorState.combatArchetypes[index].id);
+    if (archetypesChanged && this.builderNpcCombatArchetype) {
+      this.builderNpcCombatArchetype.innerHTML = editorState.combatArchetypes.map((entry) => `
+        <option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>
+      `).join('');
+    }
+
+    const weaponOptionsChanged = this.lastNpcEditorState?.weaponOptions?.length !== editorState.weaponOptions.length
+      || this.lastNpcEditorState?.weaponOptions?.some((entry, index) => entry.id !== editorState.weaponOptions[index].id);
+    if (weaponOptionsChanged && this.builderNpcCombatWeapon) {
+      this.builderNpcCombatWeapon.innerHTML = editorState.weaponOptions.map((entry) => `
+        <option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>
+      `).join('');
+    }
+
+    if (document.activeElement !== this.builderNpcCombatArchetype) {
+      this.builderNpcCombatArchetype.value = editorState.combat.archetype;
+    }
+    if (document.activeElement !== this.builderNpcCombatWeapon) {
+      this.builderNpcCombatWeapon.value = editorState.combat.weaponId;
+    }
+    setFieldValue(this.builderNpcCombatAggroRadius, String(editorState.combat.aggroRadius));
+    setFieldValue(this.builderNpcCombatLeashRadius, String(editorState.combat.leashRadius));
+    setFieldValue(this.builderNpcCombatFleeHealth, String(editorState.combat.fleeHealthThreshold));
+
+    if (this.builderNpcWarnings) {
+      const warnings = editorState.warnings ?? [];
+      this.builderNpcWarnings.hidden = warnings.length === 0;
+      this.builderNpcWarnings.textContent = warnings.join(' ');
+    }
+
+    if (this.builderNpcRoutineSteps) {
+      this.builderNpcRoutineSteps.innerHTML = editorState.routine.steps.length
+        ? editorState.routine.steps.map((step, index) => {
+            const targetOptions = step.targetOptions ?? [];
+            const targetValue = step.targetPlacementId ?? '';
+            const targetOptionMarkup = [
+              '<option value="">Select a destination</option>',
+              ...targetOptions.map((option) => `
+                <option value="${escapeHtml(option.id)}"${option.id === targetValue ? ' selected' : ''}>
+                  ${escapeHtml(option.label)}
+                </option>
+              `)
+            ].join('');
+
+            const detailFields = [];
+            if (step.type === 'usePlacement' || step.type === 'loiterNearPlacement' || step.type === 'wanderNearPlacement') {
+              detailFields.push(`
+                <label class="hud__field">
+                  <span class="hud__field-label">Duration (ms)</span>
+                  <input
+                    class="hud__field-control"
+                    type="number"
+                    min="500"
+                    max="120000"
+                    step="100"
+                    value="${escapeHtml(step.durationMs)}"
+                    data-builder-npc-step-index="${index}"
+                    data-builder-npc-step-field="durationMs"
+                  />
+                </label>
+              `);
+            }
+            if (step.type === 'enterHideAtPlacement') {
+              detailFields.push(`
+                <label class="hud__field">
+                  <span class="hud__field-label">Hidden Time (ms)</span>
+                  <input
+                    class="hud__field-control"
+                    type="number"
+                    min="500"
+                    max="120000"
+                    step="100"
+                    value="${escapeHtml(step.hiddenDurationMs)}"
+                    data-builder-npc-step-index="${index}"
+                    data-builder-npc-step-field="hiddenDurationMs"
+                  />
+                </label>
+              `);
+            }
+            if (step.type === 'loiterNearPlacement' || step.type === 'wanderNearPlacement') {
+              detailFields.push(`
+                <label class="hud__field">
+                  <span class="hud__field-label">Radius</span>
+                  <input
+                    class="hud__field-control"
+                    type="number"
+                    min="1"
+                    max="30"
+                    step="0.1"
+                    value="${escapeHtml(step.radius)}"
+                    data-builder-npc-step-index="${index}"
+                    data-builder-npc-step-field="radius"
+                  />
+                </label>
+              `);
+            }
+
+            return `
+              <section class="hud__builder-section">
+                <div class="hud__builder-section-header">
+                  <p class="hud__builder-section-title">${index + 1}. ${escapeHtml(formatNpcStepLabel(step.type))}</p>
+                  <button
+                    class="hud__builder-icon-button"
+                    type="button"
+                    data-builder-npc-step-remove="${index}"
+                    aria-label="Remove routine step"
+                    title="Remove routine step"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16" />
+                      <path d="M9 7V4h6v3" />
+                      <path d="M7 7l1 12h8l1-12" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="hud__builder-instance-metrics">
+                  <label class="hud__field">
+                    <span class="hud__field-label">Step Type</span>
+                    <select
+                      class="hud__field-control"
+                      data-builder-npc-step-index="${index}"
+                      data-builder-npc-step-field="type"
+                    >
+                      ${editorState.stepTypes.map((stepType) => `
+                        <option value="${escapeHtml(stepType.id)}"${stepType.id === step.type ? ' selected' : ''}>
+                          ${escapeHtml(stepType.label)}
+                        </option>
+                      `).join('')}
+                    </select>
+                  </label>
+                  <label class="hud__field">
+                    <span class="hud__field-label">Destination</span>
+                    <select
+                      class="hud__field-control"
+                      data-builder-npc-step-index="${index}"
+                      data-builder-npc-step-field="targetPlacementId"
+                    >
+                      ${targetOptionMarkup}
+                    </select>
+                  </label>
+                </div>
+                ${detailFields.length ? `<div class="hud__builder-instance-metrics">${detailFields.join('')}</div>` : ''}
+                ${step.warning ? `<p class="hud__body">${escapeHtml(step.warning)}</p>` : ''}
+              </section>
+            `;
+          }).join('')
+        : '<p class="hud__body">No routine steps yet. Add a destination-driven step to start the loop.</p>';
+    }
+
     this.builderNpcConfirm.disabled = editorState.active;
     this.builderNpcConfirm.textContent = editorState.active ? 'NPC Active' : 'Confirm NPC';
 

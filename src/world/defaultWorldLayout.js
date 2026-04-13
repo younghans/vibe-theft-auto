@@ -33,7 +33,7 @@ const BUILDING_PLANS = [
   { cell: [-4, -2], itemId: 'building_a', angle: Math.PI / 2, label: 'Motel strip', action: 'Room rentals are on the roadmap.' },
   { cell: [4, -2], itemId: 'building_g', angle: -Math.PI / 2, label: 'Arcade block', action: 'The arcade is all atmosphere for now.' },
   { cell: [-4, 2], itemId: 'building_e', angle: Math.PI / 2, label: 'Corner pharmacy', action: 'Health items can plug into this storefront later.' },
-  { cell: [4, 2], itemId: 'building_c', angle: -Math.PI / 2, label: 'ATM lobby', action: 'The ATM prompt is ready for a money system.' },
+  { cell: [4, 2], itemId: 'gym_building', angle: -Math.PI / 2, label: 'Neighborhood gym', action: 'The weight room is finally open for NPC routines.' },
   { cell: [-4, 4], itemId: 'building_g', angle: Math.PI, label: 'Night club', action: 'The club is closed until nightlife systems exist.' },
   { cell: [-2, 4], itemId: 'building_a', angle: Math.PI, label: 'Coffee loft', action: 'A social hub can grow out of this block.' },
   { cell: [2, 4], itemId: 'building_e', angle: Math.PI, label: 'Taxi dispatch', action: 'Taxi missions can route through this office.' },
@@ -51,7 +51,8 @@ const DISTRICT_PROPS = [
   { itemId: 'bush', position: [1.0 * BUILDER_TILE_SIZE, -2.45 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'bush', position: [2.55 * BUILDER_TILE_SIZE, -0.8 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'bench', position: [1.7 * BUILDER_TILE_SIZE, -1.1 * BUILDER_TILE_SIZE], angle: -Math.PI / 3 },
-  { itemId: 'hydrant', position: [0.55 * BUILDER_TILE_SIZE, -1.2 * BUILDER_TILE_SIZE], angle: 0 }
+  { itemId: 'hydrant', position: [0.55 * BUILDER_TILE_SIZE, -1.2 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 
 const STREET_PROPS = [
@@ -95,11 +96,19 @@ const NPC_PLANS = [
   {
     id: 'npc_bruno',
     modelId: 'brute',
-    position: [-1.35 * BUILDER_TILE_SIZE, 2.15 * BUILDER_TILE_SIZE],
-    angle: 0,
+    position: [2.65 * BUILDER_TILE_SIZE, 2.85 * BUILDER_TILE_SIZE],
+    angle: Math.PI,
     name: 'Bruno',
-    prompt: 'You are Bruno, a broad-shouldered neighborhood bouncer with a surprising soft side. Speak like a streetwise local, keep answers short, and gently point people toward the city nightlife.',
-    interactRadius: 4.8
+    prompt: 'You are Bruno, a broad-shouldered neighborhood regular who treats the gym like a second home. Speak like a streetwise local, keep answers short, and steer people toward training, discipline, and city gossip.',
+    interactRadius: 4.8,
+    routineKey: 'brunoGymLoop',
+    combat: {
+      archetype: 'guard',
+      aggroRadius: 14,
+      leashRadius: 22,
+      fleeHealthThreshold: 24,
+      weaponId: ''
+    }
   },
   {
     id: 'npc_maya',
@@ -248,7 +257,39 @@ function createPropLayout() {
   return props;
 }
 
-function createNpcLayout() {
+function findTilePlacementIdByCell(tiles, [cellX, cellZ]) {
+  return tiles.find((tile) => tile.cell?.[0] === cellX && tile.cell?.[1] === cellZ)?.id ?? '';
+}
+
+function findPropPlacementId(props, itemId) {
+  return props.find((prop) => prop.itemId === itemId)?.id ?? '';
+}
+
+function buildNpcRoutine(plan, references) {
+  if (plan.routineKey !== 'brunoGymLoop') {
+    return undefined;
+  }
+
+  return {
+    mode: 'loop',
+    resumePolicy: 'resume-step',
+    steps: [
+      { type: 'travelToPlacement', targetPlacementId: references.barbellId },
+      { type: 'usePlacement', targetPlacementId: references.barbellId, durationMs: 4200 },
+      { type: 'loiterNearPlacement', targetPlacementId: references.gymId, durationMs: 3600, radius: 4.5 },
+      { type: 'enterHideAtPlacement', targetPlacementId: references.apartmentId, hiddenDurationMs: 6500 },
+      { type: 'wanderNearPlacement', targetPlacementId: references.gymId, durationMs: 5200, radius: 8 }
+    ].filter((step) => step.targetPlacementId)
+  };
+}
+
+function createNpcLayout(tiles, props) {
+  const references = {
+    apartmentId: findTilePlacementIdByCell(tiles, [2, 2]),
+    gymId: findTilePlacementIdByCell(tiles, [4, 2]),
+    barbellId: findPropPlacementId(props, 'olympic_barbell')
+  };
+
   return NPC_PLANS.map((plan) => ({
     id: plan.id,
     modelId: plan.modelId,
@@ -256,12 +297,18 @@ function createNpcLayout() {
     rotationQuarterTurns: toQuarterTurns(plan.angle),
     name: plan.name,
     prompt: plan.prompt,
-    interactRadius: plan.interactRadius
+    interactRadius: plan.interactRadius,
+    ...(plan.combat ? { combat: plan.combat } : {}),
+    ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
   }));
 }
 
+const defaultTiles = createTileLayout();
+const defaultProps = createPropLayout();
+const defaultNpcs = createNpcLayout(defaultTiles, defaultProps);
+
 export const defaultWorldLayout = Object.freeze({
-  tiles: createTileLayout(),
-  props: createPropLayout(),
-  npcs: createNpcLayout()
+  tiles: defaultTiles,
+  props: defaultProps,
+  npcs: defaultNpcs
 });

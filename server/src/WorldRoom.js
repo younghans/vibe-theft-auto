@@ -31,7 +31,29 @@ import {
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
+import {
+  NPC_COMBAT_ARCHETYPES,
+  NPC_DEFAULT_CALM_MS,
+  NPC_DEFAULT_MAX_HEALTH,
+  NPC_DEFAULT_MOVE_SPEED,
+  NPC_RUNTIME_MODES,
+  NPC_STEP_TYPES,
+  normalizeNpcBehavior
+} from '../../src/npc/npcBehavior.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
+import {
+  buildNpcPathToPlacement,
+  buildNpcPathToPosition,
+  buildNpcRouteGraph,
+  findFarthestRouteNodeFrom
+} from '../../src/npc/npcRouteGraph.js';
+import {
+  collectNpcTargetOptions,
+  getPlacementApproachPoint,
+  getPlacementWorldOrigin,
+  isBuildingPlacement,
+  resolveNpcTargetOption
+} from '../../src/npc/npcTargeting.js';
 import { EMOTES_BY_ID, PUNCH_EMOTE_ID } from '../../src/player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -56,6 +78,12 @@ const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
 const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
 const PUNCH_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 0.55;
+const NPC_REPATH_MS = 900;
+const NPC_SHOT_INTERVAL_MS = WEAPON_FIRE_INTERVAL_MS * 2;
+const NPC_PUNCH_INTERVAL_MS = PUNCH_INTERVAL_MS * 2;
+const NPC_COMBAT_REACH_BUFFER = 1.2;
+const NPC_TARGET_STOP_DISTANCE = 0.7;
+const NPC_SHOT_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
 
 function parseAdminKeys(value = '') {
   return new Set(
@@ -127,9 +155,21 @@ const NpcState = schema({
   name: 'string',
   x: 'number',
   z: 'number',
+  rotationY: 'number',
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
+  health: 'number',
+  maxHealth: 'number',
+  alive: 'boolean',
   active: 'boolean',
+  mode: 'string',
+  currentStepIndex: 'number',
+  targetPlacementId: 'string',
+  weaponId: 'string',
+  lastAttackerId: 'string',
+  hiddenUntil: 'number',
+  activity: 'string',
+  lastDamagedAt: 'number',
   busy: 'boolean',
   chatStatus: 'string',
   chatText: 'string',
@@ -187,6 +227,41 @@ function quantizePosition(value) {
 function quantizeRotation(value) {
   const numeric = Number(value ?? 0);
   return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(3));
+}
+
+function toRotationY(rotationQuarterTurns) {
+  return normalizeRotationQuarterTurns(rotationQuarterTurns) * (Math.PI / 2);
+}
+
+function quantizeRotationQuarterTurnsFromRotationY(rotationY) {
+  return normalizeRotationQuarterTurns(Math.round(Number(rotationY ?? 0) / (Math.PI / 2)));
+}
+
+function createNpcRuntimeMeta(overrides = {}) {
+  return {
+    path: [],
+    pathIndex: 0,
+    pathKey: '',
+    lastRepathAt: 0,
+    stepStartedAt: 0,
+    calmEndsAt: 0,
+    lastAttackAt: 0,
+    wanderPoint: null,
+    attackTargetPlayerId: '',
+    attackTargetNpcId: '',
+    ...overrides
+  };
+}
+
+function clonePoint(point = null) {
+  if (!point) {
+    return null;
+  }
+
+  return {
+    x: quantizePosition(point.x),
+    z: quantizePosition(point.z)
+  };
 }
 
 function sanitizePlayerAnimationState(message = {}) {
@@ -256,6 +331,7 @@ export class WorldRoom extends Room {
     this.worldState = new WorldState();
     this.worldPersistence = getWorldPersistence();
     this.npcDefinitions = new Map();
+    this.npcRuntimeMeta = new Map();
     this.transcripts = new Map();
     this.playerAliases = new Map();
     this.cooldowns = new Map();
@@ -263,6 +339,8 @@ export class WorldRoom extends Room {
     this.playerAliasSequence = 0;
     this.playerPositionMeta = new Map();
     this.pickupSequence = 0;
+    this.npcRouteGraph = null;
+    this.lastNpcSimulationAt = Date.now();
 
     this.worldState.loadLayout(this.worldPersistence.getInitialLayout());
     this.syncNpcDefinitionsFromWorld();
@@ -536,6 +614,8 @@ export class WorldRoom extends Room {
 
   updateCombatTimers() {
     const now = Date.now();
+    const deltaMs = Math.max(16, now - this.lastNpcSimulationAt);
+    this.lastNpcSimulationAt = now;
 
     for (const [sessionId, player] of this.state.players.entries()) {
       if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
@@ -557,6 +637,8 @@ export class WorldRoom extends Room {
         this.state.pickups.delete(pickup.id);
       }
     }
+
+    this.updateNpcSimulation(now, deltaMs);
   }
 
   completeReload(player) {
@@ -706,6 +788,7 @@ export class WorldRoom extends Room {
     const shot = this.resolveShot(client.sessionId, player, aim, shotOrigin);
     this.broadcastCombatEvent({
       type: 'shot',
+      shooterType: 'player',
       shooterId: client.sessionId,
       weaponId: player.equippedWeaponId,
       fromX: shotOrigin.x,
@@ -719,6 +802,7 @@ export class WorldRoom extends Room {
       this.broadcastCombatEvent({
         type: 'impact',
         shooterId: client.sessionId,
+        shooterType: 'player',
         kind: shot.kind,
         targetId: shot.targetId ?? '',
         x: shot.hitX,
@@ -735,6 +819,10 @@ export class WorldRoom extends Room {
           this.handlePlayerDeath(shot.targetId, client.sessionId);
         }
       }
+    }
+
+    if (shot.kind === 'npc' && shot.targetId) {
+      this.applyDamageToNpc(shot.targetId, WEAPON_DAMAGE, client.sessionId, now);
     }
 
     if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
@@ -766,6 +854,7 @@ export class WorldRoom extends Room {
       this.broadcastCombatEvent({
         type: 'impact',
         shooterId: client.sessionId,
+        shooterType: 'player',
         kind: hit.kind,
         targetId: hit.targetId ?? '',
         x: hit.hitX,
@@ -783,6 +872,10 @@ export class WorldRoom extends Room {
           this.handlePlayerDeath(hit.targetId, client.sessionId);
         }
       }
+    }
+
+    if (hit.kind === 'npc' && hit.targetId) {
+      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, client.sessionId, now);
     }
   }
 
@@ -872,12 +965,15 @@ export class WorldRoom extends Room {
     return nextOrigin;
   }
 
-  resolveShot(shooterSessionId, player, aim, origin = player) {
+  resolveCombatShot(origin, aim, maxDistance, {
+    ignorePlayerId = '',
+    ignoreNpcId = ''
+  } = {}) {
     let nearestDistance = WEAPON_RANGE;
     let result = {
       kind: 'miss',
-      hitX: origin.x + aim.x * WEAPON_RANGE,
-      hitZ: origin.z + aim.z * WEAPON_RANGE,
+      hitX: origin.x + aim.x * maxDistance,
+      hitZ: origin.z + aim.z * maxDistance,
       targetId: ''
     };
 
@@ -887,7 +983,7 @@ export class WorldRoom extends Room {
         collisionKey: 'blocksShots'
       });
       for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, WEAPON_RANGE, rect);
+        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
         if (
           hitDistance == null
           || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
@@ -907,7 +1003,7 @@ export class WorldRoom extends Room {
     }
 
     for (const [sessionId, target] of this.state.players.entries()) {
-      if (sessionId === shooterSessionId || target.alive === false) {
+      if (sessionId === ignorePlayerId || target.alive === false) {
         continue;
       }
 
@@ -934,15 +1030,59 @@ export class WorldRoom extends Room {
       };
     }
 
+    for (const [npcId, target] of this.state.npcs.entries()) {
+      if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
+        continue;
+      }
+
+      const model = getNpcModelById(target.modelId);
+      const hitDistance = rayCircleIntersectionDistance(
+        origin.x,
+        origin.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+      );
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'npc',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: npcId
+      };
+    }
+
     return result;
   }
 
-  resolvePunch(attackerSessionId, player, aim) {
-    let nearestDistance = PUNCH_RANGE;
+  resolveShot(shooterSessionId, player, aim, origin = player) {
+    return this.resolveCombatShot(origin, aim, WEAPON_RANGE, {
+      ignorePlayerId: shooterSessionId
+    });
+  }
+
+  resolveShotFromNpc(npcId, npc, aim, origin = npc) {
+    return this.resolveCombatShot(origin, aim, WEAPON_RANGE, {
+      ignoreNpcId: npcId
+    });
+  }
+
+  resolveCombatPunch(origin, aim, maxDistance, {
+    ignorePlayerId = '',
+    ignoreNpcId = ''
+  } = {}) {
+    let nearestDistance = maxDistance;
     let result = {
       kind: 'miss',
-      hitX: player.x + aim.x * PUNCH_RANGE,
-      hitZ: player.z + aim.z * PUNCH_RANGE,
+      hitX: origin.x + aim.x * maxDistance,
+      hitZ: origin.z + aim.z * maxDistance,
       targetId: ''
     };
 
@@ -952,7 +1092,7 @@ export class WorldRoom extends Room {
         collisionKey: 'blocksShots'
       });
       for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(player.x, player.z, aim.x, aim.z, PUNCH_RANGE, rect);
+        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
         if (
           hitDistance == null
           || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
@@ -964,21 +1104,21 @@ export class WorldRoom extends Room {
         nearestDistance = hitDistance;
         result = {
           kind: 'world',
-          hitX: player.x + aim.x * hitDistance,
-          hitZ: player.z + aim.z * hitDistance,
+          hitX: origin.x + aim.x * hitDistance,
+          hitZ: origin.z + aim.z * hitDistance,
           targetId: placement.id
         };
       }
     }
 
     for (const [sessionId, target] of this.state.players.entries()) {
-      if (sessionId === attackerSessionId || target.alive === false) {
+      if (sessionId === ignorePlayerId || target.alive === false) {
         continue;
       }
 
       const hitDistance = rayCircleIntersectionDistance(
-        player.x,
-        player.z,
+        origin.x,
+        origin.z,
         aim.x,
         aim.z,
         nearestDistance,
@@ -993,13 +1133,137 @@ export class WorldRoom extends Room {
       nearestDistance = hitDistance;
       result = {
         kind: 'player',
-        hitX: player.x + aim.x * hitDistance,
-        hitZ: player.z + aim.z * hitDistance,
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
         targetId: sessionId
       };
     }
 
+    for (const [npcId, target] of this.state.npcs.entries()) {
+      if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
+        continue;
+      }
+
+      const model = getNpcModelById(target.modelId);
+      const hitDistance = rayCircleIntersectionDistance(
+        origin.x,
+        origin.z,
+        aim.x,
+        aim.z,
+        nearestDistance,
+        target.x,
+        target.z,
+        model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+      );
+      if (hitDistance == null || hitDistance >= nearestDistance) {
+        continue;
+      }
+
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'npc',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: npcId
+      };
+    }
+
     return result;
+  }
+
+  resolvePunch(attackerSessionId, player, aim) {
+    return this.resolveCombatPunch(player, aim, PUNCH_RANGE, {
+      ignorePlayerId: attackerSessionId
+    });
+  }
+
+  resolvePunchFromNpc(npcId, npc, aim) {
+    return this.resolveCombatPunch(npc, aim, PUNCH_RANGE, {
+      ignoreNpcId: npcId
+    });
+  }
+
+  performNpcShot(npcId, npc, targetPosition, now = Date.now()) {
+    const aim = normalizeAimVector(targetPosition.x - npc.x, targetPosition.z - npc.z);
+    const shotOrigin = {
+      x: npc.x + aim.x * NPC_SHOT_ORIGIN_FORWARD_OFFSET,
+      z: npc.z + aim.z * NPC_SHOT_ORIGIN_FORWARD_OFFSET
+    };
+    npc.rotationY = quantizeRotation(Math.atan2(aim.x, aim.z));
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    const shot = this.resolveShotFromNpc(npcId, npc, aim, shotOrigin);
+    this.broadcastCombatEvent({
+      type: 'shot',
+      shooterType: 'npc',
+      shooterId: npcId,
+      weaponId: npc.weaponId || WEAPON_IDS.pistol,
+      fromX: shotOrigin.x,
+      fromZ: shotOrigin.z,
+      toX: shot.hitX,
+      toZ: shot.hitZ,
+      clientShotAt: now
+    });
+
+    if (shot.kind !== 'miss') {
+      this.broadcastCombatEvent({
+        type: 'impact',
+        shooterType: 'npc',
+        shooterId: npcId,
+        kind: shot.kind,
+        targetId: shot.targetId ?? '',
+        x: shot.hitX,
+        z: shot.hitZ
+      });
+    }
+
+    if (shot.kind === 'player' && shot.targetId) {
+      const target = this.state.players.get(shot.targetId);
+      if (target?.alive !== false) {
+        target.health = Math.max(0, target.health - WEAPON_DAMAGE);
+        target.lastDamagedAt = now;
+        if (target.health <= 0) {
+          this.handlePlayerDeath(shot.targetId, npcId);
+        }
+      }
+    }
+
+    if (shot.kind === 'npc' && shot.targetId) {
+      this.applyDamageToNpc(shot.targetId, WEAPON_DAMAGE, npcId, now);
+    }
+  }
+
+  performNpcPunch(npcId, npc, targetPosition, now = Date.now()) {
+    const aim = normalizeAimVector(targetPosition.x - npc.x, targetPosition.z - npc.z);
+    npc.rotationY = quantizeRotation(Math.atan2(aim.x, aim.z));
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    const hit = this.resolvePunchFromNpc(npcId, { x: npc.x, z: npc.z }, aim);
+    if (hit.kind !== 'miss') {
+      this.broadcastCombatEvent({
+        type: 'impact',
+        shooterType: 'npc',
+        shooterId: npcId,
+        kind: hit.kind,
+        targetId: hit.targetId ?? '',
+        x: hit.hitX,
+        z: hit.hitZ,
+        clientPunchAt: now
+      });
+    }
+
+    if (hit.kind === 'player' && hit.targetId) {
+      const target = this.state.players.get(hit.targetId);
+      if (target?.alive !== false) {
+        target.health = Math.max(0, target.health - PUNCH_DAMAGE);
+        target.lastDamagedAt = now;
+        if (target.health <= 0) {
+          this.handlePlayerDeath(hit.targetId, npcId);
+        }
+      }
+    }
+
+    if (hit.kind === 'npc' && hit.targetId) {
+      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, npcId, now);
+    }
   }
 
   broadcastCombatEvent(event) {
@@ -1275,13 +1539,20 @@ export class WorldRoom extends Room {
       x: quantizePosition(message.x ?? message.position?.[0]),
       z: quantizePosition(message.z ?? message.position?.[1]),
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
-      npc: {
+      npc: normalizeNpcBehavior({
         modelId: model.id,
         name,
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
         interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
-        active: message.active !== false
-      }
+        active: message.active !== false,
+        routine: message.routine,
+        combat: message.combat,
+        spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
+        spawnRotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+      }, {
+        position: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
+        rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns)
+      })
     };
   }
 
@@ -1299,6 +1570,18 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'active')) {
       updates.active = message.active !== false;
+    }
+    if (Object.hasOwn(message, 'routine')) {
+      updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
+        position: [0, 0],
+        rotationQuarterTurns: 0
+      }).routine;
+    }
+    if (Object.hasOwn(message, 'combat')) {
+      updates.combat = normalizeNpcBehavior({ combat: message.combat }, {
+        position: [0, 0],
+        rotationQuarterTurns: 0
+      }).combat;
     }
     if (Object.hasOwn(message, 'modelId')) {
       const model = getNpcModelById(message.modelId);
@@ -1402,21 +1685,51 @@ export class WorldRoom extends Room {
     const nextIds = new Set(definitions.map((entry) => entry.id));
 
     for (const definition of definitions) {
-      this.npcDefinitions.set(definition.id, structuredClone(definition));
+      const normalizedDefinition = normalizeNpcBehavior(structuredClone(definition), {
+        position: definition.position,
+        rotationQuarterTurns: definition.rotationQuarterTurns
+      });
+      this.npcDefinitions.set(definition.id, normalizedDefinition);
       const existing = this.state.npcs.get(definition.id) ?? new NpcState();
+      const spawnPosition = normalizedDefinition.spawnPosition ?? normalizedDefinition.position ?? definition.position;
+      const spawnRotationQuarterTurns = normalizeRotationQuarterTurns(
+        normalizedDefinition.spawnRotationQuarterTurns ?? definition.rotationQuarterTurns
+      );
+      const isExistingRuntimeValid = this.state.npcs.has(definition.id)
+        && existing.alive !== false
+        && existing.mode !== NPC_RUNTIME_MODES.hidden;
       existing.id = definition.id;
-      existing.modelId = definition.modelId;
-      existing.name = definition.name;
-      existing.x = definition.position[0];
-      existing.z = definition.position[1];
-      existing.rotationQuarterTurns = normalizeRotationQuarterTurns(definition.rotationQuarterTurns);
-      existing.interactRadius = clampNpcRadius(definition.interactRadius);
-      existing.active = definition.active !== false;
+      existing.modelId = normalizedDefinition.modelId;
+      existing.name = normalizedDefinition.name;
+      existing.x = isExistingRuntimeValid ? quantizePosition(existing.x) : quantizePosition(spawnPosition[0]);
+      existing.z = isExistingRuntimeValid ? quantizePosition(existing.z) : quantizePosition(spawnPosition[1]);
+      existing.rotationY = isExistingRuntimeValid
+        ? quantizeRotation(existing.rotationY)
+        : quantizeRotation(toRotationY(spawnRotationQuarterTurns));
+      existing.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(existing.rotationY);
+      existing.interactRadius = clampNpcRadius(normalizedDefinition.interactRadius);
+      existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
+      existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
+      existing.alive = existing.alive !== false && existing.health > 0;
+      existing.active = normalizedDefinition.active !== false;
+      existing.mode = existing.active
+        ? (existing.alive === false ? NPC_RUNTIME_MODES.dead : (existing.mode || NPC_RUNTIME_MODES.routine))
+        : NPC_RUNTIME_MODES.dead;
+      existing.currentStepIndex = Math.max(0, Math.floor(existing.currentStepIndex || 0));
+      existing.targetPlacementId = existing.targetPlacementId || '';
+      existing.weaponId = normalizedDefinition.combat?.weaponId ?? '';
+      existing.lastAttackerId = existing.lastAttackerId || '';
+      existing.hiddenUntil = Math.max(0, Math.floor(existing.hiddenUntil || 0));
+      existing.activity = existing.activity || '';
+      existing.lastDamagedAt = Math.max(0, Math.floor(existing.lastDamagedAt || 0));
       existing.busy = existing.active ? Boolean(existing.busy) : false;
       existing.chatStatus = existing.chatStatus || 'idle';
       existing.chatText = existing.chatText || '';
       existing.chatStartedAt = Number(existing.chatStartedAt || 0);
       existing.chatSeq = Number(existing.chatSeq || 0);
+      if (!this.npcRuntimeMeta.has(definition.id)) {
+        this.npcRuntimeMeta.set(definition.id, createNpcRuntimeMeta());
+      }
       if (!this.transcripts.has(definition.id)) {
         this.transcripts.set(definition.id, []);
       }
@@ -1430,6 +1743,7 @@ export class WorldRoom extends Room {
 
       this.state.npcs.delete(npcId);
       this.npcDefinitions.delete(npcId);
+      this.npcRuntimeMeta.delete(npcId);
       this.transcripts.delete(npcId);
       for (const cooldownKey of [...this.cooldowns.keys()]) {
         if (cooldownKey.endsWith(`:${npcId}`)) {
@@ -1437,6 +1751,448 @@ export class WorldRoom extends Room {
         }
       }
     }
+
+    this.npcRouteGraph = buildNpcRouteGraph(this.worldState);
+  }
+
+  getNpcRuntimeMeta(npcId) {
+    if (!this.npcRuntimeMeta.has(npcId)) {
+      this.npcRuntimeMeta.set(npcId, createNpcRuntimeMeta());
+    }
+
+    return this.npcRuntimeMeta.get(npcId);
+  }
+
+  clearNpcPath(npcId) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    meta.path = [];
+    meta.pathIndex = 0;
+    meta.pathKey = '';
+    meta.wanderPoint = null;
+  }
+
+  getNpcDefinition(npcId) {
+    return this.npcDefinitions.get(npcId) ?? null;
+  }
+
+  getNpcSpawnPoint(definition) {
+    const position = definition?.spawnPosition ?? definition?.position ?? [0, 0];
+    return {
+      x: quantizePosition(position[0]),
+      z: quantizePosition(position[1])
+    };
+  }
+
+  getNpcHomeAnchor(definition) {
+    const routineSteps = definition?.routine?.steps ?? [];
+    for (const step of routineSteps) {
+      if (step?.type !== NPC_STEP_TYPES.enterHideAtPlacement) {
+        continue;
+      }
+
+      const target = this.getNpcTargetOption(step.targetPlacementId);
+      if (target) {
+        return clonePoint(target.approachPosition);
+      }
+    }
+
+    return this.getNpcSpawnPoint(definition);
+  }
+
+  getNpcTargetOption(targetPlacementId = '') {
+    const placement = this.worldState.getPlacement(targetPlacementId);
+    return placement ? resolveNpcTargetOption(placement) : null;
+  }
+
+  getCurrentNpcRoutineStep(definition, npc) {
+    const steps = definition?.routine?.steps ?? [];
+    if (!steps.length) {
+      return null;
+    }
+
+    const index = Math.max(0, Math.floor(npc.currentStepIndex ?? 0)) % steps.length;
+    return {
+      step: steps[index],
+      index,
+      count: steps.length
+    };
+  }
+
+  advanceNpcRoutineStep(npcId, npc) {
+    const definition = this.getNpcDefinition(npcId);
+    const steps = definition?.routine?.steps ?? [];
+    npc.currentStepIndex = steps.length
+      ? ((Math.max(0, Math.floor(npc.currentStepIndex ?? 0)) + 1) % steps.length)
+      : 0;
+    npc.targetPlacementId = '';
+    npc.activity = '';
+    this.clearNpcPath(npcId);
+    const meta = this.getNpcRuntimeMeta(npcId);
+    meta.stepStartedAt = 0;
+  }
+
+  setNpcMode(npcId, npc, mode, {
+    targetPlacementId = '',
+    activity = '',
+    hiddenUntil = 0,
+    lastAttackerId = npc.lastAttackerId || ''
+  } = {}) {
+    npc.mode = mode;
+    npc.targetPlacementId = targetPlacementId;
+    npc.activity = activity;
+    npc.hiddenUntil = Math.max(0, Math.floor(hiddenUntil));
+    npc.lastAttackerId = lastAttackerId;
+    if (mode !== NPC_RUNTIME_MODES.hidden) {
+      npc.hiddenUntil = 0;
+    }
+    if (mode === NPC_RUNTIME_MODES.dead) {
+      npc.alive = false;
+      npc.health = 0;
+      npc.activity = '';
+    }
+  }
+
+  ensureNpcPathToPosition(npcId, startPosition, targetPosition, pathKey, now, {
+    placementId = '',
+    force = false
+  } = {}) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    if (
+      !force
+      && meta.pathKey === pathKey
+      && meta.path.length
+      && (now - meta.lastRepathAt) < NPC_REPATH_MS
+    ) {
+      return;
+    }
+
+    meta.path = placementId
+      ? buildNpcPathToPlacement(this.npcRouteGraph, startPosition, placementId)
+      : buildNpcPathToPosition(this.npcRouteGraph, startPosition, targetPosition);
+    meta.pathIndex = 0;
+    meta.pathKey = pathKey;
+    meta.lastRepathAt = now;
+  }
+
+  moveNpcAlongPath(npcId, npc, targetPosition, deltaMs, {
+    stopDistance = NPC_TARGET_STOP_DISTANCE,
+    speed = NPC_DEFAULT_MOVE_SPEED
+  } = {}) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const path = meta.path ?? [];
+    const finalTarget = targetPosition ?? clonePoint({ x: npc.x, z: npc.z });
+    let nextPoint = path[meta.pathIndex] ?? finalTarget;
+
+    while (
+      nextPoint
+      && distance2D(npc.x, npc.z, nextPoint.x, nextPoint.z) <= stopDistance
+      && meta.pathIndex < Math.max(0, path.length - 1)
+    ) {
+      meta.pathIndex += 1;
+      nextPoint = path[meta.pathIndex] ?? finalTarget;
+    }
+
+    if (!nextPoint) {
+      return true;
+    }
+
+    const toTargetX = nextPoint.x - npc.x;
+    const toTargetZ = nextPoint.z - npc.z;
+    const distance = Math.hypot(toTargetX, toTargetZ);
+    if (distance <= stopDistance) {
+      npc.x = quantizePosition(nextPoint.x);
+      npc.z = quantizePosition(nextPoint.z);
+    } else {
+      const maxStep = Math.max(0.1, speed) * (deltaMs / 1000);
+      const step = Math.min(distance, maxStep);
+      npc.x = quantizePosition(npc.x + (toTargetX / distance) * step);
+      npc.z = quantizePosition(npc.z + (toTargetZ / distance) * step);
+      npc.rotationY = quantizeRotation(Math.atan2(toTargetX, toTargetZ));
+      npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    }
+
+    return distance2D(npc.x, npc.z, finalTarget.x, finalTarget.z) <= stopDistance;
+  }
+
+  pickNpcWanderPoint(anchorPosition, radius = 6, npcId = '') {
+    const angleSeed = (Date.now() / 1000) + npcId.length;
+    const angle = angleSeed % (Math.PI * 2);
+    const distance = Math.max(1, Number(radius) || 6) * 0.68;
+    return {
+      x: quantizePosition(anchorPosition.x + Math.cos(angle) * distance),
+      z: quantizePosition(anchorPosition.z + Math.sin(angle) * distance)
+    };
+  }
+
+  updateNpcRoutine(npcId, npc, definition, now, deltaMs) {
+    const routineState = this.getCurrentNpcRoutineStep(definition, npc);
+    if (!routineState?.step) {
+      this.clearNpcPath(npcId);
+      return;
+    }
+
+    const { step } = routineState;
+    const target = this.getNpcTargetOption(step.targetPlacementId);
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const targetAnchor = target?.approachPosition ?? this.getNpcSpawnPoint(definition);
+
+    if (!target && step.targetPlacementId) {
+      this.advanceNpcRoutineStep(npcId, npc);
+      return;
+    }
+
+    npc.targetPlacementId = step.targetPlacementId ?? '';
+
+    if (step.type === NPC_STEP_TYPES.travelToPlacement) {
+      this.ensureNpcPathToPosition(
+        npcId,
+        { x: npc.x, z: npc.z },
+        targetAnchor,
+        `travel:${npc.targetPlacementId}`,
+        now,
+        { placementId: npc.targetPlacementId }
+      );
+      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
+      npc.activity = '';
+      if (arrived) {
+        this.advanceNpcRoutineStep(npcId, npc);
+      }
+      return;
+    }
+
+    if (step.type === NPC_STEP_TYPES.enterHideAtPlacement) {
+      this.ensureNpcPathToPosition(
+        npcId,
+        { x: npc.x, z: npc.z },
+        targetAnchor,
+        `hide:${npc.targetPlacementId}`,
+        now,
+        { placementId: npc.targetPlacementId }
+      );
+      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
+      npc.activity = '';
+      if (arrived) {
+        const hiddenDurationMs = Math.max(500, Math.floor(Number(step.hiddenDurationMs ?? 0) || 0));
+        this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.hidden, {
+          targetPlacementId: npc.targetPlacementId,
+          hiddenUntil: now + hiddenDurationMs
+        });
+        this.clearNpcPath(npcId);
+      }
+      return;
+    }
+
+    if (step.type === NPC_STEP_TYPES.usePlacement) {
+      this.ensureNpcPathToPosition(
+        npcId,
+        { x: npc.x, z: npc.z },
+        targetAnchor,
+        `use:${npc.targetPlacementId}`,
+        now,
+        { placementId: npc.targetPlacementId }
+      );
+      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
+      npc.activity = target?.workoutType ?? 'use';
+      if (arrived) {
+        if (!meta.stepStartedAt) {
+          meta.stepStartedAt = now;
+        }
+        if ((now - meta.stepStartedAt) >= Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0))) {
+          this.advanceNpcRoutineStep(npcId, npc);
+        }
+      }
+      return;
+    }
+
+    if (step.type === NPC_STEP_TYPES.loiterNearPlacement || step.type === NPC_STEP_TYPES.wanderNearPlacement) {
+      if (!meta.stepStartedAt) {
+        meta.stepStartedAt = now;
+      }
+      const radius = Math.max(1, Number(step.radius ?? 0) || 6);
+      const durationMs = Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0));
+      if (!meta.wanderPoint || step.type === NPC_STEP_TYPES.wanderNearPlacement && distance2D(npc.x, npc.z, meta.wanderPoint.x, meta.wanderPoint.z) <= NPC_TARGET_STOP_DISTANCE) {
+        meta.wanderPoint = this.pickNpcWanderPoint(targetAnchor, radius, npcId);
+        this.ensureNpcPathToPosition(
+          npcId,
+          { x: npc.x, z: npc.z },
+          meta.wanderPoint,
+          `${step.type}:${npc.targetPlacementId}:${meta.wanderPoint.x},${meta.wanderPoint.z}`,
+          now
+        );
+      }
+      this.moveNpcAlongPath(npcId, npc, meta.wanderPoint, deltaMs);
+      npc.activity = '';
+      if ((now - meta.stepStartedAt) >= durationMs) {
+        this.advanceNpcRoutineStep(npcId, npc);
+      }
+    }
+  }
+
+  updateNpcCombatBehavior(npcId, npc, definition, now, deltaMs) {
+    const combat = definition?.combat ?? {};
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const targetPlayer = npc.lastAttackerId ? this.state.players.get(npc.lastAttackerId) : null;
+    const homeAnchor = this.getNpcHomeAnchor(definition);
+
+    if (!targetPlayer || targetPlayer.alive === false) {
+      if (meta.calmEndsAt && now < meta.calmEndsAt) {
+        return;
+      }
+      this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine, { targetPlacementId: '', activity: '' });
+      this.clearNpcPath(npcId);
+      return;
+    }
+
+    const threatPosition = { x: targetPlayer.x, z: targetPlayer.z };
+    const distanceToThreat = distance2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
+    const distanceFromHome = distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z);
+
+    if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive || combat.archetype === NPC_COMBAT_ARCHETYPES.flee) {
+      const fleeTarget = findFarthestRouteNodeFrom(this.npcRouteGraph, threatPosition, homeAnchor) ?? homeAnchor;
+      this.ensureNpcPathToPosition(
+        npcId,
+        { x: npc.x, z: npc.z },
+        fleeTarget,
+        `flee:${npc.lastAttackerId}:${fleeTarget.x},${fleeTarget.z}`,
+        now
+      );
+      this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: NPC_DEFAULT_MOVE_SPEED * 1.15 });
+      npc.activity = '';
+      if (distanceToThreat >= combat.aggroRadius && now >= meta.calmEndsAt) {
+        this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
+        this.clearNpcPath(npcId);
+      }
+      return;
+    }
+
+    if (distanceFromHome > combat.leashRadius) {
+      meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+      this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
+      this.clearNpcPath(npcId);
+      return;
+    }
+
+    meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+    npc.activity = '';
+    if (combat.weaponId === WEAPON_IDS.pistol) {
+      if (distanceToThreat <= WEAPON_RANGE * 0.72 && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
+        this.performNpcShot(npcId, npc, threatPosition, now);
+        meta.lastAttackAt = now;
+      } else {
+        this.ensureNpcPathToPosition(
+          npcId,
+          { x: npc.x, z: npc.z },
+          threatPosition,
+          `combat:${npc.lastAttackerId}`,
+          now
+        );
+        this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: WEAPON_RANGE * 0.35 });
+      }
+      return;
+    }
+
+    if (distanceToThreat <= (PUNCH_RANGE + NPC_COMBAT_REACH_BUFFER) && (now - meta.lastAttackAt) >= NPC_PUNCH_INTERVAL_MS) {
+      this.performNpcPunch(npcId, npc, threatPosition, now);
+      meta.lastAttackAt = now;
+      npc.activity = 'punch';
+      return;
+    }
+
+    this.ensureNpcPathToPosition(
+      npcId,
+      { x: npc.x, z: npc.z },
+      threatPosition,
+      `combat:${npc.lastAttackerId}`,
+      now
+    );
+    this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: PUNCH_RANGE * 0.72 });
+  }
+
+  updateNpcSimulation(now, deltaMs) {
+    for (const [npcId, npc] of this.state.npcs.entries()) {
+      const definition = this.getNpcDefinition(npcId);
+      if (!definition || npc.active === false) {
+        continue;
+      }
+
+      if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.dead) {
+        this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead);
+        continue;
+      }
+
+      if (npc.mode === NPC_RUNTIME_MODES.hidden) {
+        npc.activity = '';
+        if (npc.hiddenUntil && now >= npc.hiddenUntil) {
+          const target = this.getNpcTargetOption(npc.targetPlacementId);
+          if (target?.approachPosition) {
+            npc.x = quantizePosition(target.approachPosition.x);
+            npc.z = quantizePosition(target.approachPosition.z);
+          }
+          this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
+          this.advanceNpcRoutineStep(npcId, npc);
+        }
+        continue;
+      }
+
+      if (npc.mode === NPC_RUNTIME_MODES.combat || npc.mode === NPC_RUNTIME_MODES.flee) {
+        this.updateNpcCombatBehavior(npcId, npc, definition, now, deltaMs);
+        continue;
+      }
+
+      this.updateNpcRoutine(npcId, npc, definition, now, deltaMs);
+    }
+  }
+
+  applyDamageToNpc(npcId, damage, attackerSessionId = '', now = Date.now()) {
+    const npc = this.state.npcs.get(npcId);
+    const definition = this.getNpcDefinition(npcId);
+    if (!npc || !definition || npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden) {
+      return false;
+    }
+
+    npc.health = Math.max(0, npc.health - Math.max(0, Math.floor(damage)));
+    npc.lastDamagedAt = now;
+    npc.lastAttackerId = attackerSessionId || npc.lastAttackerId || '';
+    const meta = this.getNpcRuntimeMeta(npcId);
+    meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+    this.clearNpcPath(npcId);
+
+    if (npc.health <= 0) {
+      this.handleNpcDeath(npcId, attackerSessionId);
+      return true;
+    }
+
+    const combat = definition.combat ?? {};
+    const shouldFlee = combat.archetype === NPC_COMBAT_ARCHETYPES.passive
+      || combat.archetype === NPC_COMBAT_ARCHETYPES.flee
+      || npc.health <= Math.max(1, combat.fleeHealthThreshold ?? 0);
+    this.setNpcMode(
+      npcId,
+      npc,
+      shouldFlee ? NPC_RUNTIME_MODES.flee : NPC_RUNTIME_MODES.combat,
+      { lastAttackerId: attackerSessionId, activity: '' }
+    );
+    return true;
+  }
+
+  handleNpcDeath(npcId, killerId = '') {
+    const npc = this.state.npcs.get(npcId);
+    if (!npc || npc.alive === false) {
+      return;
+    }
+
+    npc.alive = false;
+    npc.health = 0;
+    npc.activity = '';
+    this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead, { lastAttackerId: killerId });
+    this.broadcastCombatEvent({
+      type: 'death',
+      victimId: npcId,
+      victimType: 'npc',
+      killerId,
+      x: npc.x,
+      z: npc.z
+    });
   }
 
   appendTranscript(npcId, entry) {
@@ -1487,7 +2243,7 @@ export class WorldRoom extends Room {
     let nearestDistance = Infinity;
 
     for (const npc of this.state.npcs.values()) {
-      if (!npc.active) {
+      if (!npc.active || npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
         continue;
       }
 

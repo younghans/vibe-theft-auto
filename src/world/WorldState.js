@@ -1,4 +1,8 @@
 import { getNpcModelById } from '../npc/npcCatalog.js';
+import {
+  cloneNpcBehavior,
+  normalizeNpcBehavior
+} from '../npc/npcBehavior.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
@@ -40,7 +44,7 @@ function clonePlacement(placement) {
     cellZ: placement.cellZ,
     position: placement.position ? [...placement.position] : null,
     interactable: cloneInteractable(placement.interactable),
-    npc: placement.npc ? { ...placement.npc } : null
+    npc: placement.npc ? cloneNpcBehavior(placement.npc) : null
   };
 }
 
@@ -73,13 +77,25 @@ function toPlacementRecord(entry, item, id) {
         ],
     interactable: cloneInteractable(entry.interactable),
     npc: item.layer === 'npc'
-      ? {
+      ? normalizeNpcBehavior({
           modelId: entry.modelId,
           name: entry.name,
           prompt: entry.prompt,
           interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2,
-          active: entry.active !== false
-        }
+          active: entry.active !== false,
+          routine: entry.routine,
+          combat: entry.combat,
+          spawnPosition: entry.spawnPosition,
+          spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
+        }, {
+          position: item.layer === 'npc'
+            ? [
+                normalizePositionValue(entry.position[0]),
+                normalizePositionValue(entry.position[1])
+              ]
+            : null,
+          rotationQuarterTurns: normalizeRotationQuarterTurns(entry.rotationQuarterTurns)
+        })
       : null
   };
 }
@@ -110,21 +126,32 @@ function toSerializedPlacement(placement) {
   }
 
   if (placement.layer === 'npc' && placement.npc) {
-    return {
-      id: placement.id,
-      layer: 'npc',
+      return {
+        id: placement.id,
+        layer: 'npc',
       modelId: placement.npc.modelId,
       position: [
         normalizePositionValue(placement.position[0]),
         normalizePositionValue(placement.position[1])
       ],
       rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
-      name: placement.npc.name,
-      prompt: placement.npc.prompt,
-      interactRadius: placement.npc.interactRadius,
-      active: placement.npc.active !== false
-    };
-  }
+        name: placement.npc.name,
+        prompt: placement.npc.prompt,
+        interactRadius: placement.npc.interactRadius,
+        active: placement.npc.active !== false,
+        routine: placement.npc.routine,
+        combat: placement.npc.combat,
+        spawnPosition: Array.isArray(placement.npc.spawnPosition)
+          ? [
+              normalizePositionValue(placement.npc.spawnPosition[0]),
+              normalizePositionValue(placement.npc.spawnPosition[1])
+            ]
+          : undefined,
+        spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
+          placement.npc.spawnRotationQuarterTurns ?? placement.rotationQuarterTurns
+        )
+      };
+    }
 
   return {
     id: placement.id,
@@ -304,11 +331,20 @@ export class WorldState {
       position: [x, z],
       interactable: null,
       npc: {
-        modelId: npc.modelId,
-        name: npc.name,
-        prompt: npc.prompt,
-        interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2,
-        active: npc.active !== false
+        ...normalizeNpcBehavior({
+          modelId: npc.modelId,
+          name: npc.name,
+          prompt: npc.prompt,
+          interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2,
+          active: npc.active !== false,
+          routine: npc.routine,
+          combat: npc.combat,
+          spawnPosition: [x, z],
+          spawnRotationQuarterTurns: rotationQuarterTurns
+        }, {
+          position: [x, z],
+          rotationQuarterTurns
+        })
       }
     };
 
@@ -328,10 +364,13 @@ export class WorldState {
       placement.itemId = itemId;
     }
 
-    placement.npc = {
+    placement.npc = normalizeNpcBehavior({
       ...placement.npc,
       ...npcUpdates
-    };
+    }, {
+      position: placement.position,
+      rotationQuarterTurns: placement.rotationQuarterTurns
+    });
 
     return clonePlacement(placement);
   }
@@ -395,6 +434,9 @@ export class WorldState {
     placement.cellX = null;
     placement.cellZ = null;
     placement.position = [x, z];
+    if (placement.layer === 'npc' && placement.npc) {
+      placement.npc.spawnPosition = [x, z];
+    }
     return {
       placement: clonePlacement(placement),
       error: null,
@@ -434,6 +476,9 @@ export class WorldState {
       this.registerPlacement(placement);
     } else {
       placement.rotationQuarterTurns = nextRotationQuarterTurns;
+      if (placement.layer === 'npc' && placement.npc) {
+        placement.npc.spawnRotationQuarterTurns = nextRotationQuarterTurns;
+      }
     }
 
     return { placement: clonePlacement(placement), error: null };
@@ -486,7 +531,21 @@ export class WorldState {
         name: placement.npc.name,
         prompt: placement.npc.prompt,
         interactRadius: placement.npc.interactRadius,
-        active: placement.npc.active !== false
+        active: placement.npc.active !== false,
+        routine: placement.npc.routine,
+        combat: placement.npc.combat,
+        spawnPosition: Array.isArray(placement.npc.spawnPosition)
+          ? [
+              Number(placement.npc.spawnPosition[0].toFixed(2)),
+              Number(placement.npc.spawnPosition[1].toFixed(2))
+            ]
+          : [
+              Number(placement.position[0].toFixed(2)),
+              Number(placement.position[1].toFixed(2))
+            ],
+        spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
+          placement.npc.spawnRotationQuarterTurns ?? placement.rotationQuarterTurns
+        )
       }));
 
     return { tiles, props, npcs };

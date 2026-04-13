@@ -2278,7 +2278,16 @@ export class Game {
 
     const runtime = new Map();
     for (const [npcId, npc] of this.npcServiceState.npcs.entries()) {
-      runtime.set(npcId, { busy: npc.busy });
+      runtime.set(npcId, {
+        x: npc.position?.[0] ?? npc.x,
+        z: npc.position?.[1] ?? npc.z,
+        rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
+        interactRadius: npc.interactRadius,
+        busy: npc.busy,
+        mode: npc.mode,
+        activity: npc.activity,
+        alive: npc.alive !== false
+      });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);
   }
@@ -2767,6 +2776,11 @@ export class Game {
       const targetAvatar = this.getAvatarForSessionId(event.targetId);
       if (targetAvatar) {
         end.y = targetAvatar.position.y + 2.4;
+      } else if (event.kind === 'npc') {
+        const npcAnchor = this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
+        if (npcAnchor) {
+          end.y = npcAnchor.y - 2;
+        }
       }
     }
 
@@ -2783,6 +2797,11 @@ export class Game {
       const targetAvatar = this.getAvatarForSessionId(event.targetId);
       if (targetAvatar) {
         point.y = targetAvatar.position.y + 2.4;
+      }
+    } else if (event.kind === 'npc' && event.targetId) {
+      const npcAnchor = this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
+      if (npcAnchor) {
+        point.y = npcAnchor.y - 2;
       }
     } else {
       const groundHeight = this.worldBuilder?.getGroundHeightAt(point) ?? 0;
@@ -3119,7 +3138,9 @@ export class Game {
     switch (event.type) {
       case 'shot':
         {
-          const shooterAvatar = this.getAvatarForSessionId(event.shooterId);
+          const shooterAvatar = event.shooterType === 'npc'
+            ? null
+            : this.getAvatarForSessionId(event.shooterId);
           shooterAvatar?.triggerShotFeedback?.();
           const { start, end } = this.getShotVisualPoints(event);
           if (event.weaponId === HELD_ITEM_IDS.pistol) {
@@ -3158,9 +3179,19 @@ export class Game {
             } else {
               runFeedback();
             }
+          } else if (event.kind === 'npc' && event.targetId) {
+            const runFeedback = () => {
+              this.worldBuilder?.triggerNpcDamageFeedback(event.targetId);
+            };
+
+            if (delayMs > 0) {
+              window.setTimeout(runFeedback, delayMs);
+            } else {
+              runFeedback();
+            }
           }
         }
-        if (event.kind === 'player' && event.shooterId === this.npcServiceState.sessionId) {
+        if ((event.kind === 'player' || event.kind === 'npc') && event.shooterId === this.npcServiceState.sessionId) {
           this.hitMarkerUntil = performance.now() + 120;
         }
         break;
@@ -3183,7 +3214,9 @@ export class Game {
         }
         break;
       case 'death':
-        if (event.victimId === this.npcServiceState.sessionId) {
+        if (event.victimType === 'npc') {
+          this.worldBuilder?.triggerNpcDamageFeedback(event.victimId);
+        } else if (event.victimId === this.npcServiceState.sessionId) {
           this.hud.showToast('You are down.');
         }
         break;

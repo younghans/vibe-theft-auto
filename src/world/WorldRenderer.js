@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
+import { NPC_RUNTIME_MODES } from '../npc/npcBehavior.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { assets } from './assetManifest.js';
@@ -221,7 +222,7 @@ function itemBlocksMovement(item) {
 }
 
 function createNpcCollider(actor, placement) {
-  if (!actor || placement?.npc?.active === false) {
+  if (!actor || placement?.npc?.active === false || actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden || actor.runtimeState?.alive === false) {
     return null;
   }
 
@@ -538,7 +539,13 @@ export class WorldRenderer {
       return null;
     }
 
-    await preloadMixamoClips([assets.playerAnimationSet.idle]);
+    await preloadMixamoClips([
+      assets.playerAnimationSet.idle,
+      assets.playerAnimationSet.walking,
+      assets.playerAnimationSet.fightingIdle,
+      assets.playerAnimationSet.punching,
+      assets.playerAnimationSet.snatch
+    ]);
     const object = await this.library.instantiate(item.asset);
     const actor = new NpcActor({
       model,
@@ -553,6 +560,10 @@ export class WorldRenderer {
     actor.object.userData.editorPlacementId = placement.id;
     actor.pickProxy.userData.editorPlacementId = placement.id;
     actor.setBusy(this.npcRuntimeState.get(placement.id)?.busy ?? false);
+    const runtimeState = this.npcRuntimeState.get(placement.id);
+    if (runtimeState) {
+      actor.setRuntimeState(runtimeState, this.getSurfaceHeightAtPosition(runtimeState.x ?? placement.position[0], runtimeState.z ?? placement.position[1]));
+    }
     return actor;
   }
 
@@ -580,6 +591,13 @@ export class WorldRenderer {
         rotationQuarterTurns: placement.rotationQuarterTurns,
         interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius
       });
+      const runtimeState = this.npcRuntimeState.get(placement.id);
+      if (runtimeState) {
+        rendered.actor.setRuntimeState(
+          runtimeState,
+          this.getSurfaceHeightAtPosition(runtimeState.x ?? placement.position[0], runtimeState.z ?? placement.position[1])
+        );
+      }
     } else if (placement.layer === 'tile') {
       const center = getTileCenterWorldPosition(rendered.item, placement.cellX, placement.cellZ, placement.rotationQuarterTurns);
       rendered.object.position.set(center.x, 0, center.z);
@@ -660,7 +678,14 @@ export class WorldRenderer {
   getColliders() {
     return [...this.renderedPlacements.values()]
       .filter((placement) => !placement.hidden)
-      .flatMap((placement) => placement.colliders ?? [])
+      .flatMap((placement) => {
+        if (placement.actor) {
+          const collider = createNpcCollider(placement.actor, placement.placement);
+          return collider ? [collider] : [];
+        }
+
+        return placement.colliders ?? [];
+      })
       .filter(Boolean);
   }
 
@@ -686,7 +711,8 @@ export class WorldRenderer {
         }
 
         if (placement.layer === 'npc' && placement.npc) {
-          if (placement.npc.active === false) {
+          const runtimeState = this.npcRuntimeState.get(placement.id);
+          if (placement.npc.active === false || runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
             return null;
           }
 
@@ -795,7 +821,15 @@ export class WorldRenderer {
       if (!rendered.actor) {
         continue;
       }
-      rendered.actor.setBusy(this.npcRuntimeState.get(placementId)?.busy ?? false);
+      const runtimeState = this.npcRuntimeState.get(placementId) ?? {};
+      rendered.actor.setBusy(runtimeState.busy ?? false);
+      rendered.actor.setRuntimeState(
+        runtimeState,
+        this.getSurfaceHeightAtPosition(
+          runtimeState.x ?? rendered.placement.position?.[0] ?? rendered.object.position.x,
+          runtimeState.z ?? rendered.placement.position?.[1] ?? rendered.object.position.z
+        )
+      );
     }
   }
 
@@ -832,7 +866,7 @@ export class WorldRenderer {
     const anchors = new Map();
 
     for (const [placementId, rendered] of this.renderedPlacements.entries()) {
-      if (!rendered.actor) {
+      if (!rendered.actor || rendered.actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }
 
@@ -840,5 +874,9 @@ export class WorldRenderer {
     }
 
     return anchors;
+  }
+
+  triggerNpcDamageFeedback(npcId) {
+    this.renderedPlacements.get(npcId)?.actor?.triggerDamageFeedback?.();
   }
 }

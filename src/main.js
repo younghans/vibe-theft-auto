@@ -1,5 +1,12 @@
 import { Game } from './game/Game.js';
 
+const DEBUG_LOGS_ENABLED = false;
+
+if (!DEBUG_LOGS_ENABLED) {
+  console.info = () => {};
+  console.log = () => {};
+}
+
 window.addEventListener('error', (event) => {
   console.error('[Boot] Unhandled window error.', event.error ?? event.message ?? event);
 });

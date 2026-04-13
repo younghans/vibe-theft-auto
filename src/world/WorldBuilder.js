@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 import { getNpcModelById, getNpcModelByItemId, NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
+import {
+  createDefaultNpcCombat,
+  createDefaultNpcRoutine,
+  createDefaultNpcRoutineStep,
+  listNpcCombatArchetypes,
+  listNpcStepTypes
+} from '../npc/npcBehavior.js';
+import { collectNpcTargetOptions } from '../npc/npcTargeting.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
+import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
@@ -83,6 +92,23 @@ function toRotationY(rotationQuarterTurns) {
 
 function toGroundProbe(x, z) {
   return new THREE.Vector3(x, 0, z);
+}
+
+function titleCaseLabel(value = '') {
+  return String(value)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function mergeNestedDraft(current, updates) {
+  return {
+    ...(current ?? {}),
+    ...(updates ?? {})
+  };
 }
 
 function collectBuilderGroups(items) {
@@ -273,6 +299,10 @@ export class WorldBuilder {
         interactRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
       }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
+      onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
+      onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
+      onNpcRoutineStepChange: (stepIndex, field, value) => void this.updateSelectedNpcRoutineStep(stepIndex, field, value),
+      onNpcCombatChange: (field, value) => void this.updateSelectedNpcCombat(field, value),
       onConfirmNpc: () => this.confirmSelectedNpc(),
       onCloseNpcEditor: () => this.closeNpcInstanceEditor(),
       onCloseBuildingEditor: () => this.closeBuildingInstanceEditor(),
@@ -456,6 +486,10 @@ export class WorldBuilder {
 
   setNpcRuntimeState(npcStateMap) {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
+  }
+
+  triggerNpcDamageFeedback(npcId) {
+    this.worldRenderer.triggerNpcDamageFeedback(npcId);
   }
 
   setVisible(visible) {
@@ -1592,6 +1626,85 @@ export class WorldBuilder {
     this.hud.setBuilderSelection({ screenX, screenY, moving: false });
   }
 
+  getNpcTargetOptions() {
+    return collectNpcTargetOptions(this.worldState).map((option) => ({
+      id: option.placementId,
+      label: `${option.label} (${option.placementId})`,
+      supportedStepTypes: [...(option.supportedStepTypes ?? [])]
+    }));
+  }
+
+  getNpcDraft(placement) {
+    if (!placement?.npc) {
+      return null;
+    }
+
+    const pending = this.pendingNpcUpdateByPlacementId.get(placement.id) ?? {};
+    return {
+      ...placement.npc,
+      ...pending,
+      routine: pending.routine
+        ? {
+            ...placement.npc.routine,
+            ...pending.routine
+          }
+        : placement.npc.routine,
+      combat: pending.combat
+        ? {
+            ...placement.npc.combat,
+            ...pending.combat
+          }
+        : placement.npc.combat
+    };
+  }
+
+  getNpcRoutineDraft(placement) {
+    return this.getNpcDraft(placement)?.routine ?? createDefaultNpcRoutine();
+  }
+
+  getNpcCombatDraft(placement) {
+    return this.getNpcDraft(placement)?.combat ?? createDefaultNpcCombat();
+  }
+
+  buildNpcRoutineEditorState(placement) {
+    const routine = this.getNpcRoutineDraft(placement);
+    const targetOptions = this.getNpcTargetOptions();
+    const targetOptionMap = new Map(targetOptions.map((option) => [option.id, option]));
+    const warnings = [];
+    const steps = (routine.steps ?? []).map((step, index) => {
+      const supportedTargetOptions = targetOptions.filter((option) =>
+        option.supportedStepTypes.includes(step.type)
+      );
+      let warning = '';
+
+      if (step.targetPlacementId) {
+        const target = targetOptionMap.get(step.targetPlacementId);
+        if (!target) {
+          warning = `Step ${index + 1} points at a missing placement and will be skipped at runtime.`;
+        } else if (!target.supportedStepTypes.includes(step.type)) {
+          warning = `Step ${index + 1} targets ${target.label}, but that destination does not support ${titleCaseLabel(step.type)}.`;
+        }
+      }
+
+      if (warning) {
+        warnings.push(warning);
+      }
+
+      return {
+        ...step,
+        targetOptions: supportedTargetOptions,
+        warning
+      };
+    });
+
+    return {
+      mode: routine.mode,
+      resumePolicy: routine.resumePolicy,
+      steps,
+      warnings
+    };
+  }
+
   updateBuilderNpcEditor() {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc' || !placement.npc) {
@@ -1604,20 +1717,45 @@ export class WorldBuilder {
       return;
     }
 
-    const model = getNpcModelById(placement.npc.modelId);
+    const npcDraft = this.getNpcDraft(placement);
+    const model = getNpcModelById(npcDraft?.modelId ?? placement.npc.modelId);
+    const routine = this.buildNpcRoutineEditorState(placement);
+    const combat = this.getNpcCombatDraft(placement);
     this.hud.setBuilderNpcEditor({
       id: placement.id,
-      title: placement.npc.name || model?.label || 'NPC',
+      title: npcDraft?.name || model?.label || 'NPC',
       subtitle: `${model?.label ?? 'NPC'} at ${placement.position[0].toFixed(1)}, ${placement.position[1].toFixed(1)}`,
-      modelId: placement.npc.modelId,
-      name: placement.npc.name,
-      prompt: placement.npc.prompt,
-      interactRadius: placement.npc.interactRadius,
-      active: placement.npc.active !== false,
+      modelId: npcDraft?.modelId ?? placement.npc.modelId,
+      name: npcDraft?.name ?? placement.npc.name,
+      prompt: npcDraft?.prompt ?? placement.npc.prompt,
+      interactRadius: npcDraft?.interactRadius ?? placement.npc.interactRadius,
+      active: (npcDraft?.active ?? placement.npc.active) !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,
         label: entry.label
-      }))
+      })),
+      routine,
+      warnings: routine.warnings,
+      stepTypes: listNpcStepTypes().map((stepType) => ({
+        id: stepType,
+        label: titleCaseLabel(stepType)
+      })),
+      newStepType: listNpcStepTypes()[0],
+      combat: {
+        archetype: combat.archetype,
+        aggroRadius: Number(combat.aggroRadius?.toFixed?.(2) ?? combat.aggroRadius ?? 0),
+        leashRadius: Number(combat.leashRadius?.toFixed?.(2) ?? combat.leashRadius ?? 0),
+        fleeHealthThreshold: combat.fleeHealthThreshold ?? 0,
+        weaponId: combat.weaponId || ''
+      },
+      combatArchetypes: listNpcCombatArchetypes().map((archetype) => ({
+        id: archetype,
+        label: titleCaseLabel(archetype)
+      })),
+      weaponOptions: [
+        { id: '', label: 'Unarmed' },
+        { id: WEAPON_IDS.pistol, label: 'Pistol' }
+      ]
     });
   }
 
@@ -1891,6 +2029,92 @@ export class WorldBuilder {
     }
 
     this.queueNpcUpdate(placement.id, nextChanges);
+  }
+
+  async addSelectedNpcRoutineStep(stepType) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return;
+    }
+
+    const routine = this.getNpcRoutineDraft(placement);
+    const nextStep = createDefaultNpcRoutineStep(stepType);
+    await this.updateSelectedNpc({
+      routine: {
+        ...routine,
+        steps: [...(routine.steps ?? []), nextStep]
+      }
+    });
+  }
+
+  async removeSelectedNpcRoutineStep(stepIndex) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return;
+    }
+
+    const routine = this.getNpcRoutineDraft(placement);
+    if (!Number.isInteger(stepIndex) || stepIndex < 0 || stepIndex >= (routine.steps?.length ?? 0)) {
+      return;
+    }
+
+    await this.updateSelectedNpc({
+      routine: {
+        ...routine,
+        steps: routine.steps.filter((_, index) => index !== stepIndex)
+      }
+    });
+  }
+
+  async updateSelectedNpcRoutineStep(stepIndex, field, value) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return;
+    }
+
+    const routine = this.getNpcRoutineDraft(placement);
+    const steps = [...(routine.steps ?? [])];
+    const currentStep = steps[stepIndex];
+    if (!currentStep || !field) {
+      return;
+    }
+
+    let nextStep = { ...currentStep };
+    if (field === 'type') {
+      nextStep = {
+        ...createDefaultNpcRoutineStep(String(value || currentStep.type)),
+        targetPlacementId: currentStep.targetPlacementId || ''
+      };
+    } else if (field === 'targetPlacementId') {
+      nextStep.targetPlacementId = String(value ?? '').trim();
+    } else if (field === 'durationMs' || field === 'hiddenDurationMs') {
+      nextStep[field] = Number.isFinite(value) ? Number(value) : currentStep[field];
+    } else if (field === 'radius') {
+      nextStep.radius = Number.isFinite(value) ? Number(value) : currentStep.radius;
+    } else {
+      return;
+    }
+
+    steps[stepIndex] = nextStep;
+    await this.updateSelectedNpc({
+      routine: {
+        ...routine,
+        steps
+      }
+    });
+  }
+
+  async updateSelectedNpcCombat(field, value) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc || !field) {
+      return;
+    }
+
+    const combat = this.getNpcCombatDraft(placement);
+    const nextCombat = mergeNestedDraft(combat, {
+      [field]: value
+    });
+    await this.updateSelectedNpc({ combat: nextCombat });
   }
 
   async changeSelectedNpcModel(modelId) {

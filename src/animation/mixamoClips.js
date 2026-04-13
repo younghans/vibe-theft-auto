@@ -47,7 +47,9 @@ async function loadMixamoClip(name) {
 }
 
 export async function preloadMixamoClips(names = Object.keys(clipSourceUrls)) {
-  await Promise.all(names.map((name) => {
+  const normalizedNames = [...new Set((names ?? []).filter((name) => typeof name === 'string' && name.trim()))];
+
+  await Promise.all(normalizedNames.map((name) => {
     if (clipRegistry.has(name)) {
       return Promise.resolve(clipRegistry.get(name));
     }

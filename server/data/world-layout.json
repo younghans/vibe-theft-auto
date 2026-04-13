@@ -1618,6 +1618,15 @@
         59.85
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_223",
+      "itemId": "olympic_barbell",
+      "position": [
+        88.2,
+        45.8
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "npcs": [
@@ -1659,6 +1668,58 @@
       "prompt": "You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.",
       "interactRadius": 4.2,
       "active": true
+    },
+    {
+      "id": "npc_bruno",
+      "modelId": "brute",
+      "position": [
+        30.8,
+        31.2
+      ],
+      "rotationQuarterTurns": 2,
+      "name": "Bruno",
+      "prompt": "You are Bruno, a broad-shouldered neighborhood regular who treats the gym like a second home. Speak like a streetwise local, keep answers short, and steer people toward training, discipline, and city gossip.",
+      "interactRadius": 4.8,
+      "active": true,
+      "routine": {
+        "mode": "loop",
+        "resumePolicy": "resume-step",
+        "steps": [
+          {
+            "type": "travelToPlacement",
+            "targetPlacementId": "placement_223"
+          },
+          {
+            "type": "usePlacement",
+            "targetPlacementId": "placement_223",
+            "durationMs": 4200
+          },
+          {
+            "type": "loiterNearPlacement",
+            "targetPlacementId": "placement_222",
+            "durationMs": 3600,
+            "radius": 4.5
+          },
+          {
+            "type": "enterHideAtPlacement",
+            "targetPlacementId": "placement_94",
+            "hiddenDurationMs": 6500
+          },
+          {
+            "type": "wanderNearPlacement",
+            "targetPlacementId": "placement_222",
+            "durationMs": 5200,
+            "radius": 8
+          }
+        ]
+      },
+      "combat": {
+        "archetype": "guard",
+        "aggroRadius": 14,
+        "leashRadius": 22,
+        "fleeHealthThreshold": 24,
+        "weaponId": ""
+      }
     }
   ]
 }

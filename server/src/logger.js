@@ -1,3 +1,5 @@
+const SERVER_DEBUG_LOGS_ENABLED = false;
+
 function formatMeta(meta) {
   if (!meta || typeof meta !== 'object' || !Object.keys(meta).length) {
     return '';
@@ -11,6 +13,10 @@ function formatMeta(meta) {
 }
 
 export function logServer(scope, message, meta = null) {
+  if (!SERVER_DEBUG_LOGS_ENABLED) {
+    return;
+  }
+
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${scope}] ${message}${formatMeta(meta)}`);
 }
