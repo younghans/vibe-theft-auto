@@ -4,6 +4,8 @@ import { assets } from '../world/assetManifest.js';
 const clipSourceUrls = Object.freeze({
   idle: assets.mixamo.animations.idle,
   fightingIdle: assets.mixamo.animations.fightingIdle,
+  slowRun: assets.mixamo.animations.slowRun,
+  fastRun: assets.mixamo.animations.fastRun,
   punching: assets.mixamo.animations.punching,
   snatch: assets.mixamo.animations.snatch,
   walking: assets.mixamo.animations.walking,

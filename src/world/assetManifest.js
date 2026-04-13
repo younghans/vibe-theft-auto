@@ -24,6 +24,8 @@ export const assets = {
     idle: 'idle',
     fightingIdle: 'fightingIdle',
     walking: 'walking',
+    slowRun: 'slowRun',
+    fastRun: 'fastRun',
     punching: 'punching',
     snatch: 'snatch',
     emotes: PLAYER_EMOTES
@@ -38,6 +40,8 @@ export const assets = {
     animations: {
       idle: assetUrl('mixamo', 'animations', 'idle.json'),
       fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),
+      slowRun: assetUrl('mixamo', 'animations', 'slow-run.json'),
+      fastRun: assetUrl('mixamo', 'animations', 'fast-run.json'),
       punching: assetUrl('mixamo', 'animations', 'punching.json'),
       snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),

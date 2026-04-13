@@ -29,6 +29,7 @@ import {
   NPC_STEP_TYPES,
   NPC_DEFAULT_WANDER_IDLE_MAX_MS,
   NPC_DEFAULT_WANDER_IDLE_MIN_MS,
+  getNpcRunSpeed,
   normalizeNpcBehavior
 } from './npcBehavior.js';
 import { PUNCH_EMOTE_ID } from '../player/emotes.js';
@@ -1113,6 +1114,7 @@ export class NpcServiceMock {
     const distanceFromHome = distance2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
     if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive) {
+      const runSpeed = getNpcRunSpeed(definition?.speed);
       const fleeTarget = findFarthestRouteNodeFrom(this.npcRouteGraph, threatPosition, homeAnchor) ?? homeAnchor;
       this.ensureNpcPathToPosition(
         npcId,
@@ -1121,7 +1123,7 @@ export class NpcServiceMock {
         `flee:${npc.lastAttackerId}:${fleeTarget.x},${fleeTarget.z}`,
         now
       );
-      this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: NPC_DEFAULT_MOVE_SPEED * 1.15 });
+      this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: runSpeed });
       npc.activity = '';
       if (distanceToThreat >= (combat.aggroRadius ?? 0) && now >= meta.calmEndsAt) {
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
@@ -1141,6 +1143,7 @@ export class NpcServiceMock {
 
     meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
     npc.activity = '';
+    const runSpeed = getNpcRunSpeed(definition?.speed);
     if (combat.weaponId === WEAPON_IDS.pistol) {
       if (distanceToThreat <= WEAPON_RANGE * 0.72 && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
         this.performNpcShot(npcId, npc, threatPosition, now);
@@ -1153,7 +1156,10 @@ export class NpcServiceMock {
           `combat:${npc.lastAttackerId}`,
           now
         );
-        this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: WEAPON_RANGE * 0.35 });
+        this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
+          stopDistance: WEAPON_RANGE * 0.35,
+          speed: runSpeed
+        });
       }
       return true;
     }
@@ -1172,7 +1178,10 @@ export class NpcServiceMock {
       `combat:${npc.lastAttackerId}`,
       now
     );
-    this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: PUNCH_RANGE * 0.72 });
+    this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
+      stopDistance: PUNCH_RANGE * 0.72,
+      speed: runSpeed
+    });
     return true;
   }
 

@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
+const stagingDist = path.join(root, '.dist-staging');
 const assetsRoot = path.join(root, 'assets');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
@@ -21,9 +22,9 @@ const COMPRESSIBLE_EXTENSIONS = new Set([
   '.txt'
 ]);
 
-async function resetDist() {
-  await fs.rm(dist, { recursive: true, force: true });
-  await fs.mkdir(dist, { recursive: true });
+async function resetStagingDist() {
+  await fs.rm(stagingDist, { recursive: true, force: true });
+  await fs.mkdir(stagingDist, { recursive: true });
 }
 
 async function copyFile(source, target) {
@@ -169,21 +170,21 @@ async function buildAssetCopyList() {
   };
 }
 
-async function copyRuntimeAssets() {
+async function copyRuntimeAssets(outputDirectory = stagingDist) {
   const assetCopyList = await buildAssetCopyList();
 
   for (const licensePath of assetCopyList.licenses) {
     const relativePath = path.relative(root, licensePath);
-    await copyFile(licensePath, path.join(dist, relativePath));
+    await copyFile(licensePath, path.join(outputDirectory, relativePath));
   }
 
   for (const sourcePath of assetCopyList.files) {
     const relativePath = path.relative(root, sourcePath);
-    await copyFile(sourcePath, path.join(dist, relativePath));
+    await copyFile(sourcePath, path.join(outputDirectory, relativePath));
   }
 }
 
-async function copyOptionalDirectory(relativeDirectory) {
+async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagingDist) {
   const sourceDirectory = path.join(root, relativeDirectory);
   const stats = await fs.stat(sourceDirectory).catch(() => null);
   if (!stats?.isDirectory()) {
@@ -193,7 +194,7 @@ async function copyOptionalDirectory(relativeDirectory) {
   const files = await walkFiles(sourceDirectory);
   for (const filePath of files) {
     const relativePath = path.relative(root, filePath);
-    await copyFile(filePath, path.join(dist, relativePath));
+    await copyFile(filePath, path.join(outputDirectory, relativePath));
   }
 }
 
@@ -234,7 +235,7 @@ async function bundleClient() {
     logLevel: 'silent',
     metafile: true,
     minify: true,
-    outdir: dist,
+    outdir: stagingDist,
     platform: 'browser',
     sourcemap: false,
     splitting: true,
@@ -242,7 +243,14 @@ async function bundleClient() {
   });
 
   const outputs = Object.keys(result.metafile.outputs)
-    .map((file) => file.split(path.sep).join('/'));
+    .map((file) => {
+      const normalized = path.normalize(file);
+      const relative = path.relative(
+        stagingDist,
+        path.resolve(root, normalized)
+      );
+      return relative.split(path.sep).join('/');
+    });
   const appScript = outputs.find((file) => /assets\/app-[^/]+\.js$/u.test(file));
   const stylesheet = outputs.find((file) => /assets\/styles-[^/]+\.css$/u.test(file));
 
@@ -251,19 +259,19 @@ async function bundleClient() {
   }
 
   return {
-    appScript: appScript.replace(/^dist\//u, ''),
-    stylesheet: (stylesheet ?? '').replace(/^dist\//u, '')
+    appScript,
+    stylesheet: stylesheet ?? ''
   };
 }
 
 async function copyStaticShell({ appScript, stylesheet }) {
   const htmlTemplate = await fs.readFile(path.join(root, 'index.html'), 'utf8');
   const builtHtml = buildHtmlFromTemplate(htmlTemplate, { appScript, stylesheet });
-  await fs.writeFile(path.join(dist, 'index.html'), builtHtml, 'utf8');
-  await copyFile(path.join(root, 'favicon.ico'), path.join(dist, 'favicon.ico'));
+  await fs.writeFile(path.join(stagingDist, 'index.html'), builtHtml, 'utf8');
+  await copyFile(path.join(root, 'favicon.ico'), path.join(stagingDist, 'favicon.ico'));
   await copyFile(
     path.join(root, 'vendor', 'colyseus-sdk', 'colyseus.js'),
-    path.join(dist, 'vendor', 'colyseus-sdk', 'colyseus.js')
+    path.join(stagingDist, 'vendor', 'colyseus-sdk', 'colyseus.js')
   );
 }
 
@@ -297,8 +305,8 @@ async function writeCompressedVariant(filePath, encoding) {
   await fs.writeFile(compressedPath, compressed);
 }
 
-async function compressDistFiles() {
-  const files = await walkFiles(dist);
+async function compressDistFiles(outputDirectory = stagingDist) {
+  const files = await walkFiles(outputDirectory);
 
   for (const filePath of files) {
     const extension = path.extname(filePath).toLowerCase();
@@ -311,15 +319,48 @@ async function compressDistFiles() {
   }
 }
 
-await resetDist();
+async function deployStagingDist() {
+  await fs.mkdir(dist, { recursive: true });
+  const stagingFiles = await walkFiles(stagingDist);
+  const orderedFiles = stagingFiles.sort((left, right) => {
+    const leftPriority = left.endsWith(`${path.sep}index.html`) ? 1 : 0;
+    const rightPriority = right.endsWith(`${path.sep}index.html`) ? 1 : 0;
+    return leftPriority - rightPriority;
+  });
+
+  for (const sourcePath of orderedFiles) {
+    const relativePath = path.relative(stagingDist, sourcePath);
+    const targetPath = path.join(dist, relativePath);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    try {
+      await fs.copyFile(sourcePath, targetPath);
+    } catch (error) {
+      if (!['EBUSY', 'EPERM', 'EACCES'].includes(error?.code)) {
+        throw error;
+      }
+
+      const [sourceStats, targetStats] = await Promise.all([
+        fs.stat(sourcePath),
+        fs.stat(targetPath).catch(() => null)
+      ]);
+      if (targetStats && sourceStats.size === targetStats.size) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+await resetStagingDist();
 
 const bundleOutputs = await bundleClient();
 await copyStaticShell(bundleOutputs);
 await copyRuntimeAssets();
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();
+await deployStagingDist();
 
-const distFiles = await walkFiles(dist);
+const distFiles = await walkFiles(stagingDist);
 const totalBytes = distFiles
   .filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'))
   .reduce(async (sumPromise, filePath) => {

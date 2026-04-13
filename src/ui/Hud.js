@@ -201,6 +201,7 @@ export class Hud {
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
+    this.builderNpcSpeed = this.overlay.querySelector('[data-builder-npc-speed]');
     this.builderNpcRespawnDelay = this.overlay.querySelector('[data-builder-npc-respawn-delay]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
@@ -628,6 +629,15 @@ export class Hud {
                   <span class="hud__field-label">Interact Radius</span>
                   <input class="hud__field-control" type="number" min="1.5" max="12" step="0.1" data-builder-npc-radius />
                 </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Speed</span>
+                  <select class="hud__field-control" data-builder-npc-speed>
+                    <option value="slow">Slow</option>
+                    <option value="fast">Fast</option>
+                  </select>
+                </label>
+              </div>
+              <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Respawn Timer (ms)</span>
                   <input class="hud__field-control" type="number" min="0" max="600000" step="100" data-builder-npc-respawn-delay />
@@ -1129,6 +1139,7 @@ export class Hud {
     onNpcNameChange,
     onNpcPromptChange,
     onNpcRadiusChange,
+    onNpcSpeedChange,
     onNpcRespawnDelayChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
@@ -1223,6 +1234,10 @@ export class Hud {
 
     this.builderNpcRadius.addEventListener('input', () => {
       onNpcRadiusChange(Number(this.builderNpcRadius.value));
+    });
+
+    this.builderNpcSpeed?.addEventListener('change', () => {
+      onNpcSpeedChange?.(this.builderNpcSpeed.value);
     });
 
     this.builderNpcRespawnDelay?.addEventListener('input', () => {
@@ -1532,6 +1547,9 @@ export class Hud {
     }
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
+    if (document.activeElement !== this.builderNpcSpeed && this.builderNpcSpeed) {
+      this.builderNpcSpeed.value = editorState.speed ?? 'slow';
+    }
     setFieldValue(this.builderNpcRespawnDelay, String(editorState.respawnDelayMs ?? 0));
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 

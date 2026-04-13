@@ -17,6 +17,11 @@ export const NPC_COMBAT_ARCHETYPES = Object.freeze({
   hostile: 'hostile'
 });
 
+export const NPC_SPEED_TIERS = Object.freeze({
+  slow: 'slow',
+  fast: 'fast'
+});
+
 export const NPC_RUNTIME_MODES = Object.freeze({
   routine: 'routine',
   combat: 'combat',
@@ -41,6 +46,9 @@ export const NPC_DEFAULT_IDLE_MAX_MS = 2200;
 export const NPC_DEFAULT_WANDER_IDLE_MIN_MS = 1200;
 export const NPC_DEFAULT_WANDER_IDLE_MAX_MS = 2800;
 export const NPC_DEFAULT_RESPAWN_DELAY_MS = 15000;
+export const NPC_DEFAULT_SPEED_TIER = NPC_SPEED_TIERS.slow;
+export const NPC_SLOW_RUN_SPEED = 6.4;
+export const NPC_FAST_RUN_SPEED = 9.2;
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);
@@ -69,6 +77,18 @@ function normalizeWeaponId(value, fallback = '') {
   return normalized === WEAPON_IDS.pistol
     ? normalized
     : fallback;
+}
+
+export function normalizeNpcSpeedTier(value, fallback = NPC_DEFAULT_SPEED_TIER) {
+  return Object.values(NPC_SPEED_TIERS).includes(value)
+    ? value
+    : fallback;
+}
+
+export function getNpcRunSpeed(speedTier = NPC_DEFAULT_SPEED_TIER) {
+  return normalizeNpcSpeedTier(speedTier) === NPC_SPEED_TIERS.fast
+    ? NPC_FAST_RUN_SPEED
+    : NPC_SLOW_RUN_SPEED;
 }
 
 export function cloneNpcRoutineStep(step = null) {
@@ -267,6 +287,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     routine: createDefaultNpcRoutine(),
     combat: createDefaultNpcCombat(),
     respawnDelayMs: NPC_DEFAULT_RESPAWN_DELAY_MS,
+    speed: NPC_DEFAULT_SPEED_TIER,
     ...overrides
   };
 }
@@ -298,6 +319,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     routine: normalizeNpcRoutine(npc.routine),
     combat: normalizeNpcCombat(npc.combat),
     respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),
+    speed: normalizeNpcSpeedTier(npc.speed),
     spawnPosition,
     spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4
   };
@@ -312,4 +334,8 @@ export function listNpcCombatArchetypes() {
     NPC_COMBAT_ARCHETYPES.passive,
     NPC_COMBAT_ARCHETYPES.hostile
   ];
+}
+
+export function listNpcSpeedTiers() {
+  return Object.values(NPC_SPEED_TIERS);
 }

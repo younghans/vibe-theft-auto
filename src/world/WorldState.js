@@ -77,18 +77,19 @@ function toPlacementRecord(entry, item, id) {
         ],
     interactable: cloneInteractable(entry.interactable),
     npc: item.layer === 'npc'
-      ? normalizeNpcBehavior({
+        ? normalizeNpcBehavior({
           modelId: entry.modelId,
           name: entry.name,
           prompt: entry.prompt,
           interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2,
+          speed: entry.speed,
           active: entry.active !== false,
-        routine: entry.routine,
-        combat: entry.combat,
-        respawnDelayMs: entry.respawnDelayMs,
-        spawnPosition: entry.spawnPosition,
-        spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
-      }, {
+          routine: entry.routine,
+          combat: entry.combat,
+          respawnDelayMs: entry.respawnDelayMs,
+          spawnPosition: entry.spawnPosition,
+          spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
+        }, {
           position: item.layer === 'npc'
             ? [
                 normalizePositionValue(entry.position[0]),
@@ -139,6 +140,7 @@ function toSerializedPlacement(placement) {
         name: placement.npc.name,
         prompt: placement.npc.prompt,
         interactRadius: placement.npc.interactRadius,
+        speed: placement.npc.speed,
         active: placement.npc.active !== false,
         routine: placement.npc.routine,
         combat: placement.npc.combat,
@@ -338,6 +340,7 @@ export class WorldState {
           name: npc.name,
           prompt: npc.prompt,
           interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2,
+          speed: npc.speed,
           active: npc.active !== false,
           routine: npc.routine,
           combat: npc.combat,
@@ -534,6 +537,7 @@ export class WorldState {
         name: placement.npc.name,
         prompt: placement.npc.prompt,
         interactRadius: placement.npc.interactRadius,
+        speed: placement.npc.speed,
         active: placement.npc.active !== false,
         routine: placement.npc.routine,
         combat: placement.npc.combat,

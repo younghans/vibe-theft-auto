@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
 import { createRagdollController } from '../player/ragdollController.js';
-import { NPC_RUNTIME_MODES } from './npcBehavior.js';
+import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { prepareNpcRenderObject } from './npcRenderUtils.js';
 
@@ -15,6 +15,8 @@ const NPC_FOCUS_MIN_DISTANCE = 0.18;
 
 let sharedIdleClip = null;
 let sharedWalkClip = null;
+let sharedSlowRunClip = null;
+let sharedFastRunClip = null;
 let sharedFightIdleClip = null;
 let sharedPunchClip = null;
 let sharedSnatchClip = null;
@@ -33,6 +35,22 @@ function getSharedWalkClip() {
   }
 
   return sharedWalkClip;
+}
+
+function getSharedSlowRunClip() {
+  if (!sharedSlowRunClip) {
+    sharedSlowRunClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.slowRun), MIXAMO_BONES.hips);
+  }
+
+  return sharedSlowRunClip;
+}
+
+function getSharedFastRunClip() {
+  if (!sharedFastRunClip) {
+    sharedFastRunClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.fastRun), MIXAMO_BONES.hips);
+  }
+
+  return sharedFastRunClip;
 }
 
 function getSharedFightIdleClip() {
@@ -230,6 +248,8 @@ export class NpcActor {
       this.animationActions = new Map([
         ['idle', this.mixer.clipAction(getSharedIdleClip())],
         ['walk', this.mixer.clipAction(getSharedWalkClip())],
+        ['slowRun', this.mixer.clipAction(getSharedSlowRunClip())],
+        ['fastRun', this.mixer.clipAction(getSharedFastRunClip())],
         ['fightIdle', this.mixer.clipAction(getSharedFightIdleClip())],
         ['punch', this.mixer.clipAction(getSharedPunchClip())],
         ['snatch', this.mixer.clipAction(getSharedSnatchClip())]
@@ -400,6 +420,13 @@ export class NpcActor {
       nextAnimation = 'snatch';
     } else if (this.runtimeState.activity === 'punch') {
       nextAnimation = 'punch';
+    } else if (
+      moving
+      && (this.runtimeState.mode === NPC_RUNTIME_MODES.combat || this.runtimeState.mode === NPC_RUNTIME_MODES.flee)
+    ) {
+      nextAnimation = normalizeNpcSpeedTier(this.definition?.speed) === NPC_SPEED_TIERS.fast
+        ? 'fastRun'
+        : 'slowRun';
     } else if (moving) {
       nextAnimation = 'walk';
     } else if (this.runtimeState.mode === NPC_RUNTIME_MODES.combat) {

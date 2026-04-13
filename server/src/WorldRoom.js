@@ -42,6 +42,7 @@ import {
   NPC_STEP_TYPES,
   NPC_DEFAULT_WANDER_IDLE_MAX_MS,
   NPC_DEFAULT_WANDER_IDLE_MIN_MS,
+  getNpcRunSpeed,
   normalizeNpcBehavior
 } from '../../src/npc/npcBehavior.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
@@ -1585,6 +1586,7 @@ export class WorldRoom extends Room {
         name,
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
         interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
+        speed: message.speed,
         active: message.active !== false,
         respawnDelayMs: message.respawnDelayMs,
         routine: message.routine,
@@ -1618,6 +1620,12 @@ export class WorldRoom extends Room {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).respawnDelayMs;
+    }
+    if (Object.hasOwn(message, 'speed')) {
+      updates.speed = normalizeNpcBehavior({ speed: message.speed }, {
+        position: [0, 0],
+        rotationQuarterTurns: 0
+      }).speed;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -2570,6 +2578,7 @@ export class WorldRoom extends Room {
     const distanceFromHome = distance2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
     if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive) {
+      const runSpeed = getNpcRunSpeed(definition?.speed);
       const fleeTarget = findFarthestRouteNodeFrom(this.npcRouteGraph, threatPosition, homeAnchor) ?? homeAnchor;
       this.ensureNpcPathToPosition(
         npcId,
@@ -2578,7 +2587,7 @@ export class WorldRoom extends Room {
         `flee:${npc.lastAttackerId}:${fleeTarget.x},${fleeTarget.z}`,
         now
       );
-      this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: NPC_DEFAULT_MOVE_SPEED * 1.15 });
+      this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: runSpeed });
       npc.activity = '';
       if (distanceToThreat >= combat.aggroRadius && now >= meta.calmEndsAt) {
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
@@ -2598,6 +2607,7 @@ export class WorldRoom extends Room {
 
     meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
     npc.activity = '';
+    const runSpeed = getNpcRunSpeed(definition?.speed);
     if (combat.weaponId === WEAPON_IDS.pistol) {
       if (distanceToThreat <= WEAPON_RANGE * 0.72 && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
         this.performNpcShot(npcId, npc, threatPosition, now);
@@ -2610,7 +2620,10 @@ export class WorldRoom extends Room {
           `combat:${npc.lastAttackerId}`,
           now
         );
-        this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: WEAPON_RANGE * 0.35 });
+        this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
+          stopDistance: WEAPON_RANGE * 0.35,
+          speed: runSpeed
+        });
       }
       return;
     }
@@ -2629,7 +2642,10 @@ export class WorldRoom extends Room {
       `combat:${npc.lastAttackerId}`,
       now
     );
-    this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, { stopDistance: PUNCH_RANGE * 0.72 });
+    this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
+      stopDistance: PUNCH_RANGE * 0.72,
+      speed: runSpeed
+    });
   }
 
   updateNpcSimulation(now, deltaMs) {

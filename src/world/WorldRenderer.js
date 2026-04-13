@@ -652,6 +652,8 @@ export class WorldRenderer {
     await preloadMixamoClips([
       assets.playerAnimationSet.idle,
       assets.playerAnimationSet.walking,
+      assets.playerAnimationSet.slowRun,
+      assets.playerAnimationSet.fastRun,
       assets.playerAnimationSet.fightingIdle,
       assets.playerAnimationSet.punching,
       assets.playerAnimationSet.snatch
@@ -664,7 +666,8 @@ export class WorldRenderer {
         position: placement.position,
         y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
         rotationQuarterTurns: placement.rotationQuarterTurns,
-        interactRadius: placement.npc?.interactRadius ?? item.interactionRadius ?? model.interactionRadius
+        interactRadius: placement.npc?.interactRadius ?? item.interactionRadius ?? model.interactionRadius,
+        speed: placement.npc?.speed
       }
     });
     actor.object.userData.editorPlacementId = placement.id;
@@ -702,7 +705,8 @@ export class WorldRenderer {
         position: placement.position,
         y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
         rotationQuarterTurns: placement.rotationQuarterTurns,
-        interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius
+        interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius,
+        speed: placement.npc?.speed
       });
       const runtimeState = this.npcRuntimeState.get(placement.id);
       if (runtimeState) {
