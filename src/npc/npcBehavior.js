@@ -47,8 +47,8 @@ export const NPC_DEFAULT_WANDER_IDLE_MIN_MS = 1200;
 export const NPC_DEFAULT_WANDER_IDLE_MAX_MS = 2800;
 export const NPC_DEFAULT_RESPAWN_DELAY_MS = 15000;
 export const NPC_DEFAULT_SPEED_TIER = NPC_SPEED_TIERS.slow;
-export const NPC_SLOW_RUN_SPEED = 6.4;
-export const NPC_FAST_RUN_SPEED = 9.2;
+export const NPC_SLOW_RUN_SPEED = 8.8;
+export const NPC_FAST_RUN_SPEED = 15;
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);
