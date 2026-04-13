@@ -2598,6 +2598,7 @@ body.is-builder-resizing * {
 
 .loading__word-base {
   position: relative;
+  fill: #f8f8f6;
   color: #f8f8f6;
   -webkit-text-stroke: clamp(3px, 0.5vw, 8px) #180d08;
   paint-order: stroke fill;
@@ -2610,41 +2611,25 @@ body.is-builder-resizing * {
   z-index: 1;
 }
 
-.loading__word-liquid {
+.loading__word-fill {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  clip-path: inset(calc((1 - var(--loading-progress)) * 100%) 0 0 0);
+  z-index: 2;
+}
+
+.loading__word-liquid {
+  position: relative;
   color: transparent;
   -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 0 transparent;
-  background:
-    radial-gradient(circle at 50% 6%, rgba(255, 255, 255, 0.56), transparent 26%),
-    linear-gradient(120deg, #ff4b9e 0%, #ff7b3d 16%, #ffd94d 32%, #39ecb0 50%, #36c7ff 66%, #7d82ff 83%, #ff52dd 100%);
-  background-size: 100% 160%, 180% 100%;
-  background-position: 50% 100%, 0% 0%;
+  background: linear-gradient(90deg, #ff4b9e 0%, #ff7b3d 20%, #ffd94d 42%, #66ef8d 66%, #38d3ff 84%, #ff52dd 100%);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  clip-path: inset(calc((1 - var(--loading-progress)) * 100%) 0 0 0);
-  filter:
-    saturate(1.24)
-    brightness(1.08)
-    drop-shadow(0 0 10px rgba(255, 116, 177, 0.22))
-    drop-shadow(0 0 16px rgba(55, 210, 255, 0.18));
-  z-index: 2;
-  animation: loading-liquid-flow 2200ms linear infinite;
-}
-
-@keyframes loading-liquid-flow {
-  0% {
-    background-position: 50% 120%, 0% 0%;
-  }
-
-  50% {
-    background-position: 50% 40%, 100% 0%;
-  }
-
-  100% {
-    background-position: 50% 120%, 200% 0%;
-  }
+  text-shadow: none;
 }
 
 canvas {

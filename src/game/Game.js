@@ -343,8 +343,18 @@ export class Game {
     }
   }
 
+  mapBootLoadingProgress(progress) {
+    const clampedProgress = THREE.MathUtils.clamp(Number(progress) || 0, 0, 1);
+    if (clampedProgress >= 1) {
+      return 1;
+    }
+
+    const normalized = THREE.MathUtils.clamp(clampedProgress / 0.72, 0, 1);
+    return 1 - Math.pow(1 - normalized, 1.9);
+  }
+
   setBootLoadingProgress(progress, { render = false } = {}) {
-    const nextProgress = THREE.MathUtils.clamp(Number(progress) || 0, 0, 1);
+    const nextProgress = this.mapBootLoadingProgress(progress);
     const clampedProgress = Math.max(this.loadingProgress, nextProgress);
     if (clampedProgress === this.loadingProgress) {
       if (render) {

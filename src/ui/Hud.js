@@ -138,6 +138,13 @@ export class Hud {
     this.builderPreviewLoadPromises = new Map();
     this.builderPreviewFailedIds = new Set();
     this.loading = this.createLoading();
+    this.loadingTargetProgress = 0;
+    this.loadingRequestedProgress = 0;
+    this.loadingDisplayedProgress = 0;
+    this.loadingProgressFrame = 0;
+    this.loadingProgressDelayTimeout = 0;
+    this.loadingProgressLastFrameAt = 0;
+    this.loadingProgressUnlockAt = performance.now() + 900;
     this.setLoadingProgress(0);
     this.overlay = this.createOverlay();
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
@@ -283,7 +290,9 @@ export class Hud {
             style="--join-order:0; --join-direction:-1; --join-tilt:-7deg;"
           >
             <span class="loading__word-base">Vibe</span>
-            <span class="loading__word-liquid" aria-hidden="true">Vibe</span>
+            <span class="loading__word-fill" aria-hidden="true">
+              <span class="loading__word-liquid">Vibe</span>
+            </span>
           </span>
           <span
             class="loading__word"
@@ -291,7 +300,9 @@ export class Hud {
             style="--join-order:1; --join-direction:1; --join-tilt:5deg;"
           >
             <span class="loading__word-base">Theft</span>
-            <span class="loading__word-liquid" aria-hidden="true">Theft</span>
+            <span class="loading__word-fill" aria-hidden="true">
+              <span class="loading__word-liquid">Theft</span>
+            </span>
           </span>
           <span
             class="loading__word"
@@ -299,7 +310,9 @@ export class Hud {
             style="--join-order:2; --join-direction:-1; --join-tilt:-4deg;"
           >
             <span class="loading__word-base">Auto</span>
-            <span class="loading__word-liquid" aria-hidden="true">Auto</span>
+            <span class="loading__word-fill" aria-hidden="true">
+              <span class="loading__word-liquid">Auto</span>
+            </span>
           </span>
         </h1>
       </div>
@@ -830,11 +843,22 @@ export class Hud {
 
   hideLoading() {
     window.clearTimeout(this.loadingHideTimeout);
-    this.setLoadingProgress(1);
-    this.loading.classList.add('is-hidden');
+    window.clearTimeout(this.loadingProgressDelayTimeout);
+    if (this.loadingProgressFrame) {
+      window.cancelAnimationFrame(this.loadingProgressFrame);
+      this.loadingProgressFrame = 0;
+    }
+    this.loadingTargetProgress = 1;
+    this.loadingRequestedProgress = 1;
+    this.loadingDisplayedProgress = 1;
+    this.loadingProgressLastFrameAt = 0;
+    this.loading.style.setProperty('--loading-progress', '1');
     this.loadingHideTimeout = window.setTimeout(() => {
-      this.loading.hidden = true;
-    }, 360);
+      this.loading.classList.add('is-hidden');
+      this.loadingHideTimeout = window.setTimeout(() => {
+        this.loading.hidden = true;
+      }, 360);
+    }, 420);
   }
 
   setLoadingProgress(progress = 0) {
@@ -842,9 +866,67 @@ export class Hud {
       return;
     }
 
-    const clampedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
     this.loading.hidden = false;
-    this.loading.style.setProperty('--loading-progress', clampedProgress.toFixed(4));
+    const requestedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+    this.loadingRequestedProgress = requestedProgress;
+    const now = performance.now();
+    if (
+      requestedProgress > 0
+      && this.loadingDisplayedProgress <= 0
+      && now < this.loadingProgressUnlockAt
+    ) {
+      window.clearTimeout(this.loadingProgressDelayTimeout);
+      this.loadingProgressDelayTimeout = window.setTimeout(() => {
+        this.loadingProgressDelayTimeout = 0;
+        this.loadingProgressLastFrameAt = performance.now();
+        this.setLoadingProgress(requestedProgress);
+      }, Math.max(0, this.loadingProgressUnlockAt - now));
+      return;
+    }
+
+    const elapsedSinceUnlock = Math.max(0, now - this.loadingProgressUnlockAt);
+    const timedMinimumProgress = elapsedSinceUnlock <= 0
+      ? 0
+      : Math.min(1, 1 - Math.pow(1 - Math.min(1, elapsedSinceUnlock / 950), 1.75));
+    this.loadingTargetProgress = Math.max(this.loadingRequestedProgress, timedMinimumProgress);
+
+    if (!this.loadingProgressFrame) {
+      this.loadingProgressLastFrameAt = now;
+      const animateProgress = (now) => {
+        const elapsedSeconds = Math.min(
+          0.05,
+          Math.max(0.001, (now - this.loadingProgressLastFrameAt) / 1000)
+        );
+        this.loadingProgressLastFrameAt = now;
+        const elapsedSinceUnlock = Math.max(0, now - this.loadingProgressUnlockAt);
+        const timedMinimumProgress = elapsedSinceUnlock <= 0
+          ? 0
+          : Math.min(1, 1 - Math.pow(1 - Math.min(1, elapsedSinceUnlock / 950), 1.75));
+        this.loadingTargetProgress = Math.max(this.loadingRequestedProgress, timedMinimumProgress);
+        const gap = this.loadingTargetProgress - this.loadingDisplayedProgress;
+        if (Math.abs(gap) <= 0.0025) {
+          this.loadingDisplayedProgress = this.loadingTargetProgress;
+          this.loading.style.setProperty('--loading-progress', this.loadingDisplayedProgress.toFixed(4));
+          if (
+            this.loadingTargetProgress < 0.999
+            && !this.loading.classList.contains('is-hidden')
+          ) {
+            this.loadingProgressFrame = window.requestAnimationFrame(animateProgress);
+          } else {
+            this.loadingProgressFrame = 0;
+            this.loadingProgressLastFrameAt = 0;
+          }
+          return;
+        }
+
+        const smoothing = 1 - Math.exp(-elapsedSeconds / 0.52);
+        this.loadingDisplayedProgress += gap * smoothing;
+        this.loading.style.setProperty('--loading-progress', this.loadingDisplayedProgress.toFixed(4));
+        this.loadingProgressFrame = window.requestAnimationFrame(animateProgress);
+      };
+
+      this.loadingProgressFrame = window.requestAnimationFrame(animateProgress);
+    }
   }
 
   clampBuilderPanelWidth(width) {
