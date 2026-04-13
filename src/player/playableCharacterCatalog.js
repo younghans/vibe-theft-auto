@@ -1,13 +1,19 @@
-import { assets } from '../world/assetManifest.js';
+import { assetUrl, assets } from '../world/assetManifest.js';
 import { MIXAMO_CHARACTER_DEFINITIONS } from '../shared/mixamoCharacterCatalog.js';
 
 export const DEFAULT_PLAYABLE_CHARACTER_ID = 'ch08NonPbr';
+
+function portraitAssetUrl(fileName = '') {
+  return fileName ? assetUrl('mixamo', 'portraits', fileName) : '';
+}
 
 function createPlayableCharacter(definition) {
   return Object.freeze({
     id: definition.id,
     label: definition.label,
     subtitle: definition.subtitle,
+    portraitFileName: definition.portraitFileName,
+    portraitStaticSrc: portraitAssetUrl(definition.portraitFileName),
     characterRig: assets.mixamo.characters[definition.id],
     characterVariant: 'mixamo',
     idleClip: assets.playerAnimationSet.idle,
@@ -24,6 +30,8 @@ export const PLAYABLE_CHARACTER_CATALOG = Object.freeze([
     id: 'classicBot',
     label: 'OSRS Bot',
     subtitle: 'Procedural Throwback',
+    portraitFileName: 'classic_bot.png',
+    portraitStaticSrc: portraitAssetUrl('classic_bot.png'),
     characterRig: assets.mixamo.characters.xBot,
     characterVariant: 'classicBot',
     idleClip: assets.playerAnimationSet.idle,

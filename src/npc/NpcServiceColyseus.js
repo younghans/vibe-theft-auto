@@ -79,6 +79,40 @@ function clonePlayerState(player) {
   };
 }
 
+function cloneNpcDebugState(debug = {}) {
+  return {
+    id: debug.id || '',
+    mode: debug.mode || '',
+    activity: debug.activity || '',
+    currentStepIndex: debug.currentStepIndex ?? 0,
+    currentStepType: debug.currentStepType || '',
+    stepCount: debug.stepCount ?? 0,
+    targetPlacementId: debug.targetPlacementId || '',
+    targetApproach: debug.targetApproach ? { ...debug.targetApproach } : null,
+    nextPathPoint: debug.nextPathPoint ? { ...debug.nextPathPoint } : null,
+    steeringTarget: debug.steeringTarget ? { ...debug.steeringTarget } : null,
+    finalTarget: debug.finalTarget ? { ...debug.finalTarget } : null,
+    path: Array.isArray(debug.path) ? debug.path.map((point) => ({ ...point })) : [],
+    pathIndex: debug.pathIndex ?? 0,
+    pathNodeCount: debug.pathNodeCount ?? 0,
+    pathKey: debug.pathKey || '',
+    lastRepathAt: debug.lastRepathAt ?? 0,
+    idleUntil: debug.idleUntil ?? 0,
+    calmEndsAt: debug.calmEndsAt ?? 0,
+    hiddenUntil: debug.hiddenUntil ?? 0,
+    wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
+    stepStartedAt: debug.stepStartedAt ?? 0,
+    busy: Boolean(debug.busy),
+    alive: debug.alive !== false,
+    weaponId: debug.weaponId || '',
+    lastAttackerId: debug.lastAttackerId || '',
+    debugAgeMs: debug.debugAgeMs ?? 0,
+    idleRemainingMs: debug.idleRemainingMs ?? 0,
+    calmRemainingMs: debug.calmRemainingMs ?? 0,
+    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0
+  };
+}
+
 function cloneBuilderState(builder) {
   return {
     active: Boolean(builder.active),
@@ -144,6 +178,7 @@ export class NpcServiceColyseus {
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),
+      npcDebug: new Map(),
       pickups: new Map()
     };
     this.lastTransformSentAt = 0;
@@ -221,11 +256,21 @@ export class NpcServiceColyseus {
       }
     });
 
+    this.room.onMessage('npc:debugSnapshot', (message = {}) => {
+      const nextNpcDebug = new Map();
+      for (const [id, debug] of Object.entries(message?.npcs ?? {})) {
+        nextNpcDebug.set(id, cloneNpcDebugState(debug));
+      }
+      this.state.npcDebug = nextNpcDebug;
+      this.emit();
+    });
+
     this.room.onLeave(() => {
       this.state.connected = false;
       this.state.players = new Map();
       this.state.builders = new Map();
       this.state.npcs = new Map();
+      this.state.npcDebug = new Map();
       this.state.pickups = new Map();
       this.emit();
     });
@@ -262,6 +307,7 @@ export class NpcServiceColyseus {
       players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
       builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
       npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
+      npcDebug: new Map([...this.state.npcDebug.entries()].map(([id, debug]) => [id, cloneNpcDebugState(debug)])),
       pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, { ...pickup }]))
     };
   }

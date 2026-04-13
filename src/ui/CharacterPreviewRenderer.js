@@ -42,9 +42,62 @@ const PORTRAIT_PREVIEW_PROFILE = Object.freeze({
   cameraLiftRatio: 0.02,
   cameraXRatio: 0
 });
+export const MUGSHOT_EXPORT_SIZE = Object.freeze({ width: 512, height: 512 });
+export const MUGSHOT_EXPORT_PROFILE = Object.freeze({
+  fitHeightFraction: 0.58,
+  fitWidthFraction: 0.56,
+  topPaddingRatio: 0.05,
+  bottomPaddingRatio: 0.29,
+  distanceMultiplier: 1.02,
+  cameraLiftRatio: 0.12,
+  cameraXRatio: 0
+});
+export const DEFAULT_MUGSHOT_CAMERA_PRESET = Object.freeze({
+  yawDegrees: 0,
+  zoom: 1,
+  focusXRatio: 0,
+  focusYRatio: 0
+});
 
 function clampVibeIntensity(value) {
   return THREE.MathUtils.clamp(Number.isFinite(value) ? value : 1, 0, 1);
+}
+
+function normalizePortraitCameraPreset(preset = {}) {
+  return {
+    yawDegrees: Number.isFinite(preset?.yawDegrees) ? preset.yawDegrees : DEFAULT_MUGSHOT_CAMERA_PRESET.yawDegrees,
+    zoom: THREE.MathUtils.clamp(
+      Number.isFinite(preset?.zoom) ? preset.zoom : DEFAULT_MUGSHOT_CAMERA_PRESET.zoom,
+      0.7,
+      3
+    ),
+    focusXRatio: THREE.MathUtils.clamp(
+      Number.isFinite(preset?.focusXRatio) ? preset.focusXRatio : DEFAULT_MUGSHOT_CAMERA_PRESET.focusXRatio,
+      -0.45,
+      0.45
+    ),
+    focusYRatio: THREE.MathUtils.clamp(
+      Number.isFinite(preset?.focusYRatio) ? preset.focusYRatio : DEFAULT_MUGSHOT_CAMERA_PRESET.focusYRatio,
+      -0.45,
+      1
+    )
+  };
+}
+
+function applyPortraitCameraPreset(profile, preset = DEFAULT_MUGSHOT_CAMERA_PRESET) {
+  const normalizedPreset = normalizePortraitCameraPreset(preset);
+  const baseFitHeightFraction = profile?.fitHeightFraction ?? PORTRAIT_PREVIEW_PROFILE.fitHeightFraction;
+  const baseFitWidthFraction = profile?.fitWidthFraction ?? PORTRAIT_PREVIEW_PROFILE.fitWidthFraction;
+  const baseDistanceMultiplier = profile?.distanceMultiplier ?? PORTRAIT_PREVIEW_PROFILE.distanceMultiplier;
+
+  return {
+    ...(profile ?? {}),
+    fitHeightFraction: THREE.MathUtils.clamp(baseFitHeightFraction, 0.1, 0.98),
+    fitWidthFraction: THREE.MathUtils.clamp(baseFitWidthFraction, 0.1, 0.98),
+    distanceMultiplier: Math.max(0.16, baseDistanceMultiplier / normalizedPreset.zoom),
+    focusXRatio: (profile?.focusXRatio ?? 0) + normalizedPreset.focusXRatio,
+    focusYRatio: (profile?.focusYRatio ?? 0) + normalizedPreset.focusYRatio
+  };
 }
 
 function createPreviewVibeShaderDefinition() {
@@ -99,14 +152,15 @@ function frameCamera(camera, object, profile = LIVE_PREVIEW_PROFILE) {
   const visibleHeight = Math.max(visibleHeightFromHeight, visibleHeightFromWidth, 1.2);
   const distance = (visibleHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)))) * (profile.distanceMultiplier ?? 1);
   const bottomPaddingRatio = THREE.MathUtils.clamp(profile.bottomPaddingRatio ?? 0.05, 0, 0.45);
-  const focusY = bounds.min.y + (visibleHeight * (0.5 - bottomPaddingRatio));
+  const focusX = focus.x + (size.x * (profile.focusXRatio ?? 0));
+  const focusY = bounds.min.y + (visibleHeight * (0.5 - bottomPaddingRatio + (profile.focusYRatio ?? 0)));
   const cameraLift = visibleHeight * (profile.cameraLiftRatio ?? 0);
   camera.position.set(
-    focus.x + (size.x * profile.cameraXRatio),
+    focusX + (size.x * profile.cameraXRatio),
     focusY + cameraLift,
     focus.z + distance
   );
-  camera.lookAt(focus.x, focusY, focus.z);
+  camera.lookAt(focusX, focusY, focus.z);
   camera.updateProjectionMatrix();
 }
 
@@ -308,16 +362,21 @@ async function instantiatePreviewCharacter(library, characterId, clipName) {
 }
 
 export class CharacterPreviewRenderer {
-  constructor({ library }) {
+  constructor({
+    library,
+    portraitSnapshotSize = PORTRAIT_SIZE,
+    portraitSnapshotProfile = PORTRAIT_PREVIEW_PROFILE
+  }) {
     this.library = library;
     this.active = false;
     this.liveMount = null;
+    this.portraitSnapshotProfile = portraitSnapshotProfile;
     this.vibeShaderState = {
       presetId: DEFAULT_VIBE_SHADER_PRESET_ID,
       intensity: 1
     };
     this.livePreview = createPreviewRig({ ...LIVE_PREVIEW_SIZE, mode: 'live' });
-    this.portraitSnapshotRig = createPreviewRig({ ...PORTRAIT_SIZE, mode: 'portrait' });
+    this.portraitSnapshotRig = createPreviewRig({ ...portraitSnapshotSize, mode: 'portrait' });
     this.liveCharacter = null;
     this.liveCharacterPromise = null;
     this.liveCharacterRequestId = 0;
@@ -413,7 +472,11 @@ export class CharacterPreviewRenderer {
     const entry = {
       characterId: target.id,
       node: imageNode,
-      renderedVersion: -1
+      renderedVersion: -1,
+      staticSrc: target.portraitStaticSrc ?? '',
+      staticLoaded: false,
+      staticLoadFailed: false,
+      staticLoadPromise: null
     };
 
     this.portraitEntries.set(target.id, entry);
@@ -482,6 +545,11 @@ export class CharacterPreviewRenderer {
 
   async ensurePortraitPreview(characterId) {
     const entry = this.getOrCreatePortraitEntry(characterId);
+    const staticLoaded = await this.ensureStaticPortrait(entry);
+    if (staticLoaded) {
+      return entry;
+    }
+
     if (entry.node.src) {
       return entry;
     }
@@ -490,10 +558,48 @@ export class CharacterPreviewRenderer {
     return this.getOrCreatePortraitEntry(characterId);
   }
 
-  async renderPortraitSnapshot(characterId, expectedVersion = this.portraitVersion) {
+  async ensureStaticPortrait(entry) {
+    if (!entry?.staticSrc || entry.staticLoadFailed) {
+      return false;
+    }
+
+    if (entry.staticLoaded) {
+      return true;
+    }
+
+    if (entry.staticLoadPromise) {
+      return entry.staticLoadPromise;
+    }
+
+    entry.staticLoadPromise = new Promise((resolve) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        entry.staticLoaded = true;
+        entry.staticLoadPromise = null;
+        entry.node.src = entry.staticSrc;
+        resolve(true);
+      };
+      image.onerror = () => {
+        entry.staticLoadFailed = true;
+        entry.staticLoadPromise = null;
+        resolve(false);
+      };
+      image.src = entry.staticSrc;
+    });
+
+    return entry.staticLoadPromise;
+  }
+
+  async renderPortraitSnapshot(characterId, expectedVersion = this.portraitVersion, options = {}) {
     const target = getPlayableCharacterById(characterId);
     const entry = this.getOrCreatePortraitEntry(target.id);
     const rig = this.portraitSnapshotRig;
+    const portraitPreset = normalizePortraitCameraPreset(options?.portraitPreset ?? DEFAULT_MUGSHOT_CAMERA_PRESET);
+    const snapshotProfile = applyPortraitCameraPreset(
+      options?.profile ?? this.portraitSnapshotProfile,
+      portraitPreset
+    );
     const previewCharacter = await instantiatePreviewCharacter(
       this.library,
       target.id,
@@ -502,10 +608,10 @@ export class CharacterPreviewRenderer {
 
     try {
       rig.objectRoot.clear();
-      previewCharacter.character.rotation.y = 0;
+      previewCharacter.character.rotation.y = THREE.MathUtils.degToRad(portraitPreset.yawDegrees);
       rig.objectRoot.add(previewCharacter.character);
 
-      frameCamera(rig.camera, previewCharacter.character, PORTRAIT_PREVIEW_PROFILE);
+      frameCamera(rig.camera, previewCharacter.character, snapshotProfile);
 
       previewCharacter.mixer.update(0);
       renderRig(rig, this.vibeShaderState);
@@ -534,17 +640,31 @@ export class CharacterPreviewRenderer {
     return entry;
   }
 
+  async renderPortraitDataUrl(characterId, options = {}) {
+    const entry = await this.renderPortraitSnapshot(characterId, this.portraitVersion, options);
+    return entry.node.src || '';
+  }
+
   async refreshPortraits(characterIds = null) {
     const ids = Array.isArray(characterIds) && characterIds.length > 0
       ? characterIds.map((characterId) => this.getOrCreatePortraitEntry(characterId).characterId)
       : [...this.portraitEntries.keys()];
 
+    const dynamicIds = [];
+
     for (const characterId of ids) {
+      const entry = this.getOrCreatePortraitEntry(characterId);
+      const staticLoaded = await this.ensureStaticPortrait(entry);
+      if (staticLoaded) {
+        continue;
+      }
+
       this.portraitDirtyIds.add(characterId);
       this.pendingPortraitIds.add(characterId);
+      dynamicIds.push(characterId);
     }
 
-    if (!this.active || this.pendingPortraitIds.size === 0) {
+    if (!this.active || dynamicIds.length === 0 || this.pendingPortraitIds.size === 0) {
       return;
     }
 
@@ -599,12 +719,12 @@ export class CharacterPreviewRenderer {
       return;
     }
 
-    const entry = this.getOrCreatePortraitEntry(characterId);
+    const entry = await this.ensurePortraitPreview(characterId);
     if (entry.node.src && !container.contains(entry.node)) {
       container.replaceChildren(entry.node);
     }
 
-    if (!this.active) {
+    if (!this.active || entry.staticLoaded) {
       return;
     }
 

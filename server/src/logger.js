@@ -1,4 +1,9 @@
-const SERVER_DEBUG_LOGS_ENABLED = false;
+function readEnabledFlag(value) {
+  return ['1', 'true', 'yes', 'on', 'debug'].includes(String(value ?? '').trim().toLowerCase());
+}
+
+const SERVER_DEBUG_LOGS_ENABLED = readEnabledFlag(process.env.SERVER_DEBUG ?? process.env.DEBUG_SERVER);
+const NPC_DEBUG_LOGS_ENABLED = readEnabledFlag(process.env.NPC_DEBUG);
 
 function formatMeta(meta) {
   if (!meta || typeof meta !== 'object' || !Object.keys(meta).length) {
@@ -27,4 +32,17 @@ export function logServerError(scope, message, error, meta = null) {
     ? { name: error.name, message: error.message, stack: error.stack, ...(meta ?? {}) }
     : { error, ...(meta ?? {}) };
   console.error(`[${timestamp}] [${scope}] ${message}${formatMeta(details)}`);
+}
+
+export function logNpcDebug(message, meta = null) {
+  if (!NPC_DEBUG_LOGS_ENABLED) {
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [npc-debug] ${message}${formatMeta(meta)}`);
+}
+
+export function isNpcDebugEnabled() {
+  return NPC_DEBUG_LOGS_ENABLED;
 }

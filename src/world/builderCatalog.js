@@ -8,6 +8,10 @@ import {
 
 export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
+function npcPortraitPath(fileName = '') {
+  return fileName ? `/assets/mixamo/portraits/${fileName}` : '';
+}
+
 const TILE_GROUPS = Object.freeze({
   streets: 'Streets',
   lots: 'Lots & Buildings',
@@ -511,6 +515,8 @@ export const BUILDER_CATEGORIES = [
       modelId: model.id,
       label: model.label,
       asset: model.asset,
+      previewMode: 'static',
+      previewImageSrc: npcPortraitPath(model.portraitFileName),
       size: model.footprint,
       layer: 'npc',
       collision: false,

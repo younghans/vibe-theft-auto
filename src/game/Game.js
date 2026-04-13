@@ -211,6 +211,7 @@ export class Game {
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),
+      npcDebug: new Map(),
       pickups: new Map()
     };
     this.emoteMenuOpen = false;
@@ -2290,6 +2291,7 @@ export class Game {
       });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);
+    this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? new Map());
   }
 
   captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {

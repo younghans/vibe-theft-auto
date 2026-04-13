@@ -8,7 +8,7 @@ import {
   listNpcCombatArchetypes,
   listNpcStepTypes
 } from '../npc/npcBehavior.js';
-import { collectNpcTargetOptions } from '../npc/npcTargeting.js';
+import { collectNpcTargetOptions, resolveNpcTargetOption } from '../npc/npcTargeting.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
@@ -153,6 +153,8 @@ function groupVisibleEntries(entries) {
       id: entry.item.id,
       label: entry.item.label,
       previewId: entry.item.id,
+      previewMode: entry.item.previewMode ?? 'render',
+      previewImageSrc: entry.item.previewImageSrc ?? '',
       sourceIndex: entry.index,
       selected: false,
       shortcut: entry.visibleIndex < 9 ? entry.visibleIndex + 1 : null
@@ -219,12 +221,14 @@ export class WorldBuilder {
     this.pendingNpcUpdateTimeouts = new Map();
     this.pendingBuildingUpdateByPlacementId = new Map();
     this.pendingBuildingUpdateTimeouts = new Map();
+    this.npcTargetPickState = null;
     this.activeMovePlacementId = null;
     this.awaitingMovedPlacementIds = new Set();
     this.builderInteriorPreviewPlacementIds = new Set();
     this.activeNpcEditorPlacementId = null;
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
+    this.npcDebugState = new Map();
     this.worldRenderer = new WorldRenderer({ scene, camera, library });
     this.worldEditAdapter = createWorldEditAdapter({
       transport: this.worldTransport,
@@ -302,6 +306,7 @@ export class WorldBuilder {
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
       onNpcRoutineStepChange: (stepIndex, field, value) => void this.updateSelectedNpcRoutineStep(stepIndex, field, value),
+      onNpcRoutinePickTarget: (stepIndex, mode) => this.setNpcRoutineTargetPickMode(stepIndex, mode),
       onNpcCombatChange: (field, value) => void this.updateSelectedNpcCombat(field, value),
       onConfirmNpc: () => this.confirmSelectedNpc(),
       onCloseNpcEditor: () => this.closeNpcInstanceEditor(),
@@ -412,8 +417,15 @@ export class WorldBuilder {
   async syncBuilderCatalogPreviews() {
     const categoryId = this.state.activeCategoryId;
     const groupId = this.activeGroupId;
-    const items = this.getVisibleCategoryEntries(categoryId).map(({ item }) => item);
+    const items = this.getVisibleCategoryEntries(categoryId)
+      .map(({ item }) => item)
+      .filter((item) => item.previewMode === 'render');
     const generation = ++this.builderPreviewGeneration;
+
+    if (!items.length) {
+      return;
+    }
+
     const previewRenderer = await this.ensureBuilderPreviewRenderer();
 
     for (const item of items) {
@@ -488,6 +500,13 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  setNpcDebugState(npcDebugMap = new Map()) {
+    this.npcDebugState = new Map(npcDebugMap);
+    this.worldRenderer.applyNpcDebugState(this.npcDebugState);
+    this.syncNpcDebugTools();
+    this.updateBuilderNpcEditor();
+  }
+
   triggerNpcDamageFeedback(npcId, options = {}) {
     this.worldRenderer.triggerNpcDamageFeedback(npcId, options);
   }
@@ -500,6 +519,7 @@ export class WorldBuilder {
     this.previewRoot.visible = nextVisible && this.state.enabled;
     this.gridHelper.visible = nextVisible && this.state.enabled;
     this.selectionRing.visible = nextVisible && this.state.enabled && Boolean(this.state.selection.placementId);
+    this.syncNpcDebugTools();
   }
 
   setPlacementHidden(id, hidden) {
@@ -578,6 +598,52 @@ export class WorldBuilder {
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState, playerPosition);
   }
 
+  syncNpcDebugTools() {
+    const placement = this.getSelectedPlacement();
+    const debugPlacementId = placement?.layer === 'npc' ? placement.id : '';
+    this.worldRenderer.setNpcDebugSelection(debugPlacementId, {
+      visible: this.visible && this.state.enabled && Boolean(debugPlacementId)
+    });
+    this.worldRenderer.setNpcRoutinePreview(
+      this.buildNpcRoutineMarkerState(placement),
+      {
+        visible: this.visible && this.state.enabled && Boolean(debugPlacementId)
+      }
+    );
+  }
+
+  buildNpcRoutineMarkerState(placement) {
+    if (!placement?.npc) {
+      return [];
+    }
+
+    const routine = this.getNpcRoutineDraft(placement);
+    const targetOptions = collectNpcTargetOptions(this.worldState);
+    const targetOptionMap = new Map(targetOptions.map((option) => [option.placementId, option]));
+    const activePickStepIndex = this.npcTargetPickState?.placementId === placement.id
+      ? this.npcTargetPickState.stepIndex
+      : -1;
+
+    return (routine.steps ?? []).map((step, index) => {
+      const target = step.targetPlacementId
+        ? targetOptionMap.get(step.targetPlacementId)
+        : null;
+      if (!target?.approachPosition) {
+        return null;
+      }
+
+      return {
+        stepIndex: index,
+        stepType: step.type,
+        placementId: target.placementId,
+        point: { ...target.approachPosition },
+        originPoint: target.originPosition ? { ...target.originPosition } : null,
+        label: target.label,
+        activePick: index === activePickStepIndex
+      };
+    }).filter(Boolean);
+  }
+
   setRemoteBuilders(builders = new Map(), localSessionId = '') {
     if (!this.visible) {
       this.remoteBuilderRenderer.clear();
@@ -615,6 +681,22 @@ export class WorldBuilder {
     this.resolveHoverState();
 
     const hoveredPlacement = this.getHoveredPlacement();
+
+    if (this.npcTargetPickState) {
+      if (event.button === 2) {
+        event.preventDefault();
+        this.cancelNpcRoutineTargetPickMode();
+        return;
+      }
+
+      if (event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      void this.tryAssignNpcRoutineTargetFromWorld(hoveredPlacement);
+      return;
+    }
 
     if (event.button === 2) {
       event.preventDefault();
@@ -702,6 +784,7 @@ export class WorldBuilder {
     this.previewRoot.visible = nextEnabled;
     this.worldRenderer.setNpcInteractRadiusVisible(nextEnabled);
     this.worldRenderer.syncNpcInteractRadiusIndicators(this.worldState);
+    this.syncNpcDebugTools();
 
     if (!nextEnabled) {
       this.cancelMoveSelection();
@@ -783,10 +866,14 @@ export class WorldBuilder {
     this.worldRenderer.update(deltaSeconds);
 
     if (!this.state.enabled) {
+      this.syncNpcDebugTools();
       return;
     }
 
     if (this.isNpcInstanceEditorOpen()) {
+      if (input.consume('Escape') && this.npcTargetPickState) {
+        this.cancelNpcRoutineTargetPickMode();
+      }
       if (input.consume('Escape')) {
         this.closeNpcInstanceEditor();
       }
@@ -843,6 +930,7 @@ export class WorldBuilder {
     void this.syncPreviewToState();
     this.updatePreviewTransform();
     this.updateSelectionVisual();
+    this.syncNpcDebugTools();
     this.reportBuilderPresence();
 
     if (instanceEditorOpen && !movingSelection) {
@@ -1373,10 +1461,12 @@ export class WorldBuilder {
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
     this.updateBuildingInstanceEditor();
+    this.syncNpcDebugTools();
     this.reportBuilderPresence(true);
   }
 
   clearSelection() {
+    this.cancelNpcRoutineTargetPickMode();
     if (this.activeMovePlacementId) {
       this.cancelMoveSelection();
     }
@@ -1391,6 +1481,7 @@ export class WorldBuilder {
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
     this.hud.setBuilderBuildingEditor(null);
+    this.syncNpcDebugTools();
     this.reportBuilderPresence(true);
   }
 
@@ -1628,10 +1719,81 @@ export class WorldBuilder {
 
   getNpcTargetOptions() {
     return collectNpcTargetOptions(this.worldState).map((option) => ({
+      ...option,
       id: option.placementId,
       label: `${option.label} (${option.placementId})`,
       supportedStepTypes: [...(option.supportedStepTypes ?? [])]
     }));
+  }
+
+  getNpcTargetOptionMap() {
+    return new Map(this.getNpcTargetOptions().map((option) => [option.id, option]));
+  }
+
+  cancelNpcRoutineTargetPickMode() {
+    if (!this.npcTargetPickState) {
+      return;
+    }
+
+    this.npcTargetPickState = null;
+    this.updateBuilderNpcEditor();
+    this.syncNpcDebugTools();
+  }
+
+  setNpcRoutineTargetPickMode(stepIndex, mode = 'start') {
+    const placement = this.getSelectedPlacement();
+    if (!placement?.npc || !Number.isInteger(stepIndex)) {
+      this.cancelNpcRoutineTargetPickMode();
+      return;
+    }
+
+    if (mode === 'cancel') {
+      this.cancelNpcRoutineTargetPickMode();
+      return;
+    }
+
+    const routine = this.getNpcRoutineDraft(placement);
+    const step = routine.steps?.[stepIndex];
+    if (!step) {
+      return;
+    }
+
+    this.npcTargetPickState = {
+      placementId: placement.id,
+      stepIndex,
+      stepType: step.type
+    };
+    this.updateBuilderNpcEditor();
+    this.syncNpcDebugTools();
+    this.hud.showToast(`Click a destination in the world for step ${stepIndex + 1}.`);
+  }
+
+  async tryAssignNpcRoutineTargetFromWorld(placement) {
+    const pickState = this.npcTargetPickState;
+    if (!pickState || !placement) {
+      return false;
+    }
+
+    const selectedNpc = this.getSelectedPlacement();
+    if (!selectedNpc?.npc || selectedNpc.id !== pickState.placementId) {
+      this.cancelNpcRoutineTargetPickMode();
+      return false;
+    }
+
+    const target = resolveNpcTargetOption(placement);
+    if (!target) {
+      this.hud.showToast('That placement cannot be used as an NPC destination.');
+      return true;
+    }
+
+    if (!target.supportedStepTypes.includes(pickState.stepType)) {
+      this.hud.showToast(`${target.label} does not support ${titleCaseLabel(pickState.stepType)}.`);
+      return true;
+    }
+
+    this.cancelNpcRoutineTargetPickMode();
+    await this.updateSelectedNpcRoutineStep(pickState.stepIndex, 'targetPlacementId', placement.id);
+    return true;
   }
 
   getNpcDraft(placement) {
@@ -1693,6 +1855,8 @@ export class WorldBuilder {
       return {
         ...step,
         targetOptions: supportedTargetOptions,
+        pickModeActive: this.npcTargetPickState?.placementId === placement.id
+          && this.npcTargetPickState?.stepIndex === index,
         warning
       };
     });
@@ -1702,6 +1866,39 @@ export class WorldBuilder {
       resumePolicy: routine.resumePolicy,
       steps,
       warnings
+    };
+  }
+
+  buildNpcDebugEditorState(placement) {
+    const debug = this.npcDebugState.get(placement?.id);
+    if (!placement?.npc || !debug) {
+      return null;
+    }
+
+    const targetPlacement = debug.targetPlacementId
+      ? this.worldState.getPlacement(debug.targetPlacementId)
+      : null;
+    const targetItem = getBuilderItemById(targetPlacement?.itemId);
+    const targetLabel = targetPlacement
+      ? `${targetItem?.label ?? targetPlacement.itemId} (${targetPlacement.id})`
+      : (debug.targetPlacementId || 'None');
+
+    return {
+      mode: debug.mode || 'routine',
+      activity: debug.activity || 'idle',
+      currentStep: debug.currentStepType
+        ? `${titleCaseLabel(debug.currentStepType)} (${(debug.currentStepIndex ?? 0) + 1}/${Math.max(1, debug.stepCount ?? 1)})`
+        : 'No active step',
+      targetLabel,
+      pathLabel: `${Math.min((debug.pathIndex ?? 0) + 1, Math.max(1, debug.pathNodeCount ?? 0))}/${Math.max(0, debug.pathNodeCount ?? 0)}`,
+      pathNodeCount: debug.pathNodeCount ?? 0,
+      idleRemainingMs: debug.idleRemainingMs ?? 0,
+      calmRemainingMs: debug.calmRemainingMs ?? 0,
+      hiddenRemainingMs: debug.hiddenRemainingMs ?? 0,
+      lastRepathAgeMs: debug.lastRepathAt ? Math.max(0, Date.now() - debug.lastRepathAt) : 0,
+      nextPathPoint: debug.nextPathPoint ?? null,
+      steeringTarget: debug.steeringTarget ?? null,
+      finalTarget: debug.finalTarget ?? null
     };
   }
 
@@ -1721,6 +1918,7 @@ export class WorldBuilder {
     const model = getNpcModelById(npcDraft?.modelId ?? placement.npc.modelId);
     const routine = this.buildNpcRoutineEditorState(placement);
     const combat = this.getNpcCombatDraft(placement);
+    const debug = this.buildNpcDebugEditorState(placement);
     this.hud.setBuilderNpcEditor({
       id: placement.id,
       title: npcDraft?.name || model?.label || 'NPC',
@@ -1755,7 +1953,15 @@ export class WorldBuilder {
       weaponOptions: [
         { id: '', label: 'Unarmed' },
         { id: WEAPON_IDS.pistol, label: 'Pistol' }
-      ]
+      ],
+      debug,
+      pickingTarget: this.npcTargetPickState?.placementId === placement.id
+        ? {
+            stepIndex: this.npcTargetPickState.stepIndex,
+            stepNumber: this.npcTargetPickState.stepIndex + 1,
+            stepType: this.npcTargetPickState.stepType
+          }
+        : null
     });
   }
 
@@ -1884,6 +2090,7 @@ export class WorldBuilder {
   }
 
   closeNpcInstanceEditor() {
+    this.cancelNpcRoutineTargetPickMode();
     const placementId = this.activeNpcEditorPlacementId;
     this.activeNpcEditorPlacementId = null;
     this.hud.setBuilderNpcEditor(null);
@@ -1964,6 +2171,8 @@ export class WorldBuilder {
       void this.flushNpcUpdate(placementId);
     }, 150);
     this.pendingNpcUpdateTimeouts.set(placementId, timeoutId);
+    this.updateBuilderNpcEditor();
+    this.syncNpcDebugTools();
   }
 
   async flushNpcUpdate(placementId) {

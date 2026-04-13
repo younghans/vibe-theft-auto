@@ -29,6 +29,7 @@ export const NPC_MODEL_CATALOG = Object.freeze([
     itemId: definition.itemId,
     label: definition.npcLabel,
     asset: assets.mixamo.characters[definition.id],
+    portraitFileName: definition.portraitFileName,
     height: definition.npcProfile.height,
     footprint: [...definition.npcProfile.footprint],
     interactionOffset: definition.npcProfile.interactionOffset,

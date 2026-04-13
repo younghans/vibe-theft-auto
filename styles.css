@@ -1820,6 +1820,12 @@ body.is-builder-resizing * {
   transform: translateY(-1px);
 }
 
+.hud__builder-icon-button.is-active {
+  border-color: rgba(242, 200, 113, 0.78);
+  background: rgba(242, 200, 113, 0.18);
+  color: #fff2c8;
+}
+
 .hud__builder-icon-button:disabled {
   opacity: 0.45;
   cursor: default;
@@ -1901,6 +1907,13 @@ body.is-builder-resizing * {
   outline: none;
   border-color: rgba(242, 200, 113, 0.72);
   box-shadow: 0 0 0 3px rgba(242, 200, 113, 0.12);
+}
+
+.hud__field-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
 }
 
 .hud__interaction {

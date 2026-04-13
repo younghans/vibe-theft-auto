@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
-import { NPC_RUNTIME_MODES } from '../npc/npcBehavior.js';
+import { NPC_RUNTIME_MODES, NPC_STEP_TYPES } from '../npc/npcBehavior.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { assets } from './assetManifest.js';
@@ -83,6 +83,80 @@ function cloneInteriorDefinition(interior) {
     exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
     exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
   };
+}
+
+function createNpcDebugMarker(color, radius = 0.22) {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 14, 14),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      depthTest: false
+    })
+  );
+  marker.visible = false;
+  marker.renderOrder = 40;
+  return marker;
+}
+
+function createNpcRoutineMarker(color, radius = 0.18) {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 14, 14),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      depthTest: false
+    })
+  );
+  marker.visible = false;
+  marker.renderOrder = 38;
+  return marker;
+}
+
+function replaceLineGeometry(line, points = []) {
+  if (!line) {
+    return;
+  }
+
+  const nextPoints = points.length
+    ? points
+    : [new THREE.Vector3(0, -9999, 0), new THREE.Vector3(0, -9999, 0)];
+  const nextGeometry = new THREE.BufferGeometry().setFromPoints(nextPoints);
+  line.geometry.dispose();
+  line.geometry = nextGeometry;
+}
+
+function getNpcRoutineStepColor(stepType = '', activePick = false) {
+  if (activePick) {
+    return 0xfff07a;
+  }
+
+  switch (stepType) {
+    case NPC_STEP_TYPES.travelToPlacement:
+      return 0x68d9ff;
+    case NPC_STEP_TYPES.usePlacement:
+      return 0xff9966;
+    case NPC_STEP_TYPES.loiterNearPlacement:
+      return 0x6cff95;
+    case NPC_STEP_TYPES.enterHideAtPlacement:
+      return 0xc08cff;
+    case NPC_STEP_TYPES.wanderNearPlacement:
+      return 0xff6b6b;
+    default:
+      return 0xffffff;
+  }
+}
+
+function areDebugPointsClose(a, b, epsilon = 0.08) {
+  if (!a || !b) {
+    return false;
+  }
+
+  return Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.z ?? 0) - (b.z ?? 0)) <= epsilon;
 }
 
 function cloneInteractableDefinition(interactable) {
@@ -420,9 +494,42 @@ export class WorldRenderer {
     this.scene.add(this.tileRoot);
     this.scene.add(this.propRoot);
 
+    this.npcDebugRoot = new THREE.Group();
+    this.npcDebugRoot.visible = false;
+    this.scene.add(this.npcDebugRoot);
+    this.npcRoutineRoot = new THREE.Group();
+    this.npcRoutineRoot.visible = false;
+    this.scene.add(this.npcRoutineRoot);
+
     this.renderedPlacements = new Map();
     this.npcRuntimeState = new Map();
+    this.npcDebugState = new Map();
+    this.npcRoutinePreview = [];
     this.npcInteractRadiusVisible = false;
+    this.npcDebugVisible = false;
+    this.npcRoutineVisible = false;
+    this.selectedNpcDebugId = '';
+    this.npcDebugPathLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({
+        color: 0x68d9ff,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        depthTest: false
+      })
+    );
+    this.npcDebugPathLine.frustumCulled = false;
+    this.npcDebugPathLine.renderOrder = 36;
+    this.npcDebugSteeringMarker = createNpcDebugMarker(0xffd166, 0.18);
+    this.npcDebugNextMarker = createNpcDebugMarker(0x68d9ff, 0.2);
+    this.npcDebugTargetMarker = createNpcDebugMarker(0xff6b6b, 0.24);
+    this.npcDebugApproachMarker = createNpcDebugMarker(0x6cff95, 0.18);
+    this.npcDebugRoot.add(this.npcDebugPathLine);
+    this.npcDebugRoot.add(this.npcDebugSteeringMarker);
+    this.npcDebugRoot.add(this.npcDebugNextMarker);
+    this.npcDebugRoot.add(this.npcDebugTargetMarker);
+    this.npcDebugRoot.add(this.npcDebugApproachMarker);
   }
 
   async syncFromState(worldState) {
@@ -440,6 +547,8 @@ export class WorldRenderer {
     this.renderedPlacements.clear();
     this.tileRoot.clear();
     this.propRoot.clear();
+    this.refreshNpcRoutinePreview();
+    this.refreshNpcDebugGizmos();
   }
 
   syncNpcInteractRadiusIndicators(worldState, playerPosition = null) {
@@ -571,6 +680,8 @@ export class WorldRenderer {
     for (const rendered of this.renderedPlacements.values()) {
       rendered.actor?.update(deltaSeconds);
     }
+
+    this.refreshNpcDebugGizmos();
   }
 
   updatePlacement(placement) {
@@ -673,6 +784,8 @@ export class WorldRenderer {
 
     rendered.object.parent?.remove(rendered.object);
     this.renderedPlacements.delete(id);
+    this.refreshNpcRoutinePreview();
+    this.refreshNpcDebugGizmos();
   }
 
   getColliders() {
@@ -831,6 +944,31 @@ export class WorldRenderer {
         )
       );
     }
+
+    this.refreshNpcDebugGizmos();
+  }
+
+  applyNpcDebugState(npcDebugMap = new Map()) {
+    this.npcDebugState = new Map(npcDebugMap);
+    this.refreshNpcDebugGizmos();
+  }
+
+  setNpcRoutinePreview(preview = [], { visible = true } = {}) {
+    this.npcRoutinePreview = Array.isArray(preview)
+      ? preview.map((entry) => ({
+          ...entry,
+          point: entry?.point ? { ...entry.point } : null,
+          originPoint: entry?.originPoint ? { ...entry.originPoint } : null
+        }))
+      : [];
+    this.npcRoutineVisible = Boolean(visible);
+    this.refreshNpcRoutinePreview();
+  }
+
+  setNpcDebugSelection(placementId = '', { visible = true } = {}) {
+    this.selectedNpcDebugId = placementId || '';
+    this.npcDebugVisible = Boolean(visible && placementId);
+    this.refreshNpcDebugGizmos();
   }
 
   setNpcInteractRadiusVisible(visible) {
@@ -841,6 +979,8 @@ export class WorldRenderer {
     const nextVisible = Boolean(visible);
     this.tileRoot.visible = nextVisible;
     this.propRoot.visible = nextVisible;
+    this.npcDebugRoot.visible = nextVisible && this.npcDebugVisible;
+    this.npcRoutineRoot.visible = nextVisible && this.npcRoutineVisible;
   }
 
   pickPlacementId(pointer, camera = this.camera) {
@@ -878,5 +1018,133 @@ export class WorldRenderer {
 
   triggerNpcDamageFeedback(npcId, options = {}) {
     this.renderedPlacements.get(npcId)?.actor?.triggerDamageFeedback?.(options);
+  }
+
+  toNpcDebugWorldPoint(point = null, elevation = 0.24) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(
+      point.x,
+      this.getSurfaceHeightAtPosition(point.x, point.z) + elevation,
+      point.z
+    );
+  }
+
+  setNpcDebugMarkerPosition(marker, point, elevation = 0.24) {
+    const worldPoint = this.toNpcDebugWorldPoint(point, elevation);
+    if (!marker) {
+      return;
+    }
+
+    if (!worldPoint) {
+      marker.visible = false;
+      return;
+    }
+
+    marker.position.copy(worldPoint);
+    marker.visible = true;
+  }
+
+  refreshNpcRoutinePreview() {
+    this.npcRoutineRoot.clear();
+
+    if (!this.npcRoutineVisible || !this.tileRoot.visible || !this.npcRoutinePreview.length) {
+      this.npcRoutineRoot.visible = false;
+      return;
+    }
+
+    this.npcRoutineRoot.visible = true;
+
+    this.npcRoutinePreview.forEach((entry, index) => {
+      if (!entry?.point) {
+        return;
+      }
+
+      const marker = createNpcRoutineMarker(getNpcRoutineStepColor(entry.stepType, entry.activePick), 0.17);
+      const worldPoint = this.toNpcDebugWorldPoint(entry.point, 0.26 + (index * 0.08));
+      if (!worldPoint) {
+        return;
+      }
+
+      marker.position.copy(worldPoint);
+      marker.visible = true;
+      this.npcRoutineRoot.add(marker);
+
+      if (entry.originPoint && !areDebugPointsClose(entry.originPoint, entry.point, 0.2)) {
+        const originWorldPoint = this.toNpcDebugWorldPoint(entry.originPoint, 0.08);
+        if (originWorldPoint) {
+          const line = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([originWorldPoint, worldPoint]),
+            new THREE.LineBasicMaterial({
+              color: getNpcRoutineStepColor(entry.stepType, entry.activePick),
+              transparent: true,
+              opacity: 0.35,
+              depthWrite: false,
+              depthTest: false
+            })
+          );
+          line.frustumCulled = false;
+          line.renderOrder = 37;
+          this.npcRoutineRoot.add(line);
+        }
+      }
+    });
+  }
+
+  refreshNpcDebugGizmos() {
+    const placementId = this.selectedNpcDebugId;
+    const rendered = placementId ? this.renderedPlacements.get(placementId) : null;
+    const debug = placementId ? this.npcDebugState.get(placementId) : null;
+    const runtime = placementId ? this.npcRuntimeState.get(placementId) : null;
+    const actorPosition = rendered?.actor
+      ? {
+          x: runtime?.x ?? rendered.object.position.x,
+          z: runtime?.z ?? rendered.object.position.z
+        }
+      : null;
+
+    if (!this.npcDebugVisible || !placementId || !rendered || !debug || !actorPosition) {
+      this.npcDebugRoot.visible = false;
+      this.npcDebugSteeringMarker.visible = false;
+      this.npcDebugNextMarker.visible = false;
+      this.npcDebugTargetMarker.visible = false;
+      this.npcDebugApproachMarker.visible = false;
+      replaceLineGeometry(this.npcDebugPathLine, []);
+      return;
+    }
+
+    const pathPoints = [];
+    const pushPoint = (point) => {
+      if (!point) {
+        return;
+      }
+
+      if (pathPoints.length && areDebugPointsClose(pathPoints[pathPoints.length - 1], point)) {
+        return;
+      }
+
+      pathPoints.push({ x: point.x, z: point.z });
+    };
+
+    pushPoint(actorPosition);
+    pushPoint(debug.steeringTarget);
+    pushPoint(debug.nextPathPoint);
+    for (const point of debug.path?.slice(Math.max(0, debug.pathIndex ?? 0)) ?? []) {
+      pushPoint(point);
+    }
+    pushPoint(debug.finalTarget);
+
+    const worldPoints = pathPoints
+      .map((point, index) => this.toNpcDebugWorldPoint(point, index === 0 ? 0.34 : 0.22))
+      .filter(Boolean);
+
+    replaceLineGeometry(this.npcDebugPathLine, worldPoints);
+    this.npcDebugRoot.visible = this.tileRoot.visible && this.npcDebugVisible;
+    this.setNpcDebugMarkerPosition(this.npcDebugSteeringMarker, debug.steeringTarget, 0.3);
+    this.setNpcDebugMarkerPosition(this.npcDebugNextMarker, debug.nextPathPoint, 0.26);
+    this.setNpcDebugMarkerPosition(this.npcDebugTargetMarker, debug.finalTarget, 0.34);
+    this.setNpcDebugMarkerPosition(this.npcDebugApproachMarker, debug.targetApproach, 0.24);
   }
 }

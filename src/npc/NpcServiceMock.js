@@ -64,6 +64,9 @@ const NPC_PUNCH_INTERVAL_MS = PUNCH_INTERVAL_MS * 2;
 const NPC_COMBAT_REACH_BUFFER = 1.2;
 const NPC_TARGET_STOP_DISTANCE = 0.7;
 const NPC_SHOT_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
+const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
+const NPC_PATH_TURN_BLEND_MAX = 0.26;
+const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -149,6 +152,40 @@ function clonePickupState(pickup) {
   return { ...pickup };
 }
 
+function cloneNpcDebugState(debug = {}) {
+  return {
+    id: debug.id || '',
+    mode: debug.mode || '',
+    activity: debug.activity || '',
+    currentStepIndex: debug.currentStepIndex ?? 0,
+    currentStepType: debug.currentStepType || '',
+    stepCount: debug.stepCount ?? 0,
+    targetPlacementId: debug.targetPlacementId || '',
+    targetApproach: debug.targetApproach ? { ...debug.targetApproach } : null,
+    nextPathPoint: debug.nextPathPoint ? { ...debug.nextPathPoint } : null,
+    steeringTarget: debug.steeringTarget ? { ...debug.steeringTarget } : null,
+    finalTarget: debug.finalTarget ? { ...debug.finalTarget } : null,
+    path: Array.isArray(debug.path) ? debug.path.map((point) => ({ ...point })) : [],
+    pathIndex: debug.pathIndex ?? 0,
+    pathNodeCount: debug.pathNodeCount ?? 0,
+    pathKey: debug.pathKey || '',
+    lastRepathAt: debug.lastRepathAt ?? 0,
+    idleUntil: debug.idleUntil ?? 0,
+    calmEndsAt: debug.calmEndsAt ?? 0,
+    hiddenUntil: debug.hiddenUntil ?? 0,
+    wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
+    stepStartedAt: debug.stepStartedAt ?? 0,
+    busy: Boolean(debug.busy),
+    alive: debug.alive !== false,
+    weaponId: debug.weaponId || '',
+    lastAttackerId: debug.lastAttackerId || '',
+    debugAgeMs: debug.debugAgeMs ?? 0,
+    idleRemainingMs: debug.idleRemainingMs ?? 0,
+    calmRemainingMs: debug.calmRemainingMs ?? 0,
+    hiddenRemainingMs: debug.hiddenRemainingMs ?? 0
+  };
+}
+
 function quantizePosition(value) {
   const numeric = Number(value ?? 0);
   return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
@@ -182,6 +219,15 @@ function randomBetween(min, max) {
   const safeMin = Math.max(0, Number(min) || 0);
   const safeMax = Math.max(safeMin, Number(max) || safeMin);
   return Math.round(safeMin + (Math.random() * (safeMax - safeMin)));
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function smoothstep(value) {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - (2 * clamped));
 }
 
 function createNpcRuntimeMeta(overrides = {}) {
@@ -219,6 +265,7 @@ export class NpcServiceMock {
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),
+      npcDebug: new Map(),
       pickups: new Map()
     };
     this.sequence = 0;
@@ -267,6 +314,7 @@ export class NpcServiceMock {
         ...npc,
         position: [npc.x, npc.z]
       }])),
+      npcDebug: new Map([...this.buildNpcDebugSnapshotMap().entries()].map(([id, debug]) => [id, cloneNpcDebugState(debug)])),
       pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, clonePickupState(pickup)]))
     };
   }
@@ -394,7 +442,7 @@ export class NpcServiceMock {
     maxMs = NPC_DEFAULT_IDLE_MAX_MS
   } = {}) {
     const meta = this.getNpcRuntimeMeta(npcId);
-    if ((meta.idleUntil ?? 0) > now) {
+    if ((meta.idleUntil ?? 0) > 0) {
       return meta.idleUntil;
     }
 
@@ -410,6 +458,44 @@ export class NpcServiceMock {
   clearNpcIdlePause(npcId) {
     const meta = this.getNpcRuntimeMeta(npcId);
     meta.idleUntil = 0;
+  }
+
+  resetNpcRuntimeState(npcId, {
+    restartFromSpawn = false
+  } = {}) {
+    const npc = this.state.npcs.get(npcId);
+    const definition = this.getNpcDefinition(npcId);
+    if (!npc || !definition) {
+      return;
+    }
+
+    const meta = this.getNpcRuntimeMeta(npcId);
+    meta.path = [];
+    meta.pathIndex = 0;
+    meta.pathKey = '';
+    meta.lastRepathAt = 0;
+    meta.stepStartedAt = 0;
+    meta.idleUntil = 0;
+    meta.calmEndsAt = 0;
+    meta.lastAttackAt = 0;
+    meta.wanderPoint = null;
+
+    npc.currentStepIndex = 0;
+    npc.targetPlacementId = '';
+    npc.activity = '';
+    npc.hiddenUntil = 0;
+    npc.lastAttackerId = '';
+    npc.busy = false;
+    npc.mode = npc.alive === false ? NPC_RUNTIME_MODES.dead : NPC_RUNTIME_MODES.routine;
+
+    if (restartFromSpawn) {
+      const spawnPoint = this.getNpcSpawnPoint(definition);
+      npc.x = quantizePosition(spawnPoint.x);
+      npc.z = quantizePosition(spawnPoint.z);
+      npc.position = [npc.x, npc.z];
+      npc.rotationY = quantizeRotation(toRotationY(definition.spawnRotationQuarterTurns ?? 0));
+      npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    }
   }
 
   getNpcDefinition(npcId) {
@@ -456,6 +542,98 @@ export class NpcServiceMock {
       index,
       count: steps.length
     };
+  }
+
+  getNpcDebugFinalTarget(npcId, npc, definition) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const routineState = this.getCurrentNpcRoutineStep(definition, npc);
+    const currentStep = routineState?.step ?? null;
+    const currentTarget = npc.targetPlacementId
+      ? this.getNpcTargetOption(npc.targetPlacementId)
+      : null;
+
+    if (npc.mode === NPC_RUNTIME_MODES.combat || npc.mode === NPC_RUNTIME_MODES.flee) {
+      const targetPlayer = npc.lastAttackerId ? this.state.players.get(npc.lastAttackerId) : null;
+      if (targetPlayer?.alive !== false && targetPlayer) {
+        return clonePoint({ x: targetPlayer.x, z: targetPlayer.z });
+      }
+
+      return clonePoint(this.getNpcHomeAnchor(definition));
+    }
+
+    if (npc.mode === NPC_RUNTIME_MODES.hidden) {
+      return clonePoint(currentTarget?.approachPosition);
+    }
+
+    if (!currentStep) {
+      return clonePoint(this.getNpcSpawnPoint(definition));
+    }
+
+    if (currentStep.type === NPC_STEP_TYPES.loiterNearPlacement || currentStep.type === NPC_STEP_TYPES.wanderNearPlacement) {
+      return clonePoint(meta.wanderPoint ?? currentTarget?.approachPosition ?? this.getNpcSpawnPoint(definition));
+    }
+
+    return clonePoint(currentTarget?.approachPosition ?? this.getNpcSpawnPoint(definition));
+  }
+
+  buildNpcDebugSnapshotEntry(npcId, npc, definition, now = Date.now()) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const routineState = this.getCurrentNpcRoutineStep(definition, npc);
+    const nextPathPoint = meta.path?.[meta.pathIndex] ?? null;
+    const finalTarget = this.getNpcDebugFinalTarget(npcId, npc, definition);
+    const steeringTarget = nextPathPoint
+      ? clonePoint(this.getNpcSteeringTarget(meta.path ?? [], meta.pathIndex ?? 0, npc, nextPathPoint))
+      : finalTarget;
+    const currentTarget = npc.targetPlacementId
+      ? this.getNpcTargetOption(npc.targetPlacementId)
+      : null;
+
+    return {
+      id: npcId,
+      mode: npc.mode,
+      activity: npc.activity || '',
+      currentStepIndex: routineState?.index ?? Math.max(0, Math.floor(npc.currentStepIndex ?? 0)),
+      currentStepType: routineState?.step?.type ?? '',
+      stepCount: routineState?.count ?? (definition?.routine?.steps?.length ?? 0),
+      targetPlacementId: npc.targetPlacementId || '',
+      targetApproach: clonePoint(currentTarget?.approachPosition),
+      nextPathPoint: clonePoint(nextPathPoint),
+      steeringTarget,
+      finalTarget,
+      path: (meta.path ?? []).map((point) => clonePoint(point)).filter(Boolean),
+      pathIndex: Math.max(0, Math.floor(meta.pathIndex ?? 0)),
+      pathNodeCount: meta.path?.length ?? 0,
+      pathKey: meta.pathKey || '',
+      lastRepathAt: meta.lastRepathAt ?? 0,
+      idleUntil: meta.idleUntil ?? 0,
+      calmEndsAt: meta.calmEndsAt ?? 0,
+      hiddenUntil: npc.hiddenUntil ?? 0,
+      wanderPoint: clonePoint(meta.wanderPoint),
+      stepStartedAt: meta.stepStartedAt ?? 0,
+      busy: Boolean(npc.busy),
+      alive: npc.alive !== false,
+      weaponId: npc.weaponId || '',
+      lastAttackerId: npc.lastAttackerId || '',
+      debugAgeMs: 0,
+      idleRemainingMs: Math.max(0, Math.floor((meta.idleUntil ?? 0) - now)),
+      calmRemainingMs: Math.max(0, Math.floor((meta.calmEndsAt ?? 0) - now)),
+      hiddenRemainingMs: Math.max(0, Math.floor((npc.hiddenUntil ?? 0) - now))
+    };
+  }
+
+  buildNpcDebugSnapshotMap(now = Date.now()) {
+    const next = new Map();
+
+    for (const [npcId, npc] of this.state.npcs.entries()) {
+      const definition = this.getNpcDefinition(npcId);
+      if (!definition) {
+        continue;
+      }
+
+      next.set(npcId, this.buildNpcDebugSnapshotEntry(npcId, npc, definition, now));
+    }
+
+    return next;
   }
 
   advanceNpcRoutineStep(npcId, npc) {
@@ -527,21 +705,36 @@ export class NpcServiceMock {
     const finalTarget = targetPosition ?? clonePoint({ x: npc.x, z: npc.z });
     let nextPoint = path[meta.pathIndex] ?? finalTarget;
 
-    while (
-      nextPoint
-      && distance2D(npc.x, npc.z, nextPoint.x, nextPoint.z) <= stopDistance
-      && meta.pathIndex < Math.max(0, path.length - 1)
-    ) {
-      meta.pathIndex += 1;
-      nextPoint = path[meta.pathIndex] ?? finalTarget;
+    while (nextPoint) {
+      const reachDistance = meta.pathIndex < path.length
+        ? this.getNpcWaypointReachDistance(path, meta.pathIndex, npc, stopDistance)
+        : stopDistance;
+      if (distance2D(npc.x, npc.z, nextPoint.x, nextPoint.z) > reachDistance) {
+        break;
+      }
+
+      if (meta.pathIndex < Math.max(0, path.length - 1)) {
+        meta.pathIndex += 1;
+        nextPoint = path[meta.pathIndex] ?? finalTarget;
+        continue;
+      }
+
+      if (meta.pathIndex < path.length) {
+        meta.pathIndex = path.length;
+        nextPoint = finalTarget;
+        continue;
+      }
+
+      break;
     }
 
     if (!nextPoint) {
       return true;
     }
 
-    const toTargetX = nextPoint.x - npc.x;
-    const toTargetZ = nextPoint.z - npc.z;
+    const steeringTarget = this.getNpcSteeringTarget(path, meta.pathIndex, npc, nextPoint);
+    const toTargetX = steeringTarget.x - npc.x;
+    const toTargetZ = steeringTarget.z - npc.z;
     const distance = Math.hypot(toTargetX, toTargetZ);
     if (distance <= stopDistance) {
       npc.x = quantizePosition(nextPoint.x);
@@ -557,6 +750,80 @@ export class NpcServiceMock {
 
     npc.position = [npc.x, npc.z];
     return distance2D(npc.x, npc.z, finalTarget.x, finalTarget.z) <= stopDistance;
+  }
+
+  getNpcSteeringTarget(path, pathIndex, npc, nextPoint) {
+    const upcomingPoint = path[pathIndex + 1];
+    if (!upcomingPoint) {
+      return nextPoint;
+    }
+
+    const inX = nextPoint.x - npc.x;
+    const inZ = nextPoint.z - npc.z;
+    const inLength = Math.hypot(inX, inZ);
+    const outX = upcomingPoint.x - nextPoint.x;
+    const outZ = upcomingPoint.z - nextPoint.z;
+    const outLength = Math.hypot(outX, outZ);
+    if (inLength <= 0.0001 || outLength <= 0.0001) {
+      return nextPoint;
+    }
+
+    const inDirX = inX / inLength;
+    const inDirZ = inZ / inLength;
+    const outDirX = outX / outLength;
+    const outDirZ = outZ / outLength;
+    const turnDot = (inDirX * outDirX) + (inDirZ * outDirZ);
+    if (turnDot >= NPC_PATH_TURN_MIN_ANGLE_DOT) {
+      return nextPoint;
+    }
+
+    const lookaheadDistance = Math.min(NPC_PATH_TURN_LOOKAHEAD_DISTANCE, outLength * 0.5);
+    const anticipation = smoothstep((lookaheadDistance - inLength) / Math.max(0.001, lookaheadDistance));
+    if (anticipation <= 0.0001) {
+      return nextPoint;
+    }
+
+    const turnAmount = clamp01((NPC_PATH_TURN_MIN_ANGLE_DOT - turnDot) / (NPC_PATH_TURN_MIN_ANGLE_DOT + 1));
+    const blend = Math.min(
+      NPC_PATH_TURN_BLEND_MAX,
+      anticipation * turnAmount * NPC_PATH_TURN_BLEND_MAX * 3.1
+    );
+    if (blend <= 0.0001) {
+      return nextPoint;
+    }
+
+    return {
+      x: nextPoint.x + (upcomingPoint.x - nextPoint.x) * blend,
+      z: nextPoint.z + (upcomingPoint.z - nextPoint.z) * blend
+    };
+  }
+
+  getNpcWaypointReachDistance(path, pathIndex, npc, stopDistance) {
+    const nextPoint = path[pathIndex];
+    const upcomingPoint = path[pathIndex + 1];
+    if (!nextPoint || !upcomingPoint) {
+      return stopDistance;
+    }
+
+    const inX = nextPoint.x - npc.x;
+    const inZ = nextPoint.z - npc.z;
+    const inLength = Math.hypot(inX, inZ);
+    const outX = upcomingPoint.x - nextPoint.x;
+    const outZ = upcomingPoint.z - nextPoint.z;
+    const outLength = Math.hypot(outX, outZ);
+    if (inLength <= 0.0001 || outLength <= 0.0001) {
+      return stopDistance;
+    }
+
+    const turnDot = ((inX / inLength) * (outX / outLength)) + ((inZ / inLength) * (outZ / outLength));
+    if (turnDot >= NPC_PATH_TURN_MIN_ANGLE_DOT) {
+      return stopDistance;
+    }
+
+    const lookaheadDistance = Math.min(NPC_PATH_TURN_LOOKAHEAD_DISTANCE, outLength * 0.5);
+    const anticipation = smoothstep((lookaheadDistance - inLength) / Math.max(0.001, lookaheadDistance));
+    const turnAmount = clamp01((NPC_PATH_TURN_MIN_ANGLE_DOT - turnDot) / (NPC_PATH_TURN_MIN_ANGLE_DOT + 1));
+    return stopDistance + (anticipation * turnAmount * 1.8);
   }
 
   pickNpcWanderPoint(anchorPosition, radius = 6, npcId = '') {
@@ -672,8 +939,11 @@ export class NpcServiceMock {
       }
       const radius = Math.max(1, Number(step.radius ?? 0) || 6);
       const durationMs = Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0));
+      const isWanderStep = step.type === NPC_STEP_TYPES.wanderNearPlacement;
       if (!meta.wanderPoint) {
-        meta.wanderPoint = this.pickNpcWanderPoint(targetAnchor, radius, npcId);
+        meta.wanderPoint = isWanderStep
+          ? this.pickNpcWanderPoint(targetAnchor, radius, npcId)
+          : clonePoint(targetAnchor);
         this.ensureNpcPathToPosition(
           npcId,
           { x: npc.x, z: npc.z },
@@ -697,17 +967,6 @@ export class NpcServiceMock {
           return true;
         }
         this.clearNpcIdlePause(npcId);
-        if (step.type === NPC_STEP_TYPES.wanderNearPlacement) {
-          meta.wanderPoint = this.pickNpcWanderPoint(targetAnchor, radius, npcId);
-          this.ensureNpcPathToPosition(
-            npcId,
-            { x: npc.x, z: npc.z },
-            meta.wanderPoint,
-            `${step.type}:${npc.targetPlacementId}:${meta.wanderPoint.x},${meta.wanderPoint.z}`,
-            now,
-            { force: true }
-          );
-        }
       }
       if ((now - meta.stepStartedAt) >= durationMs) {
         this.advanceNpcRoutineStep(npcId, npc);
@@ -981,6 +1240,7 @@ export class NpcServiceMock {
 
         if (placement.layer === 'npc') {
           this.syncNpcStateFromWorld();
+          this.resetNpcRuntimeState(placement.id, { restartFromSpawn: true });
           this.emit();
         }
 
@@ -1000,6 +1260,7 @@ export class NpcServiceMock {
 
         if (previousPlacement?.layer === 'npc') {
           this.syncNpcStateFromWorld();
+          this.resetNpcRuntimeState(result.placement.id, { restartFromSpawn: true });
           this.emit();
         }
 
@@ -1045,6 +1306,7 @@ export class NpcServiceMock {
         }
 
         this.syncNpcStateFromWorld();
+        this.resetNpcRuntimeState(placement.id, { restartFromSpawn: false });
         this.emitWorldPatch({
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(placement.id),

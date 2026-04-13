@@ -41,6 +41,7 @@ function createMixamoCharacterDefinition({
   id,
   label,
   fileName,
+  portraitFileName = `${toSnakeCase(id)}.png`,
   subtitle = 'City Local',
   npcLabel = label,
   npcProfile = DEFAULT_NPC_PROFILE
@@ -49,6 +50,7 @@ function createMixamoCharacterDefinition({
     id,
     label,
     fileName,
+    portraitFileName,
     subtitle,
     itemId: `npc_${toSnakeCase(id)}`,
     npcLabel,

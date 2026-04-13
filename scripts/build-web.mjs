@@ -183,6 +183,20 @@ async function copyRuntimeAssets() {
   }
 }
 
+async function copyOptionalDirectory(relativeDirectory) {
+  const sourceDirectory = path.join(root, relativeDirectory);
+  const stats = await fs.stat(sourceDirectory).catch(() => null);
+  if (!stats?.isDirectory()) {
+    return;
+  }
+
+  const files = await walkFiles(sourceDirectory);
+  for (const filePath of files) {
+    const relativePath = path.relative(root, filePath);
+    await copyFile(filePath, path.join(dist, relativePath));
+  }
+}
+
 function toPosixRelative(filePath) {
   return path.relative(dist, filePath).split(path.sep).join('/');
 }
@@ -302,6 +316,7 @@ await resetDist();
 const bundleOutputs = await bundleClient();
 await copyStaticShell(bundleOutputs);
 await copyRuntimeAssets();
+await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();
 
 const distFiles = await walkFiles(dist);

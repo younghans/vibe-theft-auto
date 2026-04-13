@@ -14,8 +14,12 @@ const configuredServerUrl = (process.env.STICKRPG_SERVER_URL || positionalArgs[2
 const liveReloadEnabled = flags.has('--live-reload') || process.env.STICKRPG_LIVE_RELOAD === '1';
 const liveReloadClients = new Set();
 const ignoredWatchPathSegments = new Set(['.git', 'dist', 'node_modules']);
-const ignoredWatchPathPrefixes = [path.join('server', 'data')];
+const ignoredWatchPathPrefixes = [
+  path.join('server', 'data'),
+  path.join('assets', 'mixamo', 'portraits')
+];
 const liveReloadEndpoint = '/__dev_reload';
+const devWriteAssetEndpoint = '/__dev_write_asset';
 
 let liveReloadTimer = null;
 
@@ -62,6 +66,9 @@ function shouldIgnoreWatchedPath(filePath = '') {
 
 function scheduleLiveReload(changedPath = '') {
   if (!liveReloadEnabled || liveReloadClients.size === 0) {
+    return;
+  }
+  if (changedPath && shouldIgnoreWatchedPath(changedPath)) {
     return;
   }
 
@@ -111,6 +118,15 @@ function injectHtml(html) {
   return nextHtml;
 }
 
+function getRequestPathname(requestUrl, host) {
+  return new URL(requestUrl, `http://${host}`).pathname;
+}
+
+function normalizeRoutePath(routePath = '') {
+  const normalized = String(routePath || '/').replace(/\\/gu, '/');
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
 function setupLiveReloadWatcher() {
   if (!liveReloadEnabled) {
     return null;
@@ -137,8 +153,47 @@ function setupLiveReloadWatcher() {
 }
 
 function normalizeRequestPath(requestUrl, host) {
-  const requestPath = new URL(requestUrl, `http://${host}`).pathname;
+  const requestPath = getRequestPathname(requestUrl, host);
   return path.normalize(decodeURIComponent(requestPath)).replace(/^(\.\.[/\\])+/, '');
+}
+
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    request.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      try {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve(body ? JSON.parse(body) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on('error', reject);
+  });
+}
+
+function resolveWritableAssetPath(relativePath = '') {
+  const normalizedRelativePath = normalizeRelativePath(relativePath);
+  const allowedPrefix = normalizeRelativePath(path.join('assets', 'mixamo', 'portraits'));
+  const extension = path.extname(normalizedRelativePath).toLowerCase();
+  if (
+    !normalizedRelativePath
+    || !normalizedRelativePath.startsWith(allowedPrefix)
+    || !['.png', '.json'].includes(extension)
+  ) {
+    return null;
+  }
+
+  const targetPath = path.resolve(root, normalizedRelativePath);
+  const allowedRoot = path.resolve(root, allowedPrefix);
+  if (!targetPath.startsWith(`${allowedRoot}${path.sep}`) && targetPath !== allowedRoot) {
+    return null;
+  }
+
+  return targetPath;
 }
 
 function isFingerprinted(filePath) {
@@ -194,7 +249,49 @@ async function pickEncodingVariant(filePath, acceptEncoding = '', injectHtml = f
 
 const server = http.createServer(async (request, response) => {
   try {
-    if (liveReloadEnabled && normalizeRequestPath(request.url, request.headers.host) === liveReloadEndpoint) {
+    const requestPathname = normalizeRoutePath(getRequestPathname(request.url, request.headers.host));
+
+    if (request.method === 'POST' && requestPathname === devWriteAssetEndpoint) {
+      const payload = await readJsonBody(request);
+      const targetPath = resolveWritableAssetPath(payload?.relativePath);
+      const dataUrl = String(payload?.dataUrl ?? '');
+      const textContents = typeof payload?.textContents === 'string'
+        ? payload.textContents
+        : '';
+      const extension = path.extname(targetPath ?? '').toLowerCase();
+      const matches = dataUrl.match(/^data:image\/png;base64,(.+)$/u);
+
+      if (!targetPath) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ ok: false, error: 'Invalid portrait save request.' }));
+        return;
+      }
+
+      await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+
+      if (extension === '.png') {
+        if (!matches?.[1]) {
+          response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          response.end(JSON.stringify({ ok: false, error: 'Invalid PNG payload.' }));
+          return;
+        }
+        await fsp.writeFile(targetPath, Buffer.from(matches[1], 'base64'));
+      } else if (extension === '.json') {
+        await fsp.writeFile(targetPath, textContents, 'utf8');
+      } else {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ ok: false, error: 'Unsupported asset type.' }));
+        return;
+      }
+
+      scheduleLiveReload(path.relative(root, targetPath));
+
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ ok: true, relativePath: normalizeRelativePath(path.relative(root, targetPath)) }));
+      return;
+    }
+
+    if (liveReloadEnabled && requestPathname === liveReloadEndpoint) {
       response.writeHead(200, {
         'Cache-Control': 'no-store, max-age=0',
         Connection: 'keep-alive',

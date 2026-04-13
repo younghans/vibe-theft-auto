@@ -63,6 +63,27 @@ function findNearestNode(nodes = [], position = null, filter = () => true) {
   return nearest;
 }
 
+const NPC_LOCAL_DIRECT_PATH_DISTANCE = BUILDER_TILE_SIZE * 1.35;
+const NPC_START_NODE_SKIP_DISTANCE = BUILDER_TILE_SIZE * 0.82;
+
+function trimPathFromStart(path = [], startPosition = null) {
+  if (!startPosition || path.length <= 1) {
+    return path;
+  }
+
+  let trimCount = 0;
+  while (
+    trimCount < (path.length - 1)
+    && distance2D(startPosition.x, startPosition.z, path[trimCount].x, path[trimCount].z) <= NPC_START_NODE_SKIP_DISTANCE
+  ) {
+    trimCount += 1;
+  }
+
+  return trimCount > 0
+    ? path.slice(trimCount)
+    : path;
+}
+
 function reconstructPath(previousById, nodeMap, goalId) {
   const path = [];
   let current = goalId;
@@ -211,18 +232,30 @@ export function buildNpcPathToPlacement(graph, startPosition, targetPlacementId)
     return goalNode ? [{ x: goalNode.x, z: goalNode.z, id: goalNode.id }] : [];
   }
 
-  return runAStar(graph.nodeMap, startNode.id, goalId);
+  return trimPathFromStart(runAStar(graph.nodeMap, startNode.id, goalId), startPosition);
 }
 
 export function buildNpcPathToPosition(graph, startPosition, targetPosition) {
-  const nodes = graph?.nodes ?? [];
-  const startNode = findNearestNode(nodes, startPosition);
-  const goalNode = findNearestNode(nodes, targetPosition);
+  if (!targetPosition) {
+    return [];
+  }
+
+  if (
+    startPosition
+    && distance2D(startPosition.x, startPosition.z, targetPosition.x, targetPosition.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE
+  ) {
+    return [{ x: Number(targetPosition.x.toFixed(2)), z: Number(targetPosition.z.toFixed(2)), id: 'direct' }];
+  }
+
+  const allNodes = graph?.nodes ?? [];
+  const routeNodes = graph?.routeNodes ?? [];
+  const startNode = findNearestNode(allNodes, startPosition);
+  const goalNode = findNearestNode(routeNodes.length ? routeNodes : allNodes, targetPosition);
   if (!startNode || !goalNode) {
     return targetPosition ? [{ x: targetPosition.x, z: targetPosition.z, id: 'direct' }] : [];
   }
 
-  const path = runAStar(graph.nodeMap, startNode.id, goalNode.id);
+  const path = trimPathFromStart(runAStar(graph.nodeMap, startNode.id, goalNode.id), startPosition);
   if (!path.length) {
     return [{ x: targetPosition.x, z: targetPosition.z, id: 'direct' }];
   }

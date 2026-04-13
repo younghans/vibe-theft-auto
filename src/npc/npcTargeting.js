@@ -96,6 +96,18 @@ export function isBuildingPlacement(placement, item = getBuilderItemById(placeme
   );
 }
 
+export function isNpcTargetablePlacement(placement, item = getBuilderItemById(placement?.itemId)) {
+  if (!placement || !item || placement.layer === 'npc') {
+    return false;
+  }
+
+  if (isBuildingPlacement(placement, item)) {
+    return true;
+  }
+
+  return placement.layer === 'prop';
+}
+
 export function getPlacementWorldOrigin(placement, item = getBuilderItemById(placement?.itemId)) {
   if (!placement || !item) {
     return null;
@@ -157,7 +169,7 @@ export function getPlacementApproachPoint(placement, item = getBuilderItemById(p
 }
 
 export function resolveNpcTargetOption(placement, item = getBuilderItemById(placement?.itemId)) {
-  if (!placement || !item || placement.layer === 'npc') {
+  if (!isNpcTargetablePlacement(placement, item)) {
     return null;
   }
 

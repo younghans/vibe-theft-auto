@@ -109,6 +109,8 @@ export class Hud {
   constructor(root) {
     this.root = root;
     this.builderPreviewImages = new Map();
+    this.builderPreviewLoadPromises = new Map();
+    this.builderPreviewFailedIds = new Set();
     this.loading = this.createLoading();
     this.overlay = this.createOverlay();
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
@@ -178,12 +180,15 @@ export class Hud {
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
     this.builderNpcStepAddType = this.overlay.querySelector('[data-builder-npc-step-add-type]');
     this.builderNpcStepAdd = this.overlay.querySelector('[data-builder-npc-step-add]');
+    this.builderNpcPickStatus = this.overlay.querySelector('[data-builder-npc-pick-status]');
     this.builderNpcCombatArchetype = this.overlay.querySelector('[data-builder-npc-combat-archetype]');
     this.builderNpcCombatAggroRadius = this.overlay.querySelector('[data-builder-npc-combat-aggro]');
     this.builderNpcCombatLeashRadius = this.overlay.querySelector('[data-builder-npc-combat-leash]');
     this.builderNpcCombatFleeHealth = this.overlay.querySelector('[data-builder-npc-combat-flee]');
     this.builderNpcCombatWeapon = this.overlay.querySelector('[data-builder-npc-combat-weapon]');
     this.builderNpcConfirm = this.overlay.querySelector('[data-builder-npc-confirm]');
+    this.builderNpcDebugSummary = this.overlay.querySelector('[data-builder-npc-debug-summary]');
+    this.builderNpcDebugMetrics = this.overlay.querySelector('[data-builder-npc-debug-metrics]');
     this.builderBuildingEditor = this.overlay.querySelector('[data-builder-building-editor]');
     this.builderBuildingEditorClose = this.overlay.querySelector('[data-builder-building-close]');
     this.builderBuildingEditorTitle = this.overlay.querySelector('[data-builder-building-title]');
@@ -606,6 +611,7 @@ export class Hud {
                 <p class="hud__builder-section-title">Routine</p>
               </div>
               <p class="hud__body" data-builder-npc-warnings hidden></p>
+              <p class="hud__body" data-builder-npc-pick-status hidden></p>
               <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Add Step</span>
@@ -645,6 +651,13 @@ export class Hud {
                   <input class="hud__field-control" type="number" min="1" max="100" step="1" data-builder-npc-combat-flee />
                 </label>
               </div>
+            </section>
+            <section class="hud__builder-section">
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Runtime Debug</p>
+              </div>
+              <p class="hud__body" data-builder-npc-debug-summary>NPC debug is unavailable. Enable server-side NPC debug to inspect live sim data.</p>
+              <div class="hud__builder-instance-metrics" data-builder-npc-debug-metrics hidden></div>
             </section>
             <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Confirm NPC</button>
           </div>
@@ -1092,6 +1105,7 @@ export class Hud {
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
     onNpcRoutineStepChange,
+    onNpcRoutinePickTarget,
     onNpcCombatChange,
     onConfirmNpc,
     onCloseNpcEditor,
@@ -1194,6 +1208,16 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
+      const pickButton = target?.closest('[data-builder-npc-step-pick]');
+      if (pickButton) {
+        onNpcRoutinePickTarget?.(
+          Number(pickButton.dataset.builderNpcStepPick),
+          pickButton.dataset.builderNpcStepPickMode === 'active'
+            ? 'cancel'
+            : 'start'
+        );
+        return;
+      }
       const button = target?.closest('[data-builder-npc-step-remove]');
       if (!button) {
         return;
@@ -1349,7 +1373,10 @@ export class Hud {
         </div>
         <div class="hud__builder-card-grid">
           ${section.cards.map((card) => {
-            const preview = this.builderPreviewImages.get(card.previewId);
+            const preview = this.builderPreviewImages.get(card.previewId) ?? '';
+            if (!preview && card.previewMode === 'static' && card.previewImageSrc) {
+              this.queueBuilderStaticPreview(card.previewId, card.previewImageSrc);
+            }
             return `
               <button
                 class="hud__builder-card${card.selected ? ' is-active' : ''}"
@@ -1399,6 +1426,35 @@ export class Hud {
     }
 
     node.innerHTML = `<img class="hud__builder-thumb-image" src="${src}" alt="" loading="lazy" />`;
+  }
+
+  queueBuilderStaticPreview(itemId, src) {
+    if (!itemId || !src || this.builderPreviewImages.has(itemId) || this.builderPreviewFailedIds.has(itemId)) {
+      return;
+    }
+
+    if (this.builderPreviewLoadPromises.has(itemId)) {
+      return;
+    }
+
+    const load = new Promise((resolve) => {
+      const image = new Image();
+      image.decoding = 'async';
+      image.loading = 'lazy';
+      image.onload = () => {
+        this.builderPreviewLoadPromises.delete(itemId);
+        this.setBuilderPreviewImage(itemId, src);
+        resolve(true);
+      };
+      image.onerror = () => {
+        this.builderPreviewLoadPromises.delete(itemId);
+        this.builderPreviewFailedIds.add(itemId);
+        resolve(false);
+      };
+      image.src = src;
+    });
+
+    this.builderPreviewLoadPromises.set(itemId, load);
   }
 
   setBuilderSelection(selection) {
@@ -1487,6 +1543,14 @@ export class Hud {
       const warnings = editorState.warnings ?? [];
       this.builderNpcWarnings.hidden = warnings.length === 0;
       this.builderNpcWarnings.textContent = warnings.join(' ');
+    }
+
+    if (this.builderNpcPickStatus) {
+      const pickingState = editorState.pickingTarget ?? null;
+      this.builderNpcPickStatus.hidden = !pickingState;
+      this.builderNpcPickStatus.textContent = pickingState
+        ? `Selecting destination for step ${pickingState.stepNumber}: click a valid building or prop in the world. Right-click, press Escape, or press the picker again to cancel.`
+        : '';
     }
 
     if (this.builderNpcRoutineSteps) {
@@ -1591,13 +1655,31 @@ export class Hud {
                   </label>
                   <label class="hud__field">
                     <span class="hud__field-label">Destination</span>
-                    <select
-                      class="hud__field-control"
-                      data-builder-npc-step-index="${index}"
-                      data-builder-npc-step-field="targetPlacementId"
-                    >
-                      ${targetOptionMarkup}
-                    </select>
+                    <div class="hud__field-inline">
+                      <select
+                        class="hud__field-control"
+                        data-builder-npc-step-index="${index}"
+                        data-builder-npc-step-field="targetPlacementId"
+                      >
+                        ${targetOptionMarkup}
+                      </select>
+                      <button
+                        class="hud__builder-icon-button${step.pickModeActive ? ' is-active' : ''}"
+                        type="button"
+                        data-builder-npc-step-pick="${index}"
+                        data-builder-npc-step-pick-mode="${step.pickModeActive ? 'active' : 'idle'}"
+                        aria-label="${step.pickModeActive ? 'Cancel world destination picking' : 'Pick destination in world'}"
+                        title="${step.pickModeActive ? 'Cancel world destination picking' : 'Pick destination in world'}"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="5" />
+                          <path d="M12 3v4" />
+                          <path d="M12 17v4" />
+                          <path d="M3 12h4" />
+                          <path d="M17 12h4" />
+                        </svg>
+                      </button>
+                    </div>
                   </label>
                 </div>
                 ${detailFields.length ? `<div class="hud__builder-instance-metrics">${detailFields.join('')}</div>` : ''}
@@ -1606,6 +1688,36 @@ export class Hud {
             `;
           }).join('')
         : '<p class="hud__body">No routine steps yet. Add a destination-driven step to start the loop.</p>';
+    }
+
+    if (this.builderNpcDebugSummary) {
+      const debug = editorState.debug ?? null;
+      this.builderNpcDebugSummary.textContent = debug
+        ? `Mode ${debug.mode} | Activity ${debug.activity} | Step ${debug.currentStep}`
+        : 'NPC debug is unavailable. Enable server-side NPC debug to inspect live sim data.';
+    }
+
+    if (this.builderNpcDebugMetrics) {
+      const debug = editorState.debug ?? null;
+      this.builderNpcDebugMetrics.hidden = !debug;
+      this.builderNpcDebugMetrics.innerHTML = debug
+        ? [
+            ['Target', debug.targetLabel],
+            ['Path Nodes', `${debug.pathNodeCount} total | index ${debug.pathLabel}`],
+            ['Idle Left', `${Math.max(0, debug.idleRemainingMs ?? 0)} ms`],
+            ['Calm Left', `${Math.max(0, debug.calmRemainingMs ?? 0)} ms`],
+            ['Hidden Left', `${Math.max(0, debug.hiddenRemainingMs ?? 0)} ms`],
+            ['Last Repath', `${Math.max(0, debug.lastRepathAgeMs ?? 0)} ms ago`],
+            ['Next Point', debug.nextPathPoint ? `${debug.nextPathPoint.x.toFixed(2)}, ${debug.nextPathPoint.z.toFixed(2)}` : 'None'],
+            ['Steering', debug.steeringTarget ? `${debug.steeringTarget.x.toFixed(2)}, ${debug.steeringTarget.z.toFixed(2)}` : 'None'],
+            ['Final Target', debug.finalTarget ? `${debug.finalTarget.x.toFixed(2)}, ${debug.finalTarget.z.toFixed(2)}` : 'None']
+          ].map(([label, value]) => `
+            <div class="hud__field">
+              <span class="hud__field-label">${escapeHtml(label)}</span>
+              <span class="hud__body">${escapeHtml(value)}</span>
+            </div>
+          `).join('')
+        : '';
     }
 
     this.builderNpcConfirm.disabled = editorState.active;
