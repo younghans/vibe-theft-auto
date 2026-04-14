@@ -10,6 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const stagingDist = path.join(root, '.dist-staging');
 const assetsRoot = path.join(root, 'assets');
+const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
 const COMPRESSIBLE_EXTENSIONS = new Set([
@@ -152,22 +153,117 @@ async function addRuntimeAsset(filePath, filesToCopy, copiedLicenses) {
 async function buildAssetCopyList() {
   const assetManifestModule = await import(pathToFileURL(path.join(root, 'src', 'world', 'assetManifest.js')).href);
   const builderCatalogModule = await import(pathToFileURL(path.join(root, 'src', 'world', 'builderCatalog.js')).href);
+  const playableCharacterCatalogModule = await import(pathToFileURL(path.join(root, 'src', 'player', 'playableCharacterCatalog.js')).href);
+  const npcCatalogModule = await import(pathToFileURL(path.join(root, 'src', 'npc', 'npcCatalog.js')).href);
 
   const assetUrls = new Set();
   collectAssetUrls(assetManifestModule.assets, assetUrls);
   collectAssetUrls(builderCatalogModule.BUILDER_ITEMS.map((item) => item.asset), assetUrls);
+  const startupMixamoCharacterPaths = await getStartupMixamoCharacterPaths({
+    assets: assetManifestModule.assets,
+    getNpcModelByItemId: npcCatalogModule.getNpcModelByItemId,
+    getPlayableCharacterById: playableCharacterCatalogModule.getPlayableCharacterById,
+    defaultPlayableCharacterId: playableCharacterCatalogModule.DEFAULT_PLAYABLE_CHARACTER_ID
+  });
 
   const filesToCopy = new Set();
   const licenseFiles = new Set();
 
   for (const assetUrl of assetUrls) {
-    await addRuntimeAsset(fileURLToPath(assetUrl), filesToCopy, licenseFiles);
+    const assetPath = fileURLToPath(assetUrl);
+    if (shouldSkipStartupCopy(assetPath, startupMixamoCharacterPaths)) {
+      continue;
+    }
+    await addRuntimeAsset(assetPath, filesToCopy, licenseFiles);
   }
 
   return {
     files: [...filesToCopy].sort(),
     licenses: [...licenseFiles].sort()
   };
+}
+
+async function readWorldLayoutCandidate(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function worldLayoutHasPlacements(layout) {
+  return ['tiles', 'props', 'npcs'].some((key) => Array.isArray(layout?.[key]) && layout[key].length > 0);
+}
+
+async function loadWorldLayoutForBuild() {
+  const configuredLayoutPath = String(process.env.WORLD_LAYOUT_PATH ?? process.env.WORLD_LAYOUT_SEED_PATH ?? '').trim();
+  const candidatePaths = [
+    configuredLayoutPath
+      ? (path.isAbsolute(configuredLayoutPath) ? configuredLayoutPath : path.resolve(root, configuredLayoutPath))
+      : null,
+    defaultWorldLayoutPath
+  ].filter(Boolean);
+
+  for (const candidatePath of candidatePaths) {
+    const layout = await readWorldLayoutCandidate(candidatePath);
+    if (worldLayoutHasPlacements(layout)) {
+      return layout;
+    }
+  }
+
+  const defaultWorldLayoutModule = await import(pathToFileURL(path.join(root, 'src', 'world', 'defaultWorldLayout.js')).href);
+  return defaultWorldLayoutModule.defaultWorldLayout;
+}
+
+async function getStartupMixamoCharacterPaths({
+  assets,
+  getNpcModelByItemId,
+  getPlayableCharacterById,
+  defaultPlayableCharacterId
+}) {
+  const layout = await loadWorldLayoutForBuild();
+  const startupCharacterUrls = new Set();
+  const defaultPlayableCharacter = getPlayableCharacterById(defaultPlayableCharacterId);
+
+  collectAssetUrls(defaultPlayableCharacter?.characterRig, startupCharacterUrls);
+
+  for (const npc of layout?.npcs ?? []) {
+    if (typeof npc?.modelId === 'string' && assets.mixamo.characters[npc.modelId]) {
+      startupCharacterUrls.add(assets.mixamo.characters[npc.modelId]);
+      continue;
+    }
+
+    if (typeof npc?.itemId === 'string') {
+      const npcModel = getNpcModelByItemId(npc.itemId);
+      collectAssetUrls(npcModel?.asset, startupCharacterUrls);
+    }
+  }
+
+  return new Set(
+    [...startupCharacterUrls]
+      .filter(isAssetUrl)
+      .map((assetUrl) => path.normalize(fileURLToPath(assetUrl)))
+  );
+}
+
+function shouldSkipStartupCopy(filePath, startupMixamoCharacterPaths) {
+  const normalizedPath = path.normalize(filePath);
+  const relativeAssetPath = path.relative(assetsRoot, normalizedPath);
+  if (relativeAssetPath.startsWith('..') || path.isAbsolute(relativeAssetPath)) {
+    return false;
+  }
+
+  const assetSegments = relativeAssetPath.split(path.sep);
+  const isMixamoCharacter = assetSegments[0] === 'mixamo' && assetSegments[1] === 'characters';
+  if (!isMixamoCharacter) {
+    return false;
+  }
+
+  return !startupMixamoCharacterPaths.has(normalizedPath);
 }
 
 async function copyRuntimeAssets(outputDirectory = stagingDist) {
@@ -318,6 +414,9 @@ async function compressDistFiles(outputDirectory = stagingDist) {
 async function deployStagingDist() {
   await fs.mkdir(dist, { recursive: true });
   const stagingFiles = await walkFiles(stagingDist);
+  const stagingRelativePaths = new Set(
+    stagingFiles.map((sourcePath) => path.relative(stagingDist, sourcePath))
+  );
   const orderedFiles = stagingFiles.sort((left, right) => {
     const leftPriority = left.endsWith(`${path.sep}index.html`) ? 1 : 0;
     const rightPriority = right.endsWith(`${path.sep}index.html`) ? 1 : 0;
@@ -343,6 +442,14 @@ async function deployStagingDist() {
         continue;
       }
       throw error;
+    }
+  }
+
+  const existingDistFiles = await walkFiles(dist);
+  for (const targetPath of existingDistFiles) {
+    const relativePath = path.relative(dist, targetPath);
+    if (!stagingRelativePaths.has(relativePath)) {
+      await fs.rm(targetPath, { force: true });
     }
   }
 }
