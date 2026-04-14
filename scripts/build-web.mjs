@@ -198,10 +198,6 @@ async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagin
   }
 }
 
-function toPosixRelative(filePath) {
-  return path.relative(dist, filePath).split(path.sep).join('/');
-}
-
 function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
   let html = template;
   html = html.replace(/\s*<link\s+rel="stylesheet"\s+href="\.\/styles\.css"\s*\/?>\s*/u, '\n');

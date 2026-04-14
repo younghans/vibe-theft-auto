@@ -40,7 +40,6 @@ export const NPC_DEFAULT_WANDER_DURATION_MS = 7000;
 export const NPC_DEFAULT_WANDER_RADIUS = 7;
 export const NPC_DEFAULT_AGGRO_RADIUS = 16;
 export const NPC_DEFAULT_LEASH_RADIUS = 24;
-export const NPC_DEFAULT_FLEE_HEALTH_THRESHOLD = 35;
 export const NPC_DEFAULT_IDLE_MIN_MS = 900;
 export const NPC_DEFAULT_IDLE_MAX_MS = 2200;
 export const NPC_DEFAULT_WANDER_IDLE_MIN_MS = 1200;
@@ -124,7 +123,6 @@ export function cloneNpcCombat(combat = null) {
     archetype: combat.archetype ?? NPC_COMBAT_ARCHETYPES.passive,
     aggroRadius: combat.aggroRadius,
     leashRadius: combat.leashRadius,
-    fleeHealthThreshold: combat.fleeHealthThreshold,
     weaponId: combat.weaponId ?? ''
   };
 }
@@ -185,7 +183,6 @@ export function createDefaultNpcCombat(overrides = {}) {
     archetype: NPC_COMBAT_ARCHETYPES.passive,
     aggroRadius: NPC_DEFAULT_AGGRO_RADIUS,
     leashRadius: NPC_DEFAULT_LEASH_RADIUS,
-    fleeHealthThreshold: NPC_DEFAULT_FLEE_HEALTH_THRESHOLD,
     weaponId: '',
     ...overrides
   };
@@ -277,7 +274,6 @@ export function normalizeNpcCombat(combat = null) {
     archetype,
     aggroRadius: Number(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }).toFixed(2)),
     leashRadius: Number(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }).toFixed(2)),
-    fleeHealthThreshold: Math.round(clampPositiveNumber(draft.fleeHealthThreshold, NPC_DEFAULT_FLEE_HEALTH_THRESHOLD, { min: 1, max: NPC_DEFAULT_MAX_HEALTH })),
     weaponId: normalizeWeaponId(draft.weaponId, defaultWeaponId)
   };
 }

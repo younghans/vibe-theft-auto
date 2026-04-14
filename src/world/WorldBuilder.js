@@ -2100,7 +2100,6 @@ export class WorldBuilder {
         archetype: combat.archetype,
         aggroRadius: Number(combat.aggroRadius?.toFixed?.(2) ?? combat.aggroRadius ?? 0),
         leashRadius: Number(combat.leashRadius?.toFixed?.(2) ?? combat.leashRadius ?? 0),
-        fleeHealthThreshold: combat.fleeHealthThreshold ?? 0,
         weaponId: combat.weaponId || ''
       },
       combatArchetypes: listNpcCombatArchetypes().map((archetype) => ({

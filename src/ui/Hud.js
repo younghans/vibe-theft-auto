@@ -225,7 +225,6 @@ export class Hud {
     this.builderNpcCombatAggroRadius = this.overlay.querySelector('[data-builder-npc-combat-aggro]');
     this.builderNpcCombatLeashField = this.overlay.querySelector('[data-builder-npc-combat-leash-field]');
     this.builderNpcCombatLeashRadius = this.overlay.querySelector('[data-builder-npc-combat-leash]');
-    this.builderNpcCombatFleeHealth = this.overlay.querySelector('[data-builder-npc-combat-flee]');
     this.builderNpcCombatWeapon = this.overlay.querySelector('[data-builder-npc-combat-weapon]');
     this.builderNpcConfirm = this.overlay.querySelector('[data-builder-npc-confirm]');
     this.builderNpcDebugSummary = this.overlay.querySelector('[data-builder-npc-debug-summary]');
@@ -709,12 +708,6 @@ export class Hud {
                 <label class="hud__field" data-builder-npc-combat-leash-field hidden>
                   <span class="hud__field-label">Hostile Leash Radius</span>
                   <input class="hud__field-control" type="number" min="0" max="120" step="0.1" data-builder-npc-combat-leash />
-                </label>
-              </div>
-              <div class="hud__builder-instance-metrics">
-                <label class="hud__field" hidden>
-                  <span class="hud__field-label">Flee Threshold</span>
-                  <input class="hud__field-control" type="number" min="1" max="100" step="1" data-builder-npc-combat-flee />
                 </label>
               </div>
               <label class="hud__field">
@@ -1459,10 +1452,6 @@ export class Hud {
       onNpcCombatChange('leashRadius', Number(this.builderNpcCombatLeashRadius.value));
     });
 
-    this.builderNpcCombatFleeHealth?.addEventListener('input', () => {
-      onNpcCombatChange('fleeHealthThreshold', Number(this.builderNpcCombatFleeHealth.value));
-    });
-
     this.builderNpcConfirm.addEventListener('click', () => {
       onConfirmNpc();
     });
@@ -1739,7 +1728,6 @@ export class Hud {
     }
     setFieldValue(this.builderNpcCombatAggroRadius, String(editorState.combat.aggroRadius));
     setFieldValue(this.builderNpcCombatLeashRadius, String(editorState.combat.leashRadius));
-    setFieldValue(this.builderNpcCombatFleeHealth, String(editorState.combat.fleeHealthThreshold));
     if (this.builderNpcCombatLeashField) {
       const showHostileLeash = editorState.combat.archetype === 'hostile';
       this.builderNpcCombatLeashField.hidden = !showHostileLeash;

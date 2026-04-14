@@ -106,7 +106,6 @@ const NPC_PLANS = [
         archetype: 'hostile',
       aggroRadius: 14,
       leashRadius: 22,
-      fleeHealthThreshold: 24,
       weaponId: ''
     }
   },

@@ -258,8 +258,6 @@ function createNpcRuntimeMeta(overrides = {}) {
     calmEndsAt: 0,
     lastAttackAt: 0,
     wanderPoint: null,
-    attackTargetPlayerId: '',
-    attackTargetNpcId: '',
     combatAnchor: null,
     ...overrides
   };
@@ -1871,8 +1869,6 @@ export class WorldRoom extends Room {
     meta.calmEndsAt = 0;
     meta.lastAttackAt = 0;
     meta.wanderPoint = null;
-    meta.attackTargetPlayerId = '';
-    meta.attackTargetNpcId = '';
     meta.combatAnchor = null;
 
     npc.currentStepIndex = 0;
