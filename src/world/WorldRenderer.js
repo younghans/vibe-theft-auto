@@ -1008,12 +1008,29 @@ export class WorldRenderer {
   }
 
   pickPlacementId(pointer, camera = this.camera) {
-    if (!this.propRoot.children.length) {
+    const pickTargets = [];
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (rendered.hidden || rendered.visualHidden || rendered.placement?.layer === 'tile') {
+        continue;
+      }
+
+      if (rendered.actor?.pickProxy) {
+        pickTargets.push(rendered.actor.pickProxy);
+        continue;
+      }
+
+      if (rendered.object) {
+        pickTargets.push(rendered.object);
+      }
+    }
+
+    if (!pickTargets.length) {
       return null;
     }
 
     this.raycaster.setFromCamera(pointer, camera);
-    const intersections = this.raycaster.intersectObjects([...this.propRoot.children], true);
+    const intersections = this.raycaster.intersectObjects(pickTargets, true);
     return intersections.length ? extractPlacementId(intersections[0].object) : null;
   }
 
