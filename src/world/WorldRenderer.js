@@ -59,6 +59,18 @@ function createBoxColliderFromBounds(minX, minZ, maxX, maxZ, minY = 0, maxY = 4)
   };
 }
 
+function boxHasFiniteExtents(box) {
+  return Boolean(
+    box
+    && Number.isFinite(box.min?.x)
+    && Number.isFinite(box.min?.y)
+    && Number.isFinite(box.min?.z)
+    && Number.isFinite(box.max?.x)
+    && Number.isFinite(box.max?.y)
+    && Number.isFinite(box.max?.z)
+  );
+}
+
 function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
   switch (((rotationQuarterTurns % 4) + 4) % 4) {
     case 1:
@@ -1040,7 +1052,17 @@ export class WorldRenderer {
       return null;
     }
 
-    return new THREE.Box3().setFromObject(rendered.actor?.boundsObject ?? rendered.object);
+    if (rendered.actor?.getSelectionBounds) {
+      const actorBounds = rendered.actor.getSelectionBounds();
+      if (boxHasFiniteExtents(actorBounds)) {
+        return actorBounds;
+      }
+    }
+
+    const objectBounds = new THREE.Box3().setFromObject(rendered.actor?.boundsObject ?? rendered.object);
+    return boxHasFiniteExtents(objectBounds)
+      ? objectBounds
+      : null;
   }
 
   getNpcSpeechAnchors() {

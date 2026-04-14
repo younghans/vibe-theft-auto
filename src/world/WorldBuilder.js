@@ -87,6 +87,9 @@ function snapToCell(worldPosition) {
 }
 
 function screenClamp(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return (min + max) * 0.5;
+  }
   return Math.min(max, Math.max(min, value));
 }
 

@@ -306,6 +306,29 @@ export class NpcActor {
     };
   }
 
+  getSelectionBounds() {
+    const collider = this.model.pickCollider ?? this.model.collider;
+    const radius = Math.max(0.5, Number(collider?.radius ?? this.model.colliderRadius ?? 1));
+    const height = Math.max(
+      Number(collider?.height ?? 0),
+      Number(this.model.height ?? 0),
+      1
+    );
+
+    return new THREE.Box3(
+      new THREE.Vector3(
+        this.anchor.position.x - radius,
+        this.anchor.position.y,
+        this.anchor.position.z - radius
+      ),
+      new THREE.Vector3(
+        this.anchor.position.x + radius,
+        this.anchor.position.y + height,
+        this.anchor.position.z + radius
+      )
+    );
+  }
+
   applyPlacement(definition) {
     this.definition = structuredClone(definition);
     this.anchor.position.set(definition.position[0], definition.y ?? 0, definition.position[1]);
