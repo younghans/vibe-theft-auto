@@ -114,6 +114,7 @@ const PlayerState = schema({
   kills: 'number',
   deaths: 'number',
   lastDamagedAt: 'number',
+  workoutPlacementId: 'string',
   characterId: 'string',
   isAdmin: 'boolean'
 });
@@ -423,6 +424,14 @@ export class WorldRoom extends Room {
         });
       }
     });
+
+    this.onMessage('workout:claim', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleWorkoutClaim(client, message));
+    });
+
+    this.onMessage('workout:release', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleWorkoutRelease(client, message));
+    });
   }
 
   onJoin(client, options = {}) {
@@ -454,6 +463,7 @@ export class WorldRoom extends Room {
     player.kills = 0;
     player.deaths = 0;
     player.lastDamagedAt = 0;
+    player.workoutPlacementId = '';
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
@@ -588,6 +598,48 @@ export class WorldRoom extends Room {
     player.characterId = sanitizeCharacterId(message?.characterId);
   }
 
+  handleWorkoutClaim(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot use that right now.');
+    }
+
+    const placementId = typeof message?.placementId === 'string'
+      ? message.placementId.trim()
+      : '';
+    const target = this.getNpcTargetOption(placementId);
+    if (!placementId || !target?.workoutType) {
+      throw new Error('That workout station is not available.');
+    }
+
+    if (player.workoutPlacementId === placementId) {
+      return { placementId };
+    }
+
+    if (this.isWorkoutPlacementOccupied(placementId, { ignorePlayerId: client.sessionId })) {
+      throw new Error('That barbell is already in use.');
+    }
+
+    player.workoutPlacementId = placementId;
+    return { placementId };
+  }
+
+  handleWorkoutRelease(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      return { placementId: '' };
+    }
+
+    const placementId = typeof message?.placementId === 'string'
+      ? message.placementId.trim()
+      : '';
+    if (!placementId || player.workoutPlacementId === placementId) {
+      player.workoutPlacementId = '';
+    }
+
+    return { placementId: player.workoutPlacementId || '' };
+  }
+
   updateCombatTimers() {
     const now = Date.now();
     const deltaMs = Math.max(16, now - this.lastNpcSimulationAt);
@@ -644,6 +696,7 @@ export class WorldRoom extends Room {
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.lastDamagedAt = 0;
+    player.workoutPlacementId = '';
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -867,6 +920,7 @@ export class WorldRoom extends Room {
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.deaths += 1;
+    player.workoutPlacementId = '';
     player.emoteId = LIMP_EMOTE_ID;
     player.emoteActive = true;
     player.emoteStartedAt = Date.now();

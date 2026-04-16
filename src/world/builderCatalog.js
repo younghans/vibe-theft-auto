@@ -170,6 +170,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     collision: true,
     blocksShots: true,
     padding: 0.5,
+    npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.46],
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
   {
@@ -433,6 +434,9 @@ function createCityTile(definition) {
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
+    npcRouteDoorOffset: Array.isArray(definition.npcRouteDoorOffset)
+      ? [...definition.npcRouteDoorOffset]
+      : undefined,
     interior: definition.interior
       ? {
           ...definition.interior,

@@ -567,6 +567,13 @@ export class WorldBuilder {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
+  setPlayerWorkoutState(
+    playerStateMap = new Map(),
+    workoutState = {}
+  ) {
+    this.worldRenderer.applyPlayerWorkoutState(playerStateMap, workoutState);
+  }
+
   setNpcFocusTargets(npcFocusTargets = new Map()) {
     this.worldRenderer.applyNpcFocusTargets(npcFocusTargets);
   }

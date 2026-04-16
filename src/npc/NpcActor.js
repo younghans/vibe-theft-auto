@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
 import { createRagdollController } from '../player/ragdollController.js';
 import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
+import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { prepareNpcRenderObject } from './npcRenderUtils.js';
 
 const DAMAGE_FEEDBACK_DURATION_MS = 380;
@@ -12,6 +13,13 @@ const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
 const NPC_FOCUS_MIN_DISTANCE = 0.18;
+const FOOT_PLANT_BONE_NAMES = Object.freeze([
+  'mixamorigLeftFoot',
+  'mixamorigLeftToeBase',
+  'mixamorigRightFoot',
+  'mixamorigRightToeBase'
+]);
+const NPC_GROUNDED_ANIMATIONS = new Set(['snatch']);
 
 let sharedIdleClip = null;
 let sharedWalkClip = null;
@@ -187,6 +195,7 @@ export class NpcActor {
     this.anchor = new THREE.Group();
     this.visual = new THREE.Group();
     this.character = object;
+    this.sockets = null;
     this.pickProxy = createPickProxy(model.pickCollider ?? model.collider);
     this.selectionIndicator = createIndicator(0xf2c871);
     this.busyIndicator = createIndicator(0xf6924c);
@@ -204,6 +213,19 @@ export class NpcActor {
     this.damageDirection = new THREE.Vector3(0, 0, 1);
     this.selected = false;
     this.focusTarget = null;
+    this.footPlantBones = [];
+    this.footPlantWorldPosition = new THREE.Vector3();
+    this.footPlantLocalPosition = new THREE.Vector3();
+    this.workoutLeftHandPosition = new THREE.Vector3();
+    this.workoutRightHandPosition = new THREE.Vector3();
+    this.workoutBarbellMidpoint = new THREE.Vector3();
+    this.workoutBarbellAxis = new THREE.Vector3();
+    this.workoutForward = new THREE.Vector3();
+    this.workoutBarbellQuaternion = new THREE.Quaternion();
+    this.anchorWorldQuaternion = new THREE.Quaternion();
+    this.anchorWorldQuaternionInverse = new THREE.Quaternion();
+    this.workoutBarbellLocalPosition = new THREE.Vector3();
+    this.workoutBarbellLocalQuaternion = new THREE.Quaternion();
     this.runtimeState = {
       x: definition.position[0],
       z: definition.position[1],
@@ -241,9 +263,15 @@ export class NpcActor {
     );
     this.damageBurst.position.set(0, this.model.height * 0.58, 0);
     this.damageBurst.visible = false;
+    this.carriedBarbell = createOlympicBarbellVisual({ origin: 'center' });
+    this.carriedBarbell.visible = false;
 
     const humanoid = validateMixamoHumanoid(this.character);
     if (humanoid.isHumanoid) {
+      this.sockets = ensureMixamoSockets(this.character);
+      this.footPlantBones = FOOT_PLANT_BONE_NAMES
+        .map((boneName) => this.character.getObjectByName(boneName))
+        .filter(Boolean);
       this.mixer = new THREE.AnimationMixer(this.character);
       this.ragdoll = createRagdollController(this.character);
       this.animationActions = new Map([
@@ -276,6 +304,7 @@ export class NpcActor {
     this.anchor.add(this.pickProxy);
     this.anchor.add(this.interactRadiusIndicator);
     this.anchor.add(this.damageRipple);
+    this.anchor.add(this.carriedBarbell);
     this.visual.add(this.character);
     this.visual.add(this.damageBurst);
     this.anchor.add(this.busyIndicator);
@@ -304,6 +333,86 @@ export class NpcActor {
       radius: collider.radius,
       height: collider.height
     };
+  }
+
+  getFootPlantGroundingOffset() {
+    if (!NPC_GROUNDED_ANIMATIONS.has(this.activeAnimation) || this.footPlantBones.length === 0) {
+      return 0;
+    }
+
+    this.character.updateWorldMatrix(true, true);
+    this.visual.updateWorldMatrix(true, true);
+
+    let lowestLocalY = Infinity;
+    for (const bone of this.footPlantBones) {
+      bone.getWorldPosition(this.footPlantWorldPosition);
+      this.footPlantLocalPosition.copy(this.footPlantWorldPosition);
+      this.visual.worldToLocal(this.footPlantLocalPosition);
+      lowestLocalY = Math.min(lowestLocalY, this.footPlantLocalPosition.y);
+    }
+
+    if (!Number.isFinite(lowestLocalY)) {
+      return 0;
+    }
+
+    return Math.max(0, lowestLocalY);
+  }
+
+  syncWorkoutBarbell() {
+    const workoutActive = (
+      this.runtimeState.alive !== false
+      && this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden
+      && this.runtimeState.activity === 'snatch'
+      && this.sockets?.handLeft
+      && this.sockets?.handRight
+    );
+
+    this.carriedBarbell.visible = Boolean(workoutActive);
+    if (!workoutActive) {
+      return;
+    }
+
+    const leftHand = this.sockets.handLeft;
+    const rightHand = this.sockets.handRight;
+    leftHand.getWorldPosition(this.workoutLeftHandPosition);
+    rightHand.getWorldPosition(this.workoutRightHandPosition);
+    this.workoutBarbellMidpoint
+      .copy(this.workoutLeftHandPosition)
+      .add(this.workoutRightHandPosition)
+      .multiplyScalar(0.5);
+    this.workoutBarbellAxis
+      .subVectors(this.workoutRightHandPosition, this.workoutLeftHandPosition)
+      .setY(0);
+
+    if (this.workoutBarbellAxis.lengthSq() <= 0.0001) {
+      const facing = this.anchor.rotation.y;
+      this.workoutBarbellAxis.set(Math.cos(facing), 0, -Math.sin(facing));
+    } else {
+      this.workoutBarbellAxis.normalize();
+    }
+
+    this.workoutForward.set(
+      Math.sin(this.anchor.rotation.y),
+      0,
+      Math.cos(this.anchor.rotation.y)
+    );
+
+    this.workoutBarbellMidpoint.addScaledVector(this.workoutForward, 0.08);
+    this.workoutBarbellQuaternion.setFromUnitVectors(
+      new THREE.Vector3(1, 0, 0),
+      this.workoutBarbellAxis
+    );
+
+    this.workoutBarbellLocalPosition.copy(this.workoutBarbellMidpoint);
+    this.anchor.worldToLocal(this.workoutBarbellLocalPosition);
+    this.anchor.getWorldQuaternion(this.anchorWorldQuaternion);
+    this.anchorWorldQuaternionInverse.copy(this.anchorWorldQuaternion).invert();
+    this.workoutBarbellLocalQuaternion
+      .copy(this.anchorWorldQuaternionInverse)
+      .multiply(this.workoutBarbellQuaternion);
+
+    this.carriedBarbell.position.copy(this.workoutBarbellLocalPosition);
+    this.carriedBarbell.quaternion.copy(this.workoutBarbellLocalQuaternion);
   }
 
   getSelectionBounds() {
@@ -514,9 +623,15 @@ export class NpcActor {
       ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
       : 0;
 
+    this.syncAnimationState();
+    this.mixer?.update(deltaSeconds);
+    this.ragdoll?.update(deltaSeconds);
+    this.ragdoll?.applyToSkeleton();
+    const footPlantGroundingOffsetY = this.getFootPlantGroundingOffset();
+
     this.visual.position.set(
       (this.damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
-      damagePulse * 0.12,
+      (damagePulse * 0.12) - footPlantGroundingOffsetY,
       (this.damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
     );
     this.visual.rotation.set(
@@ -563,9 +678,6 @@ export class NpcActor {
       }
     }
 
-    this.syncAnimationState();
-    this.mixer?.update(deltaSeconds);
-    this.ragdoll?.update(deltaSeconds);
-    this.ragdoll?.applyToSkeleton();
+    this.syncWorkoutBarbell();
   }
 }

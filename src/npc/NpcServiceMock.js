@@ -123,6 +123,7 @@ function createDefaultPlayerState(overrides = {}) {
     kills: 0,
     deaths: 0,
     lastDamagedAt: 0,
+    workoutPlacementId: '',
     lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -929,6 +930,50 @@ export class NpcServiceMock {
     this.startReload(player);
   }
 
+  async claimWorkoutPlacement(placementId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot use that right now.' };
+    }
+
+    const normalizedPlacementId = typeof placementId === 'string'
+      ? placementId.trim()
+      : '';
+    const target = this.getNpcTargetOption(normalizedPlacementId);
+    if (!normalizedPlacementId || !target?.workoutType) {
+      return { ok: false, error: 'That workout station is not available.' };
+    }
+
+    if (player.workoutPlacementId === normalizedPlacementId) {
+      return { ok: true, placementId: normalizedPlacementId };
+    }
+
+    if (this.isWorkoutPlacementOccupied(normalizedPlacementId, { ignorePlayerId: this.state.sessionId })) {
+      return { ok: false, error: 'That barbell is already in use.' };
+    }
+
+    player.workoutPlacementId = normalizedPlacementId;
+    this.emit();
+    return { ok: true, placementId: normalizedPlacementId };
+  }
+
+  async releaseWorkoutPlacement(placementId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player) {
+      return { ok: true, placementId: '' };
+    }
+
+    const normalizedPlacementId = typeof placementId === 'string'
+      ? placementId.trim()
+      : '';
+    if (!normalizedPlacementId || player.workoutPlacementId === normalizedPlacementId) {
+      player.workoutPlacementId = '';
+      this.emit();
+    }
+
+    return { ok: true, placementId: player.workoutPlacementId || '' };
+  }
+
   startReload(player, { emitEvent = true } = {}) {
     if (
       !player
@@ -1023,6 +1068,7 @@ export class NpcServiceMock {
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.lastDamagedAt = 0;
+    player.workoutPlacementId = '';
     player.lastPunchAt = 0;
     player.lastShotAt = 0;
     player.emoteId = '';
@@ -1049,6 +1095,7 @@ export class NpcServiceMock {
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.deaths += 1;
+    player.workoutPlacementId = '';
     player.emoteId = 'limp';
     player.emoteActive = true;
     player.emoteStartedAt = Date.now();

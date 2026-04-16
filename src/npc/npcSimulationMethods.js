@@ -297,7 +297,7 @@ export const npcSimulationMethods = {
       }
 
       const placement = this.worldState.getPlacement(step.targetPlacementId);
-      const target = placement ? resolveNpcTargetOption(placement) : null;
+      const target = placement ? resolveNpcTargetOption(placement, undefined, this.worldState) : null;
       if (!placement || !target?.approachPosition) {
         continue;
       }
@@ -348,7 +348,45 @@ export const npcSimulationMethods = {
 
   getNpcTargetOption(targetPlacementId = '') {
     const placement = this.worldState.getPlacement(targetPlacementId);
-    return placement ? resolveNpcTargetOption(placement) : null;
+    return placement ? resolveNpcTargetOption(placement, undefined, this.worldState) : null;
+  },
+
+  isWorkoutPlacementOccupied(targetPlacementId = '', {
+    ignoreNpcId = '',
+    ignorePlayerId = ''
+  } = {}) {
+    if (!targetPlacementId) {
+      return false;
+    }
+
+    const target = this.getNpcTargetOption(targetPlacementId);
+    if (!target?.workoutType) {
+      return false;
+    }
+
+    for (const [playerId, player] of this.state.players.entries()) {
+      if (
+        playerId !== ignorePlayerId
+        && player?.alive !== false
+        && player?.workoutPlacementId === targetPlacementId
+      ) {
+        return true;
+      }
+    }
+
+    for (const [npcId, npc] of this.state.npcs.entries()) {
+      if (
+        npcId !== ignoreNpcId
+        && npc?.alive !== false
+        && npc?.mode !== NPC_RUNTIME_MODES.hidden
+        && npc?.targetPlacementId === targetPlacementId
+        && npc?.activity === target.workoutType
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   },
 
   getCurrentNpcRoutineStep(definition, npc) {
@@ -766,12 +804,18 @@ export const npcSimulationMethods = {
       );
       const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
       if (arrived) {
-        this.beginNpcIdlePause(npcId, now);
-        if (this.isNpcIdling(npcId, now)) {
+        npc.x = quantizePosition(targetAnchor.x);
+        npc.z = quantizePosition(targetAnchor.z);
+        if (Number.isFinite(target?.approachRotationY)) {
+          npc.rotationY = quantizeRotation(target.approachRotationY);
+          npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+        }
+        this.syncNpcDerivedState?.(npc);
+        if (target?.workoutType && this.isWorkoutPlacementOccupied(npc.targetPlacementId, { ignoreNpcId: npcId })) {
           npc.activity = '';
+          meta.stepStartedAt = 0;
           return true;
         }
-        this.clearNpcIdlePause(npcId);
         npc.activity = target?.workoutType ?? 'use';
         if (!meta.stepStartedAt) {
           meta.stepStartedAt = now;
@@ -781,6 +825,7 @@ export const npcSimulationMethods = {
         }
       } else {
         npc.activity = '';
+        meta.stepStartedAt = 0;
       }
       return true;
     }

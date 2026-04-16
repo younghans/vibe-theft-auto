@@ -168,6 +168,7 @@ export function buildNpcRouteGraph(worldState) {
   const nodeMap = new Map();
   const routeNodes = [];
   const placementNodeById = new Map();
+  const targets = collectNpcTargetOptions(worldState);
 
   for (const placement of worldState.getPlacements()) {
     const item = getBuilderItemById(placement.itemId);
@@ -196,7 +197,7 @@ export function buildNpcRouteGraph(worldState) {
     addEdge(nodeMap, node.id, nodeKeyForCell(node.cellX ?? 0, (node.cellZ ?? 0) - 1));
   }
 
-  for (const target of collectNpcTargetOptions(worldState)) {
+  for (const target of targets) {
     const targetKey = nodeKeyForTarget(target.placementId);
     const node = makeNode(targetKey, target.approachPosition.x, target.approachPosition.z, {
       kind: 'target',
@@ -204,6 +205,18 @@ export function buildNpcRouteGraph(worldState) {
     });
     nodeMap.set(targetKey, node);
     placementNodeById.set(target.placementId, targetKey);
+  }
+
+  for (const target of targets) {
+    const targetKey = placementNodeById.get(target.placementId);
+    const viaPlacementNodeId = target.routeViaPlacementId
+      ? placementNodeById.get(target.routeViaPlacementId)
+      : null;
+
+    if (targetKey && viaPlacementNodeId) {
+      addEdge(nodeMap, targetKey, viaPlacementNodeId);
+      continue;
+    }
 
     const nearestRoadNode = findNearestNode(routeNodes, target.approachPosition);
     if (nearestRoadNode) {

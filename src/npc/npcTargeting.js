@@ -1,4 +1,4 @@
-import { getTileCenterWorldPosition } from '../shared/tileFootprint.js';
+import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from '../world/builderCatalog.js';
 import { NPC_STEP_TYPES } from './npcBehavior.js';
 
@@ -13,6 +13,10 @@ function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
     default:
       return { x, z };
   }
+}
+
+function toRotationY(rotationQuarterTurns = 0) {
+  return (((rotationQuarterTurns % 4) + 4) % 4) * (Math.PI / 2);
 }
 
 function cloneInteriorDefinition(interior) {
@@ -161,6 +165,10 @@ export function getPlacementApproachPoint(placement, item = getBuilderItemById(p
     return getPlacementWorldPoint(placement, interactable.localOffset, item);
   }
 
+  if (Array.isArray(item?.npcRouteDoorOffset) && item.npcRouteDoorOffset.length >= 2) {
+    return getPlacementWorldPoint(placement, item.npcRouteDoorOffset, item);
+  }
+
   if (isBuildingPlacement(placement, item)) {
     return getPlacementWorldPoint(placement, [0, BUILDER_TILE_SIZE * 0.42], item);
   }
@@ -168,7 +176,68 @@ export function getPlacementApproachPoint(placement, item = getBuilderItemById(p
   return getPlacementWorldOrigin(placement, item);
 }
 
-export function resolveNpcTargetOption(placement, item = getBuilderItemById(placement?.itemId)) {
+function placementContainsWorldPoint(placement, item, point) {
+  if (!placement || !item || !point || placement.layer !== 'tile') {
+    return false;
+  }
+
+  const halfTile = BUILDER_TILE_SIZE * 0.5;
+  const occupiedCells = getTileOccupiedCells(
+    item,
+    placement.cellX ?? 0,
+    placement.cellZ ?? 0,
+    placement.rotationQuarterTurns ?? 0
+  );
+
+  return occupiedCells.some((cell) => (
+    point.x >= ((cell.x * BUILDER_TILE_SIZE) - halfTile)
+    && point.x <= ((cell.x * BUILDER_TILE_SIZE) + halfTile)
+    && point.z >= ((cell.z * BUILDER_TILE_SIZE) - halfTile)
+    && point.z <= ((cell.z * BUILDER_TILE_SIZE) + halfTile)
+  ));
+}
+
+function findContainingBuildingPlacement(worldState, placement, originPosition) {
+  if (!worldState?.getPlacements || placement?.layer !== 'prop' || !originPosition) {
+    return null;
+  }
+
+  let bestMatch = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of worldState.getPlacements()) {
+    if (!candidate || candidate.id === placement.id) {
+      continue;
+    }
+
+    const candidateItem = getBuilderItemById(candidate.itemId);
+    if (!isBuildingPlacement(candidate, candidateItem) || !placementContainsWorldPoint(candidate, candidateItem, originPosition)) {
+      continue;
+    }
+
+    const candidateOrigin = getPlacementWorldOrigin(candidate, candidateItem);
+    const distance = candidateOrigin
+      ? Math.hypot(candidateOrigin.x - originPosition.x, candidateOrigin.z - originPosition.z)
+      : 0;
+    if (distance >= bestDistance) {
+      continue;
+    }
+
+    bestMatch = {
+      placement: candidate,
+      item: candidateItem
+    };
+    bestDistance = distance;
+  }
+
+  return bestMatch;
+}
+
+export function resolveNpcTargetOption(
+  placement,
+  item = getBuilderItemById(placement?.itemId),
+  worldState = null
+) {
   if (!isNpcTargetablePlacement(placement, item)) {
     return null;
   }
@@ -176,6 +245,7 @@ export function resolveNpcTargetOption(placement, item = getBuilderItemById(plac
   const origin = getPlacementWorldOrigin(placement, item);
   const approachPosition = getPlacementApproachPoint(placement, item) ?? origin;
   const interactable = resolvePlacementInteractable(placement, item);
+  const container = findContainingBuildingPlacement(worldState, placement, origin);
   const supportedStepTypes = [
     NPC_STEP_TYPES.travelToPlacement,
     NPC_STEP_TYPES.loiterNearPlacement,
@@ -193,6 +263,7 @@ export function resolveNpcTargetOption(placement, item = getBuilderItemById(plac
   return {
     placementId: placement.id,
     itemId: placement.itemId,
+    containerPlacementId: container?.placement?.id ?? '',
     label: placement.interactable?.label ?? interactable?.label ?? item.label,
     layer: placement.layer,
     groupLabel: item.groupLabel ?? '',
@@ -201,8 +272,12 @@ export function resolveNpcTargetOption(placement, item = getBuilderItemById(plac
     loiterCapable: true,
     activityCapable: supportedStepTypes.includes(NPC_STEP_TYPES.usePlacement),
     workoutType: interactable?.workoutType ?? '',
+    approachRotationY: Number.isFinite(interactable?.approachRotationY)
+      ? Number((toRotationY(placement.rotationQuarterTurns ?? 0) + interactable.approachRotationY).toFixed(3))
+      : undefined,
     approachPosition,
     originPosition: origin,
+    routeViaPlacementId: container?.placement?.id ?? '',
     distance: interactable?.distance ?? BUILDER_TILE_SIZE * 0.44
   };
 }
@@ -213,7 +288,7 @@ export function collectNpcTargetOptions(worldState) {
   }
 
   return worldState.getPlacements()
-    .map((placement) => resolveNpcTargetOption(placement))
+    .map((placement) => resolveNpcTargetOption(placement, undefined, worldState))
     .filter(Boolean)
     .sort((a, b) => a.label.localeCompare(b.label));
 }

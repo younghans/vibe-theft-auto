@@ -75,6 +75,7 @@ function clonePlayerState(player) {
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
     lastDamagedAt: player.lastDamagedAt ?? 0,
+    workoutPlacementId: player.workoutPlacementId || '',
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };
@@ -505,6 +506,21 @@ export class NpcServiceColyseus {
 
   reloadWeapon() {
     this.room?.send('combat:reloadRequest', {});
+  }
+
+  async claimWorkoutPlacement(placementId = '') {
+    const normalized = typeof placementId === 'string' ? placementId.trim() : '';
+    if (!normalized) {
+      return { ok: false, error: 'That workout station is not available.' };
+    }
+
+    return this.rpc('workout:claim', { placementId: normalized });
+  }
+
+  async releaseWorkoutPlacement(placementId = '') {
+    return this.rpc('workout:release', {
+      placementId: typeof placementId === 'string' ? placementId.trim() : ''
+    });
   }
 
   async destroy() {

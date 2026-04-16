@@ -517,6 +517,12 @@ export class WorldRenderer {
     this.npcRuntimeState = new Map();
     this.npcFocusTargets = new Map();
     this.npcDebugState = new Map();
+    this.playerState = new Map();
+    this.localWorkoutState = {
+      pendingPlacementId: '',
+      claimedPlacementId: '',
+      activePlacementId: ''
+    };
     this.npcRoutinePreview = [];
     this.npcInteractRadiusVisible = false;
     this.npcDebugVisible = false;
@@ -634,6 +640,7 @@ export class WorldRenderer {
       actor,
       hidden: false,
       visualHidden: false,
+      workoutHidden: false,
       hiddenNodeNames: new Set(),
       shadowOverrides: null,
       item,
@@ -651,6 +658,8 @@ export class WorldRenderer {
     } else {
       this.propRoot.add(object);
     }
+
+    this.refreshWorkoutPlacementState();
 
     return renderedPlacement;
   }
@@ -748,6 +757,8 @@ export class WorldRenderer {
     } else {
       rendered.colliders = createPlacementColliders(rendered.colliderObject, rendered.item, placement, null);
     }
+
+    this.refreshWorkoutPlacementState();
   }
 
   setPlacementHidden(id, hidden) {
@@ -803,6 +814,7 @@ export class WorldRenderer {
 
     rendered.object.parent?.remove(rendered.object);
     this.renderedPlacements.delete(id);
+    this.refreshWorkoutPlacementState();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
   }
@@ -825,7 +837,102 @@ export class WorldRenderer {
     return this.getSurfaceHeightAtPosition(worldPosition.x, worldPosition.z);
   }
 
+  getOccupiedWorkoutPlacementIds(worldState) {
+    const occupiedPlacementIds = new Set();
+
+    for (const npcState of this.npcRuntimeState.values()) {
+      if (
+        !npcState
+        || npcState.alive === false
+        || npcState.mode === NPC_RUNTIME_MODES.hidden
+        || !npcState.targetPlacementId
+        || typeof npcState.activity !== 'string'
+        || !npcState.activity
+      ) {
+        continue;
+      }
+
+      const renderedTarget = this.renderedPlacements.get(npcState.targetPlacementId);
+      const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(npcState.targetPlacementId);
+      const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
+      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      if (interactable?.workoutType && interactable.workoutType === npcState.activity) {
+        occupiedPlacementIds.add(npcState.targetPlacementId);
+      }
+    }
+
+    for (const playerState of this.playerState.values()) {
+      if (playerState?.alive === false || !playerState?.workoutPlacementId) {
+        continue;
+      }
+
+      occupiedPlacementIds.add(playerState.workoutPlacementId);
+    }
+
+    if (this.localWorkoutState.pendingPlacementId) {
+      occupiedPlacementIds.add(this.localWorkoutState.pendingPlacementId);
+    }
+    if (this.localWorkoutState.claimedPlacementId) {
+      occupiedPlacementIds.add(this.localWorkoutState.claimedPlacementId);
+    }
+
+    return occupiedPlacementIds;
+  }
+
+  getVisibleWorkoutPlacementIds(worldState) {
+    const visiblePlacementIds = new Set();
+
+    for (const npcState of this.npcRuntimeState.values()) {
+      if (
+        !npcState
+        || npcState.alive === false
+        || npcState.mode === NPC_RUNTIME_MODES.hidden
+        || !npcState.targetPlacementId
+        || typeof npcState.activity !== 'string'
+        || !npcState.activity
+      ) {
+        continue;
+      }
+
+      const renderedTarget = this.renderedPlacements.get(npcState.targetPlacementId);
+      const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(npcState.targetPlacementId);
+      const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
+      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      if (interactable?.workoutType && interactable.workoutType === npcState.activity) {
+        visiblePlacementIds.add(npcState.targetPlacementId);
+      }
+    }
+
+    for (const playerState of this.playerState.values()) {
+      if (
+        playerState?.alive === false
+        || !playerState?.workoutPlacementId
+        || !playerState?.emoteActive
+        || !playerState?.emoteId
+      ) {
+        continue;
+      }
+
+      const placementId = playerState.workoutPlacementId;
+      const renderedTarget = this.renderedPlacements.get(placementId);
+      const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(placementId);
+      const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
+      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      if (interactable?.workoutType && interactable.workoutType === playerState.emoteId) {
+        visiblePlacementIds.add(placementId);
+      }
+    }
+
+    if (this.localWorkoutState.activePlacementId) {
+      visiblePlacementIds.add(this.localWorkoutState.activePlacementId);
+    }
+
+    return visiblePlacementIds;
+  }
+
   getInteractables(worldState) {
+    const occupiedWorkoutPlacementIds = this.getOccupiedWorkoutPlacementIds(worldState);
+
     return worldState.getPlacements()
       .filter((placement) => {
         if (placement.layer === 'npc') {
@@ -885,6 +992,17 @@ export class WorldRenderer {
           )
           : null;
         const workoutKind = interactable.workoutType ? `${interactable.workoutType}-workout` : 'world';
+        const workoutBusy = Boolean(
+          interactable.workoutType
+          && occupiedWorkoutPlacementIds.has(placement.id)
+        );
+        const defaultLabel = interactable.label ?? item.label ?? 'Workout station';
+        const prompt = workoutBusy
+          ? `${defaultLabel} in use`
+          : (interactable.prompt ?? `Enter ${interactable.label ?? item.label}`);
+        const actionText = workoutBusy
+          ? `Wait until ${defaultLabel.toLowerCase()} is free.`
+          : (interactable.actionText ?? `${item.label} is not hooked up yet.`);
 
         return {
           kind: workoutKind,
@@ -894,8 +1012,9 @@ export class WorldRenderer {
           originPosition: rendered.object.position.clone(),
           position,
           radius: interactable.radius ?? 4,
-          prompt: interactable.prompt ?? `Enter ${interactable.label ?? item.label}`,
-          actionText: interactable.actionText ?? `${item.label} is not hooked up yet.`,
+          prompt,
+          actionText,
+          busy: workoutBusy,
           interior: cloneInteriorDefinition(interactable.interior),
           approachPosition,
           approachRotationY: Number.isFinite(interactable.approachRotationY)
@@ -908,7 +1027,7 @@ export class WorldRenderer {
   }
 
   applyPlacementVisibility(rendered) {
-    const visible = !rendered.hidden && !rendered.visualHidden;
+    const visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
     rendered.object.visible = visible;
     rendered.object.traverse((node) => {
       const nodeHidden = [...(rendered.hiddenNodeNames ?? [])]
@@ -921,6 +1040,22 @@ export class WorldRenderer {
     });
     if (rendered.actor?.pickProxy) {
       rendered.actor.pickProxy.visible = visible;
+    }
+  }
+
+  refreshWorkoutPlacementState(worldState = null) {
+    const resolvedWorldState = worldState ?? {
+      getPlacement: (placementId) => this.renderedPlacements.get(placementId)?.placement ?? null
+    };
+    const visibleWorkoutPlacementIds = this.getVisibleWorkoutPlacementIds(resolvedWorldState);
+    for (const rendered of this.renderedPlacements.values()) {
+      const nextWorkoutHidden = visibleWorkoutPlacementIds.has(rendered.id);
+      if (rendered.workoutHidden === nextWorkoutHidden) {
+        continue;
+      }
+
+      rendered.workoutHidden = nextWorkoutHidden;
+      this.applyPlacementVisibility(rendered);
     }
   }
 
@@ -965,7 +1100,25 @@ export class WorldRenderer {
       );
     }
 
+    this.refreshWorkoutPlacementState();
     this.refreshNpcDebugGizmos();
+  }
+
+  applyPlayerWorkoutState(
+    playerStateMap = new Map(),
+    {
+      pendingPlacementId = '',
+      claimedPlacementId = '',
+      activePlacementId = ''
+    } = {}
+  ) {
+    this.playerState = new Map(playerStateMap);
+    this.localWorkoutState = {
+      pendingPlacementId: typeof pendingPlacementId === 'string' ? pendingPlacementId : '',
+      claimedPlacementId: typeof claimedPlacementId === 'string' ? claimedPlacementId : '',
+      activePlacementId: typeof activePlacementId === 'string' ? activePlacementId : ''
+    };
+    this.refreshWorkoutPlacementState();
   }
 
   applyNpcFocusTargets(npcFocusTargets = new Map()) {

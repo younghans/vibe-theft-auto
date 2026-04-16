@@ -226,6 +226,9 @@ export class Game {
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
     this.activeWorkout = null;
+    this.pendingWorkoutPlacementId = '';
+    this.claimedWorkoutPlacementId = '';
+    this.activeWorkoutPlacementId = '';
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -1532,12 +1535,80 @@ export class Game {
     return true;
   }
 
-  startWorkout(interactable) {
-    if (!this.player || !interactable || this.activeWorkout) {
+  syncWorkoutState() {
+    if (!this.worldBuilder) {
+      return;
+    }
+
+    this.worldBuilder.setPlayerWorkoutState(this.npcServiceState.players ?? new Map(), {
+      pendingPlacementId: this.pendingWorkoutPlacementId,
+      claimedPlacementId: this.claimedWorkoutPlacementId,
+      activePlacementId: this.activeWorkoutPlacementId
+    });
+  }
+
+  releaseWorkoutPlacement(placementId = '') {
+    const normalizedPlacementId = typeof placementId === 'string' ? placementId.trim() : '';
+    if (!normalizedPlacementId || !this.npcService?.releaseWorkoutPlacement) {
+      return;
+    }
+
+    void this.npcService.releaseWorkoutPlacement(normalizedPlacementId).catch(() => {});
+  }
+
+  async startWorkout(interactable) {
+    if (
+      !this.player
+      || !interactable
+      || this.activeWorkout
+      || this.pendingWorkoutPlacementId
+      || this.claimedWorkoutPlacementId
+    ) {
       return false;
     }
 
     if (interactable.kind !== 'snatch-workout') {
+      return false;
+    }
+
+    if (interactable.busy) {
+      this.hud.showToast('That barbell is already in use.');
+      return false;
+    }
+
+    const placementId = typeof interactable.placementId === 'string'
+      ? interactable.placementId
+      : '';
+    if (!placementId || !this.npcService?.claimWorkoutPlacement) {
+      return false;
+    }
+
+    this.pendingWorkoutPlacementId = placementId;
+    this.syncWorkoutState();
+    let claimResult = null;
+    try {
+      claimResult = await this.npcService.claimWorkoutPlacement(placementId);
+    } catch (error) {
+      this.pendingWorkoutPlacementId = '';
+      this.syncWorkoutState();
+      this.hud.showToast(error?.message || 'Could not use that barbell right now.');
+      return false;
+    }
+    if (!claimResult?.ok) {
+      this.pendingWorkoutPlacementId = '';
+      this.syncWorkoutState();
+      this.hud.showToast(claimResult?.error ?? 'That barbell is already in use.');
+      return false;
+    }
+
+    this.pendingWorkoutPlacementId = '';
+    this.claimedWorkoutPlacementId = placementId;
+    this.syncWorkoutState();
+
+    if (!this.player || this.getLocalPlayerState()?.alive === false) {
+      this.claimedWorkoutPlacementId = '';
+      this.syncWorkoutState();
+      this.releaseWorkoutPlacement(placementId);
       return false;
     }
 
@@ -1564,12 +1635,13 @@ export class Game {
     }
 
     const { interactable } = this.activeWorkout;
-    interactable?.barbellObject && (interactable.barbellObject.visible = false);
     const carriedBarbell = createOlympicBarbellVisual({ origin: 'center' });
     this.scene.add(carriedBarbell);
     this.activeWorkout.phase = 'lifting';
     this.activeWorkout.carriedBarbell = carriedBarbell;
     this.activeWorkout.endsAt = performance.now() + SNATCH_WORKOUT_DURATION_MS;
+    this.activeWorkoutPlacementId = interactable?.placementId ?? '';
+    this.syncWorkoutState();
     this.player.setFacing(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.setAimRotation(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.stopEmote?.();
@@ -1627,7 +1699,17 @@ export class Game {
     }
 
     const workout = this.activeWorkout;
+    const placementId = workout.interactable?.placementId
+      ?? this.activeWorkoutPlacementId
+      ?? this.claimedWorkoutPlacementId
+      ?? '';
     this.activeWorkout = null;
+    this.activeWorkoutPlacementId = '';
+    this.claimedWorkoutPlacementId = '';
+    if (this.pendingWorkoutPlacementId === placementId) {
+      this.pendingWorkoutPlacementId = '';
+    }
+    this.syncWorkoutState();
     if (cancelled) {
       this.player?.stopEmote?.();
     }
@@ -1635,8 +1717,8 @@ export class Game {
       workout.carriedBarbell.parent?.remove(workout.carriedBarbell);
       disposeObjectResources(workout.carriedBarbell);
     }
-    if (workout.interactable?.barbellObject) {
-      workout.interactable.barbellObject.visible = true;
+    if (placementId) {
+      this.releaseWorkoutPlacement(placementId);
     }
     if (!cancelled) {
       this.hud.showToast('Snatch complete.');
@@ -2352,12 +2434,14 @@ export class Game {
         busy: npc.busy,
         mode: npc.mode,
         activity: npc.activity,
+        targetPlacementId: npc.targetPlacementId || '',
         alive: npc.alive !== false,
         lastDamagedAt: npc.lastDamagedAt ?? 0,
         respawnAt: npc.respawnAt ?? 0
       });
     }
     this.worldBuilder.setNpcRuntimeState(runtime);
+    this.syncWorkoutState();
     this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? new Map());
   }
 
@@ -3741,7 +3825,7 @@ export class Game {
     }
 
     if (nearest.kind === 'snatch-workout') {
-      this.startWorkout(nearest);
+      void this.startWorkout(nearest);
       return;
     }
 
