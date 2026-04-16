@@ -833,9 +833,6 @@ export const npcSimulationMethods = {
     }
 
     if (step.type === NPC_STEP_TYPES.loiterNearPlacement || step.type === NPC_STEP_TYPES.wanderNearPlacement) {
-      if (!meta.stepStartedAt) {
-        meta.stepStartedAt = now;
-      }
       const radius = Math.max(1, Number(step.radius ?? 0) || 6);
       const durationMs = Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0));
       const isWanderStep = step.type === NPC_STEP_TYPES.wanderNearPlacement;
@@ -853,22 +850,36 @@ export const npcSimulationMethods = {
       }
       const arrived = this.moveNpcAlongPath(npcId, npc, meta.wanderPoint, deltaMs);
       npc.activity = '';
-      if (arrived) {
-        this.beginNpcIdlePause(npcId, now, {
-          minMs: NPC_DEFAULT_WANDER_IDLE_MIN_MS,
-          maxMs: NPC_DEFAULT_WANDER_IDLE_MAX_MS
-        });
-        if (this.isNpcIdling(npcId, now)) {
-          if ((now - meta.stepStartedAt) >= durationMs) {
-            this.clearNpcIdlePause(npcId);
-            this.advanceNpcRoutineStep(npcId, npc);
-          }
-          return true;
-        }
-        this.clearNpcIdlePause(npcId);
+      if (!arrived) {
+        return true;
       }
+
+      if (!meta.stepStartedAt) {
+        meta.stepStartedAt = now;
+      }
+
+      this.beginNpcIdlePause(npcId, now, {
+        minMs: NPC_DEFAULT_WANDER_IDLE_MIN_MS,
+        maxMs: NPC_DEFAULT_WANDER_IDLE_MAX_MS
+      });
+
+      if (this.isNpcIdling(npcId, now)) {
+        if ((now - meta.stepStartedAt) >= durationMs) {
+          this.clearNpcIdlePause(npcId);
+          this.advanceNpcRoutineStep(npcId, npc);
+        }
+        return true;
+      }
+
+      this.clearNpcIdlePause(npcId);
       if ((now - meta.stepStartedAt) >= durationMs) {
         this.advanceNpcRoutineStep(npcId, npc);
+        return true;
+      }
+
+      if (isWanderStep) {
+        meta.wanderPoint = null;
+        this.clearNpcPath(npcId);
       }
       return true;
     }
