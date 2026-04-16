@@ -274,7 +274,7 @@ function buildNpcRoutine(plan, references) {
     resumePolicy: 'resume-step',
     steps: [
       { type: 'travelToPlacement', targetPlacementId: references.barbellId },
-      { type: 'usePlacement', targetPlacementId: references.barbellId, durationMs: 4200 },
+      { type: 'usePlacement', targetPlacementId: references.barbellId, durationMs: 5435 },
       { type: 'loiterNearPlacement', targetPlacementId: references.gymId, durationMs: 3600, radius: 4.5 },
       { type: 'enterHideAtPlacement', targetPlacementId: references.apartmentId, hiddenDurationMs: 6500 },
       { type: 'wanderNearPlacement', targetPlacementId: references.gymId, durationMs: 5200, radius: 8 }

@@ -48,6 +48,9 @@ export const NPC_DEFAULT_RESPAWN_DELAY_MS = 15000;
 export const NPC_DEFAULT_SPEED_TIER = NPC_SPEED_TIERS.slow;
 export const NPC_SLOW_RUN_SPEED = 8.8;
 export const NPC_FAST_RUN_SPEED = 15;
+export const NPC_ACTIVITY_MIN_DURATIONS_MS = Object.freeze({
+  snatch: 5435
+});
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);
@@ -88,6 +91,22 @@ export function getNpcRunSpeed(speedTier = NPC_DEFAULT_SPEED_TIER) {
   return normalizeNpcSpeedTier(speedTier) === NPC_SPEED_TIERS.fast
     ? NPC_FAST_RUN_SPEED
     : NPC_SLOW_RUN_SPEED;
+}
+
+export function getNpcUsePlacementDurationMs(step = null, target = null) {
+  const configuredDurationMs = Math.max(
+    500,
+    Math.floor(Number(step?.durationMs ?? 0) || NPC_DEFAULT_USE_DURATION_MS)
+  );
+  const activityKey = typeof target?.workoutType === 'string' && target.workoutType.trim()
+    ? target.workoutType.trim()
+    : '';
+  const minimumActivityDurationMs = Math.max(
+    0,
+    Math.floor(Number(NPC_ACTIVITY_MIN_DURATIONS_MS[activityKey] ?? 0) || 0)
+  );
+
+  return Math.max(configuredDurationMs, minimumActivityDurationMs);
 }
 
 export function cloneNpcRoutineStep(step = null) {

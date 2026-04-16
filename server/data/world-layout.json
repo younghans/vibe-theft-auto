@@ -1692,7 +1692,7 @@
           {
             "type": "usePlacement",
             "targetPlacementId": "placement_223",
-            "durationMs": 4200
+            "durationMs": 5435
           },
           {
             "type": "loiterNearPlacement",

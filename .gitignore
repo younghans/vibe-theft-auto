@@ -1,3 +1,5 @@
 .env
 .env.local
 .colyseus-cloud.json
+dist/
+.dist-staging/

@@ -17,6 +17,7 @@ import {
   NPC_DEFAULT_WANDER_IDLE_MIN_MS,
   NPC_RUNTIME_MODES,
   NPC_STEP_TYPES,
+  getNpcUsePlacementDurationMs,
   getNpcRunSpeed
 } from './npcBehavior.js';
 import {
@@ -794,6 +795,7 @@ export const npcSimulationMethods = {
     }
 
     if (step.type === NPC_STEP_TYPES.usePlacement) {
+      const useDurationMs = getNpcUsePlacementDurationMs(step, target);
       this.ensureNpcPathToPosition(
         npcId,
         { x: npc.x, z: npc.z },
@@ -820,7 +822,7 @@ export const npcSimulationMethods = {
         if (!meta.stepStartedAt) {
           meta.stepStartedAt = now;
         }
-        if ((now - meta.stepStartedAt) >= Math.max(500, Math.floor(Number(step.durationMs ?? 0) || 0))) {
+        if ((now - meta.stepStartedAt) >= useDurationMs) {
           this.advanceNpcRoutineStep(npcId, npc);
         }
       } else {
