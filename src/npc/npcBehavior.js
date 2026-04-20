@@ -273,6 +273,27 @@ export function normalizeNpcRoutine(routine = null) {
   };
 }
 
+function getNpcRoutineRuntimeStructure(routine = null) {
+  const normalizedRoutine = normalizeNpcRoutine(routine);
+  return {
+    mode: normalizedRoutine.mode,
+    resumePolicy: normalizedRoutine.resumePolicy,
+    steps: normalizedRoutine.steps.map((step) => ({
+      type: step.type,
+      targetPlacementId: step.targetPlacementId ?? ''
+    }))
+  };
+}
+
+export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextNpc = null, updates = {}) {
+  if (Object.keys(updates ?? {}).length === 1 && Object.hasOwn(updates, 'routine')) {
+    return JSON.stringify(getNpcRoutineRuntimeStructure(previousNpc?.routine))
+      !== JSON.stringify(getNpcRoutineRuntimeStructure(nextNpc?.routine));
+  }
+
+  return true;
+}
+
 export function normalizeNpcCombat(combat = null) {
   const draft = combat && typeof combat === 'object'
     ? combat

@@ -21,7 +21,8 @@ import {
 import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
-  normalizeNpcBehavior
+  normalizeNpcBehavior,
+  shouldResetNpcRuntimeForBehaviorUpdate
 } from './npcBehavior.js';
 import { PUNCH_EMOTE_ID } from '../player/emotes.js';
 import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMethods.js';
@@ -517,6 +518,10 @@ export class NpcServiceMock {
         return { ok: true, placementId: payload.placementId };
       }
       case 'updateNpc': {
+        const existingPlacement = this.worldState.getPlacement(payload.placementId);
+        const previousNpc = existingPlacement?.npc
+          ? structuredClone(existingPlacement.npc)
+          : null;
         const nextUpdates = { ...payload };
         delete nextUpdates.placementId;
         if (nextUpdates.modelId) {
@@ -533,7 +538,9 @@ export class NpcServiceMock {
         }
 
         this.syncNpcStateFromWorld();
-        this.resetNpcRuntimeState(placement.id, { restartFromSpawn: false });
+        if (shouldResetNpcRuntimeForBehaviorUpdate(previousNpc, placement.npc, nextUpdates)) {
+          this.resetNpcRuntimeState(placement.id, { restartFromSpawn: false });
+        }
         this.emitWorldPatch({
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(placement.id),

@@ -67,9 +67,6 @@ function getNpcRoutineEditorSignature(editorState) {
     steps: (editorState.routine?.steps ?? []).map((step) => ({
       type: step.type,
       targetPlacementId: step.targetPlacementId ?? '',
-      durationMs: step.durationMs ?? '',
-      hiddenDurationMs: step.hiddenDurationMs ?? '',
-      radius: step.radius ?? '',
       warning: step.warning ?? '',
       pickModeActive: step.pickModeActive === true,
       targetOptions: (step.targetOptions ?? []).map((option) => ({
@@ -78,6 +75,23 @@ function getNpcRoutineEditorSignature(editorState) {
       }))
     }))
   });
+}
+
+function getNpcRoutineStepFieldValue(step, field) {
+  switch (field) {
+    case 'type':
+      return step.type ?? '';
+    case 'targetPlacementId':
+      return step.targetPlacementId ?? '';
+    case 'durationMs':
+      return step.durationMs ?? '';
+    case 'hiddenDurationMs':
+      return step.hiddenDurationMs ?? '';
+    case 'radius':
+      return step.radius ?? '';
+    default:
+      return '';
+  }
 }
 
 const HUD_CONTROLS = Object.freeze([
@@ -1888,6 +1902,25 @@ export class Hud {
             `;
           }).join('')
         : '<p class="hud__body">No routine steps yet. Add a destination-driven step to start the loop.</p>';
+    }
+
+    if (this.builderNpcRoutineSteps) {
+      this.builderNpcRoutineSteps
+        .querySelectorAll('[data-builder-npc-step-field]')
+        .forEach((field) => {
+          if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) {
+            return;
+          }
+
+          const stepIndex = Number(field.dataset.builderNpcStepIndex);
+          const fieldName = field.dataset.builderNpcStepField;
+          const step = editorState.routine.steps?.[stepIndex];
+          if (!Number.isInteger(stepIndex) || !fieldName || !step) {
+            return;
+          }
+
+          setFieldValue(field, String(getNpcRoutineStepFieldValue(step, fieldName)));
+        });
     }
 
     if (this.builderNpcDebugSummary) {

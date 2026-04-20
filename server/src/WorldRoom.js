@@ -34,7 +34,8 @@ import {
 import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
-  normalizeNpcBehavior
+  normalizeNpcBehavior,
+  shouldResetNpcRuntimeForBehaviorUpdate
 } from '../../src/npc/npcBehavior.js';
 import { getNpcModelById } from '../../src/npc/npcCatalog.js';
 import { createNpcRuntimeMeta, npcSimulationMethods } from '../../src/npc/npcSimulationMethods.js';
@@ -1442,6 +1443,7 @@ export class WorldRoom extends Room {
       }
       case 'updateNpc': {
         const placement = this.assertEditablePlacement(payload.placementId, 'npc');
+        const previousNpc = structuredClone(placement.npc);
         const updates = this.sanitizeNpcUpdates(payload);
         const updatedPlacement = this.worldState.updateNpc(placement.id, updates);
         if (!updatedPlacement) {
@@ -1449,7 +1451,9 @@ export class WorldRoom extends Room {
         }
 
         this.syncNpcDefinitionsFromWorld();
-        this.resetNpcRuntimeState(updatedPlacement.id, { restartFromSpawn: false, reason: 'npc-updated' });
+        if (shouldResetNpcRuntimeForBehaviorUpdate(previousNpc, updatedPlacement.npc, updates)) {
+          this.resetNpcRuntimeState(updatedPlacement.id, { restartFromSpawn: false, reason: 'npc-updated' });
+        }
         return this.commitWorldPatch({
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(updatedPlacement.id),
