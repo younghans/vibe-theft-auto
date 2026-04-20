@@ -30,7 +30,7 @@ function cloneNpcState(npc) {
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,
-    active: npc.active !== false,
+    active: true,
     mode: npc.mode || 'routine',
     currentStepIndex: npc.currentStepIndex ?? 0,
     targetPlacementId: npc.targetPlacementId || '',

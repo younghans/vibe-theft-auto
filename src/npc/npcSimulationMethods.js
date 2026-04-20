@@ -212,7 +212,7 @@ export const npcSimulationMethods = {
     npc.health = npc.maxHealth;
     npc.alive = true;
     npc.respawnAt = 0;
-    npc.active = definition.active !== false;
+    npc.active = true;
     npc.lastDamagedAt = 0;
     npc.lastAttackerId = '';
     npc.hiddenUntil = 0;
@@ -232,7 +232,7 @@ export const npcSimulationMethods = {
     npc.z = quantizePosition(respawnPosition.z);
     npc.rotationY = quantizeRotation(respawnTarget.rotationY ?? npc.rotationY);
     npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
-    npc.mode = npc.active === false ? NPC_RUNTIME_MODES.dead : NPC_RUNTIME_MODES.routine;
+    npc.mode = NPC_RUNTIME_MODES.routine;
     npc.targetPlacementId = '';
     npc.activity = '';
     npc.respawnAt = 0;
@@ -985,7 +985,7 @@ export const npcSimulationMethods = {
 
     for (const [npcId, npc] of this.state.npcs.entries()) {
       const definition = this.getNpcDefinition(npcId);
-      if (!definition || npc.active === false) {
+      if (!definition) {
         continue;
       }
 

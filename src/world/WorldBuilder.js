@@ -375,7 +375,6 @@ export class WorldBuilder {
       onNpcRoutineStepChange: (stepIndex, field, value) => void this.updateSelectedNpcRoutineStep(stepIndex, field, value),
       onNpcRoutinePickTarget: (stepIndex, mode) => this.setNpcRoutineTargetPickMode(stepIndex, mode),
       onNpcCombatChange: (field, value) => void this.updateSelectedNpcCombat(field, value),
-      onConfirmNpc: () => this.confirmSelectedNpc(),
       onCloseNpcEditor: () => this.closeNpcInstanceEditor(),
       onCloseBuildingEditor: () => this.closeBuildingInstanceEditor(),
       onBuildingLabelChange: (value) => void this.updateSelectedBuildingInstance({ label: value }),
@@ -1385,8 +1384,7 @@ export class WorldBuilder {
         modelId: item.modelId,
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
-        interactRadius: item.interactionRadius ?? 4.2,
-        active: false
+        interactRadius: item.interactionRadius ?? 4.2
       }
     });
     if (!result?.ok) {
@@ -1406,7 +1404,7 @@ export class WorldBuilder {
       this.notifyLayoutChanged();
     }
 
-    this.hud.showToast(`Placed ${item.label}. Confirm the NPC to make them active.`);
+    this.hud.showToast(`Placed ${item.label}.`);
   }
 
   async loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
@@ -2091,7 +2089,6 @@ export class WorldBuilder {
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },
-      active: (npcDraft?.active ?? placement.npc.active) !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,
         label: entry.label,
@@ -2518,31 +2515,6 @@ export class WorldBuilder {
       this.updateBuilderNpcEditor();
       this.notifyLayoutChanged();
     }
-  }
-
-  async confirmSelectedNpc() {
-    const placement = this.getSelectedPlacement();
-    if (!placement || placement.layer !== 'npc' || !placement.npc || placement.npc.active !== false) {
-      return;
-    }
-
-    await this.flushNpcUpdate(placement.id);
-    const result = await this.worldEditAdapter.edit({
-      op: 'updateNpc',
-      placementId: placement.id,
-      changes: { active: true }
-    });
-    if (!result?.ok) {
-      this.hud.showToast(result?.error ?? 'Could not confirm NPC.');
-      return;
-    }
-
-    if (result.appliedImmediately) {
-      this.updateBuilderNpcEditor();
-      this.notifyLayoutChanged();
-    }
-
-    this.hud.showToast(`${placement.npc.name} is now active.`);
   }
 
   notifyLayoutChanged() {

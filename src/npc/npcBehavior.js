@@ -331,6 +331,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
 export function cloneNpcBehavior(npc = null) {
   return {
     ...(npc ?? {}),
+    active: true,
     routine: cloneNpcRoutine(npc?.routine),
     combat: cloneNpcCombat(npc?.combat),
     spawnPosition: Array.isArray(npc?.spawnPosition)
@@ -352,6 +353,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
 
   return {
     ...npc,
+    active: true,
     routine: normalizeNpcRoutine(npc.routine),
     combat: normalizeNpcCombat(npc.combat),
     respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),

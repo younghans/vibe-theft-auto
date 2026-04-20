@@ -335,7 +335,7 @@ export class NpcServiceMock {
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
         respawnAt: previous?.respawnAt ?? 0,
-        active: definition.active !== false,
+        active: true,
         mode: previous?.mode ?? NPC_RUNTIME_MODES.routine,
         currentStepIndex: previous?.currentStepIndex ?? 0,
         targetPlacementId: previous?.targetPlacementId ?? '',
@@ -446,8 +446,7 @@ export class NpcServiceMock {
             name: payload.name,
             prompt: payload.prompt,
             interactRadius: payload.interactRadius,
-            respawnDelayMs: payload.respawnDelayMs,
-            active: payload.active !== false
+            respawnDelayMs: payload.respawnDelayMs
           }
         );
         this.syncNpcStateFromWorld();
@@ -667,7 +666,7 @@ export class NpcServiceMock {
     let nearestDistance = Infinity;
 
     for (const npc of this.state.npcs.values()) {
-      if (npc.active === false || npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
+      if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
         continue;
       }
 

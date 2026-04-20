@@ -1582,7 +1582,6 @@ export class WorldRoom extends Room {
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
         interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
         speed: message.speed,
-        active: message.active !== false,
         respawnDelayMs: message.respawnDelayMs,
         routine: message.routine,
         combat: message.combat,
@@ -1606,9 +1605,6 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'interactRadius')) {
       updates.interactRadius = clampNpcRadius(message.interactRadius);
-    }
-    if (Object.hasOwn(message, 'active')) {
-      updates.active = message.active !== false;
     }
     if (Object.hasOwn(message, 'respawnDelayMs')) {
       updates.respawnDelayMs = normalizeNpcBehavior({ respawnDelayMs: message.respawnDelayMs }, {
@@ -1763,10 +1759,8 @@ export class WorldRoom extends Room {
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;
       existing.respawnAt = Math.max(0, Math.floor(existing.respawnAt || 0));
-      existing.active = normalizedDefinition.active !== false;
-      existing.mode = existing.active
-        ? (existing.alive === false ? NPC_RUNTIME_MODES.dead : (existing.mode || NPC_RUNTIME_MODES.routine))
-        : NPC_RUNTIME_MODES.dead;
+      existing.active = true;
+      existing.mode = existing.alive === false ? NPC_RUNTIME_MODES.dead : (existing.mode || NPC_RUNTIME_MODES.routine);
       existing.currentStepIndex = Math.max(0, Math.floor(existing.currentStepIndex || 0));
       existing.targetPlacementId = existing.targetPlacementId || '';
       existing.weaponId = normalizedDefinition.combat?.weaponId ?? '';
@@ -1774,7 +1768,7 @@ export class WorldRoom extends Room {
       existing.hiddenUntil = Math.max(0, Math.floor(existing.hiddenUntil || 0));
       existing.activity = existing.activity || '';
       existing.lastDamagedAt = Math.max(0, Math.floor(existing.lastDamagedAt || 0));
-      existing.busy = existing.active ? Boolean(existing.busy) : false;
+      existing.busy = Boolean(existing.busy);
       existing.chatStatus = existing.chatStatus || 'idle';
       existing.chatText = existing.chatText || '';
       existing.chatStartedAt = Number(existing.chatStartedAt || 0);
@@ -1917,7 +1911,7 @@ export class WorldRoom extends Room {
     let nearestDistance = Infinity;
 
     for (const npc of this.state.npcs.values()) {
-      if (!npc.active || npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
+      if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
         continue;
       }
 
@@ -2016,7 +2010,7 @@ export class WorldRoom extends Room {
     if (!npc) {
       return;
     }
-    if (!definition || !npc.active) {
+    if (!definition) {
       npc.busy = false;
       npc.chatStatus = 'idle';
       return;

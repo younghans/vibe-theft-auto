@@ -308,7 +308,7 @@ function itemBlocksMovement(item) {
 }
 
 function createNpcCollider(actor, placement) {
-  if (!actor || placement?.npc?.active === false || actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden || actor.runtimeState?.alive === false) {
+  if (!actor || actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden || actor.runtimeState?.alive === false) {
     return null;
   }
 
@@ -580,7 +580,6 @@ export class WorldRenderer {
       const withinRadius = Boolean(
         playerPosition
         && placement?.layer === 'npc'
-        && placement.npc?.active !== false
         && rendered.object.position.distanceTo(playerPosition) < (placement.npc?.interactRadius ?? rendered.item.interactionRadius ?? 4.2)
       );
 
@@ -951,7 +950,7 @@ export class WorldRenderer {
 
         if (placement.layer === 'npc' && placement.npc) {
           const runtimeState = this.npcRuntimeState.get(placement.id);
-          if (placement.npc.active === false || runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
+          if (runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
             return null;
           }
 

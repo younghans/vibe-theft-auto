@@ -754,7 +754,7 @@ export class Hud {
               <p class="hud__body" data-builder-npc-debug-summary>NPC debug is unavailable. Enable server-side NPC debug to inspect live sim data.</p>
               <div class="hud__builder-instance-metrics" data-builder-npc-debug-metrics hidden></div>
             </section>
-            <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Confirm NPC</button>
+            <button class="hud__builder-action hud__builder-confirm" type="button" data-builder-npc-confirm>Close</button>
           </div>
         </div>
       </section>
@@ -1288,7 +1288,6 @@ export class Hud {
     onNpcRoutineStepChange,
     onNpcRoutinePickTarget,
     onNpcCombatChange,
-    onConfirmNpc,
     onCloseNpcEditor,
     onCloseBuildingEditor,
     onBuildingLabelChange,
@@ -1484,7 +1483,7 @@ export class Hud {
     });
 
     this.builderNpcConfirm.addEventListener('click', () => {
-      onConfirmNpc();
+      onCloseNpcEditor();
     });
 
     this.builderBuildingEditorClose.addEventListener('click', () => {
@@ -2000,8 +1999,8 @@ export class Hud {
         : '';
     }
 
-    this.builderNpcConfirm.disabled = editorState.active;
-    this.builderNpcConfirm.textContent = editorState.active ? 'NPC Active' : 'Confirm NPC';
+    this.builderNpcConfirm.disabled = false;
+    this.builderNpcConfirm.textContent = 'Close';
 
     this.lastNpcEditorState = structuredClone(editorState);
   }
