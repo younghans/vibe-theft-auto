@@ -32,6 +32,7 @@ import {
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
 import {
+  NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -1580,7 +1581,7 @@ export class WorldRoom extends Room {
         modelId: model.id,
         name,
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
-        interactRadius: clampNpcRadius(message.interactRadius ?? item.interactionRadius ?? 4.2),
+        interactRadius: clampNpcRadius(message.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS),
         speed: message.speed,
         respawnDelayMs: message.respawnDelayMs,
         routine: message.routine,

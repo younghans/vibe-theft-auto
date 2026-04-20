@@ -1,6 +1,7 @@
 import { getNpcModelById } from '../npc/npcCatalog.js';
 import {
   cloneNpcBehavior,
+  NPC_DEFAULT_INTERACT_RADIUS,
   normalizeNpcBehavior
 } from '../npc/npcBehavior.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
@@ -81,7 +82,7 @@ function toPlacementRecord(entry, item, id) {
           modelId: entry.modelId,
           name: entry.name,
           prompt: entry.prompt,
-          interactRadius: entry.interactRadius ?? item.interactionRadius ?? 4.2,
+          interactRadius: entry.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS,
           speed: entry.speed,
           routine: entry.routine,
           combat: entry.combat,
@@ -337,7 +338,7 @@ export class WorldState {
           modelId: npc.modelId,
           name: npc.name,
           prompt: npc.prompt,
-          interactRadius: npc.interactRadius ?? item.interactionRadius ?? 4.2,
+          interactRadius: npc.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS,
           speed: npc.speed,
           routine: npc.routine,
           combat: npc.combat,

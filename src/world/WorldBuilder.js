@@ -5,6 +5,7 @@ import {
   createDefaultNpcCombat,
   createDefaultNpcRoutine,
   createDefaultNpcRoutineStep,
+  NPC_DEFAULT_INTERACT_RADIUS,
   listNpcCombatArchetypes,
   listNpcStepTypes
 } from '../npc/npcBehavior.js';
@@ -1384,7 +1385,7 @@ export class WorldBuilder {
         modelId: item.modelId,
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
-        interactRadius: item.interactionRadius ?? 4.2
+        interactRadius: NPC_DEFAULT_INTERACT_RADIUS
       }
     });
     if (!result?.ok) {
