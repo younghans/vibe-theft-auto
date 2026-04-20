@@ -2176,6 +2176,24 @@ body.is-builder-resizing * {
   background: rgba(10, 26, 34, 0.92);
 }
 
+.hud__speech-bubble.is-interaction {
+  padding: 7px 10px;
+  border-color: rgba(104, 199, 255, 0.55);
+  border-radius: 8px;
+  background: rgba(8, 20, 30, 0.92);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(104, 199, 255, 0.12);
+  transform: translate(-50%, calc(-100% - 14px));
+}
+
+.hud__speech-bubble.is-interaction::after {
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-color: rgba(104, 199, 255, 0.55);
+}
+
 .hud__speech-bubble.is-thinking {
   min-width: 72px;
 }
@@ -2204,6 +2222,15 @@ body.is-builder-resizing * {
   line-height: 1.4;
   color: rgba(244, 238, 226, 0.94);
   word-break: break-word;
+}
+
+.hud__speech-bubble.is-interaction .hud__speech-text {
+  color: rgba(220, 246, 255, 0.96);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  word-break: normal;
 }
 
 .hud__speech-bubble.is-self .hud__speech-label,

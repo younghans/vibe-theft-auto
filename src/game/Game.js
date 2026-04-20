@@ -1469,6 +1469,34 @@ export class Game {
     ].filter((interactable) => interactable.kind !== 'npc');
   }
 
+  getNearestNpcInteractable() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc' || !interactable.position) {
+        continue;
+      }
+
+      const radius = Number(interactable.radius);
+      if (!Number.isFinite(radius) || radius <= 0) {
+        continue;
+      }
+
+      const distance = interactable.position.distanceTo(this.player.position);
+      if (distance < radius && distance < nearestDistance) {
+        nearest = interactable;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
   resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
     const [offsetX, offsetZ] = cloneOffset(offset);
     const rotatedOffset = rotateFootprintOffset(offsetX, offsetZ, rotationQuarterTurns);
@@ -3599,6 +3627,7 @@ export class Game {
       this.currentAimMode = false;
       this.player?.setAimingState(false);
       this.updateBuilderCamera();
+      this.currentInteractable = null;
       this.hud.setPrompt(null);
     } else {
       const localAlive = localPlayerState?.alive !== false;
@@ -3699,6 +3728,7 @@ export class Game {
       this.updateNpcInteractRadiusIndicators();
 
       if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen()) {
+        this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
         this.updateInteraction();
@@ -3925,6 +3955,56 @@ export class Game {
     );
   }
 
+  addNpcInteractionHintBubble(bubbles, npcSpeechAnchors) {
+    const interactable = this.getNearestNpcInteractable();
+    const npcId = interactable?.kind === 'npc'
+      ? (interactable.npcId || interactable.placementId || '')
+      : '';
+    if (
+      !npcId
+      || this.worldBuilder?.enabled
+      || this.hud.isQuickChatOpen()
+    ) {
+      return;
+    }
+
+    const npcState = this.npcServiceState.npcs.get(npcId);
+    if (npcState?.busy) {
+      return;
+    }
+
+    const hasVisibleNpcSpeech = Boolean(
+      npcState
+      && (npcState.chatText || npcState.chatStatus === 'thinking')
+      && npcState.chatStartedAt
+      && (Date.now() - npcState.chatStartedAt) <= getChatBubbleLifetimeMs(npcState.chatText)
+    );
+    if (hasVisibleNpcSpeech) {
+      return;
+    }
+
+    const anchor = npcSpeechAnchors.get(npcId);
+    if (!anchor) {
+      return;
+    }
+
+    const projected = this.projectSpeechAnchor(anchor);
+    if (!projected) {
+      return;
+    }
+
+    bubbles.push({
+      id: `npc-interaction:${npcId}`,
+      text: 'Enter to chat',
+      label: '',
+      variant: 'interaction',
+      status: 'done',
+      visible: true,
+      screenX: projected.x,
+      screenY: projected.y
+    });
+  }
+
   projectSpeechAnchor(worldPosition) {
     const projected = this.projectedSpeechPosition.copy(worldPosition).project(this.camera);
     if (projected.z < -1 || projected.z > 1) {
@@ -3983,6 +4063,7 @@ export class Game {
       this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor);
     }
 
+    this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors);
     this.hud.setSpeechBubbles(bubbles);
   }
 }

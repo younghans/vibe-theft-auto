@@ -2540,6 +2540,7 @@ export class Hud {
       node.classList.toggle('is-self', bubble.variant === 'self');
       node.classList.toggle('is-npc', bubble.variant === 'npc');
       node.classList.toggle('is-player', bubble.variant === 'player');
+      node.classList.toggle('is-interaction', bubble.variant === 'interaction');
       node.classList.toggle('is-thinking', bubble.status === 'thinking');
       node.style.left = `${bubble.screenX}px`;
       node.style.top = `${bubble.screenY}px`;
