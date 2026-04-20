@@ -2094,7 +2094,10 @@ export class WorldBuilder {
       active: (npcDraft?.active ?? placement.npc.active) !== false,
       models: NPC_MODEL_CATALOG.map((entry) => ({
         id: entry.id,
-        label: entry.label
+        label: entry.label,
+        portraitSrc: entry.portraitFileName
+          ? `/assets/mixamo/portraits/${entry.portraitFileName}`
+          : ''
       })),
       routine,
       warnings: routine.warnings,

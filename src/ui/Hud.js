@@ -225,6 +225,7 @@ export class Hud {
     this.builderNpcDelete = this.overlay.querySelector('[data-builder-npc-delete]');
     this.builderNpcDone = this.overlay.querySelector('[data-builder-npc-done]');
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
+    this.builderNpcModelOptions = this.overlay.querySelector('[data-builder-npc-model-options]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
     this.builderNpcSpeed = this.overlay.querySelector('[data-builder-npc-speed]');
@@ -681,6 +682,7 @@ export class Hud {
                 <span class="hud__field-label">Model</span>
                 <select class="hud__field-control" data-builder-npc-model></select>
               </label>
+              <div class="hud__npc-model-grid" data-builder-npc-model-options></div>
               <label class="hud__field">
                 <span class="hud__field-label">Name</span>
                 <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
@@ -1403,6 +1405,21 @@ export class Hud {
       onNpcModelChange(this.builderNpcModel.value);
     });
 
+    this.builderNpcModelOptions?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-builder-npc-model-option]');
+      if (!button) {
+        return;
+      }
+
+      const modelId = button.dataset.builderNpcModelOption;
+      if (modelId) {
+        onNpcModelChange(modelId);
+      }
+    });
+
     this.builderNpcStepAdd?.addEventListener('click', () => {
       onNpcRoutineAddStep(this.builderNpcStepAddType?.value ?? '');
     });
@@ -1692,10 +1709,39 @@ export class Hud {
       this.builderNpcModel.innerHTML = editorState.models.map((model) => `
         <option value="${model.id}">${model.label}</option>
       `).join('');
+
+      if (this.builderNpcModelOptions) {
+        this.builderNpcModelOptions.innerHTML = editorState.models.map((model) => `
+          <button
+            class="hud__npc-model-card"
+            type="button"
+            data-builder-npc-model-option="${escapeHtml(model.id)}"
+            aria-pressed="false"
+            title="${escapeHtml(model.label)}"
+          >
+            <span class="hud__npc-model-card-preview">
+              ${model.portraitSrc
+                ? `<img class="hud__npc-model-card-image" src="${escapeHtml(model.portraitSrc)}" alt="${escapeHtml(model.label)}" loading="lazy" />`
+                : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(model.label)}</span>`}
+            </span>
+            <span class="hud__npc-model-card-label">${escapeHtml(model.label)}</span>
+          </button>
+        `).join('');
+      }
     }
 
     if (document.activeElement !== this.builderNpcModel) {
       this.builderNpcModel.value = editorState.modelId;
+    }
+    if (this.builderNpcModelOptions) {
+      this.builderNpcModelOptions
+        .querySelectorAll('[data-builder-npc-model-option]')
+        .forEach((button) => {
+          const active = button instanceof HTMLElement
+            && button.dataset.builderNpcModelOption === editorState.modelId;
+          button.classList.toggle('is-active', active);
+          button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
     }
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
