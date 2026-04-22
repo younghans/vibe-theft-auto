@@ -370,6 +370,9 @@ export class WorldBuilder {
       onNpcRespawnDelayChange: (value) => void this.updateSelectedNpc({
         respawnDelayMs: Number.isFinite(value) ? THREE.MathUtils.clamp(Math.round(value), 0, 600000) : undefined
       }),
+      onNpcDeliveryQuestChange: (enabled) => void this.updateSelectedNpc({
+        deliveryQuestEnabled: enabled === true
+      }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
@@ -2087,6 +2090,7 @@ export class WorldBuilder {
       interactRadius: npcDraft?.interactRadius ?? placement.npc.interactRadius,
       speed: npcDraft?.speed ?? placement.npc.speed ?? 'slow',
       respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
+      deliveryQuestEnabled: (npcDraft?.deliveryQuestEnabled ?? placement.npc.deliveryQuestEnabled) === true,
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },

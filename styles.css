@@ -2017,6 +2017,34 @@ body.is-builder-resizing * {
   box-shadow: 0 0 0 3px rgba(242, 200, 113, 0.12);
 }
 
+.hud__checkbox-field {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+}
+
+.hud__checkbox-control {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #f2c871;
+  pointer-events: auto;
+}
+
+.hud__checkbox-copy {
+  min-width: 0;
+}
+
+.hud__checkbox-title {
+  margin-bottom: 3px;
+}
+
 .hud__field-inline {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px;

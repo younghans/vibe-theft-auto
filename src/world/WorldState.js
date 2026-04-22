@@ -87,6 +87,7 @@ function toPlacementRecord(entry, item, id) {
           routine: entry.routine,
           combat: entry.combat,
           respawnDelayMs: entry.respawnDelayMs,
+          deliveryQuestEnabled: entry.deliveryQuestEnabled,
           spawnPosition: entry.spawnPosition,
           spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
         }, {
@@ -144,6 +145,7 @@ function toSerializedPlacement(placement) {
         routine: placement.npc.routine,
         combat: placement.npc.combat,
         respawnDelayMs: placement.npc.respawnDelayMs,
+        deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),
@@ -343,6 +345,7 @@ export class WorldState {
           routine: npc.routine,
           combat: npc.combat,
           respawnDelayMs: npc.respawnDelayMs,
+          deliveryQuestEnabled: npc.deliveryQuestEnabled,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
         }, {
@@ -539,6 +542,7 @@ export class WorldState {
         routine: placement.npc.routine,
         combat: placement.npc.combat,
         respawnDelayMs: placement.npc.respawnDelayMs,
+        deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               Number(placement.npc.spawnPosition[0].toFixed(2)),

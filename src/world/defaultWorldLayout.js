@@ -94,6 +94,16 @@ const PERIMETER_BUSHES = [
 
 const NPC_PLANS = [
   {
+    id: 'npc_shady_figure',
+    modelId: 'maynard',
+    position: [-1.35 * BUILDER_TILE_SIZE, -1.65 * BUILDER_TILE_SIZE],
+    angle: Math.PI / 2,
+    name: 'Shady Figure',
+    prompt: 'You are Shady Figure, a quiet fixer working the edge of the quick cash block. Keep answers short, wary, and transactional. You offer small delivery work without explaining too much.',
+    interactRadius: 5.2,
+    deliveryQuestEnabled: true
+  },
+  {
     id: 'npc_bruno',
     modelId: 'brute',
     position: [2.65 * BUILDER_TILE_SIZE, 2.85 * BUILDER_TILE_SIZE],
@@ -297,6 +307,7 @@ function createNpcLayout(tiles, props) {
     name: plan.name,
     prompt: plan.prompt,
     interactRadius: plan.interactRadius,
+    deliveryQuestEnabled: plan.deliveryQuestEnabled === true,
     ...(plan.combat ? { combat: plan.combat } : {}),
     ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
   }));

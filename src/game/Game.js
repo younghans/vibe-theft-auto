@@ -43,6 +43,11 @@ import {
 } from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
 import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
+import {
+  getDeliveryQuestTargetName,
+  isDeliveryQuestActive,
+  isDeliveryQuestGiver
+} from '../shared/deliveryQuest.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -229,6 +234,9 @@ export class Game {
     this.pendingWorkoutPlacementId = '';
     this.claimedWorkoutPlacementId = '';
     this.activeWorkoutPlacementId = '';
+    this.deliveryQuestRequestInFlight = false;
+    this.deliveryQuestReminderSuppressedKey = '';
+    this.deliveryQuestReminderSuppressionExpiresAt = 0;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -1495,6 +1503,179 @@ export class Game {
     }
 
     return nearest;
+  }
+
+  getNpcInteractableById(npcId = '') {
+    if (!npcId || !this.worldBuilder) {
+      return null;
+    }
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (
+        interactable.kind === 'npc'
+        && (interactable.npcId === npcId || interactable.placementId === npcId)
+      ) {
+        return interactable;
+      }
+    }
+
+    return null;
+  }
+
+  getDeliveryQuestReminderKey(questState = null) {
+    if (!questState?.giverNpcId && !questState?.deliveryQuestGiverNpcId) {
+      return '';
+    }
+
+    const giverNpcId = questState.giverNpcId ?? questState.deliveryQuestGiverNpcId ?? '';
+    const targetNpcId = questState.targetNpcId ?? questState.deliveryQuestTargetNpcId ?? '';
+    const acceptedAt = questState.acceptedAt ?? questState.deliveryQuestAcceptedAt ?? 0;
+    return `${giverNpcId}:${targetNpcId}:${acceptedAt}`;
+  }
+
+  suppressCurrentDeliveryReminder(questState = null) {
+    const key = this.getDeliveryQuestReminderKey(questState);
+    if (key) {
+      this.deliveryQuestReminderSuppressedKey = key;
+      this.deliveryQuestReminderSuppressionExpiresAt = performance.now() + 5000;
+    }
+  }
+
+  syncDeliveryQuestReminderGate(playerState = this.getLocalPlayerState()) {
+    if (!isDeliveryQuestActive(playerState)) {
+      if (
+        this.deliveryQuestReminderSuppressedKey
+        && performance.now() < this.deliveryQuestReminderSuppressionExpiresAt
+      ) {
+        return false;
+      }
+
+      this.deliveryQuestReminderSuppressedKey = '';
+      this.deliveryQuestReminderSuppressionExpiresAt = 0;
+      return false;
+    }
+
+    const key = this.getDeliveryQuestReminderKey(playerState);
+    if (!key || this.deliveryQuestReminderSuppressedKey !== key) {
+      return false;
+    }
+
+    const giver = this.getNpcInteractableById(playerState.deliveryQuestGiverNpcId);
+    const radius = Number(giver?.radius);
+    const insideGiverRadius = Boolean(
+      this.player
+      && giver?.position
+      && Number.isFinite(radius)
+      && this.player.position.distanceTo(giver.position) < radius
+    );
+
+    if (!insideGiverRadius) {
+      this.deliveryQuestReminderSuppressedKey = '';
+      this.deliveryQuestReminderSuppressionExpiresAt = 0;
+      return false;
+    }
+
+    return true;
+  }
+
+  getDeliveryQuestInteractionForNpc(interactable = this.getNearestNpcInteractable()) {
+    const npcId = interactable?.kind === 'npc'
+      ? (interactable.npcId || interactable.placementId || '')
+      : '';
+    if (!npcId) {
+      return null;
+    }
+
+    const playerState = this.getLocalPlayerState();
+    const npcState = this.npcServiceState.npcs.get(npcId);
+    if (!playerState || playerState.alive === false || !npcState || npcState.alive === false) {
+      return null;
+    }
+    const npcDetails = {
+      ...npcState,
+      deliveryQuestEnabled: npcState.deliveryQuestEnabled === true || interactable?.npc?.deliveryQuestEnabled === true
+    };
+
+    if (isDeliveryQuestActive(playerState)) {
+      if (npcId === playerState.deliveryQuestTargetNpcId) {
+        return {
+          kind: 'completeDelivery',
+          action: true,
+          npcId,
+          label: '',
+          overheadText: 'E to deliver',
+          variant: 'interaction'
+        };
+      }
+
+      if (
+        npcId === playerState.deliveryQuestGiverNpcId
+        && isDeliveryQuestGiver(npcId, npcDetails)
+      ) {
+        if (this.syncDeliveryQuestReminderGate(playerState)) {
+          return null;
+        }
+
+        const targetName = getDeliveryQuestTargetName(
+          this.npcServiceState.npcs.get(playerState.deliveryQuestTargetNpcId)
+        );
+        return {
+          kind: 'deliveryReminder',
+          action: false,
+          npcId,
+          label: npcState.name,
+          overheadText: `Hey, I am still waiting. Did you deliver that package to ${targetName}?`,
+          variant: 'npc'
+        };
+      }
+
+      return null;
+    }
+
+    if (!isDeliveryQuestGiver(npcId, npcDetails)) {
+      return null;
+    }
+
+    return {
+      kind: 'acceptDelivery',
+      action: true,
+      npcId,
+      label: npcState.name,
+      overheadText: 'Hey, can you help me make a delivery? Press E to accept.',
+      variant: 'npc'
+    };
+  }
+
+  async handleDeliveryQuestInteraction(interaction = null) {
+    if (!interaction?.action || this.deliveryQuestRequestInFlight) {
+      return;
+    }
+
+    this.deliveryQuestRequestInFlight = true;
+    try {
+      const service = this.npcService;
+      const result = interaction.kind === 'completeDelivery'
+        ? await service?.completeDeliveryQuest?.(interaction.npcId)
+        : await service?.acceptDeliveryQuest?.(interaction.npcId);
+
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That delivery cannot be handled right now.');
+        return;
+      }
+
+      if (interaction.kind === 'completeDelivery') {
+        this.hud.showToast(`Delivered to ${result.targetName ?? 'the contact'}.`);
+        return;
+      }
+
+      this.suppressCurrentDeliveryReminder(result);
+      this.hud.showToast(`Delivery accepted. Find ${result.targetName ?? interaction.targetName ?? 'the contact'}.`);
+    } catch (error) {
+      console.warn('[Quest] Delivery interaction failed.', error);
+      this.hud.showToast('Delivery request failed.');
+    } finally {
+      this.deliveryQuestRequestInFlight = false;
+    }
   }
 
   resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
@@ -3820,6 +4001,8 @@ export class Game {
   }
 
   updateInteraction() {
+    this.syncDeliveryQuestReminderGate();
+
     const interactables = this.getActiveInteractables();
     let nearest = null;
     let nearestDistance = Infinity;
@@ -3833,9 +4016,16 @@ export class Game {
     }
 
     this.currentInteractable = nearest;
-    this.hud.setPrompt(nearest);
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
+    this.hud.setPrompt(deliveryInteraction?.action ? null : nearest);
 
-    if (!nearest || !this.input.consume('KeyE')) {
+    const interactPressed = this.input.consume('KeyE');
+    if (deliveryInteraction?.action && interactPressed) {
+      void this.handleDeliveryQuestInteraction(deliveryInteraction);
+      return;
+    }
+
+    if (!nearest || !interactPressed) {
       return;
     }
 
@@ -3969,7 +4159,8 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (npcState?.busy) {
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(interactable);
+    if (!deliveryInteraction && npcState?.busy) {
       return;
     }
 
@@ -3979,7 +4170,11 @@ export class Game {
       && npcState.chatStartedAt
       && (Date.now() - npcState.chatStartedAt) <= getChatBubbleLifetimeMs(npcState.chatText)
     );
-    if (hasVisibleNpcSpeech) {
+    if (
+      hasVisibleNpcSpeech
+      && deliveryInteraction?.kind !== 'completeDelivery'
+      && deliveryInteraction?.kind !== 'deliveryReminder'
+    ) {
       return;
     }
 
@@ -3990,6 +4185,20 @@ export class Game {
 
     const projected = this.projectSpeechAnchor(anchor);
     if (!projected) {
+      return;
+    }
+
+    if (deliveryInteraction) {
+      bubbles.push({
+        id: `npc-delivery:${npcId}:${deliveryInteraction.kind}`,
+        text: deliveryInteraction.overheadText,
+        label: deliveryInteraction.label ?? '',
+        variant: deliveryInteraction.variant ?? 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y
+      });
       return;
     }
 

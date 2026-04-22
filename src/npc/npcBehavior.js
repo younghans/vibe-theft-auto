@@ -1,4 +1,5 @@
 import { WEAPON_IDS } from '../shared/combatConstants.js';
+import { normalizeDeliveryQuestEnabled } from '../shared/deliveryQuest.js';
 
 export const NPC_ROUTINE_MODES = Object.freeze({
   loop: 'loop'
@@ -292,6 +293,10 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
       !== JSON.stringify(getNpcRoutineRuntimeStructure(nextNpc?.routine));
   }
 
+  if (Object.keys(updates ?? {}).length === 1 && Object.hasOwn(updates, 'deliveryQuestEnabled')) {
+    return false;
+  }
+
   return true;
 }
 
@@ -325,6 +330,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     combat: createDefaultNpcCombat(),
     respawnDelayMs: NPC_DEFAULT_RESPAWN_DELAY_MS,
     speed: NPC_DEFAULT_SPEED_TIER,
+    deliveryQuestEnabled: false,
     ...overrides
   };
 }
@@ -359,6 +365,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     combat: normalizeNpcCombat(npc.combat),
     respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),
     speed: normalizeNpcSpeedTier(npc.speed),
+    deliveryQuestEnabled: normalizeDeliveryQuestEnabled(npc.deliveryQuestEnabled),
     spawnPosition,
     spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4
   };

@@ -40,7 +40,8 @@ function toTransportPayload(edit) {
         prompt: edit.npc.prompt,
         interactRadius: edit.npc.interactRadius,
         speed: edit.npc.speed,
-        respawnDelayMs: edit.npc.respawnDelayMs
+        respawnDelayMs: edit.npc.respawnDelayMs,
+        deliveryQuestEnabled: edit.npc.deliveryQuestEnabled === true
       };
     case 'rotatePlacement':
       return {

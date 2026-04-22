@@ -1631,6 +1631,33 @@
   ],
   "npcs": [
     {
+      "id": "npc_shady_figure",
+      "modelId": "maynard",
+      "position": [
+        -18.9,
+        -23.1
+      ],
+      "rotationQuarterTurns": 1,
+      "name": "Shady Figure",
+      "prompt": "You are Shady Figure, a quiet fixer working the edge of the quick cash block. Keep answers short, wary, and transactional. You offer small delivery work without explaining too much.",
+      "interactRadius": 5.2,
+      "deliveryQuestEnabled": true,
+      "active": true
+    },
+    {
+      "id": "npc_maya",
+      "modelId": "ch18NonPbr",
+      "position": [
+        18.2,
+        -28.7
+      ],
+      "rotationQuarterTurns": 2,
+      "name": "Maya",
+      "prompt": "You are Maya, a quick-thinking hustler who knows every rumor in town. Be playful, observant, and a little sarcastic, but stay helpful.",
+      "interactRadius": 4.4,
+      "active": true
+    },
+    {
       "id": "placement_148",
       "modelId": "xBot",
       "position": [

@@ -1,4 +1,5 @@
 import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
+import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
 
 function schemaMapToEntries(schemaMap) {
   const entries = [];
@@ -27,6 +28,7 @@ function cloneNpcState(npc) {
     rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
     rotationQuarterTurns: npc.rotationQuarterTurns,
     interactRadius: npc.interactRadius,
+    deliveryQuestEnabled: npc.deliveryQuestEnabled === true,
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,
@@ -76,6 +78,12 @@ function clonePlayerState(player) {
     deaths: player.deaths ?? 0,
     lastDamagedAt: player.lastDamagedAt ?? 0,
     workoutPlacementId: player.workoutPlacementId || '',
+    deliveryQuestId: player.deliveryQuestId || '',
+    deliveryQuestStatus: player.deliveryQuestStatus || DELIVERY_QUEST_STATUS.inactive,
+    deliveryQuestGiverNpcId: player.deliveryQuestGiverNpcId || '',
+    deliveryQuestTargetNpcId: player.deliveryQuestTargetNpcId || '',
+    deliveryQuestAcceptedAt: player.deliveryQuestAcceptedAt ?? 0,
+    deliveryQuestCompletedAt: player.deliveryQuestCompletedAt ?? 0,
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };
@@ -456,6 +464,18 @@ export class NpcServiceColyseus {
 
   async say(message) {
     return this.rpc('chat:say', { message });
+  }
+
+  async acceptDeliveryQuest(giverNpcId = '') {
+    return this.rpc('quest:acceptDelivery', {
+      giverNpcId: String(giverNpcId ?? '').trim()
+    });
+  }
+
+  async completeDeliveryQuest(targetNpcId = '') {
+    return this.rpc('quest:completeDelivery', {
+      targetNpcId: String(targetNpcId ?? '').trim()
+    });
   }
 
   pickupWeapon(pickupId) {

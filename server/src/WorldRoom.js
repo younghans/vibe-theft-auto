@@ -23,6 +23,15 @@ import {
   WEAPON_RESERVE_CAP
 } from '../../src/shared/combatConstants.js';
 import {
+  DELIVERY_QUEST_ID,
+  DELIVERY_QUEST_STATUS,
+  getDeliveryQuestTargetCandidate,
+  getDeliveryQuestTargetName,
+  isDeliveryQuestActive,
+  isDeliveryQuestGiver,
+  isNpcAvailableForDelivery
+} from '../../src/shared/deliveryQuest.js';
+import {
   chooseFarthestSpawnPoint,
   clampToWorldBounds,
   distance2D,
@@ -117,6 +126,12 @@ const PlayerState = schema({
   deaths: 'number',
   lastDamagedAt: 'number',
   workoutPlacementId: 'string',
+  deliveryQuestId: 'string',
+  deliveryQuestStatus: 'string',
+  deliveryQuestGiverNpcId: 'string',
+  deliveryQuestTargetNpcId: 'string',
+  deliveryQuestAcceptedAt: 'number',
+  deliveryQuestCompletedAt: 'number',
   characterId: 'string',
   isAdmin: 'boolean'
 });
@@ -155,6 +170,7 @@ const NpcState = schema({
   rotationY: 'number',
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
+  deliveryQuestEnabled: 'boolean',
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -383,6 +399,14 @@ export class WorldRoom extends Room {
       }
     });
 
+    this.onMessage('quest:acceptDelivery', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleDeliveryQuestAccept(client, message));
+    });
+
+    this.onMessage('quest:completeDelivery', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleDeliveryQuestComplete(client, message));
+    });
+
     this.onMessage('combat:pickupRequest', (client, message) => {
       try {
         this.handlePickupRequest(client, message);
@@ -466,6 +490,12 @@ export class WorldRoom extends Room {
     player.deaths = 0;
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
+    player.deliveryQuestId = '';
+    player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.inactive;
+    player.deliveryQuestGiverNpcId = '';
+    player.deliveryQuestTargetNpcId = '';
+    player.deliveryQuestAcceptedAt = 0;
+    player.deliveryQuestCompletedAt = 0;
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
@@ -598,6 +628,127 @@ export class WorldRoom extends Room {
     }
 
     player.characterId = sanitizeCharacterId(message?.characterId);
+  }
+
+  getDeliveryQuestPayload(player) {
+    return {
+      questId: player.deliveryQuestId || '',
+      status: player.deliveryQuestStatus || DELIVERY_QUEST_STATUS.inactive,
+      giverNpcId: player.deliveryQuestGiverNpcId || '',
+      targetNpcId: player.deliveryQuestTargetNpcId || '',
+      acceptedAt: player.deliveryQuestAcceptedAt || 0,
+      completedAt: player.deliveryQuestCompletedAt || 0
+    };
+  }
+
+  isPlayerInNpcInteractRadius(player, npc) {
+    if (!player || !npc) {
+      return false;
+    }
+
+    const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
+    return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+  }
+
+  handleDeliveryQuestAccept(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot accept that right now.');
+    }
+
+    const giverNpcId = typeof message?.giverNpcId === 'string'
+      ? message.giverNpcId.trim()
+      : '';
+    const giver = this.state.npcs.get(giverNpcId);
+    if (
+      !giver
+      || !isNpcAvailableForDelivery(giver)
+      || !isDeliveryQuestGiver(giverNpcId, giver)
+    ) {
+      throw new Error('That delivery job is not available.');
+    }
+
+    if (!this.isPlayerInNpcInteractRadius(player, giver)) {
+      throw new Error('Move closer to accept the delivery.');
+    }
+
+    if (isDeliveryQuestActive(player)) {
+      const activeTarget = this.state.npcs.get(player.deliveryQuestTargetNpcId);
+      return {
+        targetName: getDeliveryQuestTargetName(activeTarget),
+        ...this.getDeliveryQuestPayload(player)
+      };
+    }
+
+    const target = getDeliveryQuestTargetCandidate(this.state.npcs, giverNpcId);
+    if (!target) {
+      throw new Error('There is nobody to deliver to yet.');
+    }
+
+    const now = Date.now();
+    player.deliveryQuestId = DELIVERY_QUEST_ID;
+    player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.active;
+    player.deliveryQuestGiverNpcId = giverNpcId;
+    player.deliveryQuestTargetNpcId = target.id;
+    player.deliveryQuestAcceptedAt = now;
+    player.deliveryQuestCompletedAt = 0;
+
+    const targetName = getDeliveryQuestTargetName(target.npc);
+    this.setNpcChatPhase(
+      giver,
+      'done',
+      `Hey, can you help me make this delivery to ${targetName}? Good. Take it straight there and do not open it.`,
+      { bumpSeq: true }
+    );
+
+    return {
+      targetName,
+      ...this.getDeliveryQuestPayload(player)
+    };
+  }
+
+  handleDeliveryQuestComplete(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot deliver that right now.');
+    }
+
+    if (!isDeliveryQuestActive(player)) {
+      throw new Error('You do not have a delivery to complete.');
+    }
+
+    const targetNpcId = typeof message?.targetNpcId === 'string'
+      ? message.targetNpcId.trim()
+      : '';
+    if (targetNpcId !== player.deliveryQuestTargetNpcId) {
+      throw new Error('That is not the delivery contact.');
+    }
+
+    const target = this.state.npcs.get(targetNpcId);
+    if (!target || !isNpcAvailableForDelivery(target)) {
+      throw new Error('The delivery contact is not available.');
+    }
+
+    if (!this.isPlayerInNpcInteractRadius(player, target)) {
+      throw new Error('Move closer to deliver the package.');
+    }
+
+    player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
+    player.deliveryQuestCompletedAt = Date.now();
+
+    const giver = this.state.npcs.get(player.deliveryQuestGiverNpcId);
+    const giverName = giver?.name || 'your friend';
+    this.setNpcChatPhase(
+      target,
+      'done',
+      `Got it. Tell ${giverName} the package landed.`,
+      { bumpSeq: true }
+    );
+
+    return {
+      targetName: getDeliveryQuestTargetName(target),
+      ...this.getDeliveryQuestPayload(player)
+    };
   }
 
   handleWorkoutClaim(client, message = {}) {
@@ -1584,6 +1735,7 @@ export class WorldRoom extends Room {
         interactRadius: clampNpcRadius(message.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS),
         speed: message.speed,
         respawnDelayMs: message.respawnDelayMs,
+        deliveryQuestEnabled: message.deliveryQuestEnabled === true,
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -1618,6 +1770,9 @@ export class WorldRoom extends Room {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).speed;
+    }
+    if (Object.hasOwn(message, 'deliveryQuestEnabled')) {
+      updates.deliveryQuestEnabled = message.deliveryQuestEnabled === true;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -1756,6 +1911,7 @@ export class WorldRoom extends Room {
         : quantizeRotation(toRotationY(spawnRotationQuarterTurns));
       existing.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(existing.rotationY);
       existing.interactRadius = clampNpcRadius(normalizedDefinition.interactRadius);
+      existing.deliveryQuestEnabled = normalizedDefinition.deliveryQuestEnabled === true;
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;

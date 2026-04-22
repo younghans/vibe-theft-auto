@@ -19,6 +19,15 @@ import {
   WEAPON_RESERVE_CAP
 } from '../shared/combatConstants.js';
 import {
+  DELIVERY_QUEST_ID,
+  DELIVERY_QUEST_STATUS,
+  getDeliveryQuestTargetCandidate,
+  getDeliveryQuestTargetName,
+  isDeliveryQuestActive,
+  isDeliveryQuestGiver,
+  isNpcAvailableForDelivery
+} from '../shared/deliveryQuest.js';
+import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -125,6 +134,12 @@ function createDefaultPlayerState(overrides = {}) {
     deaths: 0,
     lastDamagedAt: 0,
     workoutPlacementId: '',
+    deliveryQuestId: '',
+    deliveryQuestStatus: DELIVERY_QUEST_STATUS.inactive,
+    deliveryQuestGiverNpcId: '',
+    deliveryQuestTargetNpcId: '',
+    deliveryQuestAcceptedAt: 0,
+    deliveryQuestCompletedAt: 0,
     lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -331,6 +346,7 @@ export class NpcServiceMock {
         rotationY: quantizeRotation(previous?.rotationY ?? toRotationY(spawnRotationQuarterTurns)),
         rotationQuarterTurns: previous?.rotationQuarterTurns ?? spawnRotationQuarterTurns,
         interactRadius: definition.interactRadius,
+        deliveryQuestEnabled: definition.deliveryQuestEnabled === true,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
@@ -446,7 +462,11 @@ export class NpcServiceMock {
             name: payload.name,
             prompt: payload.prompt,
             interactRadius: payload.interactRadius,
-            respawnDelayMs: payload.respawnDelayMs
+            speed: payload.speed,
+            routine: payload.routine,
+            combat: payload.combat,
+            respawnDelayMs: payload.respawnDelayMs,
+            deliveryQuestEnabled: payload.deliveryQuestEnabled
           }
         );
         this.syncNpcStateFromWorld();
@@ -934,6 +954,133 @@ export class NpcServiceMock {
       return;
     }
     this.startReload(player);
+  }
+
+  getDeliveryQuestPayload(player) {
+    return {
+      questId: player.deliveryQuestId || '',
+      status: player.deliveryQuestStatus || DELIVERY_QUEST_STATUS.inactive,
+      giverNpcId: player.deliveryQuestGiverNpcId || '',
+      targetNpcId: player.deliveryQuestTargetNpcId || '',
+      acceptedAt: player.deliveryQuestAcceptedAt || 0,
+      completedAt: player.deliveryQuestCompletedAt || 0
+    };
+  }
+
+  isPlayerInNpcInteractRadius(player, npc) {
+    if (!player || !npc) {
+      return false;
+    }
+
+    const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
+    return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+  }
+
+  async acceptDeliveryQuest(giverNpcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot accept that right now.' };
+    }
+
+    const normalizedGiverNpcId = typeof giverNpcId === 'string'
+      ? giverNpcId.trim()
+      : '';
+    const giver = this.state.npcs.get(normalizedGiverNpcId);
+    if (
+      !giver
+      || !isNpcAvailableForDelivery(giver)
+      || !isDeliveryQuestGiver(normalizedGiverNpcId, giver)
+    ) {
+      return { ok: false, error: 'That delivery job is not available.' };
+    }
+
+    if (!this.isPlayerInNpcInteractRadius(player, giver)) {
+      return { ok: false, error: 'Move closer to accept the delivery.' };
+    }
+
+    if (isDeliveryQuestActive(player)) {
+      const activeTarget = this.state.npcs.get(player.deliveryQuestTargetNpcId);
+      return {
+        ok: true,
+        targetName: getDeliveryQuestTargetName(activeTarget),
+        ...this.getDeliveryQuestPayload(player)
+      };
+    }
+
+    const target = getDeliveryQuestTargetCandidate(this.state.npcs, normalizedGiverNpcId);
+    if (!target) {
+      return { ok: false, error: 'There is nobody to deliver to yet.' };
+    }
+
+    const now = Date.now();
+    player.deliveryQuestId = DELIVERY_QUEST_ID;
+    player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.active;
+    player.deliveryQuestGiverNpcId = normalizedGiverNpcId;
+    player.deliveryQuestTargetNpcId = target.id;
+    player.deliveryQuestAcceptedAt = now;
+    player.deliveryQuestCompletedAt = 0;
+
+    const targetName = getDeliveryQuestTargetName(target.npc);
+    this.setNpcChatPhase(
+      giver,
+      'done',
+      `Hey, can you help me make this delivery to ${targetName}? Good. Take it straight there and do not open it.`,
+      { bumpSeq: true }
+    );
+    this.emit();
+
+    return {
+      ok: true,
+      targetName,
+      ...this.getDeliveryQuestPayload(player)
+    };
+  }
+
+  async completeDeliveryQuest(targetNpcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot deliver that right now.' };
+    }
+
+    if (!isDeliveryQuestActive(player)) {
+      return { ok: false, error: 'You do not have a delivery to complete.' };
+    }
+
+    const normalizedTargetNpcId = typeof targetNpcId === 'string'
+      ? targetNpcId.trim()
+      : '';
+    if (normalizedTargetNpcId !== player.deliveryQuestTargetNpcId) {
+      return { ok: false, error: 'That is not the delivery contact.' };
+    }
+
+    const target = this.state.npcs.get(normalizedTargetNpcId);
+    if (!target || !isNpcAvailableForDelivery(target)) {
+      return { ok: false, error: 'The delivery contact is not available.' };
+    }
+
+    if (!this.isPlayerInNpcInteractRadius(player, target)) {
+      return { ok: false, error: 'Move closer to deliver the package.' };
+    }
+
+    const now = Date.now();
+    player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
+    player.deliveryQuestCompletedAt = now;
+
+    const giver = this.state.npcs.get(player.deliveryQuestGiverNpcId);
+    const giverName = giver?.name || 'your friend';
+    this.setNpcChatPhase(
+      target,
+      'done',
+      `Got it. Tell ${giverName} the package landed.`,
+      { bumpSeq: true }
+    );
+    this.emit();
+
+    return {
+      ok: true,
+      targetName: getDeliveryQuestTargetName(target),
+      ...this.getDeliveryQuestPayload(player)
+    };
   }
 
   async claimWorkoutPlacement(placementId = '') {
