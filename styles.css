@@ -2296,6 +2296,14 @@ body.is-builder-resizing * {
   word-break: normal;
 }
 
+.hud__speech-bubble.is-money.is-money-positive .hud__speech-text {
+  color: #57ef7b;
+  text-shadow:
+    0 2px 0 #073614,
+    0 4px 10px rgba(0, 0, 0, 0.42),
+    0 0 16px rgba(126, 255, 154, 0.46);
+}
+
 .hud__speech-bubble.is-thinking {
   min-width: 72px;
 }

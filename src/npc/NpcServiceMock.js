@@ -20,6 +20,7 @@ import {
 } from '../shared/combatConstants.js';
 import {
   DELIVERY_QUEST_ID,
+  DELIVERY_QUEST_REWARD_AMOUNT,
   DELIVERY_QUEST_STATUS,
   getDeliveryQuestTargetCandidate,
   getDeliveryQuestTargetName,
@@ -983,7 +984,8 @@ export class NpcServiceMock {
       giverNpcId: player.deliveryQuestGiverNpcId || '',
       targetNpcId: player.deliveryQuestTargetNpcId || '',
       acceptedAt: player.deliveryQuestAcceptedAt || 0,
-      completedAt: player.deliveryQuestCompletedAt || 0
+      completedAt: player.deliveryQuestCompletedAt || 0,
+      rewardAmount: DELIVERY_QUEST_REWARD_AMOUNT
     };
   }
 
@@ -1085,6 +1087,8 @@ export class NpcServiceMock {
     const now = Date.now();
     player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
     player.deliveryQuestCompletedAt = now;
+    const currentMoney = Number(player.money ?? 0);
+    player.money = (Number.isFinite(currentMoney) ? Math.trunc(currentMoney) : 0) + DELIVERY_QUEST_REWARD_AMOUNT;
 
     const giver = this.state.npcs.get(player.deliveryQuestGiverNpcId);
     const giverName = giver?.name || 'your friend';

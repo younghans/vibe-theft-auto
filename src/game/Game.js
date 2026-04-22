@@ -81,6 +81,7 @@ const SNATCH_WORKOUT_DURATION_MS = 5435;
 const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
 const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
+const MONEY_REWARD_ANIMATION_MS = 900;
 const RENT_INTRO_LOADING_CLEAR_MS = 900;
 const RENT_INTRO_AFTER_LOADING_DELAY_MS = 500;
 const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
@@ -297,6 +298,7 @@ export class Game {
     this.rentIntroLoadingClearedAt = 0;
     this.pendingRentIntro = null;
     this.activeRentIntro = null;
+    this.lastAuthoritativeMoneyAmount = null;
     this.moneyDisplayAmount = 0;
     this.moneyAnimation = null;
     this.moneyFloaters = [];
@@ -3160,6 +3162,34 @@ export class Game {
     });
   }
 
+  maybeAnimateMoneyChange(authoritativeAmount) {
+    const amount = normalizeMoneyAmount(authoritativeAmount);
+    if (this.lastAuthoritativeMoneyAmount === null) {
+      this.lastAuthoritativeMoneyAmount = amount;
+      return;
+    }
+
+    const previousAmount = this.lastAuthoritativeMoneyAmount;
+    if (amount === previousAmount) {
+      return;
+    }
+
+    this.lastAuthoritativeMoneyAmount = amount;
+    if (this.pendingRentIntro || (this.activeRentIntro && !this.activeRentIntro.charged)) {
+      return;
+    }
+
+    const delta = amount - previousAmount;
+    this.startMoneyAnimation(amount, {
+      fromAmount: this.moneyDisplayAmount,
+      durationMs: delta > 0 ? MONEY_REWARD_ANIMATION_MS : 420
+    });
+    this.spawnMoneyFloater(delta);
+    if (delta > 0) {
+      this.playSoundEffect(this.rentChaChingSound);
+    }
+  }
+
   spawnMoneyFloater(amount) {
     this.moneyFloaters.push({
       id: `money:${++this.moneyFloaterSequence}`,
@@ -3306,6 +3336,7 @@ export class Game {
         text: formatMoneyDelta(floater.amount),
         label: '',
         variant: 'money',
+        tone: floater.amount >= 0 ? 'positive' : 'negative',
         status: 'done',
         visible: true,
         screenX: projected.x + driftX,
@@ -3372,6 +3403,7 @@ export class Game {
 
     this.maybeStartRentIntro(localPlayerState);
     this.updateRentIntroPresentation();
+    this.maybeAnimateMoneyChange(localPlayerState.money ?? 0);
     this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0));
 
     this.hud.setCombatState({

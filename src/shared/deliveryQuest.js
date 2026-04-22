@@ -1,4 +1,5 @@
 export const DELIVERY_QUEST_ID = 'shady_delivery';
+export const DELIVERY_QUEST_REWARD_AMOUNT = 50;
 
 export const DELIVERY_QUEST_STATUS = Object.freeze({
   inactive: 'inactive',
