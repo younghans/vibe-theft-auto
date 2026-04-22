@@ -8,6 +8,10 @@ import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
+const CAMERA_OCCLUDED_BUILDING_OPACITY = 0.1;
+const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
+const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+
 function setShadowFlags(root) {
   root.traverse((node) => {
     if (node.isMesh) {
@@ -68,6 +72,23 @@ function boxHasFiniteExtents(box) {
     && Number.isFinite(box.max?.x)
     && Number.isFinite(box.max?.y)
     && Number.isFinite(box.max?.z)
+  );
+}
+
+function isCameraOccludingBuildingItem(item) {
+  const assetName = String(item?.assetName ?? '').toLowerCase();
+  const itemId = String(item?.id ?? '').toLowerCase();
+  return Boolean(
+    item?.layer === 'tile'
+    && item.id !== 'lot_base'
+    && (
+      item.underlayTileId === 'lot_base'
+      || itemId.startsWith('building_')
+      || itemId.startsWith('kenney_building_')
+      || assetName.startsWith('building_')
+      || assetName.startsWith('kenney_building_')
+      || assetName.includes('_building')
+    )
   );
 }
 
@@ -330,6 +351,78 @@ function extractPlacementId(node) {
   return null;
 }
 
+function isNodeVisibleWithinRoot(node, root) {
+  let current = node;
+  while (current) {
+    if (!current.visible) {
+      return false;
+    }
+
+    if (current === root) {
+      return true;
+    }
+
+    current = current.parent;
+  }
+
+  return false;
+}
+
+function collectMaterials(material) {
+  return Array.isArray(material) ? material.filter(Boolean) : [material].filter(Boolean);
+}
+
+function cloneMaterialsForCameraOcclusion(root) {
+  const materialStates = [];
+
+  root?.traverse?.((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    const sourceMaterials = collectMaterials(node.material);
+    const clonedMaterials = sourceMaterials.map((material) => {
+      const cloned = material.clone();
+      materialStates.push({
+        material: cloned,
+        opacity: material.opacity,
+        transparent: material.transparent,
+        depthWrite: material.depthWrite
+      });
+      return cloned;
+    });
+
+    node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
+  });
+
+  return {
+    materialStates,
+    occluded: false
+  };
+}
+
+function getVisibleObjectBounds(root, bounds, nodeBounds) {
+  bounds.makeEmpty();
+  root?.updateWorldMatrix?.(true, true);
+
+  root?.traverse?.((node) => {
+    if (!node.isMesh || !node.geometry || !isNodeVisibleWithinRoot(node, root)) {
+      return;
+    }
+
+    if (!node.geometry.boundingBox) {
+      node.geometry.computeBoundingBox();
+    }
+
+    nodeBounds.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld);
+    if (boxHasFiniteExtents(nodeBounds)) {
+      bounds.union(nodeBounds);
+    }
+  });
+
+  return boxHasFiniteExtents(bounds) ? bounds : null;
+}
+
 const PARK_WALL_COLLIDER_CELL_SIZE = 1;
 const PARK_WALL_COLLIDER_MIN_Y = 1.1;
 const PARK_WALL_COLLIDER_MAX_Y = 4.2;
@@ -500,6 +593,13 @@ export class WorldRenderer {
     this.camera = camera;
     this.library = library;
     this.raycaster = new THREE.Raycaster();
+    this.cameraOcclusionRaycaster = new THREE.Raycaster();
+    this.cameraOcclusionTarget = new THREE.Vector3();
+    this.cameraOcclusionDirection = new THREE.Vector3();
+    this.cameraOcclusionBounds = new THREE.Box3();
+    this.cameraOcclusionNodeBounds = new THREE.Box3();
+    this.cameraOcclusionBoundsHit = new THREE.Vector3();
+    this.cameraOccludedPlacementIds = new Set();
 
     this.tileRoot = new THREE.Group();
     this.propRoot = new THREE.Group();
@@ -560,6 +660,7 @@ export class WorldRenderer {
   }
 
   clear() {
+    this.clearCameraOcclusion();
     for (const rendered of this.renderedPlacements.values()) {
       rendered.object.parent?.remove(rendered.object);
     }
@@ -636,6 +737,8 @@ export class WorldRenderer {
       id: placement.id,
       placement,
       object,
+      cameraOcclusionObject: actor ? null : visual.colliderObject,
+      cameraOcclusionMaterialState: null,
       actor,
       hidden: false,
       visualHidden: false,
@@ -707,6 +810,149 @@ export class WorldRenderer {
     }
 
     this.refreshNpcDebugGizmos();
+  }
+
+  isPlacementVisibleForCameraOcclusion(rendered) {
+    return Boolean(
+      rendered
+      && this.tileRoot.visible
+      && isCameraOccludingBuildingItem(rendered.item)
+      && !rendered.hidden
+      && !rendered.visualHidden
+      && !rendered.workoutHidden
+      && rendered.object.visible
+      && rendered.cameraOcclusionObject
+    );
+  }
+
+  getCameraOcclusionCandidates() {
+    const candidates = [];
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (this.isPlacementVisibleForCameraOcclusion(rendered)) {
+        candidates.push(rendered);
+      }
+    }
+
+    return candidates;
+  }
+
+  setPlacementCameraOccluded(rendered, occluded) {
+    const nextOccluded = Boolean(occluded);
+    if (!rendered?.cameraOcclusionObject) {
+      return;
+    }
+
+    if (!rendered.cameraOcclusionMaterialState && !nextOccluded) {
+      return;
+    }
+
+    rendered.cameraOcclusionMaterialState ??= cloneMaterialsForCameraOcclusion(rendered.cameraOcclusionObject);
+    const materialState = rendered.cameraOcclusionMaterialState;
+    if (materialState.occluded === nextOccluded) {
+      return;
+    }
+
+    materialState.occluded = nextOccluded;
+    for (const entry of materialState.materialStates) {
+      entry.material.transparent = nextOccluded ? true : entry.transparent;
+      entry.material.depthWrite = nextOccluded ? false : entry.depthWrite;
+      entry.material.opacity = nextOccluded
+        ? Math.min(entry.opacity ?? 1, CAMERA_OCCLUDED_BUILDING_OPACITY)
+        : entry.opacity;
+      entry.material.needsUpdate = true;
+    }
+  }
+
+  syncCameraOccludedPlacementIds(nextOccludedPlacementIds) {
+    for (const placementId of [...this.cameraOccludedPlacementIds]) {
+      if (nextOccludedPlacementIds.has(placementId)) {
+        continue;
+      }
+
+      const rendered = this.renderedPlacements.get(placementId);
+      this.setPlacementCameraOccluded(rendered, false);
+      this.cameraOccludedPlacementIds.delete(placementId);
+    }
+
+    for (const placementId of nextOccludedPlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!this.isPlacementVisibleForCameraOcclusion(rendered)) {
+        continue;
+      }
+
+      this.setPlacementCameraOccluded(rendered, true);
+      this.cameraOccludedPlacementIds.add(placementId);
+    }
+  }
+
+  clearCameraOcclusion() {
+    this.syncCameraOccludedPlacementIds(new Set());
+  }
+
+  updateCameraOcclusion(camera = this.camera, playerPosition = null) {
+    if (!camera || !playerPosition || !this.tileRoot.visible) {
+      this.clearCameraOcclusion();
+      return;
+    }
+
+    const baseX = playerPosition.x ?? 0;
+    const baseY = playerPosition.y ?? 0;
+    const baseZ = playerPosition.z ?? 0;
+    if (!Number.isFinite(baseX) || !Number.isFinite(baseY) || !Number.isFinite(baseZ)) {
+      this.clearCameraOcclusion();
+      return;
+    }
+
+    const candidates = this.getCameraOcclusionCandidates();
+    if (!candidates.length) {
+      this.clearCameraOcclusion();
+      return;
+    }
+
+    const nextOccludedPlacementIds = new Set();
+    this.cameraOcclusionRaycaster.near = 0;
+
+    for (const height of CAMERA_OCCLUSION_PLAYER_HEIGHTS) {
+      this.cameraOcclusionTarget.set(baseX, baseY + height, baseZ);
+      this.cameraOcclusionDirection.subVectors(this.cameraOcclusionTarget, camera.position);
+      const distance = this.cameraOcclusionDirection.length();
+      if (distance <= CAMERA_OCCLUSION_TARGET_PADDING) {
+        continue;
+      }
+
+      this.cameraOcclusionDirection.multiplyScalar(1 / distance);
+      this.cameraOcclusionRaycaster.set(camera.position, this.cameraOcclusionDirection);
+      this.cameraOcclusionRaycaster.far = Math.max(0, distance - CAMERA_OCCLUSION_TARGET_PADDING);
+
+      for (const rendered of candidates) {
+        if (nextOccludedPlacementIds.has(rendered.id)) {
+          continue;
+        }
+
+        const bounds = getVisibleObjectBounds(
+          rendered.cameraOcclusionObject,
+          this.cameraOcclusionBounds,
+          this.cameraOcclusionNodeBounds
+        );
+        if (!bounds) {
+          continue;
+        }
+
+        const hit = this.cameraOcclusionRaycaster.ray.intersectBox(
+          bounds,
+          this.cameraOcclusionBoundsHit
+        );
+        if (
+          hit
+          && hit.distanceTo(camera.position) <= this.cameraOcclusionRaycaster.far
+        ) {
+          nextOccludedPlacementIds.add(rendered.id);
+        }
+      }
+    }
+
+    this.syncCameraOccludedPlacementIds(nextOccludedPlacementIds);
   }
 
   updatePlacement(placement) {
@@ -811,6 +1057,8 @@ export class WorldRenderer {
       return;
     }
 
+    this.setPlacementCameraOccluded(rendered, false);
+    this.cameraOccludedPlacementIds.delete(id);
     rendered.object.parent?.remove(rendered.object);
     this.renderedPlacements.delete(id);
     this.refreshWorkoutPlacementState();
@@ -1166,6 +1414,9 @@ export class WorldRenderer {
 
   setVisible(visible) {
     const nextVisible = Boolean(visible);
+    if (!nextVisible) {
+      this.clearCameraOcclusion();
+    }
     this.tileRoot.visible = nextVisible;
     this.propRoot.visible = nextVisible;
     this.npcDebugRoot.visible = nextVisible && this.npcDebugVisible;

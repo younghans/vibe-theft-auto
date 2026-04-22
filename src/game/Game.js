@@ -4422,6 +4422,7 @@ export class Game {
     }
     this.refreshAdminPositionHud();
     this.characterPreviewRenderer?.update(deltaSeconds);
+    this.updateCameraOcclusion();
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }
@@ -4490,6 +4491,19 @@ export class Game {
     }
 
     this.worldBuilder.syncNpcInteractRadiusIndicators(this.player.position);
+  }
+
+  updateCameraOcclusion() {
+    if (!this.worldBuilder) {
+      return;
+    }
+
+    if (!this.player || this.worldBuilder.enabled || this.currentInterior?.scene) {
+      this.worldBuilder.clearCameraOcclusion();
+      return;
+    }
+
+    this.worldBuilder.updateCameraOcclusion(this.camera, this.player.position);
   }
 
   updateInteraction() {
