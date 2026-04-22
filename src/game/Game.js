@@ -4508,10 +4508,10 @@ export class Game {
     }
 
     this.currentInteractable = nearest;
-    const gymCheckInInteraction = this.getNearestGymCheckInInteractable();
-    const deliveryInteraction = gymCheckInInteraction
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
+    const gymCheckInInteraction = deliveryInteraction
       ? null
-      : this.getDeliveryQuestInteractionForNpc();
+      : this.getNearestGymCheckInInteractable();
     const interactPressed = this.input.consume('KeyE');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -4688,8 +4688,14 @@ export class Game {
   }
 
   addNpcInteractionHintBubble(bubbles, npcSpeechAnchors) {
-    const gymCheckInInteraction = this.getNearestGymCheckInInteractable();
-    const interactable = gymCheckInInteraction ?? this.getNearestNpcInteractable();
+    const npcInteractable = this.getNearestNpcInteractable();
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable);
+    const gymCheckInInteraction = deliveryInteraction
+      ? null
+      : this.getNearestGymCheckInInteractable();
+    const interactable = deliveryInteraction
+      ? npcInteractable
+      : (gymCheckInInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -4703,9 +4709,6 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    const deliveryInteraction = gymCheckInInteraction
-      ? null
-      : this.getDeliveryQuestInteractionForNpc(interactable);
     if (!deliveryInteraction && !gymCheckInInteraction && npcState?.busy) {
       return;
     }
