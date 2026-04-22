@@ -31,6 +31,7 @@ import {
   isDeliveryQuestGiver,
   isNpcAvailableForDelivery
 } from '../../src/shared/deliveryQuest.js';
+import { resolveRentIntroPlan } from '../../src/shared/rentIntro.js';
 import {
   chooseFarthestSpawnPoint,
   clampToWorldBounds,
@@ -125,6 +126,11 @@ const PlayerState = schema({
   kills: 'number',
   deaths: 'number',
   money: 'number',
+  rentIntroSeq: 'number',
+  rentIntroAmount: 'number',
+  rentIntroNpcId: 'string',
+  rentIntroBuildingPlacementId: 'string',
+  rentIntroStartedAt: 'number',
   lastDamagedAt: 'number',
   workoutPlacementId: 'string',
   deliveryQuestId: 'string',
@@ -464,11 +470,14 @@ export class WorldRoom extends Room {
   onJoin(client, options = {}) {
     const player = new PlayerState();
     const [spawnX, spawnZ] = this.chooseRespawnPoint(client.sessionId);
+    const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
+    const introSpawn = rentIntro?.spawn ?? null;
+    const introStartedAt = rentIntro ? Date.now() : 0;
     const isAdmin = this.isAdminJoin(options);
-    player.x = quantizePosition(spawnX);
-    player.z = quantizePosition(spawnZ);
-    player.rotationY = 0;
-    player.aimRotationY = 0;
+    player.x = quantizePosition(introSpawn?.x ?? spawnX);
+    player.z = quantizePosition(introSpawn?.z ?? spawnZ);
+    player.rotationY = Number.isFinite(introSpawn?.rotationY) ? quantizeRotation(introSpawn.rotationY) : 0;
+    player.aimRotationY = player.rotationY;
     player.aiming = false;
     player.emoteId = '';
     player.emoteActive = false;
@@ -489,7 +498,12 @@ export class WorldRoom extends Room {
     player.reloadEndsAt = 0;
     player.kills = 0;
     player.deaths = 0;
-    player.money = 0;
+    player.money = rentIntro ? -Math.abs(Math.round(rentIntro.amount)) : 0;
+    player.rentIntroSeq = introStartedAt;
+    player.rentIntroAmount = rentIntro ? Math.abs(Math.round(rentIntro.amount)) : 0;
+    player.rentIntroNpcId = rentIntro?.collectorNpcId ?? '';
+    player.rentIntroBuildingPlacementId = rentIntro?.buildingPlacementId ?? '';
+    player.rentIntroStartedAt = introStartedAt;
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
     player.deliveryQuestId = '';
@@ -510,6 +524,12 @@ export class WorldRoom extends Room {
     });
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
+    if (rentIntro?.collectorNpcId) {
+      const collector = this.state.npcs.get(rentIntro.collectorNpcId);
+      if (collector) {
+        this.setNpcChatPhase(collector, 'done', rentIntro.line, { bumpSeq: true });
+      }
+    }
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,

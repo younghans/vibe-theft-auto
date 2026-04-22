@@ -78,6 +78,8 @@ const RUNTIME_PIXEL_RATIO_CAP = 2;
 const SNATCH_WORKOUT_EMOTE_ID = 'snatch';
 const SNATCH_WORKOUT_DURATION_MS = 5435;
 const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
+const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
+const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -115,6 +117,22 @@ function getChatBubbleLifetimeMs(text) {
     CHAT_BUBBLE_MIN_LIFETIME_MS,
     CHAT_BUBBLE_MAX_LIFETIME_MS
   );
+}
+
+function easeOutCubic(value) {
+  const clamped = THREE.MathUtils.clamp(value, 0, 1);
+  return 1 - ((1 - clamped) ** 3);
+}
+
+function normalizeMoneyAmount(value) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+}
+
+function formatMoneyDelta(value) {
+  const amount = normalizeMoneyAmount(value);
+  const formattedAmount = Math.abs(amount).toLocaleString('en-US');
+  return amount < 0 ? `-$${formattedAmount}` : `+$${formattedAmount}`;
 }
 
 function disposeMaterial(material) {
@@ -267,6 +285,13 @@ export class Game {
     this.deferredMuzzleFlashWarmupId = 0;
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
+    this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.handledRentIntroSeq = 0;
+    this.moneyDisplayAmount = 0;
+    this.moneyAnimation = null;
+    this.moneyFloaters = [];
+    this.moneyFloaterSequence = 0;
+    this.moneyFloaterAnchor = new THREE.Vector3();
     this.workoutLeftHandPosition = new THREE.Vector3();
     this.workoutRightHandPosition = new THREE.Vector3();
     this.workoutBarbellMidpoint = new THREE.Vector3();
@@ -3068,6 +3093,131 @@ export class Game {
     }
   }
 
+  startMoneyAnimation(targetAmount, { fromAmount = this.moneyDisplayAmount, durationMs = RENT_INTRO_MONEY_ANIMATION_MS } = {}) {
+    const from = normalizeMoneyAmount(fromAmount);
+    const to = normalizeMoneyAmount(targetAmount);
+    if (from === to) {
+      this.moneyAnimation = null;
+      this.moneyDisplayAmount = to;
+      return;
+    }
+
+    this.moneyAnimation = {
+      from,
+      to,
+      startedAt: performance.now(),
+      durationMs: Math.max(120, Number(durationMs) || RENT_INTRO_MONEY_ANIMATION_MS)
+    };
+    this.moneyDisplayAmount = from;
+  }
+
+  getAnimatedMoneyAmount(targetAmount) {
+    const target = normalizeMoneyAmount(targetAmount);
+    if (!this.moneyAnimation) {
+      this.moneyDisplayAmount = target;
+      return target;
+    }
+
+    if (this.moneyAnimation.to !== target) {
+      this.startMoneyAnimation(target, {
+        fromAmount: this.moneyDisplayAmount,
+        durationMs: 420
+      });
+      if (!this.moneyAnimation) {
+        return this.moneyDisplayAmount;
+      }
+    }
+
+    const now = performance.now();
+    const progress = (now - this.moneyAnimation.startedAt) / this.moneyAnimation.durationMs;
+    if (progress >= 1) {
+      this.moneyDisplayAmount = this.moneyAnimation.to;
+      this.moneyAnimation = null;
+      return this.moneyDisplayAmount;
+    }
+
+    const eased = easeOutCubic(progress);
+    this.moneyDisplayAmount = Math.round(
+      this.moneyAnimation.from + ((this.moneyAnimation.to - this.moneyAnimation.from) * eased)
+    );
+    return this.moneyDisplayAmount;
+  }
+
+  syncMoneyHud(targetAmount) {
+    this.hud.setMoneyState({
+      amount: this.getAnimatedMoneyAmount(targetAmount)
+    });
+  }
+
+  spawnMoneyFloater(amount) {
+    this.moneyFloaters.push({
+      id: `money:${++this.moneyFloaterSequence}`,
+      amount: normalizeMoneyAmount(amount),
+      startedAt: performance.now(),
+      durationMs: RENT_INTRO_MONEY_FLOATER_MS
+    });
+  }
+
+  maybeStartRentIntro(localPlayerState) {
+    const seq = Number(localPlayerState?.rentIntroSeq ?? 0);
+    if (!Number.isFinite(seq) || seq <= 0 || seq === this.handledRentIntroSeq) {
+      return;
+    }
+
+    this.handledRentIntroSeq = seq;
+    const rentAmount = Math.abs(normalizeMoneyAmount(localPlayerState.rentIntroAmount || 100)) || 100;
+    const targetAmount = normalizeMoneyAmount(localPlayerState.money ?? -rentAmount);
+    this.startMoneyAnimation(targetAmount, {
+      fromAmount: this.moneyDisplayAmount,
+      durationMs: RENT_INTRO_MONEY_ANIMATION_MS
+    });
+    this.spawnMoneyFloater(-rentAmount);
+    this.playSoundEffect(this.rentChaChingSound);
+  }
+
+  addMoneyFloaterBubbles(bubbles) {
+    if (!this.moneyFloaters.length || !this.player) {
+      return;
+    }
+
+    const now = performance.now();
+    const activeFloaters = [];
+    this.moneyFloaterAnchor.set(
+      this.player.position.x,
+      this.player.position.y + 3.3,
+      this.player.position.z
+    );
+    const projected = this.projectSpeechAnchor(this.moneyFloaterAnchor);
+
+    for (const floater of this.moneyFloaters) {
+      const progress = (now - floater.startedAt) / floater.durationMs;
+      if (progress >= 1) {
+        continue;
+      }
+
+      activeFloaters.push(floater);
+      if (!projected) {
+        continue;
+      }
+
+      const eased = easeOutCubic(progress);
+      const driftX = Math.sin(progress * Math.PI) * 16;
+      bubbles.push({
+        id: `money-floater:${floater.id}`,
+        text: formatMoneyDelta(floater.amount),
+        label: '',
+        variant: 'money',
+        status: 'done',
+        visible: true,
+        screenX: projected.x + driftX,
+        screenY: projected.y - 18 - (eased * 70),
+        opacity: Math.max(0, 1 - (progress * 1.12))
+      });
+    }
+
+    this.moneyFloaters = activeFloaters;
+  }
+
   syncLocalPlayerState(localPlayerState) {
     if (!this.player || !localPlayerState) {
       return;
@@ -3121,9 +3271,8 @@ export class Game {
       endsAtMs: localPlayerState.reloadEndsAt ?? 0
     });
 
-    this.hud.setMoneyState({
-      amount: localPlayerState.money ?? 0
-    });
+    this.maybeStartRentIntro(localPlayerState);
+    this.syncMoneyHud(localPlayerState.money ?? 0);
 
     this.hud.setCombatState({
       visible: true,
@@ -4277,6 +4426,7 @@ export class Game {
     }
 
     this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors);
+    this.addMoneyFloaterBubbles(bubbles);
     this.hud.setSpeechBubbles(bubbles);
   }
 }

@@ -2262,6 +2262,40 @@ body.is-builder-resizing * {
   border-color: rgba(104, 199, 255, 0.55);
 }
 
+.hud__speech-bubble.is-money {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.hud__speech-bubble.is-money::after {
+  display: none;
+}
+
+.hud__speech-bubble.is-money .hud__speech-label {
+  display: none;
+}
+
+.hud__speech-bubble.is-money .hud__speech-text {
+  color: #ff3434;
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+  text-shadow:
+    0 2px 0 #2b0909,
+    0 4px 10px rgba(0, 0, 0, 0.42),
+    0 0 16px rgba(255, 235, 152, 0.46);
+  white-space: nowrap;
+  word-break: normal;
+}
+
 .hud__speech-bubble.is-thinking {
   min-width: 72px;
 }

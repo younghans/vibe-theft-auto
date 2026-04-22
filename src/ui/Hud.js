@@ -2580,9 +2580,11 @@ export class Hud {
       node.classList.toggle('is-npc', bubble.variant === 'npc');
       node.classList.toggle('is-player', bubble.variant === 'player');
       node.classList.toggle('is-interaction', bubble.variant === 'interaction');
+      node.classList.toggle('is-money', bubble.variant === 'money');
       node.classList.toggle('is-thinking', bubble.status === 'thinking');
       node.style.left = `${bubble.screenX}px`;
       node.style.top = `${bubble.screenY}px`;
+      node.style.opacity = Number.isFinite(Number(bubble.opacity)) ? String(bubble.opacity) : '';
 
       const [labelNode, textNode] = node.children;
       labelNode.textContent = bubble.label ?? '';

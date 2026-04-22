@@ -55,6 +55,9 @@ export const assets = {
     pistolCock: assetUrl('audio', 'combat', 'pistol_cock.wav'),
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')
   },
+  audio: {
+    chaChing: assetUrl('audio', 'cha-ching.wav')
+  },
   city: {
     base: cityAsset('base'),
     bench: cityAsset('bench'),

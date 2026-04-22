@@ -27,6 +27,7 @@ import {
   isDeliveryQuestGiver,
   isNpcAvailableForDelivery
 } from '../shared/deliveryQuest.js';
+import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
@@ -133,6 +134,11 @@ function createDefaultPlayerState(overrides = {}) {
     kills: 0,
     deaths: 0,
     money: 0,
+    rentIntroSeq: 0,
+    rentIntroAmount: 0,
+    rentIntroNpcId: '',
+    rentIntroBuildingPlacementId: '',
+    rentIntroStartedAt: 0,
     lastDamagedAt: 0,
     workoutPlacementId: '',
     deliveryQuestId: '',
@@ -243,13 +249,30 @@ export class NpcServiceMock {
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
+    const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
+    const introStartedAt = rentIntro ? Date.now() : 0;
+    const introSpawn = rentIntro?.spawn ?? null;
     this.state.players.set(this.state.sessionId, createDefaultPlayerState({
       isAdmin: Boolean(this.adminKey),
-      x: spawnX,
-      z: spawnZ
+      x: introSpawn?.x ?? spawnX,
+      z: introSpawn?.z ?? spawnZ,
+      rotationY: introSpawn?.rotationY ?? 0,
+      aimRotationY: introSpawn?.rotationY ?? 0,
+      money: rentIntro ? -Math.abs(Math.round(rentIntro.amount)) : 0,
+      rentIntroSeq: introStartedAt,
+      rentIntroAmount: rentIntro ? Math.abs(Math.round(rentIntro.amount)) : 0,
+      rentIntroNpcId: rentIntro?.collectorNpcId ?? '',
+      rentIntroBuildingPlacementId: rentIntro?.buildingPlacementId ?? '',
+      rentIntroStartedAt: introStartedAt
     }));
     this.seedCombatPickups();
     this.syncNpcStateFromWorld();
+    if (rentIntro?.collectorNpcId) {
+      const collector = this.state.npcs.get(rentIntro.collectorNpcId);
+      if (collector) {
+        this.setNpcChatPhase(collector, 'done', rentIntro.line, { bumpSeq: true });
+      }
+    }
     this.combatTick = window.setInterval(() => {
       this.updateCombatTimers();
     }, 100);
