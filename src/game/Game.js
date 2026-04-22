@@ -3121,6 +3121,10 @@ export class Game {
       endsAtMs: localPlayerState.reloadEndsAt ?? 0
     });
 
+    this.hud.setMoneyState({
+      amount: localPlayerState.money ?? 0
+    });
+
     this.hud.setCombatState({
       visible: true,
       health: localPlayerState.health ?? PLAYER_MAX_HEALTH,

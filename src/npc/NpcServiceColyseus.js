@@ -76,6 +76,7 @@ function clonePlayerState(player) {
     reloadEndsAt: player.reloadEndsAt ?? 0,
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
+    money: player.money ?? 0,
     lastDamagedAt: player.lastDamagedAt ?? 0,
     workoutPlacementId: player.workoutPlacementId || '',
     deliveryQuestId: player.deliveryQuestId || '',

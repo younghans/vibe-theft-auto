@@ -124,6 +124,7 @@ const PlayerState = schema({
   reloadEndsAt: 'number',
   kills: 'number',
   deaths: 'number',
+  money: 'number',
   lastDamagedAt: 'number',
   workoutPlacementId: 'string',
   deliveryQuestId: 'string',
@@ -488,6 +489,7 @@ export class WorldRoom extends Room {
     player.reloadEndsAt = 0;
     player.kills = 0;
     player.deaths = 0;
+    player.money = 0;
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
     player.deliveryQuestId = '';

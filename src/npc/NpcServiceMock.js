@@ -132,6 +132,7 @@ function createDefaultPlayerState(overrides = {}) {
     reloadEndsAt: 0,
     kills: 0,
     deaths: 0,
+    money: 0,
     lastDamagedAt: 0,
     workoutPlacementId: '',
     deliveryQuestId: '',

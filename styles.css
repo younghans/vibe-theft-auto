@@ -327,6 +327,46 @@ body.is-builder-resizing * {
     inset 0 -2px 6px rgba(0, 0, 0, 0.26);
 }
 
+.hud__money {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.hud__money-value {
+  display: block;
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: clamp(1.65rem, 4vw, 2.7rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0;
+  text-align: center;
+  color: #f8f8f6;
+  -webkit-text-stroke: clamp(1.5px, 0.18vw, 3px) #180d08;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 0 #180d08,
+    0 0.04em 0 #180d08,
+    0 0.08em 0 #4a1c08,
+    0 0.14em 0 rgba(29, 11, 5, 0.86),
+    0 0.22em 0.24em rgba(0, 0, 0, 0.42);
+  white-space: nowrap;
+}
+
+.hud__money.is-negative .hud__money-value {
+  color: #ff3434;
+  text-shadow:
+    0 0 0 #180d08,
+    0 0.04em 0 #180d08,
+    0 0.08em 0 #5a0909,
+    0 0.14em 0 rgba(58, 8, 8, 0.88),
+    0 0.22em 0.24em rgba(0, 0, 0, 0.46);
+}
+
 @keyframes hud-health-stripes {
   from {
     transform: translateX(0);
@@ -2839,6 +2879,19 @@ canvas {
     top: 16px;
     right: auto;
     width: clamp(144px, calc(100vw - 152px), 220px);
+  }
+
+  .hud__money {
+    top: 54px;
+  }
+
+  .hud__money-value {
+    font-size: clamp(1.45rem, 8vw, 2.1rem);
+  }
+
+  .hud__prompt {
+    bottom: 26px;
+    max-width: calc(100vw - 32px);
   }
 
   .hud__builder {

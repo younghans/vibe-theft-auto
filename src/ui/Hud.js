@@ -28,6 +28,13 @@ function getBuilderPlaceholder(label) {
     .join('');
 }
 
+function formatMoneyAmount(value) {
+  const numeric = Number(value ?? 0);
+  const amount = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+  const formattedAmount = Math.abs(amount).toLocaleString('en-US');
+  return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -187,6 +194,8 @@ export class Hud {
     this.combatHealthTrail = this.overlay.querySelector('[data-combat-health-trail]');
     this.combatHealthFill = this.overlay.querySelector('[data-combat-health-fill]');
     this.combatHealthBurst = this.overlay.querySelector('[data-combat-health-burst]');
+    this.moneyRoot = this.overlay.querySelector('[data-money]');
+    this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
@@ -295,6 +304,7 @@ export class Hud {
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
     this.initializeBuilderPanelResize();
+    this.setMoneyState({ amount: 0 });
   }
 
   createLoading() {
@@ -466,6 +476,9 @@ export class Hud {
           <div class="hud__combat-meter-fill" data-combat-health-fill></div>
           <div class="hud__combat-meter-burst" data-combat-health-burst></div>
         </div>
+      </section>
+      <section class="hud__money" data-money aria-label="Money" aria-live="polite">
+        <span class="hud__money-value" data-money-value>$0</span>
       </section>
       <div class="hud__top-actions">
         <section class="hud__toast">
@@ -2255,6 +2268,17 @@ export class Hud {
 
   setHitMarkerVisible(visible) {
     this.hitMarker.classList.toggle('is-visible', visible);
+  }
+
+  setMoneyState({ amount = 0 } = {}) {
+    if (!this.moneyRoot || !this.moneyValue) {
+      return;
+    }
+
+    const numeric = Number(amount ?? 0);
+    const money = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+    this.moneyValue.textContent = formatMoneyAmount(money);
+    this.moneyRoot.classList.toggle('is-negative', money < 0);
   }
 
   setZoomState({
