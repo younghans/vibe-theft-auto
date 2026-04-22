@@ -60,7 +60,7 @@ body.is-builder-resizing * {
 }
 
 .hud__panel {
-  top: 24px;
+  bottom: 24px;
   left: 24px;
   width: auto;
   padding: 0;
@@ -152,7 +152,7 @@ body.is-builder-resizing * {
   --health-ratio: 1;
   position: absolute;
   left: 24px;
-  bottom: 24px;
+  top: 24px;
   width: min(280px, calc(100vw - 48px));
   filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.28));
 }
@@ -1005,7 +1005,7 @@ body.is-builder-resizing * {
 
 .hud__admin-position {
   position: absolute;
-  top: 216px;
+  bottom: 216px;
   left: 24px;
   min-width: 240px;
   max-width: min(360px, calc(100vw - 48px));
@@ -2829,16 +2829,16 @@ canvas {
   }
 
   .hud__panel {
-    top: 16px;
+    bottom: 16px;
     left: 16px;
     width: auto;
   }
 
   .hud__combat {
     left: 16px;
-    right: 16px;
-    bottom: 72px;
-    width: auto;
+    top: 16px;
+    right: auto;
+    width: clamp(144px, calc(100vw - 152px), 220px);
   }
 
   .hud__builder {
@@ -2912,7 +2912,7 @@ canvas {
   }
 
   .hud__admin-position {
-    top: 184px;
+    bottom: 208px;
     left: 16px;
     max-width: calc(100vw - 32px);
   }
