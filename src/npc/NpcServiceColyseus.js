@@ -29,6 +29,7 @@ function cloneNpcState(npc) {
     rotationQuarterTurns: npc.rotationQuarterTurns,
     interactRadius: npc.interactRadius,
     deliveryQuestEnabled: npc.deliveryQuestEnabled === true,
+    gymCheckInEnabled: npc.gymCheckInEnabled === true,
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
@@ -78,6 +79,7 @@ function clonePlayerState(player) {
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
     money: player.money ?? 0,
+    gymMembershipActive: player.gymMembershipActive === true,
     rentIntroSeq: player.rentIntroSeq ?? 0,
     rentIntroAmount: player.rentIntroAmount ?? 0,
     rentIntroNpcId: player.rentIntroNpcId || '',
@@ -482,6 +484,12 @@ export class NpcServiceColyseus {
   async completeDeliveryQuest(targetNpcId = '') {
     return this.rpc('quest:completeDelivery', {
       targetNpcId: String(targetNpcId ?? '').trim()
+    });
+  }
+
+  async buyGymMembership(npcId = '') {
+    return this.rpc('gym:buyMembership', {
+      npcId: String(npcId ?? '').trim()
     });
   }
 

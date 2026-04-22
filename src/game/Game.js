@@ -48,6 +48,13 @@ import {
   isDeliveryQuestActive,
   isDeliveryQuestGiver
 } from '../shared/deliveryQuest.js';
+import {
+  GYM_CHECK_IN_LINE,
+  GYM_MEMBERSHIP_COST,
+  getGymCheckInInnerRadius,
+  getGymCheckInOuterRadius,
+  isGymCheckInNpc
+} from '../shared/gymMembership.js';
 import { RENT_INTRO_LINE } from '../shared/rentIntro.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
@@ -263,6 +270,7 @@ export class Game {
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
+    this.gymMembershipRequestInFlight = false;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -1478,6 +1486,139 @@ export class Game {
     return this.worldBuilder?.getGroundHeightAt(worldPosition) ?? 0;
   }
 
+  hasGymMembership(playerState = this.getLocalPlayerState()) {
+    return playerState?.gymMembershipActive === true;
+  }
+
+  getGymCheckInNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      gymCheckInEnabled: npcState?.gymCheckInEnabled === true || interactable?.npc?.gymCheckInEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getGymCheckInNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestGymCheckInInteractable() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder || this.hasGymMembership()) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getGymCheckInNpcDetails(interactable);
+      if (
+        !isGymCheckInNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getGymCheckInNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const outerRadius = getGymCheckInOuterRadius(npcDetails, interactable.radius);
+      if (distance > outerRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'gym-check-in',
+        npcId: interactable.npcId || interactable.placementId || '',
+        npc: npcDetails,
+        position,
+        radius: outerRadius,
+        innerRadius: getGymCheckInInnerRadius(npcDetails, interactable.radius),
+        prompt: `Buy gym membership ($${GYM_MEMBERSHIP_COST})`,
+        actionText: 'Gym membership purchased.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  getGymCheckInColliders() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder || this.hasGymMembership()) {
+      return [];
+    }
+
+    const colliders = [];
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getGymCheckInNpcDetails(interactable);
+      if (
+        !isGymCheckInNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getGymCheckInNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const innerRadius = getGymCheckInInnerRadius(npcDetails, interactable.radius);
+      const currentDistance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      if (currentDistance < innerRadius - 0.05) {
+        continue;
+      }
+
+      colliders.push({
+        kind: 'gym-check-in',
+        blocksMovement: true,
+        type: 'cylinder',
+        x: position.x,
+        z: position.z,
+        y: position.y,
+        radius: Math.max(0.1, innerRadius - PLAYER_RADIUS),
+        height: 5
+      });
+    }
+
+    return colliders;
+  }
+
   getActiveColliders() {
     if (this.currentInterior?.scene) {
       return this.currentInterior.scene.colliders ?? [];
@@ -1485,7 +1626,8 @@ export class Game {
 
     return [
       ...(this.baseColliders ?? []),
-      ...(this.worldBuilder?.getColliders() ?? [])
+      ...(this.worldBuilder?.getColliders() ?? []),
+      ...this.getGymCheckInColliders()
     ];
   }
 
@@ -1712,6 +1854,29 @@ export class Game {
       this.hud.showToast('Delivery request failed.');
     } finally {
       this.deliveryQuestRequestInFlight = false;
+    }
+  }
+
+  async handleGymCheckInInteraction(interaction = null) {
+    if (!interaction?.npcId || this.gymMembershipRequestInFlight) {
+      return;
+    }
+
+    this.gymMembershipRequestInFlight = true;
+    try {
+      const result = await this.npcService?.buyGymMembership?.(interaction.npcId);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Gym membership could not be purchased.');
+        return;
+      }
+
+      this.playSoundEffect(this.rentChaChingSound);
+      this.hud.showToast(result.alreadyOwned ? 'Gym membership already active.' : 'Gym membership active.');
+    } catch (error) {
+      console.warn('[Gym] Membership purchase failed.', error);
+      this.hud.showToast('Gym membership request failed.');
+    } finally {
+      this.gymMembershipRequestInFlight = false;
     }
   }
 
@@ -2678,6 +2843,7 @@ export class Game {
         z: npc.position?.[1] ?? npc.z,
         rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
         interactRadius: npc.interactRadius,
+        gymCheckInEnabled: npc.gymCheckInEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
         activity: npc.activity,
@@ -4301,14 +4467,26 @@ export class Game {
     }
 
     this.currentInteractable = nearest;
-    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
-    this.hud.setPrompt(deliveryInteraction?.action ? null : nearest);
-
+    const gymCheckInInteraction = this.getNearestGymCheckInInteractable();
+    const deliveryInteraction = gymCheckInInteraction
+      ? null
+      : this.getDeliveryQuestInteractionForNpc();
     const interactPressed = this.input.consume('KeyE');
+
     if (deliveryInteraction?.action && interactPressed) {
       void this.handleDeliveryQuestInteraction(deliveryInteraction);
       return;
     }
+
+    if (gymCheckInInteraction) {
+      this.hud.setPrompt(gymCheckInInteraction);
+      if (interactPressed) {
+        void this.handleGymCheckInInteraction(gymCheckInInteraction);
+      }
+      return;
+    }
+
+    this.hud.setPrompt(nearest);
 
     if (!nearest || !interactPressed) {
       return;
@@ -4469,8 +4647,9 @@ export class Game {
   }
 
   addNpcInteractionHintBubble(bubbles, npcSpeechAnchors) {
-    const interactable = this.getNearestNpcInteractable();
-    const npcId = interactable?.kind === 'npc'
+    const gymCheckInInteraction = this.getNearestGymCheckInInteractable();
+    const interactable = gymCheckInInteraction ?? this.getNearestNpcInteractable();
+    const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
     if (
@@ -4483,8 +4662,10 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(interactable);
-    if (!deliveryInteraction && npcState?.busy) {
+    const deliveryInteraction = gymCheckInInteraction
+      ? null
+      : this.getDeliveryQuestInteractionForNpc(interactable);
+    if (!deliveryInteraction && !gymCheckInInteraction && npcState?.busy) {
       return;
     }
 
@@ -4509,6 +4690,20 @@ export class Game {
 
     const projected = this.projectSpeechAnchor(anchor);
     if (!projected) {
+      return;
+    }
+
+    if (gymCheckInInteraction) {
+      bubbles.push({
+        id: `npc-gym-check-in:${npcId}`,
+        text: GYM_CHECK_IN_LINE,
+        label: npcState?.name ?? interactable?.npc?.name ?? '',
+        variant: 'npc',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y
+      });
       return;
     }
 

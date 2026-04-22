@@ -1,5 +1,6 @@
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import { normalizeDeliveryQuestEnabled } from '../shared/deliveryQuest.js';
+import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 
 export const NPC_ROUTINE_MODES = Object.freeze({
@@ -296,7 +297,11 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
 
   if (
     Object.keys(updates ?? {}).length === 1
-    && (Object.hasOwn(updates, 'deliveryQuestEnabled') || Object.hasOwn(updates, 'rentCollectorEnabled'))
+    && (
+      Object.hasOwn(updates, 'deliveryQuestEnabled')
+      || Object.hasOwn(updates, 'gymCheckInEnabled')
+      || Object.hasOwn(updates, 'rentCollectorEnabled')
+    )
   ) {
     return false;
   }
@@ -335,6 +340,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     respawnDelayMs: NPC_DEFAULT_RESPAWN_DELAY_MS,
     speed: NPC_DEFAULT_SPEED_TIER,
     deliveryQuestEnabled: false,
+    gymCheckInEnabled: false,
     rentCollectorEnabled: false,
     ...overrides
   };
@@ -371,6 +377,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),
     speed: normalizeNpcSpeedTier(npc.speed),
     deliveryQuestEnabled: normalizeDeliveryQuestEnabled(npc.deliveryQuestEnabled),
+    gymCheckInEnabled: normalizeGymCheckInEnabled(npc.gymCheckInEnabled ?? (npc.modelId === 'remy')),
     rentCollectorEnabled: normalizeRentCollectorEnabled(npc.rentCollectorEnabled),
     spawnPosition,
     spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4

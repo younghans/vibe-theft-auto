@@ -373,6 +373,9 @@ export class WorldBuilder {
       onNpcDeliveryQuestChange: (enabled) => void this.updateSelectedNpc({
         deliveryQuestEnabled: enabled === true
       }),
+      onNpcGymCheckInChange: (enabled) => void this.updateSelectedNpc({
+        gymCheckInEnabled: enabled === true
+      }),
       onNpcRentCollectorChange: (enabled) => void this.updateSelectedNpc({
         rentCollectorEnabled: enabled === true
       }),
@@ -1392,6 +1395,7 @@ export class WorldBuilder {
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
         interactRadius: NPC_DEFAULT_INTERACT_RADIUS,
+        gymCheckInEnabled: item.modelId === 'remy',
         rentCollectorEnabled: false
       }
     });
@@ -2095,6 +2099,7 @@ export class WorldBuilder {
       speed: npcDraft?.speed ?? placement.npc.speed ?? 'slow',
       respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
       deliveryQuestEnabled: (npcDraft?.deliveryQuestEnabled ?? placement.npc.deliveryQuestEnabled) === true,
+      gymCheckInEnabled: (npcDraft?.gymCheckInEnabled ?? placement.npc.gymCheckInEnabled) === true,
       rentCollectorEnabled: (npcDraft?.rentCollectorEnabled ?? placement.npc.rentCollectorEnabled) === true,
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id

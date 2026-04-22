@@ -32,6 +32,12 @@ import {
   isDeliveryQuestGiver,
   isNpcAvailableForDelivery
 } from '../../src/shared/deliveryQuest.js';
+import {
+  GYM_CHECK_IN_PURCHASED_LINE,
+  GYM_MEMBERSHIP_COST,
+  getGymCheckInOuterRadius,
+  isGymCheckInNpc
+} from '../../src/shared/gymMembership.js';
 import { resolveRentIntroPlan } from '../../src/shared/rentIntro.js';
 import {
   chooseFarthestSpawnPoint,
@@ -127,6 +133,7 @@ const PlayerState = schema({
   kills: 'number',
   deaths: 'number',
   money: 'number',
+  gymMembershipActive: 'boolean',
   rentIntroSeq: 'number',
   rentIntroAmount: 'number',
   rentIntroNpcId: 'string',
@@ -179,6 +186,7 @@ const NpcState = schema({
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
   deliveryQuestEnabled: 'boolean',
+  gymCheckInEnabled: 'boolean',
   rentCollectorEnabled: 'boolean',
   health: 'number',
   maxHealth: 'number',
@@ -416,6 +424,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleDeliveryQuestComplete(client, message));
     });
 
+    this.onMessage('gym:buyMembership', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleGymMembershipPurchase(client, message));
+    });
+
     this.onMessage('combat:pickupRequest', (client, message) => {
       try {
         this.handlePickupRequest(client, message);
@@ -501,6 +513,7 @@ export class WorldRoom extends Room {
     player.kills = 0;
     player.deaths = 0;
     player.money = rentIntro ? -Math.abs(Math.round(rentIntro.amount)) : 0;
+    player.gymMembershipActive = false;
     player.rentIntroSeq = introStartedAt;
     player.rentIntroAmount = rentIntro ? Math.abs(Math.round(rentIntro.amount)) : 0;
     player.rentIntroNpcId = rentIntro?.collectorNpcId ?? '';
@@ -618,6 +631,9 @@ export class WorldRoom extends Room {
     if (travelled > maxDistance) {
       return;
     }
+    if (this.isGymGateBlockingPosition(player, nextPosition)) {
+      return;
+    }
 
     player.x = quantizePosition(nextPosition.x);
     player.z = quantizePosition(nextPosition.z);
@@ -667,6 +683,80 @@ export class WorldRoom extends Room {
 
     const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
     return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+  }
+
+  isPlayerInGymCheckInPurchaseRadius(player, npc) {
+    if (!player || !npc || !isGymCheckInNpc(npc)) {
+      return false;
+    }
+
+    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInOuterRadius(npc);
+  }
+
+  isGymGateBlockingPosition(player, position) {
+    if (!player || player.gymMembershipActive === true || !position) {
+      return false;
+    }
+
+    for (const npc of this.state.npcs.values()) {
+      if (
+        !isGymCheckInNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
+      if (distance2D(position.x, position.z, npc.x, npc.z) <= radius) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  handleGymMembershipPurchase(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot buy that right now.');
+    }
+
+    if (player.gymMembershipActive === true) {
+      return {
+        alreadyOwned: true,
+        money: player.money ?? 0,
+        gymMembershipActive: true
+      };
+    }
+
+    const npcId = typeof message?.npcId === 'string'
+      ? message.npcId.trim()
+      : '';
+    const npc = this.state.npcs.get(npcId);
+    if (!npc || !isGymCheckInNpc(npc)) {
+      throw new Error('That gym check-in is not available.');
+    }
+
+    if (!this.isPlayerInGymCheckInPurchaseRadius(player, npc)) {
+      throw new Error('Move closer to the gym check-in.');
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < GYM_MEMBERSHIP_COST) {
+      this.setNpcChatPhase(npc, 'done', `Bring $${GYM_MEMBERSHIP_COST} and I can get you checked in.`, { bumpSeq: true });
+      throw new Error(`You need $${GYM_MEMBERSHIP_COST} for a gym membership.`);
+    }
+
+    player.money = money - GYM_MEMBERSHIP_COST;
+    player.gymMembershipActive = true;
+    this.setNpcChatPhase(npc, 'done', GYM_CHECK_IN_PURCHASED_LINE, { bumpSeq: true });
+    return {
+      cost: GYM_MEMBERSHIP_COST,
+      money: player.money,
+      gymMembershipActive: true
+    };
   }
 
   handleDeliveryQuestAccept(client, message = {}) {
@@ -1757,6 +1847,9 @@ export class WorldRoom extends Room {
         speed: message.speed,
         respawnDelayMs: message.respawnDelayMs,
         deliveryQuestEnabled: message.deliveryQuestEnabled === true,
+        gymCheckInEnabled: Object.hasOwn(message, 'gymCheckInEnabled')
+          ? message.gymCheckInEnabled === true
+          : model.id === 'remy',
         rentCollectorEnabled: message.rentCollectorEnabled === true,
         routine: message.routine,
         combat: message.combat,
@@ -1795,6 +1888,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'deliveryQuestEnabled')) {
       updates.deliveryQuestEnabled = message.deliveryQuestEnabled === true;
+    }
+    if (Object.hasOwn(message, 'gymCheckInEnabled')) {
+      updates.gymCheckInEnabled = message.gymCheckInEnabled === true;
     }
     if (Object.hasOwn(message, 'rentCollectorEnabled')) {
       updates.rentCollectorEnabled = message.rentCollectorEnabled === true;
@@ -1937,6 +2033,7 @@ export class WorldRoom extends Room {
       existing.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(existing.rotationY);
       existing.interactRadius = clampNpcRadius(normalizedDefinition.interactRadius);
       existing.deliveryQuestEnabled = normalizedDefinition.deliveryQuestEnabled === true;
+      existing.gymCheckInEnabled = normalizedDefinition.gymCheckInEnabled === true;
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
@@ -2095,6 +2192,9 @@ export class WorldRoom extends Room {
 
     for (const npc of this.state.npcs.values()) {
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
+        continue;
+      }
+      if (isGymCheckInNpc(npc) && player.gymMembershipActive !== true) {
         continue;
       }
 

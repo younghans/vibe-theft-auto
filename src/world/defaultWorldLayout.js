@@ -308,6 +308,7 @@ function createNpcLayout(tiles, props) {
     prompt: plan.prompt,
     interactRadius: plan.interactRadius,
     deliveryQuestEnabled: plan.deliveryQuestEnabled === true,
+    gymCheckInEnabled: plan.gymCheckInEnabled === true,
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
     ...(plan.combat ? { combat: plan.combat } : {}),
     ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})

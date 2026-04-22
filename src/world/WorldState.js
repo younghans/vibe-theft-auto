@@ -88,6 +88,7 @@ function toPlacementRecord(entry, item, id) {
           combat: entry.combat,
           respawnDelayMs: entry.respawnDelayMs,
           deliveryQuestEnabled: entry.deliveryQuestEnabled,
+          gymCheckInEnabled: entry.gymCheckInEnabled,
           rentCollectorEnabled: entry.rentCollectorEnabled,
           spawnPosition: entry.spawnPosition,
           spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
@@ -147,6 +148,7 @@ function toSerializedPlacement(placement) {
         combat: placement.npc.combat,
         respawnDelayMs: placement.npc.respawnDelayMs,
         deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
+        gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
@@ -348,6 +350,7 @@ export class WorldState {
           combat: npc.combat,
           respawnDelayMs: npc.respawnDelayMs,
           deliveryQuestEnabled: npc.deliveryQuestEnabled,
+          gymCheckInEnabled: npc.gymCheckInEnabled,
           rentCollectorEnabled: npc.rentCollectorEnabled,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
@@ -546,6 +549,7 @@ export class WorldState {
         combat: placement.npc.combat,
         respawnDelayMs: placement.npc.respawnDelayMs,
         deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
+        gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [

@@ -28,6 +28,12 @@ import {
   isDeliveryQuestGiver,
   isNpcAvailableForDelivery
 } from '../shared/deliveryQuest.js';
+import {
+  GYM_CHECK_IN_PURCHASED_LINE,
+  GYM_MEMBERSHIP_COST,
+  getGymCheckInOuterRadius,
+  isGymCheckInNpc
+} from '../shared/gymMembership.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
   NPC_DEFAULT_MAX_HEALTH,
@@ -135,6 +141,7 @@ function createDefaultPlayerState(overrides = {}) {
     kills: 0,
     deaths: 0,
     money: 0,
+    gymMembershipActive: false,
     rentIntroSeq: 0,
     rentIntroAmount: 0,
     rentIntroNpcId: '',
@@ -366,6 +373,7 @@ export class NpcServiceMock {
         rotationQuarterTurns: previous?.rotationQuarterTurns ?? spawnRotationQuarterTurns,
         interactRadius: definition.interactRadius,
         deliveryQuestEnabled: definition.deliveryQuestEnabled === true,
+        gymCheckInEnabled: definition.gymCheckInEnabled === true,
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
@@ -487,6 +495,7 @@ export class NpcServiceMock {
             combat: payload.combat,
             respawnDelayMs: payload.respawnDelayMs,
             deliveryQuestEnabled: payload.deliveryQuestEnabled,
+            gymCheckInEnabled: payload.gymCheckInEnabled,
             rentCollectorEnabled: payload.rentCollectorEnabled
           }
         );
@@ -615,6 +624,9 @@ export class NpcServiceMock {
 
     const nextAnimation = sanitizePlayerAnimationState(animationState);
     const clamped = clampToWorldBounds(position.x, position.z);
+    if (this.isGymGateBlockingPosition(player, clamped)) {
+      return;
+    }
     player.x = clamped.x;
     player.z = clamped.z;
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
@@ -708,6 +720,9 @@ export class NpcServiceMock {
 
     for (const npc of this.state.npcs.values()) {
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
+        continue;
+      }
+      if (isGymCheckInNpc(npc) && player.gymMembershipActive !== true) {
         continue;
       }
 
@@ -996,6 +1011,79 @@ export class NpcServiceMock {
 
     const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
     return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+  }
+
+  isPlayerInGymCheckInPurchaseRadius(player, npc) {
+    if (!player || !npc || !isGymCheckInNpc(npc)) {
+      return false;
+    }
+
+    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInOuterRadius(npc);
+  }
+
+  isGymGateBlockingPosition(player, position) {
+    if (!player || player.gymMembershipActive === true || !position) {
+      return false;
+    }
+
+    for (const npc of this.state.npcs.values()) {
+      if (
+        !isGymCheckInNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
+      if (distance2D(position.x, position.z, npc.x, npc.z) <= radius) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async buyGymMembership(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot buy that right now.' };
+    }
+
+    if (player.gymMembershipActive === true) {
+      return { ok: true, alreadyOwned: true, money: player.money ?? 0 };
+    }
+
+    const normalizedNpcId = typeof npcId === 'string'
+      ? npcId.trim()
+      : '';
+    const npc = this.state.npcs.get(normalizedNpcId);
+    if (!npc || !isGymCheckInNpc(npc)) {
+      return { ok: false, error: 'That gym check-in is not available.' };
+    }
+
+    if (!this.isPlayerInGymCheckInPurchaseRadius(player, npc)) {
+      return { ok: false, error: 'Move closer to the gym check-in.' };
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < GYM_MEMBERSHIP_COST) {
+      this.setNpcChatPhase(npc, 'done', `Bring $${GYM_MEMBERSHIP_COST} and I can get you checked in.`, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error: `You need $${GYM_MEMBERSHIP_COST} for a gym membership.` };
+    }
+
+    player.money = money - GYM_MEMBERSHIP_COST;
+    player.gymMembershipActive = true;
+    this.setNpcChatPhase(npc, 'done', GYM_CHECK_IN_PURCHASED_LINE, { bumpSeq: true });
+    this.emit();
+    return {
+      ok: true,
+      cost: GYM_MEMBERSHIP_COST,
+      money: player.money,
+      gymMembershipActive: true
+    };
   }
 
   async acceptDeliveryQuest(giverNpcId = '') {

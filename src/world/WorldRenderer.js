@@ -964,6 +964,7 @@ export class WorldRenderer {
             placementId: placement.id,
             npcId: placement.id,
             npc: { ...placement.npc },
+            originPosition: rendered.object.position.clone(),
             position: rendered.object.position.clone().addScaledVector(forward, distance),
             radius: placement.npc.interactRadius ?? item.interactionRadius ?? 4.2,
             prompt: `Talk to ${placement.npc.name}`,
