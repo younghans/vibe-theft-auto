@@ -525,12 +525,6 @@ export class WorldRoom extends Room {
     });
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
-    if (rentIntro?.collectorNpcId) {
-      const collector = this.state.npcs.get(rentIntro.collectorNpcId);
-      if (collector) {
-        this.setNpcChatPhase(collector, 'done', rentIntro.line, { bumpSeq: true });
-      }
-    }
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,

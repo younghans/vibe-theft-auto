@@ -267,12 +267,6 @@ export class NpcServiceMock {
     }));
     this.seedCombatPickups();
     this.syncNpcStateFromWorld();
-    if (rentIntro?.collectorNpcId) {
-      const collector = this.state.npcs.get(rentIntro.collectorNpcId);
-      if (collector) {
-        this.setNpcChatPhase(collector, 'done', rentIntro.line, { bumpSeq: true });
-      }
-    }
     this.combatTick = window.setInterval(() => {
       this.updateCombatTimers();
     }, 100);

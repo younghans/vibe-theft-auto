@@ -48,6 +48,7 @@ import {
   isDeliveryQuestActive,
   isDeliveryQuestGiver
 } from '../shared/deliveryQuest.js';
+import { RENT_INTRO_LINE } from '../shared/rentIntro.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -80,6 +81,12 @@ const SNATCH_WORKOUT_DURATION_MS = 5435;
 const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
 const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
+const RENT_INTRO_LOADING_CLEAR_MS = 900;
+const RENT_INTRO_AFTER_LOADING_DELAY_MS = 500;
+const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
+const RENT_INTRO_MIN_TYPING_MS = 900;
+const RENT_INTRO_AFTER_LINE_DELAY_MS = 650;
+const RENT_INTRO_SPEECH_HOLD_MS = 1700;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -287,6 +294,9 @@ export class Game {
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
     this.handledRentIntroSeq = 0;
+    this.rentIntroLoadingClearedAt = 0;
+    this.pendingRentIntro = null;
+    this.activeRentIntro = null;
     this.moneyDisplayAmount = 0;
     this.moneyAnimation = null;
     this.moneyFloaters = [];
@@ -2159,6 +2169,7 @@ export class Game {
         render: true
       });
       this.hud.hideLoading();
+      this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
       this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
     } catch (error) {
       console.error('[Game] Failed during bootstrap.', error);
@@ -3167,12 +3178,100 @@ export class Game {
     this.handledRentIntroSeq = seq;
     const rentAmount = Math.abs(normalizeMoneyAmount(localPlayerState.rentIntroAmount || 100)) || 100;
     const targetAmount = normalizeMoneyAmount(localPlayerState.money ?? -rentAmount);
-    this.startMoneyAnimation(targetAmount, {
-      fromAmount: this.moneyDisplayAmount,
-      durationMs: RENT_INTRO_MONEY_ANIMATION_MS
-    });
-    this.spawnMoneyFloater(-rentAmount);
-    this.playSoundEffect(this.rentChaChingSound);
+    this.pendingRentIntro = {
+      seq,
+      rentAmount,
+      targetAmount,
+      npcId: String(localPlayerState.rentIntroNpcId ?? ''),
+      line: RENT_INTRO_LINE,
+      readyAt: 0
+    };
+    this.activeRentIntro = null;
+    this.moneyAnimation = null;
+    this.moneyDisplayAmount = 0;
+  }
+
+  updateRentIntroPresentation() {
+    const now = performance.now();
+    if (this.pendingRentIntro) {
+      if (this.rentIntroLoadingClearedAt <= 0) {
+        return;
+      }
+
+      if (!this.pendingRentIntro.readyAt) {
+        this.pendingRentIntro.readyAt = this.rentIntroLoadingClearedAt + RENT_INTRO_AFTER_LOADING_DELAY_MS;
+      }
+
+      if (now < this.pendingRentIntro.readyAt) {
+        return;
+      }
+
+      const line = this.pendingRentIntro.line || RENT_INTRO_LINE;
+      const typeDurationMs = Math.max(
+        RENT_INTRO_MIN_TYPING_MS,
+        line.length * RENT_INTRO_TYPE_MS_PER_CHAR
+      );
+      const chargeAt = now + typeDurationMs + RENT_INTRO_AFTER_LINE_DELAY_MS;
+      this.activeRentIntro = {
+        ...this.pendingRentIntro,
+        line,
+        startedAt: now,
+        typeDurationMs,
+        chargeAt,
+        charged: false,
+        expiresAt: chargeAt + RENT_INTRO_SPEECH_HOLD_MS
+      };
+      this.pendingRentIntro = null;
+    }
+
+    if (!this.activeRentIntro) {
+      return;
+    }
+
+    if (!this.activeRentIntro.charged && now >= this.activeRentIntro.chargeAt) {
+      this.activeRentIntro.charged = true;
+      this.startMoneyAnimation(this.activeRentIntro.targetAmount, {
+        fromAmount: this.moneyDisplayAmount,
+        durationMs: RENT_INTRO_MONEY_ANIMATION_MS
+      });
+      this.spawnMoneyFloater(-this.activeRentIntro.rentAmount);
+      this.playSoundEffect(this.rentChaChingSound);
+    }
+
+    if (this.activeRentIntro.charged && now >= this.activeRentIntro.expiresAt) {
+      this.activeRentIntro = null;
+    }
+  }
+
+  getRentIntroMoneyTargetAmount(authoritativeAmount) {
+    if (this.pendingRentIntro || (this.activeRentIntro && !this.activeRentIntro.charged)) {
+      return this.moneyDisplayAmount;
+    }
+
+    return authoritativeAmount;
+  }
+
+  getRentIntroSpeechText() {
+    if (!this.activeRentIntro) {
+      return '';
+    }
+
+    const line = this.activeRentIntro.line || RENT_INTRO_LINE;
+    const elapsedMs = Math.max(0, performance.now() - this.activeRentIntro.startedAt);
+    const progress = THREE.MathUtils.clamp(elapsedMs / this.activeRentIntro.typeDurationMs, 0, 1);
+    const characterCount = Math.max(1, Math.ceil(line.length * progress));
+    return line.slice(0, characterCount);
+  }
+
+  isRentIntroReservedNpc(npcId) {
+    const normalizedNpcId = String(npcId ?? '');
+    return Boolean(
+      normalizedNpcId
+      && (
+        this.pendingRentIntro?.npcId === normalizedNpcId
+        || this.activeRentIntro?.npcId === normalizedNpcId
+      )
+    );
   }
 
   addMoneyFloaterBubbles(bubbles) {
@@ -3272,7 +3371,8 @@ export class Game {
     });
 
     this.maybeStartRentIntro(localPlayerState);
-    this.syncMoneyHud(localPlayerState.money ?? 0);
+    this.updateRentIntroPresentation();
+    this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0));
 
     this.hud.setCombatState({
       visible: true,
@@ -4281,6 +4381,10 @@ export class Game {
   }
 
   addNpcSpeechBubble(bubbles, npcId, npcState, anchor) {
+    if (this.isRentIntroReservedNpc(npcId)) {
+      return;
+    }
+
     this.pushSpeechBubble(
       bubbles,
       this.collectSpeechBubble(
@@ -4298,6 +4402,40 @@ export class Game {
     );
   }
 
+  addRentIntroSpeechBubble(bubbles, npcSpeechAnchors) {
+    const intro = this.activeRentIntro;
+    if (!intro?.npcId) {
+      return;
+    }
+
+    const anchor = npcSpeechAnchors.get(intro.npcId);
+    if (!anchor) {
+      return;
+    }
+
+    const projected = this.projectSpeechAnchor(anchor);
+    if (!projected) {
+      return;
+    }
+
+    const text = this.getRentIntroSpeechText();
+    if (!text) {
+      return;
+    }
+
+    const npcState = this.npcServiceState.npcs.get(intro.npcId);
+    bubbles.push({
+      id: `npc-rent-intro:${intro.seq}`,
+      text,
+      label: npcState?.name ?? '',
+      variant: 'npc',
+      status: 'done',
+      visible: true,
+      screenX: projected.x,
+      screenY: projected.y
+    });
+  }
+
   addNpcInteractionHintBubble(bubbles, npcSpeechAnchors) {
     const interactable = this.getNearestNpcInteractable();
     const npcId = interactable?.kind === 'npc'
@@ -4307,6 +4445,7 @@ export class Game {
       !npcId
       || this.worldBuilder?.enabled
       || this.hud.isQuickChatOpen()
+      || this.isRentIntroReservedNpc(npcId)
     ) {
       return;
     }
@@ -4425,6 +4564,7 @@ export class Game {
       this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor);
     }
 
+    this.addRentIntroSpeechBubble(bubbles, npcSpeechAnchors);
     this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors);
     this.addMoneyFloaterBubbles(bubbles);
     this.hud.setSpeechBubbles(bubbles);
