@@ -30,10 +30,12 @@ import {
 } from '../shared/deliveryQuest.js';
 import {
   GYM_CHECK_IN_PURCHASED_LINE,
+  GYM_DOOR_BLOCKER_RADIUS,
   GYM_MEMBERSHIP_COST,
-  getGymCheckInOuterRadius,
+  getGymCheckInPromptRadius,
   isGymCheckInNpc
 } from '../shared/gymMembership.js';
+import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
   NPC_DEFAULT_MAX_HEALTH,
@@ -1018,26 +1020,79 @@ export class NpcServiceMock {
       return false;
     }
 
-    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInOuterRadius(npc);
+    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInPromptRadius(npc);
+  }
+
+  hasActiveGymCheckInNpc() {
+    for (const npc of this.state.npcs.values()) {
+      if (
+        isGymCheckInNpc(npc)
+        && npc.alive !== false
+        && npc.mode !== NPC_RUNTIME_MODES.hidden
+        && npc.mode !== NPC_RUNTIME_MODES.dead
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  isGymDoorPlacement(placement = null, item = null) {
+    const itemId = String(item?.id ?? placement?.itemId ?? '').toLowerCase();
+    const interiorId = String(item?.interior?.id ?? placement?.interactable?.interior?.id ?? '').toLowerCase();
+    const label = String(item?.interior?.label ?? placement?.interactable?.label ?? item?.label ?? '').toLowerCase();
+    return itemId.includes('gym') || interiorId.includes('gym') || label.includes('gym');
+  }
+
+  getGymDoorBlockers() {
+    return this.worldState.getPlacements()
+      .map((placement) => {
+        const item = getBuilderItemById(placement?.itemId);
+        if (!item || placement?.layer !== 'tile' || !this.isGymDoorPlacement(placement, item)) {
+          return null;
+        }
+
+        const doorOffset = item.interior?.exteriorDoorOffset
+          ?? placement.interactable?.interior?.exteriorDoorOffset
+          ?? item.npcRouteDoorOffset
+          ?? null;
+        if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
+          return null;
+        }
+
+        const center = getTileCenterWorldPosition(
+          item,
+          placement.cellX,
+          placement.cellZ,
+          placement.rotationQuarterTurns
+        );
+        const rotatedOffset = rotateFootprintOffset(
+          Number(doorOffset[0]) || 0,
+          Number(doorOffset[1]) || 0,
+          placement.rotationQuarterTurns
+        );
+        return {
+          x: center.x + rotatedOffset.x,
+          z: center.z + rotatedOffset.z,
+          radius: GYM_DOOR_BLOCKER_RADIUS
+        };
+      })
+      .filter(Boolean);
   }
 
   isGymGateBlockingPosition(player, position) {
-    if (!player || player.gymMembershipActive === true || !position) {
+    if (
+      !player
+      || player.gymMembershipActive === true
+      || !position
+      || !this.hasActiveGymCheckInNpc()
+    ) {
       return false;
     }
 
-    for (const npc of this.state.npcs.values()) {
-      if (
-        !isGymCheckInNpc(npc)
-        || npc.alive === false
-        || npc.mode === NPC_RUNTIME_MODES.hidden
-        || npc.mode === NPC_RUNTIME_MODES.dead
-      ) {
-        continue;
-      }
-
-      const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
-      if (distance2D(position.x, position.z, npc.x, npc.z) <= radius) {
+    for (const blocker of this.getGymDoorBlockers()) {
+      if (distance2D(position.x, position.z, blocker.x, blocker.z) <= blocker.radius + PLAYER_RADIUS) {
         return true;
       }
     }

@@ -28,9 +28,10 @@ import {
   WORLD_GROUND_RADIUS,
   WORLD_SHADOW_EXTENT
 } from '../shared/worldConstants.js';
-import { rotateFootprintOffset } from '../shared/tileFootprint.js';
+import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
+import { getBuilderItemById } from '../world/builderCatalog.js';
 import { createInteriorScene } from '../world/InteriorScene.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
@@ -50,9 +51,9 @@ import {
 } from '../shared/deliveryQuest.js';
 import {
   GYM_CHECK_IN_LINE,
+  GYM_DOOR_BLOCKER_RADIUS,
   GYM_MEMBERSHIP_COST,
-  getGymCheckInInnerRadius,
-  getGymCheckInOuterRadius,
+  getGymCheckInPromptRadius,
   isGymCheckInNpc
 } from '../shared/gymMembership.js';
 import { RENT_INTRO_LINE } from '../shared/rentIntro.js';
@@ -1521,6 +1522,71 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
+  hasActiveGymCheckInNpc() {
+    if (!this.worldBuilder) {
+      return false;
+    }
+
+    return this.worldBuilder.getInteractables().some((interactable) => {
+      if (interactable.kind !== 'npc') {
+        return false;
+      }
+
+      const npcDetails = this.getGymCheckInNpcDetails(interactable);
+      return Boolean(
+        isGymCheckInNpc(npcDetails)
+        && npcDetails.alive !== false
+        && npcDetails.mode !== 'hidden'
+        && npcDetails.mode !== 'dead'
+      );
+    });
+  }
+
+  isGymDoorPlacement(placement = null, item = null) {
+    const itemId = String(item?.id ?? placement?.itemId ?? '').toLowerCase();
+    const interiorId = String(item?.interior?.id ?? placement?.interactable?.interior?.id ?? '').toLowerCase();
+    const label = String(item?.interior?.label ?? placement?.interactable?.label ?? item?.label ?? '').toLowerCase();
+    return itemId.includes('gym') || interiorId.includes('gym') || label.includes('gym');
+  }
+
+  getGymDoorBlockers() {
+    return (this.worldBuilder?.getLayout?.()?.tiles ?? [])
+      .map((placement) => {
+        const item = getBuilderItemById(placement?.itemId);
+        if (!item || !this.isGymDoorPlacement(placement, item)) {
+          return null;
+        }
+
+        const doorOffset = item.interior?.exteriorDoorOffset
+          ?? placement.interactable?.interior?.exteriorDoorOffset
+          ?? item.npcRouteDoorOffset
+          ?? null;
+        if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
+          return null;
+        }
+
+        const cellX = Number(placement.cell?.[0] ?? placement.cellX);
+        const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
+        if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
+          return null;
+        }
+
+        const rotationQuarterTurns = placement.rotationQuarterTurns ?? 0;
+        const center = getTileCenterWorldPosition(item, cellX, cellZ, rotationQuarterTurns);
+        const rotatedOffset = rotateFootprintOffset(
+          Number(doorOffset[0]) || 0,
+          Number(doorOffset[1]) || 0,
+          rotationQuarterTurns
+        );
+        return {
+          x: center.x + rotatedOffset.x,
+          z: center.z + rotatedOffset.z,
+          radius: GYM_DOOR_BLOCKER_RADIUS
+        };
+      })
+      .filter(Boolean);
+  }
+
   getNearestGymCheckInInteractable() {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder || this.hasGymMembership()) {
       return null;
@@ -1550,8 +1616,8 @@ export class Game {
       }
 
       const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
-      const outerRadius = getGymCheckInOuterRadius(npcDetails, interactable.radius);
-      if (distance > outerRadius || distance >= nearestDistance) {
+      const promptRadius = getGymCheckInPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
         continue;
       }
 
@@ -1561,8 +1627,7 @@ export class Game {
         npcId: interactable.npcId || interactable.placementId || '',
         npc: npcDetails,
         position,
-        radius: outerRadius,
-        innerRadius: getGymCheckInInnerRadius(npcDetails, interactable.radius),
+        radius: promptRadius,
         prompt: `Buy gym membership ($${GYM_MEMBERSHIP_COST})`,
         actionText: 'Gym membership purchased.'
       };
@@ -1573,50 +1638,26 @@ export class Game {
   }
 
   getGymCheckInColliders() {
-    if (!this.player || this.currentInterior?.scene || !this.worldBuilder || this.hasGymMembership()) {
+    if (
+      !this.player
+      || this.currentInterior?.scene
+      || !this.worldBuilder
+      || this.hasGymMembership()
+      || !this.hasActiveGymCheckInNpc()
+    ) {
       return [];
     }
 
-    const colliders = [];
-    for (const interactable of this.worldBuilder.getInteractables()) {
-      if (interactable.kind !== 'npc') {
-        continue;
-      }
-
-      const npcDetails = this.getGymCheckInNpcDetails(interactable);
-      if (
-        !isGymCheckInNpc(npcDetails)
-        || npcDetails.alive === false
-        || npcDetails.mode === 'hidden'
-        || npcDetails.mode === 'dead'
-      ) {
-        continue;
-      }
-
-      const position = this.getGymCheckInNpcPosition(interactable, npcDetails);
-      if (!position) {
-        continue;
-      }
-
-      const innerRadius = getGymCheckInInnerRadius(npcDetails, interactable.radius);
-      const currentDistance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
-      if (currentDistance < innerRadius - 0.05) {
-        continue;
-      }
-
-      colliders.push({
-        kind: 'gym-check-in',
+    return this.getGymDoorBlockers().map((blocker) => ({
+        kind: 'gym-door-membership-gate',
         blocksMovement: true,
         type: 'cylinder',
-        x: position.x,
-        z: position.z,
-        y: position.y,
-        radius: Math.max(0.1, innerRadius - PLAYER_RADIUS),
+        x: blocker.x,
+        z: blocker.z,
+        y: this.getActiveGroundHeightAt(blocker),
+        radius: blocker.radius,
         height: 5
-      });
-    }
-
-    return colliders;
+      }));
   }
 
   getActiveColliders() {
