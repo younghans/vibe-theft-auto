@@ -371,6 +371,7 @@ export class NpcServiceMock {
         rotationQuarterTurns: previous?.rotationQuarterTurns ?? spawnRotationQuarterTurns,
         interactRadius: definition.interactRadius,
         deliveryQuestEnabled: definition.deliveryQuestEnabled === true,
+        rentCollectorEnabled: definition.rentCollectorEnabled === true,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
@@ -490,7 +491,8 @@ export class NpcServiceMock {
             routine: payload.routine,
             combat: payload.combat,
             respawnDelayMs: payload.respawnDelayMs,
-            deliveryQuestEnabled: payload.deliveryQuestEnabled
+            deliveryQuestEnabled: payload.deliveryQuestEnabled,
+            rentCollectorEnabled: payload.rentCollectorEnabled
           }
         );
         this.syncNpcStateFromWorld();

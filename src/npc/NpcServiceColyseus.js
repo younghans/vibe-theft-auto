@@ -29,6 +29,7 @@ function cloneNpcState(npc) {
     rotationQuarterTurns: npc.rotationQuarterTurns,
     interactRadius: npc.interactRadius,
     deliveryQuestEnabled: npc.deliveryQuestEnabled === true,
+    rentCollectorEnabled: npc.rentCollectorEnabled === true,
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,

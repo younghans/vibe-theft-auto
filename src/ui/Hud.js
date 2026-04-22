@@ -240,6 +240,7 @@ export class Hud {
     this.builderNpcSpeed = this.overlay.querySelector('[data-builder-npc-speed]');
     this.builderNpcRespawnDelay = this.overlay.querySelector('[data-builder-npc-respawn-delay]');
     this.builderNpcDeliveryQuest = this.overlay.querySelector('[data-builder-npc-delivery-quest]');
+    this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
@@ -724,6 +725,12 @@ export class Hud {
                 <input class="hud__checkbox-control" type="checkbox" data-builder-npc-delivery-quest />
                 <span class="hud__checkbox-copy">
                   <span class="hud__field-label hud__checkbox-title">Gives Delivery Quests</span>
+                </span>
+              </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-rent-collector />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Rent Collector / Initial Spawn</span>
                 </span>
               </label>
               <div class="hud__builder-instance-metrics">
@@ -1303,6 +1310,7 @@ export class Hud {
     onNpcSpeedChange,
     onNpcRespawnDelayChange,
     onNpcDeliveryQuestChange,
+    onNpcRentCollectorChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
@@ -1423,6 +1431,10 @@ export class Hud {
 
     this.builderNpcDeliveryQuest?.addEventListener('change', () => {
       onNpcDeliveryQuestChange?.(this.builderNpcDeliveryQuest.checked === true);
+    });
+
+    this.builderNpcRentCollector?.addEventListener('change', () => {
+      onNpcRentCollectorChange?.(this.builderNpcRentCollector.checked === true);
     });
 
     this.builderNpcModel.addEventListener('change', () => {
@@ -1775,6 +1787,9 @@ export class Hud {
     setFieldValue(this.builderNpcRespawnDelay, String(editorState.respawnDelayMs ?? 0));
     if (this.builderNpcDeliveryQuest && document.activeElement !== this.builderNpcDeliveryQuest) {
       this.builderNpcDeliveryQuest.checked = editorState.deliveryQuestEnabled === true;
+    }
+    if (this.builderNpcRentCollector && document.activeElement !== this.builderNpcRentCollector) {
+      this.builderNpcRentCollector.checked = editorState.rentCollectorEnabled === true;
     }
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 

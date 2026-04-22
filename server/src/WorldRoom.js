@@ -178,6 +178,7 @@ const NpcState = schema({
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
   deliveryQuestEnabled: 'boolean',
+  rentCollectorEnabled: 'boolean',
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -1758,6 +1759,7 @@ export class WorldRoom extends Room {
         speed: message.speed,
         respawnDelayMs: message.respawnDelayMs,
         deliveryQuestEnabled: message.deliveryQuestEnabled === true,
+        rentCollectorEnabled: message.rentCollectorEnabled === true,
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -1795,6 +1797,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'deliveryQuestEnabled')) {
       updates.deliveryQuestEnabled = message.deliveryQuestEnabled === true;
+    }
+    if (Object.hasOwn(message, 'rentCollectorEnabled')) {
+      updates.rentCollectorEnabled = message.rentCollectorEnabled === true;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -1934,6 +1939,7 @@ export class WorldRoom extends Room {
       existing.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(existing.rotationY);
       existing.interactRadius = clampNpcRadius(normalizedDefinition.interactRadius);
       existing.deliveryQuestEnabled = normalizedDefinition.deliveryQuestEnabled === true;
+      existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;

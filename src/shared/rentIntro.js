@@ -4,18 +4,13 @@ import { getBuilderItemById } from '../world/builderCatalog.js';
 
 export const RENT_INTRO_AMOUNT = 100;
 export const RENT_INTRO_LINE = "Hey, buddy, rent's due.";
-export const RENT_INTRO_COLLECTOR_NAME = 'martha';
-export const RENT_INTRO_BUILDING_ITEM_IDS = Object.freeze([
-  'building_c',
-  'building_c_without_base'
-]);
-
-function normalizeId(value = '') {
-  return String(value ?? '').trim().toLowerCase();
-}
 
 function normalizeRotationQuarterTurns(value = 0) {
   return ((Math.round(Number(value ?? 0)) % 4) + 4) % 4;
+}
+
+export function normalizeRentCollectorEnabled(value = false) {
+  return value === true;
 }
 
 function getNpcPosition(npc = null) {
@@ -61,13 +56,18 @@ function getTileCenter(placement = null) {
 }
 
 export function isRentIntroCollector(npc = null) {
-  const name = normalizeId(npc?.name);
-  const modelId = normalizeId(npc?.modelId);
-  return name === RENT_INTRO_COLLECTOR_NAME || modelId === RENT_INTRO_COLLECTOR_NAME;
+  return normalizeRentCollectorEnabled(npc?.rentCollectorEnabled);
 }
 
 export function isRentIntroBuilding(placement = null) {
-  return RENT_INTRO_BUILDING_ITEM_IDS.includes(String(placement?.itemId ?? ''));
+  const item = getBuilderItemById(placement?.itemId);
+  return Boolean(
+    placement
+    && item
+    && (!placement.layer || placement.layer === 'tile')
+    && item.groupId === 'lots'
+    && item.underlayTileId
+  );
 }
 
 export function getRentIntroSpawnForBuilding(placement = null) {

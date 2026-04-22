@@ -373,6 +373,9 @@ export class WorldBuilder {
       onNpcDeliveryQuestChange: (enabled) => void this.updateSelectedNpc({
         deliveryQuestEnabled: enabled === true
       }),
+      onNpcRentCollectorChange: (enabled) => void this.updateSelectedNpc({
+        rentCollectorEnabled: enabled === true
+      }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
@@ -1388,7 +1391,8 @@ export class WorldBuilder {
         modelId: item.modelId,
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
-        interactRadius: NPC_DEFAULT_INTERACT_RADIUS
+        interactRadius: NPC_DEFAULT_INTERACT_RADIUS,
+        rentCollectorEnabled: false
       }
     });
     if (!result?.ok) {
@@ -2091,6 +2095,7 @@ export class WorldBuilder {
       speed: npcDraft?.speed ?? placement.npc.speed ?? 'slow',
       respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
       deliveryQuestEnabled: (npcDraft?.deliveryQuestEnabled ?? placement.npc.deliveryQuestEnabled) === true,
+      rentCollectorEnabled: (npcDraft?.rentCollectorEnabled ?? placement.npc.rentCollectorEnabled) === true,
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },
