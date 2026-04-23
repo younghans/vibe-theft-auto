@@ -4,6 +4,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
+import { TaskTracker } from './TaskTracker.js';
 import {
   DEFAULT_VIBE_SHADER_INTENSITY,
   DEFAULT_VIBE_SHADER_PRESET_ID,
@@ -46,7 +47,6 @@ import {
 import { createNpcService } from '../npc/createNpcService.js';
 import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 import {
-  getDeliveryQuestGiverCandidate,
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
   isDeliveryQuestGiver
@@ -71,13 +71,6 @@ const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
-const TASK_IDS = Object.freeze({
-  delivery: 'delivery',
-  gymPump: 'gym-pump',
-  makeMoney: 'make-money'
-});
-const MAKE_MONEY_TASK_TITLE = 'Make some money. Maybe the Shady Figure can help';
-const GYM_PUMP_TASK_TITLE = 'Go get a pump in the gym';
 const DAMAGE_CAMERA_KICK_MS = 260;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
 const HIP_FIRE_AIM_LEAD_MS = 90;
@@ -281,13 +274,10 @@ export class Game {
     this.pendingWorkoutPlacementId = '';
     this.claimedWorkoutPlacementId = '';
     this.activeWorkoutPlacementId = '';
+    this.taskTracker = new TaskTracker();
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
-    this.taskProgressInitialized = false;
-    this.currentTaskId = '';
-    this.lastTaskDeliveryCompletionCount = 0;
-    this.lastTaskGymPumpCompletedAt = 0;
     this.gymMembershipRequestInFlight = false;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
@@ -1760,218 +1750,26 @@ export class Game {
     return null;
   }
 
-  getTaskPositionFromValue(value = null) {
-    let x = NaN;
-    let z = NaN;
-
-    if (value?.isVector3) {
-      x = value.x;
-      z = value.z;
-    } else if (Array.isArray(value)) {
-      x = Number(value[0]);
-      z = Number(value[1]);
-    } else if (value) {
-      x = Number(value.x);
-      z = Number(value.z);
-    }
-
-    if (!Number.isFinite(x) || !Number.isFinite(z)) {
-      return null;
-    }
-
-    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
-  }
-
-  getTaskPositionForInteractable(interactable = null) {
-    return this.getTaskPositionFromValue(
-      interactable?.approachPosition
-      ?? interactable?.position
-      ?? interactable?.originPosition
-      ?? null
-    );
-  }
-
-  getNpcTaskTarget(npcId = '') {
-    const normalizedNpcId = String(npcId ?? '').trim();
-    if (!normalizedNpcId) {
-      return null;
-    }
-
-    const npcState = this.npcServiceState.npcs.get(normalizedNpcId);
-    const npcPosition = this.getTaskPositionFromValue(npcState);
-    if (npcPosition) {
-      return npcPosition;
-    }
-
-    return this.getTaskPositionForInteractable(this.getNpcInteractableById(normalizedNpcId));
-  }
-
-  getDeliveryQuestGiverTaskTarget() {
-    const candidate = getDeliveryQuestGiverCandidate(this.npcServiceState.npcs);
-    const candidateTarget = candidate?.id ? this.getNpcTaskTarget(candidate.id) : null;
-    if (candidateTarget) {
-      return candidateTarget;
-    }
-
-    for (const interactable of this.worldBuilder?.getInteractables?.() ?? []) {
-      if (interactable.kind !== 'npc') {
-        continue;
-      }
-
-      const npcId = interactable.npcId || interactable.placementId || '';
-      const npcDetails = {
-        ...(interactable.npc ?? {}),
-        ...(npcId ? (this.npcServiceState.npcs.get(npcId) ?? {}) : {})
-      };
-      if (isDeliveryQuestGiver(npcId, npcDetails)) {
-        return this.getNpcTaskTarget(npcId) ?? this.getTaskPositionForInteractable(interactable);
-      }
-    }
-
-    return null;
-  }
-
-  getGymBuildingTaskTarget() {
-    const doorTarget = this.getGymDoorBlockers()[0] ?? null;
-    if (doorTarget) {
-      return this.getTaskPositionFromValue(doorTarget);
-    }
-
-    for (const placement of this.worldBuilder?.getLayout?.()?.tiles ?? []) {
-      const item = getBuilderItemById(placement?.itemId);
-      if (!item || !this.isGymDoorPlacement(placement, item)) {
-        continue;
-      }
-
-      const cellX = Number(placement.cell?.[0] ?? placement.cellX);
-      const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
-      if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
-        continue;
-      }
-
-      const center = getTileCenterWorldPosition(
-        item,
-        cellX,
-        cellZ,
-        placement.rotationQuarterTurns ?? 0
-      );
-      return this.getTaskPositionFromValue(center);
-    }
-
-    return null;
-  }
-
-  getGymTaskTarget() {
-    const activeSnatch = this.getActiveInteractables()
-      .find((interactable) => interactable.kind === 'snatch-workout');
-    const activeSnatchTarget = this.getTaskPositionForInteractable(activeSnatch);
-    if (activeSnatchTarget) {
-      return activeSnatchTarget;
-    }
-
-    const worldSnatch = (this.worldBuilder?.getInteractables?.() ?? [])
-      .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
-    const worldSnatchTarget = this.getTaskPositionForInteractable(worldSnatch);
-    if (worldSnatchTarget) {
-      return worldSnatchTarget;
-    }
-
-    return this.getGymBuildingTaskTarget();
-  }
-
-  isTaskIntroReady(localPlayerState = null) {
-    const seq = Number(localPlayerState?.rentIntroSeq ?? 0);
-    if (!Number.isFinite(seq) || seq <= 0) {
-      return true;
-    }
-
-    if (this.pendingRentIntro?.seq === seq) {
-      return false;
-    }
-
-    if (this.activeRentIntro?.seq === seq) {
-      return this.activeRentIntro.charged === true;
-    }
-
-    return this.handledRentIntroSeq === seq;
-  }
-
-  getDeliveryCompletionCount(localPlayerState = null) {
-    const count = Number(localPlayerState?.deliveryQuestCompletionCount ?? 0);
-    if (Number.isFinite(count) && count > 0) {
-      return Math.floor(count);
-    }
-
-    return Number(localPlayerState?.deliveryQuestCompletedAt ?? 0) > 0 ? 1 : 0;
-  }
-
-  getTaskProgressSnapshot(localPlayerState = null) {
-    const gymPumpCompletedAt = Number(localPlayerState?.gymPumpCompletedAt ?? 0);
+  createTaskTrackerContext(localPlayerState = null) {
     return {
-      deliveryCompletionCount: this.getDeliveryCompletionCount(localPlayerState),
-      gymPumpCompletedAt: Number.isFinite(gymPumpCompletedAt) ? Math.max(0, gymPumpCompletedAt) : 0
+      localPlayerState,
+      npcStates: this.npcServiceState.npcs,
+      worldBuilder: this.worldBuilder,
+      activeInteractables: localPlayerState ? this.getActiveInteractables() : [],
+      gymDoorBlockers: localPlayerState ? this.getGymDoorBlockers() : [],
+      rentIntroState: {
+        pendingSeq: this.pendingRentIntro?.seq ?? 0,
+        activeSeq: this.activeRentIntro?.seq ?? 0,
+        activeCharged: this.activeRentIntro?.charged === true,
+        handledSeq: this.handledRentIntroSeq
+      },
+      getGroundHeightAt: (position) => this.getActiveGroundHeightAt(position)
     };
-  }
-
-  resolveCurrentTask(localPlayerState = null) {
-    if (!localPlayerState || !this.isTaskIntroReady(localPlayerState)) {
-      return { id: '', visible: false, title: '', target: null };
-    }
-
-    if (isDeliveryQuestActive(localPlayerState)) {
-      const targetNpcId = localPlayerState.deliveryQuestTargetNpcId;
-      const targetName = getDeliveryQuestTargetName(this.npcServiceState.npcs.get(targetNpcId));
-      return {
-        id: TASK_IDS.delivery,
-        visible: true,
-        title: `Deliver the package to ${targetName}`,
-        target: this.getNpcTaskTarget(targetNpcId)
-      };
-    }
-
-    const completedFirstDelivery = this.getDeliveryCompletionCount(localPlayerState) > 0;
-    const gymPumpCompleted = Number(localPlayerState.gymPumpCompletedAt ?? 0) > 0;
-    if (completedFirstDelivery && !gymPumpCompleted) {
-      return {
-        id: TASK_IDS.gymPump,
-        visible: true,
-        title: GYM_PUMP_TASK_TITLE,
-        target: this.getGymTaskTarget()
-      };
-    }
-
-    return {
-      id: TASK_IDS.makeMoney,
-      visible: true,
-      title: MAKE_MONEY_TASK_TITLE,
-      target: this.getDeliveryQuestGiverTaskTarget()
-    };
-  }
-
-  didCurrentTaskComplete(previousTaskId = '', progress = {}) {
-    if (previousTaskId === TASK_IDS.delivery) {
-      return progress.deliveryCompletionCount > this.lastTaskDeliveryCompletionCount;
-    }
-
-    if (previousTaskId === TASK_IDS.gymPump) {
-      return (
-        progress.gymPumpCompletedAt > 0
-        && progress.gymPumpCompletedAt !== this.lastTaskGymPumpCompletedAt
-      );
-    }
-
-    return false;
   }
 
   syncTaskHud(localPlayerState = null) {
-    const task = this.resolveCurrentTask(localPlayerState);
-    const progress = this.getTaskProgressSnapshot(localPlayerState);
-    const previousTaskId = this.currentTaskId;
-    const completedTask = Boolean(
-      this.taskProgressInitialized
-      && localPlayerState
-      && task.visible
-      && this.didCurrentTaskComplete(previousTaskId, progress)
+    const { task, completedTask } = this.taskTracker.update(
+      this.createTaskTrackerContext(localPlayerState)
     );
 
     if (completedTask) {
@@ -1985,11 +1783,6 @@ export class Game {
         title: task.title
       });
     }
-
-    this.taskProgressInitialized = Boolean(localPlayerState);
-    this.currentTaskId = task.visible ? task.id : '';
-    this.lastTaskDeliveryCompletionCount = progress.deliveryCompletionCount;
-    this.lastTaskGymPumpCompletedAt = progress.gymPumpCompletedAt;
 
     if (task.visible && task.target) {
       this.player?.setTaskArrowTarget?.(task.target);
