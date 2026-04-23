@@ -36,6 +36,7 @@ const NPC_SHOT_INTERVAL_MS = WEAPON_FIRE_INTERVAL_MS * 2;
 const NPC_PUNCH_INTERVAL_MS = PUNCH_INTERVAL_MS * 2;
 const NPC_COMBAT_REACH_BUFFER = 1.2;
 const NPC_TARGET_STOP_DISTANCE = 0.7;
+const NPC_HOME_RETURN_STOP_DISTANCE = 0.55;
 const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
@@ -102,6 +103,12 @@ function getNpcInteractionRadius(npc) {
     1.5,
     Number(npc?.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS) || NPC_DEFAULT_INTERACT_RADIUS
   );
+}
+
+function getNpcSpawnRotationY(definition) {
+  return quantizeRotation(toRotationY(
+    definition?.spawnRotationQuarterTurns ?? definition?.rotationQuarterTurns ?? 0
+  ));
 }
 
 function getDefinitionStore(host) {
@@ -783,6 +790,15 @@ export const npcSimulationMethods = {
     return true;
   },
 
+  shouldNpcPrioritizeHomeReturn(npc, definition) {
+    if (!npc || npc.mode !== NPC_RUNTIME_MODES.routine || this.getCurrentNpcRoutineStep(definition, npc)?.step) {
+      return false;
+    }
+
+    const homeAnchor = this.getNpcSpawnPoint(definition);
+    return distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z) > NPC_HOME_RETURN_STOP_DISTANCE;
+  },
+
   pickNpcWanderPoint(anchorPosition, radius = 6, npcId = '') {
     const angleSeed = (Date.now() / 1000) + npcId.length;
     const angle = angleSeed % (Math.PI * 2);
@@ -793,11 +809,48 @@ export const npcSimulationMethods = {
     };
   },
 
+  updateNpcHomeReturn(npcId, npc, definition, now, deltaMs) {
+    const homeAnchor = this.getNpcSpawnPoint(definition);
+    const homeRotationY = getNpcSpawnRotationY(definition);
+    npc.targetPlacementId = '';
+    npc.activity = '';
+
+    const distanceFromHome = distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z);
+    if (distanceFromHome <= NPC_HOME_RETURN_STOP_DISTANCE) {
+      this.clearNpcPath(npcId);
+      npc.x = quantizePosition(homeAnchor.x);
+      npc.z = quantizePosition(homeAnchor.z);
+      npc.rotationY = homeRotationY;
+      npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+      return false;
+    }
+
+    this.ensureNpcPathToPosition(
+      npcId,
+      { x: npc.x, z: npc.z },
+      homeAnchor,
+      `return-home:${homeAnchor.x},${homeAnchor.z}`,
+      now
+    );
+    const arrived = this.moveNpcAlongPath(npcId, npc, homeAnchor, deltaMs, {
+      stopDistance: NPC_HOME_RETURN_STOP_DISTANCE
+    });
+
+    if (arrived) {
+      this.clearNpcPath(npcId);
+      npc.x = quantizePosition(homeAnchor.x);
+      npc.z = quantizePosition(homeAnchor.z);
+      npc.rotationY = homeRotationY;
+      npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    }
+
+    return true;
+  },
+
   updateNpcRoutine(npcId, npc, definition, now, deltaMs) {
     const routineState = this.getCurrentNpcRoutineStep(definition, npc);
     if (!routineState?.step) {
-      this.clearNpcPath(npcId);
-      return false;
+      return this.updateNpcHomeReturn(npcId, npc, definition, now, deltaMs);
     }
 
     const { step } = routineState;
@@ -1094,6 +1147,8 @@ export const npcSimulationMethods = {
       const before = `${npc.x}|${npc.z}|${npc.rotationY}|${npc.mode}|${npc.currentStepIndex}|${npc.targetPlacementId}|${npc.activity}|${npc.hiddenUntil}`;
       if (npc.mode === NPC_RUNTIME_MODES.combat || npc.mode === NPC_RUNTIME_MODES.flee) {
         changed = this.updateNpcCombatBehavior(npcId, npc, definition, now, deltaMs) || changed;
+      } else if (this.shouldNpcPrioritizeHomeReturn(npc, definition)) {
+        changed = this.updateNpcRoutine(npcId, npc, definition, now, deltaMs) || changed;
       } else if (this.updateNpcInteractionPause(npc)) {
         // Routine is intentionally paused while a nearby player can interact.
       } else {
