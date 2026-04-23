@@ -2536,7 +2536,7 @@ export class Hud {
     }
   }
 
-  playTaskCompletion({ visible = true, nextTitle = '' } = {}) {
+  playTaskCompletion({ visible = true, nextTitle = '', withConfetti = true } = {}) {
     if (!this.taskRoot || !this.taskTitle) {
       return;
     }
@@ -2557,7 +2557,9 @@ export class Hud {
     this.pendingTaskState = queuedState;
     this.taskRoot.hidden = false;
     this.taskRoot.classList.remove('is-completing');
-    this.spawnTaskConfetti();
+    if (withConfetti) {
+      this.spawnTaskConfetti();
+    }
     void this.taskRoot.offsetWidth;
     this.taskRoot.classList.add('is-completing');
 
@@ -2568,6 +2570,10 @@ export class Hud {
       this.taskRoot.classList.remove('is-completing');
       this.setTaskState(finalState);
     }, 760);
+  }
+
+  playTaskConfetti() {
+    this.spawnTaskConfetti();
   }
 
   spawnTaskConfetti() {

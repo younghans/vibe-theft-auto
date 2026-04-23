@@ -4,7 +4,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
-import { TaskTracker } from './TaskTracker.js';
+import { TASK_IDS, TaskTracker } from './TaskTracker.js';
 import {
   DEFAULT_VIBE_SHADER_INTENSITY,
   DEFAULT_VIBE_SHADER_PRESET_ID,
@@ -274,6 +274,7 @@ export class Game {
     this.pendingWorkoutPlacementId = '';
     this.claimedWorkoutPlacementId = '';
     this.activeWorkoutPlacementId = '';
+    this.gymPumpTaskConfettiPlayed = false;
     this.taskTracker = new TaskTracker();
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
@@ -1768,20 +1769,29 @@ export class Game {
   }
 
   syncTaskHud(localPlayerState = null) {
+    const completedTaskId = this.taskTracker.currentTaskId;
     const { task, completedTask } = this.taskTracker.update(
       this.createTaskTrackerContext(localPlayerState)
     );
 
     if (completedTask) {
+      const skipConfetti = completedTaskId === TASK_IDS.gymPump && this.gymPumpTaskConfettiPlayed;
       this.hud.playTaskCompletion({
         visible: task.visible,
-        nextTitle: task.title
+        nextTitle: task.title,
+        withConfetti: !skipConfetti
       });
+      if (completedTaskId === TASK_IDS.gymPump) {
+        this.gymPumpTaskConfettiPlayed = false;
+      }
     } else {
       this.hud.setTaskState({
         visible: task.visible,
         title: task.title
       });
+      if (task.id !== TASK_IDS.gymPump && completedTaskId !== TASK_IDS.gymPump) {
+        this.gymPumpTaskConfettiPlayed = false;
+      }
     }
 
     if (task.visible && task.target) {
@@ -2169,6 +2179,10 @@ export class Game {
     this.player.setAimRotation(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.stopEmote?.();
     this.player.playEmote(SNATCH_WORKOUT_EMOTE_ID);
+    if (this.taskTracker.currentTaskId === TASK_IDS.gymPump && !this.gymPumpTaskConfettiPlayed) {
+      this.gymPumpTaskConfettiPlayed = true;
+      this.hud.playTaskConfetti();
+    }
     this.syncWorkoutBarbell();
     return true;
   }
