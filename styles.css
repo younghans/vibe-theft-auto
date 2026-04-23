@@ -338,6 +338,206 @@ body.is-builder-resizing * {
     inset 0 -2px 6px rgba(0, 0, 0, 0.26);
 }
 
+.hud__ammo {
+  --ammo-size: 132px;
+  --ammo-loaded-ratio: 1;
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  width: var(--ammo-size);
+  aspect-ratio: 1;
+  pointer-events: none;
+  z-index: 6;
+  filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.34));
+}
+
+.hud__ammo-wheel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 240, 187, 0.16) 0 28%, transparent 29%),
+    conic-gradient(
+      from -90deg,
+      rgba(242, 200, 113, 0.54) calc(var(--ammo-loaded-ratio) * 1turn),
+      rgba(255, 255, 255, 0.08) 0
+    ),
+    radial-gradient(circle at 32% 20%, rgba(86, 199, 255, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(13, 18, 25, 0.94), rgba(29, 24, 18, 0.86));
+  box-shadow:
+    inset 0 0 0 5px rgba(4, 7, 12, 0.52),
+    inset 0 1px 12px rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.38);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.hud__ammo-wheel::before,
+.hud__ammo-wheel::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hud__ammo-wheel::before {
+  inset: 11px;
+  border: 1px dashed rgba(255, 234, 183, 0.16);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.28);
+}
+
+.hud__ammo-wheel::after {
+  inset: 8px;
+  border: 2px solid transparent;
+  border-top-color: rgba(255, 222, 128, 0.95);
+  border-right-color: rgba(86, 199, 255, 0.46);
+  opacity: 0;
+  transform: rotate(0deg);
+}
+
+.hud__ammo-bullets {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  z-index: 2;
+}
+
+.hud__ammo-bullet {
+  position: absolute;
+  left: calc(50% + var(--ammo-x, 0%));
+  top: calc(50% + var(--ammo-y, -37%));
+  width: 10px;
+  height: 26px;
+  border-radius: 7px 7px 3px 3px;
+  background:
+    linear-gradient(180deg, #fff4b8 0 18%, #f2c871 18% 46%, #bd6c2f 46% 82%, #704125 82% 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    inset 0 -3px 0 rgba(55, 25, 9, 0.38),
+    0 0 12px rgba(242, 200, 113, 0.34);
+  opacity: 0.22;
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--ammo-tilt, 0deg))
+    scale(0.72);
+  transition:
+    opacity 150ms ease,
+    filter 150ms ease,
+    transform 180ms cubic-bezier(0.18, 0.86, 0.25, 1.22);
+  transition-delay: var(--ammo-delay, 0ms);
+}
+
+.hud__ammo-bullet::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50% 50% 45% 45%;
+  background: linear-gradient(180deg, #fff9cf, #f0bb48);
+  transform: translateX(-50%);
+  box-shadow: 0 -1px 5px rgba(255, 232, 137, 0.35);
+}
+
+.hud__ammo-bullet.is-loaded {
+  opacity: 1;
+  filter: saturate(1.12) brightness(1.04);
+  transform:
+    translate(-50%, -50%)
+    rotate(var(--ammo-tilt, 0deg))
+    scale(1);
+}
+
+.hud__ammo-bullet.is-spent {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(62, 68, 72, 0.34)),
+    rgba(10, 14, 18, 0.64);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.22);
+}
+
+.hud__ammo-bullet.is-spent::before {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.hud__ammo-bullet.is-next {
+  animation: hud-ammo-ready-pulse 680ms ease-in-out infinite alternate;
+}
+
+.hud__ammo-core {
+  position: absolute;
+  inset: 36px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 236, 184, 0.32);
+  background:
+    radial-gradient(circle at 36% 20%, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(9, 13, 20, 0.96), rgba(26, 16, 10, 0.92));
+  box-shadow:
+    inset 0 3px 14px rgba(0, 0, 0, 0.48),
+    0 0 18px rgba(242, 200, 113, 0.18);
+  z-index: 3;
+}
+
+.hud__ammo-reserve-value {
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: 29px;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0;
+  color: #fff7d6;
+  -webkit-text-stroke: 1px rgba(24, 13, 8, 0.9);
+  paint-order: stroke fill;
+  text-shadow:
+    0 2px 0 rgba(74, 28, 8, 0.84),
+    0 5px 12px rgba(0, 0, 0, 0.42);
+}
+
+.hud__ammo-reserve-label {
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(245, 225, 174, 0.76);
+}
+
+.hud__ammo.is-low .hud__ammo-wheel {
+  animation: hud-ammo-low-wobble 820ms ease-in-out infinite;
+}
+
+.hud__ammo.is-low .hud__ammo-core,
+.hud__ammo.is-empty .hud__ammo-core {
+  border-color: rgba(255, 111, 92, 0.58);
+  box-shadow:
+    inset 0 3px 14px rgba(0, 0, 0, 0.48),
+    0 0 18px rgba(255, 92, 72, 0.24);
+}
+
+.hud__ammo.is-empty .hud__ammo-reserve-value {
+  color: #ffd2c8;
+}
+
+.hud__ammo.is-reloading .hud__ammo-wheel::after {
+  opacity: 1;
+  animation: hud-ammo-reload-spin 720ms linear infinite;
+}
+
+.hud__ammo.is-reloading .hud__ammo-reserve-label {
+  color: #d8f4ff;
+}
+
 .hud__money {
   position: absolute;
   left: 24px;
@@ -582,6 +782,45 @@ body.is-builder-resizing * {
 
   to {
     filter: brightness(1.14) saturate(1.2);
+  }
+}
+
+@keyframes hud-ammo-ready-pulse {
+  from {
+    filter: saturate(1.08) brightness(1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.58),
+      inset 0 -3px 0 rgba(55, 25, 9, 0.38),
+      0 0 10px rgba(242, 200, 113, 0.24);
+  }
+
+  to {
+    filter: saturate(1.24) brightness(1.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.72),
+      inset 0 -3px 0 rgba(55, 25, 9, 0.34),
+      0 0 18px rgba(255, 222, 128, 0.56);
+  }
+}
+
+@keyframes hud-ammo-low-wobble {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  36% {
+    transform: rotate(-1.2deg);
+  }
+
+  64% {
+    transform: rotate(1deg);
+  }
+}
+
+@keyframes hud-ammo-reload-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -3043,6 +3282,36 @@ canvas {
     top: 54px;
     width: clamp(144px, calc(100vw - 152px), 220px);
     max-width: calc(100vw - 32px);
+  }
+
+  .hud__ammo {
+    --ammo-size: 108px;
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .hud__ammo-core {
+    inset: 30px;
+  }
+
+  .hud__ammo-bullet {
+    width: 8px;
+    height: 21px;
+  }
+
+  .hud__ammo-bullet::before {
+    width: 7px;
+    height: 7px;
+    top: -2px;
+  }
+
+  .hud__ammo-reserve-value {
+    max-width: 46px;
+    font-size: 23px;
+  }
+
+  .hud__ammo-reserve-label {
+    font-size: 7px;
   }
 
   .hud__money-value {

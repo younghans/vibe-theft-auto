@@ -1,4 +1,5 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
+import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
@@ -52,6 +53,12 @@ function formatMoneyAmount(value) {
   const amount = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
   const formattedAmount = Math.abs(amount).toLocaleString('en-US');
   return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
+}
+
+function formatHudCount(value) {
+  const numeric = Number(value ?? 0);
+  const amount = Number.isFinite(numeric) ? Math.max(0, Math.trunc(numeric)) : 0;
+  return amount.toLocaleString('en-US');
 }
 
 function randomBetween(min, max) {
@@ -255,6 +262,10 @@ export class Hud {
     this.combatHealthTrail = this.overlay.querySelector('[data-combat-health-trail]');
     this.combatHealthFill = this.overlay.querySelector('[data-combat-health-fill]');
     this.combatHealthBurst = this.overlay.querySelector('[data-combat-health-burst]');
+    this.ammoRoot = this.overlay.querySelector('[data-ammo-root]');
+    this.ammoBullets = this.overlay.querySelector('[data-ammo-bullets]');
+    this.ammoReserveValue = this.overlay.querySelector('[data-ammo-reserve-value]');
+    this.ammoReserveLabel = this.overlay.querySelector('[data-ammo-reserve-label]');
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
@@ -359,6 +370,7 @@ export class Hud {
     this.healthTrailTimeout = 0;
     this.healthHitTimeout = 0;
     this.lastCombatHealthPercent = null;
+    this.lastAmmoClipSize = 0;
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
@@ -543,6 +555,15 @@ export class Hud {
           <div class="hud__combat-meter-trail" data-combat-health-trail></div>
           <div class="hud__combat-meter-fill" data-combat-health-fill></div>
           <div class="hud__combat-meter-burst" data-combat-health-burst></div>
+        </div>
+      </section>
+      <section class="hud__ammo" data-ammo-root role="group" aria-label="Pistol ammo" hidden>
+        <div class="hud__ammo-wheel">
+          <div class="hud__ammo-bullets" data-ammo-bullets aria-hidden="true"></div>
+          <div class="hud__ammo-core">
+            <span class="hud__ammo-reserve-value" data-ammo-reserve-value>0</span>
+            <span class="hud__ammo-reserve-label" data-ammo-reserve-label>Reserve</span>
+          </div>
         </div>
       </section>
       <div class="hud__left-stack">
@@ -2313,6 +2334,86 @@ export class Hud {
     }, 760);
   }
 
+  rebuildAmmoBullets(clipSize) {
+    if (!this.ammoBullets) {
+      return;
+    }
+
+    const safeClipSize = Math.max(0, Math.trunc(Number(clipSize) || 0));
+    this.ammoBullets.replaceChildren();
+    for (let index = 0; index < safeClipSize; index += 1) {
+      const bullet = document.createElement('span');
+      const angle = safeClipSize > 0 ? ((index / safeClipSize) * Math.PI * 2) - (Math.PI * 0.5) : 0;
+      const angleDegrees = ((angle * 180) / Math.PI) + 90;
+      bullet.className = 'hud__ammo-bullet';
+      bullet.setAttribute('aria-hidden', 'true');
+      bullet.style.setProperty('--ammo-x', `${Math.cos(angle) * 37}%`);
+      bullet.style.setProperty('--ammo-y', `${Math.sin(angle) * 37}%`);
+      bullet.style.setProperty('--ammo-tilt', `${angleDegrees}deg`);
+      bullet.style.setProperty('--ammo-delay', `${Math.min(index * 18, 180)}ms`);
+      this.ammoBullets.append(bullet);
+    }
+
+    this.lastAmmoClipSize = safeClipSize;
+  }
+
+  setAmmoState({
+    visible = false,
+    ammoInClip = 0,
+    reserveAmmo = 0,
+    clipSize = WEAPON_CLIP_SIZE,
+    isReloading = false
+  } = {}) {
+    if (!this.ammoRoot) {
+      return;
+    }
+
+    const safeClipSize = Math.max(0, Math.trunc(Number(clipSize) || WEAPON_CLIP_SIZE));
+    if (!visible || safeClipSize <= 0) {
+      this.ammoRoot.hidden = true;
+      return;
+    }
+
+    if (this.lastAmmoClipSize !== safeClipSize) {
+      this.rebuildAmmoBullets(safeClipSize);
+    }
+
+    const loadedAmmo = Math.max(
+      0,
+      Math.min(safeClipSize, Math.trunc(Number(ammoInClip) || 0))
+    );
+    const reserve = Math.max(0, Math.trunc(Number(reserveAmmo) || 0));
+    const loadedRatio = safeClipSize > 0 ? loadedAmmo / safeClipSize : 0;
+    const isReloadingNow = Boolean(isReloading);
+
+    this.ammoRoot.hidden = false;
+    this.ammoRoot.classList.toggle('is-empty', loadedAmmo <= 0);
+    this.ammoRoot.classList.toggle('is-full', loadedAmmo >= safeClipSize);
+    this.ammoRoot.classList.toggle('is-low', loadedAmmo > 0 && loadedRatio <= 0.28);
+    this.ammoRoot.classList.toggle('is-reloading', isReloadingNow);
+    this.ammoRoot.style.setProperty('--ammo-loaded-ratio', `${loadedRatio}`);
+    this.ammoRoot.setAttribute(
+      'aria-label',
+      `Pistol ammo: ${loadedAmmo} in magazine, ${reserve} reserve`
+    );
+    this.ammoRoot.title = `${loadedAmmo}/${safeClipSize} in magazine, ${reserve} reserve`;
+
+    if (this.ammoReserveValue) {
+      this.ammoReserveValue.textContent = formatHudCount(reserve);
+    }
+    if (this.ammoReserveLabel) {
+      this.ammoReserveLabel.textContent = isReloadingNow ? 'Reload' : 'Reserve';
+    }
+
+    const bullets = Array.from(this.ammoBullets?.children ?? []);
+    bullets.forEach((bullet, index) => {
+      const loaded = index < loadedAmmo;
+      bullet.classList.toggle('is-loaded', loaded);
+      bullet.classList.toggle('is-spent', !loaded);
+      bullet.classList.toggle('is-next', loaded && index === loadedAmmo - 1);
+    });
+  }
+
   setCombatState({
     visible = true,
     health = 100,
@@ -2331,6 +2432,7 @@ export class Hud {
     if (!visible) {
       this.lastCombatHealthPercent = null;
       this.syncCombatTrail(0);
+      this.setAmmoState({ visible: false });
       this.respawnText.classList.remove('is-visible');
       return;
     }
@@ -2364,6 +2466,13 @@ export class Hud {
       this.syncCombatTrail(healthPercent);
     }
     this.lastCombatHealthPercent = healthPercent;
+    this.setAmmoState({
+      visible: Boolean(alive && armed),
+      ammoInClip,
+      reserveAmmo,
+      clipSize: WEAPON_CLIP_SIZE,
+      isReloading
+    });
 
     if (!alive) {
       const seconds = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
