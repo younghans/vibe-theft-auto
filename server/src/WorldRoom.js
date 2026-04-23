@@ -149,6 +149,8 @@ const PlayerState = schema({
   deliveryQuestTargetNpcId: 'string',
   deliveryQuestAcceptedAt: 'number',
   deliveryQuestCompletedAt: 'number',
+  deliveryQuestCompletionCount: 'number',
+  gymPumpCompletedAt: 'number',
   characterId: 'string',
   isAdmin: 'boolean'
 });
@@ -478,6 +480,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleWorkoutClaim(client, message));
     });
 
+    this.onMessage('workout:complete', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleWorkoutComplete(client, message));
+    });
+
     this.onMessage('workout:release', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleWorkoutRelease(client, message));
     });
@@ -529,6 +535,8 @@ export class WorldRoom extends Room {
     player.deliveryQuestTargetNpcId = '';
     player.deliveryQuestAcceptedAt = 0;
     player.deliveryQuestCompletedAt = 0;
+    player.deliveryQuestCompletionCount = 0;
+    player.gymPumpCompletedAt = 0;
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
@@ -674,6 +682,7 @@ export class WorldRoom extends Room {
       targetNpcId: player.deliveryQuestTargetNpcId || '',
       acceptedAt: player.deliveryQuestAcceptedAt || 0,
       completedAt: player.deliveryQuestCompletedAt || 0,
+      completionCount: player.deliveryQuestCompletionCount || 0,
       rewardAmount: DELIVERY_QUEST_REWARD_AMOUNT
     };
   }
@@ -899,6 +908,10 @@ export class WorldRoom extends Room {
 
     player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
     player.deliveryQuestCompletedAt = Date.now();
+    player.deliveryQuestCompletionCount = Math.max(
+      0,
+      Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)
+    ) + 1;
     const currentMoney = Number(player.money ?? 0);
     player.money = (Number.isFinite(currentMoney) ? Math.trunc(currentMoney) : 0) + DELIVERY_QUEST_REWARD_AMOUNT;
 
@@ -941,6 +954,32 @@ export class WorldRoom extends Room {
 
     player.workoutPlacementId = placementId;
     return { placementId };
+  }
+
+  handleWorkoutComplete(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot complete that workout right now.');
+    }
+
+    const placementId = typeof message?.placementId === 'string'
+      ? message.placementId.trim()
+      : '';
+    const target = this.getNpcTargetOption(placementId);
+    if (!placementId || !target?.workoutType) {
+      throw new Error('That workout station is not available.');
+    }
+
+    if (player.workoutPlacementId !== placementId) {
+      throw new Error('That workout is not active.');
+    }
+
+    player.gymPumpCompletedAt = Date.now();
+    player.workoutPlacementId = '';
+    return {
+      placementId,
+      gymPumpCompletedAt: player.gymPumpCompletedAt
+    };
   }
 
   handleWorkoutRelease(client, message = {}) {

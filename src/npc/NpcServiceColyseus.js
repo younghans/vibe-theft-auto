@@ -93,6 +93,8 @@ function clonePlayerState(player) {
     deliveryQuestTargetNpcId: player.deliveryQuestTargetNpcId || '',
     deliveryQuestAcceptedAt: player.deliveryQuestAcceptedAt ?? 0,
     deliveryQuestCompletedAt: player.deliveryQuestCompletedAt ?? 0,
+    deliveryQuestCompletionCount: player.deliveryQuestCompletionCount ?? 0,
+    gymPumpCompletedAt: player.gymPumpCompletedAt ?? 0,
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };
@@ -550,6 +552,15 @@ export class NpcServiceColyseus {
     }
 
     return this.rpc('workout:claim', { placementId: normalized });
+  }
+
+  async completeWorkoutPlacement(placementId = '') {
+    const normalized = typeof placementId === 'string' ? placementId.trim() : '';
+    if (!normalized) {
+      return { ok: false, error: 'That workout station is not available.' };
+    }
+
+    return this.rpc('workout:complete', { placementId: normalized });
   }
 
   async releaseWorkoutPlacement(placementId = '') {

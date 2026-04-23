@@ -46,6 +46,7 @@ import {
 import { createNpcService } from '../npc/createNpcService.js';
 import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 import {
+  getDeliveryQuestGiverCandidate,
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
   isDeliveryQuestGiver
@@ -70,6 +71,8 @@ const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
+const MAKE_MONEY_TASK_TITLE = 'Make some money. Maybe the Shady Figure can help';
+const GYM_PUMP_TASK_TITLE = 'Go get a pump in the gym';
 const DAMAGE_CAMERA_KICK_MS = 260;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
 const HIP_FIRE_AIM_LEAD_MS = 90;
@@ -1748,6 +1751,197 @@ export class Game {
     return null;
   }
 
+  getTaskPositionFromValue(value = null) {
+    let x = NaN;
+    let z = NaN;
+
+    if (value?.isVector3) {
+      x = value.x;
+      z = value.z;
+    } else if (Array.isArray(value)) {
+      x = Number(value[0]);
+      z = Number(value[1]);
+    } else if (value) {
+      x = Number(value.x);
+      z = Number(value.z);
+    }
+
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getTaskPositionForInteractable(interactable = null) {
+    return this.getTaskPositionFromValue(
+      interactable?.approachPosition
+      ?? interactable?.position
+      ?? interactable?.originPosition
+      ?? null
+    );
+  }
+
+  getNpcTaskTarget(npcId = '') {
+    const normalizedNpcId = String(npcId ?? '').trim();
+    if (!normalizedNpcId) {
+      return null;
+    }
+
+    const npcState = this.npcServiceState.npcs.get(normalizedNpcId);
+    const npcPosition = this.getTaskPositionFromValue(npcState);
+    if (npcPosition) {
+      return npcPosition;
+    }
+
+    return this.getTaskPositionForInteractable(this.getNpcInteractableById(normalizedNpcId));
+  }
+
+  getDeliveryQuestGiverTaskTarget() {
+    const candidate = getDeliveryQuestGiverCandidate(this.npcServiceState.npcs);
+    const candidateTarget = candidate?.id ? this.getNpcTaskTarget(candidate.id) : null;
+    if (candidateTarget) {
+      return candidateTarget;
+    }
+
+    for (const interactable of this.worldBuilder?.getInteractables?.() ?? []) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcId = interactable.npcId || interactable.placementId || '';
+      const npcDetails = {
+        ...(interactable.npc ?? {}),
+        ...(npcId ? (this.npcServiceState.npcs.get(npcId) ?? {}) : {})
+      };
+      if (isDeliveryQuestGiver(npcId, npcDetails)) {
+        return this.getNpcTaskTarget(npcId) ?? this.getTaskPositionForInteractable(interactable);
+      }
+    }
+
+    return null;
+  }
+
+  getGymBuildingTaskTarget() {
+    const doorTarget = this.getGymDoorBlockers()[0] ?? null;
+    if (doorTarget) {
+      return this.getTaskPositionFromValue(doorTarget);
+    }
+
+    for (const placement of this.worldBuilder?.getLayout?.()?.tiles ?? []) {
+      const item = getBuilderItemById(placement?.itemId);
+      if (!item || !this.isGymDoorPlacement(placement, item)) {
+        continue;
+      }
+
+      const cellX = Number(placement.cell?.[0] ?? placement.cellX);
+      const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
+      if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
+        continue;
+      }
+
+      const center = getTileCenterWorldPosition(
+        item,
+        cellX,
+        cellZ,
+        placement.rotationQuarterTurns ?? 0
+      );
+      return this.getTaskPositionFromValue(center);
+    }
+
+    return null;
+  }
+
+  getGymTaskTarget() {
+    const activeSnatch = this.getActiveInteractables()
+      .find((interactable) => interactable.kind === 'snatch-workout');
+    const activeSnatchTarget = this.getTaskPositionForInteractable(activeSnatch);
+    if (activeSnatchTarget) {
+      return activeSnatchTarget;
+    }
+
+    const worldSnatch = (this.worldBuilder?.getInteractables?.() ?? [])
+      .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
+    const worldSnatchTarget = this.getTaskPositionForInteractable(worldSnatch);
+    if (worldSnatchTarget) {
+      return worldSnatchTarget;
+    }
+
+    return this.getGymBuildingTaskTarget();
+  }
+
+  isTaskIntroReady(localPlayerState = null) {
+    const seq = Number(localPlayerState?.rentIntroSeq ?? 0);
+    if (!Number.isFinite(seq) || seq <= 0) {
+      return true;
+    }
+
+    if (this.pendingRentIntro?.seq === seq) {
+      return false;
+    }
+
+    if (this.activeRentIntro?.seq === seq) {
+      return this.activeRentIntro.charged === true;
+    }
+
+    return this.handledRentIntroSeq === seq;
+  }
+
+  getDeliveryCompletionCount(localPlayerState = null) {
+    const count = Number(localPlayerState?.deliveryQuestCompletionCount ?? 0);
+    if (Number.isFinite(count) && count > 0) {
+      return Math.floor(count);
+    }
+
+    return Number(localPlayerState?.deliveryQuestCompletedAt ?? 0) > 0 ? 1 : 0;
+  }
+
+  resolveCurrentTask(localPlayerState = null) {
+    if (!localPlayerState || !this.isTaskIntroReady(localPlayerState)) {
+      return { visible: false, title: '', target: null };
+    }
+
+    if (isDeliveryQuestActive(localPlayerState)) {
+      const targetNpcId = localPlayerState.deliveryQuestTargetNpcId;
+      const targetName = getDeliveryQuestTargetName(this.npcServiceState.npcs.get(targetNpcId));
+      return {
+        visible: true,
+        title: `Deliver the package to ${targetName}`,
+        target: this.getNpcTaskTarget(targetNpcId)
+      };
+    }
+
+    const completedFirstDelivery = this.getDeliveryCompletionCount(localPlayerState) > 0;
+    const gymPumpCompleted = Number(localPlayerState.gymPumpCompletedAt ?? 0) > 0;
+    if (completedFirstDelivery && !gymPumpCompleted) {
+      return {
+        visible: true,
+        title: GYM_PUMP_TASK_TITLE,
+        target: this.getGymTaskTarget()
+      };
+    }
+
+    return {
+      visible: true,
+      title: MAKE_MONEY_TASK_TITLE,
+      target: this.getDeliveryQuestGiverTaskTarget()
+    };
+  }
+
+  syncTaskHud(localPlayerState = null) {
+    const task = this.resolveCurrentTask(localPlayerState);
+    this.hud.setTaskState({
+      visible: task.visible,
+      title: task.title
+    });
+
+    if (task.visible && task.target) {
+      this.player?.setTaskArrowTarget?.(task.target);
+    } else {
+      this.player?.clearTaskArrowTarget?.();
+    }
+  }
+
   getDeliveryQuestReminderKey(questState = null) {
     if (!questState?.giverNpcId && !questState?.deliveryQuestGiverNpcId) {
       return '';
@@ -2014,6 +2208,28 @@ export class Game {
     void this.npcService.releaseWorkoutPlacement(normalizedPlacementId).catch(() => {});
   }
 
+  completeWorkoutPlacement(placementId = '') {
+    const normalizedPlacementId = typeof placementId === 'string' ? placementId.trim() : '';
+    if (!normalizedPlacementId) {
+      return;
+    }
+
+    if (!this.npcService?.completeWorkoutPlacement) {
+      this.releaseWorkoutPlacement(normalizedPlacementId);
+      return;
+    }
+
+    void this.npcService.completeWorkoutPlacement(normalizedPlacementId)
+      .then((result) => {
+        if (!result?.ok) {
+          this.releaseWorkoutPlacement(normalizedPlacementId);
+        }
+      })
+      .catch(() => {
+        this.releaseWorkoutPlacement(normalizedPlacementId);
+      });
+  }
+
   async startWorkout(interactable) {
     if (
       !this.player
@@ -2176,7 +2392,11 @@ export class Game {
       disposeObjectResources(workout.carriedBarbell);
     }
     if (placementId) {
-      this.releaseWorkoutPlacement(placementId);
+      if (cancelled) {
+        this.releaseWorkoutPlacement(placementId);
+      } else {
+        this.completeWorkoutPlacement(placementId);
+      }
     }
     if (!cancelled) {
       this.hud.showToast('Snatch complete.');
@@ -3633,6 +3853,7 @@ export class Game {
       deaths: localPlayerState.deaths ?? 0,
       armed: Boolean(localPlayerState.equippedWeaponId)
     });
+    this.syncTaskHud(localPlayerState);
 
     if (respawned) {
       this.closeQuickChat();
@@ -4295,6 +4516,8 @@ export class Game {
 
     if (localPlayerState) {
       this.syncLocalPlayerState(localPlayerState);
+    } else {
+      this.syncTaskHud(null);
     }
 
     this.worldBuilder.update(deltaSeconds, this.input);

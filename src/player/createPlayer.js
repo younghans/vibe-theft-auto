@@ -283,6 +283,35 @@ function createPlayerIndicator({ color = 0xf2c871, opacity = 0.85 } = {}) {
   return ring;
 }
 
+function createPlayerTaskArrow() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -2.62);
+  shape.lineTo(0.5, -1.72);
+  shape.lineTo(0.18, -1.78);
+  shape.lineTo(0, -1.36);
+  shape.lineTo(-0.18, -1.78);
+  shape.lineTo(-0.5, -1.72);
+  shape.closePath();
+
+  const mesh = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({
+      color: 0xfff1a8,
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.08;
+
+  const group = new THREE.Group();
+  group.visible = false;
+  group.add(mesh);
+  return group;
+}
+
 function cloneTrackedMaterial(material) {
   if (!material?.clone) {
     return { material, tracked: null };
@@ -417,6 +446,8 @@ export async function createPlayer(library, {
     opacity: indicatorOpacity
   });
   anchor.add(indicatorRing);
+  const taskArrow = createPlayerTaskArrow();
+  anchor.add(taskArrow);
   const damageRipple = new THREE.Mesh(
     new THREE.RingGeometry(1.65, 2.55, 36),
     new THREE.MeshBasicMaterial({
@@ -517,6 +548,7 @@ export async function createPlayer(library, {
   let aimPoseWeight = 0;
   let guardPoseWeight = 0;
   let upperBodyLookWeight = 0;
+  let taskArrowTarget = null;
   let aimRotationY = 0;
   let reloadPoseWeight = 0;
   let reloadPoseAmount = 0;
@@ -1490,6 +1522,25 @@ export async function createPlayer(library, {
         SLOT_MOTION_BASE.rotation[2] + (recoilAmount * 0.1) + ((reloadMotionRotation[2] ?? 0) * reloadDisplayedWeaponMotionAmount)
       );
     }
+
+    syncTaskArrow();
+  }
+
+  function syncTaskArrow() {
+    if (!taskArrowTarget || !aliveState) {
+      taskArrow.visible = false;
+      return;
+    }
+
+    const deltaX = taskArrowTarget.x - anchor.position.x;
+    const deltaZ = taskArrowTarget.z - anchor.position.z;
+    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaZ) || Math.hypot(deltaX, deltaZ) < 1) {
+      taskArrow.visible = false;
+      return;
+    }
+
+    taskArrow.rotation.y = normalizeAngle(Math.atan2(deltaX, deltaZ) - anchor.rotation.y);
+    taskArrow.visible = true;
   }
 
   async function setWeaponState(weaponId = '', { visible = true } = {}) {
@@ -1945,6 +1996,26 @@ export async function createPlayer(library, {
     },
     setAliveState(alive, options = {}) {
       setAliveState(Boolean(alive), options);
+    },
+    setTaskArrowTarget(targetPosition) {
+      const x = Number(targetPosition?.x);
+      const z = Number(targetPosition?.z);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        taskArrowTarget = null;
+        syncTaskArrow();
+        return false;
+      }
+
+      if (!taskArrowTarget) {
+        taskArrowTarget = new THREE.Vector3();
+      }
+      taskArrowTarget.set(x, 0, z);
+      syncTaskArrow();
+      return true;
+    },
+    clearTaskArrowTarget() {
+      taskArrowTarget = null;
+      taskArrow.visible = false;
     },
     previewReload(itemId = desiredWeaponId, durationMs = WEAPON_RELOAD_MS) {
       if (!itemId) {

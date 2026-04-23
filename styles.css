@@ -43,6 +43,7 @@ body.is-builder-resizing * {
 }
 
 .hud__panel,
+.hud__task,
 .hud__toast,
 .hud__character-selector,
 .hud__shader-debug,
@@ -376,6 +377,31 @@ body.is-builder-resizing * {
     0 0.08em 0 #5a0909,
     0 0.14em 0 rgba(58, 8, 8, 0.88),
     0 0.22em 0.24em rgba(0, 0, 0, 0.46);
+}
+
+.hud__task {
+  top: 18px;
+  left: 50%;
+  width: min(480px, calc(100vw - 360px));
+  min-width: 240px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.hud__task-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: "Lato", "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: #fff7d6;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
 }
 
 @keyframes hud-health-stripes {
@@ -2944,6 +2970,15 @@ canvas {
 
   .hud__money-value {
     font-size: clamp(1rem, 6vw, 1.45rem);
+  }
+
+  .hud__task {
+    top: 94px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    min-width: 0;
+    transform: none;
   }
 
   .hud__prompt {

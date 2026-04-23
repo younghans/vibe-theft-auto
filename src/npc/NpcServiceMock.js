@@ -157,6 +157,8 @@ function createDefaultPlayerState(overrides = {}) {
     deliveryQuestTargetNpcId: '',
     deliveryQuestAcceptedAt: 0,
     deliveryQuestCompletedAt: 0,
+    deliveryQuestCompletionCount: 0,
+    gymPumpCompletedAt: 0,
     lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -1002,6 +1004,7 @@ export class NpcServiceMock {
       targetNpcId: player.deliveryQuestTargetNpcId || '',
       acceptedAt: player.deliveryQuestAcceptedAt || 0,
       completedAt: player.deliveryQuestCompletedAt || 0,
+      completionCount: player.deliveryQuestCompletionCount || 0,
       rewardAmount: DELIVERY_QUEST_REWARD_AMOUNT
     };
   }
@@ -1230,6 +1233,10 @@ export class NpcServiceMock {
     const now = Date.now();
     player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
     player.deliveryQuestCompletedAt = now;
+    player.deliveryQuestCompletionCount = Math.max(
+      0,
+      Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)
+    ) + 1;
     const currentMoney = Number(player.money ?? 0);
     player.money = (Number.isFinite(currentMoney) ? Math.trunc(currentMoney) : 0) + DELIVERY_QUEST_REWARD_AMOUNT;
 
@@ -1275,6 +1282,34 @@ export class NpcServiceMock {
     player.workoutPlacementId = normalizedPlacementId;
     this.emit();
     return { ok: true, placementId: normalizedPlacementId };
+  }
+
+  async completeWorkoutPlacement(placementId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot complete that workout right now.' };
+    }
+
+    const normalizedPlacementId = typeof placementId === 'string'
+      ? placementId.trim()
+      : '';
+    const target = this.getNpcTargetOption(normalizedPlacementId);
+    if (!normalizedPlacementId || !target?.workoutType) {
+      return { ok: false, error: 'That workout station is not available.' };
+    }
+
+    if (player.workoutPlacementId !== normalizedPlacementId) {
+      return { ok: false, error: 'That workout is not active.' };
+    }
+
+    player.gymPumpCompletedAt = Date.now();
+    player.workoutPlacementId = '';
+    this.emit();
+    return {
+      ok: true,
+      placementId: normalizedPlacementId,
+      gymPumpCompletedAt: player.gymPumpCompletedAt
+    };
   }
 
   async releaseWorkoutPlacement(placementId = '') {

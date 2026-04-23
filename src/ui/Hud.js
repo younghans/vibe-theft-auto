@@ -196,6 +196,8 @@ export class Hud {
     this.combatHealthBurst = this.overlay.querySelector('[data-combat-health-burst]');
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
+    this.taskRoot = this.overlay.querySelector('[data-task]');
+    this.taskTitle = this.overlay.querySelector('[data-task-title]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
@@ -307,6 +309,7 @@ export class Hud {
     this.buildEmoteWheel();
     this.initializeBuilderPanelResize();
     this.setMoneyState({ amount: 0 });
+    this.setTaskState({ visible: false });
   }
 
   createLoading() {
@@ -488,6 +491,9 @@ export class Hud {
       </div>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
+      </section>
+      <section class="hud__task" data-task aria-live="polite" hidden>
+        <p class="hud__task-title" data-task-title></p>
       </section>
       <div class="hud__top-actions">
         <section class="hud__toast">
@@ -2311,6 +2317,19 @@ export class Hud {
     const money = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
     this.moneyValue.textContent = formatMoneyAmount(money);
     this.moneyRoot.classList.toggle('is-negative', money < 0);
+  }
+
+  setTaskState({ visible = false, title = '' } = {}) {
+    if (!this.taskRoot || !this.taskTitle) {
+      return;
+    }
+
+    const nextTitle = String(title ?? '').trim();
+    const nextVisible = Boolean(visible && nextTitle);
+    this.taskRoot.hidden = !nextVisible;
+    if (this.taskTitle.textContent !== nextTitle) {
+      this.taskTitle.textContent = nextTitle;
+    }
   }
 
   setZoomState({
