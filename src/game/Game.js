@@ -97,6 +97,7 @@ const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
 const RENT_INTRO_MIN_TYPING_MS = 900;
 const RENT_INTRO_AFTER_LINE_DELAY_MS = 650;
 const RENT_INTRO_SPEECH_HOLD_MS = 1700;
+const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 
 function clampVibeShaderIntensity(value) {
@@ -4508,7 +4509,8 @@ export class Game {
       this.hud.setHitMarkerVisible(hitMarkerVisible);
       this.lastHudHitMarkerVisible = hitMarkerVisible;
     }
-    this.updateSpeechBubbles();
+    const visibleOverheadHealthBarIds = this.updateOverheadHealthBars();
+    this.updateSpeechBubbles(visibleOverheadHealthBarIds);
     if (this.aimPoseDebugVisible) {
       this.refreshAimPoseDebugHud();
     }
@@ -4797,7 +4799,7 @@ export class Game {
       status: options.status ?? 'done',
       visible: true,
       screenX: projected.x,
-      screenY: projected.y
+      screenY: projected.y - (Number(options.screenYOffset) || 0)
     };
   }
 
@@ -4807,7 +4809,7 @@ export class Game {
     }
   }
 
-  addPlayerSpeechBubble(bubbles, sessionId, playerState, anchor, variant) {
+  addPlayerSpeechBubble(bubbles, sessionId, playerState, anchor, variant, options = {}) {
     this.pushSpeechBubble(
       bubbles,
       this.collectSpeechBubble(
@@ -4815,12 +4817,14 @@ export class Game {
         playerState.chatText,
         playerState.chatStartedAt,
         anchor,
-        variant
+        variant,
+        '',
+        options
       )
     );
   }
 
-  addNpcSpeechBubble(bubbles, npcId, npcState, anchor) {
+  addNpcSpeechBubble(bubbles, npcId, npcState, anchor, options = {}) {
     if (this.isRentIntroReservedNpc(npcId)) {
       return;
     }
@@ -4836,13 +4840,14 @@ export class Game {
         npcState.name,
         {
           status: npcState.chatStatus,
-          busy: npcState.busy
+          busy: npcState.busy,
+          screenYOffset: options.screenYOffset
         }
       )
     );
   }
 
-  addRentIntroSpeechBubble(bubbles, npcSpeechAnchors) {
+  addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = new Set()) {
     const intro = this.activeRentIntro;
     if (!intro?.npcId) {
       return;
@@ -4864,6 +4869,9 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(intro.npcId);
+    const screenYOffset = visibleOverheadHealthBarIds.has(`npc:${intro.npcId}`)
+      ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+      : 0;
     bubbles.push({
       id: `npc-rent-intro:${intro.seq}`,
       text,
@@ -4872,11 +4880,11 @@ export class Game {
       status: 'done',
       visible: true,
       screenX: projected.x,
-      screenY: projected.y
+      screenY: projected.y - screenYOffset
     });
   }
 
-  addNpcInteractionHintBubble(bubbles, npcSpeechAnchors) {
+  addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = new Set()) {
     const npcInteractable = this.getNearestNpcInteractable();
     const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable);
     const gymCheckInInteraction = deliveryInteraction
@@ -4926,6 +4934,10 @@ export class Game {
       return;
     }
 
+    const screenYOffset = visibleOverheadHealthBarIds.has(`npc:${npcId}`)
+      ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+      : 0;
+
     if (gymCheckInInteraction) {
       bubbles.push({
         id: `npc-gym-check-in:${npcId}`,
@@ -4935,7 +4947,7 @@ export class Game {
         status: 'done',
         visible: true,
         screenX: projected.x,
-        screenY: projected.y
+        screenY: projected.y - screenYOffset
       });
       return;
     }
@@ -4949,7 +4961,7 @@ export class Game {
         status: 'done',
         visible: true,
         screenX: projected.x,
-        screenY: projected.y
+        screenY: projected.y - screenYOffset
       });
       return;
     }
@@ -4962,8 +4974,113 @@ export class Game {
       status: 'done',
       visible: true,
       screenX: projected.x,
-      screenY: projected.y
+      screenY: projected.y - screenYOffset
     });
+  }
+
+  collectOverheadHealthBar(id, anchor, { health = 0, maxHealth = 100, alive = true } = {}, variant = 'npc') {
+    const safeMaxHealth = Math.max(1, Number(maxHealth) || 1);
+    const currentHealth = Math.max(0, Math.min(safeMaxHealth, Number(health) || 0));
+    if (!alive || currentHealth >= safeMaxHealth) {
+      return null;
+    }
+
+    const projected = this.projectSpeechAnchor(anchor);
+    if (!projected) {
+      return null;
+    }
+
+    return {
+      id,
+      variant,
+      visible: true,
+      health: currentHealth,
+      maxHealth: safeMaxHealth,
+      healthRatio: currentHealth / safeMaxHealth,
+      screenX: projected.x,
+      screenY: projected.y
+    };
+  }
+
+  pushOverheadHealthBar(bars, bar) {
+    if (bar) {
+      bars.push(bar);
+    }
+  }
+
+  updateOverheadHealthBars() {
+    if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
+      this.hud.setOverheadHealthBars([]);
+      return new Set();
+    }
+
+    const bars = [];
+    const visibleIds = new Set();
+    const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
+    if (localPlayerState) {
+      const bar = this.collectOverheadHealthBar(
+        `player:${this.npcServiceState.sessionId}`,
+        this.player.getSpeechAnchorWorldPosition(),
+        {
+          health: localPlayerState.health,
+          maxHealth: localPlayerState.maxHealth,
+          alive: localPlayerState.alive !== false
+        },
+        'self'
+      );
+      this.pushOverheadHealthBar(bars, bar);
+      if (bar) {
+        visibleIds.add(bar.id);
+      }
+    }
+
+    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+      const playerState = this.npcServiceState.players.get(sessionId);
+      if (!playerState) {
+        continue;
+      }
+
+      const bar = this.collectOverheadHealthBar(
+        `player:${sessionId}`,
+        avatar.getSpeechAnchorWorldPosition(),
+        {
+          health: playerState.health,
+          maxHealth: playerState.maxHealth,
+          alive: playerState.alive !== false
+        },
+        'player'
+      );
+      this.pushOverheadHealthBar(bars, bar);
+      if (bar) {
+        visibleIds.add(bar.id);
+      }
+    }
+
+    const npcSpeechAnchors = this.worldBuilder.getNpcSpeechAnchors();
+    for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
+      const anchor = npcSpeechAnchors.get(npcId);
+      if (!anchor) {
+        continue;
+      }
+
+      const bar = this.collectOverheadHealthBar(
+        `npc:${npcId}`,
+        anchor,
+        {
+          health: npcState.health,
+          maxHealth: npcState.maxHealth,
+          alive: npcState.alive !== false
+        },
+        'npc'
+      );
+      this.pushOverheadHealthBar(bars, bar);
+      if (bar) {
+        visibleIds.add(bar.id);
+      }
+    }
+
+    this.hud.setOverheadHealthBars(bars);
+    return visibleIds;
   }
 
   projectSpeechAnchor(worldPosition) {
@@ -4981,7 +5098,7 @@ export class Game {
     return { x, y };
   }
 
-  updateSpeechBubbles() {
+  updateSpeechBubbles(visibleOverheadHealthBarIds = new Set()) {
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
       this.hud.setSpeechBubbles([]);
       return;
@@ -4995,7 +5112,12 @@ export class Game {
         this.npcServiceState.sessionId,
         localPlayerState,
         this.player.getSpeechAnchorWorldPosition(),
-        'self'
+        'self',
+        {
+          screenYOffset: visibleOverheadHealthBarIds.has(`player:${this.npcServiceState.sessionId}`)
+            ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+            : 0
+        }
       );
     }
 
@@ -5010,7 +5132,12 @@ export class Game {
         sessionId,
         playerState,
         avatar.getSpeechAnchorWorldPosition(),
-        'player'
+        'player',
+        {
+          screenYOffset: visibleOverheadHealthBarIds.has(`player:${sessionId}`)
+            ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+            : 0
+        }
       );
     }
 
@@ -5021,11 +5148,15 @@ export class Game {
         continue;
       }
 
-      this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor);
+      this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor, {
+        screenYOffset: visibleOverheadHealthBarIds.has(`npc:${npcId}`)
+          ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+          : 0
+      });
     }
 
-    this.addRentIntroSpeechBubble(bubbles, npcSpeechAnchors);
-    this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors);
+    this.addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
+    this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
     this.addMoneyFloaterBubbles(bubbles);
     this.hud.setSpeechBubbles(bubbles);
   }

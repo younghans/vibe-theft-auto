@@ -2454,6 +2454,12 @@ body.is-builder-resizing * {
   pointer-events: none;
 }
 
+.hud__overhead-health-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .hud__respawn {
   position: absolute;
   left: 50%;
@@ -2496,6 +2502,51 @@ body.is-builder-resizing * {
 
 .hud__hitmarker.is-visible {
   opacity: 1;
+}
+
+.hud__overhead-health {
+  position: absolute;
+  width: 72px;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 16, 24, 0.92);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.hud__overhead-health.is-self {
+  border-color: rgba(242, 200, 113, 0.48);
+}
+
+.hud__overhead-health.is-player {
+  border-color: rgba(255, 148, 148, 0.34);
+}
+
+.hud__overhead-health.is-npc {
+  border-color: rgba(104, 199, 255, 0.4);
+}
+
+.hud__overhead-health.is-critical {
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    0 0 14px rgba(255, 88, 88, 0.34);
+}
+
+.hud__overhead-health-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hud__overhead-health-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  transition: width 120ms linear, background 120ms linear;
 }
 
 .hud__speech-bubble {

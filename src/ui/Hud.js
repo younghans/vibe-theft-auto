@@ -352,12 +352,14 @@ export class Hud {
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
     this.quickChatHint = this.overlay.querySelector('[data-quick-chat-hint]');
+    this.overheadHealthLayer = this.overlay.querySelector('[data-overhead-health-layer]');
     this.speechLayer = this.overlay.querySelector('[data-speech-layer]');
     this.emoteMenu = this.overlay.querySelector('[data-emote-menu]');
     this.emoteWheel = this.overlay.querySelector('[data-emote-wheel]');
     this.emoteSelection = this.overlay.querySelector('[data-emote-selection]');
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
     this.emoteSliceNodes = [];
+    this.overheadHealthBarNodes = new Map();
     this.speechBubbleNodes = new Map();
     this.aimDebugInputs = new Map();
     this.poseDebugExtraInputs = new Map();
@@ -951,6 +953,7 @@ export class Hud {
         <input class="hud__field-control hud__quick-chat-input" type="text" maxlength="280" data-quick-chat-input placeholder="Say something..." />
         <p class="hud__quick-chat-hint" data-quick-chat-hint>Enter to send. Escape to cancel.</p>
       </form>
+      <section class="hud__overhead-health-layer" data-overhead-health-layer></section>
       <section class="hud__speech-layer" data-speech-layer></section>
       <p class="hud__respawn" data-respawn></p>
       <div class="hud__hitmarker" data-hitmarker></div>
@@ -3010,6 +3013,59 @@ export class Hud {
 
       node.remove();
       this.speechBubbleNodes.delete(id);
+    }
+  }
+
+  setOverheadHealthBars(bars = []) {
+    const activeIds = new Set();
+
+    for (const bar of bars) {
+      if (!bar?.id || !bar.visible) {
+        continue;
+      }
+
+      activeIds.add(bar.id);
+      let node = this.overheadHealthBarNodes.get(bar.id);
+      let fillNode = node?.querySelector('.hud__overhead-health-fill') ?? null;
+      if (!node || !fillNode) {
+        node = document.createElement('div');
+        node.className = 'hud__overhead-health';
+        node.setAttribute('aria-hidden', 'true');
+
+        const track = document.createElement('div');
+        track.className = 'hud__overhead-health-track';
+
+        fillNode = document.createElement('div');
+        fillNode.className = 'hud__overhead-health-fill';
+
+        track.append(fillNode);
+        node.append(track);
+        this.overheadHealthLayer?.append(node);
+        this.overheadHealthBarNodes.set(bar.id, node);
+      }
+
+      const healthRatio = Math.max(0, Math.min(1, Number(bar.healthRatio) || 0));
+      const healthPercent = Math.round(healthRatio * 100);
+      const fillHue = Math.round(healthRatio * 120);
+
+      node.classList.toggle('is-self', bar.variant === 'self');
+      node.classList.toggle('is-player', bar.variant === 'player');
+      node.classList.toggle('is-npc', bar.variant === 'npc');
+      node.classList.toggle('is-critical', healthRatio <= 0.25);
+      node.style.left = `${bar.screenX}px`;
+      node.style.top = `${bar.screenY}px`;
+      node.title = `${bar.health} / ${bar.maxHealth}`;
+      fillNode.style.width = `${healthPercent}%`;
+      fillNode.style.background = `linear-gradient(90deg, hsl(${fillHue} 82% 44%), hsl(${Math.min(120, fillHue + 12)} 96% 58%))`;
+    }
+
+    for (const [id, node] of this.overheadHealthBarNodes.entries()) {
+      if (activeIds.has(id)) {
+        continue;
+      }
+
+      node.remove();
+      this.overheadHealthBarNodes.delete(id);
     }
   }
 
