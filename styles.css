@@ -60,8 +60,7 @@ body.is-builder-resizing * {
 }
 
 .hud__panel {
-  bottom: 24px;
-  left: 24px;
+  position: static;
   width: auto;
   padding: 0;
   border: 0;
@@ -69,6 +68,17 @@ body.is-builder-resizing * {
   background: transparent;
   backdrop-filter: none;
   box-shadow: none;
+}
+
+.hud__left-stack {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  display: grid;
+  gap: 12px;
+  align-items: start;
+  pointer-events: none;
+  z-index: 6;
 }
 
 .hud__controls-list {
@@ -329,10 +339,11 @@ body.is-builder-resizing * {
 
 .hud__money {
   position: absolute;
-  left: 50%;
-  top: 22px;
-  max-width: calc(100vw - 32px);
-  transform: translateX(-50%);
+  left: 24px;
+  top: 64px;
+  width: min(280px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  transform: none;
   pointer-events: none;
   z-index: 5;
 }
@@ -340,13 +351,13 @@ body.is-builder-resizing * {
 .hud__money-value {
   display: block;
   font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
-  font-size: clamp(1.65rem, 4vw, 2.7rem);
+  font-size: clamp(1.2rem, 2.6vw, 1.7rem);
   font-weight: 900;
   line-height: 0.9;
   letter-spacing: 0;
-  text-align: center;
+  text-align: left;
   color: #f8f8f6;
-  -webkit-text-stroke: clamp(1.5px, 0.18vw, 3px) #180d08;
+  -webkit-text-stroke: clamp(1px, 0.12vw, 2px) #180d08;
   paint-order: stroke fill;
   text-shadow:
     0 0 0 #180d08,
@@ -1044,9 +1055,7 @@ body.is-builder-resizing * {
 }
 
 .hud__admin-position {
-  position: absolute;
-  bottom: 216px;
-  left: 24px;
+  position: static;
   min-width: 240px;
   max-width: min(360px, calc(100vw - 48px));
   padding: 12px 14px;
@@ -2911,9 +2920,12 @@ canvas {
   }
 
   .hud__panel {
+    width: auto;
+  }
+
+  .hud__left-stack {
     bottom: 16px;
     left: 16px;
-    width: auto;
   }
 
   .hud__combat {
@@ -2924,11 +2936,14 @@ canvas {
   }
 
   .hud__money {
+    left: 16px;
     top: 54px;
+    width: clamp(144px, calc(100vw - 152px), 220px);
+    max-width: calc(100vw - 32px);
   }
 
   .hud__money-value {
-    font-size: clamp(1.45rem, 8vw, 2.1rem);
+    font-size: clamp(1rem, 6vw, 1.45rem);
   }
 
   .hud__prompt {
@@ -3007,8 +3022,6 @@ canvas {
   }
 
   .hud__admin-position {
-    bottom: 208px;
-    left: 16px;
     max-width: calc(100vw - 32px);
   }
 

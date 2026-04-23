@@ -467,11 +467,6 @@ export class Hud {
     const node = document.createElement('div');
     node.className = 'hud';
     node.innerHTML = `
-      <section class="hud__panel">
-        <div class="hud__controls-list">
-          ${getHudControlsMarkup()}
-        </div>
-      </section>
       <section class="hud__combat" data-combat-root role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
         <div class="hud__combat-meter" data-combat-meter aria-hidden="true">
           <div class="hud__combat-meter-trail" data-combat-health-trail></div>
@@ -479,6 +474,18 @@ export class Hud {
           <div class="hud__combat-meter-burst" data-combat-health-burst></div>
         </div>
       </section>
+      <div class="hud__left-stack">
+        <section class="hud__admin-position" data-admin-position hidden>
+          <p class="hud__eyebrow">Admin Position</p>
+          <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
+          <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
+        </section>
+        <section class="hud__panel">
+          <div class="hud__controls-list">
+            ${getHudControlsMarkup()}
+          </div>
+        </section>
+      </div>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
       </section>
@@ -605,11 +612,6 @@ export class Hud {
           <button class="hud__builder-icon-button hud__shader-debug-reset" type="button" data-shader-debug-intensity-reset title="Reset active vibe intensity">Reset</button>
         </div>
         <div class="hud__shader-debug-list" data-shader-debug-list></div>
-      </section>
-      <section class="hud__admin-position" data-admin-position hidden>
-        <p class="hud__eyebrow">Admin Position</p>
-        <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
-        <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
       </section>
       <section class="hud__join-title" data-join-title aria-hidden="true">
         <div class="hud__join-title-stack">
