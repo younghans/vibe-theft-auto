@@ -6,6 +6,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import {
+  DEFAULT_VIBE_SHADER_INTENSITY,
   DEFAULT_VIBE_SHADER_PRESET_ID,
   NO_VIBE_SHADER_PRESET_ID,
   createVibeShaderDefinition,
@@ -60,7 +61,7 @@ export const DEFAULT_MUGSHOT_CAMERA_PRESET = Object.freeze({
 });
 
 function clampVibeIntensity(value) {
-  return THREE.MathUtils.clamp(Number.isFinite(value) ? value : 1, 0, 1);
+  return THREE.MathUtils.clamp(Number.isFinite(value) ? value : DEFAULT_VIBE_SHADER_INTENSITY, 0, 1);
 }
 
 function normalizePortraitCameraPreset(preset = {}) {
@@ -373,7 +374,7 @@ export class CharacterPreviewRenderer {
     this.portraitSnapshotProfile = portraitSnapshotProfile;
     this.vibeShaderState = {
       presetId: DEFAULT_VIBE_SHADER_PRESET_ID,
-      intensity: 1
+      intensity: DEFAULT_VIBE_SHADER_INTENSITY
     };
     this.livePreview = createPreviewRig({ ...LIVE_PREVIEW_SIZE, mode: 'live' });
     this.portraitSnapshotRig = createPreviewRig({ ...portraitSnapshotSize, mode: 'portrait' });

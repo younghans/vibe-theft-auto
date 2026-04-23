@@ -40,6 +40,7 @@ const PRESETS = [
 
 export const VIBE_SHADER_PRESETS = PRESETS;
 export const DEFAULT_VIBE_SHADER_PRESET_ID = PRESETS[0].id;
+export const DEFAULT_VIBE_SHADER_INTENSITY = 0.6;
 export const NO_VIBE_SHADER_PRESET_ID = 'none';
 
 export function getVibeShaderPreset(presetId) {
@@ -53,7 +54,7 @@ export function createVibeShaderDefinition() {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uTime: { value: 0 },
       uPreset: { value: 0 },
-      uIntensity: { value: 1 }
+      uIntensity: { value: DEFAULT_VIBE_SHADER_INTENSITY }
     },
     vertexShader: `
       varying vec2 vUv;

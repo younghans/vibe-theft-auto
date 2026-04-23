@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Input } from './Input.js';
 import {
+  DEFAULT_VIBE_SHADER_INTENSITY,
   DEFAULT_VIBE_SHADER_PRESET_ID,
   NO_VIBE_SHADER_PRESET_ID,
   VIBE_SHADER_PRESETS,
@@ -80,7 +81,6 @@ const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
-const DEFAULT_VIBE_SHADER_INTENSITY = 1;
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const BOOT_PIXEL_RATIO_CAP = 1.25;
 const RUNTIME_PIXEL_RATIO_CAP = 2;
