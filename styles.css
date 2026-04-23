@@ -380,28 +380,157 @@ body.is-builder-resizing * {
 }
 
 .hud__task {
+  --task-panel-x: -50%;
   top: 18px;
   left: 50%;
-  width: min(480px, calc(100vw - 360px));
-  min-width: 240px;
-  padding: 10px 16px;
+  width: min(620px, calc(100vw - 320px));
+  min-width: 280px;
+  padding: 10px 20px 12px;
   border-radius: 6px;
-  transform: translateX(-50%);
+  transform: translateX(var(--task-panel-x));
   text-align: center;
   pointer-events: none;
   z-index: 7;
+  overflow: visible;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 34%),
+    rgba(10, 16, 24, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.24),
+    0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.hud__task-viewport {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  overflow: hidden;
 }
 
 .hud__task-title {
   margin: 0;
   overflow-wrap: anywhere;
   font-family: "Lato", "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1.22;
   letter-spacing: 0;
+  text-transform: none;
   color: #fff7d6;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.hud__task.is-completing {
+  animation: hud-task-bar-click 760ms steps(4, end) both;
+}
+
+.hud__task.is-completing .hud__task-title {
+  animation: hud-task-slot-rise 760ms steps(6, end) forwards;
+}
+
+.hud__task-confetti {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hud__task-confetti-piece {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--confetti-color, #ffd94d);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.hud__task.is-completing .hud__task-confetti-piece {
+  animation: hud-task-confetti-burst 1.95s cubic-bezier(0.16, 0.72, 0.18, 1) var(--confetti-delay, 340ms) forwards;
+}
+
+@keyframes hud-task-slot-rise {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  38% {
+    opacity: 1;
+    transform: translateY(-34%) scale(1.03);
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(-108%) scale(0.98);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-178%) scale(0.94);
+  }
+}
+
+@keyframes hud-task-bar-click {
+  0%,
+  100% {
+    transform: translateX(var(--task-panel-x)) translateY(0);
+    filter: brightness(1);
+  }
+
+  45% {
+    transform: translateX(var(--task-panel-x)) translateY(-2px);
+    filter: brightness(1.18);
+  }
+
+  58% {
+    transform: translateX(var(--task-panel-x)) translateY(1px);
+    filter: brightness(1.04);
+  }
+}
+
+@keyframes hud-task-confetti-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(0deg) scale(0.2);
+  }
+
+  8% {
+    opacity: 1;
+  }
+
+  24% {
+    opacity: 1;
+    transform:
+      translate(
+        calc(-50% + var(--confetti-burst-x, 40px)),
+        calc(-50% + var(--confetti-burst-y, -42px))
+      )
+      rotate(calc(var(--confetti-rot, 240deg) * 0.28))
+      scale(1);
+  }
+
+  72% {
+    opacity: 0.86;
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(-50% + var(--confetti-fall-x, 72px)),
+        var(--confetti-fall-y, 46vh)
+      )
+      rotate(var(--confetti-rot, 240deg))
+      scale(0.82);
+  }
 }
 
 @keyframes hud-health-stripes {
@@ -2973,12 +3102,18 @@ canvas {
   }
 
   .hud__task {
+    --task-panel-x: 0;
     top: 94px;
     left: 16px;
     right: 16px;
     width: auto;
     min-width: 0;
-    transform: none;
+    transform: translateX(var(--task-panel-x));
+  }
+
+  .hud__task-title {
+    font-size: 14px;
+    line-height: 1.24;
   }
 
   .hud__prompt {

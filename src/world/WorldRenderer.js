@@ -825,10 +825,14 @@ export class WorldRenderer {
     );
   }
 
-  getCameraOcclusionCandidates() {
+  getCameraOcclusionCandidates(excludedPlacementIds = new Set()) {
     const candidates = [];
 
     for (const rendered of this.renderedPlacements.values()) {
+      if (excludedPlacementIds.has(rendered.id)) {
+        continue;
+      }
+
       if (this.isPlacementVisibleForCameraOcclusion(rendered)) {
         candidates.push(rendered);
       }
@@ -892,7 +896,7 @@ export class WorldRenderer {
     return this.syncCameraOccludedPlacementIds(new Set());
   }
 
-  updateCameraOcclusion(camera = this.camera, playerPosition = null) {
+  updateCameraOcclusion(camera = this.camera, playerPosition = null, options = {}) {
     if (!camera || !playerPosition || !this.tileRoot.visible) {
       return this.clearCameraOcclusion();
     }
@@ -904,7 +908,8 @@ export class WorldRenderer {
       return this.clearCameraOcclusion();
     }
 
-    const candidates = this.getCameraOcclusionCandidates();
+    const excludedPlacementIds = new Set((options.excludedPlacementIds ?? []).filter(Boolean));
+    const candidates = this.getCameraOcclusionCandidates(excludedPlacementIds);
     if (!candidates.length) {
       return this.clearCameraOcclusion();
     }

@@ -598,8 +598,8 @@ export class WorldBuilder {
     this.worldRenderer.triggerNpcDamageFeedback(npcId, options);
   }
 
-  updateCameraOcclusion(camera, playerPosition) {
-    return this.worldRenderer.updateCameraOcclusion(camera, playerPosition);
+  updateCameraOcclusion(camera, playerPosition, options = {}) {
+    return this.worldRenderer.updateCameraOcclusion(camera, playerPosition, options);
   }
 
   clearCameraOcclusion() {

@@ -279,6 +279,9 @@ export class Game {
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
+    this.taskProgressInitialized = false;
+    this.lastTaskDeliveryCompletionCount = 0;
+    this.lastTaskGymPumpCompletedAt = 0;
     this.gymMembershipRequestInFlight = false;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
@@ -1896,6 +1899,14 @@ export class Game {
     return Number(localPlayerState?.deliveryQuestCompletedAt ?? 0) > 0 ? 1 : 0;
   }
 
+  getTaskProgressSnapshot(localPlayerState = null) {
+    const gymPumpCompletedAt = Number(localPlayerState?.gymPumpCompletedAt ?? 0);
+    return {
+      deliveryCompletionCount: this.getDeliveryCompletionCount(localPlayerState),
+      gymPumpCompletedAt: Number.isFinite(gymPumpCompletedAt) ? Math.max(0, gymPumpCompletedAt) : 0
+    };
+  }
+
   resolveCurrentTask(localPlayerState = null) {
     if (!localPlayerState || !this.isTaskIntroReady(localPlayerState)) {
       return { visible: false, title: '', target: null };
@@ -1930,10 +1941,35 @@ export class Game {
 
   syncTaskHud(localPlayerState = null) {
     const task = this.resolveCurrentTask(localPlayerState);
-    this.hud.setTaskState({
-      visible: task.visible,
-      title: task.title
-    });
+    const progress = this.getTaskProgressSnapshot(localPlayerState);
+    const completedTask = Boolean(
+      this.taskProgressInitialized
+      && localPlayerState
+      && task.visible
+      && (
+        progress.deliveryCompletionCount > this.lastTaskDeliveryCompletionCount
+        || (
+          progress.gymPumpCompletedAt > 0
+          && progress.gymPumpCompletedAt !== this.lastTaskGymPumpCompletedAt
+        )
+      )
+    );
+
+    if (completedTask) {
+      this.hud.playTaskCompletion({
+        visible: task.visible,
+        nextTitle: task.title
+      });
+    } else {
+      this.hud.setTaskState({
+        visible: task.visible,
+        title: task.title
+      });
+    }
+
+    this.taskProgressInitialized = Boolean(localPlayerState);
+    this.lastTaskDeliveryCompletionCount = progress.deliveryCompletionCount;
+    this.lastTaskGymPumpCompletedAt = progress.gymPumpCompletedAt;
 
     if (task.visible && task.target) {
       this.player?.setTaskArrowTarget?.(task.target);
@@ -4806,7 +4842,15 @@ export class Game {
       return;
     }
 
-    const occludedBuildingCount = this.worldBuilder.updateCameraOcclusion(this.camera, this.player.position);
+    const occludedBuildingCount = this.worldBuilder.updateCameraOcclusion(
+      this.camera,
+      this.player.position,
+      {
+        excludedPlacementIds: this.activeInlineShell?.placementId
+          ? [this.activeInlineShell.placementId]
+          : []
+      }
+    );
     this.setLocalPlayerCameraOcclusionRenderActive(occludedBuildingCount > 0);
   }
 

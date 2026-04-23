@@ -198,6 +198,7 @@ export class Hud {
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
     this.taskTitle = this.overlay.querySelector('[data-task-title]');
+    this.taskConfetti = this.overlay.querySelector('[data-task-confetti]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
@@ -287,6 +288,10 @@ export class Hud {
     this.joinTitleTimeout = 0;
     this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
+    this.taskCompleteTimeout = 0;
+    this.taskConfettiTimeout = 0;
+    this.taskTransitioning = false;
+    this.pendingTaskState = null;
     this.healthTrailFrame = 0;
     this.healthTrailTimeout = 0;
     this.healthHitTimeout = 0;
@@ -493,7 +498,10 @@ export class Hud {
         <span class="hud__money-value" data-money-value>$0</span>
       </section>
       <section class="hud__task" data-task aria-live="polite" hidden>
-        <p class="hud__task-title" data-task-title></p>
+        <div class="hud__task-viewport">
+          <p class="hud__task-title" data-task-title></p>
+        </div>
+        <div class="hud__task-confetti" data-task-confetti aria-hidden="true"></div>
       </section>
       <div class="hud__top-actions">
         <section class="hud__toast">
@@ -2326,10 +2334,80 @@ export class Hud {
 
     const nextTitle = String(title ?? '').trim();
     const nextVisible = Boolean(visible && nextTitle);
+    if (this.taskTransitioning) {
+      this.pendingTaskState = { visible: nextVisible, title: nextTitle };
+      return;
+    }
+
     this.taskRoot.hidden = !nextVisible;
     if (this.taskTitle.textContent !== nextTitle) {
       this.taskTitle.textContent = nextTitle;
     }
+  }
+
+  playTaskCompletion({ visible = true, nextTitle = '' } = {}) {
+    if (!this.taskRoot || !this.taskTitle) {
+      return;
+    }
+
+    const queuedTitle = String(nextTitle ?? '').trim();
+    const queuedState = {
+      visible: Boolean(visible && queuedTitle),
+      title: queuedTitle
+    };
+    const currentTitle = String(this.taskTitle.textContent ?? '').trim();
+    if (!currentTitle) {
+      this.setTaskState(queuedState);
+      return;
+    }
+
+    window.clearTimeout(this.taskCompleteTimeout);
+    this.taskTransitioning = true;
+    this.pendingTaskState = queuedState;
+    this.taskRoot.hidden = false;
+    this.taskRoot.classList.remove('is-completing');
+    this.spawnTaskConfetti();
+    void this.taskRoot.offsetWidth;
+    this.taskRoot.classList.add('is-completing');
+
+    this.taskCompleteTimeout = window.setTimeout(() => {
+      const finalState = this.pendingTaskState ?? queuedState;
+      this.taskTransitioning = false;
+      this.pendingTaskState = null;
+      this.taskRoot.classList.remove('is-completing');
+      this.setTaskState(finalState);
+    }, 760);
+  }
+
+  spawnTaskConfetti() {
+    if (!this.taskConfetti) {
+      return;
+    }
+
+    window.clearTimeout(this.taskConfettiTimeout);
+    this.taskConfetti.replaceChildren();
+    const colors = ['#ff4b9e', '#ff7b3d', '#ffd94d', '#66ef8d', '#38d3ff', '#ff52dd'];
+    for (let index = 0; index < 34; index += 1) {
+      const piece = document.createElement('span');
+      piece.className = 'hud__task-confetti-piece';
+      const direction = index % 2 === 0 ? -1 : 1;
+      const burstX = direction * (22 + ((index * 17) % 120));
+      const burstY = -18 - ((index * 11) % 58);
+      const fallX = burstX + (direction * (16 + ((index * 23) % 95)));
+      const fallY = `calc(${34 + ((index * 5) % 26)}vh + ${36 + ((index * 13) % 88)}px)`;
+      piece.style.setProperty('--confetti-burst-x', `${burstX}px`);
+      piece.style.setProperty('--confetti-burst-y', `${burstY}px`);
+      piece.style.setProperty('--confetti-fall-x', `${fallX}px`);
+      piece.style.setProperty('--confetti-fall-y', fallY);
+      piece.style.setProperty('--confetti-rot', `${direction * (260 + (index * 37) % 520)}deg`);
+      piece.style.setProperty('--confetti-delay', `${330 + ((index * 17) % 120)}ms`);
+      piece.style.setProperty('--confetti-color', colors[index % colors.length]);
+      this.taskConfetti.append(piece);
+    }
+
+    this.taskConfettiTimeout = window.setTimeout(() => {
+      this.taskConfetti?.replaceChildren();
+    }, 2900);
   }
 
   setZoomState({
