@@ -26,6 +26,7 @@ import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
   DELIVERY_QUEST_STATUS,
+  addDeliveryQuestRecentTargetId,
   getDeliveryQuestTargetCandidate,
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -149,6 +150,7 @@ const PlayerState = schema({
   deliveryQuestTargetNpcId: 'string',
   deliveryQuestAcceptedAt: 'number',
   deliveryQuestCompletedAt: 'number',
+  deliveryQuestRecentTargetNpcIds: 'string',
   deliveryQuestCompletionCount: 'number',
   gymPumpCompletedAt: 'number',
   characterId: 'string',
@@ -535,6 +537,7 @@ export class WorldRoom extends Room {
     player.deliveryQuestTargetNpcId = '';
     player.deliveryQuestAcceptedAt = 0;
     player.deliveryQuestCompletedAt = 0;
+    player.deliveryQuestRecentTargetNpcIds = '';
     player.deliveryQuestCompletionCount = 0;
     player.gymPumpCompletedAt = 0;
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
@@ -682,6 +685,7 @@ export class WorldRoom extends Room {
       targetNpcId: player.deliveryQuestTargetNpcId || '',
       acceptedAt: player.deliveryQuestAcceptedAt || 0,
       completedAt: player.deliveryQuestCompletedAt || 0,
+      recentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds || '',
       completionCount: player.deliveryQuestCompletionCount || 0,
       rewardAmount: DELIVERY_QUEST_REWARD_AMOUNT
     };
@@ -853,7 +857,9 @@ export class WorldRoom extends Room {
       };
     }
 
-    const target = getDeliveryQuestTargetCandidate(this.state.npcs, giverNpcId);
+    const target = getDeliveryQuestTargetCandidate(this.state.npcs, giverNpcId, {
+      recentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds
+    });
     if (!target) {
       throw new Error('There is nobody to deliver to yet.');
     }
@@ -908,6 +914,10 @@ export class WorldRoom extends Room {
 
     player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
     player.deliveryQuestCompletedAt = Date.now();
+    player.deliveryQuestRecentTargetNpcIds = addDeliveryQuestRecentTargetId(
+      player.deliveryQuestRecentTargetNpcIds,
+      targetNpcId
+    );
     player.deliveryQuestCompletionCount = Math.max(
       0,
       Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)

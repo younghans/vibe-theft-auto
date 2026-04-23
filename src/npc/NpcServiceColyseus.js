@@ -93,6 +93,7 @@ function clonePlayerState(player) {
     deliveryQuestTargetNpcId: player.deliveryQuestTargetNpcId || '',
     deliveryQuestAcceptedAt: player.deliveryQuestAcceptedAt ?? 0,
     deliveryQuestCompletedAt: player.deliveryQuestCompletedAt ?? 0,
+    deliveryQuestRecentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds || '',
     deliveryQuestCompletionCount: player.deliveryQuestCompletionCount ?? 0,
     gymPumpCompletedAt: player.gymPumpCompletedAt ?? 0,
     characterId: player.characterId || '',

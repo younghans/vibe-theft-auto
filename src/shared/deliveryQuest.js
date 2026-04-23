@@ -1,5 +1,6 @@
 export const DELIVERY_QUEST_ID = 'shady_delivery';
 export const DELIVERY_QUEST_REWARD_AMOUNT = 50;
+export const DELIVERY_QUEST_RECENT_TARGET_LIMIT = 2;
 
 export const DELIVERY_QUEST_STATUS = Object.freeze({
   inactive: 'inactive',
@@ -37,6 +38,45 @@ export function getNpcEntries(npcs = null) {
   return Object.entries(npcs);
 }
 
+function normalizeDeliveryQuestRecentTargetId(value = '') {
+  return String(value ?? '').trim();
+}
+
+export function parseDeliveryQuestRecentTargetIds(value = '') {
+  const rawIds = Array.isArray(value)
+    ? value
+    : String(value ?? '').split('|');
+  const ids = [];
+  const seen = new Set();
+
+  for (const rawId of rawIds) {
+    const id = normalizeDeliveryQuestRecentTargetId(rawId);
+    if (!id || seen.has(id)) {
+      continue;
+    }
+
+    ids.push(id);
+    seen.add(id);
+    if (ids.length >= DELIVERY_QUEST_RECENT_TARGET_LIMIT) {
+      break;
+    }
+  }
+
+  return ids;
+}
+
+export function serializeDeliveryQuestRecentTargetIds(value = []) {
+  return parseDeliveryQuestRecentTargetIds(value).join('|');
+}
+
+export function addDeliveryQuestRecentTargetId(value = '', npcId = '') {
+  const id = normalizeDeliveryQuestRecentTargetId(npcId);
+  const recentIds = parseDeliveryQuestRecentTargetIds(value)
+    .filter((recentId) => recentId !== id);
+
+  return serializeDeliveryQuestRecentTargetIds(id ? [id, ...recentIds] : recentIds);
+}
+
 export function isDeliveryQuestGiver(_npcId = '', npc = null) {
   return Boolean(
     npc?.deliveryQuestEnabled === true
@@ -61,7 +101,15 @@ export function getDeliveryQuestGiverCandidate(npcs = null) {
     ?? null;
 }
 
-export function getDeliveryQuestTargetCandidate(npcs = null, giverNpcId = '') {
+export function getDeliveryQuestTargetCandidate(npcs = null, giverNpcId = '', options = {}) {
+  const recentTargetValue = (
+    options
+    && typeof options === 'object'
+    && !Array.isArray(options)
+  )
+    ? (options.recentTargetNpcIds ?? options.recentTargetIds ?? '')
+    : options;
+  const recentTargetIds = new Set(parseDeliveryQuestRecentTargetIds(recentTargetValue));
   const entries = getNpcEntries(npcs)
     .map(([id, npc]) => ({ id: String(id), npc }))
     .filter(({ id, npc }) => (
@@ -73,7 +121,9 @@ export function getDeliveryQuestTargetCandidate(npcs = null, giverNpcId = '') {
     return null;
   }
 
-  return entries[Math.floor(Math.random() * entries.length)] ?? entries[0];
+  const candidates = entries.filter(({ id }) => !recentTargetIds.has(id));
+  const preferredEntries = candidates.length ? candidates : entries;
+  return preferredEntries[Math.floor(Math.random() * preferredEntries.length)] ?? preferredEntries[0];
 }
 
 export function getDeliveryQuestTargetName(targetNpc = null) {

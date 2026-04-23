@@ -22,6 +22,7 @@ import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
   DELIVERY_QUEST_STATUS,
+  addDeliveryQuestRecentTargetId,
   getDeliveryQuestTargetCandidate,
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -157,6 +158,7 @@ function createDefaultPlayerState(overrides = {}) {
     deliveryQuestTargetNpcId: '',
     deliveryQuestAcceptedAt: 0,
     deliveryQuestCompletedAt: 0,
+    deliveryQuestRecentTargetNpcIds: '',
     deliveryQuestCompletionCount: 0,
     gymPumpCompletedAt: 0,
     lastPunchAt: 0,
@@ -1004,6 +1006,7 @@ export class NpcServiceMock {
       targetNpcId: player.deliveryQuestTargetNpcId || '',
       acceptedAt: player.deliveryQuestAcceptedAt || 0,
       completedAt: player.deliveryQuestCompletedAt || 0,
+      recentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds || '',
       completionCount: player.deliveryQuestCompletionCount || 0,
       rewardAmount: DELIVERY_QUEST_REWARD_AMOUNT
     };
@@ -1175,7 +1178,9 @@ export class NpcServiceMock {
       };
     }
 
-    const target = getDeliveryQuestTargetCandidate(this.state.npcs, normalizedGiverNpcId);
+    const target = getDeliveryQuestTargetCandidate(this.state.npcs, normalizedGiverNpcId, {
+      recentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds
+    });
     if (!target) {
       return { ok: false, error: 'There is nobody to deliver to yet.' };
     }
@@ -1233,6 +1238,10 @@ export class NpcServiceMock {
     const now = Date.now();
     player.deliveryQuestStatus = DELIVERY_QUEST_STATUS.completed;
     player.deliveryQuestCompletedAt = now;
+    player.deliveryQuestRecentTargetNpcIds = addDeliveryQuestRecentTargetId(
+      player.deliveryQuestRecentTargetNpcIds,
+      normalizedTargetNpcId
+    );
     player.deliveryQuestCompletionCount = Math.max(
       0,
       Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)
