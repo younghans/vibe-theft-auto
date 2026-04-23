@@ -340,7 +340,6 @@ body.is-builder-resizing * {
 
 .hud__ammo {
   --ammo-size: 132px;
-  --ammo-loaded-ratio: 1;
   position: absolute;
   right: 24px;
   bottom: 24px;
@@ -356,45 +355,11 @@ body.is-builder-resizing * {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.18);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 240, 187, 0.16) 0 28%, transparent 29%),
-    conic-gradient(
-      from -90deg,
-      rgba(242, 200, 113, 0.54) calc(var(--ammo-loaded-ratio) * 1turn),
-      rgba(255, 255, 255, 0.08) 0
-    ),
-    radial-gradient(circle at 32% 20%, rgba(86, 199, 255, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(13, 18, 25, 0.94), rgba(29, 24, 18, 0.86));
-  box-shadow:
-    inset 0 0 0 5px rgba(4, 7, 12, 0.52),
-    inset 0 1px 12px rgba(255, 255, 255, 0.08),
-    0 0 0 1px rgba(0, 0, 0, 0.38);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   isolation: isolate;
-  overflow: hidden;
-}
-
-.hud__ammo-wheel::before,
-.hud__ammo-wheel::after {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.hud__ammo-wheel::before {
-  inset: 11px;
-  border: 1px dashed rgba(255, 234, 183, 0.16);
-  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.28);
-}
-
-.hud__ammo-wheel::after {
-  inset: 8px;
-  border: 2px solid transparent;
-  border-top-color: rgba(255, 222, 128, 0.95);
-  border-right-color: rgba(86, 199, 255, 0.46);
-  opacity: 0;
-  transform: rotate(0deg);
+  overflow: visible;
 }
 
 .hud__ammo-bullets {
@@ -477,13 +442,9 @@ body.is-builder-resizing * {
   align-content: center;
   gap: 2px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 236, 184, 0.32);
-  background:
-    radial-gradient(circle at 36% 20%, rgba(255, 255, 255, 0.16), transparent 34%),
-    linear-gradient(180deg, rgba(9, 13, 20, 0.96), rgba(26, 16, 10, 0.92));
-  box-shadow:
-    inset 0 3px 14px rgba(0, 0, 0, 0.48),
-    0 0 18px rgba(242, 200, 113, 0.18);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   z-index: 3;
 }
 
@@ -517,21 +478,8 @@ body.is-builder-resizing * {
   animation: hud-ammo-low-wobble 820ms ease-in-out infinite;
 }
 
-.hud__ammo.is-low .hud__ammo-core,
-.hud__ammo.is-empty .hud__ammo-core {
-  border-color: rgba(255, 111, 92, 0.58);
-  box-shadow:
-    inset 0 3px 14px rgba(0, 0, 0, 0.48),
-    0 0 18px rgba(255, 92, 72, 0.24);
-}
-
 .hud__ammo.is-empty .hud__ammo-reserve-value {
   color: #ffd2c8;
-}
-
-.hud__ammo.is-reloading .hud__ammo-wheel::after {
-  opacity: 1;
-  animation: hud-ammo-reload-spin 720ms linear infinite;
 }
 
 .hud__ammo.is-reloading .hud__ammo-reserve-label {
@@ -815,12 +763,6 @@ body.is-builder-resizing * {
 
   64% {
     transform: rotate(1deg);
-  }
-}
-
-@keyframes hud-ammo-reload-spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 
