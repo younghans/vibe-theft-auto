@@ -884,30 +884,29 @@ export class WorldRenderer {
       this.setPlacementCameraOccluded(rendered, true);
       this.cameraOccludedPlacementIds.add(placementId);
     }
+
+    return this.cameraOccludedPlacementIds.size;
   }
 
   clearCameraOcclusion() {
-    this.syncCameraOccludedPlacementIds(new Set());
+    return this.syncCameraOccludedPlacementIds(new Set());
   }
 
   updateCameraOcclusion(camera = this.camera, playerPosition = null) {
     if (!camera || !playerPosition || !this.tileRoot.visible) {
-      this.clearCameraOcclusion();
-      return;
+      return this.clearCameraOcclusion();
     }
 
     const baseX = playerPosition.x ?? 0;
     const baseY = playerPosition.y ?? 0;
     const baseZ = playerPosition.z ?? 0;
     if (!Number.isFinite(baseX) || !Number.isFinite(baseY) || !Number.isFinite(baseZ)) {
-      this.clearCameraOcclusion();
-      return;
+      return this.clearCameraOcclusion();
     }
 
     const candidates = this.getCameraOcclusionCandidates();
     if (!candidates.length) {
-      this.clearCameraOcclusion();
-      return;
+      return this.clearCameraOcclusion();
     }
 
     const nextOccludedPlacementIds = new Set();
@@ -952,7 +951,7 @@ export class WorldRenderer {
       }
     }
 
-    this.syncCameraOccludedPlacementIds(nextOccludedPlacementIds);
+    return this.syncCameraOccludedPlacementIds(nextOccludedPlacementIds);
   }
 
   updatePlacement(placement) {

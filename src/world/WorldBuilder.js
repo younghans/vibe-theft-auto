@@ -599,11 +599,11 @@ export class WorldBuilder {
   }
 
   updateCameraOcclusion(camera, playerPosition) {
-    this.worldRenderer.updateCameraOcclusion(camera, playerPosition);
+    return this.worldRenderer.updateCameraOcclusion(camera, playerPosition);
   }
 
   clearCameraOcclusion() {
-    this.worldRenderer.clearCameraOcclusion();
+    return this.worldRenderer.clearCameraOcclusion();
   }
 
   setVisible(visible) {

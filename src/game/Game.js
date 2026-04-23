@@ -96,6 +96,7 @@ const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
 const RENT_INTRO_MIN_TYPING_MS = 900;
 const RENT_INTRO_AFTER_LINE_DELAY_MS = 650;
 const RENT_INTRO_SPEECH_HOLD_MS = 1700;
+const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -171,6 +172,10 @@ function disposeObjectMaterials(root) {
   root?.traverse?.((node) => {
     disposeMaterial(node.material);
   });
+}
+
+function collectMaterialList(material) {
+  return Array.isArray(material) ? material.filter(Boolean) : [material].filter(Boolean);
 }
 
 function cloneVector3Like(point = { x: 0, y: 0, z: 0 }) {
@@ -319,6 +324,7 @@ export class Game {
     this.workoutBarbellAxis = new THREE.Vector3();
     this.workoutForward = new THREE.Vector3();
     this.workoutBarbellQuaternion = new THREE.Quaternion();
+    this.playerCameraOcclusionRenderState = null;
 
     this.hud.bindInteractionEvents({
       onAction: () => {},
@@ -4493,17 +4499,92 @@ export class Game {
     this.worldBuilder.syncNpcInteractRadiusIndicators(this.player.position);
   }
 
+  clearLocalPlayerCameraOcclusionRenderState() {
+    const state = this.playerCameraOcclusionRenderState;
+    if (!state) {
+      return;
+    }
+
+    for (const entry of state.entries) {
+      if (entry.type === 'object') {
+        entry.object.renderOrder = entry.renderOrder;
+        continue;
+      }
+
+      entry.material.transparent = entry.transparent;
+      entry.material.depthWrite = entry.depthWrite;
+      entry.material.needsUpdate = true;
+    }
+
+    this.playerCameraOcclusionRenderState = null;
+  }
+
+  setLocalPlayerCameraOcclusionRenderActive(active) {
+    const playerObject = this.player?.object ?? null;
+    if (!active || !playerObject) {
+      this.clearLocalPlayerCameraOcclusionRenderState();
+      return;
+    }
+
+    if (this.playerCameraOcclusionRenderState?.object !== playerObject) {
+      this.clearLocalPlayerCameraOcclusionRenderState();
+    }
+
+    if (!this.playerCameraOcclusionRenderState) {
+      const entries = [];
+      playerObject.traverse((node) => {
+        if (!node.isMesh) {
+          return;
+        }
+
+        entries.push({
+          type: 'object',
+          object: node,
+          renderOrder: node.renderOrder
+        });
+
+        for (const material of collectMaterialList(node.material)) {
+          entries.push({
+            type: 'material',
+            material,
+            transparent: material.transparent,
+            depthWrite: material.depthWrite
+          });
+        }
+      });
+
+      this.playerCameraOcclusionRenderState = {
+        object: playerObject,
+        entries
+      };
+    }
+
+    for (const entry of this.playerCameraOcclusionRenderState.entries) {
+      if (entry.type === 'object') {
+        entry.object.renderOrder = CAMERA_OCCLUDED_PLAYER_RENDER_ORDER;
+        continue;
+      }
+
+      entry.material.transparent = true;
+      entry.material.depthWrite = entry.depthWrite;
+      entry.material.needsUpdate = true;
+    }
+  }
+
   updateCameraOcclusion() {
     if (!this.worldBuilder) {
+      this.setLocalPlayerCameraOcclusionRenderActive(false);
       return;
     }
 
     if (!this.player || this.worldBuilder.enabled || this.currentInterior?.scene) {
       this.worldBuilder.clearCameraOcclusion();
+      this.setLocalPlayerCameraOcclusionRenderActive(false);
       return;
     }
 
-    this.worldBuilder.updateCameraOcclusion(this.camera, this.player.position);
+    const occludedBuildingCount = this.worldBuilder.updateCameraOcclusion(this.camera, this.player.position);
+    this.setLocalPlayerCameraOcclusionRenderActive(occludedBuildingCount > 0);
   }
 
   updateInteraction() {
