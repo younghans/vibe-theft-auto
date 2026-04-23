@@ -430,30 +430,13 @@ body.is-builder-resizing * {
   animation: hud-task-slot-rise 760ms steps(6, end) forwards;
 }
 
-.hud__task-confetti {
+.hud__task-confetti-canvas {
   position: absolute;
-  left: 50%;
-  top: 52%;
-  width: 0;
-  height: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  z-index: 2;
-}
-
-.hud__task-confetti-piece {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 7px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--confetti-color, #ffd94d);
-  opacity: 0;
-  transform: translate(-50%, -50%) rotate(0deg);
-}
-
-.hud__task.is-completing .hud__task-confetti-piece {
-  animation: hud-task-confetti-burst 1.95s cubic-bezier(0.16, 0.72, 0.18, 1) var(--confetti-delay, 340ms) forwards;
+  z-index: 8;
 }
 
 @keyframes hud-task-slot-rise {
@@ -493,43 +476,6 @@ body.is-builder-resizing * {
   58% {
     transform: translateX(var(--task-panel-x)) translateY(1px);
     filter: brightness(1.04);
-  }
-}
-
-@keyframes hud-task-confetti-burst {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) rotate(0deg) scale(0.2);
-  }
-
-  8% {
-    opacity: 1;
-  }
-
-  24% {
-    opacity: 1;
-    transform:
-      translate(
-        calc(-50% + var(--confetti-burst-x, 40px)),
-        calc(-50% + var(--confetti-burst-y, -42px))
-      )
-      rotate(calc(var(--confetti-rot, 240deg) * 0.28))
-      scale(1);
-  }
-
-  72% {
-    opacity: 0.86;
-  }
-
-  100% {
-    opacity: 0;
-    transform:
-      translate(
-        calc(-50% + var(--confetti-fall-x, 72px)),
-        var(--confetti-fall-y, 46vh)
-      )
-      rotate(var(--confetti-rot, 240deg))
-      scale(0.82);
   }
 }
 

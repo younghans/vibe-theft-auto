@@ -289,7 +289,9 @@ export class Hud {
     this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
     this.taskCompleteTimeout = 0;
-    this.taskConfettiTimeout = 0;
+    this.taskConfettiFrame = 0;
+    this.taskConfettiLastFrameAt = 0;
+    this.taskConfettiParticles = [];
     this.taskTransitioning = false;
     this.pendingTaskState = null;
     this.healthTrailFrame = 0;
@@ -501,8 +503,8 @@ export class Hud {
         <div class="hud__task-viewport">
           <p class="hud__task-title" data-task-title></p>
         </div>
-        <div class="hud__task-confetti" data-task-confetti aria-hidden="true"></div>
       </section>
+      <canvas class="hud__task-confetti-canvas" data-task-confetti aria-hidden="true"></canvas>
       <div class="hud__top-actions">
         <section class="hud__toast">
           <p class="hud__toast-text" data-toast></p>
@@ -2380,34 +2382,145 @@ export class Hud {
   }
 
   spawnTaskConfetti() {
-    if (!this.taskConfetti) {
+    if (!this.taskConfetti?.getContext) {
       return;
     }
 
-    window.clearTimeout(this.taskConfettiTimeout);
-    this.taskConfetti.replaceChildren();
-    const colors = ['#ff4b9e', '#ff7b3d', '#ffd94d', '#66ef8d', '#38d3ff', '#ff52dd'];
-    for (let index = 0; index < 34; index += 1) {
-      const piece = document.createElement('span');
-      piece.className = 'hud__task-confetti-piece';
+    const taskRect = this.taskRoot?.getBoundingClientRect?.();
+    const originX = taskRect ? taskRect.left + (taskRect.width * 0.5) : window.innerWidth * 0.5;
+    const originY = taskRect ? taskRect.top + (taskRect.height * 0.54) : 72;
+    const colors = [
+      '#ff3d8f',
+      '#ff6a2a',
+      '#ffd84f',
+      '#61ef8a',
+      '#38d3ff',
+      '#9c6bff',
+      '#ffffff'
+    ];
+    const now = performance.now();
+    const count = 190;
+
+    this.ensureTaskConfettiCanvasSize();
+    for (let index = 0; index < count; index += 1) {
       const direction = index % 2 === 0 ? -1 : 1;
-      const burstX = direction * (22 + ((index * 17) % 120));
-      const burstY = -18 - ((index * 11) % 58);
-      const fallX = burstX + (direction * (16 + ((index * 23) % 95)));
-      const fallY = `calc(${34 + ((index * 5) % 26)}vh + ${36 + ((index * 13) % 88)}px)`;
-      piece.style.setProperty('--confetti-burst-x', `${burstX}px`);
-      piece.style.setProperty('--confetti-burst-y', `${burstY}px`);
-      piece.style.setProperty('--confetti-fall-x', `${fallX}px`);
-      piece.style.setProperty('--confetti-fall-y', fallY);
-      piece.style.setProperty('--confetti-rot', `${direction * (260 + (index * 37) % 520)}deg`);
-      piece.style.setProperty('--confetti-delay', `${330 + ((index * 17) % 120)}ms`);
-      piece.style.setProperty('--confetti-color', colors[index % colors.length]);
-      this.taskConfetti.append(piece);
+      const cone = (-Math.PI * 0.5) + ((Math.random() - 0.5) * Math.PI * 1.28);
+      const speed = 420 + (Math.random() * 980);
+      const wideKick = (Math.random() - 0.5) * 420;
+      const size = 5 + (Math.random() * 10);
+      this.taskConfettiParticles.push({
+        x: originX + ((Math.random() - 0.5) * Math.min(taskRect?.width ?? 220, 280)),
+        y: originY + ((Math.random() - 0.5) * 12),
+        vx: (Math.cos(cone) * speed) + wideKick,
+        vy: (Math.sin(cone) * speed) - (Math.random() * 220),
+        gravity: 920 + (Math.random() * 520),
+        drag: 0.982 + (Math.random() * 0.012),
+        sway: 28 + (Math.random() * 95),
+        flutterPhase: Math.random() * Math.PI * 2,
+        flutterSpeed: 4 + (Math.random() * 8),
+        width: size * (0.75 + Math.random() * 0.85),
+        height: size * (1.1 + Math.random() * 1.6),
+        color: colors[index % colors.length],
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: direction * (5 + (Math.random() * 18)),
+        flipSpeed: 5 + (Math.random() * 10),
+        bornAt: now,
+        lifetime: 2200 + (Math.random() * 1300),
+        opacity: 0.76 + (Math.random() * 0.24),
+        shape: index % 13 === 0 ? 'circle' : (index % 5 === 0 ? 'streamer' : 'rect')
+      });
     }
 
-    this.taskConfettiTimeout = window.setTimeout(() => {
-      this.taskConfetti?.replaceChildren();
-    }, 2900);
+    if (!this.taskConfettiFrame) {
+      this.taskConfettiLastFrameAt = now;
+      this.taskConfettiFrame = window.requestAnimationFrame((time) => this.updateTaskConfetti(time));
+    }
+  }
+
+  ensureTaskConfettiCanvasSize() {
+    const canvas = this.taskConfetti;
+    if (!canvas?.getContext) {
+      return null;
+    }
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const pixelWidth = Math.ceil(width * dpr);
+    const pixelHeight = Math.ceil(height * dpr);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+
+    const context = canvas.getContext('2d');
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { context, width, height };
+  }
+
+  updateTaskConfetti(frameAt = performance.now()) {
+    const canvasState = this.ensureTaskConfettiCanvasSize();
+    if (!canvasState) {
+      this.taskConfettiFrame = 0;
+      this.taskConfettiParticles = [];
+      return;
+    }
+
+    const { context, width, height } = canvasState;
+    const deltaSeconds = Math.min(
+      0.034,
+      Math.max(0.001, (frameAt - this.taskConfettiLastFrameAt) / 1000 || 0.016)
+    );
+    this.taskConfettiLastFrameAt = frameAt;
+    context.clearRect(0, 0, width, height);
+
+    const activeParticles = [];
+    for (const particle of this.taskConfettiParticles) {
+      const age = frameAt - particle.bornAt;
+      if (age >= particle.lifetime || particle.y > height + 120) {
+        continue;
+      }
+
+      const drag = Math.pow(particle.drag, deltaSeconds * 60);
+      particle.vx *= drag;
+      particle.vy = (particle.vy * drag) + (particle.gravity * deltaSeconds);
+      const flutter = Math.sin(particle.flutterPhase + (age * particle.flutterSpeed * 0.01)) * particle.sway;
+      particle.x += (particle.vx + flutter) * deltaSeconds;
+      particle.y += particle.vy * deltaSeconds;
+      particle.rotation += particle.rotationSpeed * deltaSeconds;
+
+      const fadeIn = Math.min(1, age / 90);
+      const fadeOut = Math.min(1, (particle.lifetime - age) / 760);
+      const alpha = particle.opacity * fadeIn * fadeOut;
+      const flip = Math.max(0.16, Math.abs(Math.cos(age * particle.flipSpeed * 0.006)));
+
+      context.save();
+      context.globalAlpha = alpha;
+      context.translate(particle.x, particle.y);
+      context.rotate(particle.rotation);
+      context.scale(flip, 1);
+      context.fillStyle = particle.color;
+      if (particle.shape === 'circle') {
+        context.beginPath();
+        context.arc(0, 0, particle.width * 0.58, 0, Math.PI * 2);
+        context.fill();
+      } else if (particle.shape === 'streamer') {
+        context.fillRect(-particle.width * 0.35, -particle.height * 1.05, particle.width * 0.7, particle.height * 2.1);
+      } else {
+        context.fillRect(-particle.width * 0.5, -particle.height * 0.5, particle.width, particle.height);
+      }
+      context.restore();
+
+      activeParticles.push(particle);
+    }
+
+    this.taskConfettiParticles = activeParticles;
+    if (activeParticles.length) {
+      this.taskConfettiFrame = window.requestAnimationFrame((time) => this.updateTaskConfetti(time));
+    } else {
+      context.clearRect(0, 0, width, height);
+      this.taskConfettiFrame = 0;
+    }
   }
 
   setZoomState({
