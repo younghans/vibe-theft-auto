@@ -1,6 +1,25 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 
+const TASK_CONFETTI_COLORS = Object.freeze([
+  '#ff3d8f',
+  '#ff6a2a',
+  '#ffd84f',
+  '#61ef8a',
+  '#38d3ff',
+  '#9c6bff',
+  '#ffffff'
+]);
+const TASK_CONFETTI_PARTICLE_COUNT = 190;
+const TASK_CONFETTI_DPR_CAP = 2;
+const TASK_CONFETTI_MAX_DELTA_SECONDS = 0.034;
+const TASK_CONFETTI_CANVAS_BOTTOM_PADDING = 120;
+const TASK_CONFETTI_FADE_IN_MS = 90;
+const TASK_CONFETTI_FADE_OUT_MS = 760;
+const TASK_CONFETTI_DEFAULT_ORIGIN_Y = 72;
+const TASK_CONFETTI_ORIGIN_SPREAD_MAX = 280;
+const TASK_CONFETTI_UPWARD_CONE_RADIANS = Math.PI * 1.28;
+
 const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
   Object.freeze({
     key: 'punchAimYawOffset',
@@ -33,6 +52,48 @@ function formatMoneyAmount(value) {
   const amount = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
   const formattedAmount = Math.abs(amount).toLocaleString('en-US');
   return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
+}
+
+function randomBetween(min, max) {
+  return min + (Math.random() * (max - min));
+}
+
+function getTaskConfettiShape(index) {
+  if (index % 13 === 0) {
+    return 'circle';
+  }
+
+  return index % 5 === 0 ? 'streamer' : 'rect';
+}
+
+function createTaskConfettiParticle({ index, now, originX, originY, originSpread }) {
+  const direction = index % 2 === 0 ? -1 : 1;
+  const cone = (-Math.PI * 0.5) + ((Math.random() - 0.5) * TASK_CONFETTI_UPWARD_CONE_RADIANS);
+  const speed = randomBetween(420, 1400);
+  const wideKick = randomBetween(-210, 210);
+  const size = randomBetween(5, 15);
+
+  return {
+    x: originX + randomBetween(-originSpread * 0.5, originSpread * 0.5),
+    y: originY + randomBetween(-6, 6),
+    vx: (Math.cos(cone) * speed) + wideKick,
+    vy: (Math.sin(cone) * speed) - randomBetween(0, 220),
+    gravity: randomBetween(920, 1440),
+    drag: randomBetween(0.982, 0.994),
+    sway: randomBetween(28, 123),
+    flutterPhase: Math.random() * Math.PI * 2,
+    flutterSpeed: randomBetween(4, 12),
+    width: size * randomBetween(0.75, 1.6),
+    height: size * randomBetween(1.1, 2.7),
+    color: TASK_CONFETTI_COLORS[index % TASK_CONFETTI_COLORS.length],
+    rotation: Math.random() * Math.PI * 2,
+    rotationSpeed: direction * randomBetween(5, 23),
+    flipSpeed: randomBetween(5, 15),
+    bornAt: now,
+    lifetime: randomBetween(2200, 3500),
+    opacity: randomBetween(0.76, 1),
+    shape: getTaskConfettiShape(index)
+  };
 }
 
 function escapeHtml(value) {
@@ -2388,47 +2449,19 @@ export class Hud {
 
     const taskRect = this.taskRoot?.getBoundingClientRect?.();
     const originX = taskRect ? taskRect.left + (taskRect.width * 0.5) : window.innerWidth * 0.5;
-    const originY = taskRect ? taskRect.top + (taskRect.height * 0.54) : 72;
-    const colors = [
-      '#ff3d8f',
-      '#ff6a2a',
-      '#ffd84f',
-      '#61ef8a',
-      '#38d3ff',
-      '#9c6bff',
-      '#ffffff'
-    ];
+    const originY = taskRect ? taskRect.top + (taskRect.height * 0.54) : TASK_CONFETTI_DEFAULT_ORIGIN_Y;
+    const originSpread = Math.min(taskRect?.width ?? 220, TASK_CONFETTI_ORIGIN_SPREAD_MAX);
     const now = performance.now();
-    const count = 190;
 
     this.ensureTaskConfettiCanvasSize();
-    for (let index = 0; index < count; index += 1) {
-      const direction = index % 2 === 0 ? -1 : 1;
-      const cone = (-Math.PI * 0.5) + ((Math.random() - 0.5) * Math.PI * 1.28);
-      const speed = 420 + (Math.random() * 980);
-      const wideKick = (Math.random() - 0.5) * 420;
-      const size = 5 + (Math.random() * 10);
-      this.taskConfettiParticles.push({
-        x: originX + ((Math.random() - 0.5) * Math.min(taskRect?.width ?? 220, 280)),
-        y: originY + ((Math.random() - 0.5) * 12),
-        vx: (Math.cos(cone) * speed) + wideKick,
-        vy: (Math.sin(cone) * speed) - (Math.random() * 220),
-        gravity: 920 + (Math.random() * 520),
-        drag: 0.982 + (Math.random() * 0.012),
-        sway: 28 + (Math.random() * 95),
-        flutterPhase: Math.random() * Math.PI * 2,
-        flutterSpeed: 4 + (Math.random() * 8),
-        width: size * (0.75 + Math.random() * 0.85),
-        height: size * (1.1 + Math.random() * 1.6),
-        color: colors[index % colors.length],
-        rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: direction * (5 + (Math.random() * 18)),
-        flipSpeed: 5 + (Math.random() * 10),
-        bornAt: now,
-        lifetime: 2200 + (Math.random() * 1300),
-        opacity: 0.76 + (Math.random() * 0.24),
-        shape: index % 13 === 0 ? 'circle' : (index % 5 === 0 ? 'streamer' : 'rect')
-      });
+    for (let index = 0; index < TASK_CONFETTI_PARTICLE_COUNT; index += 1) {
+      this.taskConfettiParticles.push(createTaskConfettiParticle({
+        index,
+        now,
+        originX,
+        originY,
+        originSpread
+      }));
     }
 
     if (!this.taskConfettiFrame) {
@@ -2443,7 +2476,7 @@ export class Hud {
       return null;
     }
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, TASK_CONFETTI_DPR_CAP);
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
     const pixelWidth = Math.ceil(width * dpr);
@@ -2468,7 +2501,7 @@ export class Hud {
 
     const { context, width, height } = canvasState;
     const deltaSeconds = Math.min(
-      0.034,
+      TASK_CONFETTI_MAX_DELTA_SECONDS,
       Math.max(0.001, (frameAt - this.taskConfettiLastFrameAt) / 1000 || 0.016)
     );
     this.taskConfettiLastFrameAt = frameAt;
@@ -2477,7 +2510,7 @@ export class Hud {
     const activeParticles = [];
     for (const particle of this.taskConfettiParticles) {
       const age = frameAt - particle.bornAt;
-      if (age >= particle.lifetime || particle.y > height + 120) {
+      if (age >= particle.lifetime || particle.y > height + TASK_CONFETTI_CANVAS_BOTTOM_PADDING) {
         continue;
       }
 
@@ -2489,8 +2522,8 @@ export class Hud {
       particle.y += particle.vy * deltaSeconds;
       particle.rotation += particle.rotationSpeed * deltaSeconds;
 
-      const fadeIn = Math.min(1, age / 90);
-      const fadeOut = Math.min(1, (particle.lifetime - age) / 760);
+      const fadeIn = Math.min(1, age / TASK_CONFETTI_FADE_IN_MS);
+      const fadeOut = Math.min(1, (particle.lifetime - age) / TASK_CONFETTI_FADE_OUT_MS);
       const alpha = particle.opacity * fadeIn * fadeOut;
       const flip = Math.max(0.16, Math.abs(Math.cos(age * particle.flipSpeed * 0.006)));
 

@@ -71,6 +71,11 @@ const PROJECTILE_MIN_LIFETIME_MS = 120;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
+const TASK_IDS = Object.freeze({
+  delivery: 'delivery',
+  gymPump: 'gym-pump',
+  makeMoney: 'make-money'
+});
 const MAKE_MONEY_TASK_TITLE = 'Make some money. Maybe the Shady Figure can help';
 const GYM_PUMP_TASK_TITLE = 'Go get a pump in the gym';
 const DAMAGE_CAMERA_KICK_MS = 260;
@@ -280,6 +285,7 @@ export class Game {
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
     this.taskProgressInitialized = false;
+    this.currentTaskId = '';
     this.lastTaskDeliveryCompletionCount = 0;
     this.lastTaskGymPumpCompletedAt = 0;
     this.gymMembershipRequestInFlight = false;
@@ -1909,13 +1915,14 @@ export class Game {
 
   resolveCurrentTask(localPlayerState = null) {
     if (!localPlayerState || !this.isTaskIntroReady(localPlayerState)) {
-      return { visible: false, title: '', target: null };
+      return { id: '', visible: false, title: '', target: null };
     }
 
     if (isDeliveryQuestActive(localPlayerState)) {
       const targetNpcId = localPlayerState.deliveryQuestTargetNpcId;
       const targetName = getDeliveryQuestTargetName(this.npcServiceState.npcs.get(targetNpcId));
       return {
+        id: TASK_IDS.delivery,
         visible: true,
         title: `Deliver the package to ${targetName}`,
         target: this.getNpcTaskTarget(targetNpcId)
@@ -1926,6 +1933,7 @@ export class Game {
     const gymPumpCompleted = Number(localPlayerState.gymPumpCompletedAt ?? 0) > 0;
     if (completedFirstDelivery && !gymPumpCompleted) {
       return {
+        id: TASK_IDS.gymPump,
         visible: true,
         title: GYM_PUMP_TASK_TITLE,
         target: this.getGymTaskTarget()
@@ -1933,26 +1941,37 @@ export class Game {
     }
 
     return {
+      id: TASK_IDS.makeMoney,
       visible: true,
       title: MAKE_MONEY_TASK_TITLE,
       target: this.getDeliveryQuestGiverTaskTarget()
     };
   }
 
+  didCurrentTaskComplete(previousTaskId = '', progress = {}) {
+    if (previousTaskId === TASK_IDS.delivery) {
+      return progress.deliveryCompletionCount > this.lastTaskDeliveryCompletionCount;
+    }
+
+    if (previousTaskId === TASK_IDS.gymPump) {
+      return (
+        progress.gymPumpCompletedAt > 0
+        && progress.gymPumpCompletedAt !== this.lastTaskGymPumpCompletedAt
+      );
+    }
+
+    return false;
+  }
+
   syncTaskHud(localPlayerState = null) {
     const task = this.resolveCurrentTask(localPlayerState);
     const progress = this.getTaskProgressSnapshot(localPlayerState);
+    const previousTaskId = this.currentTaskId;
     const completedTask = Boolean(
       this.taskProgressInitialized
       && localPlayerState
       && task.visible
-      && (
-        progress.deliveryCompletionCount > this.lastTaskDeliveryCompletionCount
-        || (
-          progress.gymPumpCompletedAt > 0
-          && progress.gymPumpCompletedAt !== this.lastTaskGymPumpCompletedAt
-        )
-      )
+      && this.didCurrentTaskComplete(previousTaskId, progress)
     );
 
     if (completedTask) {
@@ -1968,6 +1987,7 @@ export class Game {
     }
 
     this.taskProgressInitialized = Boolean(localPlayerState);
+    this.currentTaskId = task.visible ? task.id : '';
     this.lastTaskDeliveryCompletionCount = progress.deliveryCompletionCount;
     this.lastTaskGymPumpCompletedAt = progress.gymPumpCompletedAt;
 
