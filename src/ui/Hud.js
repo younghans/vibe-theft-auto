@@ -20,6 +20,10 @@ const TASK_CONFETTI_FADE_OUT_MS = 760;
 const TASK_CONFETTI_DEFAULT_ORIGIN_Y = 72;
 const TASK_CONFETTI_ORIGIN_SPREAD_MAX = 280;
 const TASK_CONFETTI_UPWARD_CONE_RADIANS = Math.PI * 1.28;
+const AMMO_BULLET_RING_RADIUS_PERCENT = 37;
+const AMMO_BULLET_STAGGER_MS = 18;
+const AMMO_BULLET_MAX_STAGGER_MS = 180;
+const AMMO_LOW_CLIP_RATIO = 0.28;
 
 const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
   Object.freeze({
@@ -371,6 +375,7 @@ export class Hud {
     this.healthHitTimeout = 0;
     this.lastCombatHealthPercent = null;
     this.lastAmmoClipSize = 0;
+    this.lastAmmoSignature = '';
     this.lastInteractionState = null;
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
@@ -2347,10 +2352,13 @@ export class Hud {
       const angleDegrees = ((angle * 180) / Math.PI) + 90;
       bullet.className = 'hud__ammo-bullet';
       bullet.setAttribute('aria-hidden', 'true');
-      bullet.style.setProperty('--ammo-x', `${Math.cos(angle) * 37}%`);
-      bullet.style.setProperty('--ammo-y', `${Math.sin(angle) * 37}%`);
+      bullet.style.setProperty('--ammo-x', `${Math.cos(angle) * AMMO_BULLET_RING_RADIUS_PERCENT}%`);
+      bullet.style.setProperty('--ammo-y', `${Math.sin(angle) * AMMO_BULLET_RING_RADIUS_PERCENT}%`);
       bullet.style.setProperty('--ammo-tilt', `${angleDegrees}deg`);
-      bullet.style.setProperty('--ammo-delay', `${Math.min(index * 18, 180)}ms`);
+      bullet.style.setProperty(
+        '--ammo-delay',
+        `${Math.min(index * AMMO_BULLET_STAGGER_MS, AMMO_BULLET_MAX_STAGGER_MS)}ms`
+      );
       this.ammoBullets.append(bullet);
     }
 
@@ -2371,11 +2379,9 @@ export class Hud {
     const safeClipSize = Math.max(0, Math.trunc(Number(clipSize) || WEAPON_CLIP_SIZE));
     if (!visible || safeClipSize <= 0) {
       this.ammoRoot.hidden = true;
+      this.ammoRoot.classList.remove('is-empty', 'is-low', 'is-reloading');
+      this.lastAmmoSignature = '';
       return;
-    }
-
-    if (this.lastAmmoClipSize !== safeClipSize) {
-      this.rebuildAmmoBullets(safeClipSize);
     }
 
     const loadedAmmo = Math.max(
@@ -2385,13 +2391,25 @@ export class Hud {
     const reserve = Math.max(0, Math.trunc(Number(reserveAmmo) || 0));
     const loadedRatio = safeClipSize > 0 ? loadedAmmo / safeClipSize : 0;
     const isReloadingNow = Boolean(isReloading);
+    const signature = [
+      safeClipSize,
+      loadedAmmo,
+      reserve,
+      isReloadingNow ? 1 : 0
+    ].join('|');
+
+    if (this.lastAmmoSignature === signature && this.ammoRoot.hidden === false) {
+      return;
+    }
+
+    if (this.lastAmmoClipSize !== safeClipSize) {
+      this.rebuildAmmoBullets(safeClipSize);
+    }
 
     this.ammoRoot.hidden = false;
     this.ammoRoot.classList.toggle('is-empty', loadedAmmo <= 0);
-    this.ammoRoot.classList.toggle('is-full', loadedAmmo >= safeClipSize);
-    this.ammoRoot.classList.toggle('is-low', loadedAmmo > 0 && loadedRatio <= 0.28);
+    this.ammoRoot.classList.toggle('is-low', loadedAmmo > 0 && loadedRatio <= AMMO_LOW_CLIP_RATIO);
     this.ammoRoot.classList.toggle('is-reloading', isReloadingNow);
-    this.ammoRoot.style.setProperty('--ammo-loaded-ratio', `${loadedRatio}`);
     this.ammoRoot.setAttribute(
       'aria-label',
       `Pistol ammo: ${loadedAmmo} in magazine, ${reserve} reserve`
@@ -2412,6 +2430,7 @@ export class Hud {
       bullet.classList.toggle('is-spent', !loaded);
       bullet.classList.toggle('is-next', loaded && index === loadedAmmo - 1);
     });
+    this.lastAmmoSignature = signature;
   }
 
   setCombatState({
