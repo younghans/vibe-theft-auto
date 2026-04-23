@@ -14,7 +14,7 @@ export const TASK_IDS = Object.freeze({
   makeMoney: 'make-money'
 });
 
-const MAKE_MONEY_TASK_TITLE = '💵 Make some money. Maybe the Shadyfigure can help?';
+const MAKE_MONEY_TASK_TITLE = '💵 Make some money. Maybe the Shady Figure can help?';
 const GYM_PUMP_TASK_TITLE = '💪 Go get a pump in the gym.';
 
 function getGroundHeight(context, value) {
