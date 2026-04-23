@@ -9,6 +9,7 @@ import { distance2D } from '../shared/combatMath.js';
 import {
   NPC_COMBAT_ARCHETYPES,
   NPC_DEFAULT_CALM_MS,
+  NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_IDLE_MAX_MS,
   NPC_DEFAULT_IDLE_MIN_MS,
   NPC_DEFAULT_MAX_HEALTH,
@@ -94,6 +95,13 @@ function smoothstep(value) {
 
 function cloneDebugPath(points = []) {
   return points.map((point) => clonePoint(point)).filter(Boolean);
+}
+
+function getNpcInteractionRadius(npc) {
+  return Math.max(
+    1.5,
+    Number(npc?.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS) || NPC_DEFAULT_INTERACT_RADIUS
+  );
 }
 
 function getDefinitionStore(host) {
@@ -712,6 +720,69 @@ export const npcSimulationMethods = {
     return stopDistance + (anticipation * turnAmount * 1.8);
   },
 
+  findNearestNpcInteractionPlayer(npc) {
+    if (!npc || typeof this.state?.players?.entries !== 'function') {
+      return null;
+    }
+
+    const radius = getNpcInteractionRadius(npc);
+    let nearestPlayer = null;
+    let nearestDistance = Infinity;
+
+    for (const [playerId, player] of this.state.players.entries()) {
+      if (!player || player.alive === false) {
+        continue;
+      }
+
+      const distance = distance2D(npc.x, npc.z, player.x, player.z);
+      if (distance > radius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearestPlayer = {
+        id: playerId,
+        player,
+        distance
+      };
+      nearestDistance = distance;
+    }
+
+    return nearestPlayer;
+  },
+
+  faceNpcTowardPosition(npc, targetPosition) {
+    if (!npc || !Number.isFinite(targetPosition?.x) || !Number.isFinite(targetPosition?.z)) {
+      return false;
+    }
+
+    const deltaX = targetPosition.x - npc.x;
+    const deltaZ = targetPosition.z - npc.z;
+    if (Math.hypot(deltaX, deltaZ) <= 0.0001) {
+      return false;
+    }
+
+    const nextRotationY = quantizeRotation(Math.atan2(deltaX, deltaZ));
+    const changed = npc.rotationY !== nextRotationY;
+    npc.rotationY = nextRotationY;
+    npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    return changed;
+  },
+
+  updateNpcInteractionPause(npc) {
+    if (!npc || npc.mode !== NPC_RUNTIME_MODES.routine) {
+      return false;
+    }
+
+    const nearbyPlayer = this.findNearestNpcInteractionPlayer(npc);
+    if (!nearbyPlayer?.player) {
+      return false;
+    }
+
+    npc.activity = '';
+    this.faceNpcTowardPosition(npc, nearbyPlayer.player);
+    return true;
+  },
+
   pickNpcWanderPoint(anchorPosition, radius = 6, npcId = '') {
     const angleSeed = (Date.now() / 1000) + npcId.length;
     const angle = angleSeed % (Math.PI * 2);
@@ -1020,14 +1091,16 @@ export const npcSimulationMethods = {
         continue;
       }
 
-      const before = `${npc.x}|${npc.z}|${npc.mode}|${npc.currentStepIndex}|${npc.targetPlacementId}|${npc.activity}|${npc.hiddenUntil}`;
+      const before = `${npc.x}|${npc.z}|${npc.rotationY}|${npc.mode}|${npc.currentStepIndex}|${npc.targetPlacementId}|${npc.activity}|${npc.hiddenUntil}`;
       if (npc.mode === NPC_RUNTIME_MODES.combat || npc.mode === NPC_RUNTIME_MODES.flee) {
         changed = this.updateNpcCombatBehavior(npcId, npc, definition, now, deltaMs) || changed;
+      } else if (this.updateNpcInteractionPause(npc)) {
+        // Routine is intentionally paused while a nearby player can interact.
       } else {
         changed = this.updateNpcRoutine(npcId, npc, definition, now, deltaMs) || changed;
       }
       this.syncNpcDerivedState?.(npc);
-      const after = `${npc.x}|${npc.z}|${npc.mode}|${npc.currentStepIndex}|${npc.targetPlacementId}|${npc.activity}|${npc.hiddenUntil}`;
+      const after = `${npc.x}|${npc.z}|${npc.rotationY}|${npc.mode}|${npc.currentStepIndex}|${npc.targetPlacementId}|${npc.activity}|${npc.hiddenUntil}`;
       changed = changed || before !== after;
     }
 
