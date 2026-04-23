@@ -283,28 +283,19 @@ function createPlayerIndicator({ color = 0xf2c871, opacity = 0.85 } = {}) {
   return ring;
 }
 
-function createPlayerTaskArrow() {
+function createPlayerTaskArrow(material) {
   const shape = new THREE.Shape();
-  shape.moveTo(0, -2.62);
-  shape.lineTo(0.5, -1.72);
-  shape.lineTo(0.18, -1.78);
-  shape.lineTo(0, -1.36);
-  shape.lineTo(-0.18, -1.78);
-  shape.lineTo(-0.5, -1.72);
+  shape.moveTo(0, -2.78);
+  shape.lineTo(0.46, -1.92);
+  shape.lineTo(-0.46, -1.92);
   shape.closePath();
 
   const mesh = new THREE.Mesh(
     new THREE.ShapeGeometry(shape),
-    new THREE.MeshBasicMaterial({
-      color: 0xfff1a8,
-      transparent: true,
-      opacity: 0.92,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    })
+    material
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.08;
+  mesh.position.y = 0.065;
 
   const group = new THREE.Group();
   group.visible = false;
@@ -446,7 +437,7 @@ export async function createPlayer(library, {
     opacity: indicatorOpacity
   });
   anchor.add(indicatorRing);
-  const taskArrow = createPlayerTaskArrow();
+  const taskArrow = createPlayerTaskArrow(indicatorRing.material);
   anchor.add(taskArrow);
   const damageRipple = new THREE.Mesh(
     new THREE.RingGeometry(1.65, 2.55, 36),
