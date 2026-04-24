@@ -5,6 +5,7 @@ import {
   WEAPON_IDS,
   WEAPON_RANGE
 } from '../shared/combatConstants.js';
+import { tickHealthRegen } from '../shared/combatRegen.js';
 import { distance2D } from '../shared/combatMath.js';
 import {
   NPC_COMBAT_ARCHETYPES,
@@ -125,6 +126,8 @@ export function createNpcRuntimeMeta(overrides = {}) {
     idleUntil: 0,
     calmEndsAt: 0,
     lastAttackAt: 0,
+    lastCombatAt: 0,
+    healthRegenCarryMs: 0,
     wanderPoint: null,
     combatAnchor: null,
     ...overrides
@@ -190,6 +193,8 @@ export const npcSimulationMethods = {
     meta.idleUntil = 0;
     meta.calmEndsAt = 0;
     meta.lastAttackAt = 0;
+    meta.lastCombatAt = 0;
+    meta.healthRegenCarryMs = 0;
     meta.wanderPoint = null;
     meta.combatAnchor = null;
 
@@ -251,6 +256,8 @@ export const npcSimulationMethods = {
     npc.targetPlacementId = '';
     npc.activity = '';
     npc.respawnAt = 0;
+    this.getNpcRuntimeMeta(npcId).lastCombatAt = 0;
+    this.getNpcRuntimeMeta(npcId).healthRegenCarryMs = 0;
     this.syncNpcDerivedState?.(npc);
     this.logNpcDebugEvent?.(npcId, 'respawned', {
       placementId: respawnTarget.placementId,
@@ -1014,6 +1021,7 @@ export const npcSimulationMethods = {
   updateNpcCombatBehavior(npcId, npc, definition, now, deltaMs) {
     const combat = definition?.combat ?? {};
     const meta = this.getNpcRuntimeMeta(npcId);
+    meta.lastCombatAt = now;
     const targetPlayer = npc.lastAttackerId ? this.state.players.get(npc.lastAttackerId) : null;
     const homeAnchor = this.getNpcHomeAnchor(definition);
     const leashAnchor = meta.combatAnchor ?? homeAnchor;
@@ -1124,6 +1132,8 @@ export const npcSimulationMethods = {
         continue;
       }
 
+      changed = this.updateNpcHealthRegen(npcId, npc, now, deltaMs) || changed;
+
       if (npc.mode === NPC_RUNTIME_MODES.hidden) {
         npc.activity = '';
         if (npc.hiddenUntil && now >= npc.hiddenUntil) {
@@ -1181,6 +1191,7 @@ export const npcSimulationMethods = {
     });
     const meta = this.getNpcRuntimeMeta(npcId);
     meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+    meta.lastCombatAt = now;
     this.clearNpcPath(npcId);
 
     if (npc.health <= 0) {
@@ -1213,6 +1224,7 @@ export const npcSimulationMethods = {
     }
 
     const now = Date.now();
+    const meta = this.getNpcRuntimeMeta(npcId);
     npc.alive = false;
     npc.health = 0;
     npc.activity = '';
@@ -1220,6 +1232,7 @@ export const npcSimulationMethods = {
     npc.chatStatus = 'idle';
     npc.chatText = '';
     npc.chatStartedAt = 0;
+    meta.healthRegenCarryMs = 0;
     npc.respawnAt = Math.max(0, Number(definition.respawnDelayMs ?? 0))
       ? now + Math.max(0, Math.floor(Number(definition.respawnDelayMs ?? 0)))
       : 0;
@@ -1239,5 +1252,27 @@ export const npcSimulationMethods = {
       x: npc.x,
       z: npc.z
     });
+  },
+
+  updateNpcHealthRegen(npcId, npc, now, deltaMs) {
+    const meta = this.getNpcRuntimeMeta(npcId);
+    const regen = tickHealthRegen({
+      health: npc.health,
+      maxHealth: npc.maxHealth,
+      alive: npc.alive !== false,
+      deltaMs,
+      now,
+      lastDamagedAt: npc.lastDamagedAt,
+      lastCombatAt: meta.lastCombatAt,
+      carryMs: meta.healthRegenCarryMs
+    });
+
+    meta.healthRegenCarryMs = regen.carryMs;
+    if (regen.healed <= 0 || regen.health === npc.health) {
+      return false;
+    }
+
+    npc.health = regen.health;
+    return true;
   }
 };

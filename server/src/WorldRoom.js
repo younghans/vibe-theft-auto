@@ -22,6 +22,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../../src/shared/combatConstants.js';
+import { tickHealthRegen } from '../../src/shared/combatRegen.js';
 import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
@@ -548,7 +549,8 @@ export class WorldRoom extends Room {
       z: player.z,
       acceptedAt: Date.now(),
       lastPunchAt: 0,
-      lastShotAt: 0
+      lastShotAt: 0,
+      healthRegenCarryMs: 0
     });
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
@@ -622,7 +624,8 @@ export class WorldRoom extends Room {
         z: player?.z ?? 0,
         acceptedAt: Date.now(),
         lastPunchAt: 0,
-        lastShotAt: 0
+        lastShotAt: 0,
+        healthRegenCarryMs: 0
       });
     }
 
@@ -1020,7 +1023,10 @@ export class WorldRoom extends Room {
 
       if (player.alive === false && player.respawnAt && now >= player.respawnAt) {
         this.finishRespawn(sessionId, player);
+        continue;
       }
+
+      this.updatePlayerHealthRegen(sessionId, player, now, deltaMs);
     }
 
     for (const pickup of [...this.state.pickups.values()]) {
@@ -1075,6 +1081,7 @@ export class WorldRoom extends Room {
     meta.acceptedAt = Date.now();
     meta.lastPunchAt = 0;
     meta.lastShotAt = 0;
+    meta.healthRegenCarryMs = 0;
     this.broadcastCombatEvent({
       type: 'respawn',
       playerId: sessionId,
@@ -1281,6 +1288,8 @@ export class WorldRoom extends Room {
     if (!player || player.alive === false) {
       return;
     }
+
+    this.getPlayerMeta(victimId).healthRegenCarryMs = 0;
 
     player.alive = false;
     player.health = 0;
@@ -1666,6 +1675,32 @@ export class WorldRoom extends Room {
 
   broadcastCombatEvent(event) {
     this.broadcast('combat:event', event);
+  }
+
+  updatePlayerHealthRegen(sessionId, player, now, deltaMs) {
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    const meta = this.getPlayerMeta(sessionId);
+    const regen = tickHealthRegen({
+      health: player.health,
+      maxHealth: player.maxHealth,
+      alive: player.alive !== false,
+      deltaMs,
+      now,
+      lastDamagedAt: player.lastDamagedAt,
+      lastCombatAt: Math.max(meta.lastShotAt ?? 0, meta.lastPunchAt ?? 0),
+      carryMs: meta.healthRegenCarryMs
+    });
+
+    meta.healthRegenCarryMs = regen.carryMs;
+    if (regen.healed <= 0 || regen.health === player.health) {
+      return false;
+    }
+
+    player.health = regen.health;
+    return true;
   }
 
   async handleRpc(client, requestId, handler) {

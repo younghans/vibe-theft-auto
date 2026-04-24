@@ -18,6 +18,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../shared/combatConstants.js';
+import { tickHealthRegen } from '../shared/combatRegen.js';
 import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
@@ -260,6 +261,7 @@ export class NpcServiceMock {
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
     this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
+    this.playerRuntimeMeta = new Map();
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
@@ -279,6 +281,9 @@ export class NpcServiceMock {
       rentIntroBuildingPlacementId: rentIntro?.buildingPlacementId ?? '',
       rentIntroStartedAt: introStartedAt
     }));
+    this.playerRuntimeMeta.set(this.state.sessionId, {
+      healthRegenCarryMs: 0
+    });
     this.seedCombatPickups();
     this.syncNpcStateFromWorld();
     this.combatTick = window.setInterval(() => {
@@ -335,6 +340,16 @@ export class NpcServiceMock {
     for (const listener of this.combatListeners) {
       listener(snapshot);
     }
+  }
+
+  getPlayerRuntimeMeta(sessionId = this.state.sessionId) {
+    if (!this.playerRuntimeMeta.has(sessionId)) {
+      this.playerRuntimeMeta.set(sessionId, {
+        healthRegenCarryMs: 0
+      });
+    }
+
+    return this.playerRuntimeMeta.get(sessionId);
   }
 
   seedCombatPickups() {
@@ -1371,16 +1386,19 @@ export class NpcServiceMock {
     this.lastNpcSimulationAt = now;
     let stateChanged = false;
 
-    for (const player of this.state.players.values()) {
+    for (const [sessionId, player] of this.state.players.entries()) {
       if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
         this.completeReload(player);
         stateChanged = true;
       }
 
       if (player.alive === false && player.respawnAt && now >= player.respawnAt) {
-        this.finishRespawn(player);
+        this.finishRespawn(sessionId, player);
         stateChanged = true;
+        continue;
       }
+
+      stateChanged = this.updatePlayerHealthRegen(sessionId, player, now, deltaMs) || stateChanged;
     }
 
     for (const pickup of this.state.pickups.values()) {
@@ -1412,9 +1430,9 @@ export class NpcServiceMock {
     player.reloadEndsAt = 0;
   }
 
-  finishRespawn(player) {
+  finishRespawn(sessionId, player) {
     const livingOthers = [...this.state.players.entries()]
-      .filter(([id, candidate]) => id !== this.state.sessionId && candidate.alive !== false)
+      .filter(([id, candidate]) => id !== sessionId && candidate.alive !== false)
       .map(([, candidate]) => candidate);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingOthers);
     player.x = spawnX;
@@ -1435,13 +1453,14 @@ export class NpcServiceMock {
     player.workoutPlacementId = '';
     player.lastPunchAt = 0;
     player.lastShotAt = 0;
+    this.getPlayerRuntimeMeta(sessionId).healthRegenCarryMs = 0;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
     player.emoteSeq += 1;
     this.emitCombatEvent({
       type: 'respawn',
-      playerId: this.state.sessionId,
+      playerId: sessionId,
       x: spawnX,
       z: spawnZ
     });
@@ -1452,6 +1471,8 @@ export class NpcServiceMock {
     if (!player || player.alive === false) {
       return;
     }
+
+    this.getPlayerRuntimeMeta(playerId).healthRegenCarryMs = 0;
 
     player.alive = false;
     player.health = 0;
@@ -1843,7 +1864,34 @@ export class NpcServiceMock {
     this.listeners.clear();
     this.worldPatchListeners.clear();
     this.combatListeners.clear();
+    this.playerRuntimeMeta.clear();
     window.clearInterval(this.combatTick);
+  }
+
+  updatePlayerHealthRegen(sessionId, player, now, deltaMs) {
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    const meta = this.getPlayerRuntimeMeta(sessionId);
+    const regen = tickHealthRegen({
+      health: player.health,
+      maxHealth: player.maxHealth,
+      alive: player.alive !== false,
+      deltaMs,
+      now,
+      lastDamagedAt: player.lastDamagedAt,
+      lastCombatAt: Math.max(player.lastShotAt ?? 0, player.lastPunchAt ?? 0),
+      carryMs: meta.healthRegenCarryMs
+    });
+
+    meta.healthRegenCarryMs = regen.carryMs;
+    if (regen.healed <= 0 || regen.health === player.health) {
+      return false;
+    }
+
+    player.health = regen.health;
+    return true;
   }
 
   isAdmin() {
