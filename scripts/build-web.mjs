@@ -412,7 +412,7 @@ async function readFileWithRetry(filePath, { attempts = 3, retryDelayMs = 50 } =
     }
   }
 
-  return null;
+  throw new Error(`Failed to read file after ${attempts} attempts: ${filePath}`);
 }
 
 async function writeCompressedVariant(filePath, source, encoding) {

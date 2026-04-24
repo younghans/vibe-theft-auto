@@ -6,6 +6,11 @@ import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
+import {
+  cloneInteriorDefinition,
+  clonePortalDefinition,
+  resolvePlacementInteractableDefinition
+} from './interactableMetadata.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0.1;
@@ -105,31 +110,6 @@ function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
   }
 }
 
-function cloneInteriorDefinition(interior) {
-  if (!interior) {
-    return null;
-  }
-
-  return {
-    ...interior,
-    cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
-    exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
-    exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
-  };
-}
-
-function clonePortalDefinition(portal) {
-  if (!portal) {
-    return null;
-  }
-
-  return {
-    ...portal,
-    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
-    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
-  };
-}
-
 function createNpcDebugMarker(color, radius = 0.22) {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 14, 14),
@@ -202,72 +182,6 @@ function areDebugPointsClose(a, b, epsilon = 0.08) {
   }
 
   return Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.z ?? 0) - (b.z ?? 0)) <= epsilon;
-}
-
-function cloneInteractableDefinition(interactable) {
-  if (!interactable) {
-    return null;
-  }
-
-  return {
-    ...interactable,
-    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : undefined,
-    approachLocalOffset: Array.isArray(interactable.approachLocalOffset) ? [...interactable.approachLocalOffset] : undefined,
-    interior: cloneInteriorDefinition(interactable.interior),
-    portal: clonePortalDefinition(interactable.portal)
-  };
-}
-
-function resolvePlacementInteractable(placement, item) {
-  const baseInteractable = item?.interior
-    ? {
-        label: item.interior.label ?? item.label,
-        prompt: item.interior.prompt ?? `Enter ${item.interior.label ?? item.label}`,
-        actionText: item.interior.actionText ?? `Enter ${item.interior.label ?? item.label}.`,
-        radius: item.interior.exteriorInteractRadius ?? 4.4,
-        localOffset: [...(item.interior.exteriorDoorOffset ?? [0, 0])],
-        interior: cloneInteriorDefinition(item.interior)
-      }
-    : item?.interactable
-      ? cloneInteractableDefinition(item.interactable)
-    : null;
-
-  if (!placement.interactable) {
-    return baseInteractable;
-  }
-
-  const mergedInteractable = {
-    ...(baseInteractable ?? {}),
-    ...placement.interactable
-  };
-
-  if (baseInteractable?.interior || placement.interactable?.interior) {
-    mergedInteractable.interior = {
-      ...(baseInteractable?.interior ?? {}),
-      ...(placement.interactable?.interior ?? {})
-    };
-  }
-
-  if (baseInteractable?.portal || placement.interactable?.portal) {
-    mergedInteractable.portal = {
-      ...(baseInteractable?.portal ?? {}),
-      ...(placement.interactable?.portal ?? {})
-    };
-  }
-
-  if (Array.isArray(placement.interactable?.localOffset)) {
-    mergedInteractable.localOffset = [...placement.interactable.localOffset];
-  } else if (Array.isArray(baseInteractable?.localOffset)) {
-    mergedInteractable.localOffset = [...baseInteractable.localOffset];
-  }
-
-  if (Array.isArray(placement.interactable?.approachLocalOffset)) {
-    mergedInteractable.approachLocalOffset = [...placement.interactable.approachLocalOffset];
-  } else if (Array.isArray(baseInteractable?.approachLocalOffset)) {
-    mergedInteractable.approachLocalOffset = [...baseInteractable.approachLocalOffset];
-  }
-
-  return mergedInteractable;
 }
 
 function getPlacementOffsetWorldPosition(rendered, placement, localOffset = null) {
@@ -1172,7 +1086,7 @@ export class WorldRenderer {
       const renderedTarget = this.renderedPlacements.get(npcState.targetPlacementId);
       const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(npcState.targetPlacementId);
       const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
-      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
       if (interactable?.workoutType && interactable.workoutType === npcState.activity) {
         occupiedPlacementIds.add(npcState.targetPlacementId);
       }
@@ -1214,7 +1128,7 @@ export class WorldRenderer {
       const renderedTarget = this.renderedPlacements.get(npcState.targetPlacementId);
       const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(npcState.targetPlacementId);
       const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
-      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
       if (interactable?.workoutType && interactable.workoutType === npcState.activity) {
         visiblePlacementIds.add(npcState.targetPlacementId);
       }
@@ -1234,7 +1148,7 @@ export class WorldRenderer {
       const renderedTarget = this.renderedPlacements.get(placementId);
       const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(placementId);
       const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
-      const interactable = placement && item ? resolvePlacementInteractable(placement, item) : null;
+      const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
       if (interactable?.workoutType && interactable.workoutType === playerState.emoteId) {
         visiblePlacementIds.add(placementId);
       }
@@ -1290,7 +1204,7 @@ export class WorldRenderer {
           };
         }
 
-        const interactable = resolvePlacementInteractable(placement, item);
+        const interactable = resolvePlacementInteractableDefinition(placement, item);
         if (!interactable) {
           return null;
         }
@@ -1390,7 +1304,7 @@ export class WorldRenderer {
           return null;
         }
 
-        const interactable = resolvePlacementInteractable(placement, item);
+        const interactable = resolvePlacementInteractableDefinition(placement, item);
         if (
           !interactable?.interior?.id
           || !['inline-shell', 'inline-cutaway'].includes(interactable.interior.mode)

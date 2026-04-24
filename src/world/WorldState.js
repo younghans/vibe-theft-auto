@@ -6,47 +6,7 @@ import {
 } from '../npc/npcBehavior.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
-
-function cloneInterior(interior) {
-  if (!interior) {
-    return null;
-  }
-
-  return {
-    ...interior,
-    cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
-    exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
-    exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
-  };
-}
-
-function clonePortal(portal) {
-  if (!portal) {
-    return null;
-  }
-
-  return {
-    ...portal,
-    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
-    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
-  };
-}
-
-function cloneInteractable(interactable) {
-  if (!interactable) {
-    return null;
-  }
-
-  return {
-    ...interactable,
-    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : interactable.localOffset,
-    approachLocalOffset: Array.isArray(interactable.approachLocalOffset)
-      ? [...interactable.approachLocalOffset]
-      : interactable.approachLocalOffset,
-    interior: cloneInterior(interactable.interior),
-    portal: clonePortal(interactable.portal)
-  };
-}
+import { cloneInteractableDefinition } from './interactableMetadata.js';
 
 function clonePlacement(placement) {
   return {
@@ -57,7 +17,7 @@ function clonePlacement(placement) {
     cellX: placement.cellX,
     cellZ: placement.cellZ,
     position: placement.position ? [...placement.position] : null,
-    interactable: cloneInteractable(placement.interactable),
+    interactable: cloneInteractableDefinition(placement.interactable),
     npc: placement.npc ? cloneNpcBehavior(placement.npc) : null
   };
 }

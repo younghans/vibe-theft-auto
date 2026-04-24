@@ -21,6 +21,7 @@ const PORTAL_LABEL_Y = 6.35;
 const PORTAL_ORBITER_RADIUS = 0.12;
 const PORTAL_INNER_RADIUS = 2.02;
 const PORTAL_TRIGGER_RADIUS = 2.25;
+const PORTAL_TRIGGER_HALF_HEIGHT = 4.5;
 const PORTAL_PROMPT_RADIUS = 6.8;
 const PORTAL_SPAWN_LOCAL_OFFSET = Object.freeze([0, -6.2]);
 
@@ -389,6 +390,7 @@ export const VIBE_JAM_PORTAL_INTERACTABLE = Object.freeze({
   localOffset: [0, 0],
   portal: {
     triggerRadius: PORTAL_TRIGGER_RADIUS,
+    triggerHalfHeight: PORTAL_TRIGGER_HALF_HEIGHT,
     triggerLocalOffset: [0, 0],
     spawnLocalOffset: PORTAL_SPAWN_LOCAL_OFFSET,
     spawnRotationOffsetY: Math.PI

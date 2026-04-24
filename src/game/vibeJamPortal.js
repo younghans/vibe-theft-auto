@@ -1,19 +1,9 @@
-export const VIBE_JAM_PORTAL_URL = 'https://vibejam.cc/portal/2026';
+import {
+  VIBE_JAM_PORTAL_PARAM_KEYS,
+  VIBE_JAM_PORTAL_URL
+} from '../shared/vibeJamPortalConfig.js';
 
-const PORTAL_PARAM_KEYS = Object.freeze([
-  'username',
-  'color',
-  'speed',
-  'avatar_url',
-  'team',
-  'hp',
-  'speed_x',
-  'speed_y',
-  'speed_z',
-  'rotation_x',
-  'rotation_y',
-  'rotation_z'
-]);
+export { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 
 export function hasPortalFlag(search = '') {
   const params = search instanceof URLSearchParams
@@ -74,7 +64,7 @@ export function pickForwardedPortalParams(paramsLike) {
     : new URLSearchParams(paramsLike);
   const forwarded = new URLSearchParams();
 
-  for (const key of PORTAL_PARAM_KEYS) {
+  for (const key of VIBE_JAM_PORTAL_PARAM_KEYS) {
     const value = params.get(key);
     if (value !== null && value !== '') {
       forwarded.set(key, value);
@@ -101,7 +91,7 @@ export function buildPortalRedirectUrl({
   const nextParams = pickForwardedPortalParams(currentParams);
 
   for (const [key, value] of Object.entries(continuity ?? {})) {
-    if (!PORTAL_PARAM_KEYS.includes(key)) {
+    if (!VIBE_JAM_PORTAL_PARAM_KEYS.includes(key)) {
       continue;
     }
 

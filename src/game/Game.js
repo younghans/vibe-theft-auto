@@ -176,6 +176,14 @@ function getPortalTriggerDistance(playerPosition, interactable) {
     return Number.POSITIVE_INFINITY;
   }
 
+  const triggerHalfHeight = Number(interactable.triggerHalfHeight);
+  if (
+    Number.isFinite(triggerHalfHeight)
+    && Math.abs((interactable.triggerPosition.y ?? 0) - (playerPosition.y ?? 0)) > triggerHalfHeight
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   return Math.hypot(
     (interactable.triggerPosition.x ?? 0) - (playerPosition.x ?? 0),
     (interactable.triggerPosition.z ?? 0) - (playerPosition.z ?? 0)
@@ -1337,24 +1345,20 @@ export class Game {
     });
   }
 
-  maybeActivatePortalInteractable(interactables = []) {
-    if (
-      !this.player
-      || this.portalRedirectInFlight
-      || this.worldBuilder?.enabled
-      || this.currentInterior?.scene
-      || this.activeWorkout
-    ) {
-      return false;
+  getNearestTriggeredPortalRedirectUrl(interactables = []) {
+    if (!this.player) {
+      return null;
     }
 
-    const portals = interactables.filter((interactable) => interactable?.kind === 'portal');
-    for (const portal of portals) {
-      const triggerDistance = getPortalTriggerDistance(this.player.position, portal);
-      if (!Number.isFinite(triggerDistance)) {
+    let nearestRedirectUrl = '';
+    let nearestTriggerDistance = Number.POSITIVE_INFINITY;
+
+    for (const portal of interactables) {
+      if (portal?.kind !== 'portal') {
         continue;
       }
 
+      const triggerDistance = getPortalTriggerDistance(this.player.position, portal);
       if (this.portalDisarmedPlacementIds.has(portal.placementId)) {
         if (triggerDistance > ((portal.triggerRadius ?? 0) + PORTAL_EXIT_REARM_PADDING)) {
           this.portalDisarmedPlacementIds.delete(portal.placementId);
@@ -1371,17 +1375,40 @@ export class Game {
         continue;
       }
 
-      this.portalRedirectInFlight = true;
-      try {
-        window.location.assign(redirectUrl);
-      } catch (error) {
-        console.warn('[Portal] Redirect failed.', error);
-        this.portalRedirectInFlight = false;
+      if (triggerDistance < nearestTriggerDistance) {
+        nearestRedirectUrl = redirectUrl;
+        nearestTriggerDistance = triggerDistance;
       }
-      return true;
     }
 
-    return false;
+    return nearestRedirectUrl || null;
+  }
+
+  maybeActivatePortalInteractable(interactables = []) {
+    if (
+      !this.player
+      || this.portalRedirectInFlight
+      || this.worldBuilder?.enabled
+      || this.currentInterior?.scene
+      || this.activeWorkout
+    ) {
+      return false;
+    }
+
+    const redirectUrl = this.getNearestTriggeredPortalRedirectUrl(interactables);
+    if (!redirectUrl) {
+      return false;
+    }
+
+    this.portalRedirectInFlight = true;
+    try {
+      window.location.assign(redirectUrl);
+    } catch (error) {
+      console.warn('[Portal] Redirect failed.', error);
+      this.portalRedirectInFlight = false;
+    }
+
+    return true;
   }
 
   renderCurrentView() {

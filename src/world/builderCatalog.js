@@ -1,6 +1,11 @@
 import { assetUrl, cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
+import {
+  cloneInteractableDefinition,
+  cloneInteriorDefinition
+} from './interactableMetadata.js';
 import {
   createOlympicBarbellVisual,
   createVibeJamExitPortalVisual,
@@ -322,7 +327,7 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       portal: {
         ...VIBE_JAM_PORTAL_INTERACTABLE.portal,
         role: 'exit',
-        destinationUrl: 'https://vibejam.cc/portal/2026'
+        destinationUrl: VIBE_JAM_PORTAL_URL
       }
     }
   },
@@ -458,33 +463,6 @@ function propPaddingForAsset(assetName) {
   return undefined;
 }
 
-function cloneBuilderPortalDefinition(portal) {
-  if (!portal) {
-    return null;
-  }
-
-  return {
-    ...portal,
-    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
-    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
-  };
-}
-
-function cloneBuilderInteractable(interactable) {
-  if (!interactable) {
-    return null;
-  }
-
-  return {
-    ...interactable,
-    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : interactable.localOffset,
-    approachLocalOffset: Array.isArray(interactable.approachLocalOffset)
-      ? [...interactable.approachLocalOffset]
-      : interactable.approachLocalOffset,
-    portal: cloneBuilderPortalDefinition(interactable.portal)
-  };
-}
-
 function createCityTile(definition) {
   const blocksMovement = definition.blocksMovement ?? definition.collision ?? tileCollisionForAsset(definition.assetName);
   const blocksShots = definition.blocksShots ?? definition.collision ?? tileBallisticCollisionForAsset(definition.assetName);
@@ -510,14 +488,8 @@ function createCityTile(definition) {
     npcRouteDoorOffset: Array.isArray(definition.npcRouteDoorOffset)
       ? [...definition.npcRouteDoorOffset]
       : undefined,
-    interior: definition.interior
-      ? {
-          ...definition.interior,
-          exteriorDoorOffset: [...(definition.interior.exteriorDoorOffset ?? [0, 0])],
-          exteriorSpawnOffset: [...(definition.interior.exteriorSpawnOffset ?? [0, 0])]
-        }
-      : null,
-    interactable: cloneBuilderInteractable(definition.interactable),
+    interior: cloneInteriorDefinition(definition.interior),
+    interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     underlayTileId: definition.underlayTileId ?? null,
     groupId: definition.group,
@@ -543,7 +515,7 @@ function createCityProp(definition) {
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
-    interactable: cloneBuilderInteractable(definition.interactable),
+    interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
