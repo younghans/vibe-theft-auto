@@ -1881,7 +1881,7 @@ export class NpcServiceMock {
       deltaMs,
       now,
       lastDamagedAt: player.lastDamagedAt,
-      lastCombatAt: Math.max(player.lastShotAt ?? 0, player.lastPunchAt ?? 0),
+      lastCombatAt: 0,
       carryMs: meta.healthRegenCarryMs
     });
 

@@ -1690,7 +1690,7 @@ export class WorldRoom extends Room {
       deltaMs,
       now,
       lastDamagedAt: player.lastDamagedAt,
-      lastCombatAt: Math.max(meta.lastShotAt ?? 0, meta.lastPunchAt ?? 0),
+      lastCombatAt: 0,
       carryMs: meta.healthRegenCarryMs
     });
 
