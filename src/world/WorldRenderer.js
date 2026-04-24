@@ -118,6 +118,18 @@ function cloneInteriorDefinition(interior) {
   };
 }
 
+function clonePortalDefinition(portal) {
+  if (!portal) {
+    return null;
+  }
+
+  return {
+    ...portal,
+    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
+    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
+  };
+}
+
 function createNpcDebugMarker(color, radius = 0.22) {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 14, 14),
@@ -201,7 +213,8 @@ function cloneInteractableDefinition(interactable) {
     ...interactable,
     localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : undefined,
     approachLocalOffset: Array.isArray(interactable.approachLocalOffset) ? [...interactable.approachLocalOffset] : undefined,
-    interior: cloneInteriorDefinition(interactable.interior)
+    interior: cloneInteriorDefinition(interactable.interior),
+    portal: clonePortalDefinition(interactable.portal)
   };
 }
 
@@ -235,6 +248,13 @@ function resolvePlacementInteractable(placement, item) {
     };
   }
 
+  if (baseInteractable?.portal || placement.interactable?.portal) {
+    mergedInteractable.portal = {
+      ...(baseInteractable?.portal ?? {}),
+      ...(placement.interactable?.portal ?? {})
+    };
+  }
+
   if (Array.isArray(placement.interactable?.localOffset)) {
     mergedInteractable.localOffset = [...placement.interactable.localOffset];
   } else if (Array.isArray(baseInteractable?.localOffset)) {
@@ -250,14 +270,23 @@ function resolvePlacementInteractable(placement, item) {
   return mergedInteractable;
 }
 
-function getInteractableWorldPosition(rendered, placement, interactable, defaultDistance) {
-  if (Array.isArray(interactable?.localOffset) && interactable.localOffset.length >= 2) {
+function getPlacementOffsetWorldPosition(rendered, placement, localOffset = null) {
+  if (Array.isArray(localOffset) && localOffset.length >= 2) {
     const rotatedOffset = rotateLocalOffset(
-      Number(interactable.localOffset[0]) || 0,
-      Number(interactable.localOffset[1]) || 0,
+      Number(localOffset[0]) || 0,
+      Number(localOffset[1]) || 0,
       placement.rotationQuarterTurns
     );
     return rendered.object.position.clone().add(new THREE.Vector3(rotatedOffset.x, 0, rotatedOffset.z));
+  }
+
+  return null;
+}
+
+function getInteractableWorldPosition(rendered, placement, interactable, defaultDistance) {
+  const offsetPosition = getPlacementOffsetWorldPosition(rendered, placement, interactable?.localOffset);
+  if (offsetPosition) {
+    return offsetPosition;
   }
 
   const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
@@ -265,6 +294,41 @@ function getInteractableWorldPosition(rendered, placement, interactable, default
     toRotationY(placement.rotationQuarterTurns)
   );
   return rendered.object.position.clone().addScaledVector(forward, defaultDistance);
+}
+
+function createPortalInteractable(rendered, placement, item, interactable) {
+  const portal = clonePortalDefinition(interactable?.portal);
+  if (!portal) {
+    return null;
+  }
+
+  const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
+  const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
+  const triggerPosition = getPlacementOffsetWorldPosition(rendered, placement, portal.triggerLocalOffset)
+    ?? rendered.object.position.clone();
+  const spawnPosition = getPlacementOffsetWorldPosition(rendered, placement, portal.spawnLocalOffset)
+    ?? rendered.object.position.clone();
+
+  return {
+    kind: 'portal',
+    placementId: placement.id,
+    itemId: item.id,
+    rotationQuarterTurns: placement.rotationQuarterTurns,
+    originPosition: rendered.object.position.clone(),
+    position,
+    radius: interactable.radius ?? 4,
+    prompt: interactable.prompt ?? `Enter ${interactable.label ?? item.label}`,
+    actionText: interactable.actionText ?? `${interactable.label ?? item.label} is shimmering nearby.`,
+    portalRole: portal.role ?? '',
+    targetUrl: portal.destinationUrl ?? '',
+    portal,
+    triggerPosition,
+    triggerRadius: Number.isFinite(portal.triggerRadius) ? portal.triggerRadius : 2.2,
+    triggerHalfHeight: Number.isFinite(portal.triggerHalfHeight) ? portal.triggerHalfHeight : 4.5,
+    spawnPosition,
+    spawnRotationY: toRotationY(placement.rotationQuarterTurns)
+      + (Number.isFinite(portal.spawnRotationOffsetY) ? portal.spawnRotationOffsetY : Math.PI)
+  };
 }
 
 function createInlineShellEntry(rendered, placement, interactable) {
@@ -805,8 +869,10 @@ export class WorldRenderer {
   }
 
   update(deltaSeconds) {
+    const timeSeconds = performance.now() * 0.001;
     for (const rendered of this.renderedPlacements.values()) {
       rendered.actor?.update(deltaSeconds);
+      rendered.object?.userData?.onWorldUpdate?.(deltaSeconds, timeSeconds);
     }
 
     this.refreshNpcDebugGizmos();
@@ -1231,6 +1297,10 @@ export class WorldRenderer {
 
         if (['inline-shell', 'inline-cutaway'].includes(interactable.interior?.mode)) {
           return null;
+        }
+
+        if (interactable.portal) {
+          return createPortalInteractable(rendered, placement, item, interactable);
         }
 
         const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;

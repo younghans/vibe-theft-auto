@@ -32,6 +32,18 @@ function cloneInteriorDefinition(interior) {
   };
 }
 
+function clonePortalDefinition(portal) {
+  if (!portal) {
+    return null;
+  }
+
+  return {
+    ...portal,
+    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
+    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
+  };
+}
+
 function cloneInteractableDefinition(interactable) {
   if (!interactable) {
     return null;
@@ -41,7 +53,8 @@ function cloneInteractableDefinition(interactable) {
     ...interactable,
     localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : undefined,
     approachLocalOffset: Array.isArray(interactable.approachLocalOffset) ? [...interactable.approachLocalOffset] : undefined,
-    interior: cloneInteriorDefinition(interactable.interior)
+    interior: cloneInteriorDefinition(interactable.interior),
+    portal: clonePortalDefinition(interactable.portal)
   };
 }
 
@@ -75,6 +88,13 @@ function resolvePlacementInteractable(placement, item) {
     };
   }
 
+  if (baseInteractable?.portal || placement.interactable?.portal) {
+    mergedInteractable.portal = {
+      ...(baseInteractable?.portal ?? {}),
+      ...(placement.interactable?.portal ?? {})
+    };
+  }
+
   if (Array.isArray(placement.interactable?.localOffset)) {
     mergedInteractable.localOffset = [...placement.interactable.localOffset];
   } else if (Array.isArray(baseInteractable?.localOffset)) {
@@ -102,6 +122,10 @@ export function isBuildingPlacement(placement, item = getBuilderItemById(placeme
 
 export function isNpcTargetablePlacement(placement, item = getBuilderItemById(placement?.itemId)) {
   if (!placement || !item || placement.layer === 'npc') {
+    return false;
+  }
+
+  if (resolvePlacementInteractable(placement, item)?.portal) {
     return false;
   }
 

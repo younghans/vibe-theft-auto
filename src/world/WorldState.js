@@ -20,6 +20,18 @@ function cloneInterior(interior) {
   };
 }
 
+function clonePortal(portal) {
+  if (!portal) {
+    return null;
+  }
+
+  return {
+    ...portal,
+    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
+    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
+  };
+}
+
 function cloneInteractable(interactable) {
   if (!interactable) {
     return null;
@@ -31,7 +43,8 @@ function cloneInteractable(interactable) {
     approachLocalOffset: Array.isArray(interactable.approachLocalOffset)
       ? [...interactable.approachLocalOffset]
       : interactable.approachLocalOffset,
-    interior: cloneInterior(interactable.interior)
+    interior: cloneInterior(interactable.interior),
+    portal: clonePortal(interactable.portal)
   };
 }
 

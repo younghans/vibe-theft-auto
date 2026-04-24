@@ -3,7 +3,11 @@ import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import {
   createOlympicBarbellVisual,
-  OLYMPIC_BARBELL_FOOTPRINT
+  createVibeJamExitPortalVisual,
+  createVibeJamStartPortalVisual,
+  OLYMPIC_BARBELL_FOOTPRINT,
+  VIBE_JAM_PORTAL_FOOTPRINT,
+  VIBE_JAM_PORTAL_INTERACTABLE
 } from './proceduralProps.js';
 
 export { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
@@ -22,6 +26,7 @@ const PROP_GROUPS = Object.freeze({
   street: 'Street',
   greenery: 'Greenery',
   fitness: 'Fitness',
+  portals: 'Portals',
   storage: 'Storage',
   vehicles: 'Vehicles',
   utilities: 'Utilities'
@@ -300,6 +305,47 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       approachRotationY: Math.PI
     }
   },
+  {
+    id: 'vibe_jam_exit_portal',
+    assetName: 'vibe_jam_exit_portal',
+    label: 'Vibe Jam Exit Portal',
+    asset: null,
+    group: 'portals',
+    size: VIBE_JAM_PORTAL_FOOTPRINT,
+    collision: false,
+    createVisual: createVibeJamExitPortalVisual,
+    interactable: {
+      ...VIBE_JAM_PORTAL_INTERACTABLE,
+      label: 'Vibe Jam Exit Portal',
+      prompt: 'Walk into the Vibe Jam portal',
+      actionText: 'Step through to visit the Vibe Jam webring hub.',
+      portal: {
+        ...VIBE_JAM_PORTAL_INTERACTABLE.portal,
+        role: 'exit',
+        destinationUrl: 'https://vibejam.cc/portal/2026'
+      }
+    }
+  },
+  {
+    id: 'vibe_jam_start_portal',
+    assetName: 'vibe_jam_start_portal',
+    label: 'Vibe Jam Start Portal',
+    asset: null,
+    group: 'portals',
+    size: VIBE_JAM_PORTAL_FOOTPRINT,
+    collision: false,
+    createVisual: createVibeJamStartPortalVisual,
+    interactable: {
+      ...VIBE_JAM_PORTAL_INTERACTABLE,
+      label: 'Vibe Jam Start Portal',
+      prompt: 'Walk into the start portal',
+      actionText: 'Step through to return to the last jam world.',
+      portal: {
+        ...VIBE_JAM_PORTAL_INTERACTABLE.portal,
+        role: 'start'
+      }
+    }
+  },
   ...KENNEY_PROP_DEFINITIONS
 ]);
 
@@ -412,6 +458,33 @@ function propPaddingForAsset(assetName) {
   return undefined;
 }
 
+function cloneBuilderPortalDefinition(portal) {
+  if (!portal) {
+    return null;
+  }
+
+  return {
+    ...portal,
+    triggerLocalOffset: Array.isArray(portal.triggerLocalOffset) ? [...portal.triggerLocalOffset] : undefined,
+    spawnLocalOffset: Array.isArray(portal.spawnLocalOffset) ? [...portal.spawnLocalOffset] : undefined
+  };
+}
+
+function cloneBuilderInteractable(interactable) {
+  if (!interactable) {
+    return null;
+  }
+
+  return {
+    ...interactable,
+    localOffset: Array.isArray(interactable.localOffset) ? [...interactable.localOffset] : interactable.localOffset,
+    approachLocalOffset: Array.isArray(interactable.approachLocalOffset)
+      ? [...interactable.approachLocalOffset]
+      : interactable.approachLocalOffset,
+    portal: cloneBuilderPortalDefinition(interactable.portal)
+  };
+}
+
 function createCityTile(definition) {
   const blocksMovement = definition.blocksMovement ?? definition.collision ?? tileCollisionForAsset(definition.assetName);
   const blocksShots = definition.blocksShots ?? definition.collision ?? tileBallisticCollisionForAsset(definition.assetName);
@@ -444,17 +517,7 @@ function createCityTile(definition) {
           exteriorSpawnOffset: [...(definition.interior.exteriorSpawnOffset ?? [0, 0])]
         }
       : null,
-    interactable: definition.interactable
-      ? {
-          ...definition.interactable,
-          localOffset: Array.isArray(definition.interactable.localOffset)
-            ? [...definition.interactable.localOffset]
-            : definition.interactable.localOffset,
-          approachLocalOffset: Array.isArray(definition.interactable.approachLocalOffset)
-            ? [...definition.interactable.approachLocalOffset]
-            : definition.interactable.approachLocalOffset
-        }
-      : null,
+    interactable: cloneBuilderInteractable(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     underlayTileId: definition.underlayTileId ?? null,
     groupId: definition.group,
@@ -480,17 +543,7 @@ function createCityProp(definition) {
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
-    interactable: definition.interactable
-      ? {
-          ...definition.interactable,
-          localOffset: Array.isArray(definition.interactable.localOffset)
-            ? [...definition.interactable.localOffset]
-            : definition.interactable.localOffset,
-          approachLocalOffset: Array.isArray(definition.interactable.approachLocalOffset)
-            ? [...definition.interactable.approachLocalOffset]
-            : definition.interactable.approachLocalOffset
-        }
-      : null,
+    interactable: cloneBuilderInteractable(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]

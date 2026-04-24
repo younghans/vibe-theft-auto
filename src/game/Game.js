@@ -13,6 +13,12 @@ import {
   createVibeShaderDefinition,
   getVibeShaderPreset
 } from './vibeShaderPresets.js';
+import {
+  VIBE_JAM_PORTAL_URL,
+  buildPortalRedirectUrl,
+  getCurrentGameBaseUrl,
+  parsePortalArrival
+} from './vibeJamPortal.js';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
 import { assets } from '../world/assetManifest.js';
@@ -99,6 +105,8 @@ const RENT_INTRO_AFTER_LINE_DELAY_MS = 650;
 const RENT_INTRO_SPEECH_HOLD_MS = 1700;
 const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
+const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
+const PORTAL_SPAWN_LOCK_MS = 1500;
 
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
@@ -152,6 +160,26 @@ function formatMoneyDelta(value) {
   const amount = normalizeMoneyAmount(value);
   const formattedAmount = Math.abs(amount).toLocaleString('en-US');
   return amount < 0 ? `-$${formattedAmount}` : `+$${formattedAmount}`;
+}
+
+function formatPortalNumber(value, digits = 3) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  return String(Number(numeric.toFixed(digits)));
+}
+
+function getPortalTriggerDistance(playerPosition, interactable) {
+  if (!playerPosition || !interactable?.triggerPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.hypot(
+    (interactable.triggerPosition.x ?? 0) - (playerPosition.x ?? 0),
+    (interactable.triggerPosition.z ?? 0) - (playerPosition.z ?? 0)
+  );
 }
 
 function disposeMaterial(material) {
@@ -236,6 +264,13 @@ export class Game {
     this.pendingPickupVisuals = new Set();
     this.combatEffects = [];
     this.currentInteractable = null;
+    this.portalArrival = parsePortalArrival(window.location.search);
+    this.portalRedirectInFlight = false;
+    this.portalDisarmedPlacementIds = new Set();
+    this.portalSpawnPlacementId = '';
+    this.portalSpawnLockUntil = 0;
+    this.localPlayerVelocity = new THREE.Vector3();
+    this.lastLocalPlayerSample = null;
     this.currentLayout = null;
     this.cityVisualRoot = null;
     this.currentInterior = null;
@@ -1138,6 +1173,217 @@ export class Game {
     this.updateCamera(this.currentAimDirection, false, { snap: true });
   }
 
+  resetLocalPlayerKinematics(position = this.player?.position ?? null) {
+    this.localPlayerVelocity.set(0, 0, 0);
+    if (!position?.isVector3) {
+      this.lastLocalPlayerSample = null;
+      return;
+    }
+
+    this.lastLocalPlayerSample = {
+      position: position.clone(),
+      timeMs: performance.now()
+    };
+  }
+
+  updateLocalPlayerKinematics() {
+    if (!this.player) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!this.lastLocalPlayerSample) {
+      this.resetLocalPlayerKinematics(this.player.position);
+      return;
+    }
+
+    const elapsedMs = now - (this.lastLocalPlayerSample.timeMs ?? now);
+    if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+      this.lastLocalPlayerSample.position.copy(this.player.position);
+      this.lastLocalPlayerSample.timeMs = now;
+      return;
+    }
+
+    const delta = this.player.position.clone().sub(this.lastLocalPlayerSample.position);
+    if (delta.lengthSq() > 900) {
+      this.localPlayerVelocity.set(0, 0, 0);
+    } else {
+      this.localPlayerVelocity.copy(delta).divideScalar(elapsedMs / 1000);
+    }
+
+    this.lastLocalPlayerSample.position.copy(this.player.position);
+    this.lastLocalPlayerSample.timeMs = now;
+  }
+
+  getPortalInteractables() {
+    return (this.worldBuilder?.getInteractables?.() ?? [])
+      .filter((interactable) => interactable?.kind === 'portal');
+  }
+
+  getStartPortalSpawnInteractable(anchorPosition = null) {
+    const candidates = this.getPortalInteractables()
+      .filter((interactable) => interactable?.portalRole === 'start' && interactable.spawnPosition?.isVector3);
+    if (!candidates.length) {
+      return null;
+    }
+
+    if (!anchorPosition) {
+      return candidates[0] ?? null;
+    }
+
+    let bestCandidate = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of candidates) {
+      const origin = candidate.originPosition?.isVector3
+        ? candidate.originPosition
+        : candidate.spawnPosition;
+      const distance = Math.hypot(
+        (origin?.x ?? 0) - (anchorPosition.x ?? 0),
+        (origin?.z ?? 0) - (anchorPosition.z ?? 0)
+      );
+      if (distance >= bestDistance) {
+        continue;
+      }
+
+      bestCandidate = candidate;
+      bestDistance = distance;
+    }
+
+    return bestCandidate ?? candidates[0] ?? null;
+  }
+
+  applyInitialPortalSpawn(fallbackSpawnPoint = null) {
+    if (!this.player || !this.portalArrival.viaPortal) {
+      return false;
+    }
+
+    const startPortal = this.getStartPortalSpawnInteractable(fallbackSpawnPoint);
+    if (!startPortal?.spawnPosition?.isVector3) {
+      this.portalSpawnPlacementId = '';
+      this.portalDisarmedPlacementIds.clear();
+      this.portalSpawnLockUntil = 0;
+      return false;
+    }
+
+    this.player.position.copy(startPortal.spawnPosition);
+    this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? this.player.position.y;
+
+    const spawnRotationY = Number.isFinite(startPortal.spawnRotationY)
+      ? startPortal.spawnRotationY
+      : Math.PI;
+    this.player.setFacing(spawnRotationY);
+    this.player.setAimRotation(spawnRotationY);
+    this.currentAimDirection.set(Math.sin(spawnRotationY), 0, Math.cos(spawnRotationY));
+    if (this.currentAimDirection.lengthSq() <= 0.0001) {
+      this.currentAimDirection.set(0, 0, 1);
+    } else {
+      this.currentAimDirection.normalize();
+    }
+
+    this.portalSpawnPlacementId = startPortal.placementId ?? '';
+    this.portalDisarmedPlacementIds.clear();
+    if (this.portalSpawnPlacementId) {
+      this.portalDisarmedPlacementIds.add(this.portalSpawnPlacementId);
+    }
+    this.portalSpawnLockUntil = performance.now() + PORTAL_SPAWN_LOCK_MS;
+    this.resetLocalPlayerKinematics(this.player.position);
+    return true;
+  }
+
+  getPortalContinuityParams() {
+    const localPlayerState = this.getLocalPlayerState();
+    const character = getPlayableCharacterById(
+      localPlayerState?.characterId
+      ?? this.player?.characterId
+      ?? this.desiredLocalCharacterId
+    );
+    const bodyRotationY = Number.isFinite(localPlayerState?.rotationY)
+      ? localPlayerState.rotationY
+      : (this.player?.object?.rotation?.y ?? 0);
+
+    return {
+      username: character?.label || undefined,
+      avatar_url: character?.portraitStaticSrc || undefined,
+      hp: localPlayerState
+        ? String(THREE.MathUtils.clamp(Math.round(localPlayerState.health ?? PLAYER_MAX_HEALTH), 1, 100))
+        : undefined,
+      speed: formatPortalNumber(this.localPlayerVelocity.length()),
+      speed_x: formatPortalNumber(this.localPlayerVelocity.x),
+      speed_y: '0',
+      speed_z: formatPortalNumber(this.localPlayerVelocity.z),
+      rotation_x: '0',
+      rotation_y: formatPortalNumber(bodyRotationY),
+      rotation_z: '0'
+    };
+  }
+
+  getPortalRedirectUrlForInteractable(interactable = null) {
+    if (!interactable || interactable.kind !== 'portal') {
+      return null;
+    }
+
+    const targetUrl = interactable.portalRole === 'start'
+      ? this.portalArrival.refUrl
+      : (interactable.targetUrl || VIBE_JAM_PORTAL_URL);
+    if (!targetUrl) {
+      return null;
+    }
+
+    return buildPortalRedirectUrl({
+      targetUrl,
+      currentSearch: window.location.search,
+      currentBaseUrl: getCurrentGameBaseUrl(),
+      continuity: this.getPortalContinuityParams()
+    });
+  }
+
+  maybeActivatePortalInteractable(interactables = []) {
+    if (
+      !this.player
+      || this.portalRedirectInFlight
+      || this.worldBuilder?.enabled
+      || this.currentInterior?.scene
+      || this.activeWorkout
+    ) {
+      return false;
+    }
+
+    const portals = interactables.filter((interactable) => interactable?.kind === 'portal');
+    for (const portal of portals) {
+      const triggerDistance = getPortalTriggerDistance(this.player.position, portal);
+      if (!Number.isFinite(triggerDistance)) {
+        continue;
+      }
+
+      if (this.portalDisarmedPlacementIds.has(portal.placementId)) {
+        if (triggerDistance > ((portal.triggerRadius ?? 0) + PORTAL_EXIT_REARM_PADDING)) {
+          this.portalDisarmedPlacementIds.delete(portal.placementId);
+        }
+        continue;
+      }
+
+      if (triggerDistance > (portal.triggerRadius ?? 0)) {
+        continue;
+      }
+
+      const redirectUrl = this.getPortalRedirectUrlForInteractable(portal);
+      if (!redirectUrl) {
+        continue;
+      }
+
+      this.portalRedirectInFlight = true;
+      try {
+        window.location.assign(redirectUrl);
+      } catch (error) {
+        console.warn('[Portal] Redirect failed.', error);
+        this.portalRedirectInFlight = false;
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   renderCurrentView() {
     if (this.composer) {
       this.composer.render();
@@ -2019,6 +2265,7 @@ export class Game {
     this.setOutdoorSceneVisible(false);
     this.player.position.copy(interiorScene.spawnPoint);
     this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+    this.resetLocalPlayerKinematics(this.player.position);
     this.currentInteractable = null;
     this.hud.setPrompt(null);
     this.hud.showToast(`Entered ${interiorScene.label}.`);
@@ -2038,6 +2285,7 @@ export class Game {
     if (returnPosition) {
       this.player.position.copy(returnPosition);
       this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+      this.resetLocalPlayerKinematics(this.player.position);
     }
     this.currentInteractable = null;
     this.hud.setPrompt(null);
@@ -2297,6 +2545,7 @@ export class Game {
         this.player.position.y = groundHeight;
         this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
         this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+        this.resetLocalPlayerKinematics(this.player.position);
         this.beginWorkoutLift();
       }
       return true;
@@ -2411,12 +2660,14 @@ export class Game {
       this.measureBoot('localAvatarReady', 'boot:avatar:start', 'boot:avatar:end');
       console.info('[Game] Local player loaded.');
       const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
+      const fallbackSpawnPoint = cityState.spawnPoint.clone();
       if (localPlayerState) {
         this.player.position.set(localPlayerState.x, 0, localPlayerState.z);
       } else {
-        this.player.position.copy(cityState.spawnPoint);
+        this.player.position.copy(fallbackSpawnPoint);
       }
-      this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? cityState.spawnPoint.y;
+      const portalSpawnApplied = this.applyInitialPortalSpawn(fallbackSpawnPoint);
+      this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? fallbackSpawnPoint.y;
       this.scene.add(this.player.object);
       const aimPoseDebugHelper = this.player.getAimPoseDebugHelper?.();
       if (aimPoseDebugHelper) {
@@ -2442,7 +2693,13 @@ export class Game {
           endsAtMs: localPlayerState.reloadEndsAt ?? 0
         });
       }
-      this.syncInitialCameraState(localPlayerState);
+      if (portalSpawnApplied) {
+        this.player.setAimingState(false);
+        this.updateCamera(this.currentAimDirection, false, { snap: true });
+      } else {
+        this.syncInitialCameraState(localPlayerState);
+      }
+      this.resetLocalPlayerKinematics(this.player.position);
       this.enableDetailedRendering();
       this.setBootLoadingProgress(0.96, {
         render: true
@@ -3670,6 +3927,7 @@ export class Game {
     const distance = this.player.position.distanceTo(targetPosition);
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
+    const portalSpawnLocked = (performance.now() < this.portalSpawnLockUntil) && !respawned && !died;
 
     if (this.currentInterior?.scene && (died || respawned || !isAlive)) {
       this.exitInterior({ showToast: false });
@@ -3680,8 +3938,18 @@ export class Game {
     }
 
     const groundHeight = this.getActiveGroundHeightAt(targetPosition);
-    if ((!this.currentInterior?.scene) && (!this.localStateInitialized || respawned || died || distance > 2.5)) {
+    if (!portalSpawnLocked && distance <= 2.5) {
+      this.portalSpawnLockUntil = 0;
+    }
+
+    let snappedToAuthoritativePosition = false;
+    if (
+      (!this.currentInterior?.scene)
+      && !portalSpawnLocked
+      && (!this.localStateInitialized || respawned || died || distance > 2.5)
+    ) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
+      snappedToAuthoritativePosition = true;
     }
 
     this.player.setAliveState(isAlive, {
@@ -3721,6 +3989,10 @@ export class Game {
 
     if (respawned) {
       this.closeQuickChat();
+    }
+
+    if (snappedToAuthoritativePosition || respawned || died) {
+      this.resetLocalPlayerKinematics(this.player.position);
     }
 
     this.lastLocalAlive = isAlive;
@@ -4483,6 +4755,7 @@ export class Game {
         }
         this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       }
+      this.updateLocalPlayerKinematics();
       this.npcService?.setPlayerTransform(
         this.player.position,
         this.player.object.rotation.y,
@@ -4698,6 +4971,10 @@ export class Game {
       }
     }
 
+    if (this.maybeActivatePortalInteractable(interactables)) {
+      return;
+    }
+
     this.currentInteractable = nearest;
     const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
     const gymCheckInInteraction = deliveryInteraction
@@ -4731,6 +5008,10 @@ export class Game {
 
     if (nearest.kind === 'interior-exit') {
       this.exitInterior();
+      return;
+    }
+
+    if (nearest.kind === 'portal') {
       return;
     }
 
