@@ -33,6 +33,15 @@ async function copyFile(source, target) {
   await fs.copyFile(source, target);
 }
 
+async function copyOptionalFile(source, target) {
+  const stats = await fs.stat(source).catch(() => null);
+  if (!stats?.isFile()) {
+    return;
+  }
+
+  await copyFile(source, target);
+}
+
 function isAssetUrl(value) {
   return typeof value === 'string' && value.startsWith('file:');
 }
@@ -360,6 +369,7 @@ async function copyStaticShell({ appScript, stylesheet }) {
   const htmlTemplate = await fs.readFile(path.join(root, 'index.html'), 'utf8');
   const builtHtml = buildHtmlFromTemplate(htmlTemplate, { appScript, stylesheet });
   await fs.writeFile(path.join(stagingDist, 'index.html'), builtHtml, 'utf8');
+  await copyOptionalFile(path.join(root, 'favicon.svg'), path.join(stagingDist, 'favicon.svg'));
   await copyFile(path.join(root, 'favicon.ico'), path.join(stagingDist, 'favicon.ico'));
   await copyFile(
     path.join(root, 'vendor', 'colyseus-sdk', 'colyseus.js'),
@@ -383,8 +393,29 @@ async function walkFiles(directory) {
   return files;
 }
 
-async function writeCompressedVariant(filePath, encoding) {
-  const source = await fs.readFile(filePath);
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function readFileWithRetry(filePath, { attempts = 3, retryDelayMs = 50 } = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fs.readFile(filePath);
+    } catch (error) {
+      const isRetriableMissingFile = error?.code === 'ENOENT' && attempt < attempts;
+      if (!isRetriableMissingFile) {
+        throw error;
+      }
+      await delay(retryDelayMs * attempt);
+    }
+  }
+
+  return null;
+}
+
+async function writeCompressedVariant(filePath, source, encoding) {
   const compressed = encoding === 'br'
     ? await brotliCompressAsync(source, {
       params: {
@@ -406,8 +437,21 @@ async function compressDistFiles(outputDirectory = stagingDist) {
       continue;
     }
 
-    await writeCompressedVariant(filePath, 'gz');
-    await writeCompressedVariant(filePath, 'br');
+    let source;
+    try {
+      source = await readFileWithRetry(filePath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+
+      const relativePath = path.relative(outputDirectory, filePath).split(path.sep).join('/');
+      console.warn(`Skipping precompression for missing file: ${relativePath}`);
+      continue;
+    }
+
+    await writeCompressedVariant(filePath, source, 'gz');
+    await writeCompressedVariant(filePath, source, 'br');
   }
 }
 
