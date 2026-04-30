@@ -255,6 +255,8 @@ export class Game {
 
     this.hud = new Hud(this.root);
     this.input = new Input();
+    this.input.attachMobileControls(this.hud.getMobileControlsRoot());
+    this.input.bindActionPress('chat', () => this.maybeOpenQuickChatFromInput());
     this.library = new ModelLibrary();
     this.characterRoster = listPlayableCharacters();
     this.desiredLocalCharacterId = readStoredCharacterId();
@@ -4026,7 +4028,34 @@ export class Game {
     this.localStateInitialized = true;
   }
 
+  projectInputVectorOnCamera(inputVector) {
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() <= 0.000001) {
+      return new THREE.Vector3(0, 0, 1);
+    }
+
+    forward.normalize().multiplyScalar(-1);
+    const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize();
+    const direction = new THREE.Vector3();
+    direction.addScaledVector(right, inputVector.x);
+    direction.addScaledVector(forward, inputVector.z);
+    if (direction.lengthSq() > 1) {
+      direction.normalize();
+    }
+    return direction;
+  }
+
   getAimDirection() {
+    const aimInputVector = this.input.getAimVector();
+    if (aimInputVector) {
+      const aimDirection = this.projectInputVectorOnCamera(aimInputVector);
+      if (aimDirection.lengthSq() > 0.000001) {
+        return aimDirection.normalize();
+      }
+    }
+
     const pointer = this.input.getPointerPosition();
     const ndc = new THREE.Vector2(
       (pointer.x / window.innerWidth) * 2 - 1,
@@ -4557,7 +4586,7 @@ export class Game {
   }
 
   updateEmoteMenu() {
-    const holdingEmoteKey = this.input.isPressed('KeyB');
+    const holdingEmoteKey = this.input.isActionPressed('emote');
 
     if (holdingEmoteKey && !this.worldBuilder.enabled && !this.hud.isQuickChatOpen()) {
       const selection = this.getActiveEmoteSelection();
@@ -4616,17 +4645,33 @@ export class Game {
     });
   }
 
+  syncMobileControlsHud(localPlayerState = this.getLocalPlayerState()) {
+    const visible = Boolean(
+      this.player
+      && !this.hud.isLoadingVisible()
+      && !this.worldBuilder?.enabled
+      && !this.hud.isQuickChatOpen()
+      && !this.characterSelectorVisible
+      && !this.shaderDebugMenuVisible
+      && !this.aimPoseDebugVisible
+    );
+    const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId);
+
+    this.hud.setMobileControlsState({ visible, armed });
+    this.input.setTouchControlsEnabled(visible);
+  }
+
   handleCameraZoomInput() {
     if (this.worldBuilder?.enabled) {
       this.input.consumeWheelDirection();
       return;
     }
 
-    if (this.input.consume('Equal') || this.input.consume('NumpadAdd')) {
+    if (this.input.consumeAction('zoomIn')) {
       this.stepCameraZoom(-1);
     }
 
-    if (this.input.consume('Minus') || this.input.consume('NumpadSubtract')) {
+    if (this.input.consumeAction('zoomOut')) {
       this.stepCameraZoom(1);
     }
 
@@ -4647,14 +4692,15 @@ export class Game {
     }
 
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
-    const emoteMenuActive = this.updateEmoteMenu();
     const localPlayerState = this.getLocalPlayerState();
+    this.syncMobileControlsHud(localPlayerState);
+    const emoteMenuActive = this.updateEmoteMenu();
 
     if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
     }
 
-    if (this.input.consume('Escape')) {
+    if (this.input.consumeAction('escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
       } else if (this.characterSelectorVisible) {
@@ -4668,11 +4714,8 @@ export class Game {
     this.updateNpcFocusTargets();
 
     if (
-      this.input.consume('Enter')
-      && localPlayerState?.alive !== false
-      && !this.worldBuilder.enabled
-      && !emoteMenuActive
-      && !this.hud.isQuickChatOpen()
+      this.input.consumeAction('chat')
+      && this.canOpenQuickChatFromInput({ emoteMenuActive })
     ) {
       this.openQuickChat();
     }
@@ -4739,9 +4782,9 @@ export class Game {
         );
         this.syncInlineShellState();
         const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
-        const primaryFirePressed = combatInputEnabled && this.input.consumePointer(0);
-        const primaryFireHeld = combatInputEnabled && this.input.isPointerPressed(0);
-        const secondaryAimHeld = combatInputEnabled && this.input.isPointerPressed(2);
+        const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
+        const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
+        const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
         if (armed) {
           aimingMode = secondaryAimHeld;
           this.currentAimMode = aimingMode;
@@ -4753,7 +4796,7 @@ export class Game {
               this.queueHipFireShot(aimDirection);
             }
           }
-          if (combatInputEnabled && this.input.consume('KeyR')) {
+          if (combatInputEnabled && this.input.consumeAction('reload')) {
             this.npcService?.reloadWeapon();
           }
         } else {
@@ -5007,7 +5050,7 @@ export class Game {
     const gymCheckInInteraction = deliveryInteraction
       ? null
       : this.getNearestGymCheckInInteractable();
-    const interactPressed = this.input.consume('KeyE');
+    const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
       void this.handleDeliveryQuestInteraction(deliveryInteraction);
@@ -5053,6 +5096,26 @@ export class Game {
     }
 
     this.hud.showToast(nearest.actionText);
+  }
+
+  canOpenQuickChatFromInput({ emoteMenuActive = this.emoteMenuOpen } = {}) {
+    const localPlayerState = this.getLocalPlayerState();
+    return Boolean(
+      this.player
+      && localPlayerState?.alive !== false
+      && !this.worldBuilder?.enabled
+      && !emoteMenuActive
+      && !this.hud.isQuickChatOpen()
+      && !this.characterSelectorVisible
+      && !this.shaderDebugMenuVisible
+      && !this.aimPoseDebugVisible
+    );
+  }
+
+  maybeOpenQuickChatFromInput() {
+    if (this.canOpenQuickChatFromInput()) {
+      this.openQuickChat();
+    }
   }
 
   openQuickChat() {

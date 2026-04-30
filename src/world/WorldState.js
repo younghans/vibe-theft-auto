@@ -8,6 +8,10 @@ import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
 
+function cloneInteractable(interactable) {
+  return cloneInteractableDefinition(interactable);
+}
+
 function clonePlacement(placement) {
   return {
     id: placement.id,

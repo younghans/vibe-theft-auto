@@ -358,6 +358,8 @@ export class Hud {
     this.emoteWheel = this.overlay.querySelector('[data-emote-wheel]');
     this.emoteSelection = this.overlay.querySelector('[data-emote-selection]');
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
+    this.mobileControls = this.overlay.querySelector('[data-mobile-controls]');
+    this.mobileFireLabel = this.overlay.querySelector('[data-mobile-fire-label]');
     this.emoteSliceNodes = [];
     this.overheadHealthBarNodes = new Map();
     this.speechBubbleNodes = new Map();
@@ -963,6 +965,33 @@ export class Hud {
         </div>
         <p class="hud__emote-hint" data-emote-hint>Hold B, push the cursor into a slice, release B to emote.</p>
       </section>
+      <section class="hud__mobile-controls is-hidden" data-mobile-controls aria-hidden="true">
+        <div class="hud__mobile-stick hud__mobile-stick--move" data-mobile-joystick role="button" aria-label="Move">
+          <span class="hud__mobile-stick-ring" aria-hidden="true"></span>
+          <span class="hud__mobile-stick-knob" data-mobile-joystick-knob aria-hidden="true"></span>
+        </div>
+        <div class="hud__mobile-right-cluster">
+          <div class="hud__mobile-stick hud__mobile-stick--aim" data-mobile-aim role="button" aria-label="Aim">
+            <span class="hud__mobile-stick-ring" aria-hidden="true"></span>
+            <span class="hud__mobile-stick-knob" data-mobile-aim-knob aria-hidden="true"></span>
+          </div>
+          <div class="hud__mobile-actions" role="group" aria-label="Actions">
+            <button class="hud__mobile-action hud__mobile-action--fire" type="button" data-mobile-action="fire" aria-label="Attack">
+              <span data-mobile-fire-label>Hit</span>
+            </button>
+            <button class="hud__mobile-action" type="button" data-mobile-action="interact">Use</button>
+            <button class="hud__mobile-action" type="button" data-mobile-action="reload">Reload</button>
+            <button class="hud__mobile-action" type="button" data-mobile-action="chat">Chat</button>
+            <button class="hud__mobile-action" type="button" data-mobile-action="emote">Emote</button>
+          </div>
+        </div>
+      </section>
+      <section class="hud__orientation-lock" aria-hidden="true">
+        <div class="hud__orientation-device" aria-hidden="true">
+          <span class="hud__orientation-screen"></span>
+        </div>
+        <p class="hud__orientation-title">Rotate to landscape</p>
+      </section>
       <section class="hud__selection" data-builder-selection>
         <div class="hud__selection-actions">
           <button class="hud__selection-icon-button" type="button" data-builder-selection-rotate aria-label="Rotate selected piece" title="Rotate selected piece">
@@ -1171,6 +1200,27 @@ export class Hud {
 
   isElementInteractive(element) {
     return Boolean(element) && !element.hidden && element.classList.contains('is-visible');
+  }
+
+  getMobileControlsRoot() {
+    return this.mobileControls;
+  }
+
+  isLoadingVisible() {
+    return Boolean(this.loading && !this.loading.hidden && !this.loading.classList.contains('is-hidden'));
+  }
+
+  setMobileControlsState({ visible = true, armed = false } = {}) {
+    if (!this.mobileControls) {
+      return;
+    }
+
+    const nextVisible = Boolean(visible);
+    this.mobileControls.classList.toggle('is-hidden', !nextVisible);
+    this.mobileControls.setAttribute('aria-hidden', nextVisible ? 'false' : 'true');
+    if (this.mobileFireLabel) {
+      this.mobileFireLabel.textContent = armed ? 'Fire' : 'Hit';
+    }
   }
 
   setPrompt(interactable) {
