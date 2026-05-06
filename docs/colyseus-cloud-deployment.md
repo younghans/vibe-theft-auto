@@ -11,8 +11,6 @@
 
 1. In the Colyseus Cloud application settings, keep the build command on the package `build` script.
    If the UI requires an explicit command, use `npm run build`.
-   The PM2 production entrypoint also checks for `dist/index.html` and runs
-   `npm run build` before starting if the frontend build artifacts are missing.
 2. Add these environment variables:
    - `DATABASE_URL`
    - `WORLD_KEY=primary`
@@ -22,16 +20,6 @@
    - `OPENAI_TIMEOUT_MS=12000`
 
 ## 3. Deploy from the repo
-
-Before deploying, make sure generated dependency folders are not tracked by git:
-
-```bash
-git ls-files node_modules
-```
-
-That command should print nothing. Colyseus Cloud installs dependencies during
-the remote build, and tracked `node_modules` contents can break deployment on
-the Linux host.
 
 1. From the repo root, run:
 

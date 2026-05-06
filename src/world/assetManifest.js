@@ -34,7 +34,7 @@ export const assets = {
     characters: Object.fromEntries(
       MIXAMO_CHARACTER_DEFINITIONS.map((entry) => [
         entry.id,
-        assetUrl('runtime', 'mixamo', 'characters', `${entry.id}.glb`)
+        assetUrl('mixamo', 'characters', entry.fileName)
       ])
     ),
     animations: {

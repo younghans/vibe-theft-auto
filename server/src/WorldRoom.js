@@ -1886,11 +1886,7 @@ export class WorldRoom extends Room {
   }
 
   updateBuilderPresence(client, message) {
-    if (!this.isAdminClient(client)) {
-      this.state.builders.delete(client.sessionId);
-      return { active: false };
-    }
-
+    this.assertAdminClient(client);
     const sanitized = this.sanitizeBuilderPresence(message);
     if (!sanitized.active) {
       this.state.builders.delete(client.sessionId);

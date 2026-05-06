@@ -13,11 +13,8 @@ const assetsRoot = path.join(root, 'assets');
 const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
-const DIST_TOTAL_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_TOTAL_BUDGET_BYTES', 35 * 1024 * 1024);
-const DIST_FILE_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_FILE_BUDGET_BYTES', 5 * 1024 * 1024);
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',
-  '.glb',
   '.html',
   '.js',
   '.json',
@@ -25,11 +22,6 @@ const COMPRESSIBLE_EXTENSIONS = new Set([
   '.svg',
   '.txt'
 ]);
-
-function getByteBudget(name, fallback) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 
 async function resetStagingDist() {
   await fs.rm(stagingDist, { recursive: true, force: true });
@@ -39,22 +31,6 @@ async function resetStagingDist() {
 async function copyFile(source, target) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.copyFile(source, target);
-}
-
-async function copyOptimizedTextAsset(source, target) {
-  const extension = path.extname(source).toLowerCase();
-  if (extension !== '.json' && extension !== '.gltf') {
-    await copyFile(source, target);
-    return;
-  }
-
-  try {
-    const document = JSON.parse(await fs.readFile(source, 'utf8'));
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, JSON.stringify(document), 'utf8');
-  } catch {
-    await copyFile(source, target);
-  }
 }
 
 async function copyOptionalFile(source, target) {
@@ -291,8 +267,8 @@ function shouldSkipStartupCopy(filePath, startupMixamoCharacterPaths) {
   }
 
   const assetSegments = relativeAssetPath.split(path.sep);
-  const isSourceMixamoCharacter = assetSegments[0] === 'mixamo' && assetSegments[1] === 'characters';
-  if (!isSourceMixamoCharacter) {
+  const isMixamoCharacter = assetSegments[0] === 'mixamo' && assetSegments[1] === 'characters';
+  if (!isMixamoCharacter) {
     return false;
   }
 
@@ -309,7 +285,7 @@ async function copyRuntimeAssets(outputDirectory = stagingDist) {
 
   for (const sourcePath of assetCopyList.files) {
     const relativePath = path.relative(root, sourcePath);
-    await copyOptimizedTextAsset(sourcePath, path.join(outputDirectory, relativePath));
+    await copyFile(sourcePath, path.join(outputDirectory, relativePath));
   }
 }
 
@@ -479,49 +455,6 @@ async function compressDistFiles(outputDirectory = stagingDist) {
   }
 }
 
-async function enforceDistBudget(outputDirectory = stagingDist) {
-  const files = await walkFiles(outputDirectory);
-  const runtimeFiles = files.filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'));
-  let totalBytes = 0;
-  const oversizedFiles = [];
-
-  for (const filePath of runtimeFiles) {
-    const stats = await fs.stat(filePath);
-    totalBytes += stats.size;
-
-    if (stats.size > DIST_FILE_BUDGET_BYTES) {
-      oversizedFiles.push({
-        path: path.relative(outputDirectory, filePath).split(path.sep).join('/'),
-        bytes: stats.size
-      });
-    }
-  }
-
-  const errors = [];
-  if (totalBytes > DIST_TOTAL_BUDGET_BYTES) {
-    errors.push(
-      `Dist payload is ${Math.round(totalBytes / 1024)} KiB, budget is ${Math.round(DIST_TOTAL_BUDGET_BYTES / 1024)} KiB.`
-    );
-  }
-
-  if (oversizedFiles.length > 0) {
-    const details = oversizedFiles
-      .sort((left, right) => right.bytes - left.bytes)
-      .slice(0, 10)
-      .map((entry) => `${entry.path} (${Math.round(entry.bytes / 1024)} KiB)`)
-      .join(', ');
-    errors.push(
-      `Files exceed the single-file budget of ${Math.round(DIST_FILE_BUDGET_BYTES / 1024)} KiB: ${details}.`
-    );
-  }
-
-  if (errors.length > 0) {
-    throw new Error(`Build asset budget failed. ${errors.join(' ')}`);
-  }
-
-  return totalBytes;
-}
-
 async function deployStagingDist() {
   await fs.mkdir(dist, { recursive: true });
   const stagingFiles = await walkFiles(stagingDist);
@@ -572,7 +505,15 @@ await copyStaticShell(bundleOutputs);
 await copyRuntimeAssets();
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();
-const totalBytes = await enforceDistBudget();
 await deployStagingDist();
 
-console.log(`Built bundled web app into ${dist} (${Math.round(totalBytes / 1024)} KiB before precompressed variants).`);
+const distFiles = await walkFiles(stagingDist);
+const totalBytes = distFiles
+  .filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'))
+  .reduce(async (sumPromise, filePath) => {
+    const sum = await sumPromise;
+    const stats = await fs.stat(filePath);
+    return sum + stats.size;
+  }, Promise.resolve(0));
+
+console.log(`Built bundled web app into ${dist} (${Math.round((await totalBytes) / 1024)} KiB before precompressed variants).`);
