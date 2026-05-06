@@ -3,3 +3,6 @@
 .colyseus-cloud.json
 dist/
 .dist-staging/
+.tmp-gltf-estimate/
+node_modules/
+test-results/

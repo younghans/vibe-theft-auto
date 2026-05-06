@@ -25,7 +25,7 @@ const MIME_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
   '.wav': 'audio/wav'
 };
-const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt']);
+const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);
 
 function normalizeAssetPath(requestPath = '/') {
   let decodedPath = String(requestPath);
