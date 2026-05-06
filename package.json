@@ -18,7 +18,7 @@
     "world:copy": "node scripts/copy-world-snapshot.mjs",
     "world:copy:primary-to-staging": "node scripts/copy-world-snapshot.mjs primary staging",
     "world:promote:staging-to-primary": "node scripts/copy-world-snapshot.mjs staging primary",
-    "start": "node server/index.mjs",
+    "start": "node server/start-production.mjs",
     "prebuild": "npm run optimize:assets",
     "build": "node scripts/build-web.mjs",
     "optimize:assets": "node scripts/optimize-mixamo-assets.mjs",
@@ -39,20 +39,19 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@gltf-transform/cli": "^4.3.0",
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/functions": "^4.3.0",
     "@colyseus/schema": "^4.0.19",
     "@colyseus/sdk": "^0.17.35",
     "@colyseus/ws-transport": "^0.17.9",
     "colyseus": "^0.17.8",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.28.0",
+    "fbx2gltf": "^0.9.7-p1",
     "openai": "^6.33.0",
     "pg": "^8.20.0",
     "three": "^0.183.2"
   },
-  "devDependencies": {
-    "@gltf-transform/cli": "^4.3.0",
-    "@gltf-transform/core": "^4.3.0",
-    "@gltf-transform/functions": "^4.3.0",
-    "esbuild": "^0.28.0",
-    "fbx2gltf": "^0.9.7-p1"
-  }
+  "devDependencies": {}
 }

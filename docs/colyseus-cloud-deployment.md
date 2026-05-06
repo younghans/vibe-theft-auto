@@ -11,6 +11,8 @@
 
 1. In the Colyseus Cloud application settings, keep the build command on the package `build` script.
    If the UI requires an explicit command, use `npm run build`.
+   The PM2 production entrypoint also checks for `dist/index.html` and runs
+   `npm run build` before starting if the frontend build artifacts are missing.
 2. Add these environment variables:
    - `DATABASE_URL`
    - `WORLD_KEY=primary`
