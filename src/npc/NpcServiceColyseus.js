@@ -452,9 +452,15 @@ export class NpcServiceColyseus {
       return;
     }
 
+    const localPlayer = this.state.players.get(this.state.sessionId);
+    if (localPlayer?.isAdmin !== true) {
+      return;
+    }
+
     const next = {
       active: Boolean(presence.active),
       itemId: presence.itemId ?? '',
+      layer: presence.layer ?? '',
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,
@@ -464,8 +470,9 @@ export class NpcServiceColyseus {
     };
     const signature = stableStringify(next);
     const now = performance.now();
+    const force = Boolean(presence.force);
 
-    if (signature === this.lastBuilderPresenceSignature && now - this.lastBuilderPresenceSentAt < 120) {
+    if (!force && signature === this.lastBuilderPresenceSignature && now - this.lastBuilderPresenceSentAt < 120) {
       return;
     }
 
