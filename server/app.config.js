@@ -1,5 +1,5 @@
 import './src/loadEnv.js';
-import { promises as fsp } from 'node:fs';
+import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineRoom, defineServer } from 'colyseus';
@@ -10,7 +10,6 @@ import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
 const DIST_INDEX_PATH = path.join(DIST_ROOT, 'index.html');
-const ASSETS_ROOT = path.join(PROJECT_ROOT, 'assets');
 const MIME_TYPES = {
   '.bin': 'application/octet-stream',
   '.css': 'text/css; charset=utf-8',
@@ -22,10 +21,19 @@ const MIME_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.svg': 'image/svg+xml; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.wav': 'audio/wav'
 };
 const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt']);
+const SOURCE_FILE_ALLOWLIST = new Set([
+  'favicon.ico',
+  'favicon.svg',
+  'index.html',
+  'npc-portrait-studio.html',
+  'styles.css'
+]);
+const SOURCE_DIRECTORY_ALLOWLIST = ['animations/', 'assets/', 'src/', 'vendor/'];
 
 function normalizeAssetPath(requestPath = '/') {
   let decodedPath = String(requestPath);
@@ -68,14 +76,17 @@ async function resolveDistAssetPath(requestPath) {
 
 async function resolveSourceAssetPath(requestPath) {
   const normalizedPath = normalizeAssetPath(requestPath);
-  if (normalizedPath == null || (!normalizedPath.startsWith('assets/') && normalizedPath !== 'assets')) {
+  if (
+    normalizedPath == null
+    || (
+      !SOURCE_FILE_ALLOWLIST.has(normalizedPath)
+      && !SOURCE_DIRECTORY_ALLOWLIST.some((prefix) => normalizedPath.startsWith(prefix))
+    )
+  ) {
     return null;
   }
 
-  const relativeAssetPath = normalizedPath === 'assets'
-    ? ''
-    : normalizedPath.slice('assets/'.length);
-  let candidatePath = path.join(ASSETS_ROOT, relativeAssetPath);
+  let candidatePath = path.join(PROJECT_ROOT, normalizedPath);
   const stats = await fsp.stat(candidatePath).catch(() => null);
   if (stats?.isDirectory()) {
     return null;
@@ -84,8 +95,8 @@ async function resolveSourceAssetPath(requestPath) {
     return null;
   }
 
-  const assetRelativePath = path.relative(ASSETS_ROOT, candidatePath);
-  if (assetRelativePath.startsWith('..') || path.isAbsolute(assetRelativePath)) {
+  const sourceRelativePath = path.relative(PROJECT_ROOT, candidatePath);
+  if (sourceRelativePath.startsWith('..') || path.isAbsolute(sourceRelativePath)) {
     return null;
   }
 
@@ -166,6 +177,8 @@ const server = defineServer({
         worldKey: persistence.worldKey,
         openAiEnabled: Boolean(process.env.OPENAI_API_KEY),
         openAiModel: process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini',
+        release: 'mobile-450757b-rollback',
+        distReady: existsSync(DIST_INDEX_PATH),
         timestamp: new Date().toISOString()
       });
     });
@@ -187,6 +200,12 @@ const server = defineServer({
         if (!path.posix.extname(req.path || '')) {
           const indexStats = await fsp.stat(DIST_INDEX_PATH).catch(() => null);
           if (!indexStats?.isFile()) {
+            const sourceIndexPath = await resolveSourceAssetPath('index.html');
+            if (sourceIndexPath) {
+              await sendDistAsset(req, res, sourceIndexPath);
+              return;
+            }
+
             res.status(503).json({
               ok: false,
               error: 'Frontend build artifacts are missing. Run `npm run build` before starting the server.'
