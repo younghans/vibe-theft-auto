@@ -19,6 +19,13 @@
    - `OPENAI_NPC_MODEL=gpt-5.4-mini`
    - `OPENAI_TIMEOUT_MS=12000`
 
+## Asset pipeline
+
+- Optimized Mixamo runtime assets live in `assets/runtime/mixamo/characters/` and are committed to git.
+- Run `npm run optimize:assets` locally when source FBX character files change. This installs the isolated optimizer package in `tools/mixamo-optimizer/`, then updates the runtime GLBs for commit.
+- Do not wire `optimize:assets` into `prebuild` or the Colyseus Cloud build/start path. Cloud deployment should only install dependencies, run `npm run build`, and start the server.
+- `npm run build` enforces dist size budgets so oversized source character assets do not quietly return to the deployment payload.
+
 ## 3. Deploy from the repo
 
 1. From the repo root, run:

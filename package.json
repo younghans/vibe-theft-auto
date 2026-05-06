@@ -20,6 +20,8 @@
     "world:promote:staging-to-primary": "node scripts/copy-world-snapshot.mjs staging primary",
     "start": "node server/start-production.mjs",
     "build": "node scripts/build-web.mjs",
+    "optimize:assets": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize --",
+    "optimize:assets:startup": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize -- --startup-only",
     "deploy:colyseus": "npx @colyseus/cloud deploy",
     "generate:bar-building": "node scripts/generate-bar-building.mjs",
     "generate:gym-building": "node scripts/generate-gym-building.mjs",
@@ -41,10 +43,9 @@
     "@colyseus/ws-transport": "^0.17.9",
     "colyseus": "^0.17.8",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.28.0",
     "openai": "^6.33.0",
     "pg": "^8.20.0",
-    "three": "^0.183.2",
-    "esbuild": "^0.28.0"
-  },
-  "devDependencies": {}
+    "three": "^0.183.2"
+  }
 }

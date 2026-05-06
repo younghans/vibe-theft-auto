@@ -39,7 +39,7 @@ const mimeTypes = {
   '.txt': 'text/plain; charset=utf-8',
   '.wav': 'audio/wav'
 };
-const compressibleExtensions = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt']);
+const compressibleExtensions = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);
 
 function normalizeRelativePath(filePath = '') {
   return String(filePath)

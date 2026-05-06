@@ -25,7 +25,7 @@ const MIME_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
   '.wav': 'audio/wav'
 };
-const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt']);
+const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);
 const SOURCE_FILE_ALLOWLIST = new Set([
   'favicon.ico',
   'favicon.svg',
@@ -177,7 +177,7 @@ const server = defineServer({
         worldKey: persistence.worldKey,
         openAiEnabled: Boolean(process.env.OPENAI_API_KEY),
         openAiModel: process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini',
-        release: 'mobile-450757b-rollback',
+        release: 'optimized-assets-safe-build',
         distReady: existsSync(DIST_INDEX_PATH),
         timestamp: new Date().toISOString()
       });
