@@ -21,6 +21,16 @@
 
 ## 3. Deploy from the repo
 
+Before deploying, make sure generated dependency folders are not tracked by git:
+
+```bash
+git ls-files node_modules
+```
+
+That command should print nothing. Colyseus Cloud installs dependencies during
+the remote build, and tracked `node_modules` contents can break deployment on
+the Linux host.
+
 1. From the repo root, run:
 
    ```bash
