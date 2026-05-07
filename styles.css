@@ -2619,11 +2619,11 @@ body.is-builder-resizing * {
 .hud__stock-market {
   left: 50%;
   top: 50%;
-  width: min(1280px, calc(100vw - 24px));
+  width: min(1400px, calc(100vw - 24px));
   height: min(920px, calc(100vh - 24px));
   max-height: min(920px, calc(100vh - 24px));
   display: grid;
-  grid-template-rows: auto auto minmax(300px, 1fr) minmax(120px, 0.36fr) auto;
+  grid-template-rows: auto auto minmax(220px, 0.88fr) minmax(236px, 0.62fr) auto;
   gap: 10px;
   padding: 14px;
   border-radius: 16px;
@@ -2710,7 +2710,7 @@ body.is-builder-resizing * {
 
 .hud__stock-body {
   display: grid;
-  grid-template-columns: minmax(190px, 0.48fr) minmax(0, 1.52fr);
+  grid-template-columns: minmax(500px, 0.9fr) minmax(0, 1.1fr);
   gap: 12px;
   min-height: 0;
   overflow: hidden;
@@ -2718,20 +2718,21 @@ body.is-builder-resizing * {
 
 .hud__stock-list {
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(46px, 54px));
   align-content: start;
   gap: 6px;
-  padding-right: 4px;
 }
 
 .hud__stock-row {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) auto;
-  gap: 2px 8px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 2px 7px;
   width: 100%;
-  min-height: 48px;
-  padding: 7px 8px;
+  min-height: 46px;
+  padding: 6px 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-left: 3px solid var(--stock-accent, #f2c871);
   border-radius: 8px;
@@ -2807,7 +2808,7 @@ body.is-builder-resizing * {
 .hud__stock-row-price strong {
   display: block;
   color: #f8f6ef;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.08;
 }
 
@@ -2840,8 +2841,8 @@ body.is-builder-resizing * {
   display: grid;
   grid-template-rows: auto auto;
   align-content: start;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   background: rgba(5, 9, 14, 0.32);
@@ -2860,7 +2861,7 @@ body.is-builder-resizing * {
 .hud__stock-detail-head h3 {
   margin: 5px 0 4px;
   color: #f8f6ef;
-  font-size: 21px;
+  font-size: 19px;
   line-height: 1.08;
 }
 
@@ -2881,14 +2882,14 @@ body.is-builder-resizing * {
 
 .hud__stock-price-stack {
   flex: 0 0 auto;
-  min-width: 136px;
+  min-width: 126px;
   text-align: right;
 }
 
 .hud__stock-price-stack strong {
   display: block;
   color: #f8f6ef;
-  font-size: 28px;
+  font-size: 25px;
   line-height: 1;
 }
 
@@ -3079,7 +3080,7 @@ body.is-builder-resizing * {
 .hud__stock-position-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .hud__stock-trade {
