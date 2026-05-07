@@ -31,6 +31,7 @@ function cloneNpcState(npc) {
     deliveryQuestEnabled: npc.deliveryQuestEnabled === true,
     gymCheckInEnabled: npc.gymCheckInEnabled === true,
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
+    stockMarketEnabled: npc.stockMarketEnabled === true,
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,
@@ -493,6 +494,21 @@ export class NpcServiceColyseus {
   async buyGymMembership(npcId = '') {
     return this.rpc('gym:buyMembership', {
       npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async getStockMarket(npcId = '') {
+    return this.rpc('stock:getMarket', {
+      npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1) {
+    return this.rpc('stock:trade', {
+      npcId: String(npcId ?? '').trim(),
+      symbol: String(symbol ?? '').trim(),
+      side: String(side ?? '').trim(),
+      quantity
     });
   }
 

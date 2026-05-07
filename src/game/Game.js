@@ -65,6 +65,11 @@ import {
   isGymCheckInNpc
 } from '../shared/gymMembership.js';
 import { RENT_INTRO_LINE } from '../shared/rentIntro.js';
+import {
+  getStockMarketPromptRadius,
+  isStockMarketNpc,
+  normalizeStockTradeQuantity
+} from '../shared/stockMarket.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -326,6 +331,12 @@ export class Game {
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
     this.gymMembershipRequestInFlight = false;
+    this.stockMarketNpcId = '';
+    this.stockMarketSnapshot = null;
+    this.stockMarketSelectedSymbol = '';
+    this.stockMarketQuantity = 1;
+    this.stockMarketRequestInFlight = false;
+    this.stockMarketRefreshAt = 0;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -378,6 +389,14 @@ export class Game {
     this.hud.bindInteractionEvents({
       onAction: () => {},
       onCloseInteraction: () => this.hud.hideInteractionMenu()
+    });
+    this.hud.bindStockMarketEvents({
+      onClose: () => this.closeStockMarket(),
+      onRefresh: () => void this.refreshStockMarket({ force: true }),
+      onSelectStock: (symbol) => this.selectStockMarketSymbol(symbol),
+      onQuantityChange: (quantity) => this.setStockMarketQuantity(quantity),
+      onBuy: () => void this.handleStockTrade('buy'),
+      onSell: () => void this.handleStockTrade('sell')
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -2256,6 +2275,283 @@ export class Game {
     }
   }
 
+  getStockMarketNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      stockMarketEnabled: npcState?.stockMarketEnabled === true || interactable?.npc?.stockMarketEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getStockMarketNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestStockMarketInteractable() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getStockMarketNpcDetails(interactable);
+      if (
+        !isStockMarketNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getStockMarketNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getStockMarketPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'stock-market',
+        npcId: interactable.npcId || interactable.placementId || '',
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Trade stocks',
+        actionText: 'Market opened.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  selectStockMarketSymbol(symbol = '') {
+    this.stockMarketSelectedSymbol = String(symbol ?? '').trim().toUpperCase();
+    this.hud.setStockMarketState({
+      visible: true,
+      market: this.stockMarketSnapshot,
+      selectedSymbol: this.stockMarketSelectedSymbol,
+      quantity: this.stockMarketQuantity
+    });
+  }
+
+  setStockMarketQuantity(quantity = 1) {
+    this.stockMarketQuantity = normalizeStockTradeQuantity(quantity);
+    this.hud.setStockMarketState({
+      visible: true,
+      market: this.stockMarketSnapshot,
+      selectedSymbol: this.stockMarketSelectedSymbol,
+      quantity: this.stockMarketQuantity
+    });
+  }
+
+  async openStockMarket(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.stockMarketNpcId = npcId;
+    this.stockMarketRefreshAt = 0;
+    this.hud.setStockMarketState({
+      visible: true,
+      market: this.stockMarketSnapshot,
+      selectedSymbol: this.stockMarketSelectedSymbol,
+      quantity: this.stockMarketQuantity,
+      loading: true,
+      error: ''
+    });
+    await this.refreshStockMarket({ force: true });
+  }
+
+  closeStockMarket() {
+    this.hud.setStockMarketState({
+      visible: false,
+      market: this.stockMarketSnapshot,
+      selectedSymbol: this.stockMarketSelectedSymbol,
+      quantity: this.stockMarketQuantity,
+      loading: false,
+      error: ''
+    });
+  }
+
+  async refreshStockMarket({ force = false } = {}) {
+    if (!this.stockMarketNpcId || this.stockMarketRequestInFlight) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!force && now < this.stockMarketRefreshAt) {
+      return;
+    }
+
+    this.stockMarketRequestInFlight = true;
+    this.stockMarketRefreshAt = now + 4600;
+    if (force) {
+      this.hud.setStockMarketState({
+        visible: true,
+        market: this.stockMarketSnapshot,
+        selectedSymbol: this.stockMarketSelectedSymbol,
+        quantity: this.stockMarketQuantity,
+        loading: true,
+        error: ''
+      });
+    }
+
+    try {
+      const result = await this.npcService?.getStockMarket?.(this.stockMarketNpcId);
+      if (!result?.ok || !result.market) {
+        const error = result?.error ?? 'Market data is unavailable.';
+        this.hud.setStockMarketState({
+          visible: this.hud.isStockMarketOpen(),
+          market: this.stockMarketSnapshot,
+          selectedSymbol: this.stockMarketSelectedSymbol,
+          quantity: this.stockMarketQuantity,
+          loading: false,
+          error
+        });
+        this.hud.showToast(error);
+        return;
+      }
+
+      this.stockMarketSnapshot = result.market;
+      const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
+      if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
+        this.stockMarketSelectedSymbol = result.market.stocks?.[0]?.symbol ?? '';
+      }
+      this.hud.setStockMarketState({
+        visible: this.hud.isStockMarketOpen(),
+        market: this.stockMarketSnapshot,
+        selectedSymbol: this.stockMarketSelectedSymbol,
+        quantity: this.stockMarketQuantity,
+        loading: false,
+        error: ''
+      });
+    } catch (error) {
+      console.warn('[StockMarket] Refresh failed.', error);
+      this.hud.setStockMarketState({
+        visible: this.hud.isStockMarketOpen(),
+        market: this.stockMarketSnapshot,
+        selectedSymbol: this.stockMarketSelectedSymbol,
+        quantity: this.stockMarketQuantity,
+        loading: false,
+        error: 'Market request failed.'
+      });
+      this.hud.showToast('Market request failed.');
+    } finally {
+      this.stockMarketRequestInFlight = false;
+    }
+  }
+
+  async handleStockTrade(side = '') {
+    if (!this.stockMarketNpcId || this.stockMarketRequestInFlight) {
+      return;
+    }
+
+    const listedSymbols = new Set((this.stockMarketSnapshot?.stocks ?? []).map((stock) => stock.symbol));
+    const symbol = listedSymbols.has(this.stockMarketSelectedSymbol)
+      ? this.stockMarketSelectedSymbol
+      : this.stockMarketSnapshot?.stocks?.[0]?.symbol ?? '';
+    if (!symbol) {
+      return;
+    }
+
+    this.stockMarketRequestInFlight = true;
+    this.hud.setStockMarketState({
+      visible: true,
+      market: this.stockMarketSnapshot,
+      selectedSymbol: symbol,
+      quantity: this.stockMarketQuantity,
+      loading: true,
+      error: ''
+    });
+
+    try {
+      const result = await this.npcService?.tradeStock?.(
+        this.stockMarketNpcId,
+        symbol,
+        side,
+        this.stockMarketQuantity
+      );
+      if (!result?.ok || !result.market) {
+        const error = result?.error ?? 'That trade did not go through.';
+        this.hud.setStockMarketState({
+          visible: true,
+          market: this.stockMarketSnapshot,
+          selectedSymbol: symbol,
+          quantity: this.stockMarketQuantity,
+          loading: false,
+          error
+        });
+        this.hud.showToast(error);
+        return;
+      }
+
+      this.stockMarketSnapshot = result.market;
+      const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
+      this.stockMarketSelectedSymbol = listedSymbols.has(symbol)
+        ? symbol
+        : result.market.stocks?.[0]?.symbol ?? '';
+      this.stockMarketRefreshAt = performance.now() + 4600;
+      this.hud.setStockMarketState({
+        visible: this.hud.isStockMarketOpen(),
+        market: this.stockMarketSnapshot,
+        selectedSymbol: this.stockMarketSelectedSymbol,
+        quantity: this.stockMarketQuantity,
+        loading: false,
+        error: ''
+      });
+      const trade = result.trade ?? {};
+      const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
+      this.hud.showToast(`${verb} ${trade.quantity ?? this.stockMarketQuantity} ${trade.symbol ?? symbol}.`);
+      this.playSoundEffect(this.rentChaChingSound);
+    } catch (error) {
+      console.warn('[StockMarket] Trade failed.', error);
+      this.hud.setStockMarketState({
+        visible: true,
+        market: this.stockMarketSnapshot,
+        selectedSymbol: symbol,
+        quantity: this.stockMarketQuantity,
+        loading: false,
+        error: 'Trade request failed.'
+      });
+      this.hud.showToast('Trade request failed.');
+    } finally {
+      this.stockMarketRequestInFlight = false;
+    }
+  }
+
   resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
     const [offsetX, offsetZ] = cloneOffset(offset);
     const rotatedOffset = rotateFootprintOffset(offsetX, offsetZ, rotationQuarterTurns);
@@ -3261,6 +3557,7 @@ export class Game {
         rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
         interactRadius: npc.interactRadius,
         gymCheckInEnabled: npc.gymCheckInEnabled === true,
+        stockMarketEnabled: npc.stockMarketEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
         activity: npc.activity,
@@ -4588,7 +4885,12 @@ export class Game {
   updateEmoteMenu() {
     const holdingEmoteKey = this.input.isActionPressed('emote');
 
-    if (holdingEmoteKey && !this.worldBuilder.enabled && !this.hud.isQuickChatOpen()) {
+    if (
+      holdingEmoteKey
+      && !this.worldBuilder.enabled
+      && !this.hud.isQuickChatOpen()
+      && !this.hud.isStockMarketOpen()
+    ) {
       const selection = this.getActiveEmoteSelection();
       this.emoteMenuOpen = true;
       this.hud.setEmoteMenuState({
@@ -4651,6 +4953,7 @@ export class Game {
       && !this.hud.isLoadingVisible()
       && !this.worldBuilder?.enabled
       && !this.hud.isQuickChatOpen()
+      && !this.hud.isStockMarketOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -4695,6 +4998,9 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     this.syncMobileControlsHud(localPlayerState);
     const emoteMenuActive = this.updateEmoteMenu();
+    if (this.hud.isStockMarketOpen()) {
+      void this.refreshStockMarket();
+    }
 
     if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
@@ -4703,6 +5009,8 @@ export class Game {
     if (this.input.consumeAction('escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
+      } else if (this.hud.isStockMarketOpen()) {
+        this.closeStockMarket();
       } else if (this.characterSelectorVisible) {
         this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
@@ -4739,8 +5047,9 @@ export class Game {
       this.hud.setPrompt(null);
     } else {
       const localAlive = localPlayerState?.alive !== false;
+      const stockMarketOpen = this.hud.isStockMarketOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -4749,11 +5058,11 @@ export class Game {
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -4781,7 +5090,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen();
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -4808,7 +5117,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen()) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -4836,7 +5145,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen()) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
@@ -5050,6 +5359,9 @@ export class Game {
     const gymCheckInInteraction = deliveryInteraction
       ? null
       : this.getNearestGymCheckInInteractable();
+    const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
+      ? null
+      : this.getNearestStockMarketInteractable();
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -5061,6 +5373,14 @@ export class Game {
       this.hud.setPrompt(gymCheckInInteraction);
       if (interactPressed) {
         void this.handleGymCheckInInteraction(gymCheckInInteraction);
+      }
+      return;
+    }
+
+    if (stockMarketInteraction) {
+      this.hud.setPrompt(stockMarketInteraction);
+      if (interactPressed) {
+        void this.openStockMarket(stockMarketInteraction);
       }
       return;
     }
@@ -5106,6 +5426,7 @@ export class Game {
       && !this.worldBuilder?.enabled
       && !emoteMenuActive
       && !this.hud.isQuickChatOpen()
+      && !this.hud.isStockMarketOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -5261,9 +5582,12 @@ export class Game {
     const gymCheckInInteraction = deliveryInteraction
       ? null
       : this.getNearestGymCheckInInteractable();
+    const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
+      ? null
+      : this.getNearestStockMarketInteractable();
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -5271,13 +5595,14 @@ export class Game {
       !npcId
       || this.worldBuilder?.enabled
       || this.hud.isQuickChatOpen()
+      || this.hud.isStockMarketOpen()
       || this.isRentIntroReservedNpc(npcId)
     ) {
       return;
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && npcState?.busy) {
       return;
     }
 
@@ -5329,6 +5654,20 @@ export class Game {
         text: deliveryInteraction.overheadText,
         label: deliveryInteraction.label ?? '',
         variant: deliveryInteraction.variant ?? 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (stockMarketInteraction) {
+      bubbles.push({
+        id: `npc-stock-market:${npcId}`,
+        text: 'E to trade stocks',
+        label: '',
+        variant: 'interaction',
         status: 'done',
         visible: true,
         screenX: projected.x,

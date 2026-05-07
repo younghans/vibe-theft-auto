@@ -310,6 +310,7 @@ function createNpcLayout(tiles, props) {
     deliveryQuestEnabled: plan.deliveryQuestEnabled === true,
     gymCheckInEnabled: plan.gymCheckInEnabled === true,
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
+    stockMarketEnabled: plan.stockMarketEnabled === true,
     ...(plan.combat ? { combat: plan.combat } : {}),
     ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
   }));

@@ -42,6 +42,13 @@ import {
   isGymCheckInNpc
 } from '../../src/shared/gymMembership.js';
 import { resolveRentIntroPlan } from '../../src/shared/rentIntro.js';
+import {
+  createInitialStockMarketState,
+  executeStockTrade,
+  getStockMarketPromptRadius,
+  isStockMarketNpc,
+  serializeStockMarket
+} from '../../src/shared/stockMarket.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import {
   chooseFarthestSpawnPoint,
@@ -195,6 +202,7 @@ const NpcState = schema({
   deliveryQuestEnabled: 'boolean',
   gymCheckInEnabled: 'boolean',
   rentCollectorEnabled: 'boolean',
+  stockMarketEnabled: 'boolean',
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -350,6 +358,8 @@ export class WorldRoom extends Room {
     this.playerAliasSequence = 0;
     this.playerPositionMeta = new Map();
     this.pickupSequence = 0;
+    this.stockMarket = createInitialStockMarketState(Date.now());
+    this.stockPortfolios = new Map();
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
     this.npcDebugEnabled = isNpcDebugEnabled();
@@ -433,6 +443,14 @@ export class WorldRoom extends Room {
 
     this.onMessage('gym:buyMembership', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleGymMembershipPurchase(client, message));
+    });
+
+    this.onMessage('stock:getMarket', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleStockMarketRequest(client, message));
+    });
+
+    this.onMessage('stock:trade', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleStockTradeRequest(client, message));
     });
 
     this.onMessage('combat:pickupRequest', (client, message) => {
@@ -568,6 +586,7 @@ export class WorldRoom extends Room {
     this.state.builders.delete(client.sessionId);
     this.playerAliases.delete(client.sessionId);
     this.playerPositionMeta.delete(client.sessionId);
+    this.stockPortfolios.delete(client.sessionId);
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -827,6 +846,100 @@ export class WorldRoom extends Room {
       cost: GYM_MEMBERSHIP_COST,
       money: player.money,
       gymMembershipActive: true
+    };
+  }
+
+  getPlayerStockPortfolio(sessionId = '') {
+    if (!this.stockPortfolios.has(sessionId)) {
+      this.stockPortfolios.set(sessionId, {});
+    }
+
+    return this.stockPortfolios.get(sessionId);
+  }
+
+  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isStockMarketNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getStockMarketPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertStockMarketAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot trade right now.');
+    }
+
+    const npc = this.getStockMarketNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to a stock broker.');
+    }
+
+    return { player, npc };
+  }
+
+  handleStockMarketRequest(client, message = {}) {
+    const { player } = this.assertStockMarketAccess(client, message);
+    const portfolio = this.getPlayerStockPortfolio(client.sessionId);
+    return {
+      market: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      money: player.money
+    };
+  }
+
+  handleStockTradeRequest(client, message = {}) {
+    const { player, npc } = this.assertStockMarketAccess(client, message);
+    const portfolio = this.getPlayerStockPortfolio(client.sessionId);
+    const result = executeStockTrade({
+      state: this.stockMarket,
+      portfolio,
+      cash: player.money,
+      symbol: message?.symbol,
+      side: message?.side,
+      quantity: message?.quantity,
+      now: Date.now()
+    });
+    if (!result.ok) {
+      throw new Error(result.error || 'That trade was rejected.');
+    }
+
+    player.money = result.cash;
+    const trade = result.trade ?? {};
+    const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
+    this.setNpcChatPhase(
+      npc,
+      'done',
+      `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
+      { bumpSeq: true }
+    );
+    return {
+      trade,
+      market: result.market,
+      money: player.money
     };
   }
 
@@ -1990,6 +2103,7 @@ export class WorldRoom extends Room {
           ? message.gymCheckInEnabled === true
           : model.id === 'remy',
         rentCollectorEnabled: message.rentCollectorEnabled === true,
+        stockMarketEnabled: message.stockMarketEnabled === true,
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -2033,6 +2147,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'rentCollectorEnabled')) {
       updates.rentCollectorEnabled = message.rentCollectorEnabled === true;
+    }
+    if (Object.hasOwn(message, 'stockMarketEnabled')) {
+      updates.stockMarketEnabled = message.stockMarketEnabled === true;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -2174,6 +2291,7 @@ export class WorldRoom extends Room {
       existing.deliveryQuestEnabled = normalizedDefinition.deliveryQuestEnabled === true;
       existing.gymCheckInEnabled = normalizedDefinition.gymCheckInEnabled === true;
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
+      existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;

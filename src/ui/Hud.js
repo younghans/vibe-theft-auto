@@ -59,6 +59,213 @@ function formatMoneyAmount(value) {
   return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
 }
 
+function formatStockMoney(value) {
+  const numeric = Number(value ?? 0);
+  const amount = Number.isFinite(numeric) ? numeric : 0;
+  return `$${amount.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function formatStockPercent(value) {
+  const numeric = Number(value ?? 0);
+  const amount = Number.isFinite(numeric) ? numeric : 0;
+  const sign = amount > 0 ? '+' : '';
+  return `${sign}${amount.toFixed(2)}%`;
+}
+
+function formatSignedStockMoney(value) {
+  const numeric = Number(value ?? 0);
+  const amount = Number.isFinite(numeric) ? numeric : 0;
+  const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
+  return `${sign}${formatStockMoney(Math.abs(amount))}`;
+}
+
+function getStockTrendClass(value) {
+  const numeric = Number(value ?? 0);
+  if (numeric > 0) {
+    return 'is-up';
+  }
+  if (numeric < 0) {
+    return 'is-down';
+  }
+  return 'is-flat';
+}
+
+function createStockIconMarkup(stock = {}, className = '') {
+  const icon = String(stock?.icon ?? '').trim();
+  const label = escapeHtml(stock?.symbol ?? 'Stock');
+  const classes = `hud__stock-icon${className ? ` ${className}` : ''}`;
+  const common = `
+    class="${classes}"
+    viewBox="0 0 32 32"
+    role="img"
+    aria-label="${label}"
+    style="--stock-accent:${escapeHtml(stock?.accent ?? '#f2c871')}"
+  `;
+
+  switch (icon) {
+    case 'burger':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-fill" d="M7 14c.8-5 4.5-8 9-8s8.2 3 9 8H7z" />
+          <path class="hud__stock-icon-stroke" d="M6 18h20" />
+          <path class="hud__stock-icon-fill" d="M7 20h18l-1.8 4H8.8L7 20z" />
+          <path class="hud__stock-icon-stroke" d="M11 11h2M16 9h2M20 12h2" />
+        </svg>
+      `;
+    case 'cola':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M13 4h6M14 8h4l2 18h-8l2-18z" />
+          <path class="hud__stock-icon-fill" d="M13 15h6l.7 7h-7.4l.7-7z" />
+          <path class="hud__stock-icon-stroke" d="M12 26h8" />
+        </svg>
+      `;
+    case 'gym':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M4 13v6M8 10v12M24 10v12M28 13v6M8 16h16" />
+          <path class="hud__stock-icon-fill" d="M12 14h8v4h-8z" />
+        </svg>
+      `;
+    case 'medical':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M10 9V7h12v2M8 10h16v16H8z" />
+          <path class="hud__stock-icon-fill" d="M14 13h4v4h4v4h-4v4h-4v-4h-4v-4h4z" />
+        </svg>
+      `;
+    case 'cab':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M8 18l2-7h12l2 7M7 18h18v6H7zM10 24v2M22 24v2" />
+          <path class="hud__stock-icon-fill" d="M11 13h10l1 4H10z" />
+          <path class="hud__stock-icon-stroke" d="M11 21h2M19 21h2" />
+        </svg>
+      `;
+    case 'token':
+      return `
+        <svg ${common}>
+          <circle class="hud__stock-icon-fill" cx="16" cy="16" r="10" />
+          <circle class="hud__stock-icon-stroke" cx="16" cy="16" r="6" />
+          <path class="hud__stock-icon-stroke" d="M16 10v12M10 16h12" />
+        </svg>
+      `;
+    case 'tool':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M20 5a7 7 0 0 0 7 7L15 24l-5-5L22 7a7 7 0 0 0-2-2z" />
+          <path class="hud__stock-icon-fill" d="M7 21l4 4-2 2H5v-4l2-2z" />
+        </svg>
+      `;
+    case 'rent':
+      return `
+        <svg ${common}>
+          <path class="hud__stock-icon-stroke" d="M7 14l9-8 9 8v12H7z" />
+          <path class="hud__stock-icon-fill" d="M13 18h6v8h-6z" />
+          <path class="hud__stock-icon-stroke" d="M11 15h10" />
+        </svg>
+      `;
+    default:
+      return `
+        <svg ${common}>
+          <circle class="hud__stock-icon-fill" cx="16" cy="16" r="10" />
+          <text class="hud__stock-icon-text" x="16" y="20">${escapeHtml(String(stock?.symbol ?? '?').slice(0, 2))}</text>
+        </svg>
+      `;
+  }
+}
+
+function createAllStockChartMarkup(stocks = [], selectedSymbol = '') {
+  const series = (Array.isArray(stocks) ? stocks : [])
+    .map((stock) => ({
+      ...stock,
+      values: Array.isArray(stock?.history)
+        ? stock.history.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+        : []
+    }))
+    .filter((stock) => stock.values.length >= 2);
+  if (!series.length) {
+    return '<div class="hud__stock-overview-empty">No market history yet.</div>';
+  }
+
+  const width = 960;
+  const height = 260;
+  const plotRight = 890;
+  const markerX = 930;
+  const tooltipWidth = 188;
+  const tooltipHeight = 54;
+  const min = Math.min(...series.flatMap((stock) => stock.values));
+  const max = Math.max(...series.flatMap((stock) => stock.values));
+  const span = Math.max(0.01, max - min);
+  const toY = (value) => height - (((value - min) / span) * (height - 44)) - 22;
+  const gridPath = [
+    `M0 ${(height * 0.25).toFixed(1)}h${plotRight}`,
+    `M0 ${(height * 0.5).toFixed(1)}h${plotRight}`,
+    `M0 ${(height * 0.75).toFixed(1)}h${plotRight}`,
+    `M${(plotRight * 0.2).toFixed(1)} 0v${height}`,
+    `M${(plotRight * 0.4).toFixed(1)} 0v${height}`,
+    `M${(plotRight * 0.6).toFixed(1)} 0v${height}`,
+    `M${(plotRight * 0.8).toFixed(1)} 0v${height}`
+  ].join('');
+  const groups = [];
+
+  for (const stock of series) {
+    const points = stock.values.map((value, index) => {
+      const x = stock.values.length <= 1 ? 0 : (index / (stock.values.length - 1)) * plotRight;
+      return `${x.toFixed(2)},${toY(value).toFixed(2)}`;
+    }).join(' ');
+    const y = toY(stock.price ?? stock.values[stock.values.length - 1]);
+    const active = stock.symbol === selectedSymbol;
+    const activeClass = active ? ' is-active' : '';
+    const tooltipX = Math.max(8, markerX - tooltipWidth - 24);
+    const tooltipY = Math.min(
+      height - tooltipHeight - 8,
+      Math.max(8, y - (tooltipHeight / 2))
+    );
+    groups.push(`
+      <g
+        class="hud__stock-overview-series${activeClass}"
+        data-stock-symbol="${escapeHtml(stock.symbol)}"
+        style="--stock-accent:${escapeHtml(stock.accent)}"
+      >
+        <polyline
+          class="hud__stock-overview-line"
+          points="${points}"
+        ></polyline>
+        <polyline class="hud__stock-overview-hit" points="${points}"></polyline>
+        <g class="hud__stock-overview-marker" transform="translate(${markerX.toFixed(2)} ${y.toFixed(2)})">
+          <circle class="hud__stock-overview-marker-bg" r="14"></circle>
+          <foreignObject x="-10" y="-10" width="20" height="20">
+            <div xmlns="http://www.w3.org/1999/xhtml" class="hud__stock-overview-icon">
+              ${createStockIconMarkup(stock, 'is-mini')}
+            </div>
+          </foreignObject>
+        </g>
+        <foreignObject class="hud__stock-overview-tooltip" x="${tooltipX.toFixed(2)}" y="${tooltipY.toFixed(2)}" width="${tooltipWidth}" height="${tooltipHeight}">
+          <div xmlns="http://www.w3.org/1999/xhtml" class="hud__stock-tooltip">
+            ${createStockIconMarkup(stock, 'is-mini')}
+            <span>
+              <strong>${escapeHtml(stock.name)}</strong>
+              <em>${escapeHtml(stock.symbol)} ${formatStockMoney(stock.price)}</em>
+            </span>
+          </div>
+        </foreignObject>
+      </g>
+    `);
+  }
+
+  return `
+    <svg class="hud__stock-overview-chart" viewBox="0 0 ${width} ${height}" aria-label="All stock prices">
+      <path class="hud__stock-overview-grid" d="${gridPath}" />
+      <g class="hud__stock-overview-lines">${groups.join('')}</g>
+      <path class="hud__stock-overview-axis" d="M${plotRight} 0v${height}" />
+    </svg>
+  `;
+}
+
 function formatHudCount(value) {
   const numeric = Number(value ?? 0);
   const amount = Number.isFinite(numeric) ? Math.max(0, Math.trunc(numeric)) : 0;
@@ -321,6 +528,7 @@ export class Hud {
     this.builderNpcDeliveryQuest = this.overlay.querySelector('[data-builder-npc-delivery-quest]');
     this.builderNpcGymCheckIn = this.overlay.querySelector('[data-builder-npc-gym-check-in]');
     this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
+    this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
@@ -348,6 +556,19 @@ export class Hud {
     this.interactionTitle = this.overlay.querySelector('[data-interaction-title]');
     this.interactionSubtitle = this.overlay.querySelector('[data-interaction-subtitle]');
     this.interactionActions = this.overlay.querySelector('[data-interaction-actions]');
+    this.stockMarketRoot = this.overlay.querySelector('[data-stock-market]');
+    this.stockMarketClose = this.overlay.querySelector('[data-stock-market-close]');
+    this.stockMarketRefresh = this.overlay.querySelector('[data-stock-market-refresh]');
+    this.stockMarketStatus = this.overlay.querySelector('[data-stock-market-status]');
+    this.stockMarketCash = this.overlay.querySelector('[data-stock-market-cash]');
+    this.stockMarketPortfolio = this.overlay.querySelector('[data-stock-market-portfolio]');
+    this.stockMarketNetWorth = this.overlay.querySelector('[data-stock-market-net-worth]');
+    this.stockMarketOverview = this.overlay.querySelector('[data-stock-market-overview]');
+    this.stockMarketList = this.overlay.querySelector('[data-stock-market-list]');
+    this.stockMarketDetail = this.overlay.querySelector('[data-stock-market-detail]');
+    this.stockMarketQuantity = this.overlay.querySelector('[data-stock-market-quantity]');
+    this.stockMarketBuy = this.overlay.querySelector('[data-stock-market-buy]');
+    this.stockMarketSell = this.overlay.querySelector('[data-stock-market-sell]');
     this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
@@ -381,6 +602,14 @@ export class Hud {
     this.lastAmmoClipSize = 0;
     this.lastAmmoSignature = '';
     this.lastInteractionState = null;
+    this.stockMarketVisible = false;
+    this.stockMarketState = {
+      market: null,
+      selectedSymbol: '',
+      quantity: 1,
+      loading: false,
+      error: ''
+    };
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
@@ -849,6 +1078,12 @@ export class Hud {
                   <span class="hud__field-label hud__checkbox-title">Rent Collector / Initial Spawn</span>
                 </span>
               </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-stock-market />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Stock Broker / Market</span>
+                </span>
+              </label>
               <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Archetype</span>
@@ -949,6 +1184,62 @@ export class Hud {
         <h2 class="hud__dialog-title" data-interaction-title></h2>
         <p class="hud__body" data-interaction-subtitle></p>
         <div class="hud__dialog-actions" data-interaction-actions></div>
+      </section>
+      <section class="hud__stock-market" data-stock-market hidden>
+        <header class="hud__stock-header">
+          <div>
+            <p class="hud__eyebrow">Street Exchange</p>
+            <h2 class="hud__stock-title">Stock Market</h2>
+            <p class="hud__body hud__stock-status" data-stock-market-status>Loading tape...</p>
+          </div>
+          <div class="hud__stock-header-actions">
+            <button class="hud__builder-icon-button" type="button" data-stock-market-refresh aria-label="Refresh market" title="Refresh market">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                <path d="M20 4v6h-6" />
+              </svg>
+            </button>
+            <button class="hud__builder-icon-button" type="button" data-stock-market-close aria-label="Close stock market" title="Close stock market">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12" />
+                <path d="M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="hud__stock-summary">
+          <div class="hud__stock-summary-item">
+            <span>Cash</span>
+            <strong data-stock-market-cash>$0</strong>
+          </div>
+          <div class="hud__stock-summary-item">
+            <span>Holdings</span>
+            <strong data-stock-market-portfolio>$0</strong>
+          </div>
+          <div class="hud__stock-summary-item">
+            <span>Net Worth</span>
+            <strong data-stock-market-net-worth>$0</strong>
+          </div>
+        </div>
+        <section class="hud__stock-overview hud__stock-market-overview" data-stock-market-overview>
+          <div class="hud__stock-overview-header">
+            <span>All Stocks</span>
+            <strong>Loading</strong>
+          </div>
+          <div class="hud__stock-overview-empty">Loading market tape...</div>
+        </section>
+        <div class="hud__stock-body">
+          <div class="hud__stock-list" data-stock-market-list></div>
+          <div class="hud__stock-detail" data-stock-market-detail></div>
+        </div>
+        <footer class="hud__stock-trade">
+          <label class="hud__stock-quantity-field">
+            <span class="hud__field-label">Shares</span>
+            <input class="hud__field-control" type="number" min="1" max="999" step="1" value="1" data-stock-market-quantity />
+          </label>
+          <button class="hud__stock-trade-button is-buy" type="button" data-stock-market-buy>Buy</button>
+          <button class="hud__stock-trade-button is-sell" type="button" data-stock-market-sell>Sell</button>
+        </footer>
       </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
         <span class="hud__key">Enter</span>
@@ -1477,6 +1768,7 @@ export class Hud {
     onNpcDeliveryQuestChange,
     onNpcGymCheckInChange,
     onNpcRentCollectorChange,
+    onNpcStockMarketChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
@@ -1607,6 +1899,10 @@ export class Hud {
       onNpcRentCollectorChange?.(this.builderNpcRentCollector.checked === true);
     });
 
+    this.builderNpcStockMarket?.addEventListener('change', () => {
+      onNpcStockMarketChange?.(this.builderNpcStockMarket.checked === true);
+    });
+
     this.builderNpcModel.addEventListener('change', () => {
       onNpcModelChange(this.builderNpcModel.value);
     });
@@ -1731,6 +2027,50 @@ export class Hud {
       if (event.target === this.interactionRoot) {
         onCloseInteraction();
       }
+    });
+  }
+
+  bindStockMarketEvents({
+    onClose,
+    onRefresh,
+    onSelectStock,
+    onQuantityChange,
+    onBuy,
+    onSell
+  }) {
+    this.stockMarketClose?.addEventListener('click', () => {
+      onClose?.();
+    });
+
+    this.stockMarketRefresh?.addEventListener('click', () => {
+      onRefresh?.();
+    });
+
+    const selectStockFromEvent = (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const stockTarget = target?.closest('[data-stock-symbol]');
+      if (!stockTarget) {
+        return;
+      }
+
+      onSelectStock?.(stockTarget.getAttribute('data-stock-symbol') ?? '');
+    };
+
+    this.stockMarketList?.addEventListener('click', selectStockFromEvent);
+    this.stockMarketOverview?.addEventListener('click', selectStockFromEvent);
+
+    this.stockMarketQuantity?.addEventListener('input', () => {
+      onQuantityChange?.(Number(this.stockMarketQuantity.value));
+    });
+
+    this.stockMarketBuy?.addEventListener('click', () => {
+      onBuy?.();
+    });
+
+    this.stockMarketSell?.addEventListener('click', () => {
+      onSell?.();
     });
   }
 
@@ -1963,6 +2303,9 @@ export class Hud {
     }
     if (this.builderNpcRentCollector && document.activeElement !== this.builderNpcRentCollector) {
       this.builderNpcRentCollector.checked = editorState.rentCollectorEnabled === true;
+    }
+    if (this.builderNpcStockMarket && document.activeElement !== this.builderNpcStockMarket) {
+      this.builderNpcStockMarket.checked = editorState.stockMarketEnabled === true;
     }
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 
@@ -2261,6 +2604,185 @@ export class Hud {
   hideInteractionMenu() {
     this.lastInteractionState = null;
     this.interactionRoot.classList.remove('is-visible');
+  }
+
+  setStockMarketVisible(visible) {
+    this.stockMarketVisible = Boolean(visible);
+    if (!this.stockMarketRoot) {
+      return;
+    }
+
+    this.stockMarketRoot.hidden = !this.stockMarketVisible;
+    this.stockMarketRoot.classList.toggle('is-visible', this.stockMarketVisible);
+  }
+
+  isStockMarketOpen() {
+    return Boolean(this.stockMarketVisible && this.stockMarketRoot && !this.stockMarketRoot.hidden);
+  }
+
+  setStockMarketState({
+    visible = this.stockMarketVisible,
+    market = this.stockMarketState.market,
+    selectedSymbol = this.stockMarketState.selectedSymbol,
+    quantity = this.stockMarketState.quantity,
+    loading = this.stockMarketState.loading,
+    error = this.stockMarketState.error
+  } = {}) {
+    this.stockMarketState = {
+      market,
+      selectedSymbol: String(selectedSymbol ?? ''),
+      quantity: Math.max(1, Math.min(999, Math.floor(Number(quantity) || 1))),
+      loading: Boolean(loading),
+      error: String(error ?? '')
+    };
+    this.setStockMarketVisible(visible);
+    this.renderStockMarket();
+  }
+
+  renderStockMarket() {
+    if (!this.stockMarketRoot) {
+      return;
+    }
+
+    const { market, loading, error } = this.stockMarketState;
+    const stocks = Array.isArray(market?.stocks) ? market.stocks : [];
+    const selected = stocks.find((stock) => stock.symbol === this.stockMarketState.selectedSymbol) ?? stocks[0] ?? null;
+    if (selected && selected.symbol !== this.stockMarketState.selectedSymbol) {
+      this.stockMarketState.selectedSymbol = selected.symbol;
+    }
+
+    if (this.stockMarketStatus) {
+      const updatedAt = Number(market?.updatedAt ?? 0);
+      const updatedLabel = updatedAt
+        ? new Date(updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+        : '';
+      this.stockMarketStatus.textContent = loading
+        ? 'Syncing market...'
+        : error
+          ? error
+          : `${market?.marketMood ?? 'Mixed Tape'}${updatedLabel ? ` | ${updatedLabel}` : ''}`;
+      this.stockMarketStatus.classList.toggle('is-error', Boolean(error));
+    }
+
+    if (this.stockMarketCash) {
+      this.stockMarketCash.textContent = formatMoneyAmount(market?.cash ?? 0);
+    }
+    if (this.stockMarketPortfolio) {
+      this.stockMarketPortfolio.textContent = formatMoneyAmount(market?.portfolioValue ?? 0);
+    }
+    if (this.stockMarketNetWorth) {
+      this.stockMarketNetWorth.textContent = formatMoneyAmount(market?.netWorth ?? 0);
+    }
+
+    if (this.stockMarketOverview) {
+      this.stockMarketOverview.innerHTML = `
+        <div class="hud__stock-overview-header">
+          <span>All Stocks</span>
+          <strong>${selected ? `${escapeHtml(selected.symbol)} ${formatStockMoney(selected.price)}` : 'Waiting'}</strong>
+        </div>
+        ${createAllStockChartMarkup(stocks, selected?.symbol ?? '')}
+      `;
+    }
+
+    if (this.stockMarketList) {
+      this.stockMarketList.innerHTML = stocks.length
+        ? stocks.map((stock) => {
+            const trendClass = getStockTrendClass(stock.delta);
+            const activeClass = stock.symbol === selected?.symbol ? ' is-active' : '';
+            return `
+              <button
+                class="hud__stock-row ${trendClass}${activeClass}"
+                type="button"
+                data-stock-symbol="${escapeHtml(stock.symbol)}"
+                style="--stock-accent:${escapeHtml(stock.accent)}"
+              >
+                ${createStockIconMarkup(stock, 'is-row')}
+                <span class="hud__stock-row-main">
+                  <strong>${escapeHtml(stock.symbol)}</strong>
+                  <span>${escapeHtml(stock.name)}</span>
+                </span>
+                <span class="hud__stock-row-price">
+                  <strong>${formatStockMoney(stock.price)}</strong>
+                  <span>${formatStockPercent(stock.deltaPercent)}</span>
+                </span>
+                ${stock.shares > 0 ? `<span class="hud__stock-row-owned">${formatHudCount(stock.shares)} owned</span>` : ''}
+              </button>
+            `;
+          }).join('')
+        : '<p class="hud__stock-empty">No tape yet.</p>';
+    }
+
+    const quantity = this.stockMarketState.quantity;
+    if (this.stockMarketQuantity && document.activeElement !== this.stockMarketQuantity) {
+      this.stockMarketQuantity.value = String(quantity);
+    }
+
+    if (!selected) {
+      if (this.stockMarketDetail) {
+        this.stockMarketDetail.innerHTML = '<p class="hud__stock-empty">Pick a listed item to trade.</p>';
+      }
+      if (this.stockMarketBuy) {
+        this.stockMarketBuy.disabled = true;
+      }
+      if (this.stockMarketSell) {
+        this.stockMarketSell.disabled = true;
+      }
+      return;
+    }
+
+    const grossBuy = Math.ceil(selected.price * quantity);
+    const buyFee = Math.ceil(grossBuy * Number(market?.feeRate ?? 0));
+    const buyTotal = grossBuy + buyFee;
+    const grossSell = Math.floor(selected.price * quantity);
+    const sellFee = Math.ceil(grossSell * Number(market?.feeRate ?? 0));
+    const sellProceeds = Math.max(0, grossSell - sellFee);
+    const buyDisabled = loading || Number(market?.cash ?? 0) < buyTotal;
+    const sellDisabled = loading || Number(selected.shares ?? 0) < quantity;
+
+    if (this.stockMarketBuy) {
+      this.stockMarketBuy.disabled = buyDisabled;
+      this.stockMarketBuy.textContent = `Buy ${formatMoneyAmount(buyTotal)}`;
+    }
+    if (this.stockMarketSell) {
+      this.stockMarketSell.disabled = sellDisabled;
+      this.stockMarketSell.textContent = `Sell ${formatMoneyAmount(sellProceeds)}`;
+    }
+
+    if (this.stockMarketDetail) {
+      const trendClass = getStockTrendClass(selected.delta);
+      this.stockMarketDetail.innerHTML = `
+        <div class="hud__stock-detail-head" style="--stock-accent:${escapeHtml(selected.accent)}">
+          ${createStockIconMarkup(selected, 'is-detail')}
+          <div>
+            <span class="hud__stock-symbol">${escapeHtml(selected.symbol)}</span>
+            <h3>${escapeHtml(selected.name)}</h3>
+            <p>${escapeHtml(selected.sector)} | ${escapeHtml(selected.modeLabel ?? 'Sideways')}</p>
+          </div>
+          <div class="hud__stock-price-stack ${trendClass}">
+            <strong>${formatStockMoney(selected.price)}</strong>
+            <span>${formatSignedStockMoney(selected.delta)} (${formatStockPercent(selected.deltaPercent)})</span>
+          </div>
+        </div>
+        <div class="hud__stock-position-grid">
+          <div>
+            <span>Owned</span>
+            <strong>${formatHudCount(selected.shares)}</strong>
+          </div>
+          <div>
+            <span>Average</span>
+            <strong>${formatStockMoney(selected.averageCost)}</strong>
+          </div>
+          <div>
+            <span>Value</span>
+            <strong>${formatMoneyAmount(selected.marketValue)}</strong>
+          </div>
+          <div class="${getStockTrendClass(selected.unrealizedProfit)}">
+            <span>P/L</span>
+            <strong>${formatSignedStockMoney(selected.unrealizedProfit)}</strong>
+          </div>
+        </div>
+      `;
+    }
   }
 
   setQuickChatState({ visible, disabled = false, hint = 'Enter to send. Escape to cancel.' }) {

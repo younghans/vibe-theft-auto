@@ -37,6 +37,13 @@ import {
   getGymCheckInPromptRadius,
   isGymCheckInNpc
 } from '../shared/gymMembership.js';
+import {
+  createInitialStockMarketState,
+  executeStockTrade,
+  getStockMarketPromptRadius,
+  isStockMarketNpc,
+  serializeStockMarket
+} from '../shared/stockMarket.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
@@ -255,6 +262,8 @@ export class NpcServiceMock {
       npcDebug: new Map(),
       pickups: new Map()
     };
+    this.stockMarket = createInitialStockMarketState(Date.now());
+    this.stockPortfolios = new Map();
     this.sequence = 0;
     this.pickupSequence = 0;
     this.playerAliasSequence = 0;
@@ -396,6 +405,7 @@ export class NpcServiceMock {
         deliveryQuestEnabled: definition.deliveryQuestEnabled === true,
         gymCheckInEnabled: definition.gymCheckInEnabled === true,
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
+        stockMarketEnabled: definition.stockMarketEnabled === true,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
@@ -517,7 +527,8 @@ export class NpcServiceMock {
             respawnDelayMs: payload.respawnDelayMs,
             deliveryQuestEnabled: payload.deliveryQuestEnabled,
             gymCheckInEnabled: payload.gymCheckInEnabled,
-            rentCollectorEnabled: payload.rentCollectorEnabled
+            rentCollectorEnabled: payload.rentCollectorEnabled,
+            stockMarketEnabled: payload.stockMarketEnabled
           }
         );
         this.syncNpcStateFromWorld();
@@ -1042,6 +1053,118 @@ export class NpcServiceMock {
     }
 
     return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInPromptRadius(npc);
+  }
+
+  isPlayerInStockMarketRadius(player, npc) {
+    if (!player || !npc || !isStockMarketNpc(npc)) {
+      return false;
+    }
+
+    return distance2D(player.x, player.z, npc.x, npc.z) <= getStockMarketPromptRadius(npc);
+  }
+
+  getPlayerStockPortfolio(sessionId = this.state.sessionId) {
+    if (!this.stockPortfolios.has(sessionId)) {
+      this.stockPortfolios.set(sessionId, {});
+    }
+
+    return this.stockPortfolios.get(sessionId);
+  }
+
+  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isStockMarketNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getStockMarketPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getStockMarketAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot trade right now.' };
+    }
+
+    const npc = this.getStockMarketNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to a stock broker.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async getStockMarket(npcId = '') {
+    const access = this.getStockMarketAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
+    return {
+      ok: true,
+      market: serializeStockMarket(this.stockMarket, portfolio, access.player.money, Date.now()),
+      money: access.player.money
+    };
+  }
+
+  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1) {
+    const access = this.getStockMarketAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
+    const result = executeStockTrade({
+      state: this.stockMarket,
+      portfolio,
+      cash: access.player.money,
+      symbol,
+      side,
+      quantity,
+      now: Date.now()
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error ?? 'That trade was rejected.' };
+    }
+
+    access.player.money = result.cash;
+    const trade = result.trade ?? {};
+    const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
+    this.setNpcChatPhase(
+      access.npc,
+      'done',
+      `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
+      { bumpSeq: true }
+    );
+    this.emit();
+    return {
+      ok: true,
+      trade,
+      market: result.market,
+      money: access.player.money
+    };
   }
 
   hasActiveGymCheckInNpc() {

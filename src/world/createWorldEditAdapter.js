@@ -43,7 +43,8 @@ function toTransportPayload(edit) {
         respawnDelayMs: edit.npc.respawnDelayMs,
         deliveryQuestEnabled: edit.npc.deliveryQuestEnabled === true,
         gymCheckInEnabled: edit.npc.gymCheckInEnabled === true,
-        rentCollectorEnabled: edit.npc.rentCollectorEnabled === true
+        rentCollectorEnabled: edit.npc.rentCollectorEnabled === true,
+        stockMarketEnabled: edit.npc.stockMarketEnabled === true
       };
     case 'rotatePlacement':
       return {

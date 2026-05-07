@@ -67,6 +67,7 @@ function toPlacementRecord(entry, item, id) {
           deliveryQuestEnabled: entry.deliveryQuestEnabled,
           gymCheckInEnabled: entry.gymCheckInEnabled,
           rentCollectorEnabled: entry.rentCollectorEnabled,
+          stockMarketEnabled: entry.stockMarketEnabled,
           spawnPosition: entry.spawnPosition,
           spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
         }, {
@@ -127,6 +128,7 @@ function toSerializedPlacement(placement) {
         deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
         gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
+        stockMarketEnabled: placement.npc.stockMarketEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),
@@ -329,6 +331,7 @@ export class WorldState {
           deliveryQuestEnabled: npc.deliveryQuestEnabled,
           gymCheckInEnabled: npc.gymCheckInEnabled,
           rentCollectorEnabled: npc.rentCollectorEnabled,
+          stockMarketEnabled: npc.stockMarketEnabled,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
         }, {
@@ -528,6 +531,7 @@ export class WorldState {
         deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
         gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
+        stockMarketEnabled: placement.npc.stockMarketEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               Number(placement.npc.spawnPosition[0].toFixed(2)),
