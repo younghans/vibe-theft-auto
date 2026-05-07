@@ -381,6 +381,7 @@ export class Game {
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
     this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
     this.handledRentIntroSeq = 0;
     this.rentIntroLoadingClearedAt = 0;
@@ -2682,6 +2683,17 @@ export class Game {
     });
   }
 
+  playBlackjackCardSound() {
+    this.playSoundEffect(this.playingCardSound);
+  }
+
+  playBlackjackWinSound(game = null) {
+    const outcome = String(game?.outcome ?? '');
+    if (game?.phase === 'complete' && (outcome === 'blackjack' || outcome === 'win')) {
+      this.playSoundEffect(this.rentChaChingSound);
+    }
+  }
+
   openBlackjack(interaction = null) {
     const npcId = String(interaction?.npcId ?? '').trim();
     if (!npcId) {
@@ -2729,7 +2741,8 @@ export class Game {
 
       this.blackjackState = result.blackjack;
       this.syncBlackjackHud({ loading: false, error: '' });
-      this.playSoundEffect(this.rentChaChingSound);
+      this.playBlackjackCardSound();
+      this.playBlackjackWinSound(result.blackjack);
     } catch (error) {
       console.warn('[Blackjack] Deal failed.', error);
       this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });
@@ -2768,9 +2781,8 @@ export class Game {
 
       this.blackjackState = result.blackjack;
       this.syncBlackjackHud({ loading: false, error: '' });
-      if (result.blackjack.phase === 'complete') {
-        this.playSoundEffect(this.rentChaChingSound);
-      }
+      this.playBlackjackCardSound();
+      this.playBlackjackWinSound(result.blackjack);
     } catch (error) {
       console.warn('[Blackjack] Action failed.', error);
       this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });

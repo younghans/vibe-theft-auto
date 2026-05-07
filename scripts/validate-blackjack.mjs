@@ -5,6 +5,7 @@ import {
   createBlackjackTableVisual
 } from '../src/world/proceduralProps.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
+import { assets } from '../src/world/assetManifest.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import {
@@ -129,11 +130,20 @@ async function validateCheckedInPlacements() {
   );
 }
 
+async function validateBlackjackAudio() {
+  assert(assets.audio.playingCard, 'Blackjack card-deal audio should be registered.');
+  const audioBuffer = await readFile(new URL(assets.audio.playingCard));
+  assert(audioBuffer.length > 12, 'Blackjack card-deal audio should not be empty.');
+  assert(audioBuffer.subarray(0, 4).toString('ascii') === 'RIFF', 'Blackjack card-deal audio should be a WAV file.');
+  assert(audioBuffer.subarray(8, 12).toString('ascii') === 'WAVE', 'Blackjack card-deal audio should have a WAVE header.');
+}
+
 async function main() {
   validateSharedRules();
   validateNpcFlag();
   validateBuilderDefinition();
   validateTableModel();
+  await validateBlackjackAudio();
   await validateCheckedInPlacements();
   console.log('Blackjack validation passed.');
 }
