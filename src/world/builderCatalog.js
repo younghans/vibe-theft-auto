@@ -8,9 +8,11 @@ import {
 } from './interactableMetadata.js';
 import {
   createOlympicBarbellVisual,
+  createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
   OLYMPIC_BARBELL_FOOTPRINT,
+  STANDING_DESK_COMPUTER_FOOTPRINT,
   VIBE_JAM_PORTAL_FOOTPRINT,
   VIBE_JAM_PORTAL_INTERACTABLE
 } from './proceduralProps.js';
@@ -31,6 +33,7 @@ const PROP_GROUPS = Object.freeze({
   street: 'Street',
   greenery: 'Greenery',
   fitness: 'Fitness',
+  office: 'Office',
   portals: 'Portals',
   storage: 'Storage',
   vehicles: 'Vehicles',
@@ -386,6 +389,27 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       localOffset: [0, 0],
       workoutType: 'snatch',
       approachLocalOffset: [0, 1.2],
+      approachRotationY: Math.PI
+    }
+  },
+  {
+    id: 'standing_desk_computer',
+    assetName: 'standing_desk_computer',
+    label: 'Standing Desk Computer',
+    asset: null,
+    group: 'office',
+    size: STANDING_DESK_COMPUTER_FOOTPRINT,
+    collision: false,
+    createVisual: createStandingDeskComputerVisual,
+    interactable: {
+      label: 'Standing Desk Computer',
+      prompt: 'Work on computer',
+      actionText: 'Type up some work.',
+      radius: 3.8,
+      localOffset: [0, 0.1],
+      workoutType: 'typing',
+      hideDuringWorkout: false,
+      approachLocalOffset: [0, 1.35],
       approachRotationY: Math.PI
     }
   },

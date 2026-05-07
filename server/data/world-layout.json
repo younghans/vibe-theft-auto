@@ -1627,6 +1627,15 @@
         45.8
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_224",
+      "itemId": "standing_desk_computer",
+      "position": [
+        4,
+        -21
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "npcs": [

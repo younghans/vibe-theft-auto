@@ -1075,7 +1075,7 @@ export class WorldRoom extends Room {
     }
 
     if (this.isWorkoutPlacementOccupied(placementId, { ignorePlayerId: client.sessionId })) {
-      throw new Error('That barbell is already in use.');
+      throw new Error('That station is already in use.');
     }
 
     player.workoutPlacementId = placementId;
@@ -1100,7 +1100,9 @@ export class WorldRoom extends Room {
       throw new Error('That workout is not active.');
     }
 
-    player.gymPumpCompletedAt = Date.now();
+    if (target.workoutType === 'snatch') {
+      player.gymPumpCompletedAt = Date.now();
+    }
     player.workoutPlacementId = '';
     return {
       placementId,

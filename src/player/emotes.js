@@ -11,6 +11,7 @@ export const EMOTE_SLOTS = Object.freeze([
 
 export const PUNCH_EMOTE_ID = 'punching';
 export const PUNCH_ALT_EMOTE_ID = 'punchingMirrored';
+export const TYPING_EMOTE_ID = 'typing';
 
 export const EMOTES_BY_ID = Object.freeze({
   [PUNCH_EMOTE_ID]: {
@@ -69,5 +70,15 @@ export const EMOTES_BY_ID = Object.freeze({
     playbackRate: 1,
     cancelOnMove: false,
     groundFeet: true
+  },
+  [TYPING_EMOTE_ID]: {
+    label: 'Typing',
+    clipName: 'typing',
+    loop: true,
+    fadeIn: 0.12,
+    fadeOut: 0.16,
+    playbackRate: 1,
+    cancelOnMove: false,
+    upperBodyOnly: true
   }
 });

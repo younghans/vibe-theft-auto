@@ -52,6 +52,7 @@ const DISTRICT_PROPS = [
   { itemId: 'bush', position: [2.55 * BUILDER_TILE_SIZE, -0.8 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'bench', position: [1.7 * BUILDER_TILE_SIZE, -1.1 * BUILDER_TILE_SIZE], angle: -Math.PI / 3 },
   { itemId: 'hydrant', position: [0.55 * BUILDER_TILE_SIZE, -1.2 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: 'standing_desk_computer', position: [-2.3 * BUILDER_TILE_SIZE, -1.15 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 

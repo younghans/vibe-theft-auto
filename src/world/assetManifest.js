@@ -44,6 +44,7 @@ export const assets = {
       fastRun: assetUrl('mixamo', 'animations', 'fast-run.json'),
       punching: assetUrl('mixamo', 'animations', 'punching.json'),
       snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
+      typing: assetUrl('mixamo', 'animations', 'typing.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
@@ -56,7 +57,8 @@ export const assets = {
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')
   },
   audio: {
-    chaChing: assetUrl('audio', 'cha-ching.wav')
+    chaChing: assetUrl('audio', 'cha-ching.wav'),
+    typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.wav')
   },
   city: {
     base: cityAsset('base'),

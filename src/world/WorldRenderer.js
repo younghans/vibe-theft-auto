@@ -1180,6 +1180,18 @@ export class WorldRenderer {
     return occupiedPlacementIds;
   }
 
+  shouldHideActiveWorkoutPlacement(placementId = '', worldState = null) {
+    if (!placementId) {
+      return false;
+    }
+
+    const renderedTarget = this.renderedPlacements.get(placementId);
+    const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(placementId);
+    const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
+    const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
+    return Boolean(interactable?.workoutType && interactable.hideDuringWorkout !== false);
+  }
+
   getVisibleWorkoutPlacementIds(worldState) {
     const visiblePlacementIds = new Set();
 
@@ -1199,7 +1211,11 @@ export class WorldRenderer {
       const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(npcState.targetPlacementId);
       const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
       const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
-      if (interactable?.workoutType && interactable.workoutType === npcState.activity) {
+      if (
+        interactable?.workoutType
+        && interactable.workoutType === npcState.activity
+        && this.shouldHideActiveWorkoutPlacement(npcState.targetPlacementId, worldState)
+      ) {
         visiblePlacementIds.add(npcState.targetPlacementId);
       }
     }
@@ -1219,12 +1235,19 @@ export class WorldRenderer {
       const placement = renderedTarget?.placement ?? worldState?.getPlacement?.(placementId);
       const item = renderedTarget?.item ?? getBuilderItemById(placement?.itemId);
       const interactable = placement && item ? resolvePlacementInteractableDefinition(placement, item) : null;
-      if (interactable?.workoutType && interactable.workoutType === playerState.emoteId) {
+      if (
+        interactable?.workoutType
+        && interactable.workoutType === playerState.emoteId
+        && this.shouldHideActiveWorkoutPlacement(placementId, worldState)
+      ) {
         visiblePlacementIds.add(placementId);
       }
     }
 
-    if (this.localWorkoutState.activePlacementId) {
+    if (
+      this.localWorkoutState.activePlacementId
+      && this.shouldHideActiveWorkoutPlacement(this.localWorkoutState.activePlacementId, worldState)
+    ) {
       visiblePlacementIds.add(this.localWorkoutState.activePlacementId);
     }
 

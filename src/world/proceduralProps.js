@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export const OLYMPIC_BARBELL_LENGTH = 5.6;
 export const OLYMPIC_BARBELL_PLATE_RADIUS = 0.78;
 export const OLYMPIC_BARBELL_FOOTPRINT = Object.freeze([5.6, 1.7]);
+export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 
 const PORTAL_RING_RADIUS = 2.45;
@@ -38,6 +39,25 @@ function createCylinder(radiusTop, radiusBottom, height, radialSegments, materia
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments),
     material
   );
+}
+
+function createBox(name, size, position, material, {
+  rotation = null,
+  castShadow = true,
+  receiveShadow = true
+} = {}) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0], size[1], size[2]),
+    material
+  );
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  if (Array.isArray(rotation)) {
+    mesh.rotation.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
+  }
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = receiveShadow;
+  return mesh;
 }
 
 function buildPlateStack(side, material) {
@@ -353,6 +373,156 @@ export function createOlympicBarbellVisual(options = {}) {
 
     assembly.add(buildPlateStack(side, plateMaterial));
   }
+
+  return root;
+}
+
+export function createStandingDeskComputerVisual() {
+  const root = new THREE.Group();
+  root.name = 'StandingDeskComputer';
+  root.userData.footprint = [...STANDING_DESK_COMPUTER_FOOTPRINT];
+
+  const floorPadMaterial = createMaterial(0x0e1117, 0.86, 0.05);
+  const deskTopMaterial = createMaterial(0x6f5238, 0.42, 0.04);
+  const deskEdgeMaterial = createMaterial(0x32251b, 0.5, 0.08);
+  const legMaterial = createMaterial(0x7a8592, 0.32, 0.55);
+  const darkMetalMaterial = createMaterial(0x171c24, 0.44, 0.42);
+  const blackPlasticMaterial = createMaterial(0x080b10, 0.58, 0.08);
+  const keyMaterial = createMaterial(0xd5dce5, 0.46, 0.04);
+  const accentKeyMaterial = createMaterial(0x6cc6ff, 0.35, 0.08);
+  const mouseMaterial = createMaterial(0xf2f4f7, 0.36, 0.02);
+  const cableMaterial = createMaterial(0x0c0f14, 0.62, 0.1);
+  const screenMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1bd6e8,
+    emissive: new THREE.Color(0x0d9fca),
+    emissiveIntensity: 1.4,
+    roughness: 0.2,
+    metalness: 0.04
+  });
+  const screenDarkMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0e2630,
+    emissive: new THREE.Color(0x10394a),
+    emissiveIntensity: 0.65,
+    roughness: 0.4,
+    metalness: 0.02
+  });
+  const screenWarmMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf5c256,
+    emissive: new THREE.Color(0xf0a722),
+    emissiveIntensity: 0.9,
+    roughness: 0.32,
+    metalness: 0.04
+  });
+
+  const desktopY = 2.55;
+  const desktopTopY = desktopY + 0.1;
+
+  root.add(createBox('standingDeskFloorPad', [4.1, 0.05, 2.35], [0, 0.025, 0.05], floorPadMaterial, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+
+  root.add(createBox('standingDeskDesktop', [3.85, 0.2, 1.45], [0, desktopY, 0], deskTopMaterial));
+  root.add(createBox('standingDeskFrontEdge', [3.98, 0.18, 0.12], [0, desktopY - 0.01, 0.78], deskEdgeMaterial));
+  root.add(createBox('standingDeskBackEdge', [3.98, 0.16, 0.1], [0, desktopY - 0.01, -0.78], deskEdgeMaterial));
+  root.add(createBox('standingDeskLeftEdge', [0.12, 0.16, 1.54], [-1.99, desktopY - 0.01, 0], deskEdgeMaterial));
+  root.add(createBox('standingDeskRightEdge', [0.12, 0.16, 1.54], [1.99, desktopY - 0.01, 0], deskEdgeMaterial));
+
+  for (const side of [-1, 1]) {
+    root.add(createBox(`standingDeskOuterLeg${side < 0 ? 'Left' : 'Right'}`, [0.25, 1.55, 0.24], [side * 1.45, 0.86, 0], legMaterial));
+    root.add(createBox(`standingDeskInnerLeg${side < 0 ? 'Left' : 'Right'}`, [0.16, 2.28, 0.16], [side * 1.45, 1.35, 0], legMaterial));
+    root.add(createBox(`standingDeskFoot${side < 0 ? 'Left' : 'Right'}`, [0.42, 0.14, 1.7], [side * 1.45, 0.08, 0.06], darkMetalMaterial));
+    root.add(createBox(`standingDeskLevelerFront${side < 0 ? 'Left' : 'Right'}`, [0.58, 0.08, 0.22], [side * 1.45, 0.08, 0.88], blackPlasticMaterial));
+    root.add(createBox(`standingDeskLevelerBack${side < 0 ? 'Left' : 'Right'}`, [0.58, 0.08, 0.22], [side * 1.45, 0.08, -0.76], blackPlasticMaterial));
+  }
+
+  root.add(createBox('standingDeskCrossbar', [3.08, 0.13, 0.14], [0, 2.18, -0.52], darkMetalMaterial));
+  root.add(createBox('standingDeskCableTray', [2.55, 0.12, 0.32], [0, 2.36, -0.48], blackPlasticMaterial));
+
+  root.add(createBox('standingDeskMonitorBase', [0.8, 0.08, 0.48], [0, desktopTopY + 0.04, -0.35], darkMetalMaterial));
+  root.add(createBox('standingDeskMonitorNeck', [0.14, 0.78, 0.14], [0, desktopTopY + 0.42, -0.43], darkMetalMaterial));
+  root.add(createBox('standingDeskMonitor', [1.78, 1.06, 0.15], [0, desktopTopY + 1.03, -0.62], blackPlasticMaterial));
+  root.add(createBox('standingDeskScreen', [1.52, 0.82, 0.026], [0, desktopTopY + 1.03, -0.529], screenMaterial, {
+    castShadow: false,
+    receiveShadow: false
+  }));
+  root.add(createBox('standingDeskScreenSidebar', [0.24, 0.72, 0.03], [-0.59, desktopTopY + 1.03, -0.505], screenDarkMaterial, {
+    castShadow: false,
+    receiveShadow: false
+  }));
+  root.add(createBox('standingDeskScreenTopbar', [1.4, 0.08, 0.032], [0.02, desktopTopY + 1.39, -0.502], screenWarmMaterial, {
+    castShadow: false,
+    receiveShadow: false
+  }));
+  for (let index = 0; index < 5; index += 1) {
+    const width = 0.74 - (index * 0.08);
+    root.add(createBox(
+      `standingDeskScreenLine${index + 1}`,
+      [width, 0.045, 0.034],
+      [0.23 - (index * 0.015), desktopTopY + 1.21 - (index * 0.13), -0.498],
+      index % 2 === 0 ? screenWarmMaterial : screenDarkMaterial,
+      { castShadow: false, receiveShadow: false }
+    ));
+  }
+
+  const keyboard = createBox('standingDeskKeyboard', [1.42, 0.08, 0.43], [-0.2, desktopTopY + 0.05, 0.36], blackPlasticMaterial);
+  root.add(keyboard);
+  for (let row = 0; row < 4; row += 1) {
+    const keyCount = row === 3 ? 7 : 10;
+    const startX = -0.78 + (row * 0.045);
+    const z = 0.22 + (row * 0.09);
+    for (let column = 0; column < keyCount; column += 1) {
+      const isSpaceRow = row === 3 && column >= 2 && column <= 4;
+      const keyWidth = isSpaceRow ? 0.18 : 0.095;
+      root.add(createBox(
+        `standingDeskKey${row + 1}_${column + 1}`,
+        [keyWidth, 0.035, 0.055],
+        [startX + (column * 0.14) + (isSpaceRow ? 0.04 : 0), desktopTopY + 0.12, z],
+        row === 0 && column >= 7 ? accentKeyMaterial : keyMaterial
+      ));
+    }
+  }
+
+  const mouse = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 18, 12),
+    mouseMaterial
+  );
+  mouse.name = 'standingDeskMouse';
+  mouse.scale.set(0.82, 0.24, 1.24);
+  mouse.position.set(1.22, desktopTopY + 0.09, 0.35);
+  mouse.castShadow = true;
+  mouse.receiveShadow = true;
+  root.add(mouse);
+
+  const mouseWheel = createCylinder(0.019, 0.019, 0.1, 10, blackPlasticMaterial);
+  mouseWheel.name = 'standingDeskMouseWheel';
+  mouseWheel.rotation.x = Math.PI * 0.5;
+  mouseWheel.position.set(1.22, desktopTopY + 0.155, 0.24);
+  mouseWheel.castShadow = true;
+  mouseWheel.receiveShadow = true;
+  root.add(mouseWheel);
+
+  root.add(createBox('standingDeskMouseSplit', [0.018, 0.025, 0.18], [1.22, desktopTopY + 0.158, 0.24], blackPlasticMaterial));
+  root.add(createBox('standingDeskStickyNote', [0.35, 0.018, 0.26], [-1.42, desktopTopY + 0.02, 0.18], screenWarmMaterial, {
+    rotation: [0, 0.12, 0],
+    castShadow: false,
+    receiveShadow: true
+  }));
+
+  const cablePath = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.35, desktopTopY + 0.04, 0.23),
+    new THREE.Vector3(-0.32, desktopTopY + 0.025, -0.05),
+    new THREE.Vector3(-0.16, desktopTopY + 0.04, -0.33),
+    new THREE.Vector3(0, desktopTopY + 0.09, -0.42)
+  ]);
+  const keyboardCable = new THREE.Mesh(
+    new THREE.TubeGeometry(cablePath, 18, 0.018, 6),
+    cableMaterial
+  );
+  keyboardCable.name = 'standingDeskKeyboardCable';
+  keyboardCable.castShadow = true;
+  keyboardCable.receiveShadow = true;
+  root.add(keyboardCable);
 
   return root;
 }

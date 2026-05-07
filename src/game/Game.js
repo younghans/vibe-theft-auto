@@ -19,6 +19,11 @@ import {
   getCurrentGameBaseUrl,
   parsePortalArrival
 } from './vibeJamPortal.js';
+import {
+  SNATCH_APPROACH_STOP_DISTANCE,
+  SNATCH_WORKOUT_KIND,
+  getWorkoutActivityConfig
+} from './workoutActivities.js';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
 import { assets } from '../world/assetManifest.js';
@@ -96,9 +101,6 @@ const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const BOOT_PIXEL_RATIO_CAP = 1.25;
 const RUNTIME_PIXEL_RATIO_CAP = 2;
-const SNATCH_WORKOUT_EMOTE_ID = 'snatch';
-const SNATCH_WORKOUT_DURATION_MS = 5435;
-const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
 const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 const MONEY_REWARD_ANIMATION_MS = 900;
@@ -368,6 +370,7 @@ export class Game {
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
     this.handledRentIntroSeq = 0;
     this.rentIntroLoadingClearedAt = 0;
     this.pendingRentIntro = null;
@@ -2674,9 +2677,11 @@ export class Game {
   }
 
   async startWorkout(interactable) {
+    const activityConfig = getWorkoutActivityConfig(interactable);
     if (
       !this.player
       || !interactable
+      || !activityConfig
       || this.activeWorkout
       || this.pendingWorkoutPlacementId
       || this.claimedWorkoutPlacementId
@@ -2684,12 +2689,8 @@ export class Game {
       return false;
     }
 
-    if (interactable.kind !== 'snatch-workout') {
-      return false;
-    }
-
     if (interactable.busy) {
-      this.hud.showToast('That barbell is already in use.');
+      this.hud.showToast(activityConfig.busyToast);
       return false;
     }
 
@@ -2708,13 +2709,13 @@ export class Game {
     } catch (error) {
       this.pendingWorkoutPlacementId = '';
       this.syncWorkoutState();
-      this.hud.showToast(error?.message || 'Could not use that barbell right now.');
+      this.hud.showToast(error?.message || activityConfig.unavailableToast);
       return false;
     }
     if (!claimResult?.ok) {
       this.pendingWorkoutPlacementId = '';
       this.syncWorkoutState();
-      this.hud.showToast(claimResult?.error ?? 'That barbell is already in use.');
+      this.hud.showToast(claimResult?.error ?? activityConfig.busyToast);
       return false;
     }
 
@@ -2729,7 +2730,7 @@ export class Game {
       return false;
     }
 
-    void preloadMixamoClips([SNATCH_WORKOUT_EMOTE_ID]);
+    void preloadMixamoClips([activityConfig.emoteId]);
     this.clearPendingHipFireShot();
     this.currentAimMode = false;
     this.player.setAimingState(false);
@@ -2738,6 +2739,7 @@ export class Game {
       kind: interactable.kind,
       phase: 'approach',
       interactable,
+      activityConfig,
       carriedBarbell: null,
       endsAt: 0
     };
@@ -2746,24 +2748,35 @@ export class Game {
     return true;
   }
 
-  beginWorkoutLift() {
+  beginWorkoutActivity() {
     if (!this.activeWorkout || !this.player) {
       return false;
     }
 
-    const { interactable } = this.activeWorkout;
-    const carriedBarbell = createOlympicBarbellVisual({ origin: 'center' });
-    this.scene.add(carriedBarbell);
-    this.activeWorkout.phase = 'lifting';
+    const { activityConfig = getWorkoutActivityConfig(this.activeWorkout), interactable } = this.activeWorkout;
+    if (!activityConfig) {
+      return false;
+    }
+
+    let carriedBarbell = null;
+    if (activityConfig.attachBarbell) {
+      carriedBarbell = createOlympicBarbellVisual({ origin: 'center' });
+      this.scene.add(carriedBarbell);
+    }
+
+    this.activeWorkout.phase = activityConfig.activePhase;
     this.activeWorkout.carriedBarbell = carriedBarbell;
-    this.activeWorkout.endsAt = performance.now() + SNATCH_WORKOUT_DURATION_MS;
+    this.activeWorkout.endsAt = performance.now() + activityConfig.durationMs;
     this.activeWorkoutPlacementId = interactable?.placementId ?? '';
     this.syncWorkoutState();
     this.player.setFacing(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.setAimRotation(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.stopEmote?.();
-    this.player.playEmote(SNATCH_WORKOUT_EMOTE_ID);
-    if (this.taskTracker.currentTaskId === TASK_IDS.gymPump && !this.gymPumpTaskConfettiPlayed) {
+    this.player.playEmote(activityConfig.emoteId);
+    if (activityConfig.playTypingSound) {
+      this.playSoundEffect(this.typingOnKeyboardSound);
+    }
+    if (activityConfig.kind === SNATCH_WORKOUT_KIND && this.taskTracker.currentTaskId === TASK_IDS.gymPump && !this.gymPumpTaskConfettiPlayed) {
       this.gymPumpTaskConfettiPlayed = true;
       this.hud.playTaskConfetti();
     }
@@ -2831,7 +2844,7 @@ export class Game {
       this.pendingWorkoutPlacementId = '';
     }
     this.syncWorkoutState();
-    if (cancelled) {
+    if (cancelled || workout.activityConfig?.stopEmoteOnFinish) {
       this.player?.stopEmote?.();
     }
     if (workout.carriedBarbell) {
@@ -2846,7 +2859,7 @@ export class Game {
       }
     }
     if (!cancelled) {
-      this.hud.showToast('Snatch complete.');
+      this.hud.showToast(workout.activityConfig?.completeToast ?? 'Workout complete.');
     }
     return true;
   }
@@ -2862,6 +2875,7 @@ export class Game {
     }
 
     this.player.setAimingState(false);
+    const activityConfig = this.activeWorkout.activityConfig ?? getWorkoutActivityConfig(this.activeWorkout);
 
     if (this.activeWorkout.phase === 'approach') {
       const movement = this.player.moveToward(
@@ -2872,7 +2886,7 @@ export class Game {
         groundHeight,
         {
           speedScale: 0.82,
-          stopDistance: SNATCH_APPROACH_STOP_DISTANCE
+          stopDistance: activityConfig?.stopDistance ?? SNATCH_APPROACH_STOP_DISTANCE
         }
       );
       if (movement.arrived) {
@@ -2881,7 +2895,7 @@ export class Game {
         this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
         this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
         this.resetLocalPlayerKinematics(this.player.position);
-        this.beginWorkoutLift();
+        this.beginWorkoutActivity();
       }
       return true;
     }
@@ -5420,7 +5434,7 @@ export class Game {
       return;
     }
 
-    if (nearest.kind === 'snatch-workout') {
+    if (getWorkoutActivityConfig(nearest)) {
       void this.startWorkout(nearest);
       return;
     }

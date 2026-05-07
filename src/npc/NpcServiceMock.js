@@ -1423,7 +1423,7 @@ export class NpcServiceMock {
     }
 
     if (this.isWorkoutPlacementOccupied(normalizedPlacementId, { ignorePlayerId: this.state.sessionId })) {
-      return { ok: false, error: 'That barbell is already in use.' };
+      return { ok: false, error: 'That station is already in use.' };
     }
 
     player.workoutPlacementId = normalizedPlacementId;
@@ -1449,7 +1449,9 @@ export class NpcServiceMock {
       return { ok: false, error: 'That workout is not active.' };
     }
 
-    player.gymPumpCompletedAt = Date.now();
+    if (target.workoutType === 'snatch') {
+      player.gymPumpCompletedAt = Date.now();
+    }
     player.workoutPlacementId = '';
     this.emit();
     return {
