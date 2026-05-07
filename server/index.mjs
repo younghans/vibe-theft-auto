@@ -54,6 +54,8 @@ logServer('server', 'Colyseus NPC server listening.', {
   servingFrontend: true,
   persistenceMode: persistence.mode,
   worldKey: persistence.worldKey,
+  worldBackupsEnabled: Boolean(persistence.backups?.enabled),
+  worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,
   worldLayoutPath: persistence.runtimePath,
   worldLayoutSeedPath: persistence.seedPath,
   openAiEnabled: Boolean(process.env.OPENAI_API_KEY),

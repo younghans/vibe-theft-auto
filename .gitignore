@@ -5,3 +5,4 @@ node_modules/
 dist/
 .dist-staging/
 .tmp-gltf-estimate/
+server/data/world-backups/

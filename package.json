@@ -30,6 +30,7 @@
     "inspect:buildings": "node scripts/inspect-building-assets.mjs",
     "preview": "node scripts/dev-server.mjs dist 4174",
     "validate": "node scripts/validate-world-editor.mjs",
+    "validate:world-backups": "node scripts/validate-world-backups.mjs",
     "validate:blackjack": "node scripts/validate-blackjack.mjs",
     "validate:computer-activity": "node scripts/validate-computer-activity.mjs",
     "validate:portraits": "node scripts/validate-npc-portraits.mjs",
