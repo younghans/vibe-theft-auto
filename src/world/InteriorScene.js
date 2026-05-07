@@ -7,6 +7,22 @@ const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
 const INLINE_SHELL_TRIGGER_WIDTH_PADDING = 0.8;
 
+function createDistrictInteriorTemplate(id, label, palette) {
+  return {
+    id,
+    label,
+    floorSize: [22, 22],
+    wallHeight: 12,
+    wallThickness: 0.9,
+    doorwayWidth: 5.8,
+    spawnOffset: [0, 5.9],
+    exitOffset: [0, 8.2],
+    boundsPadding: 1.25,
+    workoutStations: Object.freeze([]),
+    palette: Object.freeze(palette)
+  };
+}
+
 const INTERIOR_TEMPLATES = Object.freeze([
   {
     id: 'gym_large_blank',
@@ -34,7 +50,32 @@ const INTERIOR_TEMPLATES = Object.freeze([
       wall: 0xd8d5ce,
       trim: 0x9e988f
     })
-  }
+  },
+  createDistrictInteriorTemplate('school_interior', 'School', {
+    floor: 0x66766f,
+    wall: 0xd9ded4,
+    trim: 0xa7a091
+  }),
+  createDistrictInteriorTemplate('bar_interior', 'Bar', {
+    floor: 0x58483a,
+    wall: 0xc6ad87,
+    trim: 0x7a5531
+  }),
+  createDistrictInteriorTemplate('bank_interior', 'Bank', {
+    floor: 0x74756f,
+    wall: 0xd8d4c8,
+    trim: 0x9a9a92
+  }),
+  createDistrictInteriorTemplate('casino_interior', 'Casino', {
+    floor: 0x463d50,
+    wall: 0x8f3942,
+    trim: 0xd2aa44
+  }),
+  createDistrictInteriorTemplate('offices_interior', 'Offices', {
+    floor: 0x5d666c,
+    wall: 0xc8d0d5,
+    trim: 0x66727a
+  })
 ]);
 
 const TEMPLATE_BY_ID = new Map(INTERIOR_TEMPLATES.map((template) => [template.id, template]));

@@ -40,8 +40,16 @@ const PROP_GROUPS = Object.freeze({
 const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
 const CUSTOM_CITY_PACK = 'stickrpg_custom';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+const CUSTOM_2X2_BUILDING_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
 const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;
 const BUILDING_UNDERLAY_TILE_ID = 'lot_base';
+const STANDARD_2X2_HULL_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -10.1, halfWidth: 10.85, halfDepth: 0.36, minY: 0, maxY: 12 },
+  { centerX: -10.85, centerZ: 0.35, halfWidth: 0.36, halfDepth: 10.45, minY: 0, maxY: 12 },
+  { centerX: 10.85, centerZ: 0.35, halfWidth: 0.36, halfDepth: 10.45, minY: 0, maxY: 12 },
+  { centerX: -7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 },
+  { centerX: 7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 }
+]);
 const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
 const KENNEY_SKYSCRAPER_VARIANTS = Object.freeze('abcde'.split(''));
 const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
@@ -88,6 +96,35 @@ function createKenneyPropDefinition({ key, label, fileName, size }) {
   };
 }
 
+function createCustom2x2BuildingDefinition({ key, label, fileName, prompt }) {
+  return {
+    id: `${key}_building`,
+    assetName: `${key}_building`,
+    label,
+    asset: customCityAsset('models', fileName),
+    group: 'lots',
+    size: CUSTOM_2X2_BUILDING_SIZE,
+    tileFootprint: [2, 2],
+    surfaceHeight: 0.76,
+    collision: true,
+    blocksShots: true,
+    movementCollisionRects: STANDARD_2X2_HULL_COLLISION_RECTS,
+    shotCollisionRects: STANDARD_2X2_HULL_COLLISION_RECTS,
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID,
+    interior: {
+      id: `${key}_interior`,
+      mode: 'inline-cutaway',
+      label,
+      prompt: prompt ?? `Enter ${label}`,
+      cutawayNodeNames: [`${key}_cutaway_roof`, `${key}_cutaway_upper`],
+      exteriorDoorOffset: [0, 10.95],
+      exteriorSpawnOffset: [0, 16.05],
+      exteriorInteractRadius: 4.8
+    }
+  };
+}
+
 const KENNEY_TILE_DEFINITIONS = Object.freeze([
   ...KENNEY_BUILDING_VARIANTS.map((variant) =>
     createKenneyBuildingDefinition({
@@ -108,6 +145,39 @@ const KENNEY_TILE_DEFINITIONS = Object.freeze([
 const KENNEY_PROP_DEFINITIONS = Object.freeze(
   KENNEY_DETAIL_DEFINITIONS.map(createKenneyPropDefinition)
 );
+
+const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
+  createCustom2x2BuildingDefinition({
+    key: 'school',
+    label: 'School',
+    fileName: 'school-building.glb',
+    prompt: 'Enter school'
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'bar',
+    label: 'Bar',
+    fileName: 'bar-building.glb',
+    prompt: 'Enter bar'
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'bank',
+    label: 'Bank',
+    fileName: 'bank-building.glb',
+    prompt: 'Enter bank'
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'casino',
+    label: 'Casino',
+    fileName: 'casino-building.glb',
+    prompt: 'Enter casino'
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'offices',
+    label: 'Offices',
+    fileName: 'offices-building.glb',
+    prompt: 'Enter offices'
+  })
+]);
 
 const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'road_straight', assetName: 'road_straight', group: 'streets' },
@@ -136,7 +206,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   {
     id: 'bar_building_wide',
     assetName: 'bar_building_wide',
-    label: 'Bar',
+    label: 'Bar Wide',
     asset: customCityAsset('models', 'bar-building-wide.glb'),
     group: 'lots',
     size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82],
@@ -146,6 +216,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
+  ...CUSTOM_2X2_BUILDING_DEFINITIONS,
   {
     id: 'hospital_building',
     assetName: 'hospital_building',

@@ -24,6 +24,7 @@
     "optimize:assets:startup": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize -- --startup-only",
     "deploy:colyseus": "npx @colyseus/cloud deploy",
     "generate:bar-building": "node scripts/generate-bar-building.mjs",
+    "generate:district-buildings": "node scripts/generate-district-buildings.mjs",
     "generate:gym-building": "node scripts/generate-gym-building.mjs",
     "generate:gym-building-large": "node scripts/generate-gym-building-large.mjs",
     "inspect:buildings": "node scripts/inspect-building-assets.mjs",
