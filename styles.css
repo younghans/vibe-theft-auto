@@ -356,6 +356,18 @@ body.is-builder-resizing * {
   overflow: hidden;
 }
 
+.hud__phone-stage[data-phone-active-app="character"] .hud__phone-screen {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(240, 134, 98, 0.36), transparent 30%),
+    radial-gradient(circle at 90% 0%, rgba(88, 188, 220, 0.32), transparent 30%),
+    radial-gradient(circle at 64% 96%, rgba(181, 69, 110, 0.3), transparent 34%),
+    linear-gradient(155deg, #132638, #070912 64%, #100714);
+}
+
+.hud__phone-stage[data-phone-active-app="character"] .hud__phone-screen-content {
+  padding: 0;
+}
+
 .hud__phone-home-screen {
   display: grid;
   align-content: start;
@@ -481,9 +493,35 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-character-app {
-  grid-template-rows: auto minmax(360px, 1fr) auto;
-  gap: 14px;
-  padding: 16px;
+  position: relative;
+  isolation: isolate;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  height: 100%;
+  padding: 78px 18px 14px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 35px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 18%),
+    linear-gradient(155deg, rgba(240, 134, 98, 0.2), rgba(8, 11, 18, 0.14) 48%, rgba(80, 31, 66, 0.22));
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 220, 0.055);
+}
+
+.hud__phone-character-app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(255, 219, 155, 0.08), transparent 30%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 24%, transparent 76%, rgba(255, 255, 255, 0.025));
+  pointer-events: none;
+  z-index: -1;
+}
+
+.hud__phone-character-app > * {
+  position: relative;
+  z-index: 1;
 }
 
 .hud__phone-character-status {
@@ -501,14 +539,14 @@ body.is-builder-resizing * {
 .hud__phone-character-stage {
   position: relative;
   height: 100%;
-  min-height: 360px;
+  min-height: 0;
   overflow: hidden;
   border: 2px solid rgba(4, 6, 10, 0.88);
-  border-radius: 24px;
+  border-radius: 26px;
   background:
-    radial-gradient(circle at 50% 12%, rgba(246, 199, 108, 0.1), transparent 24%),
-    linear-gradient(180deg, rgba(10, 13, 20, 0.98), rgba(3, 5, 9, 0.98));
-  box-shadow: inset 0 0 0 1px rgba(255, 240, 204, 0.06), inset 0 -24px 38px rgba(0, 0, 0, 0.25);
+    radial-gradient(circle at 50% 12%, rgba(246, 199, 108, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(8, 11, 17, 0.98), rgba(3, 4, 7, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(255, 241, 207, 0.07), inset 0 -30px 46px rgba(0, 0, 0, 0.3), 0 16px 28px rgba(0, 0, 0, 0.22);
 }
 
 .hud__phone-character-stage::after {
@@ -4905,6 +4943,10 @@ canvas {
     padding: 70px 18px 10px;
   }
 
+  .hud__phone-stage[data-phone-active-app="character"] .hud__phone-screen-content {
+    padding: 0;
+  }
+
   .hud__phone-app-grid {
     grid-auto-rows: minmax(90px, auto);
     gap: 16px 12px;
@@ -4918,13 +4960,12 @@ canvas {
   }
 
   .hud__phone-character-app {
-    grid-template-rows: auto minmax(300px, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     gap: 12px;
-    padding: 14px;
+    padding: 70px 14px 12px;
   }
 
   .hud__phone-character-stage {
-    min-height: 300px;
     border-radius: 20px;
   }
 

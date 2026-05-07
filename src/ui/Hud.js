@@ -1843,6 +1843,11 @@ export class Hud {
     this.phoneLauncher?.classList.toggle('is-active', nextVisible);
     this.phoneLauncher?.setAttribute('aria-pressed', nextVisible ? 'true' : 'false');
     this.phoneStage.classList.toggle('is-app-open', Boolean(this.phoneActiveAppId));
+    if (this.phoneActiveAppId) {
+      this.phoneStage.dataset.phoneActiveApp = this.phoneActiveAppId;
+    } else {
+      delete this.phoneStage.dataset.phoneActiveApp;
+    }
 
     if (nextVisible) {
       this.phoneStage.hidden = false;
@@ -3924,17 +3929,12 @@ export class Hud {
     this.characterSelectorPreview.replaceChildren(node);
   }
 
-  setPhoneCharacterPreviewCanvas(node) {
-    const mount = this.phoneScreenContent?.querySelector('[data-phone-character-preview]');
-    if (!mount || !node) {
-      return;
-    }
+  getCharacterSelectorPreviewMount() {
+    return this.characterSelectorPreview ?? null;
+  }
 
-    if (mount.contains(node)) {
-      return;
-    }
-
-    mount.replaceChildren(node);
+  getPhoneCharacterPreviewMount() {
+    return this.phoneScreenContent?.querySelector('[data-phone-character-preview]') ?? null;
   }
 
   setCharacterSelectorState({

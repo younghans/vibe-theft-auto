@@ -34,6 +34,7 @@ const LIVE_PREVIEW_PROFILE = Object.freeze({
   cameraLiftRatio: 0.02,
   cameraXRatio: 0.04
 });
+const DEFAULT_LIVE_PREVIEW_PROFILE = LIVE_PREVIEW_PROFILE;
 const PORTRAIT_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.82,
   fitWidthFraction: 0.72,
@@ -193,7 +194,7 @@ function resizeRig(rig, width, height) {
   const safeWidth = Math.max(1, Math.round(width));
   const safeHeight = Math.max(1, Math.round(height));
   if (rig.size.width === safeWidth && rig.size.height === safeHeight) {
-    return;
+    return false;
   }
 
   rig.size.width = safeWidth;
@@ -203,18 +204,21 @@ function resizeRig(rig, width, height) {
   rig.renderer.setSize(safeWidth, safeHeight, false);
   rig.composer?.setSize(safeWidth, safeHeight);
   syncRigPostProcessingResolution(rig);
+  return true;
 }
 
 function syncRigToContainer(rig, container) {
   if (!container) {
-    return;
+    return false;
   }
 
   const width = container.clientWidth;
   const height = container.clientHeight;
   if (width > 0 && height > 0) {
-    resizeRig(rig, width, height);
+    return resizeRig(rig, width, height);
   }
+
+  return false;
 }
 
 function renderRig(rig, vibeShaderState) {
@@ -371,6 +375,7 @@ export class CharacterPreviewRenderer {
     this.library = library;
     this.active = false;
     this.liveMount = null;
+    this.livePreviewProfile = DEFAULT_LIVE_PREVIEW_PROFILE;
     this.portraitSnapshotProfile = portraitSnapshotProfile;
     this.vibeShaderState = {
       presetId: DEFAULT_VIBE_SHADER_PRESET_ID,
@@ -401,6 +406,21 @@ export class CharacterPreviewRenderer {
     this.liveMount = container;
     syncRigToContainer(this.livePreview, this.liveMount);
     container.replaceChildren(this.livePreview.renderer.domElement);
+  }
+
+  setLivePreviewProfile(profile = DEFAULT_LIVE_PREVIEW_PROFILE) {
+    this.livePreviewProfile = {
+      ...DEFAULT_LIVE_PREVIEW_PROFILE,
+      ...(profile ?? {})
+    };
+
+    if (this.liveCharacter) {
+      this.frameLivePreview();
+    }
+
+    if (this.active) {
+      this.renderLivePreview();
+    }
   }
 
   setActive(isActive) {
@@ -486,8 +506,19 @@ export class CharacterPreviewRenderer {
   }
 
   renderLivePreview() {
-    syncRigToContainer(this.livePreview, this.liveMount);
+    const resized = syncRigToContainer(this.livePreview, this.liveMount);
+    if (resized && this.liveCharacter) {
+      this.frameLivePreview();
+    }
     renderRig(this.livePreview, this.vibeShaderState);
+  }
+
+  frameLivePreview() {
+    if (!this.liveCharacter) {
+      return;
+    }
+
+    frameCamera(this.livePreview.camera, this.liveCharacter.character, this.livePreviewProfile);
   }
 
   async setCharacter(characterId) {
@@ -515,7 +546,7 @@ export class CharacterPreviewRenderer {
         this.liveCharacter = previewCharacter;
         this.livePreview.objectRoot.add(previewCharacter.character);
 
-        frameCamera(this.livePreview.camera, previewCharacter.character, LIVE_PREVIEW_PROFILE);
+        this.frameLivePreview();
         if (this.active) {
           this.renderLivePreview();
         }

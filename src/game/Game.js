@@ -105,6 +105,14 @@ const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
+const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
+  fitHeightFraction: 0.98,
+  fitWidthFraction: 0.98,
+  bottomPaddingRatio: 0.15,
+  distanceMultiplier: 0.68,
+  cameraLiftRatio: 0,
+  cameraXRatio: 0
+});
 const BOOT_PIXEL_RATIO_CAP = 1.25;
 const RUNTIME_PIXEL_RATIO_CAP = 2;
 const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
@@ -888,7 +896,8 @@ export class Game {
       return;
     }
 
-    this.hud.setCharacterSelectorPreviewCanvas(renderer.livePreview.renderer.domElement);
+    renderer.mount(this.hud.getCharacterSelectorPreviewMount());
+    renderer.setLivePreviewProfile();
     renderer.setActive(this.characterSelectorVisible);
     await renderer.setCharacter(selectedId);
     if (requestId !== this.characterSelectorSyncRequestId || !this.characterSelectorVisible) {
@@ -952,7 +961,8 @@ export class Game {
       return;
     }
 
-    this.hud.setPhoneCharacterPreviewCanvas(renderer.livePreview.renderer.domElement);
+    renderer.mount(this.hud.getPhoneCharacterPreviewMount());
+    renderer.setLivePreviewProfile(PHONE_CHARACTER_PREVIEW_PROFILE);
     renderer.setActive(true);
     await renderer.setCharacter(selectedId);
     if (requestId !== this.phoneCharacterSyncRequestId || !this.isPhoneCharacterAppOpen()) {
