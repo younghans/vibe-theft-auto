@@ -279,6 +279,8 @@ export class Game {
     this.characterPreviewRendererPromise = null;
     this.characterSelectorSyncRequestId = 0;
     this.characterSelectorViewportSyncFrame = 0;
+    this.phoneMenuVisible = false;
+    this.phoneActiveAppId = '';
     this.localCharacterSwapSequence = 0;
     this.remoteAvatarBuildRequests = new Map();
     this.remotePlayers = new Map();
@@ -420,6 +422,12 @@ export class Game {
       onHit: () => void this.handleBlackjackAction('hit'),
       onStand: () => void this.handleBlackjackAction('stand'),
       onDouble: () => void this.handleBlackjackAction('double')
+    });
+    this.hud.bindPhoneEvents({
+      onToggle: () => this.togglePhoneMenu(),
+      onClose: () => this.closePhoneMenu(),
+      onOpenApp: (appId) => this.openPhoneApp(appId),
+      onHome: () => this.showPhoneHome()
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -762,6 +770,7 @@ export class Game {
   setShaderDebugMenuVisible(visible) {
     const nextVisible = Boolean(visible);
     if (nextVisible) {
+      this.closePhoneMenu();
       this.setAimPoseDebugVisible(false);
       if (this.worldBuilder?.enabled) {
         void this.worldBuilder.setEnabled(false);
@@ -949,6 +958,10 @@ export class Game {
   }
 
   setCharacterSelectorVisible(visible) {
+    if (visible) {
+      this.closePhoneMenu();
+    }
+
     this.characterSelectorVisible = Boolean(visible) && this.canUseCharacterSelector();
     this.refreshCharacterSelectorHud();
     return this.characterSelectorVisible;
@@ -961,6 +974,65 @@ export class Game {
     }
 
     return this.setCharacterSelectorVisible(visible);
+  }
+
+  canOpenPhoneMenu() {
+    return Boolean(
+      this.player
+      && !this.hud.isLoadingVisible()
+      && !this.worldBuilder?.enabled
+      && !this.hud.isPhoneOpen()
+      && !this.hud.isQuickChatOpen()
+      && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
+      && !this.characterSelectorVisible
+      && !this.shaderDebugMenuVisible
+      && !this.aimPoseDebugVisible
+    );
+  }
+
+  openPhoneMenu() {
+    if (!this.canOpenPhoneMenu()) {
+      return false;
+    }
+
+    this.phoneMenuVisible = true;
+    this.phoneActiveAppId = '';
+    this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    return true;
+  }
+
+  closePhoneMenu() {
+    this.phoneMenuVisible = false;
+    this.phoneActiveAppId = '';
+    this.hud.setPhoneState({ visible: false, activeAppId: '' });
+    return false;
+  }
+
+  togglePhoneMenu() {
+    if (this.hud.isPhoneOpen() || this.phoneMenuVisible) {
+      return this.closePhoneMenu();
+    }
+
+    return this.openPhoneMenu();
+  }
+
+  openPhoneApp(appId = '') {
+    if (!this.phoneMenuVisible) {
+      return;
+    }
+
+    this.phoneActiveAppId = String(appId ?? '');
+    this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+  }
+
+  showPhoneHome() {
+    if (!this.phoneMenuVisible) {
+      return;
+    }
+
+    this.phoneActiveAppId = '';
+    this.hud.setPhoneState({ visible: true, activeAppId: '' });
   }
 
   cycleCharacterSelection(step = 1) {
@@ -1039,6 +1111,7 @@ export class Game {
 
     const nextEnabled = !this.worldBuilder.enabled;
     if (nextEnabled) {
+      this.closePhoneMenu();
       this.closeQuickChat();
       this.setCharacterSelectorVisible(false);
       this.setShaderDebugMenuVisible(false);
@@ -2409,6 +2482,7 @@ export class Game {
       return;
     }
 
+    this.closePhoneMenu();
     this.stockMarketNpcId = npcId;
     this.stockMarketRefreshAt = 0;
     this.hud.setStockMarketState({
@@ -2694,6 +2768,7 @@ export class Game {
       return;
     }
 
+    this.closePhoneMenu();
     this.blackjackNpcId = npcId;
     this.blackjackDealerName = String(interaction?.npc?.name ?? 'Dealer');
     this.hud.setBlackjackState({
@@ -3611,6 +3686,7 @@ export class Game {
   setAimPoseDebugVisible(visible) {
     const nextVisible = Boolean(visible && this.canUseAimPoseDebug());
     if (nextVisible) {
+      this.closePhoneMenu();
       this.setShaderDebugMenuVisible(false);
       if (this.worldBuilder?.enabled) {
         void this.worldBuilder.setEnabled(false);
@@ -5135,6 +5211,7 @@ export class Game {
     if (
       holdingEmoteKey
       && !this.worldBuilder.enabled
+      && !this.hud.isPhoneOpen()
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
@@ -5200,6 +5277,7 @@ export class Game {
       this.player
       && !this.hud.isLoadingVisible()
       && !this.worldBuilder?.enabled
+      && !this.hud.isPhoneOpen()
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
@@ -5214,7 +5292,9 @@ export class Game {
   }
 
   handleCameraZoomInput() {
-    if (this.worldBuilder?.enabled) {
+    if (this.worldBuilder?.enabled || this.hud.isPhoneOpen()) {
+      this.input.consumeAction('zoomIn');
+      this.input.consumeAction('zoomOut');
       this.input.consumeWheelDirection();
       return;
     }
@@ -5258,6 +5338,8 @@ export class Game {
     if (this.input.consumeAction('escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
+      } else if (this.hud.isPhoneOpen()) {
+        this.closePhoneMenu();
       } else if (this.hud.isStockMarketOpen()) {
         this.closeStockMarket();
       } else if (this.hud.isBlackjackOpen()) {
@@ -5267,6 +5349,10 @@ export class Game {
       } else if (this.shaderDebugMenuVisible) {
         this.setShaderDebugMenuVisible(false);
       }
+    }
+
+    if (!this.worldBuilder?.enabled && this.input.consumeAction('phone')) {
+      this.togglePhoneMenu();
     }
 
     this.handleCameraZoomInput();
@@ -5300,8 +5386,9 @@ export class Game {
       const localAlive = localPlayerState?.alive !== false;
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
+      const phoneOpen = this.hud.isPhoneOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -5310,11 +5397,11 @@ export class Game {
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -5342,7 +5429,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen;
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -5369,7 +5456,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -5397,7 +5484,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
@@ -5689,6 +5776,7 @@ export class Game {
       && localPlayerState?.alive !== false
       && !this.worldBuilder?.enabled
       && !emoteMenuActive
+      && !this.hud.isPhoneOpen()
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
@@ -5705,6 +5793,7 @@ export class Game {
   }
 
   openQuickChat() {
+    this.closePhoneMenu();
     this.hud.setQuickChatState({ visible: true });
     this.hud.focusQuickChatInput();
   }

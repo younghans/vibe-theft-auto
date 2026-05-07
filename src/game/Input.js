@@ -3,6 +3,7 @@ const ACTION_KEY_CODES = Object.freeze({
   emote: ['KeyB'],
   escape: ['Escape'],
   interact: ['KeyE'],
+  phone: ['Tab'],
   reload: ['KeyR'],
   zoomIn: ['Equal', 'NumpadAdd'],
   zoomOut: ['Minus', 'NumpadSubtract']
@@ -96,6 +97,10 @@ export class Input {
         this.keys.delete(event.code);
         this.justPressed.delete(event.code);
         return;
+      }
+
+      if (event.code === 'Tab') {
+        event.preventDefault();
       }
 
       if (!this.keys.has(event.code)) {

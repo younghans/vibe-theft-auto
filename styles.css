@@ -80,17 +80,6 @@ body.is-builder-resizing * {
   box-shadow: none;
 }
 
-.hud__left-stack {
-  position: absolute;
-  bottom: 24px;
-  left: 24px;
-  display: grid;
-  gap: 12px;
-  align-items: start;
-  pointer-events: none;
-  z-index: 6;
-}
-
 .hud__controls-list {
   display: grid;
   gap: 4px;
@@ -164,6 +153,321 @@ body.is-builder-resizing * {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #f8f6ef;
+}
+
+.hud__phone-launcher {
+  position: absolute;
+  left: calc(24px + var(--safe-left));
+  bottom: calc(24px + var(--safe-bottom));
+  width: 50px;
+  height: 98px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 17;
+  transition: transform 150ms ease, filter 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud__phone-launcher:hover,
+.hud__phone-launcher:focus-visible {
+  transform: translateY(-3px) scale(1.08);
+  filter: brightness(1.12);
+}
+
+.hud__phone-launcher.is-active {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud__phone-launcher-frame {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border: 2px solid #05070a;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #232932, #020306 78%);
+  box-shadow: 0 16px 26px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.hud__phone-launcher-speaker {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(1, 3, 6, 0.72);
+  transform: translateX(-50%);
+}
+
+.hud__phone-launcher-screen {
+  position: absolute;
+  inset: 5px 4px 4px;
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 34% 22%, rgba(214, 186, 93, 0.5) 0 8px, rgba(214, 186, 93, 0.18) 9px 15px, transparent 22px),
+    radial-gradient(circle at 72% 78%, rgba(194, 68, 88, 0.46) 0 8px, rgba(194, 68, 88, 0.16) 9px 16px, transparent 24px),
+    linear-gradient(150deg, #253546 0%, #111926 52%, #080b12 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035), inset 0 -14px 26px rgba(0, 0, 0, 0.24);
+}
+
+.hud__phone-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 35;
+  transition: opacity 180ms ease;
+}
+
+.hud__phone-stage.is-visible,
+.hud__phone-stage.is-closing {
+  pointer-events: auto;
+}
+
+.hud__phone-stage.is-visible {
+  opacity: 1;
+}
+
+.hud__phone-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(3, 6, 10, 0.36);
+  backdrop-filter: blur(2px);
+  cursor: default;
+}
+
+.hud__phone-device {
+  position: relative;
+  width: min(382px, calc(100vw - 32px), calc((100dvh - 44px) * 0.49));
+  aspect-ratio: 390 / 790;
+  transform: translate(calc(-50vw + 86px + var(--safe-left)), calc(50dvh - 112px - var(--safe-bottom))) scale(0.18) rotate(-9deg);
+  transition: transform 260ms cubic-bezier(0.2, 0.82, 0.22, 1);
+  filter: drop-shadow(0 32px 50px rgba(0, 0, 0, 0.42));
+  pointer-events: auto;
+}
+
+.hud__phone-stage.is-visible .hud__phone-device {
+  transform: translate(0, 0) scale(1) rotate(0deg);
+}
+
+.hud__phone-stage.is-closing .hud__phone-device {
+  transform: translate(calc(-50vw + 86px + var(--safe-left)), calc(50dvh - 112px - var(--safe-bottom))) scale(0.18) rotate(-9deg);
+}
+
+.hud__phone-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 46px;
+  padding: 13px;
+  background: linear-gradient(145deg, #3b4350, #010205);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.1), 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.hud__phone-island {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  width: 104px;
+  height: 28px;
+  border-radius: 999px;
+  background: #020307;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.hud__phone-screen {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 28px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 35px;
+  background: radial-gradient(circle at 18% 10%, rgba(255, 213, 112, 0.54), transparent 26%), radial-gradient(circle at 86% 4%, rgba(105, 216, 255, 0.5), transparent 26%), radial-gradient(circle at 66% 92%, rgba(239, 93, 137, 0.38), transparent 34%), linear-gradient(155deg, #182b43, #070a13);
+  box-shadow: inset 0 0 42px rgba(7, 9, 16, 0.62);
+}
+
+.hud__phone-close,
+.hud__phone-nav-button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(2, 4, 8, 0.32);
+  color: #ffffff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud__phone-close {
+  position: absolute;
+  top: 54px;
+  right: 22px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  z-index: 4;
+}
+
+.hud__phone-close span,
+.hud__phone-nav-button span {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.hud__phone-close:hover,
+.hud__phone-nav-button:hover,
+.hud__phone-close:focus-visible,
+.hud__phone-nav-button:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hud__phone-screen-content {
+  min-height: 0;
+  padding: 78px 22px 12px;
+  overflow: hidden;
+}
+
+.hud__phone-home-screen {
+  display: grid;
+  align-content: start;
+  height: 100%;
+}
+
+.hud__phone-app-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(102px, auto);
+  align-content: start;
+  gap: 20px 18px;
+}
+
+.hud__phone-app {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud__phone-app-icon {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 17px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--phone-app-color) 70%, #ffffff), var(--phone-app-color));
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.hud__phone-app:hover .hud__phone-app-icon,
+.hud__phone-app:focus-visible .hud__phone-app-icon {
+  transform: translateY(-3px) scale(1.05);
+  filter: brightness(1.08);
+}
+
+.hud__phone-app-label {
+  width: 100%;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.08;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.hud__phone-app-panel {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--phone-app-color) 34%, #121721), rgba(8, 11, 18, 0.9) 58%);
+  color: #fff;
+  animation: phoneAppIn 190ms ease both;
+}
+
+.hud__phone-app-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__phone-nav-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+}
+
+.hud__phone-app-icon.is-panel {
+  width: 58px;
+  height: 58px;
+  border-radius: 17px;
+}
+
+.hud__phone-app-panel h2 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 0.98;
+}
+
+.hud__phone-app-panel p {
+  max-width: 25ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.hud__phone-home-indicator {
+  justify-self: center;
+  align-self: center;
+  width: 128px;
+  height: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  cursor: pointer;
+}
+
+@keyframes phoneAppIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .hud__mobile-controls {
@@ -1008,9 +1312,29 @@ body.is-builder-resizing * {
 .hud__top-actions-buttons {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  flex: 0 0 auto;
   pointer-events: auto;
+}
+
+.hud__top-actions-stack {
+  display: grid;
+  justify-items: end;
+  gap: 0;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.hud__top-actions-stack:has(.hud__top-actions-buttons > :not([hidden])) {
+  gap: 12px;
+}
+
+.hud__top-right-stack {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+  pointer-events: none;
+  z-index: 6;
 }
 
 .hud__character-selector {
@@ -4372,9 +4696,12 @@ canvas {
     width: auto;
   }
 
-  .hud__left-stack {
-    bottom: 16px;
-    left: 16px;
+  .hud__top-actions-stack:has(.hud__top-actions-buttons > :not([hidden])) {
+    gap: 8px;
+  }
+
+  .hud__top-right-stack {
+    gap: 8px;
   }
 
   .hud__combat {
@@ -4423,6 +4750,33 @@ canvas {
 
   .hud__money-value {
     font-size: clamp(1rem, 6vw, 1.45rem);
+  }
+
+  .hud__phone-launcher {
+    left: calc(16px + var(--safe-left));
+    bottom: calc(18px + var(--safe-bottom));
+    width: 46px;
+    height: 90px;
+  }
+
+  .hud__phone-device {
+    width: min(338px, calc(100vw - 28px), calc((100dvh - 32px) * 0.49));
+  }
+
+  .hud__phone-screen-content {
+    padding: 70px 18px 10px;
+  }
+
+  .hud__phone-app-grid {
+    grid-auto-rows: minmax(90px, auto);
+    gap: 16px 12px;
+  }
+
+  .hud__phone-app-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 16px;
+    font-size: 13px;
   }
 
   .hud__task {
@@ -4698,7 +5052,7 @@ canvas {
     pointer-events: none;
   }
 
-  .hud__left-stack {
+  .hud__top-right-stack {
     display: none;
   }
 
@@ -4716,6 +5070,10 @@ canvas {
   .hud__money {
     top: calc(50px + var(--safe-top));
     left: calc(12px + var(--safe-left));
+  }
+
+  .hud__phone-launcher {
+    bottom: calc(176px + var(--safe-bottom));
   }
 
   .hud__prompt {
@@ -4813,6 +5171,11 @@ canvas {
     font-size: 12px;
   }
 
+  .hud__phone-launcher {
+    bottom: calc(178px + var(--safe-bottom));
+    left: calc(36px + var(--safe-left));
+  }
+
   .hud__prompt {
     bottom: calc(172px + var(--safe-bottom));
   }
@@ -4825,5 +5188,23 @@ canvas {
 
   .hud__task-title {
     max-width: min(448px, calc(100vw - 64px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud__phone-launcher,
+  .hud__phone-device,
+  .hud__phone-stage,
+  .hud__phone-app-icon {
+    transition: none;
+  }
+
+  .hud__phone-device,
+  .hud__phone-stage.is-closing .hud__phone-device {
+    transform: none;
+  }
+
+  .hud__phone-app-panel {
+    animation: none;
   }
 }

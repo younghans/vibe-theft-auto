@@ -27,6 +27,24 @@ const AMMO_BULLET_RING_RADIUS_PERCENT = 37;
 const AMMO_BULLET_STAGGER_MS = 18;
 const AMMO_BULLET_MAX_STAGGER_MS = 180;
 const AMMO_LOW_CLIP_RATIO = 0.28;
+const PHONE_CLOSE_ANIMATION_MS = 260;
+
+const PHONE_APPS = Object.freeze([
+  ['messages', 'Messages', 'MSG', '#30d66a', 'Contacts and story texts will appear here.'],
+  ['map', 'Map', 'MAP', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
+  ['missions', 'Missions', 'GO', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
+  ['wallet', 'Wallet', '$', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
+  ['stocks', 'Stocks', 'STK', '#48d4ff', 'Market watchlists and portfolio shortcuts will connect here.'],
+  ['casino', 'Casino', '21', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
+  ['contacts', 'Contacts', 'VIP', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
+  ['settings', 'Settings', 'SET', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
+].map(([id, label, icon, color, body]) => Object.freeze({
+  id,
+  label,
+  icon,
+  color,
+  body
+})));
 
 const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
   Object.freeze({
@@ -53,6 +71,57 @@ function getBuilderPlaceholder(label) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
+}
+
+function getPhoneAppById(appId = '') {
+  return PHONE_APPS.find((app) => app.id === appId) ?? null;
+}
+
+function getPhoneAppButtonMarkup(app) {
+  return `
+    <button
+      class="hud__phone-app"
+      type="button"
+      data-phone-app="${escapeHtml(app.id)}"
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <span class="hud__phone-app-icon" aria-hidden="true">${escapeHtml(app.icon)}</span>
+      <span class="hud__phone-app-label">${escapeHtml(app.label)}</span>
+    </button>
+  `;
+}
+
+function getPhoneHomeMarkup() {
+  return `
+    <div class="hud__phone-home-screen">
+      <div class="hud__phone-app-grid">
+        ${PHONE_APPS.map((app) => getPhoneAppButtonMarkup(app)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function getPhoneAppPanelMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel"
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <span class="hud__phone-app-icon is-panel" aria-hidden="true">${escapeHtml(app.icon)}</span>
+      </div>
+      <h2>${escapeHtml(app.label)}</h2>
+      <p>${escapeHtml(app.body)}</p>
+    </div>
+  `;
+}
+
+function getPhoneScreenMarkup(activeAppId = '') {
+  const activeApp = getPhoneAppById(activeAppId);
+  return activeApp ? getPhoneAppPanelMarkup(activeApp) : getPhoneHomeMarkup();
 }
 
 function formatMoneyAmount(value) {
@@ -649,6 +718,10 @@ export class Hud {
     this.emoteHint = this.overlay.querySelector('[data-emote-hint]');
     this.mobileControls = this.overlay.querySelector('[data-mobile-controls]');
     this.mobileFireLabel = this.overlay.querySelector('[data-mobile-fire-label]');
+    this.phoneLauncher = this.overlay.querySelector('[data-phone-launcher]');
+    this.phoneStage = this.overlay.querySelector('[data-phone-stage]');
+    this.phoneScreenContent = this.overlay.querySelector('[data-phone-screen-content]');
+    this.phoneClose = this.overlay.querySelector('[data-phone-close]');
     this.emoteSliceNodes = [];
     this.overheadHealthBarNodes = new Map();
     this.speechBubbleNodes = new Map();
@@ -657,6 +730,7 @@ export class Hud {
     this.joinTitleTimeout = 0;
     this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
+    this.phoneCloseTimeout = 0;
     this.taskCompleteTimeout = 0;
     this.taskConfettiFrame = 0;
     this.taskConfettiLastFrameAt = 0;
@@ -686,6 +760,8 @@ export class Hud {
       error: '',
       dealerName: 'Dealer'
     };
+    this.phoneVisible = false;
+    this.phoneActiveAppId = '';
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
@@ -880,18 +956,6 @@ export class Hud {
           </div>
         </div>
       </section>
-      <div class="hud__left-stack">
-        <section class="hud__admin-position" data-admin-position hidden>
-          <p class="hud__eyebrow">Admin Position</p>
-          <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
-          <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
-        </section>
-        <section class="hud__panel">
-          <div class="hud__controls-list">
-            ${getHudControlsMarkup()}
-          </div>
-        </section>
-      </div>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
       </section>
@@ -901,66 +965,110 @@ export class Hud {
         </div>
       </section>
       <canvas class="hud__task-confetti-canvas" data-task-confetti aria-hidden="true"></canvas>
+      <button
+        class="hud__phone-launcher"
+        type="button"
+        data-phone-launcher
+        aria-label="Open phone menu"
+        aria-pressed="false"
+        title="Open phone"
+      >
+        <span class="hud__phone-launcher-frame" aria-hidden="true">
+          <span class="hud__phone-launcher-speaker"></span>
+          <span class="hud__phone-launcher-screen"></span>
+        </span>
+      </button>
+      <section class="hud__phone-stage" data-phone-stage role="dialog" aria-modal="true" aria-label="Phone menu" hidden>
+        <button class="hud__phone-backdrop" type="button" data-phone-backdrop aria-label="Close phone"></button>
+        <div class="hud__phone-device">
+          <div class="hud__phone-frame">
+            <div class="hud__phone-island" aria-hidden="true"></div>
+            <div class="hud__phone-screen">
+              <button class="hud__phone-close" type="button" data-phone-close aria-label="Close phone" title="Close phone">
+                <span aria-hidden="true">X</span>
+              </button>
+              <div class="hud__phone-screen-content" data-phone-screen-content>
+                ${getPhoneScreenMarkup()}
+              </div>
+              <button class="hud__phone-home-indicator" type="button" data-phone-home aria-label="Back to phone home"></button>
+            </div>
+          </div>
+        </div>
+      </section>
       <div class="hud__top-actions">
         <section class="hud__toast">
           <p class="hud__toast-text" data-toast></p>
         </section>
-        <div class="hud__top-actions-buttons">
-          <button
-            class="hud__character-selector-toggle"
-            type="button"
-            data-character-selector-toggle
-            aria-label="Toggle character selector"
-            aria-pressed="false"
-            title="Choose your character"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 4.5c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" />
-              <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
-              <path d="M4 8.5h2.5" />
-              <path d="M17.5 8.5H20" />
-            </svg>
-          </button>
-          <button
-            class="hud__shader-debug-toggle"
-            type="button"
-            data-shader-debug-toggle
-            aria-label="Toggle shader vibe menu"
-            aria-pressed="false"
-            title="Show shader vibe menu"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
-              <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
-              <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
-            </svg>
-          </button>
-          <button
-            class="hud__aim-debug-toggle"
-            type="button"
-            data-aim-debug-toggle
-            aria-label="Toggle pose debug"
-            aria-pressed="false"
-            title="Show pose debug"
-            hidden
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" />
-              <circle cx="12" cy="12" r="8" />
-              <path d="M12 2v3" />
-              <path d="M12 19v3" />
-              <path d="M2 12h3" />
-              <path d="M19 12h3" />
-            </svg>
-          </button>
-          <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M14.5 3.5l6 6" />
-              <path d="M13 5l4.5-1.5-1.5 4.5" />
-              <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
-              <path d="M9.5 14.5l3.5 3.5" />
-            </svg>
-          </button>
+        <div class="hud__top-actions-stack">
+          <div class="hud__top-actions-buttons">
+            <button
+              class="hud__character-selector-toggle"
+              type="button"
+              data-character-selector-toggle
+              aria-label="Toggle character selector"
+              aria-pressed="false"
+              title="Choose your character"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4.5c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" />
+                <path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" />
+                <path d="M4 8.5h2.5" />
+                <path d="M17.5 8.5H20" />
+              </svg>
+            </button>
+            <button
+              class="hud__shader-debug-toggle"
+              type="button"
+              data-shader-debug-toggle
+              aria-label="Toggle shader vibe menu"
+              aria-pressed="false"
+              title="Show shader vibe menu"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
+                <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
+                <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
+              </svg>
+            </button>
+            <button
+              class="hud__aim-debug-toggle"
+              type="button"
+              data-aim-debug-toggle
+              aria-label="Toggle pose debug"
+              aria-pressed="false"
+              title="Show pose debug"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <circle cx="12" cy="12" r="8" />
+                <path d="M12 2v3" />
+                <path d="M12 19v3" />
+                <path d="M2 12h3" />
+                <path d="M19 12h3" />
+              </svg>
+            </button>
+            <button class="hud__mode-toggle" type="button" data-mode-toggle aria-label="Toggle world edit mode" title="Enter world edit mode" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14.5 3.5l6 6" />
+                <path d="M13 5l4.5-1.5-1.5 4.5" />
+                <path d="M4.5 19.5l7.7-7.7 3.5 3.5L8 23H4.5v-3.5z" />
+                <path d="M9.5 14.5l3.5 3.5" />
+              </svg>
+            </button>
+          </div>
+          <div class="hud__top-right-stack">
+            <section class="hud__admin-position" data-admin-position hidden>
+              <p class="hud__eyebrow">Admin Position</p>
+              <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
+              <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
+            </section>
+            <section class="hud__panel">
+              <div class="hud__controls-list">
+                ${getHudControlsMarkup()}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
       <section class="hud__character-selector" data-character-selector hidden>
@@ -1654,6 +1762,64 @@ export class Hud {
     }
   }
 
+  renderPhoneScreen() {
+    if (!this.phoneScreenContent) {
+      return;
+    }
+
+    this.phoneScreenContent.innerHTML = getPhoneScreenMarkup(this.phoneActiveAppId);
+  }
+
+  setPhoneState({ visible = this.phoneVisible, activeAppId = this.phoneActiveAppId } = {}) {
+    if (!this.phoneStage) {
+      return;
+    }
+
+    const nextVisible = Boolean(visible);
+    this.phoneVisible = nextVisible;
+    this.phoneActiveAppId = nextVisible && getPhoneAppById(activeAppId) ? activeAppId : '';
+    this.renderPhoneScreen();
+
+    window.clearTimeout(this.phoneCloseTimeout);
+    this.phoneLauncher?.classList.toggle('is-active', nextVisible);
+    this.phoneLauncher?.setAttribute('aria-pressed', nextVisible ? 'true' : 'false');
+    this.phoneStage.classList.toggle('is-app-open', Boolean(this.phoneActiveAppId));
+
+    if (nextVisible) {
+      this.phoneStage.hidden = false;
+      this.phoneStage.classList.remove('is-closing');
+      void this.phoneStage.offsetWidth;
+      this.phoneStage.classList.add('is-visible');
+      return;
+    }
+
+    this.phoneStage.classList.remove('is-visible');
+    this.phoneStage.classList.add('is-closing');
+    this.phoneCloseTimeout = window.setTimeout(() => {
+      if (this.phoneVisible) {
+        return;
+      }
+
+      this.phoneStage.hidden = true;
+      this.phoneStage.classList.remove('is-closing', 'is-app-open');
+    }, PHONE_CLOSE_ANIMATION_MS);
+  }
+
+  setPhoneActiveApp(appId = '') {
+    if (!this.phoneVisible) {
+      return;
+    }
+
+    this.setPhoneState({
+      visible: true,
+      activeAppId: getPhoneAppById(appId) ? appId : ''
+    });
+  }
+
+  isPhoneOpen() {
+    return Boolean(this.phoneVisible && this.phoneStage && !this.phoneStage.hidden);
+  }
+
   setPrompt(interactable) {
     const prompt = this.overlay.querySelector('.hud__prompt');
     if (!interactable) {
@@ -2172,6 +2338,49 @@ export class Hud {
       if (event.target === this.interactionRoot) {
         onCloseInteraction();
       }
+    });
+  }
+
+  bindPhoneEvents({
+    onToggle,
+    onClose,
+    onOpenApp,
+    onHome
+  }) {
+    this.phoneLauncher?.addEventListener('click', () => {
+      onToggle?.();
+    });
+
+    this.phoneClose?.addEventListener('click', () => {
+      onClose?.();
+    });
+
+    this.phoneStage?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (target?.closest('[data-phone-backdrop]')) {
+        onClose?.();
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const appButton = target?.closest('[data-phone-app]');
+      if (appButton) {
+        onOpenApp?.(appButton.getAttribute('data-phone-app') ?? '');
+        return;
+      }
+
+      if (target?.closest('[data-phone-home]')) {
+        onHome?.();
+      }
+    });
+
+    this.phoneStage?.querySelector('[data-phone-home]')?.addEventListener('click', () => {
+      onHome?.();
     });
   }
 
