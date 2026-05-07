@@ -480,6 +480,111 @@ body.is-builder-resizing * {
   line-height: 1.35;
 }
 
+.hud__phone-character-app {
+  grid-template-rows: auto minmax(360px, 1fr) auto;
+  gap: 14px;
+  padding: 16px;
+}
+
+.hud__phone-character-status {
+  margin: 0;
+}
+
+.hud__phone-character-stage-shell {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  min-height: 0;
+}
+
+.hud__phone-character-stage {
+  position: relative;
+  height: 100%;
+  min-height: 360px;
+  overflow: hidden;
+  border: 2px solid rgba(4, 6, 10, 0.88);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(246, 199, 108, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(10, 13, 20, 0.98), rgba(3, 5, 9, 0.98));
+  box-shadow: inset 0 0 0 1px rgba(255, 240, 204, 0.06), inset 0 -24px 38px rgba(0, 0, 0, 0.25);
+}
+
+.hud__phone-character-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.34));
+  pointer-events: none;
+}
+
+.hud__phone-character-stage-glow {
+  position: absolute;
+  inset: auto 50% 18px auto;
+  width: 58%;
+  height: 19%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--phone-app-color) 30%, transparent), transparent 68%);
+  filter: blur(20px);
+  transform: translateX(50%);
+  pointer-events: none;
+}
+
+.hud__phone-character-preview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: stretch;
+}
+
+.hud__phone-character-nav {
+  display: inline-flex;
+  width: 34px;
+  height: 82px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  background: rgba(2, 5, 10, 0.42);
+  color: #fff4d2;
+  cursor: pointer;
+  font: inherit;
+  font-size: 30px;
+  line-height: 1;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.hud__phone-character-nav:hover,
+.hud__phone-character-nav:focus-visible {
+  border-color: color-mix(in srgb, var(--phone-app-color) 68%, #fff);
+  background: color-mix(in srgb, var(--phone-app-color) 20%, rgba(2, 5, 10, 0.62));
+  transform: translateY(-1px);
+}
+
+.hud__phone-character-nav span {
+  transform: translateY(-2px);
+}
+
+.hud__phone-character-status {
+  justify-self: center;
+  width: min(248px, 100%);
+  overflow: hidden;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--phone-app-color) 42%, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--phone-app-color) 16%, rgba(0, 0, 0, 0.28));
+  color: rgba(255, 246, 225, 0.96);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .hud__phone-home-indicator {
   justify-self: center;
   align-self: center;
@@ -4810,6 +4915,33 @@ canvas {
     height: 58px;
     border-radius: 16px;
     font-size: 13px;
+  }
+
+  .hud__phone-character-app {
+    grid-template-rows: auto minmax(300px, 1fr) auto;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .hud__phone-character-stage {
+    min-height: 300px;
+    border-radius: 20px;
+  }
+
+  .hud__phone-character-stage-shell {
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    gap: 6px;
+  }
+
+  .hud__phone-character-nav {
+    width: 30px;
+    height: 70px;
+    border-radius: 12px;
+    font-size: 26px;
+  }
+
+  .hud__phone-character-status {
+    font-size: 11px;
   }
 
   .hud__task {

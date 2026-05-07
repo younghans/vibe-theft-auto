@@ -36,6 +36,7 @@ const PHONE_APPS = Object.freeze([
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
   ['stocks', 'Stocks', 'stocks', '#48d4ff', 'Market watchlists and portfolio shortcuts will connect here.'],
   ['casino', 'Casino', 'casino', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
+  ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
   ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
   ['settings', 'Settings', 'settings', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
 ].map(([id, label, icon, color, body]) => Object.freeze({
@@ -53,6 +54,7 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
   stocks: '<path d="M4.5 18.5h15"/><path d="M6 15.75 9.4 12l3.15 2.5 5.75-7"/><path d="M15.1 7.5h3.2v3.2"/><path d="M6.25 9.25v6.5M11.15 6.75v5.75M16.05 12.25v3.5"/>',
   casino: '<path d="M7.25 5.25h7.5a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2h-7.5a2 2 0 0 1-2-2V7.25a2 2 0 0 1 2-2Z"/><path d="M9.55 9.25c.8-1.05 2.1-1.05 2.9 0 .8 1.05.32 2.45-.82 3.1L11 12.7l-.63-.35c-1.14-.65-1.62-2.05-.82-3.1Z"/><path d="M8.25 16.25h5.5M18.7 8.2l.6 8.15a1.85 1.85 0 0 1-1.7 2l-.85.06"/>',
+  character: '<path d="M8.35 9.15a3.65 3.65 0 1 0 7.3 0 3.65 3.65 0 0 0-7.3 0Z"/><path d="M5.25 19.25c.95-2.75 3.45-4.55 6.75-4.55s5.8 1.8 6.75 4.55"/><path d="M4.5 6.25 6.25 4.5 8 6.25"/><path d="M6.25 4.5v4.25"/><path d="m19.5 17.75-1.75 1.75-1.75-1.75"/><path d="M17.75 15.25v4.25"/>',
   contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
   settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
 });
@@ -124,7 +126,41 @@ function getPhoneHomeMarkup() {
   `;
 }
 
+function getPhoneCharacterAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-character-app"
+      data-phone-character-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        ${getPhoneAppIconMarkup(app, 'is-panel')}
+      </div>
+      <div class="hud__phone-character-stage-shell">
+        <button class="hud__phone-character-nav" type="button" data-phone-character-prev aria-label="Previous character">
+          <span aria-hidden="true">&#8249;</span>
+        </button>
+        <div class="hud__phone-character-stage">
+          <div class="hud__phone-character-stage-glow" aria-hidden="true"></div>
+          <div class="hud__phone-character-preview" data-phone-character-preview></div>
+        </div>
+        <button class="hud__phone-character-nav" type="button" data-phone-character-next aria-label="Next character">
+          <span aria-hidden="true">&#8250;</span>
+        </button>
+      </div>
+      <div class="hud__phone-character-status" data-phone-character-status>Character</div>
+    </div>
+  `;
+}
+
 function getPhoneAppPanelMarkup(app) {
+  if (app.id === 'character') {
+    return getPhoneCharacterAppMarkup(app);
+  }
+
   return `
     <div
       class="hud__phone-app-panel"
@@ -2368,7 +2404,8 @@ export class Hud {
     onToggle,
     onClose,
     onOpenApp,
-    onHome
+    onHome,
+    onCycleCharacter
   }) {
     this.phoneLauncher?.addEventListener('click', () => {
       onToggle?.();
@@ -2391,6 +2428,21 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
+
+      if (target?.closest('[data-phone-character-prev]')) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCycleCharacter?.(-1);
+        return;
+      }
+
+      if (target?.closest('[data-phone-character-next]')) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCycleCharacter?.(1);
+        return;
+      }
+
       const appButton = target?.closest('[data-phone-app]');
       if (appButton) {
         onOpenApp?.(appButton.getAttribute('data-phone-app') ?? '');
@@ -3872,6 +3924,19 @@ export class Hud {
     this.characterSelectorPreview.replaceChildren(node);
   }
 
+  setPhoneCharacterPreviewCanvas(node) {
+    const mount = this.phoneScreenContent?.querySelector('[data-phone-character-preview]');
+    if (!mount || !node) {
+      return;
+    }
+
+    if (mount.contains(node)) {
+      return;
+    }
+
+    mount.replaceChildren(node);
+  }
+
   setCharacterSelectorState({
     available = false,
     visible = false,
@@ -3935,6 +4000,23 @@ export class Hud {
 
     for (const button of this.characterSelectorGrid?.querySelectorAll('[data-character-id]') ?? []) {
       button.classList.toggle('is-selected', button.dataset.characterId === selectedId);
+    }
+  }
+
+  setPhoneCharacterState({
+    selectedId = '',
+    entries = []
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-character-app]');
+    if (!root) {
+      return;
+    }
+
+    const selectedEntry = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
+    const status = root.querySelector('[data-phone-character-status]');
+
+    if (status) {
+      status.textContent = selectedEntry?.label ?? 'Character';
     }
   }
 

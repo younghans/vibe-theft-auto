@@ -675,10 +675,6 @@ export class NpcServiceMock {
   }
 
   setCharacter(characterId = '') {
-    if (!this.isAdmin()) {
-      return;
-    }
-
     const player = this.state.players.get(this.state.sessionId);
     if (!player) {
       return;

@@ -279,6 +279,7 @@ export class Game {
     this.characterPreviewRendererPromise = null;
     this.characterSelectorSyncRequestId = 0;
     this.characterSelectorViewportSyncFrame = 0;
+    this.phoneCharacterSyncRequestId = 0;
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
     this.localCharacterSwapSequence = 0;
@@ -427,7 +428,8 @@ export class Game {
       onToggle: () => this.togglePhoneMenu(),
       onClose: () => this.closePhoneMenu(),
       onOpenApp: (appId) => this.openPhoneApp(appId),
-      onHome: () => this.showPhoneHome()
+      onHome: () => this.showPhoneHome(),
+      onCycleCharacter: (step) => this.cycleCharacterSelection(step)
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -886,6 +888,7 @@ export class Game {
       return;
     }
 
+    this.hud.setCharacterSelectorPreviewCanvas(renderer.livePreview.renderer.domElement);
     renderer.setActive(this.characterSelectorVisible);
     await renderer.setCharacter(selectedId);
     if (requestId !== this.characterSelectorSyncRequestId || !this.characterSelectorVisible) {
@@ -931,6 +934,48 @@ export class Game {
     }
   }
 
+  isPhoneCharacterAppOpen() {
+    return Boolean(this.phoneMenuVisible && this.phoneActiveAppId === 'character' && this.hud.isPhoneOpen());
+  }
+
+  cancelPhoneCharacterPreviewSync() {
+    this.phoneCharacterSyncRequestId += 1;
+    if (!this.characterSelectorVisible) {
+      this.characterPreviewRenderer?.setActive(false);
+    }
+  }
+
+  async syncPhoneCharacterPreview(entries, selectedId) {
+    const requestId = ++this.phoneCharacterSyncRequestId;
+    const renderer = await this.ensureCharacterPreviewRenderer();
+    if (requestId !== this.phoneCharacterSyncRequestId || !this.isPhoneCharacterAppOpen()) {
+      return;
+    }
+
+    this.hud.setPhoneCharacterPreviewCanvas(renderer.livePreview.renderer.domElement);
+    renderer.setActive(true);
+    await renderer.setCharacter(selectedId);
+    if (requestId !== this.phoneCharacterSyncRequestId || !this.isPhoneCharacterAppOpen()) {
+      return;
+    }
+  }
+
+  refreshPhoneCharacterHud() {
+    if (!this.isPhoneCharacterAppOpen()) {
+      this.cancelPhoneCharacterPreviewSync();
+      return;
+    }
+
+    const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+    const entries = this.characterRoster.map((entry) => ({ ...entry }));
+    this.hud.setPhoneCharacterState({
+      selectedId,
+      entries
+    });
+
+    void this.syncPhoneCharacterPreview(entries, selectedId);
+  }
+
   refreshCharacterSelectorHud() {
     const available = this.canUseCharacterSelector();
     const visible = available && this.characterSelectorVisible;
@@ -950,7 +995,9 @@ export class Game {
         window.cancelAnimationFrame(this.characterSelectorViewportSyncFrame);
         this.characterSelectorViewportSyncFrame = 0;
       }
-      this.characterPreviewRenderer?.setActive(false);
+      if (!this.isPhoneCharacterAppOpen()) {
+        this.characterPreviewRenderer?.setActive(false);
+      }
       return;
     }
 
@@ -1006,6 +1053,7 @@ export class Game {
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: false, activeAppId: '' });
+    this.refreshPhoneCharacterHud();
     return false;
   }
 
@@ -1024,6 +1072,7 @@ export class Game {
 
     this.phoneActiveAppId = String(appId ?? '');
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    this.refreshPhoneCharacterHud();
   }
 
   showPhoneHome() {
@@ -1033,11 +1082,12 @@ export class Game {
 
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: '' });
+    this.refreshPhoneCharacterHud();
   }
 
   cycleCharacterSelection(step = 1) {
-    if (!this.canUseCharacterSelector()) {
-      this.hud.showToast('Character selector is admin only.');
+    if (!this.canChangeCharacter()) {
+      this.hud.showToast('Character selection is not ready.');
       return;
     }
 
@@ -1050,16 +1100,6 @@ export class Game {
 
   syncPreferredCharacterSelection() {
     const localPlayerState = this.getLocalPlayerState();
-    if (!this.canUseCharacterSelector()) {
-      this.pendingCharacterRequestId = '';
-      const authoritativeCharacterId = getPlayableCharacterById(localPlayerState?.characterId).id;
-      if (this.desiredLocalCharacterId !== authoritativeCharacterId) {
-        this.desiredLocalCharacterId = authoritativeCharacterId;
-        this.storeSelectedCharacterId(authoritativeCharacterId);
-      }
-      return;
-    }
-
     if (!this.npcService || !this.npcServiceState.sessionId) {
       return;
     }
@@ -1077,17 +1117,19 @@ export class Game {
     this.pendingCharacterRequestId = desiredId;
     this.npcService.setCharacter?.(desiredId);
     this.refreshCharacterSelectorHud();
+    this.refreshPhoneCharacterHud();
   }
 
   selectCharacter(characterId) {
-    if (!this.canUseCharacterSelector()) {
-      this.hud.showToast('Character selector is admin only.');
+    if (!this.canChangeCharacter()) {
+      this.hud.showToast('Character selection is not ready.');
       return;
     }
 
     const nextCharacterId = getPlayableCharacterById(characterId).id;
     if (this.desiredLocalCharacterId === nextCharacterId && this.player?.characterId === nextCharacterId) {
       this.refreshCharacterSelectorHud();
+      this.refreshPhoneCharacterHud();
       return;
     }
 
@@ -1095,6 +1137,7 @@ export class Game {
     this.storeSelectedCharacterId(nextCharacterId);
     this.pendingCharacterRequestId = '';
     this.refreshCharacterSelectorHud();
+    this.refreshPhoneCharacterHud();
     void this.swapLocalPlayerCharacter(nextCharacterId);
     this.syncPreferredCharacterSelection();
   }
@@ -1134,6 +1177,10 @@ export class Game {
     return this.isLocalAdmin();
   }
 
+  canChangeCharacter() {
+    return Boolean(this.player);
+  }
+
   canUseAimPoseDebug() {
     return this.isLocalAdmin();
   }
@@ -1144,7 +1191,6 @@ export class Game {
 
     if (!this.canUseCharacterSelector()) {
       this.characterSelectorVisible = false;
-      this.pendingCharacterRequestId = '';
     }
 
     if (!this.canUseAimPoseDebug()) {
@@ -3282,6 +3328,7 @@ export class Game {
           });
         }
         this.refreshCharacterSelectorHud();
+        this.refreshPhoneCharacterHud();
       });
 
       this.markBoot('boot:layout:start');
@@ -4032,6 +4079,7 @@ export class Game {
     this.player.setAimPoseDebugVisible(this.canUseAimPoseDebug() && this.aimPoseDebugShowSkeleton);
     this.refreshAimPoseDebugHud();
     this.refreshCharacterSelectorHud();
+    this.refreshPhoneCharacterHud();
   }
 
   async swapRemotePlayerCharacter(sessionId, state, {
@@ -4566,6 +4614,7 @@ export class Game {
         this.desiredLocalCharacterId = authoritativeCharacterId;
         this.storeSelectedCharacterId(authoritativeCharacterId);
         this.refreshCharacterSelectorHud();
+        this.refreshPhoneCharacterHud();
         void this.swapLocalPlayerCharacter(authoritativeCharacterId);
         return;
       }

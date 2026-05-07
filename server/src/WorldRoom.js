@@ -706,7 +706,7 @@ export class WorldRoom extends Room {
 
   updatePlayerCharacter(client, message = {}) {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !this.isAdminClient(client)) {
+    if (!player) {
       return;
     }
 
