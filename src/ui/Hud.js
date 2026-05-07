@@ -30,14 +30,14 @@ const AMMO_LOW_CLIP_RATIO = 0.28;
 const PHONE_CLOSE_ANIMATION_MS = 260;
 
 const PHONE_APPS = Object.freeze([
-  ['messages', 'Messages', 'MSG', '#30d66a', 'Contacts and story texts will appear here.'],
-  ['map', 'Map', 'MAP', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
-  ['missions', 'Missions', 'GO', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
-  ['wallet', 'Wallet', '$', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
-  ['stocks', 'Stocks', 'STK', '#48d4ff', 'Market watchlists and portfolio shortcuts will connect here.'],
-  ['casino', 'Casino', '21', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
-  ['contacts', 'Contacts', 'VIP', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
-  ['settings', 'Settings', 'SET', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
+  ['messages', 'Messages', 'messages', '#30d66a', 'Contacts and story texts will appear here.'],
+  ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
+  ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
+  ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
+  ['stocks', 'Stocks', 'stocks', '#48d4ff', 'Market watchlists and portfolio shortcuts will connect here.'],
+  ['casino', 'Casino', 'casino', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
+  ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
+  ['settings', 'Settings', 'settings', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
 ].map(([id, label, icon, color, body]) => Object.freeze({
   id,
   label,
@@ -45,6 +45,17 @@ const PHONE_APPS = Object.freeze([
   color,
   body
 })));
+
+const PHONE_APP_ICON_PATHS = Object.freeze({
+  messages: '<path d="M5.5 7.25h13a2.25 2.25 0 0 1 2.25 2.25v4.75a2.25 2.25 0 0 1-2.25 2.25h-6.3l-4.45 3.25v-3.25H5.5a2.25 2.25 0 0 1-2.25-2.25V9.5A2.25 2.25 0 0 1 5.5 7.25Z"/><path d="M7.75 10.5h8.5M7.75 13.25h5.8"/>',
+  map: '<path d="m4 6.75 5-2 6 2 5-2v12.5l-5 2-6-2-5 2V6.75Z"/><path d="M9 4.75v12.5M15 6.75v12.5"/><path d="M17.4 9.6 15 12l-1.45-1.45"/>',
+  missions: '<path d="M5.5 4.75h10.25L19 8v11.25H5.5V4.75Z"/><path d="M15.5 4.75V8.2H19"/><path d="m8.25 12.05 1.6 1.6 3.65-3.8"/><path d="M8.5 16.25h7"/>',
+  wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
+  stocks: '<path d="M4.5 18.5h15"/><path d="M6 15.75 9.4 12l3.15 2.5 5.75-7"/><path d="M15.1 7.5h3.2v3.2"/><path d="M6.25 9.25v6.5M11.15 6.75v5.75M16.05 12.25v3.5"/>',
+  casino: '<path d="M7.25 5.25h7.5a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2h-7.5a2 2 0 0 1-2-2V7.25a2 2 0 0 1 2-2Z"/><path d="M9.55 9.25c.8-1.05 2.1-1.05 2.9 0 .8 1.05.32 2.45-.82 3.1L11 12.7l-.63-.35c-1.14-.65-1.62-2.05-.82-3.1Z"/><path d="M8.25 16.25h5.5M18.7 8.2l.6 8.15a1.85 1.85 0 0 1-1.7 2l-.85.06"/>',
+  contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
+  settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
+});
 
 const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
   Object.freeze({
@@ -77,6 +88,18 @@ function getPhoneAppById(appId = '') {
   return PHONE_APPS.find((app) => app.id === appId) ?? null;
 }
 
+function getPhoneAppIconMarkup(app, extraClass = '') {
+  const iconPaths = PHONE_APP_ICON_PATHS[app.icon] ?? PHONE_APP_ICON_PATHS.settings;
+  const className = `hud__phone-app-icon${extraClass ? ` ${extraClass}` : ''}`;
+  return `
+    <span class="${escapeHtml(className)}" aria-hidden="true">
+      <svg class="hud__phone-app-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+        ${iconPaths}
+      </svg>
+    </span>
+  `;
+}
+
 function getPhoneAppButtonMarkup(app) {
   return `
     <button
@@ -85,7 +108,7 @@ function getPhoneAppButtonMarkup(app) {
       data-phone-app="${escapeHtml(app.id)}"
       style="--phone-app-color:${escapeHtml(app.color)}"
     >
-      <span class="hud__phone-app-icon" aria-hidden="true">${escapeHtml(app.icon)}</span>
+      ${getPhoneAppIconMarkup(app)}
       <span class="hud__phone-app-label">${escapeHtml(app.label)}</span>
     </button>
   `;
@@ -111,7 +134,7 @@ function getPhoneAppPanelMarkup(app) {
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
           <span aria-hidden="true">&lt;</span>
         </button>
-        <span class="hud__phone-app-icon is-panel" aria-hidden="true">${escapeHtml(app.icon)}</span>
+        ${getPhoneAppIconMarkup(app, 'is-panel')}
       </div>
       <h2>${escapeHtml(app.label)}</h2>
       <p>${escapeHtml(app.body)}</p>
