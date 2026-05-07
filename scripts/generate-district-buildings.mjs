@@ -311,6 +311,7 @@ function addShellBlock(group, {
   roofMaterial = material,
   wallThickness = 0.36,
   roofThickness = 0.36,
+  includeRoof = true,
   doorwaySide = '',
   doorwayWidth = 0,
   doorwayHeight = 0,
@@ -382,11 +383,13 @@ function addShellBlock(group, {
     [centerX + halfWidth - (wallThickness * 0.5), centerY, centerZ],
     material
   ));
-  targetRoofGroup.add(createBox(
-    [width, roofThickness, depth],
-    [centerX, centerY + halfHeight - (roofThickness * 0.5), centerZ],
-    roofMaterial
-  ));
+  if (includeRoof && roofThickness > 0) {
+    targetRoofGroup.add(createBox(
+      [width, roofThickness, depth],
+      [centerX, centerY + halfHeight - (roofThickness * 0.5), centerZ],
+      roofMaterial
+    ));
+  }
 }
 
 function addFloorPanels(group, {
@@ -431,6 +434,53 @@ function addDetailedFrontWindow(group, {
     const t = index / (mullions + 1);
     const mullionX = x - (width * 0.5) + (width * t);
     group.add(createBox([0.08, height + 0.08, 0.13], [mullionX, y, z + 0.02], frameMaterial));
+  }
+}
+
+function addDetailedBackWindow(group, {
+  x,
+  y,
+  z,
+  width,
+  height,
+  glassMaterial,
+  frameMaterial,
+  sillMaterial,
+  mullions = 1
+}) {
+  group.add(createBox([width + 0.28, height + 0.26, 0.08], [x, y, z + 0.08], frameMaterial));
+  group.add(createBox([width, height, 0.1], [x, y, z], glassMaterial));
+  group.add(createBox([width + 0.18, 0.08, 0.18], [x, y - (height * 0.5) - 0.08, z - 0.04], sillMaterial));
+  group.add(createBox([width + 0.14, 0.07, 0.14], [x, y + (height * 0.5) + 0.07, z - 0.02], frameMaterial));
+
+  for (let index = 1; index <= mullions; index += 1) {
+    const t = index / (mullions + 1);
+    const mullionX = x - (width * 0.5) + (width * t);
+    group.add(createBox([0.08, height + 0.08, 0.13], [mullionX, y, z - 0.02], frameMaterial));
+  }
+}
+
+function addDetailedSideWindow(group, {
+  x,
+  y,
+  z,
+  width,
+  height,
+  glassMaterial,
+  frameMaterial,
+  sillMaterial,
+  mullions = 1
+}) {
+  const outward = x < 0 ? -1 : 1;
+  group.add(createBox([0.08, height + 0.26, width + 0.28], [x - (outward * 0.06), y, z], frameMaterial));
+  group.add(createBox([0.1, height, width], [x, y, z], glassMaterial));
+  group.add(createBox([0.18, 0.08, width + 0.18], [x + (outward * 0.04), y - (height * 0.5) - 0.08, z], sillMaterial));
+  group.add(createBox([0.14, 0.07, width + 0.14], [x + (outward * 0.02), y + (height * 0.5) + 0.07, z], frameMaterial));
+
+  for (let index = 1; index <= mullions; index += 1) {
+    const t = index / (mullions + 1);
+    const mullionZ = z - (width * 0.5) + (width * t);
+    group.add(createBox([0.13, height + 0.08, 0.08], [x + (outward * 0.02), y, mullionZ], frameMaterial));
   }
 }
 
@@ -526,6 +576,7 @@ function optimizeBuildingGroups(groups) {
   for (const group of [
     groups.foundation,
     groups.shell,
+    groups.tower,
     groups.roof,
     groups.upper,
     groups.exterior,
@@ -646,6 +697,7 @@ function createBaseGroups(key) {
     building,
     foundation: new THREE.Group(),
     shell: new THREE.Group(),
+    tower: new THREE.Group(),
     roof: new THREE.Group(),
     upper: new THREE.Group(),
     exterior: new THREE.Group(),
@@ -654,6 +706,7 @@ function createBaseGroups(key) {
 
   groups.foundation.name = `${key}_foundation`;
   groups.shell.name = `${key}_hull_wall`;
+  groups.tower.name = `${key}_cutaway_tower`;
   groups.roof.name = `${key}_cutaway_roof`;
   groups.upper.name = `${key}_cutaway_upper`;
   groups.exterior.name = `${key}_exterior_detail`;
@@ -671,6 +724,11 @@ function createBaseGroups(key) {
 
 function addCommonBuildingShell(groups, materials, options = {}) {
   const wallHeight = options.wallHeight ?? 7.6;
+  const cutawayWallHeight = Number.isFinite(Number(options.cutawayWallHeight))
+    ? THREE.MathUtils.clamp(Number(options.cutawayWallHeight), 0.5, wallHeight)
+    : wallHeight;
+  const upperWallHeight = Math.max(0, wallHeight - cutawayWallHeight);
+  const splitWallForCutaway = upperWallHeight > 0.05;
   addBoxes(groups.foundation, [
     { size: [22.8, 0.62, 22.6], position: [0, 0.31, 0], material: materials.slab },
     { size: [18.8, 0.16, 2.6], position: [0, 0.68, 10.0], material: materials.pavement },
@@ -691,18 +749,34 @@ function addCommonBuildingShell(groups, materials, options = {}) {
 
   addShellBlock(groups.shell, {
     centerX: 0,
-    centerY: 0.58 + (wallHeight * 0.5),
+    centerY: 0.58 + (cutawayWallHeight * 0.5),
     centerZ: 0.35,
     width: 21.7,
-    height: wallHeight,
+    height: cutawayWallHeight,
     depth: 20.9,
     material: materials.facade,
-    roofGroup: groups.roof,
+    roofGroup: splitWallForCutaway ? groups.shell : groups.roof,
     roofMaterial: materials.roof,
+    includeRoof: !splitWallForCutaway,
     doorwaySide: 'front',
     doorwayWidth: 6.7,
     doorwayHeight: 3.55
   });
+
+  if (splitWallForCutaway) {
+    groups.building.add(groups.tower);
+    addShellBlock(groups.tower, {
+      centerX: 0,
+      centerY: 0.58 + cutawayWallHeight + (upperWallHeight * 0.5),
+      centerZ: 0.35,
+      width: 21.7,
+      height: upperWallHeight,
+      depth: 20.9,
+      material: materials.facade,
+      roofGroup: groups.roof,
+      roofMaterial: materials.roof
+    });
+  }
 
   const upper = options.upper ?? {};
   addShellBlock(groups.upper, {
@@ -740,8 +814,14 @@ function addCommonBuildingShell(groups, materials, options = {}) {
   });
 
   addDoorTrim(groups.exterior, materials, { accentMaterial: options.doorAccentMaterial ?? materials.trim });
-  addRooftopUnit(groups.roof, [-5.4, 8.48, -4.1], materials, 0.24);
-  addRooftopUnit(groups.roof, [5.2, 8.48, -2.3], materials, -0.18);
+
+  const roofUnits = options.roofUnits ?? [
+    { position: [-5.4, 8.48, -4.1], rotationY: 0.24 },
+    { position: [5.2, 8.48, -2.3], rotationY: -0.18 }
+  ];
+  for (const { position, rotationY = 0 } of roofUnits) {
+    addRooftopUnit(groups.roof, position, materials, rotationY);
+  }
 }
 
 function addStandardSideWindows(groups, materials) {
@@ -1046,6 +1126,103 @@ function addCasinoDetails(groups, materials) {
   }
 }
 
+const OFFICE_CUTAWAY_WALL_HEIGHT = 8.4;
+const OFFICE_CUTAWAY_WALL_TOP_Y = 0.58 + OFFICE_CUTAWAY_WALL_HEIGHT;
+const OFFICE_SKYSCRAPER_WALL_HEIGHT = 46.0;
+const OFFICE_WINDOW_GRID_BOTTOM_Y = 1.6;
+const OFFICE_MAIN_TOWER_START_Y = OFFICE_CUTAWAY_WALL_TOP_Y + 0.2;
+const OFFICE_MAIN_TOWER_TOP_Y = 0.58 + OFFICE_SKYSCRAPER_WALL_HEIGHT;
+const OFFICE_MAIN_FRONT_Z = 11.02;
+const OFFICE_MAIN_BACK_Z = -10.32;
+const OFFICE_MAIN_SIDE_X = 10.92;
+const OFFICE_MAIN_SIDE_WINDOW_X = 10.98;
+const OFFICE_PENTHOUSE_HEIGHT = 4.2;
+const OFFICE_PENTHOUSE_BOTTOM_Y = OFFICE_MAIN_TOWER_TOP_Y + 0.18;
+const OFFICE_PENTHOUSE_CENTER_Y = OFFICE_PENTHOUSE_BOTTOM_Y + (OFFICE_PENTHOUSE_HEIGHT * 0.5);
+const OFFICE_PENTHOUSE_TOP_Y = OFFICE_PENTHOUSE_BOTTOM_Y + OFFICE_PENTHOUSE_HEIGHT;
+const OFFICE_PENTHOUSE_CENTER_Z = -2.8;
+const OFFICE_PENTHOUSE_WIDTH = 9.6;
+const OFFICE_PENTHOUSE_DEPTH = 6.2;
+const OFFICE_PENTHOUSE_FRONT_Z = OFFICE_PENTHOUSE_CENTER_Z + (OFFICE_PENTHOUSE_DEPTH * 0.5) + 0.22;
+const OFFICE_PENTHOUSE_BACK_Z = OFFICE_PENTHOUSE_CENTER_Z - (OFFICE_PENTHOUSE_DEPTH * 0.5) - 0.22;
+const OFFICE_PENTHOUSE_SIDE_X = (OFFICE_PENTHOUSE_WIDTH * 0.5) - 0.04;
+const OFFICE_PENTHOUSE_SIDE_WINDOW_X = (OFFICE_PENTHOUSE_WIDTH * 0.5) + 0.18;
+
+function getOfficeTowerWindowRows() {
+  const rows = [];
+  for (let y = OFFICE_MAIN_TOWER_START_Y + 1.55; y < OFFICE_MAIN_TOWER_TOP_Y - 1.2; y += 1.72) {
+    rows.push(Number(y.toFixed(2)));
+  }
+  return rows;
+}
+
+function getOfficeSideBackWindowRows() {
+  const rows = [];
+  for (let y = 2.1; y < OFFICE_MAIN_TOWER_TOP_Y - 1.2; y += 1.72) {
+    rows.push(Number(y.toFixed(2)));
+  }
+  return rows;
+}
+
+function addOfficeSideBackWindowGridSegment(group, materials, {
+  bottomY,
+  topY,
+  rows
+}) {
+  const gridHeight = topY - bottomY;
+  if (gridHeight <= 0.1) {
+    return;
+  }
+
+  const gridCenterY = bottomY + (gridHeight * 0.5);
+  const backColumns = [-8.2, -5.45, -2.7, 0, 2.7, 5.45, 8.2];
+  const sideColumns = [-7.0, -4.35, -1.7, 0.95, 3.6, 6.25];
+
+  for (const x of backColumns) {
+    group.add(createBox(
+      [1.35, gridHeight, 0.1],
+      [x, gridCenterY, OFFICE_MAIN_BACK_Z],
+      materials.glassLite
+    ));
+  }
+
+  for (const z of sideColumns) {
+    group.add(createBox(
+      [0.1, gridHeight, 0.95],
+      [-OFFICE_MAIN_SIDE_WINDOW_X, gridCenterY, z],
+      materials.glassLite
+    ));
+    group.add(createBox(
+      [0.1, gridHeight, 0.95],
+      [OFFICE_MAIN_SIDE_WINDOW_X, gridCenterY, z],
+      materials.glassLite
+    ));
+  }
+
+  for (const y of rows) {
+    const dividerY = Number((y + 0.52).toFixed(2));
+    if (dividerY <= bottomY || dividerY >= topY) {
+      continue;
+    }
+
+    group.add(createBox(
+      [19.3, 0.045, 0.12],
+      [0, dividerY, OFFICE_MAIN_BACK_Z + 0.01],
+      materials.trimDark
+    ));
+    group.add(createBox(
+      [0.12, 0.045, 17.4],
+      [-OFFICE_MAIN_SIDE_WINDOW_X + 0.01, dividerY, -0.35],
+      materials.trimDark
+    ));
+    group.add(createBox(
+      [0.12, 0.045, 17.4],
+      [OFFICE_MAIN_SIDE_WINDOW_X - 0.01, dividerY, -0.35],
+      materials.trimDark
+    ));
+  }
+}
+
 function addOfficesDetails(groups, materials) {
   addBoxes(groups.exterior, [
     { size: [21.2, 0.28, 0.22], position: [0, 8.4, 10.84], material: materials.trim },
@@ -1077,28 +1254,14 @@ function addOfficesDetails(groups, materials) {
       });
     }
   }
-  for (const x of [-10.92, 10.92]) {
-    for (const y of [2.3, 4.1, 5.9, 7.7]) {
-      for (const z of [-6.6, -3.8, -1.0, 1.8, 4.6]) {
-        addSideWindow(groups.exterior, {
-          x,
-          y,
-          z,
-          width: 1.02,
-          height: 0.95,
-          glassMaterial: materials.glass,
-          frameMaterial: materials.trimDark
-        });
-      }
-    }
-  }
 
-  for (const y of [10.3, 12.0, 13.7]) {
-    for (const x of [-5.2, -2.6, 0, 2.6, 5.2]) {
-      addDetailedFrontWindow(groups.upper, {
+  const towerRows = getOfficeTowerWindowRows();
+  for (const y of towerRows) {
+    for (const x of [-8.2, -5.45, -2.7, 0, 2.7, 5.45, 8.2]) {
+      addDetailedFrontWindow(groups.tower, {
         x,
         y,
-        z: 1.52,
+        z: OFFICE_MAIN_FRONT_Z,
         width: 1.35,
         height: 0.86,
         glassMaterial: materials.glassLite,
@@ -1108,6 +1271,131 @@ function addOfficesDetails(groups, materials) {
       });
     }
   }
+
+  const sideBackRows = getOfficeSideBackWindowRows();
+  addOfficeSideBackWindowGridSegment(groups.exterior, materials, {
+    bottomY: OFFICE_WINDOW_GRID_BOTTOM_Y,
+    topY: OFFICE_CUTAWAY_WALL_TOP_Y - 0.1,
+    rows: sideBackRows
+  });
+  addOfficeSideBackWindowGridSegment(groups.tower, materials, {
+    bottomY: OFFICE_CUTAWAY_WALL_TOP_Y + 0.12,
+    topY: OFFICE_MAIN_TOWER_TOP_Y - 0.75,
+    rows: sideBackRows
+  });
+
+  const towerDetailHeight = OFFICE_MAIN_TOWER_TOP_Y - OFFICE_MAIN_TOWER_START_Y - 0.5;
+  const towerDetailCenterY = OFFICE_MAIN_TOWER_START_Y + (towerDetailHeight * 0.5);
+  for (const x of [-9.62, -6.86, -4.1, -1.36, 1.36, 4.1, 6.86, 9.62]) {
+    groups.tower.add(createBox(
+      [0.16, towerDetailHeight, 0.2],
+      [x, towerDetailCenterY, OFFICE_MAIN_FRONT_Z - 0.08],
+      materials.trimDark
+    ));
+    groups.tower.add(createBox(
+      [0.16, towerDetailHeight, 0.2],
+      [x, towerDetailCenterY, OFFICE_MAIN_BACK_Z + 0.08],
+      materials.trimDark
+    ));
+  }
+
+  for (const z of [-8.28, -5.52, -2.76, 0, 2.76, 5.52, 8.28]) {
+    groups.tower.add(createBox(
+      [0.2, towerDetailHeight, 0.16],
+      [-OFFICE_MAIN_SIDE_WINDOW_X + 0.07, towerDetailCenterY, z],
+      materials.trimDark
+    ));
+    groups.tower.add(createBox(
+      [0.2, towerDetailHeight, 0.16],
+      [OFFICE_MAIN_SIDE_WINDOW_X - 0.07, towerDetailCenterY, z],
+      materials.trimDark
+    ));
+  }
+
+  for (let y = OFFICE_MAIN_TOWER_START_Y + 5.8; y < OFFICE_MAIN_TOWER_TOP_Y - 2.0; y += 6.88) {
+    const bandY = Number(y.toFixed(2));
+    groups.tower.add(createBox(
+      [20.2, 0.18, 0.24],
+      [0, bandY, OFFICE_MAIN_FRONT_Z - 0.05],
+      materials.trim
+    ));
+    groups.tower.add(createBox(
+      [20.2, 0.18, 0.24],
+      [0, bandY, OFFICE_MAIN_BACK_Z + 0.05],
+      materials.trim
+    ));
+    groups.tower.add(createBox(
+      [0.22, 0.16, 18.6],
+      [-OFFICE_MAIN_SIDE_X + 0.05, bandY, 0.35],
+      materials.trim
+    ));
+    groups.tower.add(createBox(
+      [0.22, 0.16, 18.6],
+      [OFFICE_MAIN_SIDE_X - 0.05, bandY, 0.35],
+      materials.trim
+    ));
+  }
+
+  for (const y of [OFFICE_PENTHOUSE_BOTTOM_Y + 1.25, OFFICE_PENTHOUSE_BOTTOM_Y + 2.85]) {
+    for (const x of [-3.2, 0, 3.2]) {
+      addDetailedFrontWindow(groups.upper, {
+        x,
+        y,
+        z: OFFICE_PENTHOUSE_FRONT_Z,
+        width: 1.18,
+        height: 0.78,
+        glassMaterial: materials.glassLite,
+        frameMaterial: materials.trimDark,
+        sillMaterial: materials.trimDark,
+        mullions: 0
+      });
+      addDetailedBackWindow(groups.upper, {
+        x,
+        y,
+        z: OFFICE_PENTHOUSE_BACK_Z,
+        width: 1.18,
+        height: 0.78,
+        glassMaterial: materials.glassLite,
+        frameMaterial: materials.trimDark,
+        sillMaterial: materials.trimDark,
+        mullions: 0
+      });
+    }
+    for (const z of [-4.55, -2.25, 0.05]) {
+      addDetailedSideWindow(groups.upper, {
+        x: -OFFICE_PENTHOUSE_SIDE_WINDOW_X,
+        y,
+        z,
+        width: 0.82,
+        height: 0.72,
+        glassMaterial: materials.glassLite,
+        frameMaterial: materials.trimDark,
+        sillMaterial: materials.trimDark,
+        mullions: 0
+      });
+      addDetailedSideWindow(groups.upper, {
+        x: OFFICE_PENTHOUSE_SIDE_WINDOW_X,
+        y,
+        z,
+        width: 0.82,
+        height: 0.72,
+        glassMaterial: materials.glassLite,
+        frameMaterial: materials.trimDark,
+        sillMaterial: materials.trimDark,
+        mullions: 0
+      });
+    }
+  }
+
+  addBoxes(groups.roof, [
+    { size: [20.5, 0.32, 19.7], position: [0, OFFICE_MAIN_TOWER_TOP_Y + 0.22, 0.35], material: materials.trim },
+    { size: [18.0, 0.22, 16.8], position: [0, OFFICE_MAIN_TOWER_TOP_Y + 0.52, 0.35], material: materials.roof },
+    { size: [OFFICE_PENTHOUSE_WIDTH + 1.2, 0.32, OFFICE_PENTHOUSE_DEPTH + 1.2], position: [0, OFFICE_PENTHOUSE_TOP_Y + 0.24, OFFICE_PENTHOUSE_CENTER_Z], material: materials.trim },
+    { size: [OFFICE_PENTHOUSE_WIDTH - 1.6, 0.42, OFFICE_PENTHOUSE_DEPTH - 1.7], position: [0, OFFICE_PENTHOUSE_TOP_Y + 0.62, OFFICE_PENTHOUSE_CENTER_Z], material: materials.roof },
+    { size: [2.8, 1.0, 1.9], position: [-2.3, OFFICE_PENTHOUSE_TOP_Y + 0.58, OFFICE_PENTHOUSE_CENTER_Z - 0.7], material: materials.metalDark },
+    { size: [2.2, 0.82, 1.5], position: [2.4, OFFICE_PENTHOUSE_TOP_Y + 0.48, OFFICE_PENTHOUSE_CENTER_Z + 0.65], material: materials.metal },
+    { size: [0.18, 2.4, 0.18], position: [0, OFFICE_PENTHOUSE_TOP_Y + 2.25, OFFICE_PENTHOUSE_CENTER_Z], material: materials.trimDark }
+  ]);
 
   for (const x of [-6.0, -2.0, 2.0, 6.0]) {
     for (const z of [-5.2, -1.6, 2.0, 5.6]) {
@@ -1133,6 +1421,7 @@ function buildDistrictBuilding(definition) {
   optimizeBuildingGroups(groups);
 
   tagGroupMeshes(groups.roof, `${definition.key}_cutaway_roof`);
+  tagGroupMeshes(groups.tower, `${definition.key}_cutaway_tower`);
   tagGroupMeshes(groups.upper, `${definition.key}_cutaway_upper`);
 
   scene.add(groups.building);
@@ -1253,8 +1542,19 @@ const BUILDINGS = Object.freeze([
       screen: 0x253542
     },
     shell: {
-      wallHeight: 8.4,
-      upper: { centerY: 12.15, centerZ: -2.8, width: 14.6, height: 7.0, depth: 8.2 }
+      wallHeight: OFFICE_SKYSCRAPER_WALL_HEIGHT,
+      cutawayWallHeight: OFFICE_CUTAWAY_WALL_HEIGHT,
+      roofUnits: [
+        { position: [-7.2, OFFICE_MAIN_TOWER_TOP_Y + 0.12, -7.0], rotationY: 0.24 },
+        { position: [7.0, OFFICE_MAIN_TOWER_TOP_Y + 0.12, 6.0], rotationY: -0.18 }
+      ],
+      upper: {
+        centerY: OFFICE_PENTHOUSE_CENTER_Y,
+        centerZ: OFFICE_PENTHOUSE_CENTER_Z,
+        width: OFFICE_PENTHOUSE_WIDTH,
+        height: OFFICE_PENTHOUSE_HEIGHT,
+        depth: OFFICE_PENTHOUSE_DEPTH
+      }
     },
     decorate: addOfficesDetails
   }

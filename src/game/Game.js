@@ -1476,6 +1476,28 @@ export class Game {
     return entry?.interior?.mode ?? 'inline-shell';
   }
 
+  clearInlineCutawayPlacement(placementId) {
+    this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
+    this.worldBuilder?.setPlacementFadedNodeNames(placementId, []);
+    this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+  }
+
+  applyInlineCutawayPlacement(entry) {
+    this.worldBuilder?.setPlacementHiddenNodeNames(
+      entry.placementId,
+      entry?.interior?.cutawayNodeNames ?? []
+    );
+    this.worldBuilder?.setPlacementFadedNodeNames(
+      entry.placementId,
+      entry?.interior?.cutawayFadeNodeNames ?? [],
+      entry?.interior?.cutawayFadeOpacity ?? 0.1
+    );
+    this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
+      castShadow: false,
+      receiveShadow: false
+    });
+  }
+
   removeInlineShellScene(placementId) {
     const instance = this.inlineShellScenes.get(placementId);
     if (!instance) {
@@ -1484,8 +1506,7 @@ export class Game {
 
     if (this.activeInlineShell?.placementId === placementId) {
       if (this.activeInlineShell.mode === 'inline-cutaway') {
-        this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
-        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+        this.clearInlineCutawayPlacement(placementId);
         this.setInlineInteriorLightActive(false);
       } else {
         this.worldBuilder?.setPlacementVisualHidden(placementId, false);
@@ -1566,8 +1587,7 @@ export class Game {
     const { placementId, scene, mode } = this.activeInlineShell;
     scene?.setVisible(false);
     if (mode === 'inline-cutaway') {
-      this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
-      this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+      this.clearInlineCutawayPlacement(placementId);
       this.setInlineInteriorLightActive(false);
     } else {
       this.worldBuilder?.setPlacementVisualHidden(placementId, false);
@@ -1581,7 +1601,13 @@ export class Game {
       return false;
     }
 
+    const { placementId, mode } = this.activeInlineShell;
     this.activeInlineShell.scene?.setVisible(false);
+    if (mode === 'inline-cutaway') {
+      this.clearInlineCutawayPlacement(placementId);
+    } else {
+      this.worldBuilder?.setPlacementVisualHidden(placementId, false);
+    }
     this.activeInlineShell = null;
     this.setInlineInteriorLightActive(false);
     return true;
@@ -1596,8 +1622,7 @@ export class Game {
       const instance = this.inlineShellScenes.get(placementId);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
-        this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
-        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+        this.clearInlineCutawayPlacement(placementId);
       } else {
         this.worldBuilder?.setPlacementVisualHidden(placementId, false);
       }
@@ -1618,8 +1643,7 @@ export class Game {
       const instance = this.inlineShellScenes.get(placementId);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
-        this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
-        this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+        this.clearInlineCutawayPlacement(placementId);
       } else {
         this.worldBuilder?.setPlacementVisualHidden(placementId, false);
       }
@@ -1635,14 +1659,7 @@ export class Game {
       const mode = this.getInlineInteriorMode(entry);
       shellScene.setVisible(mode !== 'inline-cutaway');
       if (mode === 'inline-cutaway') {
-        this.worldBuilder?.setPlacementHiddenNodeNames(
-          entry.placementId,
-          entry?.interior?.cutawayNodeNames ?? []
-        );
-        this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
-          castShadow: false,
-          receiveShadow: false
-        });
+        this.applyInlineCutawayPlacement(entry);
       } else {
         this.worldBuilder?.setPlacementVisualHidden(entry.placementId, true);
       }
@@ -1675,14 +1692,7 @@ export class Game {
     };
     if (this.activeInlineShell.mode === 'inline-cutaway') {
       shellScene.setVisible(false);
-      this.worldBuilder?.setPlacementHiddenNodeNames(
-        entry.placementId,
-        entry?.interior?.cutawayNodeNames ?? []
-      );
-      this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
-        castShadow: false,
-        receiveShadow: false
-      });
+      this.applyInlineCutawayPlacement(entry);
       this.setInlineInteriorLightActive(true, shellScene);
     } else {
       shellScene.setVisible(true);

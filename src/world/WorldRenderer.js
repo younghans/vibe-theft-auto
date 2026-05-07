@@ -350,6 +350,59 @@ function collectMaterials(material) {
   return Array.isArray(material) ? material.filter(Boolean) : [material].filter(Boolean);
 }
 
+function nodeNameMatches(node, nodeNames = new Set()) {
+  for (const pattern of nodeNames ?? []) {
+    if (node.name === pattern || node.name.startsWith(`${pattern}_`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function cloneMaterialsForNodeFade(root) {
+  const materialStates = new Map();
+
+  root?.traverse?.((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    const sourceMaterials = collectMaterials(node.material);
+    const clonedMaterials = sourceMaterials.map((material) => {
+      const cloned = material.clone();
+      materialStates.set(cloned, {
+        material: cloned,
+        opacity: material.opacity,
+        transparent: material.transparent,
+        depthWrite: material.depthWrite
+      });
+      return cloned;
+    });
+
+    node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
+  });
+
+  return {
+    materialStates,
+    active: false
+  };
+}
+
+function restoreNodeFadeMaterials(rendered) {
+  const state = rendered?.nodeFadeMaterialState;
+  if (!state?.active) {
+    return;
+  }
+
+  for (const entry of state.materialStates.values()) {
+    entry.material.opacity = entry.opacity;
+    entry.material.transparent = entry.transparent;
+    entry.material.depthWrite = entry.depthWrite;
+    entry.material.needsUpdate = true;
+  }
+  state.active = false;
+}
+
 function cloneMaterialsForCameraOcclusion(root) {
   const materialStates = [];
 
@@ -722,6 +775,9 @@ export class WorldRenderer {
       visualHidden: false,
       workoutHidden: false,
       hiddenNodeNames: new Set(),
+      fadedNodeNames: new Set(),
+      fadedNodeOpacity: 1,
+      nodeFadeMaterialState: null,
       shadowOverrides: null,
       item,
       layer: placement.layer,
@@ -1020,6 +1076,20 @@ export class WorldRenderer {
     this.applyPlacementVisibility(rendered);
   }
 
+  setPlacementFadedNodeNames(id, nodeNames = [], opacity = 1) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
+    }
+
+    rendered.fadedNodeNames = new Set((nodeNames ?? []).filter(Boolean));
+    const numericOpacity = Number(opacity);
+    rendered.fadedNodeOpacity = Number.isFinite(numericOpacity)
+      ? THREE.MathUtils.clamp(numericOpacity, 0, 1)
+      : 1;
+    this.applyPlacementVisibility(rendered);
+  }
+
   setPlacementShadowOverrides(id, overrides = null) {
     const rendered = this.renderedPlacements.get(id);
     if (!rendered) {
@@ -1264,13 +1334,39 @@ export class WorldRenderer {
 
   applyPlacementVisibility(rendered) {
     const visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
+    const hasFadedNodes = visible
+      && (rendered.fadedNodeNames?.size ?? 0) > 0
+      && rendered.fadedNodeOpacity < 1;
+    if (hasFadedNodes && !rendered.nodeFadeMaterialState) {
+      rendered.nodeFadeMaterialState = cloneMaterialsForNodeFade(rendered.object);
+    } else if (!hasFadedNodes) {
+      restoreNodeFadeMaterials(rendered);
+    }
+
     rendered.object.visible = visible;
     rendered.object.traverse((node) => {
-      const nodeHidden = [...(rendered.hiddenNodeNames ?? [])]
-        .some((pattern) => node.name === pattern || node.name.startsWith(`${pattern}_`));
+      const nodeHidden = nodeNameMatches(node, rendered.hiddenNodeNames);
       const nodeVisible = visible && !nodeHidden;
       if (node !== rendered.object) {
         node.visible = !nodeHidden;
+      }
+      if (node.isMesh && rendered.nodeFadeMaterialState) {
+        const nodeFaded = hasFadedNodes
+          && nodeVisible
+          && nodeNameMatches(node, rendered.fadedNodeNames);
+        for (const material of collectMaterials(node.material)) {
+          const entry = rendered.nodeFadeMaterialState.materialStates.get(material);
+          if (!entry) {
+            continue;
+          }
+          material.transparent = nodeFaded ? true : entry.transparent;
+          material.depthWrite = nodeFaded ? false : entry.depthWrite;
+          material.opacity = nodeFaded ? rendered.fadedNodeOpacity : entry.opacity;
+          material.needsUpdate = true;
+        }
+        if (nodeFaded) {
+          rendered.nodeFadeMaterialState.active = true;
+        }
       }
       applyShadowOverridesToNode(node, rendered, nodeVisible);
     });

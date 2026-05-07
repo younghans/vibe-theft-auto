@@ -1,7 +1,7 @@
 export const STOCK_MARKET_TICK_MS = 5200;
 export const STOCK_MARKET_HISTORY_LIMIT = 56;
 export const STOCK_MARKET_MAX_CATCH_UP_TICKS = 96;
-export const STOCK_MARKET_FEE_RATE = 0.012;
+export const STOCK_MARKET_FEE_RATE = 0;
 export const STOCK_MARKET_MAX_QUANTITY = 999;
 
 export const STOCK_MARKET_MODES = Object.freeze({
@@ -159,6 +159,11 @@ function roundWholeMoney(value) {
   return Number.isFinite(numeric) ? Math.max(0, Math.trunc(numeric)) : 0;
 }
 
+function roundTradeMoney(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : 0;
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -290,6 +295,10 @@ export function normalizeStockTradeQuantity(value = 1) {
   }
 
   return clamp(numeric, 1, STOCK_MARKET_MAX_QUANTITY);
+}
+
+export function getStockTradeValue(price = 0, quantity = 1) {
+  return roundTradeMoney(roundCents(price) * normalizeStockTradeQuantity(quantity));
 }
 
 export function createInitialStockMarketState(now = Date.now()) {
@@ -463,9 +472,7 @@ export function executeStockTrade({
   market.stocks[normalizedSymbol] = stock;
   const entry = getPortfolioEntry(portfolio, normalizedSymbol);
   let nextCash = Math.trunc(Number(cash ?? 0) || 0);
-  const gross = normalizedSide === 'buy'
-    ? Math.ceil(stock.price * normalizedQuantity)
-    : Math.floor(stock.price * normalizedQuantity);
+  const gross = getStockTradeValue(stock.price, normalizedQuantity);
   const fee = Math.ceil(gross * STOCK_MARKET_FEE_RATE);
 
   if (normalizedSide === 'buy') {

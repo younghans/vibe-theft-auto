@@ -633,6 +633,10 @@ export class WorldBuilder {
     this.worldRenderer.setPlacementHiddenNodeNames(id, nodeNames);
   }
 
+  setPlacementFadedNodeNames(id, nodeNames = [], opacity = 1) {
+    this.worldRenderer.setPlacementFadedNodeNames(id, nodeNames, opacity);
+  }
+
   setPlacementShadowOverrides(id, overrides = null) {
     this.worldRenderer.setPlacementShadowOverrides(id, overrides);
   }
@@ -644,6 +648,7 @@ export class WorldBuilder {
 
     for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
       this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
+      this.worldRenderer.setPlacementFadedNodeNames(placementId, []);
       this.worldRenderer.setPlacementShadowOverrides(placementId, null);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
     }
@@ -666,6 +671,7 @@ export class WorldBuilder {
       }
 
       this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
+      this.worldRenderer.setPlacementFadedNodeNames(placementId, []);
       this.worldRenderer.setPlacementShadowOverrides(placementId, null);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
       this.builderInteriorPreviewPlacementIds.delete(placementId);
@@ -674,12 +680,18 @@ export class WorldBuilder {
     for (const entry of entries) {
       this.worldRenderer.setPlacementVisualHidden(entry.placementId, false);
       this.worldRenderer.setPlacementHiddenNodeNames(entry.placementId, []);
+      this.worldRenderer.setPlacementFadedNodeNames(entry.placementId, []);
       this.worldRenderer.setPlacementShadowOverrides(entry.placementId, null);
 
       if (entry?.interior?.mode === 'inline-cutaway') {
         this.worldRenderer.setPlacementHiddenNodeNames(
           entry.placementId,
           entry?.interior?.cutawayNodeNames ?? []
+        );
+        this.worldRenderer.setPlacementFadedNodeNames(
+          entry.placementId,
+          entry?.interior?.cutawayFadeNodeNames ?? [],
+          entry?.interior?.cutawayFadeOpacity ?? 0.1
         );
         this.worldRenderer.setPlacementShadowOverrides(entry.placementId, {
           castShadow: false,

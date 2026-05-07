@@ -1,6 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
+import { getStockTradeValue } from '../shared/stockMarket.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
   '#ff3d8f',
@@ -2730,12 +2731,9 @@ export class Hud {
       return;
     }
 
-    const grossBuy = Math.ceil(selected.price * quantity);
-    const buyFee = Math.ceil(grossBuy * Number(market?.feeRate ?? 0));
-    const buyTotal = grossBuy + buyFee;
-    const grossSell = Math.floor(selected.price * quantity);
-    const sellFee = Math.ceil(grossSell * Number(market?.feeRate ?? 0));
-    const sellProceeds = Math.max(0, grossSell - sellFee);
+    const tradeValue = getStockTradeValue(selected.price, quantity);
+    const buyTotal = tradeValue;
+    const sellProceeds = tradeValue;
     const buyDisabled = loading || Number(market?.cash ?? 0) < buyTotal;
     const sellDisabled = loading || Number(selected.shares ?? 0) < quantity;
 

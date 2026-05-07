@@ -96,7 +96,10 @@ function createKenneyPropDefinition({ key, label, fileName, size }) {
   };
 }
 
-function createCustom2x2BuildingDefinition({ key, label, fileName, prompt }) {
+function createCustom2x2BuildingDefinition({ key, label, fileName, prompt, interiorOverrides = {} }) {
+  const cutawayNodeNames = interiorOverrides.cutawayNodeNames
+    ?? [`${key}_cutaway_roof`, `${key}_cutaway_upper`];
+
   return {
     id: `${key}_building`,
     assetName: `${key}_building`,
@@ -117,7 +120,8 @@ function createCustom2x2BuildingDefinition({ key, label, fileName, prompt }) {
       mode: 'inline-cutaway',
       label,
       prompt: prompt ?? `Enter ${label}`,
-      cutawayNodeNames: [`${key}_cutaway_roof`, `${key}_cutaway_upper`],
+      ...interiorOverrides,
+      cutawayNodeNames,
       exteriorDoorOffset: [0, 10.95],
       exteriorSpawnOffset: [0, 16.05],
       exteriorInteractRadius: 4.8
@@ -175,7 +179,11 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     key: 'offices',
     label: 'Offices',
     fileName: 'offices-building.glb',
-    prompt: 'Enter offices'
+    prompt: 'Enter offices',
+    interiorOverrides: {
+      cutawayFadeNodeNames: ['offices_cutaway_tower'],
+      cutawayFadeOpacity: 0.1
+    }
   })
 ]);
 
