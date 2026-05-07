@@ -4,6 +4,7 @@ import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/t
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
+import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -138,11 +139,67 @@ async function validateBuildCity() {
   assert(scene.children.length > 0, 'buildCity should add scene content');
 }
 
+function validateTaskSequence() {
+  const basePlayer = {
+    deliveryQuestCompletionCount: 1,
+    deliveryQuestStatus: '',
+    gymPumpCompletedAt: 0,
+    stockBoughtAt: 0,
+    blackjackHandPlayedAt: 0
+  };
+
+  assert(
+    resolvePlayerTask({ localPlayerState: basePlayer }).id === TASK_IDS.gymPump,
+    'Task sequence should route to the gym after first delivery.'
+  );
+  assert(
+    resolvePlayerTask({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000 } }).id === TASK_IDS.stockBuy,
+    'Task sequence should route to buying a stock after gym pump.'
+  );
+  assert(
+    resolvePlayerTask({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).id === TASK_IDS.blackjackHand,
+    'Task sequence should route to blackjack after buying a stock.'
+  );
+  assert(
+    resolvePlayerTask({
+      localPlayerState: {
+        ...basePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000
+      }
+    }).id === TASK_IDS.makeMoney,
+    'Task sequence should return to the make-money prompt after blackjack.'
+  );
+
+  const stockTracker = new TaskTracker();
+  stockTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000 } });
+  assert(
+    stockTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).completedTask,
+    'Task tracker should complete the stock-buy task when a stock is bought.'
+  );
+
+  const blackjackTracker = new TaskTracker();
+  blackjackTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } });
+  assert(
+    blackjackTracker.update({
+      localPlayerState: {
+        ...basePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000
+      }
+    }).completedTask,
+    'Task tracker should complete the blackjack task when a hand is played.'
+  );
+}
+
 async function main() {
   validateKenneyCatalogItems();
   validateFootprintSupport();
   validateTiles();
   validateProps();
+  validateTaskSequence();
   await validateBuildCity();
   console.log('World editor validation passed.');
 }

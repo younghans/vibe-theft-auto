@@ -99,6 +99,8 @@ function clonePlayerState(player) {
     deliveryQuestRecentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds || '',
     deliveryQuestCompletionCount: player.deliveryQuestCompletionCount ?? 0,
     gymPumpCompletedAt: player.gymPumpCompletedAt ?? 0,
+    stockBoughtAt: player.stockBoughtAt ?? 0,
+    blackjackHandPlayedAt: player.blackjackHandPlayedAt ?? 0,
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };

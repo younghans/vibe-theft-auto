@@ -186,6 +186,8 @@ function createDefaultPlayerState(overrides = {}) {
     deliveryQuestRecentTargetNpcIds: '',
     deliveryQuestCompletionCount: 0,
     gymPumpCompletedAt: 0,
+    stockBoughtAt: 0,
+    blackjackHandPlayedAt: 0,
     lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -1153,6 +1155,9 @@ export class NpcServiceMock {
 
     access.player.money = result.cash;
     const trade = result.trade ?? {};
+    if (trade.side === 'buy' && Number(access.player.stockBoughtAt ?? 0) <= 0) {
+      access.player.stockBoughtAt = Date.now();
+    }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     this.setNpcChatPhase(
       access.npc,
@@ -1221,6 +1226,9 @@ export class NpcServiceMock {
 
     session.settled = true;
     session.completedAt = Date.now();
+    if (Number(player.blackjackHandPlayedAt ?? 0) <= 0) {
+      player.blackjackHandPlayedAt = session.completedAt;
+    }
     const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
     player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
     if (npc) {

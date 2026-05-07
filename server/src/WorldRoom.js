@@ -179,6 +179,8 @@ const PlayerState = schema({
   deliveryQuestRecentTargetNpcIds: 'string',
   deliveryQuestCompletionCount: 'number',
   gymPumpCompletedAt: 'number',
+  stockBoughtAt: 'number',
+  blackjackHandPlayedAt: 'number',
   characterId: 'string',
   isAdmin: 'boolean'
 });
@@ -568,6 +570,8 @@ export class WorldRoom extends Room {
     player.deliveryQuestRecentTargetNpcIds = '';
     player.deliveryQuestCompletionCount = 0;
     player.gymPumpCompletedAt = 0;
+    player.stockBoughtAt = 0;
+    player.blackjackHandPlayedAt = 0;
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
@@ -939,6 +943,9 @@ export class WorldRoom extends Room {
 
     player.money = result.cash;
     const trade = result.trade ?? {};
+    if (trade.side === 'buy' && Number(player.stockBoughtAt ?? 0) <= 0) {
+      player.stockBoughtAt = Date.now();
+    }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     this.setNpcChatPhase(
       npc,
@@ -1006,6 +1013,9 @@ export class WorldRoom extends Room {
 
     session.settled = true;
     session.completedAt = Date.now();
+    if (Number(player.blackjackHandPlayedAt ?? 0) <= 0) {
+      player.blackjackHandPlayedAt = session.completedAt;
+    }
     const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
     player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
     if (npc) {

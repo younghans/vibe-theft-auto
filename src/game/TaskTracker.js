@@ -5,17 +5,24 @@ import {
   isDeliveryQuestActive,
   isDeliveryQuestGiver
 } from '../shared/deliveryQuest.js';
+import { isBlackjackDealerNpc } from '../shared/blackjack.js';
+import { isStockMarketNpc } from '../shared/stockMarket.js';
 import { getTileCenterWorldPosition } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
 
 export const TASK_IDS = Object.freeze({
   delivery: 'delivery',
   gymPump: 'gym-pump',
+  stockBuy: 'stock-buy',
+  blackjackHand: 'blackjack-hand',
   makeMoney: 'make-money'
 });
 
 const MAKE_MONEY_TASK_TITLE = '💵 Make some money. Maybe the Shady Figure can help?';
 const GYM_PUMP_TASK_TITLE = '💪 Go get a pump in the gym.';
+
+const STOCK_BUY_TASK_TITLE = '📈 Buy a stock at the bank.';
+const BLACKJACK_HAND_TASK_TITLE = '🃏 Play a hand of blackjack at the casino.';
 
 function getGroundHeight(context, value) {
   return typeof context.getGroundHeightAt === 'function'
@@ -112,6 +119,31 @@ function getDeliveryQuestGiverTaskTarget(context = {}) {
   return null;
 }
 
+function getNpcTaskTargetByPredicate(predicate, context = {}) {
+  for (const npcState of context.npcStates?.values?.() ?? []) {
+    if (predicate(npcState)) {
+      return getNpcTaskTarget(npcState.id, context);
+    }
+  }
+
+  for (const interactable of context.worldBuilder?.getInteractables?.() ?? []) {
+    if (interactable.kind !== 'npc') {
+      continue;
+    }
+
+    const npcId = interactable.npcId || interactable.placementId || '';
+    const npcDetails = {
+      ...(interactable.npc ?? {}),
+      ...(npcId ? (context.npcStates?.get?.(npcId) ?? {}) : {})
+    };
+    if (predicate(npcDetails)) {
+      return getNpcTaskTarget(npcId, context) ?? getTaskPositionForInteractable(interactable, context);
+    }
+  }
+
+  return null;
+}
+
 function isGymTaskBuildingPlacement(placement = null, item = null) {
   const itemId = String(item?.id ?? placement?.itemId ?? '').toLowerCase();
   const interiorId = String(item?.interior?.id ?? placement?.interactable?.interior?.id ?? '').toLowerCase();
@@ -119,15 +151,24 @@ function isGymTaskBuildingPlacement(placement = null, item = null) {
   return itemId.includes('gym') || interiorId.includes('gym') || label.includes('gym');
 }
 
-function getGymBuildingTaskTarget(context = {}) {
-  const doorTarget = context.gymDoorBlockers?.[0] ?? null;
-  if (doorTarget) {
-    return getTaskPositionFromValue(doorTarget, context);
+function isNamedTaskBuildingPlacement(placement = null, item = null, keyword = '') {
+  const normalizedKeyword = String(keyword ?? '').toLowerCase();
+  if (!normalizedKeyword) {
+    return false;
   }
 
+  const itemId = String(item?.id ?? placement?.itemId ?? '').toLowerCase();
+  const interiorId = String(item?.interior?.id ?? placement?.interactable?.interior?.id ?? '').toLowerCase();
+  const label = String(item?.interior?.label ?? placement?.interactable?.label ?? item?.label ?? '').toLowerCase();
+  return itemId.includes(normalizedKeyword)
+    || interiorId.includes(normalizedKeyword)
+    || label.includes(normalizedKeyword);
+}
+
+function getBuildingTaskTarget(context = {}, predicate = () => false) {
   for (const placement of context.worldBuilder?.getLayout?.()?.tiles ?? []) {
     const item = getBuilderItemById(placement?.itemId);
-    if (!item || !isGymTaskBuildingPlacement(placement, item)) {
+    if (!item || !predicate(placement, item)) {
       continue;
     }
 
@@ -149,6 +190,15 @@ function getGymBuildingTaskTarget(context = {}) {
   return null;
 }
 
+function getGymBuildingTaskTarget(context = {}) {
+  const doorTarget = context.gymDoorBlockers?.[0] ?? null;
+  if (doorTarget) {
+    return getTaskPositionFromValue(doorTarget, context);
+  }
+
+  return getBuildingTaskTarget(context, isGymTaskBuildingPlacement);
+}
+
 function getGymTaskTarget(context = {}) {
   const activeSnatch = (context.activeInteractables ?? [])
     .find((interactable) => interactable.kind === 'snatch-workout');
@@ -165,6 +215,16 @@ function getGymTaskTarget(context = {}) {
   }
 
   return getGymBuildingTaskTarget(context);
+}
+
+function getStockBuyTaskTarget(context = {}) {
+  return getNpcTaskTargetByPredicate(isStockMarketNpc, context)
+    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'bank'));
+}
+
+function getBlackjackTaskTarget(context = {}) {
+  return getNpcTaskTargetByPredicate(isBlackjackDealerNpc, context)
+    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'casino'));
 }
 
 function isTaskIntroReady(localPlayerState = null, rentIntroState = {}) {
@@ -195,9 +255,13 @@ export function getDeliveryCompletionCount(localPlayerState = null) {
 
 export function getTaskProgressSnapshot(localPlayerState = null) {
   const gymPumpCompletedAt = Number(localPlayerState?.gymPumpCompletedAt ?? 0);
+  const stockBoughtAt = Number(localPlayerState?.stockBoughtAt ?? 0);
+  const blackjackHandPlayedAt = Number(localPlayerState?.blackjackHandPlayedAt ?? 0);
   return {
     deliveryCompletionCount: getDeliveryCompletionCount(localPlayerState),
-    gymPumpCompletedAt: Number.isFinite(gymPumpCompletedAt) ? Math.max(0, gymPumpCompletedAt) : 0
+    gymPumpCompletedAt: Number.isFinite(gymPumpCompletedAt) ? Math.max(0, gymPumpCompletedAt) : 0,
+    stockBoughtAt: Number.isFinite(stockBoughtAt) ? Math.max(0, stockBoughtAt) : 0,
+    blackjackHandPlayedAt: Number.isFinite(blackjackHandPlayedAt) ? Math.max(0, blackjackHandPlayedAt) : 0
   };
 }
 
@@ -220,12 +284,30 @@ export function resolvePlayerTask(context = {}) {
 
   const completedFirstDelivery = getDeliveryCompletionCount(localPlayerState) > 0;
   const gymPumpCompleted = Number(localPlayerState.gymPumpCompletedAt ?? 0) > 0;
+  const stockBought = Number(localPlayerState.stockBoughtAt ?? 0) > 0;
+  const blackjackHandPlayed = Number(localPlayerState.blackjackHandPlayedAt ?? 0) > 0;
   if (completedFirstDelivery && !gymPumpCompleted) {
     return {
       id: TASK_IDS.gymPump,
       visible: true,
       title: GYM_PUMP_TASK_TITLE,
       target: getGymTaskTarget(context)
+    };
+  }
+  if (completedFirstDelivery && gymPumpCompleted && !stockBought) {
+    return {
+      id: TASK_IDS.stockBuy,
+      visible: true,
+      title: STOCK_BUY_TASK_TITLE,
+      target: getStockBuyTaskTarget(context)
+    };
+  }
+  if (completedFirstDelivery && gymPumpCompleted && stockBought && !blackjackHandPlayed) {
+    return {
+      id: TASK_IDS.blackjackHand,
+      visible: true,
+      title: BLACKJACK_HAND_TASK_TITLE,
+      target: getBlackjackTaskTarget(context)
     };
   }
 
@@ -246,6 +328,20 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return (
       progress.gymPumpCompletedAt > 0
       && progress.gymPumpCompletedAt !== previousProgress.gymPumpCompletedAt
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.stockBuy) {
+    return (
+      progress.stockBoughtAt > 0
+      && progress.stockBoughtAt !== previousProgress.stockBoughtAt
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.blackjackHand) {
+    return (
+      progress.blackjackHandPlayedAt > 0
+      && progress.blackjackHandPlayedAt !== previousProgress.blackjackHandPlayedAt
     );
   }
 
