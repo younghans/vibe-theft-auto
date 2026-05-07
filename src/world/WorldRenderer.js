@@ -979,6 +979,14 @@ export class WorldRenderer {
           continue;
         }
 
+        if (
+          bounds.containsPoint(camera.position)
+          || bounds.containsPoint(this.cameraOcclusionTarget)
+        ) {
+          nextOccludedPlacementIds.add(rendered.id);
+          continue;
+        }
+
         const hit = this.cameraOcclusionRaycaster.ray.intersectBox(
           bounds,
           this.cameraOcclusionBoundsHit
