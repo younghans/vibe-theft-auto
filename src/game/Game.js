@@ -1500,24 +1500,18 @@ export class Game {
   }
 
   clearInlineCutawayPlacement(placementId) {
-    this.worldBuilder?.setPlacementHiddenNodeNames(placementId, []);
-    this.worldBuilder?.setPlacementFadedNodeNames(placementId, []);
-    this.worldBuilder?.setPlacementShadowOverrides(placementId, null);
+    this.worldBuilder?.setPlacementCutawayState(placementId);
   }
 
   applyInlineCutawayPlacement(entry) {
-    this.worldBuilder?.setPlacementHiddenNodeNames(
-      entry.placementId,
-      entry?.interior?.cutawayNodeNames ?? []
-    );
-    this.worldBuilder?.setPlacementFadedNodeNames(
-      entry.placementId,
-      entry?.interior?.cutawayFadeNodeNames ?? [],
-      entry?.interior?.cutawayFadeOpacity ?? 0.1
-    );
-    this.worldBuilder?.setPlacementShadowOverrides(entry.placementId, {
-      castShadow: false,
-      receiveShadow: false
+    this.worldBuilder?.setPlacementCutawayState(entry.placementId, {
+      hiddenNodeNames: entry?.interior?.cutawayNodeNames ?? [],
+      fadedNodeNames: entry?.interior?.cutawayFadeNodeNames ?? [],
+      fadedNodeOpacity: entry?.interior?.cutawayFadeOpacity ?? 0.1,
+      shadowOverrides: {
+        castShadow: false,
+        receiveShadow: false
+      }
     });
   }
 
@@ -5585,9 +5579,10 @@ export class Game {
       this.camera,
       this.player.position,
       {
-        excludedPlacementIds: this.activeInlineShell?.placementId
-          ? [this.activeInlineShell.placementId]
-          : []
+        preserveInteriorNodePlacementIds:
+          this.activeInlineShell?.mode === 'inline-cutaway'
+            ? [this.activeInlineShell.placementId]
+            : []
       }
     );
     this.setLocalPlayerCameraOcclusionRenderActive(occludedBuildingCount > 0);

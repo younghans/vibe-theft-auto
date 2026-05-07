@@ -102,7 +102,14 @@ function createKenneyPropDefinition({ key, label, fileName, size }) {
   };
 }
 
-function createCustom2x2BuildingDefinition({ key, label, fileName, prompt, interiorOverrides = {} }) {
+function createCustom2x2BuildingDefinition({
+  key,
+  label,
+  fileName,
+  prompt,
+  interiorOverrides = {},
+  cameraOcclusionPreserveNodeNames = [`${key}_interior`, `${key}_foundation`]
+}) {
   const cutawayNodeNames = interiorOverrides.cutawayNodeNames
     ?? [`${key}_cutaway_roof`, `${key}_cutaway_upper`];
 
@@ -121,6 +128,7 @@ function createCustom2x2BuildingDefinition({ key, label, fileName, prompt, inter
     shotCollisionRects: STANDARD_2X2_HULL_COLLISION_RECTS,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
+    cameraOcclusionPreserveNodeNames,
     interior: {
       id: `${key}_interior`,
       mode: 'inline-cutaway',
@@ -288,6 +296,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     ],
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
+    cameraOcclusionPreserveNodeNames: ['gym_interior', 'gym_foundation'],
     interior: {
       id: 'gym_large_blank',
       mode: 'inline-cutaway',
@@ -605,6 +614,7 @@ function createCityTile(definition) {
     npcRouteDoorOffset: Array.isArray(definition.npcRouteDoorOffset)
       ? [...definition.npcRouteDoorOffset]
       : undefined,
+    cameraOcclusionPreserveNodeNames: [...(definition.cameraOcclusionPreserveNodeNames ?? [])],
     interior: cloneInteriorDefinition(definition.interior),
     interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,

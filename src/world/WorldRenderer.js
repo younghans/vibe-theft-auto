@@ -359,6 +359,75 @@ function nodeNameMatches(node, nodeNames = new Set()) {
   return false;
 }
 
+function nodeOrAncestorNameMatches(node, nodeNames = new Set(), root = null) {
+  let current = node;
+  while (current) {
+    if (nodeNameMatches(current, nodeNames)) {
+      return true;
+    }
+
+    if (current === root) {
+      break;
+    }
+
+    current = current.parent;
+  }
+
+  return false;
+}
+
+function nodeNameSetsEqual(a = new Set(), b = new Set()) {
+  if ((a?.size ?? 0) !== (b?.size ?? 0)) {
+    return false;
+  }
+
+  for (const value of a ?? []) {
+    if (!b.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function normalizeNodeNameSet(nodeNames = []) {
+  if (!nodeNames) {
+    return new Set();
+  }
+
+  const values = typeof nodeNames === 'string' ? [nodeNames] : Array.from(nodeNames);
+  return new Set(values.filter(Boolean));
+}
+
+function normalizeOpacity(opacity = 1) {
+  const numericOpacity = Number(opacity);
+  return Number.isFinite(numericOpacity)
+    ? THREE.MathUtils.clamp(numericOpacity, 0, 1)
+    : 1;
+}
+
+function normalizeShadowOverrides(overrides = null) {
+  return overrides
+    ? {
+        castShadow: overrides.castShadow,
+        receiveShadow: overrides.receiveShadow
+      }
+    : null;
+}
+
+function shadowOverridesEqual(a = null, b = null) {
+  if (!a && !b) {
+    return true;
+  }
+
+  if (!a || !b) {
+    return false;
+  }
+
+  return a.castShadow === b.castShadow
+    && a.receiveShadow === b.receiveShadow;
+}
+
 function cloneMaterialsForNodeFade(root) {
   const materialStates = new Map();
 
@@ -403,8 +472,12 @@ function restoreNodeFadeMaterials(rendered) {
   state.active = false;
 }
 
-function cloneMaterialsForCameraOcclusion(root) {
+function cloneMaterialsForCameraOcclusion(root, {
+  cloneMaterials = true,
+  preservedNodeNames = new Set()
+} = {}) {
   const materialStates = [];
+  const preservedNames = new Set(Array.from(preservedNodeNames ?? []).filter(Boolean));
 
   root?.traverse?.((node) => {
     if (!node.isMesh || !node.material) {
@@ -412,14 +485,33 @@ function cloneMaterialsForCameraOcclusion(root) {
     }
 
     const sourceMaterials = collectMaterials(node.material);
+    const nodePreserved = nodeOrAncestorNameMatches(node, preservedNames, root);
+    if (!cloneMaterials) {
+      if (nodePreserved) {
+        return;
+      }
+
+      for (const material of sourceMaterials) {
+        materialStates.push({
+          material,
+          opacity: material.opacity,
+          transparent: material.transparent,
+          depthWrite: material.depthWrite
+        });
+      }
+      return;
+    }
+
     const clonedMaterials = sourceMaterials.map((material) => {
       const cloned = material.clone();
-      materialStates.push({
-        material: cloned,
-        opacity: material.opacity,
-        transparent: material.transparent,
-        depthWrite: material.depthWrite
-      });
+      if (!nodePreserved) {
+        materialStates.push({
+          material: cloned,
+          opacity: material.opacity,
+          transparent: material.transparent,
+          depthWrite: material.depthWrite
+        });
+      }
       return cloned;
     });
 
@@ -428,8 +520,25 @@ function cloneMaterialsForCameraOcclusion(root) {
 
   return {
     materialStates,
-    occluded: false
+    occluded: false,
+    preservedNodeNames: preservedNames
   };
+}
+
+function restoreCameraOcclusionMaterials(rendered) {
+  const state = rendered?.cameraOcclusionMaterialState;
+  if (!state) {
+    return;
+  }
+
+  for (const entry of state.materialStates) {
+    entry.material.opacity = entry.opacity;
+    entry.material.transparent = entry.transparent;
+    entry.material.depthWrite = entry.depthWrite;
+    entry.material.needsUpdate = true;
+  }
+
+  rendered.cameraOcclusionMaterialState = null;
 }
 
 function getVisibleObjectBounds(root, bounds, nodeBounds) {
@@ -877,7 +986,7 @@ export class WorldRenderer {
     return candidates;
   }
 
-  setPlacementCameraOccluded(rendered, occluded) {
+  setPlacementCameraOccluded(rendered, occluded, options = {}) {
     const nextOccluded = Boolean(occluded);
     if (!rendered?.cameraOcclusionObject) {
       return;
@@ -887,7 +996,25 @@ export class WorldRenderer {
       return;
     }
 
-    rendered.cameraOcclusionMaterialState ??= cloneMaterialsForCameraOcclusion(rendered.cameraOcclusionObject);
+    const preservedNodeNames = new Set(Array.from(options.preservedNodeNames ?? []).filter(Boolean));
+    if (
+      rendered.cameraOcclusionMaterialState
+      && nextOccluded
+      && !nodeNameSetsEqual(
+        rendered.cameraOcclusionMaterialState.preservedNodeNames,
+        preservedNodeNames
+      )
+    ) {
+      restoreCameraOcclusionMaterials(rendered);
+    }
+
+    rendered.cameraOcclusionMaterialState ??= cloneMaterialsForCameraOcclusion(
+      rendered.cameraOcclusionObject,
+      {
+        cloneMaterials: !rendered.nodeFadeMaterialState,
+        preservedNodeNames
+      }
+    );
     const materialState = rendered.cameraOcclusionMaterialState;
     if (materialState.occluded === nextOccluded) {
       return;
@@ -904,7 +1031,19 @@ export class WorldRenderer {
     }
   }
 
-  syncCameraOccludedPlacementIds(nextOccludedPlacementIds) {
+  getCameraOcclusionPreservedNodeNames(rendered, preserveInteriorNodePlacementIds = new Set()) {
+    if (!preserveInteriorNodePlacementIds.has(rendered?.id)) {
+      return new Set();
+    }
+
+    return normalizeNodeNameSet(rendered?.item?.cameraOcclusionPreserveNodeNames);
+  }
+
+  syncCameraOccludedPlacementIds(nextOccludedPlacementIds, options = {}) {
+    const preserveInteriorNodePlacementIds = new Set(
+      Array.from(options.preserveInteriorNodePlacementIds ?? []).filter(Boolean)
+    );
+
     for (const placementId of [...this.cameraOccludedPlacementIds]) {
       if (nextOccludedPlacementIds.has(placementId)) {
         continue;
@@ -921,7 +1060,12 @@ export class WorldRenderer {
         continue;
       }
 
-      this.setPlacementCameraOccluded(rendered, true);
+      this.setPlacementCameraOccluded(rendered, true, {
+        preservedNodeNames: this.getCameraOcclusionPreservedNodeNames(
+          rendered,
+          preserveInteriorNodePlacementIds
+        )
+      });
       this.cameraOccludedPlacementIds.add(placementId);
     }
 
@@ -1000,7 +1144,7 @@ export class WorldRenderer {
       }
     }
 
-    return this.syncCameraOccludedPlacementIds(nextOccludedPlacementIds);
+    return this.syncCameraOccludedPlacementIds(nextOccludedPlacementIds, options);
   }
 
   updatePlacement(placement) {
@@ -1080,8 +1224,12 @@ export class WorldRenderer {
       return;
     }
 
-    rendered.hiddenNodeNames = new Set((nodeNames ?? []).filter(Boolean));
-    this.applyPlacementVisibility(rendered);
+    this.setPlacementCutawayState(id, {
+      hiddenNodeNames: nodeNames,
+      fadedNodeNames: rendered.fadedNodeNames,
+      fadedNodeOpacity: rendered.fadedNodeOpacity,
+      shadowOverrides: rendered.shadowOverrides
+    });
   }
 
   setPlacementFadedNodeNames(id, nodeNames = [], opacity = 1) {
@@ -1090,12 +1238,12 @@ export class WorldRenderer {
       return;
     }
 
-    rendered.fadedNodeNames = new Set((nodeNames ?? []).filter(Boolean));
-    const numericOpacity = Number(opacity);
-    rendered.fadedNodeOpacity = Number.isFinite(numericOpacity)
-      ? THREE.MathUtils.clamp(numericOpacity, 0, 1)
-      : 1;
-    this.applyPlacementVisibility(rendered);
+    this.setPlacementCutawayState(id, {
+      hiddenNodeNames: rendered.hiddenNodeNames,
+      fadedNodeNames: nodeNames,
+      fadedNodeOpacity: opacity,
+      shadowOverrides: rendered.shadowOverrides
+    });
   }
 
   setPlacementShadowOverrides(id, overrides = null) {
@@ -1104,12 +1252,50 @@ export class WorldRenderer {
       return;
     }
 
-    rendered.shadowOverrides = overrides
-      ? {
-          castShadow: overrides.castShadow,
-          receiveShadow: overrides.receiveShadow
-        }
-      : null;
+    this.setPlacementCutawayState(id, {
+      hiddenNodeNames: rendered.hiddenNodeNames,
+      fadedNodeNames: rendered.fadedNodeNames,
+      fadedNodeOpacity: rendered.fadedNodeOpacity,
+      shadowOverrides: overrides
+    });
+  }
+
+  setPlacementCutawayState(id, state = {}) {
+    const rendered = this.renderedPlacements.get(id);
+    if (!rendered) {
+      return;
+    }
+
+    const {
+      hiddenNodeNames = [],
+      fadedNodeNames = [],
+      fadedNodeOpacity = 1,
+      shadowOverrides = null
+    } = state ?? {};
+
+    const nextHiddenNodeNames = normalizeNodeNameSet(hiddenNodeNames);
+    const nextFadedNodeNames = normalizeNodeNameSet(fadedNodeNames);
+    const nextFadedNodeOpacity = normalizeOpacity(fadedNodeOpacity);
+    const nextShadowOverrides = normalizeShadowOverrides(shadowOverrides);
+
+    const hiddenChanged = !nodeNameSetsEqual(rendered.hiddenNodeNames, nextHiddenNodeNames);
+    const fadedChanged = !nodeNameSetsEqual(rendered.fadedNodeNames, nextFadedNodeNames)
+      || rendered.fadedNodeOpacity !== nextFadedNodeOpacity;
+    const shadowChanged = !shadowOverridesEqual(rendered.shadowOverrides, nextShadowOverrides);
+
+    if (!hiddenChanged && !fadedChanged && !shadowChanged) {
+      return;
+    }
+
+    if (hiddenChanged || fadedChanged) {
+      restoreCameraOcclusionMaterials(rendered);
+      this.cameraOccludedPlacementIds.delete(id);
+    }
+
+    rendered.hiddenNodeNames = nextHiddenNodeNames;
+    rendered.fadedNodeNames = nextFadedNodeNames;
+    rendered.fadedNodeOpacity = nextFadedNodeOpacity;
+    rendered.shadowOverrides = nextShadowOverrides;
     this.applyPlacementVisibility(rendered);
   }
 

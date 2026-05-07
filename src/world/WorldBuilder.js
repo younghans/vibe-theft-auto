@@ -644,15 +644,17 @@ export class WorldBuilder {
     this.worldRenderer.setPlacementShadowOverrides(id, overrides);
   }
 
+  setPlacementCutawayState(id, state = {}) {
+    this.worldRenderer.setPlacementCutawayState(id, state);
+  }
+
   clearInteriorPlacementPreview() {
     if (!this.builderInteriorPreviewPlacementIds.size) {
       return;
     }
 
     for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
-      this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
-      this.worldRenderer.setPlacementFadedNodeNames(placementId, []);
-      this.worldRenderer.setPlacementShadowOverrides(placementId, null);
+      this.worldRenderer.setPlacementCutawayState(placementId);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
     }
 
@@ -673,34 +675,29 @@ export class WorldBuilder {
         continue;
       }
 
-      this.worldRenderer.setPlacementHiddenNodeNames(placementId, []);
-      this.worldRenderer.setPlacementFadedNodeNames(placementId, []);
-      this.worldRenderer.setPlacementShadowOverrides(placementId, null);
+      this.worldRenderer.setPlacementCutawayState(placementId);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
       this.builderInteriorPreviewPlacementIds.delete(placementId);
     }
 
     for (const entry of entries) {
       this.worldRenderer.setPlacementVisualHidden(entry.placementId, false);
-      this.worldRenderer.setPlacementHiddenNodeNames(entry.placementId, []);
-      this.worldRenderer.setPlacementFadedNodeNames(entry.placementId, []);
-      this.worldRenderer.setPlacementShadowOverrides(entry.placementId, null);
 
       if (entry?.interior?.mode === 'inline-cutaway') {
-        this.worldRenderer.setPlacementHiddenNodeNames(
-          entry.placementId,
-          entry?.interior?.cutawayNodeNames ?? []
-        );
-        this.worldRenderer.setPlacementFadedNodeNames(
-          entry.placementId,
-          entry?.interior?.cutawayFadeNodeNames ?? [],
-          entry?.interior?.cutawayFadeOpacity ?? 0.1
-        );
-        this.worldRenderer.setPlacementShadowOverrides(entry.placementId, {
-          castShadow: false,
-          receiveShadow: false
+        this.worldRenderer.setPlacementCutawayState(entry.placementId, {
+          hiddenNodeNames: entry?.interior?.cutawayNodeNames ?? [],
+          fadedNodeNames: entry?.interior?.cutawayFadeNodeNames ?? [],
+          fadedNodeOpacity: entry?.interior?.cutawayFadeOpacity ?? 0.1,
+          shadowOverrides: {
+            castShadow: false,
+            receiveShadow: false
+          }
         });
-      } else if (entry?.interior?.mode === 'inline-shell') {
+      } else {
+        this.worldRenderer.setPlacementCutawayState(entry.placementId);
+      }
+
+      if (entry?.interior?.mode === 'inline-shell') {
         this.worldRenderer.setPlacementVisualHidden(entry.placementId, true);
       }
 
