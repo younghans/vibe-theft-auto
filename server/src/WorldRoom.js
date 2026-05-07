@@ -49,6 +49,17 @@ import {
   isStockMarketNpc,
   serializeStockMarket
 } from '../../src/shared/stockMarket.js';
+import {
+  BLACKJACK_MAX_WAGER,
+  createBlackjackSession,
+  doubleBlackjackSession,
+  getBlackjackPromptRadius,
+  hitBlackjackSession,
+  isBlackjackDealerNpc,
+  normalizeBlackjackWager,
+  serializeBlackjackSession,
+  standBlackjackSession
+} from '../../src/shared/blackjack.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import {
   chooseFarthestSpawnPoint,
@@ -203,6 +214,7 @@ const NpcState = schema({
   gymCheckInEnabled: 'boolean',
   rentCollectorEnabled: 'boolean',
   stockMarketEnabled: 'boolean',
+  blackjackDealerEnabled: 'boolean',
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -360,6 +372,7 @@ export class WorldRoom extends Room {
     this.pickupSequence = 0;
     this.stockMarket = createInitialStockMarketState(Date.now());
     this.stockPortfolios = new Map();
+    this.blackjackSessions = new Map();
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
     this.npcDebugEnabled = isNpcDebugEnabled();
@@ -451,6 +464,22 @@ export class WorldRoom extends Room {
 
     this.onMessage('stock:trade', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleStockTradeRequest(client, message));
+    });
+
+    this.onMessage('blackjack:start', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBlackjackStart(client, message));
+    });
+
+    this.onMessage('blackjack:hit', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'hit'));
+    });
+
+    this.onMessage('blackjack:stand', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'stand'));
+    });
+
+    this.onMessage('blackjack:double', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'double'));
     });
 
     this.onMessage('combat:pickupRequest', (client, message) => {
@@ -587,6 +616,7 @@ export class WorldRoom extends Room {
     this.playerAliases.delete(client.sessionId);
     this.playerPositionMeta.delete(client.sessionId);
     this.stockPortfolios.delete(client.sessionId);
+    this.blackjackSessions.delete(client.sessionId);
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -939,6 +969,128 @@ export class WorldRoom extends Room {
     return {
       trade,
       market: result.market,
+      money: player.money
+    };
+  }
+
+  getBlackjackDealerForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isBlackjackDealerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getBlackjackPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertBlackjackAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot play blackjack right now.');
+    }
+
+    const npc = this.getBlackjackDealerForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to a blackjack dealer.');
+    }
+
+    return { player, npc };
+  }
+
+  settleBlackjackSession(client, session, npc) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !session || session.phase !== 'complete' || session.settled === true) {
+      return;
+    }
+
+    session.settled = true;
+    session.completedAt = Date.now();
+    const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
+    if (npc) {
+      this.setNpcChatPhase(npc, 'done', session.message || 'Hand complete.', { bumpSeq: true });
+    }
+  }
+
+  handleBlackjackStart(client, message = {}) {
+    const { player, npc } = this.assertBlackjackAccess(client, message);
+    const wager = normalizeBlackjackWager(message?.wager);
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (wager > money) {
+      throw new Error(`You need ${wager > BLACKJACK_MAX_WAGER ? '$500 or less' : 'more cash'} for that wager.`);
+    }
+
+    player.money = money - wager;
+    const session = createBlackjackSession({
+      npcId: npc.id,
+      wager,
+      now: Date.now()
+    });
+    session.settled = false;
+    this.blackjackSessions.set(client.sessionId, session);
+    this.settleBlackjackSession(client, session, npc);
+    return {
+      blackjack: serializeBlackjackSession(session, { money: player.money }),
+      money: player.money
+    };
+  }
+
+  handleBlackjackAction(client, message = {}, action = '') {
+    const { player, npc } = this.assertBlackjackAccess(client, message);
+    const session = this.blackjackSessions.get(client.sessionId);
+    if (!session || session.npcId !== npc.id) {
+      throw new Error('Deal a new blackjack hand first.');
+    }
+    if (session.phase !== 'playerTurn') {
+      return {
+        blackjack: serializeBlackjackSession(session, { money: player.money }),
+        money: player.money
+      };
+    }
+
+    if (action === 'hit') {
+      hitBlackjackSession(session);
+    } else if (action === 'stand') {
+      standBlackjackSession(session);
+    } else if (action === 'double') {
+      if (session.playerHand.length !== 2) {
+        throw new Error('Double is only available on the first two cards.');
+      }
+      const extraWager = Math.max(0, Math.trunc(Number(session.wager ?? 0) || 0));
+      const money = Math.trunc(Number(player.money ?? 0) || 0);
+      if (extraWager > money) {
+        throw new Error('You need enough cash to double.');
+      }
+      player.money = money - extraWager;
+      doubleBlackjackSession(session);
+    } else {
+      throw new Error('That blackjack action is not available.');
+    }
+
+    this.settleBlackjackSession(client, session, npc);
+    return {
+      blackjack: serializeBlackjackSession(session, { money: player.money }),
       money: player.money
     };
   }
@@ -2106,6 +2258,7 @@ export class WorldRoom extends Room {
           : model.id === 'remy',
         rentCollectorEnabled: message.rentCollectorEnabled === true,
         stockMarketEnabled: message.stockMarketEnabled === true,
+        blackjackDealerEnabled: message.blackjackDealerEnabled === true,
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -2152,6 +2305,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'stockMarketEnabled')) {
       updates.stockMarketEnabled = message.stockMarketEnabled === true;
+    }
+    if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
+      updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -2294,6 +2450,7 @@ export class WorldRoom extends Room {
       existing.gymCheckInEnabled = normalizedDefinition.gymCheckInEnabled === true;
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
+      existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;

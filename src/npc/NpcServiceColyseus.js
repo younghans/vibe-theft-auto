@@ -32,6 +32,7 @@ function cloneNpcState(npc) {
     gymCheckInEnabled: npc.gymCheckInEnabled === true,
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
     stockMarketEnabled: npc.stockMarketEnabled === true,
+    blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,
@@ -509,6 +510,31 @@ export class NpcServiceColyseus {
       symbol: String(symbol ?? '').trim(),
       side: String(side ?? '').trim(),
       quantity
+    });
+  }
+
+  async startBlackjack(npcId = '', wager = 0) {
+    return this.rpc('blackjack:start', {
+      npcId: String(npcId ?? '').trim(),
+      wager
+    });
+  }
+
+  async hitBlackjack(npcId = '') {
+    return this.rpc('blackjack:hit', {
+      npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async standBlackjack(npcId = '') {
+    return this.rpc('blackjack:stand', {
+      npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async doubleBlackjack(npcId = '') {
+    return this.rpc('blackjack:double', {
+      npcId: String(npcId ?? '').trim()
     });
   }
 

@@ -53,6 +53,7 @@ const DISTRICT_PROPS = [
   { itemId: 'bench', position: [1.7 * BUILDER_TILE_SIZE, -1.1 * BUILDER_TILE_SIZE], angle: -Math.PI / 3 },
   { itemId: 'hydrant', position: [0.55 * BUILDER_TILE_SIZE, -1.2 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'standing_desk_computer', position: [-2.3 * BUILDER_TILE_SIZE, -1.15 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: 'blackjack_table', position: [2.05 * BUILDER_TILE_SIZE, 1.18 * BUILDER_TILE_SIZE], angle: Math.PI },
   { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 
@@ -136,7 +137,8 @@ const NPC_PLANS = [
     angle: -Math.PI / 2,
     name: 'Sketch',
     prompt: 'You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.',
-    interactRadius: 4.2
+    interactRadius: 5.2,
+    blackjackDealerEnabled: true
   }
 ];
 
@@ -312,6 +314,7 @@ function createNpcLayout(tiles, props) {
     gymCheckInEnabled: plan.gymCheckInEnabled === true,
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
     stockMarketEnabled: plan.stockMarketEnabled === true,
+    blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
     ...(plan.combat ? { combat: plan.combat } : {}),
     ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
   }));

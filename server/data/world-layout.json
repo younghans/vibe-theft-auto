@@ -1636,6 +1636,15 @@
         -21
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_225",
+      "itemId": "blackjack_table",
+      "position": [
+        20.5,
+        11.8
+      ],
+      "rotationQuarterTurns": 2
     }
   ],
   "npcs": [
@@ -1702,8 +1711,9 @@
       "rotationQuarterTurns": 3,
       "name": "Sketch",
       "prompt": "You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.",
-      "interactRadius": 4.2,
-      "active": true
+      "interactRadius": 5.2,
+      "active": true,
+      "blackjackDealerEnabled": true
     },
     {
       "id": "npc_bruno",

@@ -7,6 +7,8 @@ import {
   cloneInteriorDefinition
 } from './interactableMetadata.js';
 import {
+  BLACKJACK_TABLE_FOOTPRINT,
+  createBlackjackTableVisual,
   createOlympicBarbellVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
@@ -32,6 +34,7 @@ const TILE_GROUPS = Object.freeze({
 const PROP_GROUPS = Object.freeze({
   street: 'Street',
   greenery: 'Greenery',
+  casino: 'Casino',
   fitness: 'Fitness',
   office: 'Office',
   portals: 'Portals',
@@ -412,6 +415,17 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       approachLocalOffset: [0, 1.35],
       approachRotationY: Math.PI
     }
+  },
+  {
+    id: 'blackjack_table',
+    assetName: 'blackjack_table',
+    label: 'Blackjack Table',
+    asset: null,
+    group: 'casino',
+    size: BLACKJACK_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.2,
+    createVisual: createBlackjackTableVisual
   },
   {
     id: 'vibe_jam_exit_portal',

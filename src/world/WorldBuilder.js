@@ -382,6 +382,9 @@ export class WorldBuilder {
       onNpcStockMarketChange: (enabled) => void this.updateSelectedNpc({
         stockMarketEnabled: enabled === true
       }),
+      onNpcBlackjackDealerChange: (enabled) => void this.updateSelectedNpc({
+        blackjackDealerEnabled: enabled === true
+      }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
@@ -1420,7 +1423,8 @@ export class WorldBuilder {
         interactRadius: NPC_DEFAULT_INTERACT_RADIUS,
         gymCheckInEnabled: item.modelId === 'remy',
         rentCollectorEnabled: false,
-        stockMarketEnabled: false
+        stockMarketEnabled: false,
+        blackjackDealerEnabled: false
       }
     });
     if (!result?.ok) {
@@ -2126,6 +2130,7 @@ export class WorldBuilder {
       gymCheckInEnabled: (npcDraft?.gymCheckInEnabled ?? placement.npc.gymCheckInEnabled) === true,
       rentCollectorEnabled: (npcDraft?.rentCollectorEnabled ?? placement.npc.rentCollectorEnabled) === true,
       stockMarketEnabled: (npcDraft?.stockMarketEnabled ?? placement.npc.stockMarketEnabled) === true,
+      blackjackDealerEnabled: (npcDraft?.blackjackDealerEnabled ?? placement.npc.blackjackDealerEnabled) === true,
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },

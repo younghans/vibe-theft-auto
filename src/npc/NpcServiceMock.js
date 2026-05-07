@@ -44,6 +44,17 @@ import {
   isStockMarketNpc,
   serializeStockMarket
 } from '../shared/stockMarket.js';
+import {
+  BLACKJACK_MAX_WAGER,
+  createBlackjackSession,
+  doubleBlackjackSession,
+  getBlackjackPromptRadius,
+  hitBlackjackSession,
+  isBlackjackDealerNpc,
+  normalizeBlackjackWager,
+  serializeBlackjackSession,
+  standBlackjackSession
+} from '../shared/blackjack.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
@@ -264,6 +275,7 @@ export class NpcServiceMock {
     };
     this.stockMarket = createInitialStockMarketState(Date.now());
     this.stockPortfolios = new Map();
+    this.blackjackSessions = new Map();
     this.sequence = 0;
     this.pickupSequence = 0;
     this.playerAliasSequence = 0;
@@ -406,6 +418,7 @@ export class NpcServiceMock {
         gymCheckInEnabled: definition.gymCheckInEnabled === true,
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
         stockMarketEnabled: definition.stockMarketEnabled === true,
+        blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
@@ -528,7 +541,8 @@ export class NpcServiceMock {
             deliveryQuestEnabled: payload.deliveryQuestEnabled,
             gymCheckInEnabled: payload.gymCheckInEnabled,
             rentCollectorEnabled: payload.rentCollectorEnabled,
-            stockMarketEnabled: payload.stockMarketEnabled
+            stockMarketEnabled: payload.stockMarketEnabled,
+            blackjackDealerEnabled: payload.blackjackDealerEnabled
           }
         );
         this.syncNpcStateFromWorld();
@@ -1165,6 +1179,150 @@ export class NpcServiceMock {
       market: result.market,
       money: access.player.money
     };
+  }
+
+  getBlackjackDealerForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isBlackjackDealerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getBlackjackPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getBlackjackAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot play blackjack right now.' };
+    }
+
+    const npc = this.getBlackjackDealerForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to a blackjack dealer.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  settleBlackjackSession(session, npc) {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || !session || session.phase !== 'complete' || session.settled === true) {
+      return;
+    }
+
+    session.settled = true;
+    session.completedAt = Date.now();
+    const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
+    if (npc) {
+      this.setNpcChatPhase(npc, 'done', session.message || 'Hand complete.', { bumpSeq: true });
+    }
+  }
+
+  async startBlackjack(npcId = '', wagerValue = 0) {
+    const access = this.getBlackjackAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const wager = normalizeBlackjackWager(wagerValue);
+    const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+    if (wager > money) {
+      return {
+        ok: false,
+        error: `You need ${wager > BLACKJACK_MAX_WAGER ? '$500 or less' : 'more cash'} for that wager.`
+      };
+    }
+
+    access.player.money = money - wager;
+    const session = createBlackjackSession({
+      npcId: access.npc.id,
+      wager,
+      now: Date.now()
+    });
+    session.settled = false;
+    this.blackjackSessions.set(this.state.sessionId, session);
+    this.settleBlackjackSession(session, access.npc);
+    this.emit();
+    return {
+      ok: true,
+      blackjack: serializeBlackjackSession(session, { money: access.player.money }),
+      money: access.player.money
+    };
+  }
+
+  async handleBlackjackAction(npcId = '', action = '') {
+    const access = this.getBlackjackAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const session = this.blackjackSessions.get(this.state.sessionId);
+    if (!session || session.npcId !== access.npc.id) {
+      return { ok: false, error: 'Deal a new blackjack hand first.' };
+    }
+
+    if (session.phase === 'playerTurn') {
+      if (action === 'hit') {
+        hitBlackjackSession(session);
+      } else if (action === 'stand') {
+        standBlackjackSession(session);
+      } else if (action === 'double') {
+        if (session.playerHand.length !== 2) {
+          return { ok: false, error: 'Double is only available on the first two cards.' };
+        }
+        const extraWager = Math.max(0, Math.trunc(Number(session.wager ?? 0) || 0));
+        const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+        if (extraWager > money) {
+          return { ok: false, error: 'You need enough cash to double.' };
+        }
+        access.player.money = money - extraWager;
+        doubleBlackjackSession(session);
+      } else {
+        return { ok: false, error: 'That blackjack action is not available.' };
+      }
+      this.settleBlackjackSession(session, access.npc);
+    }
+
+    this.emit();
+    return {
+      ok: true,
+      blackjack: serializeBlackjackSession(session, { money: access.player.money }),
+      money: access.player.money
+    };
+  }
+
+  async hitBlackjack(npcId = '') {
+    return this.handleBlackjackAction(npcId, 'hit');
+  }
+
+  async standBlackjack(npcId = '') {
+    return this.handleBlackjackAction(npcId, 'stand');
+  }
+
+  async doubleBlackjack(npcId = '') {
+    return this.handleBlackjackAction(npcId, 'double');
   }
 
   hasActiveGymCheckInNpc() {

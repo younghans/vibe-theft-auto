@@ -4,6 +4,7 @@ export const OLYMPIC_BARBELL_LENGTH = 5.6;
 export const OLYMPIC_BARBELL_PLATE_RADIUS = 0.78;
 export const OLYMPIC_BARBELL_FOOTPRINT = Object.freeze([5.6, 1.7]);
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
+export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 
 const PORTAL_RING_RADIUS = 2.45;
@@ -58,6 +59,34 @@ function createBox(name, size, position, material, {
   mesh.castShadow = castShadow;
   mesh.receiveShadow = receiveShadow;
   return mesh;
+}
+
+function createDTableGeometry(width, depth, thickness, {
+  bevelSize = 0.04,
+  bevelSegments = 3
+} = {}) {
+  const halfWidth = width * 0.5;
+  const halfDepth = depth * 0.5;
+  const frontZ = -halfDepth;
+  const sideTopZ = halfDepth * 0.16;
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfWidth, frontZ);
+  shape.lineTo(-halfWidth, sideTopZ);
+  shape.quadraticCurveTo(-halfWidth * 0.72, halfDepth, 0, halfDepth);
+  shape.quadraticCurveTo(halfWidth * 0.72, halfDepth, halfWidth, sideTopZ);
+  shape.lineTo(halfWidth, frontZ);
+  shape.lineTo(-halfWidth, frontZ);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: true,
+    bevelSize,
+    bevelThickness: bevelSize,
+    bevelSegments
+  });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.center();
+  return geometry;
 }
 
 function buildPlateStack(side, material) {
@@ -523,6 +552,164 @@ export function createStandingDeskComputerVisual() {
   keyboardCable.castShadow = true;
   keyboardCable.receiveShadow = true;
   root.add(keyboardCable);
+
+  return root;
+}
+
+export function createBlackjackTableVisual() {
+  const root = new THREE.Group();
+  root.name = 'BlackjackTable';
+  root.userData.footprint = [...BLACKJACK_TABLE_FOOTPRINT];
+
+  const baseMaterial = createMaterial(0x1b1511, 0.62, 0.12);
+  const brassMaterial = createMaterial(0xc49443, 0.32, 0.48);
+  const railMaterial = createMaterial(0x4f2b1c, 0.48, 0.08);
+  const railTrimMaterial = createMaterial(0xd6aa57, 0.34, 0.34);
+  const feltMaterial = new THREE.MeshStandardMaterial({
+    color: 0x146b45,
+    roughness: 0.86,
+    metalness: 0.02
+  });
+  const feltLineMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe8d493,
+    roughness: 0.68,
+    metalness: 0.02,
+    transparent: true,
+    opacity: 0.78
+  });
+  const chipRedMaterial = createMaterial(0xb9233b, 0.42, 0.12);
+  const chipBlueMaterial = createMaterial(0x2868c7, 0.38, 0.16);
+  const chipWhiteMaterial = createMaterial(0xf5efe1, 0.5, 0.04);
+  const cardMaterial = createMaterial(0xf8f1df, 0.44, 0.02);
+  const cardRedMaterial = createMaterial(0xb9233b, 0.36, 0.04);
+  const cardBlackMaterial = createMaterial(0x101821, 0.42, 0.08);
+  const shoeMaterial = createMaterial(0x151c27, 0.46, 0.32);
+  const trayMaterial = createMaterial(0x0b1118, 0.5, 0.16);
+
+  root.add(createBox('blackjackTableBasePlate', [4.8, 0.18, 2.9], [0, 0.09, -0.12], baseMaterial));
+  root.add(createBox('blackjackTablePedestal', [1.55, 0.92, 1.08], [0, 0.58, -0.1], baseMaterial));
+  root.add(createBox('blackjackTablePedestalTrim', [1.78, 0.12, 1.28], [0, 1.08, -0.1], brassMaterial));
+
+  const tabletop = new THREE.Mesh(
+    createDTableGeometry(5.7, 4.15, 0.32, { bevelSize: 0.08, bevelSegments: 5 }),
+    railMaterial
+  );
+  tabletop.name = 'blackjackTablePaddedRail';
+  tabletop.position.y = 1.24;
+  tabletop.castShadow = true;
+  tabletop.receiveShadow = true;
+  root.add(tabletop);
+
+  const felt = new THREE.Mesh(
+    createDTableGeometry(4.75, 3.32, 0.06, { bevelSize: 0.02, bevelSegments: 3 }),
+    feltMaterial
+  );
+  felt.name = 'blackjackTableFelt';
+  felt.position.y = 1.46;
+  felt.castShadow = true;
+  felt.receiveShadow = true;
+  root.add(felt);
+
+  const trim = new THREE.Mesh(
+    createDTableGeometry(5.92, 4.36, 0.08, { bevelSize: 0.04, bevelSegments: 4 }),
+    railTrimMaterial
+  );
+  trim.name = 'blackjackTableOuterTrim';
+  trim.position.y = 1.38;
+  trim.castShadow = true;
+  trim.receiveShadow = true;
+  root.add(trim);
+
+  for (const [index, x] of [-1.55, 0, 1.55].entries()) {
+    const betSpot = new THREE.Mesh(
+      new THREE.TorusGeometry(0.46, 0.018, 8, 36),
+      feltLineMaterial
+    );
+    betSpot.name = `blackjackTableBettingCircle${index + 1}`;
+    betSpot.rotation.x = -Math.PI / 2;
+    betSpot.position.set(x, 1.505, 0.52);
+    root.add(betSpot);
+
+    const seatLine = createBox(
+      `blackjackTablePlayerArc${index + 1}`,
+      [0.92, 0.018, 0.045],
+      [x, 1.51, 1.14],
+      feltLineMaterial,
+      { castShadow: false, receiveShadow: false }
+    );
+    seatLine.rotation.y = (index - 1) * 0.18;
+    root.add(seatLine);
+  }
+
+  const dealerLine = new THREE.Mesh(
+    new THREE.TorusGeometry(0.86, 0.018, 8, 42, Math.PI),
+    feltLineMaterial
+  );
+  dealerLine.name = 'blackjackTableDealerArc';
+  dealerLine.rotation.x = -Math.PI / 2;
+  dealerLine.rotation.z = Math.PI;
+  dealerLine.position.set(0, 1.512, -0.78);
+  root.add(dealerLine);
+
+  const chipTray = createBox('blackjackTableChipTray', [1.55, 0.12, 0.42], [-1.48, 1.56, -1.26], trayMaterial);
+  root.add(chipTray);
+  for (let stackIndex = 0; stackIndex < 4; stackIndex += 1) {
+    const material = stackIndex % 3 === 0 ? chipRedMaterial : stackIndex % 3 === 1 ? chipBlueMaterial : chipWhiteMaterial;
+    for (let chipIndex = 0; chipIndex < 4; chipIndex += 1) {
+      const chip = createCylinder(0.14, 0.14, 0.035, 22, material);
+      chip.name = `blackjackTableChipStack${stackIndex + 1}_${chipIndex + 1}`;
+      chip.position.set(-2.05 + (stackIndex * 0.32), 1.65 + (chipIndex * 0.036), -1.26);
+      chip.castShadow = true;
+      chip.receiveShadow = true;
+      root.add(chip);
+    }
+  }
+
+  const shoe = createBox('blackjackTableCardShoe', [0.82, 0.34, 0.58], [1.58, 1.64, -1.22], shoeMaterial, {
+    rotation: [0, -0.22, 0]
+  });
+  root.add(shoe);
+  const discardTray = createBox('blackjackTableDiscardTray', [0.72, 0.08, 0.48], [0.74, 1.58, -1.32], trayMaterial, {
+    rotation: [0, 0.18, 0]
+  });
+  root.add(discardTray);
+
+  const cardPositions = [
+    [-0.36, -0.8, -0.08],
+    [-0.05, -0.76, 0.08],
+    [-1.55, 0.18, -0.16],
+    [-1.26, 0.2, 0.12],
+    [0.0, 0.25, -0.08],
+    [0.3, 0.24, 0.1],
+    [1.25, 0.18, -0.12],
+    [1.54, 0.2, 0.13]
+  ];
+  cardPositions.forEach(([x, z, rotation], index) => {
+    const card = createBox(
+      `blackjackTableCard${index + 1}`,
+      [0.34, 0.022, 0.48],
+      [x, 1.545, z],
+      cardMaterial,
+      { rotation: [0, rotation, 0], castShadow: false, receiveShadow: true }
+    );
+    root.add(card);
+    root.add(createBox(
+      `blackjackTableCardPip${index + 1}`,
+      [0.11, 0.024, 0.13],
+      [x + 0.02, 1.562, z],
+      index % 2 === 0 ? cardRedMaterial : cardBlackMaterial,
+      { rotation: [0, rotation, 0], castShadow: false, receiveShadow: false }
+    ));
+  });
+
+  root.add(createBox('blackjackTableDealerPlaque', [1.08, 0.036, 0.22], [0, 1.555, -1.5], railTrimMaterial, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('blackjackTableFeltCenterStripe', [3.7, 0.016, 0.035], [0, 1.512, -0.18], feltLineMaterial, {
+    castShadow: false,
+    receiveShadow: false
+  }));
 
   return root;
 }

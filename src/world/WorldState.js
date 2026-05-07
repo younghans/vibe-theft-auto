@@ -68,6 +68,7 @@ function toPlacementRecord(entry, item, id) {
           gymCheckInEnabled: entry.gymCheckInEnabled,
           rentCollectorEnabled: entry.rentCollectorEnabled,
           stockMarketEnabled: entry.stockMarketEnabled,
+          blackjackDealerEnabled: entry.blackjackDealerEnabled,
           spawnPosition: entry.spawnPosition,
           spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
         }, {
@@ -129,6 +130,7 @@ function toSerializedPlacement(placement) {
         gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         stockMarketEnabled: placement.npc.stockMarketEnabled === true,
+        blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),
@@ -332,6 +334,7 @@ export class WorldState {
           gymCheckInEnabled: npc.gymCheckInEnabled,
           rentCollectorEnabled: npc.rentCollectorEnabled,
           stockMarketEnabled: npc.stockMarketEnabled,
+          blackjackDealerEnabled: npc.blackjackDealerEnabled,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
         }, {
@@ -532,6 +535,7 @@ export class WorldState {
         gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         stockMarketEnabled: placement.npc.stockMarketEnabled === true,
+        blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               Number(placement.npc.spawnPosition[0].toFixed(2)),

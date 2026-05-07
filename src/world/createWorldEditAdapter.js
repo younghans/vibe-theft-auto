@@ -44,7 +44,8 @@ function toTransportPayload(edit) {
         deliveryQuestEnabled: edit.npc.deliveryQuestEnabled === true,
         gymCheckInEnabled: edit.npc.gymCheckInEnabled === true,
         rentCollectorEnabled: edit.npc.rentCollectorEnabled === true,
-        stockMarketEnabled: edit.npc.stockMarketEnabled === true
+        stockMarketEnabled: edit.npc.stockMarketEnabled === true,
+        blackjackDealerEnabled: edit.npc.blackjackDealerEnabled === true
       };
     case 'rotatePlacement':
       return {

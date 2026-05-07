@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
-import { createOlympicBarbellVisual, createStandingDeskComputerVisual } from './proceduralProps.js';
+import { createBlackjackTableVisual, createOlympicBarbellVisual, createStandingDeskComputerVisual } from './proceduralProps.js';
 
 export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   const bounds = new THREE.Box3().setFromObject(root);
@@ -38,6 +38,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'standing_desk_computer' || item?.assetName === 'standing_desk_computer') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createStandingDeskComputerVisual();
+  } else if (item?.id === 'blackjack_table' || item?.assetName === 'blackjack_table') {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createBlackjackTableVisual();
   } else if (typeof item?.asset === 'string' && item.asset) {
     primaryObject = await library.instantiate(item.asset);
   } else {

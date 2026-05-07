@@ -3,6 +3,7 @@ import { normalizeDeliveryQuestEnabled } from '../shared/deliveryQuest.js';
 import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 import { normalizeStockMarketEnabled } from '../shared/stockMarket.js';
+import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 
 export const NPC_ROUTINE_MODES = Object.freeze({
   loop: 'loop'
@@ -303,6 +304,7 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
       || Object.hasOwn(updates, 'gymCheckInEnabled')
       || Object.hasOwn(updates, 'rentCollectorEnabled')
       || Object.hasOwn(updates, 'stockMarketEnabled')
+      || Object.hasOwn(updates, 'blackjackDealerEnabled')
     )
   ) {
     return false;
@@ -345,6 +347,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     gymCheckInEnabled: false,
     rentCollectorEnabled: false,
     stockMarketEnabled: false,
+    blackjackDealerEnabled: false,
     ...overrides
   };
 }
@@ -383,6 +386,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     gymCheckInEnabled: normalizeGymCheckInEnabled(npc.gymCheckInEnabled ?? (npc.modelId === 'remy')),
     rentCollectorEnabled: normalizeRentCollectorEnabled(npc.rentCollectorEnabled),
     stockMarketEnabled: normalizeStockMarketEnabled(npc.stockMarketEnabled),
+    blackjackDealerEnabled: isBlackjackDealerNpc(npc),
     spawnPosition,
     spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4
   };

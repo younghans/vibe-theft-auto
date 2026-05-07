@@ -1,6 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
+import { BLACKJACK_DEFAULT_WAGER } from '../shared/blackjack.js';
 import { getStockTradeValue } from '../shared/stockMarket.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
@@ -92,6 +93,62 @@ function getStockTrendClass(value) {
     return 'is-down';
   }
   return 'is-flat';
+}
+
+function getBlackjackSuitSymbol(suit = '') {
+  switch (suit) {
+    case 'H':
+      return '&hearts;';
+    case 'D':
+      return '&diams;';
+    case 'C':
+      return '&clubs;';
+    case 'S':
+      return '&spades;';
+    default:
+      return '?';
+  }
+}
+
+function getBlackjackSuitLabel(suit = '') {
+  switch (suit) {
+    case 'H':
+      return 'Hearts';
+    case 'D':
+      return 'Diamonds';
+    case 'C':
+      return 'Clubs';
+    case 'S':
+      return 'Spades';
+    default:
+      return 'Unknown';
+  }
+}
+
+function createBlackjackCardMarkup(card = {}, index = 0) {
+  if (card?.hidden) {
+    return `
+      <span class="hud__blackjack-card is-hidden-card" style="--card-index:${index}">
+        <span class="hud__blackjack-card-back"></span>
+      </span>
+    `;
+  }
+
+  const rank = escapeHtml(card?.rank ?? '?');
+  const suit = String(card?.suit ?? '');
+  const redClass = suit === 'H' || suit === 'D' ? ' is-red' : '';
+  const suitSymbol = getBlackjackSuitSymbol(suit);
+  return `
+    <span
+      class="hud__blackjack-card${redClass}"
+      style="--card-index:${index}"
+      aria-label="${rank} of ${escapeHtml(getBlackjackSuitLabel(suit))}"
+    >
+      <span class="hud__blackjack-card-corner">${rank}</span>
+      <span class="hud__blackjack-card-suit">${suitSymbol}</span>
+      <span class="hud__blackjack-card-corner is-bottom">${rank}</span>
+    </span>
+  `;
 }
 
 function createStockIconMarkup(stock = {}, className = '') {
@@ -530,6 +587,7 @@ export class Hud {
     this.builderNpcGymCheckIn = this.overlay.querySelector('[data-builder-npc-gym-check-in]');
     this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
     this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
+    this.builderNpcBlackjackDealer = this.overlay.querySelector('[data-builder-npc-blackjack-dealer]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
@@ -570,6 +628,23 @@ export class Hud {
     this.stockMarketQuantity = this.overlay.querySelector('[data-stock-market-quantity]');
     this.stockMarketBuy = this.overlay.querySelector('[data-stock-market-buy]');
     this.stockMarketSell = this.overlay.querySelector('[data-stock-market-sell]');
+    this.blackjackRoot = this.overlay.querySelector('[data-blackjack]');
+    this.blackjackClose = this.overlay.querySelector('[data-blackjack-close]');
+    this.blackjackStatus = this.overlay.querySelector('[data-blackjack-status]');
+    this.blackjackDealerName = this.overlay.querySelector('[data-blackjack-dealer-name]');
+    this.blackjackCash = this.overlay.querySelector('[data-blackjack-cash]');
+    this.blackjackWager = this.overlay.querySelector('[data-blackjack-wager]');
+    this.blackjackDeal = this.overlay.querySelector('[data-blackjack-deal]');
+    this.blackjackDealerHand = this.overlay.querySelector('[data-blackjack-dealer-hand]');
+    this.blackjackPlayerHand = this.overlay.querySelector('[data-blackjack-player-hand]');
+    this.blackjackDealerValue = this.overlay.querySelector('[data-blackjack-dealer-value]');
+    this.blackjackPlayerValue = this.overlay.querySelector('[data-blackjack-player-value]');
+    this.blackjackMessage = this.overlay.querySelector('[data-blackjack-message]');
+    this.blackjackResult = this.overlay.querySelector('[data-blackjack-result]');
+    this.blackjackHit = this.overlay.querySelector('[data-blackjack-hit]');
+    this.blackjackStand = this.overlay.querySelector('[data-blackjack-stand]');
+    this.blackjackDouble = this.overlay.querySelector('[data-blackjack-double]');
+    this.blackjackWagerChips = this.overlay.querySelector('[data-blackjack-wager-chips]');
     this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
@@ -610,6 +685,14 @@ export class Hud {
       quantity: 1,
       loading: false,
       error: ''
+    };
+    this.blackjackVisible = false;
+    this.blackjackState = {
+      game: null,
+      wager: BLACKJACK_DEFAULT_WAGER,
+      loading: false,
+      error: '',
+      dealerName: 'Dealer'
     };
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
@@ -1085,6 +1168,12 @@ export class Hud {
                   <span class="hud__field-label hud__checkbox-title">Stock Broker / Market</span>
                 </span>
               </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-blackjack-dealer />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Blackjack Dealer</span>
+                </span>
+              </label>
               <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Archetype</span>
@@ -1240,6 +1329,64 @@ export class Hud {
           </label>
           <button class="hud__stock-trade-button is-buy" type="button" data-stock-market-buy>Buy</button>
           <button class="hud__stock-trade-button is-sell" type="button" data-stock-market-sell>Sell</button>
+        </footer>
+      </section>
+      <section class="hud__blackjack" data-blackjack hidden>
+        <header class="hud__blackjack-header">
+          <div>
+            <p class="hud__eyebrow">Table Game</p>
+            <h2 class="hud__blackjack-title">Blackjack</h2>
+            <p class="hud__body hud__blackjack-status" data-blackjack-status>Waiting for a seat...</p>
+          </div>
+          <button class="hud__builder-icon-button" type="button" data-blackjack-close aria-label="Close blackjack" title="Close blackjack">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="hud__blackjack-table">
+          <div class="hud__blackjack-rail" aria-hidden="true"></div>
+          <section class="hud__blackjack-hand hud__blackjack-hand--dealer">
+            <div class="hud__blackjack-hand-head">
+              <span data-blackjack-dealer-name>Dealer</span>
+              <strong data-blackjack-dealer-value>0</strong>
+            </div>
+            <div class="hud__blackjack-cards" data-blackjack-dealer-hand></div>
+          </section>
+          <div class="hud__blackjack-center">
+            <div class="hud__blackjack-shoe" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <p class="hud__blackjack-message" data-blackjack-message>Place a wager and deal.</p>
+            <div class="hud__blackjack-result" data-blackjack-result></div>
+          </div>
+          <section class="hud__blackjack-hand hud__blackjack-hand--player">
+            <div class="hud__blackjack-hand-head">
+              <span>Your Hand</span>
+              <strong data-blackjack-player-value>0</strong>
+            </div>
+            <div class="hud__blackjack-cards" data-blackjack-player-hand></div>
+          </section>
+        </div>
+        <footer class="hud__blackjack-controls">
+          <div class="hud__blackjack-bankroll">
+            <span>Cash</span>
+            <strong data-blackjack-cash>$0</strong>
+          </div>
+          <label class="hud__blackjack-wager">
+            <span class="hud__field-label">Wager</span>
+            <input class="hud__field-control" type="number" min="0" max="500" step="5" value="${BLACKJACK_DEFAULT_WAGER}" data-blackjack-wager />
+          </label>
+          <div class="hud__blackjack-chips" data-blackjack-wager-chips aria-hidden="true"></div>
+          <div class="hud__blackjack-actions">
+            <button class="hud__blackjack-action is-deal" type="button" data-blackjack-deal>Deal</button>
+            <button class="hud__blackjack-action" type="button" data-blackjack-hit>Hit</button>
+            <button class="hud__blackjack-action" type="button" data-blackjack-stand>Stand</button>
+            <button class="hud__blackjack-action" type="button" data-blackjack-double>Double</button>
+          </div>
         </footer>
       </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
@@ -1770,6 +1917,7 @@ export class Hud {
     onNpcGymCheckInChange,
     onNpcRentCollectorChange,
     onNpcStockMarketChange,
+    onNpcBlackjackDealerChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
@@ -1902,6 +2050,10 @@ export class Hud {
 
     this.builderNpcStockMarket?.addEventListener('change', () => {
       onNpcStockMarketChange?.(this.builderNpcStockMarket.checked === true);
+    });
+
+    this.builderNpcBlackjackDealer?.addEventListener('change', () => {
+      onNpcBlackjackDealerChange?.(this.builderNpcBlackjackDealer.checked === true);
     });
 
     this.builderNpcModel.addEventListener('change', () => {
@@ -2072,6 +2224,39 @@ export class Hud {
 
     this.stockMarketSell?.addEventListener('click', () => {
       onSell?.();
+    });
+  }
+
+  bindBlackjackEvents({
+    onClose,
+    onWagerChange,
+    onDeal,
+    onHit,
+    onStand,
+    onDouble
+  }) {
+    this.blackjackClose?.addEventListener('click', () => {
+      onClose?.();
+    });
+
+    this.blackjackWager?.addEventListener('input', () => {
+      onWagerChange?.(Number(this.blackjackWager.value));
+    });
+
+    this.blackjackDeal?.addEventListener('click', () => {
+      onDeal?.();
+    });
+
+    this.blackjackHit?.addEventListener('click', () => {
+      onHit?.();
+    });
+
+    this.blackjackStand?.addEventListener('click', () => {
+      onStand?.();
+    });
+
+    this.blackjackDouble?.addEventListener('click', () => {
+      onDouble?.();
     });
   }
 
@@ -2307,6 +2492,9 @@ export class Hud {
     }
     if (this.builderNpcStockMarket && document.activeElement !== this.builderNpcStockMarket) {
       this.builderNpcStockMarket.checked = editorState.stockMarketEnabled === true;
+    }
+    if (this.builderNpcBlackjackDealer && document.activeElement !== this.builderNpcBlackjackDealer) {
+      this.builderNpcBlackjackDealer.checked = editorState.blackjackDealerEnabled === true;
     }
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 
@@ -2780,6 +2968,132 @@ export class Hud {
           </div>
         </div>
       `;
+    }
+  }
+
+  setBlackjackVisible(visible) {
+    this.blackjackVisible = Boolean(visible);
+    if (!this.blackjackRoot) {
+      return;
+    }
+
+    this.blackjackRoot.hidden = !this.blackjackVisible;
+    this.blackjackRoot.classList.toggle('is-visible', this.blackjackVisible);
+  }
+
+  isBlackjackOpen() {
+    return Boolean(this.blackjackVisible && this.blackjackRoot && !this.blackjackRoot.hidden);
+  }
+
+  setBlackjackState({
+    visible = this.blackjackVisible,
+    game = this.blackjackState.game,
+    wager = this.blackjackState.wager,
+    loading = this.blackjackState.loading,
+    error = this.blackjackState.error,
+    dealerName = this.blackjackState.dealerName
+  } = {}) {
+    const numericWager = Number(wager);
+    this.blackjackState = {
+      game,
+      wager: Number.isFinite(numericWager) ? Math.max(0, Math.min(500, Math.trunc(numericWager))) : BLACKJACK_DEFAULT_WAGER,
+      loading: Boolean(loading),
+      error: String(error ?? ''),
+      dealerName: String(dealerName || 'Dealer')
+    };
+    this.setBlackjackVisible(visible);
+    this.renderBlackjack();
+  }
+
+  renderBlackjack() {
+    if (!this.blackjackRoot) {
+      return;
+    }
+
+    const { game, wager, loading, error, dealerName } = this.blackjackState;
+    const phase = game?.phase ?? 'idle';
+    const handActive = phase === 'playerTurn';
+    const handComplete = phase === 'complete';
+    const cash = Number(game?.money ?? 0);
+    const currentWager = Number(game?.wager ?? wager ?? 0);
+    const payout = Number(game?.payout ?? 0);
+
+    if (this.blackjackStatus) {
+      this.blackjackStatus.textContent = loading
+        ? 'The dealer is shuffling...'
+        : error
+          ? error
+          : handActive
+            ? 'Player action'
+            : handComplete
+              ? 'Hand complete'
+              : 'Open seat';
+      this.blackjackStatus.classList.toggle('is-error', Boolean(error));
+    }
+
+    if (this.blackjackDealerName) {
+      this.blackjackDealerName.textContent = dealerName;
+    }
+    if (this.blackjackCash) {
+      this.blackjackCash.textContent = formatMoneyAmount(cash);
+    }
+    if (this.blackjackWager && document.activeElement !== this.blackjackWager) {
+      this.blackjackWager.value = String(wager);
+    }
+    if (this.blackjackWager) {
+      this.blackjackWager.disabled = loading || handActive;
+    }
+
+    const dealerHand = Array.isArray(game?.dealerHand) ? game.dealerHand : [];
+    const playerHand = Array.isArray(game?.playerHand) ? game.playerHand : [];
+    if (this.blackjackDealerHand) {
+      this.blackjackDealerHand.innerHTML = dealerHand.length
+        ? dealerHand.map(createBlackjackCardMarkup).join('')
+        : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+    }
+    if (this.blackjackPlayerHand) {
+      this.blackjackPlayerHand.innerHTML = playerHand.length
+        ? playerHand.map(createBlackjackCardMarkup).join('')
+        : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+    }
+    if (this.blackjackDealerValue) {
+      this.blackjackDealerValue.textContent = dealerHand.length ? String(game?.dealerValue ?? 0) : '-';
+    }
+    if (this.blackjackPlayerValue) {
+      this.blackjackPlayerValue.textContent = playerHand.length ? String(game?.playerValue ?? 0) : '-';
+    }
+    if (this.blackjackMessage) {
+      this.blackjackMessage.textContent = error || game?.message || 'Place a wager and deal.';
+    }
+    if (this.blackjackResult) {
+      const resultClass = game?.outcome ? ` is-${String(game.outcome).replaceAll('_', '-')}` : '';
+      this.blackjackResult.className = `hud__blackjack-result${resultClass}`;
+      this.blackjackResult.textContent = handComplete
+        ? `${payout > 0 ? `${formatMoneyAmount(payout)} returned` : 'No payout'}`
+        : currentWager > 0
+          ? `${formatMoneyAmount(currentWager)} on the felt`
+          : 'Practice hand';
+    }
+    if (this.blackjackWagerChips) {
+      const chipCount = Math.max(1, Math.min(5, Math.ceil(Math.max(0, currentWager) / 25)));
+      this.blackjackWagerChips.innerHTML = Array.from({ length: chipCount }, (_, index) => `
+        <span class="hud__blackjack-chip" style="--chip-index:${index}"></span>
+      `).join('');
+      this.blackjackWagerChips.classList.toggle('is-empty', currentWager <= 0);
+    }
+
+    if (this.blackjackDeal) {
+      this.blackjackDeal.disabled = loading;
+      this.blackjackDeal.textContent = handActive ? 'New Hand' : 'Deal';
+    }
+    if (this.blackjackHit) {
+      this.blackjackHit.disabled = loading || !game?.canHit;
+    }
+    if (this.blackjackStand) {
+      this.blackjackStand.disabled = loading || !game?.canStand;
+    }
+    if (this.blackjackDouble) {
+      this.blackjackDouble.disabled = loading || !game?.canDouble;
     }
   }
 

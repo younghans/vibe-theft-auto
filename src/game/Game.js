@@ -75,6 +75,12 @@ import {
   isStockMarketNpc,
   normalizeStockTradeQuantity
 } from '../shared/stockMarket.js';
+import {
+  BLACKJACK_DEFAULT_WAGER,
+  getBlackjackPromptRadius,
+  isBlackjackDealerNpc,
+  normalizeBlackjackWager
+} from '../shared/blackjack.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -339,6 +345,11 @@ export class Game {
     this.stockMarketQuantity = 1;
     this.stockMarketRequestInFlight = false;
     this.stockMarketRefreshAt = 0;
+    this.blackjackNpcId = '';
+    this.blackjackDealerName = 'Dealer';
+    this.blackjackState = null;
+    this.blackjackWager = BLACKJACK_DEFAULT_WAGER;
+    this.blackjackRequestInFlight = false;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -400,6 +411,14 @@ export class Game {
       onQuantityChange: (quantity) => this.setStockMarketQuantity(quantity),
       onBuy: () => void this.handleStockTrade('buy'),
       onSell: () => void this.handleStockTrade('sell')
+    });
+    this.hud.bindBlackjackEvents({
+      onClose: () => this.closeBlackjack(),
+      onWagerChange: (wager) => this.setBlackjackWager(wager),
+      onDeal: () => void this.startBlackjackRound(),
+      onHit: () => void this.handleBlackjackAction('hit'),
+      onStand: () => void this.handleBlackjackAction('stand'),
+      onDouble: () => void this.handleBlackjackAction('double')
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -2565,6 +2584,203 @@ export class Game {
     }
   }
 
+  getBlackjackNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      blackjackDealerEnabled: npcState?.blackjackDealerEnabled === true
+        || interactable?.npc?.blackjackDealerEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getBlackjackNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestBlackjackDealerInteractable() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getBlackjackNpcDetails(interactable);
+      if (
+        !isBlackjackDealerNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getBlackjackNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getBlackjackPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'blackjack',
+        npcId: interactable.npcId || interactable.placementId || '',
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Play blackjack',
+        actionText: 'Sat at the blackjack table.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  setBlackjackWager(wager = BLACKJACK_DEFAULT_WAGER) {
+    this.blackjackWager = normalizeBlackjackWager(wager);
+    this.syncBlackjackHud();
+  }
+
+  syncBlackjackHud({ loading = this.blackjackRequestInFlight, error = '' } = {}) {
+    this.hud.setBlackjackState({
+      visible: this.hud.isBlackjackOpen(),
+      game: this.blackjackState,
+      wager: this.blackjackWager,
+      loading,
+      error,
+      dealerName: this.blackjackDealerName
+    });
+  }
+
+  openBlackjack(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.blackjackNpcId = npcId;
+    this.blackjackDealerName = String(interaction?.npc?.name ?? 'Dealer');
+    this.hud.setBlackjackState({
+      visible: true,
+      game: this.blackjackState,
+      wager: this.blackjackWager,
+      loading: false,
+      error: '',
+      dealerName: this.blackjackDealerName
+    });
+  }
+
+  closeBlackjack() {
+    this.hud.setBlackjackState({
+      visible: false,
+      game: this.blackjackState,
+      wager: this.blackjackWager,
+      loading: false,
+      error: '',
+      dealerName: this.blackjackDealerName
+    });
+  }
+
+  async startBlackjackRound() {
+    if (!this.blackjackNpcId || this.blackjackRequestInFlight) {
+      return;
+    }
+
+    this.blackjackRequestInFlight = true;
+    this.syncBlackjackHud({ loading: true, error: '' });
+    try {
+      const result = await this.npcService?.startBlackjack?.(this.blackjackNpcId, this.blackjackWager);
+      if (!result?.ok || !result.blackjack) {
+        const error = result?.error ?? 'Blackjack table is unavailable.';
+        this.syncBlackjackHud({ loading: false, error });
+        this.hud.showToast(error);
+        return;
+      }
+
+      this.blackjackState = result.blackjack;
+      this.syncBlackjackHud({ loading: false, error: '' });
+      this.playSoundEffect(this.rentChaChingSound);
+    } catch (error) {
+      console.warn('[Blackjack] Deal failed.', error);
+      this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });
+      this.hud.showToast('Blackjack request failed.');
+    } finally {
+      this.blackjackRequestInFlight = false;
+      this.syncBlackjackHud();
+    }
+  }
+
+  async handleBlackjackAction(action = '') {
+    if (!this.blackjackNpcId || this.blackjackRequestInFlight) {
+      return;
+    }
+
+    const methodByAction = {
+      hit: 'hitBlackjack',
+      stand: 'standBlackjack',
+      double: 'doubleBlackjack'
+    };
+    const methodName = methodByAction[action];
+    if (!methodName || typeof this.npcService?.[methodName] !== 'function') {
+      return;
+    }
+
+    this.blackjackRequestInFlight = true;
+    this.syncBlackjackHud({ loading: true, error: '' });
+    try {
+      const result = await this.npcService[methodName](this.blackjackNpcId);
+      if (!result?.ok || !result.blackjack) {
+        const error = result?.error ?? 'That blackjack move was rejected.';
+        this.syncBlackjackHud({ loading: false, error });
+        this.hud.showToast(error);
+        return;
+      }
+
+      this.blackjackState = result.blackjack;
+      this.syncBlackjackHud({ loading: false, error: '' });
+      if (result.blackjack.phase === 'complete') {
+        this.playSoundEffect(this.rentChaChingSound);
+      }
+    } catch (error) {
+      console.warn('[Blackjack] Action failed.', error);
+      this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });
+      this.hud.showToast('Blackjack request failed.');
+    } finally {
+      this.blackjackRequestInFlight = false;
+      this.syncBlackjackHud();
+    }
+  }
+
   resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
     const [offsetX, offsetZ] = cloneOffset(offset);
     const rotatedOffset = rotateFootprintOffset(offsetX, offsetZ, rotationQuarterTurns);
@@ -3582,6 +3798,7 @@ export class Game {
         interactRadius: npc.interactRadius,
         gymCheckInEnabled: npc.gymCheckInEnabled === true,
         stockMarketEnabled: npc.stockMarketEnabled === true,
+        blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
         activity: npc.activity,
@@ -4914,6 +5131,7 @@ export class Game {
       && !this.worldBuilder.enabled
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
     ) {
       const selection = this.getActiveEmoteSelection();
       this.emoteMenuOpen = true;
@@ -4978,6 +5196,7 @@ export class Game {
       && !this.worldBuilder?.enabled
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -5035,6 +5254,8 @@ export class Game {
         this.closeQuickChat();
       } else if (this.hud.isStockMarketOpen()) {
         this.closeStockMarket();
+      } else if (this.hud.isBlackjackOpen()) {
+        this.closeBlackjack();
       } else if (this.characterSelectorVisible) {
         this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
@@ -5072,8 +5293,9 @@ export class Game {
     } else {
       const localAlive = localPlayerState?.alive !== false;
       const stockMarketOpen = this.hud.isStockMarketOpen();
+      const blackjackOpen = this.hud.isBlackjackOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -5082,11 +5304,11 @@ export class Game {
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -5114,7 +5336,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen;
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -5141,7 +5363,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -5169,7 +5391,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
@@ -5386,6 +5608,9 @@ export class Game {
     const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
       ? null
       : this.getNearestStockMarketInteractable();
+    const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
+      ? null
+      : this.getNearestBlackjackDealerInteractable();
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -5405,6 +5630,14 @@ export class Game {
       this.hud.setPrompt(stockMarketInteraction);
       if (interactPressed) {
         void this.openStockMarket(stockMarketInteraction);
+      }
+      return;
+    }
+
+    if (blackjackInteraction) {
+      this.hud.setPrompt(blackjackInteraction);
+      if (interactPressed) {
+        this.openBlackjack(blackjackInteraction);
       }
       return;
     }
@@ -5451,6 +5684,7 @@ export class Game {
       && !emoteMenuActive
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -5609,9 +5843,12 @@ export class Game {
     const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
       ? null
       : this.getNearestStockMarketInteractable();
+    const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
+      ? null
+      : this.getNearestBlackjackDealerInteractable();
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -5620,13 +5857,14 @@ export class Game {
       || this.worldBuilder?.enabled
       || this.hud.isQuickChatOpen()
       || this.hud.isStockMarketOpen()
+      || this.hud.isBlackjackOpen()
       || this.isRentIntroReservedNpc(npcId)
     ) {
       return;
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && npcState?.busy) {
       return;
     }
 
@@ -5690,6 +5928,20 @@ export class Game {
       bubbles.push({
         id: `npc-stock-market:${npcId}`,
         text: 'E to trade stocks',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (blackjackInteraction) {
+      bubbles.push({
+        id: `npc-blackjack:${npcId}`,
+        text: 'E to play blackjack',
         label: '',
         variant: 'interaction',
         status: 'done',
