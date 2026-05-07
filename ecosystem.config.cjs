@@ -13,10 +13,5 @@ module.exports = {
         NODE_ENV: 'production'
       }
     }
-  ],
-  deploy: {
-    production: {
-      'post-setup': 'ln -sfn /home/deploy/source /home/deploy/current'
-    }
-  }
+  ]
 };
