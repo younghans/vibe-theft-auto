@@ -5,6 +5,7 @@ import {
   MUGSHOT_EXPORT_SIZE
 } from '../ui/CharacterPreviewRenderer.js';
 import { listPlayableCharacters } from '../player/playableCharacterCatalog.js';
+import { escapeHtml } from '../shared/htmlEscape.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 
 const SAVE_ENDPOINT = '/__dev_write_asset';
@@ -82,15 +83,6 @@ const state = {
   presetsSavedPath: '',
   presetsError: ''
 };
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
 
 function formatPresetValue(field, value) {
   return field.format(Number.isFinite(value) ? value : 0);

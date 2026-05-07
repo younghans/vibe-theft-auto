@@ -1,24 +1,16 @@
-import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  getTileOccupiedCells,
+  rotateFootprintOffset as rotateLocalOffset
+} from '../shared/tileFootprint.js';
+import {
+  quantizePosition,
+  quantizeRotation,
+  rotationQuarterTurnsToRadians as toRotationY
+} from '../shared/numberMath.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from '../world/builderCatalog.js';
 import { resolvePlacementInteractableDefinition } from '../world/interactableMetadata.js';
 import { NPC_STEP_TYPES } from './npcBehavior.js';
-
-function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
-  switch (((rotationQuarterTurns % 4) + 4) % 4) {
-    case 1:
-      return { x: z, z: -x };
-    case 2:
-      return { x: -x, z: -z };
-    case 3:
-      return { x: -z, z: x };
-    default:
-      return { x, z };
-  }
-}
-
-function toRotationY(rotationQuarterTurns = 0) {
-  return (((rotationQuarterTurns % 4) + 4) % 4) * (Math.PI / 2);
-}
 
 export function isBuildingPlacement(placement, item = getBuilderItemById(placement?.itemId)) {
   return Boolean(
@@ -80,8 +72,8 @@ export function getPlacementWorldPoint(placement, offset = [0, 0], item = getBui
   );
 
   return {
-    x: Number((origin.x + rotated.x).toFixed(2)),
-    z: Number((origin.z + rotated.z).toFixed(2))
+    x: quantizePosition(origin.x + rotated.x),
+    z: quantizePosition(origin.z + rotated.z)
   };
 }
 
@@ -207,7 +199,7 @@ export function resolveNpcTargetOption(
     activityCapable: supportedStepTypes.includes(NPC_STEP_TYPES.usePlacement),
     workoutType: interactable?.workoutType ?? '',
     approachRotationY: Number.isFinite(interactable?.approachRotationY)
-      ? Number((toRotationY(placement.rotationQuarterTurns ?? 0) + interactable.approachRotationY).toFixed(3))
+      ? quantizeRotation(toRotationY(placement.rotationQuarterTurns ?? 0) + interactable.approachRotationY)
       : undefined,
     approachPosition,
     originPosition: origin,

@@ -1,4 +1,5 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
+import { rotationRadiansToQuarterTurns as toQuarterTurns } from '../shared/numberMath.js';
 
 export const DEFAULT_WORLD_SPAWN = [0, 0, BUILDER_TILE_SIZE * 4.1];
 
@@ -148,10 +149,6 @@ function key(x, z) {
 
 function hasRoad(x, z) {
   return ROAD_CELLS.has(key(x, z));
-}
-
-function toQuarterTurns(angle = 0) {
-  return ((Math.round(angle / (Math.PI / 2)) % 4) + 4) % 4;
 }
 
 function createRoadTile(x, z) {

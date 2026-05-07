@@ -71,6 +71,13 @@ import {
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
 import {
+  normalizeRotationQuarterTurns,
+  quantizePosition,
+  quantizeRotation,
+  rotationQuarterTurnsToRadians as toRotationY,
+  rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
+} from '../../src/shared/numberMath.js';
+import {
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
@@ -266,33 +273,6 @@ function createTranscriptEntry(id, speaker, author, text) {
     text,
     createdAt: Date.now()
   };
-}
-
-function normalizeRotationQuarterTurns(value) {
-  const numeric = Number(value ?? 0);
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-
-  return ((Math.round(numeric) % 4) + 4) % 4;
-}
-
-function quantizePosition(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
-}
-
-function quantizeRotation(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(3));
-}
-
-function toRotationY(rotationQuarterTurns) {
-  return normalizeRotationQuarterTurns(rotationQuarterTurns) * (Math.PI / 2);
-}
-
-function quantizeRotationQuarterTurnsFromRotationY(rotationY) {
-  return normalizeRotationQuarterTurns(Math.round(Number(rotationY ?? 0) / (Math.PI / 2)));
 }
 
 function sanitizePlayerAnimationState(message = {}) {

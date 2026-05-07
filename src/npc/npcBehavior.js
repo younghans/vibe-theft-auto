@@ -4,6 +4,7 @@ import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 import { normalizeStockMarketEnabled } from '../shared/stockMarket.js';
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
+import { normalizeRotationQuarterTurns, quantizeNumber, quantizePosition } from '../shared/numberMath.js';
 
 export const NPC_ROUTINE_MODES = Object.freeze({
   loop: 'loop'
@@ -234,7 +235,7 @@ export function normalizeNpcRoutineStep(step = null) {
       type,
       targetPlacementId: sanitizeTargetPlacementId(draft.targetPlacementId),
       durationMs: Math.round(clampPositiveNumber(draft.durationMs, NPC_DEFAULT_LOITER_DURATION_MS, { min: 500, max: 60000 })),
-      radius: Number(clampPositiveNumber(draft.radius, NPC_DEFAULT_WANDER_RADIUS, { min: 1, max: 30 }).toFixed(2))
+      radius: quantizeNumber(clampPositiveNumber(draft.radius, NPC_DEFAULT_WANDER_RADIUS, { min: 1, max: 30 }), 2)
     };
   }
 
@@ -251,7 +252,7 @@ export function normalizeNpcRoutineStep(step = null) {
       type,
       targetPlacementId: sanitizeTargetPlacementId(draft.targetPlacementId),
       durationMs: Math.round(clampPositiveNumber(draft.durationMs, NPC_DEFAULT_WANDER_DURATION_MS, { min: 500, max: 120000 })),
-      radius: Number(clampPositiveNumber(draft.radius, NPC_DEFAULT_WANDER_RADIUS, { min: 1, max: 30 }).toFixed(2))
+      radius: quantizeNumber(clampPositiveNumber(draft.radius, NPC_DEFAULT_WANDER_RADIUS, { min: 1, max: 30 }), 2)
     };
   }
 
@@ -331,8 +332,8 @@ export function normalizeNpcCombat(combat = null) {
 
   return {
     archetype,
-    aggroRadius: Number(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }).toFixed(2)),
-    leashRadius: Number(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }).toFixed(2)),
+    aggroRadius: quantizeNumber(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }), 2),
+    leashRadius: quantizeNumber(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }), 2),
     weaponId: normalizeWeaponId(draft.weaponId, defaultWeaponId)
   };
 }
@@ -367,12 +368,12 @@ export function cloneNpcBehavior(npc = null) {
 export function normalizeNpcBehavior(npc = {}, defaults = {}) {
   const spawnPosition = Array.isArray(npc.spawnPosition) && npc.spawnPosition.length >= 2
     ? [
-        Number(Number(npc.spawnPosition[0] ?? defaults.position?.[0] ?? 0).toFixed(2)),
-        Number(Number(npc.spawnPosition[1] ?? defaults.position?.[1] ?? 0).toFixed(2))
+        quantizePosition(npc.spawnPosition[0] ?? defaults.position?.[0] ?? 0),
+        quantizePosition(npc.spawnPosition[1] ?? defaults.position?.[1] ?? 0)
       ]
     : [
-        Number(Number(defaults.position?.[0] ?? 0).toFixed(2)),
-        Number(Number(defaults.position?.[1] ?? 0).toFixed(2))
+        quantizePosition(defaults.position?.[0] ?? 0),
+        quantizePosition(defaults.position?.[1] ?? 0)
       ];
 
   return {
@@ -388,7 +389,9 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     stockMarketEnabled: normalizeStockMarketEnabled(npc.stockMarketEnabled),
     blackjackDealerEnabled: isBlackjackDealerNpc(npc),
     spawnPosition,
-    spawnRotationQuarterTurns: ((Math.round(Number(npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0)) % 4) + 4) % 4
+    spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
+      npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0
+    )
   };
 }
 

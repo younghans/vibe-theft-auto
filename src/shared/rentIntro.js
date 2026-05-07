@@ -1,13 +1,14 @@
 import { getTileCenterWorldPosition, rotateFootprintOffset } from './tileFootprint.js';
 import { BUILDER_TILE_SIZE } from './worldConstants.js';
+import {
+  normalizeRotationQuarterTurns,
+  quantizePosition,
+  quantizeRotation
+} from './numberMath.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
 
 export const RENT_INTRO_AMOUNT = 100;
 export const RENT_INTRO_LINE = "Hey, buddy, rent's due.";
-
-function normalizeRotationQuarterTurns(value = 0) {
-  return ((Math.round(Number(value ?? 0)) % 4) + 4) % 4;
-}
 
 export function normalizeRentCollectorEnabled(value = false) {
   return value === true;
@@ -81,9 +82,9 @@ export function getRentIntroSpawnForBuilding(placement = null) {
   const facingOffset = rotateFootprintOffset(0, 1, rotationQuarterTurns);
 
   return {
-    x: Number((center.x + exitOffset.x).toFixed(2)),
-    z: Number((center.z + exitOffset.z).toFixed(2)),
-    rotationY: Number(Math.atan2(facingOffset.x, facingOffset.z).toFixed(3))
+    x: quantizePosition(center.x + exitOffset.x),
+    z: quantizePosition(center.z + exitOffset.z),
+    rotationY: quantizeRotation(Math.atan2(facingOffset.x, facingOffset.z))
   };
 }
 

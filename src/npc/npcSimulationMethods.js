@@ -8,6 +8,13 @@ import {
 import { tickHealthRegen } from '../shared/combatRegen.js';
 import { distance2D } from '../shared/combatMath.js';
 import {
+  normalizeRotationQuarterTurns,
+  quantizePosition,
+  quantizeRotation,
+  rotationQuarterTurnsToRadians as toRotationY,
+  rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
+} from '../shared/numberMath.js';
+import {
   NPC_COMBAT_ARCHETYPES,
   NPC_DEFAULT_CALM_MS,
   NPC_DEFAULT_INTERACT_RADIUS,
@@ -41,33 +48,6 @@ const NPC_HOME_RETURN_STOP_DISTANCE = 0.55;
 const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
-
-function normalizeRotationQuarterTurns(value) {
-  const numeric = Number(value ?? 0);
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-
-  return ((Math.round(numeric) % 4) + 4) % 4;
-}
-
-function quantizePosition(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
-}
-
-function quantizeRotation(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(3));
-}
-
-function toRotationY(rotationQuarterTurns = 0) {
-  return normalizeRotationQuarterTurns(rotationQuarterTurns) * (Math.PI / 2);
-}
-
-function quantizeRotationQuarterTurnsFromRotationY(rotationY) {
-  return normalizeRotationQuarterTurns(Math.round(Number(rotationY ?? 0) / (Math.PI / 2)));
-}
 
 function clonePoint(point = null) {
   if (!point) {

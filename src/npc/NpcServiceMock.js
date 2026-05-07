@@ -75,6 +75,12 @@ import {
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../shared/combatMath.js';
+import {
+  quantizePosition,
+  quantizeRotation,
+  rotationQuarterTurnsToRadians as toRotationY,
+  rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
+} from '../shared/numberMath.js';
 import { getNpcModelById } from './npcCatalog.js';
 import { buildNpcRouteGraph } from './npcRouteGraph.js';
 import { WorldState } from '../world/WorldState.js';
@@ -230,24 +236,6 @@ function cloneNpcDebugState(debug = {}) {
     hiddenRemainingMs: debug.hiddenRemainingMs ?? 0,
     respawnRemainingMs: debug.respawnRemainingMs ?? 0
   };
-}
-
-function quantizePosition(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
-}
-
-function quantizeRotation(value) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(3));
-}
-
-function toRotationY(rotationQuarterTurns = 0) {
-  return (((Math.round(Number(rotationQuarterTurns) || 0) % 4) + 4) % 4) * (Math.PI / 2);
-}
-
-function quantizeRotationQuarterTurnsFromRotationY(rotationY) {
-  return ((Math.round(Number(rotationY ?? 0) / (Math.PI / 2)) % 4) + 4) % 4;
 }
 
 export class NpcServiceMock {
@@ -723,8 +711,8 @@ export class NpcServiceMock {
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,
-      x: Number(Number(presence.x ?? 0).toFixed(2)),
-      z: Number(Number(presence.z ?? 0).toFixed(2)),
+      x: quantizePosition(presence.x),
+      z: quantizePosition(presence.z),
       selectionPlacementId: presence.selectionPlacementId ?? ''
     });
     this.emit();

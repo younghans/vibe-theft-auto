@@ -1,4 +1,5 @@
 import { BUILDER_TILE_SIZE } from './worldConstants.js';
+import { normalizeRotationQuarterTurns } from './numberMath.js';
 
 function normalizeFootprintValue(value) {
   const numeric = Number(value ?? 1);
@@ -10,7 +11,7 @@ function normalizeFootprintValue(value) {
 }
 
 export function rotateFootprintOffset(x, z, rotationQuarterTurns = 0) {
-  switch (((rotationQuarterTurns % 4) + 4) % 4) {
+  switch (normalizeRotationQuarterTurns(rotationQuarterTurns)) {
     case 1:
       return { x: z, z: -x };
     case 2:
@@ -36,7 +37,7 @@ export function getTileFootprint(item) {
 
 export function getTileFootprintWorldSize(item, rotationQuarterTurns = 0) {
   const [width, depth] = getTileFootprint(item);
-  const swapAxes = Math.abs(rotationQuarterTurns % 2) === 1;
+  const swapAxes = Math.abs(normalizeRotationQuarterTurns(rotationQuarterTurns) % 2) === 1;
   const worldWidth = (swapAxes ? depth : width) * BUILDER_TILE_SIZE;
   const worldDepth = (swapAxes ? width : depth) * BUILDER_TILE_SIZE;
   return [worldWidth, worldDepth];

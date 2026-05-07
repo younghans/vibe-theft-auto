@@ -2,6 +2,7 @@ import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 import { BLACKJACK_DEFAULT_WAGER } from '../shared/blackjack.js';
+import { escapeHtml } from '../shared/htmlEscape.js';
 import { getStockTradeValue } from '../shared/stockMarket.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
@@ -370,15 +371,6 @@ function createTaskConfettiParticle({ index, now, originX, originY, originSpread
     opacity: randomBetween(0.76, 1),
     shape: getTaskConfettiShape(index)
   };
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
 }
 
 function formatNpcStepLabel(type) {

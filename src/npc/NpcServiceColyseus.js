@@ -1,5 +1,6 @@
 import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
 import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
+import { quantizeNumber as quantize } from '../shared/numberMath.js';
 
 function schemaMapToEntries(schemaMap) {
   const entries = [];
@@ -170,11 +171,6 @@ function clonePickupState(pickup) {
 
 function angleDifference(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
-}
-
-function quantize(value, digits = 2) {
-  const numeric = Number(value ?? 0);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(digits));
 }
 
 function stableStringify(value) {

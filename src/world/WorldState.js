@@ -4,6 +4,10 @@ import {
   NPC_DEFAULT_INTERACT_RADIUS,
   normalizeNpcBehavior
 } from '../npc/npcBehavior.js';
+import {
+  normalizeRotationQuarterTurns,
+  quantizePosition as normalizePositionValue
+} from '../shared/numberMath.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
@@ -24,19 +28,6 @@ function clonePlacement(placement) {
     interactable: cloneInteractableDefinition(placement.interactable),
     npc: placement.npc ? cloneNpcBehavior(placement.npc) : null
   };
-}
-
-function normalizeRotationQuarterTurns(value) {
-  const numeric = Number(value ?? 0);
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-
-  return ((Math.round(numeric) % 4) + 4) % 4;
-}
-
-function normalizePositionValue(value) {
-  return Number(Number(value ?? 0).toFixed(2));
 }
 
 function toPlacementRecord(entry, item, id) {
@@ -507,8 +498,8 @@ export class WorldState {
         id: placement.id,
         itemId: placement.itemId,
         position: [
-          Number(placement.position[0].toFixed(2)),
-          Number(placement.position[1].toFixed(2))
+          normalizePositionValue(placement.position[0]),
+          normalizePositionValue(placement.position[1])
         ],
         rotationQuarterTurns: placement.rotationQuarterTurns,
         ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
@@ -520,8 +511,8 @@ export class WorldState {
         id: placement.id,
         modelId: placement.npc.modelId,
         position: [
-          Number(placement.position[0].toFixed(2)),
-          Number(placement.position[1].toFixed(2))
+          normalizePositionValue(placement.position[0]),
+          normalizePositionValue(placement.position[1])
         ],
         rotationQuarterTurns: placement.rotationQuarterTurns,
         name: placement.npc.name,
@@ -538,12 +529,12 @@ export class WorldState {
         blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
-              Number(placement.npc.spawnPosition[0].toFixed(2)),
-              Number(placement.npc.spawnPosition[1].toFixed(2))
+              normalizePositionValue(placement.npc.spawnPosition[0]),
+              normalizePositionValue(placement.npc.spawnPosition[1])
             ]
           : [
-              Number(placement.position[0].toFixed(2)),
-              Number(placement.position[1].toFixed(2))
+              normalizePositionValue(placement.position[0]),
+              normalizePositionValue(placement.position[1])
             ],
         spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
           placement.npc.spawnRotationQuarterTurns ?? placement.rotationQuarterTurns

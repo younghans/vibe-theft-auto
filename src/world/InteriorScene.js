@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
+import { normalizeRotationQuarterTurns } from '../shared/numberMath.js';
+import { rotateFootprintOffset as rotateLocalOffset } from '../shared/tileFootprint.js';
 
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
@@ -79,23 +81,6 @@ const INTERIOR_TEMPLATES = Object.freeze([
 ]);
 
 const TEMPLATE_BY_ID = new Map(INTERIOR_TEMPLATES.map((template) => [template.id, template]));
-
-function normalizeRotationQuarterTurns(value = 0) {
-  return ((Math.round(Number(value) || 0) % 4) + 4) % 4;
-}
-
-function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
-  switch (normalizeRotationQuarterTurns(rotationQuarterTurns)) {
-    case 1:
-      return { x: z, z: -x };
-    case 2:
-      return { x: -x, z: -z };
-    case 3:
-      return { x: -z, z: x };
-    default:
-      return { x, z };
-  }
-}
 
 function transformLocalPoint(origin, rotationQuarterTurns, x, y, z) {
   const rotated = rotateLocalOffset(x, z, rotationQuarterTurns);

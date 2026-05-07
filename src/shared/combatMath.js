@@ -1,5 +1,8 @@
 import { BUILDER_TILE_SIZE, WORLD_HALF_EXTENT } from './worldConstants.js';
-import { getTileCenterWorldPosition } from './tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  rotateFootprintOffset as rotateLocalOffset
+} from './tileFootprint.js';
 
 export function distance2D(ax, az, bx, bz) {
   return Math.hypot(ax - bx, az - bz);
@@ -55,19 +58,6 @@ function itemBlocksCollision(item, collisionKey = 'blocksShots') {
   }
 
   return item.collision === true;
-}
-
-function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
-  switch (((rotationQuarterTurns % 4) + 4) % 4) {
-    case 1:
-      return { x: z, z: -x };
-    case 2:
-      return { x: -x, z: -z };
-    case 3:
-      return { x: -z, z: x };
-    default:
-      return { x, z };
-  }
 }
 
 function getCustomCollisionRects(item, collisionKey = 'blocksShots') {

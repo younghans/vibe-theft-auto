@@ -1,7 +1,7 @@
 import { distance2D } from '../shared/combatMath.js';
+import { quantizePosition } from '../shared/numberMath.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
-import { BUILDER_TILE_SIZE } from '../world/builderCatalog.js';
-import { getBuilderItemById } from '../world/builderCatalog.js';
+import { BUILDER_TILE_SIZE, getBuilderItemById } from '../world/builderCatalog.js';
 import { collectNpcTargetOptions } from './npcTargeting.js';
 
 function isRoutePlacement(placement, item = getBuilderItemById(placement?.itemId)) {
@@ -23,8 +23,8 @@ function nodeKeyForTarget(targetPlacementId) {
 function makeNode(id, x, z, meta = {}) {
   return {
     id,
-    x: Number(x.toFixed(2)),
-    z: Number(z.toFixed(2)),
+    x: quantizePosition(x),
+    z: quantizePosition(z),
     neighbors: new Set(),
     ...meta
   };
@@ -92,8 +92,8 @@ function cloneNodePoint(node, id = node?.id ?? 'direct') {
   }
 
   return {
-    x: Number(node.x.toFixed(2)),
-    z: Number(node.z.toFixed(2)),
+    x: quantizePosition(node.x),
+    z: quantizePosition(node.z),
     id
   };
 }
@@ -383,7 +383,7 @@ export function buildNpcPathToPosition(graph, startPosition, targetPosition) {
     startPosition
     && distance2D(startPosition.x, startPosition.z, targetPosition.x, targetPosition.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE
   ) {
-    return [{ x: Number(targetPosition.x.toFixed(2)), z: Number(targetPosition.z.toFixed(2)), id: 'direct' }];
+    return [{ x: quantizePosition(targetPosition.x), z: quantizePosition(targetPosition.z), id: 'direct' }];
   }
 
   const allNodes = graph?.nodes ?? [];
@@ -401,7 +401,7 @@ export function buildNpcPathToPosition(graph, startPosition, targetPosition) {
 
   const lastPoint = path[path.length - 1];
   if (distance2D(lastPoint.x, lastPoint.z, targetPosition.x, targetPosition.z) > 0.25) {
-    path.push({ x: Number(targetPosition.x.toFixed(2)), z: Number(targetPosition.z.toFixed(2)), id: 'direct' });
+    path.push({ x: quantizePosition(targetPosition.x), z: quantizePosition(targetPosition.z), id: 'direct' });
   }
 
   return path;

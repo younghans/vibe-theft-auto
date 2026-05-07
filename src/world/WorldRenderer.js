@@ -3,7 +3,12 @@ import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
 import { NPC_RUNTIME_MODES, NPC_STEP_TYPES } from '../npc/npcBehavior.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
-import { getTileCenterWorldPosition, getTileOccupiedCells } from '../shared/tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  getTileOccupiedCells,
+  rotateFootprintOffset as rotateLocalOffset
+} from '../shared/tileFootprint.js';
+import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import {
@@ -95,19 +100,6 @@ function isCameraOccludingBuildingItem(item) {
       || assetName.includes('_building')
     )
   );
-}
-
-function rotateLocalOffset(x, z, rotationQuarterTurns = 0) {
-  switch (((rotationQuarterTurns % 4) + 4) % 4) {
-    case 1:
-      return { x: z, z: -x };
-    case 2:
-      return { x: -x, z: -z };
-    case 3:
-      return { x: -z, z: x };
-    default:
-      return { x, z };
-  }
 }
 
 function createNpcDebugMarker(color, radius = 0.22) {
@@ -312,10 +304,6 @@ function createNpcCollider(actor, placement) {
   }
 
   return actor.getCollider();
-}
-
-function toRotationY(rotationQuarterTurns) {
-  return rotationQuarterTurns * (Math.PI / 2);
 }
 
 function extractPlacementId(node) {

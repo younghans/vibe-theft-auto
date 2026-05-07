@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
+import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
@@ -50,10 +51,6 @@ async function createPreviewObject(library, item) {
   const visual = await instantiateItemVisual(library, item);
   prepareItemVisual(visual);
   return visual.root;
-}
-
-function toRotationY(rotationQuarterTurns) {
-  return rotationQuarterTurns * (Math.PI / 2);
 }
 
 export class RemoteBuilderRenderer {

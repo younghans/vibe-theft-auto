@@ -11,6 +11,7 @@ import {
 } from '../npc/npcBehavior.js';
 import { collectNpcTargetOptions, resolveNpcTargetOption } from '../npc/npcTargeting.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
+import { quantizeNumber, rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
   WORLD_GRID_DIVISIONS,
@@ -92,10 +93,6 @@ function screenClamp(value, min, max) {
     return (min + max) * 0.5;
   }
   return Math.min(max, Math.max(min, value));
-}
-
-function toRotationY(rotationQuarterTurns) {
-  return rotationQuarterTurns * (Math.PI / 2);
 }
 
 function toGroundProbe(x, z) {
@@ -2237,8 +2234,8 @@ export class WorldBuilder {
       label: draft.label,
       prompt: draft.prompt,
       actionText: draft.actionText,
-      radius: Number(draft.radius.toFixed(2)),
-      distance: Number(draft.distance.toFixed(2))
+      radius: quantizeNumber(draft.radius, 2),
+      distance: quantizeNumber(draft.distance, 2)
     });
   }
 

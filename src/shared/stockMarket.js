@@ -1,3 +1,5 @@
+import { quantizeNumber } from './numberMath.js';
+
 export const STOCK_MARKET_TICK_MS = 5200;
 export const STOCK_MARKET_HISTORY_LIMIT = 56;
 export const STOCK_MARKET_MAX_CATCH_UP_TICKS = 96;
@@ -150,8 +152,7 @@ const MODE_WEIGHTS = Object.freeze([
 ]);
 
 function roundCents(value) {
-  const numeric = Number(value);
-  return Number((Number.isFinite(numeric) ? numeric : 0).toFixed(2));
+  return quantizeNumber(value, 2);
 }
 
 function roundWholeMoney(value) {
