@@ -448,6 +448,15 @@ export class Game {
       loading: false,
       error: ''
     };
+    this.phoneStocksState = {
+      market: null,
+      selectedSymbol: '',
+      quantity: 1,
+      brokerAvailable: false,
+      brokerName: 'Stock broker',
+      loading: false,
+      error: ''
+    };
     this.phoneMapState = {
       player: null,
       features: [],
@@ -567,6 +576,10 @@ export class Game {
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
       onSelectMission: (missionId) => void this.selectPhoneMission(missionId),
       onOpenWalletStocks: () => void this.openWalletStocks(),
+      onPhoneStockRefresh: () => void this.refreshPhoneStocksSnapshot({ force: true }),
+      onPhoneStockSelect: (symbol) => this.selectPhoneStockSymbol(symbol),
+      onPhoneStockQuantityChange: (quantity) => this.setPhoneStockQuantity(quantity),
+      onPhoneStockTrade: (side) => void this.handlePhoneStockTrade(side),
       onMapZoom: (step) => this.stepPhoneMapZoom(step),
       onMapPan: (delta) => this.panPhoneMapByScreenDelta(delta),
       onMasterVolumeChange: (value) => this.setMasterVolume(value)
@@ -1162,14 +1175,31 @@ export class Game {
 
   refreshPhoneWalletHud() {
     const localPlayerState = this.getLocalPlayerState();
-    const nearestBroker = this.getNearestStockMarketInteractable();
     this.phoneWalletState = {
       ...this.phoneWalletState,
       cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0),
-      brokerAvailable: Boolean(nearestBroker),
-      brokerName: nearestBroker?.npc?.name ?? nearestBroker?.label ?? 'Stock broker'
+      brokerAvailable: true,
+      brokerName: 'Phone brokerage'
     };
     this.hud.setPhoneWalletState(this.phoneWalletState);
+  }
+
+  refreshPhoneStocksHud() {
+    const market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+    const stocks = Array.isArray(market?.stocks) ? market.stocks : [];
+    const listedSymbols = new Set(stocks.map((stock) => stock.symbol));
+    if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
+      this.stockMarketSelectedSymbol = stocks[0]?.symbol ?? '';
+    }
+    this.phoneStocksState = {
+      ...this.phoneStocksState,
+      market,
+      selectedSymbol: this.stockMarketSelectedSymbol,
+      quantity: this.stockMarketQuantity,
+      brokerAvailable: true,
+      brokerName: 'Phone brokerage'
+    };
+    this.hud.setPhoneStocksState(this.phoneStocksState);
   }
 
   refreshPhoneMapHud(localPlayerState = this.getLocalPlayerState(), { force = false } = {}) {
@@ -1668,6 +1698,7 @@ export class Game {
     this.refreshPhoneMissionsHud();
     this.refreshPhoneSkillsHud(localPlayerState);
     this.refreshPhoneWalletHud();
+    this.refreshPhoneStocksHud();
     this.refreshPhoneMapHud(localPlayerState, { force: forceMap });
     this.refreshPhoneSettingsHud();
   }
@@ -1771,7 +1802,7 @@ export class Game {
     this.phoneActiveAppId = String(appId ?? '');
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
     this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
-    if (this.phoneActiveAppId === 'wallet') {
+    if (this.phoneActiveAppId === 'wallet' || this.phoneActiveAppId === 'stocks') {
       void this.refreshWalletSnapshot({ force: true });
     }
   }
@@ -1944,7 +1975,13 @@ export class Game {
       loading: true,
       error: ''
     };
+    this.phoneStocksState = {
+      ...this.phoneStocksState,
+      loading: true,
+      error: ''
+    };
     this.refreshPhoneWalletHud();
+    this.refreshPhoneStocksHud();
 
     try {
       const result = await this.npcService?.getWalletSnapshot?.();
@@ -1955,7 +1992,13 @@ export class Game {
           loading: false,
           error
         };
+        this.phoneStocksState = {
+          ...this.phoneStocksState,
+          loading: false,
+          error
+        };
         this.refreshPhoneWalletHud();
+        this.refreshPhoneStocksHud();
         return;
       }
 
@@ -1967,7 +2010,14 @@ export class Game {
         loading: false,
         error: ''
       };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        market: result.wallet,
+        loading: false,
+        error: ''
+      };
       this.refreshPhoneWalletHud();
+      this.refreshPhoneStocksHud();
     } catch (error) {
       console.warn('[Wallet] Snapshot failed.', error);
       this.phoneWalletState = {
@@ -1975,21 +2025,25 @@ export class Game {
         loading: false,
         error: 'Wallet sync failed.'
       };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        loading: false,
+        error: 'Wallet sync failed.'
+      };
       this.refreshPhoneWalletHud();
+      this.refreshPhoneStocksHud();
     } finally {
       this.walletRequestInFlight = false;
     }
   }
 
-  async openWalletStocks() {
-    const nearestBroker = this.getNearestStockMarketInteractable();
-    if (!nearestBroker) {
-      this.hud.showToast('Visit the bank to trade stocks.');
-      this.refreshPhoneWalletHud();
-      return;
-    }
+  async refreshPhoneStocksSnapshot({ force = false } = {}) {
+    await this.refreshWalletSnapshot({ force });
+  }
 
-    await this.openStockMarket(nearestBroker);
+  async openWalletStocks() {
+    this.openPhoneApp('stocks');
+    await this.refreshPhoneStocksSnapshot({ force: true });
   }
 
   setMasterVolume(value = DEFAULT_GAME_SETTINGS.masterVolume) {
@@ -3551,6 +3605,111 @@ export class Game {
     return nearest;
   }
 
+  selectPhoneStockSymbol(symbol = '') {
+    this.stockMarketSelectedSymbol = String(symbol ?? '').trim().toUpperCase();
+    this.refreshPhoneStocksHud();
+  }
+
+  setPhoneStockQuantity(quantity = 1) {
+    this.stockMarketQuantity = normalizeStockTradeQuantity(quantity);
+    this.refreshPhoneStocksHud();
+  }
+
+  async handlePhoneStockTrade(side = '') {
+    if (this.stockMarketRequestInFlight) {
+      return;
+    }
+
+    let market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+    if (!Array.isArray(market?.stocks) || !market.stocks.length) {
+      await this.refreshPhoneStocksSnapshot({ force: true });
+      market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+    }
+
+    const listedSymbols = new Set((market?.stocks ?? []).map((stock) => stock.symbol));
+    const symbol = listedSymbols.has(this.stockMarketSelectedSymbol)
+      ? this.stockMarketSelectedSymbol
+      : market?.stocks?.[0]?.symbol ?? '';
+    if (!symbol) {
+      this.hud.showToast('Market data is still syncing.');
+      return;
+    }
+
+    this.stockMarketRequestInFlight = true;
+    this.phoneStocksState = {
+      ...this.phoneStocksState,
+      loading: true,
+      error: ''
+    };
+    this.refreshPhoneStocksHud();
+
+    try {
+      const result = await this.npcService?.tradeStock?.(
+        '',
+        symbol,
+        side,
+        this.stockMarketQuantity,
+        { source: 'phone' }
+      );
+      if (!result?.ok || !result.market) {
+        const error = result?.error ?? 'That trade did not go through.';
+        this.phoneStocksState = {
+          ...this.phoneStocksState,
+          loading: false,
+          error
+        };
+        this.refreshPhoneStocksHud();
+        this.hud.showToast(error);
+        return;
+      }
+
+      this.stockMarketSnapshot = result.market;
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        wallet: result.market,
+        cash: normalizeMoneyAmount(result.market.cash ?? result.money ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        market: result.market,
+        loading: false,
+        error: ''
+      };
+      const listedAfterTrade = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
+      this.stockMarketSelectedSymbol = listedAfterTrade.has(symbol)
+        ? symbol
+        : result.market.stocks?.[0]?.symbol ?? '';
+      this.stockMarketRefreshAt = performance.now() + 4600;
+      this.refreshPhoneStocksHud();
+      this.refreshPhoneWalletHud();
+      this.hud.setStockMarketState({
+        visible: this.hud.isStockMarketOpen(),
+        market: this.stockMarketSnapshot,
+        selectedSymbol: this.stockMarketSelectedSymbol,
+        quantity: this.stockMarketQuantity,
+        loading: false,
+        error: ''
+      });
+      const trade = result.trade ?? {};
+      const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
+      this.hud.showToast(`${verb} ${trade.quantity ?? this.stockMarketQuantity} ${trade.symbol ?? symbol}.`);
+      this.playSoundEffect(this.rentChaChingSound);
+    } catch (error) {
+      console.warn('[PhoneStocks] Trade failed.', error);
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        loading: false,
+        error: 'Trade request failed.'
+      };
+      this.refreshPhoneStocksHud();
+      this.hud.showToast('Trade request failed.');
+    } finally {
+      this.stockMarketRequestInFlight = false;
+    }
+  }
+
   selectStockMarketSymbol(symbol = '') {
     this.stockMarketSelectedSymbol = String(symbol ?? '').trim().toUpperCase();
     this.hud.setStockMarketState({
@@ -3649,6 +3808,12 @@ export class Game {
         loading: false,
         error: ''
       };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        market: result.market,
+        loading: false,
+        error: ''
+      };
       const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
       if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
         this.stockMarketSelectedSymbol = result.market.stocks?.[0]?.symbol ?? '';
@@ -3661,6 +3826,7 @@ export class Game {
         loading: false,
         error: ''
       });
+      this.refreshPhoneStocksHud();
     } catch (error) {
       console.warn('[StockMarket] Refresh failed.', error);
       this.hud.setStockMarketState({
@@ -3729,6 +3895,12 @@ export class Game {
         loading: false,
         error: ''
       };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        market: result.market,
+        loading: false,
+        error: ''
+      };
       this.refreshPhoneWalletHud();
       const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
       this.stockMarketSelectedSymbol = listedSymbols.has(symbol)
@@ -3743,6 +3915,7 @@ export class Game {
         loading: false,
         error: ''
       });
+      this.refreshPhoneStocksHud();
       const trade = result.trade ?? {};
       const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
       this.hud.showToast(`${verb} ${trade.quantity ?? this.stockMarketQuantity} ${trade.symbol ?? symbol}.`);

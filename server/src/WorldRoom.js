@@ -1042,6 +1042,19 @@ export class WorldRoom extends Room {
     return { player, npc };
   }
 
+  getStockTradeAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot trade right now.');
+    }
+
+    if (String(message?.source ?? '') === 'phone') {
+      return { player, npc: null };
+    }
+
+    return this.assertStockMarketAccess(client, message);
+  }
+
   handleStockMarketRequest(client, message = {}) {
     const { player } = this.assertStockMarketAccess(client, message);
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
@@ -1052,7 +1065,7 @@ export class WorldRoom extends Room {
   }
 
   handleStockTradeRequest(client, message = {}) {
-    const { player, npc } = this.assertStockMarketAccess(client, message);
+    const { player, npc } = this.getStockTradeAccess(client, message);
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
     const result = executeStockTrade({
       state: this.stockMarket,
@@ -1074,12 +1087,14 @@ export class WorldRoom extends Room {
       this.normalizePlayerSelectedMission(player);
     }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
-    this.setNpcChatPhase(
-      npc,
-      'done',
-      `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
-      { bumpSeq: true }
-    );
+    if (npc) {
+      this.setNpcChatPhase(
+        npc,
+        'done',
+        `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
+        { bumpSeq: true }
+      );
+    }
     return {
       trade,
       market: result.market,

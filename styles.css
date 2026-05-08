@@ -877,6 +877,7 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-wallet-app,
+.hud__phone-stocks-app,
 .hud__phone-skills-app,
 .hud__phone-map-app,
 .hud__phone-settings-app {
@@ -886,6 +887,7 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-wallet-head h2,
+.hud__phone-stocks-head h2,
 .hud__phone-skills-head h2,
 .hud__phone-map-head h2,
 .hud__phone-settings-head h2 {
@@ -895,6 +897,7 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-wallet-head p,
+.hud__phone-stocks-head p,
 .hud__phone-skills-head p,
 .hud__phone-map-head p,
 .hud__phone-settings-head p {
@@ -908,7 +911,8 @@ body.is-builder-resizing * {
   text-transform: uppercase;
 }
 
-.hud__phone-wallet-head p.is-error {
+.hud__phone-wallet-head p.is-error,
+.hud__phone-stocks-head p.is-error {
   color: #ff9b9b;
 }
 
@@ -1038,6 +1042,360 @@ body.is-builder-resizing * {
 .hud__phone-wallet-stocks-button:disabled {
   cursor: default;
   opacity: 0.52;
+  filter: grayscale(0.35);
+}
+
+.hud__phone-stocks-app {
+  grid-template-rows: auto auto minmax(188px, 1fr) auto auto auto;
+  gap: 8px;
+  padding: 70px 12px 34px;
+}
+
+.hud__phone-stocks-head {
+  align-items: center;
+}
+
+.hud__phone-stocks-refresh {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid rgba(207, 238, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(4, 12, 20, 0.42);
+  color: rgba(232, 248, 255, 0.92);
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.hud__phone-stocks-refresh svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hud__phone-stocks-refresh:hover:not(:disabled),
+.hud__phone-stocks-refresh:focus-visible:not(:disabled) {
+  background: rgba(85, 199, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.hud__phone-stocks-refresh:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
+.hud__phone-stocks-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hud__phone-stocks-summary div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid rgba(207, 238, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(4, 10, 16, 0.38);
+}
+
+.hud__phone-stocks-summary span,
+.hud__phone-stock-position span,
+.hud__phone-stocks-quantity span {
+  color: rgba(224, 246, 255, 0.62);
+  font-size: 8px;
+  font-weight: 1000;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__phone-stocks-summary strong {
+  overflow: hidden;
+  color: #f2fbff;
+  font-size: 12px;
+  font-weight: 1000;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__phone-stocks-chart {
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid rgba(207, 238, 255, 0.13);
+  border-radius: 16px;
+  background: rgba(3, 9, 16, 0.42);
+  overflow: hidden;
+}
+
+.hud__phone-stocks-chart .hud__stock-overview-chart {
+  min-height: 100%;
+  border-radius: 12px;
+}
+
+.hud__phone-stocks-chart .hud__stock-overview-line {
+  stroke-width: 2.8;
+}
+
+.hud__phone-stocks-chart .hud__stock-overview-hit {
+  stroke-width: 24;
+}
+
+.hud__phone-stocks-chart .hud__stock-overview-marker-bg {
+  r: 17;
+}
+
+.hud__phone-stocks-chart .hud__stock-overview-tooltip {
+  transform: scale(1);
+  transform-origin: right center;
+}
+
+.hud__phone-stocks-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(42px, 46px));
+  gap: 6px;
+  min-height: 90px;
+  overflow: hidden;
+}
+
+.hud__phone-stock-chip {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--stock-accent, #55c7ff) 24%, rgba(255, 255, 255, 0.1));
+  border-radius: 12px;
+  background: rgba(4, 10, 16, 0.42);
+  color: #f2fbff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.hud__phone-stock-chip.is-active,
+.hud__phone-stock-chip:hover,
+.hud__phone-stock-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--stock-accent, #55c7ff) 72%, #fff);
+  background: color-mix(in srgb, var(--stock-accent, #55c7ff) 15%, rgba(4, 10, 16, 0.52));
+}
+
+.hud__phone-stock-chip span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.hud__phone-stock-chip strong,
+.hud__phone-stock-chip em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__phone-stock-chip strong {
+  font-size: 9px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-stock-chip em {
+  color: rgba(224, 246, 255, 0.72);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.hud__phone-stocks-detail {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-self: start;
+  align-content: start;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(207, 238, 255, 0.12);
+  border-radius: 15px;
+  background: rgba(4, 9, 15, 0.42);
+  overflow: hidden;
+}
+
+.hud__phone-stock-detail-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud__phone-stock-detail-head > div {
+  min-width: 0;
+}
+
+.hud__phone-stock-detail-head span,
+.hud__phone-stock-detail-head strong,
+.hud__phone-stock-detail-head em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__phone-stock-detail-head span {
+  width: max-content;
+  max-width: 100%;
+  padding: 3px 6px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--stock-accent, #55c7ff) 18%, transparent);
+  color: #f2fbff;
+  font-size: 9px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-stock-detail-head strong {
+  margin-top: 4px;
+  color: #fff8e8;
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-stock-detail-head em {
+  margin-top: 4px;
+  color: rgba(224, 246, 255, 0.58);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.hud__phone-stock-price {
+  text-align: right;
+}
+
+.hud__phone-stock-price strong {
+  color: #f2fbff;
+  font-size: 18px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-stock-price span {
+  margin-top: 5px;
+  color: rgba(224, 246, 255, 0.7);
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-stock-position {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.hud__phone-stock-position div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.hud__phone-stock-position strong {
+  overflow: hidden;
+  color: #f2fbff;
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__phone-stock-price.is-up span,
+.hud__phone-stock-position .is-up strong,
+.hud__phone-stock-chip.is-up em {
+  color: #70e3a2;
+}
+
+.hud__phone-stock-price.is-down span,
+.hud__phone-stock-position .is-down strong,
+.hud__phone-stock-chip.is-down em {
+  color: #ff8f7d;
+}
+
+.hud__phone-stocks-trade {
+  display: grid;
+  grid-template-columns: minmax(74px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  align-items: end;
+}
+
+.hud__phone-stocks-quantity {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.hud__phone-stocks-quantity input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid rgba(207, 238, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(3, 8, 14, 0.62);
+  color: #f2fbff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hud__phone-stock-trade-button {
+  min-width: 0;
+  height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 12px;
+  color: #061018;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 1000;
+  line-height: 1.05;
+  transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.hud__phone-stock-trade-button.is-buy {
+  background: linear-gradient(180deg, #91efb7, #41c477);
+}
+
+.hud__phone-stock-trade-button.is-sell {
+  background: linear-gradient(180deg, #ffb08b, #f06a4d);
+}
+
+.hud__phone-stock-trade-button:hover:not(:disabled),
+.hud__phone-stock-trade-button:focus-visible:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.hud__phone-stock-trade-button:disabled {
+  cursor: default;
+  opacity: 0.42;
   filter: grayscale(0.35);
 }
 
@@ -4625,10 +4983,10 @@ body.is-builder-resizing * {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 18px;
+  padding: 18px 20px;
   border: 1px solid color-mix(in srgb, var(--stock-accent, #f2c871) 58%, transparent);
-  border-radius: 8px;
+  border-radius: 16px;
   background: rgba(8, 13, 20, 0.94);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.32);
   color: #f8f6ef;
@@ -4636,6 +4994,8 @@ body.is-builder-resizing * {
 
 .hud__stock-tooltip .hud__stock-icon {
   flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
 }
 
 .hud__stock-tooltip span,
@@ -4649,14 +5009,14 @@ body.is-builder-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 28px;
   line-height: 1.12;
 }
 
 .hud__stock-tooltip em {
-  margin-top: 3px;
+  margin-top: 8px;
   color: color-mix(in srgb, var(--stock-accent, #f2c871) 76%, #ffffff 12%);
-  font-size: 11px;
+  font-size: 22px;
   font-style: normal;
   font-weight: 900;
   line-height: 1;
@@ -6150,6 +6510,27 @@ canvas {
     font-size: 7px;
   }
 
+  .hud__phone-stocks-app {
+    gap: 8px;
+    padding: 66px 10px 34px;
+  }
+
+  .hud__phone-stocks-chart {
+    padding: 6px;
+  }
+
+  .hud__phone-stocks-summary div {
+    padding: 8px 6px;
+  }
+
+  .hud__phone-stocks-summary strong {
+    font-size: 10px;
+  }
+
+  .hud__phone-stock-position {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .hud__task {
     --task-panel-x: 0;
     top: 94px;
@@ -6635,6 +7016,7 @@ canvas {
   }
 
   .hud__phone-wallet-head h2,
+  .hud__phone-stocks-head h2,
   .hud__phone-skills-head h2,
   .hud__phone-map-head h2,
   .hud__phone-settings-head h2 {
@@ -6642,6 +7024,7 @@ canvas {
   }
 
   .hud__phone-wallet-head p,
+  .hud__phone-stocks-head p,
   .hud__phone-skills-head p,
   .hud__phone-map-head p,
   .hud__phone-settings-head p {
@@ -6665,6 +7048,57 @@ canvas {
   .hud__phone-wallet-stocks-button {
     height: 34px;
     font-size: 9px;
+  }
+
+  .hud__phone-stocks-app {
+    grid-template-rows: auto auto minmax(98px, 1fr) auto auto auto;
+    gap: 6px;
+    padding: 48px 8px 24px;
+  }
+
+  .hud__phone-stocks-refresh {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+  }
+
+  .hud__phone-stocks-summary {
+    gap: 4px;
+  }
+
+  .hud__phone-stocks-summary div {
+    padding: 6px 5px;
+    border-radius: 10px;
+  }
+
+  .hud__phone-stocks-chart,
+  .hud__phone-stocks-detail {
+    border-radius: 12px;
+  }
+
+  .hud__phone-stocks-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(34px, 38px));
+    min-height: 74px;
+    gap: 5px;
+  }
+
+  .hud__phone-stock-chip {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 4px;
+    padding: 5px;
+    border-radius: 10px;
+  }
+
+  .hud__phone-stocks-trade {
+    gap: 5px;
+  }
+
+  .hud__phone-stocks-quantity input,
+  .hud__phone-stock-trade-button {
+    height: 32px;
+    border-radius: 10px;
+    font-size: 8px;
   }
 
   .hud__phone-skills-list {

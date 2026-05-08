@@ -34,6 +34,7 @@ const PHONE_APPS = Object.freeze([
   ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
+  ['stocks', 'Stocks', 'stocks', '#55c7ff', 'Street exchange quotes and trades.'],
   ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
   ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
   ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
@@ -51,6 +52,7 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   map: '<path d="m4 6.75 5-2 6 2 5-2v12.5l-5 2-6-2-5 2V6.75Z"/><path d="M9 4.75v12.5M15 6.75v12.5"/><path d="M17.4 9.6 15 12l-1.45-1.45"/>',
   missions: '<path d="M5.5 4.75h10.25L19 8v11.25H5.5V4.75Z"/><path d="M15.5 4.75V8.2H19"/><path d="m8.25 12.05 1.6 1.6 3.65-3.8"/><path d="M8.5 16.25h7"/>',
   wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
+  stocks: '<path d="M4.5 19.25h15"/><path d="M5.75 16.5l4.1-4.1 3.25 2.7 5.6-7.35"/><path d="M16.25 7.75h2.45v2.45"/><path d="M6 7.75h2.2M6 10.8h2.2M6 13.85h1.1"/>',
   skills: '<path d="M5.5 18.75h13"/><path d="M7 17V9.8M12 17V5.25M17 17v-4.7"/><path d="M7 9.8l2.3 1.55L12 5.25l2.6 7.05L17 12.3"/><path d="M4.7 6.2 6 4.9l1.3 1.3M17.1 7.1l1.5-1.5 1.5 1.5"/>',
   character: '<path d="M8.35 9.15a3.65 3.65 0 1 0 7.3 0 3.65 3.65 0 0 0-7.3 0Z"/><path d="M5.25 19.25c.95-2.75 3.45-4.55 6.75-4.55s5.8 1.8 6.75 4.55"/><path d="M4.5 6.25 6.25 4.5 8 6.25"/><path d="M6.25 4.5v4.25"/><path d="m19.5 17.75-1.75 1.75-1.75-1.75"/><path d="M17.75 15.25v4.25"/>',
   contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
@@ -235,6 +237,46 @@ function getPhoneWalletAppMarkup(app) {
   `;
 }
 
+function getPhoneStocksAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-stocks-app"
+      data-phone-stocks-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-stocks-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lsaquo;</span>
+        </button>
+        <div>
+          <h2>Stocks</h2>
+          <p data-phone-stocks-status>Syncing tape</p>
+        </div>
+        <button class="hud__phone-stocks-refresh" type="button" data-phone-stocks-refresh aria-label="Refresh stocks" title="Refresh stocks">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 6v5h-5" />
+            <path d="M5 18v-5h5" />
+            <path d="M17.9 10.8A6.5 6.5 0 0 0 6.7 7.7L5 9.2" />
+            <path d="M6.1 13.2a6.5 6.5 0 0 0 11.2 3.1L19 14.8" />
+          </svg>
+        </button>
+      </div>
+      <section class="hud__phone-stocks-summary" data-phone-stocks-summary></section>
+      <section class="hud__phone-stocks-chart" data-phone-stocks-chart aria-label="All stock prices"></section>
+      <section class="hud__phone-stocks-list" data-phone-stocks-list aria-label="Stock list"></section>
+      <section class="hud__phone-stocks-detail" data-phone-stocks-detail aria-label="Selected stock"></section>
+      <footer class="hud__phone-stocks-trade">
+        <label class="hud__phone-stocks-quantity">
+          <span>Shares</span>
+          <input type="number" min="1" max="999" step="1" value="1" data-phone-stock-quantity />
+        </label>
+        <button class="hud__phone-stock-trade-button is-buy" type="button" data-phone-stock-trade="buy">Buy</button>
+        <button class="hud__phone-stock-trade-button is-sell" type="button" data-phone-stock-trade="sell">Sell</button>
+      </footer>
+    </div>
+  `;
+}
+
 function getPhoneSkillsAppMarkup(app) {
   return `
     <div
@@ -333,6 +375,10 @@ function getPhoneAppPanelMarkup(app) {
 
   if (app.id === 'wallet') {
     return getPhoneWalletAppMarkup(app);
+  }
+
+  if (app.id === 'stocks') {
+    return getPhoneStocksAppMarkup(app);
   }
 
   if (app.id === 'skills') {
@@ -567,8 +613,8 @@ function createAllStockChartMarkup(stocks = [], selectedSymbol = '') {
   const height = 260;
   const plotRight = 890;
   const markerX = 930;
-  const tooltipWidth = 188;
-  const tooltipHeight = 54;
+  const tooltipWidth = 420;
+  const tooltipHeight = 124;
   const min = Math.min(...series.flatMap((stock) => stock.values));
   const max = Math.max(...series.flatMap((stock) => stock.values));
   const span = Math.max(0.01, max - min);
@@ -1015,6 +1061,7 @@ export class Hud {
     this.lastPhoneMissionsSignature = '';
     this.lastPhoneSkillsSignature = '';
     this.lastPhoneWalletSignature = '';
+    this.lastPhoneStocksSignature = '';
     this.lastPhoneMapSignature = '';
     this.skillLevelUpTimeout = 0;
     this.lastNpcEditorState = null;
@@ -2051,6 +2098,7 @@ export class Hud {
     this.lastPhoneMissionsSignature = '';
     this.lastPhoneSkillsSignature = '';
     this.lastPhoneWalletSignature = '';
+    this.lastPhoneStocksSignature = '';
     this.lastPhoneMapSignature = '';
     this.phoneScreenContent.innerHTML = getPhoneScreenMarkup(this.phoneActiveAppId);
   }
@@ -2730,6 +2778,10 @@ export class Hud {
     onCycleCharacter,
     onSelectMission,
     onOpenWalletStocks,
+    onPhoneStockRefresh,
+    onPhoneStockSelect,
+    onPhoneStockQuantityChange,
+    onPhoneStockTrade,
     onMapZoom,
     onMapPan,
     onMasterVolumeChange
@@ -2787,6 +2839,34 @@ export class Hud {
         if (!walletStocksButton.disabled) {
           onOpenWalletStocks?.();
         }
+        return;
+      }
+
+      const phoneStockRefreshButton = target?.closest('[data-phone-stocks-refresh]');
+      if (phoneStockRefreshButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!phoneStockRefreshButton.disabled) {
+          onPhoneStockRefresh?.();
+        }
+        return;
+      }
+
+      const phoneStockTradeButton = target?.closest('[data-phone-stock-trade]');
+      if (phoneStockTradeButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!phoneStockTradeButton.disabled) {
+          onPhoneStockTrade?.(phoneStockTradeButton.getAttribute('data-phone-stock-trade') ?? '');
+        }
+        return;
+      }
+
+      const phoneStockButton = target?.closest('[data-phone-stock-symbol]');
+      if (phoneStockButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        onPhoneStockSelect?.(phoneStockButton.getAttribute('data-phone-stock-symbol') ?? '');
         return;
       }
 
@@ -2951,6 +3031,9 @@ export class Hud {
       const target = event.target instanceof HTMLInputElement ? event.target : null;
       if (target?.matches('[data-phone-setting-audio]')) {
         onMasterVolumeChange?.(Number(target.value) / 100);
+      }
+      if (target?.matches('[data-phone-stock-quantity]')) {
+        onPhoneStockQuantityChange?.(Number(target.value));
       }
     });
   }
@@ -4712,6 +4795,187 @@ export class Hud {
       : '<div class="hud__phone-empty-state">Skills are syncing.</div>';
   }
 
+  setPhoneStocksState({
+    market = null,
+    selectedSymbol = '',
+    quantity = 1,
+    brokerAvailable = true,
+    brokerName = '',
+    loading = false,
+    error = ''
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-stocks-app]');
+    if (!root) {
+      return;
+    }
+
+    const safeMarket = market && typeof market === 'object' ? market : null;
+    const stocks = Array.isArray(safeMarket?.stocks) ? safeMarket.stocks : [];
+    const safeQuantity = Math.max(1, Math.min(999, Math.floor(Number(quantity) || 1)));
+    const selected = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0] ?? null;
+    const resolvedSelectedSymbol = selected?.symbol ?? '';
+    const signature = JSON.stringify({
+      selectedSymbol: resolvedSelectedSymbol,
+      quantity: safeQuantity,
+      brokerAvailable: Boolean(brokerAvailable),
+      loading: Boolean(loading),
+      error,
+      updatedAt: safeMarket?.updatedAt ?? 0,
+      cash: safeMarket?.cash ?? 0,
+      portfolioValue: safeMarket?.portfolioValue ?? 0,
+      netWorth: safeMarket?.netWorth ?? 0,
+      stocks: stocks.map((stock) => [
+        stock.symbol,
+        stock.price,
+        stock.delta,
+        stock.deltaPercent,
+        stock.shares,
+        stock.marketValue,
+        stock.unrealizedProfit
+      ])
+    });
+    if (signature === this.lastPhoneStocksSignature) {
+      return;
+    }
+    this.lastPhoneStocksSignature = signature;
+
+    const status = root.querySelector('[data-phone-stocks-status]');
+    const summary = root.querySelector('[data-phone-stocks-summary]');
+    const chart = root.querySelector('[data-phone-stocks-chart]');
+    const list = root.querySelector('[data-phone-stocks-list]');
+    const detail = root.querySelector('[data-phone-stocks-detail]');
+    const quantityInput = root.querySelector('[data-phone-stock-quantity]');
+    const buyButton = root.querySelector('[data-phone-stock-trade="buy"]');
+    const sellButton = root.querySelector('[data-phone-stock-trade="sell"]');
+    const refreshButton = root.querySelector('[data-phone-stocks-refresh]');
+    const updatedAt = Number(safeMarket?.updatedAt ?? 0);
+    const updatedLabel = updatedAt
+      ? new Date(updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      : '';
+    const statusText = loading
+      ? 'Syncing tape'
+      : error
+        ? error
+        : `${safeMarket?.marketMood ?? 'Market open'}${updatedLabel ? ` | ${updatedLabel}` : ''}`;
+
+    if (status) {
+      status.textContent = statusText;
+      status.classList.toggle('is-error', Boolean(error));
+    }
+    if (refreshButton) {
+      refreshButton.disabled = Boolean(loading);
+    }
+    if (summary) {
+      summary.innerHTML = `
+        <div>
+          <span>Cash</span>
+          <strong>${formatMoneyAmount(safeMarket?.cash ?? 0)}</strong>
+        </div>
+        <div>
+          <span>Holdings</span>
+          <strong>${formatMoneyAmount(safeMarket?.portfolioValue ?? 0)}</strong>
+        </div>
+        <div>
+          <span>Net Worth</span>
+          <strong>${formatMoneyAmount(safeMarket?.netWorth ?? safeMarket?.cash ?? 0)}</strong>
+        </div>
+      `;
+    }
+    if (chart) {
+      chart.innerHTML = stocks.length
+        ? createAllStockChartMarkup(stocks, resolvedSelectedSymbol)
+        : '<div class="hud__phone-empty-state">Market tape is syncing.</div>';
+    }
+    if (list) {
+      list.innerHTML = stocks.length
+        ? stocks.map((stock) => {
+            const trendClass = getStockTrendClass(stock.delta);
+            const activeClass = stock.symbol === resolvedSelectedSymbol ? ' is-active' : '';
+            return `
+              <button
+                class="hud__phone-stock-chip ${trendClass}${activeClass}"
+                type="button"
+                data-phone-stock-symbol="${escapeHtml(stock.symbol)}"
+                style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}"
+              >
+                ${createStockIconMarkup(stock, 'is-mini')}
+                <span>
+                  <strong>${escapeHtml(stock.symbol)}</strong>
+                  <em>${formatStockMoney(stock.price)}</em>
+                </span>
+              </button>
+            `;
+          }).join('')
+        : '<div class="hud__phone-empty-state">No stocks listed.</div>';
+    }
+
+    if (quantityInput instanceof HTMLInputElement && document.activeElement !== quantityInput) {
+      quantityInput.value = String(safeQuantity);
+    }
+
+    if (!selected) {
+      if (detail) {
+        detail.innerHTML = '<div class="hud__phone-empty-state">Pick a stock.</div>';
+      }
+      if (buyButton) {
+        buyButton.disabled = true;
+        buyButton.textContent = 'Buy';
+      }
+      if (sellButton) {
+        sellButton.disabled = true;
+        sellButton.textContent = 'Sell';
+      }
+      return;
+    }
+
+    const trendClass = getStockTrendClass(selected.delta);
+    const tradeValue = getStockTradeValue(selected.price, safeQuantity);
+    const buyDisabled = loading || Number(safeMarket?.cash ?? 0) < tradeValue;
+    const sellDisabled = loading || Number(selected.shares ?? 0) < safeQuantity;
+    if (buyButton) {
+      buyButton.disabled = buyDisabled;
+      buyButton.textContent = `Buy ${formatMoneyAmount(tradeValue)}`;
+    }
+    if (sellButton) {
+      sellButton.disabled = sellDisabled;
+      sellButton.textContent = `Sell ${formatMoneyAmount(tradeValue)}`;
+    }
+    if (detail) {
+      detail.innerHTML = `
+        <div class="hud__phone-stock-detail-head" style="--stock-accent:${escapeHtml(selected.accent ?? '#f2c871')}">
+          ${createStockIconMarkup(selected, 'is-row')}
+          <div>
+            <span>${escapeHtml(selected.symbol)}</span>
+            <strong>${escapeHtml(selected.name)}</strong>
+            <em>${escapeHtml(selected.sector)} | ${escapeHtml(selected.modeLabel ?? 'Sideways')}</em>
+          </div>
+          <div class="hud__phone-stock-price ${trendClass}">
+            <strong>${formatStockMoney(selected.price)}</strong>
+            <span>${formatStockPercent(selected.deltaPercent)}</span>
+          </div>
+        </div>
+        <div class="hud__phone-stock-position">
+          <div>
+            <span>Owned</span>
+            <strong>${formatHudCount(selected.shares)}</strong>
+          </div>
+          <div>
+            <span>Average</span>
+            <strong>${formatStockMoney(selected.averageCost)}</strong>
+          </div>
+          <div>
+            <span>Value</span>
+            <strong>${formatMoneyAmount(selected.marketValue)}</strong>
+          </div>
+          <div class="${getStockTrendClass(selected.unrealizedProfit)}">
+            <span>P/L</span>
+            <strong>${formatSignedStockMoney(selected.unrealizedProfit)}</strong>
+          </div>
+        </div>
+      `;
+    }
+  }
+
   setPhoneWalletState({
     wallet = null,
     cash = 0,
@@ -4752,9 +5016,7 @@ export class Hud {
         ? 'Syncing'
         : error
           ? error
-          : brokerAvailable
-            ? `Near ${brokerName || 'broker'}`
-            : 'Visit the bank';
+          : 'Wallet synced';
       status.classList.toggle('is-error', Boolean(error));
     }
     if (cashNode) {
@@ -4789,12 +5051,10 @@ export class Hud {
       `;
     }
     if (stocksButton) {
-      stocksButton.disabled = loading || !brokerAvailable;
+      stocksButton.disabled = loading;
       stocksButton.textContent = loading
         ? 'Syncing'
-        : brokerAvailable
-          ? 'Stocks'
-          : 'Visit the bank';
+        : 'Stocks';
     }
   }
 

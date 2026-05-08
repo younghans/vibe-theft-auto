@@ -1236,10 +1236,17 @@ export class NpcServiceMock {
     };
   }
 
-  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1) {
-    const access = this.getStockMarketAccess(npcId);
-    if (!access.ok) {
-      return { ok: false, error: access.error };
+  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1, options = {}) {
+    const phoneTrade = String(options?.source ?? '') === 'phone';
+    const access = phoneTrade
+      ? {
+          ok: true,
+          player: this.state.players.get(this.state.sessionId),
+          npc: null
+        }
+      : this.getStockMarketAccess(npcId);
+    if (!access.ok || !access.player || access.player.alive === false) {
+      return { ok: false, error: access.error ?? 'You cannot trade right now.' };
     }
 
     const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
@@ -1263,12 +1270,14 @@ export class NpcServiceMock {
       this.normalizePlayerSelectedMission(access.player);
     }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
-    this.setNpcChatPhase(
-      access.npc,
-      'done',
-      `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
-      { bumpSeq: true }
-    );
+    if (access.npc) {
+      this.setNpcChatPhase(
+        access.npc,
+        'done',
+        `${verb} ${trade.quantity ?? 0} ${trade.symbol ?? 'shares'} at $${Number(trade.price ?? 0).toFixed(2)}.`,
+        { bumpSeq: true }
+      );
+    }
     this.emit();
     return {
       ok: true,

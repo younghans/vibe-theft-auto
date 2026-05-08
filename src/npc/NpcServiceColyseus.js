@@ -508,12 +508,13 @@ export class NpcServiceColyseus {
     });
   }
 
-  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1) {
+  async tradeStock(npcId = '', symbol = '', side = '', quantity = 1, options = {}) {
     return this.rpc('stock:trade', {
       npcId: String(npcId ?? '').trim(),
       symbol: String(symbol ?? '').trim(),
       side: String(side ?? '').trim(),
-      quantity
+      quantity,
+      source: options?.source ? String(options.source) : undefined
     });
   }
 

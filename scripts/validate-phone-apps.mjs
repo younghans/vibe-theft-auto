@@ -11,13 +11,17 @@ import { assets } from '../src/world/assetManifest.js';
 const root = process.cwd();
 const hudSource = fs.readFileSync(path.join(root, 'src/ui/Hud.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'src/game/Game.js'), 'utf8');
+const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
+const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'), 'utf8');
 
 assert.match(hudSource, /\['skills', 'Skills'/, 'Skills app is registered on the phone home screen');
-assert.doesNotMatch(hudSource, /\['stocks', 'Stocks'/, 'Separate Stocks app is removed from the phone home screen');
+assert.match(hudSource, /\['stocks', 'Stocks'/, 'Stocks app is registered on the phone home screen');
 assert.doesNotMatch(hudSource, /\['casino', 'Casino'/, 'Casino app is removed from the phone home screen');
 assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone markup');
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
+assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
+assert.match(hudSource, /data-phone-stock-trade/, 'Stocks app exposes buy and sell actions');
 assert.match(hudSource, /data-phone-skills-app/, 'Skills app has dedicated phone markup');
 assert.match(hudSource, /data-phone-map-app/, 'Map app has dedicated phone markup');
 assert.match(hudSource, /data-phone-map-zoom-in/, 'Map app exposes zoom in control');
@@ -35,6 +39,9 @@ assert.match(hudSource, /Tab \/ phone button/, 'Settings controls list includes 
 
 assert.match(gameSource, /getWalletSnapshot/, 'Game requests authoritative wallet snapshots');
 assert.match(gameSource, /openWalletStocks/, 'Game wires Wallet Stocks action');
+assert.match(gameSource, /handlePhoneStockTrade/, 'Game wires phone stock trading');
+assert.match(gameSource, /source:\s*'phone'/, 'Phone stock trades identify the phone as the trade source');
+assert.match(gameSource, /setPhoneStocksState/, 'Game syncs the phone Stocks app state');
 assert.match(gameSource, /createPhoneMapState/, 'Game creates map state from live game data');
 assert.match(gameSource, /setPhoneMapZoom/, 'Game owns phone map zoom state');
 assert.match(gameSource, /panPhoneMapByScreenDelta/, 'Game owns phone map pan state');
@@ -54,6 +61,10 @@ assert.equal(phoneUnlockAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Phone 
 
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
+assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade access path for phone trading');
+assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
+assert.match(colyseusNpcSource, /source:\s*options\?\.source/, 'Colyseus stock trades forward source metadata');
+assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock trades support phone source metadata');
 
 const market = createInitialStockMarketState(1000);
 const portfolio = {};
