@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
@@ -13,6 +14,11 @@ import {
   getSkillSnapshot,
   getSkillXpForLevel
 } from '../src/shared/skills.js';
+import { assets } from '../src/world/assetManifest.js';
+
+const root = process.cwd();
+const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
+const hudSource = fs.readFileSync(`${root}/src/ui/Hud.js`, 'utf8');
 
 assert.equal(getSkillXpForLevel(1), 0, 'level 1 starts at 0 XP');
 assert.equal(getClassicXpForLevel(99), 13034431, 'classic level 99 XP matches RuneScape curve');
@@ -57,5 +63,17 @@ assert.equal(agilityAward.skillId, SKILL_IDS.agility, 'shared award payload repo
 
 assert.equal(AGILITY_DISTANCE_PER_XP, 18, 'agility distance rate matches plan');
 assert.equal(AGILITY_MAX_XP_PER_UPDATE, 3, 'agility per-update cap matches plan');
+
+assert.match(gameSource, /spawnSkillXpFloater/, 'game spawns XP floaters for skill awards');
+assert.match(gameSource, /levelUpCelebrationSound/, 'game registers the level-up celebration sound');
+assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
+assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
+assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
+
+assert.ok(assets.audio.levelUpCelebration, 'Level-up celebration audio should be registered.');
+const levelUpAudio = fs.readFileSync(new URL(assets.audio.levelUpCelebration));
+assert.ok(levelUpAudio.length > 12, 'Level-up celebration audio should not be empty.');
+assert.equal(levelUpAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Level-up celebration audio should be a WAV file.');
+assert.equal(levelUpAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Level-up celebration audio should have a WAVE header.');
 
 console.log('Skills validation passed.');

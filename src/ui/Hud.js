@@ -658,7 +658,7 @@ function getTaskConfettiShape(index) {
   return index % 5 === 0 ? 'streamer' : 'rect';
 }
 
-function createTaskConfettiParticle({ index, now, originX, originY, originSpread }) {
+function createTaskConfettiParticle({ index, now, originX, originY, originSpread, colors = TASK_CONFETTI_COLORS }) {
   const direction = index % 2 === 0 ? -1 : 1;
   const cone = (-Math.PI * 0.5) + ((Math.random() - 0.5) * TASK_CONFETTI_UPWARD_CONE_RADIANS);
   const speed = randomBetween(420, 1400);
@@ -677,7 +677,7 @@ function createTaskConfettiParticle({ index, now, originX, originY, originSpread
     flutterSpeed: randomBetween(4, 12),
     width: size * randomBetween(0.75, 1.6),
     height: size * randomBetween(1.1, 2.7),
-    color: TASK_CONFETTI_COLORS[index % TASK_CONFETTI_COLORS.length],
+    color: colors[index % colors.length],
     rotation: Math.random() * Math.PI * 2,
     rotationSpeed: direction * randomBetween(5, 23),
     flipSpeed: randomBetween(5, 15),
@@ -4237,25 +4237,35 @@ export class Hud {
     this.spawnTaskConfetti();
   }
 
-  spawnTaskConfetti() {
+  spawnTaskConfetti({
+    originElement = this.taskRoot,
+    originYRatio = 0.54,
+    originSpread = null,
+    particleCount = TASK_CONFETTI_PARTICLE_COUNT,
+    colors = TASK_CONFETTI_COLORS
+  } = {}) {
     if (!this.taskConfetti?.getContext) {
       return;
     }
 
-    const taskRect = this.taskRoot?.getBoundingClientRect?.();
-    const originX = taskRect ? taskRect.left + (taskRect.width * 0.5) : window.innerWidth * 0.5;
-    const originY = taskRect ? taskRect.top + (taskRect.height * 0.54) : TASK_CONFETTI_DEFAULT_ORIGIN_Y;
-    const originSpread = Math.min(taskRect?.width ?? 220, TASK_CONFETTI_ORIGIN_SPREAD_MAX);
+    const originRect = originElement?.getBoundingClientRect?.();
+    const originX = originRect ? originRect.left + (originRect.width * 0.5) : window.innerWidth * 0.5;
+    const originY = originRect ? originRect.top + (originRect.height * originYRatio) : TASK_CONFETTI_DEFAULT_ORIGIN_Y;
+    const resolvedOriginSpread = Math.min(
+      Number(originSpread ?? originRect?.width ?? 220) || 220,
+      TASK_CONFETTI_ORIGIN_SPREAD_MAX
+    );
     const now = performance.now();
 
     this.ensureTaskConfettiCanvasSize();
-    for (let index = 0; index < TASK_CONFETTI_PARTICLE_COUNT; index += 1) {
+    for (let index = 0; index < particleCount; index += 1) {
       this.taskConfettiParticles.push(createTaskConfettiParticle({
         index,
         now,
         originX,
         originY,
-        originSpread
+        originSpread: resolvedOriginSpread,
+        colors
       }));
     }
 
@@ -4989,12 +4999,25 @@ export class Hud {
     this.skillLevelUpRoot.classList.remove('is-active');
     void this.skillLevelUpRoot.offsetWidth;
     this.skillLevelUpRoot.classList.add('is-active');
+    this.spawnTaskConfetti({
+      originElement: this.skillLevelUpRoot,
+      originYRatio: 0.42,
+      originSpread: 320,
+      particleCount: 240,
+      colors: [
+        skill.accent ?? '#58b8ff',
+        '#58b8ff',
+        '#9ce9ff',
+        '#ffffff',
+        '#f7d86a'
+      ]
+    });
     this.skillLevelUpTimeout = window.setTimeout(() => {
       this.skillLevelUpRoot?.classList.remove('is-active');
       if (this.skillLevelUpRoot) {
         this.skillLevelUpRoot.hidden = true;
       }
-    }, 2600);
+    }, 3000);
   }
 
   getCharacterSelectorCardPreviewMount(characterId) {
@@ -5162,6 +5185,7 @@ export class Hud {
       node.classList.toggle('is-money', bubble.variant === 'money');
       node.classList.toggle('is-money-positive', bubble.variant === 'money' && bubble.tone === 'positive');
       node.classList.toggle('is-money-negative', bubble.variant === 'money' && bubble.tone === 'negative');
+      node.classList.toggle('is-xp', bubble.variant === 'xp');
       node.classList.toggle('is-thinking', bubble.status === 'thinking');
       node.style.left = `${bubble.screenX}px`;
       node.style.top = `${bubble.screenY}px`;

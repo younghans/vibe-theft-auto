@@ -117,6 +117,11 @@ const GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
 const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
+const SKILL_XP_EMOJIS = Object.freeze({
+  strength: String.fromCodePoint(0x1f4aa),
+  agility: String.fromCodePoint(0x26a1),
+  intelligence: String.fromCodePoint(0x1f9e0)
+});
 const PHONE_MAP_REFRESH_MS = 140;
 const PHONE_MAP_DEFAULT_ZOOM = 1.7;
 const PHONE_MAP_MIN_ZOOM = 1.7;
@@ -143,6 +148,7 @@ const RUNTIME_PIXEL_RATIO_CAP = 2;
 const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 const MONEY_REWARD_ANIMATION_MS = 900;
+const SKILL_XP_FLOATER_MS = 1550;
 const RENT_INTRO_LOADING_CLEAR_MS = 900;
 const RENT_INTRO_AFTER_LOADING_DELAY_MS = 500;
 const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
@@ -508,6 +514,7 @@ export class Game {
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.levelUpCelebrationSound = this.createSoundEffect(assets.audio?.levelUpCelebration, { volume: 0.7 });
     this.phoneUnlockSound = this.createSoundEffect(assets.audio?.phoneUnlock, { volume: 0.58 });
     this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
     this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
@@ -521,6 +528,9 @@ export class Game {
     this.moneyFloaters = [];
     this.moneyFloaterSequence = 0;
     this.moneyFloaterAnchor = new THREE.Vector3();
+    this.skillXpFloaters = [];
+    this.skillXpFloaterSequence = 0;
+    this.skillXpFloaterAnchor = new THREE.Vector3();
     this.workoutLeftHandPosition = new THREE.Vector3();
     this.workoutRightHandPosition = new THREE.Vector3();
     this.workoutBarbellMidpoint = new THREE.Vector3();
@@ -842,6 +852,7 @@ export class Game {
       this.pistolCockSound,
       this.pistolShotSound,
       this.rentChaChingSound,
+      this.levelUpCelebrationSound,
       this.phoneUnlockSound,
       this.playingCardSound,
       this.typingOnKeyboardSound
@@ -3162,6 +3173,68 @@ export class Game {
     }
   }
 
+  resolveSkillAwardDefinition(award = null, skills = []) {
+    const awardSkillId = String(award?.skillId ?? '');
+    return skills.find((entry) => entry.id === awardSkillId)
+      ?? SKILL_DEFINITIONS.find((entry) => entry.id === awardSkillId)
+      ?? {
+        id: awardSkillId,
+        label: award?.label || 'Skill',
+        icon: award?.icon || awardSkillId,
+        accent: award?.accent || '#58b8ff'
+      };
+  }
+
+  getSkillXpEmoji(skill = null) {
+    const skillId = String(skill?.id ?? '');
+    const iconId = String(skill?.icon ?? '');
+    return SKILL_XP_EMOJIS[skillId] ?? SKILL_XP_EMOJIS[iconId] ?? '*';
+  }
+
+  spawnSkillXpFloater({ skill = null, xpGained = 0 } = {}) {
+    const amount = Math.max(0, Math.floor(Number(xpGained) || 0));
+    if (amount <= 0) {
+      return;
+    }
+
+    this.skillXpFloaters.push({
+      id: `skill-xp:${++this.skillXpFloaterSequence}`,
+      amount,
+      emoji: this.getSkillXpEmoji(skill),
+      accent: skill?.accent ?? '#58b8ff',
+      startedAt: performance.now(),
+      durationMs: SKILL_XP_FLOATER_MS
+    });
+  }
+
+  showSkillLevelUpFeedback({ skill = {}, oldLevel = 1, newLevel = 1 } = {}) {
+    this.hud.showSkillLevelUp({
+      skill,
+      oldLevel,
+      newLevel
+    });
+    this.playSoundEffect(this.levelUpCelebrationSound);
+  }
+
+  presentSkillAwardFeedback(award = null, skill = null) {
+    if (!award || !skill) {
+      return;
+    }
+
+    this.spawnSkillXpFloater({
+      skill,
+      xpGained: award.xpGained
+    });
+
+    if (award.newLevel > award.oldLevel) {
+      this.showSkillLevelUpFeedback({
+        skill,
+        oldLevel: award.oldLevel,
+        newLevel: award.newLevel
+      });
+    }
+  }
+
   syncSkillProgress(localPlayerState = null) {
     if (!localPlayerState) {
       return;
@@ -3186,7 +3259,7 @@ export class Game {
       const previousLevel = this.skillLevelSnapshot.get(skill.id);
       this.skillLevelSnapshot.set(skill.id, skill.level);
       if (!award && hadSnapshot && previousLevel && skill.level > previousLevel) {
-        this.hud.showSkillLevelUp({
+        this.showSkillLevelUpFeedback({
           skill,
           oldLevel: previousLevel,
           newLevel: skill.level
@@ -3196,7 +3269,7 @@ export class Game {
 
     if (award) {
       this.lastSkillAwardSeq = award.seq;
-      const skill = skills.find((entry) => entry.id === award.skillId);
+      const skill = this.resolveSkillAwardDefinition(award, skills);
       this.phoneSkillsState = {
         skills,
         recentAward: {
@@ -3204,13 +3277,8 @@ export class Game {
           skill
         }
       };
-      if (award.newLevel > award.oldLevel && skill) {
-        this.hud.showSkillLevelUp({
-          skill,
-          oldLevel: award.oldLevel,
-          newLevel: award.newLevel
-        });
-      } else if (skill && this.phoneMenuVisible && this.phoneActiveAppId === 'skills') {
+      this.presentSkillAwardFeedback(award, skill);
+      if (award.newLevel <= award.oldLevel && skill && this.phoneMenuVisible && this.phoneActiveAppId === 'skills') {
         this.hud.showToast(`+${award.xpGained} ${skill.label} XP`);
       }
     } else {
@@ -4027,13 +4095,7 @@ export class Game {
               skill
             }
           };
-          if (award.newLevel > award.oldLevel) {
-            this.hud.showSkillLevelUp({
-              skill,
-              oldLevel: award.oldLevel,
-              newLevel: award.newLevel
-            });
-          }
+          this.presentSkillAwardFeedback(award, skill);
           this.refreshPhoneSkillsHud();
         }
       })
@@ -5620,6 +5682,50 @@ export class Game {
     }
 
     this.moneyFloaters = activeFloaters;
+  }
+
+  addSkillXpFloaterBubbles(bubbles) {
+    if (!this.skillXpFloaters.length || !this.player) {
+      return;
+    }
+
+    const now = performance.now();
+    const activeFloaters = [];
+    this.skillXpFloaterAnchor.set(
+      this.player.position.x,
+      this.player.position.y + 3.95,
+      this.player.position.z
+    );
+    const projected = this.projectSpeechAnchor(this.skillXpFloaterAnchor);
+
+    for (const floater of this.skillXpFloaters) {
+      const progress = (now - floater.startedAt) / floater.durationMs;
+      if (progress >= 1) {
+        continue;
+      }
+
+      activeFloaters.push(floater);
+      if (!projected) {
+        continue;
+      }
+
+      const eased = easeOutCubic(progress);
+      const arc = Math.sin(progress * Math.PI);
+      const driftX = (Math.sin(progress * Math.PI * 1.35) * 18) + (arc * 10);
+      bubbles.push({
+        id: `skill-xp-floater:${floater.id}`,
+        text: `+${floater.amount.toLocaleString('en-US')} ${floater.emoji}`,
+        label: '',
+        variant: 'xp',
+        status: 'done',
+        visible: true,
+        screenX: projected.x + driftX,
+        screenY: projected.y - 28 - (eased * 86) - (arc * 8),
+        opacity: Math.max(0, 1 - (progress * 1.08))
+      });
+    }
+
+    this.skillXpFloaters = activeFloaters;
   }
 
   syncLocalPlayerState(localPlayerState) {
@@ -7318,6 +7424,7 @@ export class Game {
     this.addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
     this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
     this.addMoneyFloaterBubbles(bubbles);
+    this.addSkillXpFloaterBubbles(bubbles);
     this.hud.setSpeechBubbles(bubbles);
   }
 }
