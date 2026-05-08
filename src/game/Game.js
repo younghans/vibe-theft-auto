@@ -119,7 +119,7 @@ const DEFAULT_GAME_SETTINGS = Object.freeze({
 });
 const SKILL_XP_EMOJIS = Object.freeze({
   strength: String.fromCodePoint(0x1f4aa),
-  agility: String.fromCodePoint(0x26a1),
+  agility: String.fromCodePoint(0x1f3c3),
   intelligence: String.fromCodePoint(0x1f9e0)
 });
 const PHONE_MAP_REFRESH_MS = 140;

@@ -27,6 +27,7 @@ assert.equal(getSkillLevelFromXp(0), 1, '0 XP is level 1');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(2)), 2, 'threshold XP reaches level 2');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99)), SKILL_MAX_LEVEL, 'level 99 threshold reaches level 99');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99) + 999999), SKILL_MAX_LEVEL, 'levels cap at 99');
+assert.equal(STRENGTH_SNATCH_XP, 10, 'barbell snatching awards 10 strength XP');
 
 const levelTwoSnapshot = getSkillSnapshot(SKILL_IDS.strength, getSkillXpForLevel(2));
 assert.equal(levelTwoSnapshot.level, 2, 'snapshot level is derived from XP');
@@ -61,13 +62,15 @@ const agilityAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.agility, 
 assert.equal(serverPlayerShape.agilityXp, AGILITY_MAX_XP_PER_UPDATE, 'shared award mutates agility XP field');
 assert.equal(agilityAward.skillId, SKILL_IDS.agility, 'shared award payload reports agility skill');
 
-assert.equal(AGILITY_DISTANCE_PER_XP, 18, 'agility distance rate matches plan');
+assert.equal(AGILITY_DISTANCE_PER_XP, 90, 'agility distance rate is five times slower than the original walking XP pace');
 assert.equal(AGILITY_MAX_XP_PER_UPDATE, 3, 'agility per-update cap matches plan');
 
 assert.match(gameSource, /spawnSkillXpFloater/, 'game spawns XP floaters for skill awards');
+assert.match(gameSource, /0x1f3c3/, 'agility XP floaters use a running icon');
 assert.match(gameSource, /levelUpCelebrationSound/, 'game registers the level-up celebration sound');
 assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
+assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
 
 assert.ok(assets.audio.levelUpCelebration, 'Level-up celebration audio should be registered.');
