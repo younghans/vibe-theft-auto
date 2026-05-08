@@ -168,7 +168,7 @@ function getPhoneCharacterAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
       </div>
       <div class="hud__phone-character-stage-shell">
@@ -197,7 +197,7 @@ function getPhoneMissionsAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head hud__phone-missions-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
         <div class="hud__phone-missions-title-block">
           <h2>Missions</h2>
@@ -219,7 +219,7 @@ function getPhoneWalletAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head hud__phone-wallet-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
         <div>
           <h2>Wallet</h2>
@@ -246,7 +246,7 @@ function getPhoneSkillsAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head hud__phone-skills-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
         <div>
           <h2>Skills</h2>
@@ -267,11 +267,16 @@ function getPhoneMapAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head hud__phone-map-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
         <div>
           <h2>Map</h2>
           <p data-phone-map-status>Locating</p>
+        </div>
+        <div class="hud__phone-map-controls" aria-label="Map zoom controls">
+          <button class="hud__phone-map-zoom" type="button" data-phone-map-zoom="-1" data-phone-map-zoom-out aria-label="Zoom out">-</button>
+          <span data-phone-map-zoom-label>100%</span>
+          <button class="hud__phone-map-zoom" type="button" data-phone-map-zoom="1" data-phone-map-zoom-in aria-label="Zoom in">+</button>
         </div>
       </div>
       <section class="hud__phone-map-canvas" data-phone-map-canvas aria-label="City map"></section>
@@ -288,7 +293,7 @@ function getPhoneSettingsAppMarkup(app) {
     >
       <div class="hud__phone-app-panel-head hud__phone-settings-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
         <div>
           <h2>Settings</h2>
@@ -351,7 +356,7 @@ function getPhoneAppPanelMarkup(app) {
     >
       <div class="hud__phone-app-panel-head">
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true">&lsaquo;</span>
         </button>
       </div>
       <h2>${escapeHtml(app.label)}</h2>
@@ -1008,6 +1013,7 @@ export class Hud {
     };
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
+    this.phoneMapDragState = null;
     this.lastPhoneMissionsSignature = '';
     this.lastPhoneSkillsSignature = '';
     this.lastPhoneWalletSignature = '';
@@ -1244,7 +1250,7 @@ export class Hud {
             <div class="hud__phone-island" aria-hidden="true"></div>
             <div class="hud__phone-screen">
               <button class="hud__phone-close" type="button" data-phone-close aria-label="Close phone" title="Close phone">
-                <span aria-hidden="true">X</span>
+                <span aria-hidden="true">&times;</span>
               </button>
               <div class="hud__phone-screen-content" data-phone-screen-content>
                 ${getPhoneScreenMarkup()}
@@ -2042,6 +2048,8 @@ export class Hud {
       return;
     }
 
+    this.hidePhoneMapTooltip();
+    this.phoneMapDragState = null;
     this.lastPhoneMissionsSignature = '';
     this.lastPhoneSkillsSignature = '';
     this.lastPhoneWalletSignature = '';
@@ -2276,6 +2284,85 @@ export class Hud {
 
       onCapture?.();
     });
+  }
+
+  getPhoneMapTooltipElement() {
+    return this.phoneScreenContent?.querySelector('[data-phone-map-tooltip-popover]') ?? null;
+  }
+
+  getPhoneMapMarkerFromEvent(event) {
+    const target = event.target instanceof Element
+      ? event.target
+      : event.target?.parentElement ?? null;
+    return target?.closest('[data-phone-map-tooltip]') ?? null;
+  }
+
+  showPhoneMapTooltip(marker, event = null) {
+    const tooltip = this.getPhoneMapTooltipElement();
+    const label = marker?.getAttribute?.('data-phone-map-tooltip')?.trim() ?? '';
+    if (!tooltip || !label) {
+      return;
+    }
+
+    const icon = marker.getAttribute('data-phone-map-tooltip-icon')?.trim() ?? '';
+    const kind = marker.getAttribute('data-phone-map-tooltip-kind')?.trim() ?? 'default';
+    tooltip.innerHTML = `
+      <span class="hud__phone-map-tooltip-icon is-${escapeHtml(kind)}">${escapeHtml(icon || '?')}</span>
+      <strong>${escapeHtml(label)}</strong>
+    `;
+    tooltip.hidden = false;
+    this.positionPhoneMapTooltip(marker, event);
+  }
+
+  positionPhoneMapTooltip(marker, event = null) {
+    const tooltip = this.getPhoneMapTooltipElement();
+    const canvas = marker?.closest?.('[data-phone-map-canvas]');
+    if (!tooltip || !(canvas instanceof HTMLElement)) {
+      return;
+    }
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const markerRect = marker?.getBoundingClientRect?.();
+    const clientX = Number.isFinite(event?.clientX)
+      ? event.clientX
+      : markerRect
+        ? markerRect.left + markerRect.width * 0.5
+        : canvasRect.left + canvasRect.width * 0.5;
+    const clientY = Number.isFinite(event?.clientY)
+      ? event.clientY
+      : markerRect
+        ? markerRect.top + markerRect.height * 0.5
+        : canvasRect.top + canvasRect.height * 0.5;
+
+    tooltip.style.transform = 'translate(10px, calc(-100% - 10px))';
+    tooltip.style.left = `${Math.max(8, Math.min(canvasRect.width - 8, clientX - canvasRect.left))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(canvasRect.height - 8, clientY - canvasRect.top))}px`;
+
+    const tooltipRect = tooltip.getBoundingClientRect();
+    let left = clientX - canvasRect.left + 10;
+    let top = clientY - canvasRect.top - 10;
+    let transform = 'translate(0, -100%)';
+    if (left + tooltipRect.width > canvasRect.width - 8) {
+      left = canvasRect.width - tooltipRect.width - 8;
+    }
+    if (top - tooltipRect.height < 8) {
+      top = clientY - canvasRect.top + 16;
+      transform = 'translate(0, 0)';
+    }
+
+    tooltip.style.left = `${Math.max(8, left)}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(canvasRect.height - 8, top))}px`;
+    tooltip.style.transform = transform;
+  }
+
+  hidePhoneMapTooltip() {
+    const tooltip = this.getPhoneMapTooltipElement();
+    if (!tooltip) {
+      return;
+    }
+
+    tooltip.hidden = true;
+    tooltip.innerHTML = '';
   }
 
   bindZoomEvents({ onZoomIn, onZoomOut }) {
@@ -2645,6 +2732,8 @@ export class Hud {
     onCycleCharacter,
     onSelectMission,
     onOpenWalletStocks,
+    onMapZoom,
+    onMapPan,
     onMasterVolumeChange
   }) {
     this.phoneLauncher?.addEventListener('click', () => {
@@ -2703,6 +2792,16 @@ export class Hud {
         return;
       }
 
+      const mapZoomButton = target?.closest('[data-phone-map-zoom]');
+      if (mapZoomButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!mapZoomButton.disabled) {
+          onMapZoom?.(Number(mapZoomButton.getAttribute('data-phone-map-zoom') ?? 0));
+        }
+        return;
+      }
+
       const appButton = target?.closest('[data-phone-app]');
       if (appButton) {
         onOpenApp?.(appButton.getAttribute('data-phone-app') ?? '');
@@ -2711,6 +2810,138 @@ export class Hud {
 
       if (target?.closest('[data-phone-home]')) {
         onHome?.();
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('wheel', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (!target?.closest('[data-phone-map-canvas]')) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const deltaY = Number(event.deltaY) || 0;
+      if (deltaY === 0) {
+        return;
+      }
+      const direction = deltaY < 0 ? 1 : -1;
+      onMapZoom?.(direction);
+    }, { passive: false });
+
+    this.phoneScreenContent?.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const canvas = target?.closest('[data-phone-map-canvas]');
+      if (!(canvas instanceof HTMLElement) || target?.closest('button')) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      this.hidePhoneMapTooltip();
+      this.phoneMapDragState = {
+        pointerId: event.pointerId,
+        lastX: event.clientX,
+        lastY: event.clientY
+      };
+      canvas.classList.add('is-dragging');
+      canvas.setPointerCapture?.(event.pointerId);
+    });
+
+    this.phoneScreenContent?.addEventListener('pointermove', (event) => {
+      if (!this.phoneMapDragState || event.pointerId !== this.phoneMapDragState.pointerId) {
+        return;
+      }
+
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const canvas = target?.closest('[data-phone-map-canvas]')
+        ?? this.phoneScreenContent?.querySelector('[data-phone-map-canvas]');
+      if (!(canvas instanceof HTMLElement)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = canvas.getBoundingClientRect();
+      const pixelDeltaX = event.clientX - this.phoneMapDragState.lastX;
+      const pixelDeltaY = event.clientY - this.phoneMapDragState.lastY;
+      this.phoneMapDragState.lastX = event.clientX;
+      this.phoneMapDragState.lastY = event.clientY;
+      if (Math.abs(pixelDeltaX) > 0.01 || Math.abs(pixelDeltaY) > 0.01) {
+        onMapPan?.({
+          pixelDeltaX,
+          pixelDeltaY,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+    });
+
+    const endPhoneMapDrag = (event) => {
+      if (!this.phoneMapDragState || event.pointerId !== this.phoneMapDragState.pointerId) {
+        return;
+      }
+
+      const canvas = this.phoneScreenContent?.querySelector('[data-phone-map-canvas]');
+      canvas?.classList.remove('is-dragging');
+      canvas?.releasePointerCapture?.(event.pointerId);
+      this.phoneMapDragState = null;
+    };
+    this.phoneScreenContent?.addEventListener('pointerup', endPhoneMapDrag);
+    this.phoneScreenContent?.addEventListener('pointercancel', endPhoneMapDrag);
+    this.phoneScreenContent?.addEventListener('lostpointercapture', endPhoneMapDrag);
+
+    this.phoneScreenContent?.addEventListener('pointerover', (event) => {
+      if (this.phoneMapDragState) {
+        return;
+      }
+
+      const marker = this.getPhoneMapMarkerFromEvent(event);
+      if (marker) {
+        this.showPhoneMapTooltip(marker, event);
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('pointermove', (event) => {
+      if (this.phoneMapDragState) {
+        return;
+      }
+
+      const marker = this.getPhoneMapMarkerFromEvent(event);
+      if (marker) {
+        this.positionPhoneMapTooltip(marker, event);
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('pointerout', (event) => {
+      const marker = this.getPhoneMapMarkerFromEvent(event);
+      if (!marker) {
+        return;
+      }
+
+      const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+      if (!relatedTarget || !marker.contains(relatedTarget)) {
+        this.hidePhoneMapTooltip();
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('focusin', (event) => {
+      const marker = this.getPhoneMapMarkerFromEvent(event);
+      if (marker) {
+        this.showPhoneMapTooltip(marker, event);
+      }
+    });
+
+    this.phoneScreenContent?.addEventListener('focusout', (event) => {
+      const marker = this.getPhoneMapMarkerFromEvent(event);
+      if (marker) {
+        this.hidePhoneMapTooltip();
       }
     });
 
@@ -4581,7 +4812,11 @@ export class Hud {
   setPhoneMapState({
     player = null,
     features = [],
-    image = null
+    image = null,
+    zoom = 1,
+    minZoom = 1,
+    maxZoom = 4,
+    pan = { x: 0, z: 0 }
   } = {}) {
     const root = this.phoneScreenContent?.querySelector('[data-phone-map-app]');
     if (!root) {
@@ -4601,8 +4836,10 @@ export class Hud {
     );
     const signature = JSON.stringify({
       player,
+      zoom,
+      pan: [pan?.x ?? 0, pan?.z ?? 0],
       image: hasImage ? [image.src, imageBounds.minX, imageBounds.maxX, imageBounds.minZ, imageBounds.maxZ] : null,
-      features: safeFeatures.map((feature) => [feature.id, feature.kind, feature.x, feature.z, feature.width, feature.depth])
+      features: safeFeatures.map((feature) => [feature.id, feature.kind, feature.label, feature.x, feature.z, feature.width, feature.depth])
     });
     if (signature === this.lastPhoneMapSignature) {
       return;
@@ -4611,6 +4848,21 @@ export class Hud {
 
     const status = root.querySelector('[data-phone-map-status]');
     const canvas = root.querySelector('[data-phone-map-canvas]');
+    const zoomLabel = root.querySelector('[data-phone-map-zoom-label]');
+    const zoomInButton = root.querySelector('[data-phone-map-zoom-in]');
+    const zoomOutButton = root.querySelector('[data-phone-map-zoom-out]');
+    const safeMinZoom = Math.max(1, Number(minZoom) || 1);
+    const safeMaxZoom = Math.max(safeMinZoom, Number(maxZoom) || safeMinZoom);
+    const safeZoom = Math.max(safeMinZoom, Math.min(safeMaxZoom, Number(zoom) || safeMinZoom));
+    if (zoomLabel) {
+      zoomLabel.textContent = `${Math.round((safeZoom / safeMinZoom) * 100)}%`;
+    }
+    if (zoomInButton) {
+      zoomInButton.disabled = safeZoom >= safeMaxZoom - 0.001;
+    }
+    if (zoomOutButton) {
+      zoomOutButton.disabled = safeZoom <= safeMinZoom + 0.001;
+    }
     if (status) {
       status.textContent = hasImage
         ? (player ? 'Satellite map' : 'Satellite cached')
@@ -4638,34 +4890,64 @@ export class Hud {
     const maxZ = hasImage ? Number(imageBounds.maxZ) : Math.max(...points.map((point) => point.z)) + 8;
     const spanX = Math.max(1, maxX - minX);
     const spanZ = Math.max(1, maxZ - minZ);
-    const toX = (x) => ((x - minX) / spanX) * width;
-    const toY = (z) => ((z - minZ) / spanZ) * height;
+    const viewSpanX = spanX / safeZoom;
+    const viewSpanZ = spanZ / safeZoom;
+    const preferredCenterX = (Number.isFinite(Number(player?.x)) ? Number(player.x) : (minX + maxX) * 0.5) + (Number(pan?.x) || 0);
+    const preferredCenterZ = (Number.isFinite(Number(player?.z)) ? Number(player.z) : (minZ + maxZ) * 0.5) + (Number(pan?.z) || 0);
+    const clampCenter = (value, min, max, viewSpan) => {
+      if (viewSpan >= max - min) {
+        return (min + max) * 0.5;
+      }
+      const halfSpan = viewSpan * 0.5;
+      return Math.max(min + halfSpan, Math.min(max - halfSpan, value));
+    };
+    const viewCenterX = clampCenter(preferredCenterX, minX, maxX, viewSpanX);
+    const viewCenterZ = clampCenter(preferredCenterZ, minZ, maxZ, viewSpanZ);
+    const viewMinX = viewCenterX - viewSpanX * 0.5;
+    const viewMinZ = viewCenterZ - viewSpanZ * 0.5;
+    const toX = (x) => ((x - viewMinX) / viewSpanX) * width;
+    const toY = (z) => ((z - viewMinZ) / viewSpanZ) * height;
     const rasterMarkup = hasImage
-      ? `<image class="hud__phone-map-raster" href="${escapeHtml(image.src)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>`
+      ? `<image class="hud__phone-map-raster" href="${escapeHtml(image.src)}" x="${(((minX - viewMinX) / viewSpanX) * width).toFixed(1)}" y="${(((minZ - viewMinZ) / viewSpanZ) * height).toFixed(1)}" width="${((spanX / viewSpanX) * width).toFixed(1)}" height="${((spanZ / viewSpanZ) * height).toFixed(1)}" preserveAspectRatio="none"></image>`
       : '';
     const featureMarkup = safeFeatures.map((feature) => {
       const kind = escapeHtml(feature.kind ?? 'building');
       const x = toX(Number(feature.x));
       const y = toY(Number(feature.z));
       if (['shady', 'stock', 'blackjack', 'workout'].includes(feature.kind)) {
+        const label = String(feature.label ?? '').trim();
+        const tooltip = feature.kind === 'stock'
+          ? 'Stock broker'
+          : feature.kind === 'blackjack'
+            ? 'Blackjack dealer'
+            : feature.kind === 'workout'
+              ? `Workout station${label ? `: ${label}` : ''}`
+              : 'Shady Figure';
+        const markerIcon = feature.kind === 'stock'
+          ? '$'
+          : feature.kind === 'blackjack'
+            ? 'J'
+            : feature.kind === 'workout'
+              ? 'S'
+              : '?';
         return `
-          <g class="hud__phone-map-marker is-${kind}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
+          <g class="hud__phone-map-marker is-${kind}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" tabindex="0" role="button" aria-label="${escapeHtml(tooltip)}" data-phone-map-tooltip="${escapeHtml(tooltip)}" data-phone-map-tooltip-icon="${escapeHtml(markerIcon)}" data-phone-map-tooltip-kind="${kind}">
             <circle r="6"></circle>
-            <text y="-9">${escapeHtml(feature.kind === 'stock' ? '$' : feature.kind === 'blackjack' ? 'J' : feature.kind === 'workout' ? 'S' : '?')}</text>
+            <text y="-9">${escapeHtml(markerIcon)}</text>
           </g>
         `;
       }
       if (hasImage) {
         return '';
       }
-      const w = Math.max(3, (Number(feature.width ?? 1) / spanX) * width);
-      const h = Math.max(3, (Number(feature.depth ?? 1) / spanZ) * height);
+      const w = Math.max(3, (Number(feature.width ?? 1) / viewSpanX) * width);
+      const h = Math.max(3, (Number(feature.depth ?? 1) / viewSpanZ) * height);
       return `<rect class="hud__phone-map-feature is-${kind}" x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2"></rect>`;
     }).join('');
 
     const playerMarkup = player
       ? `
-        <g class="hud__phone-map-player" transform="translate(${toX(Number(player.x)).toFixed(1)} ${toY(Number(player.z)).toFixed(1)}) rotate(${((Number(player.rotationY) || 0) * 180 / Math.PI).toFixed(1)})">
+        <g class="hud__phone-map-player" transform="translate(${toX(Number(player.x)).toFixed(1)} ${toY(Number(player.z)).toFixed(1)}) rotate(${((Number(player.rotationY) || 0) * 180 / Math.PI).toFixed(1)})" tabindex="0" role="button" aria-label="You" data-phone-map-tooltip="You" data-phone-map-tooltip-icon="YOU" data-phone-map-tooltip-kind="player">
           <circle r="8"></circle>
           <path d="M0 -15 5 -3 -5 -3Z"></path>
         </g>
@@ -4679,6 +4961,7 @@ export class Hud {
         ${featureMarkup}
         ${playerMarkup}
       </svg>
+      <div class="hud__phone-map-tooltip" data-phone-map-tooltip-popover hidden></div>
     `;
   }
 

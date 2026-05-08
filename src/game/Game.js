@@ -118,6 +118,13 @@ const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
 const PHONE_MAP_REFRESH_MS = 140;
+const PHONE_MAP_DEFAULT_ZOOM = 1.7;
+const PHONE_MAP_MIN_ZOOM = 1.7;
+const PHONE_MAP_MAX_ZOOM = 4;
+const PHONE_MAP_ZOOM_STEP = 0.35;
+const PHONE_MAP_WIDTH = 280;
+const PHONE_MAP_HEIGHT = 430;
+const PHONE_MAP_KEY_PAN_VIEW_FRACTION_PER_SECOND = 0.82;
 const WORLD_MAP_IMAGE_METADATA_URL = '/assets/generated/world-map.json';
 const WORLD_MAP_CAPTURE_ENDPOINT = '/admin/world-map';
 const WORLD_MAP_CAPTURE_WIDTH = 1024;
@@ -439,8 +446,12 @@ export class Game {
       player: null,
       features: [],
       image: null,
+      zoom: PHONE_MAP_DEFAULT_ZOOM,
+      pan: { x: 0, z: 0 },
       updatedAt: 0
     };
+    this.phoneMapZoom = PHONE_MAP_DEFAULT_ZOOM;
+    this.phoneMapPan = { x: 0, z: 0 };
     this.worldMapImage = null;
     this.worldMapImageRequest = null;
     this.worldMapCaptureInFlight = false;
@@ -545,6 +556,8 @@ export class Game {
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
       onSelectMission: (missionId) => void this.selectPhoneMission(missionId),
       onOpenWalletStocks: () => void this.openWalletStocks(),
+      onMapZoom: (step) => this.stepPhoneMapZoom(step),
+      onMapPan: (delta) => this.panPhoneMapByScreenDelta(delta),
       onMasterVolumeChange: (value) => this.setMasterVolume(value)
     });
     this.hud.bindQuickChatEvents({
@@ -1165,6 +1178,192 @@ export class Game {
     this.hud.setPhoneMapState(this.phoneMapState);
   }
 
+  setPhoneMapZoom(zoom = this.phoneMapZoom) {
+    const nextZoom = THREE.MathUtils.clamp(
+      Number.isFinite(Number(zoom)) ? Number(zoom) : PHONE_MAP_DEFAULT_ZOOM,
+      PHONE_MAP_MIN_ZOOM,
+      PHONE_MAP_MAX_ZOOM
+    );
+    if (Math.abs(nextZoom - this.phoneMapZoom) < 0.001) {
+      return this.phoneMapZoom;
+    }
+
+    this.phoneMapZoom = nextZoom;
+    this.phoneMapPan = this.clampPhoneMapPan(this.phoneMapPan);
+    this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+    return this.phoneMapZoom;
+  }
+
+  stepPhoneMapZoom(step = 0) {
+    const direction = Math.sign(Number(step) || 0);
+    if (!direction) {
+      return this.phoneMapZoom;
+    }
+
+    return this.setPhoneMapZoom(this.phoneMapZoom + direction * PHONE_MAP_ZOOM_STEP);
+  }
+
+  isPhoneMapAppOpen() {
+    return Boolean(this.phoneMenuVisible && this.phoneActiveAppId === 'map' && this.hud.isPhoneOpen());
+  }
+
+  getPhoneMapBounds(localPlayerState = this.getLocalPlayerState()) {
+    const imageBounds = this.worldMapImage?.bounds ?? null;
+    if (
+      Number.isFinite(Number(imageBounds?.minX))
+      && Number.isFinite(Number(imageBounds?.maxX))
+      && Number.isFinite(Number(imageBounds?.minZ))
+      && Number.isFinite(Number(imageBounds?.maxZ))
+      && Number(imageBounds.maxX) > Number(imageBounds.minX)
+      && Number(imageBounds.maxZ) > Number(imageBounds.minZ)
+    ) {
+      const minX = Number(imageBounds.minX);
+      const maxX = Number(imageBounds.maxX);
+      const minZ = Number(imageBounds.minZ);
+      const maxZ = Number(imageBounds.maxZ);
+      return {
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        spanX: Math.max(1, maxX - minX),
+        spanZ: Math.max(1, maxZ - minZ)
+      };
+    }
+
+    const features = this.getPhoneMapPlacementFeatures();
+    const points = [
+      ...features.map((feature) => ({ x: Number(feature.x), z: Number(feature.z) })),
+      localPlayerState ? { x: Number(localPlayerState.x), z: Number(localPlayerState.z) } : null
+    ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z));
+
+    if (!points.length) {
+      const minX = -WORLD_GROUND_RADIUS * 0.5;
+      const maxX = WORLD_GROUND_RADIUS * 0.5;
+      const minZ = -WORLD_GROUND_RADIUS * 0.5;
+      const maxZ = WORLD_GROUND_RADIUS * 0.5;
+      return {
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        spanX: Math.max(1, maxX - minX),
+        spanZ: Math.max(1, maxZ - minZ)
+      };
+    }
+
+    const minX = Math.min(...points.map((point) => point.x)) - 8;
+    const maxX = Math.max(...points.map((point) => point.x)) + 8;
+    const minZ = Math.min(...points.map((point) => point.z)) - 8;
+    const maxZ = Math.max(...points.map((point) => point.z)) + 8;
+    return {
+      minX,
+      maxX,
+      minZ,
+      maxZ,
+      spanX: Math.max(1, maxX - minX),
+      spanZ: Math.max(1, maxZ - minZ)
+    };
+  }
+
+  getPhoneMapBaseCenter(bounds = this.getPhoneMapBounds(), localPlayerState = this.getLocalPlayerState()) {
+    const playerPosition = this.player?.position ?? null;
+    const playerX = Number(localPlayerState?.x ?? playerPosition?.x);
+    const playerZ = Number(localPlayerState?.z ?? playerPosition?.z);
+    return {
+      x: Number.isFinite(playerX) ? playerX : (bounds.minX + bounds.maxX) * 0.5,
+      z: Number.isFinite(playerZ) ? playerZ : (bounds.minZ + bounds.maxZ) * 0.5
+    };
+  }
+
+  clampPhoneMapPan(pan = this.phoneMapPan, localPlayerState = this.getLocalPlayerState()) {
+    const bounds = this.getPhoneMapBounds(localPlayerState);
+    const baseCenter = this.getPhoneMapBaseCenter(bounds, localPlayerState);
+    const viewSpanX = bounds.spanX / this.phoneMapZoom;
+    const viewSpanZ = bounds.spanZ / this.phoneMapZoom;
+    const clampCenter = (value, min, max, viewSpan) => {
+      if (viewSpan >= max - min) {
+        return (min + max) * 0.5;
+      }
+      const halfSpan = viewSpan * 0.5;
+      return Math.max(min + halfSpan, Math.min(max - halfSpan, value));
+    };
+    const centerX = clampCenter(baseCenter.x + Number(pan?.x ?? 0), bounds.minX, bounds.maxX, viewSpanX);
+    const centerZ = clampCenter(baseCenter.z + Number(pan?.z ?? 0), bounds.minZ, bounds.maxZ, viewSpanZ);
+    return {
+      x: centerX - baseCenter.x,
+      z: centerZ - baseCenter.z
+    };
+  }
+
+  setPhoneMapPan(pan = this.phoneMapPan) {
+    const nextPan = this.clampPhoneMapPan(pan);
+    if (
+      Math.abs(nextPan.x - this.phoneMapPan.x) < 0.001
+      && Math.abs(nextPan.z - this.phoneMapPan.z) < 0.001
+    ) {
+      return this.phoneMapPan;
+    }
+
+    this.phoneMapPan = nextPan;
+    this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+    return this.phoneMapPan;
+  }
+
+  panPhoneMapByWorldDelta({ x = 0, z = 0 } = {}) {
+    if (!this.isPhoneMapAppOpen()) {
+      return this.phoneMapPan;
+    }
+
+    return this.setPhoneMapPan({
+      x: this.phoneMapPan.x + (Number(x) || 0),
+      z: this.phoneMapPan.z + (Number(z) || 0)
+    });
+  }
+
+  panPhoneMapByScreenDelta({
+    pixelDeltaX = 0,
+    pixelDeltaY = 0,
+    width = PHONE_MAP_WIDTH,
+    height = PHONE_MAP_HEIGHT
+  } = {}) {
+    if (!this.isPhoneMapAppOpen()) {
+      return this.phoneMapPan;
+    }
+
+    const bounds = this.getPhoneMapBounds();
+    const safeWidth = Math.max(1, Number(width) || PHONE_MAP_WIDTH);
+    const safeHeight = Math.max(1, Number(height) || PHONE_MAP_HEIGHT);
+    const viewSpanX = bounds.spanX / this.phoneMapZoom;
+    const viewSpanZ = bounds.spanZ / this.phoneMapZoom;
+    return this.panPhoneMapByWorldDelta({
+      x: -((Number(pixelDeltaX) || 0) / safeWidth) * viewSpanX,
+      z: -((Number(pixelDeltaY) || 0) / safeHeight) * viewSpanZ
+    });
+  }
+
+  handlePhoneMapKeyboardInput(deltaSeconds = 0) {
+    if (!this.isPhoneMapAppOpen()) {
+      return;
+    }
+
+    const x = (this.input.isPressed('KeyD') ? 1 : 0) - (this.input.isPressed('KeyA') ? 1 : 0);
+    const z = (this.input.isPressed('KeyS') ? 1 : 0) - (this.input.isPressed('KeyW') ? 1 : 0);
+    if (!x && !z) {
+      return;
+    }
+
+    const length = Math.hypot(x, z) || 1;
+    const bounds = this.getPhoneMapBounds();
+    const viewSpanX = bounds.spanX / this.phoneMapZoom;
+    const viewSpanZ = bounds.spanZ / this.phoneMapZoom;
+    const scale = Math.max(0, Number(deltaSeconds) || 0) * PHONE_MAP_KEY_PAN_VIEW_FRACTION_PER_SECOND;
+    this.panPhoneMapByWorldDelta({
+      x: (x / length) * viewSpanX * scale,
+      z: (z / length) * viewSpanZ * scale
+    });
+  }
+
   getAdminKey() {
     try {
       const url = new URL(window.location.href);
@@ -1705,6 +1904,10 @@ export class Game {
         : null,
       features: this.getPhoneMapPlacementFeatures(),
       image: this.worldMapImage,
+      zoom: this.phoneMapZoom,
+      minZoom: PHONE_MAP_MIN_ZOOM,
+      maxZoom: PHONE_MAP_MAX_ZOOM,
+      pan: this.phoneMapPan,
       updatedAt: Date.now()
     };
   }
@@ -6227,6 +6430,7 @@ export class Game {
     }
 
     this.handleCameraZoomInput();
+    this.handlePhoneMapKeyboardInput(deltaSeconds);
     this.updateNpcFocusTargets();
 
     if (

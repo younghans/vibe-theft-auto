@@ -13,7 +13,7 @@ const assetsRoot = path.join(root, 'assets');
 const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
-const DIST_TOTAL_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_TOTAL_BUDGET_BYTES', (35 * 1024 + 96) * 1024);
+const DIST_TOTAL_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_TOTAL_BUDGET_BYTES', (35 * 1024 + 256) * 1024);
 const DIST_FILE_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_FILE_BUDGET_BYTES', 5 * 1024 * 1024);
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',

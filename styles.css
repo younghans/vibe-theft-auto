@@ -304,6 +304,8 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-screen {
+  --phone-chrome-top: 14px;
+  --phone-chrome-side: 20px;
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) 28px;
@@ -319,35 +321,44 @@ body.is-builder-resizing * {
 .hud__phone-nav-button {
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(2, 4, 8, 0.32);
-  color: #ffffff;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 251, 239, 0.92);
   cursor: pointer;
+  font: inherit;
+  line-height: 1;
   -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease, color 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
 .hud__phone-close {
   position: absolute;
-  top: 54px;
-  right: 22px;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
+  top: var(--phone-chrome-top);
+  right: var(--phone-chrome-side);
   z-index: 4;
 }
 
 .hud__phone-close span,
 .hud__phone-nav-button span {
-  font-size: 18px;
-  font-weight: 900;
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
   line-height: 1;
+  transform: translateY(-1px);
 }
 
 .hud__phone-close:hover,
 .hud__phone-nav-button:hover,
 .hud__phone-close:focus-visible,
 .hud__phone-nav-button:focus-visible {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .hud__phone-screen-content {
@@ -480,6 +491,7 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-app-panel-head {
+  position: static;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -487,9 +499,10 @@ body.is-builder-resizing * {
 }
 
 .hud__phone-nav-button {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
+  position: absolute;
+  top: var(--phone-chrome-top);
+  left: var(--phone-chrome-side);
+  z-index: 4;
 }
 
 .hud__phone-app-panel h2 {
@@ -1133,13 +1146,73 @@ body.is-builder-resizing * {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.hud__phone-map-head {
+  align-items: center;
+}
+
+.hud__phone-map-controls {
+  display: inline-grid;
+  grid-template-columns: 30px minmax(42px, auto) 30px;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px;
+  border: 1px solid rgba(156, 215, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(3, 9, 16, 0.34);
+}
+
+.hud__phone-map-controls span {
+  color: rgba(255, 247, 225, 0.78);
+  font-size: 9px;
+  font-weight: 1000;
+  line-height: 1;
+  text-align: center;
+}
+
+.hud__phone-map-zoom {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f7fbff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 1000;
+  line-height: 1;
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.hud__phone-map-zoom:hover:not(:disabled),
+.hud__phone-map-zoom:focus-visible:not(:disabled) {
+  background: rgba(58, 164, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.hud__phone-map-zoom:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .hud__phone-map-canvas {
+  position: relative;
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(156, 215, 255, 0.22);
   border-radius: 24px;
   background: rgba(3, 9, 16, 0.48);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 18px 32px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.hud__phone-map-canvas.is-dragging {
+  cursor: grabbing;
 }
 
 .hud__phone-map-svg {
@@ -1189,6 +1262,17 @@ body.is-builder-resizing * {
   stroke-width: 2;
 }
 
+.hud__phone-map-marker {
+  cursor: help;
+  outline: none;
+}
+
+.hud__phone-map-marker:focus-visible circle,
+.hud__phone-map-player:focus-visible circle {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
 .hud__phone-map-marker text {
   fill: #fff;
   font-size: 9px;
@@ -1221,6 +1305,78 @@ body.is-builder-resizing * {
 
 .hud__phone-map-player path {
   fill: #36d6ff;
+}
+
+.hud__phone-map-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: inline-grid;
+  grid-template-columns: 30px minmax(0, auto);
+  align-items: center;
+  gap: 9px;
+  max-width: 190px;
+  padding: 8px 10px 8px 8px;
+  border: 1px solid rgba(255, 247, 225, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(10, 18, 28, 0.96), rgba(5, 9, 16, 0.94)),
+    radial-gradient(circle at 16% 10%, rgba(58, 164, 255, 0.18), transparent 42%);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: #fff7e6;
+  pointer-events: none;
+}
+
+.hud__phone-map-tooltip[hidden] {
+  display: none;
+}
+
+.hud__phone-map-tooltip-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 1000;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.hud__phone-map-tooltip-icon.is-shady {
+  background: rgba(242, 186, 69, 0.2);
+  color: #ffd878;
+}
+
+.hud__phone-map-tooltip-icon.is-stock {
+  background: rgba(72, 212, 255, 0.18);
+  color: #7ce5ff;
+}
+
+.hud__phone-map-tooltip-icon.is-blackjack {
+  background: rgba(255, 111, 141, 0.18);
+  color: #ff9aae;
+}
+
+.hud__phone-map-tooltip-icon.is-workout {
+  background: rgba(104, 224, 143, 0.18);
+  color: #a0f1b9;
+}
+
+.hud__phone-map-tooltip-icon.is-player {
+  background: rgba(54, 214, 255, 0.2);
+  color: #b8f5ff;
+  font-size: 8px;
+}
+
+.hud__phone-map-tooltip strong {
+  min-width: 0;
+  color: #fff7e6;
+  font-size: 12px;
+  font-weight: 1000;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .hud__phone-settings-app {
@@ -6261,6 +6417,8 @@ canvas {
   }
 
   .hud__phone-screen {
+    --phone-chrome-top: 10px;
+    --phone-chrome-side: 10px;
     border-radius: 23px;
   }
 
@@ -6271,15 +6429,18 @@ canvas {
   }
 
   .hud__phone-close {
-    top: 42px;
-    right: 9px;
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
+  }
+
+  .hud__phone-nav-button {
+    width: 30px;
+    height: 30px;
   }
 
   .hud__phone-close span,
   .hud__phone-nav-button span {
-    font-size: 15px;
+    font-size: 24px;
   }
 
   .hud__phone-screen-content {
@@ -6319,11 +6480,6 @@ canvas {
 
   .hud__phone-app-panel-head {
     gap: 6px;
-  }
-
-  .hud__phone-nav-button {
-    width: 28px;
-    height: 28px;
   }
 
   .hud__phone-wallet-head h2,
