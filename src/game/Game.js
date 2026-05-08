@@ -508,6 +508,7 @@ export class Game {
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.phoneUnlockSound = this.createSoundEffect(assets.audio?.phoneUnlock, { volume: 0.58 });
     this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
     this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
     this.handledRentIntroSeq = 0;
@@ -841,6 +842,7 @@ export class Game {
       this.pistolCockSound,
       this.pistolShotSound,
       this.rentChaChingSound,
+      this.phoneUnlockSound,
       this.playingCardSound,
       this.typingOnKeyboardSound
     ]) {
@@ -1729,6 +1731,7 @@ export class Game {
     this.phoneMenuVisible = true;
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    this.playSoundEffect(this.phoneUnlockSound);
     this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
     return true;
   }

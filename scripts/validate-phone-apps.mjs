@@ -6,6 +6,7 @@ import {
   executeStockTrade,
   serializeStockMarket
 } from '../src/shared/stockMarket.js';
+import { assets } from '../src/world/assetManifest.js';
 
 const root = process.cwd();
 const hudSource = fs.readFileSync(path.join(root, 'src/ui/Hud.js'), 'utf8');
@@ -37,10 +38,18 @@ assert.match(gameSource, /createPhoneMapState/, 'Game creates map state from liv
 assert.match(gameSource, /setPhoneMapZoom/, 'Game owns phone map zoom state');
 assert.match(gameSource, /panPhoneMapByScreenDelta/, 'Game owns phone map pan state');
 assert.match(gameSource, /handlePhoneMapKeyboardInput/, 'Game maps WASD input to phone map panning');
+assert.match(gameSource, /phoneUnlockSound/, 'Game registers the phone unlock sound');
+assert.match(gameSource, /playSoundEffect\(this\.phoneUnlockSound\)/, 'Game plays the unlock sound when opening the phone');
 assert.match(gameSource, /captureAndSaveWorldMap/, 'Game can manually capture the world map');
 assert.match(gameSource, /WORLD_MAP_IMAGE_METADATA_URL/, 'Game loads cached map image metadata');
 assert.match(gameSource, /setMasterVolume/, 'Game owns persisted master volume setting');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
+
+assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');
+const phoneUnlockAudio = fs.readFileSync(new URL(assets.audio.phoneUnlock));
+assert.ok(phoneUnlockAudio.length > 12, 'Phone unlock audio should not be empty.');
+assert.equal(phoneUnlockAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Phone unlock audio should be a WAV file.');
+assert.equal(phoneUnlockAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Phone unlock audio should have a WAVE header.');
 
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
