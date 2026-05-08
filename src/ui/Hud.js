@@ -59,6 +59,21 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
 });
 
+const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
+  money: '&#128181;',
+  package: '&#128230;',
+  muscle: '&#128170;',
+  chart: '&#128200;',
+  'playing-card': '&#127183;'
+});
+
+const PHONE_MISSION_STATUS_LABELS = Object.freeze({
+  available: 'Available',
+  completed: 'Done',
+  inProgress: 'In Progress',
+  locked: 'Locked'
+});
+
 const POSE_DEBUG_EXTRA_FIELDS = Object.freeze([
   Object.freeze({
     key: 'punchAimYawOffset',
@@ -137,7 +152,6 @@ function getPhoneCharacterAppMarkup(app) {
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
           <span aria-hidden="true">&lt;</span>
         </button>
-        ${getPhoneAppIconMarkup(app, 'is-panel')}
       </div>
       <div class="hud__phone-character-stage-shell">
         <button class="hud__phone-character-nav" type="button" data-phone-character-prev aria-label="Previous character">
@@ -156,9 +170,35 @@ function getPhoneCharacterAppMarkup(app) {
   `;
 }
 
+function getPhoneMissionsAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-missions-app"
+      data-phone-missions-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-missions-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <div class="hud__phone-missions-title-block">
+          <h2>Missions</h2>
+          <p data-phone-missions-count>Loading objectives</p>
+        </div>
+      </div>
+      <section class="hud__phone-missions-current" data-phone-missions-current aria-label="Current mission"></section>
+      <section class="hud__phone-missions-list" data-phone-missions-list aria-label="Mission list"></section>
+    </div>
+  `;
+}
+
 function getPhoneAppPanelMarkup(app) {
   if (app.id === 'character') {
     return getPhoneCharacterAppMarkup(app);
+  }
+
+  if (app.id === 'missions') {
+    return getPhoneMissionsAppMarkup(app);
   }
 
   return `
@@ -170,7 +210,6 @@ function getPhoneAppPanelMarkup(app) {
         <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
           <span aria-hidden="true">&lt;</span>
         </button>
-        ${getPhoneAppIconMarkup(app, 'is-panel')}
       </div>
       <h2>${escapeHtml(app.label)}</h2>
       <p>${escapeHtml(app.body)}</p>
@@ -821,6 +860,7 @@ export class Hud {
     };
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
+    this.lastPhoneMissionsSignature = '';
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
@@ -1826,6 +1866,7 @@ export class Hud {
       return;
     }
 
+    this.lastPhoneMissionsSignature = '';
     this.phoneScreenContent.innerHTML = getPhoneScreenMarkup(this.phoneActiveAppId);
   }
 
@@ -2410,7 +2451,8 @@ export class Hud {
     onClose,
     onOpenApp,
     onHome,
-    onCycleCharacter
+    onCycleCharacter,
+    onSelectMission
   }) {
     this.phoneLauncher?.addEventListener('click', () => {
       onToggle?.();
@@ -2445,6 +2487,16 @@ export class Hud {
         event.preventDefault();
         event.stopPropagation();
         onCycleCharacter?.(1);
+        return;
+      }
+
+      const missionButton = target?.closest('[data-phone-mission-id]');
+      if (missionButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!missionButton.disabled) {
+          onSelectMission?.(missionButton.getAttribute('data-phone-mission-id') ?? '');
+        }
         return;
       }
 
@@ -4017,6 +4069,116 @@ export class Hud {
 
     if (status) {
       status.textContent = selectedEntry?.label ?? 'Character';
+    }
+  }
+
+  getPhoneMissionIconMarkup(icon = '') {
+    return PHONE_MISSION_ICON_ENTITIES[icon] ?? '&#9679;';
+  }
+
+  getPhoneMissionStatusMarkup(mission = {}) {
+    if (mission.selected) {
+      return '<span class="hud__phone-mission-status is-selected">Selected</span>';
+    }
+
+    if (mission.status === 'completed') {
+      return '<span class="hud__phone-mission-status is-completed"><span aria-hidden="true">&#10003;</span> Done</span>';
+    }
+
+    if (mission.status === 'locked') {
+      return '<span class="hud__phone-mission-status is-locked"><span aria-hidden="true">&#128274;</span> Locked</span>';
+    }
+
+    return `<span class="hud__phone-mission-status">${escapeHtml(PHONE_MISSION_STATUS_LABELS[mission.status] ?? 'Available')}</span>`;
+  }
+
+  getPhoneMissionRowMarkup(mission = {}, { current = false } = {}) {
+    const status = String(mission.status ?? 'locked');
+    const selectedClass = mission.selected ? ' is-selected' : '';
+    const currentClass = current ? ' is-current' : '';
+    const disabled = mission.selectable && !mission.selected ? '' : ' disabled';
+    const title = mission.label || mission.title || 'Mission';
+    const detail = mission.status === 'locked'
+      ? (mission.requirement || 'Locked')
+      : (mission.description || '');
+
+    return `
+      <button
+        class="hud__phone-mission-row is-${escapeHtml(status)}${selectedClass}${currentClass}"
+        type="button"
+        data-phone-mission-id="${escapeHtml(mission.id ?? '')}"
+        ${disabled}
+      >
+        <span class="hud__phone-mission-icon" aria-hidden="true">${this.getPhoneMissionIconMarkup(mission.icon)}</span>
+        <span class="hud__phone-mission-copy">
+          <span class="hud__phone-mission-title">${escapeHtml(title)}</span>
+          <span class="hud__phone-mission-detail">${escapeHtml(detail)}</span>
+        </span>
+        ${this.getPhoneMissionStatusMarkup(mission)}
+      </button>
+    `;
+  }
+
+  setPhoneMissionsState({
+    missions = [],
+    selectedMissionId = ''
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-missions-app]');
+    if (!root) {
+      return;
+    }
+
+    const safeMissions = Array.isArray(missions) ? missions : [];
+    const signature = JSON.stringify(safeMissions.map((mission) => ({
+      id: mission.id,
+      title: mission.title,
+      description: mission.description,
+      requirement: mission.requirement,
+      status: mission.status,
+      selected: mission.selected,
+      selectable: mission.selectable,
+      icon: mission.icon
+    })));
+    if (signature === this.lastPhoneMissionsSignature) {
+      return;
+    }
+    this.lastPhoneMissionsSignature = signature;
+
+    const selectedMission = safeMissions.find((mission) => mission.selected || mission.id === selectedMissionId) ?? null;
+    const current = root.querySelector('[data-phone-missions-current]');
+    const list = root.querySelector('[data-phone-missions-list]');
+    const count = root.querySelector('[data-phone-missions-count]');
+
+    const completedCount = safeMissions.filter((mission) => mission.status === 'completed').length;
+    const availableCount = safeMissions.filter((mission) => (
+      mission.status === 'available'
+      || mission.status === 'inProgress'
+    )).length;
+    if (count) {
+      count.textContent = `${completedCount}/${safeMissions.length} complete; ${availableCount} open`;
+    }
+
+    if (current) {
+      current.innerHTML = selectedMission
+        ? `
+          <div class="hud__phone-missions-section-label">Current</div>
+          ${this.getPhoneMissionRowMarkup(selectedMission, { current: true })}
+        `
+        : `
+          <div class="hud__phone-missions-empty">
+            <strong>No active mission</strong>
+            <span>New objectives will appear here.</span>
+          </div>
+        `;
+    }
+
+    if (list) {
+      list.innerHTML = `
+        <div class="hud__phone-missions-section-label">All Missions</div>
+        <div class="hud__phone-missions-scroll">
+          ${safeMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+        </div>
+      `;
     }
   }
 

@@ -43,6 +43,11 @@ import {
 } from '../../src/shared/gymMembership.js';
 import { resolveRentIntroPlan } from '../../src/shared/rentIntro.js';
 import {
+  isMissionSelectable,
+  normalizeMissionId,
+  resolveSelectedMissionId
+} from '../../src/shared/missions.js';
+import {
   createInitialStockMarketState,
   executeStockTrade,
   getStockMarketPromptRadius,
@@ -181,6 +186,7 @@ const PlayerState = schema({
   gymPumpCompletedAt: 'number',
   stockBoughtAt: 'number',
   blackjackHandPlayedAt: 'number',
+  selectedMissionId: 'string',
   characterId: 'string',
   isAdmin: 'boolean'
 });
@@ -386,6 +392,10 @@ export class WorldRoom extends Room {
       this.updatePlayerCharacter(client, message);
     });
 
+    this.onMessage('mission:select', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleMissionSelect(client, message));
+    });
+
     this.onMessage('builder:updatePresence', (client, message) => {
       try {
         this.updateBuilderPresence(client, message);
@@ -572,6 +582,7 @@ export class WorldRoom extends Room {
     player.gymPumpCompletedAt = 0;
     player.stockBoughtAt = 0;
     player.blackjackHandPlayedAt = 0;
+    player.selectedMissionId = resolveSelectedMissionId(player);
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     this.state.players.set(client.sessionId, player);
@@ -711,6 +722,39 @@ export class WorldRoom extends Room {
     }
 
     player.characterId = sanitizeCharacterId(message?.characterId);
+  }
+
+  normalizePlayerSelectedMission(player) {
+    if (!player) {
+      return '';
+    }
+
+    const nextMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+    if (player.selectedMissionId !== nextMissionId) {
+      player.selectedMissionId = nextMissionId;
+    }
+    return nextMissionId;
+  }
+
+  handleMissionSelect(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      throw new Error('Your player is not connected.');
+    }
+
+    const missionId = normalizeMissionId(message?.missionId);
+    if (!missionId) {
+      throw new Error('That mission is not available.');
+    }
+
+    if (!isMissionSelectable(missionId, player)) {
+      throw new Error('That mission is locked or already complete.');
+    }
+
+    player.selectedMissionId = missionId;
+    return {
+      selectedMissionId: this.normalizePlayerSelectedMission(player)
+    };
   }
 
   getDeliveryQuestPayload(player) {
@@ -945,6 +989,7 @@ export class WorldRoom extends Room {
     const trade = result.trade ?? {};
     if (trade.side === 'buy' && Number(player.stockBoughtAt ?? 0) <= 0) {
       player.stockBoughtAt = Date.now();
+      this.normalizePlayerSelectedMission(player);
     }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     this.setNpcChatPhase(
@@ -1015,6 +1060,7 @@ export class WorldRoom extends Room {
     session.completedAt = Date.now();
     if (Number(player.blackjackHandPlayedAt ?? 0) <= 0) {
       player.blackjackHandPlayedAt = session.completedAt;
+      this.normalizePlayerSelectedMission(player);
     }
     const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
     player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
@@ -1129,6 +1175,7 @@ export class WorldRoom extends Room {
     player.deliveryQuestTargetNpcId = target.id;
     player.deliveryQuestAcceptedAt = now;
     player.deliveryQuestCompletedAt = 0;
+    this.normalizePlayerSelectedMission(player);
 
     const targetName = getDeliveryQuestTargetName(target.npc);
     this.setNpcChatPhase(
@@ -1180,6 +1227,7 @@ export class WorldRoom extends Room {
       0,
       Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)
     ) + 1;
+    this.normalizePlayerSelectedMission(player);
     const currentMoney = Number(player.money ?? 0);
     player.money = (Number.isFinite(currentMoney) ? Math.trunc(currentMoney) : 0) + DELIVERY_QUEST_REWARD_AMOUNT;
 
@@ -1244,6 +1292,7 @@ export class WorldRoom extends Room {
 
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
     return {

@@ -106,10 +106,10 @@ const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
-  fitHeightFraction: 0.98,
-  fitWidthFraction: 0.98,
-  bottomPaddingRatio: 0.15,
-  distanceMultiplier: 0.68,
+  fitHeightFraction: 0.96,
+  fitWidthFraction: 0.96,
+  bottomPaddingRatio: 0.22,
+  distanceMultiplier: 0.58,
   cameraLiftRatio: 0,
   cameraXRatio: 0
 });
@@ -346,6 +346,11 @@ export class Game {
     this.activeWorkoutPlacementId = '';
     this.gymPumpTaskConfettiPlayed = false;
     this.taskTracker = new TaskTracker();
+    this.phoneMissionState = {
+      missions: [],
+      selectedMissionId: ''
+    };
+    this.missionSelectRequestInFlight = false;
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
@@ -437,7 +442,8 @@ export class Game {
       onClose: () => this.closePhoneMenu(),
       onOpenApp: (appId) => this.openPhoneApp(appId),
       onHome: () => this.showPhoneHome(),
-      onCycleCharacter: (step) => this.cycleCharacterSelection(step)
+      onCycleCharacter: (step) => this.cycleCharacterSelection(step),
+      onSelectMission: (missionId) => void this.selectPhoneMission(missionId)
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -986,6 +992,10 @@ export class Game {
     void this.syncPhoneCharacterPreview(entries, selectedId);
   }
 
+  refreshPhoneMissionsHud() {
+    this.hud.setPhoneMissionsState(this.phoneMissionState);
+  }
+
   refreshCharacterSelectorHud() {
     const available = this.canUseCharacterSelector();
     const visible = available && this.characterSelectorVisible;
@@ -1064,6 +1074,7 @@ export class Game {
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: false, activeAppId: '' });
     this.refreshPhoneCharacterHud();
+    this.refreshPhoneMissionsHud();
     return false;
   }
 
@@ -1083,6 +1094,7 @@ export class Game {
     this.phoneActiveAppId = String(appId ?? '');
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
     this.refreshPhoneCharacterHud();
+    this.refreshPhoneMissionsHud();
   }
 
   showPhoneHome() {
@@ -1093,6 +1105,36 @@ export class Game {
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: '' });
     this.refreshPhoneCharacterHud();
+    this.refreshPhoneMissionsHud();
+  }
+
+  async selectPhoneMission(missionId = '') {
+    if (this.missionSelectRequestInFlight) {
+      return;
+    }
+
+    const normalizedMissionId = String(missionId ?? '').trim();
+    if (!normalizedMissionId || !this.npcService?.selectMission) {
+      return;
+    }
+
+    this.missionSelectRequestInFlight = true;
+    try {
+      const result = await this.npcService.selectMission(normalizedMissionId);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That mission is not available.');
+        return;
+      }
+
+      const localPlayerState = this.getLocalPlayerState();
+      if (localPlayerState) {
+        this.syncTaskHud(localPlayerState);
+      }
+    } catch (error) {
+      this.hud.showToast(error?.message ?? 'Could not select that mission.');
+    } finally {
+      this.missionSelectRequestInFlight = false;
+    }
   }
 
   cycleCharacterSelection(step = 1) {
@@ -2221,9 +2263,19 @@ export class Game {
 
   syncTaskHud(localPlayerState = null) {
     const completedTaskId = this.taskTracker.currentTaskId;
-    const { task, completedTask } = this.taskTracker.update(
+    const {
+      task,
+      missions,
+      selectedMission,
+      completedTask
+    } = this.taskTracker.update(
       this.createTaskTrackerContext(localPlayerState)
     );
+    this.phoneMissionState = {
+      missions,
+      selectedMissionId: selectedMission?.id ?? ''
+    };
+    this.refreshPhoneMissionsHud();
 
     if (completedTask) {
       const skipConfetti = completedTaskId === TASK_IDS.gymPump && this.gymPumpTaskConfettiPlayed;
@@ -3339,6 +3391,7 @@ export class Game {
         }
         this.refreshCharacterSelectorHud();
         this.refreshPhoneCharacterHud();
+        this.refreshPhoneMissionsHud();
       });
 
       this.markBoot('boot:layout:start');

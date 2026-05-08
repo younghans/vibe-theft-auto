@@ -101,6 +101,7 @@ function clonePlayerState(player) {
     gymPumpCompletedAt: player.gymPumpCompletedAt ?? 0,
     stockBoughtAt: player.stockBoughtAt ?? 0,
     blackjackHandPlayedAt: player.blackjackHandPlayedAt ?? 0,
+    selectedMissionId: player.selectedMissionId || '',
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
   };
@@ -529,6 +530,12 @@ export class NpcServiceColyseus {
   async doubleBlackjack(npcId = '') {
     return this.rpc('blackjack:double', {
       npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async selectMission(missionId = '') {
+    return this.rpc('mission:select', {
+      missionId: String(missionId ?? '').trim()
     });
   }
 

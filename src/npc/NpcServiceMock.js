@@ -58,6 +58,12 @@ import {
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
+  MISSION_IDS,
+  isMissionSelectable,
+  normalizeMissionId,
+  resolveSelectedMissionId
+} from '../shared/missions.js';
+import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -188,6 +194,7 @@ function createDefaultPlayerState(overrides = {}) {
     gymPumpCompletedAt: 0,
     stockBoughtAt: 0,
     blackjackHandPlayedAt: 0,
+    selectedMissionId: MISSION_IDS.makeMoney,
     lastPunchAt: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
@@ -689,6 +696,35 @@ export class NpcServiceMock {
     this.emit();
   }
 
+  normalizePlayerSelectedMission(player) {
+    if (!player) {
+      return '';
+    }
+
+    const nextMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+    if (player.selectedMissionId !== nextMissionId) {
+      player.selectedMissionId = nextMissionId;
+    }
+    return nextMissionId;
+  }
+
+  async selectMission(missionId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player) {
+      return { ok: false, error: 'Your player is not connected.' };
+    }
+
+    const normalizedMissionId = normalizeMissionId(missionId);
+    if (!normalizedMissionId || !isMissionSelectable(normalizedMissionId, player)) {
+      return { ok: false, error: 'That mission is locked or already complete.' };
+    }
+
+    player.selectedMissionId = normalizedMissionId;
+    const selectedMissionId = this.normalizePlayerSelectedMission(player);
+    this.emit();
+    return { ok: true, selectedMissionId };
+  }
+
   setBuilderPresence(presence = {}) {
     if (!this.isAdmin()) {
       this.state.builders.delete(this.state.sessionId);
@@ -1153,6 +1189,7 @@ export class NpcServiceMock {
     const trade = result.trade ?? {};
     if (trade.side === 'buy' && Number(access.player.stockBoughtAt ?? 0) <= 0) {
       access.player.stockBoughtAt = Date.now();
+      this.normalizePlayerSelectedMission(access.player);
     }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     this.setNpcChatPhase(
@@ -1224,6 +1261,7 @@ export class NpcServiceMock {
     session.completedAt = Date.now();
     if (Number(player.blackjackHandPlayedAt ?? 0) <= 0) {
       player.blackjackHandPlayedAt = session.completedAt;
+      this.normalizePlayerSelectedMission(player);
     }
     const payout = Math.max(0, Math.trunc(Number(session.payout ?? 0) || 0));
     player.money = Math.trunc(Number(player.money ?? 0) || 0) + payout;
@@ -1480,6 +1518,7 @@ export class NpcServiceMock {
     player.deliveryQuestTargetNpcId = target.id;
     player.deliveryQuestAcceptedAt = now;
     player.deliveryQuestCompletedAt = 0;
+    this.normalizePlayerSelectedMission(player);
 
     const targetName = getDeliveryQuestTargetName(target.npc);
     this.setNpcChatPhase(
@@ -1534,6 +1573,7 @@ export class NpcServiceMock {
       0,
       Math.floor(Number(player.deliveryQuestCompletionCount ?? 0) || 0)
     ) + 1;
+    this.normalizePlayerSelectedMission(player);
     const currentMoney = Number(player.money ?? 0);
     player.money = (Number.isFinite(currentMoney) ? Math.trunc(currentMoney) : 0) + DELIVERY_QUEST_REWARD_AMOUNT;
 
@@ -1601,6 +1641,7 @@ export class NpcServiceMock {
 
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
     this.emit();
