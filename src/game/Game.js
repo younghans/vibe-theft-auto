@@ -444,7 +444,6 @@ export class Game {
     this.phoneWalletState = {
       wallet: null,
       cash: 0,
-      brokerAvailable: false,
       loading: false,
       error: ''
     };
@@ -452,8 +451,6 @@ export class Game {
       market: null,
       selectedSymbol: '',
       quantity: 1,
-      brokerAvailable: false,
-      brokerName: 'Stock broker',
       loading: false,
       error: ''
     };
@@ -1177,9 +1174,7 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     this.phoneWalletState = {
       ...this.phoneWalletState,
-      cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0),
-      brokerAvailable: true,
-      brokerName: 'Phone brokerage'
+      cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0)
     };
     this.hud.setPhoneWalletState(this.phoneWalletState);
   }
@@ -1195,9 +1190,7 @@ export class Game {
       ...this.phoneStocksState,
       market,
       selectedSymbol: this.stockMarketSelectedSymbol,
-      quantity: this.stockMarketQuantity,
-      brokerAvailable: true,
-      brokerName: 'Phone brokerage'
+      quantity: this.stockMarketQuantity
     };
     this.hud.setPhoneStocksState(this.phoneStocksState);
   }
@@ -1965,6 +1958,7 @@ export class Game {
     const now = performance.now();
     if (!force && now < this.walletRefreshAt) {
       this.refreshPhoneWalletHud();
+      this.refreshPhoneStocksHud();
       return;
     }
 
@@ -2041,9 +2035,8 @@ export class Game {
     await this.refreshWalletSnapshot({ force });
   }
 
-  async openWalletStocks() {
+  openWalletStocks() {
     this.openPhoneApp('stocks');
-    await this.refreshPhoneStocksSnapshot({ force: true });
   }
 
   setMasterVolume(value = DEFAULT_GAME_SETTINGS.masterVolume) {

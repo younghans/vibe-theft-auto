@@ -4799,8 +4799,6 @@ export class Hud {
     market = null,
     selectedSymbol = '',
     quantity = 1,
-    brokerAvailable = true,
-    brokerName = '',
     loading = false,
     error = ''
   } = {}) {
@@ -4817,7 +4815,6 @@ export class Hud {
     const signature = JSON.stringify({
       selectedSymbol: resolvedSelectedSymbol,
       quantity: safeQuantity,
-      brokerAvailable: Boolean(brokerAvailable),
       loading: Boolean(loading),
       error,
       updatedAt: safeMarket?.updatedAt ?? 0,
@@ -4979,8 +4976,6 @@ export class Hud {
   setPhoneWalletState({
     wallet = null,
     cash = 0,
-    brokerAvailable = false,
-    brokerName = 'Stock broker',
     loading = false,
     error = ''
   } = {}) {
@@ -4993,7 +4988,6 @@ export class Hud {
     const holdings = (safeWallet?.stocks ?? []).filter((stock) => Number(stock.shares ?? 0) > 0);
     const signature = JSON.stringify({
       cash,
-      brokerAvailable,
       loading,
       error,
       portfolioValue: safeWallet?.portfolioValue ?? 0,
