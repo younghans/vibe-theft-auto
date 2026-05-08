@@ -34,7 +34,7 @@ const PHONE_APPS = Object.freeze([
   ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
-  ['stocks', 'Stocks', 'stocks', '#48d4ff', 'Market watchlists and portfolio shortcuts will connect here.'],
+  ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
   ['casino', 'Casino', 'casino', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
   ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
   ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
@@ -52,12 +52,30 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   map: '<path d="m4 6.75 5-2 6 2 5-2v12.5l-5 2-6-2-5 2V6.75Z"/><path d="M9 4.75v12.5M15 6.75v12.5"/><path d="M17.4 9.6 15 12l-1.45-1.45"/>',
   missions: '<path d="M5.5 4.75h10.25L19 8v11.25H5.5V4.75Z"/><path d="M15.5 4.75V8.2H19"/><path d="m8.25 12.05 1.6 1.6 3.65-3.8"/><path d="M8.5 16.25h7"/>',
   wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
-  stocks: '<path d="M4.5 18.5h15"/><path d="M6 15.75 9.4 12l3.15 2.5 5.75-7"/><path d="M15.1 7.5h3.2v3.2"/><path d="M6.25 9.25v6.5M11.15 6.75v5.75M16.05 12.25v3.5"/>',
+  skills: '<path d="M5.5 18.75h13"/><path d="M7 17V9.8M12 17V5.25M17 17v-4.7"/><path d="M7 9.8l2.3 1.55L12 5.25l2.6 7.05L17 12.3"/><path d="M4.7 6.2 6 4.9l1.3 1.3M17.1 7.1l1.5-1.5 1.5 1.5"/>',
   casino: '<path d="M7.25 5.25h7.5a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2h-7.5a2 2 0 0 1-2-2V7.25a2 2 0 0 1 2-2Z"/><path d="M9.55 9.25c.8-1.05 2.1-1.05 2.9 0 .8 1.05.32 2.45-.82 3.1L11 12.7l-.63-.35c-1.14-.65-1.62-2.05-.82-3.1Z"/><path d="M8.25 16.25h5.5M18.7 8.2l.6 8.15a1.85 1.85 0 0 1-1.7 2l-.85.06"/>',
   character: '<path d="M8.35 9.15a3.65 3.65 0 1 0 7.3 0 3.65 3.65 0 0 0-7.3 0Z"/><path d="M5.25 19.25c.95-2.75 3.45-4.55 6.75-4.55s5.8 1.8 6.75 4.55"/><path d="M4.5 6.25 6.25 4.5 8 6.25"/><path d="M6.25 4.5v4.25"/><path d="m19.5 17.75-1.75 1.75-1.75-1.75"/><path d="M17.75 15.25v4.25"/>',
   contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
   settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
 });
+
+const PHONE_SKILL_ICON_ENTITIES = Object.freeze({
+  strength: '&#127947;',
+  agility: '&#9889;',
+  intelligence: '&#129504;'
+});
+
+const PHONE_SETTINGS_CONTROLS = Object.freeze([
+  Object.freeze({ action: 'Move', control: 'WASD / left touch stick' }),
+  Object.freeze({ action: 'Interact', control: 'E / action button' }),
+  Object.freeze({ action: 'Phone', control: 'Tab / phone button' }),
+  Object.freeze({ action: 'Emotes', control: 'B' }),
+  Object.freeze({ action: 'Aim', control: 'Right mouse / right touch stick' }),
+  Object.freeze({ action: 'Fire', control: 'Left mouse' }),
+  Object.freeze({ action: 'Reload', control: 'R' }),
+  Object.freeze({ action: 'Zoom', control: 'Mouse wheel or plus/minus' }),
+  Object.freeze({ action: 'Close menus', control: 'Escape' })
+]);
 
 const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   money: '&#128181;',
@@ -192,6 +210,115 @@ function getPhoneMissionsAppMarkup(app) {
   `;
 }
 
+function getPhoneWalletAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-wallet-app"
+      data-phone-wallet-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-wallet-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <div>
+          <h2>Wallet</h2>
+          <p data-phone-wallet-status>Syncing</p>
+        </div>
+      </div>
+      <section class="hud__phone-wallet-balance">
+        <span>Cash</span>
+        <strong data-phone-wallet-cash>$0</strong>
+      </section>
+      <section class="hud__phone-wallet-stats" data-phone-wallet-stats></section>
+      <section class="hud__phone-wallet-holdings" data-phone-wallet-holdings></section>
+      <button class="hud__phone-wallet-stocks-button" type="button" data-phone-wallet-stocks>Stocks</button>
+    </div>
+  `;
+}
+
+function getPhoneSkillsAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-skills-app"
+      data-phone-skills-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-skills-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <div>
+          <h2>Skills</h2>
+          <p data-phone-skills-summary>Loading progress</p>
+        </div>
+      </div>
+      <section class="hud__phone-skills-list" data-phone-skills-list></section>
+    </div>
+  `;
+}
+
+function getPhoneMapAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-map-app"
+      data-phone-map-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-map-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <div>
+          <h2>Map</h2>
+          <p data-phone-map-status>Locating</p>
+        </div>
+      </div>
+      <section class="hud__phone-map-canvas" data-phone-map-canvas aria-label="City map"></section>
+    </div>
+  `;
+}
+
+function getPhoneSettingsAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-settings-app"
+      data-phone-settings-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-settings-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <div>
+          <h2>Settings</h2>
+          <p>Audio and controls</p>
+        </div>
+      </div>
+      <section class="hud__phone-settings-section">
+        <div class="hud__phone-settings-section-head">
+          <span>Audio</span>
+          <strong data-phone-setting-audio-value>82%</strong>
+        </div>
+        <input class="hud__phone-settings-slider" type="range" min="0" max="100" step="1" value="82" data-phone-setting-audio />
+      </section>
+      <section class="hud__phone-settings-section hud__phone-settings-controls">
+        <div class="hud__phone-settings-section-head">
+          <span>Controls</span>
+        </div>
+        <div class="hud__phone-settings-control-list">
+          ${PHONE_SETTINGS_CONTROLS.map((control) => `
+            <div class="hud__phone-settings-control-row">
+              <strong>${escapeHtml(control.action)}</strong>
+              <span>${escapeHtml(control.control)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function getPhoneAppPanelMarkup(app) {
   if (app.id === 'character') {
     return getPhoneCharacterAppMarkup(app);
@@ -199,6 +326,22 @@ function getPhoneAppPanelMarkup(app) {
 
   if (app.id === 'missions') {
     return getPhoneMissionsAppMarkup(app);
+  }
+
+  if (app.id === 'wallet') {
+    return getPhoneWalletAppMarkup(app);
+  }
+
+  if (app.id === 'skills') {
+    return getPhoneSkillsAppMarkup(app);
+  }
+
+  if (app.id === 'map') {
+    return getPhoneMapAppMarkup(app);
+  }
+
+  if (app.id === 'settings') {
+    return getPhoneSettingsAppMarkup(app);
   }
 
   return `
@@ -699,6 +842,10 @@ export class Hud {
     this.taskRoot = this.overlay.querySelector('[data-task]');
     this.taskTitle = this.overlay.querySelector('[data-task-title]');
     this.taskConfetti = this.overlay.querySelector('[data-task-confetti]');
+    this.skillLevelUpRoot = this.overlay.querySelector('[data-skill-level-up]');
+    this.skillLevelUpIcon = this.overlay.querySelector('[data-skill-level-up-icon]');
+    this.skillLevelUpTitle = this.overlay.querySelector('[data-skill-level-up-title]');
+    this.skillLevelUpSubtitle = this.overlay.querySelector('[data-skill-level-up-subtitle]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
@@ -861,6 +1008,10 @@ export class Hud {
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
     this.lastPhoneMissionsSignature = '';
+    this.lastPhoneSkillsSignature = '';
+    this.lastPhoneWalletSignature = '';
+    this.lastPhoneMapSignature = '';
+    this.skillLevelUpTimeout = 0;
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
@@ -1064,6 +1215,14 @@ export class Hud {
         </div>
       </section>
       <canvas class="hud__task-confetti-canvas" data-task-confetti aria-hidden="true"></canvas>
+      <section class="hud__skill-level-up" data-skill-level-up aria-live="polite" hidden>
+        <div class="hud__skill-level-up-burst" aria-hidden="true"></div>
+        <div class="hud__skill-level-up-icon" data-skill-level-up-icon aria-hidden="true">&#127947;</div>
+        <div class="hud__skill-level-up-copy">
+          <strong data-skill-level-up-title>Level Up</strong>
+          <span data-skill-level-up-subtitle>Skill Level 2</span>
+        </div>
+      </section>
       <button
         class="hud__phone-launcher"
         type="button"
@@ -1867,6 +2026,9 @@ export class Hud {
     }
 
     this.lastPhoneMissionsSignature = '';
+    this.lastPhoneSkillsSignature = '';
+    this.lastPhoneWalletSignature = '';
+    this.lastPhoneMapSignature = '';
     this.phoneScreenContent.innerHTML = getPhoneScreenMarkup(this.phoneActiveAppId);
   }
 
@@ -2452,7 +2614,9 @@ export class Hud {
     onOpenApp,
     onHome,
     onCycleCharacter,
-    onSelectMission
+    onSelectMission,
+    onOpenWalletStocks,
+    onMasterVolumeChange
   }) {
     this.phoneLauncher?.addEventListener('click', () => {
       onToggle?.();
@@ -2500,6 +2664,16 @@ export class Hud {
         return;
       }
 
+      const walletStocksButton = target?.closest('[data-phone-wallet-stocks]');
+      if (walletStocksButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!walletStocksButton.disabled) {
+          onOpenWalletStocks?.();
+        }
+        return;
+      }
+
       const appButton = target?.closest('[data-phone-app]');
       if (appButton) {
         onOpenApp?.(appButton.getAttribute('data-phone-app') ?? '');
@@ -2513,6 +2687,13 @@ export class Hud {
 
     this.phoneStage?.querySelector('[data-phone-home]')?.addEventListener('click', () => {
       onHome?.();
+    });
+
+    this.phoneScreenContent?.addEventListener('input', (event) => {
+      const target = event.target instanceof HTMLInputElement ? event.target : null;
+      if (target?.matches('[data-phone-setting-audio]')) {
+        onMasterVolumeChange?.(Number(target.value) / 100);
+      }
     });
   }
 
@@ -4180,6 +4361,289 @@ export class Hud {
         </div>
       `;
     }
+  }
+
+  getPhoneSkillIconMarkup(icon = '') {
+    return PHONE_SKILL_ICON_ENTITIES[icon] ?? '&#9679;';
+  }
+
+  setPhoneSkillsState({
+    skills = [],
+    recentAward = null
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-skills-app]');
+    if (!root) {
+      return;
+    }
+
+    const safeSkills = Array.isArray(skills) ? skills : [];
+    const signature = JSON.stringify({
+      skills: safeSkills.map((skill) => ({
+        id: skill.id,
+        xp: skill.xp,
+        level: skill.level,
+        progress: skill.progress
+      })),
+      recentAwardSeq: recentAward?.seq ?? 0
+    });
+    if (signature === this.lastPhoneSkillsSignature) {
+      return;
+    }
+    this.lastPhoneSkillsSignature = signature;
+
+    const summary = root.querySelector('[data-phone-skills-summary]');
+    const list = root.querySelector('[data-phone-skills-list]');
+    const totalLevel = safeSkills.reduce((total, skill) => total + (Number(skill.level) || 1), 0);
+    if (summary) {
+      summary.textContent = `${safeSkills.length} skills | total ${totalLevel || safeSkills.length}`;
+    }
+
+    if (!list) {
+      return;
+    }
+
+    list.innerHTML = safeSkills.length
+      ? safeSkills.map((skill) => {
+          const progress = Math.max(0, Math.min(1, Number(skill.progress ?? 0)));
+          const maxed = Number(skill.level ?? 1) >= Number(skill.maxLevel ?? 99);
+          const recent = recentAward?.skillId === skill.id ? ' is-recent' : '';
+          return `
+            <article class="hud__phone-skill-card${maxed ? ' is-maxed' : ''}${recent}" style="--skill-accent:${escapeHtml(skill.accent ?? '#68e08f')}">
+              <div class="hud__phone-skill-icon" aria-hidden="true">${this.getPhoneSkillIconMarkup(skill.icon)}</div>
+              <div class="hud__phone-skill-copy">
+                <div class="hud__phone-skill-title">
+                  <strong>${escapeHtml(skill.label ?? 'Skill')}</strong>
+                  <span>${escapeHtml(String(skill.level ?? 1))}/${escapeHtml(String(skill.maxLevel ?? 99))}</span>
+                </div>
+                <div class="hud__phone-skill-progress" aria-hidden="true">
+                  <span style="--skill-progress:${(progress * 100).toFixed(1)}%"></span>
+                </div>
+                <p>${maxed
+                  ? 'Max level reached'
+                  : `${formatHudCount(skill.xpToNextLevel ?? 0)} XP to next`}</p>
+              </div>
+            </article>
+          `;
+        }).join('')
+      : '<div class="hud__phone-empty-state">Skills are syncing.</div>';
+  }
+
+  setPhoneWalletState({
+    wallet = null,
+    cash = 0,
+    brokerAvailable = false,
+    brokerName = 'Stock broker',
+    loading = false,
+    error = ''
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-wallet-app]');
+    if (!root) {
+      return;
+    }
+
+    const safeWallet = wallet && typeof wallet === 'object' ? wallet : null;
+    const holdings = (safeWallet?.stocks ?? []).filter((stock) => Number(stock.shares ?? 0) > 0);
+    const signature = JSON.stringify({
+      cash,
+      brokerAvailable,
+      loading,
+      error,
+      portfolioValue: safeWallet?.portfolioValue ?? 0,
+      netWorth: safeWallet?.netWorth ?? cash,
+      holdings: holdings.map((stock) => [stock.symbol, stock.shares, stock.marketValue, stock.unrealizedProfit])
+    });
+    if (signature === this.lastPhoneWalletSignature) {
+      return;
+    }
+    this.lastPhoneWalletSignature = signature;
+
+    const status = root.querySelector('[data-phone-wallet-status]');
+    const cashNode = root.querySelector('[data-phone-wallet-cash]');
+    const stats = root.querySelector('[data-phone-wallet-stats]');
+    const holdingsNode = root.querySelector('[data-phone-wallet-holdings]');
+    const stocksButton = root.querySelector('[data-phone-wallet-stocks]');
+
+    if (status) {
+      status.textContent = loading
+        ? 'Syncing'
+        : error
+          ? error
+          : brokerAvailable
+            ? `Near ${brokerName || 'broker'}`
+            : 'Visit the bank';
+      status.classList.toggle('is-error', Boolean(error));
+    }
+    if (cashNode) {
+      cashNode.textContent = formatMoneyAmount(safeWallet?.cash ?? cash);
+    }
+    if (stats) {
+      stats.innerHTML = `
+        <div><span>Portfolio</span><strong>${formatMoneyAmount(safeWallet?.portfolioValue ?? 0)}</strong></div>
+        <div><span>Net Worth</span><strong>${formatMoneyAmount(safeWallet?.netWorth ?? cash)}</strong></div>
+      `;
+    }
+    if (holdingsNode) {
+      holdingsNode.innerHTML = `
+        <div class="hud__phone-wallet-section-label">Holdings</div>
+        <div class="hud__phone-wallet-holding-list">
+          ${holdings.length
+            ? holdings.map((stock) => `
+              <div class="hud__phone-wallet-holding" style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}">
+                ${createStockIconMarkup(stock, 'is-mini')}
+                <div>
+                  <strong>${escapeHtml(stock.symbol)}</strong>
+                  <span>${formatHudCount(stock.shares)} shares</span>
+                </div>
+                <div class="${getStockTrendClass(stock.unrealizedProfit)}">
+                  <strong>${formatMoneyAmount(stock.marketValue)}</strong>
+                  <span>${formatSignedStockMoney(stock.unrealizedProfit)}</span>
+                </div>
+              </div>
+            `).join('')
+            : '<div class="hud__phone-empty-state">No holdings yet.</div>'}
+        </div>
+      `;
+    }
+    if (stocksButton) {
+      stocksButton.disabled = loading || !brokerAvailable;
+      stocksButton.textContent = loading
+        ? 'Syncing'
+        : brokerAvailable
+          ? 'Stocks'
+          : 'Visit the bank';
+    }
+  }
+
+  setPhoneSettingsState({
+    masterVolume = 0.82
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-settings-app]');
+    if (!root) {
+      return;
+    }
+
+    const volume = Math.max(0, Math.min(1, Number(masterVolume) || 0));
+    const slider = root.querySelector('[data-phone-setting-audio]');
+    const value = root.querySelector('[data-phone-setting-audio-value]');
+    if (slider && document.activeElement !== slider) {
+      slider.value = String(Math.round(volume * 100));
+    }
+    if (value) {
+      value.textContent = `${Math.round(volume * 100)}%`;
+    }
+  }
+
+  setPhoneMapState({
+    player = null,
+    features = []
+  } = {}) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-map-app]');
+    if (!root) {
+      return;
+    }
+
+    const safeFeatures = Array.isArray(features) ? features : [];
+    const signature = JSON.stringify({
+      player,
+      features: safeFeatures.map((feature) => [feature.id, feature.kind, feature.x, feature.z, feature.width, feature.depth])
+    });
+    if (signature === this.lastPhoneMapSignature) {
+      return;
+    }
+    this.lastPhoneMapSignature = signature;
+
+    const status = root.querySelector('[data-phone-map-status]');
+    const canvas = root.querySelector('[data-phone-map-canvas]');
+    if (status) {
+      status.textContent = player ? 'Live location' : 'Locating';
+    }
+    if (!canvas) {
+      return;
+    }
+
+    const points = [
+      ...safeFeatures.map((feature) => ({ x: Number(feature.x), z: Number(feature.z) })),
+      player ? { x: Number(player.x), z: Number(player.z) } : null
+    ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z));
+
+    if (!points.length) {
+      canvas.innerHTML = '<div class="hud__phone-empty-state">Map data is syncing.</div>';
+      return;
+    }
+
+    const minX = Math.min(...points.map((point) => point.x)) - 8;
+    const maxX = Math.max(...points.map((point) => point.x)) + 8;
+    const minZ = Math.min(...points.map((point) => point.z)) - 8;
+    const maxZ = Math.max(...points.map((point) => point.z)) + 8;
+    const width = 280;
+    const height = 430;
+    const toX = (x) => ((x - minX) / Math.max(1, maxX - minX)) * width;
+    const toY = (z) => ((z - minZ) / Math.max(1, maxZ - minZ)) * height;
+    const featureMarkup = safeFeatures.map((feature) => {
+      const kind = escapeHtml(feature.kind ?? 'building');
+      const x = toX(Number(feature.x));
+      const y = toY(Number(feature.z));
+      const w = Math.max(5, Number(feature.width ?? 1) * 10);
+      const h = Math.max(5, Number(feature.depth ?? 1) * 10);
+      if (['shady', 'stock', 'blackjack', 'workout'].includes(feature.kind)) {
+        return `
+          <g class="hud__phone-map-marker is-${kind}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
+            <circle r="6"></circle>
+            <text y="-9">${escapeHtml(feature.kind === 'stock' ? '$' : feature.kind === 'blackjack' ? 'J' : feature.kind === 'workout' ? 'S' : '?')}</text>
+          </g>
+        `;
+      }
+      return `<rect class="hud__phone-map-feature is-${kind}" x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2"></rect>`;
+    }).join('');
+
+    const playerMarkup = player
+      ? `
+        <g class="hud__phone-map-player" transform="translate(${toX(Number(player.x)).toFixed(1)} ${toY(Number(player.z)).toFixed(1)}) rotate(${((Number(player.rotationY) || 0) * 180 / Math.PI).toFixed(1)})">
+          <circle r="8"></circle>
+          <path d="M0 -15 5 -3 -5 -3Z"></path>
+        </g>
+      `
+      : '';
+
+    canvas.innerHTML = `
+      <svg class="hud__phone-map-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="City map">
+        <rect class="hud__phone-map-bg" width="${width}" height="${height}" rx="18"></rect>
+        ${featureMarkup}
+        ${playerMarkup}
+      </svg>
+    `;
+  }
+
+  showSkillLevelUp({
+    skill = {},
+    oldLevel = 1,
+    newLevel = 1
+  } = {}) {
+    if (!this.skillLevelUpRoot) {
+      return;
+    }
+
+    window.clearTimeout(this.skillLevelUpTimeout);
+    this.skillLevelUpRoot.hidden = false;
+    this.skillLevelUpRoot.style.setProperty('--skill-accent', skill.accent ?? '#68e08f');
+    if (this.skillLevelUpIcon) {
+      this.skillLevelUpIcon.innerHTML = this.getPhoneSkillIconMarkup(skill.icon);
+    }
+    if (this.skillLevelUpTitle) {
+      this.skillLevelUpTitle.textContent = `${skill.label ?? 'Skill'} Level ${newLevel}`;
+    }
+    if (this.skillLevelUpSubtitle) {
+      this.skillLevelUpSubtitle.textContent = `Level ${oldLevel} -> ${newLevel}`;
+    }
+    this.skillLevelUpRoot.classList.remove('is-active');
+    void this.skillLevelUpRoot.offsetWidth;
+    this.skillLevelUpRoot.classList.add('is-active');
+    this.skillLevelUpTimeout = window.setTimeout(() => {
+      this.skillLevelUpRoot?.classList.remove('is-active');
+      if (this.skillLevelUpRoot) {
+        this.skillLevelUpRoot.hidden = true;
+      }
+    }, 2600);
   }
 
   getCharacterSelectorCardPreviewMount(characterId) {

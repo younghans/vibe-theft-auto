@@ -64,6 +64,15 @@ import {
   resolveSelectedMissionId
 } from '../shared/missions.js';
 import {
+  AGILITY_DISTANCE_PER_XP,
+  AGILITY_MAX_XP_PER_UPDATE,
+  AGILITY_MIN_DISTANCE,
+  SKILL_IDS,
+  STRENGTH_SNATCH_XP,
+  applySkillXpToPlayer,
+  normalizeSkillId
+} from '../shared/skills.js';
+import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -194,6 +203,15 @@ function createDefaultPlayerState(overrides = {}) {
     gymPumpCompletedAt: 0,
     stockBoughtAt: 0,
     blackjackHandPlayedAt: 0,
+    strengthXp: 0,
+    agilityXp: 0,
+    intelligenceXp: 0,
+    skillAwardSeq: 0,
+    skillAwardSkillId: '',
+    skillAwardXpGained: 0,
+    skillAwardOldLevel: 1,
+    skillAwardNewLevel: 1,
+    skillAwardAt: 0,
     selectedMissionId: MISSION_IDS.makeMoney,
     lastPunchAt: 0,
     lastShotAt: 0,
@@ -300,7 +318,8 @@ export class NpcServiceMock {
       rentIntroStartedAt: introStartedAt
     }));
     this.playerRuntimeMeta.set(this.state.sessionId, {
-      healthRegenCarryMs: 0
+      healthRegenCarryMs: 0,
+      agilityDistanceCarry: 0
     });
     this.seedCombatPickups();
     this.syncNpcStateFromWorld();
@@ -363,11 +382,60 @@ export class NpcServiceMock {
   getPlayerRuntimeMeta(sessionId = this.state.sessionId) {
     if (!this.playerRuntimeMeta.has(sessionId)) {
       this.playerRuntimeMeta.set(sessionId, {
-        healthRegenCarryMs: 0
+        healthRegenCarryMs: 0,
+        agilityDistanceCarry: 0
       });
     }
 
     return this.playerRuntimeMeta.get(sessionId);
+  }
+
+  awardPlayerSkillXp(player, skillId = '', amount = 0) {
+    const id = normalizeSkillId(skillId);
+    const xpAmount = Math.max(0, Math.floor(Number(amount) || 0));
+    if (!player || !id || xpAmount <= 0) {
+      return null;
+    }
+
+    const award = applySkillXpToPlayer(player, id, xpAmount);
+    if (!award) {
+      return null;
+    }
+
+    player.skillAwardSeq = Math.max(0, Math.floor(Number(player.skillAwardSeq ?? 0) || 0)) + 1;
+    player.skillAwardSkillId = award.skillId;
+    player.skillAwardXpGained = award.xpGained;
+    player.skillAwardOldLevel = award.oldLevel;
+    player.skillAwardNewLevel = award.newLevel;
+    player.skillAwardAt = Date.now();
+    return {
+      ...award,
+      seq: player.skillAwardSeq,
+      awardedAt: player.skillAwardAt
+    };
+  }
+
+  awardAgilityXpFromDistance(player, meta, acceptedDistance = 0) {
+    const distance = Number(acceptedDistance);
+    if (
+      !player
+      || !meta
+      || !Number.isFinite(distance)
+      || distance < AGILITY_MIN_DISTANCE
+    ) {
+      return null;
+    }
+
+    const totalDistance = Math.max(0, Number(meta.agilityDistanceCarry ?? 0) || 0) + distance;
+    const rawXp = Math.floor(totalDistance / AGILITY_DISTANCE_PER_XP);
+    if (rawXp <= 0) {
+      meta.agilityDistanceCarry = totalDistance;
+      return null;
+    }
+
+    const awardedXp = Math.min(rawXp, AGILITY_MAX_XP_PER_UPDATE);
+    meta.agilityDistanceCarry = totalDistance - (rawXp * AGILITY_DISTANCE_PER_XP);
+    return this.awardPlayerSkillXp(player, SKILL_IDS.agility, awardedXp);
   }
 
   seedCombatPickups() {
@@ -670,6 +738,9 @@ export class NpcServiceMock {
     if (this.isGymGateBlockingPosition(player, clamped)) {
       return;
     }
+    const meta = this.getPlayerRuntimeMeta(this.state.sessionId);
+    const travelled = distance2D(player.x, player.z, clamped.x, clamped.z);
+    this.awardAgilityXpFromDistance(player, meta, travelled);
     player.x = clamped.x;
     player.z = clamped.z;
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
@@ -1207,6 +1278,20 @@ export class NpcServiceMock {
     };
   }
 
+  async getWalletSnapshot() {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'Wallet is unavailable right now.' };
+    }
+
+    const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
+    return {
+      ok: true,
+      wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      money: player.money
+    };
+  }
+
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
     const normalizedNpcId = typeof requestedNpcId === 'string'
       ? requestedNpcId.trim()
@@ -1639,8 +1724,10 @@ export class NpcServiceMock {
       return { ok: false, error: 'That workout is not active.' };
     }
 
+    let skillAward = null;
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
+      skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
       this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
@@ -1648,7 +1735,8 @@ export class NpcServiceMock {
     return {
       ok: true,
       placementId: normalizedPlacementId,
-      gymPumpCompletedAt: player.gymPumpCompletedAt
+      gymPumpCompletedAt: player.gymPumpCompletedAt,
+      skillAward
     };
   }
 

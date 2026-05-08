@@ -101,6 +101,15 @@ function clonePlayerState(player) {
     gymPumpCompletedAt: player.gymPumpCompletedAt ?? 0,
     stockBoughtAt: player.stockBoughtAt ?? 0,
     blackjackHandPlayedAt: player.blackjackHandPlayedAt ?? 0,
+    strengthXp: player.strengthXp ?? 0,
+    agilityXp: player.agilityXp ?? 0,
+    intelligenceXp: player.intelligenceXp ?? 0,
+    skillAwardSeq: player.skillAwardSeq ?? 0,
+    skillAwardSkillId: player.skillAwardSkillId || '',
+    skillAwardXpGained: player.skillAwardXpGained ?? 0,
+    skillAwardOldLevel: player.skillAwardOldLevel ?? 1,
+    skillAwardNewLevel: player.skillAwardNewLevel ?? 1,
+    skillAwardAt: player.skillAwardAt ?? 0,
     selectedMissionId: player.selectedMissionId || '',
     characterId: player.characterId || '',
     isAdmin: player.isAdmin === true
@@ -506,6 +515,10 @@ export class NpcServiceColyseus {
       side: String(side ?? '').trim(),
       quantity
     });
+  }
+
+  async getWalletSnapshot() {
+    return this.rpc('wallet:getSnapshot');
   }
 
   async startBlackjack(npcId = '', wager = 0) {

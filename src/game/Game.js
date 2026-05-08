@@ -81,6 +81,10 @@ import {
   isBlackjackDealerNpc,
   normalizeBlackjackWager
 } from '../shared/blackjack.js';
+import {
+  SKILL_DEFINITIONS,
+  getPlayerSkillsSnapshot
+} from '../shared/skills.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -105,6 +109,11 @@ const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
 const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
+const GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
+const DEFAULT_GAME_SETTINGS = Object.freeze({
+  masterVolume: 0.82
+});
+const PHONE_MAP_REFRESH_MS = 140;
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -143,6 +152,31 @@ function readStoredCharacterId() {
     return getPlayableCharacterById(stored).id;
   } catch {
     return DEFAULT_PLAYABLE_CHARACTER_ID;
+  }
+}
+
+function readStoredGameSettings() {
+  try {
+    const raw = window.localStorage?.getItem(GAME_SETTINGS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const masterVolume = Number(parsed?.masterVolume);
+    return {
+      masterVolume: Number.isFinite(masterVolume)
+        ? THREE.MathUtils.clamp(masterVolume, 0, 1)
+        : DEFAULT_GAME_SETTINGS.masterVolume
+    };
+  } catch {
+    return { ...DEFAULT_GAME_SETTINGS };
+  }
+}
+
+function writeStoredGameSettings(settings = DEFAULT_GAME_SETTINGS) {
+  try {
+    window.localStorage?.setItem(GAME_SETTINGS_STORAGE_KEY, JSON.stringify({
+      masterVolume: THREE.MathUtils.clamp(Number(settings.masterVolume), 0, 1)
+    }));
+  } catch {
+    // Local persistence is best-effort; gameplay should continue if storage is unavailable.
   }
 }
 
@@ -350,6 +384,28 @@ export class Game {
       missions: [],
       selectedMissionId: ''
     };
+    this.phoneSkillsState = {
+      skills: [],
+      recentAward: null
+    };
+    this.phoneWalletState = {
+      wallet: null,
+      cash: 0,
+      brokerAvailable: false,
+      loading: false,
+      error: ''
+    };
+    this.phoneMapState = {
+      player: null,
+      features: [],
+      updatedAt: 0
+    };
+    this.gameSettings = readStoredGameSettings();
+    this.lastSkillAwardSeq = 0;
+    this.skillLevelSnapshot = new Map();
+    this.walletRequestInFlight = false;
+    this.walletRefreshAt = 0;
+    this.lastPhoneMapRefreshAt = 0;
     this.missionSelectRequestInFlight = false;
     this.deliveryQuestRequestInFlight = false;
     this.deliveryQuestReminderSuppressedKey = '';
@@ -443,7 +499,9 @@ export class Game {
       onOpenApp: (appId) => this.openPhoneApp(appId),
       onHome: () => this.showPhoneHome(),
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
-      onSelectMission: (missionId) => void this.selectPhoneMission(missionId)
+      onSelectMission: (missionId) => void this.selectPhoneMission(missionId),
+      onOpenWalletStocks: () => void this.openWalletStocks(),
+      onMasterVolumeChange: (value) => this.setMasterVolume(value)
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -682,6 +740,14 @@ export class Game {
     };
   }
 
+  getEffectiveSoundVolume(soundEffect) {
+    return THREE.MathUtils.clamp(
+      Number(soundEffect?.volume ?? 1) * Number(this.gameSettings?.masterVolume ?? 1),
+      0,
+      1
+    );
+  }
+
   getSoundEffectTemplate(soundEffect) {
     if (!soundEffect) {
       return null;
@@ -690,7 +756,7 @@ export class Game {
     if (!soundEffect.template) {
       const sound = new Audio(soundEffect.url);
       sound.preload = 'auto';
-      sound.volume = soundEffect.volume;
+      sound.volume = this.getEffectiveSoundVolume(soundEffect);
       sound.load();
       soundEffect.template = sound;
     }
@@ -705,8 +771,22 @@ export class Game {
     }
 
     const sound = template.cloneNode();
-    sound.volume = template.volume;
+    sound.volume = this.getEffectiveSoundVolume(soundEffect);
     void sound.play().catch(() => {});
+  }
+
+  applyAudioSettings() {
+    for (const soundEffect of [
+      this.pistolCockSound,
+      this.pistolShotSound,
+      this.rentChaChingSound,
+      this.playingCardSound,
+      this.typingOnKeyboardSound
+    ]) {
+      if (soundEffect?.template) {
+        soundEffect.template.volume = this.getEffectiveSoundVolume(soundEffect);
+      }
+    }
   }
 
   fireLocalWeapon(aimDirection, origin = null) {
@@ -996,6 +1076,58 @@ export class Game {
     this.hud.setPhoneMissionsState(this.phoneMissionState);
   }
 
+  refreshPhoneSkillsHud(localPlayerState = this.getLocalPlayerState()) {
+    if (localPlayerState) {
+      this.phoneSkillsState = {
+        skills: getPlayerSkillsSnapshot(localPlayerState),
+        recentAward: this.phoneSkillsState.recentAward ?? null
+      };
+    }
+    this.hud.setPhoneSkillsState(this.phoneSkillsState);
+  }
+
+  refreshPhoneWalletHud() {
+    const localPlayerState = this.getLocalPlayerState();
+    const nearestBroker = this.getNearestStockMarketInteractable();
+    this.phoneWalletState = {
+      ...this.phoneWalletState,
+      cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0),
+      brokerAvailable: Boolean(nearestBroker),
+      brokerName: nearestBroker?.npc?.name ?? nearestBroker?.label ?? 'Stock broker'
+    };
+    this.hud.setPhoneWalletState(this.phoneWalletState);
+  }
+
+  refreshPhoneMapHud(localPlayerState = this.getLocalPlayerState(), { force = false } = {}) {
+    if (!this.phoneMenuVisible || this.phoneActiveAppId !== 'map') {
+      return;
+    }
+
+    const now = performance.now();
+    if (!force && now - this.lastPhoneMapRefreshAt < PHONE_MAP_REFRESH_MS) {
+      return;
+    }
+    this.lastPhoneMapRefreshAt = now;
+
+    this.phoneMapState = this.createPhoneMapState(localPlayerState);
+    this.hud.setPhoneMapState(this.phoneMapState);
+  }
+
+  refreshPhoneSettingsHud() {
+    this.hud.setPhoneSettingsState({
+      masterVolume: this.gameSettings.masterVolume
+    });
+  }
+
+  refreshPhoneAppHud(localPlayerState = this.getLocalPlayerState(), { forceMap = false } = {}) {
+    this.refreshPhoneCharacterHud();
+    this.refreshPhoneMissionsHud();
+    this.refreshPhoneSkillsHud(localPlayerState);
+    this.refreshPhoneWalletHud();
+    this.refreshPhoneMapHud(localPlayerState, { force: forceMap });
+    this.refreshPhoneSettingsHud();
+  }
+
   refreshCharacterSelectorHud() {
     const available = this.canUseCharacterSelector();
     const visible = available && this.characterSelectorVisible;
@@ -1066,6 +1198,7 @@ export class Game {
     this.phoneMenuVisible = true;
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
     return true;
   }
 
@@ -1073,8 +1206,7 @@ export class Game {
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: false, activeAppId: '' });
-    this.refreshPhoneCharacterHud();
-    this.refreshPhoneMissionsHud();
+    this.refreshPhoneAppHud();
     return false;
   }
 
@@ -1093,8 +1225,10 @@ export class Game {
 
     this.phoneActiveAppId = String(appId ?? '');
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
-    this.refreshPhoneCharacterHud();
-    this.refreshPhoneMissionsHud();
+    this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
+    if (this.phoneActiveAppId === 'wallet') {
+      void this.refreshWalletSnapshot({ force: true });
+    }
   }
 
   showPhoneHome() {
@@ -1104,8 +1238,7 @@ export class Game {
 
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: '' });
-    this.refreshPhoneCharacterHud();
-    this.refreshPhoneMissionsHud();
+    this.refreshPhoneAppHud();
   }
 
   async selectPhoneMission(missionId = '') {
@@ -1143,6 +1276,179 @@ export class Game {
     } finally {
       this.missionSelectRequestInFlight = false;
     }
+  }
+
+  getPhoneMapPlacementFeatures() {
+    const layout = this.worldBuilder?.getLayout?.() ?? this.currentLayout ?? {};
+    const features = [];
+    for (const placement of [...(layout.tiles ?? []), ...(layout.props ?? [])]) {
+      const item = getBuilderItemById(placement?.itemId);
+      const cellX = Number(placement?.cell?.[0] ?? placement?.cellX);
+      const cellZ = Number(placement?.cell?.[1] ?? placement?.cellZ);
+      const center = Number.isFinite(cellX) && Number.isFinite(cellZ) && item
+        ? getTileCenterWorldPosition(item, cellX, cellZ, placement.rotationQuarterTurns ?? 0)
+        : {
+            x: Number(placement?.x ?? placement?.position?.[0]),
+            z: Number(placement?.z ?? placement?.position?.[1])
+          };
+      if (!Number.isFinite(center?.x) || !Number.isFinite(center?.z)) {
+        continue;
+      }
+
+      const label = String(item?.label ?? placement?.label ?? placement?.itemId ?? '').trim();
+      const key = `${placement?.itemId ?? ''} ${label}`.toLowerCase();
+      const footprint = item?.footprint ?? item?.size ?? [1, 1];
+      const width = Math.max(1, Number(footprint?.[0] ?? 1) || 1);
+      const depth = Math.max(1, Number(footprint?.[1] ?? 1) || 1);
+      const kind = key.includes('road')
+        ? 'road'
+        : key.includes('gym')
+          ? 'gym'
+          : key.includes('bank')
+            ? 'bank'
+            : key.includes('casino')
+              ? 'casino'
+              : key.includes('barbell') || key.includes('snatch')
+                ? 'workout'
+                : placement?.layer === 'prop'
+                  ? 'prop'
+                  : 'building';
+      features.push({
+        id: placement?.id ?? `${placement?.itemId}:${features.length}`,
+        kind,
+        label,
+        x: center.x,
+        z: center.z,
+        width,
+        depth
+      });
+    }
+
+    for (const npc of this.npcServiceState.npcs?.values?.() ?? []) {
+      if (npc.alive === false || npc.mode === 'hidden' || npc.mode === 'dead') {
+        continue;
+      }
+
+      const x = Number(npc.x ?? npc.position?.[0]);
+      const z = Number(npc.z ?? npc.position?.[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        continue;
+      }
+
+      const kind = isDeliveryQuestGiver(npc.id, npc)
+        ? 'shady'
+        : isStockMarketNpc(npc)
+          ? 'stock'
+          : isBlackjackDealerNpc(npc)
+            ? 'blackjack'
+            : 'npc';
+      if (kind === 'npc') {
+        continue;
+      }
+
+      features.push({
+        id: npc.id,
+        kind,
+        label: npc.name ?? '',
+        x,
+        z,
+        width: 1,
+        depth: 1
+      });
+    }
+
+    return features;
+  }
+
+  createPhoneMapState(localPlayerState = this.getLocalPlayerState()) {
+    const playerPosition = this.player?.position ?? null;
+    const playerX = Number(localPlayerState?.x ?? playerPosition?.x);
+    const playerZ = Number(localPlayerState?.z ?? playerPosition?.z);
+    const playerRotationY = Number(localPlayerState?.rotationY ?? this.player?.rotationY ?? 0);
+    return {
+      player: Number.isFinite(playerX) && Number.isFinite(playerZ)
+        ? { x: playerX, z: playerZ, rotationY: Number.isFinite(playerRotationY) ? playerRotationY : 0 }
+        : null,
+      features: this.getPhoneMapPlacementFeatures(),
+      updatedAt: Date.now()
+    };
+  }
+
+  async refreshWalletSnapshot({ force = false } = {}) {
+    if (this.walletRequestInFlight) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!force && now < this.walletRefreshAt) {
+      this.refreshPhoneWalletHud();
+      return;
+    }
+
+    this.walletRequestInFlight = true;
+    this.walletRefreshAt = now + 3500;
+    this.phoneWalletState = {
+      ...this.phoneWalletState,
+      loading: true,
+      error: ''
+    };
+    this.refreshPhoneWalletHud();
+
+    try {
+      const result = await this.npcService?.getWalletSnapshot?.();
+      if (!result?.ok || !result.wallet) {
+        const error = result?.error ?? 'Wallet sync failed.';
+        this.phoneWalletState = {
+          ...this.phoneWalletState,
+          loading: false,
+          error
+        };
+        this.refreshPhoneWalletHud();
+        return;
+      }
+
+      this.stockMarketSnapshot = result.wallet;
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        wallet: result.wallet,
+        cash: normalizeMoneyAmount(result.wallet.cash ?? result.money ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+    } catch (error) {
+      console.warn('[Wallet] Snapshot failed.', error);
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        loading: false,
+        error: 'Wallet sync failed.'
+      };
+      this.refreshPhoneWalletHud();
+    } finally {
+      this.walletRequestInFlight = false;
+    }
+  }
+
+  async openWalletStocks() {
+    const nearestBroker = this.getNearestStockMarketInteractable();
+    if (!nearestBroker) {
+      this.hud.showToast('Visit the bank to trade stocks.');
+      this.refreshPhoneWalletHud();
+      return;
+    }
+
+    await this.openStockMarket(nearestBroker);
+  }
+
+  setMasterVolume(value = DEFAULT_GAME_SETTINGS.masterVolume) {
+    const masterVolume = THREE.MathUtils.clamp(Number(value), 0, 1);
+    this.gameSettings = {
+      ...this.gameSettings,
+      masterVolume
+    };
+    writeStoredGameSettings(this.gameSettings);
+    this.applyAudioSettings();
+    this.refreshPhoneSettingsHud();
   }
 
   cycleCharacterSelection(step = 1) {
@@ -2314,6 +2620,67 @@ export class Game {
     }
   }
 
+  syncSkillProgress(localPlayerState = null) {
+    if (!localPlayerState) {
+      return;
+    }
+
+    const skills = getPlayerSkillsSnapshot(localPlayerState);
+    const hadSnapshot = this.skillLevelSnapshot.size > 0;
+    const awardSeq = Math.max(0, Math.floor(Number(localPlayerState.skillAwardSeq ?? 0) || 0));
+    const awardSkillId = String(localPlayerState.skillAwardSkillId ?? '');
+    const award = awardSeq > this.lastSkillAwardSeq && awardSkillId
+      ? {
+          seq: awardSeq,
+          skillId: awardSkillId,
+          xpGained: Math.max(0, Math.floor(Number(localPlayerState.skillAwardXpGained ?? 0) || 0)),
+          oldLevel: Math.max(1, Math.floor(Number(localPlayerState.skillAwardOldLevel ?? 1) || 1)),
+          newLevel: Math.max(1, Math.floor(Number(localPlayerState.skillAwardNewLevel ?? 1) || 1)),
+          awardedAt: Number(localPlayerState.skillAwardAt ?? 0) || Date.now()
+        }
+      : null;
+
+    for (const skill of skills) {
+      const previousLevel = this.skillLevelSnapshot.get(skill.id);
+      this.skillLevelSnapshot.set(skill.id, skill.level);
+      if (!award && hadSnapshot && previousLevel && skill.level > previousLevel) {
+        this.hud.showSkillLevelUp({
+          skill,
+          oldLevel: previousLevel,
+          newLevel: skill.level
+        });
+      }
+    }
+
+    if (award) {
+      this.lastSkillAwardSeq = award.seq;
+      const skill = skills.find((entry) => entry.id === award.skillId);
+      this.phoneSkillsState = {
+        skills,
+        recentAward: {
+          ...award,
+          skill
+        }
+      };
+      if (award.newLevel > award.oldLevel && skill) {
+        this.hud.showSkillLevelUp({
+          skill,
+          oldLevel: award.oldLevel,
+          newLevel: award.newLevel
+        });
+      } else if (skill && this.phoneMenuVisible && this.phoneActiveAppId === 'skills') {
+        this.hud.showToast(`+${award.xpGained} ${skill.label} XP`);
+      }
+    } else {
+      this.phoneSkillsState = {
+        skills,
+        recentAward: this.phoneSkillsState.recentAward
+      };
+    }
+
+    this.refreshPhoneSkillsHud(localPlayerState);
+  }
+
   getDeliveryQuestReminderKey(questState = null) {
     if (!questState?.giverNpcId && !questState?.deliveryQuestGiverNpcId) {
       return '';
@@ -2665,6 +3032,13 @@ export class Game {
       }
 
       this.stockMarketSnapshot = result.market;
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        wallet: result.market,
+        cash: normalizeMoneyAmount(result.market.cash ?? result.money ?? 0),
+        loading: false,
+        error: ''
+      };
       const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
       if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
         this.stockMarketSelectedSymbol = result.market.stocks?.[0]?.symbol ?? '';
@@ -2738,6 +3112,14 @@ export class Game {
       }
 
       this.stockMarketSnapshot = result.market;
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        wallet: result.market,
+        cash: normalizeMoneyAmount(result.market.cash ?? result.money ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
       const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
       this.stockMarketSelectedSymbol = listedSymbols.has(symbol)
         ? symbol
@@ -2755,6 +3137,7 @@ export class Game {
       const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
       this.hud.showToast(`${verb} ${trade.quantity ?? this.stockMarketQuantity} ${trade.symbol ?? symbol}.`);
       this.playSoundEffect(this.rentChaChingSound);
+      this.refreshPhoneWalletHud();
     } catch (error) {
       console.warn('[StockMarket] Trade failed.', error);
       this.hud.setStockMarketState({
@@ -3084,6 +3467,32 @@ export class Game {
       .then((result) => {
         if (!result?.ok) {
           this.releaseWorkoutPlacement(normalizedPlacementId);
+          return;
+        }
+        const award = result.skillAward;
+        if (award?.seq && award.seq > this.lastSkillAwardSeq) {
+          this.lastSkillAwardSeq = award.seq;
+          const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
+            id: award.skillId,
+            label: award.label,
+            icon: award.icon,
+            accent: award.accent
+          };
+          this.phoneSkillsState = {
+            ...this.phoneSkillsState,
+            recentAward: {
+              ...award,
+              skill
+            }
+          };
+          if (award.newLevel > award.oldLevel) {
+            this.hud.showSkillLevelUp({
+              skill,
+              oldLevel: award.oldLevel,
+              newLevel: award.newLevel
+            });
+          }
+          this.refreshPhoneSkillsHud();
         }
       })
       .catch(() => {
@@ -3400,8 +3809,7 @@ export class Game {
           });
         }
         this.refreshCharacterSelectorHud();
-        this.refreshPhoneCharacterHud();
-        this.refreshPhoneMissionsHud();
+        this.refreshPhoneAppHud(this.getLocalPlayerState());
       });
 
       this.markBoot('boot:layout:start');
@@ -4757,6 +5165,11 @@ export class Game {
       armed: Boolean(localPlayerState.equippedWeaponId)
     });
     this.syncTaskHud(localPlayerState);
+    this.syncSkillProgress(localPlayerState);
+    if (this.phoneMenuVisible) {
+      this.refreshPhoneWalletHud();
+      this.refreshPhoneMapHud(localPlayerState);
+    }
 
     if (respawned) {
       this.closeQuickChat();

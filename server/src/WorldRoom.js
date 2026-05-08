@@ -65,6 +65,15 @@ import {
   serializeBlackjackSession,
   standBlackjackSession
 } from '../../src/shared/blackjack.js';
+import {
+  AGILITY_DISTANCE_PER_XP,
+  AGILITY_MAX_XP_PER_UPDATE,
+  AGILITY_MIN_DISTANCE,
+  SKILL_IDS,
+  STRENGTH_SNATCH_XP,
+  applySkillXpToPlayer,
+  normalizeSkillId
+} from '../../src/shared/skills.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import {
   chooseFarthestSpawnPoint,
@@ -186,6 +195,15 @@ const PlayerState = schema({
   gymPumpCompletedAt: 'number',
   stockBoughtAt: 'number',
   blackjackHandPlayedAt: 'number',
+  strengthXp: 'number',
+  agilityXp: 'number',
+  intelligenceXp: 'number',
+  skillAwardSeq: 'number',
+  skillAwardSkillId: 'string',
+  skillAwardXpGained: 'number',
+  skillAwardOldLevel: 'number',
+  skillAwardNewLevel: 'number',
+  skillAwardAt: 'number',
   selectedMissionId: 'string',
   characterId: 'string',
   isAdmin: 'boolean'
@@ -458,6 +476,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleStockTradeRequest(client, message));
     });
 
+    this.onMessage('wallet:getSnapshot', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleWalletSnapshotRequest(client));
+    });
+
     this.onMessage('blackjack:start', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleBlackjackStart(client, message));
     });
@@ -582,6 +604,15 @@ export class WorldRoom extends Room {
     player.gymPumpCompletedAt = 0;
     player.stockBoughtAt = 0;
     player.blackjackHandPlayedAt = 0;
+    player.strengthXp = 0;
+    player.agilityXp = 0;
+    player.intelligenceXp = 0;
+    player.skillAwardSeq = 0;
+    player.skillAwardSkillId = '';
+    player.skillAwardXpGained = 0;
+    player.skillAwardOldLevel = 1;
+    player.skillAwardNewLevel = 1;
+    player.skillAwardAt = 0;
     player.selectedMissionId = resolveSelectedMissionId(player);
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
@@ -592,7 +623,8 @@ export class WorldRoom extends Room {
       acceptedAt: Date.now(),
       lastPunchAt: 0,
       lastShotAt: 0,
-      healthRegenCarryMs: 0
+      healthRegenCarryMs: 0,
+      agilityDistanceCarry: 0
     });
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
@@ -669,11 +701,60 @@ export class WorldRoom extends Room {
         acceptedAt: Date.now(),
         lastPunchAt: 0,
         lastShotAt: 0,
-        healthRegenCarryMs: 0
+        healthRegenCarryMs: 0,
+        agilityDistanceCarry: 0
       });
     }
 
     return this.playerPositionMeta.get(sessionId);
+  }
+
+  awardPlayerSkillXp(player, skillId = '', amount = 0) {
+    const id = normalizeSkillId(skillId);
+    const xpAmount = Math.max(0, Math.floor(Number(amount) || 0));
+    if (!player || !id || xpAmount <= 0) {
+      return null;
+    }
+
+    const award = applySkillXpToPlayer(player, id, xpAmount);
+    if (!award) {
+      return null;
+    }
+
+    player.skillAwardSeq = Math.max(0, Math.floor(Number(player.skillAwardSeq ?? 0) || 0)) + 1;
+    player.skillAwardSkillId = award.skillId;
+    player.skillAwardXpGained = award.xpGained;
+    player.skillAwardOldLevel = award.oldLevel;
+    player.skillAwardNewLevel = award.newLevel;
+    player.skillAwardAt = Date.now();
+    return {
+      ...award,
+      seq: player.skillAwardSeq,
+      awardedAt: player.skillAwardAt
+    };
+  }
+
+  awardAgilityXpFromDistance(player, meta, acceptedDistance = 0) {
+    const distance = Number(acceptedDistance);
+    if (
+      !player
+      || !meta
+      || !Number.isFinite(distance)
+      || distance < AGILITY_MIN_DISTANCE
+    ) {
+      return null;
+    }
+
+    const totalDistance = Math.max(0, Number(meta.agilityDistanceCarry ?? 0) || 0) + distance;
+    const rawXp = Math.floor(totalDistance / AGILITY_DISTANCE_PER_XP);
+    if (rawXp <= 0) {
+      meta.agilityDistanceCarry = totalDistance;
+      return null;
+    }
+
+    const awardedXp = Math.min(rawXp, AGILITY_MAX_XP_PER_UPDATE);
+    meta.agilityDistanceCarry = totalDistance - (rawXp * AGILITY_DISTANCE_PER_XP);
+    return this.awardPlayerSkillXp(player, SKILL_IDS.agility, awardedXp);
   }
 
   updatePlayerTransform(client, message = {}) {
@@ -695,6 +776,7 @@ export class WorldRoom extends Room {
       return;
     }
 
+    this.awardAgilityXpFromDistance(player, meta, travelled);
     player.x = quantizePosition(nextPosition.x);
     player.z = quantizePosition(nextPosition.z);
     meta.x = player.x;
@@ -1005,6 +1087,19 @@ export class WorldRoom extends Room {
     };
   }
 
+  handleWalletSnapshotRequest(client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('Wallet is unavailable right now.');
+    }
+
+    const portfolio = this.getPlayerStockPortfolio(client.sessionId);
+    return {
+      wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      money: player.money
+    };
+  }
+
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
     const normalizedNpcId = typeof requestedNpcId === 'string'
       ? requestedNpcId.trim()
@@ -1290,14 +1385,17 @@ export class WorldRoom extends Room {
       throw new Error('That workout is not active.');
     }
 
+    let skillAward = null;
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
+      skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
       this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
     return {
       placementId,
-      gymPumpCompletedAt: player.gymPumpCompletedAt
+      gymPumpCompletedAt: player.gymPumpCompletedAt,
+      skillAward
     };
   }
 

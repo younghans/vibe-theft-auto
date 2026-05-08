@@ -863,6 +863,547 @@ body.is-builder-resizing * {
   font-weight: 700;
 }
 
+.hud__phone-wallet-app,
+.hud__phone-skills-app,
+.hud__phone-map-app,
+.hud__phone-settings-app {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 13px;
+  padding: 70px 16px 36px;
+}
+
+.hud__phone-wallet-head h2,
+.hud__phone-skills-head h2,
+.hud__phone-map-head h2,
+.hud__phone-settings-head h2 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.hud__phone-wallet-head p,
+.hud__phone-skills-head p,
+.hud__phone-map-head p,
+.hud__phone-settings-head p {
+  max-width: none;
+  margin: 3px 0 0;
+  color: rgba(255, 247, 225, 0.66);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.hud__phone-wallet-head p.is-error {
+  color: #ff9b9b;
+}
+
+.hud__phone-wallet-app {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+
+.hud__phone-wallet-balance {
+  display: grid;
+  gap: 4px;
+  padding: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(104, 224, 143, 0.22), transparent 34%),
+    rgba(4, 10, 14, 0.44);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 15px 34px rgba(0, 0, 0, 0.19);
+}
+
+.hud__phone-wallet-balance span,
+.hud__phone-wallet-stats span,
+.hud__phone-wallet-section-label {
+  color: rgba(226, 255, 236, 0.62);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.hud__phone-wallet-balance strong {
+  color: #ecfff3;
+  font-size: 38px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-wallet-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hud__phone-wallet-stats div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: rgba(4, 9, 14, 0.38);
+}
+
+.hud__phone-wallet-stats strong {
+  color: #f5fff8;
+  font-size: 15px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-wallet-holdings {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.hud__phone-wallet-holding-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.hud__phone-wallet-holding {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--stock-accent) 28%, rgba(255, 255, 255, 0.1));
+  border-radius: 15px;
+  background: rgba(4, 8, 13, 0.42);
+}
+
+.hud__phone-wallet-holding div {
+  display: grid;
+  gap: 2px;
+}
+
+.hud__phone-wallet-holding strong {
+  color: #fff8e8;
+  font-size: 11px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-wallet-holding span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.hud__phone-wallet-stocks-button {
+  width: 100%;
+  height: 44px;
+  border: 1px solid rgba(226, 255, 236, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #35d48a, #158652);
+  color: #f3fff7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 1000;
+  text-transform: uppercase;
+  box-shadow: 0 14px 25px rgba(21, 134, 82, 0.24);
+  transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.hud__phone-wallet-stocks-button:hover:not(:disabled),
+.hud__phone-wallet-stocks-button:focus-visible:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.hud__phone-wallet-stocks-button:disabled {
+  cursor: default;
+  opacity: 0.52;
+  filter: grayscale(0.35);
+}
+
+.hud__phone-skills-app {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.hud__phone-skills-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.hud__phone-skill-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--skill-accent) 32%, rgba(255, 255, 255, 0.1));
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 94% 14%, color-mix(in srgb, var(--skill-accent) 18%, transparent), transparent 28%),
+    rgba(5, 9, 15, 0.44);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 28px rgba(0, 0, 0, 0.18);
+}
+
+.hud__phone-skill-card.is-recent {
+  animation: phoneSkillPulse 850ms ease both;
+}
+
+.hud__phone-skill-card.is-maxed {
+  border-color: rgba(255, 221, 105, 0.54);
+  background:
+    radial-gradient(circle at 92% 12%, rgba(255, 221, 105, 0.2), transparent 32%),
+    rgba(24, 17, 5, 0.46);
+}
+
+.hud__phone-skill-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--skill-accent) 30%, rgba(255, 255, 255, 0.08));
+  font-size: 24px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.hud__phone-skill-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hud__phone-skill-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud__phone-skill-title strong,
+.hud__phone-skill-title span {
+  color: rgba(255, 250, 238, 0.96);
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-skill-title span {
+  color: color-mix(in srgb, var(--skill-accent) 82%, #fff);
+}
+
+.hud__phone-skill-progress {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.hud__phone-skill-progress span {
+  display: block;
+  width: var(--skill-progress);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--skill-accent) 84%, #fff), var(--skill-accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--skill-accent) 50%, transparent);
+  transition: width 320ms ease;
+}
+
+.hud__phone-skill-copy p {
+  max-width: none;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.hud__phone-map-app {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.hud__phone-map-canvas {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(156, 215, 255, 0.22);
+  border-radius: 24px;
+  background: rgba(3, 9, 16, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 18px 32px rgba(0, 0, 0, 0.2);
+}
+
+.hud__phone-map-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud__phone-map-bg {
+  fill: #07111b;
+}
+
+.hud__phone-map-feature {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.hud__phone-map-feature.is-road {
+  fill: #29323a;
+  stroke: rgba(255, 226, 120, 0.16);
+}
+
+.hud__phone-map-feature.is-building,
+.hud__phone-map-feature.is-prop {
+  fill: #172330;
+}
+
+.hud__phone-map-feature.is-gym {
+  fill: #234934;
+}
+
+.hud__phone-map-feature.is-bank {
+  fill: #1f4861;
+}
+
+.hud__phone-map-feature.is-casino {
+  fill: #5a2032;
+}
+
+.hud__phone-map-marker circle {
+  fill: rgba(255, 255, 255, 0.1);
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.hud__phone-map-marker text {
+  fill: #fff;
+  font-size: 9px;
+  font-weight: 1000;
+  text-anchor: middle;
+}
+
+.hud__phone-map-marker.is-shady {
+  color: #f2ba45;
+}
+
+.hud__phone-map-marker.is-stock {
+  color: #48d4ff;
+}
+
+.hud__phone-map-marker.is-blackjack {
+  color: #ff6f8d;
+}
+
+.hud__phone-map-marker.is-workout {
+  color: #68e08f;
+}
+
+.hud__phone-map-player circle {
+  fill: #fff8d8;
+  stroke: #36d6ff;
+  stroke-width: 2;
+  animation: phoneMapPlayerPulse 1150ms ease-in-out infinite;
+}
+
+.hud__phone-map-player path {
+  fill: #36d6ff;
+}
+
+.hud__phone-settings-app {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.hud__phone-settings-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 20px;
+  background: rgba(5, 9, 15, 0.42);
+}
+
+.hud__phone-settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud__phone-settings-section-head span,
+.hud__phone-settings-section-head strong {
+  color: rgba(255, 250, 238, 0.92);
+  font-size: 12px;
+  font-weight: 1000;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__phone-settings-section-head strong {
+  color: #dce5ef;
+}
+
+.hud__phone-settings-slider {
+  width: 100%;
+  accent-color: #dce5ef;
+}
+
+.hud__phone-settings-controls {
+  min-height: 0;
+}
+
+.hud__phone-settings-control-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  overflow-y: auto;
+}
+
+.hud__phone-settings-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.hud__phone-settings-control-row strong,
+.hud__phone-settings-control-row span {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.hud__phone-settings-control-row span {
+  color: rgba(255, 255, 255, 0.58);
+  text-align: right;
+}
+
+.hud__phone-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  padding: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.hud__skill-level-up {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  z-index: 10020;
+  display: grid;
+  grid-template-columns: 54px auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 270px;
+  padding: 13px 18px 13px 13px;
+  border: 1px solid color-mix(in srgb, var(--skill-accent, #68e08f) 56%, rgba(255, 255, 255, 0.16));
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 20% 50%, color-mix(in srgb, var(--skill-accent, #68e08f) 34%, transparent), transparent 36%),
+    rgba(4, 10, 12, 0.88);
+  color: #fff;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -12px) scale(0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+}
+
+.hud__skill-level-up.is-active {
+  animation: skillLevelUpIn 2500ms ease both;
+}
+
+.hud__skill-level-up-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--skill-accent, #68e08f) 32%, rgba(255, 255, 255, 0.08));
+  font-size: 28px;
+}
+
+.hud__skill-level-up-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.hud__skill-level-up-copy strong {
+  font-size: 18px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__skill-level-up-copy span {
+  color: color-mix(in srgb, var(--skill-accent, #68e08f) 70%, #fff);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@keyframes phoneSkillPulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+
+  35% {
+    transform: translateY(-2px);
+    filter: brightness(1.2);
+  }
+}
+
+@keyframes phoneMapPlayerPulse {
+  0%,
+  100% {
+    r: 8;
+    opacity: 1;
+  }
+
+  50% {
+    r: 10;
+    opacity: 0.82;
+  }
+}
+
+@keyframes skillLevelUpIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -16px) scale(0.92);
+  }
+
+  10%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -8px) scale(0.98);
+  }
+}
+
 .hud__phone-home-indicator {
   position: absolute;
   left: 50%;
@@ -5672,6 +6213,148 @@ canvas {
 
   .hud__task-title {
     max-width: min(448px, calc(100vw - 64px));
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .hud__phone-frame {
+    padding: 8px;
+    border-radius: 30px;
+  }
+
+  .hud__phone-screen {
+    border-radius: 23px;
+  }
+
+  .hud__phone-island {
+    top: 14px;
+    width: 74px;
+    height: 20px;
+  }
+
+  .hud__phone-close {
+    top: 42px;
+    right: 9px;
+    width: 26px;
+    height: 26px;
+  }
+
+  .hud__phone-close span,
+  .hud__phone-nav-button span {
+    font-size: 15px;
+  }
+
+  .hud__phone-screen-content {
+    padding: 66px 8px 8px;
+  }
+
+  .hud__phone-app-grid {
+    grid-auto-rows: minmax(58px, auto);
+    gap: 7px 5px;
+  }
+
+  .hud__phone-app {
+    gap: 4px;
+  }
+
+  .hud__phone-app-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+  }
+
+  .hud__phone-app-glyph {
+    width: 21px;
+    height: 21px;
+  }
+
+  .hud__phone-app-label {
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .hud__phone-app-panel {
+    gap: 8px;
+    padding: 48px 8px 24px;
+    border-radius: 23px;
+  }
+
+  .hud__phone-app-panel-head {
+    gap: 6px;
+  }
+
+  .hud__phone-nav-button {
+    width: 28px;
+    height: 28px;
+  }
+
+  .hud__phone-wallet-head h2,
+  .hud__phone-skills-head h2,
+  .hud__phone-map-head h2,
+  .hud__phone-settings-head h2 {
+    font-size: 18px;
+  }
+
+  .hud__phone-wallet-head p,
+  .hud__phone-skills-head p,
+  .hud__phone-map-head p,
+  .hud__phone-settings-head p {
+    font-size: 7px;
+  }
+
+  .hud__phone-wallet-balance {
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .hud__phone-wallet-balance strong {
+    font-size: 24px;
+  }
+
+  .hud__phone-wallet-stats div {
+    padding: 7px;
+    border-radius: 10px;
+  }
+
+  .hud__phone-wallet-stocks-button {
+    height: 34px;
+    font-size: 9px;
+  }
+
+  .hud__phone-skills-list {
+    gap: 6px;
+  }
+
+  .hud__phone-skill-card {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 6px;
+    min-height: 58px;
+    padding: 7px;
+    border-radius: 12px;
+  }
+
+  .hud__phone-skill-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 17px;
+  }
+
+  .hud__phone-skill-copy {
+    gap: 5px;
+  }
+
+  .hud__phone-skill-title strong,
+  .hud__phone-skill-title span {
+    font-size: 10px;
+  }
+
+  .hud__phone-skill-progress {
+    height: 6px;
+  }
+
+  .hud__phone-skill-copy p {
+    font-size: 8px;
   }
 }
 
