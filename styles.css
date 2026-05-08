@@ -1152,6 +1152,10 @@ body.is-builder-resizing * {
   fill: #07111b;
 }
 
+.hud__phone-map-raster {
+  opacity: 1;
+}
+
 .hud__phone-map-feature {
   stroke: rgba(255, 255, 255, 0.08);
   stroke-width: 1;
@@ -2603,7 +2607,8 @@ body.is-builder-resizing * {
 .hud__character-selector-toggle,
 .hud__mode-toggle,
 .hud__aim-debug-toggle,
-.hud__shader-debug-toggle {
+.hud__shader-debug-toggle,
+.hud__map-capture-toggle {
   position: static;
   display: inline-flex;
   align-items: center;
@@ -2649,7 +2654,8 @@ body.is-builder-resizing * {
 .hud__character-nav:hover,
 .hud__mode-toggle:hover,
 .hud__aim-debug-toggle:hover,
-.hud__shader-debug-toggle:hover {
+.hud__shader-debug-toggle:hover,
+.hud__map-capture-toggle:hover {
   border-color: rgba(242, 200, 113, 0.55);
   background: rgba(242, 200, 113, 0.12);
   transform: translateY(-1px);
@@ -2658,7 +2664,8 @@ body.is-builder-resizing * {
 .hud__character-selector-toggle.is-active,
 .hud__mode-toggle.is-active,
 .hud__aim-debug-toggle.is-active,
-.hud__shader-debug-toggle.is-active {
+.hud__shader-debug-toggle.is-active,
+.hud__map-capture-toggle.is-active {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #f8d98d;
@@ -2667,7 +2674,8 @@ body.is-builder-resizing * {
 .hud__character-selector-toggle svg,
 .hud__mode-toggle svg,
 .hud__aim-debug-toggle svg,
-.hud__shader-debug-toggle svg {
+.hud__shader-debug-toggle svg,
+.hud__map-capture-toggle svg {
   width: 20px;
   height: 20px;
   fill: none;

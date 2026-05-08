@@ -41,7 +41,11 @@ import {
   WORLD_GROUND_RADIUS,
   WORLD_SHADOW_EXTENT
 } from '../shared/worldConstants.js';
-import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  getTileFootprintWorldSize,
+  rotateFootprintOffset
+} from '../shared/tileFootprint.js';
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
@@ -114,6 +118,11 @@ const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
 const PHONE_MAP_REFRESH_MS = 140;
+const WORLD_MAP_IMAGE_METADATA_URL = '/assets/generated/world-map.json';
+const WORLD_MAP_CAPTURE_ENDPOINT = '/admin/world-map';
+const WORLD_MAP_CAPTURE_WIDTH = 1024;
+const WORLD_MAP_CAPTURE_HEIGHT = 1536;
+const WORLD_MAP_CAPTURE_QUALITY = 0.84;
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -282,6 +291,37 @@ function cloneOffset(offset = [0, 0]) {
   ];
 }
 
+function normalizeWorldMapBounds(bounds = {}) {
+  const minX = Number(bounds.minX);
+  const maxX = Number(bounds.maxX);
+  const minZ = Number(bounds.minZ);
+  const maxZ = Number(bounds.maxZ);
+  if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) {
+    return null;
+  }
+
+  return { minX, maxX, minZ, maxZ };
+}
+
+function normalizeWorldMapImageMetadata(metadata = {}) {
+  const bounds = normalizeWorldMapBounds(metadata?.bounds);
+  const image = typeof metadata?.image === 'string' ? metadata.image.trim() : '';
+  if (!bounds || !image) {
+    return null;
+  }
+
+  const capturedMs = Date.parse(metadata.capturedAt ?? '');
+  const version = Number.isFinite(capturedMs) ? capturedMs : Date.now();
+  return {
+    src: `${image}${image.includes('?') ? '&' : '?'}v=${version}`,
+    bounds,
+    width: Math.max(1, Math.round(Number(metadata.width) || WORLD_MAP_CAPTURE_WIDTH)),
+    height: Math.max(1, Math.round(Number(metadata.height) || WORLD_MAP_CAPTURE_HEIGHT)),
+    capturedAt: typeof metadata.capturedAt === 'string' ? metadata.capturedAt : '',
+    worldKey: typeof metadata.worldKey === 'string' ? metadata.worldKey : ''
+  };
+}
+
 export class Game {
   constructor(root) {
     this.root = root;
@@ -398,8 +438,12 @@ export class Game {
     this.phoneMapState = {
       player: null,
       features: [],
+      image: null,
       updatedAt: 0
     };
+    this.worldMapImage = null;
+    this.worldMapImageRequest = null;
+    this.worldMapCaptureInFlight = false;
     this.gameSettings = readStoredGameSettings();
     this.lastSkillAwardSeq = 0;
     this.skillLevelSnapshot = new Map();
@@ -522,6 +566,9 @@ export class Game {
       onSetIntensity: (intensity) => this.setVibeShaderIntensity(intensity),
       onResetIntensity: () => this.resetVibeShaderIntensity()
     });
+    this.hud.bindMapCaptureEvents({
+      onCapture: () => void this.captureAndSaveWorldMap()
+    });
     this.hud.bindZoomEvents({
       onZoomIn: () => this.stepCameraZoom(-1),
       onZoomOut: () => this.stepCameraZoom(1)
@@ -536,6 +583,7 @@ export class Game {
     this.refreshCharacterSelectorHud();
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
     this.hud.setLoadingProgress(0);
+    void this.loadWorldMapImageMetadata();
 
     window.addEventListener('resize', () => this.onResize());
   }
@@ -1103,6 +1151,10 @@ export class Game {
       return;
     }
 
+    if (!this.worldMapImage && !this.worldMapImageRequest) {
+      void this.loadWorldMapImageMetadata();
+    }
+
     const now = performance.now();
     if (!force && now - this.lastPhoneMapRefreshAt < PHONE_MAP_REFRESH_MS) {
       return;
@@ -1111,6 +1163,286 @@ export class Game {
 
     this.phoneMapState = this.createPhoneMapState(localPlayerState);
     this.hud.setPhoneMapState(this.phoneMapState);
+  }
+
+  getAdminKey() {
+    try {
+      const url = new URL(window.location.href);
+      return url.searchParams.get('adminKey')?.trim() ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  getWorldMapCaptureEndpoint() {
+    const serviceEndpoint = this.npcService?.endpoint;
+    if (typeof serviceEndpoint === 'string' && /^wss?:\/\//i.test(serviceEndpoint)) {
+      try {
+        const url = new URL(serviceEndpoint);
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+        url.pathname = WORLD_MAP_CAPTURE_ENDPOINT;
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+      } catch {
+        // Fall through to same-origin endpoint.
+      }
+    }
+
+    return new URL(WORLD_MAP_CAPTURE_ENDPOINT, window.location.href).toString();
+  }
+
+  refreshMapCaptureHud() {
+    this.hud.setMapCaptureState({
+      visible: this.isLocalAdmin(),
+      busy: this.worldMapCaptureInFlight
+    });
+  }
+
+  async loadWorldMapImageMetadata({ force = false } = {}) {
+    if (this.worldMapImageRequest) {
+      return this.worldMapImageRequest;
+    }
+
+    this.worldMapImageRequest = (async () => {
+      try {
+        const url = `${WORLD_MAP_IMAGE_METADATA_URL}${force ? `?v=${Date.now()}` : ''}`;
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+          if (response.status !== 404) {
+            console.warn('[Map] World map metadata request failed.', response.status);
+          }
+          this.worldMapImage = null;
+          return null;
+        }
+
+        this.worldMapImage = normalizeWorldMapImageMetadata(await response.json());
+        if (this.phoneMenuVisible && this.phoneActiveAppId === 'map') {
+          this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+        }
+        return this.worldMapImage;
+      } catch (error) {
+        console.warn('[Map] Could not load world map image metadata.', error);
+        this.worldMapImage = null;
+        return null;
+      } finally {
+        this.worldMapImageRequest = null;
+      }
+    })();
+
+    return this.worldMapImageRequest;
+  }
+
+  getWorldMapCaptureBounds({ width = WORLD_MAP_CAPTURE_WIDTH, height = WORLD_MAP_CAPTURE_HEIGHT } = {}) {
+    const features = this.getPhoneMapPlacementFeatures();
+    const bounds = features.reduce((box, feature) => {
+      const x = Number(feature.x);
+      const z = Number(feature.z);
+      const halfWidth = Math.max(0.5, Number(feature.width ?? 1) * 0.5);
+      const halfDepth = Math.max(0.5, Number(feature.depth ?? 1) * 0.5);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return box;
+      }
+
+      box.minX = Math.min(box.minX, x - halfWidth);
+      box.maxX = Math.max(box.maxX, x + halfWidth);
+      box.minZ = Math.min(box.minZ, z - halfDepth);
+      box.maxZ = Math.max(box.maxZ, z + halfDepth);
+      return box;
+    }, {
+      minX: Infinity,
+      maxX: -Infinity,
+      minZ: Infinity,
+      maxZ: -Infinity
+    });
+
+    const playerPosition = this.player?.position;
+    if (Number.isFinite(playerPosition?.x) && Number.isFinite(playerPosition?.z)) {
+      bounds.minX = Math.min(bounds.minX, playerPosition.x);
+      bounds.maxX = Math.max(bounds.maxX, playerPosition.x);
+      bounds.minZ = Math.min(bounds.minZ, playerPosition.z);
+      bounds.maxZ = Math.max(bounds.maxZ, playerPosition.z);
+    }
+
+    if (![bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ].every(Number.isFinite)) {
+      bounds.minX = -WORLD_GROUND_RADIUS * 0.5;
+      bounds.maxX = WORLD_GROUND_RADIUS * 0.5;
+      bounds.minZ = -WORLD_GROUND_RADIUS * 0.5;
+      bounds.maxZ = WORLD_GROUND_RADIUS * 0.5;
+    }
+
+    const padding = 9;
+    bounds.minX -= padding;
+    bounds.maxX += padding;
+    bounds.minZ -= padding;
+    bounds.maxZ += padding;
+
+    const targetAspect = Math.max(0.1, Number(width) / Math.max(1, Number(height)));
+    let spanX = Math.max(1, bounds.maxX - bounds.minX);
+    let spanZ = Math.max(1, bounds.maxZ - bounds.minZ);
+    const currentAspect = spanX / spanZ;
+    if (currentAspect > targetAspect) {
+      const nextSpanZ = spanX / targetAspect;
+      const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+      bounds.minZ = centerZ - nextSpanZ * 0.5;
+      bounds.maxZ = centerZ + nextSpanZ * 0.5;
+    } else {
+      const nextSpanX = spanZ * targetAspect;
+      const centerX = (bounds.minX + bounds.maxX) * 0.5;
+      bounds.minX = centerX - nextSpanX * 0.5;
+      bounds.maxX = centerX + nextSpanX * 0.5;
+    }
+
+    spanX = Math.max(1, bounds.maxX - bounds.minX);
+    spanZ = Math.max(1, bounds.maxZ - bounds.minZ);
+    const centerX = (bounds.minX + bounds.maxX) * 0.5;
+    const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+    return { ...bounds, spanX, spanZ, centerX, centerZ };
+  }
+
+  collectWorldMapCaptureHiddenObjects() {
+    const objects = [
+      this.player?.object,
+      this.worldBuilder?.gridHelper,
+      this.worldBuilder?.previewRoot,
+      this.worldBuilder?.selectionRing,
+      this.worldBuilder?.npcTargetPickMarker,
+      this.worldBuilder?.worldRenderer?.npcDebugRoot
+    ];
+
+    for (const avatar of this.remotePlayers?.values?.() ?? []) {
+      objects.push(avatar?.object, avatar?.debugHelper);
+    }
+
+    for (const visual of this.pickupVisuals?.values?.() ?? []) {
+      objects.push(visual?.object);
+    }
+
+    for (const rendered of this.worldBuilder?.worldRenderer?.renderedPlacements?.values?.() ?? []) {
+      if (rendered?.actor?.object) {
+        objects.push(rendered.actor.object);
+      }
+      if (rendered?.actor?.pickProxy) {
+        objects.push(rendered.actor.pickProxy);
+      }
+    }
+
+    return [...new Set(objects.filter(Boolean))];
+  }
+
+  async captureWorldMapDataUrl({
+    width = WORLD_MAP_CAPTURE_WIDTH,
+    height = WORLD_MAP_CAPTURE_HEIGHT,
+    bounds = this.getWorldMapCaptureBounds({ width, height })
+  } = {}) {
+    if (!this.renderer || !this.scene) {
+      throw new Error('Renderer is not ready.');
+    }
+
+    const outputWidth = Math.max(256, Math.min(4096, Math.round(Number(width) || WORLD_MAP_CAPTURE_WIDTH)));
+    const outputHeight = Math.max(256, Math.min(4096, Math.round(Number(height) || WORLD_MAP_CAPTURE_HEIGHT)));
+    const mapCamera = new THREE.OrthographicCamera(
+      -bounds.spanX * 0.5,
+      bounds.spanX * 0.5,
+      bounds.spanZ * 0.5,
+      -bounds.spanZ * 0.5,
+      1,
+      1000
+    );
+    mapCamera.position.set(bounds.centerX, 420, bounds.centerZ);
+    mapCamera.up.set(0, 0, -1);
+    mapCamera.lookAt(bounds.centerX, 0, bounds.centerZ);
+    mapCamera.updateProjectionMatrix();
+
+    const previousSize = this.renderer.getSize(new THREE.Vector2());
+    const previousPixelRatio = this.renderer.getPixelRatio();
+    const previousRenderTarget = this.renderer.getRenderTarget();
+    const previousFog = this.scene.fog;
+    const hiddenObjects = this.collectWorldMapCaptureHiddenObjects();
+    const previousVisibility = hiddenObjects.map((object) => [object, object.visible]);
+
+    try {
+      this.worldBuilder?.clearCameraOcclusion?.();
+      for (const object of hiddenObjects) {
+        object.visible = false;
+      }
+      this.scene.fog = null;
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(outputWidth, outputHeight, false);
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, mapCamera);
+
+      const dataUrl = this.renderer.domElement.toDataURL('image/webp', WORLD_MAP_CAPTURE_QUALITY);
+      if (!dataUrl.startsWith('data:image/webp;base64,')) {
+        throw new Error('This browser could not export the map as WebP.');
+      }
+      return dataUrl;
+    } finally {
+      for (const [object, visible] of previousVisibility) {
+        object.visible = visible;
+      }
+      this.scene.fog = previousFog;
+      this.renderer.setRenderTarget(previousRenderTarget);
+      this.renderer.setPixelRatio(previousPixelRatio);
+      this.renderer.setSize(previousSize.x, previousSize.y, false);
+      this.composer?.setPixelRatio?.(this.getTargetPixelRatio());
+      this.composer?.setSize?.(window.innerWidth, window.innerHeight);
+      this.updatePostProcessingResolution();
+      this.renderCurrentView();
+    }
+  }
+
+  async captureAndSaveWorldMap() {
+    if (this.worldMapCaptureInFlight) {
+      return;
+    }
+
+    const adminKey = this.getAdminKey();
+    if (!this.isLocalAdmin() || !adminKey) {
+      this.hud.showToast('Map capture is admin only.');
+      return;
+    }
+
+    if (this.currentInterior?.scene) {
+      this.hud.showToast('Exit interiors before capturing the city map.');
+      return;
+    }
+
+    this.worldMapCaptureInFlight = true;
+    this.refreshMapCaptureHud();
+    try {
+      this.hud.showToast('Capturing city map...');
+      const width = WORLD_MAP_CAPTURE_WIDTH;
+      const height = WORLD_MAP_CAPTURE_HEIGHT;
+      const bounds = this.getWorldMapCaptureBounds({ width, height });
+      const dataUrl = await this.captureWorldMapDataUrl({ width, height, bounds });
+      const response = await fetch(this.getWorldMapCaptureEndpoint(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey,
+          dataUrl,
+          bounds: normalizeWorldMapBounds(bounds),
+          width,
+          height
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not save map image.');
+      }
+
+      await this.loadWorldMapImageMetadata({ force: true });
+      this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+      const sizeKb = Math.max(1, Math.round(Number(result.bytes ?? 0) / 1024));
+      this.hud.showToast(`Phone map captured (${sizeKb} KB).`);
+    } catch (error) {
+      console.warn('[Map] Capture failed.', error);
+      this.hud.showToast(error?.message ?? 'Map capture failed.');
+    } finally {
+      this.worldMapCaptureInFlight = false;
+      this.refreshMapCaptureHud();
+    }
   }
 
   refreshPhoneSettingsHud() {
@@ -1297,9 +1629,11 @@ export class Game {
 
       const label = String(item?.label ?? placement?.label ?? placement?.itemId ?? '').trim();
       const key = `${placement?.itemId ?? ''} ${label}`.toLowerCase();
-      const footprint = item?.footprint ?? item?.size ?? [1, 1];
-      const width = Math.max(1, Number(footprint?.[0] ?? 1) || 1);
-      const depth = Math.max(1, Number(footprint?.[1] ?? 1) || 1);
+      const [footprintWidth = 1, footprintDepth = 1] = item?.layer === 'tile'
+        ? getTileFootprintWorldSize(item, placement.rotationQuarterTurns ?? 0)
+        : (item?.size ?? [1, 1]);
+      const width = Math.max(1, Number(footprintWidth) || 1);
+      const depth = Math.max(1, Number(footprintDepth) || 1);
       const kind = key.includes('road')
         ? 'road'
         : key.includes('gym')
@@ -1370,6 +1704,7 @@ export class Game {
         ? { x: playerX, z: playerZ, rotationY: Number.isFinite(playerRotationY) ? playerRotationY : 0 }
         : null,
       features: this.getPhoneMapPlacementFeatures(),
+      image: this.worldMapImage,
       updatedAt: Date.now()
     };
   }
@@ -1567,6 +1902,7 @@ export class Game {
 
     this.refreshAimPoseDebugHud();
     this.refreshAdminPositionHud();
+    this.refreshMapCaptureHud();
   }
 
   refreshAdminPositionHud() {

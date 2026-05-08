@@ -37,6 +37,7 @@ const mimeTypes = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.txt': 'text/plain; charset=utf-8',
+  '.webp': 'image/webp',
   '.wav': 'audio/wav'
 };
 const compressibleExtensions = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);

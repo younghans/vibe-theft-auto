@@ -570,6 +570,7 @@ await resetStagingDist();
 const bundleOutputs = await bundleClient();
 await copyStaticShell(bundleOutputs);
 await copyRuntimeAssets();
+await copyOptionalDirectory(path.join('assets', 'generated'));
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();
 const totalBytes = await enforceDistBudget();

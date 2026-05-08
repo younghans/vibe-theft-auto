@@ -23,6 +23,7 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
+  '.webp': 'image/webp',
   '.wav': 'audio/wav'
 };
 const COMPRESSIBLE_EXTENSIONS = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);
@@ -34,6 +35,9 @@ const SOURCE_FILE_ALLOWLIST = new Set([
   'styles.css'
 ]);
 const SOURCE_DIRECTORY_ALLOWLIST = ['animations/', 'assets/', 'src/', 'vendor/'];
+const GENERATED_WORLD_MAP_IMAGE_PATH = path.join('assets', 'generated', 'world-map.webp');
+const GENERATED_WORLD_MAP_METADATA_PATH = path.join('assets', 'generated', 'world-map.json');
+const ADMIN_WORLD_MAP_MAX_BYTES = 14 * 1024 * 1024;
 
 function normalizeAssetPath(requestPath = '/') {
   let decodedPath = String(requestPath);
@@ -124,6 +128,96 @@ function getCacheControl(filePath) {
   return 'public, max-age=3600';
 }
 
+function parseAdminKeys(value = '') {
+  return new Set(
+    String(value)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+}
+
+function isValidAdminKey(value = '') {
+  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return Boolean(normalized && adminKeys.size > 0 && adminKeys.has(normalized));
+}
+
+function setAdminWorldMapCorsHeaders(req, res) {
+  const origin = typeof req.headers.origin === 'string' && req.headers.origin
+    ? req.headers.origin
+    : '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Headers', 'content-type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+}
+
+function sendJson(res, status, payload) {
+  res.status(status).json(payload);
+}
+
+async function readJsonRequest(req, { maxBytes = ADMIN_WORLD_MAP_MAX_BYTES } = {}) {
+  const chunks = [];
+  let totalBytes = 0;
+
+  for await (const chunk of req) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) {
+      throw new Error('Request body is too large.');
+    }
+    chunks.push(chunk);
+  }
+
+  if (!chunks.length) {
+    return {};
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+function normalizeWorldMapBounds(bounds = {}) {
+  const minX = Number(bounds.minX);
+  const maxX = Number(bounds.maxX);
+  const minZ = Number(bounds.minZ);
+  const maxZ = Number(bounds.maxZ);
+  if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) {
+    throw new Error('Invalid map bounds.');
+  }
+
+  return { minX, maxX, minZ, maxZ };
+}
+
+function normalizeWorldMapDimension(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(8192, Math.round(numeric)));
+}
+
+async function writeGeneratedWorldMapFile(relativePath, contents) {
+  const sourceTarget = path.join(PROJECT_ROOT, relativePath);
+  await fsp.mkdir(path.dirname(sourceTarget), { recursive: true });
+  await fsp.writeFile(sourceTarget, contents);
+  await removeCompressedVariants(sourceTarget);
+
+  const distStats = await fsp.stat(DIST_ROOT).catch(() => null);
+  if (distStats?.isDirectory()) {
+    const distTarget = path.join(DIST_ROOT, relativePath);
+    await fsp.mkdir(path.dirname(distTarget), { recursive: true });
+    await fsp.writeFile(distTarget, contents);
+    await removeCompressedVariants(distTarget);
+  }
+}
+
+async function removeCompressedVariants(filePath) {
+  await Promise.all([
+    fsp.rm(`${filePath}.br`, { force: true }),
+    fsp.rm(`${filePath}.gz`, { force: true })
+  ]);
+}
+
 async function resolveCompressedVariant(filePath, acceptEncoding = '') {
   const extension = path.extname(filePath).toLowerCase();
   if (!COMPRESSIBLE_EXTENSIONS.has(extension)) {
@@ -185,6 +279,67 @@ const server = defineServer({
         distReady: existsSync(DIST_INDEX_PATH),
         timestamp: new Date().toISOString()
       });
+    });
+
+    app.options('/admin/world-map', (req, res) => {
+      setAdminWorldMapCorsHeaders(req, res);
+      res.status(204).end();
+    });
+
+    app.post('/admin/world-map', async (req, res) => {
+      setAdminWorldMapCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req);
+        if (!isValidAdminKey(payload?.adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const dataUrl = String(payload?.dataUrl ?? '');
+        const imageMatch = dataUrl.match(/^data:image\/webp;base64,([a-z0-9+/=]+)$/iu);
+        if (!imageMatch?.[1]) {
+          sendJson(res, 400, { ok: false, error: 'Expected a WebP data URL.' });
+          return;
+        }
+
+        const imageBuffer = Buffer.from(imageMatch[1], 'base64');
+        if (imageBuffer.length <= 0 || imageBuffer.length > ADMIN_WORLD_MAP_MAX_BYTES) {
+          sendJson(res, 400, { ok: false, error: 'Invalid map image size.' });
+          return;
+        }
+
+        const capturedAt = new Date().toISOString();
+        const persistence = getWorldPersistenceInfo();
+        const metadata = {
+          image: '/assets/generated/world-map.webp',
+          bounds: normalizeWorldMapBounds(payload?.bounds),
+          width: normalizeWorldMapDimension(payload?.width, 1024),
+          height: normalizeWorldMapDimension(payload?.height, 1536),
+          capturedAt,
+          worldKey: persistence.worldKey ?? null
+        };
+
+        await writeGeneratedWorldMapFile(GENERATED_WORLD_MAP_IMAGE_PATH, imageBuffer);
+        await writeGeneratedWorldMapFile(
+          GENERATED_WORLD_MAP_METADATA_PATH,
+          Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`, 'utf8')
+        );
+
+        sendJson(res, 200, {
+          ok: true,
+          image: metadata.image,
+          metadata: `/assets/generated/${path.basename(GENERATED_WORLD_MAP_METADATA_PATH)}`,
+          bytes: imageBuffer.length,
+          capturedAt,
+          worldKey: metadata.worldKey
+        });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not save world map.'
+        });
+      }
     });
 
     app.get(/.*/, async (req, res, next) => {

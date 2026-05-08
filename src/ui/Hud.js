@@ -825,6 +825,7 @@ export class Hud {
     this.shaderDebugIntensityValue = this.overlay.querySelector('[data-shader-debug-intensity-value]');
     this.shaderDebugIntensityReset = this.overlay.querySelector('[data-shader-debug-intensity-reset]');
     this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
+    this.mapCaptureToggle = this.overlay.querySelector('[data-map-capture-toggle]');
     this.adminPositionRoot = this.overlay.querySelector('[data-admin-position]');
     this.adminPositionValue = this.overlay.querySelector('[data-admin-position-value]');
     this.adminPositionHint = this.overlay.querySelector('[data-admin-position-hint]');
@@ -1286,6 +1287,22 @@ export class Hud {
                 <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
                 <path d="M18.5 13.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z" />
                 <path d="M5.5 14.5l1.1 2.4 2.4 1.1-2.4 1.1L5.5 21l-1.1-2.4L2 17.5l2.4-1.1 1.1-2.4z" />
+              </svg>
+            </button>
+            <button
+              class="hud__map-capture-toggle"
+              type="button"
+              data-map-capture-toggle
+              aria-label="Capture phone map image"
+              title="Capture phone map image"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6.8l4.5-1.8 6 1.8 5.5-1.8v12.2l-5.5 1.8-6-1.8L4 19V6.8z" />
+                <path d="M8.5 5v12.2" />
+                <path d="M14.5 6.8V19" />
+                <path d="M10.5 11.5h3" />
+                <path d="M12 10v3" />
               </svg>
             </button>
             <button
@@ -2246,6 +2263,18 @@ export class Hud {
       event.preventDefault();
       event.stopPropagation();
       onResetIntensity();
+    });
+  }
+
+  bindMapCaptureEvents({ onCapture } = {}) {
+    this.mapCaptureToggle?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.mapCaptureToggle.disabled) {
+        return;
+      }
+
+      onCapture?.();
     });
   }
 
@@ -4150,6 +4179,22 @@ export class Hud {
     this.adminPositionHint.textContent = `Heading ${Number(heading).toFixed(1)}°`;
   }
 
+  setMapCaptureState({
+    visible = false,
+    busy = false
+  } = {}) {
+    if (!this.mapCaptureToggle) {
+      return;
+    }
+
+    this.mapCaptureToggle.hidden = !visible;
+    this.mapCaptureToggle.disabled = Boolean(busy);
+    this.mapCaptureToggle.classList.toggle('is-active', Boolean(busy));
+    const label = busy ? 'Capturing phone map image' : 'Capture phone map image';
+    this.mapCaptureToggle.setAttribute('aria-label', label);
+    this.mapCaptureToggle.setAttribute('title', label);
+  }
+
   setCharacterSelectorPreviewCanvas(node) {
     if (!this.characterSelectorPreview || !node) {
       return;
@@ -4535,7 +4580,8 @@ export class Hud {
 
   setPhoneMapState({
     player = null,
-    features = []
+    features = [],
+    image = null
   } = {}) {
     const root = this.phoneScreenContent?.querySelector('[data-phone-map-app]');
     if (!root) {
@@ -4543,8 +4589,19 @@ export class Hud {
     }
 
     const safeFeatures = Array.isArray(features) ? features : [];
+    const imageBounds = image?.bounds ?? null;
+    const hasImage = Boolean(
+      image?.src
+      && Number.isFinite(Number(imageBounds?.minX))
+      && Number.isFinite(Number(imageBounds?.maxX))
+      && Number.isFinite(Number(imageBounds?.minZ))
+      && Number.isFinite(Number(imageBounds?.maxZ))
+      && Number(imageBounds.maxX) > Number(imageBounds.minX)
+      && Number(imageBounds.maxZ) > Number(imageBounds.minZ)
+    );
     const signature = JSON.stringify({
       player,
+      image: hasImage ? [image.src, imageBounds.minX, imageBounds.maxX, imageBounds.minZ, imageBounds.maxZ] : null,
       features: safeFeatures.map((feature) => [feature.id, feature.kind, feature.x, feature.z, feature.width, feature.depth])
     });
     if (signature === this.lastPhoneMapSignature) {
@@ -4555,7 +4612,9 @@ export class Hud {
     const status = root.querySelector('[data-phone-map-status]');
     const canvas = root.querySelector('[data-phone-map-canvas]');
     if (status) {
-      status.textContent = player ? 'Live location' : 'Locating';
+      status.textContent = hasImage
+        ? (player ? 'Satellite map' : 'Satellite cached')
+        : (player ? 'Live location' : 'Locating');
     }
     if (!canvas) {
       return;
@@ -4566,25 +4625,28 @@ export class Hud {
       player ? { x: Number(player.x), z: Number(player.z) } : null
     ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z));
 
-    if (!points.length) {
+    if (!points.length && !hasImage) {
       canvas.innerHTML = '<div class="hud__phone-empty-state">Map data is syncing.</div>';
       return;
     }
 
-    const minX = Math.min(...points.map((point) => point.x)) - 8;
-    const maxX = Math.max(...points.map((point) => point.x)) + 8;
-    const minZ = Math.min(...points.map((point) => point.z)) - 8;
-    const maxZ = Math.max(...points.map((point) => point.z)) + 8;
     const width = 280;
     const height = 430;
-    const toX = (x) => ((x - minX) / Math.max(1, maxX - minX)) * width;
-    const toY = (z) => ((z - minZ) / Math.max(1, maxZ - minZ)) * height;
+    const minX = hasImage ? Number(imageBounds.minX) : Math.min(...points.map((point) => point.x)) - 8;
+    const maxX = hasImage ? Number(imageBounds.maxX) : Math.max(...points.map((point) => point.x)) + 8;
+    const minZ = hasImage ? Number(imageBounds.minZ) : Math.min(...points.map((point) => point.z)) - 8;
+    const maxZ = hasImage ? Number(imageBounds.maxZ) : Math.max(...points.map((point) => point.z)) + 8;
+    const spanX = Math.max(1, maxX - minX);
+    const spanZ = Math.max(1, maxZ - minZ);
+    const toX = (x) => ((x - minX) / spanX) * width;
+    const toY = (z) => ((z - minZ) / spanZ) * height;
+    const rasterMarkup = hasImage
+      ? `<image class="hud__phone-map-raster" href="${escapeHtml(image.src)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>`
+      : '';
     const featureMarkup = safeFeatures.map((feature) => {
       const kind = escapeHtml(feature.kind ?? 'building');
       const x = toX(Number(feature.x));
       const y = toY(Number(feature.z));
-      const w = Math.max(5, Number(feature.width ?? 1) * 10);
-      const h = Math.max(5, Number(feature.depth ?? 1) * 10);
       if (['shady', 'stock', 'blackjack', 'workout'].includes(feature.kind)) {
         return `
           <g class="hud__phone-map-marker is-${kind}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
@@ -4593,6 +4655,11 @@ export class Hud {
           </g>
         `;
       }
+      if (hasImage) {
+        return '';
+      }
+      const w = Math.max(3, (Number(feature.width ?? 1) / spanX) * width);
+      const h = Math.max(3, (Number(feature.depth ?? 1) / spanZ) * height);
       return `<rect class="hud__phone-map-feature is-${kind}" x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2"></rect>`;
     }).join('');
 
@@ -4608,6 +4675,7 @@ export class Hud {
     canvas.innerHTML = `
       <svg class="hud__phone-map-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="City map">
         <rect class="hud__phone-map-bg" width="${width}" height="${height}" rx="18"></rect>
+        ${rasterMarkup}
         ${featureMarkup}
         ${playerMarkup}
       </svg>

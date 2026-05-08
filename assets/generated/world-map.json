@@ -1,0 +1,13 @@
+{
+  "image": "/assets/generated/world-map.webp",
+  "bounds": {
+    "minX": -156,
+    "maxX": 170,
+    "minZ": -265.5,
+    "maxZ": 223.5
+  },
+  "width": 1024,
+  "height": 1536,
+  "capturedAt": "2026-05-08T06:00:30.848Z",
+  "worldKey": "staging"
+}

@@ -18,6 +18,8 @@ assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
 assert.match(hudSource, /data-phone-skills-app/, 'Skills app has dedicated phone markup');
 assert.match(hudSource, /data-phone-map-app/, 'Map app has dedicated phone markup');
+assert.match(hudSource, /data-map-capture-toggle/, 'Admin map capture button is present');
+assert.match(hudSource, /setMapCaptureState/, 'HUD can show admin map capture state');
 assert.match(hudSource, /data-phone-settings-app/, 'Settings app has dedicated phone markup');
 assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio slider');
 assert.match(hudSource, /WASD \/ left touch stick/, 'Settings controls list includes movement binding');
@@ -26,6 +28,8 @@ assert.match(hudSource, /Tab \/ phone button/, 'Settings controls list includes 
 assert.match(gameSource, /getWalletSnapshot/, 'Game requests authoritative wallet snapshots');
 assert.match(gameSource, /openWalletStocks/, 'Game wires Wallet Stocks action');
 assert.match(gameSource, /createPhoneMapState/, 'Game creates map state from live game data');
+assert.match(gameSource, /captureAndSaveWorldMap/, 'Game can manually capture the world map');
+assert.match(gameSource, /WORLD_MAP_IMAGE_METADATA_URL/, 'Game loads cached map image metadata');
 assert.match(gameSource, /setMasterVolume/, 'Game owns persisted master volume setting');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
 
