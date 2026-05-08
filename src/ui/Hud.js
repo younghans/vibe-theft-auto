@@ -594,7 +594,8 @@ function createStockIconMarkup(stock = {}, className = '') {
   }
 }
 
-function createAllStockChartMarkup(stocks = [], selectedSymbol = '') {
+function createAllStockChartMarkup(stocks = [], selectedSymbol = '', options = {}) {
+  const layout = options?.layout === 'phone' ? 'phone' : 'wide';
   const series = (Array.isArray(stocks) ? stocks : [])
     .map((stock) => ({
       ...stock,
@@ -607,24 +608,34 @@ function createAllStockChartMarkup(stocks = [], selectedSymbol = '') {
     return '<div class="hud__stock-overview-empty">No market history yet.</div>';
   }
 
-  const width = 960;
-  const height = 260;
-  const plotRight = 890;
-  const markerX = 930;
-  const tooltipWidth = 420;
-  const tooltipHeight = 124;
-  const min = Math.min(...series.flatMap((stock) => stock.values));
-  const max = Math.max(...series.flatMap((stock) => stock.values));
+  const phoneLayout = layout === 'phone';
+  const width = phoneLayout ? 360 : 960;
+  const height = phoneLayout ? 280 : 260;
+  const plotRight = phoneLayout ? 316 : 890;
+  const markerX = phoneLayout ? 342 : 930;
+  const tooltipWidth = phoneLayout ? 252 : 420;
+  const tooltipHeight = phoneLayout ? 86 : 124;
+  const plotTop = phoneLayout ? 14 : 18;
+  const plotBottom = height - (phoneLayout ? 14 : 18);
+  const plotHeight = Math.max(1, plotBottom - plotTop);
+  const scaleValues = series.flatMap((stock) => {
+    const price = Number(stock.price);
+    return Number.isFinite(price)
+      ? [...stock.values, price]
+      : stock.values;
+  });
+  const min = Math.min(...scaleValues);
+  const max = Math.max(...scaleValues);
   const span = Math.max(0.01, max - min);
-  const toY = (value) => height - (((value - min) / span) * (height - 44)) - 22;
+  const toY = (value) => plotBottom - (((value - min) / span) * plotHeight);
   const gridPath = [
-    `M0 ${(height * 0.25).toFixed(1)}h${plotRight}`,
-    `M0 ${(height * 0.5).toFixed(1)}h${plotRight}`,
-    `M0 ${(height * 0.75).toFixed(1)}h${plotRight}`,
-    `M${(plotRight * 0.2).toFixed(1)} 0v${height}`,
-    `M${(plotRight * 0.4).toFixed(1)} 0v${height}`,
-    `M${(plotRight * 0.6).toFixed(1)} 0v${height}`,
-    `M${(plotRight * 0.8).toFixed(1)} 0v${height}`
+    `M0 ${(plotTop + plotHeight * 0.25).toFixed(1)}h${plotRight}`,
+    `M0 ${(plotTop + plotHeight * 0.5).toFixed(1)}h${plotRight}`,
+    `M0 ${(plotTop + plotHeight * 0.75).toFixed(1)}h${plotRight}`,
+    `M${(plotRight * 0.2).toFixed(1)} ${plotTop}v${plotHeight}`,
+    `M${(plotRight * 0.4).toFixed(1)} ${plotTop}v${plotHeight}`,
+    `M${(plotRight * 0.6).toFixed(1)} ${plotTop}v${plotHeight}`,
+    `M${(plotRight * 0.8).toFixed(1)} ${plotTop}v${plotHeight}`
   ].join('');
   const groups = [];
 
@@ -674,10 +685,10 @@ function createAllStockChartMarkup(stocks = [], selectedSymbol = '') {
   }
 
   return `
-    <svg class="hud__stock-overview-chart" viewBox="0 0 ${width} ${height}" aria-label="All stock prices">
+    <svg class="hud__stock-overview-chart${phoneLayout ? ' is-phone-layout' : ''}" viewBox="0 0 ${width} ${height}" aria-label="All stock prices">
       <path class="hud__stock-overview-grid" d="${gridPath}" />
       <g class="hud__stock-overview-lines">${groups.join('')}</g>
-      <path class="hud__stock-overview-axis" d="M${plotRight} 0v${height}" />
+      <path class="hud__stock-overview-axis" d="M${plotRight} ${plotTop}v${plotHeight}" />
     </svg>
   `;
 }
@@ -4878,7 +4889,7 @@ export class Hud {
     }
     if (chart) {
       chart.innerHTML = stocks.length
-        ? createAllStockChartMarkup(stocks, resolvedSelectedSymbol)
+        ? createAllStockChartMarkup(stocks, resolvedSelectedSymbol, { layout: 'phone' })
         : '<div class="hud__phone-empty-state">Market tape is syncing.</div>';
     }
     if (list) {
