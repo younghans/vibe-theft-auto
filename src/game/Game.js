@@ -1126,9 +1126,17 @@ export class Game {
         return;
       }
 
+      const selectedMissionId = String(result.selectedMissionId ?? normalizedMissionId).trim();
       const localPlayerState = this.getLocalPlayerState();
       if (localPlayerState) {
-        this.syncTaskHud(localPlayerState);
+        const nextLocalPlayerState = {
+          ...localPlayerState,
+          selectedMissionId
+        };
+        if (this.npcServiceState.sessionId) {
+          this.npcServiceState.players.set(this.npcServiceState.sessionId, nextLocalPlayerState);
+        }
+        this.syncTaskHud(nextLocalPlayerState);
       }
     } catch (error) {
       this.hud.showToast(error?.message ?? 'Could not select that mission.');
@@ -2271,11 +2279,13 @@ export class Game {
     } = this.taskTracker.update(
       this.createTaskTrackerContext(localPlayerState)
     );
-    this.phoneMissionState = {
-      missions,
-      selectedMissionId: selectedMission?.id ?? ''
-    };
-    this.refreshPhoneMissionsHud();
+    if (localPlayerState) {
+      this.phoneMissionState = {
+        missions,
+        selectedMissionId: selectedMission?.id ?? ''
+      };
+      this.refreshPhoneMissionsHud();
+    }
 
     if (completedTask) {
       const skipConfetti = completedTaskId === TASK_IDS.gymPump && this.gymPumpTaskConfettiPlayed;

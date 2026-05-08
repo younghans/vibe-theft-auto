@@ -4138,7 +4138,7 @@ export class Hud {
       selected: mission.selected,
       selectable: mission.selectable,
       icon: mission.icon
-    })));
+    })).concat([{ selectedMissionId }]));
     if (signature === this.lastPhoneMissionsSignature) {
       return;
     }

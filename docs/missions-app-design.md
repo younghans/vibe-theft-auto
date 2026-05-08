@@ -31,10 +31,12 @@ The first version can use the existing progression already tracked on the player
 | `make-money` | Make some money. Maybe the Shady Figure can help? | `money` | Always available at start | Player accepts/completes the first delivery path |
 | `delivery` | Deliver the package | `package` | Shady Figure delivery accepted | `deliveryQuestCompletionCount > 0` for first completion |
 | `gym-pump` | Go get a pump in the gym. | `muscle` | First delivery complete | `gymPumpCompletedAt > 0` |
-| `stock-buy` | Buy a stock at the bank. | `chart` | Gym pump complete | `stockBoughtAt > 0` |
-| `blackjack-hand` | Play a hand of blackjack at the casino. | `playing-card` | Stock purchase complete | `blackjackHandPlayedAt > 0` |
+| `stock-buy` | Buy a stock at the bank. | `chart` | First delivery complete | `stockBoughtAt > 0` |
+| `blackjack-hand` | Play a hand of blackjack at the casino. | `playing-card` | First delivery complete | `blackjackHandPlayedAt > 0` |
 
 Important rule: future progression missions stay locked until the player has helped the Shady Figure. In practice, that means missions after the intro cash/delivery step should require `deliveryQuestCompletionCount > 0`.
+
+After the first delivery is complete, `gym-pump`, `stock-buy`, and `blackjack-hand` should all be available. The default fallback order should still guide players through Gym Pump, then First Stock, then Blackjack Hand, but players can manually switch to any unlocked incomplete mission.
 
 ## Mission States
 
@@ -91,6 +93,8 @@ If the selected mission becomes invalid, use a deterministic fallback:
 2. The first available incomplete mission in progression order.
 3. A repeatable/evergreen mission, such as making money through the Shady Figure.
 4. No visible mission if nothing is available.
+
+This fallback order should be explicit in shared mission rules rather than inferred from UI order. Multiple missions can be available at once, but automatic guidance should prefer Delivery if active, then Gym Pump, then First Stock, then Blackjack Hand, then Make Money.
 
 ## Active Delivery Behavior
 

@@ -47,7 +47,7 @@ export const MISSION_CATALOG = Object.freeze([
     label: 'First Stock',
     icon: 'chart',
     description: 'Visit the bank and buy any stock from the street exchange.',
-    requirement: 'Complete: Go get a pump in the gym.'
+    requirement: 'Help the Shady Figure first.'
   },
   {
     id: MISSION_IDS.blackjackHand,
@@ -55,11 +55,18 @@ export const MISSION_CATALOG = Object.freeze([
     label: 'Blackjack Hand',
     icon: 'playing-card',
     description: 'Sit with the dealer and play one hand.',
-    requirement: 'Complete: Buy a stock at the bank.'
+    requirement: 'Help the Shady Figure first.'
   }
 ].map(Object.freeze));
 
 const MISSION_BY_ID = new Map(MISSION_CATALOG.map((mission) => [mission.id, mission]));
+const DEFAULT_MISSION_FALLBACK_ORDER = Object.freeze([
+  MISSION_IDS.delivery,
+  MISSION_IDS.gymPump,
+  MISSION_IDS.stockBuy,
+  MISSION_IDS.blackjackHand,
+  MISSION_IDS.makeMoney
+]);
 
 export function getMissionDefinition(missionId = '') {
   return MISSION_BY_ID.get(String(missionId ?? '')) ?? null;
@@ -123,14 +130,14 @@ export function getMissionStatus(missionId = '', player = null) {
   }
 
   if (id === MISSION_IDS.stockBuy) {
-    if (!completedFirstDelivery || !gymPumpCompleted) {
+    if (!completedFirstDelivery) {
       return MISSION_STATUS.locked;
     }
     return stockBought ? MISSION_STATUS.completed : MISSION_STATUS.available;
   }
 
   if (id === MISSION_IDS.blackjackHand) {
-    if (!completedFirstDelivery || !gymPumpCompleted || !stockBought) {
+    if (!completedFirstDelivery) {
       return MISSION_STATUS.locked;
     }
     return blackjackHandPlayed ? MISSION_STATUS.completed : MISSION_STATUS.available;
@@ -181,11 +188,7 @@ export function resolveSelectedMissionId(player = null, requestedMissionId = pla
     return requestedId;
   }
 
-  const fallback = MISSION_CATALOG.find((mission) => (
-    mission.id !== MISSION_IDS.makeMoney
-    && isMissionSelectable(mission.id, player)
-  )) ?? MISSION_CATALOG.find((mission) => isMissionSelectable(mission.id, player));
-  return fallback?.id ?? '';
+  return DEFAULT_MISSION_FALLBACK_ORDER.find((missionId) => isMissionSelectable(missionId, player)) ?? '';
 }
 
 export function getMissionSnapshots(player = null, selectedMissionId = player?.selectedMissionId ?? '') {
