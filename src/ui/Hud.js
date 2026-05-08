@@ -30,14 +30,13 @@ const AMMO_LOW_CLIP_RATIO = 0.28;
 const PHONE_CLOSE_ANIMATION_MS = 260;
 
 const PHONE_APPS = Object.freeze([
-  ['messages', 'Messages', 'messages', '#30d66a', 'Contacts and story texts will appear here.'],
+  ['messages', 'Messages', 'messages', '#30d66a', 'Story texts will appear here.'],
   ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
   ['stocks', 'Stocks', 'stocks', '#55c7ff', 'Street exchange quotes and trades.'],
   ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
   ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
-  ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
   ['settings', 'Settings', 'settings', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
 ].map(([id, label, icon, color, body]) => Object.freeze({
   id,
@@ -55,7 +54,6 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   stocks: '<path d="M4.5 19.25h15"/><path d="M5.75 16.5l4.1-4.1 3.25 2.7 5.6-7.35"/><path d="M16.25 7.75h2.45v2.45"/><path d="M6 7.75h2.2M6 10.8h2.2M6 13.85h1.1"/>',
   skills: '<path d="M5.5 18.75h13"/><path d="M7 17V9.8M12 17V5.25M17 17v-4.7"/><path d="M7 9.8l2.3 1.55L12 5.25l2.6 7.05L17 12.3"/><path d="M4.7 6.2 6 4.9l1.3 1.3M17.1 7.1l1.5-1.5 1.5 1.5"/>',
   character: '<path d="M8.35 9.15a3.65 3.65 0 1 0 7.3 0 3.65 3.65 0 0 0-7.3 0Z"/><path d="M5.25 19.25c.95-2.75 3.45-4.55 6.75-4.55s5.8 1.8 6.75 4.55"/><path d="M4.5 6.25 6.25 4.5 8 6.25"/><path d="M6.25 4.5v4.25"/><path d="m19.5 17.75-1.75 1.75-1.75-1.75"/><path d="M17.75 15.25v4.25"/>',
-  contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
   settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
 });
 
@@ -1304,6 +1302,7 @@ export class Hud {
             </div>
           </div>
         </div>
+        <div class="hud__phone-map-tooltip" data-phone-map-tooltip-popover hidden></div>
       </section>
       <div class="hud__top-actions">
         <section class="hud__toast">
@@ -2333,7 +2332,7 @@ export class Hud {
   }
 
   getPhoneMapTooltipElement() {
-    return this.phoneScreenContent?.querySelector('[data-phone-map-tooltip-popover]') ?? null;
+    return this.phoneStage?.querySelector('[data-phone-map-tooltip-popover]') ?? null;
   }
 
   getPhoneMapMarkerFromEvent(event) {
@@ -2362,43 +2361,42 @@ export class Hud {
 
   positionPhoneMapTooltip(marker, event = null) {
     const tooltip = this.getPhoneMapTooltipElement();
-    const canvas = marker?.closest?.('[data-phone-map-canvas]');
-    if (!tooltip || !(canvas instanceof HTMLElement)) {
+    const stage = this.phoneStage;
+    if (!tooltip || !(stage instanceof HTMLElement)) {
       return;
     }
 
-    const canvasRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
     const markerRect = marker?.getBoundingClientRect?.();
     const clientX = Number.isFinite(event?.clientX)
       ? event.clientX
       : markerRect
         ? markerRect.left + markerRect.width * 0.5
-        : canvasRect.left + canvasRect.width * 0.5;
+        : stageRect.left + stageRect.width * 0.5;
     const clientY = Number.isFinite(event?.clientY)
       ? event.clientY
       : markerRect
         ? markerRect.top + markerRect.height * 0.5
-        : canvasRect.top + canvasRect.height * 0.5;
+        : stageRect.top + stageRect.height * 0.5;
 
-    tooltip.style.transform = 'translate(10px, calc(-100% - 10px))';
-    tooltip.style.left = `${Math.max(8, Math.min(canvasRect.width - 8, clientX - canvasRect.left))}px`;
-    tooltip.style.top = `${Math.max(8, Math.min(canvasRect.height - 8, clientY - canvasRect.top))}px`;
-
+    tooltip.style.transform = 'none';
+    tooltip.style.left = '0px';
+    tooltip.style.top = '0px';
     const tooltipRect = tooltip.getBoundingClientRect();
-    let left = clientX - canvasRect.left + 10;
-    let top = clientY - canvasRect.top - 10;
-    let transform = 'translate(0, -100%)';
-    if (left + tooltipRect.width > canvasRect.width - 8) {
-      left = canvasRect.width - tooltipRect.width - 8;
+    const margin = 12;
+    const offset = 16;
+    let left = clientX - stageRect.left + offset;
+    let top = clientY - stageRect.top - tooltipRect.height - offset;
+
+    if (left + tooltipRect.width > stageRect.width - margin) {
+      left = clientX - stageRect.left - tooltipRect.width - offset;
     }
-    if (top - tooltipRect.height < 8) {
-      top = clientY - canvasRect.top + 16;
-      transform = 'translate(0, 0)';
+    if (top < margin) {
+      top = clientY - stageRect.top + offset;
     }
 
-    tooltip.style.left = `${Math.max(8, left)}px`;
-    tooltip.style.top = `${Math.max(8, Math.min(canvasRect.height - 8, top))}px`;
-    tooltip.style.transform = transform;
+    tooltip.style.left = `${Math.max(margin, Math.min(stageRect.width - tooltipRect.width - margin, left))}px`;
+    tooltip.style.top = `${Math.max(margin, Math.min(stageRect.height - tooltipRect.height - margin, top))}px`;
   }
 
   hidePhoneMapTooltip() {
@@ -5223,7 +5221,6 @@ export class Hud {
         ${featureMarkup}
         ${playerMarkup}
       </svg>
-      <div class="hud__phone-map-tooltip" data-phone-map-tooltip-popover hidden></div>
     `;
   }
 
