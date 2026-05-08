@@ -15,6 +15,7 @@ const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'),
 
 assert.match(hudSource, /\['skills', 'Skills'/, 'Skills app is registered on the phone home screen');
 assert.doesNotMatch(hudSource, /\['stocks', 'Stocks'/, 'Separate Stocks app is removed from the phone home screen');
+assert.doesNotMatch(hudSource, /\['casino', 'Casino'/, 'Casino app is removed from the phone home screen');
 assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone markup');
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
 assert.match(hudSource, /data-phone-skills-app/, 'Skills app has dedicated phone markup');

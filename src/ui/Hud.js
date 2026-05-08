@@ -35,7 +35,6 @@ const PHONE_APPS = Object.freeze([
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
   ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
-  ['casino', 'Casino', 'casino', '#e24761', 'Blackjack, wagers, and table invites will be reachable from here.'],
   ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
   ['contacts', 'Contacts', 'contacts', '#8e62f0', 'NPC contacts and relationship notes will show up here.'],
   ['settings', 'Settings', 'settings', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
@@ -53,7 +52,6 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   missions: '<path d="M5.5 4.75h10.25L19 8v11.25H5.5V4.75Z"/><path d="M15.5 4.75V8.2H19"/><path d="m8.25 12.05 1.6 1.6 3.65-3.8"/><path d="M8.5 16.25h7"/>',
   wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
   skills: '<path d="M5.5 18.75h13"/><path d="M7 17V9.8M12 17V5.25M17 17v-4.7"/><path d="M7 9.8l2.3 1.55L12 5.25l2.6 7.05L17 12.3"/><path d="M4.7 6.2 6 4.9l1.3 1.3M17.1 7.1l1.5-1.5 1.5 1.5"/>',
-  casino: '<path d="M7.25 5.25h7.5a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2h-7.5a2 2 0 0 1-2-2V7.25a2 2 0 0 1 2-2Z"/><path d="M9.55 9.25c.8-1.05 2.1-1.05 2.9 0 .8 1.05.32 2.45-.82 3.1L11 12.7l-.63-.35c-1.14-.65-1.62-2.05-.82-3.1Z"/><path d="M8.25 16.25h5.5M18.7 8.2l.6 8.15a1.85 1.85 0 0 1-1.7 2l-.85.06"/>',
   character: '<path d="M8.35 9.15a3.65 3.65 0 1 0 7.3 0 3.65 3.65 0 0 0-7.3 0Z"/><path d="M5.25 19.25c.95-2.75 3.45-4.55 6.75-4.55s5.8 1.8 6.75 4.55"/><path d="M4.5 6.25 6.25 4.5 8 6.25"/><path d="M6.25 4.5v4.25"/><path d="m19.5 17.75-1.75 1.75-1.75-1.75"/><path d="M17.75 15.25v4.25"/>',
   contacts: '<path d="M8.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 0 0-7 0Z"/><path d="M5.75 19.25c.9-2.55 3.25-4.25 6.25-4.25s5.35 1.7 6.25 4.25"/><path d="M18.75 6.5h1.75M18.75 10h1.75M18.75 13.5h1.75"/>',
   settings: '<path d="M10.25 4.75h3.5l.45 2.1c.5.18.98.44 1.42.75l2.02-.68 1.75 3.03-1.58 1.42c.04.26.06.53.06.8s-.02.54-.06.8l1.58 1.42-1.75 3.03-2.02-.68c-.44.31-.92.57-1.42.75l-.45 2.1h-3.5l-.45-2.1a6.18 6.18 0 0 1-1.42-.75l-2.02.68-1.75-3.03 1.58-1.42a5.58 5.58 0 0 1-.06-.8c0-.27.02-.54.06-.8L4.61 9.95l1.75-3.03 2.02.68c.44-.31.92-.57 1.42-.75l.45-2.1Z"/><path d="M9.5 12.17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z"/>'
