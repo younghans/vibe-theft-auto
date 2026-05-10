@@ -61,6 +61,7 @@ body.is-builder-resizing * {
 .hud__interaction,
 .hud__stock-market,
 .hud__blackjack,
+.hud__school-microgame,
 .hud__quick-chat {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -5650,6 +5651,1077 @@ body.is-builder-resizing * {
   transform: none;
 }
 
+.hud__school-microgame {
+  --school-accent: #5bd7ff;
+  --school-secondary: #ffce5b;
+  left: 50%;
+  top: 50%;
+  width: min(860px, calc(100vw - 28px));
+  min-height: min(620px, calc(100vh - 28px));
+  display: grid;
+  grid-template-rows: auto 34px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 15px;
+  border-radius: 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 34px 34px,
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 34px 34px,
+    radial-gradient(circle at 15% 12%, color-mix(in srgb, var(--school-accent) 28%, transparent), transparent 31%),
+    radial-gradient(circle at 84% 88%, color-mix(in srgb, var(--school-secondary) 22%, transparent), transparent 34%),
+    linear-gradient(145deg, rgba(18, 23, 28, 0.96), rgba(7, 10, 14, 0.94));
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 16px)) scale(0.985);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 22;
+}
+
+.hud__school-microgame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-top: 4px solid var(--school-accent);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+.hud__school-microgame.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.hud__school-header,
+.hud__school-footer,
+.hud__school-score-strip,
+.hud__school-dual-actions,
+.hud__school-bell-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__school-title {
+  margin: 0 0 6px;
+  color: #fff6df;
+  font-size: 26px;
+  line-height: 1.04;
+}
+
+.hud__school-status {
+  margin: 0;
+}
+
+.hud__school-status.is-error,
+.hud__school-footer p.is-error {
+  color: #ffb6b6;
+}
+
+.hud__school-timer-slot {
+  min-height: 34px;
+}
+
+.hud__school-timer {
+  position: relative;
+  height: 30px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.hud__school-timer-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--timer, 100%);
+  background:
+    linear-gradient(90deg, var(--school-accent), var(--school-secondary));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--school-accent) 42%, transparent);
+  transition: width 90ms linear;
+}
+
+.hud__school-timer strong {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: #10151a;
+  font-size: 13px;
+  font-weight: 950;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.36);
+}
+
+.hud__school-body {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), transparent 46%),
+    rgba(4, 8, 12, 0.36);
+}
+
+.hud__school-footer {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.hud__school-footer p {
+  margin: 0;
+  color: rgba(244, 238, 226, 0.78);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.hud__school-ready,
+.hud__school-result {
+  display: grid;
+  gap: 16px;
+  place-items: center;
+  align-content: center;
+  padding: 28px;
+  text-align: center;
+}
+
+.hud__school-ready-badge,
+.hud__school-result-burst {
+  width: 94px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, var(--school-accent), var(--school-secondary));
+  color: #111820;
+  font-size: 24px;
+  font-weight: 950;
+  box-shadow:
+    0 20px 42px color-mix(in srgb, var(--school-accent) 24%, transparent),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  transform: rotate(-4deg);
+}
+
+.hud__school-ready h3,
+.hud__school-result strong {
+  margin: 0;
+  color: #fff7e3;
+  font-size: clamp(28px, 5vw, 52px);
+  line-height: 0.98;
+}
+
+.hud__school-ready p,
+.hud__school-result p {
+  max-width: 520px;
+  margin: 0;
+  color: rgba(244, 238, 226, 0.78);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.hud__school-reward,
+.hud__school-result span {
+  display: inline-grid;
+  gap: 4px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(244, 238, 226, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hud__school-reward strong,
+.hud__school-result span {
+  color: #fff0bd;
+  font-size: 14px;
+}
+
+.hud__school-result.is-success .hud__school-result-burst {
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.8), transparent 28%),
+    linear-gradient(135deg, #61ef8a, #45d4ff);
+  animation: hud-school-pop 420ms cubic-bezier(0.18, 0.9, 0.24, 1.2) both;
+}
+
+.hud__school-result.is-failure .hud__school-result-burst {
+  background:
+    linear-gradient(135deg, #ff6d8d, #ffb45b);
+  animation: hud-school-shake 360ms ease both;
+}
+
+.hud__school-action,
+.hud__school-hold-button {
+  min-height: 46px;
+  padding: 11px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.076);
+  color: #fff6de;
+  font: inherit;
+  font-weight: 950;
+  line-height: 1.08;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hud__school-action:hover,
+.hud__school-hold-button:hover {
+  border-color: color-mix(in srgb, var(--school-accent) 62%, white 16%);
+  background: color-mix(in srgb, var(--school-accent) 16%, rgba(255, 255, 255, 0.075));
+  transform: translateY(-1px);
+}
+
+.hud__school-action:active,
+.hud__school-hold-button:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.hud__school-action:focus-visible,
+.hud__school-hold-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--school-accent) 72%, white 20%);
+  outline-offset: 3px;
+}
+
+.hud__school-action.is-primary,
+.hud__school-hold-button {
+  min-width: 148px;
+  background: linear-gradient(180deg, var(--school-secondary), var(--school-accent));
+  color: #12161b;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
+.hud__school-question {
+  display: grid;
+  min-height: 156px;
+  place-items: center;
+  padding: 20px;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(12, 54, 44, 0.96), rgba(7, 34, 31, 0.96));
+  color: #fff8dd;
+  font-size: clamp(25px, 4.2vw, 45px);
+  font-weight: 950;
+  line-height: 1.04;
+  text-align: center;
+  box-shadow: inset 0 0 0 8px rgba(73, 45, 24, 0.84);
+}
+
+.hud__school-quiz,
+.hud__school-hallpass,
+.hud__school-notes,
+.hud__school-locker,
+.hud__school-teacher,
+.hud__school-tray,
+.hud__school-dodge,
+.hud__school-sort,
+.hud__school-bell,
+.hud__school-scantron {
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.hud__school-answer-grid,
+.hud__school-pass-grid,
+.hud__school-note-buttons,
+.hud__school-bin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hud__school-answer,
+.hud__school-pass,
+.hud__school-note-key,
+.hud__school-key,
+.hud__school-bin,
+.hud__school-backpack-item,
+.hud__school-bubble {
+  min-width: 0;
+}
+
+.hud__school-answer {
+  min-height: 74px;
+  font-size: 19px;
+}
+
+.hud__school-answer.is-selected,
+.hud__school-pass.is-selected,
+.hud__school-backpack-item.is-selected {
+  border-color: var(--school-secondary);
+  background: color-mix(in srgb, var(--school-secondary) 22%, rgba(255, 255, 255, 0.09));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--school-secondary) 26%, transparent);
+}
+
+.hud__school-locker {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(220px, 1fr);
+  align-items: center;
+}
+
+.hud__school-locker-door {
+  position: relative;
+  min-height: 330px;
+  overflow: hidden;
+  border: 4px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 22%),
+    linear-gradient(180deg, color-mix(in srgb, var(--school-accent) 42%, #28313a), #1c2530);
+  box-shadow: inset -12px 0 0 rgba(0, 0, 0, 0.16);
+}
+
+.hud__school-locker-vents,
+.hud__school-locker-vents::before,
+.hud__school-locker-vents::after {
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  content: '';
+}
+
+.hud__school-locker-vents {
+  top: 38px;
+}
+
+.hud__school-locker-vents::before {
+  top: 22px;
+  left: 0;
+  right: 0;
+}
+
+.hud__school-locker-vents::after {
+  top: 44px;
+  left: 0;
+  right: 0;
+}
+
+.hud__school-combo-strip {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 54px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hud__school-combo-digit {
+  width: 54px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.34);
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.hud__school-combo-digit.is-visible {
+  color: #11171f;
+  background: linear-gradient(180deg, #fff2b8, var(--school-secondary));
+  animation: hud-school-combo-flash 280ms ease both;
+}
+
+.hud__school-combo-digit.is-entered {
+  border-color: #61ef8a;
+  color: #9ff7bf;
+}
+
+.hud__school-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hud__school-key {
+  min-height: 58px;
+  font-size: 21px;
+}
+
+.hud__school-locker.is-previewing .hud__school-key {
+  opacity: 0.48;
+  pointer-events: none;
+  filter: grayscale(0.35);
+}
+
+.hud__school-key:last-child {
+  grid-column: 2;
+}
+
+.hud__school-monitor {
+  position: relative;
+  height: 118px;
+}
+
+.hud__school-monitor-head {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 70px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffe0aa, #c78a5f);
+  transform: translateX(-50%);
+}
+
+.hud__school-monitor-head::before,
+.hud__school-monitor-head::after {
+  content: '';
+  position: absolute;
+  top: 28px;
+  width: 8px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #111820;
+}
+
+.hud__school-monitor-head::before {
+  left: 20px;
+}
+
+.hud__school-monitor-head::after {
+  right: 20px;
+}
+
+.hud__school-monitor-body {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  width: 118px;
+  height: 48px;
+  border-radius: 24px 24px 10px 10px;
+  background: linear-gradient(180deg, #315f81, #1c324a);
+  transform: translateX(-50%);
+}
+
+.hud__school-prompt-card,
+.hud__school-answer-key {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.065);
+  color: #fff4d8;
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.hud__school-pass-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.hud__school-pass {
+  min-height: 90px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, var(--school-accent) 18%, #202831);
+}
+
+.hud__school-board {
+  display: flex;
+  min-height: 190px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  border: 9px solid rgba(90, 56, 31, 0.95);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, #174f40, #0f372f);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.34);
+}
+
+.hud__school-board-token {
+  min-width: 66px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eaf7e2;
+  font-size: 32px;
+  font-weight: 950;
+}
+
+.hud__school-board-token.is-next {
+  outline: 3px solid var(--school-secondary);
+  animation: hud-school-pulse 860ms ease-in-out infinite;
+}
+
+.hud__school-board-token.is-copied {
+  color: #111820;
+  background: #61ef8a;
+}
+
+.hud__school-note-buttons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hud__school-note-key {
+  min-height: 64px;
+  font-size: 22px;
+}
+
+.hud__school-teacher {
+  align-content: center;
+}
+
+.hud__school-teacher-scene {
+  position: relative;
+  min-height: 240px;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 36%),
+    linear-gradient(180deg, #223446 0 64%, #3c3028 65% 100%);
+}
+
+.hud__school-teacher-figure {
+  position: absolute;
+  left: 50%;
+  top: 28px;
+  width: 112px;
+  height: 160px;
+  transform: translateX(-50%) rotateY(180deg);
+  transition: transform 160ms ease;
+}
+
+.hud__school-teacher.is-looking .hud__school-teacher-figure {
+  transform: translateX(-50%) rotateY(0deg);
+}
+
+.hud__school-teacher-head,
+.hud__school-teacher-body,
+.hud__school-teacher-eyes {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.hud__school-teacher-head {
+  top: 0;
+  width: 82px;
+  height: 78px;
+  border-radius: 50% 50% 44% 44%;
+  background: linear-gradient(180deg, #f3c98b, #bd8158);
+}
+
+.hud__school-teacher-eyes {
+  top: 32px;
+  width: 50px;
+  height: 10px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.hud__school-teacher.is-looking .hud__school-teacher-eyes {
+  opacity: 1;
+}
+
+.hud__school-teacher-eyes::before,
+.hud__school-teacher-eyes::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #111820;
+}
+
+.hud__school-teacher-eyes::before {
+  left: 6px;
+}
+
+.hud__school-teacher-eyes::after {
+  right: 6px;
+}
+
+.hud__school-teacher-body {
+  top: 76px;
+  width: 112px;
+  height: 88px;
+  border-radius: 30px 30px 12px 12px;
+  background: linear-gradient(180deg, #7d466b, #412d55);
+}
+
+.hud__school-desk {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 24px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #bd7940, #714125);
+}
+
+.hud__school-desk span {
+  position: absolute;
+  bottom: 42px;
+  width: 76px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.hud__school-desk span:nth-child(1) {
+  left: 18%;
+  transform: rotate(-7deg);
+}
+
+.hud__school-desk span:nth-child(2) {
+  left: 42%;
+}
+
+.hud__school-desk span:nth-child(3) {
+  right: 18%;
+  transform: rotate(6deg);
+}
+
+.hud__school-teacher-status {
+  justify-self: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff5db;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-teacher.is-looking .hud__school-teacher-status {
+  background: rgba(255, 109, 141, 0.18);
+  color: #ffb6c5;
+}
+
+.hud__school-meter {
+  height: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.hud__school-meter-fill {
+  display: block;
+  width: var(--meter, 0%);
+  height: 100%;
+  background: linear-gradient(90deg, var(--school-accent), var(--school-secondary));
+  transition: width 90ms linear;
+}
+
+.hud__school-hold-button {
+  justify-self: center;
+  min-width: 220px;
+}
+
+.hud__school-teacher.is-holding .hud__school-hold-button {
+  transform: translateY(2px) scale(0.99);
+  filter: brightness(1.12);
+}
+
+.hud__school-tray-stage {
+  position: relative;
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+    #243545;
+}
+
+.hud__school-tray-safe-zone {
+  justify-self: center;
+  width: min(420px, 72%);
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(97, 239, 138, 0.5), transparent);
+}
+
+.hud__school-tray-board {
+  position: relative;
+  width: min(430px, 78vw);
+  height: 92px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #e3d2b7, #9b7b5b);
+  box-shadow: 0 25px 42px rgba(0, 0, 0, 0.34);
+  transform: rotate(var(--tray-rotation, 0deg));
+  transform-origin: center;
+  transition: transform 70ms linear;
+}
+
+.hud__school-tray-board::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -88px;
+  width: 24px;
+  height: 88px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateX(-50%);
+}
+
+.hud__school-tray-cup,
+.hud__school-tray-apple,
+.hud__school-tray-plate {
+  position: absolute;
+  bottom: 64px;
+  filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.2));
+}
+
+.hud__school-tray-cup {
+  left: 18%;
+  width: 44px;
+  height: 62px;
+  border-radius: 8px 8px 16px 16px;
+  background: linear-gradient(180deg, #e8f4ff, #72b5e8);
+}
+
+.hud__school-tray-apple {
+  left: 47%;
+  width: 46px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffb0b0, #d6293f 68%);
+}
+
+.hud__school-tray-plate {
+  right: 17%;
+  width: 76px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff8df, #c9b58d);
+}
+
+.hud__school-dual-actions {
+  justify-content: center;
+}
+
+.hud__school-direction {
+  min-width: 128px;
+}
+
+.hud__school-dodge {
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+}
+
+.hud__school-lives {
+  justify-self: end;
+  display: flex;
+  gap: 8px;
+}
+
+.hud__school-lives span {
+  width: 18px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.hud__school-lives span.is-live {
+  background: linear-gradient(180deg, #61ef8a, #2ab668);
+  box-shadow: 0 0 16px rgba(97, 239, 138, 0.34);
+}
+
+.hud__school-dodge-lanes {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+    #222b35;
+}
+
+.hud__school-dodge-lane {
+  position: relative;
+  display: grid;
+  place-items: start center;
+  padding-top: 12px;
+  border-right: 1px dashed rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-dodge-lane:last-child {
+  border-right: 0;
+}
+
+.hud__school-dodge-lane.is-player-lane {
+  background: linear-gradient(180deg, rgba(105, 167, 255, 0.14), transparent);
+}
+
+.hud__school-dodge-player {
+  position: absolute;
+  left: calc((var(--lane, 1) * 33.333%) + 16.666%);
+  bottom: 30px;
+  width: 48px;
+  height: 82px;
+  transform: translateX(-50%);
+  transition: left 120ms cubic-bezier(0.18, 0.86, 0.22, 1.1);
+}
+
+.hud__school-dodge-player::before,
+.hud__school-dodge-player::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.hud__school-dodge-player::before {
+  top: 0;
+  width: 30px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #f0c08a;
+}
+
+.hud__school-dodge-player::after {
+  top: 32px;
+  width: 14px;
+  height: 50px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--school-accent), #245c88);
+  box-shadow:
+    -18px 12px 0 -4px #f0c08a,
+    18px 12px 0 -4px #f0c08a;
+}
+
+.hud__school-chalk {
+  position: absolute;
+  left: var(--x, 0%);
+  top: calc((var(--lane, 0) + 1) * 23%);
+  width: 54px;
+  height: 13px;
+  border-radius: 999px;
+  background: #f7f2df;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.42);
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.hud__school-sort {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.46fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.hud__school-backpack-pile {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
+  gap: 10px;
+  min-height: 310px;
+  padding: 16px;
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(240, 143, 93, 0.22), transparent 48%),
+    rgba(255, 255, 255, 0.045);
+}
+
+.hud__school-backpack-item {
+  min-height: 68px;
+}
+
+.hud__school-bin-grid {
+  grid-template-columns: 1fr;
+  align-content: center;
+}
+
+.hud__school-bin {
+  min-height: 62px;
+}
+
+.hud__school-score-strip {
+  grid-column: 1 / -1;
+  justify-content: center;
+  color: rgba(244, 238, 226, 0.8);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hud__school-score-strip span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hud__school-bell {
+  align-content: center;
+}
+
+.hud__school-hallway-meter {
+  position: relative;
+  height: 108px;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 2px, transparent 2px 70px),
+    linear-gradient(180deg, #2c3540, #171d24);
+}
+
+.hud__school-classroom-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--target-left, 62%);
+  width: var(--target-width, 17%);
+  background:
+    linear-gradient(180deg, rgba(97, 239, 138, 0.42), rgba(97, 239, 138, 0.12));
+  box-shadow: inset 0 0 0 2px rgba(97, 239, 138, 0.5);
+}
+
+.hud__school-runner-marker {
+  position: absolute;
+  left: var(--marker, 0%);
+  top: 50%;
+  width: 28px;
+  height: 82px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, var(--school-secondary), var(--school-accent));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--school-accent) 44%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.hud__school-bell-labels {
+  color: rgba(244, 238, 226, 0.66);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-bell-labels strong {
+  color: #a7ffc2;
+}
+
+.hud__school-answer-key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__school-answer-key span {
+  color: rgba(244, 238, 226, 0.58);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.hud__school-scantron-sheet {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(235, 238, 232, 0.9));
+  color: #17202b;
+}
+
+.hud__school-scantron-row {
+  display: grid;
+  grid-template-columns: 28px repeat(4, minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+}
+
+.hud__school-scantron-row > span {
+  font-weight: 950;
+}
+
+.hud__school-bubble {
+  min-height: 42px;
+  border-color: rgba(20, 28, 36, 0.18);
+  background: transparent;
+  color: #17202b;
+}
+
+.hud__school-bubble.is-filled {
+  background: #17202b;
+  color: #fff;
+}
+
+.hud__school-bubble.is-key:not(.is-filled) {
+  box-shadow: inset 0 0 0 2px rgba(110, 168, 255, 0.18);
+}
+
+@keyframes hud-school-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.72) rotate(-8deg);
+  }
+  70% {
+    transform: scale(1.08) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes hud-school-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-9px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes hud-school-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(255, 222, 89, 0);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(255, 222, 89, 0.38);
+  }
+}
+
+@keyframes hud-school-combo-flash {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) rotateX(60deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0deg);
+  }
+}
+
 .hud__quick-chat {
   left: 50%;
   bottom: 24px;
@@ -6424,6 +7496,10 @@ body.is-builder-resizing * {
   pointer-events: none;
 }
 
+.loading.is-dismissing {
+  pointer-events: none;
+}
+
 .loading__content {
   position: relative;
   display: flex;
@@ -6806,6 +7882,7 @@ canvas {
   .hud__shader-debug,
   .hud__stock-market,
   .hud__blackjack,
+  .hud__school-microgame,
   .hud__aim-debug {
     width: calc(100vw - 32px);
     left: 16px;
@@ -6829,8 +7906,60 @@ canvas {
     transform: translateY(14px);
   }
 
+  .hud__school-microgame {
+    top: 84px;
+    bottom: 16px;
+    min-height: 0;
+    height: auto;
+    grid-template-rows: auto 28px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+    transform: translateY(14px) scale(1);
+  }
+
+  .hud__school-title {
+    font-size: 21px;
+  }
+
+  .hud__school-timer-slot {
+    min-height: 28px;
+  }
+
+  .hud__school-timer {
+    height: 26px;
+  }
+
+  .hud__school-footer {
+    min-height: 42px;
+    padding: 8px 10px;
+  }
+
+  .hud__school-footer p {
+    font-size: 12px;
+  }
+
+  .hud__school-quiz,
+  .hud__school-hallpass,
+  .hud__school-notes,
+  .hud__school-locker,
+  .hud__school-teacher,
+  .hud__school-tray,
+  .hud__school-dodge,
+  .hud__school-sort,
+  .hud__school-bell,
+  .hud__school-scantron {
+    gap: 10px;
+    padding: 12px;
+    width: 100%;
+    min-width: 0;
+  }
+
   .hud__blackjack.is-visible {
     transform: translateY(0);
+  }
+
+  .hud__school-microgame.is-visible {
+    transform: translateY(0) scale(1);
   }
 
   .hud__blackjack-table {
@@ -6856,6 +7985,107 @@ canvas {
 
   .hud__blackjack-action {
     flex: 1 1 118px;
+  }
+
+  .hud__school-locker,
+  .hud__school-sort {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__school-answer-grid,
+  .hud__school-pass-grid,
+  .hud__school-note-buttons {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hud__school-pass-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hud__school-monitor {
+    height: 74px;
+  }
+
+  .hud__school-monitor-head {
+    width: 46px;
+  }
+
+  .hud__school-monitor-head::before,
+  .hud__school-monitor-head::after {
+    top: 18px;
+    width: 6px;
+  }
+
+  .hud__school-monitor-head::before {
+    left: 13px;
+  }
+
+  .hud__school-monitor-head::after {
+    right: 13px;
+  }
+
+  .hud__school-monitor-body {
+    top: 48px;
+    width: 88px;
+    height: 30px;
+  }
+
+  .hud__school-prompt-card,
+  .hud__school-answer-key {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .hud__school-pass {
+    min-height: 56px;
+  }
+
+  .hud__school-board {
+    min-height: 132px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    border-width: 6px;
+  }
+
+  .hud__school-board-token {
+    min-width: 42px;
+    height: 48px;
+    font-size: 21px;
+  }
+
+  .hud__school-note-buttons {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .hud__school-note-key {
+    min-height: 54px;
+  }
+
+  .hud__school-tray-stage {
+    min-height: 238px;
+  }
+
+  .hud__school-tray-board {
+    width: min(252px, 82%);
+    height: 78px;
+  }
+
+  .hud__school-tray-cup {
+    width: 34px;
+    height: 48px;
+  }
+
+  .hud__school-tray-apple {
+    width: 36px;
+  }
+
+  .hud__school-tray-plate {
+    width: 56px;
+  }
+
+  .hud__school-locker-door {
+    min-height: 220px;
   }
 
   .hud__stock-market.is-visible {
@@ -7332,6 +8562,291 @@ canvas {
   }
 }
 
+@media (max-height: 520px) and (orientation: landscape) {
+  .hud__school-microgame {
+    left: 14px;
+    right: 14px;
+    top: 12px;
+    bottom: 12px;
+    width: auto;
+    min-height: 0;
+    height: auto;
+    grid-template-rows: auto 24px minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 10px;
+    transform: translateY(10px) scale(1);
+  }
+
+  .hud__school-microgame.is-visible {
+    transform: translateY(0) scale(1);
+  }
+
+  .hud__school-header {
+    gap: 8px;
+  }
+
+  .hud__school-title {
+    margin-bottom: 2px;
+    font-size: 19px;
+  }
+
+  .hud__school-status,
+  .hud__school-footer p {
+    font-size: 12px;
+    line-height: 1.1;
+  }
+
+  .hud__school-timer-slot {
+    min-height: 24px;
+  }
+
+  .hud__school-timer {
+    height: 22px;
+  }
+
+  .hud__school-footer {
+    min-height: 32px;
+    padding: 6px 8px;
+  }
+
+  .hud__school-ready,
+  .hud__school-result {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .hud__school-ready-badge,
+  .hud__school-result-burst {
+    width: 48px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  .hud__school-ready h3,
+  .hud__school-result strong {
+    font-size: 24px;
+  }
+
+  .hud__school-ready p,
+  .hud__school-result p {
+    max-width: 520px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .hud__school-reward {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .hud__school-reward strong,
+  .hud__school-result span {
+    font-size: 11px;
+  }
+
+  .hud__school-quiz,
+  .hud__school-hallpass,
+  .hud__school-notes,
+  .hud__school-locker,
+  .hud__school-teacher,
+  .hud__school-tray,
+  .hud__school-dodge,
+  .hud__school-sort,
+  .hud__school-bell,
+  .hud__school-scantron {
+    min-width: 0;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .hud__school-action,
+  .hud__school-hold-button {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .hud__school-question {
+    min-height: 92px;
+    padding: 12px;
+    font-size: 24px;
+    box-shadow: inset 0 0 0 6px rgba(73, 45, 24, 0.84);
+  }
+
+  .hud__school-answer {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .hud__school-locker {
+    grid-template-columns: minmax(160px, 0.72fr) minmax(190px, 1fr);
+  }
+
+  .hud__school-locker-door {
+    min-height: 156px;
+  }
+
+  .hud__school-combo-strip {
+    bottom: 24px;
+  }
+
+  .hud__school-combo-digit {
+    width: 42px;
+    height: 48px;
+    font-size: 21px;
+  }
+
+  .hud__school-key {
+    min-height: 38px;
+    font-size: 16px;
+  }
+
+  .hud__school-monitor {
+    height: 54px;
+  }
+
+  .hud__school-monitor-head {
+    width: 38px;
+  }
+
+  .hud__school-monitor-body {
+    top: 38px;
+    width: 72px;
+    height: 24px;
+  }
+
+  .hud__school-prompt-card,
+  .hud__school-answer-key {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .hud__school-pass {
+    min-height: 46px;
+  }
+
+  .hud__school-board {
+    min-height: 110px;
+    gap: 8px;
+    padding: 10px;
+    border-width: 6px;
+  }
+
+  .hud__school-board-token {
+    min-width: 48px;
+    height: 54px;
+    font-size: 24px;
+  }
+
+  .hud__school-note-key {
+    min-height: 44px;
+  }
+
+  .hud__school-teacher-scene {
+    min-height: 112px;
+  }
+
+  .hud__school-teacher-figure {
+    top: 10px;
+    transform: translateX(-50%) rotateY(180deg) scale(0.66);
+    transform-origin: top center;
+  }
+
+  .hud__school-teacher.is-looking .hud__school-teacher-figure {
+    transform: translateX(-50%) rotateY(0deg) scale(0.66);
+  }
+
+  .hud__school-desk {
+    bottom: 14px;
+    height: 28px;
+  }
+
+  .hud__school-desk span {
+    bottom: 28px;
+    width: 56px;
+  }
+
+  .hud__school-meter {
+    height: 12px;
+  }
+
+  .hud__school-hold-button {
+    min-width: 170px;
+  }
+
+  .hud__school-tray-stage {
+    min-height: 128px;
+  }
+
+  .hud__school-tray-board {
+    width: min(330px, 68vw);
+    height: 62px;
+  }
+
+  .hud__school-tray-cup {
+    width: 30px;
+    height: 42px;
+  }
+
+  .hud__school-tray-apple {
+    width: 32px;
+  }
+
+  .hud__school-tray-plate {
+    width: 52px;
+  }
+
+  .hud__school-dodge {
+    grid-template-rows: auto minmax(130px, 1fr) auto;
+  }
+
+  .hud__school-dodge-player {
+    bottom: 14px;
+    transform: translateX(-50%) scale(0.72);
+    transform-origin: bottom center;
+  }
+
+  .hud__school-chalk {
+    width: 40px;
+  }
+
+  .hud__school-sort {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 0.38fr);
+  }
+
+  .hud__school-backpack-pile {
+    min-height: 138px;
+    padding: 10px;
+  }
+
+  .hud__school-backpack-item,
+  .hud__school-bin {
+    min-height: 38px;
+  }
+
+  .hud__school-hallway-meter {
+    height: 58px;
+  }
+
+  .hud__school-runner-marker {
+    height: 48px;
+  }
+
+  .hud__school-scantron-sheet {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .hud__school-scantron-row {
+    gap: 6px;
+  }
+
+  .hud__school-bubble {
+    min-height: 30px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hud__phone-launcher,
   .hud__phone-device,
@@ -7352,7 +8867,10 @@ canvas {
   .hud__blackjack-card,
   .hud__blackjack-card-inner,
   .hud__blackjack-card-edge,
-  .hud__blackjack-card-face::after {
+  .hud__blackjack-card-face::after,
+  .hud__school-result-burst,
+  .hud__school-board-token,
+  .hud__school-combo-digit {
     animation: none !important;
     transition: none !important;
   }

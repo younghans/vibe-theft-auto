@@ -140,6 +140,17 @@ const NPC_PLANS = [
     prompt: 'You are Sketch, an eccentric prototype android who narrates the city like it is an unfinished game level. You are curious, earnest, and lightly comedic.',
     interactRadius: 5.2,
     blackjackDealerEnabled: true
+  },
+  {
+    id: 'npc_professor_byte',
+    modelId: 'martha',
+    position: [-0.4 * BUILDER_TILE_SIZE, -2.2 * BUILDER_TILE_SIZE],
+    angle: 0,
+    name: 'Professor Byte',
+    prompt: 'You are Professor Byte, a sharp school teacher who runs fast classroom challenges. Keep answers short, witty, and focused on school microgames.',
+    interactRadius: 5.4,
+    schoolMicrogameEnabled: true,
+    schoolMicrogameId: 'all'
   }
 ];
 
@@ -312,6 +323,8 @@ function createNpcLayout(tiles, props) {
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
     stockMarketEnabled: plan.stockMarketEnabled === true,
     blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
+    schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
+    schoolMicrogameId: plan.schoolMicrogameId ?? 'all',
     ...(plan.combat ? { combat: plan.combat } : {}),
     ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
   }));

@@ -4,6 +4,7 @@ import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
 import { BLACKJACK_DEFAULT_WAGER } from '../shared/blackjack.js';
 import { escapeHtml } from '../shared/htmlEscape.js';
 import { getStockTradeValue } from '../shared/stockMarket.js';
+import { SCHOOL_MICROGAME_IDS } from '../shared/schoolMicrogames.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
   '#ff3d8f',
@@ -628,6 +629,419 @@ function createBlackjackCardMarkup(card = {}, index = 0, visual = {}) {
   `;
 }
 
+function formatMicrogameSeconds(remainingMs = 0) {
+  const seconds = Math.max(0, Number(remainingMs) || 0) / 1000;
+  return seconds < 10 ? seconds.toFixed(1) : String(Math.ceil(seconds));
+}
+
+function getSchoolMicrogameStatusText(game = null) {
+  const phase = String(game?.phase ?? 'ready');
+  if (phase === 'playing') {
+    return `${formatMicrogameSeconds(game?.remainingMs)} seconds`;
+  }
+  if (phase === 'success') {
+    return 'Passed';
+  }
+  if (phase === 'failure') {
+    return 'Failed';
+  }
+  return 'Ready';
+}
+
+function getSchoolMicrogameResultLabel(game = null) {
+  const phase = String(game?.phase ?? 'ready');
+  if (phase === 'success') {
+    return game?.resultTitle || 'Passed';
+  }
+  if (phase === 'failure') {
+    return game?.resultTitle || 'Try again';
+  }
+  return '';
+}
+
+function createSchoolProgressMarkup(value = 0, label = 'Progress') {
+  const percent = Math.max(0, Math.min(100, Number(value) || 0));
+  return `
+    <div class="hud__school-meter" role="progressbar" aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent.toFixed(0)}">
+      <span class="hud__school-meter-fill" style="--meter:${percent.toFixed(2)}%"></span>
+    </div>
+  `;
+}
+
+function createSchoolTimerMarkup(game = null) {
+  const roundDuration = Math.max(1, Number(game?.round?.durationMs ?? 1) || 1);
+  const remaining = Math.max(0, Number(game?.remainingMs ?? roundDuration) || 0);
+  const percent = Math.max(0, Math.min(100, (remaining / roundDuration) * 100));
+  return `
+    <div class="hud__school-timer" aria-label="Microgame timer">
+      <span class="hud__school-timer-fill" style="--timer:${percent.toFixed(2)}%"></span>
+      <strong>${formatMicrogameSeconds(remaining)}</strong>
+    </div>
+  `;
+}
+
+function createSchoolGameButton(action, label, className = '') {
+  return `
+    <button class="hud__school-action${className ? ` ${className}` : ''}" type="button" data-school-microgame-action="${escapeHtml(action)}">
+      ${escapeHtml(label)}
+    </button>
+  `;
+}
+
+function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
+  const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
+  const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
+  return [
+    money > 0 ? `${prefix ? '+' : ''}$${money}` : '',
+    xp > 0 ? `${prefix ? '+' : ''}${xp} Intelligence XP` : ''
+  ].filter(Boolean).join(' / ');
+}
+
+function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
+  const phase = String(game?.phase ?? 'ready');
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const gameId = String(round.gameId ?? '');
+  const base = [
+    game?.id ?? '',
+    gameId,
+    phase,
+    String(error ?? ''),
+    String(game?.resultTitle ?? ''),
+    String(game?.resultDetail ?? ''),
+    String(game?.message ?? '')
+  ];
+  if (phase !== 'playing') {
+    return base.join('|');
+  }
+
+  if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
+    base.push(String(data.selectedIndex ?? -1));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
+    base.push(Boolean(data.previewActive) ? 'preview' : 'entry', (data.entered ?? []).join(','));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.hallPass) {
+    base.push(String(data.selectedPass ?? ''));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
+    base.push(String(data.enteredCount ?? 0));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+    base.push(Boolean(data.teacherLooking) ? 'look' : 'away', Boolean(data.holding) ? 'hold' : 'free', String(Math.floor(Number(data.progress ?? 0) / 5)));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
+    base.push(String(Math.round(Number(data.balance ?? 0) * 24)));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+    base.push(
+      String(data.playerLane ?? 1),
+      String(data.lives ?? 0),
+      (data.chalks ?? []).map((chalk) => `${chalk.lane}:${Math.round(Number(chalk.x ?? 0) / 4)}`).join(',')
+    );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.sortBackpack) {
+    base.push(
+      String(data.selectedItemId ?? ''),
+      String(data.correct ?? 0),
+      String(data.wrong ?? 0),
+      (data.remaining ?? []).map((item) => item.id).join(',')
+    );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
+    base.push(String(Math.round(Number(data.marker ?? 0) * 100)));
+  } else if (gameId === SCHOOL_MICROGAME_IDS.scantron) {
+    base.push((data.filled ?? []).join(','), String(data.correct ?? 0), String(data.wrong ?? 0));
+  }
+  return base.join('|');
+}
+
+function createReadySchoolMicrogameMarkup(game = null) {
+  const round = game?.round ?? {};
+  return `
+    <div class="hud__school-ready">
+      <div class="hud__school-ready-badge" aria-hidden="true">${escapeHtml(round.icon ?? 'GO')}</div>
+      <h3>${escapeHtml(round.title ?? 'School Microgame')}</h3>
+      <p>${escapeHtml(round.description ?? 'Play fast and clean.')}</p>
+      <div class="hud__school-reward">
+        <span>Reward</span>
+        <strong>${escapeHtml(getSchoolMicrogameRewardText(round))}</strong>
+      </div>
+      ${createSchoolGameButton('start', 'Start', 'is-primary')}
+    </div>
+  `;
+}
+
+function createPopQuizMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const selectedIndex = Number(data.selectedIndex ?? -1);
+  return `
+    <div class="hud__school-quiz">
+      <div class="hud__school-question">${escapeHtml(round.question ?? 'Question')}</div>
+      <div class="hud__school-answer-grid">
+        ${(round.answers ?? []).map((answer) => {
+          const index = Number(answer.index ?? 0);
+          const selectedClass = selectedIndex === index ? ' is-selected' : '';
+          return createSchoolGameButton(`answer:${index}`, answer.label, `hud__school-answer${selectedClass}`);
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function createLockerComboMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const combo = Array.isArray(round.combo) ? round.combo : [];
+  const entered = Array.isArray(data.entered) ? data.entered : [];
+  const previewActive = Boolean(data.previewActive);
+  return `
+    <div class="hud__school-locker${previewActive ? ' is-previewing' : ''}">
+      <div class="hud__school-locker-door">
+        <div class="hud__school-locker-vents" aria-hidden="true"></div>
+        <div class="hud__school-combo-strip">
+          ${combo.map((digit, index) => `
+            <span class="hud__school-combo-digit${previewActive ? ' is-visible' : ''}${entered[index] === digit ? ' is-entered' : ''}">
+              ${previewActive ? escapeHtml(digit) : escapeHtml(entered[index] ?? '-')}
+            </span>
+          `).join('')}
+        </div>
+      </div>
+      <div class="hud__school-keypad">
+        ${(round.keypad ?? []).map((digit) => createSchoolGameButton(`digit:${digit}`, String(digit), 'hud__school-key')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function createHallPassMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  return `
+    <div class="hud__school-hallpass">
+      <div class="hud__school-monitor" aria-hidden="true">
+        <span class="hud__school-monitor-head"></span>
+        <span class="hud__school-monitor-body"></span>
+      </div>
+      <p class="hud__school-prompt-card">${escapeHtml(round.promptText ?? 'Pick the right pass.')}</p>
+      <div class="hud__school-pass-grid">
+        ${(round.passes ?? []).map((pass) => createSchoolGameButton(`pass:${pass}`, pass, `hud__school-pass${data.selectedPass === pass ? ' is-selected' : ''}`)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function createCopyNotesMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const sequence = Array.isArray(round.sequence) ? round.sequence : [];
+  const enteredCount = Math.max(0, Math.floor(Number(data.enteredCount ?? 0) || 0));
+  return `
+    <div class="hud__school-notes">
+      <div class="hud__school-board">
+        ${sequence.map((key, index) => `
+          <span class="hud__school-board-token${index < enteredCount ? ' is-copied' : ''}${index === enteredCount ? ' is-next' : ''}">
+            ${escapeHtml(key)}
+          </span>
+        `).join('')}
+      </div>
+      <div class="hud__school-note-buttons">
+        ${(round.keys ?? []).map((key) => createSchoolGameButton(`note:${key}`, key, 'hud__school-note-key')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function createTeacherLookingMarkup(game = null) {
+  const data = game?.data ?? {};
+  const looking = Boolean(data.teacherLooking);
+  const holding = Boolean(data.holding);
+  return `
+    <div class="hud__school-teacher${looking ? ' is-looking' : ' is-away'}${holding ? ' is-holding' : ''}">
+      <div class="hud__school-teacher-scene">
+        <div class="hud__school-teacher-figure" aria-hidden="true">
+          <span class="hud__school-teacher-head"></span>
+          <span class="hud__school-teacher-eyes"></span>
+          <span class="hud__school-teacher-body"></span>
+        </div>
+        <div class="hud__school-desk" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="hud__school-teacher-status">${looking ? 'Teacher is looking' : 'Write now'}</div>
+      ${createSchoolProgressMarkup(data.progress ?? 0, 'Writing progress')}
+      <button class="hud__school-hold-button" type="button" data-school-microgame-hold>
+        Write
+      </button>
+    </div>
+  `;
+}
+
+function createTraySaveMarkup(game = null) {
+  const data = game?.data ?? {};
+  const balance = Math.max(-1.2, Math.min(1.2, Number(data.balance ?? 0) || 0));
+  const rotation = (balance * 15).toFixed(2);
+  return `
+    <div class="hud__school-tray">
+      <div class="hud__school-tray-safe-zone" aria-hidden="true"></div>
+      <div class="hud__school-tray-stage">
+        <div class="hud__school-tray-board" style="--tray-rotation:${rotation}deg">
+          <span class="hud__school-tray-cup"></span>
+          <span class="hud__school-tray-apple"></span>
+          <span class="hud__school-tray-plate"></span>
+        </div>
+      </div>
+      <div class="hud__school-dual-actions">
+        ${createSchoolGameButton('balance:left', 'Left', 'hud__school-direction')}
+        ${createSchoolGameButton('balance:right', 'Right', 'hud__school-direction')}
+      </div>
+    </div>
+  `;
+}
+
+function createDodgeChalkMarkup(game = null) {
+  const data = game?.data ?? {};
+  const lanes = Array.isArray(game?.round?.lanes) ? game.round.lanes : ['Left', 'Center', 'Right'];
+  const playerLane = Math.max(0, Math.min(2, Math.floor(Number(data.playerLane ?? 1) || 1)));
+  const chalks = Array.isArray(data.chalks) ? data.chalks : [];
+  return `
+    <div class="hud__school-dodge">
+      <div class="hud__school-lives">${Array.from({ length: 2 }, (_, index) => `<span class="${index < (data.lives ?? 0) ? 'is-live' : ''}"></span>`).join('')}</div>
+      <div class="hud__school-dodge-lanes">
+        ${lanes.map((lane, index) => `
+          <div class="hud__school-dodge-lane${playerLane === index ? ' is-player-lane' : ''}">
+            <span>${escapeHtml(lane)}</span>
+          </div>
+        `).join('')}
+        <div class="hud__school-dodge-player" style="--lane:${playerLane}" aria-label="Student"></div>
+        ${chalks.map((chalk) => `
+          <span class="hud__school-chalk" style="--lane:${Math.max(0, Math.min(2, Number(chalk.lane ?? 0)))}; --x:${Math.max(0, Math.min(100, Number(chalk.x ?? 0))).toFixed(2)}%"></span>
+        `).join('')}
+      </div>
+      <div class="hud__school-dual-actions">
+        ${createSchoolGameButton('move:left', 'Left', 'hud__school-direction')}
+        ${createSchoolGameButton('move:right', 'Right', 'hud__school-direction')}
+      </div>
+    </div>
+  `;
+}
+
+function createSortBackpackMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const remaining = Array.isArray(data.remaining) ? data.remaining : (round.items ?? []);
+  const selectedId = String(data.selectedItemId ?? '');
+  return `
+    <div class="hud__school-sort">
+      <div class="hud__school-backpack-pile">
+        ${remaining.map((item) => createSchoolGameButton(`item:${item.id}`, item.label, `hud__school-backpack-item${selectedId === item.id ? ' is-selected' : ''}`)).join('')}
+      </div>
+      <div class="hud__school-bin-grid">
+        ${(round.bins ?? []).map((bin) => createSchoolGameButton(`bin:${bin}`, bin, 'hud__school-bin')).join('')}
+      </div>
+      <div class="hud__school-score-strip">
+        <span>${Math.max(0, Number(data.correct ?? 0) || 0)} sorted</span>
+        <span>${Math.max(0, Number(data.wrong ?? 0) || 0)} wrong</span>
+      </div>
+    </div>
+  `;
+}
+
+function createBellSprintMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const marker = Math.max(0, Math.min(1, Number(data.marker ?? 0) || 0));
+  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.62) || 0.62));
+  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.78) || 0.78));
+  return `
+    <div class="hud__school-bell">
+      <div class="hud__school-hallway-meter">
+        <span class="hud__school-classroom-zone" style="--target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%"></span>
+        <span class="hud__school-runner-marker" style="--marker:${(marker * 100).toFixed(2)}%"></span>
+      </div>
+      <div class="hud__school-bell-labels">
+        <span>Hall</span>
+        <strong>Class Door</strong>
+      </div>
+      ${createSchoolGameButton('stop', 'Stop', 'is-primary')}
+    </div>
+  `;
+}
+
+function createScantronMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const answerKey = Array.isArray(round.answerKey) ? round.answerKey : [];
+  const filled = Array.isArray(data.filled) ? data.filled : [];
+  return `
+    <div class="hud__school-scantron">
+      <div class="hud__school-answer-key">
+        <span>Key</span>
+        <strong>${answerKey.map((answer) => escapeHtml(answer)).join(' ')}</strong>
+      </div>
+      <div class="hud__school-scantron-sheet">
+        ${answerKey.map((answer, rowIndex) => `
+          <div class="hud__school-scantron-row">
+            <span>${rowIndex + 1}</span>
+            ${(round.options ?? ['A', 'B', 'C', 'D']).map((option) => createSchoolGameButton(
+              `bubble:${rowIndex}:${option}`,
+              option,
+              `hud__school-bubble${filled[rowIndex] === option ? ' is-filled' : ''}${answer === option ? ' is-key' : ''}`
+            )).join('')}
+          </div>
+        `).join('')}
+      </div>
+      <div class="hud__school-score-strip">
+        <span>${Math.max(0, Number(data.correct ?? 0) || 0)} correct</span>
+        <span>${Math.max(0, Number(data.wrong ?? 0) || 0)} wrong</span>
+      </div>
+    </div>
+  `;
+}
+
+function createSchoolMicrogamePlayMarkup(game = null) {
+  const gameId = String(game?.round?.gameId ?? '');
+  switch (gameId) {
+    case SCHOOL_MICROGAME_IDS.popQuiz:
+      return createPopQuizMarkup(game);
+    case SCHOOL_MICROGAME_IDS.lockerCombo:
+      return createLockerComboMarkup(game);
+    case SCHOOL_MICROGAME_IDS.hallPass:
+      return createHallPassMarkup(game);
+    case SCHOOL_MICROGAME_IDS.copyNotes:
+      return createCopyNotesMarkup(game);
+    case SCHOOL_MICROGAME_IDS.teacherLooking:
+      return createTeacherLookingMarkup(game);
+    case SCHOOL_MICROGAME_IDS.cafeteriaTray:
+      return createTraySaveMarkup(game);
+    case SCHOOL_MICROGAME_IDS.dodgeChalk:
+      return createDodgeChalkMarkup(game);
+    case SCHOOL_MICROGAME_IDS.sortBackpack:
+      return createSortBackpackMarkup(game);
+    case SCHOOL_MICROGAME_IDS.bellSprint:
+      return createBellSprintMarkup(game);
+    case SCHOOL_MICROGAME_IDS.scantron:
+      return createScantronMarkup(game);
+    default:
+      return '<div class="hud__school-ready"><p>Unknown school microgame.</p></div>';
+  }
+}
+
+function createSchoolMicrogameBodyMarkup(game = null) {
+  const phase = String(game?.phase ?? 'ready');
+  if (phase === 'ready') {
+    return createReadySchoolMicrogameMarkup(game);
+  }
+
+  if (phase === 'success' || phase === 'failure') {
+    const resultClass = phase === 'success' ? ' is-success' : ' is-failure';
+    return `
+      <div class="hud__school-result${resultClass}">
+        <div class="hud__school-result-burst" aria-hidden="true"></div>
+        <strong>${escapeHtml(getSchoolMicrogameResultLabel(game))}</strong>
+        <p>${escapeHtml(game?.resultDetail || game?.message || '')}</p>
+        ${phase === 'success' ? `<span>${escapeHtml(getSchoolMicrogameRewardText(game?.round, { prefix: true }))}</span>` : ''}
+        ${createSchoolGameButton('restart', 'Play Again', 'is-primary')}
+      </div>
+    `;
+  }
+
+  return createSchoolMicrogamePlayMarkup(game);
+}
+
 function createStockIconMarkup(stock = {}, className = '') {
   const icon = String(stock?.icon ?? '').trim();
   const label = escapeHtml(stock?.symbol ?? 'Stock');
@@ -1073,6 +1487,7 @@ export class Hud {
     this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
     this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
     this.builderNpcBlackjackDealer = this.overlay.querySelector('[data-builder-npc-blackjack-dealer]');
+    this.builderNpcSchoolMicrogame = this.overlay.querySelector('[data-builder-npc-school-microgame]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
     this.builderNpcWarnings = this.overlay.querySelector('[data-builder-npc-warnings]');
     this.builderNpcRoutineSteps = this.overlay.querySelector('[data-builder-npc-routine-steps]');
@@ -1130,6 +1545,14 @@ export class Hud {
     this.blackjackStand = this.overlay.querySelector('[data-blackjack-stand]');
     this.blackjackDouble = this.overlay.querySelector('[data-blackjack-double]');
     this.blackjackWagerChips = this.overlay.querySelector('[data-blackjack-wager-chips]');
+    this.schoolMicrogameRoot = this.overlay.querySelector('[data-school-microgame]');
+    this.schoolMicrogameClose = this.overlay.querySelector('[data-school-microgame-close]');
+    this.schoolMicrogameTitle = this.overlay.querySelector('[data-school-microgame-title]');
+    this.schoolMicrogameEyebrow = this.overlay.querySelector('[data-school-microgame-eyebrow]');
+    this.schoolMicrogameStatus = this.overlay.querySelector('[data-school-microgame-status]');
+    this.schoolMicrogameTimer = this.overlay.querySelector('[data-school-microgame-timer]');
+    this.schoolMicrogameBody = this.overlay.querySelector('[data-school-microgame-body]');
+    this.schoolMicrogameMessage = this.overlay.querySelector('[data-school-microgame-message]');
     this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
@@ -1190,6 +1613,13 @@ export class Hud {
       player: []
     };
     this.blackjackCardAnimationTimeout = 0;
+    this.schoolMicrogameVisible = false;
+    this.schoolMicrogameState = {
+      game: null,
+      loading: false,
+      error: ''
+    };
+    this.schoolMicrogameBodyRenderKey = '';
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
     this.phoneMapDragState = null;
@@ -1737,6 +2167,12 @@ export class Hud {
                   <span class="hud__field-label hud__checkbox-title">Blackjack Dealer</span>
                 </span>
               </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-school-microgame />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">School Microgames</span>
+                </span>
+              </label>
               <div class="hud__builder-instance-metrics">
                 <label class="hud__field">
                   <span class="hud__field-label">Archetype</span>
@@ -1947,6 +2383,26 @@ export class Hud {
           </div>
         </footer>
       </section>
+      <section class="hud__school-microgame" data-school-microgame hidden>
+        <header class="hud__school-header">
+          <div>
+            <p class="hud__eyebrow" data-school-microgame-eyebrow>School</p>
+            <h2 class="hud__school-title" data-school-microgame-title>School Microgame</h2>
+            <p class="hud__body hud__school-status" data-school-microgame-status>Ready</p>
+          </div>
+          <button class="hud__builder-icon-button" type="button" data-school-microgame-close aria-label="Close school microgame" title="Close school microgame">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="hud__school-timer-slot" data-school-microgame-timer></div>
+        <div class="hud__school-body" data-school-microgame-body></div>
+        <footer class="hud__school-footer">
+          <p data-school-microgame-message>Start when ready.</p>
+        </footer>
+      </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
         <span class="hud__key">Enter</span>
         <input class="hud__field-control hud__quick-chat-input" type="text" maxlength="280" data-quick-chat-input placeholder="Say something..." />
@@ -2039,6 +2495,8 @@ export class Hud {
     this.loadingRequestedProgress = 1;
     this.loadingDisplayedProgress = 1;
     this.loadingProgressLastFrameAt = 0;
+    this.loading.classList.add('is-dismissing');
+    this.loading.style.pointerEvents = 'none';
     this.loading.style.setProperty('--loading-progress', '1');
     this.loadingHideTimeout = window.setTimeout(() => {
       this.loading.classList.add('is-hidden');
@@ -2054,6 +2512,8 @@ export class Hud {
     }
 
     this.loading.hidden = false;
+    this.loading.classList.remove('is-dismissing', 'is-hidden');
+    this.loading.style.pointerEvents = '';
     const requestedProgress = Math.max(0, Math.min(1, Number(progress) || 0));
     this.loadingRequestedProgress = requestedProgress;
     const now = performance.now();
@@ -2636,6 +3096,7 @@ export class Hud {
     onNpcRentCollectorChange,
     onNpcStockMarketChange,
     onNpcBlackjackDealerChange,
+    onNpcSchoolMicrogameChange,
     onNpcModelChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
@@ -2772,6 +3233,10 @@ export class Hud {
 
     this.builderNpcBlackjackDealer?.addEventListener('change', () => {
       onNpcBlackjackDealerChange?.(this.builderNpcBlackjackDealer.checked === true);
+    });
+
+    this.builderNpcSchoolMicrogame?.addEventListener('change', () => {
+      onNpcSchoolMicrogameChange?.(this.builderNpcSchoolMicrogame.checked === true);
     });
 
     this.builderNpcModel.addEventListener('change', () => {
@@ -3246,6 +3711,79 @@ export class Hud {
     });
   }
 
+  bindSchoolMicrogameEvents({
+    onClose,
+    onAction
+  }) {
+    this.schoolMicrogameClose?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+    });
+
+    let actionPointerHandledUntil = 0;
+
+    this.schoolMicrogameRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-school-microgame-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (performance.now() < actionPointerHandledUntil) {
+        return;
+      }
+      onAction?.(actionTarget.getAttribute('data-school-microgame-action') ?? '');
+    });
+
+    let holdPointerActive = false;
+
+    this.schoolMicrogameRoot?.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const holdTarget = target?.closest('[data-school-microgame-hold]');
+      if (!holdTarget) {
+        const actionTarget = target?.closest('[data-school-microgame-action]');
+        if (!actionTarget || (typeof event.button === 'number' && event.button !== 0)) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        actionPointerHandledUntil = performance.now() + 420;
+        onAction?.(actionTarget.getAttribute('data-school-microgame-action') ?? '');
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      holdPointerActive = true;
+      holdTarget.setPointerCapture?.(event.pointerId);
+      onAction?.('hold:start');
+    });
+
+    const releaseHold = (event) => {
+      if (!holdPointerActive) {
+        return;
+      }
+
+      holdPointerActive = false;
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      onAction?.('hold:end');
+    };
+
+    this.schoolMicrogameRoot?.addEventListener('pointerup', releaseHold);
+    this.schoolMicrogameRoot?.addEventListener('pointercancel', releaseHold);
+    window.addEventListener('pointerup', releaseHold);
+    window.addEventListener('blur', releaseHold);
+  }
+
   bindQuickChatEvents({ onSubmit, onCancel }) {
     this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -3481,6 +4019,9 @@ export class Hud {
     }
     if (this.builderNpcBlackjackDealer && document.activeElement !== this.builderNpcBlackjackDealer) {
       this.builderNpcBlackjackDealer.checked = editorState.blackjackDealerEnabled === true;
+    }
+    if (this.builderNpcSchoolMicrogame && document.activeElement !== this.builderNpcSchoolMicrogame) {
+      this.builderNpcSchoolMicrogame.checked = editorState.schoolMicrogameEnabled === true;
     }
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 
@@ -4098,6 +4639,91 @@ export class Hud {
     }
     if (this.blackjackDouble) {
       this.blackjackDouble.disabled = loading || !game?.canDouble;
+    }
+  }
+
+  setSchoolMicrogameVisible(visible) {
+    this.schoolMicrogameVisible = Boolean(visible);
+    if (!this.schoolMicrogameRoot) {
+      return;
+    }
+
+    this.schoolMicrogameRoot.hidden = !this.schoolMicrogameVisible;
+    this.schoolMicrogameRoot.classList.toggle('is-visible', this.schoolMicrogameVisible);
+  }
+
+  isSchoolMicrogameOpen() {
+    return Boolean(this.schoolMicrogameVisible && this.schoolMicrogameRoot && !this.schoolMicrogameRoot.hidden);
+  }
+
+  setSchoolMicrogameState({
+    visible = this.schoolMicrogameVisible,
+    game = this.schoolMicrogameState.game,
+    loading = this.schoolMicrogameState.loading,
+    error = this.schoolMicrogameState.error
+  } = {}) {
+    this.schoolMicrogameState = {
+      game,
+      loading: Boolean(loading),
+      error: String(error ?? '')
+    };
+    this.setSchoolMicrogameVisible(visible);
+    this.renderSchoolMicrogame();
+  }
+
+  renderSchoolMicrogame() {
+    if (!this.schoolMicrogameRoot) {
+      return;
+    }
+
+    const { game, loading, error } = this.schoolMicrogameState;
+    const round = game?.round ?? {};
+    const phase = String(game?.phase ?? 'ready');
+    this.schoolMicrogameRoot.classList.toggle('is-playing', phase === 'playing');
+    this.schoolMicrogameRoot.classList.toggle('is-success', phase === 'success');
+    this.schoolMicrogameRoot.classList.toggle('is-failure', phase === 'failure');
+    this.schoolMicrogameRoot.style.setProperty('--school-accent', round.accent ?? '#5bd7ff');
+    this.schoolMicrogameRoot.style.setProperty('--school-secondary', round.secondaryAccent ?? '#ffce5b');
+
+    if (this.schoolMicrogameTitle) {
+      this.schoolMicrogameTitle.textContent = round.title ?? 'School Microgame';
+    }
+
+    if (this.schoolMicrogameEyebrow) {
+      this.schoolMicrogameEyebrow.textContent = round.eyebrow ?? 'School';
+    }
+
+    if (this.schoolMicrogameStatus) {
+      this.schoolMicrogameStatus.textContent = loading
+        ? 'Saving result...'
+        : error
+          ? error
+          : getSchoolMicrogameStatusText(game);
+      this.schoolMicrogameStatus.classList.toggle('is-error', Boolean(error));
+    }
+
+    if (this.schoolMicrogameTimer) {
+      this.schoolMicrogameTimer.innerHTML = phase === 'playing'
+        ? createSchoolTimerMarkup(game)
+        : '';
+    }
+
+    if (!this.schoolMicrogameVisible) {
+      this.schoolMicrogameBodyRenderKey = '';
+    }
+
+    const bodyRenderKey = getSchoolMicrogameBodyRenderKey(game, error);
+    if (this.schoolMicrogameBody && this.schoolMicrogameBodyRenderKey !== bodyRenderKey) {
+      this.schoolMicrogameBody.innerHTML = createSchoolMicrogameBodyMarkup({
+        ...game,
+        message: error || game?.message || ''
+      });
+      this.schoolMicrogameBodyRenderKey = bodyRenderKey;
+    }
+
+    if (this.schoolMicrogameMessage) {
+      this.schoolMicrogameMessage.textContent = error || game?.message || round.description || 'Play fast.';
+      this.schoolMicrogameMessage.classList.toggle('is-error', Boolean(error));
     }
   }
 

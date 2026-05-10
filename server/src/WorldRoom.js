@@ -66,6 +66,13 @@ import {
   standBlackjackSession
 } from '../../src/shared/blackjack.js';
 import {
+  SCHOOL_MICROGAME_ALL_ID,
+  getSchoolMicrogamePromptRadius,
+  getSchoolMicrogameReward,
+  isSchoolMicrogameNpc,
+  normalizeSchoolMicrogameId
+} from '../../src/shared/schoolMicrogames.js';
+import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
@@ -248,6 +255,8 @@ const NpcState = schema({
   rentCollectorEnabled: 'boolean',
   stockMarketEnabled: 'boolean',
   blackjackDealerEnabled: 'boolean',
+  schoolMicrogameEnabled: 'boolean',
+  schoolMicrogameId: 'string',
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -494,6 +503,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('blackjack:double', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'double'));
+    });
+
+    this.onMessage('schoolMicrogame:complete', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleSchoolMicrogameComplete(client, message));
     });
 
     this.onMessage('combat:pickupRequest', (client, message) => {
@@ -1238,6 +1251,86 @@ export class WorldRoom extends Room {
     return {
       blackjack: serializeBlackjackSession(session, { money: player.money }),
       money: player.money
+    };
+  }
+
+  getSchoolMicrogameNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isSchoolMicrogameNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getSchoolMicrogamePromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertSchoolMicrogameAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot play school games right now.');
+    }
+
+    const npc = this.getSchoolMicrogameNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to a school NPC.');
+    }
+
+    return { player, npc };
+  }
+
+  handleSchoolMicrogameComplete(client, message = {}) {
+    const { player, npc } = this.assertSchoolMicrogameAccess(client, message);
+    const gameId = normalizeSchoolMicrogameId(message?.gameId, '');
+    if (!gameId || gameId === SCHOOL_MICROGAME_ALL_ID) {
+      throw new Error('That school game is not available.');
+    }
+    const npcGameId = normalizeSchoolMicrogameId(npc.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
+    if (npcGameId !== SCHOOL_MICROGAME_ALL_ID && npcGameId !== gameId) {
+      throw new Error('That school game is not available here.');
+    }
+
+    const reward = getSchoolMicrogameReward(gameId);
+    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) + moneyAwarded;
+    const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.intelligence, reward.xp);
+    const rewardText = [
+      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
+      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
+    ].filter(Boolean).join('  ');
+    this.setNpcChatPhase(
+      npc,
+      'done',
+      `Nice work. ${rewardText}.`,
+      { bumpSeq: true }
+    );
+    return {
+      gameId,
+      money: player.money,
+      moneyAwarded,
+      xp: reward.xp,
+      message: rewardText,
+      skillAward
     };
   }
 
@@ -2411,6 +2504,8 @@ export class WorldRoom extends Room {
         rentCollectorEnabled: message.rentCollectorEnabled === true,
         stockMarketEnabled: message.stockMarketEnabled === true,
         blackjackDealerEnabled: message.blackjackDealerEnabled === true,
+        schoolMicrogameEnabled: message.schoolMicrogameEnabled === true,
+        schoolMicrogameId: normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID),
         routine: message.routine,
         combat: message.combat,
         spawnPosition: [quantizePosition(message.x ?? message.position?.[0]), quantizePosition(message.z ?? message.position?.[1])],
@@ -2460,6 +2555,12 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
       updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
+    }
+    if (Object.hasOwn(message, 'schoolMicrogameEnabled')) {
+      updates.schoolMicrogameEnabled = message.schoolMicrogameEnabled === true;
+    }
+    if (Object.hasOwn(message, 'schoolMicrogameId')) {
+      updates.schoolMicrogameId = normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
@@ -2603,6 +2704,8 @@ export class WorldRoom extends Room {
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
       existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
+      existing.schoolMicrogameEnabled = normalizedDefinition.schoolMicrogameEnabled === true;
+      existing.schoolMicrogameId = normalizeSchoolMicrogameId(normalizedDefinition.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
       existing.health = Math.max(0, Number(existing.health || NPC_DEFAULT_MAX_HEALTH));
       existing.maxHealth = Math.max(1, Number(existing.maxHealth || NPC_DEFAULT_MAX_HEALTH));
       existing.alive = existing.alive !== false && existing.health > 0;

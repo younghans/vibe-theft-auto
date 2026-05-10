@@ -1765,6 +1765,21 @@
         "leashRadius": 22,
         "weaponId": ""
       }
+    },
+    {
+      "id": "npc_professor_byte",
+      "modelId": "martha",
+      "position": [
+        4,
+        -21
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "Professor Byte",
+      "prompt": "You are Professor Byte, a sharp school teacher who runs fast classroom challenges. Keep answers short, witty, and focused on school microgames.",
+      "interactRadius": 5.4,
+      "active": true,
+      "schoolMicrogameEnabled": true,
+      "schoolMicrogameId": "all"
     }
   ]
 }

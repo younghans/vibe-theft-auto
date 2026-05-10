@@ -34,6 +34,8 @@ function cloneNpcState(npc) {
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
     stockMarketEnabled: npc.stockMarketEnabled === true,
     blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
+    schoolMicrogameEnabled: npc.schoolMicrogameEnabled === true,
+    schoolMicrogameId: npc.schoolMicrogameId || '',
     health: npc.health ?? 100,
     maxHealth: npc.maxHealth ?? 100,
     alive: npc.alive !== false,
@@ -544,6 +546,14 @@ export class NpcServiceColyseus {
   async doubleBlackjack(npcId = '') {
     return this.rpc('blackjack:double', {
       npcId: String(npcId ?? '').trim()
+    });
+  }
+
+  async completeSchoolMicrogame(npcId = '', gameId = '', result = {}) {
+    return this.rpc('schoolMicrogame:complete', {
+      npcId: String(npcId ?? '').trim(),
+      gameId: String(gameId ?? '').trim(),
+      score: result?.score
     });
   }
 

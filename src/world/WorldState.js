@@ -60,6 +60,8 @@ function toPlacementRecord(entry, item, id) {
           rentCollectorEnabled: entry.rentCollectorEnabled,
           stockMarketEnabled: entry.stockMarketEnabled,
           blackjackDealerEnabled: entry.blackjackDealerEnabled,
+          schoolMicrogameEnabled: entry.schoolMicrogameEnabled,
+          schoolMicrogameId: entry.schoolMicrogameId,
           spawnPosition: entry.spawnPosition,
           spawnRotationQuarterTurns: entry.spawnRotationQuarterTurns
         }, {
@@ -122,6 +124,8 @@ function toSerializedPlacement(placement) {
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         stockMarketEnabled: placement.npc.stockMarketEnabled === true,
         blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
+        schoolMicrogameEnabled: placement.npc.schoolMicrogameEnabled === true,
+        schoolMicrogameId: placement.npc.schoolMicrogameId,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),
@@ -326,6 +330,8 @@ export class WorldState {
           rentCollectorEnabled: npc.rentCollectorEnabled,
           stockMarketEnabled: npc.stockMarketEnabled,
           blackjackDealerEnabled: npc.blackjackDealerEnabled,
+          schoolMicrogameEnabled: npc.schoolMicrogameEnabled,
+          schoolMicrogameId: npc.schoolMicrogameId,
           spawnPosition: [x, z],
           spawnRotationQuarterTurns: rotationQuarterTurns
         }, {
@@ -527,6 +533,8 @@ export class WorldState {
         rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
         stockMarketEnabled: placement.npc.stockMarketEnabled === true,
         blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
+        schoolMicrogameEnabled: placement.npc.schoolMicrogameEnabled === true,
+        schoolMicrogameId: placement.npc.schoolMicrogameId,
         spawnPosition: Array.isArray(placement.npc.spawnPosition)
           ? [
               normalizePositionValue(placement.npc.spawnPosition[0]),

@@ -382,6 +382,9 @@ export class WorldBuilder {
       onNpcBlackjackDealerChange: (enabled) => void this.updateSelectedNpc({
         blackjackDealerEnabled: enabled === true
       }),
+      onNpcSchoolMicrogameChange: (enabled) => void this.updateSelectedNpc({
+        schoolMicrogameEnabled: enabled === true
+      }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
@@ -1424,7 +1427,9 @@ export class WorldBuilder {
         gymCheckInEnabled: item.modelId === 'remy',
         rentCollectorEnabled: false,
         stockMarketEnabled: false,
-        blackjackDealerEnabled: false
+        blackjackDealerEnabled: false,
+        schoolMicrogameEnabled: false,
+        schoolMicrogameId: 'all'
       }
     });
     if (!result?.ok) {
@@ -2131,6 +2136,8 @@ export class WorldBuilder {
       rentCollectorEnabled: (npcDraft?.rentCollectorEnabled ?? placement.npc.rentCollectorEnabled) === true,
       stockMarketEnabled: (npcDraft?.stockMarketEnabled ?? placement.npc.stockMarketEnabled) === true,
       blackjackDealerEnabled: (npcDraft?.blackjackDealerEnabled ?? placement.npc.blackjackDealerEnabled) === true,
+      schoolMicrogameEnabled: (npcDraft?.schoolMicrogameEnabled ?? placement.npc.schoolMicrogameEnabled) === true,
+      schoolMicrogameId: npcDraft?.schoolMicrogameId ?? placement.npc.schoolMicrogameId ?? 'all',
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },

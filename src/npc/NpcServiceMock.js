@@ -55,6 +55,13 @@ import {
   serializeBlackjackSession,
   standBlackjackSession
 } from '../shared/blackjack.js';
+import {
+  SCHOOL_MICROGAME_ALL_ID,
+  getSchoolMicrogamePromptRadius,
+  getSchoolMicrogameReward,
+  isSchoolMicrogameNpc,
+  normalizeSchoolMicrogameId
+} from '../shared/schoolMicrogames.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
@@ -484,6 +491,8 @@ export class NpcServiceMock {
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
         stockMarketEnabled: definition.stockMarketEnabled === true,
         blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
+        schoolMicrogameEnabled: definition.schoolMicrogameEnabled === true,
+        schoolMicrogameId: definition.schoolMicrogameId || SCHOOL_MICROGAME_ALL_ID,
         health: previous?.health ?? NPC_DEFAULT_MAX_HEALTH,
         maxHealth: previous?.maxHealth ?? NPC_DEFAULT_MAX_HEALTH,
         alive: previous?.alive !== false,
@@ -607,7 +616,9 @@ export class NpcServiceMock {
             gymCheckInEnabled: payload.gymCheckInEnabled,
             rentCollectorEnabled: payload.rentCollectorEnabled,
             stockMarketEnabled: payload.stockMarketEnabled,
-            blackjackDealerEnabled: payload.blackjackDealerEnabled
+            blackjackDealerEnabled: payload.blackjackDealerEnabled,
+            schoolMicrogameEnabled: payload.schoolMicrogameEnabled,
+            schoolMicrogameId: payload.schoolMicrogameId
           }
         );
         this.syncNpcStateFromWorld();
@@ -1447,6 +1458,91 @@ export class NpcServiceMock {
 
   async doubleBlackjack(npcId = '') {
     return this.handleBlackjackAction(npcId, 'double');
+  }
+
+  getSchoolMicrogameNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isSchoolMicrogameNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getSchoolMicrogamePromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getSchoolMicrogameAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot play school games right now.' };
+    }
+
+    const npc = this.getSchoolMicrogameNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to a school NPC.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async completeSchoolMicrogame(npcId = '', gameId = '', _result = {}) {
+    const access = this.getSchoolMicrogameAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const normalizedGameId = normalizeSchoolMicrogameId(gameId, '');
+    if (!normalizedGameId || normalizedGameId === SCHOOL_MICROGAME_ALL_ID) {
+      return { ok: false, error: 'That school game is not available.' };
+    }
+    const npcGameId = normalizeSchoolMicrogameId(access.npc.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
+    if (npcGameId !== SCHOOL_MICROGAME_ALL_ID && npcGameId !== normalizedGameId) {
+      return { ok: false, error: 'That school game is not available here.' };
+    }
+
+    const reward = getSchoolMicrogameReward(normalizedGameId);
+    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
+    access.player.money = Math.trunc(Number(access.player.money ?? 0) || 0) + moneyAwarded;
+    const skillAward = this.awardPlayerSkillXp(access.player, SKILL_IDS.intelligence, reward.xp);
+    const rewardText = [
+      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
+      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
+    ].filter(Boolean).join('  ');
+    this.setNpcChatPhase(
+      access.npc,
+      'done',
+      `Nice work. ${rewardText}.`,
+      { bumpSeq: true }
+    );
+    this.emit();
+    return {
+      ok: true,
+      gameId: normalizedGameId,
+      money: access.player.money,
+      moneyAwarded,
+      xp: reward.xp,
+      message: rewardText,
+      skillAward
+    };
   }
 
   hasActiveGymCheckInNpc() {

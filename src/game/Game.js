@@ -91,6 +91,16 @@ import {
   standBlackjackSession
 } from '../shared/blackjack.js';
 import {
+  SCHOOL_MICROGAME_ALL_ID,
+  SCHOOL_MICROGAME_DEFAULT_ID,
+  SCHOOL_MICROGAME_IDS,
+  getSchoolMicrogameDefinition,
+  getSchoolMicrogamePromptRadius,
+  isSchoolMicrogameNpc,
+  listSchoolMicrogames,
+  normalizeSchoolMicrogameId
+} from '../shared/schoolMicrogames.js';
+import {
   SKILL_DEFINITIONS,
   getPlayerSkillsSnapshot
 } from '../shared/skills.js';
@@ -496,7 +506,17 @@ export class Game {
     this.blackjackRequestInFlight = false;
     this.blackjackPreviewMode = false;
     this.blackjackPreviewSession = null;
+    this.schoolMicrogameNpcId = '';
+    this.schoolMicrogameNpcName = 'Teacher';
+    this.schoolMicrogamePreviewMode = false;
+    this.schoolMicrogame = null;
+    this.schoolMicrogameRequestInFlight = false;
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameLastTickAt = 0;
+    this.schoolMicrogameSequence = 0;
+    this.schoolMicrogameRandomCursor = 0;
     this.debugMinigameRequestHandled = false;
+    this.debugMinigameRequestRetryTimeout = 0;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -572,6 +592,10 @@ export class Game {
       onHit: () => void this.handleBlackjackAction('hit'),
       onStand: () => void this.handleBlackjackAction('stand'),
       onDouble: () => void this.handleBlackjackAction('double')
+    });
+    this.hud.bindSchoolMicrogameEvents({
+      onClose: () => this.closeSchoolMicrogame(),
+      onAction: (action) => this.handleSchoolMicrogameAction(action)
     });
     this.hud.bindPhoneEvents({
       onToggle: () => this.togglePhoneMenu(),
@@ -1767,6 +1791,7 @@ export class Game {
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -4036,6 +4061,95 @@ export class Game {
     return nearest;
   }
 
+  getSchoolMicrogameNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      schoolMicrogameEnabled: npcState?.schoolMicrogameEnabled === true
+        || interactable?.npc?.schoolMicrogameEnabled === true,
+      schoolMicrogameId: npcState?.schoolMicrogameId
+        ?? interactable?.npc?.schoolMicrogameId
+        ?? SCHOOL_MICROGAME_ALL_ID,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getSchoolMicrogameNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestSchoolMicrogameInteractable() {
+    if (!this.player || !this.worldBuilder) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getSchoolMicrogameNpcDetails(interactable);
+      if (
+        !isSchoolMicrogameNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getSchoolMicrogameNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getSchoolMicrogamePromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      const gameId = normalizeSchoolMicrogameId(npcDetails.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
+      const gameDefinition = gameId === SCHOOL_MICROGAME_ALL_ID ? null : getSchoolMicrogameDefinition(gameId);
+      nearest = {
+        ...interactable,
+        kind: 'school-microgame',
+        npcId: interactable.npcId || interactable.placementId || '',
+        npc: npcDetails,
+        gameId,
+        position,
+        radius: promptRadius,
+        schoolMicrogameId: gameId,
+        prompt: gameDefinition?.prompt ?? 'Play school microgame',
+        actionText: `${gameDefinition?.title ?? 'School microgame'} started.`
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
   getDebugMinigameRequest() {
     if (!isLocalDebugHost()) {
       return '';
@@ -4063,7 +4177,16 @@ export class Game {
       return;
     }
 
+    if (!this.bootCriticalReady || this.hud?.isLoadingVisible?.()) {
+      window.clearTimeout(this.debugMinigameRequestRetryTimeout);
+      this.debugMinigameRequestRetryTimeout = window.setTimeout(() => {
+        this.maybeOpenRequestedDebugMinigame();
+      }, 120);
+      return;
+    }
+
     this.debugMinigameRequestHandled = true;
+    window.clearTimeout(this.debugMinigameRequestRetryTimeout);
     window.setTimeout(() => {
       this.openDebugMinigameHud(requestedMinigame);
     }, 0);
@@ -4076,6 +4199,10 @@ export class Game {
   openDebugMinigameHud(minigameId = 'blackjack') {
     const normalizedId = String(minigameId ?? '').trim().toLowerCase();
     if (normalizedId !== 'blackjack') {
+      const schoolId = normalizeSchoolMicrogameId(normalizedId, '');
+      if (schoolId) {
+        return this.openDebugSchoolMicrogame(schoolId);
+      }
       this.hud.showToast(`No ${normalizedId || 'minigame'} HUD preview exists yet.`);
       return false;
     }
@@ -4289,6 +4416,776 @@ export class Game {
       if (!syncedResult) {
         this.blackjackRequestInFlight = false;
         this.syncBlackjackHud();
+      }
+    }
+  }
+
+  chooseSchoolMicrogameId(requestedId = SCHOOL_MICROGAME_ALL_ID) {
+    const normalizedId = normalizeSchoolMicrogameId(requestedId, SCHOOL_MICROGAME_ALL_ID);
+    if (normalizedId !== SCHOOL_MICROGAME_ALL_ID) {
+      return normalizedId;
+    }
+
+    const games = listSchoolMicrogames();
+    if (!games.length) {
+      return SCHOOL_MICROGAME_DEFAULT_ID;
+    }
+
+    const index = Math.floor(Math.random() * games.length);
+    return games[index]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
+  }
+
+  schoolRandom() {
+    this.schoolMicrogameRandomCursor = (Math.imul(this.schoolMicrogameRandomCursor || 1, 1664525) + 1013904223) >>> 0;
+    return this.schoolMicrogameRandomCursor / 4294967296;
+  }
+
+  schoolRandomInt(min, max) {
+    const low = Math.ceil(Number(min) || 0);
+    const high = Math.floor(Number(max) || low);
+    return low + Math.floor(this.schoolRandom() * Math.max(1, high - low + 1));
+  }
+
+  schoolPick(items = []) {
+    return items[Math.floor(this.schoolRandom() * items.length)] ?? items[0];
+  }
+
+  schoolShuffle(items = []) {
+    const next = [...items];
+    for (let index = next.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(this.schoolRandom() * (index + 1));
+      [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+    }
+    return next;
+  }
+
+  createSchoolMicrogameRound(gameId = SCHOOL_MICROGAME_DEFAULT_ID) {
+    const definition = getSchoolMicrogameDefinition(gameId) ?? getSchoolMicrogameDefinition(SCHOOL_MICROGAME_DEFAULT_ID);
+    const round = {
+      ...definition,
+      gameId: definition.id,
+      icon: definition.shortTitle ?? 'GO',
+      secondaryAccent: definition.secondaryAccent ?? definition.accent2 ?? '#ffce5b'
+    };
+    const data = {};
+
+    if (definition.id === SCHOOL_MICROGAME_IDS.popQuiz) {
+      const questions = [
+        { question: '8 x 7 = ?', answers: ['54', '56', '63'], correctIndex: 1 },
+        { question: 'Which word is a noun?', answers: ['Sprint', 'Locker', 'Quickly'], correctIndex: 1 },
+        { question: 'Water freezes at...', answers: ['0 C', '20 C', '100 C'], correctIndex: 0 },
+        { question: 'Capital of New York?', answers: ['Albany', 'Brooklyn', 'Buffalo'], correctIndex: 0 },
+        { question: '2/4 simplifies to...', answers: ['1/3', '1/2', '2/8'], correctIndex: 1 }
+      ];
+      const question = this.schoolPick(questions);
+      round.question = question.question;
+      round.answers = question.answers.map((label, index) => ({ label, index }));
+      round.correctIndex = question.correctIndex;
+      data.selectedIndex = -1;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.lockerCombo) {
+      round.combo = Array.from({ length: 3 }, () => String(this.schoolRandomInt(0, 9)));
+      round.keypad = this.schoolShuffle(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+      data.entered = [];
+      data.previewActive = true;
+      data.previewEndsAt = performance.now() + 1500;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.hallPass) {
+      const passes = ['Math', 'Gym', 'Library', 'Cafeteria'];
+      const destination = this.schoolPick(passes);
+      round.passes = this.schoolShuffle(passes);
+      round.correctPass = destination;
+      round.promptText = `The monitor wants the ${destination} pass.`;
+      data.selectedPass = '';
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.copyNotes) {
+      const keys = ['W', 'A', 'S', 'D'];
+      round.keys = keys;
+      round.sequence = Array.from({ length: 4 }, () => this.schoolPick(keys));
+      data.enteredCount = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.teacherLooking) {
+      data.progress = 0;
+      data.holding = false;
+      data.teacherLooking = false;
+      data.nextLookAt = performance.now() + this.schoolRandomInt(3600, 4600);
+      data.lookEndsAt = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
+      data.balance = (this.schoolRandom() - 0.5) * 0.34;
+      data.velocity = (this.schoolRandom() - 0.5) * 0.36;
+      data.lastTap = '';
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+      round.lanes = ['Left', 'Center', 'Right'];
+      data.playerLane = 1;
+      data.chalks = [];
+      data.lives = 2;
+      data.spawnIn = 0.45;
+      data.hitCooldownMs = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.sortBackpack) {
+      round.bins = ['Book', 'Snack', 'Contraband'];
+      round.items = this.schoolShuffle([
+        { id: 'math-book', label: 'Math Book', bin: 'Book' },
+        { id: 'comic', label: 'Comic', bin: 'Book' },
+        { id: 'chips', label: 'Chips', bin: 'Snack' },
+        { id: 'juice', label: 'Juice', bin: 'Snack' },
+        { id: 'spray', label: 'Spray Can', bin: 'Contraband' },
+        { id: 'fireworks', label: 'Fireworks', bin: 'Contraband' }
+      ]);
+      data.remaining = [...round.items];
+      data.selectedItemId = data.remaining[0]?.id ?? '';
+      data.correct = 0;
+      data.wrong = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.bellSprint) {
+      const targetStart = 0.38 + this.schoolRandom() * 0.18;
+      round.targetStart = targetStart;
+      round.targetEnd = Math.min(0.94, targetStart + 0.24);
+      data.marker = this.schoolRandom() * 0.14;
+      data.direction = 1;
+      data.speed = 1.12 + this.schoolRandom() * 0.3;
+      data.stopped = false;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.scantron) {
+      const options = ['A', 'B', 'C', 'D'];
+      round.options = options;
+      round.answerKey = Array.from({ length: 4 }, () => this.schoolPick(options));
+      data.filled = [];
+      data.correct = 0;
+      data.wrong = 0;
+    }
+
+    return { round, data };
+  }
+
+  openSchoolMicrogame(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.closePhoneMenu();
+    this.schoolMicrogameNpcId = npcId;
+    this.schoolMicrogameNpcName = String(interaction?.npc?.name ?? 'Teacher');
+    this.schoolMicrogamePreviewMode = false;
+    const gameId = this.chooseSchoolMicrogameId(interaction?.gameId ?? interaction?.npc?.schoolMicrogameId ?? SCHOOL_MICROGAME_ALL_ID);
+    this.prepareSchoolMicrogame(gameId, { visible: true });
+  }
+
+  openDebugSchoolMicrogame(gameId = SCHOOL_MICROGAME_DEFAULT_ID) {
+    this.closePhoneMenu();
+    this.schoolMicrogameNpcId = 'debug-school';
+    this.schoolMicrogameNpcName = 'Debug Teacher';
+    this.schoolMicrogamePreviewMode = true;
+    this.prepareSchoolMicrogame(this.chooseSchoolMicrogameId(gameId), { visible: true });
+    this.hud.showToast('School microgame HUD preview opened.');
+    return true;
+  }
+
+  prepareSchoolMicrogame(gameId = SCHOOL_MICROGAME_DEFAULT_ID, { visible = this.hud.isSchoolMicrogameOpen() } = {}) {
+    this.schoolMicrogameSequence += 1;
+    this.schoolMicrogameRandomCursor = (Date.now() + this.schoolMicrogameSequence * 2654435761) >>> 0;
+    const { round, data } = this.createSchoolMicrogameRound(gameId);
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameLastTickAt = performance.now();
+    this.schoolMicrogame = {
+      id: `school_${round.gameId}_${this.schoolMicrogameSequence}`,
+      phase: 'ready',
+      round,
+      data,
+      remainingMs: round.durationMs,
+      message: round.description,
+      resultTitle: '',
+      resultDetail: '',
+      preview: this.schoolMicrogamePreviewMode === true
+    };
+    if (visible) {
+      this.hud.hideLoading();
+    }
+    this.hud.setSchoolMicrogameState({
+      visible,
+      game: this.schoolMicrogame,
+      loading: false,
+      error: ''
+    });
+  }
+
+  beginSchoolMicrogame() {
+    if (!this.schoolMicrogame || this.schoolMicrogame.phase === 'playing') {
+      return;
+    }
+
+    const now = performance.now();
+    this.schoolMicrogame.phase = 'playing';
+    this.schoolMicrogame.startedAt = now;
+    this.schoolMicrogame.endsAt = now + Math.max(1, Number(this.schoolMicrogame.round?.durationMs ?? 7000) || 7000);
+    this.schoolMicrogame.remainingMs = this.schoolMicrogame.endsAt - now;
+    this.schoolMicrogame.message = this.schoolMicrogame.round?.prompt ?? 'Go.';
+    this.schoolMicrogame.resultTitle = '';
+    this.schoolMicrogame.resultDetail = '';
+    if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
+      this.schoolMicrogame.data.entered = [];
+      this.schoolMicrogame.data.previewActive = true;
+      this.schoolMicrogame.data.previewEndsAt = now + 1500;
+    } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+      this.schoolMicrogame.data.progress = 0;
+      this.schoolMicrogame.data.holding = false;
+      this.schoolMicrogame.data.teacherLooking = false;
+      this.schoolMicrogame.data.nextLookAt = now + this.schoolRandomInt(3600, 4600);
+      this.schoolMicrogame.data.lookEndsAt = 0;
+    }
+    this.schoolMicrogameLastTickAt = now;
+    this.playSoundEffect(this.phoneUnlockSound);
+    this.syncSchoolMicrogameHud();
+  }
+
+  closeSchoolMicrogame() {
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameRequestInFlight = false;
+    this.hud.setSchoolMicrogameState({
+      visible: false,
+      game: this.schoolMicrogame,
+      loading: false,
+      error: ''
+    });
+  }
+
+  syncSchoolMicrogameHud({ loading = this.schoolMicrogameRequestInFlight, error = '' } = {}) {
+    this.hud.setSchoolMicrogameState({
+      visible: this.hud.isSchoolMicrogameOpen(),
+      game: this.schoolMicrogame,
+      loading,
+      error
+    });
+  }
+
+  getSchoolMicrogameDebugState() {
+    const game = this.schoolMicrogame;
+    if (!game) {
+      return null;
+    }
+
+    const snapshot = {
+      visible: this.hud.isSchoolMicrogameOpen(),
+      loading: this.schoolMicrogameRequestInFlight,
+      phase: game.phase,
+      remainingMs: game.remainingMs,
+      message: game.message,
+      resultTitle: game.resultTitle,
+      resultDetail: game.resultDetail,
+      round: game.round,
+      data: game.data
+    };
+    try {
+      return JSON.parse(JSON.stringify(snapshot));
+    } catch {
+      return snapshot;
+    }
+  }
+
+  async finishSchoolMicrogame(success, resultTitle, resultDetail = '') {
+    if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
+      return;
+    }
+
+    this.schoolMicrogame.phase = success ? 'success' : 'failure';
+    this.schoolMicrogame.remainingMs = 0;
+    this.schoolMicrogame.resultTitle = resultTitle || (success ? 'Passed' : 'Try again');
+    this.schoolMicrogame.resultDetail = resultDetail || (success ? 'Clean work.' : 'The bell got you.');
+    this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
+    this.schoolMicrogameHoldActive = false;
+
+    if (!success) {
+      this.playSoundEffect(this.playingCardSound);
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    this.playSoundEffect(this.levelUpCelebrationSound);
+    this.hud.playTaskConfetti();
+    this.syncSchoolMicrogameHud();
+
+    if (this.schoolMicrogamePreviewMode || typeof this.npcService?.completeSchoolMicrogame !== 'function') {
+      return;
+    }
+
+    this.schoolMicrogameRequestInFlight = true;
+    this.syncSchoolMicrogameHud({ loading: true, error: '' });
+    try {
+      const result = await this.npcService.completeSchoolMicrogame(
+        this.schoolMicrogameNpcId,
+        this.schoolMicrogame.round?.gameId,
+        { score: 1 }
+      );
+      if (!result?.ok) {
+        this.syncSchoolMicrogameHud({ loading: false, error: result?.error ?? 'School reward failed.' });
+        this.hud.showToast(result?.error ?? 'School reward failed.');
+        return;
+      }
+
+      const money = Math.max(0, Math.floor(Number(result.moneyAwarded ?? result.money ?? this.schoolMicrogame.round?.rewardMoney ?? 0) || 0));
+      const xp = Math.max(0, Math.floor(Number(result.xp ?? this.schoolMicrogame.round?.rewardXp ?? 0) || 0));
+      const rewardText = [
+        money > 0 ? `+$${money}` : '',
+        xp > 0 ? `+${xp} Intelligence XP` : ''
+      ].filter(Boolean).join('  ');
+      this.schoolMicrogame.resultDetail = rewardText;
+      this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
+      this.hud.showToast(rewardText);
+      this.syncSchoolMicrogameHud({ loading: false, error: '' });
+    } catch (error) {
+      console.warn('[SchoolMicrogame] Completion failed.', error);
+      this.syncSchoolMicrogameHud({ loading: false, error: 'School reward failed.' });
+      this.hud.showToast('School reward failed.');
+    } finally {
+      this.schoolMicrogameRequestInFlight = false;
+      this.syncSchoolMicrogameHud();
+    }
+  }
+
+  handleSchoolMicrogameAction(action = '') {
+    const game = this.schoolMicrogame;
+    if (!game) {
+      return;
+    }
+
+    if (action === 'start') {
+      this.beginSchoolMicrogame();
+      return;
+    }
+
+    if (action === 'restart') {
+      this.prepareSchoolMicrogame(game.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID, { visible: true });
+      return;
+    }
+
+    if (action === 'hold:start') {
+      this.schoolMicrogameHoldActive = true;
+      if (game.phase === 'playing' && game.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+        if (game.data.teacherLooking) {
+          void this.finishSchoolMicrogame(false, 'Caught', 'That stare could grade homework by itself.');
+          return;
+        }
+
+        game.data.holding = true;
+        game.data.progress = Math.min(100, Number(game.data.progress ?? 0) + 55);
+        if (game.data.progress >= 100) {
+          void this.finishSchoolMicrogame(true, 'Finished', 'Perfect timing, suspiciously neat handwriting.');
+          return;
+        }
+        this.syncSchoolMicrogameHud();
+      }
+      return;
+    }
+
+    if (action === 'hold:end') {
+      this.schoolMicrogameHoldActive = false;
+      if (game.data) {
+        game.data.holding = false;
+      }
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    if (game.phase !== 'playing') {
+      return;
+    }
+
+    this.handlePlayingSchoolMicrogameAction(action);
+  }
+
+  handlePlayingSchoolMicrogameAction(action = '') {
+    const game = this.schoolMicrogame;
+    const gameId = game?.round?.gameId;
+    if (!game || !gameId) {
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.popQuiz && action.startsWith('answer:')) {
+      const index = Math.floor(Number(action.split(':')[1]));
+      game.data.selectedIndex = index;
+      void this.finishSchoolMicrogame(index === game.round.correctIndex, index === game.round.correctIndex ? 'Correct' : 'Wrong answer', index === game.round.correctIndex ? 'The class actually clapped a little.' : 'The red pen was instant.');
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo && action.startsWith('digit:')) {
+      this.pushLockerComboDigit(action.split(':')[1] ?? '');
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.hallPass && action.startsWith('pass:')) {
+      const pass = action.slice('pass:'.length);
+      game.data.selectedPass = pass;
+      void this.finishSchoolMicrogame(pass === game.round.correctPass, pass === game.round.correctPass ? 'Cleared' : 'Detention Slip', pass === game.round.correctPass ? 'The monitor steps aside.' : 'Wrong pass, wrong hallway.');
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.copyNotes && action.startsWith('note:')) {
+      this.pushCopyNotesKey(action.slice('note:'.length));
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
+      if (action === 'balance:left') {
+        game.data.velocity -= 0.48;
+      } else if (action === 'balance:right') {
+        game.data.velocity += 0.48;
+      }
+      game.data.lastTap = action;
+      this.playSoundEffect(this.typingOnKeyboardSound);
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+      if (action === 'move:left') {
+        game.data.playerLane = Math.max(0, Math.floor(Number(game.data.playerLane ?? 1) || 1) - 1);
+      } else if (action === 'move:right') {
+        game.data.playerLane = Math.min(2, Math.floor(Number(game.data.playerLane ?? 1) || 1) + 1);
+      }
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.sortBackpack) {
+      this.handleSortBackpackAction(action);
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.bellSprint && action === 'stop') {
+      const marker = Number(game.data.marker ?? 0);
+      const inside = marker >= Number(game.round.targetStart ?? 0) && marker <= Number(game.round.targetEnd ?? 0);
+      game.data.stopped = true;
+      void this.finishSchoolMicrogame(inside, inside ? 'Made It' : 'Late Bell', inside ? 'You hit the door right on the bell.' : 'So close you can hear the attendance sheet.');
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.scantron && action.startsWith('bubble:')) {
+      const [, rowText, option] = action.split(':');
+      this.fillScantronBubble(Math.floor(Number(rowText)), option);
+    }
+  }
+
+  pushLockerComboDigit(digit = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.lockerCombo) {
+      return;
+    }
+
+    const combo = Array.isArray(game.round.combo) ? game.round.combo : [];
+    const entered = Array.isArray(game.data.entered) ? game.data.entered : [];
+    if (game.data.previewActive) {
+      game.message = 'Memorize the flash, then punch it in.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    const expected = combo[entered.length];
+    entered.push(String(digit));
+    game.data.entered = entered;
+    this.playSoundEffect(this.playingCardSound);
+    if (String(digit) !== String(expected)) {
+      void this.finishSchoolMicrogame(false, 'Jammed Lock', 'The dial snaps back to zero.');
+      return;
+    }
+    if (entered.length >= combo.length) {
+      void this.finishSchoolMicrogame(true, 'Unlocked', 'Clean memory. Cleaner click.');
+      return;
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
+  pushCopyNotesKey(key = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.copyNotes) {
+      return;
+    }
+
+    const sequence = Array.isArray(game.round.sequence) ? game.round.sequence : [];
+    const enteredCount = Math.max(0, Math.floor(Number(game.data.enteredCount ?? 0) || 0));
+    const expected = sequence[enteredCount];
+    if (String(key).toUpperCase() !== String(expected).toUpperCase()) {
+      void this.finishSchoolMicrogame(false, 'Smudged Notes', 'One wrong letter and the whole board tilts.');
+      return;
+    }
+
+    game.data.enteredCount = enteredCount + 1;
+    this.playSoundEffect(this.typingOnKeyboardSound);
+    if (game.data.enteredCount >= sequence.length) {
+      void this.finishSchoolMicrogame(true, 'Copied', 'Every mark lands in the right place.');
+      return;
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
+  handleSortBackpackAction(action = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.sortBackpack) {
+      return;
+    }
+
+    if (action.startsWith('item:')) {
+      game.data.selectedItemId = action.slice('item:'.length);
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    if (!action.startsWith('bin:')) {
+      return;
+    }
+
+    const selectedId = String(game.data.selectedItemId || game.data.remaining?.[0]?.id || '');
+    if (!selectedId) {
+      game.message = 'Pick an item first.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    const bin = action.slice('bin:'.length);
+    const item = (game.data.remaining ?? []).find((entry) => entry.id === selectedId);
+    if (!item) {
+      return;
+    }
+
+    game.data.remaining = game.data.remaining.filter((entry) => entry.id !== selectedId);
+    if (item.bin === bin) {
+      game.data.correct += 1;
+      this.playSoundEffect(this.typingOnKeyboardSound);
+    } else {
+      game.data.wrong += 1;
+      this.playSoundEffect(this.playingCardSound);
+    }
+
+    if (game.data.correct >= 2) {
+      void this.finishSchoolMicrogame(true, 'Packed', 'The backpack finally has a filing system.');
+      return;
+    }
+    if (game.data.wrong >= 2) {
+      void this.finishSchoolMicrogame(false, 'Bag Search', 'That pile is now evidence.');
+      return;
+    }
+    game.data.selectedItemId = game.data.remaining[0]?.id ?? '';
+    this.syncSchoolMicrogameHud();
+  }
+
+  fillScantronBubble(rowIndex = 0, option = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.scantron) {
+      return;
+    }
+
+    const row = Math.max(0, Math.min((game.round.answerKey?.length ?? 1) - 1, rowIndex));
+    if (game.data.filled[row]) {
+      return;
+    }
+
+    game.data.filled[row] = option;
+    if (game.round.answerKey[row] === option) {
+      game.data.correct += 1;
+      this.playSoundEffect(this.typingOnKeyboardSound);
+    } else {
+      game.data.wrong += 1;
+      this.playSoundEffect(this.playingCardSound);
+    }
+
+    if (game.data.correct >= game.round.answerKey.length) {
+      void this.finishSchoolMicrogame(true, 'Aced', 'Bubbles filled. Pencil intact.');
+      return;
+    }
+    if (game.data.wrong >= 2) {
+      void this.finishSchoolMicrogame(false, 'Bad Bubbles', 'The answer sheet looks haunted.');
+      return;
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
+  updateSchoolMicrogame(deltaSeconds = 0) {
+    const game = this.schoolMicrogame;
+    if (!game || !this.hud.isSchoolMicrogameOpen()) {
+      return;
+    }
+
+    if (game.phase !== 'playing') {
+      return;
+    }
+
+    const now = performance.now();
+    const dt = Math.max(0, Math.min(0.05, Number(deltaSeconds) || ((now - this.schoolMicrogameLastTickAt) / 1000)));
+    this.schoolMicrogameLastTickAt = now;
+    game.remainingMs = Math.max(0, Number(game.endsAt ?? now) - now);
+
+    this.handleSchoolMicrogameKeyboardInput();
+    this.updatePlayingSchoolMicrogame(dt, now);
+
+    if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
+      return;
+    }
+
+    if (game.remainingMs <= 0) {
+      const gameId = game.round?.gameId;
+      if (
+        gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray
+        || gameId === SCHOOL_MICROGAME_IDS.dodgeChalk
+      ) {
+        void this.finishSchoolMicrogame(true, 'Survived', 'The bell saves the day.');
+      } else if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
+        const marker = Number(game.data.marker ?? 0);
+        const inside = marker >= Number(game.round.targetStart ?? 0) && marker <= Number(game.round.targetEnd ?? 0);
+        void this.finishSchoolMicrogame(inside, inside ? 'Made It' : 'Out Of Time', inside ? 'You hit the door right on the bell.' : 'The bell does not negotiate.');
+      } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+        void this.finishSchoolMicrogame(false, 'Unfinished', 'The bell caught your half-written notes.');
+      } else {
+        void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
+      }
+      return;
+    }
+
+    this.syncSchoolMicrogameHud();
+  }
+
+  handleSchoolMicrogameKeyboardInput() {
+    const game = this.schoolMicrogame;
+    const gameId = game?.round?.gameId;
+    if (!game || game.phase !== 'playing') {
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
+      for (const key of game.round.keys ?? []) {
+        if (this.input.consume(`Key${key}`)) {
+          this.pushCopyNotesKey(key);
+          return;
+        }
+      }
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
+      for (let digit = 0; digit <= 9; digit += 1) {
+        if (this.input.consume(`Digit${digit}`) || this.input.consume(`Numpad${digit}`)) {
+          this.pushLockerComboDigit(String(digit));
+          return;
+        }
+      }
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
+      if (this.input.consume('KeyA') || this.input.consume('ArrowLeft')) {
+        this.handlePlayingSchoolMicrogameAction('balance:left');
+      }
+      if (this.input.consume('KeyD') || this.input.consume('ArrowRight')) {
+        this.handlePlayingSchoolMicrogameAction('balance:right');
+      }
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+      if (this.input.consume('KeyA') || this.input.consume('ArrowLeft')) {
+        this.handlePlayingSchoolMicrogameAction('move:left');
+      }
+      if (this.input.consume('KeyD') || this.input.consume('ArrowRight')) {
+        this.handlePlayingSchoolMicrogameAction('move:right');
+      }
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+      const holding = this.schoolMicrogameHoldActive || this.input.isPressed('Space');
+      game.data.holding = holding;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
+      if (this.input.consume('Space') || this.input.consume('Enter') || this.input.consume('KeyE')) {
+        this.handlePlayingSchoolMicrogameAction('stop');
+      }
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.scantron) {
+      for (const option of ['A', 'B', 'C', 'D']) {
+        if (this.input.consume(`Key${option}`)) {
+          const row = (game.data.filled ?? []).filter(Boolean).length;
+          this.fillScantronBubble(row, option);
+          return;
+        }
+      }
+    }
+  }
+
+  updatePlayingSchoolMicrogame(dt, now) {
+    const game = this.schoolMicrogame;
+    const gameId = game?.round?.gameId;
+    if (!game || game.phase !== 'playing') {
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo && game.data.previewActive && now >= Number(game.data.previewEndsAt ?? 0)) {
+      game.data.previewActive = false;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
+      if (game.data.teacherLooking && now >= Number(game.data.lookEndsAt ?? 0)) {
+        game.data.teacherLooking = false;
+        game.data.nextLookAt = now + this.schoolRandomInt(980, 1500);
+      } else if (!game.data.teacherLooking && now >= Number(game.data.nextLookAt ?? 0)) {
+        game.data.teacherLooking = true;
+        game.data.lookEndsAt = now + this.schoolRandomInt(480, 760);
+      }
+
+      if (game.data.holding && game.data.teacherLooking) {
+        void this.finishSchoolMicrogame(false, 'Caught', 'That stare could grade homework by itself.');
+        return;
+      }
+      if (game.data.holding && !game.data.teacherLooking) {
+        game.data.progress = Math.min(100, Number(game.data.progress ?? 0) + dt * 100);
+      } else {
+        game.data.progress = Math.max(0, Number(game.data.progress ?? 0) - dt * 4);
+      }
+      if (game.data.progress >= 100) {
+        void this.finishSchoolMicrogame(true, 'Finished', 'Perfect timing, suspiciously neat handwriting.');
+      }
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
+      const drift = Math.sin(now * 0.003) * 0.22;
+      game.data.velocity = (Number(game.data.velocity ?? 0) + drift * dt) * 0.985;
+      game.data.balance = Number(game.data.balance ?? 0) + game.data.velocity * dt;
+      if (Math.abs(game.data.balance) > 1) {
+        void this.finishSchoolMicrogame(false, 'Tray Spill', 'Lunch achieved flight.');
+      }
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+      game.data.hitCooldownMs = Math.max(0, Number(game.data.hitCooldownMs ?? 0) - dt * 1000);
+      game.data.spawnIn = Number(game.data.spawnIn ?? 0) - dt;
+      if (game.data.spawnIn <= 0) {
+        game.data.chalks.push({
+          id: `chalk_${now}_${this.schoolRandomInt(0, 9999)}`,
+          lane: this.schoolRandomInt(0, 2),
+          x: 100
+        });
+        game.data.spawnIn = Math.max(0.42, 0.92 - ((game.round.durationMs - game.remainingMs) / game.round.durationMs) * 0.34);
+      }
+      game.data.chalks = game.data.chalks
+        .map((chalk) => ({ ...chalk, x: Number(chalk.x ?? 0) - dt * 72 }))
+        .filter((chalk) => chalk.x > -8);
+
+      for (const chalk of game.data.chalks) {
+        const inHitZone = chalk.x >= 9 && chalk.x <= 21;
+        if (inHitZone && chalk.lane === game.data.playerLane && game.data.hitCooldownMs <= 0) {
+          game.data.lives = Math.max(0, Number(game.data.lives ?? 0) - 1);
+          game.data.hitCooldownMs = 620;
+          this.playSoundEffect(this.playingCardSound);
+          if (game.data.lives <= 0) {
+            void this.finishSchoolMicrogame(false, 'Chalked', 'Direct hit. The board wins.');
+          }
+          break;
+        }
+      }
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.bellSprint && !game.data.stopped) {
+      const nextMarker = Number(game.data.marker ?? 0) + Number(game.data.direction ?? 1) * Number(game.data.speed ?? 1) * dt;
+      if (nextMarker >= 1) {
+        game.data.marker = 1;
+        game.data.direction = -1;
+      } else if (nextMarker <= 0) {
+        game.data.marker = 0;
+        game.data.direction = 1;
+      } else {
+        game.data.marker = nextMarker;
       }
     }
   }
@@ -4893,10 +5790,15 @@ export class Game {
 
     globalThis.__stickRpgMinigameDebug = {
       open: (minigameId = 'blackjack') => this.openDebugMinigameHud(minigameId),
-      openBlackjack: () => this.openDebugMinigameHud('blackjack')
+      openBlackjack: () => this.openDebugMinigameHud('blackjack'),
+      openSchool: (minigameId = SCHOOL_MICROGAME_DEFAULT_ID) => this.openDebugSchoolMicrogame(minigameId),
+      schoolAction: (action = '') => this.handleSchoolMicrogameAction(action),
+      schoolState: () => this.getSchoolMicrogameDebugState(),
+      schoolGames: () => listSchoolMicrogames().map((game) => game.id)
     };
     globalThis.openMinigameHud = (...args) => globalThis.__stickRpgMinigameDebug.open(...args);
     globalThis.openBlackjackHud = () => globalThis.__stickRpgMinigameDebug.openBlackjack();
+    globalThis.openSchoolMicrogameHud = (...args) => globalThis.__stickRpgMinigameDebug.openSchool(...args);
     this.maybeOpenRequestedDebugMinigame();
   }
 
@@ -6734,6 +7636,7 @@ export class Game {
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen()
     ) {
       const selection = this.getActiveEmoteSelection();
       this.emoteMenuOpen = true;
@@ -6800,6 +7703,7 @@ export class Game {
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -6849,6 +7753,9 @@ export class Game {
     if (this.hud.isStockMarketOpen()) {
       void this.refreshStockMarket();
     }
+    if (this.hud.isSchoolMicrogameOpen()) {
+      this.updateSchoolMicrogame(deltaSeconds);
+    }
 
     if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
@@ -6863,6 +7770,8 @@ export class Game {
         this.closeStockMarket();
       } else if (this.hud.isBlackjackOpen()) {
         this.closeBlackjack();
+      } else if (this.hud.isSchoolMicrogameOpen()) {
+        this.closeSchoolMicrogame();
       } else if (this.characterSelectorVisible) {
         this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
@@ -6870,7 +7779,7 @@ export class Game {
       }
     }
 
-    if (!this.worldBuilder?.enabled && this.input.consumeAction('phone')) {
+    if (!this.worldBuilder?.enabled && !this.hud.isSchoolMicrogameOpen() && this.input.consumeAction('phone')) {
       this.togglePhoneMenu();
     }
 
@@ -6906,9 +7815,10 @@ export class Game {
       const localAlive = localPlayerState?.alive !== false;
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
+      const schoolMicrogameOpen = this.hud.isSchoolMicrogameOpen();
       const phoneOpen = this.hud.isPhoneOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -6917,11 +7827,11 @@ export class Game {
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -6949,7 +7859,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -6976,7 +7886,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -7004,7 +7914,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || phoneOpen) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
@@ -7225,6 +8135,9 @@ export class Game {
     const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
       ? null
       : this.getNearestBlackjackDealerInteractable();
+    const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
+      ? null
+      : this.getNearestSchoolMicrogameInteractable();
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -7252,6 +8165,14 @@ export class Game {
       this.hud.setPrompt(blackjackInteraction);
       if (interactPressed) {
         this.openBlackjack(blackjackInteraction);
+      }
+      return;
+    }
+
+    if (schoolMicrogameInteraction) {
+      this.hud.setPrompt(schoolMicrogameInteraction);
+      if (interactPressed) {
+        this.openSchoolMicrogame(schoolMicrogameInteraction);
       }
       return;
     }
@@ -7300,6 +8221,7 @@ export class Game {
       && !this.hud.isQuickChatOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -7462,9 +8384,12 @@ export class Game {
     const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
       ? null
       : this.getNearestBlackjackDealerInteractable();
+    const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
+      ? null
+      : this.getNearestSchoolMicrogameInteractable();
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -7474,13 +8399,14 @@ export class Game {
       || this.hud.isQuickChatOpen()
       || this.hud.isStockMarketOpen()
       || this.hud.isBlackjackOpen()
+      || this.hud.isSchoolMicrogameOpen()
       || this.isRentIntroReservedNpc(npcId)
     ) {
       return;
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && npcState?.busy) {
       return;
     }
 
@@ -7558,6 +8484,23 @@ export class Game {
       bubbles.push({
         id: `npc-blackjack:${npcId}`,
         text: 'E to play blackjack',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (schoolMicrogameInteraction) {
+      const game = schoolMicrogameInteraction.gameId === SCHOOL_MICROGAME_ALL_ID
+        ? null
+        : getSchoolMicrogameDefinition(schoolMicrogameInteraction.gameId);
+      bubbles.push({
+        id: `npc-school-microgame:${npcId}`,
+        text: game ? `E to play ${game.shortTitle ?? game.title}` : 'E to play school microgame',
         label: '',
         variant: 'interaction',
         status: 'done',

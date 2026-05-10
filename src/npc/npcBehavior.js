@@ -4,6 +4,11 @@ import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 import { normalizeStockMarketEnabled } from '../shared/stockMarket.js';
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
+import {
+  SCHOOL_MICROGAME_ALL_ID,
+  isSchoolMicrogameNpc,
+  normalizeSchoolMicrogameNpcId
+} from '../shared/schoolMicrogames.js';
 import { normalizeRotationQuarterTurns, quantizeNumber, quantizePosition } from '../shared/numberMath.js';
 
 export const NPC_ROUTINE_MODES = Object.freeze({
@@ -306,6 +311,8 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
       || Object.hasOwn(updates, 'rentCollectorEnabled')
       || Object.hasOwn(updates, 'stockMarketEnabled')
       || Object.hasOwn(updates, 'blackjackDealerEnabled')
+      || Object.hasOwn(updates, 'schoolMicrogameEnabled')
+      || Object.hasOwn(updates, 'schoolMicrogameId')
     )
   ) {
     return false;
@@ -349,6 +356,8 @@ export function createDefaultNpcBehavior(overrides = {}) {
     rentCollectorEnabled: false,
     stockMarketEnabled: false,
     blackjackDealerEnabled: false,
+    schoolMicrogameEnabled: false,
+    schoolMicrogameId: SCHOOL_MICROGAME_ALL_ID,
     ...overrides
   };
 }
@@ -388,6 +397,8 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     rentCollectorEnabled: normalizeRentCollectorEnabled(npc.rentCollectorEnabled),
     stockMarketEnabled: normalizeStockMarketEnabled(npc.stockMarketEnabled),
     blackjackDealerEnabled: isBlackjackDealerNpc(npc),
+    schoolMicrogameEnabled: isSchoolMicrogameNpc(npc),
+    schoolMicrogameId: normalizeSchoolMicrogameNpcId(npc.schoolMicrogameId),
     spawnPosition,
     spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
       npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0
