@@ -30,9 +30,9 @@ const AMMO_LOW_CLIP_RATIO = 0.28;
 const PHONE_CLOSE_ANIMATION_MS = 260;
 const BLACKJACK_CARD_STAGGER_MS = 78;
 const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
-  'deal-flip': 318,
+  'deal-flip': 350,
   'deal-hidden': 185,
-  reveal: 214
+  reveal: 254
 });
 
 const PHONE_APPS = Object.freeze([
@@ -622,6 +622,7 @@ function createBlackjackCardMarkup(card = {}, index = 0, visual = {}) {
         <span class="hud__blackjack-card-face hud__blackjack-card-back-face">
           <span class="hud__blackjack-card-back"></span>
         </span>
+        <span class="hud__blackjack-card-edge" aria-hidden="true"></span>
       </span>
     </span>
   `;
@@ -1917,11 +1918,6 @@ export class Hud {
             <div class="hud__blackjack-cards" data-blackjack-dealer-hand></div>
           </section>
           <div class="hud__blackjack-center">
-            <div class="hud__blackjack-shoe" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
             <p class="hud__blackjack-message" data-blackjack-message>Place a wager and deal.</p>
             <div class="hud__blackjack-result" data-blackjack-result></div>
           </div>
