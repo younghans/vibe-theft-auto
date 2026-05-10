@@ -152,7 +152,7 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     eyebrow: 'Risky Notes',
     prompt: 'Type secret sentence',
     overheadText: 'E for risky writing',
-    durationMs: 10000,
+    durationMs: 16000,
     rewardXp: 13,
     rewardMoney: 20,
     accent: '#ff7a66',
