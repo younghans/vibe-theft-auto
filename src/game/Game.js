@@ -548,6 +548,8 @@ export class Game {
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
+    this.skillXpGainSound = this.createSoundEffect(assets.audio?.skillXpGain, { volume: 0.62 });
+    this.levelUpSound = this.createSoundEffect(assets.audio?.levelUp, { volume: 0.72 });
     this.levelUpCelebrationSound = this.createSoundEffect(assets.audio?.levelUpCelebration, { volume: 0.7 });
     this.phoneUnlockSound = this.createSoundEffect(assets.audio?.phoneUnlock, { volume: 0.58 });
     this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
@@ -894,6 +896,8 @@ export class Game {
       this.pistolCockSound,
       this.pistolShotSound,
       this.rentChaChingSound,
+      this.skillXpGainSound,
+      this.levelUpSound,
       this.levelUpCelebrationSound,
       this.phoneUnlockSound,
       this.playingCardSound,
@@ -3309,7 +3313,7 @@ export class Game {
       oldLevel,
       newLevel
     });
-    this.playSoundEffect(this.levelUpCelebrationSound);
+    this.playSoundEffect(this.levelUpSound);
   }
 
   presentSkillAwardFeedback(award = null, skill = null) {
@@ -3317,10 +3321,14 @@ export class Game {
       return;
     }
 
+    const xpGained = Math.max(0, Math.floor(Number(award.xpGained) || 0));
     this.spawnSkillXpFloater({
       skill,
-      xpGained: award.xpGained
+      xpGained
     });
+    if (xpGained > 0) {
+      this.playSoundEffect(this.skillXpGainSound);
+    }
 
     if (award.newLevel > award.oldLevel) {
       this.showSkillLevelUpFeedback({

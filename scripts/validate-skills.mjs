@@ -67,16 +67,25 @@ assert.equal(AGILITY_MAX_XP_PER_UPDATE, 3, 'agility per-update cap matches plan'
 
 assert.match(gameSource, /spawnSkillXpFloater/, 'game spawns XP floaters for skill awards');
 assert.match(gameSource, /0x1f3c3/, 'agility XP floaters use a running icon');
-assert.match(gameSource, /levelUpCelebrationSound/, 'game registers the level-up celebration sound');
+assert.match(gameSource, /skillXpGainSound/, 'game registers the skill XP gain sound');
+assert.match(gameSource, /levelUpSound/, 'game registers the level-up sound');
 assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
 assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
 
-assert.ok(assets.audio.levelUpCelebration, 'Level-up celebration audio should be registered.');
-const levelUpAudio = fs.readFileSync(new URL(assets.audio.levelUpCelebration));
-assert.ok(levelUpAudio.length > 12, 'Level-up celebration audio should not be empty.');
-assert.equal(levelUpAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Level-up celebration audio should be a WAV file.');
-assert.equal(levelUpAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Level-up celebration audio should have a WAVE header.');
+assert.ok(assets.audio.skillXpGain, 'Skill XP gain audio should be registered.');
+assert.match(assets.audio.skillXpGain, /gain_experience_point_ding\.wav$/, 'Skill XP gain audio should use the ding file.');
+const skillXpGainAudio = fs.readFileSync(new URL(assets.audio.skillXpGain));
+assert.ok(skillXpGainAudio.length > 12, 'Skill XP gain audio should not be empty.');
+assert.equal(skillXpGainAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Skill XP gain audio should be a WAV file.');
+assert.equal(skillXpGainAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Skill XP gain audio should have a WAVE header.');
+
+assert.ok(assets.audio.levelUp, 'Level-up audio should be registered.');
+assert.match(assets.audio.levelUp, /level_up_ding\.wav$/, 'Level-up audio should use the ding file.');
+const levelUpAudio = fs.readFileSync(new URL(assets.audio.levelUp));
+assert.ok(levelUpAudio.length > 12, 'Level-up audio should not be empty.');
+assert.equal(levelUpAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Level-up audio should be a WAV file.');
+assert.equal(levelUpAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Level-up audio should have a WAVE header.');
 
 console.log('Skills validation passed.');
