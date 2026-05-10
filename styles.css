@@ -2900,11 +2900,51 @@ body.is-builder-resizing * {
 @keyframes hud-card-deal {
   0% {
     opacity: 0;
-    transform: translateY(-16px) translateX(24px) rotate(7deg) scale(0.82);
+    transform:
+      translate3d(var(--deal-x, 64px), var(--deal-y, -84px), 0)
+      rotate(var(--deal-rotate, 7deg))
+      scale(0.82);
+  }
+
+  68% {
+    opacity: 1;
+    transform:
+      translate3d(-3px, 1px, 18px)
+      rotate(calc((var(--card-index, 0) - 1) * 1.6deg))
+      scale(1.04);
   }
 
   100% {
     opacity: 1;
+    transform: translateY(4px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg)) scale(1);
+  }
+}
+
+@keyframes hud-card-flip-up {
+  0%,
+  32% {
+    transform: rotateY(180deg);
+  }
+
+  72% {
+    transform: rotateY(-12deg);
+  }
+
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes hud-card-reveal-lift {
+  0% {
+    transform: translateY(4px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg)) scale(1);
+  }
+
+  46% {
+    transform: translateY(-5px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg)) scale(1.035);
+  }
+
+  100% {
     transform: translateY(4px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg)) scale(1);
   }
 }
@@ -5207,6 +5247,12 @@ body.is-builder-resizing * {
   color: #fff1bf;
   font-size: 15px;
   line-height: 1;
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+
+.hud__blackjack.is-dealing .hud__blackjack-hand-head strong {
+  opacity: 0.48;
+  filter: blur(1px);
 }
 
 .hud__blackjack-cards {
@@ -5216,6 +5262,8 @@ body.is-builder-resizing * {
   gap: 10px;
   min-height: 112px;
   padding: 0 12px;
+  perspective: 820px;
+  transform-style: preserve-3d;
 }
 
 .hud__blackjack-card,
@@ -5227,21 +5275,77 @@ body.is-builder-resizing * {
 }
 
 .hud__blackjack-card {
+  display: block;
+  color: #15191f;
+  transform: translateY(4px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg));
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+}
+
+.hud__blackjack-card.is-deal-flip,
+.hud__blackjack-card.is-deal-hidden {
+  animation: hud-card-deal 185ms cubic-bezier(0.18, 0.88, 0.22, 1.08) both;
+  animation-delay: var(--deal-delay, 0ms);
+}
+
+.hud__blackjack-card.is-reveal {
+  animation: hud-card-reveal-lift 230ms cubic-bezier(0.2, 0.92, 0.24, 1.04) both;
+  animation-delay: var(--deal-delay, 0ms);
+}
+
+.hud__blackjack-card-inner,
+.hud__blackjack-card-face {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.hud__blackjack-card-inner {
+  transform-style: preserve-3d;
+  transform: rotateY(0deg);
+  will-change: transform;
+}
+
+.hud__blackjack-card.is-face-down .hud__blackjack-card-inner {
+  transform: rotateY(180deg);
+}
+
+.hud__blackjack-card.is-deal-flip .hud__blackjack-card-inner {
+  animation: hud-card-flip-up 190ms cubic-bezier(0.2, 0.86, 0.22, 1) both;
+  animation-delay: calc(var(--deal-delay, 0ms) + 128ms);
+}
+
+.hud__blackjack-card.is-reveal .hud__blackjack-card-inner {
+  animation: hud-card-flip-up 180ms cubic-bezier(0.2, 0.86, 0.22, 1) both;
+  animation-delay: calc(var(--deal-delay, 0ms) + 34ms);
+}
+
+.hud__blackjack-card-face {
   display: grid;
   place-items: center;
+  overflow: hidden;
   border: 1px solid rgba(16, 20, 26, 0.16);
-  background:
-    linear-gradient(180deg, #fff8e9, #e8dfcf);
-  color: #15191f;
   box-shadow:
     inset 0 0 0 3px rgba(255, 255, 255, 0.44),
     0 10px 22px rgba(0, 0, 0, 0.24);
-  transform: translateY(4px) rotate(calc((var(--card-index, 0) - 1) * 1.6deg));
-  animation: hud-card-deal 220ms cubic-bezier(0.18, 0.88, 0.22, 1.12) both;
-  animation-delay: calc(var(--card-index, 0) * 55ms);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.hud__blackjack-card.is-red {
+.hud__blackjack-card-front {
+  background:
+    linear-gradient(180deg, #fff8e9, #e8dfcf);
+  color: #15191f;
+}
+
+.hud__blackjack-card-back-face {
+  transform: rotateY(180deg);
+  background:
+    linear-gradient(135deg, rgba(242, 200, 113, 0.28), transparent 32%),
+    repeating-linear-gradient(45deg, #17253a 0 8px, #0b1524 8px 16px);
+}
+
+.hud__blackjack-card.is-red .hud__blackjack-card-front {
   color: #b32238;
 }
 
@@ -5262,12 +5366,6 @@ body.is-builder-resizing * {
 .hud__blackjack-card-suit {
   font-size: clamp(22px, 3.4vw, 34px);
   line-height: 1;
-}
-
-.hud__blackjack-card.is-hidden-card {
-  background:
-    linear-gradient(135deg, rgba(242, 200, 113, 0.28), transparent 32%),
-    repeating-linear-gradient(45deg, #17253a 0 8px, #0b1524 8px 16px);
 }
 
 .hud__blackjack-card-back {
@@ -5325,6 +5423,7 @@ body.is-builder-resizing * {
   line-height: 1.2;
   text-align: center;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.38);
+  transition: opacity 140ms ease;
 }
 
 .hud__blackjack-result {
@@ -5339,6 +5438,16 @@ body.is-builder-resizing * {
   font-weight: 900;
   line-height: 1;
   text-align: center;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.hud__blackjack.is-dealing .hud__blackjack-message,
+.hud__blackjack.is-dealing .hud__blackjack-result {
+  opacity: 0.58;
+}
+
+.hud__blackjack.is-dealing .hud__blackjack-result {
+  transform: translateY(2px);
 }
 
 .hud__blackjack-result.is-win,
@@ -7156,5 +7265,11 @@ canvas {
 
   .hud__phone-app-panel {
     animation: none;
+  }
+
+  .hud__blackjack-card,
+  .hud__blackjack-card-inner {
+    animation: none !important;
+    transition: none !important;
   }
 }

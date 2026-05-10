@@ -81,9 +81,14 @@ import {
 } from '../shared/stockMarket.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
+  createBlackjackSession,
+  doubleBlackjackSession,
   getBlackjackPromptRadius,
+  hitBlackjackSession,
   isBlackjackDealerNpc,
-  normalizeBlackjackWager
+  normalizeBlackjackWager,
+  serializeBlackjackSession,
+  standBlackjackSession
 } from '../shared/blackjack.js';
 import {
   SKILL_DEFINITIONS,
@@ -489,6 +494,9 @@ export class Game {
     this.blackjackState = null;
     this.blackjackWager = BLACKJACK_DEFAULT_WAGER;
     this.blackjackRequestInFlight = false;
+    this.blackjackPreviewMode = false;
+    this.blackjackPreviewSession = null;
+    this.debugMinigameRequestHandled = false;
     this.aimPoseDebugVisible = false;
     this.aimPoseDebugShowSkeleton = false;
     this.poseDebugSection = 'unarmed';
@@ -4028,6 +4036,106 @@ export class Game {
     return nearest;
   }
 
+  getDebugMinigameRequest() {
+    if (!isLocalDebugHost()) {
+      return '';
+    }
+
+    try {
+      const url = new URL(window.location.href);
+      return String(
+        url.searchParams.get('debugMinigame')
+        ?? url.searchParams.get('previewMinigame')
+        ?? ''
+      ).trim().toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
+  maybeOpenRequestedDebugMinigame() {
+    if (this.debugMinigameRequestHandled) {
+      return;
+    }
+
+    const requestedMinigame = this.getDebugMinigameRequest();
+    if (!requestedMinigame) {
+      return;
+    }
+
+    this.debugMinigameRequestHandled = true;
+    window.setTimeout(() => {
+      this.openDebugMinigameHud(requestedMinigame);
+    }, 0);
+  }
+
+  getBlackjackPreviewMoney() {
+    return Math.max(1000, Number(this.getLocalPlayerState()?.money ?? 0));
+  }
+
+  openDebugMinigameHud(minigameId = 'blackjack') {
+    const normalizedId = String(minigameId ?? '').trim().toLowerCase();
+    if (normalizedId !== 'blackjack') {
+      this.hud.showToast(`No ${normalizedId || 'minigame'} HUD preview exists yet.`);
+      return false;
+    }
+
+    this.closePhoneMenu();
+    this.blackjackPreviewMode = true;
+    this.blackjackPreviewSession = null;
+    this.blackjackNpcId = 'debug-blackjack';
+    this.blackjackDealerName = 'Preview Dealer';
+    this.blackjackState = null;
+    this.hud.setBlackjackState({
+      visible: true,
+      game: null,
+      wager: this.blackjackWager,
+      loading: false,
+      error: '',
+      dealerName: this.blackjackDealerName
+    });
+    this.hud.showToast('Blackjack HUD preview opened.');
+    return true;
+  }
+
+  startBlackjackPreviewRound() {
+    this.blackjackPreviewSession = createBlackjackSession({
+      npcId: 'debug-blackjack',
+      wager: this.blackjackWager,
+      now: Date.now()
+    });
+    this.blackjackState = serializeBlackjackSession(this.blackjackPreviewSession, {
+      money: this.getBlackjackPreviewMoney()
+    });
+    this.syncBlackjackHud({ loading: false, error: '' });
+    this.playBlackjackCardSound();
+    this.playBlackjackWinSound(this.blackjackState);
+  }
+
+  handleBlackjackPreviewAction(action = '') {
+    if (!this.blackjackPreviewSession) {
+      this.startBlackjackPreviewRound();
+      return;
+    }
+
+    if (action === 'hit') {
+      hitBlackjackSession(this.blackjackPreviewSession);
+    } else if (action === 'stand') {
+      standBlackjackSession(this.blackjackPreviewSession);
+    } else if (action === 'double') {
+      doubleBlackjackSession(this.blackjackPreviewSession);
+    } else {
+      return;
+    }
+
+    this.blackjackState = serializeBlackjackSession(this.blackjackPreviewSession, {
+      money: this.getBlackjackPreviewMoney()
+    });
+    this.syncBlackjackHud({ loading: false, error: '' });
+    this.playBlackjackCardSound();
+    this.playBlackjackWinSound(this.blackjackState);
+  }
+
   setBlackjackWager(wager = BLACKJACK_DEFAULT_WAGER) {
     this.blackjackWager = normalizeBlackjackWager(wager);
     this.syncBlackjackHud();
@@ -4062,6 +4170,8 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.blackjackPreviewMode = false;
+    this.blackjackPreviewSession = null;
     this.blackjackNpcId = npcId;
     this.blackjackDealerName = String(interaction?.npc?.name ?? 'Dealer');
     this.hud.setBlackjackState({
@@ -4075,6 +4185,14 @@ export class Game {
   }
 
   closeBlackjack() {
+    const closingPreview = this.blackjackPreviewMode;
+    this.blackjackPreviewMode = false;
+    this.blackjackPreviewSession = null;
+    if (closingPreview) {
+      this.blackjackState = null;
+      this.blackjackNpcId = '';
+      this.blackjackDealerName = 'Dealer';
+    }
     this.hud.setBlackjackState({
       visible: false,
       game: this.blackjackState,
@@ -4086,12 +4204,18 @@ export class Game {
   }
 
   async startBlackjackRound() {
+    if (this.blackjackPreviewMode) {
+      this.startBlackjackPreviewRound();
+      return;
+    }
+
     if (!this.blackjackNpcId || this.blackjackRequestInFlight) {
       return;
     }
 
     this.blackjackRequestInFlight = true;
     this.syncBlackjackHud({ loading: true, error: '' });
+    let syncedResult = false;
     try {
       const result = await this.npcService?.startBlackjack?.(this.blackjackNpcId, this.blackjackWager);
       if (!result?.ok || !result.blackjack) {
@@ -4102,7 +4226,9 @@ export class Game {
       }
 
       this.blackjackState = result.blackjack;
+      this.blackjackRequestInFlight = false;
       this.syncBlackjackHud({ loading: false, error: '' });
+      syncedResult = true;
       this.playBlackjackCardSound();
       this.playBlackjackWinSound(result.blackjack);
     } catch (error) {
@@ -4110,12 +4236,19 @@ export class Game {
       this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });
       this.hud.showToast('Blackjack request failed.');
     } finally {
-      this.blackjackRequestInFlight = false;
-      this.syncBlackjackHud();
+      if (!syncedResult) {
+        this.blackjackRequestInFlight = false;
+        this.syncBlackjackHud();
+      }
     }
   }
 
   async handleBlackjackAction(action = '') {
+    if (this.blackjackPreviewMode) {
+      this.handleBlackjackPreviewAction(action);
+      return;
+    }
+
     if (!this.blackjackNpcId || this.blackjackRequestInFlight) {
       return;
     }
@@ -4132,6 +4265,7 @@ export class Game {
 
     this.blackjackRequestInFlight = true;
     this.syncBlackjackHud({ loading: true, error: '' });
+    let syncedResult = false;
     try {
       const result = await this.npcService[methodName](this.blackjackNpcId);
       if (!result?.ok || !result.blackjack) {
@@ -4142,7 +4276,9 @@ export class Game {
       }
 
       this.blackjackState = result.blackjack;
+      this.blackjackRequestInFlight = false;
       this.syncBlackjackHud({ loading: false, error: '' });
+      syncedResult = true;
       this.playBlackjackCardSound();
       this.playBlackjackWinSound(result.blackjack);
     } catch (error) {
@@ -4150,8 +4286,10 @@ export class Game {
       this.syncBlackjackHud({ loading: false, error: 'Blackjack request failed.' });
       this.hud.showToast('Blackjack request failed.');
     } finally {
-      this.blackjackRequestInFlight = false;
-      this.syncBlackjackHud();
+      if (!syncedResult) {
+        this.blackjackRequestInFlight = false;
+        this.syncBlackjackHud();
+      }
     }
   }
 
@@ -4748,7 +4886,23 @@ export class Game {
     this.updatePostProcessingResolution();
   }
 
+  registerMinigameDebugTools() {
+    if (!isLocalDebugHost()) {
+      return;
+    }
+
+    globalThis.__stickRpgMinigameDebug = {
+      open: (minigameId = 'blackjack') => this.openDebugMinigameHud(minigameId),
+      openBlackjack: () => this.openDebugMinigameHud('blackjack')
+    };
+    globalThis.openMinigameHud = (...args) => globalThis.__stickRpgMinigameDebug.open(...args);
+    globalThis.openBlackjackHud = () => globalThis.__stickRpgMinigameDebug.openBlackjack();
+    this.maybeOpenRequestedDebugMinigame();
+  }
+
   registerHeldItemDebugTools() {
+    this.registerMinigameDebugTools();
+
     if (!this.player) {
       return;
     }

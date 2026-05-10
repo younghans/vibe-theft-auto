@@ -28,6 +28,12 @@ const AMMO_BULLET_STAGGER_MS = 18;
 const AMMO_BULLET_MAX_STAGGER_MS = 180;
 const AMMO_LOW_CLIP_RATIO = 0.28;
 const PHONE_CLOSE_ANIMATION_MS = 260;
+const BLACKJACK_CARD_STAGGER_MS = 78;
+const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
+  'deal-flip': 318,
+  'deal-hidden': 185,
+  reveal: 214
+});
 
 const PHONE_APPS = Object.freeze([
   ['messages', 'Messages', 'messages', '#30d66a', 'Story texts will appear here.'],
@@ -483,28 +489,140 @@ function getBlackjackSuitLabel(suit = '') {
   }
 }
 
-function createBlackjackCardMarkup(card = {}, index = 0) {
+function getBlackjackCardSignature(card = {}, index = 0) {
   if (card?.hidden) {
-    return `
-      <span class="hud__blackjack-card is-hidden-card" style="--card-index:${index}">
-        <span class="hud__blackjack-card-back"></span>
-      </span>
-    `;
+    return `hidden:${index}`;
+  }
+  const code = String(card?.code ?? '').trim();
+  if (code) {
+    return code;
+  }
+  return `${String(card?.rank ?? '?')}${String(card?.suit ?? '?')}:${index}`;
+}
+
+function getBlackjackCardDealOrigin(handKey = 'player', index = 0) {
+  const x = Math.max(34, 92 - index * 14);
+  return {
+    dealX: `${x}px`,
+    dealY: handKey === 'dealer' ? '96px' : '-108px',
+    dealRotate: handKey === 'dealer' ? '8deg' : '-7deg'
+  };
+}
+
+function createBlackjackCardVisuals({
+  game = null,
+  dealerHand = [],
+  playerHand = [],
+  previousState = null
+} = {}) {
+  const sessionId = String(game?.id ?? '');
+  const sameSession = Boolean(sessionId && previousState?.sessionId === sessionId);
+  const previous = sameSession ? previousState : { dealer: [], player: [] };
+  const hands = { dealer: dealerHand, player: playerHand };
+  const visuals = { dealer: [], player: [] };
+  const nextState = {
+    sessionId,
+    dealer: dealerHand.map(getBlackjackCardSignature),
+    player: playerHand.map(getBlackjackCardSignature)
+  };
+
+  for (const handKey of ['dealer', 'player']) {
+    hands[handKey].forEach((card, index) => {
+      const signature = nextState[handKey][index];
+      const previousSignature = previous[handKey]?.[index] ?? '';
+      const wasHidden = previousSignature.startsWith('hidden:');
+      const isHidden = signature.startsWith('hidden:');
+      const isNew = !sameSession || !previousSignature;
+      const isReveal = sameSession && wasHidden && !isHidden;
+      const animation = isNew
+        ? (card?.hidden ? 'deal-hidden' : 'deal-flip')
+        : isReveal
+          ? 'reveal'
+          : '';
+
+      visuals[handKey][index] = {
+        animation,
+        delay: 0,
+        ...getBlackjackCardDealOrigin(handKey, index)
+      };
+    });
   }
 
+  const animatedSlots = [];
+  const usedSlots = new Set();
+  const pushSlot = (handKey, index) => {
+    const slotId = `${handKey}:${index}`;
+    if (usedSlots.has(slotId) || !visuals[handKey]?.[index]?.animation) {
+      return;
+    }
+    usedSlots.add(slotId);
+    animatedSlots.push({ handKey, index });
+  };
+
+  if (sameSession) {
+    playerHand.forEach((_, index) => pushSlot('player', index));
+    dealerHand.forEach((_, index) => pushSlot('dealer', index));
+  } else {
+    [
+      ['player', 0],
+      ['dealer', 0],
+      ['player', 1],
+      ['dealer', 1]
+    ].forEach(([handKey, index]) => pushSlot(handKey, index));
+    playerHand.forEach((_, index) => pushSlot('player', index));
+    dealerHand.forEach((_, index) => pushSlot('dealer', index));
+  }
+
+  let duration = 0;
+  animatedSlots.forEach(({ handKey, index }, sequence) => {
+    const animation = visuals[handKey][index].animation;
+    visuals[handKey][index].delay = sequence * BLACKJACK_CARD_STAGGER_MS;
+    duration = Math.max(
+      duration,
+      visuals[handKey][index].delay + (BLACKJACK_CARD_ANIMATION_MS[animation] ?? 0)
+    );
+  });
+
+  return { visuals, nextState, duration };
+}
+
+function createBlackjackCardMarkup(card = {}, index = 0, visual = {}) {
   const rank = escapeHtml(card?.rank ?? '?');
   const suit = String(card?.suit ?? '');
   const redClass = suit === 'H' || suit === 'D' ? ' is-red' : '';
+  const hiddenClass = card?.hidden ? ' is-hidden-card' : '';
+  const faceClass = card?.hidden ? ' is-face-down' : ' is-face-up';
+  const animationClass = visual?.animation ? ` is-${visual.animation}` : '';
   const suitSymbol = getBlackjackSuitSymbol(suit);
+  const cardLabel = card?.hidden
+    ? 'Face-down card'
+    : `${rank} of ${escapeHtml(getBlackjackSuitLabel(suit))}`;
+  const style = [
+    `--card-index:${index}`,
+    `--deal-delay:${Number(visual?.delay ?? 0)}ms`,
+    `--deal-x:${visual?.dealX ?? '64px'}`,
+    `--deal-y:${visual?.dealY ?? '-84px'}`,
+    `--deal-rotate:${visual?.dealRotate ?? '7deg'}`
+  ].join(';');
+
   return `
     <span
-      class="hud__blackjack-card${redClass}"
-      style="--card-index:${index}"
-      aria-label="${rank} of ${escapeHtml(getBlackjackSuitLabel(suit))}"
+      class="hud__blackjack-card${redClass}${hiddenClass}${faceClass}${animationClass}"
+      style="${style}"
+      aria-label="${cardLabel}"
     >
-      <span class="hud__blackjack-card-corner">${rank}</span>
-      <span class="hud__blackjack-card-suit">${suitSymbol}</span>
-      <span class="hud__blackjack-card-corner is-bottom">${rank}</span>
+      <span class="hud__blackjack-card-inner">
+        <span class="hud__blackjack-card-face hud__blackjack-card-front">
+          ${card?.hidden ? '' : `
+            <span class="hud__blackjack-card-corner">${rank}</span>
+            <span class="hud__blackjack-card-suit">${suitSymbol}</span>
+            <span class="hud__blackjack-card-corner is-bottom">${rank}</span>
+          `}
+        </span>
+        <span class="hud__blackjack-card-face hud__blackjack-card-back-face">
+          <span class="hud__blackjack-card-back"></span>
+        </span>
+      </span>
     </span>
   `;
 }
@@ -1065,6 +1183,12 @@ export class Hud {
       error: '',
       dealerName: 'Dealer'
     };
+    this.blackjackCardVisualState = {
+      sessionId: '',
+      dealer: [],
+      player: []
+    };
+    this.blackjackCardAnimationTimeout = 0;
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
     this.phoneMapDragState = null;
@@ -3912,16 +4036,34 @@ export class Hud {
 
     const dealerHand = Array.isArray(game?.dealerHand) ? game.dealerHand : [];
     const playerHand = Array.isArray(game?.playerHand) ? game.playerHand : [];
+    const blackjackCardVisuals = createBlackjackCardVisuals({
+      game,
+      dealerHand,
+      playerHand,
+      previousState: this.blackjackCardVisualState
+    });
+    if (blackjackCardVisuals.duration > 0) {
+      window.clearTimeout(this.blackjackCardAnimationTimeout);
+      this.blackjackRoot.classList.add('is-dealing');
+      this.blackjackCardAnimationTimeout = window.setTimeout(() => {
+        this.blackjackRoot?.classList.remove('is-dealing');
+      }, blackjackCardVisuals.duration + 40);
+    }
     if (this.blackjackDealerHand) {
       this.blackjackDealerHand.innerHTML = dealerHand.length
-        ? dealerHand.map(createBlackjackCardMarkup).join('')
+        ? dealerHand.map((card, index) =>
+          createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.dealer[index])
+        ).join('')
         : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
     }
     if (this.blackjackPlayerHand) {
       this.blackjackPlayerHand.innerHTML = playerHand.length
-        ? playerHand.map(createBlackjackCardMarkup).join('')
+        ? playerHand.map((card, index) =>
+          createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.player[index])
+        ).join('')
         : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
     }
+    this.blackjackCardVisualState = blackjackCardVisuals.nextState;
     if (this.blackjackDealerValue) {
       this.blackjackDealerValue.textContent = dealerHand.length ? String(game?.dealerValue ?? 0) : '-';
     }
