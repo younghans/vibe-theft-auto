@@ -2,14 +2,10 @@ export const SCHOOL_MICROGAME_IDS = Object.freeze({
   popQuiz: 'pop-quiz-panic',
   popQuizPanic: 'pop-quiz-panic',
   lockerCombo: 'locker-combo',
-  hallPass: 'hall-pass-check',
-  hallPassCheck: 'hall-pass-check',
   copyNotes: 'copy-the-notes',
   copyTheNotes: 'copy-the-notes',
   teacherLooking: 'teacher-is-looking',
   teacherIsLooking: 'teacher-is-looking',
-  cafeteriaTray: 'cafeteria-tray-save',
-  cafeteriaTraySave: 'cafeteria-tray-save',
   dodgeChalk: 'dodge-the-chalk',
   dodgeTheChalk: 'dodge-the-chalk',
   sortBackpack: 'sort-the-backpack',
@@ -31,16 +27,6 @@ const QUESTION_BANK = Object.freeze([
   Object.freeze({ question: 'Solve: 18 + 24', answers: Object.freeze(['32', '42', '46']), correctIndex: 1 }),
   Object.freeze({ question: 'Which is a complete sentence?', answers: Object.freeze(['Ran fast', 'Because lunch', 'The bell rang']), correctIndex: 2 })
 ]);
-
-const HALL_PASS_ROUNDS = Object.freeze([
-  Object.freeze({ prompt: 'Return a graphing calculator before algebra starts.', correct: 'Math' }),
-  Object.freeze({ prompt: 'Coach says dodgeball drills are already running.', correct: 'Gym' }),
-  Object.freeze({ prompt: 'Check out the book before the final bell.', correct: 'Library' }),
-  Object.freeze({ prompt: 'The tray line closes in a few seconds.', correct: 'Cafeteria' }),
-  Object.freeze({ prompt: 'Scheduling slip says to report downstairs.', correct: 'Office' })
-]);
-
-const PASS_OPTIONS = Object.freeze(['Math', 'Gym', 'Library', 'Cafeteria', 'Office']);
 
 const NOTE_SEQUENCES = Object.freeze([
   Object.freeze(['W', 'A', 'S', 'D']),
@@ -108,24 +94,6 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     skill: 'intelligence'
   }),
   Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.hallPassCheck,
-    title: 'Hall Pass Check',
-    shortTitle: 'Hall Pass',
-    subtitle: 'Match the monitor with the right pass.',
-    description: 'Match the pass to the excuse before suspicion spikes.',
-    eyebrow: 'Hall Monitor',
-    prompt: 'Show hall pass',
-    overheadText: 'E for hall pass check',
-    durationMs: 6500,
-    rewardXp: 11,
-    rewardMoney: 12,
-    accent: '#6ee7a8',
-    accent2: '#69a7ff',
-    secondaryAccent: '#69a7ff',
-    icon: 'PASS',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
     id: SCHOOL_MICROGAME_IDS.copyTheNotes,
     title: 'Copy The Notes',
     shortTitle: 'Notes',
@@ -159,24 +127,6 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     accent2: '#78f0b5',
     secondaryAccent: '#78f0b5',
     icon: 'EYE',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.cafeteriaTraySave,
-    title: 'Cafeteria Tray Save',
-    shortTitle: 'Tray Save',
-    subtitle: 'Tap left and right to keep lunch alive.',
-    description: 'Tap left and right to keep lunch from becoming floor art.',
-    eyebrow: 'Cafeteria',
-    prompt: 'Balance tray',
-    overheadText: 'E to balance tray',
-    durationMs: 9000,
-    rewardXp: 10,
-    rewardMoney: 17,
-    accent: '#f2c14e',
-    accent2: '#4ecdc4',
-    secondaryAccent: '#4ecdc4',
-    icon: 'TRAY',
     skill: 'intelligence'
   }),
   Object.freeze({
@@ -273,7 +223,6 @@ for (const game of SCHOOL_MICROGAME_DEFINITIONS) {
 }
 
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('pop-quiz', SCHOOL_MICROGAME_IDS.popQuizPanic);
-SCHOOL_MICROGAME_ALIAS_BY_ID.set('hall-pass', SCHOOL_MICROGAME_IDS.hallPassCheck);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('copy-notes', SCHOOL_MICROGAME_IDS.copyTheNotes);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('teacher-looking', SCHOOL_MICROGAME_IDS.teacherIsLooking);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('dodge-chalk', SCHOOL_MICROGAME_IDS.dodgeTheChalk);
@@ -406,16 +355,6 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
     };
   }
 
-  if (definition.id === SCHOOL_MICROGAME_IDS.hallPassCheck) {
-    const pass = choose(HALL_PASS_ROUNDS, rng);
-    return {
-      ...base,
-      promptText: pass.prompt,
-      correctPass: pass.correct,
-      passes: shuffle(PASS_OPTIONS, rng)
-    };
-  }
-
   if (definition.id === SCHOOL_MICROGAME_IDS.copyTheNotes) {
     return {
       ...base,
@@ -431,15 +370,6 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
       lookCycleMs: 2600,
       lookWindowMs: 1050,
       startingPhaseMs: Math.floor(rng() * 700)
-    };
-  }
-
-  if (definition.id === SCHOOL_MICROGAME_IDS.cafeteriaTraySave) {
-    return {
-      ...base,
-      safeZone: 0.46,
-      spillZone: 1,
-      wobble: rng() > 0.5 ? 1 : -1
     };
   }
 

@@ -4613,13 +4613,6 @@ export class Game {
       data.entered = [];
       data.previewActive = true;
       data.previewEndsAt = performance.now() + 1500;
-    } else if (definition.id === SCHOOL_MICROGAME_IDS.hallPass) {
-      const passes = ['Math', 'Gym', 'Library', 'Cafeteria'];
-      const destination = this.schoolPick(passes);
-      round.passes = this.schoolShuffle(passes);
-      round.correctPass = destination;
-      round.promptText = `The monitor wants the ${destination} pass.`;
-      data.selectedPass = '';
     } else if (definition.id === SCHOOL_MICROGAME_IDS.copyNotes) {
       const keys = ['W', 'A', 'S', 'D'];
       round.keys = keys;
@@ -4637,10 +4630,6 @@ export class Game {
       data.turnEndsAt = 0;
       data.lookStartedAt = 0;
       data.lookEndsAt = 0;
-    } else if (definition.id === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
-      data.balance = (this.schoolRandom() - 0.5) * 0.34;
-      data.velocity = (this.schoolRandom() - 0.5) * 0.36;
-      data.lastTap = '';
     } else if (definition.id === SCHOOL_MICROGAME_IDS.dodgeChalk) {
       round.lanes = ['Left', 'Center', 'Right'];
       data.playerLane = 1;
@@ -4984,27 +4973,8 @@ export class Game {
       return;
     }
 
-    if (gameId === SCHOOL_MICROGAME_IDS.hallPass && action.startsWith('pass:')) {
-      const pass = action.slice('pass:'.length);
-      game.data.selectedPass = pass;
-      void this.finishSchoolMicrogame(pass === game.round.correctPass, pass === game.round.correctPass ? 'Cleared' : 'Detention Slip', pass === game.round.correctPass ? 'The monitor steps aside.' : 'Wrong pass, wrong hallway.');
-      return;
-    }
-
     if (gameId === SCHOOL_MICROGAME_IDS.copyNotes && action.startsWith('note:')) {
       this.pushCopyNotesKey(action.slice('note:'.length));
-      return;
-    }
-
-    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
-      if (action === 'balance:left') {
-        game.data.velocity -= 0.48;
-      } else if (action === 'balance:right') {
-        game.data.velocity += 0.48;
-      }
-      game.data.lastTap = action;
-      this.playSoundEffect(this.typingOnKeyboardSound);
-      this.syncSchoolMicrogameHud();
       return;
     }
 
@@ -5279,10 +5249,7 @@ export class Game {
 
     if (game.remainingMs <= 0) {
       const gameId = game.round?.gameId;
-      if (
-        gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray
-        || gameId === SCHOOL_MICROGAME_IDS.dodgeChalk
-      ) {
+      if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
         void this.finishSchoolMicrogame(true, 'Survived', 'The bell saves the day.');
       } else if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
         const marker = Number(game.data.marker ?? 0);
@@ -5321,15 +5288,6 @@ export class Game {
           this.pushLockerComboDigit(String(digit));
           return;
         }
-      }
-    }
-
-    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
-      if (this.input.consume('KeyA') || this.input.consume('ArrowLeft')) {
-        this.handlePlayingSchoolMicrogameAction('balance:left');
-      }
-      if (this.input.consume('KeyD') || this.input.consume('ArrowRight')) {
-        this.handlePlayingSchoolMicrogameAction('balance:right');
       }
     }
 
@@ -5404,16 +5362,6 @@ export class Game {
 
     if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
       this.updateTeacherLookingState(game, now);
-      return;
-    }
-
-    if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
-      const drift = Math.sin(now * 0.003) * 0.22;
-      game.data.velocity = (Number(game.data.velocity ?? 0) + drift * dt) * 0.985;
-      game.data.balance = Number(game.data.balance ?? 0) + game.data.velocity * dt;
-      if (Math.abs(game.data.balance) > 1) {
-        void this.finishSchoolMicrogame(false, 'Tray Spill', 'Lunch achieved flight.');
-      }
       return;
     }
 

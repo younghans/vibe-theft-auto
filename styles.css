@@ -5922,11 +5922,9 @@ body.is-builder-resizing * {
 }
 
 .hud__school-quiz,
-.hud__school-hallpass,
 .hud__school-notes,
 .hud__school-locker,
 .hud__school-teacher,
-.hud__school-tray,
 .hud__school-dodge,
 .hud__school-sort,
 .hud__school-bell,
@@ -5938,7 +5936,6 @@ body.is-builder-resizing * {
 }
 
 .hud__school-answer-grid,
-.hud__school-pass-grid,
 .hud__school-note-buttons,
 .hud__school-bin-grid {
   display: grid;
@@ -5947,7 +5944,6 @@ body.is-builder-resizing * {
 }
 
 .hud__school-answer,
-.hud__school-pass,
 .hud__school-note-key,
 .hud__school-key,
 .hud__school-bin,
@@ -5962,7 +5958,6 @@ body.is-builder-resizing * {
 }
 
 .hud__school-answer.is-selected,
-.hud__school-pass.is-selected,
 .hud__school-backpack-item.is-selected {
   border-color: var(--school-secondary);
   background: color-mix(in srgb, var(--school-secondary) 22%, rgba(255, 255, 255, 0.09));
@@ -6069,53 +6064,6 @@ body.is-builder-resizing * {
   grid-column: 2;
 }
 
-.hud__school-monitor {
-  position: relative;
-  height: 118px;
-}
-
-.hud__school-monitor-head {
-  position: absolute;
-  left: 50%;
-  top: 4px;
-  width: 70px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #ffe0aa, #c78a5f);
-  transform: translateX(-50%);
-}
-
-.hud__school-monitor-head::before,
-.hud__school-monitor-head::after {
-  content: '';
-  position: absolute;
-  top: 28px;
-  width: 8px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: #111820;
-}
-
-.hud__school-monitor-head::before {
-  left: 20px;
-}
-
-.hud__school-monitor-head::after {
-  right: 20px;
-}
-
-.hud__school-monitor-body {
-  position: absolute;
-  left: 50%;
-  top: 72px;
-  width: 118px;
-  height: 48px;
-  border-radius: 24px 24px 10px 10px;
-  background: linear-gradient(180deg, #315f81, #1c324a);
-  transform: translateX(-50%);
-}
-
-.hud__school-prompt-card,
 .hud__school-answer-key {
   margin: 0;
   padding: 14px 16px;
@@ -6126,17 +6074,6 @@ body.is-builder-resizing * {
   font-size: 18px;
   font-weight: 850;
   line-height: 1.3;
-}
-
-.hud__school-pass-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.hud__school-pass {
-  min-height: 90px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
-    color-mix(in srgb, var(--school-accent) 18%, #202831);
 }
 
 .hud__school-board {
@@ -6637,82 +6574,6 @@ body.is-builder-resizing * {
 .hud__school-hold-button {
   justify-self: center;
   min-width: 220px;
-}
-
-.hud__school-tray-stage {
-  position: relative;
-  min-height: 300px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
-    #243545;
-}
-
-.hud__school-tray-safe-zone {
-  justify-self: center;
-  width: min(420px, 72%);
-  height: 14px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(97, 239, 138, 0.5), transparent);
-}
-
-.hud__school-tray-board {
-  position: relative;
-  width: min(430px, 78vw);
-  height: 92px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #e3d2b7, #9b7b5b);
-  box-shadow: 0 25px 42px rgba(0, 0, 0, 0.34);
-  transform: rotate(var(--tray-rotation, 0deg));
-  transform-origin: center;
-  transition: transform 70ms linear;
-}
-
-.hud__school-tray-board::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -88px;
-  width: 24px;
-  height: 88px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  transform: translateX(-50%);
-}
-
-.hud__school-tray-cup,
-.hud__school-tray-apple,
-.hud__school-tray-plate {
-  position: absolute;
-  bottom: 64px;
-  filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.2));
-}
-
-.hud__school-tray-cup {
-  left: 18%;
-  width: 44px;
-  height: 62px;
-  border-radius: 8px 8px 16px 16px;
-  background: linear-gradient(180deg, #e8f4ff, #72b5e8);
-}
-
-.hud__school-tray-apple {
-  left: 47%;
-  width: 46px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffb0b0, #d6293f 68%);
-}
-
-.hud__school-tray-plate {
-  right: 17%;
-  width: 76px;
-  height: 24px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #fff8df, #c9b58d);
 }
 
 .hud__school-dual-actions {
@@ -8239,11 +8100,9 @@ canvas {
   }
 
   .hud__school-quiz,
-  .hud__school-hallpass,
   .hud__school-notes,
   .hud__school-locker,
   .hud__school-teacher,
-  .hud__school-tray,
   .hud__school-dodge,
   .hud__school-sort,
   .hud__school-bell,
@@ -8293,51 +8152,13 @@ canvas {
   }
 
   .hud__school-answer-grid,
-  .hud__school-pass-grid,
   .hud__school-note-buttons {
     grid-template-columns: 1fr 1fr;
   }
 
-  .hud__school-pass-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .hud__school-monitor {
-    height: 74px;
-  }
-
-  .hud__school-monitor-head {
-    width: 46px;
-  }
-
-  .hud__school-monitor-head::before,
-  .hud__school-monitor-head::after {
-    top: 18px;
-    width: 6px;
-  }
-
-  .hud__school-monitor-head::before {
-    left: 13px;
-  }
-
-  .hud__school-monitor-head::after {
-    right: 13px;
-  }
-
-  .hud__school-monitor-body {
-    top: 48px;
-    width: 88px;
-    height: 30px;
-  }
-
-  .hud__school-prompt-card,
   .hud__school-answer-key {
     padding: 10px 12px;
     font-size: 14px;
-  }
-
-  .hud__school-pass {
-    min-height: 56px;
   }
 
   .hud__school-board {
@@ -8360,28 +8181,6 @@ canvas {
 
   .hud__school-note-key {
     min-height: 54px;
-  }
-
-  .hud__school-tray-stage {
-    min-height: 238px;
-  }
-
-  .hud__school-tray-board {
-    width: min(252px, 82%);
-    height: 78px;
-  }
-
-  .hud__school-tray-cup {
-    width: 34px;
-    height: 48px;
-  }
-
-  .hud__school-tray-apple {
-    width: 36px;
-  }
-
-  .hud__school-tray-plate {
-    width: 56px;
   }
 
   .hud__school-locker-door {
@@ -8946,11 +8745,9 @@ canvas {
   }
 
   .hud__school-quiz,
-  .hud__school-hallpass,
   .hud__school-notes,
   .hud__school-locker,
   .hud__school-teacher,
-  .hud__school-tray,
   .hud__school-dodge,
   .hud__school-sort,
   .hud__school-bell,
@@ -9002,28 +8799,9 @@ canvas {
     font-size: 16px;
   }
 
-  .hud__school-monitor {
-    height: 54px;
-  }
-
-  .hud__school-monitor-head {
-    width: 38px;
-  }
-
-  .hud__school-monitor-body {
-    top: 38px;
-    width: 72px;
-    height: 24px;
-  }
-
-  .hud__school-prompt-card,
   .hud__school-answer-key {
     padding: 8px 10px;
     font-size: 13px;
-  }
-
-  .hud__school-pass {
-    min-height: 46px;
   }
 
   .hud__school-board {
@@ -9155,28 +8933,6 @@ canvas {
 
   .hud__school-hold-button {
     min-width: 170px;
-  }
-
-  .hud__school-tray-stage {
-    min-height: 128px;
-  }
-
-  .hud__school-tray-board {
-    width: min(330px, 68vw);
-    height: 62px;
-  }
-
-  .hud__school-tray-cup {
-    width: 30px;
-    height: 42px;
-  }
-
-  .hud__school-tray-apple {
-    width: 32px;
-  }
-
-  .hud__school-tray-plate {
-    width: 52px;
   }
 
   .hud__school-dodge {

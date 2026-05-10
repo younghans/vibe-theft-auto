@@ -719,8 +719,6 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     base.push(String(data.selectedIndex ?? -1));
   } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
     base.push(Boolean(data.previewActive) ? 'preview' : 'entry', (data.entered ?? []).join(','));
-  } else if (gameId === SCHOOL_MICROGAME_IDS.hallPass) {
-    base.push(String(data.selectedPass ?? ''));
   } else if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
     base.push(String(data.enteredCount ?? 0));
   } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
@@ -730,8 +728,6 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(data.mistakes ?? 0),
       String(Math.floor(Number(data.progress ?? 0) / 4))
     );
-  } else if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
-    base.push(String(Math.round(Number(data.balance ?? 0) * 24)));
   } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
     base.push(
       String(data.playerLane ?? 1),
@@ -807,23 +803,6 @@ function createLockerComboMarkup(game = null) {
       </div>
       <div class="hud__school-keypad">
         ${(round.keypad ?? []).map((digit) => createSchoolGameButton(`digit:${digit}`, String(digit), 'hud__school-key')).join('')}
-      </div>
-    </div>
-  `;
-}
-
-function createHallPassMarkup(game = null) {
-  const round = game?.round ?? {};
-  const data = game?.data ?? {};
-  return `
-    <div class="hud__school-hallpass">
-      <div class="hud__school-monitor" aria-hidden="true">
-        <span class="hud__school-monitor-head"></span>
-        <span class="hud__school-monitor-body"></span>
-      </div>
-      <p class="hud__school-prompt-card">${escapeHtml(round.promptText ?? 'Pick the right pass.')}</p>
-      <div class="hud__school-pass-grid">
-        ${(round.passes ?? []).map((pass) => createSchoolGameButton(`pass:${pass}`, pass, `hud__school-pass${data.selectedPass === pass ? ' is-selected' : ''}`)).join('')}
       </div>
     </div>
   `;
@@ -911,28 +890,6 @@ function createTeacherLookingMarkup(game = null) {
         </div>
       </div>
       ${createSchoolProgressMarkup(progress, 'Sentence progress')}
-    </div>
-  `;
-}
-
-function createTraySaveMarkup(game = null) {
-  const data = game?.data ?? {};
-  const balance = Math.max(-1.2, Math.min(1.2, Number(data.balance ?? 0) || 0));
-  const rotation = (balance * 15).toFixed(2);
-  return `
-    <div class="hud__school-tray">
-      <div class="hud__school-tray-safe-zone" aria-hidden="true"></div>
-      <div class="hud__school-tray-stage">
-        <div class="hud__school-tray-board" style="--tray-rotation:${rotation}deg">
-          <span class="hud__school-tray-cup"></span>
-          <span class="hud__school-tray-apple"></span>
-          <span class="hud__school-tray-plate"></span>
-        </div>
-      </div>
-      <div class="hud__school-dual-actions">
-        ${createSchoolGameButton('balance:left', 'Left', 'hud__school-direction')}
-        ${createSchoolGameButton('balance:right', 'Right', 'hud__school-direction')}
-      </div>
     </div>
   `;
 }
@@ -1044,14 +1001,10 @@ function createSchoolMicrogamePlayMarkup(game = null) {
       return createPopQuizMarkup(game);
     case SCHOOL_MICROGAME_IDS.lockerCombo:
       return createLockerComboMarkup(game);
-    case SCHOOL_MICROGAME_IDS.hallPass:
-      return createHallPassMarkup(game);
     case SCHOOL_MICROGAME_IDS.copyNotes:
       return createCopyNotesMarkup(game);
     case SCHOOL_MICROGAME_IDS.teacherLooking:
       return createTeacherLookingMarkup(game);
-    case SCHOOL_MICROGAME_IDS.cafeteriaTray:
-      return createTraySaveMarkup(game);
     case SCHOOL_MICROGAME_IDS.dodgeChalk:
       return createDodgeChalkMarkup(game);
     case SCHOOL_MICROGAME_IDS.sortBackpack:
