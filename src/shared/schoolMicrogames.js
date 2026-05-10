@@ -19,13 +19,65 @@ export const SCHOOL_MICROGAME_DEFAULT_ID = SCHOOL_MICROGAME_IDS.popQuizPanic;
 export const SCHOOL_MICROGAME_ALL_ID = 'all';
 export const SCHOOL_MICROGAME_DEFAULT_REWARD_XP = 8;
 export const SCHOOL_MICROGAME_DEFAULT_REWARD_MONEY = 12;
+export const SCHOOL_POP_QUIZ_ROUND_COUNT = 3;
 
 const QUESTION_BANK = Object.freeze([
   Object.freeze({ question: 'What is 9 x 7?', answers: Object.freeze(['54', '63', '72']), correctIndex: 1 }),
   Object.freeze({ question: 'Which word is a noun?', answers: Object.freeze(['Quickly', 'Locker', 'Blue']), correctIndex: 1 }),
   Object.freeze({ question: 'What planet is known as the red planet?', answers: Object.freeze(['Mars', 'Venus', 'Jupiter']), correctIndex: 0 }),
   Object.freeze({ question: 'Solve: 18 + 24', answers: Object.freeze(['32', '42', '46']), correctIndex: 1 }),
-  Object.freeze({ question: 'Which is a complete sentence?', answers: Object.freeze(['Ran fast', 'Because lunch', 'The bell rang']), correctIndex: 2 })
+  Object.freeze({ question: 'Which is a complete sentence?', answers: Object.freeze(['Ran fast', 'Because lunch', 'The bell rang']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 12 x 6?', answers: Object.freeze(['66', '72', '78']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is a verb?', answers: Object.freeze(['Jump', 'Pencil', 'Quiet']), correctIndex: 0 }),
+  Object.freeze({ question: 'How many sides does a hexagon have?', answers: Object.freeze(['5', '6', '8']), correctIndex: 1 }),
+  Object.freeze({ question: 'What gas do plants take in?', answers: Object.freeze(['Oxygen', 'Nitrogen', 'Carbon dioxide']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 144 divided by 12?', answers: Object.freeze(['10', '12', '14']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which punctuation ends a question?', answers: Object.freeze(['Period', 'Comma', 'Question mark']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is the largest ocean?', answers: Object.freeze(['Atlantic', 'Pacific', 'Indian']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 15 percent of 100?', answers: Object.freeze(['10', '15', '25']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word means the opposite of ancient?', answers: Object.freeze(['Modern', 'Fragile', 'Silent']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the square root of 81?', answers: Object.freeze(['8', '9', '10']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which animal is a mammal?', answers: Object.freeze(['Shark', 'Frog', 'Whale']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 3/4 as a decimal?', answers: Object.freeze(['0.25', '0.5', '0.75']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which sentence uses their correctly?', answers: Object.freeze(['Their books fell', 'There books fell', 'Theyre books fell']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the capital of California?', answers: Object.freeze(['Sacramento', 'Los Angeles', 'San Diego']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which planet is closest to the sun?', answers: Object.freeze(['Venus', 'Mercury', 'Earth']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 27 + 38?', answers: Object.freeze(['55', '65', '75']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is an adjective?', answers: Object.freeze(['Bright', 'Running', 'Desk']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the past tense of teach?', answers: Object.freeze(['Teached', 'Taught', 'Teaching']), correctIndex: 1 }),
+  Object.freeze({ question: 'How many minutes are in two hours?', answers: Object.freeze(['60', '90', '120']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which layer of Earth is liquid metal?', answers: Object.freeze(['Crust', 'Outer core', 'Mantle']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 11 squared?', answers: Object.freeze(['111', '121', '131']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which number is prime?', answers: Object.freeze(['21', '29', '35']), correctIndex: 1 }),
+  Object.freeze({ question: 'What do bees collect from flowers?', answers: Object.freeze(['Nectar', 'Granite', 'Salt']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is a synonym for quick?', answers: Object.freeze(['Rapid', 'Heavy', 'Empty']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 5 cubed?', answers: Object.freeze(['25', '75', '125']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which branch makes federal laws?', answers: Object.freeze(['Judicial', 'Legislative', 'Executive']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the chemical symbol for water?', answers: Object.freeze(['CO2', 'H2O', 'O2']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which continent is Brazil in?', answers: Object.freeze(['Africa', 'South America', 'Europe']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 90 degrees called?', answers: Object.freeze(['Acute angle', 'Right angle', 'Obtuse angle']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is plural?', answers: Object.freeze(['Class', 'Boxes', 'Child']), correctIndex: 1 }),
+  Object.freeze({ question: 'What force pulls objects toward Earth?', answers: Object.freeze(['Gravity', 'Friction', 'Magnetism']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 64 minus 27?', answers: Object.freeze(['37', '41', '47']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which is a primary color?', answers: Object.freeze(['Green', 'Purple', 'Red']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is the main idea of a paragraph?', answers: Object.freeze(['The central point', 'The page number', 'The longest word']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which shape has four equal sides?', answers: Object.freeze(['Triangle', 'Square', 'Pentagon']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 7 x 8?', answers: Object.freeze(['54', '56', '64']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which organ pumps blood?', answers: Object.freeze(['Heart', 'Liver', 'Lung']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is half of 86?', answers: Object.freeze(['41', '43', '46']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is spelled correctly?', answers: Object.freeze(['Recieve', 'Receive', 'Receeve']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the freezing point of water in C?', answers: Object.freeze(['0', '32', '100']), correctIndex: 0 }),
+  Object.freeze({ question: 'Who wrote the Declaration of Independence?', answers: Object.freeze(['Thomas Jefferson', 'Abraham Lincoln', 'George Washington']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 1,000 divided by 10?', answers: Object.freeze(['10', '100', '1,000']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which sentence has correct capitalization?', answers: Object.freeze(['i like math', 'I like math', 'I Like Math']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the perimeter of a 4 by 6 rectangle?', answers: Object.freeze(['10', '20', '24']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which simple machine is a ramp?', answers: Object.freeze(['Lever', 'Pulley', 'Inclined plane']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is the antonym of generous?', answers: Object.freeze(['Stingy', 'Helpful', 'Friendly']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 13 + 19 + 8?', answers: Object.freeze(['38', '40', '42']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which planet has rings most famously?', answers: Object.freeze(['Mars', 'Saturn', 'Mercury']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is a contraction?', answers: Object.freeze(['Cannot', 'Cant', "Can't"]), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 6 x 12?', answers: Object.freeze(['62', '72', '82']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which fraction equals 0.5?', answers: Object.freeze(['1/2', '1/3', '2/3']), correctIndex: 0 })
 ]);
 
 const NOTE_SEQUENCES = Object.freeze([
@@ -61,12 +113,12 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     id: SCHOOL_MICROGAME_IDS.popQuizPanic,
     title: 'Pop Quiz Panic',
     shortTitle: 'Quiz',
-    subtitle: 'Pick the answer before the bell bites.',
-    description: 'Pick the correct answer before the clock eats the grade.',
+    subtitle: 'Answer all three questions before the bell bites.',
+    description: 'Get three questions in a row correct before the clock eats the grade.',
     eyebrow: 'Classroom',
     prompt: 'Start pop quiz',
     overheadText: 'E to take pop quiz',
-    durationMs: 7000,
+    durationMs: 18000,
     rewardXp: 12,
     rewardMoney: 16,
     accent: '#38d3ff',
@@ -250,6 +302,19 @@ function shuffle(list, rng) {
   return next;
 }
 
+function formatQuizQuestion(question) {
+  return {
+    question: question.question,
+    answers: question.answers.map((label, index) => ({ label, index })),
+    correctIndex: question.correctIndex
+  };
+}
+
+export function createSchoolPopQuizQuestions({ rng = Math.random, count = SCHOOL_POP_QUIZ_ROUND_COUNT } = {}) {
+  const questionCount = Math.max(1, Math.min(QUESTION_BANK.length, Math.trunc(Number(count) || SCHOOL_POP_QUIZ_ROUND_COUNT)));
+  return shuffle(QUESTION_BANK, rng).slice(0, questionCount).map(formatQuizQuestion);
+}
+
 function createCombo(rng) {
   const digits = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9], rng);
   return digits.slice(0, 3 + Math.floor(rng() * 2));
@@ -337,11 +402,14 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
   };
 
   if (definition.id === SCHOOL_MICROGAME_IDS.popQuizPanic) {
-    const question = choose(QUESTION_BANK, rng);
+    const questions = createSchoolPopQuizQuestions({ rng });
+    const question = questions[0];
     return {
       ...base,
+      questionCount: questions.length,
+      questions,
       question: question.question,
-      answers: question.answers.map((label, index) => ({ label, index })),
+      answers: question.answers,
       correctIndex: question.correctIndex
     };
   }

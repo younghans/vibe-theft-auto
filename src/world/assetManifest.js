@@ -61,6 +61,7 @@ export const assets = {
     skillXpGain: assetUrl('audio', 'gain_experience_point_ding.wav'),
     levelUp: assetUrl('audio', 'level_up_ding.wav'),
     levelUpCelebration: assetUrl('audio', 'level_up_celebration.wav'),
+    clockTick: assetUrl('audio', 'clock-tick.wav'),
     phoneUnlock: assetUrl('audio', 'phone_unlock.wav'),
     playingCard: assetUrl('audio', 'playing_card.wav'),
     typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.wav')

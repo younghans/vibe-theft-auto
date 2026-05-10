@@ -680,9 +680,9 @@ function createSchoolTimerMarkup(game = null) {
   `;
 }
 
-function createSchoolGameButton(action, label, className = '') {
+function createSchoolGameButton(action, label, className = '', { disabled = false } = {}) {
   return `
-    <button class="hud__school-action${className ? ` ${className}` : ''}" type="button" data-school-microgame-action="${escapeHtml(action)}">
+    <button class="hud__school-action${className ? ` ${className}` : ''}" type="button" data-school-microgame-action="${escapeHtml(action)}"${disabled ? ' disabled' : ''}>
       ${escapeHtml(label)}
     </button>
   `;
@@ -716,7 +716,13 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   }
 
   if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
-    base.push(String(data.selectedIndex ?? -1));
+    const roundResults = Array.isArray(data.roundResults) ? data.roundResults : [];
+    base.push(
+      String(data.currentQuestionIndex ?? 0),
+      String(data.selectedIndex ?? -1),
+      String(Boolean(data.questionLocked)),
+      roundResults.map((result) => result === true ? '1' : result === false ? '0' : '-').join('')
+    );
   } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
     base.push(Boolean(data.previewActive) ? 'preview' : 'entry', (data.entered ?? []).join(','));
   } else if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
@@ -768,15 +774,41 @@ function createReadySchoolMicrogameMarkup(game = null) {
 function createPopQuizMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
+  const questions = Array.isArray(round.questions) && round.questions.length > 0
+    ? round.questions
+    : [{
+      question: round.question ?? 'Question',
+      answers: Array.isArray(round.answers) ? round.answers : [],
+      correctIndex: Number(round.correctIndex ?? -1)
+    }];
+  const currentQuestionIndex = Math.max(0, Math.min(questions.length - 1, Math.floor(Number(data.currentQuestionIndex ?? 0) || 0)));
+  const currentQuestion = questions[currentQuestionIndex] ?? questions[0];
+  const roundResults = Array.isArray(data.roundResults) ? data.roundResults : [];
+  const questionLocked = Boolean(data.questionLocked);
   const selectedIndex = Number(data.selectedIndex ?? -1);
+  const totalQuestions = Math.max(questions.length, Number(round.questionCount ?? 0) || 0, 3);
   return `
     <div class="hud__school-quiz">
-      <div class="hud__school-question">${escapeHtml(round.question ?? 'Question')}</div>
+      <div class="hud__school-quiz-status" aria-label="Quiz rounds">
+        ${Array.from({ length: totalQuestions }, (_, index) => {
+          const result = roundResults[index];
+          const stateClass = result === true ? ' is-correct' : index === currentQuestionIndex ? ' is-current' : '';
+          return `
+            <span class="hud__school-round${stateClass}">
+              <span>Q${index + 1}</span>
+              ${result === true ? '<strong aria-label="Correct">&#10003;</strong>' : ''}
+            </span>
+          `;
+        }).join('')}
+      </div>
+      <div class="hud__school-question-count">Question ${currentQuestionIndex + 1} of ${totalQuestions}</div>
+      <div class="hud__school-question">${escapeHtml(currentQuestion.question ?? 'Question')}</div>
       <div class="hud__school-answer-grid">
-        ${(round.answers ?? []).map((answer) => {
+        ${(currentQuestion.answers ?? []).map((answer) => {
           const index = Number(answer.index ?? 0);
           const selectedClass = selectedIndex === index ? ' is-selected' : '';
-          return createSchoolGameButton(`answer:${index}`, answer.label, `hud__school-answer${selectedClass}`);
+          const correctClass = questionLocked && selectedIndex === index && index === Number(currentQuestion.correctIndex ?? -1) ? ' is-correct' : '';
+          return createSchoolGameButton(`answer:${index}`, answer.label, `hud__school-answer${selectedClass}${correctClass}`, { disabled: questionLocked });
         }).join('')}
       </div>
     </div>

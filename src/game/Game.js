@@ -95,6 +95,8 @@ import {
   SCHOOL_MICROGAME_ALL_ID,
   SCHOOL_MICROGAME_DEFAULT_ID,
   SCHOOL_MICROGAME_IDS,
+  SCHOOL_POP_QUIZ_ROUND_COUNT,
+  createSchoolPopQuizQuestions,
   getSchoolMicrogameDefinition,
   getSchoolMicrogamePromptRadius,
   isSchoolMicrogameNpc,
@@ -656,6 +658,7 @@ export class Game {
     this.skillXpGainSound = this.createSoundEffect(assets.audio?.skillXpGain, { volume: 0.62 });
     this.levelUpSound = this.createSoundEffect(assets.audio?.levelUp, { volume: 0.72 });
     this.levelUpCelebrationSound = this.createSoundEffect(assets.audio?.levelUpCelebration, { volume: 0.7 });
+    this.popQuizClockTickSound = this.createSoundEffect(assets.audio?.clockTick, { volume: 0.52 });
     this.phoneUnlockSound = this.createSoundEffect(assets.audio?.phoneUnlock, { volume: 0.58 });
     this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
     this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
@@ -1004,6 +1007,7 @@ export class Game {
       this.skillXpGainSound,
       this.levelUpSound,
       this.levelUpCelebrationSound,
+      this.popQuizClockTickSound,
       this.phoneUnlockSound,
       this.playingCardSound,
       this.typingOnKeyboardSound
@@ -4595,18 +4599,24 @@ export class Game {
     const data = {};
 
     if (definition.id === SCHOOL_MICROGAME_IDS.popQuiz) {
-      const questions = [
-        { question: '8 x 7 = ?', answers: ['54', '56', '63'], correctIndex: 1 },
-        { question: 'Which word is a noun?', answers: ['Sprint', 'Locker', 'Quickly'], correctIndex: 1 },
-        { question: 'Water freezes at...', answers: ['0 C', '20 C', '100 C'], correctIndex: 0 },
-        { question: 'Capital of New York?', answers: ['Albany', 'Brooklyn', 'Buffalo'], correctIndex: 0 },
-        { question: '2/4 simplifies to...', answers: ['1/3', '1/2', '2/8'], correctIndex: 1 }
-      ];
-      const question = this.schoolPick(questions);
+      const questions = createSchoolPopQuizQuestions({
+        rng: () => this.schoolRandom(),
+        count: SCHOOL_POP_QUIZ_ROUND_COUNT
+      });
+      const question = questions[0];
+      round.questionCount = questions.length;
+      round.questions = questions;
       round.question = question.question;
-      round.answers = question.answers.map((label, index) => ({ label, index }));
+      round.answers = question.answers;
       round.correctIndex = question.correctIndex;
+      data.currentQuestionIndex = 0;
       data.selectedIndex = -1;
+      data.roundResults = Array.from({ length: questions.length }, () => null);
+      data.correctCount = 0;
+      data.questionLocked = false;
+      data.advanceAt = 0;
+      data.completing = false;
+      data.lastCountdownSecond = 0;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.lockerCombo) {
       round.combo = Array.from({ length: 3 }, () => String(this.schoolRandomInt(0, 9)));
       round.keypad = this.schoolShuffle(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
@@ -4740,7 +4750,16 @@ export class Game {
     this.schoolMicrogame.message = this.schoolMicrogame.round?.prompt ?? 'Go.';
     this.schoolMicrogame.resultTitle = '';
     this.schoolMicrogame.resultDetail = '';
-    if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
+    if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
+      const questions = this.getPopQuizQuestions(this.schoolMicrogame);
+      this.schoolMicrogame.data.roundResults = Array.from({ length: questions.length }, () => null);
+      this.schoolMicrogame.data.correctCount = 0;
+      this.schoolMicrogame.data.questionLocked = false;
+      this.schoolMicrogame.data.advanceAt = 0;
+      this.schoolMicrogame.data.completing = false;
+      this.schoolMicrogame.data.lastCountdownSecond = Math.ceil(this.schoolMicrogame.remainingMs / 1000);
+      this.setCurrentPopQuizQuestion(this.schoolMicrogame, 0);
+    } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
       this.schoolMicrogame.data.entered = [];
       this.schoolMicrogame.data.previewActive = true;
       this.schoolMicrogame.data.previewEndsAt = now + 1500;
@@ -4954,6 +4973,73 @@ export class Game {
     this.handlePlayingSchoolMicrogameAction(action);
   }
 
+  getPopQuizQuestions(game = this.schoolMicrogame) {
+    const round = game?.round ?? {};
+    if (Array.isArray(round.questions) && round.questions.length > 0) {
+      return round.questions;
+    }
+
+    return [{
+      question: round.question ?? 'Question',
+      answers: Array.isArray(round.answers) ? round.answers : [],
+      correctIndex: Number(round.correctIndex ?? -1)
+    }];
+  }
+
+  setCurrentPopQuizQuestion(game = this.schoolMicrogame, questionIndex = 0) {
+    const questions = this.getPopQuizQuestions(game);
+    const nextIndex = Math.max(0, Math.min(questions.length - 1, Math.floor(Number(questionIndex) || 0)));
+    const question = questions[nextIndex] ?? questions[0];
+    if (!game || !question) {
+      return;
+    }
+
+    game.data.currentQuestionIndex = nextIndex;
+    game.data.selectedIndex = -1;
+    game.data.questionLocked = false;
+    game.data.advanceAt = 0;
+    game.data.completing = false;
+    game.round.question = question.question;
+    game.round.answers = question.answers;
+    game.round.correctIndex = question.correctIndex;
+    game.message = `Question ${nextIndex + 1} of ${questions.length}.`;
+  }
+
+  handlePopQuizAnswer(index) {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.popQuiz || game.data.questionLocked) {
+      return;
+    }
+
+    const questions = this.getPopQuizQuestions(game);
+    const currentIndex = Math.max(0, Math.min(questions.length - 1, Math.floor(Number(game.data.currentQuestionIndex ?? 0) || 0)));
+    const question = questions[currentIndex] ?? {};
+    const selectedIndex = Math.floor(Number(index));
+    const roundResults = Array.isArray(game.data.roundResults) && game.data.roundResults.length === questions.length
+      ? [...game.data.roundResults]
+      : Array.from({ length: questions.length }, () => null);
+    const isCorrect = selectedIndex === Number(question.correctIndex ?? -1);
+
+    game.data.selectedIndex = selectedIndex;
+    game.data.questionLocked = true;
+    roundResults[currentIndex] = isCorrect;
+    game.data.roundResults = roundResults;
+
+    if (!isCorrect) {
+      this.syncSchoolMicrogameHud();
+      void this.finishSchoolMicrogame(false, 'Wrong answer', 'You needed a perfect 3-for-3 to pass.');
+      return;
+    }
+
+    game.data.correctCount = roundResults.filter((result) => result === true).length;
+    game.data.advanceAt = performance.now() + 650;
+    game.data.completing = currentIndex >= questions.length - 1;
+    game.message = game.data.completing
+      ? 'Perfect. Turning it in...'
+      : `Correct. Question ${currentIndex + 2} is up next.`;
+    this.syncSchoolMicrogameHud();
+  }
+
   handlePlayingSchoolMicrogameAction(action = '') {
     const game = this.schoolMicrogame;
     const gameId = game?.round?.gameId;
@@ -4962,9 +5048,7 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.popQuiz && action.startsWith('answer:')) {
-      const index = Math.floor(Number(action.split(':')[1]));
-      game.data.selectedIndex = index;
-      void this.finishSchoolMicrogame(index === game.round.correctIndex, index === game.round.correctIndex ? 'Correct' : 'Wrong answer', index === game.round.correctIndex ? 'The class actually clapped a little.' : 'The red pen was instant.');
+      this.handlePopQuizAnswer(action.split(':')[1]);
       return;
     }
 
@@ -5349,6 +5433,45 @@ export class Game {
     }
   }
 
+  playPopQuizCountdownTick(game = this.schoolMicrogame) {
+    if (!game || game.phase !== 'playing' || game.round?.gameId !== SCHOOL_MICROGAME_IDS.popQuiz) {
+      return;
+    }
+
+    const currentSecond = Math.ceil(Math.max(0, Number(game.remainingMs ?? 0) || 0) / 1000);
+    if (currentSecond <= 0) {
+      return;
+    }
+
+    const lastSecond = Number(game.data.lastCountdownSecond);
+    if (!Number.isFinite(lastSecond)) {
+      game.data.lastCountdownSecond = currentSecond;
+      return;
+    }
+
+    if (currentSecond < lastSecond) {
+      game.data.lastCountdownSecond = currentSecond;
+      this.playSoundEffect(this.popQuizClockTickSound);
+    }
+  }
+
+  updatePopQuizState(game = this.schoolMicrogame, now = performance.now()) {
+    this.playPopQuizCountdownTick(game);
+
+    if (!game?.data?.questionLocked || Number(game.data.advanceAt ?? 0) <= 0 || now < Number(game.data.advanceAt ?? 0)) {
+      return;
+    }
+
+    const questions = this.getPopQuizQuestions(game);
+    const currentIndex = Math.max(0, Math.min(questions.length - 1, Math.floor(Number(game.data.currentQuestionIndex ?? 0) || 0)));
+    if (game.data.completing || currentIndex >= questions.length - 1) {
+      void this.finishSchoolMicrogame(true, 'Perfect Score', 'All three answers landed.');
+      return;
+    }
+
+    this.setCurrentPopQuizQuestion(game, currentIndex + 1);
+  }
+
   updatePlayingSchoolMicrogame(dt, now) {
     const game = this.schoolMicrogame;
     const gameId = game?.round?.gameId;
@@ -5358,6 +5481,11 @@ export class Game {
 
     if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo && game.data.previewActive && now >= Number(game.data.previewEndsAt ?? 0)) {
       game.data.previewActive = false;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
+      this.updatePopQuizState(game, now);
+      return;
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
