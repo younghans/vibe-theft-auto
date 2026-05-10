@@ -735,6 +735,18 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(data.mistakes ?? 0),
       String(Math.floor(Number(data.progress ?? 0) / 4))
     );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
+    base.push(
+      (data.visibleCardIds ?? []).join(','),
+      (data.matchedCardIds ?? []).join(','),
+      (data.pendingMismatchIds ?? []).join(','),
+      (data.celebratingCardIds ?? []).join(','),
+      (data.flippingBackCardIds ?? []).join(','),
+      String(data.lastFlippedCardId ?? ''),
+      String(data.moves ?? 0),
+      String(data.matchBurstSeq ?? 0),
+      String(Boolean(data.completing))
+    );
   } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
     base.push(
       String(data.playerLane ?? 1),
@@ -936,6 +948,82 @@ function createTeacherLookingMarkup(game = null) {
   `;
 }
 
+function createMemoryMatchMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const cards = Array.isArray(round.cards) ? round.cards : [];
+  const visibleIds = new Set(Array.isArray(data.visibleCardIds) ? data.visibleCardIds : []);
+  const matchedIds = new Set(Array.isArray(data.matchedCardIds) ? data.matchedCardIds : []);
+  const pendingMismatchIds = new Set(Array.isArray(data.pendingMismatchIds) ? data.pendingMismatchIds : []);
+  const celebratingIds = new Set(Array.isArray(data.celebratingCardIds) ? data.celebratingCardIds : []);
+  const flippingBackIds = new Set(Array.isArray(data.flippingBackCardIds) ? data.flippingBackCardIds : []);
+  const matchesFound = Math.max(0, Math.floor(Number(data.matchesFound ?? matchedIds.size / 2) || 0));
+  const pairCount = Math.max(1, Math.floor(Number(round.pairCount ?? cards.length / 2) || 1));
+  const moves = Math.max(0, Math.floor(Number(data.moves ?? 0) || 0));
+
+  return `
+    <div class="hud__school-memory">
+      <div class="hud__school-memory-score">
+        <span><strong>${matchesFound}</strong>/${pairCount} pairs</span>
+        <span><strong>${moves}</strong> turns</span>
+      </div>
+      <div class="hud__school-memory-grid" aria-label="Memory card grid">
+        ${cards.map((card, index) => {
+          const isMatched = matchedIds.has(card.id);
+          const isVisible = isMatched || visibleIds.has(card.id);
+          const isPending = pendingMismatchIds.has(card.id);
+          const isCelebrating = celebratingIds.has(card.id);
+          const isFlippingBack = flippingBackIds.has(card.id);
+          const isFlippingUp = isVisible && data.lastFlippedCardId === card.id;
+          const cardClass = [
+            'hud__school-memory-card',
+            isVisible ? 'is-visible' : '',
+            isMatched ? 'is-matched' : '',
+            isPending ? 'is-pending' : '',
+            isCelebrating ? 'is-celebrating' : '',
+            isFlippingBack ? 'is-flipping-back' : '',
+            isFlippingUp ? 'is-flipping-up' : ''
+          ].filter(Boolean).join(' ');
+          const disabled = isMatched || isVisible || isFlippingBack || Boolean(data.completing);
+          const label = isMatched
+            ? `${card.label} matched`
+            : isVisible
+              ? `${card.label} card`
+              : `Face-down memory card ${index + 1}`;
+
+          return `
+            <button
+              class="${cardClass}"
+              type="button"
+              data-school-microgame-action="memory:flip:${escapeHtml(card.id)}"
+              style="--card-accent:${escapeHtml(card.accent ?? '#78f0b5')}; --memory-card-index:${index}"
+              aria-label="${escapeHtml(label)}"
+              ${disabled ? 'disabled' : ''}
+            >
+              <span class="hud__school-memory-card-inner">
+                <span class="hud__school-memory-face hud__school-memory-front">
+                  <span class="hud__school-memory-icon">${escapeHtml(card.icon ?? '?')}</span>
+                  <span class="hud__school-memory-label">${escapeHtml(card.label ?? 'Card')}</span>
+                  <span class="hud__school-memory-match-burst" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </span>
+                <span class="hud__school-memory-face hud__school-memory-back">
+                  <span class="hud__school-memory-back-mark"></span>
+                </span>
+                <span class="hud__school-memory-edge" aria-hidden="true"></span>
+              </span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function createDodgeChalkMarkup(game = null) {
   const data = game?.data ?? {};
   const lanes = Array.isArray(game?.round?.lanes) ? game.round.lanes : ['Left', 'Center', 'Right'];
@@ -1047,6 +1135,8 @@ function createSchoolMicrogamePlayMarkup(game = null) {
       return createCopyNotesMarkup(game);
     case SCHOOL_MICROGAME_IDS.teacherLooking:
       return createTeacherLookingMarkup(game);
+    case SCHOOL_MICROGAME_IDS.memoryMatch:
+      return createMemoryMatchMarkup(game);
     case SCHOOL_MICROGAME_IDS.dodgeChalk:
       return createDodgeChalkMarkup(game);
     case SCHOOL_MICROGAME_IDS.sortBackpack:

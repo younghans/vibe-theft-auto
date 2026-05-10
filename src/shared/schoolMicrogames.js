@@ -6,6 +6,8 @@ export const SCHOOL_MICROGAME_IDS = Object.freeze({
   copyTheNotes: 'copy-the-notes',
   teacherLooking: 'teacher-is-looking',
   teacherIsLooking: 'teacher-is-looking',
+  memoryMatch: 'memory-match',
+  memoryCards: 'memory-match',
   dodgeChalk: 'dodge-the-chalk',
   dodgeTheChalk: 'dodge-the-chalk',
   sortBackpack: 'sort-the-backpack',
@@ -108,6 +110,17 @@ const SCANTRON_KEYS = Object.freeze([
   Object.freeze(['D', 'B', 'C', 'A'])
 ]);
 
+const MEMORY_MATCH_PAIRS = Object.freeze([
+  Object.freeze({ pairId: 'math', icon: 'PI', label: 'Math', accent: '#38d3ff' }),
+  Object.freeze({ pairId: 'science', icon: 'H2O', label: 'Science', accent: '#58e2a5' }),
+  Object.freeze({ pairId: 'english', icon: 'AB', label: 'English', accent: '#ffd84f' }),
+  Object.freeze({ pairId: 'geo', icon: 'MAP', label: 'Geography', accent: '#69a7ff' }),
+  Object.freeze({ pairId: 'bio', icon: 'DNA', label: 'Biology', accent: '#ff8fb3' }),
+  Object.freeze({ pairId: 'music', icon: 'MUS', label: 'Music', accent: '#b983ff' }),
+  Object.freeze({ pairId: 'art', icon: 'ART', label: 'Art', accent: '#ff9f5f' }),
+  Object.freeze({ pairId: 'tech', icon: 'CODE', label: 'Tech', accent: '#8ef7e1' })
+]);
+
 const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: SCHOOL_MICROGAME_IDS.popQuizPanic,
@@ -179,6 +192,24 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     accent2: '#78f0b5',
     secondaryAccent: '#78f0b5',
     icon: 'EYE',
+    skill: 'intelligence'
+  }),
+  Object.freeze({
+    id: SCHOOL_MICROGAME_IDS.memoryMatch,
+    title: 'Memory Match',
+    shortTitle: 'Memory',
+    subtitle: 'Flip cards and clear every matching pair.',
+    description: 'Flip two cards at a time, remember the icons, and match the whole grid.',
+    eyebrow: 'Brain Training',
+    prompt: 'Start memory match',
+    overheadText: 'E for memory match',
+    durationMs: 45000,
+    rewardXp: 16,
+    rewardMoney: 20,
+    accent: '#78f0b5',
+    accent2: '#ffcf56',
+    secondaryAccent: '#ffcf56',
+    icon: 'MEM',
     skill: 'intelligence'
   }),
   Object.freeze({
@@ -277,6 +308,9 @@ for (const game of SCHOOL_MICROGAME_DEFINITIONS) {
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('pop-quiz', SCHOOL_MICROGAME_IDS.popQuizPanic);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('copy-notes', SCHOOL_MICROGAME_IDS.copyTheNotes);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('teacher-looking', SCHOOL_MICROGAME_IDS.teacherIsLooking);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory', SCHOOL_MICROGAME_IDS.memoryMatch);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-game', SCHOOL_MICROGAME_IDS.memoryMatch);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-cards', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('dodge-chalk', SCHOOL_MICROGAME_IDS.dodgeTheChalk);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('sort-backpack', SCHOOL_MICROGAME_IDS.sortTheBackpack);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school', SCHOOL_MICROGAME_DEFAULT_ID);
@@ -324,6 +358,19 @@ function createBackpackRound(rng) {
   return shuffle(BACKPACK_ITEMS, rng).slice(0, 6).map((item, index) => ({
     ...item,
     id: `${item.id}-${index}`
+  }));
+}
+
+export function createSchoolMemoryMatchCards({ rng = Math.random } = {}) {
+  return shuffle(
+    MEMORY_MATCH_PAIRS.flatMap((pair) => [0, 1].map((copyIndex) => ({
+      ...pair,
+      id: `${pair.pairId}-${copyIndex}`
+    }))),
+    rng
+  ).map((card, index) => ({
+    ...card,
+    slot: index
   }));
 }
 
@@ -438,6 +485,16 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
       lookCycleMs: 2600,
       lookWindowMs: 1050,
       startingPhaseMs: Math.floor(rng() * 700)
+    };
+  }
+
+  if (definition.id === SCHOOL_MICROGAME_IDS.memoryMatch) {
+    const cards = createSchoolMemoryMatchCards({ rng });
+    return {
+      ...base,
+      cards,
+      gridSize: 4,
+      pairCount: cards.length / 2
     };
   }
 

@@ -96,6 +96,7 @@ import {
   SCHOOL_MICROGAME_DEFAULT_ID,
   SCHOOL_MICROGAME_IDS,
   SCHOOL_POP_QUIZ_ROUND_COUNT,
+  createSchoolMemoryMatchCards,
   createSchoolPopQuizQuestions,
   getSchoolMicrogameDefinition,
   getSchoolMicrogamePromptRadius,
@@ -4641,6 +4642,25 @@ export class Game {
       data.turnEndsAt = 0;
       data.lookStartedAt = 0;
       data.lookEndsAt = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.memoryMatch) {
+      round.cards = createSchoolMemoryMatchCards({ rng: () => this.schoolRandom() });
+      round.gridSize = 4;
+      round.pairCount = round.cards.length / 2;
+      data.visibleCardIds = [];
+      data.matchedCardIds = [];
+      data.pendingMismatchIds = [];
+      data.celebratingCardIds = [];
+      data.flippingBackCardIds = [];
+      data.lastFlippedCardId = '';
+      data.moves = 0;
+      data.matchesFound = 0;
+      data.flipCount = 0;
+      data.matchBurstSeq = 0;
+      data.celebrationEndsAt = 0;
+      data.flipBackEndsAt = 0;
+      data.lastFlipEndsAt = 0;
+      data.completing = false;
+      data.completeAt = 0;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.dodgeChalk) {
       round.lanes = ['Left', 'Center', 'Right'];
       data.playerLane = 1;
@@ -4776,6 +4796,22 @@ export class Game {
       this.schoolMicrogame.data.turnEndsAt = 0;
       this.schoolMicrogame.data.lookStartedAt = 0;
       this.schoolMicrogame.data.lookEndsAt = 0;
+    } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
+      this.schoolMicrogame.data.visibleCardIds = [];
+      this.schoolMicrogame.data.matchedCardIds = [];
+      this.schoolMicrogame.data.pendingMismatchIds = [];
+      this.schoolMicrogame.data.celebratingCardIds = [];
+      this.schoolMicrogame.data.flippingBackCardIds = [];
+      this.schoolMicrogame.data.lastFlippedCardId = '';
+      this.schoolMicrogame.data.moves = 0;
+      this.schoolMicrogame.data.matchesFound = 0;
+      this.schoolMicrogame.data.flipCount = 0;
+      this.schoolMicrogame.data.matchBurstSeq = 0;
+      this.schoolMicrogame.data.celebrationEndsAt = 0;
+      this.schoolMicrogame.data.flipBackEndsAt = 0;
+      this.schoolMicrogame.data.lastFlipEndsAt = 0;
+      this.schoolMicrogame.data.completing = false;
+      this.schoolMicrogame.data.completeAt = 0;
     }
     this.input.clearKeyPressQueue?.();
     this.schoolMicrogameLastTickAt = now;
@@ -5045,6 +5081,106 @@ export class Game {
     this.syncSchoolMicrogameHud();
   }
 
+  getMemoryMatchCards(game = this.schoolMicrogame) {
+    return Array.isArray(game?.round?.cards) ? game.round.cards : [];
+  }
+
+  normalizeMemoryCardIds(ids = [], cards = this.getMemoryMatchCards()) {
+    const allowed = new Set(cards.map((card) => card.id));
+    const next = [];
+    for (const id of Array.isArray(ids) ? ids : []) {
+      const cardId = String(id ?? '');
+      if (allowed.has(cardId) && !next.includes(cardId)) {
+        next.push(cardId);
+      }
+    }
+    return next;
+  }
+
+  handleMemoryMatchFlip(cardId = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.memoryMatch || game.data.completing) {
+      return;
+    }
+
+    const cards = this.getMemoryMatchCards(game);
+    const selectedCard = cards.find((card) => card.id === cardId);
+    if (!selectedCard) {
+      return;
+    }
+
+    const matchedIds = new Set(this.normalizeMemoryCardIds(game.data.matchedCardIds, cards));
+    if (matchedIds.has(cardId)) {
+      return;
+    }
+
+    let visibleIds = this.normalizeMemoryCardIds(game.data.visibleCardIds, cards)
+      .filter((id) => !matchedIds.has(id));
+    const pendingMismatchIds = this.normalizeMemoryCardIds(game.data.pendingMismatchIds, cards);
+    if (pendingMismatchIds.length >= 2) {
+      visibleIds = visibleIds.filter((id) => !pendingMismatchIds.includes(id));
+      game.data.pendingMismatchIds = [];
+      game.data.celebratingCardIds = [];
+      game.data.flippingBackCardIds = pendingMismatchIds;
+      game.data.flipBackEndsAt = performance.now() + 340;
+    }
+
+    if (visibleIds.includes(cardId)) {
+      return;
+    }
+
+    if (visibleIds.length >= 2) {
+      visibleIds = [];
+    }
+
+    visibleIds.push(cardId);
+    game.data.visibleCardIds = visibleIds;
+    game.data.lastFlippedCardId = cardId;
+    game.data.lastFlipEndsAt = performance.now() + 360;
+    game.data.flipCount = Math.max(0, Math.floor(Number(game.data.flipCount ?? 0) || 0)) + 1;
+    this.playSoundEffect(this.playingCardSound);
+
+    if (visibleIds.length < 2) {
+      game.message = 'Flip one more card.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    game.data.moves = Math.max(0, Math.floor(Number(game.data.moves ?? 0) || 0)) + 1;
+    const [firstId, secondId] = visibleIds;
+    const firstCard = cards.find((card) => card.id === firstId);
+    const secondCard = cards.find((card) => card.id === secondId);
+    const isMatch = Boolean(firstCard && secondCard && firstCard.pairId === secondCard.pairId);
+
+    if (!isMatch) {
+      game.data.pendingMismatchIds = [firstId, secondId];
+      game.message = 'Not a match. Flip another card to reset them.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    matchedIds.add(firstId);
+    matchedIds.add(secondId);
+    const pairCount = Math.max(1, Math.floor(Number(game.round.pairCount ?? cards.length / 2) || 1));
+    game.data.matchedCardIds = [...matchedIds];
+    game.data.visibleCardIds = [];
+    game.data.pendingMismatchIds = [];
+    game.data.celebratingCardIds = [firstId, secondId];
+    game.data.matchesFound = Math.floor(matchedIds.size / 2);
+    game.data.matchBurstSeq = Math.max(0, Math.floor(Number(game.data.matchBurstSeq ?? 0) || 0)) + 1;
+    game.data.celebrationEndsAt = performance.now() + 950;
+    this.playSoundEffect(this.levelUpSound);
+
+    if (game.data.matchesFound >= pairCount) {
+      game.data.completing = true;
+      game.data.completeAt = performance.now() + 900;
+      game.message = 'Every pair is locked in.';
+    } else {
+      game.message = `${game.data.matchesFound}/${pairCount} pairs matched.`;
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
   handlePlayingSchoolMicrogameAction(action = '') {
     const game = this.schoolMicrogame;
     const gameId = game?.round?.gameId;
@@ -5064,6 +5200,11 @@ export class Game {
 
     if (gameId === SCHOOL_MICROGAME_IDS.copyNotes && action.startsWith('note:')) {
       this.pushCopyNotesKey(action.slice('note:'.length));
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch && action.startsWith('memory:flip:')) {
+      this.handleMemoryMatchFlip(action.slice('memory:flip:'.length));
       return;
     }
 
@@ -5346,6 +5487,8 @@ export class Game {
         void this.finishSchoolMicrogame(inside, inside ? 'Made It' : 'Out Of Time', inside ? 'You hit the door right on the bell.' : 'The bell does not negotiate.');
       } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
         void this.finishSchoolMicrogame(false, 'Unfinished', 'The bell rang before the sentence was finished.');
+      } else if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
+        void this.finishSchoolMicrogame(false, 'Still Hidden', 'The last pairs stayed face down when the bell rang.');
       } else {
         void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
       }
@@ -5477,6 +5620,27 @@ export class Game {
     this.setCurrentPopQuizQuestion(game, currentIndex + 1);
   }
 
+  updateMemoryMatchState(game = this.schoolMicrogame, now = performance.now()) {
+    if (Number(game?.data?.lastFlipEndsAt ?? 0) > 0 && now >= Number(game.data.lastFlipEndsAt ?? 0)) {
+      game.data.lastFlipEndsAt = 0;
+      game.data.lastFlippedCardId = '';
+    }
+
+    if (Number(game?.data?.flipBackEndsAt ?? 0) > 0 && now >= Number(game.data.flipBackEndsAt ?? 0)) {
+      game.data.flipBackEndsAt = 0;
+      game.data.flippingBackCardIds = [];
+    }
+
+    if (Number(game?.data?.celebrationEndsAt ?? 0) > 0 && now >= Number(game.data.celebrationEndsAt ?? 0)) {
+      game.data.celebrationEndsAt = 0;
+      game.data.celebratingCardIds = [];
+    }
+
+    if (game?.data?.completing && Number(game.data.completeAt ?? 0) > 0 && now >= Number(game.data.completeAt ?? 0)) {
+      void this.finishSchoolMicrogame(true, 'Matched', 'Every card found its partner.');
+    }
+  }
+
   updatePlayingSchoolMicrogame(dt, now) {
     const game = this.schoolMicrogame;
     const gameId = game?.round?.gameId;
@@ -5495,6 +5659,11 @@ export class Game {
 
     if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
       this.updateTeacherLookingState(game, now);
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
+      this.updateMemoryMatchState(game, now);
       return;
     }
 
