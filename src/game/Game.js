@@ -948,7 +948,7 @@ export class Game {
   }
 
   setShaderDebugMenuVisible(visible) {
-    const nextVisible = Boolean(visible);
+    const nextVisible = Boolean(visible && this.canUseShaderDebug());
     if (nextVisible) {
       this.closePhoneMenu();
       this.setAimPoseDebugVisible(false);
@@ -963,6 +963,11 @@ export class Game {
   }
 
   toggleShaderDebugMenu() {
+    if (!this.shaderDebugMenuVisible && !this.canUseShaderDebug()) {
+      this.hud.showToast('Shader vibe menu is admin only.');
+      return this.setShaderDebugMenuVisible(false);
+    }
+
     const nextVisible = this.setShaderDebugMenuVisible(!this.shaderDebugMenuVisible);
     this.hud.showToast(nextVisible ? 'Shader vibe menu opened.' : 'Shader vibe menu hidden.');
     return nextVisible;
@@ -998,6 +1003,7 @@ export class Game {
   }
 
   refreshShaderDebugHud() {
+    const available = this.canUseShaderDebug();
     const activePreset = this.getActiveVibeShaderPreset();
     const intensity = this.getVibeShaderIntensity(activePreset.id);
     const statusText = activePreset.id === NO_VIBE_SHADER_PRESET_ID
@@ -1005,7 +1011,8 @@ export class Game {
       : `${activePreset.label} is live at ${Math.round(intensity * 100)}%. Switch presets anytime to totally restyle the city.`;
 
     this.hud.setShaderDebugState({
-      visible: this.shaderDebugMenuVisible,
+      available,
+      visible: Boolean(this.shaderDebugMenuVisible && available),
       activePresetId: activePreset.id,
       statusText,
       presets: VIBE_SHADER_PRESETS,
@@ -2150,6 +2157,10 @@ export class Game {
     return this.isLocalAdmin();
   }
 
+  canUseShaderDebug() {
+    return this.isLocalAdmin();
+  }
+
   syncAdminAccess() {
     const isAdmin = this.isLocalAdmin();
     void this.worldBuilder?.setCanEdit(isAdmin);
@@ -2164,7 +2175,12 @@ export class Game {
       this.player?.setAimPoseDebugVisible(false);
     }
 
+    if (!this.canUseShaderDebug()) {
+      this.shaderDebugMenuVisible = false;
+    }
+
     this.refreshAimPoseDebugHud();
+    this.refreshShaderDebugHud();
     this.refreshAdminPositionHud();
     this.refreshMapCaptureHud();
   }

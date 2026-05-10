@@ -803,6 +803,7 @@ const HUD_CONTROLS = Object.freeze([
   { label: 'Fire', mouseButton: 'left' },
   { label: 'Aim', mouseButton: 'right' },
   { label: 'Interact', key: 'E' },
+  { label: 'Phone', key: 'Tab' },
   { label: 'Reload', key: 'R' },
   { label: 'Chat', key: 'Enter' },
   { label: 'Emote', key: 'B' }
@@ -1343,6 +1344,7 @@ export class Hud {
               aria-label="Toggle shader vibe menu"
               aria-pressed="false"
               title="Show shader vibe menu"
+              hidden
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
@@ -5361,6 +5363,7 @@ export class Hud {
   }
 
   setShaderDebugState({
+    available = false,
     visible = false,
     activePresetId = '',
     statusText = '',
@@ -5372,16 +5375,17 @@ export class Hud {
       return;
     }
 
-    this.shaderDebugRoot.hidden = !visible;
-    this.shaderDebugRoot.classList.toggle('is-visible', visible);
+    const panelVisible = Boolean(available && visible);
+    this.shaderDebugRoot.hidden = !panelVisible;
+    this.shaderDebugRoot.classList.toggle('is-visible', panelVisible);
     this.shaderDebugStatus.textContent = statusText;
 
     if (this.shaderDebugToggle) {
-      this.shaderDebugToggle.hidden = false;
-      const highlightToggle = visible || intensityEnabled;
+      this.shaderDebugToggle.hidden = !available;
+      const highlightToggle = panelVisible || (available && intensityEnabled);
       this.shaderDebugToggle.classList.toggle('is-active', highlightToggle);
-      this.shaderDebugToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      this.shaderDebugToggle.title = visible ? 'Hide shader vibe menu' : 'Show shader vibe menu';
+      this.shaderDebugToggle.setAttribute('aria-pressed', panelVisible ? 'true' : 'false');
+      this.shaderDebugToggle.title = panelVisible ? 'Hide shader vibe menu' : 'Show shader vibe menu';
     }
 
     const clampedIntensity = Math.max(0, Math.min(1, Number.isFinite(intensity) ? intensity : 1));
