@@ -13,7 +13,7 @@ const port = Number(process.env.PORT || positionalArgs[1] || 4173);
 const configuredServerUrl = (process.env.STICKRPG_SERVER_URL || positionalArgs[2] || '').trim();
 const liveReloadEnabled = flags.has('--live-reload') || process.env.STICKRPG_LIVE_RELOAD === '1';
 const liveReloadClients = new Set();
-const ignoredWatchPathSegments = new Set(['.git', 'dist', 'node_modules']);
+const ignoredWatchPathSegments = new Set(['.codex', '.git', 'dist', 'node_modules', 'test-results']);
 const ignoredWatchPathPrefixes = [
   path.join('server', 'data'),
   path.join('assets', 'mixamo', 'portraits')

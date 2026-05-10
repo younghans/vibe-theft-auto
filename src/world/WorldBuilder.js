@@ -872,14 +872,16 @@ export class WorldBuilder {
       return;
     }
 
-    this.canEdit = nextCanEdit;
-    if (!this.canEdit && this.state.enabled) {
+    if (!nextCanEdit && this.canEdit && this.state.enabled) {
       await this.setEnabled(false);
-      return;
     }
 
+    this.canEdit = nextCanEdit;
+
     this.updateBuilderHud({ syncPreviews: this.canEdit && this.state.enabled });
-    this.reportBuilderPresence(true);
+    if (this.canEdit) {
+      this.reportBuilderPresence(true);
+    }
   }
 
   async setEnabled(enabled) {
@@ -1306,7 +1308,11 @@ export class WorldBuilder {
       return;
     }
 
-    if (!this.canEdit || !this.state.enabled || !this.activeItem) {
+    if (!this.canEdit) {
+      return;
+    }
+
+    if (!this.state.enabled || !this.activeItem) {
       this.worldTransport.setBuilderPresence({ active: false, force });
       return;
     }
