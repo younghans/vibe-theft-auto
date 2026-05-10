@@ -4617,6 +4617,7 @@ export class Game {
       data.advanceAt = 0;
       data.completing = false;
       data.lastCountdownSecond = 0;
+      data.correctImpactIndex = -1;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.lockerCombo) {
       round.combo = Array.from({ length: 3 }, () => String(this.schoolRandomInt(0, 9)));
       round.keypad = this.schoolShuffle(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
@@ -4758,6 +4759,7 @@ export class Game {
       this.schoolMicrogame.data.advanceAt = 0;
       this.schoolMicrogame.data.completing = false;
       this.schoolMicrogame.data.lastCountdownSecond = Math.ceil(this.schoolMicrogame.remainingMs / 1000);
+      this.schoolMicrogame.data.correctImpactIndex = -1;
       this.setCurrentPopQuizQuestion(this.schoolMicrogame, 0);
     } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
       this.schoolMicrogame.data.entered = [];
@@ -4999,6 +5001,7 @@ export class Game {
     game.data.questionLocked = false;
     game.data.advanceAt = 0;
     game.data.completing = false;
+    game.data.correctImpactIndex = -1;
     game.round.question = question.question;
     game.round.answers = question.answers;
     game.round.correctIndex = question.correctIndex;
@@ -5032,11 +5035,13 @@ export class Game {
     }
 
     game.data.correctCount = roundResults.filter((result) => result === true).length;
-    game.data.advanceAt = performance.now() + 650;
+    game.data.correctImpactIndex = currentIndex;
+    game.data.advanceAt = performance.now() + 900;
     game.data.completing = currentIndex >= questions.length - 1;
     game.message = game.data.completing
       ? 'Perfect. Turning it in...'
       : `Correct. Question ${currentIndex + 2} is up next.`;
+    this.playSoundEffect(this.levelUpSound);
     this.syncSchoolMicrogameHud();
   }
 

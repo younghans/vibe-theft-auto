@@ -721,6 +721,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(data.currentQuestionIndex ?? 0),
       String(data.selectedIndex ?? -1),
       String(Boolean(data.questionLocked)),
+      String(data.correctImpactIndex ?? -1),
       roundResults.map((result) => result === true ? '1' : result === false ? '0' : '-').join('')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
@@ -792,11 +793,20 @@ function createPopQuizMarkup(game = null) {
       <div class="hud__school-quiz-status" aria-label="Quiz rounds">
         ${Array.from({ length: totalQuestions }, (_, index) => {
           const result = roundResults[index];
-          const stateClass = result === true ? ' is-correct' : index === currentQuestionIndex ? ' is-current' : '';
+          const isImpact = result === true && index === Number(data.correctImpactIndex ?? -1);
+          const stateClass = `${result === true ? ' is-correct' : index === currentQuestionIndex ? ' is-current' : ''}${isImpact ? ' is-impact' : ''}`;
+          const label = result === true ? `Question ${index + 1} correct` : `Question ${index + 1}`;
           return `
-            <span class="hud__school-round${stateClass}">
-              <span>Q${index + 1}</span>
-              ${result === true ? '<strong aria-label="Correct">&#10003;</strong>' : ''}
+            <span class="hud__school-round${stateClass}" aria-label="${escapeHtml(label)}">
+              <span class="hud__school-round-dot" aria-hidden="true"></span>
+              ${result === true ? `
+                <strong class="hud__school-round-check" aria-hidden="true">&#10003;</strong>
+                <span class="hud__school-round-dust" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
+              ` : ''}
             </span>
           `;
         }).join('')}
