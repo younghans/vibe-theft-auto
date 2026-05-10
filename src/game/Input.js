@@ -39,6 +39,7 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.justPressed = new Set();
+    this.keyPressQueue = [];
     this.pointerButtons = new Set();
     this.justPressedPointerButtons = new Set();
     this.wheelDirection = 0;
@@ -96,6 +97,7 @@ export class Input {
       if (this.isEditableTarget(event.target)) {
         this.keys.delete(event.code);
         this.justPressed.delete(event.code);
+        this.keyPressQueue = [];
         return;
       }
 
@@ -105,6 +107,10 @@ export class Input {
 
       if (!this.keys.has(event.code)) {
         this.justPressed.add(event.code);
+        this.keyPressQueue.push({ code: event.code, at: performance.now() });
+        if (this.keyPressQueue.length > 64) {
+          this.keyPressQueue.shift();
+        }
       }
       this.keys.add(event.code);
     });
@@ -113,6 +119,7 @@ export class Input {
       if (this.isEditableTarget(event.target)) {
         this.keys.delete(event.code);
         this.justPressed.delete(event.code);
+        this.keyPressQueue = [];
         return;
       }
 
@@ -124,12 +131,14 @@ export class Input {
       if (this.isEditableTarget(event.target)) {
         this.keys.clear();
         this.justPressed.clear();
+        this.keyPressQueue = [];
       }
     });
 
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.justPressed.clear();
+      this.keyPressQueue = [];
       this.pointerButtons.clear();
       this.justPressedPointerButtons.clear();
       this.releaseAllTouchControls();
@@ -553,7 +562,38 @@ export class Input {
 
     const pressed = this.justPressed.has(code);
     this.justPressed.delete(code);
+    if (pressed) {
+      const queueIndex = this.keyPressQueue.findIndex((entry) => entry.code === code);
+      if (queueIndex >= 0) {
+        this.keyPressQueue.splice(queueIndex, 1);
+      }
+    }
     return pressed;
+  }
+
+  consumeNextKey(codes = []) {
+    return this.consumeNextKeyEvent(codes)?.code ?? '';
+  }
+
+  consumeNextKeyEvent(codes = []) {
+    if (this.isKeyboardSuspended()) {
+      this.keyPressQueue = [];
+      return null;
+    }
+
+    const allowed = new Set(codes);
+    const queueIndex = this.keyPressQueue.findIndex((entry) => allowed.has(entry.code));
+    if (queueIndex < 0) {
+      return null;
+    }
+
+    const [entry] = this.keyPressQueue.splice(queueIndex, 1);
+    this.justPressed.delete(entry.code);
+    return entry;
+  }
+
+  clearKeyPressQueue() {
+    this.keyPressQueue = [];
   }
 
   isPressed(code) {

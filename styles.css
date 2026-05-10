@@ -6185,36 +6185,165 @@ body.is-builder-resizing * {
 }
 
 .hud__school-teacher {
-  align-content: center;
+  align-content: stretch;
+  grid-template-rows: auto minmax(240px, 1fr) auto auto;
+}
+
+.hud__school-teacher-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__school-traffic {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(5, 9, 14, 0.52);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.hud__school-light {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.18);
+}
+
+.hud__school-light.is-green.is-active {
+  background: #65f18d;
+  box-shadow: 0 0 18px rgba(101, 241, 141, 0.78);
+}
+
+.hud__school-light.is-yellow.is-active {
+  background: #ffd166;
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.78);
+}
+
+.hud__school-light.is-red.is-active {
+  background: #ff5f7e;
+  box-shadow: 0 0 20px rgba(255, 95, 126, 0.82);
+}
+
+.hud__school-teacher-status {
+  justify-self: end;
+  min-width: 116px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(101, 241, 141, 0.16);
+  color: #d9ffe3;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.hud__school-teacher.is-turning .hud__school-teacher-status {
+  background: rgba(255, 209, 102, 0.2);
+  color: #ffe6a5;
+}
+
+.hud__school-teacher.is-looking .hud__school-teacher-status {
+  background: rgba(255, 95, 126, 0.2);
+  color: #ffc0cc;
+  animation: hud-school-danger-pulse 520ms ease-in-out infinite;
 }
 
 .hud__school-teacher-scene {
   position: relative;
-  min-height: 240px;
+  min-height: 320px;
   overflow: hidden;
   border-radius: 12px;
+  perspective: 920px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 36%),
-    linear-gradient(180deg, #223446 0 64%, #3c3028 65% 100%);
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.12), transparent 22%),
+    linear-gradient(180deg, #7b5f50 0 5%, #273d4e 5% 65%, #4a372e 66% 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 -48px 72px rgba(12, 8, 6, 0.18);
+}
+
+.hud__school-teacher-fallback,
+.hud__school-teacher-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.hud__school-teacher-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.hud__school-blackboard {
+  position: absolute;
+  left: 7%;
+  right: 34%;
+  top: 22px;
+  min-height: 104px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 18px 22px;
+  border: 8px solid #7a4e2b;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 42%),
+    linear-gradient(180deg, #164637, #0d302a);
+  box-shadow:
+    inset 0 0 24px rgba(0, 0, 0, 0.28),
+    0 14px 24px rgba(0, 0, 0, 0.18);
+}
+
+.hud__school-blackboard span {
+  color: rgba(234, 247, 226, 0.7);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hud__school-blackboard strong {
+  color: #f4ffe9;
+  font-size: 32px;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .hud__school-teacher-figure {
   position: absolute;
-  left: 50%;
-  top: 28px;
-  width: 112px;
-  height: 160px;
-  transform: translateX(-50%) rotateY(180deg);
-  transition: transform 160ms ease;
+  right: 12%;
+  top: 44px;
+  width: 124px;
+  height: 178px;
+  transform-style: preserve-3d;
+  transform-origin: 50% 52%;
+  filter: drop-shadow(0 18px 20px rgba(0, 0, 0, 0.26));
+}
+
+.hud__school-teacher.is-away .hud__school-teacher-figure {
+  transform: rotateY(178deg);
+}
+
+.hud__school-teacher.is-turning .hud__school-teacher-figure {
+  animation: hud-school-teacher-turn 660ms ease-in-out both;
 }
 
 .hud__school-teacher.is-looking .hud__school-teacher-figure {
-  transform: translateX(-50%) rotateY(0deg);
+  transform: rotateY(0deg);
 }
 
 .hud__school-teacher-head,
 .hud__school-teacher-body,
-.hud__school-teacher-eyes {
+.hud__school-teacher-eyes,
+.hud__school-teacher-nose,
+.hud__school-teacher-hair,
+.hud__school-teacher-arm,
+.hud__school-teacher-chalk {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -6222,21 +6351,34 @@ body.is-builder-resizing * {
 
 .hud__school-teacher-head {
   top: 0;
-  width: 82px;
-  height: 78px;
+  width: 84px;
+  height: 80px;
   border-radius: 50% 50% 44% 44%;
-  background: linear-gradient(180deg, #f3c98b, #bd8158);
+  background:
+    radial-gradient(circle at 64% 36%, rgba(255, 255, 255, 0.22), transparent 18%),
+    linear-gradient(180deg, #f3c98b, #bd8158);
+  box-shadow: inset 0 -8px 0 rgba(103, 62, 45, 0.16);
+}
+
+.hud__school-teacher-hair {
+  z-index: 2;
+  top: -3px;
+  width: 92px;
+  height: 36px;
+  border-radius: 50% 50% 26% 26%;
+  background: linear-gradient(180deg, #2e2031, #19141f);
 }
 
 .hud__school-teacher-eyes {
-  top: 32px;
-  width: 50px;
-  height: 10px;
+  z-index: 3;
+  top: 34px;
+  width: 54px;
+  height: 12px;
   opacity: 0;
-  transition: opacity 120ms ease;
 }
 
-.hud__school-teacher.is-looking .hud__school-teacher-eyes {
+.hud__school-teacher.is-looking .hud__school-teacher-eyes,
+.hud__school-teacher.is-turning .hud__school-teacher-eyes {
   opacity: 1;
 }
 
@@ -6244,10 +6386,11 @@ body.is-builder-resizing * {
 .hud__school-teacher-eyes::after {
   content: '';
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: #111820;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
 }
 
 .hud__school-teacher-eyes::before {
@@ -6258,60 +6401,222 @@ body.is-builder-resizing * {
   right: 6px;
 }
 
-.hud__school-teacher-body {
-  top: 76px;
-  width: 112px;
-  height: 88px;
-  border-radius: 30px 30px 12px 12px;
-  background: linear-gradient(180deg, #7d466b, #412d55);
+.hud__school-teacher-nose {
+  z-index: 3;
+  top: 44px;
+  width: 11px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(124, 76, 54, 0.34);
+  opacity: 0;
 }
 
-.hud__school-desk {
+.hud__school-teacher.is-looking .hud__school-teacher-nose {
+  opacity: 1;
+}
+
+.hud__school-teacher-body {
+  top: 76px;
+  width: 122px;
+  height: 102px;
+  border-radius: 32px 32px 12px 12px;
+  background:
+    linear-gradient(90deg, transparent 0 42%, rgba(255, 255, 255, 0.18) 43% 47%, transparent 48% 100%),
+    linear-gradient(180deg, #8d4f72, #3e315d);
+}
+
+.hud__school-teacher-arm {
+  top: 104px;
+  width: 112px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f0c184, #b97855);
+  transform: translateX(-20%) rotate(-17deg);
+}
+
+.hud__school-teacher-chalk {
+  top: 95px;
+  left: 18px;
+  width: 32px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f4ffe9;
+  transform: rotate(-17deg);
+  opacity: 0.9;
+}
+
+.hud__school-teacher.is-looking .hud__school-teacher-arm,
+.hud__school-teacher.is-looking .hud__school-teacher-chalk {
+  opacity: 0.34;
+}
+
+.hud__school-student-desk {
   position: absolute;
   left: 8%;
   right: 8%;
-  bottom: 24px;
-  height: 42px;
+  bottom: 22px;
+  height: 48px;
   border-radius: 10px;
-  background: linear-gradient(180deg, #bd7940, #714125);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 45%),
+    linear-gradient(180deg, #c77f45, #714125);
+  box-shadow: 0 16px 24px rgba(0, 0, 0, 0.22);
 }
 
-.hud__school-desk span {
+.hud__school-student-paper {
   position: absolute;
-  bottom: 42px;
-  width: 76px;
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.hud__school-desk span:nth-child(1) {
   left: 18%;
-  transform: rotate(-7deg);
+  bottom: 41px;
+  width: 120px;
+  height: 35px;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 8px, rgba(68, 91, 125, 0.22) 9px 10px),
+    #f8f3df;
+  transform: rotate(-5deg);
 }
 
-.hud__school-desk span:nth-child(2) {
-  left: 42%;
-}
-
-.hud__school-desk span:nth-child(3) {
-  right: 18%;
-  transform: rotate(6deg);
-}
-
-.hud__school-teacher-status {
-  justify-self: center;
-  padding: 8px 14px;
+.hud__school-student-pencil {
+  position: absolute;
+  left: calc(18% + 74px);
+  bottom: 58px;
+  width: 70px;
+  height: 8px;
   border-radius: 999px;
+  background: linear-gradient(90deg, #f4d35e 0 76%, #f3c98b 76% 88%, #26212c 88% 100%);
+  transform: rotate(-18deg);
+}
+
+.hud__school-teacher.is-away .hud__school-student-pencil {
+  animation: hud-school-pencil-write 320ms ease-in-out infinite;
+}
+
+.hud__school-teacher.is-turning .hud__school-student-pencil,
+.hud__school-teacher.is-looking .hud__school-student-pencil {
+  animation: none;
+  transform: rotate(-18deg) translateY(-3px);
+}
+
+.hud__school-typing-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.34fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.hud__school-type-target {
+  min-height: 74px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 5px;
+  padding: 13px;
+  border-radius: 10px;
+  background: rgba(5, 9, 14, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.hud__school-type-char {
+  width: 24px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
-  color: #fff5db;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 18px;
   font-weight: 950;
+  line-height: 1;
+}
+
+.hud__school-type-char.is-space {
+  width: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.hud__school-type-char.is-typed {
+  background: #65f18d;
+  color: #101820;
+  transform: translateY(-1px);
+}
+
+.hud__school-type-char.is-current {
+  outline: 3px solid #ffd166;
+  outline-offset: 2px;
+}
+
+.hud__school-teacher.is-looking .hud__school-type-char.is-current {
+  outline-color: #ff5f7e;
+}
+
+.hud__school-type-copy {
+  min-height: 74px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hud__school-type-copy span {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 12px;
+  font-weight: 850;
   text-transform: uppercase;
 }
 
-.hud__school-teacher.is-looking .hud__school-teacher-status {
-  background: rgba(255, 109, 141, 0.18);
-  color: #ffb6c5;
+.hud__school-type-copy strong {
+  min-height: 20px;
+  color: #fff5db;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+@keyframes hud-school-teacher-turn {
+  0% {
+    transform: rotateY(178deg);
+  }
+  55% {
+    transform: rotateY(82deg) translateX(-6px);
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+@keyframes hud-school-pencil-write {
+  0%,
+  100% {
+    transform: rotate(-18deg) translate(0, 0);
+  }
+  50% {
+    transform: rotate(-12deg) translate(6px, 2px);
+  }
+}
+
+@keyframes hud-school-danger-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes hud-school-teacher-turn-compact {
+  0% {
+    transform: rotateY(178deg) scale(0.52);
+  }
+  55% {
+    transform: rotateY(82deg) translateX(-4px) scale(0.52);
+  }
+  100% {
+    transform: rotateY(0deg) scale(0.52);
+  }
 }
 
 .hud__school-meter {
@@ -6332,11 +6637,6 @@ body.is-builder-resizing * {
 .hud__school-hold-button {
   justify-self: center;
   min-width: 220px;
-}
-
-.hud__school-teacher.is-holding .hud__school-hold-button {
-  transform: translateY(2px) scale(0.99);
-  filter: brightness(1.12);
 }
 
 .hud__school-tray-stage {
@@ -8743,28 +9043,110 @@ canvas {
     min-height: 44px;
   }
 
+  .hud__school-teacher {
+    grid-template-rows: auto minmax(104px, 1fr) auto auto;
+  }
+
+  .hud__school-teacher-topline {
+    gap: 6px;
+  }
+
+  .hud__school-teacher-status {
+    min-width: 92px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .hud__school-traffic {
+    padding: 6px 8px;
+  }
+
+  .hud__school-light {
+    width: 13px;
+    height: 13px;
+  }
+
   .hud__school-teacher-scene {
-    min-height: 112px;
+    min-height: 104px;
   }
 
   .hud__school-teacher-figure {
-    top: 10px;
-    transform: translateX(-50%) rotateY(180deg) scale(0.66);
+    right: 11%;
+    top: 14px;
+    transform: scale(0.52);
     transform-origin: top center;
   }
 
+  .hud__school-teacher.is-away .hud__school-teacher-figure {
+    transform: rotateY(178deg) scale(0.52);
+  }
+
+  .hud__school-teacher.is-turning .hud__school-teacher-figure {
+    animation: hud-school-teacher-turn-compact 660ms ease-in-out both;
+  }
+
   .hud__school-teacher.is-looking .hud__school-teacher-figure {
-    transform: translateX(-50%) rotateY(0deg) scale(0.66);
+    transform: rotateY(0deg) scale(0.52);
   }
 
-  .hud__school-desk {
-    bottom: 14px;
-    height: 28px;
+  .hud__school-blackboard {
+    left: 5%;
+    right: 37%;
+    top: 10px;
+    min-height: 52px;
+    padding: 8px 10px;
+    border-width: 5px;
   }
 
-  .hud__school-desk span {
-    bottom: 28px;
-    width: 56px;
+  .hud__school-blackboard span {
+    font-size: 9px;
+  }
+
+  .hud__school-blackboard strong {
+    font-size: 18px;
+  }
+
+  .hud__school-student-desk {
+    bottom: 8px;
+    height: 22px;
+  }
+
+  .hud__school-student-paper {
+    bottom: 20px;
+    width: 74px;
+    height: 20px;
+  }
+
+  .hud__school-student-pencil {
+    left: calc(18% + 46px);
+    bottom: 31px;
+    width: 44px;
+  }
+
+  .hud__school-typing-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(74px, 0.22fr);
+    gap: 6px;
+  }
+
+  .hud__school-type-target,
+  .hud__school-type-copy {
+    min-height: 42px;
+    padding: 6px;
+  }
+
+  .hud__school-type-char {
+    width: 16px;
+    height: 22px;
+    border-radius: 5px;
+    font-size: 12px;
+  }
+
+  .hud__school-type-char.is-space {
+    width: 12px;
+  }
+
+  .hud__school-type-copy strong {
+    font-size: 11px;
   }
 
   .hud__school-meter {
@@ -8870,7 +9252,10 @@ canvas {
   .hud__blackjack-card-face::after,
   .hud__school-result-burst,
   .hud__school-board-token,
-  .hud__school-combo-digit {
+  .hud__school-combo-digit,
+  .hud__school-teacher-figure,
+  .hud__school-student-pencil,
+  .hud__school-teacher-status {
     animation: none !important;
     transition: none !important;
   }

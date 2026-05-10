@@ -26,6 +26,7 @@ import {
 } from './workoutActivities.js';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
+import { SchoolTeacherPreviewRenderer } from '../ui/SchoolTeacherPreviewRenderer.js';
 import { assets } from '../world/assetManifest.js';
 import {
   ATTACHMENT_SLOTS,
@@ -508,6 +509,7 @@ export class Game {
     this.blackjackPreviewSession = null;
     this.schoolMicrogameNpcId = '';
     this.schoolMicrogameNpcName = 'Teacher';
+    this.schoolMicrogameNpcModelId = 'martha';
     this.schoolMicrogamePreviewMode = false;
     this.schoolMicrogame = null;
     this.schoolMicrogameRequestInFlight = false;
@@ -515,6 +517,7 @@ export class Game {
     this.schoolMicrogameLastTickAt = 0;
     this.schoolMicrogameSequence = 0;
     this.schoolMicrogameRandomCursor = 0;
+    this.schoolTeacherPreviewRenderer = null;
     this.debugMinigameRequestHandled = false;
     this.debugMinigameRequestRetryTimeout = 0;
     this.aimPoseDebugVisible = false;
@@ -4467,6 +4470,24 @@ export class Game {
     return next;
   }
 
+  normalizeTeacherTypingText(value = '') {
+    return String(value ?? '')
+      .toUpperCase()
+      .replace(/[^A-Z ]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  chooseTeacherTypingSentence() {
+    return this.schoolPick([
+      'MEET ME AFTER CLASS',
+      'THE ANSWER IS IN THE LOCKER',
+      'KEEP YOUR PENCIL MOVING',
+      'THE BELL RINGS TOO SOON',
+      'STAY COOL AND TYPE FAST'
+    ]);
+  }
+
   createSchoolMicrogameRound(gameId = SCHOOL_MICROGAME_DEFAULT_ID) {
     const definition = getSchoolMicrogameDefinition(gameId) ?? getSchoolMicrogameDefinition(SCHOOL_MICROGAME_DEFAULT_ID);
     const round = {
@@ -4509,10 +4530,16 @@ export class Game {
       round.sequence = Array.from({ length: 4 }, () => this.schoolPick(keys));
       data.enteredCount = 0;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.teacherLooking) {
+      round.sentence = this.normalizeTeacherTypingText(this.chooseTeacherTypingSentence());
       data.progress = 0;
-      data.holding = false;
+      data.typedText = '';
+      data.mistakes = 0;
       data.teacherLooking = false;
-      data.nextLookAt = performance.now() + this.schoolRandomInt(3600, 4600);
+      data.teacherMode = 'away';
+      data.nextLookAt = performance.now() + this.schoolRandomInt(3000, 4100);
+      data.turnStartedAt = 0;
+      data.turnEndsAt = 0;
+      data.lookStartedAt = 0;
       data.lookEndsAt = 0;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
       data.balance = (this.schoolRandom() - 0.5) * 0.34;
@@ -4568,6 +4595,7 @@ export class Game {
     this.closePhoneMenu();
     this.schoolMicrogameNpcId = npcId;
     this.schoolMicrogameNpcName = String(interaction?.npc?.name ?? 'Teacher');
+    this.schoolMicrogameNpcModelId = String(interaction?.npc?.modelId ?? this.schoolMicrogameNpcModelId ?? 'martha');
     this.schoolMicrogamePreviewMode = false;
     const gameId = this.chooseSchoolMicrogameId(interaction?.gameId ?? interaction?.npc?.schoolMicrogameId ?? SCHOOL_MICROGAME_ALL_ID);
     this.prepareSchoolMicrogame(gameId, { visible: true });
@@ -4577,6 +4605,7 @@ export class Game {
     this.closePhoneMenu();
     this.schoolMicrogameNpcId = 'debug-school';
     this.schoolMicrogameNpcName = 'Debug Teacher';
+    this.schoolMicrogameNpcModelId = 'martha';
     this.schoolMicrogamePreviewMode = true;
     this.prepareSchoolMicrogame(this.chooseSchoolMicrogameId(gameId), { visible: true });
     this.hud.showToast('School microgame HUD preview opened.');
@@ -4587,6 +4616,8 @@ export class Game {
     this.schoolMicrogameSequence += 1;
     this.schoolMicrogameRandomCursor = (Date.now() + this.schoolMicrogameSequence * 2654435761) >>> 0;
     const { round, data } = this.createSchoolMicrogameRound(gameId);
+    round.teacherName = this.schoolMicrogameNpcName;
+    round.teacherModelId = this.schoolMicrogameNpcModelId;
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameLastTickAt = performance.now();
     this.schoolMicrogame = {
@@ -4630,11 +4661,17 @@ export class Game {
       this.schoolMicrogame.data.previewEndsAt = now + 1500;
     } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
       this.schoolMicrogame.data.progress = 0;
-      this.schoolMicrogame.data.holding = false;
+      this.schoolMicrogame.data.typedText = '';
+      this.schoolMicrogame.data.mistakes = 0;
       this.schoolMicrogame.data.teacherLooking = false;
-      this.schoolMicrogame.data.nextLookAt = now + this.schoolRandomInt(3600, 4600);
+      this.schoolMicrogame.data.teacherMode = 'away';
+      this.schoolMicrogame.data.nextLookAt = now + this.schoolRandomInt(3000, 4100);
+      this.schoolMicrogame.data.turnStartedAt = 0;
+      this.schoolMicrogame.data.turnEndsAt = 0;
+      this.schoolMicrogame.data.lookStartedAt = 0;
       this.schoolMicrogame.data.lookEndsAt = 0;
     }
+    this.input.clearKeyPressQueue?.();
     this.schoolMicrogameLastTickAt = now;
     this.playSoundEffect(this.phoneUnlockSound);
     this.syncSchoolMicrogameHud();
@@ -4649,6 +4686,7 @@ export class Game {
       loading: false,
       error: ''
     });
+    this.schoolTeacherPreviewRenderer?.setActive(false);
   }
 
   syncSchoolMicrogameHud({ loading = this.schoolMicrogameRequestInFlight, error = '' } = {}) {
@@ -4658,6 +4696,59 @@ export class Game {
       loading,
       error
     });
+    this.syncSchoolTeacherPreview();
+  }
+
+  getOrCreateSchoolTeacherPreviewRenderer() {
+    if (!this.schoolTeacherPreviewRenderer) {
+      this.schoolTeacherPreviewRenderer = new SchoolTeacherPreviewRenderer({
+        library: this.library
+      });
+    }
+
+    return this.schoolTeacherPreviewRenderer;
+  }
+
+  syncSchoolTeacherPreview() {
+    const game = this.schoolMicrogame;
+    const isTeacherGame = (
+      this.hud.isSchoolMicrogameOpen()
+      && game?.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking
+      && game.phase === 'playing'
+    );
+    if (!isTeacherGame) {
+      this.schoolTeacherPreviewRenderer?.setActive(false);
+      return;
+    }
+
+    const mount = this.hud.getSchoolTeacherPreviewMount?.();
+    if (!mount) {
+      return;
+    }
+
+    const renderer = this.getOrCreateSchoolTeacherPreviewRenderer();
+    renderer.mount(mount);
+    renderer.setActive(true);
+    void renderer.setTeacherModel(game.round?.teacherModelId ?? this.schoolMicrogameNpcModelId);
+    const sentence = this.normalizeTeacherTypingText(game.round?.sentence ?? '');
+    const typedText = this.normalizeTeacherTypingText(game.data?.typedText ?? '');
+    renderer.setState({
+      phase: game.phase,
+      teacherMode: String(game.data?.teacherMode ?? (game.data?.teacherLooking ? 'looking' : 'away')),
+      sentence,
+      typedText,
+      progress: sentence.length > 0 ? Math.min(100, (typedText.length / sentence.length) * 100) : 0,
+      turnStartedAt: Number(game.data?.turnStartedAt ?? 0) || 0,
+      turnEndsAt: Number(game.data?.turnEndsAt ?? 0) || 0,
+      lookStartedAt: Number(game.data?.lookStartedAt ?? 0) || 0,
+      lookEndsAt: Number(game.data?.lookEndsAt ?? 0) || 0,
+      remainingMs: Number(game.remainingMs ?? 0) || 0
+    });
+  }
+
+  updateSchoolTeacherPreview(deltaSeconds = 0) {
+    this.syncSchoolTeacherPreview();
+    this.schoolTeacherPreviewRenderer?.update(deltaSeconds);
   }
 
   getSchoolMicrogameDebugState() {
@@ -4762,28 +4853,11 @@ export class Game {
 
     if (action === 'hold:start') {
       this.schoolMicrogameHoldActive = true;
-      if (game.phase === 'playing' && game.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
-        if (game.data.teacherLooking) {
-          void this.finishSchoolMicrogame(false, 'Caught', 'That stare could grade homework by itself.');
-          return;
-        }
-
-        game.data.holding = true;
-        game.data.progress = Math.min(100, Number(game.data.progress ?? 0) + 55);
-        if (game.data.progress >= 100) {
-          void this.finishSchoolMicrogame(true, 'Finished', 'Perfect timing, suspiciously neat handwriting.');
-          return;
-        }
-        this.syncSchoolMicrogameHud();
-      }
       return;
     }
 
     if (action === 'hold:end') {
       this.schoolMicrogameHoldActive = false;
-      if (game.data) {
-        game.data.holding = false;
-      }
       this.syncSchoolMicrogameHud();
       return;
     }
@@ -4919,6 +4993,91 @@ export class Game {
     this.syncSchoolMicrogameHud();
   }
 
+  updateTeacherLookingState(game = this.schoolMicrogame, now = performance.now()) {
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.teacherLooking || game.phase !== 'playing') {
+      return false;
+    }
+
+    const teacherMode = String(game.data.teacherMode ?? (game.data.teacherLooking ? 'looking' : 'away'));
+    if (teacherMode === 'away' && now >= Number(game.data.nextLookAt ?? 0)) {
+      game.data.teacherMode = 'turning';
+      game.data.teacherLooking = false;
+      game.data.turnStartedAt = now;
+      game.data.turnEndsAt = now + this.schoolRandomInt(880, 1120);
+      game.message = 'Yellow light. Stop.';
+      return true;
+    }
+    if (teacherMode === 'turning' && now >= Number(game.data.turnEndsAt ?? 0)) {
+      game.data.teacherMode = 'looking';
+      game.data.teacherLooking = true;
+      game.data.lookStartedAt = now;
+      game.data.lookEndsAt = now + this.schoolRandomInt(900, 1250);
+      game.message = 'Red light. Freeze.';
+      return true;
+    }
+    if (teacherMode === 'looking' && now >= Number(game.data.lookEndsAt ?? 0)) {
+      game.data.teacherMode = 'away';
+      game.data.teacherLooking = false;
+      game.data.nextLookAt = now + this.schoolRandomInt(2100, 3100);
+      game.message = 'Green light. Type.';
+      return true;
+    }
+
+    return false;
+  }
+
+  pushTeacherTypingKey(key = '') {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.teacherLooking || game.phase !== 'playing') {
+      return;
+    }
+
+    const inputKey = String(key ?? '').toUpperCase();
+    const isBackspace = inputKey === 'BACKSPACE';
+    const isTextKey = isBackspace || inputKey === ' ' || /^[A-Z]$/.test(inputKey);
+    if (!isTextKey) {
+      return;
+    }
+
+    const teacherMode = String(game.data.teacherMode ?? (game.data.teacherLooking ? 'looking' : 'away'));
+    if (teacherMode === 'looking') {
+      void this.finishSchoolMicrogame(false, 'Caught', 'The teacher saw every suspicious keystroke.');
+      return;
+    }
+
+    const sentence = this.normalizeTeacherTypingText(game.round.sentence ?? '');
+    let typedText = String(game.data.typedText ?? '').toUpperCase().replace(/[^A-Z ]+/g, '');
+    if (isBackspace) {
+      typedText = typedText.slice(0, -1);
+      game.data.typedText = typedText;
+      game.data.progress = sentence.length > 0 ? Math.min(100, (typedText.length / sentence.length) * 100) : 0;
+      game.message = typedText ? 'Green light. Clean correction.' : 'Green light. Fresh page.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    const expected = sentence[typedText.length] ?? '';
+    if (inputKey !== expected) {
+      game.data.mistakes = Math.min(99, Math.floor(Number(game.data.mistakes ?? 0) || 0) + 1);
+      game.message = expected === ' ' ? 'Green light. Leave a gap.' : `Green light. Next: ${expected}`;
+      this.playSoundEffect(this.playingCardSound);
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    typedText += expected;
+    game.data.typedText = typedText;
+    game.data.progress = sentence.length > 0 ? Math.min(100, (typedText.length / sentence.length) * 100) : 100;
+    this.playSoundEffect(this.typingOnKeyboardSound);
+    if (typedText.length >= sentence.length) {
+      void this.finishSchoolMicrogame(true, 'Finished', 'Sentence finished. The teacher never saw the pencil move.');
+      return;
+    }
+
+    game.message = 'Green light. Keep typing.';
+    this.syncSchoolMicrogameHud();
+  }
+
   handleSortBackpackAction(action = '') {
     const game = this.schoolMicrogame;
     if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.sortBackpack) {
@@ -5034,7 +5193,7 @@ export class Game {
         const inside = marker >= Number(game.round.targetStart ?? 0) && marker <= Number(game.round.targetEnd ?? 0);
         void this.finishSchoolMicrogame(inside, inside ? 'Made It' : 'Out Of Time', inside ? 'You hit the door right on the bell.' : 'The bell does not negotiate.');
       } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
-        void this.finishSchoolMicrogame(false, 'Unfinished', 'The bell caught your half-written notes.');
+        void this.finishSchoolMicrogame(false, 'Unfinished', 'The bell rang before the sentence was finished.');
       } else {
         void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
       }
@@ -5088,8 +5247,35 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
-      const holding = this.schoolMicrogameHoldActive || this.input.isPressed('Space');
-      game.data.holding = holding;
+      const typingCodes = ['Backspace', 'Space'];
+      for (let charCode = 65; charCode <= 90; charCode += 1) {
+        typingCodes.push(`Key${String.fromCharCode(charCode)}`);
+      }
+
+      for (let index = 0; index < 32; index += 1) {
+        const keyEvent = this.input.consumeNextKeyEvent(typingCodes);
+        if (!keyEvent) {
+          return;
+        }
+
+        this.updateTeacherLookingState(game, Number(keyEvent.at ?? performance.now()));
+        if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
+          return;
+        }
+
+        const code = keyEvent.code;
+        if (code === 'Backspace') {
+          this.pushTeacherTypingKey('Backspace');
+        } else if (code === 'Space') {
+          this.pushTeacherTypingKey(' ');
+        } else if (code.startsWith('Key')) {
+          this.pushTeacherTypingKey(code.slice(3));
+        }
+
+        if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
+          return;
+        }
+      }
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
@@ -5121,26 +5307,7 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
-      if (game.data.teacherLooking && now >= Number(game.data.lookEndsAt ?? 0)) {
-        game.data.teacherLooking = false;
-        game.data.nextLookAt = now + this.schoolRandomInt(980, 1500);
-      } else if (!game.data.teacherLooking && now >= Number(game.data.nextLookAt ?? 0)) {
-        game.data.teacherLooking = true;
-        game.data.lookEndsAt = now + this.schoolRandomInt(480, 760);
-      }
-
-      if (game.data.holding && game.data.teacherLooking) {
-        void this.finishSchoolMicrogame(false, 'Caught', 'That stare could grade homework by itself.');
-        return;
-      }
-      if (game.data.holding && !game.data.teacherLooking) {
-        game.data.progress = Math.min(100, Number(game.data.progress ?? 0) + dt * 100);
-      } else {
-        game.data.progress = Math.max(0, Number(game.data.progress ?? 0) - dt * 4);
-      }
-      if (game.data.progress >= 100) {
-        void this.finishSchoolMicrogame(true, 'Finished', 'Perfect timing, suspiciously neat handwriting.');
-      }
+      this.updateTeacherLookingState(game, now);
       return;
     }
 
@@ -5802,6 +5969,16 @@ export class Game {
       openSchool: (minigameId = SCHOOL_MICROGAME_DEFAULT_ID) => this.openDebugSchoolMicrogame(minigameId),
       schoolAction: (action = '') => this.handleSchoolMicrogameAction(action),
       schoolState: () => this.getSchoolMicrogameDebugState(),
+      schoolTeacherPreview: () => ({
+        active: this.schoolTeacherPreviewRenderer?.active === true,
+        mode: this.schoolTeacherPreviewRenderer?.state?.teacherMode ?? '',
+        yaw: Number.isFinite(this.schoolTeacherPreviewRenderer?.teacherYaw)
+          ? this.schoolTeacherPreviewRenderer.teacherYaw
+          : null,
+        targetYaw: Number.isFinite(this.schoolTeacherPreviewRenderer?.resolveTeacherYaw?.())
+          ? this.schoolTeacherPreviewRenderer.resolveTeacherYaw()
+          : null
+      }),
       schoolGames: () => listSchoolMicrogames().map((game) => game.id)
     };
     globalThis.openMinigameHud = (...args) => globalThis.__stickRpgMinigameDebug.open(...args);
@@ -7763,6 +7940,7 @@ export class Game {
     }
     if (this.hud.isSchoolMicrogameOpen()) {
       this.updateSchoolMicrogame(deltaSeconds);
+      this.updateSchoolTeacherPreview(deltaSeconds);
     }
 
     if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {

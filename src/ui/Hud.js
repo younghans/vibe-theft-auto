@@ -724,7 +724,12 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   } else if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
     base.push(String(data.enteredCount ?? 0));
   } else if (gameId === SCHOOL_MICROGAME_IDS.teacherLooking) {
-    base.push(Boolean(data.teacherLooking) ? 'look' : 'away', Boolean(data.holding) ? 'hold' : 'free', String(Math.floor(Number(data.progress ?? 0) / 5)));
+    base.push(
+      String(data.teacherMode ?? (data.teacherLooking ? 'looking' : 'away')),
+      String(data.typedText ?? ''),
+      String(data.mistakes ?? 0),
+      String(Math.floor(Number(data.progress ?? 0) / 4))
+    );
   } else if (gameId === SCHOOL_MICROGAME_IDS.cafeteriaTray) {
     base.push(String(Math.round(Number(data.balance ?? 0) * 24)));
   } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
@@ -846,26 +851,66 @@ function createCopyNotesMarkup(game = null) {
 }
 
 function createTeacherLookingMarkup(game = null) {
+  const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const looking = Boolean(data.teacherLooking);
-  const holding = Boolean(data.holding);
+  const sentence = String(round.sentence ?? 'MEET ME AFTER CLASS');
+  const typedText = String(data.typedText ?? '').toUpperCase().replace(/[^A-Z ]+/g, '');
+  const teacherMode = String(data.teacherMode ?? (data.teacherLooking ? 'looking' : 'away'));
+  const modeClass = teacherMode === 'looking' ? 'is-looking' : teacherMode === 'turning' ? 'is-turning' : 'is-away';
+  const statusLabel = teacherMode === 'looking' ? 'Red light' : teacherMode === 'turning' ? 'Yellow light' : 'Green light';
+  const sceneLabel = teacherMode === 'looking' ? 'Freeze' : teacherMode === 'turning' ? 'Stop' : 'Write';
+  const progress = sentence.length > 0 ? Math.min(100, (typedText.length / sentence.length) * 100) : 0;
+  const targetMarkup = Array.from(sentence).map((char, index) => {
+    const isTyped = index < typedText.length;
+    const isCurrent = index === typedText.length;
+    const isSpace = char === ' ';
+    return `
+      <span class="hud__school-type-char${isTyped ? ' is-typed' : ''}${isCurrent ? ' is-current' : ''}${isSpace ? ' is-space' : ''}" aria-label="${isSpace ? 'space' : escapeHtml(char)}">
+        ${isSpace ? '&nbsp;' : escapeHtml(char)}
+      </span>
+    `;
+  }).join('');
   return `
-    <div class="hud__school-teacher${looking ? ' is-looking' : ' is-away'}${holding ? ' is-holding' : ''}">
-      <div class="hud__school-teacher-scene">
-        <div class="hud__school-teacher-figure" aria-hidden="true">
-          <span class="hud__school-teacher-head"></span>
-          <span class="hud__school-teacher-eyes"></span>
-          <span class="hud__school-teacher-body"></span>
+    <div class="hud__school-teacher ${modeClass}">
+      <div class="hud__school-teacher-topline">
+        <div class="hud__school-traffic" aria-hidden="true">
+          <span class="hud__school-light is-green${teacherMode === 'away' ? ' is-active' : ''}"></span>
+          <span class="hud__school-light is-yellow${teacherMode === 'turning' ? ' is-active' : ''}"></span>
+          <span class="hud__school-light is-red${teacherMode === 'looking' ? ' is-active' : ''}"></span>
         </div>
-        <div class="hud__school-desk" aria-hidden="true">
-          <span></span><span></span><span></span>
+        <div class="hud__school-teacher-status">${escapeHtml(statusLabel)}</div>
+      </div>
+      <div class="hud__school-teacher-scene" data-school-teacher-preview>
+        <div class="hud__school-teacher-fallback" aria-hidden="true">
+          <div class="hud__school-blackboard">
+            <span>${escapeHtml(statusLabel)}</span>
+            <strong>${escapeHtml(sceneLabel)}</strong>
+          </div>
+          <div class="hud__school-teacher-figure">
+            <span class="hud__school-teacher-hair"></span>
+            <span class="hud__school-teacher-head"></span>
+            <span class="hud__school-teacher-eyes"></span>
+            <span class="hud__school-teacher-nose"></span>
+            <span class="hud__school-teacher-body"></span>
+            <span class="hud__school-teacher-arm"></span>
+            <span class="hud__school-teacher-chalk"></span>
+          </div>
+          <div class="hud__school-student-desk">
+            <span class="hud__school-student-paper"></span>
+            <span class="hud__school-student-pencil"></span>
+          </div>
         </div>
       </div>
-      <div class="hud__school-teacher-status">${looking ? 'Teacher is looking' : 'Write now'}</div>
-      ${createSchoolProgressMarkup(data.progress ?? 0, 'Writing progress')}
-      <button class="hud__school-hold-button" type="button" data-school-microgame-hold>
-        Write
-      </button>
+      <div class="hud__school-typing-panel">
+        <div class="hud__school-type-target" aria-label="Target sentence">
+          ${targetMarkup}
+        </div>
+        <div class="hud__school-type-copy">
+          <span>${escapeHtml(String(typedText.length).padStart(2, '0'))}/${escapeHtml(String(sentence.length).padStart(2, '0'))}</span>
+          <strong>${typedText ? escapeHtml(typedText) : '&nbsp;'}</strong>
+        </div>
+      </div>
+      ${createSchoolProgressMarkup(progress, 'Sentence progress')}
     </div>
   `;
 }
@@ -4654,6 +4699,10 @@ export class Hud {
 
   isSchoolMicrogameOpen() {
     return Boolean(this.schoolMicrogameVisible && this.schoolMicrogameRoot && !this.schoolMicrogameRoot.hidden);
+  }
+
+  getSchoolTeacherPreviewMount() {
+    return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
 
   setSchoolMicrogameState({

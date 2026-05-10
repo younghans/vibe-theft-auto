@@ -147,12 +147,12 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     id: SCHOOL_MICROGAME_IDS.teacherIsLooking,
     title: 'Teacher Is Looking',
     shortTitle: 'Teacher',
-    subtitle: 'Write while the teacher looks away. Freeze when watched.',
-    description: 'Hold write while the teacher looks away. Let go before they turn.',
+    subtitle: 'Green light: type. Red light: freeze.',
+    description: 'Type the sentence while the teacher faces the board. Stop when they turn around.',
     eyebrow: 'Risky Notes',
-    prompt: 'Risky writing drill',
+    prompt: 'Type secret sentence',
     overheadText: 'E for risky writing',
-    durationMs: 8500,
+    durationMs: 10000,
     rewardXp: 13,
     rewardMoney: 20,
     accent: '#ff7a66',
@@ -428,8 +428,8 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
     return {
       ...base,
       targetProgress: 100,
-      lookCycleMs: 1800,
-      lookWindowMs: 620,
+      lookCycleMs: 2600,
+      lookWindowMs: 1050,
       startingPhaseMs: Math.floor(rng() * 700)
     };
   }
