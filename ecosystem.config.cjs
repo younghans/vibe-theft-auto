@@ -1,3 +1,36 @@
+const path = require('node:path');
+
+function loadEnvCandidate(candidate) {
+  if (!candidate) {
+    return;
+  }
+
+  try {
+    process.loadEnvFile(path.resolve(__dirname, candidate));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.warn(`[env] Could not load ${candidate}: ${error.message}`);
+    }
+  }
+}
+
+const configuredNodeEnv = String(process.env.NODE_ENV ?? 'production').trim().toLowerCase();
+const configuredRegion = String(process.env.REGION ?? '').trim();
+const envCandidates = configuredNodeEnv === 'production'
+  ? [
+      configuredRegion ? `.env.${configuredRegion}.production` : '',
+      '.env.production',
+      '.env'
+    ]
+  : [
+      '.env.local',
+      '.env'
+    ];
+
+for (const candidate of envCandidates) {
+  loadEnvCandidate(candidate);
+}
+
 const passthroughEnvKeys = [
   'PORT',
   'COLYSEUS_PORT',
