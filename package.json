@@ -48,6 +48,7 @@
     "@colyseus/core": "^0.17.43",
     "@colyseus/schema": "^4.0.19",
     "@colyseus/sdk": "^0.17.35",
+    "@colyseus/tools": "^0.17.19",
     "@colyseus/ws-transport": "^0.17.9",
     "concurrently": "^9.2.1",
     "esbuild": "^0.28.0",
