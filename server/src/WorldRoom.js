@@ -1,4 +1,4 @@
-import { Room } from 'colyseus';
+import { Room } from '@colyseus/core';
 import { MapSchema, schema } from '@colyseus/schema';
 import {
   COMBAT_PICKUP_SPAWNS,

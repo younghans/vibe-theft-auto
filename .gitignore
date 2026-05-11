@@ -8,6 +8,7 @@ dist/
 .dist-staging/
 .tmp-gltf-estimate/
 test-results/
+tmp-*.spec.cjs
 tools/mixamo-optimizer/node_modules/
 assets/mixamo/characters/*.fbx
 assets/mixamo/characters/*.FBX

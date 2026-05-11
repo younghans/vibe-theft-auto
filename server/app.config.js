@@ -2,7 +2,7 @@ import './src/loadEnv.js';
 import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineRoom, defineServer } from 'colyseus';
+import { defineRoom, defineServer } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { WorldRoom } from './src/WorldRoom.js';
 import {

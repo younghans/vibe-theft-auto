@@ -278,7 +278,7 @@ ADMIN_KEYS=<existing-admin-key-list>
 AGENT_WORKER_TOKENS=<long-random-worker-token>
 ```
 
-The admin browser URL still needs `?adminKey=<admin-key>`. Add `&agentAutoDeploy=1` only for admins who should see the `Auto deploy` mode. The worker still refuses production deploys unless its own deploy environment enables them.
+The admin browser URL still needs `?adminKey=<admin-key>`. Add `&agentAutoDeploy=1` only for admins who should see the `Auto deploy` mode. The worker still refuses production deploys unless its own deploy environment enables them. Do not commit, screenshot, paste, or link URLs containing a real admin key; rotate the key if one is accidentally shared.
 
 On the extra PC, install prerequisites:
 
