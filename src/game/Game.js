@@ -2058,7 +2058,10 @@ export class Game {
       this.renderer.setPixelRatio(1);
       this.renderer.setSize(outputWidth, outputHeight, false);
       this.renderer.setRenderTarget(null);
-      this.renderer.render(this.scene, mapCamera);
+      this.renderWorldMapCaptureFrame(mapCamera, {
+        width: outputWidth,
+        height: outputHeight
+      });
 
       const dataUrl = this.renderer.domElement.toDataURL('image/webp', WORLD_MAP_CAPTURE_QUALITY);
       if (!dataUrl.startsWith('data:image/webp;base64,')) {
@@ -2077,6 +2080,48 @@ export class Game {
       this.composer?.setSize?.(window.innerWidth, window.innerHeight);
       this.updatePostProcessingResolution();
       this.renderCurrentView();
+    }
+  }
+
+  renderWorldMapCaptureFrame(mapCamera, { width, height } = {}) {
+    let mapComposer = null;
+    let mapVibeShaderPass = null;
+    let mapOutputPass = null;
+
+    try {
+      mapComposer = new EffectComposer(this.renderer);
+      mapComposer.setPixelRatio(1);
+      mapComposer.setSize(width, height);
+
+      const mapRenderPass = new RenderPass(this.scene, mapCamera);
+      mapVibeShaderPass = new ShaderPass(createVibeShaderDefinition());
+      mapOutputPass = new OutputPass();
+      mapComposer.addPass(mapRenderPass);
+      mapComposer.addPass(mapVibeShaderPass);
+      mapComposer.addPass(mapOutputPass);
+
+      const defaultPreset = getVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID);
+      if (mapVibeShaderPass.uniforms?.uPreset) {
+        mapVibeShaderPass.uniforms.uPreset.value = defaultPreset.index;
+      }
+      if (mapVibeShaderPass.uniforms?.uIntensity) {
+        mapVibeShaderPass.uniforms.uIntensity.value = DEFAULT_VIBE_SHADER_INTENSITY;
+      }
+      if (mapVibeShaderPass.uniforms?.uResolution) {
+        mapVibeShaderPass.uniforms.uResolution.value.set(width, height);
+      }
+      if (mapVibeShaderPass.uniforms?.uTime) {
+        mapVibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
+      }
+
+      mapComposer.render();
+    } catch (error) {
+      console.error('[WorldMap] Satellite map shader render failed. Falling back to plain map render.', error);
+      this.renderer.render(this.scene, mapCamera);
+    } finally {
+      mapVibeShaderPass?.dispose?.();
+      mapOutputPass?.dispose?.();
+      mapComposer?.dispose?.();
     }
   }
 
