@@ -112,7 +112,15 @@ function getPersistenceEnvSummary(databaseUrl) {
     nodeEnv: String(process.env.NODE_ENV ?? ''),
     databaseUrlConfigured: Boolean(databaseUrl),
     worldPersistenceAllowFileFallback: isProductionFileFallbackAllowed(),
-    worldKey: getWorldKey()
+    worldKey: getWorldKey(),
+    visibleConfigKeys: [
+      'DATABASE_URL',
+      'WORLD_KEY',
+      'WORLD_LAYOUT_SEED_PATH',
+      'WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK',
+      'OPENAI_API_KEY',
+      'ADMIN_KEYS'
+    ].filter((key) => process.env[key] !== undefined)
   };
 }
 
@@ -707,8 +715,9 @@ function createConfiguredStore() {
 
   if (isProductionEnvironment()) {
     if (!isProductionFileFallbackAllowed()) {
-      logServer('world-persistence', 'Missing required production DATABASE_URL.', getPersistenceEnvSummary(databaseUrl));
-      throw new Error('DATABASE_URL is required in production deployments.');
+      const envSummary = getPersistenceEnvSummary(databaseUrl);
+      logServer('world-persistence', 'Missing required production DATABASE_URL.', envSummary);
+      throw new Error(`DATABASE_URL is required in production deployments. Runtime env summary: ${JSON.stringify(envSummary)}`);
     }
 
     logServer('world-persistence', 'DATABASE_URL is missing; using production file fallback.', getPersistenceEnvSummary(databaseUrl));
