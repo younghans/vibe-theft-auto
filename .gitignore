@@ -1,10 +1,16 @@
 .env
 .env.local
 .colyseus-cloud.json
+.codex/
+*.bundle
 node_modules/
 dist/
 .dist-staging/
 .tmp-gltf-estimate/
+test-results/
+tools/mixamo-optimizer/node_modules/
+assets/mixamo/characters/*.fbx
+assets/mixamo/characters/*.FBX
 server/data/world-backups/
 server/data/agent-tasks.json
 server/data/agent-deployments.json

@@ -37,7 +37,7 @@
     "validate:blackjack": "node scripts/validate-blackjack.mjs",
     "validate:computer-activity": "node scripts/validate-computer-activity.mjs",
     "validate:portraits": "node scripts/validate-npc-portraits.mjs",
-    "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/mixamo/characters/x-bot.fbx\" \"assets/mixamo/animations/walking.json\"",
+    "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/runtime/mixamo/characters/xBot.glb\" \"assets/mixamo/animations/walking.json\"",
     "extract:mixamo-animation": "node scripts/extract-fbx-animation.mjs \"assets/mixamo/animations/walking.fbx\" \"assets/mixamo/animations/walking.json\" Walking"
   },
   "keywords": [],

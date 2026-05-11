@@ -4,6 +4,8 @@ import process from 'node:process';
 
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { validateMixamoHumanoid } from '../src/animation/humanoid.js';
 
 globalThis.self = globalThis;
@@ -37,15 +39,32 @@ function getArrayBuffer(buffer) {
 const [, , characterArg, clipArg] = process.argv;
 
 if (!characterArg || !clipArg) {
-  console.error('Usage: node scripts/validate-mixamo-assets.mjs <character.fbx> <clip.json>');
+  console.error('Usage: node scripts/validate-mixamo-assets.mjs <character.fbx|character.glb> <clip.json>');
   process.exit(1);
 }
 
 const characterPath = path.resolve(characterArg);
 const clipPath = path.resolve(clipArg);
 
-const characterBytes = await fs.readFile(characterPath);
-const character = new FBXLoader().parse(getArrayBuffer(characterBytes), path.dirname(characterPath) + path.sep);
+async function loadCharacter(filePath) {
+  const bytes = await fs.readFile(filePath);
+  const extension = path.extname(filePath).toLowerCase();
+
+  if (extension === '.fbx') {
+    return new FBXLoader().parse(getArrayBuffer(bytes), path.dirname(filePath) + path.sep);
+  }
+
+  if (extension === '.glb' || extension === '.gltf') {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const gltf = await loader.parseAsync(getArrayBuffer(bytes), path.dirname(filePath) + path.sep);
+    return gltf.scene;
+  }
+
+  throw new Error(`Unsupported character asset extension: ${extension || '(none)'}`);
+}
+
+const character = await loadCharacter(characterPath);
 const clipJson = JSON.parse(await fs.readFile(clipPath, 'utf8'));
 const clip = THREE.AnimationClip.parse(clipJson);
 

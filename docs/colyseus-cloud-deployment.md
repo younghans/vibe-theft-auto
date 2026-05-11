@@ -22,7 +22,7 @@
 ## Asset pipeline
 
 - Optimized Mixamo runtime assets live in `assets/runtime/mixamo/characters/` and are committed to git.
-- Run `npm run optimize:assets` locally when source FBX character files change. This installs the isolated optimizer package in `tools/mixamo-optimizer/`, then updates the runtime GLBs for commit.
+- Raw Mixamo character FBX files are local-only source inputs in `assets/mixamo/characters/` and are ignored by git. Run `npm run optimize:assets` locally when those source files change. This installs the isolated optimizer package in `tools/mixamo-optimizer/`, then updates the runtime GLBs for commit.
 - Do not wire `optimize:assets` into `prebuild` or the Colyseus Cloud build/start path. Cloud deployment should only install dependencies, run `npm run build`, and start the server.
 - `npm run build` enforces dist size budgets so oversized source character assets do not quietly return to the deployment payload.
 
