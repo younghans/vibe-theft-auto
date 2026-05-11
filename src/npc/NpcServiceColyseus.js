@@ -191,6 +191,58 @@ function stableStringify(value) {
   return JSON.stringify(value, Object.keys(value).sort());
 }
 
+function parseEndpointUrl(endpoint) {
+  try {
+    if (String(endpoint).startsWith('/')) {
+      const baseUrl = globalThis.location?.href ?? 'http://localhost/';
+      return new URL(endpoint, baseUrl);
+    }
+
+    return new URL(endpoint);
+  } catch {
+    return null;
+  }
+}
+
+function getMatchingProtocol(sourceProtocol, secure) {
+  if (sourceProtocol === 'http:' || sourceProtocol === 'https:') {
+    return secure ? 'https:' : 'http:';
+  }
+
+  return secure ? 'wss:' : 'ws:';
+}
+
+function createColyseusUrlBuilder(endpoint) {
+  const endpointUrl = parseEndpointUrl(endpoint);
+  if (!endpointUrl) {
+    return undefined;
+  }
+
+  const endpointSecure = endpointUrl.protocol === 'https:' || endpointUrl.protocol === 'wss:';
+  const endpointHost = endpointUrl.host;
+  let hasLoggedCloudRewrite = false;
+
+  return (url) => {
+    if (!url.hostname.endsWith('.colyseus.cloud') || url.host === endpointHost) {
+      return url.href;
+    }
+
+    const rewrittenUrl = new URL(url.href);
+    rewrittenUrl.protocol = getMatchingProtocol(url.protocol, endpointSecure);
+    rewrittenUrl.host = endpointHost;
+
+    if (!hasLoggedCloudRewrite) {
+      hasLoggedCloudRewrite = true;
+      console.info('[NPC] Rewriting Colyseus Cloud public address to the configured endpoint host.', {
+        from: url.host,
+        to: endpointHost
+      });
+    }
+
+    return rewrittenUrl.href;
+  };
+}
+
 export class NpcServiceColyseus {
   constructor({ endpoint, adminKey = '' }) {
     const ClientCtor = globalThis.Colyseus?.Client;
@@ -205,7 +257,8 @@ export class NpcServiceColyseus {
     this.combatListeners = new Set();
     this.pendingRequests = new Map();
     this.sequence = 0;
-    this.client = new ClientCtor(endpoint);
+    const urlBuilder = createColyseusUrlBuilder(endpoint);
+    this.client = new ClientCtor(endpoint, urlBuilder ? { urlBuilder } : undefined);
     this.destroyed = false;
     this.state = {
       transport: 'colyseus',

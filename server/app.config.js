@@ -165,6 +165,22 @@ function isValidAgentWorkerToken(value = '') {
   return Boolean(normalized && workerTokens.size > 0 && workerTokens.has(normalized));
 }
 
+function normalizePublicAddress(value = '') {
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  return trimmed
+    .replace(/^wss?:\/\//iu, '')
+    .replace(/^https?:\/\//iu, '')
+    .replace(/\/+$/u, '');
+}
+
+const colyseusPublicAddress = normalizePublicAddress(
+  process.env.COLYSEUS_PUBLIC_ADDRESS ?? process.env.STICKRPG_PUBLIC_ADDRESS ?? ''
+);
+
 function getBearerToken(req) {
   const authorization = typeof req.headers.authorization === 'string'
     ? req.headers.authorization
@@ -310,6 +326,7 @@ async function sendDistAsset(req, res, filePath) {
 
 const server = defineServer({
   gracefullyShutdown: false,
+  ...(colyseusPublicAddress ? { publicAddress: colyseusPublicAddress } : {}),
   transport: new WebSocketTransport({
     pingInterval: 10000
   }),
@@ -323,6 +340,7 @@ const server = defineServer({
         ok: true,
         service: 'stickrpg-colyseus',
         transport: 'websocket',
+        publicAddressConfigured: Boolean(colyseusPublicAddress),
         persistenceMode: persistence.mode,
         worldKey: persistence.worldKey,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),

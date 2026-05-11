@@ -15,6 +15,7 @@
    - `DATABASE_URL`
    - `WORLD_KEY=primary`
    - `WORLD_LAYOUT_SEED_PATH=server/data/world-layout.json`
+   - `COLYSEUS_PUBLIC_ADDRESS=your-domain.example/2567` when serving through a custom domain
    - `OPENAI_API_KEY`
    - `OPENAI_NPC_MODEL=gpt-5.4-mini`
    - `OPENAI_TIMEOUT_MS=12000`
@@ -47,6 +48,7 @@
 ## Notes
 
 - The production deployment expects `DATABASE_URL`.
+- For custom domains, set `COLYSEUS_PUBLIC_ADDRESS` to the public websocket host/path the browser should use after matchmaking. Do not include `ws://` or `wss://`.
 - Local development can still use file-backed persistence when `DATABASE_URL` is unset.
 - `WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK=true` is an emergency production safety valve only. It can keep the app online without Postgres, but world edits may not survive restarts or redeploys.
 - PM2 is pinned to a single instance in `ecosystem.config.cjs` so the world remains authoritative in one process.
