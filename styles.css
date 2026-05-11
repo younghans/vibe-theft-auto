@@ -5659,7 +5659,7 @@ body.is-builder-resizing * {
   width: min(860px, calc(100vw - 28px));
   min-height: min(620px, calc(100vh - 28px));
   display: grid;
-  grid-template-rows: auto 34px minmax(0, 1fr) auto;
+  grid-template-rows: auto 34px minmax(0, 1fr) auto auto;
   gap: 12px;
   padding: 15px;
   border-radius: 14px;
@@ -5781,6 +5781,294 @@ body.is-builder-resizing * {
   font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
+}
+
+.hud__school-agent {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.hud__school-agent[hidden] {
+  display: none;
+}
+
+.hud__school-agent-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.hud__school-agent-toggle,
+.hud__school-agent-submit,
+.hud__school-agent-small {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff6de;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.hud__school-agent-toggle.is-active,
+.hud__school-agent-submit {
+  background: linear-gradient(180deg, #75e3c1, #59b9ff);
+  color: #111820;
+}
+
+.hud__school-agent-submit:disabled,
+.hud__school-agent-small:disabled {
+  opacity: 0.52;
+  cursor: default;
+}
+
+.hud__school-agent-bar p {
+  margin: 0;
+  overflow: hidden;
+  color: rgba(244, 238, 226, 0.74);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__school-agent-bar p.is-error {
+  color: #ffb6b6;
+}
+
+.hud__school-agent-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.05fr);
+  gap: 10px;
+  min-height: 150px;
+  max-height: min(300px, 34vh);
+}
+
+.hud__school-agent-panel[hidden] {
+  display: none;
+}
+
+.hud__school-agent-form,
+.hud__school-agent-content,
+.hud__school-agent-detail,
+.hud__school-agent-tasks,
+.hud__school-agent-detail-slot {
+  min-height: 0;
+}
+
+.hud__school-agent-form {
+  display: grid;
+  grid-template-rows: minmax(82px, 1fr) auto;
+  gap: 8px;
+}
+
+.hud__school-agent-prompt,
+.hud__school-agent-mode {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(3, 7, 10, 0.62);
+  color: #fff8e5;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.hud__school-agent-prompt {
+  min-height: 82px;
+  padding: 10px;
+  resize: none;
+  line-height: 1.35;
+}
+
+.hud__school-agent-mode {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.hud__school-agent-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.hud__school-agent-content {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+  overflow: hidden;
+}
+
+.hud__school-agent-tasks,
+.hud__school-agent-detail-slot {
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.hud__school-agent-task {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #fff6de;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud__school-agent-task.is-active {
+  border-color: color-mix(in srgb, var(--school-accent) 58%, white 12%);
+  background: color-mix(in srgb, var(--school-accent) 14%, rgba(255, 255, 255, 0.055));
+}
+
+.hud__school-agent-task strong,
+.hud__school-agent-task small,
+.hud__school-agent-task em {
+  display: block;
+}
+
+.hud__school-agent-task strong {
+  font-size: 13px;
+}
+
+.hud__school-agent-task small {
+  margin-top: 2px;
+  color: rgba(244, 238, 226, 0.62);
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.hud__school-agent-task em,
+.hud__school-agent-detail header span {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 238, 226, 0.78);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-agent-task em.is-good,
+.hud__school-agent-detail header span.is-good {
+  background: rgba(84, 226, 151, 0.18);
+  color: #a5ffd1;
+}
+
+.hud__school-agent-task em.is-bad,
+.hud__school-agent-detail header span.is-bad {
+  background: rgba(255, 109, 141, 0.17);
+  color: #ffb8c8;
+}
+
+.hud__school-agent-task em.is-busy,
+.hud__school-agent-detail header span.is-busy {
+  background: rgba(89, 185, 255, 0.18);
+  color: #b7e4ff;
+}
+
+.hud__school-agent-detail {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.hud__school-agent-detail header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hud__school-agent-detail header strong {
+  overflow: hidden;
+  color: #fff4d6;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.hud__school-agent-detail p {
+  margin: 0;
+  color: rgba(244, 238, 226, 0.76);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.hud__school-agent-meta,
+.hud__school-agent-links,
+.hud__school-agent-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hud__school-agent-meta span,
+.hud__school-agent-link {
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(244, 238, 226, 0.78);
+  font-size: 11px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.hud__school-agent-meta strong {
+  color: #fff0bd;
+}
+
+.hud__school-agent-logs {
+  display: grid;
+  gap: 5px;
+  max-height: 94px;
+  overflow: auto;
+}
+
+.hud__school-agent-log {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 6px;
+  color: rgba(244, 238, 226, 0.74);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.hud__school-agent-log time {
+  color: rgba(244, 238, 226, 0.48);
+}
+
+.hud__school-agent-log span {
+  overflow-wrap: anywhere;
+}
+
+.hud__school-agent-empty {
+  padding: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  color: rgba(244, 238, 226, 0.56);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .hud__school-ready,
@@ -8678,10 +8966,20 @@ canvas {
     bottom: 16px;
     min-height: 0;
     height: auto;
-    grid-template-rows: auto 28px minmax(0, 1fr) auto;
+    grid-template-rows: auto 28px minmax(0, 1fr) auto auto;
     gap: 8px;
     padding: 10px;
     transform: translateY(14px) scale(1);
+  }
+
+  .hud__school-agent-panel,
+  .hud__school-agent-content {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__school-agent-panel {
+    max-height: min(360px, 42vh);
+    overflow: auto;
   }
 
   .hud__school-title {
@@ -9307,7 +9605,7 @@ canvas {
     width: auto;
     min-height: 0;
     height: auto;
-    grid-template-rows: auto 24px minmax(0, 1fr) auto;
+    grid-template-rows: auto 24px minmax(0, 1fr) auto auto;
     gap: 6px;
     padding: 8px;
     border-radius: 10px;
@@ -9331,6 +9629,18 @@ canvas {
   .hud__school-footer p {
     font-size: 12px;
     line-height: 1.1;
+  }
+
+  .hud__school-agent-panel {
+    max-height: 36vh;
+  }
+
+  .hud__school-agent-form {
+    grid-template-rows: minmax(62px, 1fr) auto;
+  }
+
+  .hud__school-agent-prompt {
+    min-height: 62px;
   }
 
   .hud__school-timer-slot {

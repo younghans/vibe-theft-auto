@@ -13,7 +13,17 @@ const port = Number(process.env.PORT || positionalArgs[1] || 4173);
 const configuredServerUrl = (process.env.STICKRPG_SERVER_URL || positionalArgs[2] || '').trim();
 const liveReloadEnabled = flags.has('--live-reload') || process.env.STICKRPG_LIVE_RELOAD === '1';
 const liveReloadClients = new Set();
-const ignoredWatchPathSegments = new Set(['.codex', '.git', 'dist', 'node_modules', 'test-results']);
+const ignoredWatchPathSegments = new Set([
+  '.codex',
+  '.dist-staging',
+  '.git',
+  'animations',
+  'assets',
+  'dist',
+  'node_modules',
+  'test-results',
+  'vendor'
+]);
 const ignoredWatchPathPrefixes = [
   path.join('server', 'data'),
   path.join('assets', 'mixamo', 'portraits')
@@ -65,11 +75,11 @@ function shouldIgnoreWatchedPath(filePath = '') {
   );
 }
 
-function scheduleLiveReload(changedPath = '') {
+function scheduleLiveReload(changedPath = '', { force = false } = {}) {
   if (!liveReloadEnabled || liveReloadClients.size === 0) {
     return;
   }
-  if (changedPath && shouldIgnoreWatchedPath(changedPath)) {
+  if (!force && changedPath && shouldIgnoreWatchedPath(changedPath)) {
     return;
   }
 
@@ -135,7 +145,7 @@ function setupLiveReloadWatcher() {
 
   try {
     const watcher = fs.watch(root, { recursive: true }, (_eventType, filename) => {
-      if (filename && shouldIgnoreWatchedPath(filename)) {
+      if (!filename || shouldIgnoreWatchedPath(filename)) {
         return;
       }
 
@@ -285,7 +295,7 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      scheduleLiveReload(path.relative(root, targetPath));
+      scheduleLiveReload(path.relative(root, targetPath), { force: true });
 
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ ok: true, relativePath: normalizeRelativePath(path.relative(root, targetPath)) }));
