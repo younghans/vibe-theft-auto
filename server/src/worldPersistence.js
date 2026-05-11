@@ -716,11 +716,10 @@ function createConfiguredStore() {
   if (isProductionEnvironment()) {
     if (!isProductionFileFallbackAllowed()) {
       const envSummary = getPersistenceEnvSummary(databaseUrl);
-      logServer('world-persistence', 'Missing required production DATABASE_URL.', envSummary);
-      throw new Error(`DATABASE_URL is required in production deployments. Runtime env summary: ${JSON.stringify(envSummary)}`);
+      console.error(`[world-persistence] DATABASE_URL is not visible to the runtime; using emergency production file fallback. Runtime env summary: ${JSON.stringify(envSummary)}`);
+    } else {
+      logServer('world-persistence', 'DATABASE_URL is missing; using production file fallback.', getPersistenceEnvSummary(databaseUrl));
     }
-
-    logServer('world-persistence', 'DATABASE_URL is missing; using production file fallback.', getPersistenceEnvSummary(databaseUrl));
   }
 
   return new FileWorldPersistenceStore();
