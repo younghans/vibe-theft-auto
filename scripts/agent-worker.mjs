@@ -66,16 +66,31 @@ function safeTaskSlug(value = '') {
     .slice(0, 96) || 'task';
 }
 
-function commandForPlatform(command = '') {
-  if (process.platform !== 'win32' || path.extname(command)) {
-    return command;
+function commandForPlatform(command = '', args = []) {
+  if (process.platform !== 'win32') {
+    return { command, args };
   }
 
-  if (['npm', 'npx', 'codex'].includes(command)) {
-    return `${command}.cmd`;
+  const normalizedCommand = path.basename(String(command)).toLowerCase();
+  if (normalizedCommand === 'npm' || normalizedCommand === 'npm.cmd') {
+    return {
+      command: process.execPath,
+      args: [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'), ...args]
+    };
   }
 
-  return command;
+  if (normalizedCommand === 'npx' || normalizedCommand === 'npx.cmd') {
+    return {
+      command: process.execPath,
+      args: [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'), ...args]
+    };
+  }
+
+  if (normalizedCommand === 'codex') {
+    return { command: 'codex.exe', args };
+  }
+
+  return { command, args };
 }
 
 function splitCommandLine(value = '') {
@@ -170,7 +185,8 @@ async function runCommand(command, args = [], {
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawn(commandForPlatform(command), args, {
+    const platformCommand = commandForPlatform(command, args);
+    const child = spawn(platformCommand.command, platformCommand.args, {
       cwd,
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
