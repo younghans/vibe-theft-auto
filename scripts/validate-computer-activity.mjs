@@ -85,8 +85,9 @@ async function validateAssets() {
 
   const typingAudioPath = getAssetPath(assets.audio.typingOnKeyboard);
   const typingAudio = await readFile(typingAudioPath);
-  assert(typingAudio.subarray(0, 4).toString('ascii') === 'RIFF', 'Typing audio should be a RIFF WAV file.');
-  assert(typingAudio.subarray(8, 12).toString('ascii') === 'WAVE', 'Typing audio should be a WAV file.');
+  const hasId3Header = typingAudio.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasFrameSync = typingAudio[0] === 0xff && (typingAudio[1] & 0xe0) === 0xe0;
+  assert(hasId3Header || hasFrameSync, 'Typing audio should be an MP3 file.');
 }
 
 function validateEmoteConfig() {

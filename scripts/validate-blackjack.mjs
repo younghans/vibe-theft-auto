@@ -134,8 +134,9 @@ async function validateBlackjackAudio() {
   assert(assets.audio.playingCard, 'Blackjack card-deal audio should be registered.');
   const audioBuffer = await readFile(new URL(assets.audio.playingCard));
   assert(audioBuffer.length > 12, 'Blackjack card-deal audio should not be empty.');
-  assert(audioBuffer.subarray(0, 4).toString('ascii') === 'RIFF', 'Blackjack card-deal audio should be a WAV file.');
-  assert(audioBuffer.subarray(8, 12).toString('ascii') === 'WAVE', 'Blackjack card-deal audio should have a WAVE header.');
+  const hasId3Header = audioBuffer.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasFrameSync = audioBuffer[0] === 0xff && (audioBuffer[1] & 0xe0) === 0xe0;
+  assert(hasId3Header || hasFrameSync, 'Blackjack card-deal audio should be an MP3 file.');
 }
 
 async function main() {

@@ -20,6 +20,12 @@ const root = process.cwd();
 const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
 const hudSource = fs.readFileSync(`${root}/src/ui/Hud.js`, 'utf8');
 
+function assertMp3Audio(buffer, label) {
+  const hasId3Header = buffer.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasFrameSync = buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+  assert.ok(hasId3Header || hasFrameSync, `${label} should be an MP3 file.`);
+}
+
 assert.equal(getSkillXpForLevel(1), 0, 'level 1 starts at 0 XP');
 assert.equal(getClassicXpForLevel(99), 13034431, 'classic level 99 XP matches RuneScape curve');
 assert.equal(getSkillXpForLevel(99), 651721, 'scaled level 99 XP is 20x faster');
@@ -75,17 +81,15 @@ assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
 
 assert.ok(assets.audio.skillXpGain, 'Skill XP gain audio should be registered.');
-assert.match(assets.audio.skillXpGain, /gain_experience_point_ding\.wav$/, 'Skill XP gain audio should use the ding file.');
+assert.match(assets.audio.skillXpGain, /gain_experience_point_ding\.mp3$/, 'Skill XP gain audio should use the optimized ding file.');
 const skillXpGainAudio = fs.readFileSync(new URL(assets.audio.skillXpGain));
 assert.ok(skillXpGainAudio.length > 12, 'Skill XP gain audio should not be empty.');
-assert.equal(skillXpGainAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Skill XP gain audio should be a WAV file.');
-assert.equal(skillXpGainAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Skill XP gain audio should have a WAVE header.');
+assertMp3Audio(skillXpGainAudio, 'Skill XP gain audio');
 
 assert.ok(assets.audio.levelUp, 'Level-up audio should be registered.');
-assert.match(assets.audio.levelUp, /level_up_ding\.wav$/, 'Level-up audio should use the ding file.');
+assert.match(assets.audio.levelUp, /level_up_ding\.mp3$/, 'Level-up audio should use the optimized ding file.');
 const levelUpAudio = fs.readFileSync(new URL(assets.audio.levelUp));
 assert.ok(levelUpAudio.length > 12, 'Level-up audio should not be empty.');
-assert.equal(levelUpAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Level-up audio should be a WAV file.');
-assert.equal(levelUpAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Level-up audio should have a WAVE header.');
+assertMp3Audio(levelUpAudio, 'Level-up audio');
 
 console.log('Skills validation passed.');

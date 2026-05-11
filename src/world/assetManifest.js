@@ -57,14 +57,14 @@ export const assets = {
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.wav')
   },
   audio: {
-    chaChing: assetUrl('audio', 'cha-ching.wav'),
-    skillXpGain: assetUrl('audio', 'gain_experience_point_ding.wav'),
-    levelUp: assetUrl('audio', 'level_up_ding.wav'),
-    levelUpCelebration: assetUrl('audio', 'level_up_celebration.wav'),
-    clockTick: assetUrl('audio', 'clock-tick.wav'),
-    phoneUnlock: assetUrl('audio', 'phone_unlock.wav'),
-    playingCard: assetUrl('audio', 'playing_card.wav'),
-    typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.wav')
+    chaChing: assetUrl('audio', 'cha-ching.mp3'),
+    skillXpGain: assetUrl('audio', 'gain_experience_point_ding.mp3'),
+    levelUp: assetUrl('audio', 'level_up_ding.mp3'),
+    levelUpCelebration: assetUrl('audio', 'level_up_celebration.mp3'),
+    clockTick: assetUrl('audio', 'clock-tick.mp3'),
+    phoneUnlock: assetUrl('audio', 'phone_unlock.mp3'),
+    playingCard: assetUrl('audio', 'playing_card.mp3'),
+    typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.mp3')
   },
   city: {
     base: cityAsset('base'),

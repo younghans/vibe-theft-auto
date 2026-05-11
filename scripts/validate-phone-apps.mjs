@@ -56,8 +56,9 @@ assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedb
 assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');
 const phoneUnlockAudio = fs.readFileSync(new URL(assets.audio.phoneUnlock));
 assert.ok(phoneUnlockAudio.length > 12, 'Phone unlock audio should not be empty.');
-assert.equal(phoneUnlockAudio.subarray(0, 4).toString('ascii'), 'RIFF', 'Phone unlock audio should be a WAV file.');
-assert.equal(phoneUnlockAudio.subarray(8, 12).toString('ascii'), 'WAVE', 'Phone unlock audio should have a WAVE header.');
+const phoneUnlockHasId3Header = phoneUnlockAudio.subarray(0, 3).toString('ascii') === 'ID3';
+const phoneUnlockHasFrameSync = phoneUnlockAudio[0] === 0xff && (phoneUnlockAudio[1] & 0xe0) === 0xe0;
+assert.ok(phoneUnlockHasId3Header || phoneUnlockHasFrameSync, 'Phone unlock audio should be an MP3 file.');
 
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
