@@ -8,6 +8,7 @@ import { WorldRoom } from './src/WorldRoom.js';
 import {
   appendAgentTaskLog,
   approveAgentTaskDeploy,
+  approveAgentTaskRollback,
   cancelAgentTask,
   claimNextAgentTask,
   createAgentTask,
@@ -15,6 +16,10 @@ import {
   listAgentTasks,
   updateAgentTask
 } from './src/agentTasks.js';
+import {
+  getAgentDeploymentState,
+  recordAgentDeploymentState
+} from './src/agentDeployments.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -399,7 +404,9 @@ const server = defineServer({
       '/admin/agent-tasks/:id',
       '/admin/agent-tasks/:id/logs',
       '/admin/agent-tasks/:id/cancel',
-      '/admin/agent-tasks/:id/approve-deploy'
+      '/admin/agent-tasks/:id/approve-deploy',
+      '/admin/agent-tasks/:id/rollback',
+      '/admin/agent-deployments'
     ]) {
       app.options(route, (req, res) => {
         setAdminAgentTaskCorsHeaders(req, res);
@@ -609,6 +616,75 @@ const server = defineServer({
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not approve deploy.'
+        });
+      }
+    });
+
+    app.post('/admin/agent-tasks/:id/rollback', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        const adminKey = getAdminKeyFromRequest(req, payload);
+        if (!isValidAdminKey(adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const task = await approveAgentTaskRollback(req.params.id, {
+          approvedBy: String(payload?.createdBy ?? 'in-game-admin')
+        });
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not approve rollback.'
+        });
+      }
+    });
+
+    app.get('/admin/agent-deployments', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
+          || isValidAgentWorkerToken(getBearerToken(req));
+        if (!isAuthorized) {
+          sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
+          return;
+        }
+
+        const deployment = await getAgentDeploymentState();
+        sendJson(res, 200, { ok: true, deployment });
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not read agent deployment state.'
+        });
+      }
+    });
+
+    app.patch('/admin/agent-deployments', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAgentWorkerToken(getBearerToken(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
+          return;
+        }
+
+        const payload = await readJsonRequest(req, { maxBytes: 64 * 1024 });
+        const deployment = await recordAgentDeploymentState(payload);
+        sendJson(res, 200, { ok: true, deployment });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not update agent deployment state.'
         });
       }
     });

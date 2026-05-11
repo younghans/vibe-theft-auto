@@ -707,9 +707,19 @@ const AGENT_TASK_STATUS_LABELS = Object.freeze({
   ready_for_review: 'Ready',
   deploying: 'Deploying',
   deployed: 'Deployed',
+  rolling_back: 'Rolling Back',
+  rolled_back: 'Rolled Back',
   failed: 'Failed',
   cancelled: 'Cancelled'
 });
+
+const ADMIN_PROMPT_TABS = Object.freeze([
+  { id: 'new', label: 'New' },
+  { id: 'active', label: 'Active' },
+  { id: 'ready', label: 'Ready' },
+  { id: 'deployed', label: 'Deployed' },
+  { id: 'history', label: 'History' }
+]);
 
 function getAgentTaskStatusLabel(status = '') {
   return AGENT_TASK_STATUS_LABELS[String(status ?? '')] ?? 'Unknown';
@@ -719,10 +729,10 @@ function getAgentTaskStatusTone(status = '') {
   if (['ready_for_review', 'deployed'].includes(status)) {
     return 'is-good';
   }
-  if (['failed', 'test_failed', 'cancelled'].includes(status)) {
+  if (['failed', 'test_failed', 'cancelled', 'rolled_back'].includes(status)) {
     return 'is-bad';
   }
-  if (['coding', 'testing', 'deploying', 'preparing', 'claimed'].includes(status)) {
+  if (['coding', 'testing', 'deploying', 'rolling_back', 'preparing', 'claimed'].includes(status)) {
     return 'is-busy';
   }
   return 'is-muted';
@@ -751,22 +761,68 @@ function createAgentTaskLink(label, url = '') {
     return '';
   }
 
-  return `<a class="hud__school-agent-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+  return `<a class="hud__admin-prompt-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
 }
 
-function createAgentTaskListMarkup(tasks = [], selectedTaskId = '') {
-  if (!tasks.length) {
-    return '<div class="hud__school-agent-empty">No Codex tasks yet.</div>';
+function getAdminPromptTabId(tab = '') {
+  const normalized = String(tab ?? '').trim();
+  return ADMIN_PROMPT_TABS.some((entry) => entry.id === normalized) ? normalized : 'new';
+}
+
+function getAdminPromptTabTaskCount(tasks = [], tab = '') {
+  const filtered = filterAdminPromptTasksForTab(tasks, tab);
+  return filtered.length;
+}
+
+function filterAdminPromptTasksForTab(tasks = [], tab = '') {
+  const tabId = getAdminPromptTabId(tab);
+  const statusesByTab = {
+    active: new Set(['queued', 'claimed', 'preparing', 'coding', 'testing', 'deploying', 'rolling_back']),
+    ready: new Set(['ready_for_review']),
+    deployed: new Set(['deployed']),
+    history: new Set(['test_failed', 'failed', 'cancelled', 'rolled_back'])
+  };
+
+  if (tabId === 'new') {
+    return [];
   }
 
-  return tasks.slice(0, 8).map((task) => {
+  const statuses = statusesByTab[tabId];
+  return tasks.filter((task) => statuses?.has(String(task.status ?? ''))).slice(0, 24);
+}
+
+function createAdminPromptTabsMarkup(tasks = [], activeTab = 'new') {
+  const tabId = getAdminPromptTabId(activeTab);
+  return ADMIN_PROMPT_TABS.map((tab) => {
+    const count = tab.id === 'new' ? 0 : getAdminPromptTabTaskCount(tasks, tab.id);
+    return `
+      <button class="hud__admin-prompt-tab${tab.id === tabId ? ' is-active' : ''}" type="button" data-admin-prompt-action="tab:${escapeHtml(tab.id)}" aria-pressed="${tab.id === tabId ? 'true' : 'false'}">
+        <span>${escapeHtml(tab.label)}</span>
+        ${count > 0 ? `<em>${escapeHtml(String(count))}</em>` : ''}
+      </button>
+    `;
+  }).join('');
+}
+
+function getAgentTaskTitle(task = {}) {
+  const label = String(task.contextLabel || task.gameId || task.contextType || task.scope || 'Game').trim();
+  return label || 'Game';
+}
+
+function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 'active') {
+  const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
+  if (!visibleTasks.length) {
+    return '<div class="hud__admin-prompt-empty">No tasks in this view.</div>';
+  }
+
+  return visibleTasks.map((task) => {
     const status = String(task.status ?? 'queued');
     const activeClass = task.id === selectedTaskId ? ' is-active' : '';
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
     return `
-      <button class="hud__school-agent-task${activeClass}" type="button" data-school-agent-action="select:${escapeHtml(task.id)}">
+      <button class="hud__admin-prompt-task${activeClass}" type="button" data-admin-prompt-action="select:${escapeHtml(task.id)}">
         <span>
-          <strong>${escapeHtml(task.gameId || 'school')}</strong>
+          <strong>${escapeHtml(getAgentTaskTitle(task))}</strong>
           <small>${escapeHtml(getAgentTaskShortId(task))}${time ? ` - ${escapeHtml(time)}` : ''}</small>
         </span>
         <em class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</em>
@@ -777,7 +833,7 @@ function createAgentTaskListMarkup(tasks = [], selectedTaskId = '') {
 
 function createAgentTaskDetailMarkup(task = null) {
   if (!task) {
-    return '<div class="hud__school-agent-empty">Select a task to inspect it.</div>';
+    return '<div class="hud__admin-prompt-empty">Select a task to inspect it.</div>';
   }
 
   const status = String(task.status ?? 'queued');
@@ -787,35 +843,42 @@ function createAgentTaskDetailMarkup(task = null) {
   const deployApproved = Number(task.deployApprovedAt ?? 0) > 0;
   const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
   const canCancel = ['queued', 'claimed', 'preparing'].includes(status);
+  const canRollback = status === 'deployed' && Number(task.rollbackApprovedAt ?? 0) <= 0;
+  const rollbackApproved = Number(task.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
+  const rollbackCommitSha = String(task.rollbackCommitSha ?? '').trim();
   const links = [
     createAgentTaskLink('Preview', task.previewUrl),
     createAgentTaskLink('Deploy', task.deployUrl)
   ].filter(Boolean).join('');
 
   return `
-    <article class="hud__school-agent-detail">
+    <article class="hud__admin-prompt-detail">
       <header>
         <span class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</span>
         <strong>${escapeHtml(getAgentTaskShortId(task))}</strong>
       </header>
       <p>${escapeHtml(task.summary || task.error || task.prompt || 'Waiting for worker updates.')}</p>
-      <div class="hud__school-agent-meta">
+      <div class="hud__admin-prompt-meta">
+        <span>Context <strong>${escapeHtml(getAgentTaskTitle(task))}</strong></span>
         ${branch ? `<span>Branch <strong>${escapeHtml(branch)}</strong></span>` : ''}
         ${commitSha ? `<span>Commit <strong>${escapeHtml(commitSha.slice(0, 10))}</strong></span>` : ''}
+        ${rollbackCommitSha ? `<span>Rollback <strong>${escapeHtml(rollbackCommitSha.slice(0, 10))}</strong></span>` : ''}
         ${deployApproved ? '<span>Deploy approved</span>' : ''}
+        ${rollbackApproved ? '<span>Rollback approved</span>' : ''}
       </div>
-      ${links ? `<div class="hud__school-agent-links">${links}</div>` : ''}
-      <div class="hud__school-agent-detail-actions">
-        ${canApproveDeploy ? '<button class="hud__school-agent-small" type="button" data-school-agent-action="approve-deploy">Approve Deploy</button>' : ''}
-        ${canCancel ? '<button class="hud__school-agent-small" type="button" data-school-agent-action="cancel-task">Cancel</button>' : ''}
+      ${links ? `<div class="hud__admin-prompt-links">${links}</div>` : ''}
+      <div class="hud__admin-prompt-detail-actions">
+        ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
+        ${canRollback ? '<button class="hud__admin-prompt-small hud__admin-prompt-small--danger" type="button" data-admin-prompt-action="rollback">Rollback</button>' : ''}
+        ${canCancel ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="cancel-task">Cancel</button>' : ''}
       </div>
-      <div class="hud__school-agent-logs">
+      <div class="hud__admin-prompt-logs">
         ${logs.length ? logs.map((entry) => `
-          <div class="hud__school-agent-log">
+          <div class="hud__admin-prompt-log">
             <time>${escapeHtml(formatAgentTaskTime(entry.at))}</time>
             <span>${escapeHtml(entry.message ?? '')}</span>
           </div>
-        `).join('') : '<div class="hud__school-agent-empty">No worker logs yet.</div>'}
+        `).join('') : '<div class="hud__admin-prompt-empty">No worker logs yet.</div>'}
       </div>
     </article>
   `;
@@ -1807,18 +1870,22 @@ export class Hud {
     this.schoolMicrogameTimer = this.overlay.querySelector('[data-school-microgame-timer]');
     this.schoolMicrogameBody = this.overlay.querySelector('[data-school-microgame-body]');
     this.schoolMicrogameMessage = this.overlay.querySelector('[data-school-microgame-message]');
-    this.schoolAgentRoot = this.overlay.querySelector('[data-school-agent]');
-    this.schoolAgentToggle = this.overlay.querySelector('[data-school-agent-toggle]');
-    this.schoolAgentPanel = this.overlay.querySelector('[data-school-agent-panel]');
-    this.schoolAgentForm = this.overlay.querySelector('[data-school-agent-form]');
-    this.schoolAgentPrompt = this.overlay.querySelector('[data-school-agent-prompt]');
-    this.schoolAgentMode = this.overlay.querySelector('[data-school-agent-mode]');
-    this.schoolAgentAutoOption = this.overlay.querySelector('[data-school-agent-mode-auto]');
-    this.schoolAgentSubmit = this.overlay.querySelector('[data-school-agent-submit]');
-    this.schoolAgentRefresh = this.overlay.querySelector('[data-school-agent-refresh]');
-    this.schoolAgentStatus = this.overlay.querySelector('[data-school-agent-status]');
-    this.schoolAgentTasks = this.overlay.querySelector('[data-school-agent-tasks]');
-    this.schoolAgentDetail = this.overlay.querySelector('[data-school-agent-detail]');
+    this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
+    this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
+    this.adminPromptClose = this.overlay.querySelector('[data-admin-prompt-close]');
+    this.adminPromptForm = this.overlay.querySelector('[data-admin-prompt-form]');
+    this.adminPromptPrompt = this.overlay.querySelector('[data-admin-prompt-prompt]');
+    this.adminPromptMode = this.overlay.querySelector('[data-admin-prompt-mode]');
+    this.adminPromptAutoOption = this.overlay.querySelector('[data-admin-prompt-mode-auto]');
+    this.adminPromptSubmit = this.overlay.querySelector('[data-admin-prompt-submit]');
+    this.adminPromptRefresh = this.overlay.querySelector('[data-admin-prompt-refresh]');
+    this.adminPromptStatus = this.overlay.querySelector('[data-admin-prompt-status]');
+    this.adminPromptTabs = this.overlay.querySelector('[data-admin-prompt-tabs]');
+    this.adminPromptNew = this.overlay.querySelector('[data-admin-prompt-new]');
+    this.adminPromptTaskBrowser = this.overlay.querySelector('[data-admin-prompt-task-browser]');
+    this.adminPromptTasks = this.overlay.querySelector('[data-admin-prompt-tasks]');
+    this.adminPromptDetail = this.overlay.querySelector('[data-admin-prompt-detail]');
+    this.adminPromptContext = this.overlay.querySelector('[data-admin-prompt-context]');
     this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
@@ -1885,15 +1952,17 @@ export class Hud {
       loading: false,
       error: ''
     };
-    this.schoolAgentState = {
+    this.adminPromptState = {
       available: false,
       open: false,
+      activeTab: 'new',
       tasks: [],
       selectedTaskId: '',
       loading: false,
       submitting: false,
       error: '',
-      autoDeployAvailable: false
+      autoDeployAvailable: false,
+      contextLabel: 'Game'
     };
     this.schoolMicrogameBodyRenderKey = '';
     this.phoneVisible = false;
@@ -2184,6 +2253,18 @@ export class Hud {
               </svg>
             </button>
             <button
+              class="hud__admin-prompt-toggle"
+              type="button"
+              data-admin-prompt-toggle
+              aria-label="Open Prompt console"
+              aria-pressed="false"
+              title="Open Prompt console"
+              hidden
+            >
+              <span class="hud__admin-prompt-code" aria-hidden="true">&lt;/&gt;</span>
+              <span>Prompt</span>
+            </button>
+            <button
               class="hud__map-capture-toggle"
               type="button"
               data-map-capture-toggle
@@ -2231,6 +2312,49 @@ export class Hud {
               <p class="hud__eyebrow">Admin Position</p>
               <p class="hud__admin-position-value" data-admin-position-value>X 0.00 Z 0.00</p>
               <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
+            </section>
+            <section class="hud__admin-prompt" data-admin-prompt hidden>
+              <header class="hud__admin-prompt-header">
+                <div>
+                  <p class="hud__eyebrow">Admin</p>
+                  <h2 class="hud__dialog-title">Prompt</h2>
+                  <p class="hud__body hud__admin-prompt-status" data-admin-prompt-status>Codex worker ready</p>
+                </div>
+                <div class="hud__admin-prompt-header-actions">
+                  <button class="hud__builder-icon-button" type="button" data-admin-prompt-refresh data-admin-prompt-action="refresh" aria-label="Refresh Prompt tasks" title="Refresh Prompt tasks">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M19 6v5h-5" />
+                      <path d="M5 18v-5h5" />
+                      <path d="M17.9 10.8A6.5 6.5 0 0 0 6.7 7.7L5 9.2" />
+                      <path d="M6.1 13.2a6.5 6.5 0 0 0 11.2 3.1L19 14.8" />
+                    </svg>
+                  </button>
+                  <button class="hud__builder-icon-button" type="button" data-admin-prompt-close data-admin-prompt-action="close" aria-label="Close Prompt console" title="Close Prompt console">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12" />
+                      <path d="M18 6L6 18" />
+                    </svg>
+                  </button>
+                </div>
+              </header>
+              <div class="hud__admin-prompt-tabs" data-admin-prompt-tabs></div>
+              <div class="hud__admin-prompt-context" data-admin-prompt-context>Context: Game</div>
+              <div class="hud__admin-prompt-body">
+                <form class="hud__admin-prompt-new" data-admin-prompt-new data-admin-prompt-form>
+                  <textarea class="hud__admin-prompt-prompt" data-admin-prompt-prompt maxlength="6000" rows="5" placeholder="Describe what should change in the game..."></textarea>
+                  <div class="hud__admin-prompt-form-row">
+                    <select class="hud__admin-prompt-mode" data-admin-prompt-mode aria-label="Prompt task mode">
+                      <option value="preview">Preview</option>
+                      <option value="auto" data-admin-prompt-mode-auto>Auto deploy</option>
+                    </select>
+                    <button class="hud__admin-prompt-submit" type="submit" data-admin-prompt-submit>Submit</button>
+                  </div>
+                </form>
+                <div class="hud__admin-prompt-task-browser" data-admin-prompt-task-browser hidden>
+                  <div class="hud__admin-prompt-tasks" data-admin-prompt-tasks></div>
+                  <div class="hud__admin-prompt-detail-slot" data-admin-prompt-detail></div>
+                </div>
+              </div>
             </section>
             <section class="hud__panel">
               <div class="hud__controls-list">
@@ -2675,36 +2799,6 @@ export class Hud {
         </header>
         <div class="hud__school-timer-slot" data-school-microgame-timer></div>
         <div class="hud__school-body" data-school-microgame-body></div>
-        <section class="hud__school-agent" data-school-agent hidden>
-          <div class="hud__school-agent-bar">
-            <button class="hud__school-agent-toggle" type="button" data-school-agent-toggle data-school-agent-action="toggle">Improve</button>
-            <p data-school-agent-status>Codex worker ready</p>
-            <button class="hud__builder-icon-button" type="button" data-school-agent-refresh data-school-agent-action="refresh" aria-label="Refresh Codex task status" title="Refresh Codex task status">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19 6v5h-5" />
-                <path d="M5 18v-5h5" />
-                <path d="M17.9 10.8A6.5 6.5 0 0 0 6.7 7.7L5 9.2" />
-                <path d="M6.1 13.2a6.5 6.5 0 0 0 11.2 3.1L19 14.8" />
-              </svg>
-            </button>
-          </div>
-          <div class="hud__school-agent-panel" data-school-agent-panel hidden>
-            <form class="hud__school-agent-form" data-school-agent-form>
-              <textarea class="hud__school-agent-prompt" data-school-agent-prompt maxlength="6000" rows="3" placeholder="Describe the improvement..."></textarea>
-              <div class="hud__school-agent-form-row">
-                <select class="hud__school-agent-mode" data-school-agent-mode aria-label="Codex task mode">
-                  <option value="preview">Preview</option>
-                  <option value="auto" data-school-agent-mode-auto>Auto deploy</option>
-                </select>
-                <button class="hud__school-agent-submit" type="submit" data-school-agent-submit>Submit</button>
-              </div>
-            </form>
-            <div class="hud__school-agent-content">
-              <div class="hud__school-agent-tasks" data-school-agent-tasks></div>
-              <div class="hud__school-agent-detail-slot" data-school-agent-detail></div>
-            </div>
-          </div>
-        </section>
         <footer class="hud__school-footer">
           <p data-school-microgame-message>Start when ready.</p>
         </footer>
@@ -3227,6 +3321,62 @@ export class Hud {
       }
 
       onCapture?.();
+    });
+  }
+
+  bindAdminPromptEvents({
+    onToggle,
+    onClose,
+    onRefresh,
+    onSubmit,
+    onSelect,
+    onCancel,
+    onApproveDeploy,
+    onRollback,
+    onTab
+  } = {}) {
+    this.adminPromptToggle?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle?.();
+    });
+
+    this.adminPromptForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onSubmit?.({
+        prompt: this.adminPromptPrompt?.value ?? '',
+        mode: this.adminPromptMode?.value ?? 'preview'
+      });
+    });
+
+    this.adminPromptRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-admin-prompt-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const action = actionTarget.getAttribute('data-admin-prompt-action') ?? '';
+      if (action === 'close') {
+        onClose?.();
+      } else if (action === 'refresh') {
+        onRefresh?.();
+      } else if (action.startsWith('tab:')) {
+        onTab?.(action.slice('tab:'.length));
+      } else if (action.startsWith('select:')) {
+        onSelect?.(action.slice('select:'.length));
+      } else if (action === 'cancel-task') {
+        onCancel?.(this.adminPromptState.selectedTaskId);
+      } else if (action === 'approve-deploy') {
+        onApproveDeploy?.(this.adminPromptState.selectedTaskId);
+      } else if (action === 'rollback') {
+        onRollback?.(this.adminPromptState.selectedTaskId);
+      }
     });
   }
 
@@ -4019,52 +4169,12 @@ export class Hud {
 
   bindSchoolMicrogameEvents({
     onClose,
-    onAction,
-    onAgentToggle,
-    onAgentRefresh,
-    onAgentSubmit,
-    onAgentSelect,
-    onAgentCancel,
-    onAgentApproveDeploy
+    onAction
   }) {
     this.schoolMicrogameClose?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       onClose?.();
-    });
-
-    this.schoolAgentForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onAgentSubmit?.({
-        prompt: this.schoolAgentPrompt?.value ?? '',
-        mode: this.schoolAgentMode?.value ?? 'preview'
-      });
-    });
-
-    this.schoolAgentRoot?.addEventListener('click', (event) => {
-      const target = event.target instanceof Element
-        ? event.target
-        : event.target?.parentElement ?? null;
-      const actionTarget = target?.closest('[data-school-agent-action]');
-      if (!actionTarget) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      const action = actionTarget.getAttribute('data-school-agent-action') ?? '';
-      if (action === 'toggle') {
-        onAgentToggle?.();
-      } else if (action === 'refresh') {
-        onAgentRefresh?.();
-      } else if (action.startsWith('select:')) {
-        onAgentSelect?.(action.slice('select:'.length));
-      } else if (action === 'cancel-task') {
-        onAgentCancel?.(this.schoolAgentState.selectedTaskId);
-      } else if (action === 'approve-deploy') {
-        onAgentApproveDeploy?.(this.schoolAgentState.selectedTaskId);
-      }
     });
 
     let actionPointerHandledUntil = 0;
@@ -5006,101 +5116,127 @@ export class Hud {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
 
-  setSchoolAgentState({
-    available = this.schoolAgentState.available,
-    open = this.schoolAgentState.open,
-    tasks = this.schoolAgentState.tasks,
-    selectedTaskId = this.schoolAgentState.selectedTaskId,
-    loading = this.schoolAgentState.loading,
-    submitting = this.schoolAgentState.submitting,
-    error = this.schoolAgentState.error,
-    autoDeployAvailable = this.schoolAgentState.autoDeployAvailable
+  setAdminPromptState({
+    available = this.adminPromptState.available,
+    open = this.adminPromptState.open,
+    activeTab = this.adminPromptState.activeTab,
+    tasks = this.adminPromptState.tasks,
+    selectedTaskId = this.adminPromptState.selectedTaskId,
+    loading = this.adminPromptState.loading,
+    submitting = this.adminPromptState.submitting,
+    error = this.adminPromptState.error,
+    autoDeployAvailable = this.adminPromptState.autoDeployAvailable,
+    contextLabel = this.adminPromptState.contextLabel
   } = {}) {
     const safeTasks = Array.isArray(tasks) ? tasks : [];
+    const safeActiveTab = getAdminPromptTabId(activeTab);
+    const visibleTasks = filterAdminPromptTasksForTab(safeTasks, safeActiveTab);
     let safeSelectedTaskId = String(selectedTaskId ?? '').trim();
     if (safeSelectedTaskId && !safeTasks.some((task) => task.id === safeSelectedTaskId)) {
       safeSelectedTaskId = '';
     }
-    if (!safeSelectedTaskId && safeTasks.length > 0) {
-      safeSelectedTaskId = safeTasks[0].id;
+    if (safeActiveTab !== 'new' && safeSelectedTaskId && !visibleTasks.some((task) => task.id === safeSelectedTaskId)) {
+      safeSelectedTaskId = '';
+    }
+    if (!safeSelectedTaskId && visibleTasks.length > 0) {
+      safeSelectedTaskId = visibleTasks[0].id;
     }
 
-    this.schoolAgentState = {
+    this.adminPromptState = {
       available: Boolean(available),
       open: Boolean(open),
+      activeTab: safeActiveTab,
       tasks: safeTasks,
       selectedTaskId: safeSelectedTaskId,
       loading: Boolean(loading),
       submitting: Boolean(submitting),
       error: String(error ?? ''),
-      autoDeployAvailable: Boolean(autoDeployAvailable)
+      autoDeployAvailable: Boolean(autoDeployAvailable),
+      contextLabel: String(contextLabel ?? 'Game')
     };
-    this.renderSchoolAgentPanel();
+    this.renderAdminPromptPanel();
   }
 
-  clearSchoolAgentPrompt() {
-    if (this.schoolAgentPrompt) {
-      this.schoolAgentPrompt.value = '';
+  clearAdminPromptText() {
+    if (this.adminPromptPrompt) {
+      this.adminPromptPrompt.value = '';
     }
   }
 
-  renderSchoolAgentPanel() {
-    if (!this.schoolAgentRoot) {
+  isAdminPromptOpen() {
+    return Boolean(this.adminPromptState.open && this.adminPromptRoot && !this.adminPromptRoot.hidden);
+  }
+
+  renderAdminPromptPanel() {
+    if (!this.adminPromptRoot) {
       return;
     }
 
     const {
       available,
       open,
+      activeTab,
       tasks,
       selectedTaskId,
       loading,
       submitting,
       error,
-      autoDeployAvailable
-    } = this.schoolAgentState;
-    this.schoolAgentRoot.hidden = !available;
-    this.schoolAgentRoot.classList.toggle('is-open', Boolean(available && open));
-    this.schoolAgentRoot.classList.toggle('is-loading', loading || submitting);
-    if (this.schoolAgentPanel) {
-      this.schoolAgentPanel.hidden = !available || !open;
+      autoDeployAvailable,
+      contextLabel
+    } = this.adminPromptState;
+    this.adminPromptRoot.hidden = !available || !open;
+    this.adminPromptRoot.classList.toggle('is-visible', Boolean(available && open));
+    this.adminPromptRoot.classList.toggle('is-loading', loading || submitting);
+    if (this.adminPromptToggle) {
+      this.adminPromptToggle.hidden = !available;
+      this.adminPromptToggle.classList.toggle('is-active', Boolean(open));
+      this.adminPromptToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
     }
-    if (this.schoolAgentToggle) {
-      this.schoolAgentToggle.classList.toggle('is-active', Boolean(open));
-      this.schoolAgentToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (this.adminPromptRefresh) {
+      this.adminPromptRefresh.disabled = loading || submitting;
     }
-    if (this.schoolAgentRefresh) {
-      this.schoolAgentRefresh.disabled = loading || submitting;
+    if (this.adminPromptSubmit) {
+      this.adminPromptSubmit.disabled = submitting;
+      this.adminPromptSubmit.textContent = submitting ? 'Submitting' : 'Submit';
     }
-    if (this.schoolAgentSubmit) {
-      this.schoolAgentSubmit.disabled = submitting;
-      this.schoolAgentSubmit.textContent = submitting ? 'Submitting' : 'Submit';
+    if (this.adminPromptAutoOption) {
+      this.adminPromptAutoOption.hidden = !autoDeployAvailable;
+      this.adminPromptAutoOption.disabled = !autoDeployAvailable;
     }
-    if (this.schoolAgentAutoOption) {
-      this.schoolAgentAutoOption.hidden = !autoDeployAvailable;
-      this.schoolAgentAutoOption.disabled = !autoDeployAvailable;
+    if (this.adminPromptMode && !autoDeployAvailable && this.adminPromptMode.value === 'auto') {
+      this.adminPromptMode.value = 'preview';
     }
-    if (this.schoolAgentMode && !autoDeployAvailable && this.schoolAgentMode.value === 'auto') {
-      this.schoolAgentMode.value = 'preview';
-    }
-    if (this.schoolAgentStatus) {
-      this.schoolAgentStatus.textContent = error
+    if (this.adminPromptStatus) {
+      this.adminPromptStatus.textContent = error
         ? error
         : submitting
           ? 'Submitting task...'
           : loading
             ? 'Refreshing tasks...'
             : tasks.length
-              ? `${tasks.length} Codex task${tasks.length === 1 ? '' : 's'}`
+              ? `${tasks.length} prompt task${tasks.length === 1 ? '' : 's'}`
               : 'Codex worker ready';
-      this.schoolAgentStatus.classList.toggle('is-error', Boolean(error));
+      this.adminPromptStatus.classList.toggle('is-error', Boolean(error));
     }
-    if (this.schoolAgentTasks) {
-      this.schoolAgentTasks.innerHTML = createAgentTaskListMarkup(tasks, selectedTaskId);
+    if (this.adminPromptContext) {
+      this.adminPromptContext.textContent = `Context: ${contextLabel || 'Game'}`;
     }
-    if (this.schoolAgentDetail) {
-      const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
-      this.schoolAgentDetail.innerHTML = createAgentTaskDetailMarkup(selectedTask);
+    if (this.adminPromptTabs) {
+      this.adminPromptTabs.innerHTML = createAdminPromptTabsMarkup(tasks, activeTab);
+    }
+    if (this.adminPromptNew) {
+      this.adminPromptNew.hidden = activeTab !== 'new';
+    }
+    if (this.adminPromptTaskBrowser) {
+      this.adminPromptTaskBrowser.hidden = activeTab === 'new';
+    }
+    if (this.adminPromptTasks) {
+      this.adminPromptTasks.innerHTML = createAgentTaskListMarkup(tasks, selectedTaskId, activeTab);
+    }
+    if (this.adminPromptDetail) {
+      const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
+      const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
+      this.adminPromptDetail.innerHTML = createAgentTaskDetailMarkup(activeTab === 'new' ? null : selectedTask);
     }
   }
 

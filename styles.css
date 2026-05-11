@@ -5659,7 +5659,7 @@ body.is-builder-resizing * {
   width: min(860px, calc(100vw - 28px));
   min-height: min(620px, calc(100vh - 28px));
   display: grid;
-  grid-template-rows: auto 34px minmax(0, 1fr) auto auto;
+  grid-template-rows: auto 34px minmax(0, 1fr) auto;
   gap: 12px;
   padding: 15px;
   border-radius: 14px;
@@ -5783,96 +5783,165 @@ body.is-builder-resizing * {
   line-height: 1.25;
 }
 
-.hud__school-agent {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
+.hud__admin-prompt-toggle {
+  display: inline-flex;
+  min-width: 96px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4eee2;
+  cursor: pointer;
+  pointer-events: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 950;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 
-.hud__school-agent[hidden] {
+.hud__admin-prompt-toggle:hover {
+  border-color: rgba(106, 205, 255, 0.65);
+  background: rgba(106, 205, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.hud__admin-prompt-toggle.is-active {
+  border-color: rgba(117, 227, 193, 0.78);
+  background: rgba(117, 227, 193, 0.16);
+  color: #eafff8;
+}
+
+.hud__admin-prompt-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__admin-prompt {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(74vh, 640px);
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background: rgba(6, 10, 15, 0.92);
+  color: #f4eee2;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.hud__admin-prompt[hidden] {
   display: none;
 }
 
-.hud__school-agent-bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.055);
+.hud__admin-prompt-header,
+.hud__admin-prompt-header-actions,
+.hud__admin-prompt-form-row,
+.hud__admin-prompt-tabs,
+.hud__admin-prompt-meta,
+.hud__admin-prompt-links,
+.hud__admin-prompt-detail-actions {
+  display: flex;
+  gap: 8px;
 }
 
-.hud__school-agent-toggle,
-.hud__school-agent-submit,
-.hud__school-agent-small {
-  min-height: 36px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff6de;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 950;
-  cursor: pointer;
+.hud__admin-prompt-header {
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
-.hud__school-agent-toggle.is-active,
-.hud__school-agent-submit {
-  background: linear-gradient(180deg, #75e3c1, #59b9ff);
-  color: #111820;
+.hud__admin-prompt-header > div:first-child {
+  min-width: 0;
 }
 
-.hud__school-agent-submit:disabled,
-.hud__school-agent-small:disabled {
-  opacity: 0.52;
-  cursor: default;
-}
-
-.hud__school-agent-bar p {
-  margin: 0;
+.hud__admin-prompt-status,
+.hud__admin-prompt-context {
   overflow: hidden;
-  color: rgba(244, 238, 226, 0.74);
-  font-size: 13px;
-  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.hud__school-agent-bar p.is-error {
+.hud__admin-prompt-status.is-error {
   color: #ffb6b6;
 }
 
-.hud__school-agent-panel {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.05fr);
-  gap: 10px;
-  min-height: 150px;
-  max-height: min(300px, 34vh);
+.hud__admin-prompt-tabs {
+  flex-wrap: wrap;
 }
 
-.hud__school-agent-panel[hidden] {
-  display: none;
+.hud__admin-prompt-tab {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(244, 238, 226, 0.74);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 950;
 }
 
-.hud__school-agent-form,
-.hud__school-agent-content,
-.hud__school-agent-detail,
-.hud__school-agent-tasks,
-.hud__school-agent-detail-slot {
+.hud__admin-prompt-tab.is-active {
+  border-color: rgba(117, 227, 193, 0.62);
+  background: rgba(117, 227, 193, 0.14);
+  color: #eafff8;
+}
+
+.hud__admin-prompt-tab em {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(106, 205, 255, 0.18);
+  color: #bceaff;
+  font-style: normal;
+  text-align: center;
+}
+
+.hud__admin-prompt-context {
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(244, 238, 226, 0.7);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.hud__admin-prompt-body,
+.hud__admin-prompt-new,
+.hud__admin-prompt-task-browser,
+.hud__admin-prompt-detail,
+.hud__admin-prompt-tasks,
+.hud__admin-prompt-detail-slot {
   min-height: 0;
 }
 
-.hud__school-agent-form {
+.hud__admin-prompt-new {
   display: grid;
-  grid-template-rows: minmax(82px, 1fr) auto;
+  grid-template-rows: minmax(150px, 1fr) auto;
   gap: 8px;
 }
 
-.hud__school-agent-prompt,
-.hud__school-agent-mode {
+.hud__admin-prompt-new[hidden],
+.hud__admin-prompt-task-browser[hidden] {
+  display: none;
+}
+
+.hud__admin-prompt-prompt,
+.hud__admin-prompt-mode {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 8px;
@@ -5883,38 +5952,69 @@ body.is-builder-resizing * {
   font-weight: 750;
 }
 
-.hud__school-agent-prompt {
-  min-height: 82px;
+.hud__admin-prompt-prompt {
+  min-height: 150px;
   padding: 10px;
   resize: none;
   line-height: 1.35;
 }
 
-.hud__school-agent-mode {
+.hud__admin-prompt-mode {
   min-height: 36px;
   padding: 0 10px;
 }
 
-.hud__school-agent-form-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+.hud__admin-prompt-submit,
+.hud__admin-prompt-small {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff6de;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 950;
 }
 
-.hud__school-agent-content {
+.hud__admin-prompt-submit {
+  background: linear-gradient(180deg, #75e3c1, #59b9ff);
+  color: #111820;
+}
+
+.hud__admin-prompt-small--danger {
+  border-color: rgba(255, 109, 141, 0.38);
+  color: #ffd5de;
+  background: rgba(255, 109, 141, 0.1);
+}
+
+.hud__admin-prompt-submit:disabled,
+.hud__admin-prompt-small:disabled {
+  opacity: 0.52;
+  cursor: default;
+}
+
+.hud__admin-prompt-form-row {
   display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hud__admin-prompt-task-browser {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.82fr) minmax(0, 1.18fr);
   gap: 8px;
+  max-height: min(460px, 54vh);
   overflow: hidden;
 }
 
-.hud__school-agent-tasks,
-.hud__school-agent-detail-slot {
+.hud__admin-prompt-tasks,
+.hud__admin-prompt-detail-slot {
   overflow: auto;
   scrollbar-width: thin;
 }
 
-.hud__school-agent-task {
+.hud__admin-prompt-task {
   width: 100%;
   display: flex;
   align-items: center;
@@ -5926,35 +6026,46 @@ body.is-builder-resizing * {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.055);
   color: #fff6de;
+  cursor: pointer;
   font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
-.hud__school-agent-task.is-active {
-  border-color: color-mix(in srgb, var(--school-accent) 58%, white 12%);
-  background: color-mix(in srgb, var(--school-accent) 14%, rgba(255, 255, 255, 0.055));
+.hud__admin-prompt-task.is-active {
+  border-color: rgba(117, 227, 193, 0.58);
+  background: rgba(117, 227, 193, 0.12);
 }
 
-.hud__school-agent-task strong,
-.hud__school-agent-task small,
-.hud__school-agent-task em {
+.hud__admin-prompt-task strong,
+.hud__admin-prompt-task small,
+.hud__admin-prompt-task em {
   display: block;
 }
 
-.hud__school-agent-task strong {
+.hud__admin-prompt-task span {
+  min-width: 0;
+}
+
+.hud__admin-prompt-task strong,
+.hud__admin-prompt-task small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__admin-prompt-task strong {
   font-size: 13px;
 }
 
-.hud__school-agent-task small {
+.hud__admin-prompt-task small {
   margin-top: 2px;
   color: rgba(244, 238, 226, 0.62);
   font-size: 11px;
   font-weight: 780;
 }
 
-.hud__school-agent-task em,
-.hud__school-agent-detail header span {
+.hud__admin-prompt-task em,
+.hud__admin-prompt-detail header span {
   flex: 0 0 auto;
   padding: 4px 6px;
   border-radius: 999px;
@@ -5966,25 +6077,25 @@ body.is-builder-resizing * {
   text-transform: uppercase;
 }
 
-.hud__school-agent-task em.is-good,
-.hud__school-agent-detail header span.is-good {
+.hud__admin-prompt-task em.is-good,
+.hud__admin-prompt-detail header span.is-good {
   background: rgba(84, 226, 151, 0.18);
   color: #a5ffd1;
 }
 
-.hud__school-agent-task em.is-bad,
-.hud__school-agent-detail header span.is-bad {
+.hud__admin-prompt-task em.is-bad,
+.hud__admin-prompt-detail header span.is-bad {
   background: rgba(255, 109, 141, 0.17);
   color: #ffb8c8;
 }
 
-.hud__school-agent-task em.is-busy,
-.hud__school-agent-detail header span.is-busy {
+.hud__admin-prompt-task em.is-busy,
+.hud__admin-prompt-detail header span.is-busy {
   background: rgba(89, 185, 255, 0.18);
   color: #b7e4ff;
 }
 
-.hud__school-agent-detail {
+.hud__admin-prompt-detail {
   display: grid;
   gap: 8px;
   padding: 9px;
@@ -5993,21 +6104,21 @@ body.is-builder-resizing * {
   background: rgba(0, 0, 0, 0.18);
 }
 
-.hud__school-agent-detail header {
+.hud__admin-prompt-detail header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.hud__school-agent-detail header strong {
+.hud__admin-prompt-detail header strong {
   overflow: hidden;
   color: #fff4d6;
   font-size: 12px;
   text-overflow: ellipsis;
 }
 
-.hud__school-agent-detail p {
+.hud__admin-prompt-detail p {
   margin: 0;
   color: rgba(244, 238, 226, 0.76);
   font-size: 12px;
@@ -6015,16 +6126,14 @@ body.is-builder-resizing * {
   line-height: 1.35;
 }
 
-.hud__school-agent-meta,
-.hud__school-agent-links,
-.hud__school-agent-detail-actions {
-  display: flex;
+.hud__admin-prompt-meta,
+.hud__admin-prompt-links,
+.hud__admin-prompt-detail-actions {
   flex-wrap: wrap;
-  gap: 6px;
 }
 
-.hud__school-agent-meta span,
-.hud__school-agent-link {
+.hud__admin-prompt-meta span,
+.hud__admin-prompt-link {
   padding: 5px 7px;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.07);
@@ -6034,18 +6143,18 @@ body.is-builder-resizing * {
   text-decoration: none;
 }
 
-.hud__school-agent-meta strong {
+.hud__admin-prompt-meta strong {
   color: #fff0bd;
 }
 
-.hud__school-agent-logs {
+.hud__admin-prompt-logs {
   display: grid;
   gap: 5px;
-  max-height: 94px;
+  max-height: 128px;
   overflow: auto;
 }
 
-.hud__school-agent-log {
+.hud__admin-prompt-log {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr);
   gap: 6px;
@@ -6054,15 +6163,15 @@ body.is-builder-resizing * {
   font-weight: 760;
 }
 
-.hud__school-agent-log time {
+.hud__admin-prompt-log time {
   color: rgba(244, 238, 226, 0.48);
 }
 
-.hud__school-agent-log span {
+.hud__admin-prompt-log span {
   overflow-wrap: anywhere;
 }
 
-.hud__school-agent-empty {
+.hud__admin-prompt-empty {
   padding: 8px;
   border: 1px dashed rgba(255, 255, 255, 0.11);
   border-radius: 8px;
@@ -8966,19 +9075,22 @@ canvas {
     bottom: 16px;
     min-height: 0;
     height: auto;
-    grid-template-rows: auto 28px minmax(0, 1fr) auto auto;
+    grid-template-rows: auto 28px minmax(0, 1fr) auto;
     gap: 8px;
     padding: 10px;
     transform: translateY(14px) scale(1);
   }
 
-  .hud__school-agent-panel,
-  .hud__school-agent-content {
+  .hud__admin-prompt-task-browser {
     grid-template-columns: 1fr;
   }
 
-  .hud__school-agent-panel {
-    max-height: min(360px, 42vh);
+  .hud__admin-prompt {
+    width: min(620px, calc(100vw - 32px));
+  }
+
+  .hud__admin-prompt-task-browser {
+    max-height: min(420px, 52vh);
     overflow: auto;
   }
 
@@ -9605,7 +9717,7 @@ canvas {
     width: auto;
     min-height: 0;
     height: auto;
-    grid-template-rows: auto 24px minmax(0, 1fr) auto auto;
+    grid-template-rows: auto 24px minmax(0, 1fr) auto;
     gap: 6px;
     padding: 8px;
     border-radius: 10px;
@@ -9631,16 +9743,17 @@ canvas {
     line-height: 1.1;
   }
 
-  .hud__school-agent-panel {
-    max-height: 36vh;
+  .hud__admin-prompt {
+    width: calc(100vw - 24px);
+    max-height: min(78vh, 620px);
   }
 
-  .hud__school-agent-form {
-    grid-template-rows: minmax(62px, 1fr) auto;
+  .hud__admin-prompt-new {
+    grid-template-rows: minmax(96px, 1fr) auto;
   }
 
-  .hud__school-agent-prompt {
-    min-height: 62px;
+  .hud__admin-prompt-prompt {
+    min-height: 96px;
   }
 
   .hud__school-timer-slot {

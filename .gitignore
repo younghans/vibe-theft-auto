@@ -7,3 +7,4 @@ dist/
 .tmp-gltf-estimate/
 server/data/world-backups/
 server/data/agent-tasks.json
+server/data/agent-deployments.json

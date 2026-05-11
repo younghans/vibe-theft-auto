@@ -257,8 +257,8 @@ const WORLD_MAP_CAPTURE_WIDTH = 1024;
 const WORLD_MAP_CAPTURE_HEIGHT = 1536;
 const WORLD_MAP_CAPTURE_QUALITY = 0.84;
 const ADMIN_AGENT_TASKS_ENDPOINT = '/admin/agent-tasks';
-const SCHOOL_AGENT_TASK_SCOPE = 'school_minigame';
-const SCHOOL_AGENT_TASK_REFRESH_MS = 5000;
+const ADMIN_PROMPT_TASK_SCOPE = 'game';
+const ADMIN_PROMPT_TASK_REFRESH_MS = 5000;
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -626,14 +626,15 @@ export class Game {
     this.schoolMicrogameSequence = 0;
     this.schoolMicrogameRandomCursor = 0;
     this.schoolTeacherPreviewRenderer = null;
-    this.schoolAgentOpen = false;
-    this.schoolAgentTasks = [];
-    this.schoolAgentSelectedTaskId = '';
-    this.schoolAgentLoading = false;
-    this.schoolAgentSubmitting = false;
-    this.schoolAgentError = '';
-    this.schoolAgentRefreshAt = 0;
-    this.schoolAgentRequest = null;
+    this.adminPromptOpen = false;
+    this.adminPromptActiveTab = 'new';
+    this.adminPromptTasks = [];
+    this.adminPromptSelectedTaskId = '';
+    this.adminPromptLoading = false;
+    this.adminPromptSubmitting = false;
+    this.adminPromptError = '';
+    this.adminPromptRefreshAt = 0;
+    this.adminPromptRequest = null;
     this.debugMinigameRequestHandled = false;
     this.debugMinigameRequestRetryTimeout = 0;
     this.aimPoseDebugVisible = false;
@@ -717,13 +718,18 @@ export class Game {
     });
     this.hud.bindSchoolMicrogameEvents({
       onClose: () => this.closeSchoolMicrogame(),
-      onAction: (action) => this.handleSchoolMicrogameAction(action),
-      onAgentToggle: () => this.toggleSchoolAgentPanel(),
-      onAgentRefresh: () => void this.refreshSchoolAgentTasks({ force: true }),
-      onAgentSubmit: (payload) => void this.submitSchoolAgentTask(payload),
-      onAgentSelect: (taskId) => this.selectSchoolAgentTask(taskId),
-      onAgentCancel: (taskId) => void this.cancelSchoolAgentTask(taskId),
-      onAgentApproveDeploy: (taskId) => void this.approveSchoolAgentDeploy(taskId)
+      onAction: (action) => this.handleSchoolMicrogameAction(action)
+    });
+    this.hud.bindAdminPromptEvents({
+      onToggle: () => this.toggleAdminPromptPanel(),
+      onClose: () => this.setAdminPromptOpen(false),
+      onRefresh: () => void this.refreshAdminPromptTasks({ force: true }),
+      onSubmit: (payload) => void this.submitAdminPromptTask(payload),
+      onSelect: (taskId) => this.selectAdminPromptTask(taskId),
+      onCancel: (taskId) => void this.cancelAdminPromptTask(taskId),
+      onApproveDeploy: (taskId) => void this.approveAdminPromptDeploy(taskId),
+      onRollback: (taskId) => void this.approveAdminPromptRollback(taskId),
+      onTab: (tabId) => this.setAdminPromptTab(tabId)
     });
     this.hud.bindPhoneEvents({
       onToggle: () => this.togglePhoneMenu(),
@@ -1617,7 +1623,7 @@ export class Game {
     return new URL(endpointPath, window.location.href).toString();
   }
 
-  isSchoolAgentAutoDeployAvailable() {
+  isAdminPromptAutoDeployAvailable() {
     try {
       const url = new URL(window.location.href);
       return ['1', 'true', 'yes'].includes(String(url.searchParams.get('agentAutoDeploy') ?? '').toLowerCase());
@@ -1626,60 +1632,247 @@ export class Game {
     }
   }
 
-  canUseSchoolAgentFeedback() {
-    return Boolean(this.isLocalAdmin() && this.getAdminKey() && this.hud.isSchoolMicrogameOpen());
+  canUseAdminPrompt() {
+    return Boolean(this.isLocalAdmin() && this.getAdminKey());
   }
 
-  refreshSchoolAgentHud() {
-    const available = this.canUseSchoolAgentFeedback();
+  refreshAdminPromptHud() {
+    const available = this.canUseAdminPrompt();
+    const context = this.getAdminPromptContext();
     if (!available) {
-      this.hud.setSchoolAgentState({
+      this.hud.setAdminPromptState({
         available: false,
         open: false,
-        tasks: this.schoolAgentTasks,
-        selectedTaskId: this.schoolAgentSelectedTaskId,
+        activeTab: this.adminPromptActiveTab,
+        tasks: this.adminPromptTasks,
+        selectedTaskId: this.adminPromptSelectedTaskId,
         loading: false,
         submitting: false,
-        error: ''
+        error: '',
+        contextLabel: context.contextLabel
       });
       return;
     }
 
-    this.hud.setSchoolAgentState({
+    this.hud.setAdminPromptState({
       available: true,
-      open: this.schoolAgentOpen,
-      tasks: this.schoolAgentTasks,
-      selectedTaskId: this.schoolAgentSelectedTaskId,
-      loading: this.schoolAgentLoading,
-      submitting: this.schoolAgentSubmitting,
-      error: this.schoolAgentError,
-      autoDeployAvailable: this.isSchoolAgentAutoDeployAvailable()
+      open: this.adminPromptOpen,
+      activeTab: this.adminPromptActiveTab,
+      tasks: this.adminPromptTasks,
+      selectedTaskId: this.adminPromptSelectedTaskId,
+      loading: this.adminPromptLoading,
+      submitting: this.adminPromptSubmitting,
+      error: this.adminPromptError,
+      autoDeployAvailable: this.isAdminPromptAutoDeployAvailable(),
+      contextLabel: context.contextLabel
     });
   }
 
-  getSchoolAgentSnapshot() {
-    const game = this.schoolMicrogame;
+  getAdminPromptVectorSnapshot(vector = null) {
+    if (!vector) {
+      return null;
+    }
+
+    return {
+      x: Number(vector.x) || 0,
+      y: Number(vector.y) || 0,
+      z: Number(vector.z) || 0
+    };
+  }
+
+  getAdminPromptInteractableSnapshot(interactable = null) {
+    if (!interactable) {
+      return null;
+    }
+
+    const position = this.getAdminPromptVectorSnapshot(interactable.position);
+    const distance = position && this.player?.position
+      ? Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z)
+      : 0;
+    return {
+      kind: String(interactable.kind ?? ''),
+      prompt: String(interactable.prompt ?? ''),
+      actionText: String(interactable.actionText ?? ''),
+      label: String(interactable.label ?? interactable.npc?.name ?? interactable.item?.label ?? ''),
+      placementId: String(interactable.placementId ?? ''),
+      npcId: String(interactable.npcId ?? ''),
+      pickupId: String(interactable.pickupId ?? ''),
+      gameId: String(interactable.gameId ?? ''),
+      itemId: String(interactable.itemId ?? interactable.item?.id ?? ''),
+      position,
+      distance: Number(distance.toFixed(2)) || 0
+    };
+  }
+
+  getAdminPromptContext() {
+    if (this.hud.isSchoolMicrogameOpen()) {
+      const gameId = this.schoolMicrogame?.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID;
+      const definition = getSchoolMicrogameDefinition(gameId);
+      return {
+        contextType: 'school_minigame',
+        contextLabel: `School: ${definition?.shortTitle ?? definition?.title ?? gameId}`,
+        gameId
+      };
+    }
+
+    if (this.hud.isBlackjackOpen()) {
+      return {
+        contextType: 'blackjack',
+        contextLabel: `Blackjack: ${this.blackjackDealerName || 'Dealer'}`,
+        gameId: 'blackjack'
+      };
+    }
+
+    if (this.hud.isStockMarketOpen()) {
+      return {
+        contextType: 'stock_market',
+        contextLabel: this.stockMarketSelectedSymbol ? `Stocks: ${this.stockMarketSelectedSymbol}` : 'Stock Market',
+        gameId: 'stock-market'
+      };
+    }
+
+    if (this.activeWorkout) {
+      const activityConfig = this.activeWorkout.activityConfig ?? getWorkoutActivityConfig(this.activeWorkout);
+      return {
+        contextType: 'gym',
+        contextLabel: `Gym: ${activityConfig?.label ?? this.activeWorkout.phase ?? 'Workout'}`,
+        gameId: activityConfig?.id ?? 'gym'
+      };
+    }
+
+    if (this.hud.isPhoneOpen()) {
+      return {
+        contextType: this.phoneActiveAppId ? `phone_${this.phoneActiveAppId}` : 'phone',
+        contextLabel: this.phoneActiveAppId ? `Phone: ${this.phoneActiveAppId}` : 'Phone',
+        gameId: this.phoneActiveAppId || 'phone'
+      };
+    }
+
+    if (this.worldBuilder?.enabled) {
+      const selectedPlacement = this.worldBuilder.getSelectedPlacement?.();
+      const hoveredPlacement = this.worldBuilder.getHoveredPlacement?.();
+      const activeItem = this.worldBuilder.activeItem;
+      const label = selectedPlacement?.label
+        || hoveredPlacement?.label
+        || activeItem?.label
+        || this.worldBuilder.activeCategory?.label
+        || 'World Builder';
+      return {
+        contextType: 'world_builder',
+        contextLabel: `Builder: ${label}`,
+        gameId: 'world-builder'
+      };
+    }
+
+    const interactable = this.getAdminPromptInteractableSnapshot(this.currentInteractable);
+    if (interactable) {
+      return {
+        contextType: interactable.kind || 'interaction',
+        contextLabel: interactable.prompt || interactable.actionText || interactable.label || interactable.kind || 'Interaction',
+        gameId: interactable.gameId || interactable.kind || 'interaction'
+      };
+    }
+
+    return {
+      contextType: 'game',
+      contextLabel: 'Game',
+      gameId: ''
+    };
+  }
+
+  getAdminPromptSnapshot() {
+    const context = this.getAdminPromptContext();
     const playerPosition = this.player?.position;
+    const localPlayerState = this.getLocalPlayerState();
+    const selectedPlacement = this.worldBuilder?.getSelectedPlacement?.();
+    const hoveredPlacement = this.worldBuilder?.getHoveredPlacement?.();
+    const selectedStock = this.stockMarketSnapshot?.stocks?.find?.((stock) => stock.symbol === this.stockMarketSelectedSymbol) ?? null;
     const snapshot = {
-      gameId: game?.round?.gameId ?? '',
-      round: game?.round ?? null,
-      data: game?.data ?? null,
-      phase: game?.phase ?? '',
-      remainingMs: game?.remainingMs ?? 0,
-      resultTitle: game?.resultTitle ?? '',
-      resultDetail: game?.resultDetail ?? '',
-      npcId: this.schoolMicrogameNpcId,
-      npcName: this.schoolMicrogameNpcName,
-      npcModelId: this.schoolMicrogameNpcModelId,
       url: window.location.href,
       buildVersion: '',
-      adminPosition: playerPosition
+      context,
+      admin: {
+        sessionId: this.npcServiceState?.sessionId ?? '',
+        isAdmin: this.isLocalAdmin(),
+        position: this.getAdminPromptVectorSnapshot(playerPosition),
+        rotationY: Number(this.player?.object?.rotation?.y ?? 0) || 0,
+        characterId: this.desiredLocalCharacterId,
+        money: Number(localPlayerState?.money ?? 0) || 0,
+        health: Number(localPlayerState?.health ?? 0) || 0,
+        selectedMissionId: String(localPlayerState?.selectedMissionId ?? '')
+      },
+      ui: {
+        phoneOpen: this.hud.isPhoneOpen(),
+        phoneActiveAppId: this.phoneActiveAppId,
+        stockMarketOpen: this.hud.isStockMarketOpen(),
+        blackjackOpen: this.hud.isBlackjackOpen(),
+        schoolMicrogameOpen: this.hud.isSchoolMicrogameOpen(),
+        worldBuilderEnabled: Boolean(this.worldBuilder?.enabled),
+        quickChatOpen: this.hud.isQuickChatOpen()
+      },
+      nearestInteractable: this.getAdminPromptInteractableSnapshot(this.currentInteractable),
+      schoolMicrogame: this.schoolMicrogame
         ? {
-            x: Number(playerPosition.x) || 0,
-            y: Number(playerPosition.y) || 0,
-            z: Number(playerPosition.z) || 0
+            gameId: this.schoolMicrogame.round?.gameId ?? '',
+            round: this.schoolMicrogame.round ?? null,
+            data: this.schoolMicrogame.data ?? null,
+            phase: this.schoolMicrogame.phase ?? '',
+            remainingMs: this.schoolMicrogame.remainingMs ?? 0,
+            resultTitle: this.schoolMicrogame.resultTitle ?? '',
+            resultDetail: this.schoolMicrogame.resultDetail ?? '',
+            npcId: this.schoolMicrogameNpcId,
+            npcName: this.schoolMicrogameNpcName,
+            npcModelId: this.schoolMicrogameNpcModelId
           }
-        : null
+        : null,
+      blackjack: this.blackjackState
+        ? {
+            dealerName: this.blackjackDealerName,
+            wager: this.blackjackWager,
+            state: this.blackjackState
+          }
+        : null,
+      stockMarket: this.stockMarketSnapshot
+        ? {
+            selectedSymbol: this.stockMarketSelectedSymbol,
+            quantity: this.stockMarketQuantity,
+            marketMood: this.stockMarketSnapshot.marketMood ?? '',
+            selectedStock
+          }
+        : null,
+      phone: {
+        activeAppId: this.phoneActiveAppId,
+        selectedMissionId: String(localPlayerState?.selectedMissionId ?? ''),
+        selectedStockSymbol: this.phoneStocksState?.selectedSymbol ?? '',
+        walletCash: this.phoneWalletState?.cash ?? 0
+      },
+      worldBuilder: this.worldBuilder
+        ? {
+            enabled: this.worldBuilder.enabled,
+            activeCategoryId: this.worldBuilder.state?.activeCategoryId ?? '',
+            activeGroupId: this.worldBuilder.activeGroupId ?? '',
+            activeItem: this.worldBuilder.activeItem
+              ? {
+                  id: this.worldBuilder.activeItem.id,
+                  label: this.worldBuilder.activeItem.label,
+                  layer: this.worldBuilder.activeItem.layer
+                }
+              : null,
+            selectedPlacement,
+            hoveredPlacement,
+            activeNpcEditorPlacementId: this.worldBuilder.activeNpcEditorPlacementId ?? '',
+            activeBuildingEditorPlacementId: this.worldBuilder.activeBuildingEditorPlacementId ?? ''
+          }
+        : null,
+      workout: this.activeWorkout
+        ? {
+            phase: this.activeWorkout.phase ?? '',
+            placementId: this.activeWorkoutPlacementId,
+            activityId: this.activeWorkout.activityConfig?.id ?? '',
+            label: this.activeWorkout.activityConfig?.label ?? ''
+          }
+        : null,
+      recentTaskTargetLabel: context.contextLabel
     };
 
     try {
@@ -1689,113 +1882,128 @@ export class Game {
     }
   }
 
-  getSchoolAgentCreatedBy() {
+  getAdminPromptCreatedBy() {
     return String(this.npcServiceState?.sessionId ?? 'in-game-admin');
   }
 
-  async refreshSchoolAgentTasks({ force = false } = {}) {
-    if (!this.canUseSchoolAgentFeedback()) {
-      this.schoolAgentTasks = [];
-      this.schoolAgentError = '';
-      this.refreshSchoolAgentHud();
+  async refreshAdminPromptTasks({ force = false } = {}) {
+    if (!this.canUseAdminPrompt()) {
+      this.adminPromptTasks = [];
+      this.adminPromptError = '';
+      this.refreshAdminPromptHud();
       return;
     }
-    if (this.schoolAgentLoading || (!force && performance.now() < this.schoolAgentRefreshAt)) {
+    if (this.adminPromptLoading || (!force && performance.now() < this.adminPromptRefreshAt)) {
       return;
     }
 
     const adminKey = this.getAdminKey();
-    this.schoolAgentLoading = true;
-    this.schoolAgentError = '';
-    this.refreshSchoolAgentHud();
+    this.adminPromptLoading = true;
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
     try {
       const url = new URL(this.getAdminAgentTasksEndpoint());
       url.searchParams.set('adminKey', adminKey);
-      url.searchParams.set('scope', SCHOOL_AGENT_TASK_SCOPE);
-      url.searchParams.set('limit', '12');
+      url.searchParams.set('limit', '40');
       const response = await fetch(url.toString(), { cache: 'no-store' });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not refresh Codex tasks.');
       }
 
-      this.schoolAgentTasks = Array.isArray(result.tasks) ? result.tasks : [];
+      this.adminPromptTasks = Array.isArray(result.tasks) ? result.tasks : [];
       if (
-        this.schoolAgentSelectedTaskId
-        && !this.schoolAgentTasks.some((task) => task.id === this.schoolAgentSelectedTaskId)
+        this.adminPromptSelectedTaskId
+        && !this.adminPromptTasks.some((task) => task.id === this.adminPromptSelectedTaskId)
       ) {
-        this.schoolAgentSelectedTaskId = '';
+        this.adminPromptSelectedTaskId = '';
       }
-      if (!this.schoolAgentSelectedTaskId && this.schoolAgentTasks.length > 0) {
-        this.schoolAgentSelectedTaskId = this.schoolAgentTasks[0].id;
+      if (!this.adminPromptSelectedTaskId && this.adminPromptTasks.length > 0) {
+        this.adminPromptSelectedTaskId = this.adminPromptTasks[0].id;
       }
-      this.schoolAgentRefreshAt = performance.now() + SCHOOL_AGENT_TASK_REFRESH_MS;
+      this.adminPromptRefreshAt = performance.now() + ADMIN_PROMPT_TASK_REFRESH_MS;
     } catch (error) {
       console.warn('[AgentTasks] Refresh failed.', error);
-      this.schoolAgentError = error?.message ?? 'Codex task refresh failed.';
+      this.adminPromptError = error?.message ?? 'Codex task refresh failed.';
     } finally {
-      this.schoolAgentLoading = false;
-      this.refreshSchoolAgentHud();
+      this.adminPromptLoading = false;
+      this.refreshAdminPromptHud();
     }
   }
 
-  toggleSchoolAgentPanel() {
-    if (!this.canUseSchoolAgentFeedback()) {
-      this.hud.showToast('Codex feedback is admin only.');
-      return;
+  setAdminPromptOpen(open) {
+    const nextOpen = Boolean(open && this.canUseAdminPrompt());
+    if (open && !nextOpen) {
+      this.hud.showToast('Prompt is admin only.');
     }
-
-    this.schoolAgentOpen = !this.schoolAgentOpen;
-    this.refreshSchoolAgentHud();
-    if (this.schoolAgentOpen) {
-      void this.refreshSchoolAgentTasks({ force: true });
+    this.adminPromptOpen = nextOpen;
+    this.refreshAdminPromptHud();
+    if (nextOpen) {
+      void this.refreshAdminPromptTasks({ force: true });
     }
   }
 
-  selectSchoolAgentTask(taskId = '') {
+  toggleAdminPromptPanel() {
+    this.setAdminPromptOpen(!this.adminPromptOpen);
+  }
+
+  setAdminPromptTab(tabId = '') {
+    this.adminPromptActiveTab = ['new', 'active', 'ready', 'deployed', 'history'].includes(String(tabId))
+      ? String(tabId)
+      : 'new';
+    this.refreshAdminPromptHud();
+    if (this.adminPromptOpen && this.adminPromptActiveTab !== 'new') {
+      void this.refreshAdminPromptTasks({ force: true });
+    }
+  }
+
+  selectAdminPromptTask(taskId = '') {
     const id = String(taskId ?? '').trim();
-    if (!id || !this.schoolAgentTasks.some((task) => task.id === id)) {
+    if (!id || !this.adminPromptTasks.some((task) => task.id === id)) {
       return;
     }
 
-    this.schoolAgentSelectedTaskId = id;
-    this.refreshSchoolAgentHud();
+    this.adminPromptSelectedTaskId = id;
+    this.refreshAdminPromptHud();
   }
 
-  async submitSchoolAgentTask({ prompt = '', mode = 'preview' } = {}) {
-    if (!this.canUseSchoolAgentFeedback()) {
-      this.hud.showToast('Codex feedback is admin only.');
+  async submitAdminPromptTask({ prompt = '', mode = 'preview' } = {}) {
+    if (!this.canUseAdminPrompt()) {
+      this.hud.showToast('Prompt is admin only.');
       return;
     }
-    if (this.schoolAgentSubmitting) {
+    if (this.adminPromptSubmitting) {
       return;
     }
 
     const cleanedPrompt = String(prompt ?? '').trim();
     if (cleanedPrompt.length < 8) {
-      this.schoolAgentError = 'Add a longer prompt.';
-      this.refreshSchoolAgentHud();
+      this.adminPromptError = 'Add a longer prompt.';
+      this.refreshAdminPromptHud();
       return;
     }
 
-    const requestedMode = String(mode ?? 'preview') === 'auto' && this.isSchoolAgentAutoDeployAvailable()
+    const requestedMode = String(mode ?? 'preview') === 'auto' && this.isAdminPromptAutoDeployAvailable()
       ? 'auto'
       : 'preview';
-    this.schoolAgentSubmitting = true;
-    this.schoolAgentError = '';
-    this.refreshSchoolAgentHud();
+    const context = this.getAdminPromptContext();
+    this.adminPromptSubmitting = true;
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           adminKey: this.getAdminKey(),
-          createdBy: this.getSchoolAgentCreatedBy(),
-          scope: SCHOOL_AGENT_TASK_SCOPE,
-          gameId: this.schoolMicrogame?.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID,
+          createdBy: this.getAdminPromptCreatedBy(),
+          scope: ADMIN_PROMPT_TASK_SCOPE,
+          contextType: context.contextType,
+          contextLabel: context.contextLabel,
+          gameId: context.gameId,
           prompt: cleanedPrompt,
           mode: requestedMode,
-          snapshot: this.getSchoolAgentSnapshot()
+          snapshot: this.getAdminPromptSnapshot()
         })
       });
       const result = await response.json().catch(() => null);
@@ -1803,23 +2011,24 @@ export class Game {
         throw new Error(result?.error || 'Could not submit Codex task.');
       }
 
-      this.schoolAgentOpen = true;
-      this.schoolAgentSelectedTaskId = result.task?.id ?? '';
-      this.hud.clearSchoolAgentPrompt();
+      this.adminPromptOpen = true;
+      this.adminPromptActiveTab = 'active';
+      this.adminPromptSelectedTaskId = result.task?.id ?? '';
+      this.hud.clearAdminPromptText();
       this.hud.showToast('Codex task queued.');
-      await this.refreshSchoolAgentTasks({ force: true });
+      await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Submit failed.', error);
-      this.schoolAgentError = error?.message ?? 'Codex task submit failed.';
+      this.adminPromptError = error?.message ?? 'Codex task submit failed.';
     } finally {
-      this.schoolAgentSubmitting = false;
-      this.refreshSchoolAgentHud();
+      this.adminPromptSubmitting = false;
+      this.refreshAdminPromptHud();
     }
   }
 
-  async cancelSchoolAgentTask(taskId = '') {
+  async cancelAdminPromptTask(taskId = '') {
     const id = String(taskId ?? '').trim();
-    if (!id || !this.canUseSchoolAgentFeedback()) {
+    if (!id || !this.canUseAdminPrompt()) {
       return;
     }
 
@@ -1829,24 +2038,24 @@ export class Game {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           adminKey: this.getAdminKey(),
-          createdBy: this.getSchoolAgentCreatedBy()
+          createdBy: this.getAdminPromptCreatedBy()
         })
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not cancel Codex task.');
       }
-      await this.refreshSchoolAgentTasks({ force: true });
+      await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Cancel failed.', error);
-      this.schoolAgentError = error?.message ?? 'Codex task cancel failed.';
-      this.refreshSchoolAgentHud();
+      this.adminPromptError = error?.message ?? 'Codex task cancel failed.';
+      this.refreshAdminPromptHud();
     }
   }
 
-  async approveSchoolAgentDeploy(taskId = '') {
+  async approveAdminPromptDeploy(taskId = '') {
     const id = String(taskId ?? '').trim();
-    if (!id || !this.canUseSchoolAgentFeedback()) {
+    if (!id || !this.canUseAdminPrompt()) {
       return;
     }
 
@@ -1856,7 +2065,7 @@ export class Game {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           adminKey: this.getAdminKey(),
-          createdBy: this.getSchoolAgentCreatedBy()
+          createdBy: this.getAdminPromptCreatedBy()
         })
       });
       const result = await response.json().catch(() => null);
@@ -1864,20 +2073,48 @@ export class Game {
         throw new Error(result?.error || 'Could not approve deploy.');
       }
       this.hud.showToast('Deploy approved for worker.');
-      await this.refreshSchoolAgentTasks({ force: true });
+      await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Deploy approval failed.', error);
-      this.schoolAgentError = error?.message ?? 'Codex deploy approval failed.';
-      this.refreshSchoolAgentHud();
+      this.adminPromptError = error?.message ?? 'Codex deploy approval failed.';
+      this.refreshAdminPromptHud();
     }
   }
 
-  updateSchoolAgentPolling() {
-    if (!this.schoolAgentOpen || !this.canUseSchoolAgentFeedback()) {
+  async approveAdminPromptRollback(taskId = '') {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.canUseAdminPrompt()) {
       return;
     }
 
-    void this.refreshSchoolAgentTasks();
+    try {
+      const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/rollback`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: this.getAdminKey(),
+          createdBy: this.getAdminPromptCreatedBy()
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not approve rollback.');
+      }
+      this.hud.showToast('Rollback approved for worker.');
+      await this.refreshAdminPromptTasks({ force: true });
+    } catch (error) {
+      console.warn('[AgentTasks] Rollback approval failed.', error);
+      this.adminPromptError = error?.message ?? 'Codex rollback approval failed.';
+      this.refreshAdminPromptHud();
+    }
+  }
+
+  updateAdminPromptPolling() {
+    if (!this.adminPromptOpen || !this.canUseAdminPrompt()) {
+      return;
+    }
+
+    void this.refreshAdminPromptTasks();
   }
 
   refreshMapCaptureHud() {
@@ -2206,6 +2443,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -2630,7 +2868,7 @@ export class Game {
     this.refreshShaderDebugHud();
     this.refreshAdminPositionHud();
     this.refreshMapCaptureHud();
-    this.refreshSchoolAgentHud();
+    this.refreshAdminPromptHud();
   }
 
   refreshAdminPositionHud() {
@@ -5057,11 +5295,8 @@ export class Game {
       loading: false,
       error: ''
     });
-    this.schoolAgentError = '';
-    this.refreshSchoolAgentHud();
-    if (visible && this.canUseSchoolAgentFeedback()) {
-      void this.refreshSchoolAgentTasks({ force: true });
-    }
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
   }
 
   beginSchoolMicrogame() {
@@ -5128,15 +5363,14 @@ export class Game {
   closeSchoolMicrogame() {
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameRequestInFlight = false;
-    this.schoolAgentOpen = false;
-    this.schoolAgentError = '';
+    this.adminPromptError = '';
     this.hud.setSchoolMicrogameState({
       visible: false,
       game: this.schoolMicrogame,
       loading: false,
       error: ''
     });
-    this.refreshSchoolAgentHud();
+    this.refreshAdminPromptHud();
     this.schoolTeacherPreviewRenderer?.setActive(false);
   }
 
@@ -5769,8 +6003,6 @@ export class Game {
     if (!game || !this.hud.isSchoolMicrogameOpen()) {
       return;
     }
-
-    this.updateSchoolAgentPolling();
 
     if (game.phase !== 'playing') {
       return;
@@ -8595,6 +8827,7 @@ export class Game {
     if (this.hud.isStockMarketOpen()) {
       void this.refreshStockMarket();
     }
+    this.updateAdminPromptPolling();
     if (this.hud.isSchoolMicrogameOpen()) {
       this.updateSchoolMicrogame(deltaSeconds);
       this.updateSchoolTeacherPreview(deltaSeconds);
@@ -8607,6 +8840,8 @@ export class Game {
     if (this.input.consumeAction('escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
+      } else if (this.hud.isAdminPromptOpen()) {
+        this.setAdminPromptOpen(false);
       } else if (this.hud.isPhoneOpen()) {
         this.closePhoneMenu();
       } else if (this.hud.isStockMarketOpen()) {
@@ -8659,9 +8894,10 @@ export class Game {
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
       const schoolMicrogameOpen = this.hud.isSchoolMicrogameOpen();
+      const adminPromptOpen = this.hud.isAdminPromptOpen();
       const phoneOpen = this.hud.isPhoneOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -8670,11 +8906,11 @@ export class Game {
       const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -8702,7 +8938,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -8729,7 +8965,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -8757,7 +8993,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || phoneOpen) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {

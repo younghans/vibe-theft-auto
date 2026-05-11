@@ -17,12 +17,14 @@ export const AGENT_TASK_STATUSES = Object.freeze([
   'ready_for_review',
   'deploying',
   'deployed',
+  'rolling_back',
+  'rolled_back',
   'failed',
   'cancelled'
 ]);
 
 export const AGENT_TASK_MODES = Object.freeze(['draft', 'preview', 'auto']);
-export const AGENT_TASK_DEFAULT_SCOPE = 'school_minigame';
+export const AGENT_TASK_DEFAULT_SCOPE = 'game';
 export const AGENT_TASK_LOG_LIMIT = 240;
 export const AGENT_TASK_PROMPT_MAX_LENGTH = 6000;
 export const AGENT_TASK_ERROR_MAX_LENGTH = 12000;
@@ -38,10 +40,15 @@ const MUTABLE_TASK_FIELDS = new Set([
   'summary',
   'claimedBy',
   'claimedAt',
+  'deployStartedAt',
   'previousDeployCommitSha',
   'newDeployCommitSha',
   'deployedAt',
-  'deployLog'
+  'deployLog',
+  'rollbackStartedAt',
+  'rolledBackAt',
+  'rollbackCommitSha',
+  'rollbackLog'
 ]);
 
 let taskStoreQueue = Promise.resolve();
@@ -80,6 +87,11 @@ function normalizeMode(value = '') {
   return AGENT_TASK_MODES.includes(mode) ? mode : 'preview';
 }
 
+function normalizeContextType(value = '') {
+  const contextType = String(value ?? '').trim().toLowerCase();
+  return contextType || 'game';
+}
+
 function normalizeStatus(value = '') {
   const status = String(value ?? '').trim().toLowerCase();
   return AGENT_TASK_STATUSES.includes(status) ? status : '';
@@ -106,6 +118,8 @@ function normalizeTask(raw = {}) {
     type: String(raw.type ?? 'code_change') || 'code_change',
     scope: normalizeScope(raw.scope),
     gameId: String(raw.gameId ?? '').trim(),
+    contextType: normalizeContextType(raw.contextType ?? raw.scope),
+    contextLabel: String(raw.contextLabel ?? '').trim().slice(0, 160),
     prompt: truncateText(raw.prompt ?? '', AGENT_TASK_PROMPT_MAX_LENGTH),
     mode: normalizeMode(raw.mode),
     status: normalizeStatus(raw.status) || 'queued',
@@ -128,7 +142,13 @@ function normalizeTask(raw = {}) {
     deployedAt: Number.isFinite(Number(raw.deployedAt)) ? Number(raw.deployedAt) : 0,
     previousDeployCommitSha: String(raw.previousDeployCommitSha ?? ''),
     newDeployCommitSha: String(raw.newDeployCommitSha ?? ''),
-    deployLog: truncateText(raw.deployLog ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH)
+    deployLog: truncateText(raw.deployLog ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+    rollbackApprovedAt: Number.isFinite(Number(raw.rollbackApprovedAt)) ? Number(raw.rollbackApprovedAt) : 0,
+    rollbackApprovedBy: String(raw.rollbackApprovedBy ?? ''),
+    rollbackStartedAt: Number.isFinite(Number(raw.rollbackStartedAt)) ? Number(raw.rollbackStartedAt) : 0,
+    rolledBackAt: Number.isFinite(Number(raw.rolledBackAt)) ? Number(raw.rolledBackAt) : 0,
+    rollbackCommitSha: String(raw.rollbackCommitSha ?? ''),
+    rollbackLog: truncateText(raw.rollbackLog ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH)
   };
 }
 
@@ -242,6 +262,8 @@ export async function createAgentTask(payload = {}, {
     type: 'code_change',
     scope: normalizeScope(payload.scope),
     gameId: String(payload.gameId ?? '').trim(),
+    contextType: normalizeContextType(payload.contextType ?? payload.scope),
+    contextLabel: String(payload.contextLabel ?? '').trim(),
     prompt,
     mode: normalizeMode(payload.mode),
     status: 'queued',
@@ -256,7 +278,8 @@ export async function createAgentTask(payload = {}, {
         message: 'Task queued from in-game admin feedback.',
         data: {
           mode: normalizeMode(payload.mode),
-          scope: normalizeScope(payload.scope)
+          scope: normalizeScope(payload.scope),
+          contextType: normalizeContextType(payload.contextType ?? payload.scope)
         }
       }
     ]
@@ -274,14 +297,39 @@ export async function claimNextAgentTask({
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const normalizedScope = normalizeScope(scope);
+  const shouldFilterScope = String(scope ?? '').trim() !== '';
   const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
   const now = Date.now();
 
   return withTaskStore((state) => {
+    const rollbackTask = sortTasks(state.tasks)
+      .reverse()
+      .find((task) => (
+        (!shouldFilterScope || task.scope === normalizedScope)
+        && task.status === 'deployed'
+        && Number(task.rollbackApprovedAt) > 0
+        && !Number(task.rollbackStartedAt)
+      ));
+
+    if (rollbackTask) {
+      rollbackTask.status = 'rolling_back';
+      rollbackTask.claimedBy = normalizedWorkerId;
+      rollbackTask.claimedAt = now;
+      rollbackTask.rollbackStartedAt = now;
+      rollbackTask.updatedAt = now;
+      addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
+        data: { workerId: normalizedWorkerId }
+      });
+      return {
+        action: 'rollback',
+        task: rollbackTask
+      };
+    }
+
     const deployTask = sortTasks(state.tasks)
       .reverse()
       .find((task) => (
-        task.scope === normalizedScope
+        (!shouldFilterScope || task.scope === normalizedScope)
         && task.status === 'ready_for_review'
         && Number(task.deployApprovedAt) > 0
         && !Number(task.deployStartedAt)
@@ -304,7 +352,7 @@ export async function claimNextAgentTask({
 
     const queuedTask = sortTasks(state.tasks)
       .reverse()
-      .find((task) => task.scope === normalizedScope && task.status === 'queued');
+      .find((task) => (!shouldFilterScope || task.scope === normalizedScope) && task.status === 'queued');
 
     if (!queuedTask) {
       return {
@@ -352,11 +400,11 @@ export async function updateAgentTask(taskId, updates = {}, {
           throw new Error(`Invalid task status: ${String(value)}`);
         }
         task.status = status;
-      } else if (['claimedAt', 'deployedAt'].includes(key)) {
+      } else if (['claimedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
         task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
       } else if (key === 'error') {
         task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
-      } else if (key === 'summary' || key === 'deployLog') {
+      } else if (key === 'summary' || key === 'deployLog' || key === 'rollbackLog') {
         task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
       } else {
         task[key] = String(value ?? '');
@@ -396,7 +444,7 @@ export async function cancelAgentTask(taskId, {
   cancelledBy = '',
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
-  const terminalStatuses = new Set(['deployed', 'cancelled']);
+  const terminalStatuses = new Set(['deployed', 'rolled_back', 'cancelled']);
   const id = normalizeTaskId(taskId);
   if (!id) {
     throw new Error('Task id is required.');
@@ -445,6 +493,40 @@ export async function approveAgentTaskDeploy(taskId, {
     task.deployApprovedBy = String(approvedBy ?? '');
     task.updatedAt = Date.now();
     addTaskLog(task, 'Admin approved production deploy.', {
+      data: { approvedBy }
+    });
+    return task;
+  }, { filePath });
+}
+
+export async function approveAgentTaskRollback(taskId, {
+  approvedBy = '',
+  filePath = AGENT_TASKS_FILE_PATH
+} = {}) {
+  const id = normalizeTaskId(taskId);
+  if (!id) {
+    throw new Error('Task id is required.');
+  }
+
+  return withTaskStore((state) => {
+    const task = state.tasks.find((candidate) => candidate.id === id);
+    if (!task) {
+      return null;
+    }
+
+    if (task.status !== 'deployed') {
+      throw new Error('Only deployed tasks can be approved for rollback.');
+    }
+
+    if (Number(task.rollbackApprovedAt) > 0) {
+      return task;
+    }
+
+    task.rollbackApprovedAt = Date.now();
+    task.rollbackApprovedBy = String(approvedBy ?? '');
+    task.updatedAt = Date.now();
+    addTaskLog(task, 'Admin approved rollback.', {
+      level: 'warn',
       data: { approvedBy }
     });
     return task;

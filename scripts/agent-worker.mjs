@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-const DEFAULT_SCOPE = 'school_minigame';
+const DEFAULT_SCOPE = String(process.env.AGENT_TASK_SCOPE || 'game');
 const DEFAULT_POLL_MS = 5000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60 * 1000;
 const CODEX_TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || (45 * 60 * 1000));
@@ -22,14 +22,16 @@ const DEPLOY_COMMAND = process.env.DEPLOY_COMMAND || 'npm run deploy:colyseus';
 const RUN_ONCE = process.argv.includes('--once');
 
 const ALLOWED_EXACT_FILES = new Set([
-  'src/shared/schoolMicrogames.js',
-  'src/game/Game.js',
-  'src/game/Input.js',
-  'src/ui/Hud.js',
+  'index.html',
+  'package.json',
+  'package-lock.json',
   'styles.css'
 ]);
 
 const ALLOWED_PREFIXES = [
+  'assets/',
+  'server/',
+  'src/',
   'scripts/',
   'docs/'
 ];
@@ -167,6 +169,13 @@ async function appendLog(taskId, message, { level = 'info', data = null } = {}) 
   } catch (error) {
     console.warn(`[agent-worker] Could not append task log for ${taskId}.`, error);
   }
+}
+
+async function recordDeployment(payload = {}) {
+  return apiRequest('/admin/agent-deployments', {
+    method: 'PATCH',
+    body: payload
+  });
 }
 
 async function runCommand(command, args = [], {
@@ -347,6 +356,20 @@ async function createDeployWorktree(task) {
   return { branch, worktreePath };
 }
 
+async function createRollbackWorktree(task) {
+  await ensureBaseRepository(task.id);
+  const slug = `${safeTaskSlug(task.id)}-rollback`;
+  const branch = `agent/rollback-${safeTaskSlug(task.id)}`;
+  const worktreePath = path.join(TASKS_ROOT, slug);
+  await cleanTaskWorktree(worktreePath, task.id);
+  await git(['worktree', 'add', '-B', branch, worktreePath, `origin/${GIT_BASE_BRANCH}`], {
+    cwd: REPO_PATH,
+    taskId: task.id,
+    label: 'git worktree add rollback'
+  });
+  return { branch, worktreePath };
+}
+
 function indentBlock(value = '') {
   return String(value ?? '')
     .split(/\r?\n/u)
@@ -366,10 +389,12 @@ Admin request:
 ${indentBlock(task.prompt)}
 
 Scope:
-School minigames. Keep edits scoped unless the request genuinely requires shared input/HUD systems.
+Game-wide admin prompt. Keep edits focused on the requested behavior and the referenced context.
 
-Relevant current game:
-${task.gameId || 'unknown'}
+Current context:
+- Type: ${task.contextType || task.scope || 'game'}
+- Label: ${task.contextLabel || 'Game'}
+- Game ID: ${task.gameId || 'none'}
 
 Runtime snapshot:
 \`\`\`json
@@ -383,14 +408,15 @@ Expected behavior:
 - Add or update focused validation where useful.
 - Run or prepare for \`npm run build\`.
 
-MVP file allowlist:
-- src/shared/schoolMicrogames.js
-- src/game/Game.js
-- src/game/Input.js
-- src/ui/Hud.js
-- styles.css
+Repo file allowlist:
+- src/
+- server/
 - scripts/
 - docs/
+- assets/
+- styles.css
+- index.html
+- package.json / package-lock.json
 
 Important constraints:
 - Do not read or modify secrets.
@@ -439,15 +465,19 @@ async function installAndCheck(task, worktreePath) {
 }
 
 async function getChangedFiles(worktreePath) {
-  const output = await git(['diff', '--name-only', 'HEAD', '--'], {
+  const trackedOutput = await git(['diff', '--name-only', 'HEAD', '--'], {
     cwd: worktreePath,
     label: 'git diff name-only'
   });
-  return output
+  const untrackedOutput = await git(['ls-files', '--others', '--exclude-standard'], {
+    cwd: worktreePath,
+    label: 'git ls-files untracked'
+  });
+  return [...new Set(`${trackedOutput}\n${untrackedOutput}`
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => !line.startsWith('warning:'))
-    .filter(Boolean);
+    .filter(Boolean))];
 }
 
 async function enforceAllowlist(task, worktreePath) {
@@ -491,41 +521,140 @@ async function commitAndPush(task, worktreePath, branch, changedFiles) {
   return { branch, commitSha };
 }
 
-async function deployTask(task, worktreePath) {
-  if (!DEPLOY_ENABLED) {
-    throw new Error('Deployment is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
-  }
-
-  await installAndCheck(task, worktreePath);
-  const previousDeployCommitSha = (await git(['rev-parse', `origin/${GIT_BASE_BRANCH}`], {
-    cwd: REPO_PATH,
-    taskId: task.id,
-    label: 'git rev-parse previous deploy'
-  }).catch(() => '')).trim();
+async function runDeployCommand(task, worktreePath) {
   const deployParts = splitCommandLine(DEPLOY_COMMAND);
   if (!deployParts.length) {
     throw new Error('DEPLOY_COMMAND is empty.');
   }
 
-  const deployOutput = await runCommand(deployParts[0], deployParts.slice(1), {
+  return runCommand(deployParts[0], deployParts.slice(1), {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 30 * 60 * 1000,
     label: 'deploy'
   });
-  const newDeployCommitSha = (await git(['rev-parse', 'HEAD'], {
+}
+
+async function verifyDeployFastForward(task, worktreePath) {
+  await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
+    cwd: REPO_PATH,
+    taskId: task.id,
+    label: 'git fetch deploy base'
+  });
+  const headCommitSha = (await git(['rev-parse', 'HEAD'], {
     cwd: worktreePath,
     taskId: task.id,
-    label: 'git rev-parse deployed'
+    label: 'git rev-parse deploy head'
   })).trim();
+  const expectedCommitSha = String(task.commitSha || '').trim();
+  if (expectedCommitSha && headCommitSha !== expectedCommitSha) {
+    throw new Error(`Deploy checkout is at ${headCommitSha}, expected task commit ${expectedCommitSha}.`);
+  }
+
+  const previousDeployCommitSha = (await git(['rev-parse', `origin/${GIT_BASE_BRANCH}`], {
+    cwd: REPO_PATH,
+    taskId: task.id,
+    label: 'git rev-parse previous deploy'
+  })).trim();
+  await git(['merge-base', '--is-ancestor', previousDeployCommitSha, 'HEAD'], {
+    cwd: worktreePath,
+    taskId: task.id,
+    label: 'git verify deploy fast-forward'
+  }).catch(() => {
+    throw new Error(`Task commit ${headCommitSha} is not a fast-forward from origin/${GIT_BASE_BRANCH}. Rebase or rerun the prompt before deploying.`);
+  });
+
+  return {
+    previousDeployCommitSha,
+    newDeployCommitSha: headCommitSha
+  };
+}
+
+async function pushWorktreeToMain(task, worktreePath) {
+  await git(['push', 'origin', `HEAD:${GIT_BASE_BRANCH}`], {
+    cwd: worktreePath,
+    taskId: task.id,
+    timeoutMs: 10 * 60 * 1000,
+    label: 'git push main'
+  });
+  await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
+    cwd: REPO_PATH,
+    taskId: task.id,
+    label: 'git fetch pushed main'
+  });
+}
+
+async function deployTask(task, worktreePath) {
+  if (!DEPLOY_ENABLED) {
+    throw new Error('Deployment is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
+  }
+
+  const deployRefs = await verifyDeployFastForward(task, worktreePath);
+  await installAndCheck(task, worktreePath);
+  await pushWorktreeToMain(task, worktreePath);
+  const deployOutput = await runDeployCommand(task, worktreePath);
+  await recordDeployment({
+    action: 'deploy',
+    taskId: task.id,
+    previousCommitSha: deployRefs.previousDeployCommitSha,
+    currentCommitSha: deployRefs.newDeployCommitSha,
+    deployUrl: task.deployUrl || ''
+  });
   await updateTask(task.id, {
     status: 'deployed',
-    previousDeployCommitSha,
-    newDeployCommitSha,
-    commitSha: newDeployCommitSha,
+    previousDeployCommitSha: deployRefs.previousDeployCommitSha,
+    newDeployCommitSha: deployRefs.newDeployCommitSha,
+    commitSha: deployRefs.newDeployCommitSha,
     deployedAt: Date.now(),
     deployLog: truncateText(deployOutput, 10000),
     summary: 'Deployment completed successfully.'
+  });
+}
+
+async function rollbackTask(task, worktreePath) {
+  if (!DEPLOY_ENABLED) {
+    throw new Error('Rollback is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
+  }
+
+  const targetCommitSha = String(task.newDeployCommitSha || task.commitSha || '').trim();
+  if (!targetCommitSha) {
+    throw new Error('Rollback task has no deployed commit SHA.');
+  }
+
+  const previousDeployCommitSha = (await git(['rev-parse', 'HEAD'], {
+    cwd: worktreePath,
+    taskId: task.id,
+    label: 'git rev-parse rollback base'
+  })).trim();
+  await git(['revert', '--no-edit', targetCommitSha], {
+    cwd: worktreePath,
+    taskId: task.id,
+    timeoutMs: 10 * 60 * 1000,
+    label: 'git revert deployed task'
+  });
+  const rollbackCommitSha = (await git(['rev-parse', 'HEAD'], {
+    cwd: worktreePath,
+    taskId: task.id,
+    label: 'git rev-parse rollback'
+  })).trim();
+
+  await installAndCheck(task, worktreePath);
+  await pushWorktreeToMain(task, worktreePath);
+  const deployOutput = await runDeployCommand(task, worktreePath);
+  await recordDeployment({
+    action: 'rollback',
+    taskId: task.id,
+    previousCommitSha: previousDeployCommitSha,
+    currentCommitSha: rollbackCommitSha,
+    rollbackCommitSha,
+    deployUrl: task.deployUrl || ''
+  });
+  await updateTask(task.id, {
+    status: 'rolled_back',
+    rolledBackAt: Date.now(),
+    rollbackCommitSha,
+    rollbackLog: truncateText(deployOutput, 10000),
+    summary: 'Rollback deployed successfully.'
   });
 }
 
@@ -601,6 +730,27 @@ async function handleDeployTask(task) {
   }
 }
 
+async function handleRollbackTask(task) {
+  let worktreePath = '';
+  try {
+    const worktree = await createRollbackWorktree(task);
+    worktreePath = worktree.worktreePath;
+    await rollbackTask(task, worktreePath);
+  } catch (error) {
+    await updateTask(task.id, {
+      status: 'failed',
+      error: String(error?.stack ?? error)
+    }).catch(() => {});
+    throw error;
+  } finally {
+    if (worktreePath) {
+      await cleanTaskWorktree(worktreePath, task.id).catch((error) => {
+        console.warn('[agent-worker] Rollback worktree cleanup failed.', error);
+      });
+    }
+  }
+}
+
 async function claimNextTask() {
   return apiRequest('/admin/agent-tasks/next', {
     query: { scope: DEFAULT_SCOPE }
@@ -617,6 +767,8 @@ async function runIteration() {
   await appendLog(task.id, `Worker ${WORKER_ID} started ${result.action || 'task'}.`);
   if (result.action === 'deploy') {
     await handleDeployTask(task);
+  } else if (result.action === 'rollback') {
+    await handleRollbackTask(task);
   } else {
     await handleCodeTask(task);
   }
@@ -645,6 +797,7 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   apiBase: API_BASE,
   workRoot: WORK_ROOT,
   baseBranch: GIT_BASE_BRANCH,
+  scope: DEFAULT_SCOPE,
   autoDeploy: AUTO_DEPLOY,
   deployEnabled: DEPLOY_ENABLED,
   runOnce: RUN_ONCE
