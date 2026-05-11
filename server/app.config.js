@@ -349,7 +349,7 @@ const server = defineServer({
         worldBackupMaxDailyDays: persistence.backups?.maxDailyDays ?? null,
         openAiEnabled: Boolean(process.env.OPENAI_API_KEY),
         openAiModel: process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini',
-        release: 'optimized-assets-safe-build',
+        release: 'cloud-env-websocket-routing-fix',
         distReady: existsSync(DIST_INDEX_PATH),
         timestamp: new Date().toISOString()
       });
@@ -741,6 +741,7 @@ const server = defineServer({
           return;
         }
 
+        res.setHeader('Cache-Control', 'no-store');
         next();
       } catch (error) {
         next(error);

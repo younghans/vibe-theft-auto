@@ -559,10 +559,15 @@ async function deployStagingDist() {
   const existingDistFiles = await walkFiles(dist);
   for (const targetPath of existingDistFiles) {
     const relativePath = path.relative(dist, targetPath);
-    if (!stagingRelativePaths.has(relativePath)) {
+    if (!stagingRelativePaths.has(relativePath) && !shouldKeepStaleDistFile(relativePath)) {
       await fs.rm(targetPath, { force: true });
     }
   }
+}
+
+function shouldKeepStaleDistFile(relativePath) {
+  const normalizedPath = relativePath.split(path.sep).join('/');
+  return /^assets\/(?:app|styles)-[a-z0-9]+\.(?:js|css)(?:\.(?:br|gz))?$/iu.test(normalizedPath);
 }
 
 await resetStagingDist();

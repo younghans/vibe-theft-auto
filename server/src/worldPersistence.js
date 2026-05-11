@@ -731,8 +731,30 @@ export async function initializeWorldPersistence() {
   }
 
   const seedLayout = await readLayoutFile(getConfiguredSeedLayoutUrl()) ?? cloneLayout(defaultWorldLayout);
-  const store = createConfiguredStore();
-  await store.initializeFromSeedIfEmpty(seedLayout);
+  let store = createConfiguredStore();
+
+  try {
+    await store.initializeFromSeedIfEmpty(seedLayout);
+  } catch (error) {
+    const storeInfo = store.getInfo?.() ?? {};
+    if (storeInfo.mode !== 'postgres' || !isProductionEnvironment()) {
+      throw error;
+    }
+
+    console.error('[world-persistence] Failed to initialize Postgres world persistence; using emergency production file fallback.', {
+      message: error?.message,
+      code: error?.code
+    });
+
+    await store.dispose().catch((disposeError) => {
+      console.warn('[world-persistence] Failed to dispose Postgres store after initialization error.', {
+        message: disposeError?.message
+      });
+    });
+
+    store = new FileWorldPersistenceStore();
+    await store.initializeFromSeedIfEmpty(seedLayout);
+  }
 
   const initialLayout = await store.load() ?? seedLayout;
   worldPersistenceManager = new WorldPersistenceManager(store, initialLayout);

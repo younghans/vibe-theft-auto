@@ -233,7 +233,7 @@ function createColyseusUrlBuilder(endpoint) {
 
     if (!hasLoggedCloudRewrite) {
       hasLoggedCloudRewrite = true;
-      console.info('[NPC] Rewriting Colyseus Cloud public address to the configured endpoint host.', {
+      console.info('[NPC] Rewriting Colyseus Cloud room address to the configured endpoint host.', {
         from: url.host,
         to: endpointHost
       });
