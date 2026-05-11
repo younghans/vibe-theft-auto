@@ -5,6 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { defineRoom, defineServer } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { WorldRoom } from './src/WorldRoom.js';
+import {
+  appendAgentTaskLog,
+  approveAgentTaskDeploy,
+  cancelAgentTask,
+  claimNextAgentTask,
+  createAgentTask,
+  getAgentTask,
+  listAgentTasks,
+  updateAgentTask
+} from './src/agentTasks.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -144,6 +154,37 @@ function isValidAdminKey(value = '') {
   return Boolean(normalized && adminKeys.size > 0 && adminKeys.has(normalized));
 }
 
+function isValidAgentWorkerToken(value = '') {
+  const workerTokens = parseAdminKeys(process.env.AGENT_WORKER_TOKENS ?? process.env.AGENT_WORKER_TOKEN ?? '');
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return Boolean(normalized && workerTokens.size > 0 && workerTokens.has(normalized));
+}
+
+function getBearerToken(req) {
+  const authorization = typeof req.headers.authorization === 'string'
+    ? req.headers.authorization
+    : '';
+  const match = authorization.match(/^Bearer\s+(.+)$/iu);
+  return match?.[1]?.trim() ?? '';
+}
+
+function getAdminKeyFromRequest(req, payload = null) {
+  const payloadKey = typeof payload?.adminKey === 'string' ? payload.adminKey.trim() : '';
+  if (payloadKey) {
+    return payloadKey;
+  }
+
+  const queryKey = typeof req.query?.adminKey === 'string' ? req.query.adminKey.trim() : '';
+  if (queryKey) {
+    return queryKey;
+  }
+
+  const headerKey = typeof req.headers['x-admin-key'] === 'string'
+    ? req.headers['x-admin-key'].trim()
+    : '';
+  return headerKey;
+}
+
 function setAdminWorldMapCorsHeaders(req, res) {
   const origin = typeof req.headers.origin === 'string' && req.headers.origin
     ? req.headers.origin
@@ -151,6 +192,15 @@ function setAdminWorldMapCorsHeaders(req, res) {
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Headers', 'content-type');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+}
+
+function setAdminAgentTaskCorsHeaders(req, res) {
+  const origin = typeof req.headers.origin === 'string' && req.headers.origin
+    ? req.headers.origin
+    : '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type,x-admin-key,x-agent-worker-id');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
 }
 
 function sendJson(res, status, payload) {
@@ -339,6 +389,226 @@ const server = defineServer({
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not save world map.'
+        });
+      }
+    });
+
+    for (const route of [
+      '/admin/agent-tasks',
+      '/admin/agent-tasks/next',
+      '/admin/agent-tasks/:id',
+      '/admin/agent-tasks/:id/logs',
+      '/admin/agent-tasks/:id/cancel',
+      '/admin/agent-tasks/:id/approve-deploy'
+    ]) {
+      app.options(route, (req, res) => {
+        setAdminAgentTaskCorsHeaders(req, res);
+        res.status(204).end();
+      });
+    }
+
+    app.post('/admin/agent-tasks', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        const adminKey = getAdminKeyFromRequest(req, payload);
+        if (!isValidAdminKey(adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const task = await createAgentTask(payload, {
+          createdBy: String(payload?.createdBy ?? 'in-game-admin')
+        });
+        sendJson(res, 201, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not queue agent task.'
+        });
+      }
+    });
+
+    app.get('/admin/agent-tasks', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAdminKey(getAdminKeyFromRequest(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const tasks = await listAgentTasks({
+          scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
+          gameId: typeof req.query?.gameId === 'string' ? req.query.gameId : '',
+          limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25
+        });
+        sendJson(res, 200, { ok: true, tasks });
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not list agent tasks.'
+        });
+      }
+    });
+
+    app.get('/admin/agent-tasks/next', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAgentWorkerToken(getBearerToken(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
+          return;
+        }
+
+        const result = await claimNextAgentTask({
+          scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
+          workerId: typeof req.headers['x-agent-worker-id'] === 'string'
+            ? req.headers['x-agent-worker-id']
+            : ''
+        });
+        sendJson(res, 200, {
+          ok: true,
+          action: result.action,
+          task: result.task
+        });
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not claim agent task.'
+        });
+      }
+    });
+
+    app.get('/admin/agent-tasks/:id', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
+          || isValidAgentWorkerToken(getBearerToken(req));
+        if (!isAuthorized) {
+          sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
+          return;
+        }
+
+        const task = await getAgentTask(req.params.id);
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not read agent task.'
+        });
+      }
+    });
+
+    app.patch('/admin/agent-tasks/:id', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAgentWorkerToken(getBearerToken(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
+          return;
+        }
+
+        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        const task = await updateAgentTask(req.params.id, payload);
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not update agent task.'
+        });
+      }
+    });
+
+    app.post('/admin/agent-tasks/:id/logs', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAgentWorkerToken(getBearerToken(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
+          return;
+        }
+
+        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        const task = await appendAgentTaskLog(req.params.id, payload);
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not append agent task log.'
+        });
+      }
+    });
+
+    app.post('/admin/agent-tasks/:id/cancel', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        const adminKey = getAdminKeyFromRequest(req, payload);
+        if (!isValidAdminKey(adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const task = await cancelAgentTask(req.params.id, {
+          cancelledBy: String(payload?.createdBy ?? 'in-game-admin')
+        });
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not cancel agent task.'
+        });
+      }
+    });
+
+    app.post('/admin/agent-tasks/:id/approve-deploy', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        const adminKey = getAdminKeyFromRequest(req, payload);
+        if (!isValidAdminKey(adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const task = await approveAgentTaskDeploy(req.params.id, {
+          approvedBy: String(payload?.createdBy ?? 'in-game-admin')
+        });
+        if (!task) {
+          sendJson(res, 404, { ok: false, error: 'Task not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not approve deploy.'
         });
       }
     });

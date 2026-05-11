@@ -256,6 +256,9 @@ const WORLD_MAP_CAPTURE_ENDPOINT = '/admin/world-map';
 const WORLD_MAP_CAPTURE_WIDTH = 1024;
 const WORLD_MAP_CAPTURE_HEIGHT = 1536;
 const WORLD_MAP_CAPTURE_QUALITY = 0.84;
+const ADMIN_AGENT_TASKS_ENDPOINT = '/admin/agent-tasks';
+const SCHOOL_AGENT_TASK_SCOPE = 'school_minigame';
+const SCHOOL_AGENT_TASK_REFRESH_MS = 5000;
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -623,6 +626,14 @@ export class Game {
     this.schoolMicrogameSequence = 0;
     this.schoolMicrogameRandomCursor = 0;
     this.schoolTeacherPreviewRenderer = null;
+    this.schoolAgentOpen = false;
+    this.schoolAgentTasks = [];
+    this.schoolAgentSelectedTaskId = '';
+    this.schoolAgentLoading = false;
+    this.schoolAgentSubmitting = false;
+    this.schoolAgentError = '';
+    this.schoolAgentRefreshAt = 0;
+    this.schoolAgentRequest = null;
     this.debugMinigameRequestHandled = false;
     this.debugMinigameRequestRetryTimeout = 0;
     this.aimPoseDebugVisible = false;
@@ -706,7 +717,13 @@ export class Game {
     });
     this.hud.bindSchoolMicrogameEvents({
       onClose: () => this.closeSchoolMicrogame(),
-      onAction: (action) => this.handleSchoolMicrogameAction(action)
+      onAction: (action) => this.handleSchoolMicrogameAction(action),
+      onAgentToggle: () => this.toggleSchoolAgentPanel(),
+      onAgentRefresh: () => void this.refreshSchoolAgentTasks({ force: true }),
+      onAgentSubmit: (payload) => void this.submitSchoolAgentTask(payload),
+      onAgentSelect: (taskId) => this.selectSchoolAgentTask(taskId),
+      onAgentCancel: (taskId) => void this.cancelSchoolAgentTask(taskId),
+      onAgentApproveDeploy: (taskId) => void this.approveSchoolAgentDeploy(taskId)
     });
     this.hud.bindPhoneEvents({
       onToggle: () => this.togglePhoneMenu(),
@@ -1580,6 +1597,289 @@ export class Game {
     return new URL(WORLD_MAP_CAPTURE_ENDPOINT, window.location.href).toString();
   }
 
+  getAdminAgentTasksEndpoint(pathname = '') {
+    const serviceEndpoint = this.npcService?.endpoint;
+    const suffix = String(pathname ?? '').trim();
+    const endpointPath = `${ADMIN_AGENT_TASKS_ENDPOINT}${suffix ? `/${suffix.replace(/^\/+/, '')}` : ''}`;
+    if (typeof serviceEndpoint === 'string' && /^wss?:\/\//i.test(serviceEndpoint)) {
+      try {
+        const url = new URL(serviceEndpoint);
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+        url.pathname = endpointPath;
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+      } catch {
+        // Fall through to same-origin endpoint.
+      }
+    }
+
+    return new URL(endpointPath, window.location.href).toString();
+  }
+
+  isSchoolAgentAutoDeployAvailable() {
+    try {
+      const url = new URL(window.location.href);
+      return ['1', 'true', 'yes'].includes(String(url.searchParams.get('agentAutoDeploy') ?? '').toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  canUseSchoolAgentFeedback() {
+    return Boolean(this.isLocalAdmin() && this.getAdminKey() && this.hud.isSchoolMicrogameOpen());
+  }
+
+  refreshSchoolAgentHud() {
+    const available = this.canUseSchoolAgentFeedback();
+    if (!available) {
+      this.hud.setSchoolAgentState({
+        available: false,
+        open: false,
+        tasks: this.schoolAgentTasks,
+        selectedTaskId: this.schoolAgentSelectedTaskId,
+        loading: false,
+        submitting: false,
+        error: ''
+      });
+      return;
+    }
+
+    this.hud.setSchoolAgentState({
+      available: true,
+      open: this.schoolAgentOpen,
+      tasks: this.schoolAgentTasks,
+      selectedTaskId: this.schoolAgentSelectedTaskId,
+      loading: this.schoolAgentLoading,
+      submitting: this.schoolAgentSubmitting,
+      error: this.schoolAgentError,
+      autoDeployAvailable: this.isSchoolAgentAutoDeployAvailable()
+    });
+  }
+
+  getSchoolAgentSnapshot() {
+    const game = this.schoolMicrogame;
+    const playerPosition = this.player?.position;
+    const snapshot = {
+      gameId: game?.round?.gameId ?? '',
+      round: game?.round ?? null,
+      data: game?.data ?? null,
+      phase: game?.phase ?? '',
+      remainingMs: game?.remainingMs ?? 0,
+      resultTitle: game?.resultTitle ?? '',
+      resultDetail: game?.resultDetail ?? '',
+      npcId: this.schoolMicrogameNpcId,
+      npcName: this.schoolMicrogameNpcName,
+      npcModelId: this.schoolMicrogameNpcModelId,
+      url: window.location.href,
+      buildVersion: '',
+      adminPosition: playerPosition
+        ? {
+            x: Number(playerPosition.x) || 0,
+            y: Number(playerPosition.y) || 0,
+            z: Number(playerPosition.z) || 0
+          }
+        : null
+    };
+
+    try {
+      return JSON.parse(JSON.stringify(snapshot));
+    } catch {
+      return snapshot;
+    }
+  }
+
+  getSchoolAgentCreatedBy() {
+    return String(this.npcServiceState?.sessionId ?? 'in-game-admin');
+  }
+
+  async refreshSchoolAgentTasks({ force = false } = {}) {
+    if (!this.canUseSchoolAgentFeedback()) {
+      this.schoolAgentTasks = [];
+      this.schoolAgentError = '';
+      this.refreshSchoolAgentHud();
+      return;
+    }
+    if (this.schoolAgentLoading || (!force && performance.now() < this.schoolAgentRefreshAt)) {
+      return;
+    }
+
+    const adminKey = this.getAdminKey();
+    this.schoolAgentLoading = true;
+    this.schoolAgentError = '';
+    this.refreshSchoolAgentHud();
+    try {
+      const url = new URL(this.getAdminAgentTasksEndpoint());
+      url.searchParams.set('adminKey', adminKey);
+      url.searchParams.set('scope', SCHOOL_AGENT_TASK_SCOPE);
+      url.searchParams.set('limit', '12');
+      const response = await fetch(url.toString(), { cache: 'no-store' });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not refresh Codex tasks.');
+      }
+
+      this.schoolAgentTasks = Array.isArray(result.tasks) ? result.tasks : [];
+      if (
+        this.schoolAgentSelectedTaskId
+        && !this.schoolAgentTasks.some((task) => task.id === this.schoolAgentSelectedTaskId)
+      ) {
+        this.schoolAgentSelectedTaskId = '';
+      }
+      if (!this.schoolAgentSelectedTaskId && this.schoolAgentTasks.length > 0) {
+        this.schoolAgentSelectedTaskId = this.schoolAgentTasks[0].id;
+      }
+      this.schoolAgentRefreshAt = performance.now() + SCHOOL_AGENT_TASK_REFRESH_MS;
+    } catch (error) {
+      console.warn('[AgentTasks] Refresh failed.', error);
+      this.schoolAgentError = error?.message ?? 'Codex task refresh failed.';
+    } finally {
+      this.schoolAgentLoading = false;
+      this.refreshSchoolAgentHud();
+    }
+  }
+
+  toggleSchoolAgentPanel() {
+    if (!this.canUseSchoolAgentFeedback()) {
+      this.hud.showToast('Codex feedback is admin only.');
+      return;
+    }
+
+    this.schoolAgentOpen = !this.schoolAgentOpen;
+    this.refreshSchoolAgentHud();
+    if (this.schoolAgentOpen) {
+      void this.refreshSchoolAgentTasks({ force: true });
+    }
+  }
+
+  selectSchoolAgentTask(taskId = '') {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.schoolAgentTasks.some((task) => task.id === id)) {
+      return;
+    }
+
+    this.schoolAgentSelectedTaskId = id;
+    this.refreshSchoolAgentHud();
+  }
+
+  async submitSchoolAgentTask({ prompt = '', mode = 'preview' } = {}) {
+    if (!this.canUseSchoolAgentFeedback()) {
+      this.hud.showToast('Codex feedback is admin only.');
+      return;
+    }
+    if (this.schoolAgentSubmitting) {
+      return;
+    }
+
+    const cleanedPrompt = String(prompt ?? '').trim();
+    if (cleanedPrompt.length < 8) {
+      this.schoolAgentError = 'Add a longer prompt.';
+      this.refreshSchoolAgentHud();
+      return;
+    }
+
+    const requestedMode = String(mode ?? 'preview') === 'auto' && this.isSchoolAgentAutoDeployAvailable()
+      ? 'auto'
+      : 'preview';
+    this.schoolAgentSubmitting = true;
+    this.schoolAgentError = '';
+    this.refreshSchoolAgentHud();
+    try {
+      const response = await fetch(this.getAdminAgentTasksEndpoint(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: this.getAdminKey(),
+          createdBy: this.getSchoolAgentCreatedBy(),
+          scope: SCHOOL_AGENT_TASK_SCOPE,
+          gameId: this.schoolMicrogame?.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID,
+          prompt: cleanedPrompt,
+          mode: requestedMode,
+          snapshot: this.getSchoolAgentSnapshot()
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not submit Codex task.');
+      }
+
+      this.schoolAgentOpen = true;
+      this.schoolAgentSelectedTaskId = result.task?.id ?? '';
+      this.hud.clearSchoolAgentPrompt();
+      this.hud.showToast('Codex task queued.');
+      await this.refreshSchoolAgentTasks({ force: true });
+    } catch (error) {
+      console.warn('[AgentTasks] Submit failed.', error);
+      this.schoolAgentError = error?.message ?? 'Codex task submit failed.';
+    } finally {
+      this.schoolAgentSubmitting = false;
+      this.refreshSchoolAgentHud();
+    }
+  }
+
+  async cancelSchoolAgentTask(taskId = '') {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.canUseSchoolAgentFeedback()) {
+      return;
+    }
+
+    try {
+      const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/cancel`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: this.getAdminKey(),
+          createdBy: this.getSchoolAgentCreatedBy()
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not cancel Codex task.');
+      }
+      await this.refreshSchoolAgentTasks({ force: true });
+    } catch (error) {
+      console.warn('[AgentTasks] Cancel failed.', error);
+      this.schoolAgentError = error?.message ?? 'Codex task cancel failed.';
+      this.refreshSchoolAgentHud();
+    }
+  }
+
+  async approveSchoolAgentDeploy(taskId = '') {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.canUseSchoolAgentFeedback()) {
+      return;
+    }
+
+    try {
+      const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/approve-deploy`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: this.getAdminKey(),
+          createdBy: this.getSchoolAgentCreatedBy()
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not approve deploy.');
+      }
+      this.hud.showToast('Deploy approved for worker.');
+      await this.refreshSchoolAgentTasks({ force: true });
+    } catch (error) {
+      console.warn('[AgentTasks] Deploy approval failed.', error);
+      this.schoolAgentError = error?.message ?? 'Codex deploy approval failed.';
+      this.refreshSchoolAgentHud();
+    }
+  }
+
+  updateSchoolAgentPolling() {
+    if (!this.schoolAgentOpen || !this.canUseSchoolAgentFeedback()) {
+      return;
+    }
+
+    void this.refreshSchoolAgentTasks();
+  }
+
   refreshMapCaptureHud() {
     this.hud.setMapCaptureState({
       visible: this.isLocalAdmin(),
@@ -2330,6 +2630,7 @@ export class Game {
     this.refreshShaderDebugHud();
     this.refreshAdminPositionHud();
     this.refreshMapCaptureHud();
+    this.refreshSchoolAgentHud();
   }
 
   refreshAdminPositionHud() {
@@ -4756,6 +5057,11 @@ export class Game {
       loading: false,
       error: ''
     });
+    this.schoolAgentError = '';
+    this.refreshSchoolAgentHud();
+    if (visible && this.canUseSchoolAgentFeedback()) {
+      void this.refreshSchoolAgentTasks({ force: true });
+    }
   }
 
   beginSchoolMicrogame() {
@@ -4822,12 +5128,15 @@ export class Game {
   closeSchoolMicrogame() {
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameRequestInFlight = false;
+    this.schoolAgentOpen = false;
+    this.schoolAgentError = '';
     this.hud.setSchoolMicrogameState({
       visible: false,
       game: this.schoolMicrogame,
       loading: false,
       error: ''
     });
+    this.refreshSchoolAgentHud();
     this.schoolTeacherPreviewRenderer?.setActive(false);
   }
 
@@ -5460,6 +5769,8 @@ export class Game {
     if (!game || !this.hud.isSchoolMicrogameOpen()) {
       return;
     }
+
+    this.updateSchoolAgentPolling();
 
     if (game.phase !== 'playing') {
       return;

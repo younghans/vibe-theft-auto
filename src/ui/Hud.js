@@ -697,6 +697,130 @@ function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   ].filter(Boolean).join(' / ');
 }
 
+const AGENT_TASK_STATUS_LABELS = Object.freeze({
+  queued: 'Queued',
+  claimed: 'Claimed',
+  preparing: 'Preparing',
+  coding: 'Coding',
+  testing: 'Testing',
+  test_failed: 'Tests Failed',
+  ready_for_review: 'Ready',
+  deploying: 'Deploying',
+  deployed: 'Deployed',
+  failed: 'Failed',
+  cancelled: 'Cancelled'
+});
+
+function getAgentTaskStatusLabel(status = '') {
+  return AGENT_TASK_STATUS_LABELS[String(status ?? '')] ?? 'Unknown';
+}
+
+function getAgentTaskStatusTone(status = '') {
+  if (['ready_for_review', 'deployed'].includes(status)) {
+    return 'is-good';
+  }
+  if (['failed', 'test_failed', 'cancelled'].includes(status)) {
+    return 'is-bad';
+  }
+  if (['coding', 'testing', 'deploying', 'preparing', 'claimed'].includes(status)) {
+    return 'is-busy';
+  }
+  return 'is-muted';
+}
+
+function getAgentTaskShortId(task = {}) {
+  const id = String(task?.id ?? '');
+  return id.length > 16 ? id.slice(-13) : id;
+}
+
+function formatAgentTaskTime(timestamp = 0) {
+  const date = new Date(Number(timestamp) || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) {
+    return '';
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function createAgentTaskLink(label, url = '') {
+  const href = String(url ?? '').trim();
+  if (!href) {
+    return '';
+  }
+
+  return `<a class="hud__school-agent-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+}
+
+function createAgentTaskListMarkup(tasks = [], selectedTaskId = '') {
+  if (!tasks.length) {
+    return '<div class="hud__school-agent-empty">No Codex tasks yet.</div>';
+  }
+
+  return tasks.slice(0, 8).map((task) => {
+    const status = String(task.status ?? 'queued');
+    const activeClass = task.id === selectedTaskId ? ' is-active' : '';
+    const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
+    return `
+      <button class="hud__school-agent-task${activeClass}" type="button" data-school-agent-action="select:${escapeHtml(task.id)}">
+        <span>
+          <strong>${escapeHtml(task.gameId || 'school')}</strong>
+          <small>${escapeHtml(getAgentTaskShortId(task))}${time ? ` - ${escapeHtml(time)}` : ''}</small>
+        </span>
+        <em class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</em>
+      </button>
+    `;
+  }).join('');
+}
+
+function createAgentTaskDetailMarkup(task = null) {
+  if (!task) {
+    return '<div class="hud__school-agent-empty">Select a task to inspect it.</div>';
+  }
+
+  const status = String(task.status ?? 'queued');
+  const logs = Array.isArray(task.logs) ? task.logs.slice(-5).reverse() : [];
+  const branch = String(task.branch ?? '').trim();
+  const commitSha = String(task.commitSha ?? '').trim();
+  const deployApproved = Number(task.deployApprovedAt ?? 0) > 0;
+  const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
+  const canCancel = ['queued', 'claimed', 'preparing'].includes(status);
+  const links = [
+    createAgentTaskLink('Preview', task.previewUrl),
+    createAgentTaskLink('Deploy', task.deployUrl)
+  ].filter(Boolean).join('');
+
+  return `
+    <article class="hud__school-agent-detail">
+      <header>
+        <span class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</span>
+        <strong>${escapeHtml(getAgentTaskShortId(task))}</strong>
+      </header>
+      <p>${escapeHtml(task.summary || task.error || task.prompt || 'Waiting for worker updates.')}</p>
+      <div class="hud__school-agent-meta">
+        ${branch ? `<span>Branch <strong>${escapeHtml(branch)}</strong></span>` : ''}
+        ${commitSha ? `<span>Commit <strong>${escapeHtml(commitSha.slice(0, 10))}</strong></span>` : ''}
+        ${deployApproved ? '<span>Deploy approved</span>' : ''}
+      </div>
+      ${links ? `<div class="hud__school-agent-links">${links}</div>` : ''}
+      <div class="hud__school-agent-detail-actions">
+        ${canApproveDeploy ? '<button class="hud__school-agent-small" type="button" data-school-agent-action="approve-deploy">Approve Deploy</button>' : ''}
+        ${canCancel ? '<button class="hud__school-agent-small" type="button" data-school-agent-action="cancel-task">Cancel</button>' : ''}
+      </div>
+      <div class="hud__school-agent-logs">
+        ${logs.length ? logs.map((entry) => `
+          <div class="hud__school-agent-log">
+            <time>${escapeHtml(formatAgentTaskTime(entry.at))}</time>
+            <span>${escapeHtml(entry.message ?? '')}</span>
+          </div>
+        `).join('') : '<div class="hud__school-agent-empty">No worker logs yet.</div>'}
+      </div>
+    </article>
+  `;
+}
+
 function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   const phase = String(game?.phase ?? 'ready');
   const round = game?.round ?? {};
@@ -1683,6 +1807,18 @@ export class Hud {
     this.schoolMicrogameTimer = this.overlay.querySelector('[data-school-microgame-timer]');
     this.schoolMicrogameBody = this.overlay.querySelector('[data-school-microgame-body]');
     this.schoolMicrogameMessage = this.overlay.querySelector('[data-school-microgame-message]');
+    this.schoolAgentRoot = this.overlay.querySelector('[data-school-agent]');
+    this.schoolAgentToggle = this.overlay.querySelector('[data-school-agent-toggle]');
+    this.schoolAgentPanel = this.overlay.querySelector('[data-school-agent-panel]');
+    this.schoolAgentForm = this.overlay.querySelector('[data-school-agent-form]');
+    this.schoolAgentPrompt = this.overlay.querySelector('[data-school-agent-prompt]');
+    this.schoolAgentMode = this.overlay.querySelector('[data-school-agent-mode]');
+    this.schoolAgentAutoOption = this.overlay.querySelector('[data-school-agent-mode-auto]');
+    this.schoolAgentSubmit = this.overlay.querySelector('[data-school-agent-submit]');
+    this.schoolAgentRefresh = this.overlay.querySelector('[data-school-agent-refresh]');
+    this.schoolAgentStatus = this.overlay.querySelector('[data-school-agent-status]');
+    this.schoolAgentTasks = this.overlay.querySelector('[data-school-agent-tasks]');
+    this.schoolAgentDetail = this.overlay.querySelector('[data-school-agent-detail]');
     this.quickChatRoot = this.overlay.querySelector('[data-quick-chat]');
     this.quickChatForm = this.overlay.querySelector('[data-quick-chat-form]');
     this.quickChatInput = this.overlay.querySelector('[data-quick-chat-input]');
@@ -1748,6 +1884,16 @@ export class Hud {
       game: null,
       loading: false,
       error: ''
+    };
+    this.schoolAgentState = {
+      available: false,
+      open: false,
+      tasks: [],
+      selectedTaskId: '',
+      loading: false,
+      submitting: false,
+      error: '',
+      autoDeployAvailable: false
     };
     this.schoolMicrogameBodyRenderKey = '';
     this.phoneVisible = false;
@@ -2529,6 +2675,36 @@ export class Hud {
         </header>
         <div class="hud__school-timer-slot" data-school-microgame-timer></div>
         <div class="hud__school-body" data-school-microgame-body></div>
+        <section class="hud__school-agent" data-school-agent hidden>
+          <div class="hud__school-agent-bar">
+            <button class="hud__school-agent-toggle" type="button" data-school-agent-toggle data-school-agent-action="toggle">Improve</button>
+            <p data-school-agent-status>Codex worker ready</p>
+            <button class="hud__builder-icon-button" type="button" data-school-agent-refresh data-school-agent-action="refresh" aria-label="Refresh Codex task status" title="Refresh Codex task status">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 6v5h-5" />
+                <path d="M5 18v-5h5" />
+                <path d="M17.9 10.8A6.5 6.5 0 0 0 6.7 7.7L5 9.2" />
+                <path d="M6.1 13.2a6.5 6.5 0 0 0 11.2 3.1L19 14.8" />
+              </svg>
+            </button>
+          </div>
+          <div class="hud__school-agent-panel" data-school-agent-panel hidden>
+            <form class="hud__school-agent-form" data-school-agent-form>
+              <textarea class="hud__school-agent-prompt" data-school-agent-prompt maxlength="6000" rows="3" placeholder="Describe the improvement..."></textarea>
+              <div class="hud__school-agent-form-row">
+                <select class="hud__school-agent-mode" data-school-agent-mode aria-label="Codex task mode">
+                  <option value="preview">Preview</option>
+                  <option value="auto" data-school-agent-mode-auto>Auto deploy</option>
+                </select>
+                <button class="hud__school-agent-submit" type="submit" data-school-agent-submit>Submit</button>
+              </div>
+            </form>
+            <div class="hud__school-agent-content">
+              <div class="hud__school-agent-tasks" data-school-agent-tasks></div>
+              <div class="hud__school-agent-detail-slot" data-school-agent-detail></div>
+            </div>
+          </div>
+        </section>
         <footer class="hud__school-footer">
           <p data-school-microgame-message>Start when ready.</p>
         </footer>
@@ -3843,12 +4019,52 @@ export class Hud {
 
   bindSchoolMicrogameEvents({
     onClose,
-    onAction
+    onAction,
+    onAgentToggle,
+    onAgentRefresh,
+    onAgentSubmit,
+    onAgentSelect,
+    onAgentCancel,
+    onAgentApproveDeploy
   }) {
     this.schoolMicrogameClose?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       onClose?.();
+    });
+
+    this.schoolAgentForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onAgentSubmit?.({
+        prompt: this.schoolAgentPrompt?.value ?? '',
+        mode: this.schoolAgentMode?.value ?? 'preview'
+      });
+    });
+
+    this.schoolAgentRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-school-agent-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const action = actionTarget.getAttribute('data-school-agent-action') ?? '';
+      if (action === 'toggle') {
+        onAgentToggle?.();
+      } else if (action === 'refresh') {
+        onAgentRefresh?.();
+      } else if (action.startsWith('select:')) {
+        onAgentSelect?.(action.slice('select:'.length));
+      } else if (action === 'cancel-task') {
+        onAgentCancel?.(this.schoolAgentState.selectedTaskId);
+      } else if (action === 'approve-deploy') {
+        onAgentApproveDeploy?.(this.schoolAgentState.selectedTaskId);
+      }
     });
 
     let actionPointerHandledUntil = 0;
@@ -4788,6 +5004,104 @@ export class Hud {
 
   getSchoolTeacherPreviewMount() {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
+  }
+
+  setSchoolAgentState({
+    available = this.schoolAgentState.available,
+    open = this.schoolAgentState.open,
+    tasks = this.schoolAgentState.tasks,
+    selectedTaskId = this.schoolAgentState.selectedTaskId,
+    loading = this.schoolAgentState.loading,
+    submitting = this.schoolAgentState.submitting,
+    error = this.schoolAgentState.error,
+    autoDeployAvailable = this.schoolAgentState.autoDeployAvailable
+  } = {}) {
+    const safeTasks = Array.isArray(tasks) ? tasks : [];
+    let safeSelectedTaskId = String(selectedTaskId ?? '').trim();
+    if (safeSelectedTaskId && !safeTasks.some((task) => task.id === safeSelectedTaskId)) {
+      safeSelectedTaskId = '';
+    }
+    if (!safeSelectedTaskId && safeTasks.length > 0) {
+      safeSelectedTaskId = safeTasks[0].id;
+    }
+
+    this.schoolAgentState = {
+      available: Boolean(available),
+      open: Boolean(open),
+      tasks: safeTasks,
+      selectedTaskId: safeSelectedTaskId,
+      loading: Boolean(loading),
+      submitting: Boolean(submitting),
+      error: String(error ?? ''),
+      autoDeployAvailable: Boolean(autoDeployAvailable)
+    };
+    this.renderSchoolAgentPanel();
+  }
+
+  clearSchoolAgentPrompt() {
+    if (this.schoolAgentPrompt) {
+      this.schoolAgentPrompt.value = '';
+    }
+  }
+
+  renderSchoolAgentPanel() {
+    if (!this.schoolAgentRoot) {
+      return;
+    }
+
+    const {
+      available,
+      open,
+      tasks,
+      selectedTaskId,
+      loading,
+      submitting,
+      error,
+      autoDeployAvailable
+    } = this.schoolAgentState;
+    this.schoolAgentRoot.hidden = !available;
+    this.schoolAgentRoot.classList.toggle('is-open', Boolean(available && open));
+    this.schoolAgentRoot.classList.toggle('is-loading', loading || submitting);
+    if (this.schoolAgentPanel) {
+      this.schoolAgentPanel.hidden = !available || !open;
+    }
+    if (this.schoolAgentToggle) {
+      this.schoolAgentToggle.classList.toggle('is-active', Boolean(open));
+      this.schoolAgentToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    if (this.schoolAgentRefresh) {
+      this.schoolAgentRefresh.disabled = loading || submitting;
+    }
+    if (this.schoolAgentSubmit) {
+      this.schoolAgentSubmit.disabled = submitting;
+      this.schoolAgentSubmit.textContent = submitting ? 'Submitting' : 'Submit';
+    }
+    if (this.schoolAgentAutoOption) {
+      this.schoolAgentAutoOption.hidden = !autoDeployAvailable;
+      this.schoolAgentAutoOption.disabled = !autoDeployAvailable;
+    }
+    if (this.schoolAgentMode && !autoDeployAvailable && this.schoolAgentMode.value === 'auto') {
+      this.schoolAgentMode.value = 'preview';
+    }
+    if (this.schoolAgentStatus) {
+      this.schoolAgentStatus.textContent = error
+        ? error
+        : submitting
+          ? 'Submitting task...'
+          : loading
+            ? 'Refreshing tasks...'
+            : tasks.length
+              ? `${tasks.length} Codex task${tasks.length === 1 ? '' : 's'}`
+              : 'Codex worker ready';
+      this.schoolAgentStatus.classList.toggle('is-error', Boolean(error));
+    }
+    if (this.schoolAgentTasks) {
+      this.schoolAgentTasks.innerHTML = createAgentTaskListMarkup(tasks, selectedTaskId);
+    }
+    if (this.schoolAgentDetail) {
+      const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null;
+      this.schoolAgentDetail.innerHTML = createAgentTaskDetailMarkup(selectedTask);
+    }
   }
 
   setSchoolMicrogameState({

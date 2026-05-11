@@ -32,6 +32,7 @@
     "validate": "node scripts/validate-world-editor.mjs",
     "validate:phone-apps": "node scripts/validate-phone-apps.mjs",
     "validate:skills": "node scripts/validate-skills.mjs",
+    "validate:agent-tasks": "node scripts/validate-agent-tasks.mjs",
     "validate:world-backups": "node scripts/validate-world-backups.mjs",
     "validate:blackjack": "node scripts/validate-blackjack.mjs",
     "validate:computer-activity": "node scripts/validate-computer-activity.mjs",
