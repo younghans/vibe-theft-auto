@@ -446,6 +446,7 @@ async function getChangedFiles(worktreePath) {
   return output
     .split(/\r?\n/u)
     .map((line) => line.trim())
+    .filter((line) => !line.startsWith('warning:'))
     .filter(Boolean);
 }
 
