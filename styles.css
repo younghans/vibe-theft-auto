@@ -7679,8 +7679,8 @@ body.is-builder-resizing * {
 
 .hud__school-chalk {
   position: absolute;
-  left: var(--x, 0%);
-  top: calc((var(--lane, 0) + 1) * 23%);
+  left: calc((var(--lane, 1) * 33.333%) + 16.666%);
+  top: var(--y, 0%);
   width: 54px;
   height: 13px;
   border-radius: 999px;
