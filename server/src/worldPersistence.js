@@ -103,6 +103,19 @@ function isProductionEnvironment() {
   return String(process.env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
 }
 
+function isProductionFileFallbackAllowed() {
+  return parseBooleanEnv(process.env.WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK, false);
+}
+
+function getPersistenceEnvSummary(databaseUrl) {
+  return {
+    nodeEnv: String(process.env.NODE_ENV ?? ''),
+    databaseUrlConfigured: Boolean(databaseUrl),
+    worldPersistenceAllowFileFallback: isProductionFileFallbackAllowed(),
+    worldKey: getWorldKey()
+  };
+}
+
 export function getLayoutBackupHash(layout) {
   return createHash('sha256')
     .update(JSON.stringify(cloneLayout(layout)))
@@ -686,13 +699,19 @@ class WorldPersistenceManager {
 function createConfiguredStore() {
   const databaseUrl = String(process.env.DATABASE_URL ?? '').trim();
   if (databaseUrl) {
+    logServer('world-persistence', 'Using Postgres world persistence.', getPersistenceEnvSummary(databaseUrl));
     return new PostgresWorldPersistenceStore({
       connectionString: databaseUrl
     });
   }
 
   if (isProductionEnvironment()) {
-    throw new Error('DATABASE_URL is required in production deployments.');
+    if (!isProductionFileFallbackAllowed()) {
+      logServer('world-persistence', 'Missing required production DATABASE_URL.', getPersistenceEnvSummary(databaseUrl));
+      throw new Error('DATABASE_URL is required in production deployments.');
+    }
+
+    logServer('world-persistence', 'DATABASE_URL is missing; using production file fallback.', getPersistenceEnvSummary(databaseUrl));
   }
 
   return new FileWorldPersistenceStore();

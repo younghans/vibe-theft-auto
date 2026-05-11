@@ -48,5 +48,6 @@
 
 - The production deployment expects `DATABASE_URL`.
 - Local development can still use file-backed persistence when `DATABASE_URL` is unset.
+- `WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK=true` is an emergency production safety valve only. It can keep the app online without Postgres, but world edits may not survive restarts or redeploys.
 - PM2 is pinned to a single instance in `ecosystem.config.cjs` so the world remains authoritative in one process.
 - This repo uses ESM (`"type": "module"`), so the PM2 ecosystem file must stay `.cjs` instead of `.js`.
