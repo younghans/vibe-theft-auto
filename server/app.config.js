@@ -177,41 +177,9 @@ function normalizePublicAddress(value = '') {
     .replace(/\/+$/u, '');
 }
 
-function normalizePublicHost(value = '') {
-  const address = normalizePublicAddress(value);
-  if (!address) {
-    return '';
-  }
-
-  return address.split('/')[0];
-}
-
-function getColyseusPublicPort() {
-  if (process.env.COLYSEUS_CLOUD !== undefined) {
-    return 2567 + Number(process.env.NODE_APP_INSTANCE || 0);
-  }
-
-  const configuredPort = Number(process.env.PORT || process.env.COLYSEUS_PORT || process.env.COLOSEUS_PORT || 2567);
-  return Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 2567;
-}
-
-function resolveColyseusPublicAddress() {
-  const explicitAddress = normalizePublicAddress(
-    process.env.COLYSEUS_PUBLIC_ADDRESS ?? process.env.STICKRPG_PUBLIC_ADDRESS ?? ''
-  );
-  if (explicitAddress) {
-    return explicitAddress.includes('/')
-      ? explicitAddress
-      : `${explicitAddress}/${getColyseusPublicPort()}`;
-  }
-
-  const publicHost = normalizePublicHost(
-    process.env.COLYSEUS_PUBLIC_HOST ?? process.env.STICKRPG_PUBLIC_HOST ?? ''
-  );
-  return publicHost ? `${publicHost}/${getColyseusPublicPort()}` : '';
-}
-
-const colyseusPublicAddress = resolveColyseusPublicAddress();
+const colyseusPublicAddress = normalizePublicAddress(
+  process.env.COLYSEUS_PUBLIC_ADDRESS ?? process.env.STICKRPG_PUBLIC_ADDRESS ?? ''
+);
 
 function getBearerToken(req) {
   const authorization = typeof req.headers.authorization === 'string'
