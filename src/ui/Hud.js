@@ -1933,13 +1933,14 @@ const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
 const BUILDER_PANEL_MOBILE_BREAKPOINT = 900;
-const ADMIN_PROMPT_DEFAULT_WIDTH = 720;
-const ADMIN_PROMPT_DEFAULT_HEIGHT = 462;
+const ADMIN_PROMPT_DEFAULT_WIDTH = 860;
+const ADMIN_PROMPT_DEFAULT_HEIGHT = 620;
 const ADMIN_PROMPT_MIN_WIDTH = 340;
 const ADMIN_PROMPT_MIN_HEIGHT = 280;
 const ADMIN_PROMPT_MAX_WIDTH = 980;
 const ADMIN_PROMPT_MAX_HEIGHT = 780;
 const ADMIN_PROMPT_VIEWPORT_MARGIN = 6;
+const ADMIN_PROMPT_TOP_ACTIONS_GAP = 12;
 
 function getMouseControlIconMarkup(side) {
   const leftActive = side === 'left' ? ' is-active' : '';
@@ -3389,15 +3390,53 @@ export class Hud {
     };
   }
 
+  getAdminPromptDefaultAnchor(bounds = this.getAdminPromptViewportBounds()) {
+    const topActionsStack = this.overlay?.querySelector('.hud__top-actions-stack') ?? null;
+    const topActionsButtons = this.overlay?.querySelector('.hud__top-actions-buttons') ?? null;
+    const gap = Math.max(ADMIN_PROMPT_TOP_ACTIONS_GAP, bounds.margin);
+    const clearanceRects = [
+      this.connectionStatusRoot,
+      topActionsButtons
+    ].map((element) => element?.getBoundingClientRect?.() ?? null)
+      .filter((rect) => rect && rect.width > 0 && rect.height > 0);
+    const anchorRects = [
+      topActionsStack,
+      topActionsButtons
+    ].map((element) => element?.getBoundingClientRect?.() ?? null)
+      .filter((rect) => rect && rect.width > 0 && rect.height > 0);
+    const clearedBottom = clearanceRects.reduce(
+      (bottom, rect) => Math.max(bottom, rect.bottom),
+      0
+    );
+    const rightEdge = anchorRects.reduce(
+      (right, rect) => Math.max(right, rect.right),
+      0
+    );
+
+    return {
+      right: rightEdge > 0
+        ? Math.min(bounds.width - bounds.margin, Math.ceil(rightEdge))
+        : bounds.width - Math.max(14, bounds.margin),
+      y: clearedBottom > 0
+        ? Math.max(bounds.margin, Math.ceil(clearedBottom + gap))
+        : bounds.margin
+    };
+  }
+
   getDefaultAdminPromptLayout() {
     const bounds = this.getAdminPromptViewportBounds();
+    const anchor = this.getAdminPromptDefaultAnchor(bounds);
+    const availableHeightBelowActions = Math.max(
+      ADMIN_PROMPT_MIN_HEIGHT,
+      bounds.height - anchor.y - bounds.margin
+    );
     const size = this.clampAdminPromptSize(
       Math.min(ADMIN_PROMPT_DEFAULT_WIDTH, bounds.maxWidth),
-      Math.min(ADMIN_PROMPT_DEFAULT_HEIGHT, bounds.maxHeight)
+      Math.min(ADMIN_PROMPT_DEFAULT_HEIGHT, bounds.maxHeight, availableHeightBelowActions)
     );
     return this.clampAdminPromptLayout({
-      x: bounds.width - size.width - Math.max(14, bounds.margin),
-      y: bounds.margin,
+      x: anchor.right - size.width,
+      y: anchor.y,
       width: size.width,
       height: size.height
     });

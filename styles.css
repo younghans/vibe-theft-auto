@@ -5955,10 +5955,10 @@ body.is-admin-prompt-resizing * {
 .hud__admin-prompt {
   position: fixed;
   z-index: 30;
-  left: var(--admin-prompt-x, max(6px, calc(100vw - min(720px, calc(100vw - 48px)) - 14px)));
+  left: var(--admin-prompt-x, max(6px, calc(100vw - min(860px, calc(100vw - 48px)) - 14px)));
   top: var(--admin-prompt-y, 6px);
-  width: var(--admin-prompt-width, min(720px, calc(100vw - 48px)));
-  height: var(--admin-prompt-height, min(462px, calc(100vh - 12px)));
+  width: var(--admin-prompt-width, min(860px, calc(100vw - 48px)));
+  height: var(--admin-prompt-height, min(620px, calc(100vh - 12px)));
   min-width: min(340px, calc(100vw - 12px));
   min-height: min(280px, calc(100vh - 12px));
   max-width: calc(100vw - 12px);
