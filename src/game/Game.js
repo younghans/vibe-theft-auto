@@ -5291,6 +5291,11 @@ export class Game {
     return low + Math.floor(this.schoolRandom() * Math.max(1, high - low + 1));
   }
 
+  normalizeDodgeChalkLane(value = 1) {
+    const lane = Number(value);
+    return Math.max(0, Math.min(2, Number.isFinite(lane) ? Math.floor(lane) : 1));
+  }
+
   schoolPick(items = []) {
     return items[Math.floor(this.schoolRandom() * items.length)] ?? items[0];
   }
@@ -5940,10 +5945,11 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+      const currentLane = this.normalizeDodgeChalkLane(game.data.playerLane);
       if (action === 'move:left') {
-        game.data.playerLane = Math.max(0, Math.floor(Number(game.data.playerLane ?? 1) || 1) - 1);
+        game.data.playerLane = Math.max(0, currentLane - 1);
       } else if (action === 'move:right') {
-        game.data.playerLane = Math.min(2, Math.floor(Number(game.data.playerLane ?? 1) || 1) + 1);
+        game.data.playerLane = Math.min(2, currentLane + 1);
       }
       this.syncSchoolMicrogameHud();
       return;
@@ -6405,17 +6411,32 @@ export class Game {
         game.data.chalks.push({
           id: `chalk_${now}_${this.schoolRandomInt(0, 9999)}`,
           lane: this.schoolRandomInt(0, 2),
-          x: 100
+          y: -10,
+          spin: this.schoolRandomInt(-14, 14)
         });
         game.data.spawnIn = Math.max(0.42, 0.92 - ((game.round.durationMs - game.remainingMs) / game.round.durationMs) * 0.34);
       }
       game.data.chalks = game.data.chalks
-        .map((chalk) => ({ ...chalk, x: Number(chalk.x ?? 0) - dt * 72 }))
-        .filter((chalk) => chalk.x > -8);
+        .map((chalk) => {
+          const dropY = Number(chalk.y);
+          const legacyX = Number(chalk.x);
+          const currentY = Number.isFinite(dropY)
+            ? dropY
+            : Number.isFinite(legacyX)
+              ? 100 - legacyX
+              : -10;
+          return {
+            id: chalk.id,
+            lane: this.normalizeDodgeChalkLane(chalk.lane ?? 0),
+            y: currentY + dt * 78,
+            spin: Number(chalk.spin ?? 0) || 0
+          };
+        })
+        .filter((chalk) => chalk.y < 112);
 
       for (const chalk of game.data.chalks) {
-        const inHitZone = chalk.x >= 9 && chalk.x <= 21;
-        if (inHitZone && chalk.lane === game.data.playerLane && game.data.hitCooldownMs <= 0) {
+        const inHitZone = chalk.y >= 68 && chalk.y <= 94;
+        if (inHitZone && chalk.lane === this.normalizeDodgeChalkLane(game.data.playerLane) && game.data.hitCooldownMs <= 0) {
           game.data.lives = Math.max(0, Number(game.data.lives ?? 0) - 1);
           game.data.hitCooldownMs = 620;
           this.playSoundEffect(this.playingCardSound);

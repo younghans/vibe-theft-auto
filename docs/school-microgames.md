@@ -75,7 +75,7 @@ A cafeteria tray tilts left and right. The player taps left/right controls to ke
 
 ## 7. Dodge The Chalk
 
-A tiny 2D stick figure stands in three lanes while chalk or erasers fly across the popup. The player moves left and right to dodge.
+A tiny 2D stick figure stands in three lanes while chalk drops from above. The player moves left and right to dodge.
 
 - Duration: 6-10 seconds
 - Inputs: `A/D`, left/right buttons, or touch controls
