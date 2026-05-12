@@ -243,6 +243,32 @@ function createColyseusUrlBuilder(endpoint) {
   };
 }
 
+function getBackendHttpUrl(serviceEndpoint, endpointPath = '/') {
+  if (typeof serviceEndpoint !== 'string' || !/^(https?|wss?):\/\//iu.test(serviceEndpoint)) {
+    return '';
+  }
+
+  try {
+    const url = new URL(serviceEndpoint);
+    if (url.protocol === 'wss:') {
+      url.protocol = 'https:';
+    } else if (url.protocol === 'ws:') {
+      url.protocol = 'http:';
+    }
+    url.pathname = endpointPath;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+function getReconnectDelayMs(attempt) {
+  const safeAttempt = Math.max(1, Number(attempt) || 1);
+  return Math.min(8000, Math.round(700 * Math.pow(1.55, safeAttempt - 1)));
+}
+
 export class NpcServiceColyseus {
   constructor({ endpoint, adminKey = '' }) {
     const ClientCtor = globalThis.Colyseus?.Client;
@@ -260,9 +286,28 @@ export class NpcServiceColyseus {
     const urlBuilder = createColyseusUrlBuilder(endpoint);
     this.client = new ClientCtor(endpoint, urlBuilder ? { urlBuilder } : undefined);
     this.destroyed = false;
+    this.room = null;
+    this.rejoinAttempt = 0;
+    this.rejoinTimer = 0;
+    this.rejoinInFlight = false;
+    this.handleBeforeUnload = () => {
+      if (!this.room || this.destroyed) {
+        return;
+      }
+
+      try {
+        this.room.leave(true);
+      } catch {
+        // The page is unloading; best-effort consented leave is enough.
+      }
+    };
+    window.addEventListener('beforeunload', this.handleBeforeUnload);
     this.state = {
       transport: 'colyseus',
       connected: false,
+      connectionStatus: 'connecting',
+      connectionMessage: 'Connecting to multiplayer...',
+      reconnectAttempt: 0,
       sessionId: null,
       players: new Map(),
       builders: new Map(),
@@ -279,22 +324,59 @@ export class NpcServiceColyseus {
   }
 
   async connect() {
-    this.room = await this.client.joinOrCreate('world', this.adminKey ? { adminKey: this.adminKey } : {});
+    this.setConnectionState({
+      connected: false,
+      connectionStatus: 'connecting',
+      connectionMessage: 'Connecting to multiplayer...',
+      reconnectAttempt: 0
+    });
+    await this.joinRoom({ reason: 'initial' });
+  }
+
+  getJoinOptions() {
+    return this.adminKey ? { adminKey: this.adminKey } : {};
+  }
+
+  async joinRoom({ reason = 'rejoin' } = {}) {
+    const room = await this.client.joinOrCreate('world', this.getJoinOptions());
     if (this.destroyed) {
-      this.room.leave();
-      this.room = null;
+      room.leave();
       return;
     }
 
-    this.state.connected = true;
-    this.state.sessionId = this.room.sessionId;
+    this.attachRoom(room, { reason });
+  }
+
+  attachRoom(room, { reason = 'join' } = {}) {
+    this.clearRejoinTimer();
+    this.rejoinAttempt = 0;
+    this.rejoinInFlight = false;
+    this.room = room;
+
+    if (room.reconnection) {
+      room.reconnection.enabled = true;
+      room.reconnection.maxRetries = 8;
+      room.reconnection.minUptime = 1000;
+      room.reconnection.delay = 250;
+      room.reconnection.maxDelay = 3500;
+      room.reconnection.maxEnqueuedMessages = 20;
+    }
+
+    this.setConnectionState({
+      connected: true,
+      connectionStatus: 'online',
+      connectionMessage: 'Connected to multiplayer.',
+      reconnectAttempt: 0,
+      sessionId: room.sessionId
+    });
     console.info('[NPC] Joined Colyseus room.', {
-      roomName: this.room.name,
-      roomId: this.room.roomId,
-      sessionId: this.room.sessionId
+      reason,
+      roomName: room.name,
+      roomId: room.roomId,
+      sessionId: room.sessionId
     });
 
-    this.room.onStateChange((state) => {
+    room.onStateChange((state) => {
       const nextPlayers = new Map();
       for (const [id, player] of schemaMapToEntries(state.players)) {
         nextPlayers.set(id, clonePlayerState(player));
@@ -322,14 +404,14 @@ export class NpcServiceColyseus {
       this.emit();
     });
 
-    this.room.onMessage('world:patch', (message) => {
+    room.onMessage('world:patch', (message) => {
       const snapshot = structuredClone(message);
       for (const listener of this.worldPatchListeners) {
         listener(snapshot);
       }
     });
 
-    this.room.onMessage('rpc:response', (message) => {
+    room.onMessage('rpc:response', (message) => {
       const pending = this.pendingRequests.get(message.requestId);
       if (!pending) {
         return;
@@ -338,14 +420,14 @@ export class NpcServiceColyseus {
       pending.resolve(message);
     });
 
-    this.room.onMessage('combat:event', (message) => {
+    room.onMessage('combat:event', (message) => {
       const snapshot = structuredClone(message);
       for (const listener of this.combatListeners) {
         listener(snapshot);
       }
     });
 
-    this.room.onMessage('npc:debugSnapshot', (message = {}) => {
+    room.onMessage('npc:debugSnapshot', (message = {}) => {
       const nextNpcDebug = new Map();
       for (const [id, debug] of Object.entries(message?.npcs ?? {})) {
         nextNpcDebug.set(id, cloneNpcDebugState(debug));
@@ -354,17 +436,194 @@ export class NpcServiceColyseus {
       this.emit();
     });
 
-    this.room.onLeave(() => {
-      this.state.connected = false;
-      this.state.players = new Map();
-      this.state.builders = new Map();
-      this.state.npcs = new Map();
-      this.state.npcDebug = new Map();
-      this.state.pickups = new Map();
-      this.emit();
+    if (typeof room.onDrop === 'function') {
+      room.onDrop((code, reasonText) => {
+        if (this.destroyed || this.room !== room) {
+          return;
+        }
+        this.setConnectionState({
+          connected: false,
+          connectionStatus: 'reconnecting',
+          connectionMessage: 'Connection lost. Reconnecting...',
+          reconnectAttempt: room.reconnection?.retryCount ?? 0
+        });
+        console.warn('[NPC] Colyseus connection dropped; SDK reconnect is active.', {
+          code,
+          reason: reasonText,
+          roomId: room.roomId,
+          sessionId: room.sessionId
+        });
+      });
+    }
+
+    if (typeof room.onReconnect === 'function') {
+      room.onReconnect(() => {
+        if (this.destroyed || this.room !== room) {
+          return;
+        }
+        this.setConnectionState({
+          connected: true,
+          connectionStatus: 'online',
+          connectionMessage: 'Reconnected to multiplayer.',
+          reconnectAttempt: 0,
+          sessionId: room.sessionId
+        });
+        console.info('[NPC] Reconnected to Colyseus room.', {
+          roomId: room.roomId,
+          sessionId: room.sessionId
+        });
+      });
+    }
+
+    room.onError((code, message) => {
+      if (this.destroyed || this.room !== room) {
+        return;
+      }
+      console.warn('[NPC] Colyseus room error.', { code, message });
+    });
+
+    room.onLeave((code, reasonText) => {
+      if (this.destroyed || this.room !== room) {
+        return;
+      }
+      this.room = null;
+      this.failPendingRequests('The multiplayer connection was interrupted.');
+      this.setConnectionState({
+        connected: false,
+        connectionStatus: 'reconnecting',
+        connectionMessage: 'Rejoining the multiplayer server...',
+        reconnectAttempt: Math.max(1, this.rejoinAttempt)
+      });
+      console.warn('[NPC] Left Colyseus room; starting fallback rejoin loop.', {
+        code,
+        reason: reasonText
+      });
+      this.startRejoinLoop();
     });
 
     this.emit();
+  }
+
+  setConnectionState(updates = {}) {
+    this.state = {
+      ...this.state,
+      ...updates
+    };
+    this.emit();
+  }
+
+  clearRejoinTimer() {
+    if (!this.rejoinTimer) {
+      return;
+    }
+    window.clearTimeout(this.rejoinTimer);
+    this.rejoinTimer = 0;
+  }
+
+  startRejoinLoop() {
+    if (this.destroyed || this.rejoinInFlight || this.rejoinTimer) {
+      return;
+    }
+
+    this.scheduleRejoin(0);
+  }
+
+  scheduleRejoin(delayMs) {
+    this.clearRejoinTimer();
+    this.rejoinTimer = window.setTimeout(() => {
+      this.rejoinTimer = 0;
+      void this.tryRejoin();
+    }, Math.max(0, delayMs));
+  }
+
+  async isServerHealthy() {
+    const healthUrl = getBackendHttpUrl(this.endpoint, '/health');
+    if (!healthUrl) {
+      return null;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 3500);
+    try {
+      const response = await fetch(`${healthUrl}?_=${Date.now()}`, {
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async tryRejoin() {
+    if (this.destroyed || this.room || this.rejoinInFlight) {
+      return;
+    }
+
+    this.rejoinInFlight = true;
+    this.rejoinAttempt += 1;
+    const attempt = this.rejoinAttempt;
+    this.setConnectionState({
+      connected: false,
+      connectionStatus: 'reconnecting',
+      connectionMessage: `Rejoining multiplayer... attempt ${attempt}`,
+      reconnectAttempt: attempt
+    });
+
+    try {
+      const healthy = await this.isServerHealthy();
+      if (healthy === false) {
+        this.setConnectionState({
+          connected: false,
+          connectionStatus: 'updating',
+          connectionMessage: 'Game server is updating. Waiting for it to return...',
+          reconnectAttempt: attempt
+        });
+        throw new Error('Health check failed while rejoining.');
+      }
+
+      await this.joinRoom({ reason: 'fallback-rejoin' });
+      this.setConnectionState({
+        connected: true,
+        connectionStatus: 'online',
+        connectionMessage: 'Rejoined multiplayer.',
+        reconnectAttempt: 0
+      });
+    } catch (error) {
+      if (!this.destroyed && !this.room) {
+        const delayMs = getReconnectDelayMs(attempt);
+        const serverStillUpdating = error?.message === 'Health check failed while rejoining.';
+        console.warn('[NPC] Rejoin attempt failed; retrying.', {
+          attempt,
+          delayMs,
+          error: error?.message || String(error)
+        });
+        this.setConnectionState({
+          connected: false,
+          connectionStatus: serverStillUpdating ? 'updating' : 'reconnecting',
+          connectionMessage: serverStillUpdating
+            ? `Game server is updating. Retrying in ${Math.ceil(delayMs / 1000)}s`
+            : `Still reconnecting... retrying in ${Math.ceil(delayMs / 1000)}s`,
+          reconnectAttempt: attempt
+        });
+        this.scheduleRejoin(delayMs);
+      }
+    } finally {
+      this.rejoinInFlight = false;
+    }
+  }
+
+  failPendingRequests(message = 'The multiplayer server did not respond.') {
+    for (const [requestId, pending] of this.pendingRequests.entries()) {
+      this.pendingRequests.delete(requestId);
+      pending.reject?.(new Error(message));
+    }
+  }
+
+  canSendRoomMessage() {
+    return Boolean(this.room && this.state.connected);
   }
 
   subscribe(listener) {
@@ -402,6 +661,10 @@ export class NpcServiceColyseus {
   }
 
   async rpc(type, payload = {}) {
+    if (!this.canSendRoomMessage()) {
+      return { ok: false, error: 'The multiplayer server is reconnecting.' };
+    }
+
     const requestId = `rpc_${++this.sequence}`;
     const responsePromise = new Promise((resolve, reject) => {
       const timeout = window.setTimeout(() => {
@@ -413,6 +676,10 @@ export class NpcServiceColyseus {
         resolve: (message) => {
           window.clearTimeout(timeout);
           resolve(message);
+        },
+        reject: (error) => {
+          window.clearTimeout(timeout);
+          reject(error);
         }
       });
     });
@@ -450,7 +717,7 @@ export class NpcServiceColyseus {
   }
 
   setPlayerTransform(position, rotationY = 0, animationState = {}) {
-    if (!this.room) {
+    if (!this.canSendRoomMessage()) {
       return;
     }
 
@@ -494,7 +761,7 @@ export class NpcServiceColyseus {
 
   setCharacter(characterId = '') {
     const normalized = typeof characterId === 'string' ? characterId.trim() : '';
-    if (!this.room || !normalized) {
+    if (!this.canSendRoomMessage() || !normalized) {
       return;
     }
 
@@ -509,7 +776,7 @@ export class NpcServiceColyseus {
   }
 
   setBuilderPresence(presence = {}) {
-    if (!this.room) {
+    if (!this.canSendRoomMessage()) {
       return;
     }
 
@@ -617,12 +884,20 @@ export class NpcServiceColyseus {
   }
 
   pickupWeapon(pickupId) {
+    if (!this.canSendRoomMessage()) {
+      return;
+    }
+
     this.room?.send('combat:pickupRequest', {
       pickupId: String(pickupId ?? '')
     });
   }
 
   fireWeapon(aimDirection = { x: 0, z: 0 }, clientShotAt = Date.now(), origin = null) {
+    if (!this.canSendRoomMessage()) {
+      return false;
+    }
+
     const player = this.state.players.get(this.state.sessionId);
     const now = Date.now();
     if (!player || player.alive === false || !player.equippedWeaponId || player.isReloading) {
@@ -644,6 +919,10 @@ export class NpcServiceColyseus {
   }
 
   punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now()) {
+    if (!this.canSendRoomMessage()) {
+      return false;
+    }
+
     const player = this.state.players.get(this.state.sessionId);
     const now = Date.now();
     if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
@@ -663,6 +942,10 @@ export class NpcServiceColyseus {
   }
 
   reloadWeapon() {
+    if (!this.canSendRoomMessage()) {
+      return;
+    }
+
     this.room?.send('combat:reloadRequest', {});
   }
 
@@ -692,6 +975,9 @@ export class NpcServiceColyseus {
 
   async destroy() {
     this.destroyed = true;
+    window.removeEventListener('beforeunload', this.handleBeforeUnload);
+    this.clearRejoinTimer();
+    this.failPendingRequests('The multiplayer connection was closed.');
     this.lastFireSentAt = 0;
     this.lastPunchSentAt = 0;
     if (this.room) {

@@ -128,6 +128,10 @@ function isFingerprinted(filePath) {
 }
 
 function getCacheControl(filePath) {
+  if (path.basename(filePath).toLowerCase() === 'version.json') {
+    return 'no-store, max-age=0';
+  }
+
   const extension = path.extname(filePath).toLowerCase();
   if (extension === '.html') {
     return 'no-cache';
@@ -335,6 +339,8 @@ const server = defineServer({
   },
   express: (app) => {
     app.get('/health', (_req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
       const persistence = getWorldPersistenceInfo();
       res.json({
         ok: true,

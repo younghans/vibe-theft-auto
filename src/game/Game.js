@@ -259,6 +259,9 @@ const WORLD_MAP_CAPTURE_QUALITY = 0.84;
 const ADMIN_AGENT_TASKS_ENDPOINT = '/admin/agent-tasks';
 const ADMIN_PROMPT_TASK_SCOPE = 'game';
 const ADMIN_PROMPT_TASK_REFRESH_MS = 5000;
+const RELEASE_VERSION_ENDPOINT = '/version.json';
+const RELEASE_VERSION_CHECK_MS = 45000;
+const RELEASE_RELOAD_DELAY_MS = 8000;
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -303,6 +306,11 @@ function getBackendHttpEndpoint(serviceEndpoint, endpointPath) {
   } catch {
     return '';
   }
+}
+
+function getClientBuildCommitSha() {
+  const value = globalThis.STICKRPG_BUILD_COMMIT_SHA;
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function clampVibeShaderIntensity(value) {
@@ -557,6 +565,9 @@ export class Game {
     this.npcServiceState = {
       transport: 'mock',
       connected: true,
+      connectionStatus: 'local',
+      connectionMessage: 'Local mock transport is active.',
+      reconnectAttempt: 0,
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),
@@ -616,6 +627,17 @@ export class Game {
     this.worldMapImageRequest = null;
     this.worldMapCaptureInFlight = false;
     this.gameSettings = readStoredGameSettings();
+    this.currentBuildCommitSha = getClientBuildCommitSha();
+    this.frontendUpdateAvailable = false;
+    this.frontendUpdateCommitSha = '';
+    this.releaseVersionTimer = 0;
+    this.releaseVersionCheckInFlight = false;
+    this.releaseReloadScheduledAt = 0;
+    this.releaseReloadDelayToastAt = 0;
+    this.releaseReloadStarted = false;
+    this.releaseVersionVisibilityHandler = null;
+    this.lastConnectionHudSignature = '';
+    this.lastConnectionToastStatus = '';
     this.lastSkillAwardSeq = 0;
     this.skillLevelSnapshot = new Map();
     this.walletRequestInFlight = false;
@@ -1828,7 +1850,7 @@ export class Game {
     const selectedStock = this.stockMarketSnapshot?.stocks?.find?.((stock) => stock.symbol === this.stockMarketSelectedSymbol) ?? null;
     const snapshot = {
       url: window.location.href,
-      buildVersion: '',
+      buildVersion: this.currentBuildCommitSha,
       context,
       admin: {
         sessionId: this.npcServiceState?.sessionId ?? '',
@@ -6929,6 +6951,7 @@ export class Game {
       this.npcService.subscribe((state) => {
         this.npcServiceState = state;
         this.reportNpcTransportState();
+        this.refreshConnectionHud();
         this.syncPreferredCharacterSelection();
         this.syncAdminAccess();
         this.registerHeldItemDebugTools();
@@ -7036,6 +7059,7 @@ export class Game {
         render: true
       });
       this.hud.hideLoading();
+      this.startReleaseVersionPolling();
       this.queueCharacterPreviewWarmup();
       this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
       this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
@@ -8934,6 +8958,168 @@ export class Game {
     });
   }
 
+  getConnectionHudInfo() {
+    const state = this.npcServiceState ?? {};
+    const transport = String(state.transport ?? '');
+    const connected = state.connected !== false;
+    const rawStatus = String(
+      state.connectionStatus
+      || (connected ? 'online' : 'offline')
+    ).toLowerCase();
+
+    if (transport === 'mock') {
+      return {
+        status: 'local',
+        label: 'Local',
+        detail: state.connectionMessage || 'Local mock transport is active.'
+      };
+    }
+
+    if (this.frontendUpdateAvailable && connected) {
+      const shortSha = this.frontendUpdateCommitSha ? this.frontendUpdateCommitSha.slice(0, 7) : '';
+      return {
+        status: 'update-ready',
+        label: 'Update ready',
+        detail: shortSha ? `New frontend build ${shortSha} is live.` : 'A new frontend build is live.'
+      };
+    }
+
+    const fallbackLabels = {
+      connecting: 'Connecting',
+      online: 'Online',
+      reconnecting: 'Reconnecting',
+      rejoining: 'Rejoining',
+      updating: 'Server updating',
+      offline: 'Offline'
+    };
+    return {
+      status: rawStatus,
+      label: fallbackLabels[rawStatus] || (connected ? 'Online' : 'Offline'),
+      detail: state.connectionMessage || (connected ? 'Connected to multiplayer.' : 'Disconnected from multiplayer.')
+    };
+  }
+
+  refreshConnectionHud({ force = false } = {}) {
+    const info = this.getConnectionHudInfo();
+    const signature = JSON.stringify(info);
+    if (!force && signature === this.lastConnectionHudSignature) {
+      return;
+    }
+
+    const previousStatus = this.lastConnectionToastStatus;
+    this.lastConnectionHudSignature = signature;
+    this.hud.setConnectionStatus(info);
+
+    if (info.status === this.lastConnectionToastStatus) {
+      return;
+    }
+
+    this.lastConnectionToastStatus = info.status;
+    if (['reconnecting', 'rejoining', 'updating', 'offline'].includes(info.status)) {
+      this.hud.showToast(info.detail);
+    } else if (info.status === 'online' && previousStatus && !['online', 'local', 'update-ready'].includes(previousStatus)) {
+      this.hud.showToast('Back online.');
+    }
+  }
+
+  startReleaseVersionPolling() {
+    if (this.releaseVersionTimer || !this.currentBuildCommitSha) {
+      return;
+    }
+
+    this.releaseVersionTimer = window.setInterval(() => {
+      void this.checkReleaseVersion();
+    }, RELEASE_VERSION_CHECK_MS);
+    this.releaseVersionVisibilityHandler = () => {
+      if (!document.hidden) {
+        void this.checkReleaseVersion({ force: true });
+      }
+    };
+    document.addEventListener('visibilitychange', this.releaseVersionVisibilityHandler);
+    window.addEventListener('focus', this.releaseVersionVisibilityHandler);
+    void this.checkReleaseVersion({ force: true });
+  }
+
+  async checkReleaseVersion({ force = false } = {}) {
+    if (this.releaseVersionCheckInFlight || !this.currentBuildCommitSha || (this.frontendUpdateAvailable && !force)) {
+      return;
+    }
+
+    this.releaseVersionCheckInFlight = true;
+    try {
+      const response = await fetch(`${RELEASE_VERSION_ENDPOINT}?_=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        return;
+      }
+
+      const version = await response.json();
+      const latestCommitSha = String(version?.commitSha ?? version?.buildCommitSha ?? '').trim();
+      if (!latestCommitSha || latestCommitSha === this.currentBuildCommitSha) {
+        return;
+      }
+
+      this.markFrontendUpdateAvailable(latestCommitSha);
+    } catch {
+      // Version polling is opportunistic; connection state handles hard server failures.
+    } finally {
+      this.releaseVersionCheckInFlight = false;
+    }
+  }
+
+  markFrontendUpdateAvailable(commitSha = '') {
+    if (this.frontendUpdateAvailable) {
+      return;
+    }
+
+    this.frontendUpdateAvailable = true;
+    this.frontendUpdateCommitSha = String(commitSha ?? '').trim();
+    this.releaseReloadScheduledAt = performance.now() + RELEASE_RELOAD_DELAY_MS;
+    this.hud.showToast('New game update is live. Reloading when safe...');
+    this.refreshConnectionHud({ force: true });
+  }
+
+  isSafeToAutoReloadFrontend() {
+    if (document.hidden) {
+      return true;
+    }
+
+    if (this.npcServiceState.transport === 'colyseus' && this.npcServiceState.connected === false) {
+      return true;
+    }
+
+    return !this.worldBuilder?.enabled
+      && !this.activeWorkout
+      && !this.emoteMenuOpen
+      && !this.hud.isQuickChatOpen()
+      && !this.hud.isAdminPromptOpen()
+      && !this.hud.isPhoneOpen()
+      && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen();
+  }
+
+  processPendingFrontendReload() {
+    if (this.releaseReloadStarted || !this.frontendUpdateAvailable || performance.now() < this.releaseReloadScheduledAt) {
+      return;
+    }
+
+    if (this.isSafeToAutoReloadFrontend()) {
+      this.releaseReloadStarted = true;
+      void this.npcService?.destroy?.();
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 120);
+      return;
+    }
+
+    if (performance.now() >= this.releaseReloadDelayToastAt) {
+      this.releaseReloadDelayToastAt = performance.now() + 12000;
+      this.hud.showToast('Update ready. Close active panels to reload.');
+    }
+  }
+
   getActiveEmoteSelection() {
     const pointer = this.input.getPointerPosition();
     const centerX = window.innerWidth * 0.5;
@@ -9076,6 +9262,7 @@ export class Game {
 
     const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
     const localPlayerState = this.getLocalPlayerState();
+    this.processPendingFrontendReload();
     this.syncMobileControlsHud(localPlayerState);
     const emoteMenuActive = this.updateEmoteMenu();
     if (this.hud.isStockMarketOpen()) {

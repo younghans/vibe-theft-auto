@@ -288,6 +288,9 @@ export class NpcServiceMock {
     this.state = {
       transport: 'mock',
       connected: true,
+      connectionStatus: 'local',
+      connectionMessage: 'Local mock transport is active.',
+      reconnectAttempt: 0,
       sessionId: 'local-player',
       players: new Map(),
       builders: new Map(),

@@ -451,6 +451,17 @@ async function copyStaticShell({ appScript, stylesheet, modulePreloads = [] }) {
   );
 }
 
+async function writeVersionManifest(outputDirectory = stagingDist) {
+  const commitSha = readFrontendBuildCommitSha();
+  const manifest = {
+    version: 1,
+    commitSha,
+    buildCommitSha: commitSha,
+    builtAt: new Date().toISOString()
+  };
+  await fs.writeFile(path.join(outputDirectory, 'version.json'), `${JSON.stringify(manifest)}\n`, 'utf8');
+}
+
 async function walkFiles(directory) {
   const files = [];
   const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -624,6 +635,7 @@ await resetStagingDist();
 
 const bundleOutputs = await bundleClient();
 await copyStaticShell(bundleOutputs);
+await writeVersionManifest();
 await copyRuntimeAssets();
 await copyOptionalDirectory(path.join('assets', 'generated'));
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));

@@ -1976,6 +1976,8 @@ export class Hud {
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
+    this.connectionStatusRoot = this.overlay.querySelector('[data-connection-status]');
+    this.connectionStatusLabel = this.overlay.querySelector('[data-connection-status-label]');
     this.aimDebugRoot = this.overlay.querySelector('[data-aim-debug]');
     this.aimDebugToggle = this.overlay.querySelector('[data-aim-debug-toggle]');
     this.aimDebugStatus = this.overlay.querySelector('[data-aim-debug-status]');
@@ -2491,6 +2493,10 @@ export class Hud {
         <div class="hud__phone-map-tooltip" data-phone-map-tooltip-popover hidden></div>
       </section>
       <div class="hud__top-actions">
+        <section class="hud__connection is-connecting" data-connection-status aria-live="polite" title="Connecting to multiplayer">
+          <span class="hud__connection-dot" aria-hidden="true"></span>
+          <span data-connection-status-label>Connecting</span>
+        </section>
         <section class="hud__toast">
           <p class="hud__toast-text" data-toast></p>
         </section>
@@ -3686,6 +3692,41 @@ export class Hud {
     this.toastTimeout = window.setTimeout(() => {
       toast.classList.remove('is-visible');
     }, 2200);
+  }
+
+  setConnectionStatus({
+    status = 'online',
+    label = '',
+    detail = ''
+  } = {}) {
+    if (!this.connectionStatusRoot || !this.connectionStatusLabel) {
+      return;
+    }
+
+    const normalizedStatus = String(status || 'online').toLowerCase();
+    const defaultLabels = {
+      connecting: 'Connecting',
+      online: 'Online',
+      reconnecting: 'Reconnecting',
+      rejoining: 'Rejoining',
+      updating: 'Server updating',
+      offline: 'Offline',
+      local: 'Local',
+      'update-ready': 'Update ready'
+    };
+    this.connectionStatusLabel.textContent = String(label || defaultLabels[normalizedStatus] || 'Online');
+    this.connectionStatusRoot.title = String(detail || this.connectionStatusLabel.textContent);
+    this.connectionStatusRoot.classList.remove(
+      'is-connecting',
+      'is-online',
+      'is-reconnecting',
+      'is-rejoining',
+      'is-updating',
+      'is-offline',
+      'is-local',
+      'is-update-ready'
+    );
+    this.connectionStatusRoot.classList.add(`is-${normalizedStatus}`);
   }
 
   bindAimPoseDebugEvents({

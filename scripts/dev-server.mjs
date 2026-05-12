@@ -217,6 +217,10 @@ function getCacheControl(filePath) {
     return 'no-store, max-age=0';
   }
 
+  if (path.basename(filePath).toLowerCase() === 'version.json') {
+    return 'no-store, max-age=0';
+  }
+
   const extension = path.extname(filePath).toLowerCase();
   if (extension === '.html') {
     return 'no-cache';

@@ -1,4 +1,4 @@
-import { Room } from '@colyseus/core';
+import { CloseCode, Room } from '@colyseus/core';
 import { MapSchema, schema } from '@colyseus/schema';
 import {
   COMBAT_PICKUP_SPAWNS,
@@ -147,6 +147,7 @@ const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const NPC_DEBUG_BROADCAST_INTERVAL_MS = 120;
+const PLAYER_RECONNECTION_GRACE_SECONDS = 30;
 
 function parseAdminKeys(value = '') {
   return new Set(
@@ -650,7 +651,38 @@ export class WorldRoom extends Room {
     this.broadcastNpcDebugSnapshot(Date.now(), { force: true });
   }
 
-  onLeave(client) {
+  async onLeave(client, code = 0) {
+    const player = this.state.players.get(client.sessionId);
+    const isConsentedLeave = code === CloseCode.CONSENTED || code === 1000;
+
+    if (player && !isConsentedLeave) {
+      logServer('room', 'Client dropped; allowing short reconnection window.', {
+        roomId: this.roomId,
+        sessionId: client.sessionId,
+        code,
+        graceSeconds: PLAYER_RECONNECTION_GRACE_SECONDS,
+        connectedClients: this.clients.length
+      });
+
+      try {
+        await this.allowReconnection(client, PLAYER_RECONNECTION_GRACE_SECONDS);
+        logServer('room', 'Client reconnected to world room.', {
+          roomId: this.roomId,
+          sessionId: client.sessionId,
+          connectedClients: this.clients.length
+        });
+        this.broadcastNpcDebugSnapshot(Date.now(), { force: true });
+        return;
+      } catch {
+        logServer('room', 'Client reconnection window expired.', {
+          roomId: this.roomId,
+          sessionId: client.sessionId,
+          code,
+          connectedClients: this.clients.length
+        });
+      }
+    }
+
     this.state.players.delete(client.sessionId);
     this.state.builders.delete(client.sessionId);
     this.playerAliases.delete(client.sessionId);
