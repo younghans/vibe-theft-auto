@@ -294,20 +294,27 @@ function createInlineShellEntry(rendered, placement, interactable) {
   };
 }
 
-function createColliderFromLocalRect(rect, placement, minY = 0, maxY = 4) {
+function createColliderFromLocalRect(rect, placement, item = null, minY = 0, maxY = 4) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
   const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
   const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
   const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
   const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
-  const tileCenter = getTileCenterWorldPosition(
-    getBuilderItemById(placement?.itemId),
-    placement?.cellX ?? 0,
-    placement?.cellZ ?? 0,
-    0
-  );
-  const centerX = tileCenter.x + rotatedCenter.x;
-  const centerZ = tileCenter.z + rotatedCenter.z;
+  const isTilePlacement = placement?.layer === 'tile';
+  const tileCenter = isTilePlacement
+    ? getTileCenterWorldPosition(
+        item ?? getBuilderItemById(placement?.itemId),
+        placement?.cellX ?? 0,
+        placement?.cellZ ?? 0,
+        0
+      )
+    : null;
+  const centerX = isTilePlacement
+    ? tileCenter.x + rotatedCenter.x
+    : (placement?.position?.[0] ?? 0) + rotatedCenter.x;
+  const centerZ = isTilePlacement
+    ? tileCenter.z + rotatedCenter.z
+    : (placement?.position?.[1] ?? 0) + rotatedCenter.z;
 
   return createBoxColliderFromBounds(
     centerX - halfWidth,
@@ -712,8 +719,8 @@ function createPlacementColliders(object, item, placement, actor) {
     return collider ? [collider] : [];
   }
 
-  if (item?.movementCollisionRects?.length && placement?.layer === 'tile') {
-    return item.movementCollisionRects.map((rect) => createColliderFromLocalRect(rect, placement));
+  if (item?.movementCollisionRects?.length) {
+    return item.movementCollisionRects.map((rect) => createColliderFromLocalRect(rect, placement, item));
   }
 
   if (isParkWallItem(item)) {

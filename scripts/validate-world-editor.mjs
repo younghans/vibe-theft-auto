@@ -1,5 +1,6 @@
 import { Box3, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
+import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
@@ -52,6 +53,11 @@ function validateCustomPropCatalogItems() {
   assert(basketballHoop.layer === 'prop', 'Basketball hoop should be a prop catalog item');
   assert(basketballHoop.groupId === 'fitness', 'Basketball hoop should be grouped under Fitness');
   assert(basketballHoop.collision === true, 'Basketball hoop should block movement like a grounded prop');
+  assert(basketballHoop.movementCollisionRects?.length === 1, 'Basketball hoop movement collision should use a custom base/pole rect');
+  assert(basketballHoop.shotCollisionRects?.length === 1, 'Basketball hoop shot collision should use the same base/pole rect');
+  const hoopCollisionRect = basketballHoop.movementCollisionRects[0];
+  assert(hoopCollisionRect.halfWidth <= 0.4 && hoopCollisionRect.halfDepth <= 0.4, 'Basketball hoop movement collision should stay tight to the base/pole');
+  assert(hoopCollisionRect.centerZ < -1.2, 'Basketball hoop movement collision should be centered on the rear pole, not the backboard footprint');
   assert(typeof basketballHoop.createVisual === 'function', 'Basketball hoop should define a procedural visual');
   assert(
     Array.isArray(basketballHoop.size)
@@ -93,6 +99,24 @@ function validateCustomPropCatalogItems() {
   const preparedRimHeight = rim.position.y * footprintScale;
   assert(poleBounds.min.y >= -0.001 && poleBounds.min.y <= 0.001, 'Basketball hoop pole should begin at ground level');
   assert(preparedRimHeight >= 7.45 && preparedRimHeight <= 7.65, 'Basketball hoop rim should read as a 10ft hoop against the character model after footprint fitting');
+
+  const hoopTestPlacement = {
+    itemId: basketballHoop.id,
+    layer: 'prop',
+    position: [12, -5],
+    rotationQuarterTurns: 0
+  };
+  const [worldCollisionRect] = placementToCollisionRects(
+    hoopTestPlacement,
+    basketballHoop,
+    { collisionKey: 'blocksMovement' }
+  );
+  assert(worldCollisionRect, 'Basketball hoop movement collision should resolve for prop placements');
+  assert(Math.abs(worldCollisionRect.x - hoopTestPlacement.position[0]) < 0.001, 'Basketball hoop prop collision should be relative to placement x');
+  assert(
+    Math.abs(worldCollisionRect.z - (hoopTestPlacement.position[1] + hoopCollisionRect.centerZ)) < 0.001,
+    'Basketball hoop prop collision should be relative to the pole position'
+  );
 }
 
 function validateTiles() {

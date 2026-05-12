@@ -58,6 +58,9 @@ const STANDARD_2X2_HULL_COLLISION_RECTS = Object.freeze([
   { centerX: -7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 },
   { centerX: 7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 }
 ]);
+const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
+]);
 const KENNEY_BUILDING_VARIANTS = Object.freeze('abcdefghijklmn'.split(''));
 const KENNEY_SKYSCRAPER_VARIANTS = Object.freeze('abcde'.split(''));
 const KENNEY_DETAIL_DEFINITIONS = Object.freeze([
@@ -394,6 +397,8 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     group: 'fitness',
     size: BASKETBALL_HOOP_FOOTPRINT,
     collision: true,
+    movementCollisionRects: BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS,
+    shotCollisionRects: BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS,
     padding: 0.16,
     createVisual: createBasketballHoopVisual
   },
@@ -651,6 +656,8 @@ function createCityProp(definition) {
     asset,
     size: definition.size ?? propSizeForAsset(definition.assetName),
     layer: 'prop',
+    movementCollisionRects: definition.movementCollisionRects?.map((rect) => ({ ...rect })) ?? null,
+    shotCollisionRects: definition.shotCollisionRects?.map((rect) => ({ ...rect })) ?? null,
     collision: blocksMovement,
     blocksMovement,
     blocksShots,
