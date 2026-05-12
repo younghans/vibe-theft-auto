@@ -16,6 +16,8 @@ the source-code license.
 - Raw Mixamo character FBX files are local-only source inputs and are ignored by
   git. Commit optimized runtime GLBs from `assets/runtime/mixamo/characters/`,
   not raw character FBX source files.
+- Raw source assets such as FBX, OBJ, MTL, and WAV files should stay local-only.
+  Commit runtime-ready GLB, GLTF, JSON, MP3, PNG, or WebP assets instead.
 
 When adding new assets, include the source, license, and any attribution notes in
 or near the asset directory.

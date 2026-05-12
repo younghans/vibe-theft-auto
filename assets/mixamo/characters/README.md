@@ -8,4 +8,10 @@ To regenerate runtime characters, place the source FBX files in this directory w
 npm run optimize:assets
 ```
 
+You can also keep the source FBX files outside the repo and point the optimizer at them:
+
+```bash
+MIXAMO_SOURCE_CHARACTER_DIR=/path/to/local/mixamo-sources npm run optimize:assets
+```
+
 Commit the updated runtime GLBs, not the raw FBX source files.

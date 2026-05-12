@@ -14,6 +14,11 @@ tmp-*.spec.cjs
 tools/mixamo-optimizer/node_modules/
 assets/mixamo/characters/*.fbx
 assets/mixamo/characters/*.FBX
+assets/mixamo/animations/*.fbx
+assets/mixamo/animations/*.FBX
+assets/source/
+assets/**/*.wav
+assets/**/*.WAV
 server/data/world-backups/
 server/data/agent-tasks.json
 server/data/agent-deployments.json

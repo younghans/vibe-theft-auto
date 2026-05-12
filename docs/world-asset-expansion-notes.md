@@ -4,7 +4,9 @@
 
 - The builder catalog is the source of truth for editor items. Every placeable tile or prop is defined in `src/world/builderCatalog.js`.
 - Tile placements are single-cell records with `itemId`, `cell`, and `rotationQuarterTurns`. Prop placements are free-placed with `itemId`, `position`, and `rotationQuarterTurns`. See `src/world/WorldState.js`.
-- Models are loaded through `ModelLibrary`, which supports `FBXLoader` and `GLTFLoader`. That means `.fbx`, `.gltf`, and `.glb` all work.
+- Models are loaded through `ModelLibrary`, but committed runtime assets should
+  be `.glb` or `.gltf`. Treat `.fbx`, `.obj`, and `.mtl` files as local-only
+  source exports that are converted before they enter the runtime asset tree.
 - `WorldRenderer` automatically:
   - loads the asset
   - fits it to the configured `item.size`
@@ -170,11 +172,12 @@ These are not primarily new exterior buildings, but they are the strongest style
 
 1. Add Kenney for ready-to-use `.glb` buildings.
 2. Add Quaternius building packs as a second pass.
-3. Convert selected `.fbx` or `.obj` models to `.glb` in Blender before importing.
+3. Convert selected `.fbx` or `.obj` models to `.glb` in Blender before importing, and commit only the curated runtime `.glb` files.
 
 ## Practical integration rules
 
 - Prefer `.glb` or `.gltf` first. They flow through the current loader path with no special handling.
+- Keep raw `.fbx`, `.obj`, `.mtl`, and `.wav` source files out of git.
 - Keep each pack in its own folder under `assets/`.
 - Add only a few curated entries at a time instead of bulk-registering every file.
 - Start with compact buildings that visually read well inside a single lot footprint.

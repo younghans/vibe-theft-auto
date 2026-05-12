@@ -77,6 +77,12 @@ See [docs/vercel-frontend-deployment.md](docs/vercel-frontend-deployment.md)
 and [docs/colyseus-cloud-deployment.md](docs/colyseus-cloud-deployment.md) for
 the production setup notes.
 
+## Asset Pipeline
+
+Commit runtime-ready assets and keep bulky source exports local. See
+[docs/asset-pipeline.md](docs/asset-pipeline.md) for the Mixamo optimization,
+animation extraction, and third-party asset import workflow.
+
 ## Assets And License
 
 Source code is licensed under the ISC License. Bundled game assets, third-party

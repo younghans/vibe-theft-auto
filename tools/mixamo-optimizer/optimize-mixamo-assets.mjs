@@ -18,7 +18,10 @@ const require = createRequire(import.meta.url);
 const convertFbxToGltf = require('fbx2gltf');
 const toolRoot = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(toolRoot, '..', '..');
-const sourceCharacterRoot = path.join(root, 'assets', 'mixamo', 'characters');
+const sourceCharacterRoot = resolveProjectPath(
+  process.env.MIXAMO_SOURCE_CHARACTER_DIR,
+  path.join(root, 'assets', 'mixamo', 'characters')
+);
 const runtimeCharacterRoot = path.join(root, 'assets', 'runtime', 'mixamo', 'characters');
 const tempRoot = path.join(root, '.tmp-gltf-estimate', 'runtime-mixamo');
 const worldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
@@ -49,6 +52,17 @@ const flags = new Set(cliArgs.filter((arg) => arg.startsWith('--')));
 const requestedIds = cliArgs.filter((arg) => !arg.startsWith('--'));
 
 installDomShims();
+
+function resolveProjectPath(value, fallback) {
+  const configured = String(value ?? '').trim();
+  if (!configured) {
+    return fallback;
+  }
+
+  return path.isAbsolute(configured)
+    ? configured
+    : path.resolve(root, configured);
+}
 
 function installDomShims() {
   globalThis.self = globalThis;
