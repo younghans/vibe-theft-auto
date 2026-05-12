@@ -1984,7 +1984,7 @@ export class Game {
       ) {
         this.adminPromptSelectedTaskId = '';
       }
-      if (!this.adminPromptSelectedTaskId && this.adminPromptTasks.length > 0) {
+      if (this.adminPromptActiveTab !== 'new' && !this.adminPromptSelectedTaskId && this.adminPromptTasks.length > 0) {
         this.adminPromptSelectedTaskId = this.adminPromptTasks[0].id;
       }
       this.adminPromptRefreshAt = performance.now() + ADMIN_PROMPT_TASK_REFRESH_MS;
@@ -2015,9 +2015,9 @@ export class Game {
   }
 
   setAdminPromptTab(tabId = '') {
-    this.adminPromptActiveTab = ['new', 'active', 'ready', 'deployed', 'history'].includes(String(tabId))
+    this.adminPromptActiveTab = ['new', 'threads'].includes(String(tabId))
       ? String(tabId)
-      : 'new';
+      : 'threads';
     this.refreshAdminPromptHud();
   }
 
@@ -2028,6 +2028,7 @@ export class Game {
     }
 
     this.adminPromptSelectedTaskId = id;
+    this.adminPromptActiveTab = 'threads';
     this.refreshAdminPromptHud();
   }
 
@@ -2076,7 +2077,7 @@ export class Game {
       }
 
       this.adminPromptOpen = true;
-      this.adminPromptActiveTab = 'active';
+      this.adminPromptActiveTab = 'threads';
       this.adminPromptSelectedTaskId = result.task?.id ?? '';
       this.hud.clearAdminPromptText();
       this.hud.showToast('Codex task queued.');
@@ -2134,7 +2135,7 @@ export class Game {
         throw new Error(result?.error || 'Could not submit follow-up.');
       }
 
-      this.adminPromptActiveTab = 'active';
+      this.adminPromptActiveTab = 'threads';
       this.adminPromptSelectedTaskId = result.task?.id ?? id;
       this.hud.showToast('Follow-up queued.');
       await this.refreshAdminPromptTasks({ force: true });

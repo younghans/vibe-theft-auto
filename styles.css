@@ -6294,6 +6294,26 @@ body.is-admin-prompt-resizing * {
   background: rgba(117, 227, 193, 0.12);
 }
 
+.hud__admin-prompt-task--new {
+  border-color: rgba(117, 227, 193, 0.22);
+  background: rgba(117, 227, 193, 0.075);
+}
+
+.hud__admin-prompt-new-thread-icon {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(117, 227, 193, 0.36);
+  border-radius: 999px;
+  background: rgba(117, 227, 193, 0.12);
+  color: #bffff0;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .hud__admin-prompt-task strong,
 .hud__admin-prompt-task small {
   display: block;
@@ -6319,6 +6339,26 @@ body.is-admin-prompt-resizing * {
   color: rgba(244, 238, 226, 0.62);
   font-size: 11px;
   font-weight: 780;
+}
+
+.hud__admin-prompt-load-more {
+  width: 100%;
+  min-height: 34px;
+  margin: 2px 0 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(244, 238, 226, 0.68);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__admin-prompt-load-more:hover {
+  border-color: rgba(117, 227, 193, 0.42);
+  color: #dffff7;
 }
 
 .hud__admin-prompt-status-badge {
