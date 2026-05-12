@@ -871,7 +871,6 @@ function createAgentTaskDetailMarkup(task = null) {
   }
 
   const status = String(task.status ?? 'queued');
-  const logs = Array.isArray(task.logs) ? task.logs.slice(-5).reverse() : [];
   const branch = String(task.branch ?? '').trim();
   const commitSha = String(task.commitSha ?? '').trim();
   const deployApproved = Number(task.deployApprovedAt ?? 0) > 0;
@@ -914,14 +913,6 @@ function createAgentTaskDetailMarkup(task = null) {
         ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
         ${canRollback ? '<button class="hud__admin-prompt-small hud__admin-prompt-small--danger" type="button" data-admin-prompt-action="rollback">Rollback</button>' : ''}
         ${canCancel ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="cancel-task">Cancel</button>' : ''}
-      </div>
-      <div class="hud__admin-prompt-logs">
-        ${logs.length ? logs.map((entry) => `
-          <div class="hud__admin-prompt-log">
-            <time>${escapeHtml(formatAgentTaskTime(entry.at))}</time>
-            <span>${escapeHtml(entry.message ?? '')}</span>
-          </div>
-        `).join('') : '<div class="hud__admin-prompt-empty">No worker logs yet.</div>'}
       </div>
     </article>
   `;
@@ -1706,6 +1697,13 @@ const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
 const BUILDER_PANEL_MOBILE_BREAKPOINT = 900;
+const ADMIN_PROMPT_DEFAULT_WIDTH = 720;
+const ADMIN_PROMPT_DEFAULT_HEIGHT = 462;
+const ADMIN_PROMPT_MIN_WIDTH = 340;
+const ADMIN_PROMPT_MIN_HEIGHT = 280;
+const ADMIN_PROMPT_MAX_WIDTH = 980;
+const ADMIN_PROMPT_MAX_HEIGHT = 780;
+const ADMIN_PROMPT_VIEWPORT_MARGIN = 6;
 
 function getMouseControlIconMarkup(side) {
   const leftActive = side === 'left' ? ' is-active' : '';
@@ -1915,6 +1913,8 @@ export class Hud {
     this.schoolMicrogameMessage = this.overlay.querySelector('[data-school-microgame-message]');
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
+    this.adminPromptDragHandle = this.overlay.querySelector('[data-admin-prompt-drag-handle]');
+    this.adminPromptResizeHandles = Array.from(this.overlay.querySelectorAll('[data-admin-prompt-resize-handle]'));
     this.adminPromptClose = this.overlay.querySelector('[data-admin-prompt-close]');
     this.adminPromptForm = this.overlay.querySelector('[data-admin-prompt-form]');
     this.adminPromptPrompt = this.overlay.querySelector('[data-admin-prompt-prompt]');
@@ -2007,6 +2007,10 @@ export class Hud {
       autoDeployAvailable: false,
       contextLabel: 'Game'
     };
+    this.adminPromptLayout = null;
+    this.adminPromptLayoutCustomized = false;
+    this.adminPromptDragState = null;
+    this.adminPromptResizeState = null;
     this.lastAdminPromptTabsSignature = '';
     this.lastAdminPromptTaskListSignature = '';
     this.lastAdminPromptDetailSignature = '';
@@ -2033,9 +2037,15 @@ export class Hud {
     this.builderBuildingEditorVisible = false;
     this.onBuilderResizePointerMove = this.onBuilderResizePointerMove.bind(this);
     this.onBuilderResizePointerUp = this.onBuilderResizePointerUp.bind(this);
+    this.onAdminPromptDragPointerMove = this.onAdminPromptDragPointerMove.bind(this);
+    this.onAdminPromptDragPointerUp = this.onAdminPromptDragPointerUp.bind(this);
+    this.onAdminPromptResizePointerMove = this.onAdminPromptResizePointerMove.bind(this);
+    this.onAdminPromptResizePointerUp = this.onAdminPromptResizePointerUp.bind(this);
+    this.onAdminPromptViewportResize = this.onAdminPromptViewportResize.bind(this);
     this.buildAimPoseDebugFields();
     this.buildEmoteWheel();
     this.initializeBuilderPanelResize();
+    this.initializeAdminPromptInteraction();
     this.setMoneyState({ amount: 0 });
     this.setTaskState({ visible: false });
   }
@@ -2360,7 +2370,7 @@ export class Hud {
               <p class="hud__body hud__admin-position-hint" data-admin-position-hint>World coordinates for collider debugging.</p>
             </section>
             <section class="hud__admin-prompt" data-admin-prompt hidden>
-              <header class="hud__admin-prompt-header">
+              <header class="hud__admin-prompt-header" data-admin-prompt-drag-handle title="Drag Prompt panel">
                 <div>
                   <p class="hud__eyebrow">Admin</p>
                   <h2 class="hud__dialog-title">Prompt</h2>
@@ -2401,6 +2411,14 @@ export class Hud {
                   <div class="hud__admin-prompt-detail-slot" data-admin-prompt-detail></div>
                 </div>
               </div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--n" data-admin-prompt-resize-handle="n" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--e" data-admin-prompt-resize-handle="e" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--s" data-admin-prompt-resize-handle="s" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--w" data-admin-prompt-resize-handle="w" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--ne" data-admin-prompt-resize-handle="ne" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--nw" data-admin-prompt-resize-handle="nw" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--se" data-admin-prompt-resize-handle="se" aria-hidden="true"></div>
+              <div class="hud__admin-prompt-resize-handle hud__admin-prompt-resize-handle--sw" data-admin-prompt-resize-handle="sw" aria-hidden="true"></div>
             </section>
             <section class="hud__panel">
               <div class="hud__controls-list">
@@ -3084,6 +3102,235 @@ export class Hud {
     window.removeEventListener('pointermove', this.onBuilderResizePointerMove);
     window.removeEventListener('pointerup', this.onBuilderResizePointerUp);
     window.removeEventListener('pointercancel', this.onBuilderResizePointerUp);
+  }
+
+  getAdminPromptViewportBounds() {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const margin = Math.min(ADMIN_PROMPT_VIEWPORT_MARGIN, Math.floor(Math.min(width, height) * 0.08));
+    return {
+      width,
+      height,
+      margin,
+      maxWidth: Math.max(1, width - (margin * 2)),
+      maxHeight: Math.max(1, height - (margin * 2))
+    };
+  }
+
+  clampAdminPromptSize(width, height) {
+    const bounds = this.getAdminPromptViewportBounds();
+    const minWidth = Math.min(ADMIN_PROMPT_MIN_WIDTH, bounds.maxWidth);
+    const minHeight = Math.min(ADMIN_PROMPT_MIN_HEIGHT, bounds.maxHeight);
+    const maxWidth = Math.max(minWidth, Math.min(ADMIN_PROMPT_MAX_WIDTH, bounds.maxWidth));
+    const maxHeight = Math.max(minHeight, Math.min(ADMIN_PROMPT_MAX_HEIGHT, bounds.maxHeight));
+    return {
+      width: Math.min(Math.max(Math.round(Number(width) || ADMIN_PROMPT_DEFAULT_WIDTH), minWidth), maxWidth),
+      height: Math.min(Math.max(Math.round(Number(height) || ADMIN_PROMPT_DEFAULT_HEIGHT), minHeight), maxHeight)
+    };
+  }
+
+  clampAdminPromptLayout(layout = {}) {
+    const bounds = this.getAdminPromptViewportBounds();
+    const size = this.clampAdminPromptSize(layout.width, layout.height);
+    const maxX = Math.max(bounds.margin, bounds.width - size.width - bounds.margin);
+    const maxY = Math.max(bounds.margin, bounds.height - size.height - bounds.margin);
+    return {
+      x: Math.min(Math.max(Math.round(Number(layout.x) || bounds.margin), bounds.margin), maxX),
+      y: Math.min(Math.max(Math.round(Number(layout.y) || bounds.margin), bounds.margin), maxY),
+      width: size.width,
+      height: size.height
+    };
+  }
+
+  getDefaultAdminPromptLayout() {
+    const bounds = this.getAdminPromptViewportBounds();
+    const size = this.clampAdminPromptSize(
+      Math.min(ADMIN_PROMPT_DEFAULT_WIDTH, bounds.maxWidth),
+      Math.min(ADMIN_PROMPT_DEFAULT_HEIGHT, bounds.maxHeight)
+    );
+    return this.clampAdminPromptLayout({
+      x: bounds.width - size.width - Math.max(14, bounds.margin),
+      y: bounds.margin,
+      width: size.width,
+      height: size.height
+    });
+  }
+
+  applyAdminPromptLayout(layout = {}, { customized = this.adminPromptLayoutCustomized } = {}) {
+    if (!this.adminPromptRoot) {
+      return;
+    }
+
+    this.adminPromptLayout = this.clampAdminPromptLayout(layout);
+    this.adminPromptLayoutCustomized = Boolean(customized);
+    this.adminPromptRoot.style.setProperty('--admin-prompt-x', `${this.adminPromptLayout.x}px`);
+    this.adminPromptRoot.style.setProperty('--admin-prompt-y', `${this.adminPromptLayout.y}px`);
+    this.adminPromptRoot.style.setProperty('--admin-prompt-width', `${this.adminPromptLayout.width}px`);
+    this.adminPromptRoot.style.setProperty('--admin-prompt-height', `${this.adminPromptLayout.height}px`);
+  }
+
+  ensureAdminPromptLayout() {
+    if (!this.adminPromptRoot) {
+      return;
+    }
+
+    if (!this.adminPromptLayout || !this.adminPromptLayoutCustomized) {
+      this.applyAdminPromptLayout(this.getDefaultAdminPromptLayout(), { customized: false });
+      return;
+    }
+
+    this.applyAdminPromptLayout(this.adminPromptLayout, { customized: true });
+  }
+
+  initializeAdminPromptInteraction() {
+    this.adminPromptDragHandle?.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (
+        event.button !== 0
+        || target?.closest('button, input, textarea, select, a, [data-admin-prompt-resize-handle]')
+      ) {
+        return;
+      }
+
+      if (!this.adminPromptRoot || this.adminPromptRoot.hidden) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = this.adminPromptRoot.getBoundingClientRect();
+      this.adminPromptDragState = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: rect.left,
+        startY: rect.top,
+        width: rect.width,
+        height: rect.height
+      };
+      this.adminPromptRoot.classList.add('is-dragging');
+      this.adminPromptDragHandle.setPointerCapture?.(event.pointerId);
+      document.body.classList.add('is-admin-prompt-dragging');
+      window.addEventListener('pointermove', this.onAdminPromptDragPointerMove);
+      window.addEventListener('pointerup', this.onAdminPromptDragPointerUp);
+      window.addEventListener('pointercancel', this.onAdminPromptDragPointerUp);
+    });
+
+    for (const handle of this.adminPromptResizeHandles) {
+      handle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || !this.adminPromptRoot || this.adminPromptRoot.hidden) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = this.adminPromptRoot.getBoundingClientRect();
+        this.adminPromptResizeState = {
+          pointerId: event.pointerId,
+          direction: handle.getAttribute('data-admin-prompt-resize-handle') ?? '',
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startX: rect.left,
+          startY: rect.top,
+          startRight: rect.right,
+          startBottom: rect.bottom,
+          startWidth: rect.width,
+          startHeight: rect.height
+        };
+        this.adminPromptRoot.classList.add('is-resizing');
+        handle.setPointerCapture?.(event.pointerId);
+        document.body.classList.add('is-admin-prompt-resizing');
+        window.addEventListener('pointermove', this.onAdminPromptResizePointerMove);
+        window.addEventListener('pointerup', this.onAdminPromptResizePointerUp);
+        window.addEventListener('pointercancel', this.onAdminPromptResizePointerUp);
+      });
+    }
+
+    window.addEventListener('resize', this.onAdminPromptViewportResize);
+  }
+
+  onAdminPromptDragPointerMove(event) {
+    const state = this.adminPromptDragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    this.applyAdminPromptLayout({
+      x: state.startX + (event.clientX - state.startClientX),
+      y: state.startY + (event.clientY - state.startClientY),
+      width: state.width,
+      height: state.height
+    }, { customized: true });
+  }
+
+  onAdminPromptDragPointerUp(event) {
+    const state = this.adminPromptDragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+
+    this.adminPromptDragState = null;
+    this.adminPromptRoot?.classList.remove('is-dragging');
+    document.body.classList.remove('is-admin-prompt-dragging');
+    window.removeEventListener('pointermove', this.onAdminPromptDragPointerMove);
+    window.removeEventListener('pointerup', this.onAdminPromptDragPointerUp);
+    window.removeEventListener('pointercancel', this.onAdminPromptDragPointerUp);
+  }
+
+  onAdminPromptResizePointerMove(event) {
+    const state = this.adminPromptResizeState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const direction = state.direction;
+    const deltaX = event.clientX - state.startClientX;
+    const deltaY = event.clientY - state.startClientY;
+    const requestedWidth = direction.includes('w')
+      ? state.startWidth - deltaX
+      : direction.includes('e')
+        ? state.startWidth + deltaX
+        : state.startWidth;
+    const requestedHeight = direction.includes('n')
+      ? state.startHeight - deltaY
+      : direction.includes('s')
+        ? state.startHeight + deltaY
+        : state.startHeight;
+    const size = this.clampAdminPromptSize(requestedWidth, requestedHeight);
+    const x = direction.includes('w') ? state.startRight - size.width : state.startX;
+    const y = direction.includes('n') ? state.startBottom - size.height : state.startY;
+    this.applyAdminPromptLayout({
+      x,
+      y,
+      width: size.width,
+      height: size.height
+    }, { customized: true });
+  }
+
+  onAdminPromptResizePointerUp(event) {
+    const state = this.adminPromptResizeState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+
+    this.adminPromptResizeState = null;
+    this.adminPromptRoot?.classList.remove('is-resizing');
+    document.body.classList.remove('is-admin-prompt-resizing');
+    window.removeEventListener('pointermove', this.onAdminPromptResizePointerMove);
+    window.removeEventListener('pointerup', this.onAdminPromptResizePointerUp);
+    window.removeEventListener('pointercancel', this.onAdminPromptResizePointerUp);
+  }
+
+  onAdminPromptViewportResize() {
+    if (!this.adminPromptRoot || this.adminPromptRoot.hidden) {
+      return;
+    }
+
+    this.ensureAdminPromptLayout();
   }
 
   playJoinTitleAnimation() {
@@ -5237,6 +5484,9 @@ export class Hud {
     this.adminPromptRoot.hidden = !available || !open;
     this.adminPromptRoot.classList.toggle('is-visible', Boolean(available && open));
     this.adminPromptRoot.classList.toggle('is-loading', loading || submitting);
+    if (available && open) {
+      this.ensureAdminPromptLayout();
+    }
     if (this.adminPromptToggle) {
       this.adminPromptToggle.hidden = !available;
       this.adminPromptToggle.classList.toggle('is-active', Boolean(open));
@@ -5309,7 +5559,6 @@ export class Hud {
     }
     if (this.adminPromptDetail) {
       const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
-      const detailLogs = Array.isArray(selectedTask?.logs) ? selectedTask.logs.slice(-5) : [];
       const detailSignature = JSON.stringify({
         activeTab,
         selectedTaskId: selectedTask?.id ?? '',
@@ -5323,8 +5572,7 @@ export class Hud {
         changedFilesLength: Array.isArray(selectedTask?.changedFiles) ? selectedTask.changedFiles.length : 0,
         summary: selectedTask?.summary ?? '',
         error: selectedTask?.error ?? '',
-        prompt: selectedTask?.prompt ?? '',
-        logs: detailLogs.map((entry) => [entry.at, entry.level, entry.message])
+        prompt: selectedTask?.prompt ?? ''
       });
       if (detailSignature === this.lastAdminPromptDetailSignature) {
         return;

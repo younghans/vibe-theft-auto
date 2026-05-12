@@ -49,6 +49,17 @@ body.is-builder-resizing * {
   user-select: none;
 }
 
+body.is-admin-prompt-dragging,
+body.is-admin-prompt-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+body.is-admin-prompt-resizing,
+body.is-admin-prompt-resizing * {
+  user-select: none;
+}
+
 .hud__panel,
 .hud__task,
 .hud__toast,
@@ -5836,8 +5847,17 @@ body.is-builder-resizing * {
 }
 
 .hud__admin-prompt {
-  width: min(720px, calc(100vw - 48px));
-  max-height: min(74vh, 640px);
+  position: fixed;
+  z-index: 30;
+  left: var(--admin-prompt-x, max(6px, calc(100vw - min(720px, calc(100vw - 48px)) - 14px)));
+  top: var(--admin-prompt-y, 6px);
+  width: var(--admin-prompt-width, min(720px, calc(100vw - 48px)));
+  height: var(--admin-prompt-height, min(462px, calc(100vh - 12px)));
+  min-width: min(340px, calc(100vw - 12px));
+  min-height: min(280px, calc(100vh - 12px));
+  max-width: calc(100vw - 12px);
+  max-height: calc(100vh - 12px);
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 10px;
@@ -5849,6 +5869,7 @@ body.is-builder-resizing * {
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
   pointer-events: auto;
   backdrop-filter: blur(18px);
+  overflow: hidden;
 }
 
 .hud__admin-prompt[hidden] {
@@ -5867,8 +5888,19 @@ body.is-builder-resizing * {
 }
 
 .hud__admin-prompt-header {
+  touch-action: none;
   align-items: flex-start;
   justify-content: space-between;
+  cursor: grab;
+}
+
+.hud__admin-prompt-header:active,
+.hud__admin-prompt.is-dragging .hud__admin-prompt-header {
+  cursor: grabbing;
+}
+
+.hud__admin-prompt-header button {
+  cursor: pointer;
 }
 
 .hud__admin-prompt-header > div:first-child {
@@ -5884,6 +5916,80 @@ body.is-builder-resizing * {
 
 .hud__admin-prompt-status.is-error {
   color: #ffb6b6;
+}
+
+.hud__admin-prompt-resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.hud__admin-prompt-resize-handle--n,
+.hud__admin-prompt-resize-handle--s {
+  left: 14px;
+  right: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.hud__admin-prompt-resize-handle--n {
+  top: -5px;
+}
+
+.hud__admin-prompt-resize-handle--s {
+  bottom: -5px;
+}
+
+.hud__admin-prompt-resize-handle--e,
+.hud__admin-prompt-resize-handle--w {
+  top: 14px;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.hud__admin-prompt-resize-handle--e {
+  right: -5px;
+}
+
+.hud__admin-prompt-resize-handle--w {
+  left: -5px;
+}
+
+.hud__admin-prompt-resize-handle--ne,
+.hud__admin-prompt-resize-handle--nw,
+.hud__admin-prompt-resize-handle--se,
+.hud__admin-prompt-resize-handle--sw {
+  width: 18px;
+  height: 18px;
+}
+
+.hud__admin-prompt-resize-handle--ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.hud__admin-prompt-resize-handle--nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.hud__admin-prompt-resize-handle--se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.hud__admin-prompt-resize-handle--sw {
+  left: -6px;
+  bottom: -6px;
+  cursor: nesw-resize;
+}
+
+.hud__admin-prompt.is-resizing {
+  transition: none;
 }
 
 .hud__admin-prompt-tabs {
@@ -6017,7 +6123,7 @@ body.is-builder-resizing * {
   display: grid;
   grid-template-columns: minmax(190px, 0.82fr) minmax(0, 1.18fr);
   gap: 8px;
-  max-height: min(460px, 54vh);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -6025,6 +6131,35 @@ body.is-builder-resizing * {
 .hud__admin-prompt-detail-slot {
   overflow: auto;
   scrollbar-width: thin;
+}
+
+@container (max-width: 560px) {
+  .hud__admin-prompt-header {
+    gap: 6px;
+  }
+
+  .hud__admin-prompt-tabs {
+    gap: 6px;
+  }
+
+  .hud__admin-prompt-tab {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .hud__admin-prompt-task-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(82px, 0.44fr) minmax(0, 0.56fr);
+  }
+
+  .hud__admin-prompt-form-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hud__admin-prompt-prompt {
+    min-height: 110px;
+  }
 }
 
 .hud__admin-prompt-task {
@@ -6192,30 +6327,6 @@ body.is-builder-resizing * {
 
 .hud__admin-prompt-meta strong {
   color: #fff0bd;
-}
-
-.hud__admin-prompt-logs {
-  display: grid;
-  gap: 5px;
-  max-height: 128px;
-  overflow: auto;
-}
-
-.hud__admin-prompt-log {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  gap: 6px;
-  color: rgba(244, 238, 226, 0.74);
-  font-size: 11px;
-  font-weight: 760;
-}
-
-.hud__admin-prompt-log time {
-  color: rgba(244, 238, 226, 0.48);
-}
-
-.hud__admin-prompt-log span {
-  overflow-wrap: anywhere;
 }
 
 .hud__admin-prompt-empty {
@@ -9129,15 +9240,6 @@ canvas {
   }
 
   .hud__admin-prompt-task-browser {
-    grid-template-columns: 1fr;
-  }
-
-  .hud__admin-prompt {
-    width: min(620px, calc(100vw - 32px));
-  }
-
-  .hud__admin-prompt-task-browser {
-    max-height: min(420px, 52vh);
     overflow: auto;
   }
 
@@ -9788,11 +9890,6 @@ canvas {
   .hud__school-footer p {
     font-size: 12px;
     line-height: 1.1;
-  }
-
-  .hud__admin-prompt {
-    width: calc(100vw - 24px);
-    max-height: min(78vh, 620px);
   }
 
   .hud__admin-prompt-new {
