@@ -349,7 +349,7 @@ const server = defineServer({
         worldBackupMaxDailyDays: persistence.backups?.maxDailyDays ?? null,
         openAiEnabled: Boolean(process.env.OPENAI_API_KEY),
         openAiModel: process.env.OPENAI_NPC_MODEL || 'gpt-5.4-mini',
-        release: 'cloud-env-websocket-routing-fix',
+        release: 'vercel-frontend-backend-only',
         distReady: existsSync(DIST_INDEX_PATH),
         timestamp: new Date().toISOString()
       });

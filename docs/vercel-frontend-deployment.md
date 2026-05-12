@@ -55,4 +55,4 @@ The start command remains:
 npm start
 ```
 
-If Colyseus Cloud does not allow changing the build command, the default `npm run build` still builds the frontend, but it is no longer part of the public frontend release path.
+The package `build` script is backend-only so Colyseus Cloud can use its default `npm run build` hook without rebuilding frontend assets. Use `npm run build:web` for Vercel and `npm run build:all` when you want to validate both deploy targets locally.
