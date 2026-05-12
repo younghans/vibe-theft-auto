@@ -1,8 +1,9 @@
-import { Scene } from 'three';
+import { Box3, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
+import { BASKETBALL_HOOP_RIM_HEIGHT } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 
@@ -58,6 +59,40 @@ function validateCustomPropCatalogItems() {
       && basketballHoop.size[1] >= 3.4,
     'Basketball hoop should reserve a practical world-builder footprint'
   );
+
+  const hoopVisual = basketballHoop.createVisual();
+  const rim = hoopVisual.getObjectByName('basketballHoopOrangeRim');
+  const pole = hoopVisual.getObjectByName('basketballHoopGroundPole');
+  const removedPortableParts = [
+    'basketballHoopWeightedBase',
+    'basketballHoopBaseTopPanel',
+    'basketballHoopBaseFrontSlope',
+    'basketballHoopInnerPole',
+    'basketballHoopHeightCollarLower',
+    'basketballHoopHeightCollarUpper'
+  ];
+
+  assert(rim, 'Basketball hoop visual should include a named rim');
+  assert(pole, 'Basketball hoop visual should use a grounded metal pole');
+  assert(Math.abs(rim.position.y - BASKETBALL_HOOP_RIM_HEIGHT) < 0.001, 'Basketball hoop rim height should stay anchored to the regulation-scale constant');
+  for (const partName of removedPortableParts) {
+    assert(!hoopVisual.getObjectByName(partName), `Basketball hoop should not include portable-base part "${partName}"`);
+  }
+  let portableWheelName = '';
+  hoopVisual.traverse((child) => {
+    if (!portableWheelName && typeof child.name === 'string' && child.name.startsWith('basketballHoopBaseWheel')) {
+      portableWheelName = child.name;
+    }
+  });
+  assert(!portableWheelName, `Basketball hoop should not include portable-base wheel "${portableWheelName}"`);
+
+  const bounds = new Box3().setFromObject(hoopVisual);
+  const poleBounds = new Box3().setFromObject(pole);
+  const size = bounds.getSize(new Vector3());
+  const footprintScale = Math.min(basketballHoop.size[0] / size.x, basketballHoop.size[1] / size.z);
+  const preparedRimHeight = rim.position.y * footprintScale;
+  assert(poleBounds.min.y >= -0.001 && poleBounds.min.y <= 0.001, 'Basketball hoop pole should begin at ground level');
+  assert(preparedRimHeight >= 7.45 && preparedRimHeight <= 7.65, 'Basketball hoop rim should read as a 10ft hoop against the character model after footprint fitting');
 }
 
 function validateTiles() {

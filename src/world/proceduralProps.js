@@ -4,6 +4,7 @@ export const OLYMPIC_BARBELL_LENGTH = 5.6;
 export const OLYMPIC_BARBELL_PLATE_RADIUS = 0.78;
 export const OLYMPIC_BARBELL_FOOTPRINT = Object.freeze([5.6, 1.7]);
 export const BASKETBALL_HOOP_FOOTPRINT = Object.freeze([3.6, 3.6]);
+export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
@@ -27,6 +28,9 @@ const PORTAL_TRIGGER_RADIUS = 2.25;
 const PORTAL_TRIGGER_HALF_HEIGHT = 4.5;
 const PORTAL_PROMPT_RADIUS = 6.8;
 const PORTAL_SPAWN_LOCAL_OFFSET = Object.freeze([0, -6.2]);
+const BASKETBALL_HOOP_BACKBOARD_CENTER_Y = BASKETBALL_HOOP_RIM_HEIGHT + 0.9;
+const BASKETBALL_HOOP_BACKBOARD_Z = -0.31;
+const BASKETBALL_HOOP_POLE_Z = -1.54;
 
 function createMaterial(color, roughness = 0.5, metalness = 0.25) {
   return new THREE.MeshStandardMaterial({
@@ -438,25 +442,46 @@ function createBackboardLine(name, size, position, material) {
 
 function addBackboardFrame(root, material) {
   const z = -0.245;
-  root.add(createBackboardLine('basketballHoopBackboardTopFrame', [3.46, 0.09, 0.08], [0, 4.78, z], material));
-  root.add(createBackboardLine('basketballHoopBackboardBottomFrame', [3.46, 0.09, 0.08], [0, 2.68, z], material));
-  root.add(createBackboardLine('basketballHoopBackboardLeftFrame', [0.09, 2.1, 0.08], [-1.68, 3.73, z], material));
-  root.add(createBackboardLine('basketballHoopBackboardRightFrame', [0.09, 2.1, 0.08], [1.68, 3.73, z], material));
+  root.add(createBackboardLine(
+    'basketballHoopBackboardTopFrame',
+    [3.46, 0.09, 0.08],
+    [0, BASKETBALL_HOOP_BACKBOARD_CENTER_Y + 1.27, z],
+    material
+  ));
+  root.add(createBackboardLine(
+    'basketballHoopBackboardBottomFrame',
+    [3.46, 0.09, 0.08],
+    [0, BASKETBALL_HOOP_BACKBOARD_CENTER_Y - 1.27, z],
+    material
+  ));
+  root.add(createBackboardLine(
+    'basketballHoopBackboardLeftFrame',
+    [0.09, 2.54, 0.08],
+    [-1.68, BASKETBALL_HOOP_BACKBOARD_CENTER_Y, z],
+    material
+  ));
+  root.add(createBackboardLine(
+    'basketballHoopBackboardRightFrame',
+    [0.09, 2.54, 0.08],
+    [1.68, BASKETBALL_HOOP_BACKBOARD_CENTER_Y, z],
+    material
+  ));
 }
 
 function addBackboardTarget(root, material) {
   const z = -0.19;
-  root.add(createBackboardLine('basketballHoopTargetTop', [1.18, 0.045, 0.035], [0, 3.48, z], material));
-  root.add(createBackboardLine('basketballHoopTargetBottom', [1.18, 0.045, 0.035], [0, 2.92, z], material));
-  root.add(createBackboardLine('basketballHoopTargetLeft', [0.045, 0.58, 0.035], [-0.59, 3.2, z], material));
-  root.add(createBackboardLine('basketballHoopTargetRight', [0.045, 0.58, 0.035], [0.59, 3.2, z], material));
+  const targetCenterY = BASKETBALL_HOOP_RIM_HEIGHT + 0.38;
+  root.add(createBackboardLine('basketballHoopTargetTop', [1.18, 0.045, 0.035], [0, targetCenterY + 0.34, z], material));
+  root.add(createBackboardLine('basketballHoopTargetBottom', [1.18, 0.045, 0.035], [0, targetCenterY - 0.34, z], material));
+  root.add(createBackboardLine('basketballHoopTargetLeft', [0.045, 0.72, 0.035], [-0.59, targetCenterY, z], material));
+  root.add(createBackboardLine('basketballHoopTargetRight', [0.045, 0.72, 0.035], [0.59, targetCenterY, z], material));
 }
 
 function addRimNet(root, rimMaterial, netMaterial) {
-  const rimCenter = new THREE.Vector3(0, 3.05, 0.42);
+  const rimCenter = new THREE.Vector3(0, BASKETBALL_HOOP_RIM_HEIGHT, 0.42);
   const rimRadius = 0.48;
   const lowerRadius = 0.28;
-  const lowerY = 2.42;
+  const lowerY = BASKETBALL_HOOP_RIM_HEIGHT - 0.64;
   const segmentCount = 12;
 
   const rim = new THREE.Mesh(
@@ -515,12 +540,12 @@ function addRimNet(root, rimMaterial, netMaterial) {
 
 function addBasketballHoopBolts(root, material) {
   const boltPositions = [
-    [-1.38, 4.48, -0.17],
-    [1.38, 4.48, -0.17],
-    [-1.38, 2.98, -0.17],
-    [1.38, 2.98, -0.17],
-    [-0.34, 3.05, -0.15],
-    [0.34, 3.05, -0.15]
+    [-1.38, BASKETBALL_HOOP_BACKBOARD_CENTER_Y + 0.94, -0.17],
+    [1.38, BASKETBALL_HOOP_BACKBOARD_CENTER_Y + 0.94, -0.17],
+    [-1.38, BASKETBALL_HOOP_BACKBOARD_CENTER_Y - 0.94, -0.17],
+    [1.38, BASKETBALL_HOOP_BACKBOARD_CENTER_Y - 0.94, -0.17],
+    [-0.34, BASKETBALL_HOOP_RIM_HEIGHT, -0.15],
+    [0.34, BASKETBALL_HOOP_RIM_HEIGHT, -0.15]
   ];
 
   boltPositions.forEach(([x, y, z], index) => {
@@ -573,16 +598,12 @@ export function createBasketballHoopVisual() {
   root.name = 'BasketballHoop';
   root.userData.footprint = [...BASKETBALL_HOOP_FOOTPRINT];
 
-  const darkBaseMaterial = createMaterial(0x17191f, 0.58, 0.18);
-  const baseTopMaterial = createMaterial(0x242833, 0.5, 0.2);
   const poleMaterial = createMaterial(0x8e98a6, 0.32, 0.62);
-  const darkerPoleMaterial = createMaterial(0x5d6672, 0.42, 0.5);
   const bracketMaterial = createMaterial(0x39404a, 0.36, 0.58);
   const rimMaterial = createMaterial(0xe46f1f, 0.34, 0.34);
   const netMaterial = createMaterial(0xf3f4f0, 0.84, 0.02);
   const lineMaterial = createMaterial(0xf8fbff, 0.38, 0.04);
   const boltMaterial = createMaterial(0xc4ccd6, 0.28, 0.72);
-  const wheelMaterial = createMaterial(0x090b0f, 0.62, 0.08);
   const ballMaterial = createMaterial(0xc76823, 0.62, 0.05);
   const ballSeamMaterial = createMaterial(0x19130f, 0.76, 0.02);
   const glassMaterial = new THREE.MeshPhysicalMaterial({
@@ -597,55 +618,32 @@ export function createBasketballHoopVisual() {
     side: THREE.DoubleSide
   });
 
-  root.add(createBox('basketballHoopWeightedBase', [1.92, 0.28, 2.08], [0, 0.14, -1.62], darkBaseMaterial));
-  root.add(createBox('basketballHoopBaseTopPanel', [1.58, 0.08, 1.58], [0, 0.34, -1.58], baseTopMaterial));
-  root.add(createBox('basketballHoopBaseFrontSlope', [1.62, 0.2, 0.42], [0, 0.4, -0.64], baseTopMaterial, {
-    rotation: [0.22, 0, 0]
-  }));
-
-  for (const sideX of [-1, 1]) {
-    for (const sideZ of [-1, 1]) {
-      const wheel = createCylinder(0.12, 0.12, 0.18, 18, wheelMaterial);
-      wheel.name = `basketballHoopBaseWheel${sideX < 0 ? 'Left' : 'Right'}${sideZ < 0 ? 'Rear' : 'Front'}`;
-      wheel.rotation.z = Math.PI * 0.5;
-      wheel.position.set(sideX * 0.72, 0.13, -1.62 + sideZ * 0.72);
-      wheel.castShadow = true;
-      wheel.receiveShadow = true;
-      root.add(wheel);
-    }
-  }
-
-  root.add(createCylinderBetween('basketballHoopRearPole', [0, 0.34, -1.54], [0, 3.82, -1.54], 0.115, poleMaterial, {
+  root.add(createCylinderBetween('basketballHoopGroundPole', [0, 0, BASKETBALL_HOOP_POLE_Z], [0, 8.18, BASKETBALL_HOOP_POLE_Z], 0.14, poleMaterial, {
     radialSegments: 22
   }));
-  root.add(createCylinderBetween('basketballHoopInnerPole', [0, 1.38, -1.54], [0, 3.96, -1.54], 0.075, darkerPoleMaterial, {
-    radialSegments: 18
-  }));
-  root.add(createCylinderBetween('basketballHoopHeightCollarLower', [-0.22, 1.36, -1.54], [0.22, 1.36, -1.54], 0.045, bracketMaterial));
-  root.add(createCylinderBetween('basketballHoopHeightCollarUpper', [-0.22, 2.24, -1.54], [0.22, 2.24, -1.54], 0.04, bracketMaterial));
 
-  root.add(createCylinderBetween('basketballHoopMainBoom', [0, 3.85, -1.48], [0, 3.64, -0.58], 0.075, poleMaterial, {
+  root.add(createCylinderBetween('basketballHoopMainBoom', [0, 7.92, -1.48], [0, 7.78, -0.58], 0.08, poleMaterial, {
     radialSegments: 18
   }));
-  root.add(createCylinderBetween('basketballHoopLowerBoom', [0, 3.18, -1.48], [0, 3.06, -0.58], 0.055, bracketMaterial, {
+  root.add(createCylinderBetween('basketballHoopLowerBoom', [0, 7.16, -1.48], [0, 7.1, -0.58], 0.058, bracketMaterial, {
     radialSegments: 14
   }));
-  root.add(createCylinderBetween('basketballHoopLeftDiagonalBrace', [0, 3.56, -1.43], [-1.18, 3.62, -0.52], 0.04, bracketMaterial));
-  root.add(createCylinderBetween('basketballHoopRightDiagonalBrace', [0, 3.56, -1.43], [1.18, 3.62, -0.52], 0.04, bracketMaterial));
-  root.add(createCylinderBetween('basketballHoopCentralBrace', [0, 1.02, -1.54], [0, 3.02, -0.63], 0.045, darkerPoleMaterial));
+  root.add(createCylinderBetween('basketballHoopLeftDiagonalBrace', [0, 7.55, -1.43], [-1.18, 7.62, -0.52], 0.04, bracketMaterial));
+  root.add(createCylinderBetween('basketballHoopRightDiagonalBrace', [0, 7.55, -1.43], [1.18, 7.62, -0.52], 0.04, bracketMaterial));
+  root.add(createCylinderBetween('basketballHoopCentralBrace', [0, 3.22, BASKETBALL_HOOP_POLE_Z], [0, 7.08, -0.63], 0.046, bracketMaterial));
 
-  const backboard = createBox('basketballHoopTemperedGlassBackboard', [3.3, 1.95, 0.12], [0, 3.72, -0.31], glassMaterial, {
+  const backboard = createBox('basketballHoopTemperedGlassBackboard', [3.3, 2.45, 0.12], [0, BASKETBALL_HOOP_BACKBOARD_CENTER_Y, BASKETBALL_HOOP_BACKBOARD_Z], glassMaterial, {
     castShadow: true,
     receiveShadow: true
   });
   root.add(backboard);
   addBackboardFrame(root, bracketMaterial);
   addBackboardTarget(root, lineMaterial);
-  root.add(createBox('basketballHoopRimMountPlate', [0.82, 0.34, 0.1], [0, 3.04, -0.18], bracketMaterial));
-  root.add(createCylinderBetween('basketballHoopRimLeftSupport', [-0.22, 3.04, -0.13], [-0.36, 3.04, 0.32], 0.028, rimMaterial, {
+  root.add(createBox('basketballHoopRimMountPlate', [0.82, 0.34, 0.1], [0, BASKETBALL_HOOP_RIM_HEIGHT - 0.01, -0.18], bracketMaterial));
+  root.add(createCylinderBetween('basketballHoopRimLeftSupport', [-0.22, BASKETBALL_HOOP_RIM_HEIGHT - 0.01, -0.13], [-0.36, BASKETBALL_HOOP_RIM_HEIGHT - 0.01, 0.32], 0.028, rimMaterial, {
     radialSegments: 10
   }));
-  root.add(createCylinderBetween('basketballHoopRimRightSupport', [0.22, 3.04, -0.13], [0.36, 3.04, 0.32], 0.028, rimMaterial, {
+  root.add(createCylinderBetween('basketballHoopRimRightSupport', [0.22, BASKETBALL_HOOP_RIM_HEIGHT - 0.01, -0.13], [0.36, BASKETBALL_HOOP_RIM_HEIGHT - 0.01, 0.32], 0.028, rimMaterial, {
     radialSegments: 10
   }));
 
