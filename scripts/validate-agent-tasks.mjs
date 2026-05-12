@@ -178,6 +178,18 @@ try {
   assert.equal(deployClaim.action, 'deploy');
   assert.equal(deployClaim.task.status, 'deploying');
   assert.equal(deployClaim.task.claimedBy, 'deploy-worker');
+  await updateAgentTask(created.id, {
+    deployStartedAt: Date.now() - 60000
+  }, { filePath });
+  const reconcileClaim = await claimNextAgentTask({
+    workerId: 'reconcile-worker',
+    scope: 'game',
+    staleDeployingAfterMs: 1,
+    filePath
+  });
+  assert.equal(reconcileClaim.action, 'reconcile_deploy');
+  assert.equal(reconcileClaim.task.status, 'deploying');
+  assert.equal(reconcileClaim.task.claimedBy, 'reconcile-worker');
 
   const deployed = await updateAgentTask(created.id, {
     status: 'deployed',

@@ -517,16 +517,48 @@ export async function claimNextAgentTask({
   workerId = '',
   scope = '',
   deployEnabled = true,
+  staleDeployingAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const normalizedScope = normalizeScope(scope);
   const shouldFilterScope = String(scope ?? '').trim() !== '';
   const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
   const canClaimDeployActions = deployEnabled !== false;
+  const staleDeployingMs = Math.max(0, Number(staleDeployingAfterMs) || 0);
   const now = Date.now();
 
   return withTaskStore((state) => {
     if (canClaimDeployActions) {
+      if (staleDeployingMs > 0) {
+        const staleDeployingTask = sortTasks(state.tasks)
+          .reverse()
+          .find((task) => {
+            if (task.status !== 'deploying' || !String(task.commitSha ?? '').trim()) {
+              return false;
+            }
+
+            const startedAt = Number(task.deployStartedAt || task.claimedAt || task.updatedAt || 0);
+            return startedAt > 0 && now - startedAt >= staleDeployingMs;
+          });
+
+        if (staleDeployingTask) {
+          staleDeployingTask.claimedBy = normalizedWorkerId;
+          staleDeployingTask.claimedAt = now;
+          staleDeployingTask.updatedAt = now;
+          addTaskLog(staleDeployingTask, 'Worker claimed stale deploy reconciliation.', {
+            level: 'warn',
+            data: {
+              workerId: normalizedWorkerId,
+              staleDeployingAfterMs: staleDeployingMs
+            }
+          });
+          return {
+            action: 'reconcile_deploy',
+            task: staleDeployingTask
+          };
+        }
+      }
+
       const rollbackTask = sortTasks(state.tasks)
         .reverse()
         .find((task) => (

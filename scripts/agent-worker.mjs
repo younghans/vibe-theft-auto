@@ -49,6 +49,7 @@ const BACKEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('BACKEND_VERIFY_
 const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
+const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 
@@ -816,6 +817,28 @@ function withVerifyCacheBuster(urlString) {
   return url.toString();
 }
 
+function getFrontendVersionManifestUrl(verifyUrl = '') {
+  const url = new URL(verifyUrl);
+  const basePath = url.pathname.endsWith('/')
+    ? url.pathname
+    : url.pathname.replace(/[^/]*$/u, '');
+  url.pathname = `${basePath.replace(/\/?$/u, '/')}version.json`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function getJsonCommitSha(json = {}) {
+  return String(json?.commitSha || json?.buildCommitSha || '').trim();
+}
+
+function commitShaMatches(expectedCommitSha = '', servedCommitSha = '') {
+  const expected = String(expectedCommitSha || '').trim();
+  const served = String(servedCommitSha || '').trim();
+  return Boolean(expected && served)
+    && (served === expected || served.startsWith(expected) || expected.startsWith(served));
+}
+
 async function fetchText(url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -899,6 +922,40 @@ async function verifyFrontendDeployment(task, worktreePath, {
   while (Date.now() <= deadline) {
     attempt += 1;
     try {
+      const versionUrl = getFrontendVersionManifestUrl(verifyUrl);
+      const versionResult = await fetchJson(withVerifyCacheBuster(versionUrl), FRONTEND_VERIFY_REQUEST_TIMEOUT_MS);
+      const servedCommitSha = getJsonCommitSha(versionResult.json);
+      if (commitShaMatches(commitSha, servedCommitSha)) {
+        const message = `${actionLabel} verified: frontend version manifest is serving commit ${servedCommitSha.slice(0, 12)}.`;
+        await appendLog(task.id, message, {
+          data: {
+            verifyUrl: versionUrl,
+            responseUrl: versionResult.url,
+            expectedCommitSha: commitSha,
+            servedCommitSha,
+            attempts: attempt,
+            cacheControl: versionResult.cacheControl
+          }
+        });
+        return {
+          deployUrl: verifyUrl,
+          output: [
+            message,
+            `URL: ${verifyUrl}`,
+            `Version: ${versionUrl}`,
+            `Attempts: ${attempt}`
+          ].join('\n')
+        };
+      }
+
+      if (servedCommitSha) {
+        lastError = `version manifest expected commit ${commitSha.slice(0, 12)}, saw ${servedCommitSha.slice(0, 12)}`;
+      }
+    } catch (error) {
+      lastError = `version manifest check failed: ${error?.message || String(error)}`;
+    }
+
+    try {
       const result = await fetchText(withVerifyCacheBuster(verifyUrl), FRONTEND_VERIFY_REQUEST_TIMEOUT_MS);
       lastEtag = result.etag;
       lastAssets = extractHtmlAssetUrls(result.text, result.url);
@@ -929,7 +986,7 @@ async function verifyFrontendDeployment(task, worktreePath, {
 
       lastError = `expected commit ${commitSha} was not found in HTML`;
     } catch (error) {
-      lastError = error?.message || String(error);
+      lastError = `${lastError ? `${lastError}; ` : ''}HTML check failed: ${error?.message || String(error)}`;
     }
 
     if (Date.now() + FRONTEND_VERIFY_POLL_MS > deadline) {
@@ -971,11 +1028,7 @@ async function verifyBackendDeployment(task, {
     attempt += 1;
     try {
       const result = await fetchJson(withVerifyCacheBuster(verifyUrl), BACKEND_VERIFY_REQUEST_TIMEOUT_MS);
-      const servedCommitSha = String(
-        result.json?.commitSha
-        || result.json?.buildCommitSha
-        || ''
-      ).trim();
+      const servedCommitSha = getJsonCommitSha(result.json);
       if (!servedCommitSha) {
         const message = `${actionLabel} backend verification skipped; health endpoint does not expose a commit SHA yet.`;
         await appendLog(task.id, message, {
@@ -990,7 +1043,7 @@ async function verifyBackendDeployment(task, {
         return { deployUrl: verifyUrl, output: message };
       }
 
-      if (servedCommitSha === commitSha || servedCommitSha.startsWith(commitSha) || commitSha.startsWith(servedCommitSha)) {
+      if (commitShaMatches(commitSha, servedCommitSha)) {
         const message = `${actionLabel} verified: backend is serving commit ${servedCommitSha.slice(0, 12)}.`;
         await appendLog(task.id, message, {
           data: {
@@ -1028,6 +1081,168 @@ async function verifyBackendDeployment(task, {
 
   const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
   throw new Error(`${actionLabel} backend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}`);
+}
+
+async function readFrontendServedCommit(worktreePath) {
+  const verifyUrl = await getFrontendVerifyUrl(worktreePath);
+  if (!verifyUrl) {
+    return {
+      target: 'frontend',
+      ok: false,
+      deployUrl: '',
+      servedCommitSha: '',
+      output: 'Frontend reconciliation skipped; no FRONTEND_VERIFY_URL or package homepage is configured.'
+    };
+  }
+
+  const versionUrl = getFrontendVersionManifestUrl(verifyUrl);
+  try {
+    const result = await fetchJson(withVerifyCacheBuster(versionUrl), FRONTEND_VERIFY_REQUEST_TIMEOUT_MS);
+    return {
+      target: 'frontend',
+      ok: true,
+      deployUrl: verifyUrl,
+      sourceUrl: result.url,
+      servedCommitSha: getJsonCommitSha(result.json),
+      output: `Frontend version manifest ${versionUrl} reported ${getJsonCommitSha(result.json) || 'no commit SHA'}.`
+    };
+  } catch (error) {
+    return {
+      target: 'frontend',
+      ok: false,
+      deployUrl: verifyUrl,
+      sourceUrl: versionUrl,
+      servedCommitSha: '',
+      output: `Frontend version manifest check failed: ${error?.message || String(error)}`
+    };
+  }
+}
+
+async function readBackendServedCommit() {
+  const verifyUrl = normalizeHttpUrl(BACKEND_VERIFY_URL);
+  if (!verifyUrl) {
+    return {
+      target: 'backend',
+      ok: false,
+      deployUrl: '',
+      servedCommitSha: '',
+      output: 'Backend reconciliation skipped; no BACKEND_VERIFY_URL or AGENT_API_BASE is configured.'
+    };
+  }
+
+  try {
+    const result = await fetchJson(withVerifyCacheBuster(verifyUrl), BACKEND_VERIFY_REQUEST_TIMEOUT_MS);
+    return {
+      target: 'backend',
+      ok: true,
+      deployUrl: verifyUrl,
+      sourceUrl: result.url,
+      servedCommitSha: getJsonCommitSha(result.json),
+      output: `Backend health ${verifyUrl} reported ${getJsonCommitSha(result.json) || 'no commit SHA'}.`
+    };
+  } catch (error) {
+    return {
+      target: 'backend',
+      ok: false,
+      deployUrl: verifyUrl,
+      servedCommitSha: '',
+      output: `Backend health check failed: ${error?.message || String(error)}`
+    };
+  }
+}
+
+async function servedCommitIncludesExpected(task, expectedCommitSha = '', servedCommitSha = '') {
+  if (commitShaMatches(expectedCommitSha, servedCommitSha)) {
+    return true;
+  }
+
+  const expected = String(expectedCommitSha || '').trim();
+  const served = String(servedCommitSha || '').trim();
+  if (!expected || !served) {
+    return false;
+  }
+
+  const hasExpected = await commitExists(REPO_PATH, expected, task.id);
+  const hasServed = await commitExists(REPO_PATH, served, task.id);
+  if (!hasExpected || !hasServed) {
+    return false;
+  }
+
+  return isAncestor(REPO_PATH, expected, served, task.id);
+}
+
+async function reconcileStaleDeployTask(task) {
+  const expectedCommitSha = String(task.newDeployCommitSha || task.commitSha || '').trim();
+  if (!expectedCommitSha) {
+    throw new Error('Stale deploy task has no commit SHA to reconcile.');
+  }
+
+  await ensureBaseRepository(task.id);
+  await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
+    cwd: REPO_PATH,
+    taskId: task.id,
+    label: 'git fetch reconciliation base'
+  });
+
+  const deployTargets = normalizeDeployTargets(task.deployTargets);
+  const inferredTargets = deployTargets.length > 0
+    ? deployTargets
+    : inferDeployTargets(normalizeChangedFiles(task.changedFiles));
+  const targets = inferredTargets.length > 0 ? inferredTargets : ['frontend', 'backend'];
+  const results = [];
+
+  if (targets.includes('frontend')) {
+    results.push(await readFrontendServedCommit(REPO_PATH));
+  }
+  if (targets.includes('backend')) {
+    results.push(await readBackendServedCommit());
+  }
+
+  for (const result of results) {
+    result.includesExpectedCommit = result.ok
+      && await servedCommitIncludesExpected(task, expectedCommitSha, result.servedCommitSha);
+  }
+
+  const output = results.map((result) => [
+    `[${result.target}] ${result.output}`,
+    result.servedCommitSha ? `Served commit: ${result.servedCommitSha}` : '',
+    result.includesExpectedCommit ? `Includes task commit: ${expectedCommitSha}` : 'Includes task commit: no'
+  ].filter(Boolean).join('\n')).join('\n\n');
+
+  if (!results.length || results.some((result) => !result.includesExpectedCommit)) {
+    throw new Error(`Stale deploy could not be reconciled against the live runtime.\n${output}`);
+  }
+
+  const liveCommitSha = results.find((result) => result.servedCommitSha)?.servedCommitSha || expectedCommitSha;
+  const deployUrl = results.find((result) => result.deployUrl)?.deployUrl || task.deployUrl || '';
+  const message = liveCommitSha === expectedCommitSha
+    ? `Deployment reconciled: live runtime is serving commit ${expectedCommitSha.slice(0, 12)}.`
+    : `Deployment reconciled: live runtime is serving ${liveCommitSha.slice(0, 12)}, which includes task commit ${expectedCommitSha.slice(0, 12)}.`;
+  await appendLog(task.id, message, {
+    data: {
+      expectedCommitSha,
+      liveCommitSha,
+      deployTargets: targets,
+      results
+    }
+  });
+  await recordDeployment({
+    action: 'deploy',
+    taskId: task.id,
+    previousCommitSha: task.previousDeployCommitSha || '',
+    currentCommitSha: liveCommitSha,
+    deployUrl,
+    deployTargets: targets
+  });
+  await updateTask(task.id, {
+    status: 'deployed',
+    newDeployCommitSha: expectedCommitSha,
+    deployedAt: Date.now(),
+    deployTargets: targets,
+    deployUrl,
+    deployLog: truncateText(`${message}\n\n${output}`, 10000),
+    summary: `${message} ${summarizeDeployResult('Deployment', targets)}`
+  });
 }
 
 async function runDeployTargets(task, worktreePath, targets = [], {
@@ -1473,6 +1688,18 @@ async function handleDeployTask(task) {
   }
 }
 
+async function handleReconcileDeployTask(task) {
+  try {
+    await reconcileStaleDeployTask(task);
+  } catch (error) {
+    await updateTask(task.id, {
+      status: 'failed',
+      error: String(error?.stack ?? error)
+    }).catch(() => {});
+    throw error;
+  }
+}
+
 async function handleRollbackTask(task) {
   let worktreePath = '';
   try {
@@ -1498,7 +1725,8 @@ async function claimNextTask() {
   return apiRequest('/admin/agent-tasks/next', {
     query: {
       scope: DEFAULT_SCOPE,
-      deployEnabled: DEPLOY_ENABLED ? '1' : '0'
+      deployEnabled: DEPLOY_ENABLED ? '1' : '0',
+      staleDeployingAfterMs: String(STALE_DEPLOY_RECONCILE_AFTER_MS)
     }
   });
 }
@@ -1513,6 +1741,8 @@ async function runIteration() {
   await appendLog(task.id, `Worker ${WORKER_ID} started ${result.action || 'task'}.`);
   if (result.action === 'deploy') {
     await handleDeployTask(task);
+  } else if (result.action === 'reconcile_deploy') {
+    await handleReconcileDeployTask(task);
   } else if (result.action === 'rollback') {
     await handleRollbackTask(task);
   } else {

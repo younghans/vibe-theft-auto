@@ -374,6 +374,13 @@ deploy without running a second CLI deploy. The smoother setup is to disable
 Colyseus automatic Git deploys and keep `BACKEND_DEPLOY_STRATEGY=command`,
 because then frontend-only tasks do not restart connected players.
 
+If a worker process is interrupted after a deploy reaches production but before
+it can mark the task complete, the next worker run can reconcile the stale
+`deploying` task. By default, tasks that have been deploying for more than 15
+minutes are checked against the live frontend `version.json` and backend
+`/health` commit SHA. Override that window with
+`AGENT_DEPLOY_RECONCILE_AFTER_MS`.
+
 For full auto deploy, set both the admin URL flag and worker opt-in:
 
 ```powershell
