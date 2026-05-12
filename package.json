@@ -1,7 +1,9 @@
 {
-  "name": "stickrpg",
+  "name": "vibe-theft-auto",
   "version": "1.0.0",
+  "description": "A browser-based multiplayer city game built with Three.js and Colyseus.",
   "type": "module",
+  "packageManager": "npm@10.9.0",
   "engines": {
     "node": "22.x"
   },
@@ -43,10 +45,23 @@
     "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/runtime/mixamo/characters/xBot.glb\" \"assets/mixamo/animations/walking.json\"",
     "extract:mixamo-animation": "node scripts/extract-fbx-animation.mjs \"assets/mixamo/animations/walking.fbx\" \"assets/mixamo/animations/walking.json\" Walking"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "threejs",
+    "colyseus",
+    "multiplayer",
+    "browser-game",
+    "vibe-theft-auto"
+  ],
+  "author": "oldfeet (https://x.com/oldfeet)",
   "license": "ISC",
-  "description": "",
+  "homepage": "https://www.vibetheftauto.xyz/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/younghans/vibe-theft-auto.git"
+  },
+  "bugs": {
+    "url": "https://github.com/younghans/vibe-theft-auto/issues"
+  },
   "dependencies": {
     "@colyseus/core": "^0.17.43",
     "@colyseus/schema": "^4.0.19",

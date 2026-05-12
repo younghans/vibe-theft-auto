@@ -1,6 +1,6 @@
 # Asset Policy
 
-This repository includes assets so the project can run as intended, but the
+This repository includes assets so Vibe Theft Auto can run as intended, but the
 project does not claim ownership of third-party assets or relicense them under
 the source-code license.
 
