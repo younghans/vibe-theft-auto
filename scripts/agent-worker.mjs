@@ -170,7 +170,14 @@ function commandForPlatform(command = '', args = []) {
   }
 
   if (normalizedCommand === 'codex') {
-    return { command: 'codex.exe', args };
+    const appDataPath = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return {
+      command: process.execPath,
+      args: [
+        path.join(appDataPath, 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+        ...args
+      ]
+    };
   }
 
   return { command, args };
