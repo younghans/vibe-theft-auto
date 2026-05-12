@@ -327,6 +327,23 @@ async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagin
   }
 }
 
+function readFrontendServerUrl() {
+  return String(
+    process.env.STICKRPG_SERVER_URL
+    ?? process.env.VITE_STICKRPG_SERVER_URL
+    ?? ''
+  ).trim();
+}
+
+function getRuntimeConfigScript() {
+  const serverUrl = readFrontendServerUrl();
+  if (!serverUrl) {
+    return '';
+  }
+
+  return `    <script>globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(serverUrl)};</script>\n`;
+}
+
 function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
   let html = template;
   html = html.replace(/\s*<link\s+rel="stylesheet"\s+href="\.\/styles\.css"\s*\/?>\s*/u, '\n');
@@ -341,6 +358,11 @@ function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
       '</head>',
       `    <link rel="stylesheet" href="./${stylesheet}" />\n  </head>`
     );
+  }
+
+  const runtimeConfigScript = getRuntimeConfigScript();
+  if (runtimeConfigScript) {
+    html = html.replace('</head>', runtimeConfigScript + '  </head>');
   }
 
   return html;

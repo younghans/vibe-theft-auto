@@ -284,6 +284,27 @@ const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
 const PORTAL_SPAWN_LOCK_MS = 1500;
 
+function getBackendHttpEndpoint(serviceEndpoint, endpointPath) {
+  if (typeof serviceEndpoint !== 'string' || !/^(https?|wss?):\/\//iu.test(serviceEndpoint)) {
+    return '';
+  }
+
+  try {
+    const url = new URL(serviceEndpoint);
+    if (url.protocol === 'wss:') {
+      url.protocol = 'https:';
+    } else if (url.protocol === 'ws:') {
+      url.protocol = 'http:';
+    }
+    url.pathname = endpointPath;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 function clampVibeShaderIntensity(value) {
   return THREE.MathUtils.clamp(
     Number.isFinite(value) ? value : DEFAULT_VIBE_SHADER_INTENSITY,
@@ -1586,18 +1607,9 @@ export class Game {
   }
 
   getWorldMapCaptureEndpoint() {
-    const serviceEndpoint = this.npcService?.endpoint;
-    if (typeof serviceEndpoint === 'string' && /^wss?:\/\//i.test(serviceEndpoint)) {
-      try {
-        const url = new URL(serviceEndpoint);
-        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-        url.pathname = WORLD_MAP_CAPTURE_ENDPOINT;
-        url.search = '';
-        url.hash = '';
-        return url.toString();
-      } catch {
-        // Fall through to same-origin endpoint.
-      }
+    const backendEndpoint = getBackendHttpEndpoint(this.npcService?.endpoint, WORLD_MAP_CAPTURE_ENDPOINT);
+    if (backendEndpoint) {
+      return backendEndpoint;
     }
 
     return new URL(WORLD_MAP_CAPTURE_ENDPOINT, window.location.href).toString();
@@ -1607,17 +1619,9 @@ export class Game {
     const serviceEndpoint = this.npcService?.endpoint;
     const suffix = String(pathname ?? '').trim();
     const endpointPath = `${ADMIN_AGENT_TASKS_ENDPOINT}${suffix ? `/${suffix.replace(/^\/+/, '')}` : ''}`;
-    if (typeof serviceEndpoint === 'string' && /^wss?:\/\//i.test(serviceEndpoint)) {
-      try {
-        const url = new URL(serviceEndpoint);
-        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-        url.pathname = endpointPath;
-        url.search = '';
-        url.hash = '';
-        return url.toString();
-      } catch {
-        // Fall through to same-origin endpoint.
-      }
+    const backendEndpoint = getBackendHttpEndpoint(serviceEndpoint, endpointPath);
+    if (backendEndpoint) {
+      return backendEndpoint;
     }
 
     return new URL(endpointPath, window.location.href).toString();
