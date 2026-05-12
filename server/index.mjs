@@ -5,6 +5,10 @@ import {
   initializeWorldPersistence,
   shutdownWorldPersistence
 } from './src/worldPersistence.js';
+import {
+  initializePlayerSnapshots,
+  shutdownPlayerSnapshots
+} from './src/playerSnapshots.js';
 
 const cliPort = Number(process.argv[2]);
 const port = Number.isFinite(cliPort) && cliPort > 0
@@ -12,6 +16,7 @@ const port = Number.isFinite(cliPort) && cliPort > 0
   : Number(process.env.COLYSEUS_PORT || process.env.COLOSEUS_PORT || 2567);
 const resolvedPort = Number(process.env.PORT || port);
 await initializeWorldPersistence();
+await initializePlayerSnapshots();
 const persistence = getWorldPersistenceInfo();
 
 let shutdownPromise = null;
@@ -24,6 +29,7 @@ async function shutdown(signal, { exitCode = 0 } = {}) {
     });
     shutdownPromise = server.gracefullyShutdown(false)
       .then(() => shutdownWorldPersistence())
+      .then(() => shutdownPlayerSnapshots())
       .catch((error) => {
         console.error('[server] Graceful shutdown failed.', error);
         process.exitCode = 1;

@@ -1,6 +1,8 @@
 import { NpcServiceColyseus } from './NpcServiceColyseus.js';
 import { NpcServiceMock } from './NpcServiceMock.js';
 
+const PLAYER_ID_STORAGE_KEY = 'stickrpg.playerId';
+
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -44,6 +46,30 @@ function readAdminKey(url) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function createPlayerId() {
+  if (globalThis.crypto?.randomUUID) {
+    return `player:${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `player:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function readPersistentPlayerId() {
+  try {
+    const stored = window.localStorage?.getItem(PLAYER_ID_STORAGE_KEY);
+    const normalized = typeof stored === 'string' ? stored.trim() : '';
+    if (normalized) {
+      return normalized;
+    }
+
+    const next = createPlayerId();
+    window.localStorage?.setItem(PLAYER_ID_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return createPlayerId();
+  }
+}
+
 export async function createNpcService({
   endpoint = null,
   connectTimeoutMs = 1200,
@@ -53,11 +79,12 @@ export async function createNpcService({
   const url = new URL(window.location.href);
   const resolvedEndpoint = endpoint ?? readConfiguredEndpoint(url);
   const adminKey = readAdminKey(url);
+  const playerId = readPersistentPlayerId();
   const allowMockFallback = url.searchParams.get('allowMockFallback') === '1' || isLocalEnvironment(url);
 
   if (url.searchParams.get('npcTransport') === 'mock') {
     console.info('[NPC] Using local mock transport because ?npcTransport=mock is set.');
-    return new NpcServiceMock({ adminKey });
+    return new NpcServiceMock({ adminKey, playerId });
   }
 
   const deadline = performance.now() + retryWindowMs;
@@ -68,7 +95,8 @@ export async function createNpcService({
     attempt += 1;
     const service = new NpcServiceColyseus({
       endpoint: resolvedEndpoint,
-      adminKey
+      adminKey,
+      playerId
     });
     try {
       await Promise.race([
@@ -103,5 +131,5 @@ export async function createNpcService({
     endpoint: resolvedEndpoint,
     reason
   });
-  return new NpcServiceMock({ adminKey });
+  return new NpcServiceMock({ adminKey, playerId });
 }

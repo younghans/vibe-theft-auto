@@ -124,6 +124,7 @@ import { WorldState } from '../../src/world/WorldState.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
 import { isNpcDebugEnabled, logNpcDebug, logServer, logServerError } from './logger.js';
 import { getWorldPersistence } from './worldPersistence.js';
+import { getPlayerSnapshots, normalizePlayerSnapshotId } from './playerSnapshots.js';
 
 const MAX_MESSAGE_LENGTH = 280;
 const MAX_TRANSCRIPT_ENTRIES = 18;
@@ -148,6 +149,7 @@ const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const NPC_DEBUG_BROADCAST_INTERVAL_MS = 120;
 const PLAYER_RECONNECTION_GRACE_SECONDS = 30;
+const PLAYER_SNAPSHOT_AUTOSAVE_MS = 5000;
 
 function parseAdminKeys(value = '') {
   return new Set(
@@ -369,6 +371,177 @@ function createPickupState(definition, {
   return pickup;
 }
 
+function sanitizeSnapshotNumber(value, fallback = 0, {
+  integer = false,
+  min = -Infinity,
+  max = Infinity
+} = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  const clamped = Math.max(min, Math.min(max, numeric));
+  return integer ? Math.floor(clamped) : clamped;
+}
+
+function sanitizeSnapshotBoolean(value, fallback = false) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function sanitizeSnapshotString(value, fallback = '', maxLength = 240) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : fallback;
+}
+
+function isSnapshotWeaponId(value = '') {
+  return Object.values(WEAPON_IDS).includes(String(value ?? '').trim());
+}
+
+function sanitizeStockPortfolioSnapshot(portfolio = {}) {
+  const output = {};
+  if (!portfolio || typeof portfolio !== 'object' || Array.isArray(portfolio)) {
+    return output;
+  }
+
+  for (const [symbol, quantity] of Object.entries(portfolio)) {
+    const normalizedSymbol = String(symbol ?? '').trim().toUpperCase().slice(0, 12);
+    const normalizedQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
+    if (normalizedSymbol && normalizedQuantity > 0) {
+      output[normalizedSymbol] = normalizedQuantity;
+    }
+  }
+
+  return output;
+}
+
+function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
+  return {
+    player: {
+      x: player.x,
+      z: player.z,
+      rotationY: player.rotationY,
+      aimRotationY: player.aimRotationY,
+      health: player.health,
+      maxHealth: player.maxHealth,
+      alive: player.alive,
+      respawnAt: player.respawnAt,
+      spawnProtectedUntil: player.spawnProtectedUntil,
+      equippedWeaponId: player.equippedWeaponId,
+      ammoInClip: player.ammoInClip,
+      reserveAmmo: player.reserveAmmo,
+      isReloading: player.isReloading,
+      reloadEndsAt: player.reloadEndsAt,
+      kills: player.kills,
+      deaths: player.deaths,
+      money: player.money,
+      gymMembershipActive: player.gymMembershipActive,
+      rentIntroSeq: player.rentIntroSeq,
+      rentIntroAmount: player.rentIntroAmount,
+      rentIntroNpcId: player.rentIntroNpcId,
+      rentIntroBuildingPlacementId: player.rentIntroBuildingPlacementId,
+      rentIntroStartedAt: player.rentIntroStartedAt,
+      lastDamagedAt: player.lastDamagedAt,
+      deliveryQuestId: player.deliveryQuestId,
+      deliveryQuestStatus: player.deliveryQuestStatus,
+      deliveryQuestGiverNpcId: player.deliveryQuestGiverNpcId,
+      deliveryQuestTargetNpcId: player.deliveryQuestTargetNpcId,
+      deliveryQuestAcceptedAt: player.deliveryQuestAcceptedAt,
+      deliveryQuestCompletedAt: player.deliveryQuestCompletedAt,
+      deliveryQuestRecentTargetNpcIds: player.deliveryQuestRecentTargetNpcIds,
+      deliveryQuestCompletionCount: player.deliveryQuestCompletionCount,
+      gymPumpCompletedAt: player.gymPumpCompletedAt,
+      stockBoughtAt: player.stockBoughtAt,
+      blackjackHandPlayedAt: player.blackjackHandPlayedAt,
+      strengthXp: player.strengthXp,
+      agilityXp: player.agilityXp,
+      intelligenceXp: player.intelligenceXp,
+      skillAwardSeq: player.skillAwardSeq,
+      skillAwardSkillId: player.skillAwardSkillId,
+      skillAwardXpGained: player.skillAwardXpGained,
+      skillAwardOldLevel: player.skillAwardOldLevel,
+      skillAwardNewLevel: player.skillAwardNewLevel,
+      skillAwardAt: player.skillAwardAt,
+      selectedMissionId: player.selectedMissionId,
+      characterId: player.characterId
+    },
+    stockPortfolio: sanitizeStockPortfolioSnapshot(stockPortfolio)
+  };
+}
+
+function applyPlayerSnapshotPayload(player, snapshot = {}) {
+  const saved = snapshot?.player;
+  if (!player || !saved || typeof saved !== 'object') {
+    return false;
+  }
+
+  const now = Date.now();
+  player.x = quantizePosition(saved.x);
+  player.z = quantizePosition(saved.z);
+  player.rotationY = quantizeRotation(saved.rotationY);
+  player.aimRotationY = quantizeRotation(saved.aimRotationY ?? saved.rotationY);
+  player.aiming = false;
+  player.emoteId = '';
+  player.emoteActive = false;
+  player.emoteStartedAt = 0;
+  player.emoteSeq = Math.max(0, Math.floor(Number(player.emoteSeq ?? 0) || 0)) + 1;
+  player.chatText = '';
+  player.chatStartedAt = 0;
+  player.chatSeq = 0;
+  player.health = sanitizeSnapshotNumber(saved.health, PLAYER_MAX_HEALTH, { integer: true, min: 0, max: PLAYER_MAX_HEALTH });
+  player.maxHealth = sanitizeSnapshotNumber(saved.maxHealth, PLAYER_MAX_HEALTH, { integer: true, min: 1, max: PLAYER_MAX_HEALTH });
+  player.alive = sanitizeSnapshotBoolean(saved.alive, true);
+  player.respawnAt = sanitizeSnapshotNumber(saved.respawnAt, 0, { integer: true, min: 0 });
+  player.spawnProtectedUntil = sanitizeSnapshotNumber(saved.spawnProtectedUntil, 0, { integer: true, min: 0 });
+  player.equippedWeaponId = isSnapshotWeaponId(saved.equippedWeaponId) ? saved.equippedWeaponId : '';
+  player.ammoInClip = sanitizeSnapshotNumber(saved.ammoInClip, 0, { integer: true, min: 0, max: WEAPON_CLIP_SIZE });
+  player.reserveAmmo = sanitizeSnapshotNumber(saved.reserveAmmo, 0, { integer: true, min: 0, max: WEAPON_RESERVE_CAP });
+  player.isReloading = sanitizeSnapshotBoolean(saved.isReloading, false) && sanitizeSnapshotNumber(saved.reloadEndsAt, 0) > now;
+  player.reloadEndsAt = player.isReloading ? sanitizeSnapshotNumber(saved.reloadEndsAt, 0, { integer: true, min: 0 }) : 0;
+  player.kills = sanitizeSnapshotNumber(saved.kills, 0, { integer: true, min: 0 });
+  player.deaths = sanitizeSnapshotNumber(saved.deaths, 0, { integer: true, min: 0 });
+  player.money = sanitizeSnapshotNumber(saved.money, 0, { integer: true });
+  player.gymMembershipActive = sanitizeSnapshotBoolean(saved.gymMembershipActive, false);
+  player.rentIntroSeq = sanitizeSnapshotNumber(saved.rentIntroSeq, 0, { integer: true, min: 0 });
+  player.rentIntroAmount = sanitizeSnapshotNumber(saved.rentIntroAmount, 0, { integer: true, min: 0 });
+  player.rentIntroNpcId = sanitizeSnapshotString(saved.rentIntroNpcId, '', 80);
+  player.rentIntroBuildingPlacementId = sanitizeSnapshotString(saved.rentIntroBuildingPlacementId, '', 120);
+  player.rentIntroStartedAt = sanitizeSnapshotNumber(saved.rentIntroStartedAt, 0, { integer: true, min: 0 });
+  player.lastDamagedAt = sanitizeSnapshotNumber(saved.lastDamagedAt, 0, { integer: true, min: 0 });
+  player.workoutPlacementId = '';
+  player.deliveryQuestId = sanitizeSnapshotString(saved.deliveryQuestId, '', 80);
+  player.deliveryQuestStatus = sanitizeSnapshotString(saved.deliveryQuestStatus, DELIVERY_QUEST_STATUS.inactive, 40) || DELIVERY_QUEST_STATUS.inactive;
+  player.deliveryQuestGiverNpcId = sanitizeSnapshotString(saved.deliveryQuestGiverNpcId, '', 80);
+  player.deliveryQuestTargetNpcId = sanitizeSnapshotString(saved.deliveryQuestTargetNpcId, '', 80);
+  player.deliveryQuestAcceptedAt = sanitizeSnapshotNumber(saved.deliveryQuestAcceptedAt, 0, { integer: true, min: 0 });
+  player.deliveryQuestCompletedAt = sanitizeSnapshotNumber(saved.deliveryQuestCompletedAt, 0, { integer: true, min: 0 });
+  player.deliveryQuestRecentTargetNpcIds = sanitizeSnapshotString(saved.deliveryQuestRecentTargetNpcIds, '', 500);
+  player.deliveryQuestCompletionCount = sanitizeSnapshotNumber(saved.deliveryQuestCompletionCount, 0, { integer: true, min: 0 });
+  player.gymPumpCompletedAt = sanitizeSnapshotNumber(saved.gymPumpCompletedAt, 0, { integer: true, min: 0 });
+  player.stockBoughtAt = sanitizeSnapshotNumber(saved.stockBoughtAt, 0, { integer: true, min: 0 });
+  player.blackjackHandPlayedAt = sanitizeSnapshotNumber(saved.blackjackHandPlayedAt, 0, { integer: true, min: 0 });
+  player.strengthXp = sanitizeSnapshotNumber(saved.strengthXp, 0, { integer: true, min: 0 });
+  player.agilityXp = sanitizeSnapshotNumber(saved.agilityXp, 0, { integer: true, min: 0 });
+  player.intelligenceXp = sanitizeSnapshotNumber(saved.intelligenceXp, 0, { integer: true, min: 0 });
+  player.skillAwardSeq = sanitizeSnapshotNumber(saved.skillAwardSeq, 0, { integer: true, min: 0 });
+  player.skillAwardSkillId = normalizeSkillId(saved.skillAwardSkillId);
+  player.skillAwardXpGained = sanitizeSnapshotNumber(saved.skillAwardXpGained, 0, { integer: true, min: 0 });
+  player.skillAwardOldLevel = sanitizeSnapshotNumber(saved.skillAwardOldLevel, 1, { integer: true, min: 1 });
+  player.skillAwardNewLevel = sanitizeSnapshotNumber(saved.skillAwardNewLevel, 1, { integer: true, min: 1 });
+  player.skillAwardAt = sanitizeSnapshotNumber(saved.skillAwardAt, 0, { integer: true, min: 0 });
+  player.selectedMissionId = normalizeMissionId(saved.selectedMissionId);
+  player.characterId = sanitizeCharacterId(saved.characterId);
+
+  if (!player.alive || player.health <= 0) {
+    player.alive = false;
+    player.health = 0;
+    if (!player.respawnAt) {
+      player.respawnAt = now + PLAYER_RESPAWN_MS;
+    }
+  }
+
+  return true;
+}
+
 export class WorldRoom extends Room {
   onCreate() {
     this.maxClients = 16;
@@ -388,6 +561,11 @@ export class WorldRoom extends Room {
     this.pickupSequence = 0;
     this.stockMarket = createInitialStockMarketState(Date.now());
     this.stockPortfolios = new Map();
+    this.playerSnapshots = getPlayerSnapshots();
+    this.playerSnapshotIds = new Map();
+    this.playerSnapshotSessions = new Map();
+    this.dirtyPlayerSnapshots = new Set();
+    this.playerSnapshotSavePromises = new Map();
     this.blackjackSessions = new Map();
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
@@ -401,6 +579,9 @@ export class WorldRoom extends Room {
     this.clock.setInterval(() => {
       this.updateCombatTimers();
     }, COMBAT_TICK_MS);
+    this.clock.setInterval(() => {
+      void this.flushDirtyPlayerSnapshots();
+    }, PLAYER_SNAPSHOT_AUTOSAVE_MS);
     logServer('room', 'World room created.', {
       roomId: this.roomId,
       maxClients: this.maxClients,
@@ -567,7 +748,34 @@ export class WorldRoom extends Room {
     });
   }
 
-  onJoin(client, options = {}) {
+  async onJoin(client, options = {}) {
+    const playerSnapshotId = normalizePlayerSnapshotId(options?.playerId);
+    let playerSnapshot = null;
+    if (playerSnapshotId) {
+      const previousSessionId = this.playerSnapshotSessions.get(playerSnapshotId);
+      if (
+        previousSessionId
+        && previousSessionId !== client.sessionId
+        && this.state.players.has(previousSessionId)
+        && !this.isClientSessionConnected(previousSessionId)
+      ) {
+        await this.savePlayerSnapshot(previousSessionId);
+        this.removePlayerSession(previousSessionId);
+      }
+
+      this.playerSnapshotIds.set(client.sessionId, playerSnapshotId);
+      this.playerSnapshotSessions.set(playerSnapshotId, client.sessionId);
+      try {
+        playerSnapshot = await this.playerSnapshots.load(playerSnapshotId);
+      } catch (error) {
+        logServerError('room', 'Failed to load player snapshot.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId,
+          playerSnapshotId
+        });
+      }
+    }
+
     const player = new PlayerState();
     const [spawnX, spawnZ] = this.chooseRespawnPoint(client.sessionId);
     const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
@@ -630,6 +838,11 @@ export class WorldRoom extends Room {
     player.selectedMissionId = resolveSelectedMissionId(player);
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
+    const restoredPlayerSnapshot = applyPlayerSnapshotPayload(player, playerSnapshot);
+    if (restoredPlayerSnapshot) {
+      this.stockPortfolios.set(client.sessionId, sanitizeStockPortfolioSnapshot(playerSnapshot.stockPortfolio));
+      player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+    }
     this.state.players.set(client.sessionId, player);
     this.playerPositionMeta.set(client.sessionId, {
       x: player.x,
@@ -640,12 +853,15 @@ export class WorldRoom extends Room {
       healthRegenCarryMs: 0,
       agilityDistanceCarry: 0
     });
+    this.queuePlayerSnapshotSave(client.sessionId);
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
       isAdmin,
+      playerSnapshotId,
+      restoredPlayerSnapshot,
       connectedClients: this.clients.length
     });
     this.broadcastNpcDebugSnapshot(Date.now(), { force: true });
@@ -683,12 +899,8 @@ export class WorldRoom extends Room {
       }
     }
 
-    this.state.players.delete(client.sessionId);
-    this.state.builders.delete(client.sessionId);
-    this.playerAliases.delete(client.sessionId);
-    this.playerPositionMeta.delete(client.sessionId);
-    this.stockPortfolios.delete(client.sessionId);
-    this.blackjackSessions.delete(client.sessionId);
+    await this.savePlayerSnapshot(client.sessionId);
+    this.removePlayerSession(client.sessionId);
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -696,7 +908,91 @@ export class WorldRoom extends Room {
     });
   }
 
-  async onDispose() {}
+  async onDispose() {
+    await this.flushDirtyPlayerSnapshots({ force: true });
+  }
+
+  isClientSessionConnected(sessionId = '') {
+    return this.clients.some((client) => client.sessionId === sessionId);
+  }
+
+  removePlayerSession(sessionId = '') {
+    const playerSnapshotId = this.getPlayerSnapshotId(sessionId);
+    this.state.players.delete(sessionId);
+    this.state.builders.delete(sessionId);
+    this.playerAliases.delete(sessionId);
+    this.playerPositionMeta.delete(sessionId);
+    this.stockPortfolios.delete(sessionId);
+    this.blackjackSessions.delete(sessionId);
+    if (playerSnapshotId && this.playerSnapshotSessions.get(playerSnapshotId) === sessionId) {
+      this.playerSnapshotSessions.delete(playerSnapshotId);
+    }
+    this.playerSnapshotIds.delete(sessionId);
+    this.dirtyPlayerSnapshots.delete(sessionId);
+    this.playerSnapshotSavePromises.delete(sessionId);
+  }
+
+  getPlayerSnapshotId(sessionId = '') {
+    return this.playerSnapshotIds.get(sessionId) ?? '';
+  }
+
+  queuePlayerSnapshotSave(sessionId = '') {
+    if (!this.getPlayerSnapshotId(sessionId) || !this.state.players.has(sessionId)) {
+      return;
+    }
+
+    this.dirtyPlayerSnapshots.add(sessionId);
+  }
+
+  async savePlayerSnapshot(sessionId = '') {
+    const playerSnapshotId = this.getPlayerSnapshotId(sessionId);
+    const player = this.state.players.get(sessionId);
+    if (!playerSnapshotId || !player) {
+      return null;
+    }
+
+    const existingSave = this.playerSnapshotSavePromises.get(sessionId);
+    if (existingSave) {
+      return existingSave;
+    }
+
+    let savePromise = null;
+    savePromise = (async () => {
+      try {
+        const snapshotPayload = createPlayerSnapshotPayload(
+          player,
+          this.stockPortfolios.get(sessionId) ?? {}
+        );
+        this.dirtyPlayerSnapshots.delete(sessionId);
+        const snapshot = await this.playerSnapshots.save(
+          playerSnapshotId,
+          snapshotPayload
+        );
+        return snapshot;
+      } catch (error) {
+        this.dirtyPlayerSnapshots.add(sessionId);
+        logServerError('room', 'Failed to save player snapshot.', error, {
+          roomId: this.roomId,
+          sessionId,
+          playerSnapshotId
+        });
+        return null;
+      } finally {
+        if (this.playerSnapshotSavePromises.get(sessionId) === savePromise) {
+          this.playerSnapshotSavePromises.delete(sessionId);
+        }
+      }
+    })();
+    this.playerSnapshotSavePromises.set(sessionId, savePromise);
+    return savePromise;
+  }
+
+  async flushDirtyPlayerSnapshots({ force = false } = {}) {
+    const sessionIds = force
+      ? [...this.state.players.keys()]
+      : [...this.dirtyPlayerSnapshots];
+    await Promise.all(sessionIds.map((sessionId) => this.savePlayerSnapshot(sessionId)));
+  }
 
   isAdminJoin(options = {}) {
     const providedKey = typeof options.adminKey === 'string'
@@ -840,6 +1136,7 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
+    this.queuePlayerSnapshotSave(client.sessionId);
   }
 
   updatePlayerCharacter(client, message = {}) {
@@ -849,6 +1146,7 @@ export class WorldRoom extends Room {
     }
 
     player.characterId = sanitizeCharacterId(message?.characterId);
+    this.queuePlayerSnapshotSave(client.sessionId);
   }
 
   normalizePlayerSelectedMission(player) {
@@ -1563,6 +1861,7 @@ export class WorldRoom extends Room {
     for (const [sessionId, player] of this.state.players.entries()) {
       if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
         this.completeReload(player);
+        this.queuePlayerSnapshotSave(sessionId);
       }
 
       if (player.alive === false && player.respawnAt && now >= player.respawnAt) {
@@ -1570,7 +1869,9 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      this.updatePlayerHealthRegen(sessionId, player, now, deltaMs);
+      if (this.updatePlayerHealthRegen(sessionId, player, now, deltaMs)) {
+        this.queuePlayerSnapshotSave(sessionId);
+      }
     }
 
     for (const pickup of [...this.state.pickups.values()]) {
@@ -1632,6 +1933,7 @@ export class WorldRoom extends Room {
       x: player.x,
       z: player.z
     });
+    this.queuePlayerSnapshotSave(sessionId);
   }
 
   startReload(sessionId, player, { emitEvent = true } = {}) {
@@ -1658,6 +1960,7 @@ export class WorldRoom extends Room {
         endsAt: player.reloadEndsAt
       });
     }
+    this.queuePlayerSnapshotSave(sessionId);
     return true;
   }
 
@@ -1711,6 +2014,7 @@ export class WorldRoom extends Room {
       pickupId: pickup.id,
       weaponId: pickup.weaponId
     });
+    this.queuePlayerSnapshotSave(client.sessionId);
   }
 
   handleFireRequest(client, message = {}) {
@@ -1766,6 +2070,7 @@ export class WorldRoom extends Room {
         if (target.health <= 0) {
           this.handlePlayerDeath(shot.targetId, client.sessionId);
         }
+        this.queuePlayerSnapshotSave(shot.targetId);
       }
     }
 
@@ -1776,6 +2081,7 @@ export class WorldRoom extends Room {
     if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
       this.startReload(client.sessionId, player);
     }
+    this.queuePlayerSnapshotSave(client.sessionId);
   }
 
   handlePunchRequest(client, message = {}) {
@@ -1819,12 +2125,14 @@ export class WorldRoom extends Room {
         if (target.health <= 0) {
           this.handlePlayerDeath(hit.targetId, client.sessionId);
         }
+        this.queuePlayerSnapshotSave(hit.targetId);
       }
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
       this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, client.sessionId, now);
     }
+    this.queuePlayerSnapshotSave(client.sessionId);
   }
 
   handlePlayerDeath(victimId, killerId = '') {
@@ -1865,6 +2173,8 @@ export class WorldRoom extends Room {
       x: player.x,
       z: player.z
     });
+    this.queuePlayerSnapshotSave(victimId);
+    this.queuePlayerSnapshotSave(killerId);
   }
 
   dropWeaponPickup(player) {
@@ -2175,6 +2485,7 @@ export class WorldRoom extends Room {
         if (target.health <= 0) {
           this.handlePlayerDeath(shot.targetId, npcId);
         }
+        this.queuePlayerSnapshotSave(shot.targetId);
       }
     }
 
@@ -2209,6 +2520,7 @@ export class WorldRoom extends Room {
         if (target.health <= 0) {
           this.handlePlayerDeath(hit.targetId, npcId);
         }
+        this.queuePlayerSnapshotSave(hit.targetId);
       }
     }
 
@@ -2255,6 +2567,7 @@ export class WorldRoom extends Room {
         ok: true,
         ...payload
       });
+      this.queuePlayerSnapshotSave(client.sessionId);
     } catch (error) {
       logServerError('room', 'RPC request failed.', error, {
         roomId: this.roomId,

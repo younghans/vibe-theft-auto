@@ -15,6 +15,7 @@
    - `DATABASE_URL`
    - `WORLD_KEY=primary`
    - `WORLD_LAYOUT_SEED_PATH=server/data/world-layout.json`
+   - `PLAYER_SNAPSHOT_TTL_MS=1800000` to keep restart/deploy player restores available for 30 minutes
    - `COLYSEUS_PUBLIC_ADDRESS=your-backend-domain.example/2567` only when Colyseus support recommends an explicit public room address
    - `OPENAI_API_KEY`
    - `OPENAI_NPC_MODEL=gpt-5.4-mini`

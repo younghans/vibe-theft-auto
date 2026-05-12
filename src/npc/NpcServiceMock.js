@@ -273,7 +273,7 @@ function cloneNpcDebugState(debug = {}) {
 }
 
 export class NpcServiceMock {
-  constructor({ adminKey = '' } = {}) {
+  constructor({ adminKey = '', playerId = '' } = {}) {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
@@ -307,6 +307,7 @@ export class NpcServiceMock {
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
     this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
+    this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
     this.playerRuntimeMeta = new Map();
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);

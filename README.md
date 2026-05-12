@@ -60,6 +60,8 @@ Runtime secrets are intentionally not committed. Start from `.env.example`.
 Important production values include:
 
 - `DATABASE_URL`: PostgreSQL connection string for world persistence.
+- `PLAYER_SNAPSHOT_TTL_MS`: optional time window for restoring players after
+  backend restarts; defaults to 30 minutes.
 - `STICKRPG_SERVER_URL`: frontend build-time websocket URL for the Colyseus
   backend, such as `wss://us-atl-06d422c8.vibetheftauto.xyz`.
 - `COLYSEUS_PUBLIC_ADDRESS`: optional hosted backend address override.
