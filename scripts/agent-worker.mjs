@@ -1171,6 +1171,29 @@ async function servedCommitIncludesExpected(task, expectedCommitSha = '', served
   return isAncestor(REPO_PATH, expected, served, task.id);
 }
 
+async function chooseReconciledLiveCommitSha(task, results = [], fallbackCommitSha = '') {
+  const commits = [...new Set(results
+    .map((result) => String(result.servedCommitSha || '').trim())
+    .filter(Boolean))];
+  for (const candidate of commits) {
+    let includesAllServedCommits = true;
+    for (const other of commits) {
+      if (commitShaMatches(other, candidate)) {
+        continue;
+      }
+      if (!await servedCommitIncludesExpected(task, other, candidate)) {
+        includesAllServedCommits = false;
+        break;
+      }
+    }
+    if (includesAllServedCommits) {
+      return candidate;
+    }
+  }
+
+  return commits[0] || fallbackCommitSha;
+}
+
 async function reconcileStaleDeployTask(task) {
   const expectedCommitSha = String(task.newDeployCommitSha || task.commitSha || '').trim();
   if (!expectedCommitSha) {
@@ -1213,7 +1236,7 @@ async function reconcileStaleDeployTask(task) {
     throw new Error(`Stale deploy could not be reconciled against the live runtime.\n${output}`);
   }
 
-  const liveCommitSha = results.find((result) => result.servedCommitSha)?.servedCommitSha || expectedCommitSha;
+  const liveCommitSha = await chooseReconciledLiveCommitSha(task, results, expectedCommitSha);
   const deployUrl = results.find((result) => result.deployUrl)?.deployUrl || task.deployUrl || '';
   const message = liveCommitSha === expectedCommitSha
     ? `Deployment reconciled: live runtime is serving commit ${expectedCommitSha.slice(0, 12)}.`
