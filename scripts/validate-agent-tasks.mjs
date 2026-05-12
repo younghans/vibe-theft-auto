@@ -64,6 +64,7 @@ try {
   assert.equal(claim.task.id, created.id);
   assert.equal(claim.task.status, 'claimed');
   assert.equal(claim.task.claimedBy, 'validator-worker');
+  assert.ok(claim.task.workStartedAt >= claim.task.claimedAt);
 
   const preparing = await updateAgentTask(created.id, {
     status: 'preparing',
@@ -87,6 +88,8 @@ try {
   assert.equal(ready.status, 'ready_for_review');
   assert.deepEqual(ready.changedFiles, ['src/game/Game.js', 'server/app.config.js']);
   assert.deepEqual(ready.deployTargets, ['frontend', 'backend']);
+  assert.ok(ready.workCompletedAt >= ready.workStartedAt);
+  const readyWorkCompletedAt = ready.workCompletedAt;
 
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',
@@ -114,6 +117,7 @@ try {
   const stillReady = await getAgentTask(created.id, { filePath });
   assert.equal(stillReady.status, 'ready_for_review');
   assert.ok(stillReady.deployApprovedAt > 0);
+  assert.equal(stillReady.workCompletedAt, readyWorkCompletedAt);
 
   const deployClaim = await claimNextAgentTask({
     workerId: 'deploy-worker',

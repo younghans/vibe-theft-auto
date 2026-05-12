@@ -42,6 +42,8 @@ const MUTABLE_TASK_FIELDS = new Set([
   'summary',
   'claimedBy',
   'claimedAt',
+  'workStartedAt',
+  'workCompletedAt',
   'deployStartedAt',
   'previousDeployCommitSha',
   'newDeployCommitSha',
@@ -99,6 +101,11 @@ function normalizeStatus(value = '') {
   return AGENT_TASK_STATUSES.includes(status) ? status : '';
 }
 
+function normalizeTimestamp(value, fallback = 0) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? timestamp : fallback;
+}
+
 function normalizeLogs(logs = []) {
   if (!Array.isArray(logs)) {
     return [];
@@ -136,6 +143,15 @@ function normalizeDeployTargets(value = []) {
 function normalizeTask(raw = {}) {
   const now = Date.now();
   const id = normalizeTaskId(raw.id);
+  const status = normalizeStatus(raw.status) || 'queued';
+  const createdAt = normalizeTimestamp(raw.createdAt, now);
+  const updatedAt = normalizeTimestamp(raw.updatedAt, now);
+  const claimedAt = normalizeTimestamp(raw.claimedAt, 0);
+  const workStartedAt = normalizeTimestamp(raw.workStartedAt, claimedAt);
+  const workCompletedAt = normalizeTimestamp(
+    raw.workCompletedAt,
+    status === 'ready_for_review' ? updatedAt : 0
+  );
   return {
     id,
     type: String(raw.type ?? 'code_change') || 'code_change',
@@ -145,12 +161,14 @@ function normalizeTask(raw = {}) {
     contextLabel: String(raw.contextLabel ?? '').trim().slice(0, 160),
     prompt: truncateText(raw.prompt ?? '', AGENT_TASK_PROMPT_MAX_LENGTH),
     mode: normalizeMode(raw.mode),
-    status: normalizeStatus(raw.status) || 'queued',
+    status,
     createdBy: String(raw.createdBy ?? ''),
-    createdAt: Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : now,
-    updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : now,
+    createdAt,
+    updatedAt,
     claimedBy: String(raw.claimedBy ?? ''),
-    claimedAt: Number.isFinite(Number(raw.claimedAt)) ? Number(raw.claimedAt) : 0,
+    claimedAt,
+    workStartedAt,
+    workCompletedAt,
     branch: String(raw.branch ?? ''),
     commitSha: String(raw.commitSha ?? ''),
     previewUrl: String(raw.previewUrl ?? ''),
@@ -161,17 +179,17 @@ function normalizeTask(raw = {}) {
     summary: truncateText(raw.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
     logs: normalizeLogs(raw.logs),
     snapshot: raw.snapshot == null ? null : cloneJson(raw.snapshot),
-    deployApprovedAt: Number.isFinite(Number(raw.deployApprovedAt)) ? Number(raw.deployApprovedAt) : 0,
+    deployApprovedAt: normalizeTimestamp(raw.deployApprovedAt, 0),
     deployApprovedBy: String(raw.deployApprovedBy ?? ''),
-    deployStartedAt: Number.isFinite(Number(raw.deployStartedAt)) ? Number(raw.deployStartedAt) : 0,
-    deployedAt: Number.isFinite(Number(raw.deployedAt)) ? Number(raw.deployedAt) : 0,
+    deployStartedAt: normalizeTimestamp(raw.deployStartedAt, 0),
+    deployedAt: normalizeTimestamp(raw.deployedAt, 0),
     previousDeployCommitSha: String(raw.previousDeployCommitSha ?? ''),
     newDeployCommitSha: String(raw.newDeployCommitSha ?? ''),
     deployLog: truncateText(raw.deployLog ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
-    rollbackApprovedAt: Number.isFinite(Number(raw.rollbackApprovedAt)) ? Number(raw.rollbackApprovedAt) : 0,
+    rollbackApprovedAt: normalizeTimestamp(raw.rollbackApprovedAt, 0),
     rollbackApprovedBy: String(raw.rollbackApprovedBy ?? ''),
-    rollbackStartedAt: Number.isFinite(Number(raw.rollbackStartedAt)) ? Number(raw.rollbackStartedAt) : 0,
-    rolledBackAt: Number.isFinite(Number(raw.rolledBackAt)) ? Number(raw.rolledBackAt) : 0,
+    rollbackStartedAt: normalizeTimestamp(raw.rollbackStartedAt, 0),
+    rolledBackAt: normalizeTimestamp(raw.rolledBackAt, 0),
     rollbackCommitSha: String(raw.rollbackCommitSha ?? ''),
     rollbackLog: truncateText(raw.rollbackLog ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH)
   };
@@ -393,6 +411,7 @@ export async function claimNextAgentTask({
     queuedTask.status = 'claimed';
     queuedTask.claimedBy = normalizedWorkerId;
     queuedTask.claimedAt = now;
+    queuedTask.workStartedAt = now;
     queuedTask.updatedAt = now;
     addTaskLog(queuedTask, 'Worker claimed task.', {
       data: { workerId: normalizedWorkerId }
@@ -418,6 +437,7 @@ export async function updateAgentTask(taskId, updates = {}, {
       return null;
     }
 
+    const now = Date.now();
     for (const [key, value] of Object.entries(updates ?? {})) {
       if (!MUTABLE_TASK_FIELDS.has(key)) {
         continue;
@@ -429,7 +449,13 @@ export async function updateAgentTask(taskId, updates = {}, {
           throw new Error(`Invalid task status: ${String(value)}`);
         }
         task.status = status;
-      } else if (['claimedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
+        if (['claimed', 'preparing', 'coding', 'testing'].includes(status) && Number(task.workStartedAt) <= 0) {
+          task.workStartedAt = now;
+        }
+        if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
+          task.workCompletedAt = now;
+        }
+      } else if (['claimedAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
         task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
       } else if (key === 'changedFiles') {
         task.changedFiles = normalizeStringList(value);
@@ -444,7 +470,7 @@ export async function updateAgentTask(taskId, updates = {}, {
       }
     }
 
-    task.updatedAt = Date.now();
+    task.updatedAt = now;
     return task;
   }, { filePath });
 }

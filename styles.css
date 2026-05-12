@@ -6230,6 +6230,15 @@ body.is-admin-prompt-resizing * {
   text-transform: uppercase;
 }
 
+.hud__admin-prompt-status-time {
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  opacity: 0.78;
+}
+
 .hud__admin-prompt-status-badge.is-good {
   background: rgba(84, 226, 151, 0.18);
   color: #a5ffd1;

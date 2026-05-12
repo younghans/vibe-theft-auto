@@ -723,6 +723,13 @@ const AGENT_TASK_BUSY_STATUSES = new Set([
   'rolling_back'
 ]);
 
+const AGENT_TASK_CODE_WORK_STATUSES = new Set([
+  'claimed',
+  'preparing',
+  'coding',
+  'testing'
+]);
+
 const ADMIN_PROMPT_TABS = Object.freeze([
   { id: 'new', label: 'New' },
   { id: 'active', label: 'Active' },
@@ -753,15 +760,82 @@ function isAgentTaskBusy(status = '') {
   return AGENT_TASK_BUSY_STATUSES.has(String(status ?? ''));
 }
 
-function createAgentTaskStatusBadge(status = '', tagName = 'span') {
-  const normalized = String(status ?? 'queued');
+function getAgentTaskTimestamp(value = 0) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+}
+
+function formatAgentTaskDuration(durationMs = 0) {
+  const totalSeconds = Math.max(0, Math.floor((Number(durationMs) || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  }
+  return `${seconds}s`;
+}
+
+function getAgentTaskActiveStartedAt(task = {}) {
+  const status = String(task?.status ?? '');
+  if (AGENT_TASK_CODE_WORK_STATUSES.has(status)) {
+    return getAgentTaskTimestamp(task.workStartedAt)
+      || getAgentTaskTimestamp(task.claimedAt)
+      || getAgentTaskTimestamp(task.createdAt);
+  }
+  if (status === 'deploying') {
+    return getAgentTaskTimestamp(task.deployStartedAt)
+      || getAgentTaskTimestamp(task.updatedAt)
+      || getAgentTaskTimestamp(task.claimedAt);
+  }
+  if (status === 'rolling_back') {
+    return getAgentTaskTimestamp(task.rollbackStartedAt)
+      || getAgentTaskTimestamp(task.updatedAt)
+      || getAgentTaskTimestamp(task.claimedAt);
+  }
+  return 0;
+}
+
+function getAgentTaskActiveDurationLabel(task = {}, now = Date.now()) {
+  if (!isAgentTaskBusy(task?.status)) {
+    return '';
+  }
+  const startedAt = getAgentTaskActiveStartedAt(task);
+  return startedAt > 0 ? formatAgentTaskDuration(Math.max(0, now - startedAt)) : '';
+}
+
+function getAgentTaskWorkedDurationLabel(task = {}) {
+  const startedAt = getAgentTaskTimestamp(task.workStartedAt)
+    || getAgentTaskTimestamp(task.claimedAt);
+  const completedAt = getAgentTaskTimestamp(task.workCompletedAt)
+    || (String(task.status ?? '') === 'ready_for_review' ? getAgentTaskTimestamp(task.updatedAt) : 0);
+  return startedAt > 0 && completedAt >= startedAt
+    ? formatAgentTaskDuration(completedAt - startedAt)
+    : '';
+}
+
+function getAgentTaskWorkedDurationText(task = {}) {
+  const duration = getAgentTaskWorkedDurationLabel(task);
+  return duration ? `Worked ${duration}` : '';
+}
+
+function createAgentTaskStatusBadge(taskOrStatus = '', tagName = 'span') {
+  const task = taskOrStatus && typeof taskOrStatus === 'object' ? taskOrStatus : null;
+  const normalized = String(task?.status ?? taskOrStatus ?? 'queued');
   const elementName = tagName === 'em' ? 'em' : 'span';
   const isBusy = isAgentTaskBusy(normalized);
   const busyClass = isBusy ? ' is-working' : '';
   const spinner = isBusy
     ? '<span class="hud__admin-prompt-spinner" aria-hidden="true"></span>'
     : '';
-  return `<${elementName} class="hud__admin-prompt-status-badge ${escapeHtml(getAgentTaskStatusTone(normalized))}${busyClass}">${spinner}<span>${escapeHtml(getAgentTaskStatusLabel(normalized))}</span></${elementName}>`;
+  const activeDuration = task ? getAgentTaskActiveDurationLabel(task) : '';
+  const activeTimer = activeDuration
+    ? `<span class="hud__admin-prompt-status-time">${escapeHtml(activeDuration)}</span>`
+    : '';
+  return `<${elementName} class="hud__admin-prompt-status-badge ${escapeHtml(getAgentTaskStatusTone(normalized))}${busyClass}">${spinner}<span>${escapeHtml(getAgentTaskStatusLabel(normalized))}</span>${activeTimer}</${elementName}>`;
 }
 
 function getAgentTaskShortId(task = {}) {
@@ -839,7 +913,8 @@ function getAgentTaskContextLine(task = {}, time = '') {
   return [
     getAgentTaskTitle(task),
     getAgentTaskShortId(task),
-    time
+    time,
+    String(task.status ?? '') === 'ready_for_review' ? getAgentTaskWorkedDurationText(task) : ''
   ].filter(Boolean).join(' - ');
 }
 
@@ -859,7 +934,7 @@ function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 
           <strong>${escapeHtml(getAgentTaskPromptTitle(task))}</strong>
           <small>${escapeHtml(getAgentTaskContextLine(task, time))}</small>
         </span>
-        ${createAgentTaskStatusBadge(status, 'em')}
+        ${createAgentTaskStatusBadge(task, 'em')}
       </button>
     `;
   }).join('');
@@ -889,11 +964,14 @@ function createAgentTaskDetailMarkup(task = null) {
     createAgentTaskLink('Preview', task.previewUrl),
     createAgentTaskLink('Deploy', task.deployUrl)
   ].filter(Boolean).join('');
+  const workedDuration = String(task.status ?? '') === 'ready_for_review'
+    ? getAgentTaskWorkedDurationLabel(task)
+    : '';
 
   return `
     <article class="hud__admin-prompt-detail">
       <header>
-        ${createAgentTaskStatusBadge(status)}
+        ${createAgentTaskStatusBadge(task)}
         <strong>${escapeHtml(getAgentTaskShortId(task))}</strong>
       </header>
       <h3>${escapeHtml(getAgentTaskPromptTitle(task, { maxLength: 96 }))}</h3>
@@ -904,6 +982,7 @@ function createAgentTaskDetailMarkup(task = null) {
         ${commitSha ? `<span>Commit <strong>${escapeHtml(commitSha.slice(0, 10))}</strong></span>` : ''}
         ${deployTargets.length ? `<span>Targets <strong>${escapeHtml(deployTargets.join(', '))}</strong></span>` : ''}
         ${changedFiles.length ? `<span>Files <strong>${escapeHtml(String(changedFiles.length))}</strong></span>` : ''}
+        ${workedDuration ? `<span>Worked <strong>${escapeHtml(workedDuration)}</strong></span>` : ''}
         ${rollbackCommitSha ? `<span>Rollback <strong>${escapeHtml(rollbackCommitSha.slice(0, 10))}</strong></span>` : ''}
         ${deployApproved ? '<span>Deploy approved</span>' : ''}
         ${rollbackApproved ? '<span>Rollback approved</span>' : ''}
@@ -2014,6 +2093,8 @@ export class Hud {
     this.lastAdminPromptTabsSignature = '';
     this.lastAdminPromptTaskListSignature = '';
     this.lastAdminPromptDetailSignature = '';
+    this.adminPromptDurationTimer = 0;
+    this.adminPromptDurationTick = 0;
     this.schoolMicrogameBodyRenderKey = '';
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
@@ -5452,6 +5533,7 @@ export class Hud {
       contextLabel: String(contextLabel ?? 'Game')
     };
     this.renderAdminPromptPanel();
+    this.syncAdminPromptDurationTimer();
   }
 
   clearAdminPromptText() {
@@ -5462,6 +5544,33 @@ export class Hud {
 
   isAdminPromptOpen() {
     return Boolean(this.adminPromptState.open && this.adminPromptRoot && !this.adminPromptRoot.hidden);
+  }
+
+  shouldRunAdminPromptDurationTimer() {
+    if (!this.adminPromptState.available || !this.adminPromptState.open) {
+      return false;
+    }
+
+    return filterAdminPromptTasksForTab(
+      this.adminPromptState.tasks,
+      this.adminPromptState.activeTab
+    ).some((task) => isAgentTaskBusy(task.status) && getAgentTaskActiveStartedAt(task) > 0);
+  }
+
+  syncAdminPromptDurationTimer() {
+    const shouldRun = this.shouldRunAdminPromptDurationTimer();
+    if (shouldRun && !this.adminPromptDurationTimer) {
+      this.adminPromptDurationTimer = window.setInterval(() => {
+        this.adminPromptDurationTick += 1;
+        this.renderAdminPromptPanel();
+      }, 1000);
+      return;
+    }
+
+    if (!shouldRun && this.adminPromptDurationTimer) {
+      window.clearInterval(this.adminPromptDurationTimer);
+      this.adminPromptDurationTimer = 0;
+    }
   }
 
   renderAdminPromptPanel() {
@@ -5539,13 +5648,25 @@ export class Hud {
       this.adminPromptTaskBrowser.hidden = activeTab === 'new';
     }
     const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
+    const durationTick = visibleTasks.some((task) => (
+      isAgentTaskBusy(task.status)
+      && getAgentTaskActiveStartedAt(task) > 0
+    ))
+      ? this.adminPromptDurationTick
+      : 0;
     const taskListSignature = JSON.stringify({
       activeTab,
       selectedTaskId,
+      durationTick,
       tasks: visibleTasks.map((task) => [
         task.id,
         task.status,
         task.updatedAt,
+        task.workStartedAt,
+        task.workCompletedAt,
+        task.claimedAt,
+        task.deployStartedAt,
+        task.rollbackStartedAt,
         task.contextLabel,
         task.gameId,
         task.contextType,
@@ -5563,8 +5684,15 @@ export class Hud {
         activeTab,
         selectedTaskId: selectedTask?.id ?? '',
         status: selectedTask?.status ?? '',
+        durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
         branch: selectedTask?.branch ?? '',
         commitSha: selectedTask?.commitSha ?? '',
+        updatedAt: selectedTask?.updatedAt ?? 0,
+        workStartedAt: selectedTask?.workStartedAt ?? 0,
+        workCompletedAt: selectedTask?.workCompletedAt ?? 0,
+        claimedAt: selectedTask?.claimedAt ?? 0,
+        deployStartedAt: selectedTask?.deployStartedAt ?? 0,
+        rollbackStartedAt: selectedTask?.rollbackStartedAt ?? 0,
         deployApprovedAt: selectedTask?.deployApprovedAt ?? 0,
         rollbackApprovedAt: selectedTask?.rollbackApprovedAt ?? 0,
         rollbackCommitSha: selectedTask?.rollbackCommitSha ?? '',
