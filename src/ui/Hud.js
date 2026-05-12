@@ -938,7 +938,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     base.push(
       String(data.playerLane ?? 1),
       String(data.lives ?? 0),
-      (data.chalks ?? []).map((chalk) => `${chalk.lane}:${Math.round(Number(chalk.y ?? chalk.x ?? 0) / 4)}`).join(',')
+      (data.chalks ?? []).map((chalk) => `${chalk.lane}:${Math.round(Number(chalk.x ?? 0) / 4)}`).join(',')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.sortBackpack) {
     base.push(
@@ -1216,11 +1216,6 @@ function createDodgeChalkMarkup(game = null) {
   const lanes = Array.isArray(game?.round?.lanes) ? game.round.lanes : ['Left', 'Center', 'Right'];
   const playerLane = Math.max(0, Math.min(2, Math.floor(Number(data.playerLane ?? 1) || 1)));
   const chalks = Array.isArray(data.chalks) ? data.chalks : [];
-  const getChalkLane = (chalk) => Math.max(0, Math.min(2, Math.floor(Number(chalk?.lane ?? 0) || 0)));
-  const getChalkY = (chalk) => {
-    const value = Number(chalk?.y ?? chalk?.x ?? -8);
-    return Math.max(-12, Math.min(112, Number.isFinite(value) ? value : -8));
-  };
   return `
     <div class="hud__school-dodge">
       <div class="hud__school-lives">${Array.from({ length: 2 }, (_, index) => `<span class="${index < (data.lives ?? 0) ? 'is-live' : ''}"></span>`).join('')}</div>
@@ -1232,7 +1227,7 @@ function createDodgeChalkMarkup(game = null) {
         `).join('')}
         <div class="hud__school-dodge-player" style="--lane:${playerLane}" aria-label="Student"></div>
         ${chalks.map((chalk) => `
-          <span class="hud__school-chalk" style="--lane:${getChalkLane(chalk)}; --y:${getChalkY(chalk).toFixed(2)}%"></span>
+          <span class="hud__school-chalk" style="--lane:${Math.max(0, Math.min(2, Number(chalk.lane ?? 0)))}; --x:${Math.max(0, Math.min(100, Number(chalk.x ?? 0))).toFixed(2)}%"></span>
         `).join('')}
       </div>
       <div class="hud__school-dual-actions">

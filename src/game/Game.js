@@ -6266,16 +6266,16 @@ export class Game {
         game.data.chalks.push({
           id: `chalk_${now}_${this.schoolRandomInt(0, 9999)}`,
           lane: this.schoolRandomInt(0, 2),
-          y: -8
+          x: 100
         });
         game.data.spawnIn = Math.max(0.42, 0.92 - ((game.round.durationMs - game.remainingMs) / game.round.durationMs) * 0.34);
       }
       game.data.chalks = game.data.chalks
-        .map((chalk) => ({ ...chalk, y: Number(chalk.y ?? -8) + dt * 72 }))
-        .filter((chalk) => chalk.y < 108);
+        .map((chalk) => ({ ...chalk, x: Number(chalk.x ?? 0) - dt * 72 }))
+        .filter((chalk) => chalk.x > -8);
 
       for (const chalk of game.data.chalks) {
-        const inHitZone = chalk.y >= 62 && chalk.y <= 92;
+        const inHitZone = chalk.x >= 9 && chalk.x <= 21;
         if (inHitZone && chalk.lane === game.data.playerLane && game.data.hitCooldownMs <= 0) {
           game.data.lives = Math.max(0, Number(game.data.lives ?? 0) - 1);
           game.data.hitCooldownMs = 620;
