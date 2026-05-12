@@ -353,12 +353,19 @@ PowerShell example:
 ```powershell
 $env:DEPLOY_ENABLED = "true"
 $env:BACKEND_DEPLOY_COMMAND = "npm run deploy:colyseus"
+$env:BACKEND_DEPLOY_STRATEGY = "command"
+$env:BACKEND_VERIFY_URL = "https://us-atl-06d422c8.vibetheftauto.xyz/health"
 $env:FRONTEND_VERIFY_URL = "https://www.vibetheftauto.xyz/"
 # Optional; leave unset when Vercel Git integration deploys pushes to main.
 $env:FRONTEND_DEPLOY_COMMAND = "npx vercel deploy --prod --yes"
 ```
 
 `DEPLOY_COMMAND` is still accepted as a legacy alias for the backend deploy command.
+If Colyseus Cloud Git integration remains enabled for `main`, use
+`BACKEND_DEPLOY_STRATEGY=git` so the worker records and verifies the backend
+deploy without running a second CLI deploy. The smoother setup is to disable
+Colyseus automatic Git deploys and keep `BACKEND_DEPLOY_STRATEGY=command`,
+because then frontend-only tasks do not restart connected players.
 
 For full auto deploy, set both the admin URL flag and worker opt-in:
 

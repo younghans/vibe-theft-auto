@@ -69,5 +69,9 @@ The Codex worker must treat frontend and backend deploys separately:
 - Frontend builds stamp the served HTML with `STICKRPG_BUILD_COMMIT_SHA`. Vercel sets this from `VERCEL_GIT_COMMIT_SHA`; other hosts can set `STICKRPG_BUILD_COMMIT_SHA` explicitly.
 - The worker waits for the production frontend to serve the expected commit before it marks frontend deploys or rollbacks complete. Set `FRONTEND_VERIFY_URL` to the production URL, for example `https://www.vibetheftauto.xyz/`; if unset, the worker falls back to the `homepage` field in `package.json`.
 - Backend task changes deploy through `BACKEND_DEPLOY_COMMAND`, normally `npm run deploy:colyseus`.
+- If Colyseus Cloud is also connected directly to `main`, every frontend push
+  restarts the backend too. Disable Colyseus Git auto deploys for the smoothest
+  player experience, or set `BACKEND_DEPLOY_STRATEGY=git` on the worker to avoid
+  running a duplicate backend CLI deploy.
 
 Do not set the legacy `DEPLOY_COMMAND` to a combined frontend/backend deploy. It remains supported only as a backend deploy alias for older worker environments.

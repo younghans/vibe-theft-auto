@@ -49,6 +49,14 @@
 ## Notes
 
 - The production deployment expects `DATABASE_URL`.
+- Colyseus Cloud Git integration deploys every push to its configured branch. If
+  Vercel also deploys from `main`, that means frontend-only agent tasks still
+  restart the game server. For smoother player sessions, disable automatic
+  Colyseus deploys from Git and let the worker run `BACKEND_DEPLOY_COMMAND`
+  only when backend files change.
+- If Colyseus Git integration stays enabled, set `BACKEND_DEPLOY_STRATEGY=git`
+  on the worker so backend-target tasks do not also run the Colyseus CLI deploy
+  command.
 - The public frontend is deployed separately on Vercel. See `docs/vercel-frontend-deployment.md`.
 - For custom backend domains, set `COLYSEUS_PUBLIC_ADDRESS` to the public websocket host/path the browser should use after matchmaking only if needed. Do not include `ws://` or `wss://`.
 - Local development can still use file-backed persistence when `DATABASE_URL` is unset.

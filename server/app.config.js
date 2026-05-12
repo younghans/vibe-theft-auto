@@ -1,5 +1,5 @@
 import './src/loadEnv.js';
-import { existsSync, promises as fsp } from 'node:fs';
+import { existsSync, promises as fsp, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineRoom, defineServer } from '@colyseus/core';
@@ -21,6 +21,7 @@ import {
   recordAgentDeploymentState
 } from './src/agentDeployments.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
+import { getPlayerSnapshotsInfo } from './src/playerSnapshots.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
@@ -54,6 +55,44 @@ const SOURCE_DIRECTORY_ALLOWLIST = ['animations/', 'assets/', 'src/', 'vendor/']
 const GENERATED_WORLD_MAP_IMAGE_PATH = path.join('assets', 'generated', 'world-map.webp');
 const GENERATED_WORLD_MAP_METADATA_PATH = path.join('assets', 'generated', 'world-map.json');
 const ADMIN_WORLD_MAP_MAX_BYTES = 14 * 1024 * 1024;
+
+function readGitCommitSha() {
+  try {
+    let gitDirectory = path.join(PROJECT_ROOT, '.git');
+    try {
+      const gitMetadata = readFileSync(gitDirectory, 'utf8').trim();
+      if (gitMetadata.startsWith('gitdir:')) {
+        const gitDirPath = gitMetadata.slice(7).trim();
+        gitDirectory = path.isAbsolute(gitDirPath)
+          ? gitDirPath
+          : path.resolve(PROJECT_ROOT, gitDirPath);
+      }
+    } catch {}
+    const gitHeadPath = path.join(gitDirectory, 'HEAD');
+    const head = readFileSync(gitHeadPath, 'utf8').trim();
+    if (!head.startsWith('ref:')) {
+      return head;
+    }
+
+    const refPath = head.slice(4).trim();
+    return readFileSync(path.join(gitDirectory, refPath), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function readBackendCommitSha() {
+  return String(
+    process.env.STICKRPG_BUILD_COMMIT_SHA
+    ?? process.env.COLYSEUS_GIT_COMMIT_SHA
+    ?? process.env.GITHUB_SHA
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? readGitCommitSha()
+    ?? ''
+  ).trim();
+}
+
+const BACKEND_COMMIT_SHA = readBackendCommitSha();
 
 function normalizeAssetPath(requestPath = '/') {
   let decodedPath = String(requestPath);
@@ -342,13 +381,18 @@ const server = defineServer({
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cache-Control', 'no-store, max-age=0');
       const persistence = getWorldPersistenceInfo();
+      const playerSnapshots = getPlayerSnapshotsInfo();
       res.json({
         ok: true,
         service: 'stickrpg-colyseus',
         transport: 'websocket',
+        commitSha: BACKEND_COMMIT_SHA,
+        buildCommitSha: BACKEND_COMMIT_SHA,
         publicAddressConfigured: Boolean(colyseusPublicAddress),
         persistenceMode: persistence.mode,
         worldKey: persistence.worldKey,
+        playerSnapshotPersistenceMode: playerSnapshots.mode,
+        playerSnapshotTtlMs: playerSnapshots.ttlMs,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),
         worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,
         worldBackupRecentDays: persistence.backups?.recentDays ?? null,

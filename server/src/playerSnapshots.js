@@ -406,6 +406,15 @@ export function getPlayerSnapshots() {
   return playerSnapshotManager;
 }
 
+export function getPlayerSnapshotsInfo() {
+  return playerSnapshotManager?.getInfo() ?? {
+    mode: 'uninitialized',
+    worldKey: getWorldKey(),
+    path: null,
+    ttlMs: getPlayerSnapshotTtlMs()
+  };
+}
+
 export async function shutdownPlayerSnapshots() {
   if (!playerSnapshotManager) {
     return;

@@ -58,6 +58,8 @@ Set-DefaultEnv -Name 'GIT_REMOTE' -Value 'https://github.com/younghans/vibe-thef
 Set-DefaultEnv -Name 'GIT_BASE_BRANCH' -Value 'main'
 Set-DefaultEnv -Name 'DEPLOY_ENABLED' -Value 'true'
 Set-DefaultEnv -Name 'BACKEND_DEPLOY_COMMAND' -Value 'npm run deploy:colyseus'
+Set-DefaultEnv -Name 'BACKEND_DEPLOY_STRATEGY' -Value 'command'
+Set-DefaultEnv -Name 'BACKEND_VERIFY_URL' -Value 'https://us-atl-06d422c8.vibetheftauto.xyz/health'
 Set-DefaultEnv -Name 'FRONTEND_VERIFY_URL' -Value 'https://www.vibetheftauto.xyz/'
 
 if ($AutoDeploy) {

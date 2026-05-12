@@ -853,7 +853,7 @@ export class WorldRoom extends Room {
       healthRegenCarryMs: 0,
       agilityDistanceCarry: 0
     });
-    this.queuePlayerSnapshotSave(client.sessionId);
+    void this.savePlayerSnapshot(client.sessionId);
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
     logServer('room', 'Client joined world room.', {
@@ -953,6 +953,7 @@ export class WorldRoom extends Room {
 
     const existingSave = this.playerSnapshotSavePromises.get(sessionId);
     if (existingSave) {
+      this.dirtyPlayerSnapshots.add(sessionId);
       return existingSave;
     }
 
@@ -2567,7 +2568,7 @@ export class WorldRoom extends Room {
         ok: true,
         ...payload
       });
-      this.queuePlayerSnapshotSave(client.sessionId);
+      void this.savePlayerSnapshot(client.sessionId);
     } catch (error) {
       logServerError('room', 'RPC request failed.', error, {
         roomId: this.roomId,

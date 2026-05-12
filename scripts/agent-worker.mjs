@@ -26,19 +26,29 @@ const BACKEND_DEPLOY_COMMAND = process.env.BACKEND_DEPLOY_COMMAND
   || process.env.COLYSEUS_DEPLOY_COMMAND
   || process.env.DEPLOY_COMMAND
   || 'npm run deploy:colyseus';
+const BACKEND_DEPLOY_STRATEGY = String(process.env.BACKEND_DEPLOY_STRATEGY || 'command').trim().toLowerCase();
 const FRONTEND_DEPLOY_COMMAND = process.env.FRONTEND_DEPLOY_COMMAND
   || process.env.VERCEL_DEPLOY_COMMAND
   || '';
+const BACKEND_VERIFY_URL = String(
+  process.env.BACKEND_VERIFY_URL
+  || process.env.COLYSEUS_VERIFY_URL
+  || (API_BASE ? `${API_BASE}/health` : '')
+).trim();
 const FRONTEND_VERIFY_URL = String(
   process.env.FRONTEND_VERIFY_URL
   || process.env.FRONTEND_PRODUCTION_URL
   || process.env.PUBLIC_FRONTEND_URL
   || ''
 ).trim();
+const BACKEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('BACKEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
+const BACKEND_VERIFY_POLL_MS = getPositiveIntegerEnv('BACKEND_VERIFY_POLL_MS', 10 * 1000);
+const BACKEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('BACKEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const RUN_ONCE = process.argv.includes('--once');
+const RUN_SELF_TEST = process.argv.includes('--self-test');
 
 const ALLOWED_EXACT_FILES = new Set([
   'index.html',
@@ -141,6 +151,26 @@ function formatDeployTargets(targets = []) {
 
 function extractFirstHttpUrl(value = '') {
   return String(value ?? '').match(/https?:\/\/[^\s"'<>]+/u)?.[0] ?? '';
+}
+
+function isBackendDeployGitManaged() {
+  return ['git', 'git-integration', 'colyseus-git'].includes(BACKEND_DEPLOY_STRATEGY);
+}
+
+function getInstallCheckPlan(targets = []) {
+  const deployTargets = normalizeDeployTargets(targets);
+  const commands = [];
+  if (deployTargets.includes('frontend') || deployTargets.includes('backend')) {
+    commands.push('npm ci');
+  }
+  if (deployTargets.includes('frontend')) {
+    commands.push('npm run build:web');
+  }
+  if (deployTargets.includes('backend')) {
+    commands.push('npm run build:server');
+  }
+  commands.push('git diff --check');
+  return commands;
 }
 
 function summarizeDeployResult(actionLabel, targets = []) {
@@ -600,25 +630,34 @@ async function runCodex(task, worktreePath, promptPath) {
   };
 }
 
-async function installAndCheck(task, worktreePath) {
-  await runCommand('npm', ['ci'], {
-    cwd: worktreePath,
-    taskId: task.id,
-    timeoutMs: 15 * 60 * 1000,
-    label: 'npm ci'
-  });
-  await runCommand('npm', ['run', 'build:web'], {
-    cwd: worktreePath,
-    taskId: task.id,
-    timeoutMs: 15 * 60 * 1000,
-    label: 'npm run build:web'
-  });
-  await runCommand('npm', ['run', 'build:server'], {
-    cwd: worktreePath,
-    taskId: task.id,
-    timeoutMs: 15 * 60 * 1000,
-    label: 'npm run build:server'
-  });
+async function installAndCheck(task, worktreePath, {
+  targets = []
+} = {}) {
+  const plan = getInstallCheckPlan(targets);
+  if (plan.includes('npm ci')) {
+    await runCommand('npm', ['ci'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      timeoutMs: 15 * 60 * 1000,
+      label: 'npm ci'
+    });
+  }
+  if (plan.includes('npm run build:web')) {
+    await runCommand('npm', ['run', 'build:web'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      timeoutMs: 15 * 60 * 1000,
+      label: 'npm run build:web'
+    });
+  }
+  if (plan.includes('npm run build:server')) {
+    await runCommand('npm', ['run', 'build:server'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      timeoutMs: 15 * 60 * 1000,
+      label: 'npm run build:server'
+    });
+  }
   await git(['diff', '--check'], {
     cwd: worktreePath,
     taskId: task.id,
@@ -802,6 +841,14 @@ async function fetchText(url, timeoutMs) {
   }
 }
 
+async function fetchJson(url, timeoutMs) {
+  const result = await fetchText(url, timeoutMs);
+  return {
+    ...result,
+    json: JSON.parse(result.text)
+  };
+}
+
 function extractHtmlAssetUrls(html = '', baseUrl = '') {
   const assets = [];
   for (const match of String(html).matchAll(/(?:src|href)="([^"]+)"/gu)) {
@@ -893,6 +940,94 @@ async function verifyFrontendDeployment(task, worktreePath, {
   throw new Error(`${actionLabel} frontend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}${lastEtag ? `; last etag ${lastEtag}` : ''}${lastAssets.length ? `; last assets ${lastAssets.slice(0, 5).join(', ')}` : ''}`);
 }
 
+async function verifyBackendDeployment(task, {
+  expectedCommitSha = '',
+  actionLabel = 'Deployment'
+} = {}) {
+  const commitSha = String(expectedCommitSha || '').trim();
+  const verifyUrl = normalizeHttpUrl(BACKEND_VERIFY_URL);
+  if (!verifyUrl) {
+    const message = 'Backend deployment verification skipped; no BACKEND_VERIFY_URL or AGENT_API_BASE is configured.';
+    await appendLog(task.id, message, { level: 'warn' });
+    return { deployUrl: '', output: message };
+  }
+
+  if (!commitSha) {
+    const message = 'Backend deployment verification skipped; expected commit SHA is missing.';
+    await appendLog(task.id, message, {
+      level: 'warn',
+      data: { verifyUrl }
+    });
+    return { deployUrl: verifyUrl, output: message };
+  }
+
+  const startedAt = Date.now();
+  const deadline = startedAt + BACKEND_VERIFY_TIMEOUT_MS;
+  let attempt = 0;
+  let lastError = '';
+  while (Date.now() <= deadline) {
+    attempt += 1;
+    try {
+      const result = await fetchJson(withVerifyCacheBuster(verifyUrl), BACKEND_VERIFY_REQUEST_TIMEOUT_MS);
+      const servedCommitSha = String(
+        result.json?.commitSha
+        || result.json?.buildCommitSha
+        || ''
+      ).trim();
+      if (!servedCommitSha) {
+        const message = `${actionLabel} backend verification skipped; health endpoint does not expose a commit SHA yet.`;
+        await appendLog(task.id, message, {
+          level: 'warn',
+          data: {
+            verifyUrl,
+            responseUrl: result.url,
+            expectedCommitSha: commitSha,
+            attempts: attempt
+          }
+        });
+        return { deployUrl: verifyUrl, output: message };
+      }
+
+      if (servedCommitSha === commitSha || servedCommitSha.startsWith(commitSha) || commitSha.startsWith(servedCommitSha)) {
+        const message = `${actionLabel} verified: backend is serving commit ${servedCommitSha.slice(0, 12)}.`;
+        await appendLog(task.id, message, {
+          data: {
+            verifyUrl,
+            responseUrl: result.url,
+            expectedCommitSha: commitSha,
+            servedCommitSha,
+            attempts: attempt,
+            persistenceMode: result.json?.persistenceMode ?? '',
+            playerSnapshotPersistenceMode: result.json?.playerSnapshotPersistenceMode ?? ''
+          }
+        });
+        return {
+          deployUrl: verifyUrl,
+          output: [
+            message,
+            `URL: ${verifyUrl}`,
+            `Attempts: ${attempt}`,
+            result.json?.persistenceMode ? `World persistence: ${result.json.persistenceMode}` : '',
+            result.json?.playerSnapshotPersistenceMode ? `Player snapshots: ${result.json.playerSnapshotPersistenceMode}` : ''
+          ].filter(Boolean).join('\n')
+        };
+      }
+
+      lastError = `expected commit ${commitSha.slice(0, 12)}, saw ${servedCommitSha.slice(0, 12)}`;
+    } catch (error) {
+      lastError = error?.message || String(error);
+    }
+
+    if (Date.now() + BACKEND_VERIFY_POLL_MS > deadline) {
+      break;
+    }
+    await sleep(BACKEND_VERIFY_POLL_MS);
+  }
+
+  const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+  throw new Error(`${actionLabel} backend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}`);
+}
+
 async function runDeployTargets(task, worktreePath, targets = [], {
   expectedCommitSha = '',
   actionLabel = 'Deployment'
@@ -928,11 +1063,30 @@ async function runDeployTargets(task, worktreePath, targets = [], {
   }
 
   if (deployTargets.includes('backend')) {
-    const output = await runDeployCommand(task, worktreePath, {
-      command: BACKEND_DEPLOY_COMMAND,
-      label: 'backend deploy'
+    if (isBackendDeployGitManaged()) {
+      const message = 'Backend deploy is handled by Colyseus Git integration after the main branch push.';
+      await appendLog(task.id, message, {
+        data: { target: 'backend', backendDeployStrategy: BACKEND_DEPLOY_STRATEGY }
+      });
+      outputs.push(`[backend]\n${message}`);
+    } else {
+      const output = await runDeployCommand(task, worktreePath, {
+        command: BACKEND_DEPLOY_COMMAND,
+        label: 'backend deploy'
+      });
+      outputs.push(`[backend]\n${output.trim()}`);
+    }
+
+    const verification = await verifyBackendDeployment(task, {
+      expectedCommitSha,
+      actionLabel
     });
-    outputs.push(`[backend]\n${output.trim()}`);
+    if (verification.deployUrl && !deployUrl) {
+      deployUrl = verification.deployUrl;
+    }
+    if (verification.output) {
+      outputs.push(`[backend verify]\n${verification.output}`);
+    }
   }
 
   if (outputs.length === 0) {
@@ -1122,7 +1276,7 @@ async function deployTask(task, worktreePath) {
       changedFiles
     }
   });
-  await installAndCheck(task, worktreePath);
+  await installAndCheck(task, worktreePath, { targets: inferredTargets });
   if (deployRefs.rebased) {
     await pushRebasedTaskBranch(task, worktreePath);
   }
@@ -1203,7 +1357,7 @@ async function rollbackTask(task, worktreePath) {
     }
   });
 
-  await installAndCheck(task, worktreePath);
+  await installAndCheck(task, worktreePath, { targets: inferredTargets });
   await pushWorktreeToMain(task, worktreePath);
   const deployResult = await runDeployTargets(task, worktreePath, inferredTargets, {
     expectedCommitSha: rollbackCommitSha,
@@ -1246,9 +1400,9 @@ async function handleCodeTask(task) {
       agentMessage: codexResult.lastMessage || truncateText(codexResult.output, 4000),
       codexSessionId: codexResult.sessionId
     });
-    await installAndCheck(task, worktreePath);
     const changedFiles = await enforceAllowlist(task, worktreePath);
     const deployTargets = inferDeployTargets(changedFiles);
+    await installAndCheck(task, worktreePath, { targets: deployTargets });
     const commit = await commitAndPush(task, worktreePath, worktree.branch, changedFiles);
 
     if (task.mode === 'auto' && AUTO_DEPLOY) {
@@ -1381,6 +1535,101 @@ function validateConfig() {
   }
 }
 
+function assertSelfTestEqual(actual, expected, label) {
+  const actualText = JSON.stringify(actual);
+  const expectedText = JSON.stringify(expected);
+  if (actualText !== expectedText) {
+    throw new Error(`${label}: expected ${expectedText}, received ${actualText}`);
+  }
+}
+
+function getSimulatedDeployPlan(changedFiles = []) {
+  const deployTargets = inferDeployTargets(changedFiles);
+  return {
+    changedFiles: normalizeChangedFiles(changedFiles),
+    deployTargets,
+    checks: getInstallCheckPlan(deployTargets),
+    frontendDeploy: deployTargets.includes('frontend')
+      ? (FRONTEND_DEPLOY_COMMAND.trim() ? 'command' : 'git-integration')
+      : 'none',
+    backendDeploy: deployTargets.includes('backend')
+      ? (isBackendDeployGitManaged() ? 'git-integration' : 'command')
+      : 'none',
+    backendVerify: deployTargets.includes('backend')
+      ? (normalizeHttpUrl(BACKEND_VERIFY_URL) ? 'enabled' : 'missing')
+      : 'none'
+  };
+}
+
+function runSelfTest() {
+  const scenarios = [
+    {
+      label: 'frontend-only',
+      changedFiles: ['src/ui/Hud.js', 'styles.css'],
+      deployTargets: ['frontend'],
+      checks: ['npm ci', 'npm run build:web', 'git diff --check'],
+      frontendDeploy: FRONTEND_DEPLOY_COMMAND.trim() ? 'command' : 'git-integration',
+      backendDeploy: 'none'
+    },
+    {
+      label: 'backend-only',
+      changedFiles: ['server/src/WorldRoom.js'],
+      deployTargets: ['backend'],
+      checks: ['npm ci', 'npm run build:server', 'git diff --check'],
+      frontendDeploy: 'none',
+      backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
+    },
+    {
+      label: 'mixed',
+      changedFiles: ['src/game/Game.js', 'server/src/WorldRoom.js'],
+      deployTargets: ['frontend', 'backend'],
+      checks: ['npm ci', 'npm run build:web', 'npm run build:server', 'git diff --check'],
+      frontendDeploy: FRONTEND_DEPLOY_COMMAND.trim() ? 'command' : 'git-integration',
+      backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
+    },
+    {
+      label: 'docs-only',
+      changedFiles: ['docs/admin-codex-worker.md'],
+      deployTargets: [],
+      checks: ['git diff --check'],
+      frontendDeploy: 'none',
+      backendDeploy: 'none'
+    }
+  ];
+
+  const output = scenarios.map((scenario) => {
+    const plan = getSimulatedDeployPlan(scenario.changedFiles);
+    assertSelfTestEqual(plan.deployTargets, scenario.deployTargets, `${scenario.label} deploy targets`);
+    assertSelfTestEqual(plan.checks, scenario.checks, `${scenario.label} checks`);
+    assertSelfTestEqual(plan.frontendDeploy, scenario.frontendDeploy, `${scenario.label} frontend deploy`);
+    assertSelfTestEqual(plan.backendDeploy, scenario.backendDeploy, `${scenario.label} backend deploy`);
+    return {
+      label: scenario.label,
+      deployTargets: plan.deployTargets,
+      checks: plan.checks,
+      frontendDeploy: plan.frontendDeploy,
+      backendDeploy: plan.backendDeploy,
+      backendVerify: plan.backendVerify
+    };
+  });
+
+  console.log(JSON.stringify({
+    ok: true,
+    workerMode: {
+      backendDeployStrategy: BACKEND_DEPLOY_STRATEGY,
+      backendVerifyUrl: normalizeHttpUrl(BACKEND_VERIFY_URL) ? 'configured' : 'missing',
+      frontendDeployCommand: FRONTEND_DEPLOY_COMMAND.trim() ? 'configured' : 'git-integration',
+      frontendVerifyUrl: normalizeHttpUrl(FRONTEND_VERIFY_URL) ? 'configured' : 'package-homepage'
+    },
+    scenarios: output
+  }, null, 2));
+}
+
+if (RUN_SELF_TEST) {
+  runSelfTest();
+  process.exit(0);
+}
+
 validateConfig();
 console.log('[agent-worker] Starting StickRPG Codex worker.', {
   workerId: WORKER_ID,
@@ -1391,10 +1640,13 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   autoDeploy: AUTO_DEPLOY,
   deployEnabled: DEPLOY_ENABLED,
   backendDeployCommand: BACKEND_DEPLOY_COMMAND ? 'configured' : 'missing',
+  backendDeployStrategy: BACKEND_DEPLOY_STRATEGY,
+  backendVerifyUrl: BACKEND_VERIFY_URL ? 'configured' : 'missing',
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
-  runOnce: RUN_ONCE
+  runOnce: RUN_ONCE,
+  selfTest: RUN_SELF_TEST
 });
 
 while (true) {
