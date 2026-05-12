@@ -134,6 +134,8 @@ Minimum task shape:
   "commitSha": "",
   "previewUrl": "",
   "deployUrl": "",
+  "changedFiles": [],
+  "deployTargets": [],
   "error": "",
   "summary": "",
   "logs": [],
@@ -268,7 +270,7 @@ This repo now includes the first vertical slice:
 - `server/src/agentTasks.js` stores tasks in `server/data/agent-tasks.json`.
 - `server/app.config.js` exposes `/admin/agent-tasks` admin and worker endpoints.
 - The school microgame HUD has an admin-only `Improve` panel for prompts, task status, logs, branch, commit, and deploy approval.
-- `scripts/agent-worker.mjs` polls for work, creates isolated git worktrees, runs Codex, runs `npm ci`, `npm run build`, and `git diff --check`, enforces the MVP file allowlist, commits, pushes an `agent/task-...` branch, and reports updates back to the game.
+- `scripts/agent-worker.mjs` polls for work, creates isolated git worktrees, runs Codex, runs `npm ci`, `npm run build:web`, `npm run build:server`, and `git diff --check`, enforces the MVP file allowlist, commits, pushes an `agent/task-...` branch, infers frontend/backend deploy targets from changed files, and reports updates back to the game.
 - `npm run validate:agent-tasks` validates the local JSON task lifecycle.
 
 On the game server, configure:
@@ -310,12 +312,23 @@ For a one-task smoke run:
 node scripts/agent-worker.mjs --once
 ```
 
-For manual deploy approval from the game, install and authenticate the Colyseus Cloud CLI on the worker, then set:
+For manual deploy approval from the game, keep `AGENT_API_BASE` pointed at the Colyseus backend host, not the Vercel frontend host. The worker first fetches the latest `main`. If the approved task branch is behind `main`, it attempts to rebase the task commit onto the current `main`, reruns checks, updates the task branch, and only then pushes to `main`. If the rebase conflicts or the rebuilt task fails checks, deployment stops before touching `main`.
+
+After that safety pass, the worker deploys only the inferred runtime targets:
+
+- `frontend` changes are served by Vercel. With Git integration, no command is required; Vercel deploys the pushed `main` commit. To force the worker to run a Vercel CLI deploy instead, set `FRONTEND_DEPLOY_COMMAND`.
+- `backend` changes are served by Colyseus Cloud. Install and authenticate the Colyseus Cloud CLI on the worker, then set `BACKEND_DEPLOY_COMMAND`.
+
+PowerShell example:
 
 ```powershell
 $env:DEPLOY_ENABLED = "true"
-$env:DEPLOY_COMMAND = "npm run deploy:colyseus"
+$env:BACKEND_DEPLOY_COMMAND = "npm run deploy:colyseus"
+# Optional; leave unset when Vercel Git integration deploys pushes to main.
+$env:FRONTEND_DEPLOY_COMMAND = "npx vercel deploy --prod --yes"
 ```
+
+`DEPLOY_COMMAND` is still accepted as a legacy alias for the backend deploy command.
 
 For full auto deploy, set both the admin URL flag and worker opt-in:
 
@@ -474,7 +487,12 @@ Manual approval flow:
 ready_for_review
   -> admin clicks Approve Deploy
   -> worker claims deploy action
-  -> npm run deploy:colyseus
+  -> worker fetches latest main
+  -> if main moved, worker rebases the task branch and reruns checks
+  -> worker validates npm run build:web and npm run build:server
+  -> worker pushes commit to main
+  -> frontend changes deploy through Vercel Git integration or FRONTEND_DEPLOY_COMMAND
+  -> backend changes deploy through BACKEND_DEPLOY_COMMAND
   -> deployed
 ```
 
@@ -482,7 +500,8 @@ Auto deploy flow:
 
 ```text
 testing passed
-  -> npm run deploy:colyseus
+  -> worker pushes commit to main
+  -> worker deploys inferred frontend/backend targets
   -> deployed
 ```
 
@@ -537,7 +556,7 @@ Rollback options:
 5. Implement git worktree creation.
 6. Implement prompt file generation.
 7. Implement `codex exec` invocation.
-8. Implement `npm run build` and `git diff --check` gates.
+8. Implement `npm run build:web`, `npm run build:server`, and `git diff --check` gates.
 9. Implement commit and push.
 10. Add manual deploy approval.
 11. Add preview URLs.
@@ -551,7 +570,7 @@ The smallest useful version:
 - Server writes a queued task to `server/data/agent-tasks.json`.
 - Worker polls, claims the task, creates branch `agent/task-<id>`.
 - Worker runs Codex.
-- Worker runs `npm run build`.
+- Worker runs `npm run build:web` and `npm run build:server`.
 - Worker commits and pushes the branch.
 - Game status panel shows `ready_for_review` with branch and commit.
 

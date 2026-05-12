@@ -58,3 +58,14 @@ npm start
 ```
 
 The package `build` script is backend-only so Colyseus Cloud can use its default `npm run build` hook without rebuilding frontend assets. Use `npm run build:web` for Vercel and `npm run build:all` when you want to validate both deploy targets locally.
+
+## Codex worker deployment
+
+The Codex worker must treat frontend and backend deploys separately:
+
+- Keep `AGENT_API_BASE` pointed at the Colyseus backend hostname because the task API lives on the backend.
+- The worker validation gate runs both `npm run build:web` and `npm run build:server`.
+- Frontend task changes deploy through Vercel after the worker pushes the approved commit to `main`. If Git integration is enabled, leave `FRONTEND_DEPLOY_COMMAND` unset. If the worker should run the Vercel CLI itself, set `FRONTEND_DEPLOY_COMMAND`, for example `npx vercel deploy --prod --yes`.
+- Backend task changes deploy through `BACKEND_DEPLOY_COMMAND`, normally `npm run deploy:colyseus`.
+
+Do not set the legacy `DEPLOY_COMMAND` to a combined frontend/backend deploy. It remains supported only as a backend deploy alias for older worker environments.

@@ -32,6 +32,16 @@ function normalizeTimestamp(value = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
+function normalizeDeployTargets(value = []) {
+  const allowedTargets = new Set(['frontend', 'backend']);
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(/[\n,]/u);
+  return [...new Set(rawItems
+    .map((target) => String(target ?? '').trim().toLowerCase())
+    .filter((target) => allowedTargets.has(target)))];
+}
+
 function normalizeState(raw = {}) {
   const history = Array.isArray(raw.history) ? raw.history : [];
   return {
@@ -50,7 +60,8 @@ function normalizeState(raw = {}) {
       currentCommitSha: String(entry?.currentCommitSha ?? ''),
       previousCommitSha: String(entry?.previousCommitSha ?? ''),
       rollbackCommitSha: String(entry?.rollbackCommitSha ?? ''),
-      deployUrl: String(entry?.deployUrl ?? '')
+      deployUrl: String(entry?.deployUrl ?? ''),
+      deployTargets: normalizeDeployTargets(entry?.deployTargets)
     }))
   };
 }
@@ -109,6 +120,7 @@ export async function recordAgentDeploymentState(payload = {}, {
     const previousCommitSha = String(payload.previousCommitSha ?? '').trim();
     const rollbackCommitSha = String(payload.rollbackCommitSha ?? '').trim();
     const deployUrl = String(payload.deployUrl ?? '').trim();
+    const deployTargets = normalizeDeployTargets(payload.deployTargets);
 
     if (currentCommitSha) {
       state.currentCommitSha = currentCommitSha;
@@ -138,7 +150,8 @@ export async function recordAgentDeploymentState(payload = {}, {
         currentCommitSha,
         previousCommitSha,
         rollbackCommitSha,
-        deployUrl
+        deployUrl,
+        deployTargets
       }
     ].slice(-DEPLOYMENT_HISTORY_LIMIT);
 

@@ -18,7 +18,13 @@ const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
 const AUTO_DEPLOY = ['1', 'true', 'yes'].includes(String(process.env.AUTO_DEPLOY || '').toLowerCase());
 const DEPLOY_ENABLED = AUTO_DEPLOY || ['1', 'true', 'yes'].includes(String(process.env.DEPLOY_ENABLED || '').toLowerCase());
-const DEPLOY_COMMAND = process.env.DEPLOY_COMMAND || 'npm run deploy:colyseus';
+const BACKEND_DEPLOY_COMMAND = process.env.BACKEND_DEPLOY_COMMAND
+  || process.env.COLYSEUS_DEPLOY_COMMAND
+  || process.env.DEPLOY_COMMAND
+  || 'npm run deploy:colyseus';
+const FRONTEND_DEPLOY_COMMAND = process.env.FRONTEND_DEPLOY_COMMAND
+  || process.env.VERCEL_DEPLOY_COMMAND
+  || '';
 const RUN_ONCE = process.argv.includes('--once');
 
 const ALLOWED_EXACT_FILES = new Set([
@@ -53,6 +59,81 @@ function truncateText(value = '', maxLength = 6000) {
 
 function normalizeRepoPath(value = '') {
   return String(value ?? '').replaceAll('\\', '/').replace(/^\.\/+/u, '');
+}
+
+function normalizeStringList(value = []) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(/[\n,]/u);
+  return [...new Set(rawItems
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean))];
+}
+
+function normalizeChangedFiles(value = []) {
+  return normalizeStringList(value)
+    .map(normalizeRepoPath)
+    .filter(Boolean);
+}
+
+function normalizeDeployTargets(value = []) {
+  const allowedTargets = new Set(['frontend', 'backend']);
+  return normalizeStringList(value)
+    .map((target) => target.toLowerCase())
+    .filter((target) => allowedTargets.has(target));
+}
+
+function inferDeployTargets(changedFiles = []) {
+  const targets = new Set();
+  for (const filePath of normalizeChangedFiles(changedFiles)) {
+    const normalized = filePath.toLowerCase();
+    if (normalized === 'package.json' || normalized === 'package-lock.json') {
+      targets.add('frontend');
+      targets.add('backend');
+      continue;
+    }
+
+    if (
+      normalized === 'index.html'
+      || normalized === 'styles.css'
+      || normalized === 'vercel.json'
+      || normalized === 'scripts/build-web.mjs'
+      || normalized.startsWith('src/')
+      || normalized.startsWith('assets/')
+      || normalized.startsWith('vendor/')
+    ) {
+      targets.add('frontend');
+    }
+
+    if (
+      normalized === 'ecosystem.config.cjs'
+      || normalized.startsWith('server/')
+    ) {
+      targets.add('backend');
+    }
+  }
+
+  return [...targets];
+}
+
+function formatDeployTargets(targets = []) {
+  const normalizedTargets = normalizeDeployTargets(targets);
+  return normalizedTargets.length ? normalizedTargets.join(', ') : 'none';
+}
+
+function extractFirstHttpUrl(value = '') {
+  return String(value ?? '').match(/https?:\/\/[^\s"'<>]+/u)?.[0] ?? '';
+}
+
+function summarizeDeployResult(actionLabel, targets = []) {
+  const deployTargets = normalizeDeployTargets(targets);
+  if (deployTargets.length === 0) {
+    return `${actionLabel} completed; no runtime deploy target was inferred.`;
+  }
+  if (deployTargets.includes('frontend') && !FRONTEND_DEPLOY_COMMAND.trim()) {
+    return `${actionLabel} completed for ${formatDeployTargets(deployTargets)}; Vercel Git integration handles frontend deploy.`;
+  }
+  return `${actionLabel} completed for ${formatDeployTargets(deployTargets)}.`;
 }
 
 function isAllowedChangedFile(filePath = '') {
@@ -406,7 +487,7 @@ Expected behavior:
 - Keep the game polished and playable.
 - Preserve unrelated features.
 - Add or update focused validation where useful.
-- Run or prepare for \`npm run build\`.
+- Run or prepare for \`npm run build:all\`.
 
 Repo file allowlist:
 - src/
@@ -451,11 +532,17 @@ async function installAndCheck(task, worktreePath) {
     timeoutMs: 15 * 60 * 1000,
     label: 'npm ci'
   });
-  await runCommand('npm', ['run', 'build'], {
+  await runCommand('npm', ['run', 'build:web'], {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 15 * 60 * 1000,
-    label: 'npm run build'
+    label: 'npm run build:web'
+  });
+  await runCommand('npm', ['run', 'build:server'], {
+    cwd: worktreePath,
+    taskId: task.id,
+    timeoutMs: 15 * 60 * 1000,
+    label: 'npm run build:server'
   });
   await git(['diff', '--check'], {
     cwd: worktreePath,
@@ -473,11 +560,11 @@ async function getChangedFiles(worktreePath) {
     cwd: worktreePath,
     label: 'git ls-files untracked'
   });
-  return [...new Set(`${trackedOutput}\n${untrackedOutput}`
+  return normalizeChangedFiles([...new Set(`${trackedOutput}\n${untrackedOutput}`
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => !line.startsWith('warning:'))
-    .filter(Boolean))];
+    .filter(Boolean))]);
 }
 
 async function enforceAllowlist(task, worktreePath) {
@@ -494,6 +581,14 @@ async function enforceAllowlist(task, worktreePath) {
     data: { changedFiles }
   });
   return changedFiles;
+}
+
+function assertAllowedChangedFiles(changedFiles = []) {
+  const disallowed = normalizeChangedFiles(changedFiles)
+    .filter((filePath) => !isAllowedChangedFile(filePath));
+  if (disallowed.length > 0) {
+    throw new Error(`Deploy diff includes files outside the allowlist: ${disallowed.join(', ')}`);
+  }
 }
 
 async function commitAndPush(task, worktreePath, branch, changedFiles) {
@@ -521,21 +616,124 @@ async function commitAndPush(task, worktreePath, branch, changedFiles) {
   return { branch, commitSha };
 }
 
-async function runDeployCommand(task, worktreePath) {
-  const deployParts = splitCommandLine(DEPLOY_COMMAND);
+async function getDiffChangedFiles(worktreePath, fromRef, toRef = 'HEAD') {
+  const diffOutput = await git(['diff', '--name-only', fromRef, toRef, '--'], {
+    cwd: worktreePath,
+    label: 'git diff deploy changed files'
+  });
+  return normalizeChangedFiles(diffOutput
+    .split(/\r?\n/u)
+    .filter((line) => !line.startsWith('warning:')));
+}
+
+async function getDeployChangedFiles(task, worktreePath, fromRef) {
+  const taskChangedFiles = normalizeChangedFiles(task.changedFiles);
+  if (taskChangedFiles.length > 0) {
+    return taskChangedFiles;
+  }
+
+  if (!fromRef) {
+    return [];
+  }
+
+  return getDiffChangedFiles(worktreePath, fromRef, 'HEAD');
+}
+
+async function runDeployCommand(task, worktreePath, {
+  command = '',
+  label = 'deploy'
+} = {}) {
+  const deployParts = splitCommandLine(command);
   if (!deployParts.length) {
-    throw new Error('DEPLOY_COMMAND is empty.');
+    throw new Error(`${label} command is empty.`);
   }
 
   return runCommand(deployParts[0], deployParts.slice(1), {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 30 * 60 * 1000,
-    label: 'deploy'
+    label
   });
 }
 
-async function verifyDeployFastForward(task, worktreePath) {
+async function runDeployTargets(task, worktreePath, targets = []) {
+  const deployTargets = normalizeDeployTargets(targets);
+  const outputs = [];
+  let deployUrl = '';
+
+  if (deployTargets.includes('frontend')) {
+    if (FRONTEND_DEPLOY_COMMAND.trim()) {
+      const output = await runDeployCommand(task, worktreePath, {
+        command: FRONTEND_DEPLOY_COMMAND,
+        label: 'frontend deploy'
+      });
+      deployUrl = extractFirstHttpUrl(output) || deployUrl;
+      outputs.push(`[frontend]\n${output.trim()}`);
+    } else {
+      const message = 'Frontend deploy is handled by Vercel Git integration after the main branch push.';
+      await appendLog(task.id, message, {
+        data: { target: 'frontend' }
+      });
+      outputs.push(`[frontend]\n${message}`);
+    }
+  }
+
+  if (deployTargets.includes('backend')) {
+    const output = await runDeployCommand(task, worktreePath, {
+      command: BACKEND_DEPLOY_COMMAND,
+      label: 'backend deploy'
+    });
+    outputs.push(`[backend]\n${output.trim()}`);
+  }
+
+  if (outputs.length === 0) {
+    const message = 'No frontend or backend deploy target was inferred; main branch push completed without a runtime deploy command.';
+    await appendLog(task.id, message);
+    outputs.push(message);
+  }
+
+  return {
+    deployUrl,
+    output: outputs.join('\n\n')
+  };
+}
+
+async function isAncestor(worktreePath, ancestorRef, descendantRef = 'HEAD', taskId = '') {
+  return git(['merge-base', '--is-ancestor', ancestorRef, descendantRef], {
+    cwd: worktreePath,
+    taskId,
+    label: 'git verify deploy ancestry'
+  }).then(() => true).catch(() => false);
+}
+
+async function commitExists(worktreePath, commitSha = '', taskId = '') {
+  const normalizedCommitSha = String(commitSha || '').trim();
+  if (!normalizedCommitSha) {
+    return false;
+  }
+
+  return git(['cat-file', '-e', `${normalizedCommitSha}^{commit}`], {
+    cwd: worktreePath,
+    taskId,
+    label: 'git verify expected commit'
+  }).then(() => true).catch(() => false);
+}
+
+async function pushRebasedTaskBranch(task, worktreePath, branch = '') {
+  const normalizedBranch = String(branch || task.branch || '').trim();
+  if (!normalizedBranch) {
+    return;
+  }
+
+  await git(['push', '--force-with-lease', 'origin', `HEAD:${normalizedBranch}`], {
+    cwd: worktreePath,
+    taskId: task.id,
+    timeoutMs: 10 * 60 * 1000,
+    label: 'git push rebased task branch'
+  });
+}
+
+async function prepareDeployCommit(task, worktreePath) {
   await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
     cwd: REPO_PATH,
     taskId: task.id,
@@ -547,8 +745,31 @@ async function verifyDeployFastForward(task, worktreePath) {
     label: 'git rev-parse deploy head'
   })).trim();
   const expectedCommitSha = String(task.commitSha || '').trim();
+  const taskBranchCommitChanged = Boolean(expectedCommitSha && headCommitSha !== expectedCommitSha);
   if (expectedCommitSha && headCommitSha !== expectedCommitSha) {
-    throw new Error(`Deploy checkout is at ${headCommitSha}, expected task commit ${expectedCommitSha}.`);
+    const expectedExists = await commitExists(worktreePath, expectedCommitSha, task.id);
+    const expectedIsAncestor = expectedExists
+      ? await isAncestor(worktreePath, expectedCommitSha, 'HEAD', task.id)
+      : false;
+    const headSubject = (await git(['log', '-1', '--format=%s'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      label: 'git read deploy head subject'
+    })).trim();
+    const expectedSubject = `Agent task ${task.id}`;
+    if (!expectedIsAncestor && headSubject !== expectedSubject) {
+      throw new Error(`Deploy checkout is at ${headCommitSha}, expected task commit ${expectedCommitSha}.`);
+    }
+
+    await appendLog(task.id, 'Task branch head differs from stored commit; using verified branch head for deploy.', {
+      level: 'warn',
+      data: {
+        storedCommitSha: expectedCommitSha,
+        branchHeadCommitSha: headCommitSha,
+        expectedCommitFound: expectedExists,
+        storedCommitIsAncestor: expectedIsAncestor
+      }
+    });
   }
 
   const previousDeployCommitSha = (await git(['rev-parse', `origin/${GIT_BASE_BRANCH}`], {
@@ -556,17 +777,67 @@ async function verifyDeployFastForward(task, worktreePath) {
     taskId: task.id,
     label: 'git rev-parse previous deploy'
   })).trim();
-  await git(['merge-base', '--is-ancestor', previousDeployCommitSha, 'HEAD'], {
+
+  const alreadyCurrent = await isAncestor(worktreePath, previousDeployCommitSha, 'HEAD', task.id);
+  if (alreadyCurrent) {
+    const changedFiles = taskBranchCommitChanged
+      ? await getDiffChangedFiles(worktreePath, previousDeployCommitSha, 'HEAD')
+      : await getDeployChangedFiles(task, worktreePath, previousDeployCommitSha);
+    assertAllowedChangedFiles(changedFiles);
+    return {
+      previousDeployCommitSha,
+      newDeployCommitSha: headCommitSha,
+      changedFiles,
+      rebased: false,
+      taskBranchCommitChanged
+    };
+  }
+
+  await appendLog(task.id, `Task commit is behind origin/${GIT_BASE_BRANCH}; rebasing before deploy.`, {
+    data: {
+      baseBranch: GIT_BASE_BRANCH,
+      previousDeployCommitSha,
+      taskCommitSha: headCommitSha
+    }
+  });
+
+  try {
+    await git(['rebase', `origin/${GIT_BASE_BRANCH}`], {
+      cwd: worktreePath,
+      taskId: task.id,
+      timeoutMs: 10 * 60 * 1000,
+      label: 'git rebase deploy task'
+    });
+  } catch (error) {
+    await git(['rebase', '--abort'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      label: 'git rebase abort'
+    }).catch(() => {});
+    throw new Error(`Task commit ${headCommitSha} could not be automatically rebased onto origin/${GIT_BASE_BRANCH}. Rerun the prompt or resolve the task branch conflicts before approving deploy again.\n${error?.message ?? error}`);
+  }
+
+  const rebasedCommitSha = (await git(['rev-parse', 'HEAD'], {
     cwd: worktreePath,
     taskId: task.id,
-    label: 'git verify deploy fast-forward'
-  }).catch(() => {
-    throw new Error(`Task commit ${headCommitSha} is not a fast-forward from origin/${GIT_BASE_BRANCH}. Rebase or rerun the prompt before deploying.`);
+    label: 'git rev-parse rebased deploy head'
+  })).trim();
+  const changedFiles = await getDiffChangedFiles(worktreePath, previousDeployCommitSha, 'HEAD');
+  assertAllowedChangedFiles(changedFiles);
+  await appendLog(task.id, `Task branch rebased onto latest origin/${GIT_BASE_BRANCH}.`, {
+    data: {
+      previousCommitSha: headCommitSha,
+      rebasedCommitSha,
+      changedFiles
+    }
   });
 
   return {
     previousDeployCommitSha,
-    newDeployCommitSha: headCommitSha
+    newDeployCommitSha: rebasedCommitSha,
+    changedFiles,
+    rebased: true,
+    taskBranchCommitChanged: true
   };
 }
 
@@ -589,16 +860,40 @@ async function deployTask(task, worktreePath) {
     throw new Error('Deployment is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
   }
 
-  const deployRefs = await verifyDeployFastForward(task, worktreePath);
+  const deployRefs = await prepareDeployCommit(task, worktreePath);
+  const changedFiles = normalizeChangedFiles(deployRefs.changedFiles);
+  const deployTargets = normalizeDeployTargets(task.deployTargets);
+  const inferredTargets = deployTargets.length > 0 ? deployTargets : inferDeployTargets(changedFiles);
+  await appendLog(task.id, `Deploy targets: ${formatDeployTargets(inferredTargets)}.`, {
+    data: {
+      deployTargets: inferredTargets,
+      changedFiles
+    }
+  });
   await installAndCheck(task, worktreePath);
+  if (deployRefs.rebased) {
+    await pushRebasedTaskBranch(task, worktreePath);
+  }
+  if (deployRefs.rebased || deployRefs.taskBranchCommitChanged) {
+    await updateTask(task.id, {
+      branch: String(task.branch || '').trim(),
+      commitSha: deployRefs.newDeployCommitSha,
+      changedFiles,
+      deployTargets: inferredTargets,
+      summary: deployRefs.rebased
+        ? `Task branch rebased onto latest ${GIT_BASE_BRANCH}; checks passed and deploy is continuing.`
+        : 'Task branch head verified; checks passed and deploy is continuing.'
+    });
+  }
   await pushWorktreeToMain(task, worktreePath);
-  const deployOutput = await runDeployCommand(task, worktreePath);
+  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets);
   await recordDeployment({
     action: 'deploy',
     taskId: task.id,
     previousCommitSha: deployRefs.previousDeployCommitSha,
     currentCommitSha: deployRefs.newDeployCommitSha,
-    deployUrl: task.deployUrl || ''
+    deployUrl: deployResult.deployUrl || task.deployUrl || '',
+    deployTargets: inferredTargets
   });
   await updateTask(task.id, {
     status: 'deployed',
@@ -606,8 +901,11 @@ async function deployTask(task, worktreePath) {
     newDeployCommitSha: deployRefs.newDeployCommitSha,
     commitSha: deployRefs.newDeployCommitSha,
     deployedAt: Date.now(),
-    deployLog: truncateText(deployOutput, 10000),
-    summary: 'Deployment completed successfully.'
+    changedFiles,
+    deployTargets: inferredTargets,
+    deployUrl: deployResult.deployUrl || task.deployUrl || '',
+    deployLog: truncateText(deployResult.output, 10000),
+    summary: summarizeDeployResult('Deployment', inferredTargets)
   });
 }
 
@@ -637,24 +935,37 @@ async function rollbackTask(task, worktreePath) {
     taskId: task.id,
     label: 'git rev-parse rollback'
   })).trim();
+  const changedFiles = normalizeChangedFiles(task.changedFiles).length > 0
+    ? normalizeChangedFiles(task.changedFiles)
+    : await getDiffChangedFiles(worktreePath, previousDeployCommitSha, 'HEAD');
+  const deployTargets = normalizeDeployTargets(task.deployTargets);
+  const inferredTargets = deployTargets.length > 0 ? deployTargets : inferDeployTargets(changedFiles);
+  await appendLog(task.id, `Rollback deploy targets: ${formatDeployTargets(inferredTargets)}.`, {
+    level: 'warn',
+    data: {
+      deployTargets: inferredTargets,
+      changedFiles
+    }
+  });
 
   await installAndCheck(task, worktreePath);
   await pushWorktreeToMain(task, worktreePath);
-  const deployOutput = await runDeployCommand(task, worktreePath);
+  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets);
   await recordDeployment({
     action: 'rollback',
     taskId: task.id,
     previousCommitSha: previousDeployCommitSha,
     currentCommitSha: rollbackCommitSha,
     rollbackCommitSha,
-    deployUrl: task.deployUrl || ''
+    deployUrl: deployResult.deployUrl || task.deployUrl || '',
+    deployTargets: inferredTargets
   });
   await updateTask(task.id, {
     status: 'rolled_back',
     rolledBackAt: Date.now(),
     rollbackCommitSha,
-    rollbackLog: truncateText(deployOutput, 10000),
-    summary: 'Rollback deployed successfully.'
+    rollbackLog: truncateText(deployResult.output, 10000),
+    summary: summarizeDeployResult('Rollback deploy', inferredTargets)
   });
 }
 
@@ -672,15 +983,24 @@ async function handleCodeTask(task) {
     await updateTask(task.id, { status: 'testing', summary: truncateText(codexOutput, 10000) });
     await installAndCheck(task, worktreePath);
     const changedFiles = await enforceAllowlist(task, worktreePath);
+    const deployTargets = inferDeployTargets(changedFiles);
     const commit = await commitAndPush(task, worktreePath, worktree.branch, changedFiles);
 
     if (task.mode === 'auto' && AUTO_DEPLOY) {
       await updateTask(task.id, {
         status: 'deploying',
         branch: commit.branch,
-        commitSha: commit.commitSha
+        commitSha: commit.commitSha,
+        changedFiles,
+        deployTargets
       });
-      await deployTask({ ...task, branch: commit.branch, commitSha: commit.commitSha }, worktreePath);
+      await deployTask({
+        ...task,
+        branch: commit.branch,
+        commitSha: commit.commitSha,
+        changedFiles,
+        deployTargets
+      }, worktreePath);
     } else {
       const autoDeployNote = task.mode === 'auto' && !AUTO_DEPLOY
         ? ' Auto deploy was requested, but AUTO_DEPLOY is disabled on this worker.'
@@ -689,12 +1009,14 @@ async function handleCodeTask(task) {
         status: 'ready_for_review',
         branch: commit.branch,
         commitSha: commit.commitSha,
-        summary: `Branch pushed and checks passed.${autoDeployNote}`
+        changedFiles,
+        deployTargets,
+        summary: `Branch pushed and checks passed. Deploy targets: ${formatDeployTargets(deployTargets)}.${autoDeployNote}`
       });
     }
   } catch (error) {
     const errorMessage = String(error?.message ?? '');
-    const status = /(npm ci|npm run build|diff --check)/u.test(errorMessage) ? 'test_failed' : 'failed';
+    const status = /(npm ci|npm run build:(?:web|server)|diff --check)/u.test(errorMessage) ? 'test_failed' : 'failed';
     await updateTask(task.id, {
       status,
       error: String(error?.stack ?? error)
@@ -800,6 +1122,8 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   scope: DEFAULT_SCOPE,
   autoDeploy: AUTO_DEPLOY,
   deployEnabled: DEPLOY_ENABLED,
+  backendDeployCommand: BACKEND_DEPLOY_COMMAND ? 'configured' : 'missing',
+  frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   runOnce: RUN_ONCE
 });
 

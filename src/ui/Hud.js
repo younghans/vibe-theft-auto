@@ -846,6 +846,12 @@ function createAgentTaskDetailMarkup(task = null) {
   const canRollback = status === 'deployed' && Number(task.rollbackApprovedAt ?? 0) <= 0;
   const rollbackApproved = Number(task.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
   const rollbackCommitSha = String(task.rollbackCommitSha ?? '').trim();
+  const deployTargets = Array.isArray(task.deployTargets)
+    ? task.deployTargets.map((target) => String(target ?? '').trim()).filter(Boolean)
+    : [];
+  const changedFiles = Array.isArray(task.changedFiles)
+    ? task.changedFiles.map((filePath) => String(filePath ?? '').trim()).filter(Boolean)
+    : [];
   const links = [
     createAgentTaskLink('Preview', task.previewUrl),
     createAgentTaskLink('Deploy', task.deployUrl)
@@ -862,6 +868,8 @@ function createAgentTaskDetailMarkup(task = null) {
         <span>Context <strong>${escapeHtml(getAgentTaskTitle(task))}</strong></span>
         ${branch ? `<span>Branch <strong>${escapeHtml(branch)}</strong></span>` : ''}
         ${commitSha ? `<span>Commit <strong>${escapeHtml(commitSha.slice(0, 10))}</strong></span>` : ''}
+        ${deployTargets.length ? `<span>Targets <strong>${escapeHtml(deployTargets.join(', '))}</strong></span>` : ''}
+        ${changedFiles.length ? `<span>Files <strong>${escapeHtml(String(changedFiles.length))}</strong></span>` : ''}
         ${rollbackCommitSha ? `<span>Rollback <strong>${escapeHtml(rollbackCommitSha.slice(0, 10))}</strong></span>` : ''}
         ${deployApproved ? '<span>Deploy approved</span>' : ''}
         ${rollbackApproved ? '<span>Rollback approved</span>' : ''}
@@ -1964,6 +1972,9 @@ export class Hud {
       autoDeployAvailable: false,
       contextLabel: 'Game'
     };
+    this.lastAdminPromptTabsSignature = '';
+    this.lastAdminPromptTaskListSignature = '';
+    this.lastAdminPromptDetailSignature = '';
     this.schoolMicrogameBodyRenderKey = '';
     this.phoneVisible = false;
     this.phoneActiveAppId = '';
@@ -3101,9 +3112,13 @@ export class Hud {
     }
 
     const nextVisible = Boolean(visible);
+    const previousVisible = this.phoneVisible;
+    const previousActiveAppId = this.phoneActiveAppId;
     this.phoneVisible = nextVisible;
     this.phoneActiveAppId = nextVisible && getPhoneAppById(activeAppId) ? activeAppId : '';
-    this.renderPhoneScreen();
+    if (previousVisible !== this.phoneVisible || previousActiveAppId !== this.phoneActiveAppId) {
+      this.renderPhoneScreen();
+    }
 
     window.clearTimeout(this.phoneCloseTimeout);
     this.phoneLauncher?.classList.toggle('is-active', nextVisible);
@@ -5221,8 +5236,16 @@ export class Hud {
     if (this.adminPromptContext) {
       this.adminPromptContext.textContent = `Context: ${contextLabel || 'Game'}`;
     }
-    if (this.adminPromptTabs) {
+    const tabsSignature = JSON.stringify(tasks.map((task) => [task.id, task.status]));
+    if (this.adminPromptTabs && tabsSignature !== this.lastAdminPromptTabsSignature) {
+      this.lastAdminPromptTabsSignature = tabsSignature;
       this.adminPromptTabs.innerHTML = createAdminPromptTabsMarkup(tasks, activeTab);
+    }
+    for (const button of this.adminPromptTabs?.querySelectorAll('[data-admin-prompt-action^="tab:"]') ?? []) {
+      const tabId = (button.getAttribute('data-admin-prompt-action') ?? '').slice(4);
+      const isActive = tabId === activeTab;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     }
     if (this.adminPromptNew) {
       this.adminPromptNew.hidden = activeTab !== 'new';
@@ -5230,12 +5253,47 @@ export class Hud {
     if (this.adminPromptTaskBrowser) {
       this.adminPromptTaskBrowser.hidden = activeTab === 'new';
     }
-    if (this.adminPromptTasks) {
+    const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
+    const taskListSignature = JSON.stringify({
+      activeTab,
+      selectedTaskId,
+      tasks: visibleTasks.map((task) => [
+        task.id,
+        task.status,
+        task.updatedAt,
+        task.contextLabel,
+        task.gameId,
+        task.contextType,
+        task.scope
+      ])
+    });
+    if (this.adminPromptTasks && taskListSignature !== this.lastAdminPromptTaskListSignature) {
+      this.lastAdminPromptTaskListSignature = taskListSignature;
       this.adminPromptTasks.innerHTML = createAgentTaskListMarkup(tasks, selectedTaskId, activeTab);
     }
     if (this.adminPromptDetail) {
-      const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
       const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
+      const detailLogs = Array.isArray(selectedTask?.logs) ? selectedTask.logs.slice(-5) : [];
+      const detailSignature = JSON.stringify({
+        activeTab,
+        selectedTaskId: selectedTask?.id ?? '',
+        status: selectedTask?.status ?? '',
+        branch: selectedTask?.branch ?? '',
+        commitSha: selectedTask?.commitSha ?? '',
+        deployApprovedAt: selectedTask?.deployApprovedAt ?? 0,
+        rollbackApprovedAt: selectedTask?.rollbackApprovedAt ?? 0,
+        rollbackCommitSha: selectedTask?.rollbackCommitSha ?? '',
+        deployTargets: selectedTask?.deployTargets ?? [],
+        changedFilesLength: Array.isArray(selectedTask?.changedFiles) ? selectedTask.changedFiles.length : 0,
+        summary: selectedTask?.summary ?? '',
+        error: selectedTask?.error ?? '',
+        prompt: selectedTask?.prompt ?? '',
+        logs: detailLogs.map((entry) => [entry.at, entry.level, entry.message])
+      });
+      if (detailSignature === this.lastAdminPromptDetailSignature) {
+        return;
+      }
+      this.lastAdminPromptDetailSignature = detailSignature;
       this.adminPromptDetail.innerHTML = createAgentTaskDetailMarkup(activeTab === 'new' ? null : selectedTask);
     }
   }

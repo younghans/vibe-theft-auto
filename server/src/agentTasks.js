@@ -36,6 +36,8 @@ const MUTABLE_TASK_FIELDS = new Set([
   'commitSha',
   'previewUrl',
   'deployUrl',
+  'changedFiles',
+  'deployTargets',
   'error',
   'summary',
   'claimedBy',
@@ -110,6 +112,27 @@ function normalizeLogs(logs = []) {
   }));
 }
 
+function normalizeStringList(value = [], {
+  maxItems = 200,
+  maxLength = 240
+} = {}) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(/[\n,]/u);
+  return [...new Set(rawItems
+    .map((item) => String(item ?? '').trim().replaceAll('\\', '/').replace(/^\.\/+/u, ''))
+    .filter(Boolean)
+    .map((item) => item.slice(0, maxLength)))]
+    .slice(0, maxItems);
+}
+
+function normalizeDeployTargets(value = []) {
+  const allowedTargets = new Set(['frontend', 'backend']);
+  return normalizeStringList(value, { maxItems: 4, maxLength: 32 })
+    .map((target) => target.toLowerCase())
+    .filter((target) => allowedTargets.has(target));
+}
+
 function normalizeTask(raw = {}) {
   const now = Date.now();
   const id = normalizeTaskId(raw.id);
@@ -132,6 +155,8 @@ function normalizeTask(raw = {}) {
     commitSha: String(raw.commitSha ?? ''),
     previewUrl: String(raw.previewUrl ?? ''),
     deployUrl: String(raw.deployUrl ?? ''),
+    changedFiles: normalizeStringList(raw.changedFiles),
+    deployTargets: normalizeDeployTargets(raw.deployTargets),
     error: truncateText(raw.error ?? '', AGENT_TASK_ERROR_MAX_LENGTH),
     summary: truncateText(raw.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
     logs: normalizeLogs(raw.logs),
@@ -402,6 +427,10 @@ export async function updateAgentTask(taskId, updates = {}, {
         task.status = status;
       } else if (['claimedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
         task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
+      } else if (key === 'changedFiles') {
+        task.changedFiles = normalizeStringList(value);
+      } else if (key === 'deployTargets') {
+        task.deployTargets = normalizeDeployTargets(value);
       } else if (key === 'error') {
         task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
       } else if (key === 'summary' || key === 'deployLog' || key === 'rollbackLog') {

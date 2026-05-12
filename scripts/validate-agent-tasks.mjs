@@ -74,9 +74,13 @@ try {
 
   const ready = await updateAgentTask(created.id, {
     status: 'ready_for_review',
-    commitSha: 'abc1234'
+    commitSha: 'abc1234',
+    changedFiles: ['src/game/Game.js', 'server/app.config.js'],
+    deployTargets: ['frontend', 'backend']
   }, { filePath });
   assert.equal(ready.status, 'ready_for_review');
+  assert.deepEqual(ready.changedFiles, ['src/game/Game.js', 'server/app.config.js']);
+  assert.deepEqual(ready.deployTargets, ['frontend', 'backend']);
 
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',
@@ -98,19 +102,23 @@ try {
     previousDeployCommitSha: 'base1234',
     newDeployCommitSha: 'abc1234',
     deployedAt: Date.now(),
-    deployLog: 'mock deploy ok'
+    deployLog: 'mock deploy ok',
+    deployTargets: ['frontend']
   }, { filePath });
   assert.equal(deployed.status, 'deployed');
+  assert.deepEqual(deployed.deployTargets, ['frontend']);
 
   await recordAgentDeploymentState({
     action: 'deploy',
     taskId: created.id,
     previousCommitSha: 'base1234',
-    currentCommitSha: 'abc1234'
+    currentCommitSha: 'abc1234',
+    deployTargets: ['frontend']
   }, { filePath: deploymentFilePath });
   const deployment = await getAgentDeploymentState({ filePath: deploymentFilePath });
   assert.equal(deployment.currentTaskId, created.id);
   assert.equal(deployment.currentCommitSha, 'abc1234');
+  assert.deepEqual(deployment.history.at(-1).deployTargets, ['frontend']);
 
   const rollbackApproved = await approveAgentTaskRollback(created.id, {
     approvedBy: 'validator',

@@ -517,11 +517,14 @@ export class Game {
     this.characterSelectorVisible = false;
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
+    this.characterPreviewWarmupQueued = false;
     this.characterSelectorSyncRequestId = 0;
     this.characterSelectorViewportSyncFrame = 0;
     this.phoneCharacterSyncRequestId = 0;
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
+    this.phoneAppRefreshFrame = 0;
+    this.phoneAppRefreshTimeout = 0;
     this.localCharacterSwapSequence = 0;
     this.remoteAvatarBuildRequests = new Map();
     this.remotePlayers = new Map();
@@ -652,6 +655,7 @@ export class Game {
     this.adminPromptTasks = [];
     this.adminPromptSelectedTaskId = '';
     this.adminPromptLoading = false;
+    this.adminPromptLoadingVisible = false;
     this.adminPromptSubmitting = false;
     this.adminPromptError = '';
     this.adminPromptRefreshAt = 0;
@@ -1256,6 +1260,36 @@ export class Game {
     return this.characterPreviewRendererPromise;
   }
 
+  queueCharacterPreviewWarmup() {
+    if (this.characterPreviewWarmupQueued || this.characterPreviewRenderer || this.characterPreviewRendererPromise) {
+      return;
+    }
+
+    this.characterPreviewWarmupQueued = true;
+    const warm = () => {
+      void this.warmCharacterPreviewRenderer();
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(warm, { timeout: 5000 });
+    } else {
+      window.setTimeout(warm, 2200);
+    }
+  }
+
+  async warmCharacterPreviewRenderer() {
+    try {
+      const renderer = await this.ensureCharacterPreviewRenderer();
+      const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
+      await renderer.setCharacter(selectedId);
+      if (!this.characterSelectorVisible && !this.isPhoneCharacterAppOpen()) {
+        renderer.setActive(false);
+      }
+    } catch (error) {
+      console.warn('[CharacterSelector] Preview warmup failed.', error);
+    }
+  }
+
   async syncCharacterSelectorPreview(entries, selectedId) {
     const requestId = ++this.characterSelectorSyncRequestId;
     const renderer = await this.ensureCharacterPreviewRenderer();
@@ -1664,7 +1698,7 @@ export class Game {
       activeTab: this.adminPromptActiveTab,
       tasks: this.adminPromptTasks,
       selectedTaskId: this.adminPromptSelectedTaskId,
-      loading: this.adminPromptLoading,
+      loading: this.adminPromptLoadingVisible,
       submitting: this.adminPromptSubmitting,
       error: this.adminPromptError,
       autoDeployAvailable: this.isAdminPromptAutoDeployAvailable(),
@@ -1890,10 +1924,12 @@ export class Game {
     return String(this.npcServiceState?.sessionId ?? 'in-game-admin');
   }
 
-  async refreshAdminPromptTasks({ force = false } = {}) {
+  async refreshAdminPromptTasks({ force = false, showLoading = true } = {}) {
     if (!this.canUseAdminPrompt()) {
       this.adminPromptTasks = [];
       this.adminPromptError = '';
+      this.adminPromptLoading = false;
+      this.adminPromptLoadingVisible = false;
       this.refreshAdminPromptHud();
       return;
     }
@@ -1903,8 +1939,11 @@ export class Game {
 
     const adminKey = this.getAdminKey();
     this.adminPromptLoading = true;
+    this.adminPromptLoadingVisible = Boolean(showLoading);
     this.adminPromptError = '';
-    this.refreshAdminPromptHud();
+    if (showLoading) {
+      this.refreshAdminPromptHud();
+    }
     try {
       const url = new URL(this.getAdminAgentTasksEndpoint());
       url.searchParams.set('adminKey', adminKey);
@@ -1931,6 +1970,7 @@ export class Game {
       this.adminPromptError = error?.message ?? 'Codex task refresh failed.';
     } finally {
       this.adminPromptLoading = false;
+      this.adminPromptLoadingVisible = false;
       this.refreshAdminPromptHud();
     }
   }
@@ -1956,9 +1996,6 @@ export class Game {
       ? String(tabId)
       : 'new';
     this.refreshAdminPromptHud();
-    if (this.adminPromptOpen && this.adminPromptActiveTab !== 'new') {
-      void this.refreshAdminPromptTasks({ force: true });
-    }
   }
 
   selectAdminPromptTask(taskId = '') {
@@ -2118,7 +2155,7 @@ export class Game {
       return;
     }
 
-    void this.refreshAdminPromptTasks();
+    void this.refreshAdminPromptTasks({ showLoading: false });
   }
 
   refreshMapCaptureHud() {
@@ -2425,7 +2462,91 @@ export class Game {
     });
   }
 
+  refreshActivePhoneAppHud(localPlayerState = this.getLocalPlayerState(), { forceMap = false } = {}) {
+    if (this.phoneActiveAppId !== 'character') {
+      this.cancelPhoneCharacterPreviewSync();
+    }
+
+    switch (this.phoneActiveAppId) {
+      case 'character':
+        this.refreshPhoneCharacterHud();
+        break;
+      case 'missions':
+        this.refreshPhoneMissionsHud();
+        break;
+      case 'skills':
+        this.refreshPhoneSkillsHud(localPlayerState);
+        break;
+      case 'wallet':
+        this.refreshPhoneWalletHud();
+        break;
+      case 'stocks':
+        this.refreshPhoneStocksHud();
+        break;
+      case 'map':
+        this.refreshPhoneMapHud(localPlayerState, { force: forceMap });
+        break;
+      case 'settings':
+        this.refreshPhoneSettingsHud();
+        break;
+      default:
+        break;
+    }
+  }
+
+  scheduleActivePhoneAppHudRefresh(localPlayerState = this.getLocalPlayerState(), { forceMap = false } = {}) {
+    if (this.phoneAppRefreshFrame) {
+      window.cancelAnimationFrame(this.phoneAppRefreshFrame);
+    }
+    if (this.phoneAppRefreshTimeout) {
+      window.clearTimeout(this.phoneAppRefreshTimeout);
+      this.phoneAppRefreshTimeout = 0;
+    }
+
+    const scheduledAppId = this.phoneActiveAppId;
+    this.phoneAppRefreshFrame = window.requestAnimationFrame(() => {
+      this.phoneAppRefreshFrame = 0;
+      if (!this.phoneMenuVisible || !scheduledAppId || this.phoneActiveAppId !== scheduledAppId) {
+        return;
+      }
+
+      const refresh = () => {
+        if (!this.phoneMenuVisible || this.phoneActiveAppId !== scheduledAppId) {
+          return;
+        }
+        this.refreshActivePhoneAppHud(localPlayerState, { forceMap });
+      };
+      const queueRefresh = () => {
+        this.phoneAppRefreshTimeout = window.setTimeout(() => {
+          this.phoneAppRefreshTimeout = 0;
+          refresh();
+        }, 0);
+      };
+
+      if (scheduledAppId === 'character') {
+        this.phoneAppRefreshFrame = window.requestAnimationFrame(() => {
+          this.phoneAppRefreshFrame = 0;
+          queueRefresh();
+        });
+        return;
+      }
+
+      this.phoneAppRefreshTimeout = window.setTimeout(() => {
+        this.phoneAppRefreshTimeout = 0;
+        refresh();
+      }, 0);
+    });
+  }
+
   refreshPhoneAppHud(localPlayerState = this.getLocalPlayerState(), { forceMap = false } = {}) {
+    if (this.phoneMenuVisible) {
+      if (this.phoneActiveAppId) {
+        this.refreshActivePhoneAppHud(localPlayerState, { forceMap });
+      }
+      return;
+    }
+
+    this.cancelPhoneCharacterPreviewSync();
     this.refreshPhoneCharacterHud();
     this.refreshPhoneMissionsHud();
     this.refreshPhoneSkillsHud(localPlayerState);
@@ -2508,15 +2629,22 @@ export class Game {
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
     this.playSoundEffect(this.phoneUnlockSound);
-    this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
     return true;
   }
 
   closePhoneMenu() {
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
+    if (this.phoneAppRefreshFrame) {
+      window.cancelAnimationFrame(this.phoneAppRefreshFrame);
+      this.phoneAppRefreshFrame = 0;
+    }
+    if (this.phoneAppRefreshTimeout) {
+      window.clearTimeout(this.phoneAppRefreshTimeout);
+      this.phoneAppRefreshTimeout = 0;
+    }
+    this.cancelPhoneCharacterPreviewSync();
     this.hud.setPhoneState({ visible: false, activeAppId: '' });
-    this.refreshPhoneAppHud();
     return false;
   }
 
@@ -2534,8 +2662,11 @@ export class Game {
     }
 
     this.phoneActiveAppId = String(appId ?? '');
+    if (this.phoneActiveAppId !== 'character') {
+      this.cancelPhoneCharacterPreviewSync();
+    }
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
-    this.refreshPhoneAppHud(this.getLocalPlayerState(), { forceMap: true });
+    this.scheduleActivePhoneAppHudRefresh(this.getLocalPlayerState(), { forceMap: true });
     if (this.phoneActiveAppId === 'wallet' || this.phoneActiveAppId === 'stocks') {
       void this.refreshWalletSnapshot({ force: true });
     }
@@ -2547,8 +2678,16 @@ export class Game {
     }
 
     this.phoneActiveAppId = '';
+    if (this.phoneAppRefreshFrame) {
+      window.cancelAnimationFrame(this.phoneAppRefreshFrame);
+      this.phoneAppRefreshFrame = 0;
+    }
+    if (this.phoneAppRefreshTimeout) {
+      window.clearTimeout(this.phoneAppRefreshTimeout);
+      this.phoneAppRefreshTimeout = 0;
+    }
+    this.cancelPhoneCharacterPreviewSync();
     this.hud.setPhoneState({ visible: true, activeAppId: '' });
-    this.refreshPhoneAppHud();
   }
 
   async selectPhoneMission(missionId = '') {
@@ -6832,6 +6971,7 @@ export class Game {
         render: true
       });
       this.hud.hideLoading();
+      this.queueCharacterPreviewWarmup();
       this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
       this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
     } catch (error) {
