@@ -310,6 +310,7 @@ export class NpcServiceColyseus {
       connectionMessage: 'Connecting to multiplayer...',
       reconnectAttempt: 0,
       sessionId: null,
+      connectedPlayerCount: 0,
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),
@@ -371,7 +372,8 @@ export class NpcServiceColyseus {
       connectionStatus: 'online',
       connectionMessage: 'Connected to multiplayer.',
       reconnectAttempt: 0,
-      sessionId: room.sessionId
+      sessionId: room.sessionId,
+      connectedPlayerCount: this.getOptimisticConnectedPlayerCount()
     });
     console.info('[NPC] Joined Colyseus room.', {
       reason,
@@ -405,6 +407,9 @@ export class NpcServiceColyseus {
       this.state.builders = nextBuilders;
       this.state.npcs = nextNpcs;
       this.state.pickups = nextPickups;
+      this.state.connectedPlayerCount = Number.isFinite(Number(state.connectedPlayerCount))
+        ? Math.max(0, Math.floor(Number(state.connectedPlayerCount)))
+        : nextPlayers.size;
       this.emit();
     });
 
@@ -470,7 +475,8 @@ export class NpcServiceColyseus {
           connectionStatus: 'online',
           connectionMessage: 'Reconnected to multiplayer.',
           reconnectAttempt: 0,
-          sessionId: room.sessionId
+          sessionId: room.sessionId,
+          connectedPlayerCount: this.getOptimisticConnectedPlayerCount()
         });
         console.info('[NPC] Reconnected to Colyseus room.', {
           roomId: room.roomId,
@@ -514,6 +520,10 @@ export class NpcServiceColyseus {
       ...updates
     };
     this.emit();
+  }
+
+  getOptimisticConnectedPlayerCount() {
+    return Math.max(1, Math.floor(Number(this.state.connectedPlayerCount) || this.state.players.size || 1));
   }
 
   clearRejoinTimer() {
@@ -593,7 +603,8 @@ export class NpcServiceColyseus {
         connected: true,
         connectionStatus: 'online',
         connectionMessage: 'Rejoined multiplayer.',
-        reconnectAttempt: 0
+        reconnectAttempt: 0,
+        connectedPlayerCount: this.getOptimisticConnectedPlayerCount()
       });
     } catch (error) {
       if (!this.destroyed && !this.room) {

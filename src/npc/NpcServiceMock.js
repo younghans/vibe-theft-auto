@@ -292,6 +292,7 @@ export class NpcServiceMock {
       connectionMessage: 'Local mock transport is active.',
       reconnectAttempt: 0,
       sessionId: 'local-player',
+      connectedPlayerCount: 1,
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),

@@ -1999,6 +1999,8 @@ export class Hud {
     this.toastText = this.overlay.querySelector('[data-toast]');
     this.connectionStatusRoot = this.overlay.querySelector('[data-connection-status]');
     this.connectionStatusLabel = this.overlay.querySelector('[data-connection-status-label]');
+    this.connectionPlayers = this.overlay.querySelector('[data-connection-players]');
+    this.connectionPlayerCount = this.overlay.querySelector('[data-connection-player-count]');
     this.aimDebugRoot = this.overlay.querySelector('[data-aim-debug]');
     this.aimDebugToggle = this.overlay.querySelector('[data-aim-debug-toggle]');
     this.aimDebugStatus = this.overlay.querySelector('[data-aim-debug-status]');
@@ -2517,7 +2519,11 @@ export class Hud {
       <div class="hud__top-actions">
         <section class="hud__connection is-connecting" data-connection-status aria-live="polite" title="Connecting to multiplayer">
           <span class="hud__connection-dot" aria-hidden="true"></span>
-          <span data-connection-status-label>Connecting</span>
+          <span class="hud__connection-label" data-connection-status-label>Connecting</span>
+          <span class="hud__connection-players" data-connection-players hidden aria-label="Active players">
+            <span class="hud__connection-player-icon" aria-hidden="true"></span>
+            <span data-connection-player-count>0</span>
+          </span>
         </section>
         <section class="hud__toast">
           <p class="hud__toast-text" data-toast></p>
@@ -3759,7 +3765,8 @@ export class Hud {
   setConnectionStatus({
     status = 'online',
     label = '',
-    detail = ''
+    detail = '',
+    activePlayerCount = null
   } = {}) {
     if (!this.connectionStatusRoot || !this.connectionStatusLabel) {
       return;
@@ -3777,7 +3784,26 @@ export class Hud {
       'update-ready': 'Update ready'
     };
     this.connectionStatusLabel.textContent = String(label || defaultLabels[normalizedStatus] || 'Online');
-    this.connectionStatusRoot.title = String(detail || this.connectionStatusLabel.textContent);
+    const rawPlayerCount = Number(activePlayerCount);
+    const shouldShowPlayerCount = ['online', 'update-ready'].includes(normalizedStatus)
+      && Number.isFinite(rawPlayerCount)
+      && rawPlayerCount >= 0;
+    const playerCount = shouldShowPlayerCount ? Math.floor(rawPlayerCount) : 0;
+    if (this.connectionPlayers) {
+      this.connectionPlayers.hidden = !shouldShowPlayerCount;
+      this.connectionPlayers.setAttribute(
+        'aria-label',
+        `${playerCount} active ${playerCount === 1 ? 'player' : 'players'}`
+      );
+    }
+    if (this.connectionPlayerCount) {
+      this.connectionPlayerCount.textContent = String(playerCount);
+    }
+
+    const titleText = String(detail || this.connectionStatusLabel.textContent);
+    this.connectionStatusRoot.title = shouldShowPlayerCount
+      ? `${titleText} ${playerCount} active ${playerCount === 1 ? 'player' : 'players'}.`
+      : titleText;
     this.connectionStatusRoot.classList.remove(
       'is-connecting',
       'is-online',

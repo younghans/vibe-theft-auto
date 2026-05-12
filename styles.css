@@ -3045,7 +3045,7 @@ body.is-admin-prompt-resizing * {
   align-items: center;
   gap: 8px;
   min-height: 38px;
-  max-width: min(240px, calc(100vw - 176px));
+  max-width: min(280px, calc(100vw - 176px));
   padding: 9px 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px;
@@ -3127,10 +3127,56 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 0 0 4px rgba(131, 211, 255, 0.16);
 }
 
-.hud__connection span:last-child {
+.hud__connection-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.hud__connection-players {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 8px;
+  border-left: 1px solid rgba(244, 238, 226, 0.22);
+  color: rgba(244, 238, 226, 0.94);
+  line-height: 1;
+}
+
+.hud__connection-players[hidden] {
+  display: none;
+}
+
+.hud__connection-player-icon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 12px;
+}
+
+.hud__connection-player-icon::before,
+.hud__connection-player-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: currentColor;
+}
+
+.hud__connection-player-icon::before {
+  top: 1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.hud__connection-player-icon::after {
+  bottom: 1px;
+  width: 10px;
+  height: 6px;
+  border-radius: 7px 7px 3px 3px;
 }
 
 @keyframes hud-connection-pulse {
@@ -9179,7 +9225,7 @@ canvas {
 
   .hud__connection {
     min-height: 34px;
-    max-width: min(188px, calc(100vw - 132px));
+    max-width: min(212px, calc(100vw - 132px));
     padding: 8px 10px;
     font-size: 11px;
   }

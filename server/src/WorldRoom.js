@@ -281,6 +281,7 @@ const NpcState = schema({
 });
 
 const WorldRoomState = schema({
+  connectedPlayerCount: 'number',
   players: {
     map: PlayerState,
     default: new MapSchema()
@@ -546,6 +547,7 @@ export class WorldRoom extends Room {
   onCreate() {
     this.maxClients = 16;
     this.setState(new WorldRoomState());
+    this.syncConnectedPlayerCount();
     this.adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
     this.chatEngine = new NpcChatEngine();
     this.worldState = new WorldState();
@@ -844,6 +846,7 @@ export class WorldRoom extends Room {
       player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
     }
     this.state.players.set(client.sessionId, player);
+    this.syncConnectedPlayerCount({ includingSessionId: client.sessionId });
     this.playerPositionMeta.set(client.sessionId, {
       x: player.x,
       z: player.z,
@@ -868,6 +871,7 @@ export class WorldRoom extends Room {
   }
 
   async onLeave(client, code = 0) {
+    this.syncConnectedPlayerCount({ excludingSessionId: client.sessionId });
     const player = this.state.players.get(client.sessionId);
     const isConsentedLeave = code === CloseCode.CONSENTED || code === 1000;
 
@@ -887,6 +891,7 @@ export class WorldRoom extends Room {
           sessionId: client.sessionId,
           connectedClients: this.clients.length
         });
+        this.syncConnectedPlayerCount({ includingSessionId: client.sessionId });
         this.broadcastNpcDebugSnapshot(Date.now(), { force: true });
         return;
       } catch {
@@ -901,6 +906,7 @@ export class WorldRoom extends Room {
 
     await this.savePlayerSnapshot(client.sessionId);
     this.removePlayerSession(client.sessionId);
+    this.syncConnectedPlayerCount();
     logServer('room', 'Client left world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -914,6 +920,18 @@ export class WorldRoom extends Room {
 
   isClientSessionConnected(sessionId = '') {
     return this.clients.some((client) => client.sessionId === sessionId);
+  }
+
+  syncConnectedPlayerCount({ excludingSessionId = '', includingSessionId = '' } = {}) {
+    const connectedSessionIds = new Set(
+      (Array.isArray(this.clients) ? this.clients : [])
+        .map((connectedClient) => connectedClient.sessionId)
+        .filter((sessionId) => sessionId && sessionId !== excludingSessionId)
+    );
+    if (includingSessionId && includingSessionId !== excludingSessionId) {
+      connectedSessionIds.add(includingSessionId);
+    }
+    this.state.connectedPlayerCount = connectedSessionIds.size;
   }
 
   removePlayerSession(sessionId = '') {

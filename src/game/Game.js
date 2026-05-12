@@ -569,6 +569,7 @@ export class Game {
       connectionMessage: 'Local mock transport is active.',
       reconnectAttempt: 0,
       sessionId: 'local-player',
+      connectedPlayerCount: 1,
       players: new Map(),
       builders: new Map(),
       npcs: new Map(),
@@ -8955,7 +8956,8 @@ export class Game {
       transport: this.npcServiceState.transport,
       connected: this.npcServiceState.connected,
       sessionId: this.npcServiceState.sessionId ?? null,
-      npcCount: this.npcServiceState.npcs.size
+      npcCount: this.npcServiceState.npcs.size,
+      connectedPlayerCount: this.npcServiceState.connectedPlayerCount ?? this.npcServiceState.players.size
     });
   }
 
@@ -8963,6 +8965,11 @@ export class Game {
     const state = this.npcServiceState ?? {};
     const transport = String(state.transport ?? '');
     const connected = state.connected !== false;
+    const statePlayerCount = Number(state.connectedPlayerCount);
+    const fallbackPlayerCount = state.players instanceof Map ? state.players.size : 0;
+    const activePlayerCount = Math.max(0, Math.floor(
+      Number.isFinite(statePlayerCount) ? statePlayerCount : fallbackPlayerCount
+    ));
     const rawStatus = String(
       state.connectionStatus
       || (connected ? 'online' : 'offline')
@@ -8981,7 +8988,8 @@ export class Game {
       return {
         status: 'update-ready',
         label: 'Update ready',
-        detail: shortSha ? `New frontend build ${shortSha} is live.` : 'A new frontend build is live.'
+        detail: shortSha ? `New frontend build ${shortSha} is live.` : 'A new frontend build is live.',
+        activePlayerCount
       };
     }
 
@@ -8996,7 +9004,8 @@ export class Game {
     return {
       status: rawStatus,
       label: fallbackLabels[rawStatus] || (connected ? 'Online' : 'Offline'),
-      detail: state.connectionMessage || (connected ? 'Connected to multiplayer.' : 'Disconnected from multiplayer.')
+      detail: state.connectionMessage || (connected ? 'Connected to multiplayer.' : 'Disconnected from multiplayer.'),
+      activePlayerCount: connected && rawStatus === 'online' ? activePlayerCount : null
     };
   }
 
