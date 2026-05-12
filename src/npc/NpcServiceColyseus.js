@@ -2,6 +2,10 @@ import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatCons
 import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
 import { quantizeNumber as quantize } from '../shared/numberMath.js';
 
+const PLAYER_TRANSFORM_SEND_INTERVAL_MS = 50;
+const PLAYER_TRANSFORM_MOVE_EPSILON = 0.08;
+const PLAYER_TRANSFORM_ROTATION_EPSILON = 0.08;
+
 function schemaMapToEntries(schemaMap) {
   const entries = [];
   if (!schemaMap) {
@@ -751,12 +755,12 @@ export class NpcServiceColyseus {
       emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0
     };
     const moved = !this.lastTransform
-      || Math.abs(this.lastTransform.x - next.x) > 0.15
-      || Math.abs(this.lastTransform.z - next.z) > 0.15;
+      || Math.abs(this.lastTransform.x - next.x) > PLAYER_TRANSFORM_MOVE_EPSILON
+      || Math.abs(this.lastTransform.z - next.z) > PLAYER_TRANSFORM_MOVE_EPSILON;
     const rotated = !this.lastTransform
-      || Math.abs(angleDifference(this.lastTransform.rotationY, next.rotationY)) > 0.08;
+      || Math.abs(angleDifference(this.lastTransform.rotationY, next.rotationY)) > PLAYER_TRANSFORM_ROTATION_EPSILON;
     const aimRotated = !this.lastTransform
-      || Math.abs(angleDifference(this.lastTransform.aimRotationY, next.aimRotationY)) > 0.08;
+      || Math.abs(angleDifference(this.lastTransform.aimRotationY, next.aimRotationY)) > PLAYER_TRANSFORM_ROTATION_EPSILON;
     const emoteChanged = !this.lastTransform
       || this.lastTransform.emoteId !== next.emoteId
       || this.lastTransform.emoteActive !== next.emoteActive
@@ -765,7 +769,15 @@ export class NpcServiceColyseus {
     const aimStateChanged = !this.lastTransform
       || this.lastTransform.aiming !== next.aiming;
 
-    if ((!moved && !rotated && !aimRotated && !emoteChanged && !aimStateChanged) || (!emoteChanged && !aimRotated && !aimStateChanged && now - this.lastTransformSentAt < 90)) {
+    if (
+      (!moved && !rotated && !aimRotated && !emoteChanged && !aimStateChanged)
+      || (
+        !emoteChanged
+        && !aimRotated
+        && !aimStateChanged
+        && now - this.lastTransformSentAt < PLAYER_TRANSFORM_SEND_INTERVAL_MS
+      )
+    ) {
       return;
     }
 

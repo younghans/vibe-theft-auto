@@ -286,6 +286,12 @@ const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
 const PORTAL_SPAWN_LOCK_MS = 1500;
+const LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE = 2.5;
+const LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE = 3;
+const LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE = 5;
+const LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS = 220;
+const LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE = 8;
+const LOCAL_AUTHORITATIVE_RECONCILE_RATE = 5.5;
 
 function getBackendHttpEndpoint(serviceEndpoint, endpointPath) {
   if (typeof serviceEndpoint !== 'string' || !/^(https?|wss?):\/\//iu.test(serviceEndpoint)) {
@@ -548,6 +554,9 @@ export class Game {
     this.portalSpawnLockUntil = 0;
     this.localPlayerVelocity = new THREE.Vector3();
     this.lastLocalPlayerSample = null;
+    this.authoritativeLocalPosition = new THREE.Vector3();
+    this.authoritativeLocalPositionInitialized = false;
+    this.authoritativeLocalPositionChangedAt = 0;
     this.currentLayout = null;
     this.cityVisualRoot = null;
     this.currentInterior = null;
@@ -8320,7 +8329,33 @@ export class Game {
     this.skillXpFloaters = activeFloaters;
   }
 
-  syncLocalPlayerState(localPlayerState) {
+  updateAuthoritativeLocalPositionSample(targetPosition) {
+    const now = performance.now();
+    const changed = !this.authoritativeLocalPositionInitialized
+      || Math.abs(this.authoritativeLocalPosition.x - targetPosition.x) > 0.001
+      || Math.abs(this.authoritativeLocalPosition.z - targetPosition.z) > 0.001;
+
+    if (changed) {
+      this.authoritativeLocalPosition.copy(targetPosition);
+      this.authoritativeLocalPositionInitialized = true;
+      this.authoritativeLocalPositionChangedAt = now;
+    }
+
+    return {
+      changed,
+      staleMs: now - this.authoritativeLocalPositionChangedAt
+    };
+  }
+
+  gentlyReconcileLocalPlayerPosition(targetPosition, groundHeight, deltaSeconds = 0) {
+    const safeDeltaSeconds = Math.max(1 / 120, Math.min(0.05, Number(deltaSeconds) || (1 / 60)));
+    const alpha = 1 - Math.exp(-LOCAL_AUTHORITATIVE_RECONCILE_RATE * safeDeltaSeconds);
+    this.player.position.x = THREE.MathUtils.lerp(this.player.position.x, targetPosition.x, alpha);
+    this.player.position.z = THREE.MathUtils.lerp(this.player.position.z, targetPosition.z, alpha);
+    this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? groundHeight;
+  }
+
+  syncLocalPlayerState(localPlayerState, deltaSeconds = 0) {
     if (!this.player || !localPlayerState) {
       return;
     }
@@ -8343,6 +8378,7 @@ export class Game {
 
     const isAlive = localPlayerState.alive !== false;
     const targetPosition = new THREE.Vector3(localPlayerState.x, this.player.position.y, localPlayerState.z);
+    const authoritativeSample = this.updateAuthoritativeLocalPositionSample(targetPosition);
     const distance = this.player.position.distanceTo(targetPosition);
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
@@ -8357,7 +8393,7 @@ export class Game {
     }
 
     const groundHeight = this.getActiveGroundHeightAt(targetPosition);
-    if (!portalSpawnLocked && distance <= 2.5) {
+    if (!portalSpawnLocked && distance <= LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE) {
       this.portalSpawnLockUntil = 0;
     }
 
@@ -8365,10 +8401,21 @@ export class Game {
     if (
       (!this.currentInterior?.scene)
       && !portalSpawnLocked
-      && (!this.localStateInitialized || respawned || died || distance > 2.5)
+      && (!this.localStateInitialized || respawned || died || distance > LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE)
     ) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
       snappedToAuthoritativePosition = true;
+    } else if (
+      isAlive
+      && !this.currentInterior?.scene
+      && !portalSpawnLocked
+      && distance > LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE
+      && (
+        authoritativeSample.staleMs >= LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS
+        || distance > LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE
+      )
+    ) {
+      this.gentlyReconcileLocalPlayerPosition(targetPosition, groundHeight, deltaSeconds);
     }
 
     this.player.setAliveState(isAlive, {
@@ -9324,7 +9371,7 @@ export class Game {
     }
 
     if (localPlayerState) {
-      this.syncLocalPlayerState(localPlayerState);
+      this.syncLocalPlayerState(localPlayerState, deltaSeconds);
     } else {
       this.syncTaskHud(null);
     }

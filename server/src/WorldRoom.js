@@ -568,6 +568,7 @@ export class WorldRoom extends Room {
     this.playerSnapshotSessions = new Map();
     this.dirtyPlayerSnapshots = new Set();
     this.playerSnapshotSavePromises = new Map();
+    this.playerTransformCorrectionLogAt = new Map();
     this.blackjackSessions = new Map();
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
@@ -942,6 +943,11 @@ export class WorldRoom extends Room {
     this.playerPositionMeta.delete(sessionId);
     this.stockPortfolios.delete(sessionId);
     this.blackjackSessions.delete(sessionId);
+    for (const key of this.playerTransformCorrectionLogAt.keys()) {
+      if (key.startsWith(`${sessionId}:`)) {
+        this.playerTransformCorrectionLogAt.delete(key);
+      }
+    }
     if (playerSnapshotId && this.playerSnapshotSessions.get(playerSnapshotId) === sessionId) {
       this.playerSnapshotSessions.delete(playerSnapshotId);
     }
@@ -1117,6 +1123,23 @@ export class WorldRoom extends Room {
     return this.awardPlayerSkillXp(player, SKILL_IDS.agility, awardedXp);
   }
 
+  logPlayerTransformCorrection(sessionId = '', reason = '', meta = {}) {
+    const key = `${sessionId}:${reason}`;
+    const now = Date.now();
+    const previousLogAt = this.playerTransformCorrectionLogAt.get(key) ?? 0;
+    if (now - previousLogAt < 2000) {
+      return;
+    }
+
+    this.playerTransformCorrectionLogAt.set(key, now);
+    logServer('movement', 'Player transform corrected.', {
+      roomId: this.roomId,
+      sessionId,
+      reason,
+      ...meta
+    });
+  }
+
   updatePlayerTransform(client, message = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.alive === false) {
@@ -1124,15 +1147,33 @@ export class WorldRoom extends Room {
     }
 
     const now = Date.now();
-    const nextPosition = clampToWorldBounds(Number(message.x), Number(message.z));
+    const requestedPosition = clampToWorldBounds(Number(message.x), Number(message.z));
     const meta = this.getPlayerMeta(client.sessionId);
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
     const maxDistance = PLAYER_POSITION_FORGIVENESS + (PLAYER_MAX_ACCEPTED_SPEED * elapsedSeconds);
-    const travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
+    let nextPosition = requestedPosition;
+    let travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
     if (travelled > maxDistance) {
-      return;
+      const scale = maxDistance / travelled;
+      nextPosition = clampToWorldBounds(
+        meta.x + ((requestedPosition.x - meta.x) * scale),
+        meta.z + ((requestedPosition.z - meta.z) * scale)
+      );
+      this.logPlayerTransformCorrection(client.sessionId, 'speed-clamped', {
+        requestedDistance: quantizePosition(travelled),
+        acceptedDistance: quantizePosition(distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z)),
+        maxDistance: quantizePosition(maxDistance),
+        elapsedMs: Math.round(elapsedSeconds * 1000)
+      });
+      travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
     }
     if (this.isGymGateBlockingPosition(player, nextPosition)) {
+      this.logPlayerTransformCorrection(client.sessionId, 'gym-gate-blocked', {
+        requestedX: quantizePosition(requestedPosition.x),
+        requestedZ: quantizePosition(requestedPosition.z),
+        acceptedX: quantizePosition(meta.x),
+        acceptedZ: quantizePosition(meta.z)
+      });
       return;
     }
 
