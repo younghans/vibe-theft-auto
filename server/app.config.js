@@ -489,6 +489,7 @@ const server = defineServer({
 
         const result = await claimNextAgentTask({
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
+          deployEnabled: ['1', 'true', 'yes'].includes(String(req.query?.deployEnabled ?? '').toLowerCase()),
           workerId: typeof req.headers['x-agent-worker-id'] === 'string'
             ? req.headers['x-agent-worker-id']
             : ''

@@ -5,6 +5,7 @@ import { BLACKJACK_DEFAULT_WAGER } from '../shared/blackjack.js';
 import { escapeHtml } from '../shared/htmlEscape.js';
 import { getStockTradeValue } from '../shared/stockMarket.js';
 import { SCHOOL_MICROGAME_IDS } from '../shared/schoolMicrogames.js';
+import { getAgentTaskPromptTitle } from '../shared/agentTaskSummary.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
   '#ff3d8f',
@@ -713,6 +714,15 @@ const AGENT_TASK_STATUS_LABELS = Object.freeze({
   cancelled: 'Cancelled'
 });
 
+const AGENT_TASK_BUSY_STATUSES = new Set([
+  'claimed',
+  'preparing',
+  'coding',
+  'testing',
+  'deploying',
+  'rolling_back'
+]);
+
 const ADMIN_PROMPT_TABS = Object.freeze([
   { id: 'new', label: 'New' },
   { id: 'active', label: 'Active' },
@@ -726,16 +736,32 @@ function getAgentTaskStatusLabel(status = '') {
 }
 
 function getAgentTaskStatusTone(status = '') {
-  if (['ready_for_review', 'deployed'].includes(status)) {
+  const normalized = String(status ?? '');
+  if (['ready_for_review', 'deployed'].includes(normalized)) {
     return 'is-good';
   }
-  if (['failed', 'test_failed', 'cancelled', 'rolled_back'].includes(status)) {
+  if (['failed', 'test_failed', 'cancelled', 'rolled_back'].includes(normalized)) {
     return 'is-bad';
   }
-  if (['coding', 'testing', 'deploying', 'rolling_back', 'preparing', 'claimed'].includes(status)) {
+  if (AGENT_TASK_BUSY_STATUSES.has(normalized)) {
     return 'is-busy';
   }
   return 'is-muted';
+}
+
+function isAgentTaskBusy(status = '') {
+  return AGENT_TASK_BUSY_STATUSES.has(String(status ?? ''));
+}
+
+function createAgentTaskStatusBadge(status = '', tagName = 'span') {
+  const normalized = String(status ?? 'queued');
+  const elementName = tagName === 'em' ? 'em' : 'span';
+  const isBusy = isAgentTaskBusy(normalized);
+  const busyClass = isBusy ? ' is-working' : '';
+  const spinner = isBusy
+    ? '<span class="hud__admin-prompt-spinner" aria-hidden="true"></span>'
+    : '';
+  return `<${elementName} class="hud__admin-prompt-status-badge ${escapeHtml(getAgentTaskStatusTone(normalized))}${busyClass}">${spinner}<span>${escapeHtml(getAgentTaskStatusLabel(normalized))}</span></${elementName}>`;
 }
 
 function getAgentTaskShortId(task = {}) {
@@ -809,6 +835,14 @@ function getAgentTaskTitle(task = {}) {
   return label || 'Game';
 }
 
+function getAgentTaskContextLine(task = {}, time = '') {
+  return [
+    getAgentTaskTitle(task),
+    getAgentTaskShortId(task),
+    time
+  ].filter(Boolean).join(' - ');
+}
+
 function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 'active') {
   const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
   if (!visibleTasks.length) {
@@ -822,10 +856,10 @@ function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 
     return `
       <button class="hud__admin-prompt-task${activeClass}" type="button" data-admin-prompt-action="select:${escapeHtml(task.id)}">
         <span>
-          <strong>${escapeHtml(getAgentTaskTitle(task))}</strong>
-          <small>${escapeHtml(getAgentTaskShortId(task))}${time ? ` - ${escapeHtml(time)}` : ''}</small>
+          <strong>${escapeHtml(getAgentTaskPromptTitle(task))}</strong>
+          <small>${escapeHtml(getAgentTaskContextLine(task, time))}</small>
         </span>
-        <em class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</em>
+        ${createAgentTaskStatusBadge(status, 'em')}
       </button>
     `;
   }).join('');
@@ -860,9 +894,10 @@ function createAgentTaskDetailMarkup(task = null) {
   return `
     <article class="hud__admin-prompt-detail">
       <header>
-        <span class="${escapeHtml(getAgentTaskStatusTone(status))}">${escapeHtml(getAgentTaskStatusLabel(status))}</span>
+        ${createAgentTaskStatusBadge(status)}
         <strong>${escapeHtml(getAgentTaskShortId(task))}</strong>
       </header>
+      <h3>${escapeHtml(getAgentTaskPromptTitle(task, { maxLength: 96 }))}</h3>
       <p>${escapeHtml(task.summary || task.error || task.prompt || 'Waiting for worker updates.')}</p>
       <div class="hud__admin-prompt-meta">
         <span>Context <strong>${escapeHtml(getAgentTaskTitle(task))}</strong></span>
@@ -5264,7 +5299,8 @@ export class Hud {
         task.contextLabel,
         task.gameId,
         task.contextType,
-        task.scope
+        task.scope,
+        task.prompt
       ])
     });
     if (this.adminPromptTasks && taskListSignature !== this.lastAdminPromptTaskListSignature) {

@@ -319,60 +319,64 @@ export async function createAgentTask(payload = {}, {
 export async function claimNextAgentTask({
   workerId = '',
   scope = '',
+  deployEnabled = true,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const normalizedScope = normalizeScope(scope);
   const shouldFilterScope = String(scope ?? '').trim() !== '';
   const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
+  const canClaimDeployActions = deployEnabled !== false;
   const now = Date.now();
 
   return withTaskStore((state) => {
-    const rollbackTask = sortTasks(state.tasks)
-      .reverse()
-      .find((task) => (
-        (!shouldFilterScope || task.scope === normalizedScope)
-        && task.status === 'deployed'
-        && Number(task.rollbackApprovedAt) > 0
-        && !Number(task.rollbackStartedAt)
-      ));
+    if (canClaimDeployActions) {
+      const rollbackTask = sortTasks(state.tasks)
+        .reverse()
+        .find((task) => (
+          (!shouldFilterScope || task.scope === normalizedScope)
+          && task.status === 'deployed'
+          && Number(task.rollbackApprovedAt) > 0
+          && !Number(task.rollbackStartedAt)
+        ));
 
-    if (rollbackTask) {
-      rollbackTask.status = 'rolling_back';
-      rollbackTask.claimedBy = normalizedWorkerId;
-      rollbackTask.claimedAt = now;
-      rollbackTask.rollbackStartedAt = now;
-      rollbackTask.updatedAt = now;
-      addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
-        data: { workerId: normalizedWorkerId }
-      });
-      return {
-        action: 'rollback',
-        task: rollbackTask
-      };
-    }
+      if (rollbackTask) {
+        rollbackTask.status = 'rolling_back';
+        rollbackTask.claimedBy = normalizedWorkerId;
+        rollbackTask.claimedAt = now;
+        rollbackTask.rollbackStartedAt = now;
+        rollbackTask.updatedAt = now;
+        addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
+          data: { workerId: normalizedWorkerId }
+        });
+        return {
+          action: 'rollback',
+          task: rollbackTask
+        };
+      }
 
-    const deployTask = sortTasks(state.tasks)
-      .reverse()
-      .find((task) => (
-        (!shouldFilterScope || task.scope === normalizedScope)
-        && task.status === 'ready_for_review'
-        && Number(task.deployApprovedAt) > 0
-        && !Number(task.deployStartedAt)
-      ));
+      const deployTask = sortTasks(state.tasks)
+        .reverse()
+        .find((task) => (
+          (!shouldFilterScope || task.scope === normalizedScope)
+          && task.status === 'ready_for_review'
+          && Number(task.deployApprovedAt) > 0
+          && !Number(task.deployStartedAt)
+        ));
 
-    if (deployTask) {
-      deployTask.status = 'deploying';
-      deployTask.claimedBy = normalizedWorkerId;
-      deployTask.claimedAt = now;
-      deployTask.deployStartedAt = now;
-      deployTask.updatedAt = now;
-      addTaskLog(deployTask, 'Worker claimed deploy approval.', {
-        data: { workerId: normalizedWorkerId }
-      });
-      return {
-        action: 'deploy',
-        task: deployTask
-      };
+      if (deployTask) {
+        deployTask.status = 'deploying';
+        deployTask.claimedBy = normalizedWorkerId;
+        deployTask.claimedAt = now;
+        deployTask.deployStartedAt = now;
+        deployTask.updatedAt = now;
+        addTaskLog(deployTask, 'Worker claimed deploy approval.', {
+          data: { workerId: normalizedWorkerId }
+        });
+        return {
+          action: 'deploy',
+          task: deployTask
+        };
+      }
     }
 
     const queuedTask = sortTasks(state.tasks)

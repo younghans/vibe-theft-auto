@@ -314,6 +314,8 @@ node scripts/agent-worker.mjs --once
 
 For manual deploy approval from the game, keep `AGENT_API_BASE` pointed at the Colyseus backend host, not the Vercel frontend host. The worker first fetches the latest `main`. If the approved task branch is behind `main`, it attempts to rebase the task commit onto the current `main`, reruns checks, updates the task branch, and only then pushes to `main`. If the rebase conflicts or the rebuilt task fails checks, deployment stops before touching `main`.
 
+For local development workers, keep `DEPLOY_ENABLED=false` and `AUTO_DEPLOY=false`. Those workers still claim and run prompt coding tasks, but they do not claim approved deploy or rollback actions. To test a ready task locally, check out the pushed `agent/task-...` branch or create a local git worktree for that branch and run the dev server there.
+
 After that safety pass, the worker deploys only the inferred runtime targets:
 
 - `frontend` changes are served by Vercel. With Git integration, no command is required; Vercel deploys the pushed `main` commit. The worker then verifies that the production frontend is serving the expected commit SHA before it marks the task deployed or rolled back. To force the worker to run a Vercel CLI deploy instead, set `FRONTEND_DEPLOY_COMMAND`.

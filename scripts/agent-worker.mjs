@@ -3,6 +3,10 @@ import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  getAgentTaskCommitBody,
+  getAgentTaskCommitSubject
+} from '../src/shared/agentTaskSummary.js';
 
 const DEFAULT_SCOPE = String(process.env.AGENT_TASK_SCOPE || 'game');
 const DEFAULT_POLL_MS = 5000;
@@ -618,7 +622,13 @@ async function commitAndPush(task, worktreePath, branch, changedFiles) {
     taskId: task.id,
     label: 'git add'
   });
-  await git(['commit', '-m', `Agent task ${task.id}`], {
+  await git([
+    'commit',
+    '-m',
+    getAgentTaskCommitSubject(task),
+    '-m',
+    getAgentTaskCommitBody(task, changedFiles)
+  ], {
     cwd: worktreePath,
     taskId: task.id,
     label: 'git commit'
@@ -945,8 +955,11 @@ async function prepareDeployCommit(task, worktreePath) {
       taskId: task.id,
       label: 'git read deploy head subject'
     })).trim();
-    const expectedSubject = `Agent task ${task.id}`;
-    if (!expectedIsAncestor && headSubject !== expectedSubject) {
+    const expectedSubjects = new Set([
+      `Agent task ${task.id}`,
+      getAgentTaskCommitSubject(task)
+    ]);
+    if (!expectedIsAncestor && !expectedSubjects.has(headSubject)) {
       throw new Error(`Deploy checkout is at ${headCommitSha}, expected task commit ${expectedCommitSha}.`);
     }
 
@@ -1272,7 +1285,10 @@ async function handleRollbackTask(task) {
 
 async function claimNextTask() {
   return apiRequest('/admin/agent-tasks/next', {
-    query: { scope: DEFAULT_SCOPE }
+    query: {
+      scope: DEFAULT_SCOPE,
+      deployEnabled: DEPLOY_ENABLED ? '1' : '0'
+    }
   });
 }
 

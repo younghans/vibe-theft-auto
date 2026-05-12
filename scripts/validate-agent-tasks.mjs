@@ -17,6 +17,10 @@ import {
   getAgentDeploymentState,
   recordAgentDeploymentState
 } from '../server/src/agentDeployments.js';
+import {
+  getAgentTaskCommitSubject,
+  getAgentTaskPromptTitle
+} from '../src/shared/agentTaskSummary.js';
 
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'stickrpg-agent-tasks-'));
 const filePath = path.join(tempRoot, 'agent-tasks.json');
@@ -44,6 +48,8 @@ try {
   assert.equal(created.scope, 'game');
   assert.equal(created.contextType, 'school_minigame');
   assert.equal(created.contextLabel, 'School: Teacher Is Looking');
+  assert.equal(getAgentTaskPromptTitle(created), 'Make the teacher turn animation smoother');
+  assert.equal(getAgentTaskCommitSubject(created), 'Agent task: Make the teacher turn animation smoother');
 
   const listed = await listAgentTasks({ scope: 'game', filePath });
   assert.equal(listed.length, 1);
@@ -87,6 +93,27 @@ try {
     filePath
   });
   assert.ok(approved.deployApprovedAt > 0);
+
+  const localOnlyTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Make prompt task cards easier to scan.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  const localClaim = await claimNextAgentTask({
+    workerId: 'local-worker',
+    scope: 'game',
+    deployEnabled: false,
+    filePath
+  });
+  assert.equal(localClaim.action, 'code_change');
+  assert.equal(localClaim.task.id, localOnlyTask.id);
+  const stillReady = await getAgentTask(created.id, { filePath });
+  assert.equal(stillReady.status, 'ready_for_review');
+  assert.ok(stillReady.deployApprovedAt > 0);
 
   const deployClaim = await claimNextAgentTask({
     workerId: 'deploy-worker',

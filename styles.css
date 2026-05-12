@@ -6050,8 +6050,7 @@ body.is-builder-resizing * {
 }
 
 .hud__admin-prompt-task strong,
-.hud__admin-prompt-task small,
-.hud__admin-prompt-task em {
+.hud__admin-prompt-task small {
   display: block;
 }
 
@@ -6077,9 +6076,14 @@ body.is-builder-resizing * {
   font-weight: 780;
 }
 
-.hud__admin-prompt-task em,
-.hud__admin-prompt-detail header span {
+.hud__admin-prompt-status-badge {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 66px;
+  min-height: 20px;
   padding: 4px 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -6087,25 +6091,47 @@ body.is-builder-resizing * {
   font-size: 10px;
   font-style: normal;
   font-weight: 950;
+  line-height: 1;
   text-transform: uppercase;
 }
 
-.hud__admin-prompt-task em.is-good,
-.hud__admin-prompt-detail header span.is-good {
+.hud__admin-prompt-status-badge.is-good {
   background: rgba(84, 226, 151, 0.18);
   color: #a5ffd1;
 }
 
-.hud__admin-prompt-task em.is-bad,
-.hud__admin-prompt-detail header span.is-bad {
+.hud__admin-prompt-status-badge.is-bad {
   background: rgba(255, 109, 141, 0.17);
   color: #ffb8c8;
 }
 
-.hud__admin-prompt-task em.is-busy,
-.hud__admin-prompt-detail header span.is-busy {
+.hud__admin-prompt-status-badge.is-busy {
   background: rgba(89, 185, 255, 0.18);
   color: #b7e4ff;
+}
+
+.hud__admin-prompt-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  opacity: 0.92;
+  animation: hud-admin-prompt-spin 0.78s linear infinite;
+}
+
+@keyframes hud-admin-prompt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud__admin-prompt-spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.58;
+  }
 }
 
 .hud__admin-prompt-detail {
@@ -6129,6 +6155,14 @@ body.is-builder-resizing * {
   color: #fff4d6;
   font-size: 12px;
   text-overflow: ellipsis;
+}
+
+.hud__admin-prompt-detail h3 {
+  margin: 0;
+  color: #fff5df;
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1.24;
 }
 
 .hud__admin-prompt-detail p {
