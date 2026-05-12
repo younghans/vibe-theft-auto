@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
-import { createBlackjackTableVisual, createOlympicBarbellVisual, createStandingDeskComputerVisual } from './proceduralProps.js';
+import {
+  createBasketballHoopVisual,
+  createBlackjackTableVisual,
+  createOlympicBarbellVisual,
+  createStandingDeskComputerVisual
+} from './proceduralProps.js';
 
 export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   const bounds = new THREE.Box3().setFromObject(root);
@@ -32,6 +37,9 @@ export async function instantiateItemVisual(library, item) {
 
   if (typeof item?.createVisual === 'function') {
     primaryObject = item.createVisual();
+  } else if (item?.id === 'basketball_hoop' || item?.assetName === 'basketball_hoop') {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createBasketballHoopVisual();
   } else if (item?.id === 'olympic_barbell' || item?.assetName === 'olympic_barbell') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createOlympicBarbellVisual();

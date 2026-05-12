@@ -45,6 +45,21 @@ function validateKenneyCatalogItems() {
   }
 }
 
+function validateCustomPropCatalogItems() {
+  const basketballHoop = getBuilderItemById('basketball_hoop');
+  assert(basketballHoop, 'Basketball hoop prop should exist');
+  assert(basketballHoop.layer === 'prop', 'Basketball hoop should be a prop catalog item');
+  assert(basketballHoop.groupId === 'fitness', 'Basketball hoop should be grouped under Fitness');
+  assert(basketballHoop.collision === true, 'Basketball hoop should block movement like a grounded prop');
+  assert(typeof basketballHoop.createVisual === 'function', 'Basketball hoop should define a procedural visual');
+  assert(
+    Array.isArray(basketballHoop.size)
+      && basketballHoop.size[0] >= 3.4
+      && basketballHoop.size[1] >= 3.4,
+    'Basketball hoop should reserve a practical world-builder footprint'
+  );
+}
+
 function validateTiles() {
   const seenCells = new Set();
 
@@ -196,6 +211,7 @@ function validateTaskSequence() {
 
 async function main() {
   validateKenneyCatalogItems();
+  validateCustomPropCatalogItems();
   validateFootprintSupport();
   validateTiles();
   validateProps();

@@ -7,7 +7,9 @@ import {
   cloneInteriorDefinition
 } from './interactableMetadata.js';
 import {
+  BASKETBALL_HOOP_FOOTPRINT,
   BLACKJACK_TABLE_FOOTPRINT,
+  createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
   createStandingDeskComputerVisual,
@@ -384,6 +386,17 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'tree_D', group: 'greenery' },
   { assetName: 'tree_E', group: 'greenery' },
   { id: 'tower', assetName: 'watertower', label: 'Water Tower', group: 'utilities' },
+  {
+    id: 'basketball_hoop',
+    assetName: 'basketball_hoop',
+    label: 'Basketball Hoop',
+    asset: null,
+    group: 'fitness',
+    size: BASKETBALL_HOOP_FOOTPRINT,
+    collision: true,
+    padding: 0.16,
+    createVisual: createBasketballHoopVisual
+  },
   {
     id: 'olympic_barbell',
     assetName: 'olympic_barbell',
