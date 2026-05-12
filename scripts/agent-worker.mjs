@@ -3,11 +3,13 @@ import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import {
   getAgentTaskCommitBody,
   getAgentTaskCommitSubject
 } from '../src/shared/agentTaskSummary.js';
 
+const LOCAL_REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const DEFAULT_SCOPE = String(process.env.AGENT_TASK_SCOPE || 'game');
 const DEFAULT_POLL_MS = 5000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 20 * 60 * 1000;
@@ -1535,6 +1537,27 @@ function validateConfig() {
   }
 }
 
+async function hydrateColyseusDeployEnv() {
+  if (
+    String(process.env.COLYSEUS_APPLICATION_ID ?? process.env.COLYSEUS_APP_ID ?? '').trim()
+    && String(process.env.COLYSEUS_DEPLOY_TOKEN ?? process.env.COLYSEUS_TOKEN ?? '').trim()
+  ) {
+    return;
+  }
+
+  try {
+    const raw = await fsp.readFile(path.join(LOCAL_REPO_ROOT, '.colyseus-cloud.json'), 'utf8');
+    const envName = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
+    const config = JSON.parse(raw)?.[envName] ?? null;
+    if (!String(process.env.COLYSEUS_APPLICATION_ID ?? process.env.COLYSEUS_APP_ID ?? '').trim() && config?.applicationId) {
+      process.env.COLYSEUS_APPLICATION_ID = String(config.applicationId);
+    }
+    if (!String(process.env.COLYSEUS_DEPLOY_TOKEN ?? process.env.COLYSEUS_TOKEN ?? '').trim() && config?.token) {
+      process.env.COLYSEUS_DEPLOY_TOKEN = String(config.token);
+    }
+  } catch {}
+}
+
 function assertSelfTestEqual(actual, expected, label) {
   const actualText = JSON.stringify(actual);
   const expectedText = JSON.stringify(expected);
@@ -1624,6 +1647,8 @@ function runSelfTest() {
     scenarios: output
   }, null, 2));
 }
+
+await hydrateColyseusDeployEnv();
 
 if (RUN_SELF_TEST) {
   runSelfTest();

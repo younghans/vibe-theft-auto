@@ -37,9 +37,11 @@
    ```
 
 2. Keep the generated `.colyseus-cloud.json` file local only. It is ignored by git.
-   Worker deploys should set `COLYSEUS_APPLICATION_ID` and
-   `COLYSEUS_DEPLOY_TOKEN` so `npm run deploy:colyseus` can run without opening
-   the browser from a temporary task worktree.
+   Worker deploys can either set `COLYSEUS_APPLICATION_ID` and
+   `COLYSEUS_DEPLOY_TOKEN`, or keep `.colyseus-cloud.json` in the worker repo
+   root. The worker hydrates those credentials into its environment so
+   `npm run deploy:colyseus` can run without opening the browser from a
+   temporary task worktree.
 
 ## 4. Smoke test
 

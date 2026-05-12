@@ -349,7 +349,9 @@ After that safety pass, the worker deploys only the inferred runtime targets:
 - `backend` changes are served by Colyseus Cloud. Install and authenticate the Colyseus Cloud CLI on the worker, then set `BACKEND_DEPLOY_COMMAND`.
   The default `npm run deploy:colyseus` command is non-interactive when either
   `COLYSEUS_APPLICATION_ID` and `COLYSEUS_DEPLOY_TOKEN` are present, or when a
-  local ignored `.colyseus-cloud.json` exists in the repository root.
+  local ignored `.colyseus-cloud.json` exists in the repository root. The worker
+  copies those local credentials into its environment before spawning temporary
+  task worktrees, so the task checkout does not need its own secret file.
 
 PowerShell example:
 
