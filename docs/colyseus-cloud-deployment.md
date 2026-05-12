@@ -36,8 +36,10 @@
    npm run deploy:colyseus
    ```
 
-2. Complete the browser flow and select the `stickrpg` application.
-3. Keep the generated `.colyseus-cloud.json` file local only. It is ignored by git.
+2. Keep the generated `.colyseus-cloud.json` file local only. It is ignored by git.
+   Worker deploys should set `COLYSEUS_APPLICATION_ID` and
+   `COLYSEUS_DEPLOY_TOKEN` so `npm run deploy:colyseus` can run without opening
+   the browser from a temporary task worktree.
 
 ## 4. Smoke test
 

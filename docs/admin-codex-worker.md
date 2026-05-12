@@ -347,6 +347,9 @@ After that safety pass, the worker deploys only the inferred runtime targets:
 
 - `frontend` changes are served by Vercel. With Git integration, no command is required; Vercel deploys the pushed `main` commit. The worker then verifies that the production frontend is serving the expected commit SHA before it marks the task deployed or rolled back. To force the worker to run a Vercel CLI deploy instead, set `FRONTEND_DEPLOY_COMMAND`.
 - `backend` changes are served by Colyseus Cloud. Install and authenticate the Colyseus Cloud CLI on the worker, then set `BACKEND_DEPLOY_COMMAND`.
+  The default `npm run deploy:colyseus` command is non-interactive when either
+  `COLYSEUS_APPLICATION_ID` and `COLYSEUS_DEPLOY_TOKEN` are present, or when a
+  local ignored `.colyseus-cloud.json` exists in the repository root.
 
 PowerShell example:
 
@@ -354,6 +357,8 @@ PowerShell example:
 $env:DEPLOY_ENABLED = "true"
 $env:BACKEND_DEPLOY_COMMAND = "npm run deploy:colyseus"
 $env:BACKEND_DEPLOY_STRATEGY = "command"
+$env:COLYSEUS_APPLICATION_ID = "1388-stickrpg"
+$env:COLYSEUS_DEPLOY_TOKEN = "<copy from local .colyseus-cloud.json or Colyseus CLI>"
 $env:BACKEND_VERIFY_URL = "https://us-atl-06d422c8.vibetheftauto.xyz/health"
 $env:FRONTEND_VERIFY_URL = "https://www.vibetheftauto.xyz/"
 # Optional; leave unset when Vercel Git integration deploys pushes to main.

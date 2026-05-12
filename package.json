@@ -30,7 +30,7 @@
     "worker:prod:auto": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod.ps1 -AutoDeploy",
     "optimize:assets": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize --",
     "optimize:assets:startup": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize -- --startup-only",
-    "deploy:colyseus": "npx @colyseus/cloud deploy",
+    "deploy:colyseus": "node scripts/deploy-colyseus-noninteractive.mjs",
     "generate:bar-building": "node scripts/generate-bar-building.mjs",
     "generate:district-buildings": "node scripts/generate-district-buildings.mjs",
     "generate:gym-building": "node scripts/generate-gym-building.mjs",
