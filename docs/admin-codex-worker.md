@@ -306,11 +306,37 @@ $env:DEPLOY_ENABLED = "false"
 node scripts/agent-worker.mjs
 ```
 
+The production defaults above are also available through a one-command launcher. Put only the secret token in an ignored local file at the repository root:
+
+```powershell
+"AGENT_WORKER_TOKEN=<same long random token from AGENT_WORKER_TOKENS>" | Set-Content .env.worker.production
+```
+
+Then start the production worker:
+
+```powershell
+npm run worker:prod
+```
+
+For a one-task smoke run with the same production defaults:
+
+```powershell
+npm run worker:prod:once
+```
+
 For a one-task smoke run:
 
 ```powershell
 node scripts/agent-worker.mjs --once
 ```
+
+## Prompt threads
+
+In-game prompts are grouped into lightweight threads. The first prompt in a thread creates the initial task; follow-up prompts create new tasks with the same `threadId` and a `parentTaskId` pointing at the selected task. The server snapshots recent thread history onto the follow-up task so the worker prompt includes the prior admin requests and agent replies.
+
+The worker writes Codex's final response with `codex exec --output-last-message` and stores it as `agentMessage`. The Prompt panel renders that message in the selected thread so admins can see the relevant completion note after a task reaches ready, deployed, failed, or rolled-back states.
+
+Only one worker run can be active in a thread at a time. Follow-ups are allowed once the thread is idle, including from a ready-for-review branch or a deployed task. If the latest idle task is ready for review, the follow-up starts from that task branch so the next change continues the undeployed work.
 
 For manual deploy approval from the game, keep `AGENT_API_BASE` pointed at the Colyseus backend host, not the Vercel frontend host. The worker first fetches the latest `main`. If the approved task branch is behind `main`, it attempts to rebase the task commit onto the current `main`, reruns checks, updates the task branch, and only then pushes to `main`. If the rebase conflicts or the rebuilt task fails checks, deployment stops before touching `main`.
 

@@ -420,6 +420,7 @@ const server = defineServer({
       '/admin/agent-tasks',
       '/admin/agent-tasks/next',
       '/admin/agent-tasks/:id',
+      '/admin/agent-tasks/:id/followups',
       '/admin/agent-tasks/:id/logs',
       '/admin/agent-tasks/:id/cancel',
       '/admin/agent-tasks/:id/approve-deploy',
@@ -474,6 +475,32 @@ const server = defineServer({
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not list agent tasks.'
+        });
+      }
+    });
+
+    app.post('/admin/agent-tasks/:id/followups', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        const adminKey = getAdminKeyFromRequest(req, payload);
+        if (!isValidAdminKey(adminKey)) {
+          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+          return;
+        }
+
+        const task = await createAgentTask({
+          ...payload,
+          parentTaskId: req.params.id
+        }, {
+          createdBy: String(payload?.createdBy ?? 'in-game-admin')
+        });
+        sendJson(res, 201, { ok: true, task });
+      } catch (error) {
+        sendJson(res, 400, {
+          ok: false,
+          error: error?.message || 'Could not queue follow-up task.'
         });
       }
     });

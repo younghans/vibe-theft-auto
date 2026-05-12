@@ -425,8 +425,17 @@ async function createCodeWorktree(task) {
   const slug = safeTaskSlug(task.id);
   const branch = `agent/task-${slug}`;
   const worktreePath = path.join(TASKS_ROOT, slug);
+  const baseBranch = String(task.baseBranch || '').trim();
+  const baseRef = baseBranch ? `origin/${baseBranch}` : `origin/${GIT_BASE_BRANCH}`;
+  if (baseBranch) {
+    await git(['fetch', 'origin', `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], {
+      cwd: REPO_PATH,
+      taskId: task.id,
+      label: 'git fetch thread base'
+    });
+  }
   await cleanTaskWorktree(worktreePath, task.id);
-  await git(['worktree', 'add', '-B', branch, worktreePath, `origin/${GIT_BASE_BRANCH}`], {
+  await git(['worktree', 'add', '-B', branch, worktreePath, baseRef], {
     cwd: REPO_PATH,
     taskId: task.id,
     label: 'git worktree add'
@@ -483,6 +492,32 @@ function indentBlock(value = '') {
     .join('\n');
 }
 
+function formatThreadHistoryForPrompt(history = []) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return 'No prior thread messages.';
+  }
+
+  return history.map((entry, index) => {
+    const prompt = truncateText(entry?.prompt ?? '', 1200);
+    const agentMessage = truncateText(entry?.agentMessage || entry?.summary || entry?.error || '', 1600);
+    const metadata = [
+      entry?.status ? `status=${entry.status}` : '',
+      entry?.branch ? `branch=${entry.branch}` : '',
+      entry?.commitSha ? `commit=${String(entry.commitSha).slice(0, 12)}` : ''
+    ].filter(Boolean).join(', ');
+    return [
+      `Thread turn ${index + 1}${metadata ? ` (${metadata})` : ''}:`,
+      prompt ? `Admin asked:\n${indentBlock(prompt)}` : '',
+      agentMessage ? `Agent replied:\n${indentBlock(agentMessage)}` : ''
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function extractCodexSessionId(output = '') {
+  const match = String(output ?? '').match(/session id:\s*([0-9a-f-]{20,})/iu);
+  return match?.[1] ?? '';
+}
+
 async function writePromptFile(task, worktreePath) {
   const promptPath = path.join(worktreePath, '.codex', 'agent-task-prompt.md');
   await fsp.mkdir(path.dirname(promptPath), { recursive: true });
@@ -501,6 +536,12 @@ Current context:
 - Type: ${task.contextType || task.scope || 'game'}
 - Label: ${task.contextLabel || 'Game'}
 - Game ID: ${task.gameId || 'none'}
+- Thread ID: ${task.threadId || task.id}
+- Parent task: ${task.parentTaskId || 'none'}
+- Base branch: ${task.baseBranch || `origin/${GIT_BASE_BRANCH}`}
+
+Ongoing thread context:
+${formatThreadHistoryForPrompt(task.threadHistory)}
 
 Runtime snapshot:
 \`\`\`json
@@ -537,17 +578,26 @@ Important constraints:
 
 async function runCodex(task, worktreePath, promptPath) {
   const prompt = await fsp.readFile(promptPath, 'utf8');
+  const lastMessagePath = path.join(worktreePath, '.codex', 'agent-task-last-message.md');
   const configuredArgs = process.env.CODEX_EXEC_ARGS
     ? splitCommandLine(process.env.CODEX_EXEC_ARGS).map((arg) => arg.replaceAll('{worktree}', worktreePath))
-    : ['exec', '--full-auto', '--sandbox', 'workspace-write', '-C', worktreePath];
+    : ['exec', '--full-auto', '--sandbox', 'workspace-write', '-C', worktreePath, '-o', lastMessagePath];
 
-  return runCommand(process.env.CODEX_COMMAND || 'codex', configuredArgs, {
+  const output = await runCommand(process.env.CODEX_COMMAND || 'codex', configuredArgs, {
     cwd: worktreePath,
     input: prompt,
     timeoutMs: CODEX_TIMEOUT_MS,
     taskId: task.id,
     label: 'codex exec'
   });
+  const lastMessage = await fsp.readFile(lastMessagePath, 'utf8')
+    .then((text) => truncateText(text.trim(), 10000))
+    .catch(() => '');
+  return {
+    output,
+    lastMessage,
+    sessionId: extractCodexSessionId(output)
+  };
 }
 
 async function installAndCheck(task, worktreePath) {
@@ -1188,9 +1238,14 @@ async function handleCodeTask(task) {
     const promptPath = await writePromptFile(task, worktreePath);
 
     await updateTask(task.id, { status: 'coding', branch: worktree.branch });
-    const codexOutput = await runCodex(task, worktreePath, promptPath);
+    const codexResult = await runCodex(task, worktreePath, promptPath);
 
-    await updateTask(task.id, { status: 'testing', summary: truncateText(codexOutput, 10000) });
+    await updateTask(task.id, {
+      status: 'testing',
+      summary: truncateText(codexResult.output, 10000),
+      agentMessage: codexResult.lastMessage || truncateText(codexResult.output, 4000),
+      codexSessionId: codexResult.sessionId
+    });
     await installAndCheck(task, worktreePath);
     const changedFiles = await enforceAllowlist(task, worktreePath);
     const deployTargets = inferDeployTargets(changedFiles);

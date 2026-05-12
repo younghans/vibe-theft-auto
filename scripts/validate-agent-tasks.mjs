@@ -45,6 +45,8 @@ try {
 
   assert.match(created.id, /^task_/u);
   assert.equal(created.status, 'queued');
+  assert.equal(created.threadId, created.id);
+  assert.equal(created.threadTitle, 'Make the teacher turn animation smoother.');
   assert.equal(created.scope, 'game');
   assert.equal(created.contextType, 'school_minigame');
   assert.equal(created.contextLabel, 'School: Teacher Is Looking');
@@ -83,19 +85,68 @@ try {
     status: 'ready_for_review',
     commitSha: 'abc1234',
     changedFiles: ['src/game/Game.js', 'server/app.config.js'],
-    deployTargets: ['frontend', 'backend']
+    deployTargets: ['frontend', 'backend'],
+    agentMessage: 'I smoothed the teacher turn animation and kept the microgame timing intact.'
   }, { filePath });
   assert.equal(ready.status, 'ready_for_review');
+  assert.equal(ready.agentMessage, 'I smoothed the teacher turn animation and kept the microgame timing intact.');
   assert.deepEqual(ready.changedFiles, ['src/game/Game.js', 'server/app.config.js']);
   assert.deepEqual(ready.deployTargets, ['frontend', 'backend']);
   assert.ok(ready.workCompletedAt >= ready.workStartedAt);
   const readyWorkCompletedAt = ready.workCompletedAt;
+
+  const readyWithoutDeployApproval = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    contextLabel: 'Prompt console',
+    prompt: 'Make prompt thread rows easier to scan.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  await updateAgentTask(readyWithoutDeployApproval.id, {
+    status: 'ready_for_review',
+    branch: 'agent/task-thread-base',
+    commitSha: 'thread1234',
+    agentMessage: 'Thread row polish is ready for review.'
+  }, { filePath });
+  const followup = await createAgentTask({
+    parentTaskId: readyWithoutDeployApproval.id,
+    prompt: 'Also show the latest agent completion in the detail panel.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  assert.equal(followup.threadId, readyWithoutDeployApproval.threadId);
+  assert.equal(followup.parentTaskId, readyWithoutDeployApproval.id);
+  assert.equal(followup.baseBranch, 'agent/task-thread-base');
+  assert.equal(followup.baseCommitSha, 'thread1234');
+  assert.equal(followup.threadHistory.length, 1);
+  assert.equal(followup.threadHistory[0].agentMessage, 'Thread row polish is ready for review.');
+  await cancelAgentTask(followup.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
 
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',
     filePath
   });
   assert.ok(approved.deployApprovedAt > 0);
+
+  await assert.rejects(
+    createAgentTask({
+      parentTaskId: created.id,
+      prompt: 'Also make the classroom lights warmer.',
+      mode: 'preview'
+    }, {
+      createdBy: 'validator',
+      filePath
+    }),
+    /active worker run/u
+  );
 
   const localOnlyTask = await createAgentTask({
     scope: 'game',

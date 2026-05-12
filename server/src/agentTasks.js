@@ -26,6 +26,7 @@ export const AGENT_TASK_STATUSES = Object.freeze([
 export const AGENT_TASK_MODES = Object.freeze(['draft', 'preview', 'auto']);
 export const AGENT_TASK_DEFAULT_SCOPE = 'game';
 export const AGENT_TASK_LOG_LIMIT = 240;
+export const AGENT_TASK_THREAD_HISTORY_LIMIT = 12;
 export const AGENT_TASK_PROMPT_MAX_LENGTH = 6000;
 export const AGENT_TASK_ERROR_MAX_LENGTH = 12000;
 export const AGENT_TASK_SUMMARY_MAX_LENGTH = 12000;
@@ -40,6 +41,8 @@ const MUTABLE_TASK_FIELDS = new Set([
   'deployTargets',
   'error',
   'summary',
+  'agentMessage',
+  'codexSessionId',
   'claimedBy',
   'claimedAt',
   'workStartedAt',
@@ -53,6 +56,16 @@ const MUTABLE_TASK_FIELDS = new Set([
   'rolledBackAt',
   'rollbackCommitSha',
   'rollbackLog'
+]);
+
+const THREAD_ACTIVE_STATUSES = new Set([
+  'queued',
+  'claimed',
+  'preparing',
+  'coding',
+  'testing',
+  'deploying',
+  'rolling_back'
 ]);
 
 let taskStoreQueue = Promise.resolve();
@@ -119,6 +132,28 @@ function normalizeLogs(logs = []) {
   }));
 }
 
+function normalizeThreadHistory(history = []) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history.slice(-AGENT_TASK_THREAD_HISTORY_LIMIT).map((entry) => ({
+    taskId: normalizeTaskId(entry?.taskId),
+    parentTaskId: normalizeTaskId(entry?.parentTaskId),
+    prompt: truncateText(entry?.prompt ?? '', AGENT_TASK_PROMPT_MAX_LENGTH),
+    status: normalizeStatus(entry?.status) || 'queued',
+    summary: truncateText(entry?.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+    agentMessage: truncateText(entry?.agentMessage ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+    error: truncateText(entry?.error ?? '', AGENT_TASK_ERROR_MAX_LENGTH),
+    branch: String(entry?.branch ?? ''),
+    commitSha: String(entry?.commitSha ?? ''),
+    deployTargets: normalizeDeployTargets(entry?.deployTargets),
+    changedFiles: normalizeStringList(entry?.changedFiles),
+    createdAt: Number.isFinite(Number(entry?.createdAt)) ? Number(entry.createdAt) : 0,
+    updatedAt: Number.isFinite(Number(entry?.updatedAt)) ? Number(entry.updatedAt) : 0
+  })).filter((entry) => entry.taskId || entry.prompt || entry.agentMessage || entry.summary);
+}
+
 function normalizeStringList(value = [], {
   maxItems = 200,
   maxLength = 240
@@ -152,9 +187,15 @@ function normalizeTask(raw = {}) {
     raw.workCompletedAt,
     status === 'ready_for_review' ? updatedAt : 0
   );
+  const threadId = normalizeTaskId(raw.threadId) || id;
   return {
     id,
     type: String(raw.type ?? 'code_change') || 'code_change',
+    threadId,
+    parentTaskId: normalizeTaskId(raw.parentTaskId),
+    threadTitle: String(raw.threadTitle ?? '').trim().slice(0, 160),
+    baseBranch: String(raw.baseBranch ?? '').trim(),
+    baseCommitSha: String(raw.baseCommitSha ?? '').trim(),
     scope: normalizeScope(raw.scope),
     gameId: String(raw.gameId ?? '').trim(),
     contextType: normalizeContextType(raw.contextType ?? raw.scope),
@@ -177,6 +218,9 @@ function normalizeTask(raw = {}) {
     deployTargets: normalizeDeployTargets(raw.deployTargets),
     error: truncateText(raw.error ?? '', AGENT_TASK_ERROR_MAX_LENGTH),
     summary: truncateText(raw.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+    agentMessage: truncateText(raw.agentMessage ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+    codexSessionId: String(raw.codexSessionId ?? '').trim(),
+    threadHistory: normalizeThreadHistory(raw.threadHistory),
     logs: normalizeLogs(raw.logs),
     snapshot: raw.snapshot == null ? null : cloneJson(raw.snapshot),
     deployApprovedAt: normalizeTimestamp(raw.deployApprovedAt, 0),
@@ -197,6 +241,61 @@ function normalizeTask(raw = {}) {
 
 function sortTasks(tasks = []) {
   return [...tasks].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+}
+
+function sortTasksAscending(tasks = []) {
+  return [...tasks].sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+}
+
+function getTaskThreadId(task = {}) {
+  return normalizeTaskId(task.threadId) || normalizeTaskId(task.id);
+}
+
+function isThreadActiveTask(task = {}) {
+  if (THREAD_ACTIVE_STATUSES.has(String(task.status ?? ''))) {
+    return true;
+  }
+
+  return task.status === 'ready_for_review' && Number(task.deployApprovedAt ?? 0) > 0;
+}
+
+function getThreadTitleFromTask(task = {}) {
+  return String(task.threadTitle || task.prompt || task.contextLabel || task.gameId || 'Game prompt')
+    .trim()
+    .slice(0, 160);
+}
+
+function createThreadHistoryEntry(task = {}) {
+  return {
+    taskId: String(task.id ?? ''),
+    parentTaskId: String(task.parentTaskId ?? ''),
+    prompt: task.prompt ?? '',
+    status: task.status ?? '',
+    summary: task.summary ?? '',
+    agentMessage: task.agentMessage ?? '',
+    error: task.error ?? '',
+    branch: task.branch ?? '',
+    commitSha: task.commitSha ?? '',
+    deployTargets: task.deployTargets ?? [],
+    changedFiles: task.changedFiles ?? [],
+    createdAt: task.createdAt ?? 0,
+    updatedAt: task.updatedAt ?? 0
+  };
+}
+
+function buildThreadHistory(tasks = [], threadId = '') {
+  return normalizeThreadHistory(sortTasksAscending(tasks)
+    .filter((task) => getTaskThreadId(task) === threadId)
+    .map(createThreadHistoryEntry));
+}
+
+function getFollowupBaseTask(threadTasks = []) {
+  return sortTasks(threadTasks)
+    .find((task) => (
+      task.status === 'ready_for_review'
+      && String(task.branch ?? '').trim()
+      && String(task.commitSha ?? '').trim()
+    )) ?? null;
 }
 
 async function readTaskState(filePath = AGENT_TASKS_FILE_PATH) {
@@ -300,35 +399,68 @@ export async function createAgentTask(payload = {}, {
   }
 
   const now = Date.now();
-  const task = normalizeTask({
-    id: `task_${now.toString(36)}_${randomUUID().slice(0, 8)}`,
-    type: 'code_change',
-    scope: normalizeScope(payload.scope),
-    gameId: String(payload.gameId ?? '').trim(),
-    contextType: normalizeContextType(payload.contextType ?? payload.scope),
-    contextLabel: String(payload.contextLabel ?? '').trim(),
-    prompt,
-    mode: normalizeMode(payload.mode),
-    status: 'queued',
-    createdBy,
-    createdAt: now,
-    updatedAt: now,
-    snapshot: payload.snapshot == null ? null : cloneJson(payload.snapshot),
-    logs: [
-      {
-        at: now,
-        level: 'info',
-        message: 'Task queued from in-game admin feedback.',
-        data: {
-          mode: normalizeMode(payload.mode),
-          scope: normalizeScope(payload.scope),
-          contextType: normalizeContextType(payload.contextType ?? payload.scope)
-        }
-      }
-    ]
-  });
-
   return withTaskStore((state) => {
+    const id = `task_${now.toString(36)}_${randomUUID().slice(0, 8)}`;
+    const parentTaskId = normalizeTaskId(payload.parentTaskId);
+    const parentTask = parentTaskId
+      ? state.tasks.find((candidate) => candidate.id === parentTaskId)
+      : null;
+
+    if (parentTaskId && !parentTask) {
+      throw new Error('Parent task not found.');
+    }
+
+    const explicitThreadId = normalizeTaskId(payload.threadId);
+    const threadId = parentTask
+      ? getTaskThreadId(parentTask)
+      : explicitThreadId || id;
+    const threadTasks = state.tasks.filter((task) => getTaskThreadId(task) === threadId);
+    const activeThreadTask = threadTasks.find(isThreadActiveTask);
+    if (parentTask && activeThreadTask) {
+      throw new Error('This prompt thread already has an active worker run.');
+    }
+
+    const baseTask = parentTask ? getFollowupBaseTask(threadTasks) : null;
+    const threadTitle = String(payload.threadTitle ?? '').trim()
+      || (parentTask ? getThreadTitleFromTask(parentTask) : '')
+      || prompt;
+    const threadHistory = parentTask ? buildThreadHistory(state.tasks, threadId) : [];
+    const task = normalizeTask({
+      id,
+      type: 'code_change',
+      threadId,
+      parentTaskId: parentTask?.id ?? '',
+      threadTitle,
+      baseBranch: baseTask?.branch ?? '',
+      baseCommitSha: baseTask?.commitSha ?? '',
+      scope: normalizeScope(payload.scope || parentTask?.scope),
+      gameId: String(payload.gameId ?? parentTask?.gameId ?? '').trim(),
+      contextType: normalizeContextType(payload.contextType ?? parentTask?.contextType ?? payload.scope),
+      contextLabel: String(payload.contextLabel ?? parentTask?.contextLabel ?? '').trim(),
+      prompt,
+      mode: normalizeMode(payload.mode),
+      status: 'queued',
+      createdBy,
+      createdAt: now,
+      updatedAt: now,
+      snapshot: payload.snapshot == null ? null : cloneJson(payload.snapshot),
+      threadHistory,
+      logs: [
+        {
+          at: now,
+          level: 'info',
+          message: parentTask ? 'Follow-up queued in prompt thread.' : 'Task queued from in-game admin feedback.',
+          data: {
+            mode: normalizeMode(payload.mode),
+            scope: normalizeScope(payload.scope || parentTask?.scope),
+            contextType: normalizeContextType(payload.contextType ?? parentTask?.contextType ?? payload.scope),
+            threadId,
+            parentTaskId: parentTask?.id ?? '',
+            baseBranch: baseTask?.branch ?? ''
+          }
+        }
+      ]
+    });
     state.tasks.push(task);
     return task;
   }, { filePath });
@@ -463,7 +595,7 @@ export async function updateAgentTask(taskId, updates = {}, {
         task.deployTargets = normalizeDeployTargets(value);
       } else if (key === 'error') {
         task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
-      } else if (key === 'summary' || key === 'deployLog' || key === 'rollbackLog') {
+      } else if (['summary', 'agentMessage', 'deployLog', 'rollbackLog'].includes(key)) {
         task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
       } else {
         task[key] = String(value ?? '');

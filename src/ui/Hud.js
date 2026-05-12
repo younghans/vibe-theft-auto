@@ -874,7 +874,7 @@ function getAdminPromptTabTaskCount(tasks = [], tab = '') {
   return filtered.length;
 }
 
-function filterAdminPromptTasksForTab(tasks = [], tab = '') {
+function getAdminPromptStatusesForTab(tab = '') {
   const tabId = getAdminPromptTabId(tab);
   const statusesByTab = {
     active: new Set(['queued', 'claimed', 'preparing', 'coding', 'testing', 'deploying', 'rolling_back']),
@@ -883,12 +883,65 @@ function filterAdminPromptTasksForTab(tasks = [], tab = '') {
     history: new Set(['test_failed', 'failed', 'cancelled', 'rolled_back'])
   };
 
-  if (tabId === 'new') {
+  return statusesByTab[tabId] ?? null;
+}
+
+function getAgentTaskThreadId(task = {}) {
+  return String(task?.threadId || task?.id || '').trim();
+}
+
+function getAgentTaskSortTimestamp(task = {}) {
+  return Number(task?.createdAt || task?.updatedAt || 0) || 0;
+}
+
+function sortAgentTasksByCreatedAt(tasks = [], direction = 'desc') {
+  const multiplier = direction === 'asc' ? 1 : -1;
+  return [...tasks].sort((a, b) => (getAgentTaskSortTimestamp(a) - getAgentTaskSortTimestamp(b)) * multiplier);
+}
+
+function getAgentThreadTasks(tasks = [], selectedTask = null) {
+  const threadId = getAgentTaskThreadId(selectedTask);
+  if (!threadId) {
     return [];
   }
 
-  const statuses = statusesByTab[tabId];
-  return tasks.filter((task) => statuses?.has(String(task.status ?? ''))).slice(0, 24);
+  return sortAgentTasksByCreatedAt(
+    tasks.filter((task) => getAgentTaskThreadId(task) === threadId),
+    'asc'
+  );
+}
+
+function getAgentThreadLatestTask(threadTasks = []) {
+  return sortAgentTasksByCreatedAt(threadTasks)[0] ?? null;
+}
+
+function getAgentPromptThreadRows(tasks = [], tab = '') {
+  const statuses = getAdminPromptStatusesForTab(tab);
+  if (!statuses) {
+    return [];
+  }
+
+  const groups = new Map();
+  for (const task of tasks) {
+    const threadId = getAgentTaskThreadId(task);
+    if (!threadId) {
+      continue;
+    }
+    if (!groups.has(threadId)) {
+      groups.set(threadId, []);
+    }
+    groups.get(threadId).push(task);
+  }
+
+  return [...groups.values()]
+    .map(getAgentThreadLatestTask)
+    .filter((task) => task && statuses.has(String(task.status ?? '')))
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+    .slice(0, 24);
+}
+
+function filterAdminPromptTasksForTab(tasks = [], tab = '') {
+  return getAgentPromptThreadRows(tasks, tab);
 }
 
 function createAdminPromptTabsMarkup(tasks = [], activeTab = 'new') {
@@ -909,6 +962,11 @@ function getAgentTaskTitle(task = {}) {
   return label || 'Game';
 }
 
+function getAgentTaskThreadTitle(task = {}) {
+  const label = String(task.threadTitle || '').trim();
+  return label || getAgentTaskPromptTitle(task);
+}
+
 function getAgentTaskContextLine(task = {}, time = '') {
   return [
     getAgentTaskTitle(task),
@@ -921,18 +979,21 @@ function getAgentTaskContextLine(task = {}, time = '') {
 function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 'active') {
   const visibleTasks = filterAdminPromptTasksForTab(tasks, activeTab);
   if (!visibleTasks.length) {
-    return '<div class="hud__admin-prompt-empty">No tasks in this view.</div>';
+    return '<div class="hud__admin-prompt-empty">No threads in this view.</div>';
   }
 
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedThreadId = getAgentTaskThreadId(selectedTask);
   return visibleTasks.map((task) => {
     const status = String(task.status ?? 'queued');
-    const activeClass = task.id === selectedTaskId ? ' is-active' : '';
+    const threadTasks = getAgentThreadTasks(tasks, task);
+    const activeClass = getAgentTaskThreadId(task) === selectedThreadId ? ' is-active' : '';
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
     return `
       <button class="hud__admin-prompt-task${activeClass}" type="button" data-admin-prompt-action="select:${escapeHtml(task.id)}">
         <span>
-          <strong>${escapeHtml(getAgentTaskPromptTitle(task))}</strong>
-          <small>${escapeHtml(getAgentTaskContextLine(task, time))}</small>
+          <strong>${escapeHtml(getAgentTaskThreadTitle(task))}</strong>
+          <small>${escapeHtml(`${getAgentTaskContextLine(task, time)}${threadTasks.length > 1 ? ` - ${threadTasks.length} turns` : ''}`)}</small>
         </span>
         ${createAgentTaskStatusBadge(task, 'em')}
       </button>
@@ -940,44 +1001,113 @@ function createAgentTaskListMarkup(tasks = [], selectedTaskId = '', activeTab = 
   }).join('');
 }
 
-function createAgentTaskDetailMarkup(task = null) {
-  if (!task) {
-    return '<div class="hud__admin-prompt-empty">Select a task to inspect it.</div>';
+function formatAgentTaskMessage(value = '') {
+  return escapeHtml(value).replace(/\r?\n/gu, '<br>');
+}
+
+function getAgentTaskCompletionMessage(task = {}) {
+  return String(task.agentMessage || '').trim();
+}
+
+function isAgentThreadBusy(threadTasks = []) {
+  return threadTasks.some((task) => {
+    const status = String(task.status ?? '');
+    return ['queued', 'claimed', 'preparing', 'coding', 'testing', 'deploying', 'rolling_back'].includes(status)
+      || (status === 'ready_for_review' && Number(task.deployApprovedAt ?? 0) > 0);
+  });
+}
+
+function createAgentTaskThreadMessageMarkup(threadTasks = []) {
+  if (!threadTasks.length) {
+    return '<div class="hud__admin-prompt-empty">No thread messages yet.</div>';
   }
 
-  const status = String(task.status ?? 'queued');
-  const branch = String(task.branch ?? '').trim();
-  const commitSha = String(task.commitSha ?? '').trim();
-  const deployApproved = Number(task.deployApprovedAt ?? 0) > 0;
+  return threadTasks.map((task, index) => {
+    const status = String(task.status ?? 'queued');
+    const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
+    const agentMessage = getAgentTaskCompletionMessage(task);
+    const statusMessage = String(task.error || task.summary || '').trim();
+    const showStatusMessage = statusMessage && statusMessage !== agentMessage;
+    return `
+      <section class="hud__admin-prompt-turn">
+        <div class="hud__admin-prompt-bubble is-user">
+          <header>
+            <strong>${index === 0 ? 'Prompt' : 'Follow-up'}</strong>
+            ${time ? `<span>${escapeHtml(time)}</span>` : ''}
+          </header>
+          <p>${formatAgentTaskMessage(task.prompt || 'Prompt unavailable.')}</p>
+        </div>
+        ${agentMessage ? `
+          <div class="hud__admin-prompt-bubble is-agent">
+            <header>
+              <strong>Agent</strong>
+              ${createAgentTaskStatusBadge(task)}
+            </header>
+            <p>${formatAgentTaskMessage(agentMessage)}</p>
+          </div>
+        ` : ''}
+        ${showStatusMessage ? `
+          <div class="hud__admin-prompt-bubble is-system${task.error ? ' is-error' : ''}">
+            <header>
+              <strong>${task.error ? 'Issue' : getAgentTaskStatusLabel(status)}</strong>
+            </header>
+            <p>${formatAgentTaskMessage(statusMessage)}</p>
+          </div>
+        ` : ''}
+        ${!agentMessage && !showStatusMessage ? `
+          <div class="hud__admin-prompt-bubble is-system">
+            <header>
+              <strong>${getAgentTaskStatusLabel(status)}</strong>
+              ${createAgentTaskStatusBadge(task)}
+            </header>
+            <p>Waiting for worker updates.</p>
+          </div>
+        ` : ''}
+      </section>
+    `;
+  }).join('');
+}
+
+function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
+  if (!task) {
+    return '<div class="hud__admin-prompt-empty">Select a thread to inspect it.</div>';
+  }
+
+  const safeThreadTasks = threadTasks.length ? threadTasks : [task];
+  const latestTask = getAgentThreadLatestTask(safeThreadTasks) ?? task;
+  const status = String(latestTask.status ?? 'queued');
+  const branch = String(latestTask.branch ?? '').trim();
+  const commitSha = String(latestTask.commitSha ?? '').trim();
+  const deployApproved = Number(latestTask.deployApprovedAt ?? 0) > 0;
   const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
   const canCancel = ['queued', 'claimed', 'preparing'].includes(status);
-  const canRollback = status === 'deployed' && Number(task.rollbackApprovedAt ?? 0) <= 0;
-  const rollbackApproved = Number(task.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
-  const rollbackCommitSha = String(task.rollbackCommitSha ?? '').trim();
-  const deployTargets = Array.isArray(task.deployTargets)
-    ? task.deployTargets.map((target) => String(target ?? '').trim()).filter(Boolean)
+  const canRollback = status === 'deployed' && Number(latestTask.rollbackApprovedAt ?? 0) <= 0;
+  const rollbackApproved = Number(latestTask.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
+  const rollbackCommitSha = String(latestTask.rollbackCommitSha ?? '').trim();
+  const threadBusy = isAgentThreadBusy(safeThreadTasks);
+  const deployTargets = Array.isArray(latestTask.deployTargets)
+    ? latestTask.deployTargets.map((target) => String(target ?? '').trim()).filter(Boolean)
     : [];
-  const changedFiles = Array.isArray(task.changedFiles)
-    ? task.changedFiles.map((filePath) => String(filePath ?? '').trim()).filter(Boolean)
+  const changedFiles = Array.isArray(latestTask.changedFiles)
+    ? latestTask.changedFiles.map((filePath) => String(filePath ?? '').trim()).filter(Boolean)
     : [];
   const links = [
-    createAgentTaskLink('Preview', task.previewUrl),
-    createAgentTaskLink('Deploy', task.deployUrl)
+    createAgentTaskLink('Preview', latestTask.previewUrl),
+    createAgentTaskLink('Deploy', latestTask.deployUrl)
   ].filter(Boolean).join('');
-  const workedDuration = String(task.status ?? '') === 'ready_for_review'
-    ? getAgentTaskWorkedDurationLabel(task)
+  const workedDuration = String(latestTask.status ?? '') === 'ready_for_review'
+    ? getAgentTaskWorkedDurationLabel(latestTask)
     : '';
 
   return `
     <article class="hud__admin-prompt-detail">
       <header>
-        ${createAgentTaskStatusBadge(task)}
-        <strong>${escapeHtml(getAgentTaskShortId(task))}</strong>
+        ${createAgentTaskStatusBadge(latestTask)}
+        <strong>${escapeHtml(getAgentTaskShortId(latestTask))}</strong>
       </header>
-      <h3>${escapeHtml(getAgentTaskPromptTitle(task, { maxLength: 96 }))}</h3>
-      <p>${escapeHtml(task.summary || task.error || task.prompt || 'Waiting for worker updates.')}</p>
+      <h3>${escapeHtml(getAgentTaskThreadTitle(latestTask))}</h3>
       <div class="hud__admin-prompt-meta">
-        <span>Context <strong>${escapeHtml(getAgentTaskTitle(task))}</strong></span>
+        <span>Context <strong>${escapeHtml(getAgentTaskTitle(latestTask))}</strong></span>
         ${branch ? `<span>Branch <strong>${escapeHtml(branch)}</strong></span>` : ''}
         ${commitSha ? `<span>Commit <strong>${escapeHtml(commitSha.slice(0, 10))}</strong></span>` : ''}
         ${deployTargets.length ? `<span>Targets <strong>${escapeHtml(deployTargets.join(', '))}</strong></span>` : ''}
@@ -988,11 +1118,18 @@ function createAgentTaskDetailMarkup(task = null) {
         ${rollbackApproved ? '<span>Rollback approved</span>' : ''}
       </div>
       ${links ? `<div class="hud__admin-prompt-links">${links}</div>` : ''}
+      <div class="hud__admin-prompt-thread">
+        ${createAgentTaskThreadMessageMarkup(safeThreadTasks)}
+      </div>
       <div class="hud__admin-prompt-detail-actions">
         ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
         ${canRollback ? '<button class="hud__admin-prompt-small hud__admin-prompt-small--danger" type="button" data-admin-prompt-action="rollback">Rollback</button>' : ''}
         ${canCancel ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="cancel-task">Cancel</button>' : ''}
       </div>
+      <form class="hud__admin-prompt-followup" data-admin-prompt-followup-form>
+        <textarea class="hud__admin-prompt-followup-input" data-admin-prompt-followup-prompt maxlength="6000" rows="3" placeholder="${threadBusy ? 'Worker is active...' : 'Continue this thread...'}" ${threadBusy ? 'disabled' : ''}></textarea>
+        <button class="hud__admin-prompt-small" type="submit" ${threadBusy ? 'disabled' : ''}>Send Follow-up</button>
+      </form>
     </article>
   `;
 }
@@ -3707,6 +3844,7 @@ export class Hud {
     onClose,
     onRefresh,
     onSubmit,
+    onFollowup,
     onSelect,
     onCancel,
     onApproveDeploy,
@@ -3725,6 +3863,24 @@ export class Hud {
       onSubmit?.({
         prompt: this.adminPromptPrompt?.value ?? '',
         mode: this.adminPromptMode?.value ?? 'preview'
+      });
+    });
+
+    this.adminPromptRoot?.addEventListener('submit', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const followupForm = target?.closest('[data-admin-prompt-followup-form]');
+      if (!followupForm) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const promptField = followupForm.querySelector('[data-admin-prompt-followup-prompt]');
+      onFollowup?.(this.adminPromptState.selectedTaskId, {
+        prompt: promptField?.value ?? '',
+        mode: 'preview'
       });
     });
 
@@ -5680,9 +5836,24 @@ export class Hud {
     }
     if (this.adminPromptDetail) {
       const selectedTask = visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
+      const selectedThreadTasks = selectedTask ? getAgentThreadTasks(tasks, selectedTask) : [];
       const detailSignature = JSON.stringify({
         activeTab,
         selectedTaskId: selectedTask?.id ?? '',
+        threadId: selectedTask ? getAgentTaskThreadId(selectedTask) : '',
+        threadTasks: selectedThreadTasks.map((task) => [
+          task.id,
+          task.status,
+          task.updatedAt,
+          task.prompt,
+          task.summary,
+          task.agentMessage,
+          task.error,
+          task.branch,
+          task.commitSha,
+          task.deployApprovedAt ?? 0,
+          task.rollbackApprovedAt ?? 0
+        ]),
         status: selectedTask?.status ?? '',
         durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
         branch: selectedTask?.branch ?? '',
@@ -5706,7 +5877,10 @@ export class Hud {
         return;
       }
       this.lastAdminPromptDetailSignature = detailSignature;
-      this.adminPromptDetail.innerHTML = createAgentTaskDetailMarkup(activeTab === 'new' ? null : selectedTask);
+      this.adminPromptDetail.innerHTML = createAgentTaskDetailMarkup(
+        activeTab === 'new' ? null : selectedTask,
+        selectedThreadTasks
+      );
     }
   }
 

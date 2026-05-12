@@ -6157,6 +6157,10 @@ body.is-admin-prompt-resizing * {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .hud__admin-prompt-followup {
+    display: grid;
+  }
+
   .hud__admin-prompt-prompt {
     min-height: 110px;
   }
@@ -6315,6 +6319,92 @@ body.is-admin-prompt-resizing * {
   font-size: 12px;
   font-weight: 760;
   line-height: 1.35;
+}
+
+.hud__admin-prompt-thread {
+  display: grid;
+  gap: 8px;
+}
+
+.hud__admin-prompt-turn {
+  display: grid;
+  gap: 6px;
+}
+
+.hud__admin-prompt-bubble {
+  display: grid;
+  gap: 5px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.hud__admin-prompt-bubble.is-user {
+  border-color: rgba(89, 185, 255, 0.18);
+  background: rgba(89, 185, 255, 0.09);
+}
+
+.hud__admin-prompt-bubble.is-agent {
+  border-color: rgba(117, 227, 193, 0.22);
+  background: rgba(117, 227, 193, 0.085);
+}
+
+.hud__admin-prompt-bubble.is-system {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hud__admin-prompt-bubble.is-error {
+  border-color: rgba(255, 109, 141, 0.28);
+  background: rgba(255, 109, 141, 0.08);
+}
+
+.hud__admin-prompt-bubble header,
+.hud__admin-prompt-followup {
+  display: flex;
+  gap: 8px;
+}
+
+.hud__admin-prompt-bubble header {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hud__admin-prompt-bubble header strong,
+.hud__admin-prompt-bubble header span {
+  color: rgba(244, 238, 226, 0.64);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__admin-prompt-bubble p {
+  overflow-wrap: anywhere;
+}
+
+.hud__admin-prompt-followup {
+  align-items: flex-end;
+}
+
+.hud__admin-prompt-followup-input {
+  min-height: 58px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(3, 7, 10, 0.62);
+  color: #fff8e5;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  resize: none;
+}
+
+.hud__admin-prompt-followup-input:disabled {
+  opacity: 0.58;
 }
 
 .hud__admin-prompt-meta,

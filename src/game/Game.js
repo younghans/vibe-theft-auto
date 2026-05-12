@@ -750,6 +750,7 @@ export class Game {
       onClose: () => this.setAdminPromptOpen(false),
       onRefresh: () => void this.refreshAdminPromptTasks({ force: true }),
       onSubmit: (payload) => void this.submitAdminPromptTask(payload),
+      onFollowup: (taskId, payload) => void this.submitAdminPromptFollowup(taskId, payload),
       onSelect: (taskId) => this.selectAdminPromptTask(taskId),
       onCancel: (taskId) => void this.cancelAdminPromptTask(taskId),
       onApproveDeploy: (taskId) => void this.approveAdminPromptDeploy(taskId),
@@ -1947,7 +1948,7 @@ export class Game {
     try {
       const url = new URL(this.getAdminAgentTasksEndpoint());
       url.searchParams.set('adminKey', adminKey);
-      url.searchParams.set('limit', '40');
+      url.searchParams.set('limit', '80');
       const response = await fetch(url.toString(), { cache: 'no-store' });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
@@ -2061,6 +2062,63 @@ export class Game {
     } catch (error) {
       console.warn('[AgentTasks] Submit failed.', error);
       this.adminPromptError = error?.message ?? 'Codex task submit failed.';
+    } finally {
+      this.adminPromptSubmitting = false;
+      this.refreshAdminPromptHud();
+    }
+  }
+
+  async submitAdminPromptFollowup(taskId = '', { prompt = '', mode = 'preview' } = {}) {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.canUseAdminPrompt()) {
+      return;
+    }
+    if (this.adminPromptSubmitting) {
+      return;
+    }
+
+    const cleanedPrompt = String(prompt ?? '').trim();
+    if (cleanedPrompt.length < 8) {
+      this.adminPromptError = 'Add a longer follow-up.';
+      this.refreshAdminPromptHud();
+      return;
+    }
+
+    const requestedMode = String(mode ?? 'preview') === 'auto' && this.isAdminPromptAutoDeployAvailable()
+      ? 'auto'
+      : 'preview';
+    const context = this.getAdminPromptContext();
+    this.adminPromptSubmitting = true;
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
+    try {
+      const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/followups`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          adminKey: this.getAdminKey(),
+          createdBy: this.getAdminPromptCreatedBy(),
+          scope: ADMIN_PROMPT_TASK_SCOPE,
+          contextType: context.contextType,
+          contextLabel: context.contextLabel,
+          gameId: context.gameId,
+          prompt: cleanedPrompt,
+          mode: requestedMode,
+          snapshot: this.getAdminPromptSnapshot()
+        })
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || 'Could not submit follow-up.');
+      }
+
+      this.adminPromptActiveTab = 'active';
+      this.adminPromptSelectedTaskId = result.task?.id ?? id;
+      this.hud.showToast('Follow-up queued.');
+      await this.refreshAdminPromptTasks({ force: true });
+    } catch (error) {
+      console.warn('[AgentTasks] Follow-up failed.', error);
+      this.adminPromptError = error?.message ?? 'Prompt follow-up failed.';
     } finally {
       this.adminPromptSubmitting = false;
       this.refreshAdminPromptHud();
