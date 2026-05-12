@@ -25,6 +25,15 @@ const BACKEND_DEPLOY_COMMAND = process.env.BACKEND_DEPLOY_COMMAND
 const FRONTEND_DEPLOY_COMMAND = process.env.FRONTEND_DEPLOY_COMMAND
   || process.env.VERCEL_DEPLOY_COMMAND
   || '';
+const FRONTEND_VERIFY_URL = String(
+  process.env.FRONTEND_VERIFY_URL
+  || process.env.FRONTEND_PRODUCTION_URL
+  || process.env.PUBLIC_FRONTEND_URL
+  || ''
+).trim();
+const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
+const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
+const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const RUN_ONCE = process.argv.includes('--once');
 
 const ALLOWED_EXACT_FILES = new Set([
@@ -46,6 +55,11 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function getPositiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function truncateText(value = '', maxLength = 6000) {
@@ -131,7 +145,7 @@ function summarizeDeployResult(actionLabel, targets = []) {
     return `${actionLabel} completed; no runtime deploy target was inferred.`;
   }
   if (deployTargets.includes('frontend') && !FRONTEND_DEPLOY_COMMAND.trim()) {
-    return `${actionLabel} completed for ${formatDeployTargets(deployTargets)}; Vercel Git integration handles frontend deploy.`;
+    return `${actionLabel} completed for ${formatDeployTargets(deployTargets)}; Vercel Git integration handled frontend deploy and the served commit was verified.`;
   }
   return `${actionLabel} completed for ${formatDeployTargets(deployTargets)}.`;
 }
@@ -663,7 +677,166 @@ async function runDeployCommand(task, worktreePath, {
   });
 }
 
-async function runDeployTargets(task, worktreePath, targets = []) {
+function normalizeHttpUrl(value = '') {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) {
+    return '';
+  }
+
+  try {
+    const url = new URL(rawValue);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return '';
+    }
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+async function getFrontendVerifyUrl(worktreePath) {
+  const configuredUrl = normalizeHttpUrl(FRONTEND_VERIFY_URL);
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  try {
+    const packageJson = JSON.parse(await fsp.readFile(path.join(worktreePath, 'package.json'), 'utf8'));
+    return normalizeHttpUrl(packageJson.homepage);
+  } catch {
+    return '';
+  }
+}
+
+function withVerifyCacheBuster(urlString) {
+  const url = new URL(urlString);
+  url.searchParams.set('_stickrpg_verify', `${Date.now()}`);
+  return url.toString();
+}
+
+async function fetchText(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'cache-control': 'no-cache',
+        pragma: 'no-cache'
+      }
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from ${url}`);
+    }
+
+    return {
+      text,
+      url: response.url || url,
+      etag: response.headers.get('etag') || '',
+      cacheControl: response.headers.get('cache-control') || ''
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractHtmlAssetUrls(html = '', baseUrl = '') {
+  const assets = [];
+  for (const match of String(html).matchAll(/(?:src|href)="([^"]+)"/gu)) {
+    const assetPath = match[1] ?? '';
+    if (!/\.(?:js|css)(?:\?|$)/u.test(assetPath)) {
+      continue;
+    }
+
+    try {
+      assets.push(new URL(assetPath, baseUrl).toString());
+    } catch {
+      assets.push(assetPath);
+    }
+  }
+
+  return [...new Set(assets)];
+}
+
+async function verifyFrontendDeployment(task, worktreePath, {
+  expectedCommitSha = '',
+  actionLabel = 'Deployment'
+} = {}) {
+  const commitSha = String(expectedCommitSha || '').trim();
+  const verifyUrl = await getFrontendVerifyUrl(worktreePath);
+  if (!verifyUrl) {
+    const message = 'Frontend deployment verification skipped; no FRONTEND_VERIFY_URL or package homepage is configured.';
+    await appendLog(task.id, message, { level: 'warn' });
+    return { deployUrl: '', output: message };
+  }
+
+  if (!commitSha) {
+    const message = 'Frontend deployment verification skipped; expected commit SHA is missing.';
+    await appendLog(task.id, message, {
+      level: 'warn',
+      data: { verifyUrl }
+    });
+    return { deployUrl: verifyUrl, output: message };
+  }
+
+  const startedAt = Date.now();
+  const deadline = startedAt + FRONTEND_VERIFY_TIMEOUT_MS;
+  let attempt = 0;
+  let lastError = '';
+  let lastAssets = [];
+  let lastEtag = '';
+  while (Date.now() <= deadline) {
+    attempt += 1;
+    try {
+      const result = await fetchText(withVerifyCacheBuster(verifyUrl), FRONTEND_VERIFY_REQUEST_TIMEOUT_MS);
+      lastEtag = result.etag;
+      lastAssets = extractHtmlAssetUrls(result.text, result.url);
+      if (result.text.includes(commitSha)) {
+        const message = `${actionLabel} verified: frontend is serving commit ${commitSha.slice(0, 12)}.`;
+        await appendLog(task.id, message, {
+          data: {
+            verifyUrl,
+            responseUrl: result.url,
+            expectedCommitSha: commitSha,
+            attempts: attempt,
+            etag: result.etag,
+            cacheControl: result.cacheControl,
+            assets: lastAssets.slice(0, 8)
+          }
+        });
+        return {
+          deployUrl: verifyUrl,
+          output: [
+            message,
+            `URL: ${verifyUrl}`,
+            `Attempts: ${attempt}`,
+            result.etag ? `ETag: ${result.etag}` : '',
+            lastAssets.length ? `Assets: ${lastAssets.slice(0, 8).join(', ')}` : ''
+          ].filter(Boolean).join('\n')
+        };
+      }
+
+      lastError = `expected commit ${commitSha} was not found in HTML`;
+    } catch (error) {
+      lastError = error?.message || String(error);
+    }
+
+    if (Date.now() + FRONTEND_VERIFY_POLL_MS > deadline) {
+      break;
+    }
+    await sleep(FRONTEND_VERIFY_POLL_MS);
+  }
+
+  const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+  throw new Error(`${actionLabel} frontend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}${lastEtag ? `; last etag ${lastEtag}` : ''}${lastAssets.length ? `; last assets ${lastAssets.slice(0, 5).join(', ')}` : ''}`);
+}
+
+async function runDeployTargets(task, worktreePath, targets = [], {
+  expectedCommitSha = '',
+  actionLabel = 'Deployment'
+} = {}) {
   const deployTargets = normalizeDeployTargets(targets);
   const outputs = [];
   let deployUrl = '';
@@ -682,6 +855,15 @@ async function runDeployTargets(task, worktreePath, targets = []) {
         data: { target: 'frontend' }
       });
       outputs.push(`[frontend]\n${message}`);
+    }
+
+    const verification = await verifyFrontendDeployment(task, worktreePath, {
+      expectedCommitSha,
+      actionLabel
+    });
+    deployUrl = verification.deployUrl || deployUrl;
+    if (verification.output) {
+      outputs.push(`[frontend verify]\n${verification.output}`);
     }
   }
 
@@ -893,7 +1075,10 @@ async function deployTask(task, worktreePath) {
     });
   }
   await pushWorktreeToMain(task, worktreePath);
-  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets);
+  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets, {
+    expectedCommitSha: deployRefs.newDeployCommitSha,
+    actionLabel: 'Deployment'
+  });
   await recordDeployment({
     action: 'deploy',
     taskId: task.id,
@@ -957,7 +1142,10 @@ async function rollbackTask(task, worktreePath) {
 
   await installAndCheck(task, worktreePath);
   await pushWorktreeToMain(task, worktreePath);
-  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets);
+  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets, {
+    expectedCommitSha: rollbackCommitSha,
+    actionLabel: 'Rollback deploy'
+  });
   await recordDeployment({
     action: 'rollback',
     taskId: task.id,
@@ -971,6 +1159,8 @@ async function rollbackTask(task, worktreePath) {
     status: 'rolled_back',
     rolledBackAt: Date.now(),
     rollbackCommitSha,
+    deployTargets: inferredTargets,
+    deployUrl: deployResult.deployUrl || task.deployUrl || '',
     rollbackLog: truncateText(deployResult.output, 10000),
     summary: summarizeDeployResult('Rollback deploy', inferredTargets)
   });
@@ -1131,6 +1321,8 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   deployEnabled: DEPLOY_ENABLED,
   backendDeployCommand: BACKEND_DEPLOY_COMMAND ? 'configured' : 'missing',
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
+  frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
+  frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
   runOnce: RUN_ONCE
 });
 

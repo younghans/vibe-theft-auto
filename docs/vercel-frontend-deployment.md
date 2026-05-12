@@ -66,6 +66,8 @@ The Codex worker must treat frontend and backend deploys separately:
 - Keep `AGENT_API_BASE` pointed at the Colyseus backend hostname because the task API lives on the backend.
 - The worker validation gate runs both `npm run build:web` and `npm run build:server`.
 - Frontend task changes deploy through Vercel after the worker pushes the approved commit to `main`. If Git integration is enabled, leave `FRONTEND_DEPLOY_COMMAND` unset. If the worker should run the Vercel CLI itself, set `FRONTEND_DEPLOY_COMMAND`, for example `npx vercel deploy --prod --yes`.
+- Frontend builds stamp the served HTML with `STICKRPG_BUILD_COMMIT_SHA`. Vercel sets this from `VERCEL_GIT_COMMIT_SHA`; other hosts can set `STICKRPG_BUILD_COMMIT_SHA` explicitly.
+- The worker waits for the production frontend to serve the expected commit before it marks frontend deploys or rollbacks complete. Set `FRONTEND_VERIFY_URL` to the production URL, for example `https://www.vibetheftauto.xyz/`; if unset, the worker falls back to the `homepage` field in `package.json`.
 - Backend task changes deploy through `BACKEND_DEPLOY_COMMAND`, normally `npm run deploy:colyseus`.
 
 Do not set the legacy `DEPLOY_COMMAND` to a combined frontend/backend deploy. It remains supported only as a backend deploy alias for older worker environments.

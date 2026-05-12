@@ -335,13 +335,30 @@ function readFrontendServerUrl() {
   ).trim();
 }
 
+function readFrontendBuildCommitSha() {
+  return String(
+    process.env.STICKRPG_BUILD_COMMIT_SHA
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? process.env.GITHUB_SHA
+    ?? ''
+  ).trim();
+}
+
 function getRuntimeConfigScript() {
   const serverUrl = readFrontendServerUrl();
-  if (!serverUrl) {
+  const buildCommitSha = readFrontendBuildCommitSha();
+  const assignments = [];
+  if (serverUrl) {
+    assignments.push(`globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(serverUrl)};`);
+  }
+  if (buildCommitSha) {
+    assignments.push(`globalThis.STICKRPG_BUILD_COMMIT_SHA = ${JSON.stringify(buildCommitSha)};`);
+  }
+  if (assignments.length === 0) {
     return '';
   }
 
-  return `    <script>globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(serverUrl)};</script>\n`;
+  return `    <script>${assignments.join('')}</script>\n`;
 }
 
 function buildHtmlFromTemplate(template, { appScript, stylesheet }) {

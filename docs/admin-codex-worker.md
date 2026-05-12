@@ -316,7 +316,7 @@ For manual deploy approval from the game, keep `AGENT_API_BASE` pointed at the C
 
 After that safety pass, the worker deploys only the inferred runtime targets:
 
-- `frontend` changes are served by Vercel. With Git integration, no command is required; Vercel deploys the pushed `main` commit. To force the worker to run a Vercel CLI deploy instead, set `FRONTEND_DEPLOY_COMMAND`.
+- `frontend` changes are served by Vercel. With Git integration, no command is required; Vercel deploys the pushed `main` commit. The worker then verifies that the production frontend is serving the expected commit SHA before it marks the task deployed or rolled back. To force the worker to run a Vercel CLI deploy instead, set `FRONTEND_DEPLOY_COMMAND`.
 - `backend` changes are served by Colyseus Cloud. Install and authenticate the Colyseus Cloud CLI on the worker, then set `BACKEND_DEPLOY_COMMAND`.
 
 PowerShell example:
@@ -324,6 +324,7 @@ PowerShell example:
 ```powershell
 $env:DEPLOY_ENABLED = "true"
 $env:BACKEND_DEPLOY_COMMAND = "npm run deploy:colyseus"
+$env:FRONTEND_VERIFY_URL = "https://www.vibetheftauto.xyz/"
 # Optional; leave unset when Vercel Git integration deploys pushes to main.
 $env:FRONTEND_DEPLOY_COMMAND = "npx vercel deploy --prod --yes"
 ```
@@ -492,6 +493,7 @@ ready_for_review
   -> worker validates npm run build:web and npm run build:server
   -> worker pushes commit to main
   -> frontend changes deploy through Vercel Git integration or FRONTEND_DEPLOY_COMMAND
+  -> worker waits until production frontend serves the pushed commit SHA
   -> backend changes deploy through BACKEND_DEPLOY_COMMAND
   -> deployed
 ```
@@ -546,6 +548,8 @@ Rollback options:
 1. Revert the merged commit and deploy.
 2. Redeploy the previous known-good commit.
 3. Disable the affected admin workflow while investigating.
+
+The implemented worker rollback path uses option 1. It creates a revert commit, reruns the same checks used for deploy approval, pushes the revert to `main`, and then waits until the production frontend is serving the rollback commit SHA before setting the task to `rolled_back`.
 
 ## MVP Implementation Order
 
