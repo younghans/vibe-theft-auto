@@ -1,10 +1,18 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  readPostgresAgentState,
+  shouldUsePostgresAgentState,
+  withPostgresAgentState
+} from './agentJsonStateStore.js';
 
+const AGENT_DEPLOYMENTS_FILE_PATH_CONFIGURED = Boolean(process.env.AGENT_DEPLOYMENTS_FILE_PATH);
 export const AGENT_DEPLOYMENTS_FILE_PATH = process.env.AGENT_DEPLOYMENTS_FILE_PATH
   ? path.resolve(process.env.AGENT_DEPLOYMENTS_FILE_PATH)
   : fileURLToPath(new URL('../data/agent-deployments.json', import.meta.url));
+const DEFAULT_AGENT_DEPLOYMENTS_FILE_PATH = fileURLToPath(new URL('../data/agent-deployments.json', import.meta.url));
+const AGENT_DEPLOYMENTS_STATE_KEY = 'agent_deployments';
 
 const DEPLOYMENT_HISTORY_LIMIT = 50;
 
@@ -67,6 +75,17 @@ function normalizeState(raw = {}) {
 }
 
 async function readDeploymentState(filePath = AGENT_DEPLOYMENTS_FILE_PATH) {
+  if (shouldUseDeploymentPostgresState(filePath)) {
+    return normalizeState(await readPostgresAgentState(
+      AGENT_DEPLOYMENTS_STATE_KEY,
+      await readDeploymentFileState(filePath)
+    ));
+  }
+
+  return readDeploymentFileState(filePath);
+}
+
+async function readDeploymentFileState(filePath = AGENT_DEPLOYMENTS_FILE_PATH) {
   const text = await fsp.readFile(filePath, 'utf8').catch((error) => {
     if (error?.code === 'ENOENT') {
       return '';
@@ -86,10 +105,41 @@ async function writeDeploymentState(state, filePath = AGENT_DEPLOYMENTS_FILE_PAT
   await fsp.writeFile(filePath, `${JSON.stringify(normalizeState(state), null, 2)}\n`, 'utf8');
 }
 
+function shouldUseDeploymentPostgresState(filePath = AGENT_DEPLOYMENTS_FILE_PATH) {
+  return shouldUsePostgresAgentState({
+    filePath,
+    defaultFilePath: DEFAULT_AGENT_DEPLOYMENTS_FILE_PATH,
+    filePathConfigured: AGENT_DEPLOYMENTS_FILE_PATH_CONFIGURED
+  });
+}
+
 function withDeploymentStore(mutator, {
   filePath = AGENT_DEPLOYMENTS_FILE_PATH,
   write = true
 } = {}) {
+  if (shouldUseDeploymentPostgresState(filePath)) {
+    const operation = deploymentStoreQueue.then(async () => {
+      const fallbackState = await readDeploymentFileState(filePath);
+      return withPostgresAgentState(AGENT_DEPLOYMENTS_STATE_KEY, fallbackState, async (rawState) => {
+        const state = normalizeState(rawState);
+        const result = await mutator(state);
+        rawState.version = 1;
+        rawState.currentCommitSha = state.currentCommitSha;
+        rawState.previousCommitSha = state.previousCommitSha;
+        rawState.currentTaskId = state.currentTaskId;
+        rawState.lastAction = state.lastAction;
+        rawState.deployedAt = state.deployedAt;
+        rawState.rolledBackAt = state.rolledBackAt;
+        rawState.updatedAt = state.updatedAt;
+        rawState.history = normalizeState(state).history;
+        return cloneJson(result);
+      }, { write });
+    });
+
+    deploymentStoreQueue = operation.catch(() => {});
+    return operation;
+  }
+
   const operation = deploymentStoreQueue.then(async () => {
     const state = await readDeploymentState(filePath);
     const result = await mutator(state);

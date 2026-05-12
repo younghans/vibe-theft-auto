@@ -2,10 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  readPostgresAgentState,
+  shouldUsePostgresAgentState,
+  withPostgresAgentState
+} from './agentJsonStateStore.js';
 
+const AGENT_TASKS_FILE_PATH_CONFIGURED = Boolean(process.env.AGENT_TASKS_FILE_PATH);
 export const AGENT_TASKS_FILE_PATH = process.env.AGENT_TASKS_FILE_PATH
   ? path.resolve(process.env.AGENT_TASKS_FILE_PATH)
   : fileURLToPath(new URL('../data/agent-tasks.json', import.meta.url));
+const DEFAULT_AGENT_TASKS_FILE_PATH = fileURLToPath(new URL('../data/agent-tasks.json', import.meta.url));
+const AGENT_TASKS_STATE_KEY = 'agent_tasks';
 
 export const AGENT_TASK_STATUSES = Object.freeze([
   'queued',
@@ -299,6 +307,17 @@ function getFollowupBaseTask(threadTasks = []) {
 }
 
 async function readTaskState(filePath = AGENT_TASKS_FILE_PATH) {
+  if (shouldUseTaskPostgresState(filePath)) {
+    return normalizeTaskState(await readPostgresAgentState(
+      AGENT_TASKS_STATE_KEY,
+      await readTaskFileState(filePath)
+    ));
+  }
+
+  return readTaskFileState(filePath);
+}
+
+async function readTaskFileState(filePath = AGENT_TASKS_FILE_PATH) {
   const text = await fsp.readFile(filePath, 'utf8').catch((error) => {
     if (error?.code === 'ENOENT') {
       return '';
@@ -311,6 +330,10 @@ async function readTaskState(filePath = AGENT_TASKS_FILE_PATH) {
   }
 
   const parsed = JSON.parse(text);
+  return normalizeTaskState(parsed);
+}
+
+function normalizeTaskState(parsed = {}) {
   const rawTasks = Array.isArray(parsed) ? parsed : parsed?.tasks;
   return {
     version: Number(parsed?.version ?? 1) || 1,
@@ -331,7 +354,31 @@ async function writeTaskState(state, filePath = AGENT_TASKS_FILE_PATH) {
   await fsp.rename(tempPath, filePath);
 }
 
+function shouldUseTaskPostgresState(filePath = AGENT_TASKS_FILE_PATH) {
+  return shouldUsePostgresAgentState({
+    filePath,
+    defaultFilePath: DEFAULT_AGENT_TASKS_FILE_PATH,
+    filePathConfigured: AGENT_TASKS_FILE_PATH_CONFIGURED
+  });
+}
+
 function withTaskStore(operation, { filePath = AGENT_TASKS_FILE_PATH, write = true } = {}) {
+  if (shouldUseTaskPostgresState(filePath)) {
+    const run = taskStoreQueue.then(async () => {
+      const fallbackState = await readTaskFileState(filePath);
+      return withPostgresAgentState(AGENT_TASKS_STATE_KEY, fallbackState, async (rawState) => {
+        const state = normalizeTaskState(rawState);
+        const result = await operation(state);
+        rawState.version = 1;
+        rawState.tasks = sortTasks(state.tasks).map(normalizeTask);
+        return result;
+      }, { write });
+    });
+
+    taskStoreQueue = run.catch(() => {});
+    return run;
+  }
+
   const run = taskStoreQueue.then(async () => {
     const state = await readTaskState(filePath);
     const result = await operation(state);

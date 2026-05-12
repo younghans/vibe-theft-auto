@@ -148,13 +148,14 @@ Minimum task shape:
 }
 ```
 
-For MVP storage, a JSON file is acceptable:
+Agent task storage uses Postgres when `DATABASE_URL` is present and no explicit file path override is configured. Local development and tests can still use JSON files:
 
 ```text
 server/data/agent-tasks.json
+server/data/agent-deployments.json
 ```
 
-Move to Postgres when this becomes used by multiple admins or when task history matters.
+Set `AGENT_STATE_STORE=file`, `AGENT_TASKS_FILE_PATH`, or `AGENT_DEPLOYMENTS_FILE_PATH` only for local debugging or tests. Production should keep `DATABASE_URL` configured so prompt threads, deployed history, rollback state, and agent completion messages survive server restarts and redeploys.
 
 ## Server Endpoints
 
@@ -267,7 +268,7 @@ The worker PC needs:
 
 This repo now includes the first vertical slice:
 
-- `server/src/agentTasks.js` stores tasks in `server/data/agent-tasks.json`.
+- `server/src/agentTasks.js` stores tasks through a Postgres-backed JSON state store in production, with local JSON-file fallback for tests and development.
 - `server/app.config.js` exposes `/admin/agent-tasks` admin and worker endpoints.
 - The school microgame HUD has an admin-only `Improve` panel for prompts, task status, logs, branch, commit, and deploy approval.
 - `scripts/agent-worker.mjs` polls for work, creates isolated git worktrees, runs Codex, runs `npm ci`, `npm run build:web`, `npm run build:server`, and `git diff --check`, enforces the MVP file allowlist, commits, pushes an `agent/task-...` branch, infers frontend/backend deploy targets from changed files, and reports updates back to the game.
