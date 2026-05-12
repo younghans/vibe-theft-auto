@@ -245,7 +245,7 @@ Screenshots can be added later. Text context is enough for the first pass.
 Recommended environment variables:
 
 ```bash
-AGENT_API_BASE=https://vibetheftauto.xyz
+AGENT_API_BASE=https://us-atl-06d422c8.vibetheftauto.xyz
 AGENT_WORKER_TOKEN=<long random token>
 AGENT_WORK_ROOT=D:\agent-work
 GIT_REMOTE=git@github.com:<org-or-user>/<repo>.git
@@ -294,7 +294,7 @@ git config --global user.email "<worker email>"
 Then set the worker environment. PowerShell example:
 
 ```powershell
-$env:AGENT_API_BASE = "https://vibetheftauto.xyz"
+$env:AGENT_API_BASE = "https://us-atl-06d422c8.vibetheftauto.xyz"
 $env:AGENT_WORKER_TOKEN = "<same long random token from AGENT_WORKER_TOKENS>"
 $env:AGENT_WORK_ROOT = "D:\agent-work"
 $env:GIT_REMOTE = "git@github.com:<org-or-user>/<repo>.git"
