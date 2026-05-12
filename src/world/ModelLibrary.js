@@ -21,6 +21,7 @@ export class ModelLibrary {
       this.cache.set(url, this.getLoader(url).loadAsync(url)
         .then((asset) => {
           const normalized = asset.scene ? asset : { scene: asset, animations: asset.animations ?? [] };
+          const hasSkinnedMeshes = this.hasSkinnedMeshes(normalized.scene);
 
           normalized.scene.traverse((node) => {
             if (node.isMesh) {
@@ -39,9 +40,12 @@ export class ModelLibrary {
           console.info('[Assets] Model loaded.', {
             url,
             animationCount: normalized.animations?.length ?? 0,
-            hasSkinnedMeshes: this.hasSkinnedMeshes(normalized.scene)
+            hasSkinnedMeshes
           });
-          return normalized;
+          return {
+            ...normalized,
+            hasSkinnedMeshes
+          };
         })
         .catch((error) => {
           console.error('[Assets] Model load failed.', {
@@ -56,9 +60,29 @@ export class ModelLibrary {
     return this.cache.get(url);
   }
 
+  async preload(urls = [], { concurrency = 8 } = {}) {
+    const queue = [...new Set(
+      (urls ?? [])
+        .filter((url) => typeof url === 'string' && url)
+    )];
+    if (!queue.length) {
+      return;
+    }
+
+    let index = 0;
+    const workerCount = Math.max(1, Math.min(Math.floor(concurrency) || 1, queue.length));
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (index < queue.length) {
+        const url = queue[index];
+        index += 1;
+        await this.load(url);
+      }
+    }));
+  }
+
   async instantiate(url) {
     const asset = await this.load(url);
-    return this.hasSkinnedMeshes(asset.scene) ? cloneSkeleton(asset.scene) : asset.scene.clone(true);
+    return asset.hasSkinnedMeshes ? cloneSkeleton(asset.scene) : asset.scene.clone(true);
   }
 
   getLoader(url) {

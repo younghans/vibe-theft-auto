@@ -361,7 +361,7 @@ function getRuntimeConfigScript() {
   return `    <script>${assignments.join('')}</script>\n`;
 }
 
-function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
+function buildHtmlFromTemplate(template, { appScript, stylesheet, modulePreloads = [] }) {
   let html = template;
   html = html.replace(/\s*<link\s+rel="stylesheet"\s+href="\.\/styles\.css"\s*\/?>\s*/u, '\n');
   html = html.replace(/\s*<script type="importmap">[\s\S]*?<\/script>\s*/u, '\n');
@@ -375,6 +375,13 @@ function buildHtmlFromTemplate(template, { appScript, stylesheet }) {
       '</head>',
       `    <link rel="stylesheet" href="./${stylesheet}" />\n  </head>`
     );
+  }
+
+  if (modulePreloads.length > 0) {
+    const preloadTags = modulePreloads
+      .map((file) => `    <link rel="modulepreload" href="./${file}" />`)
+      .join('\n');
+    html = html.replace('</head>', `${preloadTags}\n  </head>`);
   }
 
   const runtimeConfigScript = getRuntimeConfigScript();
@@ -417,6 +424,9 @@ async function bundleClient() {
     });
   const appScript = outputs.find((file) => /assets\/app-[^/]+\.js$/u.test(file));
   const stylesheet = outputs.find((file) => /assets\/styles-[^/]+\.css$/u.test(file));
+  const modulePreloads = outputs
+    .filter((file) => /assets\/chunks\/[^/]+\.js$/u.test(file))
+    .sort();
 
   if (!appScript) {
     throw new Error('Bundled app entry was not generated.');
@@ -424,13 +434,14 @@ async function bundleClient() {
 
   return {
     appScript,
-    stylesheet: stylesheet ?? ''
+    stylesheet: stylesheet ?? '',
+    modulePreloads
   };
 }
 
-async function copyStaticShell({ appScript, stylesheet }) {
+async function copyStaticShell({ appScript, stylesheet, modulePreloads = [] }) {
   const htmlTemplate = await fs.readFile(path.join(root, 'index.html'), 'utf8');
-  const builtHtml = buildHtmlFromTemplate(htmlTemplate, { appScript, stylesheet });
+  const builtHtml = buildHtmlFromTemplate(htmlTemplate, { appScript, stylesheet, modulePreloads });
   await fs.writeFile(path.join(stagingDist, 'index.html'), builtHtml, 'utf8');
   await copyOptionalFile(path.join(root, 'favicon.svg'), path.join(stagingDist, 'favicon.svg'));
   await copyFile(path.join(root, 'favicon.ico'), path.join(stagingDist, 'favicon.ico'));

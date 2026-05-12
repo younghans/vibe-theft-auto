@@ -21,6 +21,39 @@ import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0.1;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
+  assets.playerAnimationSet.idle,
+  assets.playerAnimationSet.walking,
+  assets.playerAnimationSet.slowRun,
+  assets.playerAnimationSet.fastRun,
+  assets.playerAnimationSet.fightingIdle,
+  assets.playerAnimationSet.punching,
+  assets.playerAnimationSet.snatch
+]);
+
+function getCellKey(cellX, cellZ) {
+  return `${cellX}:${cellZ}`;
+}
+
+function worldToCellCoord(value) {
+  return Math.round((Number(value) || 0) / BUILDER_TILE_SIZE);
+}
+
+function collectItemAssetUrls(item, output = new Set()) {
+  if (!item) {
+    return output;
+  }
+
+  if (typeof item.asset === 'string' && item.asset) {
+    output.add(item.asset);
+  }
+
+  if (item.layer === 'tile' && item.underlayTileId) {
+    collectItemAssetUrls(getBuilderItemById(item.underlayTileId), output);
+  }
+
+  return output;
+}
 
 function setShadowFlags(root) {
   root.traverse((node) => {
@@ -559,23 +592,6 @@ function isParkWallItem(item) {
   return item?.layer === 'tile' && item.assetName?.startsWith('park_wall_');
 }
 
-function tileContainsPosition(rendered, x, z) {
-  const occupiedCells = getTileOccupiedCells(
-    rendered.item,
-    rendered.placement?.cellX ?? 0,
-    rendered.placement?.cellZ ?? 0,
-    rendered.placement?.rotationQuarterTurns ?? 0
-  );
-  const halfTile = BUILDER_TILE_SIZE * 0.5;
-
-  return occupiedCells.some((cell) => (
-    x >= (cell.x * BUILDER_TILE_SIZE) - halfTile
-    && x <= (cell.x * BUILDER_TILE_SIZE) + halfTile
-    && z >= (cell.z * BUILDER_TILE_SIZE) - halfTile
-    && z <= (cell.z * BUILDER_TILE_SIZE) + halfTile
-  ));
-}
-
 function markParkWallTriangleCells(occupied, tileMinX, tileMinZ, minX, maxX, minZ, maxZ) {
   const gridSize = occupied.length;
   const startX = Math.max(0, Math.min(gridSize - 1, Math.floor(minX - tileMinX)));
@@ -742,6 +758,12 @@ export class WorldRenderer {
     this.scene.add(this.npcRoutineRoot);
 
     this.renderedPlacements = new Map();
+    this.actorPlacementIds = new Set();
+    this.staticColliderEntries = new Map();
+    this.visibleStaticColliders = [];
+    this.staticCollidersDirty = true;
+    this.surfaceHeightByCell = new Map();
+    this.surfaceHeightIndexDirty = true;
     this.npcRuntimeState = new Map();
     this.npcFocusTargets = new Map();
     this.npcDebugState = new Map();
@@ -781,8 +803,10 @@ export class WorldRenderer {
 
   async syncFromState(worldState) {
     this.clear();
+    const placements = [...worldState.getPlacements()];
+    await this.preloadPlacementAssets(placements);
 
-    for (const placement of worldState.getPlacements()) {
+    for (const placement of placements) {
       await this.addPlacement(placement);
     }
   }
@@ -793,10 +817,104 @@ export class WorldRenderer {
       rendered.object.parent?.remove(rendered.object);
     }
     this.renderedPlacements.clear();
+    this.actorPlacementIds.clear();
+    this.staticColliderEntries.clear();
+    this.visibleStaticColliders = [];
+    this.staticCollidersDirty = true;
+    this.surfaceHeightByCell.clear();
+    this.surfaceHeightIndexDirty = true;
     this.tileRoot.clear();
     this.propRoot.clear();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
+  }
+
+  async preloadPlacementAssets(placements = []) {
+    const modelUrls = new Set();
+    let hasNpc = false;
+
+    for (const placement of placements) {
+      const item = getBuilderItemById(placement.itemId);
+      collectItemAssetUrls(item, modelUrls);
+      hasNpc = hasNpc || placement.layer === 'npc';
+    }
+
+    await Promise.all([
+      this.library.preload([...modelUrls]),
+      hasNpc ? preloadMixamoClips(NPC_CORE_ANIMATION_CLIPS) : Promise.resolve()
+    ]);
+  }
+
+  markStaticCollidersDirty() {
+    this.staticCollidersDirty = true;
+  }
+
+  refreshStaticColliderEntry(rendered) {
+    if (!rendered || rendered.actor) {
+      return;
+    }
+
+    if (rendered.colliders?.length) {
+      this.staticColliderEntries.set(rendered.id, rendered.colliders);
+    } else {
+      this.staticColliderEntries.delete(rendered.id);
+    }
+    this.markStaticCollidersDirty();
+  }
+
+  getVisibleStaticColliders() {
+    if (!this.staticCollidersDirty) {
+      return this.visibleStaticColliders;
+    }
+
+    const colliders = [];
+    for (const [placementId, entryColliders] of this.staticColliderEntries.entries()) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered || rendered.hidden) {
+        continue;
+      }
+      colliders.push(...entryColliders);
+    }
+
+    this.visibleStaticColliders = colliders;
+    this.staticCollidersDirty = false;
+    return this.visibleStaticColliders;
+  }
+
+  markSurfaceHeightIndexDirty() {
+    this.surfaceHeightIndexDirty = true;
+  }
+
+  rebuildSurfaceHeightIndex() {
+    this.surfaceHeightByCell.clear();
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (rendered.layer !== 'tile') {
+        continue;
+      }
+
+      const surfaceHeight = rendered.surfaceHeight ?? 0;
+      for (const cell of getTileOccupiedCells(
+        rendered.item,
+        rendered.placement?.cellX ?? 0,
+        rendered.placement?.cellZ ?? 0,
+        rendered.placement?.rotationQuarterTurns ?? 0
+      )) {
+        const key = getCellKey(cell.x, cell.z);
+        this.surfaceHeightByCell.set(
+          key,
+          Math.max(this.surfaceHeightByCell.get(key) ?? 0, surfaceHeight)
+        );
+      }
+    }
+
+    this.surfaceHeightIndexDirty = false;
+  }
+
+  ensureSurfaceHeightIndex() {
+    if (this.surfaceHeightIndexDirty) {
+      this.rebuildSurfaceHeightIndex();
+    }
   }
 
   syncNpcInteractRadiusIndicators(worldState, playerPosition = null) {
@@ -817,19 +935,8 @@ export class WorldRenderer {
   }
 
   getSurfaceHeightAtPosition(x, z) {
-    let surfaceHeight = 0;
-
-    for (const rendered of this.renderedPlacements.values()) {
-      if (rendered.layer !== 'tile') {
-        continue;
-      }
-
-      if (tileContainsPosition(rendered, x, z)) {
-        surfaceHeight = Math.max(surfaceHeight, rendered.surfaceHeight ?? 0);
-      }
-    }
-
-    return surfaceHeight;
+    this.ensureSurfaceHeightIndex();
+    return this.surfaceHeightByCell.get(getCellKey(worldToCellCoord(x), worldToCellCoord(z))) ?? 0;
   }
 
   async addPlacement(placement) {
@@ -886,6 +993,14 @@ export class WorldRenderer {
     };
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
+    if (actor) {
+      this.actorPlacementIds.add(placement.id);
+    } else {
+      this.refreshStaticColliderEntry(renderedPlacement);
+    }
+    if (placement.layer === 'tile') {
+      this.markSurfaceHeightIndexDirty();
+    }
     if (placement.layer === 'tile') {
       this.tileRoot.add(object);
     } else {
@@ -903,15 +1018,7 @@ export class WorldRenderer {
       return null;
     }
 
-    await preloadMixamoClips([
-      assets.playerAnimationSet.idle,
-      assets.playerAnimationSet.walking,
-      assets.playerAnimationSet.slowRun,
-      assets.playerAnimationSet.fastRun,
-      assets.playerAnimationSet.fightingIdle,
-      assets.playerAnimationSet.punching,
-      assets.playerAnimationSet.snatch
-    ]);
+    await preloadMixamoClips(NPC_CORE_ANIMATION_CLIPS);
     const object = await this.library.instantiate(item.asset);
     const actor = new NpcActor({
       model,
@@ -1181,6 +1288,11 @@ export class WorldRenderer {
       rendered.colliders = createPlacementColliders(rendered.object, rendered.item, placement, rendered.actor);
     } else {
       rendered.colliders = createPlacementColliders(rendered.colliderObject, rendered.item, placement, null);
+      this.refreshStaticColliderEntry(rendered);
+    }
+
+    if (placement.layer === 'tile') {
+      this.markSurfaceHeightIndexDirty();
     }
 
     this.refreshWorkoutPlacementState();
@@ -1193,6 +1305,9 @@ export class WorldRenderer {
     }
 
     rendered.hidden = Boolean(hidden);
+    if (!rendered.actor) {
+      this.markStaticCollidersDirty();
+    }
     this.applyPlacementVisibility(rendered);
   }
 
@@ -1297,23 +1412,33 @@ export class WorldRenderer {
     this.cameraOccludedPlacementIds.delete(id);
     rendered.object.parent?.remove(rendered.object);
     this.renderedPlacements.delete(id);
+    this.actorPlacementIds.delete(id);
+    this.staticColliderEntries.delete(id);
+    this.markStaticCollidersDirty();
+    if (rendered.layer === 'tile') {
+      this.markSurfaceHeightIndexDirty();
+    }
     this.refreshWorkoutPlacementState();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
   }
 
   getColliders() {
-    return [...this.renderedPlacements.values()]
-      .filter((placement) => !placement.hidden)
-      .flatMap((placement) => {
-        if (placement.actor) {
-          const collider = createNpcCollider(placement.actor, placement.placement);
-          return collider ? [collider] : [];
-        }
+    const colliders = [...this.getVisibleStaticColliders()];
 
-        return placement.colliders ?? [];
-      })
-      .filter(Boolean);
+    for (const placementId of this.actorPlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered || rendered.hidden) {
+        continue;
+      }
+
+      const collider = createNpcCollider(rendered.actor, rendered.placement);
+      if (collider) {
+        colliders.push(collider);
+      }
+    }
+
+    return colliders;
   }
 
   getGroundHeightAt(worldPosition, worldState) {

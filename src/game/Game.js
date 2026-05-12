@@ -6824,6 +6824,8 @@ export class Game {
       this.setupLights();
       this.setupAtmosphere();
       this.setBootLoadingProgress(0.12);
+      this.markBoot('boot:npc-service:start');
+      const npcServicePromise = createNpcService();
 
       const cityState = await buildCity(this.scene);
       this.setBootLoadingProgress(0.24);
@@ -6835,8 +6837,7 @@ export class Game {
       this.baseColliders = cityState.colliders;
       this.staticInteractables = cityState.interactables;
       this.cityBounds = cityState.cityBounds;
-      this.markBoot('boot:npc-service:start');
-      this.npcService = await createNpcService();
+      this.npcService = await npcServicePromise;
       this.setBootLoadingProgress(0.36);
       this.markBoot('boot:npc-service:end');
       this.measureBoot('npcServiceReady', 'boot:npc-service:start', 'boot:npc-service:end');
@@ -6896,12 +6897,18 @@ export class Game {
         npcs: sharedLayout.npcs?.length ?? 0
       });
       this.currentLayout = sharedLayout;
+      this.markBoot('boot:avatar:start');
+      const avatarPromise = this.buildAvatar(this.desiredLocalCharacterId)
+        .then((avatar) => ({ avatar }), (error) => ({ error }));
       await this.worldBuilder.loadLayout(sharedLayout);
       this.worldLayoutReady = true;
       this.setBootLoadingProgress(0.72);
 
-      this.markBoot('boot:avatar:start');
-      this.player = await this.buildAvatar(this.desiredLocalCharacterId);
+      const avatarResult = await avatarPromise;
+      if (avatarResult.error) {
+        throw avatarResult.error;
+      }
+      this.player = avatarResult.avatar;
       this.setBootLoadingProgress(0.88);
       this.markBoot('boot:avatar:end');
       this.measureBoot('localAvatarReady', 'boot:avatar:start', 'boot:avatar:end');

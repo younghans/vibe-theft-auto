@@ -636,6 +636,7 @@ class WorldPersistenceManager {
     this.latestSaveResult = { version: null };
     this.backupCapturePromise = null;
     this.backupTimer = null;
+    this.lastBackupAttemptAt = 0;
     this.startBackupTimer();
   }
 
@@ -659,9 +660,20 @@ class WorldPersistenceManager {
     this.backupTimer.unref?.();
   }
 
-  async captureCurrentBackup(saveResult = this.latestSaveResult) {
+  async captureCurrentBackup(saveResult = this.latestSaveResult, { force = false } = {}) {
     if (!this.store.captureBackup) {
       return null;
+    }
+
+    const intervalMs = Number(this.store.backupConfig?.intervalMs ?? 0);
+    const nowMs = Date.now();
+    if (
+      !force
+      && intervalMs > 0
+      && this.lastBackupAttemptAt > 0
+      && nowMs - this.lastBackupAttemptAt < intervalMs
+    ) {
+      return { captured: false, reason: 'backup-interval-not-elapsed' };
     }
 
     if (this.backupCapturePromise) {
@@ -674,6 +686,12 @@ class WorldPersistenceManager {
           error: error?.message ?? String(error)
         });
         return null;
+      })
+      .then((result) => {
+        if (result) {
+          this.lastBackupAttemptAt = nowMs;
+        }
+        return result;
       })
       .finally(() => {
         this.backupCapturePromise = null;
