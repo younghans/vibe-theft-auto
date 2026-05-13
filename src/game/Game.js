@@ -129,6 +129,7 @@ const DEFAULT_CAMERA_ZOOM_INDEX = 4;
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
+const SCHOOL_MICROGAME_COUNTDOWN_MS = 3000;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
@@ -693,6 +694,9 @@ export class Game {
     this.schoolMicrogameLastTickAt = 0;
     this.schoolMicrogameSequence = 0;
     this.schoolMicrogameRandomCursor = 0;
+    this.schoolMicrogameSessionActive = false;
+    this.schoolMicrogameSessionRoundCount = 0;
+    this.schoolMicrogameSessionXpEarned = 0;
     this.schoolTeacherPreviewRenderer = null;
     this.officeJobPlacementId = '';
     this.adminPromptOpen = false;
@@ -5388,6 +5392,25 @@ export class Game {
     return games[index]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
   }
 
+  chooseRandomSchoolSessionGameId(previousId = '', preferredId = SCHOOL_MICROGAME_ALL_ID) {
+    const preferred = normalizeSchoolMicrogameId(preferredId, SCHOOL_MICROGAME_ALL_ID);
+    if (preferred !== SCHOOL_MICROGAME_ALL_ID && getSchoolMicrogameDefinition(preferred)) {
+      return preferred;
+    }
+
+    const games = listSchoolMicrogames();
+    if (!games.length) {
+      return SCHOOL_MICROGAME_DEFAULT_ID;
+    }
+
+    const previous = normalizeSchoolMicrogameId(previousId, '');
+    const choices = games.length > 1
+      ? games.filter((game) => game.id !== previous)
+      : games;
+    const index = Math.floor(this.schoolRandom() * choices.length);
+    return choices[index]?.id ?? games[0]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
+  }
+
   isOfficeJobComputerInteractable(interactable = null) {
     return String(interactable?.itemId ?? '').trim() === OFFICE_JOB_TERMINAL_ITEM_ID;
   }
@@ -5436,6 +5459,7 @@ export class Game {
     this.closePhoneMenu();
     const placementId = String(interaction?.placementId ?? this.officeJobPlacementId ?? '').trim();
     this.officeJobPlacementId = placementId;
+    this.schoolMicrogameSessionActive = false;
     this.schoolMicrogameNpcId = '';
     this.schoolMicrogameNpcName = 'Office Computer';
     this.schoolMicrogameNpcModelId = 'martha';
@@ -5532,6 +5556,7 @@ export class Game {
 
     this.schoolMicrogameSequence += 1;
     this.schoolMicrogameRandomCursor = (Date.now() + this.schoolMicrogameSequence * 2654435761) >>> 0;
+    this.schoolMicrogameSessionActive = false;
     const { round, data } = this.createOfficeJobRound(job.id);
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameLastTickAt = performance.now();
@@ -5718,8 +5743,12 @@ export class Game {
     this.schoolMicrogameNpcName = String(interaction?.npc?.name ?? 'Teacher');
     this.schoolMicrogameNpcModelId = String(interaction?.npc?.modelId ?? this.schoolMicrogameNpcModelId ?? 'martha');
     this.schoolMicrogamePreviewMode = false;
-    const gameId = this.chooseSchoolMicrogameId(interaction?.gameId ?? interaction?.npc?.schoolMicrogameId ?? SCHOOL_MICROGAME_ALL_ID);
-    this.prepareSchoolMicrogame(gameId, { visible: true });
+    this.schoolMicrogameSessionActive = true;
+    this.schoolMicrogameSessionRoundCount = 0;
+    this.schoolMicrogameSessionXpEarned = 0;
+    this.schoolMicrogameRandomCursor = (Date.now() + (++this.schoolMicrogameSequence * 2654435761)) >>> 0;
+    const gameId = this.chooseRandomSchoolSessionGameId('', SCHOOL_MICROGAME_ALL_ID);
+    this.prepareSchoolMicrogame(gameId, { countdown: true, visible: true });
   }
 
   openDebugSchoolMicrogame(gameId = SCHOOL_MICROGAME_DEFAULT_ID) {
@@ -5728,26 +5757,51 @@ export class Game {
     this.schoolMicrogameNpcName = 'Debug Teacher';
     this.schoolMicrogameNpcModelId = 'martha';
     this.schoolMicrogamePreviewMode = true;
-    this.prepareSchoolMicrogame(this.chooseSchoolMicrogameId(gameId), { visible: true });
+    this.schoolMicrogameSessionActive = true;
+    this.schoolMicrogameSessionRoundCount = 0;
+    this.schoolMicrogameSessionXpEarned = 0;
+    this.schoolMicrogameRandomCursor = (Date.now() + (++this.schoolMicrogameSequence * 2654435761)) >>> 0;
+    this.prepareSchoolMicrogame(this.chooseRandomSchoolSessionGameId('', gameId), { countdown: true, visible: true });
     this.hud.showToast('School microgame HUD preview opened.');
     return true;
   }
 
-  prepareSchoolMicrogame(gameId = SCHOOL_MICROGAME_DEFAULT_ID, { visible = this.hud.isSchoolMicrogameOpen() } = {}) {
+  prepareSchoolMicrogame(
+    gameId = SCHOOL_MICROGAME_DEFAULT_ID,
+    {
+      visible = this.hud.isSchoolMicrogameOpen(),
+      countdown = this.schoolMicrogameSessionActive,
+      previousResultTitle = '',
+      previousResultDetail = '',
+      previousSuccess = null
+    } = {}
+  ) {
     this.schoolMicrogameSequence += 1;
     this.schoolMicrogameRandomCursor = (Date.now() + this.schoolMicrogameSequence * 2654435761) >>> 0;
     const { round, data } = this.createSchoolMicrogameRound(gameId);
+    const now = performance.now();
     round.teacherName = this.schoolMicrogameNpcName;
     round.teacherModelId = this.schoolMicrogameNpcModelId;
+    data.roundNumber = Math.max(1, this.schoolMicrogameSessionRoundCount + 1);
+    data.sessionXpEarned = Math.max(0, Math.floor(Number(this.schoolMicrogameSessionXpEarned ?? 0) || 0));
+    data.previousResultTitle = previousResultTitle;
+    data.previousResultDetail = previousResultDetail;
+    data.previousSuccess = previousSuccess;
+    if (countdown) {
+      data.countdownStartedAt = now;
+      data.countdownEndsAt = now + SCHOOL_MICROGAME_COUNTDOWN_MS;
+      data.countdownMs = SCHOOL_MICROGAME_COUNTDOWN_MS;
+    }
     this.schoolMicrogameHoldActive = false;
-    this.schoolMicrogameLastTickAt = performance.now();
+    this.schoolMicrogameLastTickAt = now;
     this.schoolMicrogame = {
       id: `school_${round.gameId}_${this.schoolMicrogameSequence}`,
-      phase: 'ready',
+      context: 'school-minigame',
+      phase: countdown ? 'countdown' : 'ready',
       round,
       data,
-      remainingMs: round.durationMs,
-      message: round.description,
+      remainingMs: countdown ? SCHOOL_MICROGAME_COUNTDOWN_MS : round.durationMs,
+      message: countdown ? `Round ${data.roundNumber} starts soon.` : round.description,
       resultTitle: '',
       resultDetail: '',
       preview: this.schoolMicrogamePreviewMode === true
@@ -5842,6 +5896,7 @@ export class Game {
   }
 
   closeSchoolMicrogame() {
+    this.schoolMicrogameSessionActive = false;
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameRequestInFlight = false;
     this.adminPromptError = '';
@@ -5853,6 +5908,43 @@ export class Game {
     });
     this.refreshAdminPromptHud();
     this.schoolTeacherPreviewRenderer?.setActive(false);
+  }
+
+  updateSchoolMicrogameCountdown(game = this.schoolMicrogame, now = performance.now()) {
+    if (!game || game.phase !== 'countdown') {
+      return false;
+    }
+
+    const countdownEndsAt = Number(game.data?.countdownEndsAt ?? 0) || now;
+    game.remainingMs = Math.max(0, countdownEndsAt - now);
+    game.data.countdownMs = game.remainingMs;
+    if (game.remainingMs > 0) {
+      this.syncSchoolMicrogameHud();
+      return true;
+    }
+
+    this.beginSchoolMicrogame();
+    return true;
+  }
+
+  continueSchoolMicrogameSession({
+    previousGameId = '',
+    previousSuccess = null,
+    previousResultTitle = '',
+    previousResultDetail = ''
+  } = {}) {
+    if (!this.schoolMicrogameSessionActive || !this.hud.isSchoolMicrogameOpen()) {
+      return;
+    }
+
+    const nextGameId = this.chooseRandomSchoolSessionGameId(previousGameId, SCHOOL_MICROGAME_ALL_ID);
+    this.prepareSchoolMicrogame(nextGameId, {
+      countdown: true,
+      visible: true,
+      previousSuccess,
+      previousResultTitle,
+      previousResultDetail
+    });
   }
 
   syncSchoolMicrogameHud({ loading = this.schoolMicrogameRequestInFlight, error = '' } = {}) {
@@ -5946,6 +6038,9 @@ export class Game {
       return;
     }
 
+    const completedGame = this.schoolMicrogame;
+    const completedGameId = completedGame.round?.gameId ?? '';
+    const isSchoolSession = completedGame.context === 'school-minigame';
     this.schoolMicrogame.phase = success ? 'success' : 'failure';
     this.schoolMicrogame.remainingMs = 0;
     this.schoolMicrogame.resultTitle = resultTitle || (success ? 'Passed' : 'Try again');
@@ -5959,8 +6054,19 @@ export class Game {
     };
 
     if (!success) {
+      if (isSchoolSession) {
+        this.schoolMicrogameSessionRoundCount += 1;
+      }
       this.playSoundEffect(this.playingCardSound);
       this.syncSchoolMicrogameHud();
+      if (isSchoolSession) {
+        this.continueSchoolMicrogameSession({
+          previousGameId: completedGameId,
+          previousSuccess: false,
+          previousResultTitle: this.schoolMicrogame.resultTitle,
+          previousResultDetail: this.schoolMicrogame.resultDetail
+        });
+      }
       return;
     }
 
@@ -5973,6 +6079,21 @@ export class Game {
       ? typeof this.npcService?.completeOfficeJob === 'function'
       : typeof this.npcService?.completeSchoolMicrogame === 'function';
     if (this.schoolMicrogamePreviewMode || !canCompleteReward) {
+      if (isSchoolSession) {
+        const previewXp = Math.max(0, Math.floor(Number(this.schoolMicrogame.round?.rewardXp ?? 0) || 0));
+        this.schoolMicrogameSessionRoundCount += 1;
+        this.schoolMicrogameSessionXpEarned += previewXp;
+        const rewardText = previewXp > 0 ? `+${previewXp} Intelligence XP` : 'Nice work.';
+        this.schoolMicrogame.resultDetail = rewardText;
+        this.schoolMicrogame.message = rewardText;
+        this.hud.showToast(rewardText);
+        this.continueSchoolMicrogameSession({
+          previousGameId: completedGameId,
+          previousSuccess: true,
+          previousResultTitle: this.schoolMicrogame.resultTitle,
+          previousResultDetail: rewardText
+        });
+      }
       return;
     }
 
@@ -5997,11 +6118,24 @@ export class Game {
         const fallbackError = officeJob ? 'Office payroll failed.' : 'School reward failed.';
         this.syncSchoolMicrogameHud({ loading: false, error: result?.error ?? fallbackError });
         this.hud.showToast(result?.error ?? fallbackError);
+        if (isSchoolSession && this.schoolMicrogame === completedGame) {
+          this.schoolMicrogameSessionRoundCount += 1;
+          this.continueSchoolMicrogameSession({
+            previousGameId: completedGameId,
+            previousSuccess: false,
+            previousResultTitle: this.schoolMicrogame.resultTitle,
+            previousResultDetail: result?.error ?? fallbackError
+          });
+        }
         return;
       }
 
       const xp = Math.max(0, Math.floor(Number(result.xp ?? this.schoolMicrogame.round?.rewardXp ?? 0) || 0));
       const rewardText = xp > 0 ? `+${xp} Intelligence XP` : 'Nice work.';
+      if (isSchoolSession) {
+        this.schoolMicrogameSessionRoundCount += 1;
+        this.schoolMicrogameSessionXpEarned += xp;
+      }
       this.schoolMicrogame.resultDetail = rewardText;
       this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
       this.hud.showToast(rewardText);
@@ -6013,6 +6147,14 @@ export class Game {
         this.refreshPhoneWalletHud();
       }
       this.syncSchoolMicrogameHud({ loading: false, error: '' });
+      if (isSchoolSession && this.schoolMicrogame === completedGame) {
+        this.continueSchoolMicrogameSession({
+          previousGameId: completedGameId,
+          previousSuccess: true,
+          previousResultTitle: this.schoolMicrogame.resultTitle,
+          previousResultDetail: rewardText
+        });
+      }
     } catch (error) {
       console.warn('[SchoolMicrogame] Completion failed.', error);
       const fallbackError = this.schoolMicrogame?.context === 'office-job'
@@ -6020,6 +6162,15 @@ export class Game {
         : 'School reward failed.';
       this.syncSchoolMicrogameHud({ loading: false, error: fallbackError });
       this.hud.showToast(fallbackError);
+      if (isSchoolSession && this.schoolMicrogame === completedGame) {
+        this.schoolMicrogameSessionRoundCount += 1;
+        this.continueSchoolMicrogameSession({
+          previousGameId: completedGameId,
+          previousSuccess: false,
+          previousResultTitle: this.schoolMicrogame.resultTitle,
+          previousResultDetail: fallbackError
+        });
+      }
     } finally {
       this.schoolMicrogameRequestInFlight = false;
       this.syncSchoolMicrogameHud();
@@ -6042,7 +6193,7 @@ export class Game {
       return;
     }
 
-    if (action === 'start') {
+    if (action === 'start' && game.context !== 'school-minigame') {
       this.beginSchoolMicrogame();
       return;
     }
@@ -6580,11 +6731,16 @@ export class Game {
       return;
     }
 
+    const now = performance.now();
+    if (game.phase === 'countdown') {
+      this.updateSchoolMicrogameCountdown(game, now);
+      return;
+    }
+
     if (game.phase !== 'playing') {
       return;
     }
 
-    const now = performance.now();
     const dt = Math.max(0, Math.min(0.05, Number(deltaSeconds) || ((now - this.schoolMicrogameLastTickAt) / 1000)));
     this.schoolMicrogameLastTickAt = now;
     game.remainingMs = Math.max(0, Number(game.endsAt ?? now) - now);

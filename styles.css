@@ -6724,7 +6724,8 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__school-ready,
-.hud__school-result {
+.hud__school-result,
+.hud__school-countdown {
   display: grid;
   gap: 16px;
   place-items: center;
@@ -6800,6 +6801,78 @@ body.is-admin-prompt-resizing * {
   background:
     linear-gradient(135deg, #ff6d8d, #ffb45b);
   animation: hud-school-shake 360ms ease both;
+}
+
+.hud__school-countdown {
+  min-height: 100%;
+}
+
+.hud__school-countdown-result {
+  display: inline-grid;
+  gap: 4px;
+  max-width: min(520px, 100%);
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(244, 238, 226, 0.76);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.hud__school-countdown-result strong {
+  color: #fff7e3;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.hud__school-countdown.is-after-success .hud__school-countdown-result {
+  border-color: color-mix(in srgb, #61ef8a 42%, rgba(255, 255, 255, 0.13));
+}
+
+.hud__school-countdown.is-after-failure .hud__school-countdown-result {
+  border-color: color-mix(in srgb, #ff8d6d 44%, rgba(255, 255, 255, 0.13));
+}
+
+.hud__school-countdown-number {
+  width: min(220px, 48vw);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.92), transparent 22%),
+    linear-gradient(135deg, var(--school-accent), var(--school-secondary));
+  color: #10151a;
+  font-size: clamp(82px, 18vw, 156px);
+  font-weight: 950;
+  line-height: 0.9;
+  box-shadow:
+    0 28px 64px color-mix(in srgb, var(--school-accent) 24%, transparent),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.42);
+  animation: hud-school-countdown-pop 620ms cubic-bezier(0.18, 0.9, 0.24, 1.18) both;
+}
+
+.hud__school-countdown-meta {
+  display: grid;
+  gap: 5px;
+  min-width: min(420px, 100%);
+}
+
+.hud__school-countdown-meta span,
+.hud__school-countdown-meta em {
+  color: rgba(244, 238, 226, 0.66);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hud__school-countdown-meta strong {
+  color: #fff7e3;
+  font-size: clamp(24px, 4vw, 44px);
+  line-height: 1;
 }
 
 .hud__school-action,
@@ -8714,6 +8787,21 @@ body.is-admin-prompt-resizing * {
     transform: scale(0.72) rotate(-8deg);
   }
   70% {
+    transform: scale(1.08) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes hud-school-countdown-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.62) rotate(-6deg);
+  }
+  55% {
+    opacity: 1;
     transform: scale(1.08) rotate(2deg);
   }
   100% {
@@ -10657,7 +10745,8 @@ canvas {
   }
 
   .hud__school-ready,
-  .hud__school-result {
+  .hud__school-result,
+  .hud__school-countdown {
     gap: 8px;
     padding: 8px;
   }
@@ -10679,6 +10768,20 @@ canvas {
     max-width: 520px;
     font-size: 12px;
     line-height: 1.2;
+  }
+
+  .hud__school-countdown-number {
+    width: min(132px, 44vw);
+    border-radius: 12px;
+  }
+
+  .hud__school-countdown-result {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .hud__school-countdown-meta strong {
+    font-size: 22px;
   }
 
   .hud__school-reward {

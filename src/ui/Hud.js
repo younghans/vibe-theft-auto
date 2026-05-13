@@ -738,6 +738,10 @@ function formatMicrogameSeconds(remainingMs = 0) {
 
 function getSchoolMicrogameStatusText(game = null) {
   const phase = String(game?.phase ?? 'ready');
+  if (phase === 'countdown') {
+    const roundNumber = Math.max(1, Math.floor(Number(game?.data?.roundNumber ?? 1) || 1));
+    return `Round ${roundNumber}`;
+  }
   if (phase === 'playing') {
     return `${formatMicrogameSeconds(game?.remainingMs)} seconds`;
   }
@@ -1280,6 +1284,17 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     );
     return base.join('|');
   }
+  if (phase === 'countdown') {
+    base.push(
+      String(Math.ceil(Math.max(0, Number(game?.remainingMs ?? data.countdownMs ?? 0) || 0) / 1000)),
+      String(data.roundNumber ?? 1),
+      String(data.sessionXpEarned ?? 0),
+      String(data.previousSuccess ?? ''),
+      String(data.previousResultTitle ?? ''),
+      String(data.previousResultDetail ?? '')
+    );
+    return base.join('|');
+  }
   if (phase !== 'playing') {
     return base.join('|');
   }
@@ -1372,6 +1387,35 @@ function createReadySchoolMicrogameMarkup(game = null) {
         <strong>${escapeHtml(getSchoolMicrogameRewardText(round))}</strong>
       </div>
       ${createSchoolGameButton('start', 'Start', 'is-primary')}
+    </div>
+  `;
+}
+
+function createSchoolCountdownMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const remainingMs = Math.max(0, Number(game?.remainingMs ?? data.countdownMs ?? 0) || 0);
+  const count = Math.max(1, Math.min(3, Math.ceil(remainingMs / 1000)));
+  const roundNumber = Math.max(1, Math.floor(Number(data.roundNumber ?? 1) || 1));
+  const sessionXp = Math.max(0, Math.floor(Number(data.sessionXpEarned ?? 0) || 0));
+  const previousTitle = String(data.previousResultTitle ?? '').trim();
+  const previousDetail = String(data.previousResultDetail ?? '').trim();
+  const previousSuccess = data.previousSuccess === true;
+  const previousFailure = data.previousSuccess === false;
+  return `
+    <div class="hud__school-countdown${previousSuccess ? ' is-after-success' : previousFailure ? ' is-after-failure' : ''}">
+      ${previousTitle || previousDetail ? `
+        <div class="hud__school-countdown-result">
+          ${previousTitle ? `<strong>${escapeHtml(previousTitle)}</strong>` : ''}
+          ${previousDetail ? `<span>${escapeHtml(previousDetail)}</span>` : ''}
+        </div>
+      ` : ''}
+      <div class="hud__school-countdown-number" aria-label="Starting in ${count}">${escapeHtml(String(count))}</div>
+      <div class="hud__school-countdown-meta">
+        <span>Round ${escapeHtml(String(roundNumber))}</span>
+        <strong>${escapeHtml(round.title ?? 'School Microgame')}</strong>
+        <em>${escapeHtml(String(sessionXp))} Intelligence XP</em>
+      </div>
     </div>
   `;
 }
@@ -1872,15 +1916,20 @@ function createSchoolMicrogameBodyMarkup(game = null) {
     return createReadySchoolMicrogameMarkup(game);
   }
 
+  if (phase === 'countdown') {
+    return createSchoolCountdownMarkup(game);
+  }
+
   if (phase === 'success' || phase === 'failure') {
     const resultClass = phase === 'success' ? ' is-success' : ' is-failure';
+    const isSchoolSession = game?.context === 'school-minigame';
     return `
       <div class="hud__school-result${resultClass}">
         <div class="hud__school-result-burst" aria-hidden="true"></div>
         <strong>${escapeHtml(getSchoolMicrogameResultLabel(game))}</strong>
         <p>${escapeHtml(game?.resultDetail || game?.message || '')}</p>
         ${phase === 'success' ? `<span>${escapeHtml(getSchoolMicrogameRewardText(game?.round, { prefix: true }))}</span>` : ''}
-        ${createSchoolGameButton('restart', 'Play Again', 'is-primary')}
+        ${isSchoolSession ? '' : createSchoolGameButton('restart', 'Play Again', 'is-primary')}
       </div>
     `;
   }
@@ -6356,6 +6405,7 @@ export class Hud {
     const round = game?.round ?? {};
     const phase = String(game?.phase ?? 'ready');
     this.schoolMicrogameRoot.classList.toggle('is-playing', phase === 'playing');
+    this.schoolMicrogameRoot.classList.toggle('is-countdown', phase === 'countdown');
     this.schoolMicrogameRoot.classList.toggle('is-success', phase === 'success');
     this.schoolMicrogameRoot.classList.toggle('is-failure', phase === 'failure');
     this.schoolMicrogameRoot.style.setProperty('--school-accent', round.accent ?? '#5bd7ff');

@@ -25,6 +25,7 @@ import { assets } from '../src/world/assetManifest.js';
 const root = process.cwd();
 const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
 const hudSource = fs.readFileSync(`${root}/src/ui/Hud.js`, 'utf8');
+const stylesSource = fs.readFileSync(`${root}/styles.css`, 'utf8');
 
 function assertMp3Audio(buffer, label) {
   const hasId3Header = buffer.subarray(0, 3).toString('ascii') === 'ID3';
@@ -85,6 +86,10 @@ assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up 
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
 assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
+assert.match(gameSource, /phase:\s*countdown\s*\?\s*'countdown'/, 'school rounds start in countdown instead of a start-button ready state');
+assert.match(gameSource, /continueSchoolMicrogameSession/, 'school minigame sessions continue into another random round');
+assert.match(hudSource, /createSchoolCountdownMarkup/, 'HUD renders the school round countdown');
+assert.match(stylesSource, /hud-school-countdown-pop/, 'school countdown has a dedicated animation');
 
 const activeSchoolGames = listSchoolMicrogames();
 assert.deepEqual(

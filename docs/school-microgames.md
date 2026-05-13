@@ -1,12 +1,14 @@
 # School Microgames
 
-School microgames are quick HUD popups launched from school NPCs. They are designed to be readable at a glance, playable with mouse, keyboard, or touch, and resolved into a fast pass/fail result.
+School microgames are quick HUD popups launched from school NPCs. They are designed to be readable at a glance, playable with mouse, keyboard, or touch, and resolved into fast pass/fail rounds.
 
 Current school games:
 
 - Pop Quiz Panic
 - Teacher Is Looking
 - Memory Card Flip
+
+School NPC interactions start a random game immediately. There is no start button: the HUD shows a `3`, `2`, `1` countdown before the first round and before every following round. After each round resolves, the next random school game continues automatically until the player closes the school HUD.
 
 School games only award Intelligence XP. They do not award cash.
 
