@@ -4,7 +4,10 @@ import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
-import { BASKETBALL_HOOP_RIM_HEIGHT } from '../src/world/proceduralProps.js';
+import {
+  BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
+  BASKETBALL_HOOP_RIM_HEIGHT
+} from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 
@@ -45,6 +48,47 @@ function validateKenneyCatalogItems() {
     const item = getBuilderItemById(itemId);
     assert(item, `Kenney catalog item "${itemId}" should exist`);
   }
+}
+
+function validateCustomTileCatalogItems() {
+  const basketballCourt = getBuilderItemById('basketball_court_half');
+  assert(basketballCourt, 'Basketball half-court tile should exist');
+  assert(basketballCourt.layer === 'tile', 'Basketball half court should be a tile catalog item');
+  assert(basketballCourt.groupId === 'parks', 'Basketball half court should be grouped under Parks');
+  assert(basketballCourt.asset === null, 'Basketball half court should use a procedural visual');
+  assert(typeof basketballCourt.createVisual === 'function', 'Basketball half court should define a procedural visual');
+  assert(basketballCourt.collision === false, 'Basketball half court should not block movement');
+  assert(basketballCourt.blocksMovement === false, 'Basketball half court should keep movement open');
+  assert(basketballCourt.blocksShots === false, 'Basketball half court should not block shots');
+  assert(basketballCourt.tileFootprint[0] === 1 && basketballCourt.tileFootprint[1] === 1, 'Basketball half court should remain a 1x1 tile');
+  assert(basketballCourt.size[0] === BUILDER_TILE_SIZE && basketballCourt.size[1] === BUILDER_TILE_SIZE, 'Basketball half court should fill one builder tile');
+  assert(basketballCourt.surfaceHeight === BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT, 'Basketball half court should expose a stable tile surface height');
+
+  const courtVisual = basketballCourt.createVisual();
+  const surface = courtVisual.getObjectByName('basketballCourtHalfSurface');
+  const centerLine = courtVisual.getObjectByName('basketballCourtHalfCenterLine');
+  const centerArc = courtVisual.getObjectByName('basketballCourtHalfCenterCircleArc');
+  const keyPaint = courtVisual.getObjectByName('basketballCourtHalfKeyPaint');
+  const threePointArc = courtVisual.getObjectByName('basketballCourtHalfThreePointArc');
+  const hoopMarker = courtVisual.getObjectByName('basketballCourtHalfHoopMarker');
+
+  assert(surface, 'Basketball half court visual should include a named slab surface');
+  assert(centerLine, 'Basketball half court visual should include a half-court center line');
+  assert(centerArc, 'Basketball half court visual should include the center-circle half arc');
+  assert(keyPaint, 'Basketball half court visual should include painted key area');
+  assert(threePointArc, 'Basketball half court visual should include a three-point arc');
+  assert(hoopMarker, 'Basketball half court visual should include a centered hoop placement marker');
+  assert(centerLine.position.z > 6, 'Basketball half court center line should sit on the pairing edge of the tile');
+  assert(keyPaint.position.z < 0, 'Basketball half court key should sit on the hoop half of the tile');
+
+  const bounds = new Box3().setFromObject(courtVisual);
+  const size = bounds.getSize(new Vector3());
+  assert(Math.abs(size.x - BUILDER_TILE_SIZE) < 0.001, 'Basketball half court visual should fill one tile width');
+  assert(Math.abs(size.z - BUILDER_TILE_SIZE) < 0.001, 'Basketball half court visual should fill one tile depth');
+  assert(Math.abs(bounds.min.x + bounds.max.x) < 0.001, 'Basketball half court visual should be symmetrical left-to-right');
+
+  const arcBounds = new Box3().setFromObject(threePointArc);
+  assert(Math.abs(arcBounds.min.x + arcBounds.max.x) < 0.05, 'Basketball half court three-point arc should be symmetrical');
 }
 
 function validateCustomPropCatalogItems() {
@@ -270,6 +314,7 @@ function validateTaskSequence() {
 
 async function main() {
   validateKenneyCatalogItems();
+  validateCustomTileCatalogItems();
   validateCustomPropCatalogItems();
   validateFootprintSupport();
   validateTiles();

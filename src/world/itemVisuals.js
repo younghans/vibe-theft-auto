@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import {
+  createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
@@ -37,6 +38,9 @@ export async function instantiateItemVisual(library, item) {
 
   if (typeof item?.createVisual === 'function') {
     primaryObject = item.createVisual();
+  } else if (item?.id === 'basketball_court_half' || item?.assetName === 'basketball_court_half') {
+    // Procedural tiles can lose function fields when copied through plain-object workflows.
+    primaryObject = createBasketballHalfCourtTileVisual();
   } else if (item?.id === 'basketball_hoop' || item?.assetName === 'basketball_hoop') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBasketballHoopVisual();

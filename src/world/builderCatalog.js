@@ -7,8 +7,11 @@ import {
   cloneInteriorDefinition
 } from './interactableMetadata.js';
 import {
+  BASKETBALL_HALF_COURT_TILE_FOOTPRINT,
+  BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_FOOTPRINT,
   BLACKJACK_TABLE_FOOTPRINT,
+  createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
@@ -325,6 +328,18 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     blocksShots: true,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
+    id: 'basketball_court_half',
+    assetName: 'basketball_court_half',
+    label: 'Basketball Half Court',
+    asset: null,
+    group: 'parks',
+    size: BASKETBALL_HALF_COURT_TILE_FOOTPRINT,
+    tileFootprint: [1, 1],
+    surfaceHeight: BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
+    collision: false,
+    createVisual: createBasketballHalfCourtTileVisual
   },
   { assetName: 'park_base', group: 'parks' },
   { assetName: 'park_base_decorated_bushes', group: 'parks' },

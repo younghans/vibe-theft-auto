@@ -1,8 +1,11 @@
 import * as THREE from 'three';
+import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
 export const OLYMPIC_BARBELL_LENGTH = 5.6;
 export const OLYMPIC_BARBELL_PLATE_RADIUS = 0.78;
 export const OLYMPIC_BARBELL_FOOTPRINT = Object.freeze([5.6, 1.7]);
+export const BASKETBALL_HALF_COURT_TILE_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE, BUILDER_TILE_SIZE]);
+export const BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT = 0.7;
 export const BASKETBALL_HOOP_FOOTPRINT = Object.freeze([3.6, 3.6]);
 export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
@@ -28,6 +31,9 @@ const PORTAL_TRIGGER_RADIUS = 2.25;
 const PORTAL_TRIGGER_HALF_HEIGHT = 4.5;
 const PORTAL_PROMPT_RADIUS = 6.8;
 const PORTAL_SPAWN_LOCAL_OFFSET = Object.freeze([0, -6.2]);
+const BASKETBALL_HALF_COURT_LINE_RADIUS = 0.035;
+const BASKETBALL_HALF_COURT_LINE_HEIGHT = 0.035;
+const BASKETBALL_HALF_COURT_TOP_Y = BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT + 0.028;
 const BASKETBALL_HOOP_BACKBOARD_CENTER_Y = BASKETBALL_HOOP_RIM_HEIGHT + 0.9;
 const BASKETBALL_HOOP_BACKBOARD_Z = -0.31;
 const BASKETBALL_HOOP_POLE_Z = -1.54;
@@ -85,6 +91,59 @@ function createCylinderBetween(name, start, end, radius, material, {
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
   mesh.castShadow = castShadow;
   mesh.receiveShadow = receiveShadow;
+  return mesh;
+}
+
+function createFlatLine(name, width, depth, x, z, material) {
+  return createBox(
+    name,
+    [width, BASKETBALL_HALF_COURT_LINE_HEIGHT, depth],
+    [x, BASKETBALL_HALF_COURT_TOP_Y, z],
+    material,
+    { castShadow: false, receiveShadow: true }
+  );
+}
+
+function createCourtArcLine(name, centerX, centerZ, radius, startAngle, endAngle, material, {
+  segments = 48
+} = {}) {
+  const points = [];
+
+  for (let index = 0; index <= segments; index += 1) {
+    const angle = startAngle + ((endAngle - startAngle) * (index / segments));
+    points.push(new THREE.Vector3(
+      centerX + Math.cos(angle) * radius,
+      BASKETBALL_HALF_COURT_TOP_Y,
+      centerZ + Math.sin(angle) * radius
+    ));
+  }
+
+  const mesh = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3(points),
+      segments,
+      BASKETBALL_HALF_COURT_LINE_RADIUS,
+      6,
+      false
+    ),
+    material
+  );
+  mesh.name = name;
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function createCourtCircleLine(name, centerX, centerZ, radius, material) {
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, BASKETBALL_HALF_COURT_LINE_RADIUS, 6, 72),
+    material
+  );
+  mesh.name = name;
+  mesh.rotation.x = Math.PI * 0.5;
+  mesh.position.set(centerX, BASKETBALL_HALF_COURT_TOP_Y, centerZ);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
   return mesh;
 }
 
@@ -389,6 +448,102 @@ function buildPortalVisual({
     shimmerRing,
     orbiters
   });
+
+  return root;
+}
+
+export function createBasketballHalfCourtTileVisual() {
+  const root = new THREE.Group();
+  root.name = 'BasketballHalfCourtTile';
+  root.userData.footprint = [...BASKETBALL_HALF_COURT_TILE_FOOTPRINT];
+
+  const tileSize = BUILDER_TILE_SIZE;
+  const halfTile = tileSize * 0.5;
+  const courtEdge = halfTile - 0.28;
+  const lineWidth = 0.1;
+  const surfaceMaterial = createMaterial(0x2f7a67, 0.92, 0.02);
+  const borderMaterial = createMaterial(0x1d413a, 0.94, 0.02);
+  const keyPaintMaterial = createMaterial(0xb96a33, 0.88, 0.02);
+  const lineMaterial = createMaterial(0xf4f1df, 0.58, 0.02);
+  const hoopMarkerMaterial = createMaterial(0xf0a23c, 0.5, 0.04);
+
+  root.add(createBox(
+    'basketballCourtHalfSurface',
+    [tileSize, BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT, tileSize],
+    [0, BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT * 0.5, 0],
+    surfaceMaterial,
+    { castShadow: false, receiveShadow: true }
+  ));
+  root.add(createFlatLine('basketballCourtHalfBackBorder', tileSize, 0.22, 0, -courtEdge, borderMaterial));
+  root.add(createFlatLine('basketballCourtHalfLeftBorder', 0.22, tileSize, -courtEdge, 0, borderMaterial));
+  root.add(createFlatLine('basketballCourtHalfRightBorder', 0.22, tileSize, courtEdge, 0, borderMaterial));
+
+  const paintDepth = 4.65;
+  const paintCenterZ = -courtEdge + (paintDepth * 0.5);
+  root.add(createBox(
+    'basketballCourtHalfKeyPaint',
+    [3.42, 0.018, paintDepth],
+    [0, BASKETBALL_HALF_COURT_TOP_Y - 0.018, paintCenterZ],
+    keyPaintMaterial,
+    { castShadow: false, receiveShadow: true }
+  ));
+
+  root.add(createFlatLine('basketballCourtHalfLeftSideline', lineWidth, tileSize - 0.72, -courtEdge + 0.2, 0, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfRightSideline', lineWidth, tileSize - 0.72, courtEdge - 0.2, 0, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfBaseline', tileSize - 0.72, lineWidth, 0, -courtEdge + 0.2, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfCenterLine', tileSize - 0.72, lineWidth, 0, courtEdge - 0.2, lineMaterial));
+
+  const keyLeftX = -1.71;
+  const keyRightX = 1.71;
+  const freeThrowZ = -2.1;
+  const baselineZ = -courtEdge + 0.2;
+  const keyCenterZ = (baselineZ + freeThrowZ) * 0.5;
+  root.add(createFlatLine('basketballCourtHalfKeyLeftLine', lineWidth, Math.abs(freeThrowZ - baselineZ), keyLeftX, keyCenterZ, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfKeyRightLine', lineWidth, Math.abs(freeThrowZ - baselineZ), keyRightX, keyCenterZ, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfFreeThrowLine', Math.abs(keyRightX - keyLeftX) + lineWidth, lineWidth, 0, freeThrowZ, lineMaterial));
+  root.add(createCourtCircleLine('basketballCourtHalfFreeThrowCircle', 0, freeThrowZ, 1.24, lineMaterial));
+
+  const hoopCenterZ = -4.85;
+  const threePointRadius = 5.28;
+  root.add(createFlatLine('basketballCourtHalfThreePointLeftCorner', lineWidth, 2.92, -5.12, -5.02, lineMaterial));
+  root.add(createFlatLine('basketballCourtHalfThreePointRightCorner', lineWidth, 2.92, 5.12, -5.02, lineMaterial));
+  root.add(createCourtArcLine(
+    'basketballCourtHalfThreePointArc',
+    0,
+    hoopCenterZ,
+    threePointRadius,
+    0.25,
+    Math.PI - 0.25,
+    lineMaterial,
+    { segments: 72 }
+  ));
+  root.add(createCourtArcLine(
+    'basketballCourtHalfRestrictedArc',
+    0,
+    hoopCenterZ,
+    0.92,
+    0.08,
+    Math.PI - 0.08,
+    lineMaterial,
+    { segments: 28 }
+  ));
+  root.add(createCourtCircleLine('basketballCourtHalfHoopMarker', 0, hoopCenterZ, 0.22, hoopMarkerMaterial));
+
+  root.add(createCourtArcLine(
+    'basketballCourtHalfCenterCircleArc',
+    0,
+    courtEdge - 0.2,
+    1.42,
+    Math.PI,
+    Math.PI * 2,
+    lineMaterial,
+    { segments: 38 }
+  ));
+
+  for (const side of [-1, 1]) {
+    root.add(createFlatLine(`basketballCourtHalfLaneHash${side < 0 ? 'Left' : 'Right'}1`, 0.46, 0.07, side * 2.06, -3.55, lineMaterial));
+    root.add(createFlatLine(`basketballCourtHalfLaneHash${side < 0 ? 'Left' : 'Right'}2`, 0.46, 0.07, side * 2.06, -4.28, lineMaterial));
+  }
 
   return root;
 }
