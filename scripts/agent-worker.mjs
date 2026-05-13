@@ -114,6 +114,13 @@ function normalizeDeployTargets(value = []) {
     .filter((target) => allowedTargets.has(target));
 }
 
+function isBackendSharedSourcePath(normalizedPath = '') {
+  return normalizedPath.startsWith('src/shared/')
+    || normalizedPath.startsWith('src/npc/')
+    || normalizedPath.startsWith('src/player/')
+    || normalizedPath.startsWith('src/world/');
+}
+
 function inferDeployTargets(changedFiles = []) {
   const targets = new Set();
   for (const filePath of normalizeChangedFiles(changedFiles)) {
@@ -139,6 +146,7 @@ function inferDeployTargets(changedFiles = []) {
     if (
       normalized === 'ecosystem.config.cjs'
       || normalized.startsWith('server/')
+      || isBackendSharedSourcePath(normalized)
     ) {
       targets.add('backend');
     }
@@ -1948,6 +1956,14 @@ function runSelfTest() {
       deployTargets: ['backend'],
       checks: ['npm ci', 'npm run build:server', 'git diff --check'],
       frontendDeploy: 'none',
+      backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
+    },
+    {
+      label: 'shared-world-catalog',
+      changedFiles: ['src/world/builderCatalog.js', 'src/world/proceduralProps.js'],
+      deployTargets: ['frontend', 'backend'],
+      checks: ['npm ci', 'npm run build:web', 'npm run build:server', 'git diff --check'],
+      frontendDeploy: FRONTEND_DEPLOY_COMMAND.trim() ? 'command' : 'git-integration',
       backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
     },
     {

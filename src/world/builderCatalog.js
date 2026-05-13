@@ -332,6 +332,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   {
     id: 'basketball_court_half',
     assetName: 'basketball_court_half',
+    aliases: ['basketball_half_court', 'half_basketball_court', 'Basketball Half Court'],
     label: 'Basketball Half Court',
     asset: null,
     group: 'parks',
@@ -652,6 +653,7 @@ function createCityTile(definition) {
     interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     underlayTileId: definition.underlayTileId ?? null,
+    aliases: [...(definition.aliases ?? [])],
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]
   };
@@ -679,6 +681,7 @@ function createCityProp(definition) {
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
     interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
+    aliases: [...(definition.aliases ?? [])],
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
   };
@@ -730,6 +733,43 @@ export const BUILDER_ITEMS = BUILDER_CATEGORIES.flatMap((category) =>
 
 const CATEGORY_BY_ID = new Map(BUILDER_CATEGORIES.map((category) => [category.id, category]));
 const ITEM_BY_ID = new Map(BUILDER_ITEMS.map((item) => [item.id, item]));
+const ITEM_BY_LOOKUP_KEY = new Map();
+
+function normalizeBuilderItemLookupKey(value) {
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return normalized || '';
+}
+
+function addBuilderItemLookupKey(key, item) {
+  if (!key) {
+    return;
+  }
+
+  const exactKey = String(key).trim();
+  const normalizedKey = normalizeBuilderItemLookupKey(key);
+
+  if (exactKey && !ITEM_BY_LOOKUP_KEY.has(exactKey)) {
+    ITEM_BY_LOOKUP_KEY.set(exactKey, item);
+  }
+
+  if (normalizedKey && !ITEM_BY_LOOKUP_KEY.has(normalizedKey)) {
+    ITEM_BY_LOOKUP_KEY.set(normalizedKey, item);
+  }
+}
+
+for (const item of BUILDER_ITEMS) {
+  addBuilderItemLookupKey(item.id, item);
+  addBuilderItemLookupKey(item.assetName, item);
+  for (const alias of item.aliases ?? []) {
+    addBuilderItemLookupKey(alias, item);
+  }
+}
 
 export function getBuilderItem(categoryId, index) {
   const category = CATEGORY_BY_ID.get(categoryId);
@@ -737,7 +777,10 @@ export function getBuilderItem(categoryId, index) {
 }
 
 export function getBuilderItemById(itemId) {
-  return ITEM_BY_ID.get(itemId) ?? null;
+  return ITEM_BY_ID.get(itemId)
+    ?? ITEM_BY_LOOKUP_KEY.get(String(itemId ?? '').trim())
+    ?? ITEM_BY_LOOKUP_KEY.get(normalizeBuilderItemLookupKey(itemId))
+    ?? null;
 }
 
 export { assetUrl, cityAsset } from './assetManifest.js';

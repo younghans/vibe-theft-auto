@@ -53,6 +53,9 @@ function validateKenneyCatalogItems() {
 function validateCustomTileCatalogItems() {
   const basketballCourt = getBuilderItemById('basketball_court_half');
   assert(basketballCourt, 'Basketball half-court tile should exist');
+  assert(getBuilderItemById('basketball_half_court') === basketballCourt, 'Basketball half court should resolve from the natural slug alias');
+  assert(getBuilderItemById('half_basketball_court') === basketballCourt, 'Basketball half court should resolve from the half-court slug alias');
+  assert(getBuilderItemById('Basketball Half Court') === basketballCourt, 'Basketball half court should resolve from the label used in builder workflows');
   assert(basketballCourt.layer === 'tile', 'Basketball half court should be a tile catalog item');
   assert(basketballCourt.groupId === 'parks', 'Basketball half court should be grouped under Parks');
   assert(basketballCourt.asset === null, 'Basketball half court should use a procedural visual');
