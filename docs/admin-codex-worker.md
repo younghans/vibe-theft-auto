@@ -70,11 +70,12 @@ OpenAI documentation:
 - Codex CLI: <https://developers.openai.com/codex/cli>
 - Non-interactive `codex exec`: <https://www.mintlify.com/openai/codex/cli/exec>
 
-Install on the worker machine:
+Install Codex on the worker machine through either the Codex desktop app or the npm CLI package:
 
 ```bash
 npm i -g @openai/codex
 codex
+codex --version
 ```
 
 Sign in once interactively. After that, the worker script should call Codex non-interactively:
@@ -288,6 +289,7 @@ On the extra PC, install prerequisites:
 ```bash
 npm i -g @openai/codex
 codex
+codex --version
 git --version
 node --version
 git config --global user.name "<worker name>"
@@ -311,6 +313,31 @@ The production defaults above are also available through a one-command launcher.
 
 ```powershell
 "AGENT_WORKER_TOKEN=<same long random token from AGENT_WORKER_TOKENS>" | Set-Content .env.worker.production
+```
+
+The launcher auto-discovers a working Codex command before starting the worker. It prefers `CODEX_COMMAND` when explicitly set, then checks known Codex desktop, Windows app, and npm-global install locations before falling back to `codex` on `PATH`. If a PC has an unusual install path, add the executable to `.env.worker.production`:
+
+```powershell
+"CODEX_COMMAND=C:\Users\<you>\AppData\Local\OpenAI\Codex\bin\codex.exe" | Add-Content .env.worker.production
+```
+
+Validate the production startup configuration without launching the long-running worker:
+
+```powershell
+npm run worker:prod:check
+```
+
+For workers that can deploy backend changes, also add Colyseus deploy credentials or choose Git-managed backend deploys before approving production deploys. The worker checks this before pushing to `main` so a missing backend credential cannot leave the frontend deployed while the backend stays on the previous commit:
+
+```powershell
+"COLYSEUS_APPLICATION_ID=<application-id>" | Add-Content .env.worker.production
+"COLYSEUS_DEPLOY_TOKEN=<deploy-token>" | Add-Content .env.worker.production
+```
+
+If Colyseus Cloud is configured to deploy pushes to `main` through Git integration, use:
+
+```powershell
+"BACKEND_DEPLOY_STRATEGY=git" | Add-Content .env.worker.production
 ```
 
 Then start the production worker:

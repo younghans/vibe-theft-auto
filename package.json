@@ -28,6 +28,7 @@
     "worker:prod": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod.ps1",
     "worker:prod:once": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod.ps1 -Once",
     "worker:prod:auto": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod.ps1 -AutoDeploy",
+    "worker:prod:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod.ps1 -Check",
     "optimize:assets": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize --",
     "optimize:assets:startup": "npm --prefix tools/mixamo-optimizer install && npm --prefix tools/mixamo-optimizer run optimize -- --startup-only",
     "deploy:colyseus": "node scripts/deploy-colyseus-noninteractive.mjs",

@@ -779,6 +779,66 @@ async function runDeployCommand(task, worktreePath, {
   });
 }
 
+function readEnvCredential(name, aliases = []) {
+  for (const key of [name, ...aliases]) {
+    const value = String(process.env[key] ?? '').trim();
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
+async function readLocalColyseusDeployConfig() {
+  try {
+    const raw = await fsp.readFile(path.join(LOCAL_REPO_ROOT, '.colyseus-cloud.json'), 'utf8');
+    const envName = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
+    return JSON.parse(raw)?.[envName] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function hasColyseusDeployCredentials() {
+  const envApplicationId = readEnvCredential('COLYSEUS_APPLICATION_ID', ['COLYSEUS_APP_ID']);
+  const envToken = readEnvCredential('COLYSEUS_DEPLOY_TOKEN', ['COLYSEUS_TOKEN']);
+  if (envApplicationId && envToken) {
+    return true;
+  }
+
+  const config = await readLocalColyseusDeployConfig();
+  return Boolean(String(config?.applicationId ?? '').trim() && String(config?.token ?? '').trim());
+}
+
+function isColyseusBackendDeployCommand(command = '') {
+  const normalized = String(command ?? '').trim().toLowerCase();
+  return normalized.includes('deploy:colyseus')
+    || normalized.includes('deploy-colyseus-noninteractive.mjs')
+    || normalized.includes('@colyseus/cloud');
+}
+
+async function validateDeployPrerequisites(task, targets = []) {
+  const deployTargets = normalizeDeployTargets(targets);
+  if (
+    deployTargets.includes('backend')
+    && !isBackendDeployGitManaged()
+    && isColyseusBackendDeployCommand(BACKEND_DEPLOY_COMMAND)
+    && !(await hasColyseusDeployCredentials())
+  ) {
+    const message = 'Backend deploy is configured for Colyseus CLI, but this worker has no Colyseus deploy credentials. '
+      + 'Set COLYSEUS_APPLICATION_ID and COLYSEUS_DEPLOY_TOKEN, add a local .colyseus-cloud.json, '
+      + 'or set BACKEND_DEPLOY_STRATEGY=git if Colyseus Cloud deploys main through Git integration.';
+    await appendLog(task.id, message, {
+      level: 'error',
+      data: {
+        backendDeployStrategy: BACKEND_DEPLOY_STRATEGY,
+        backendDeployCommand: BACKEND_DEPLOY_COMMAND
+      }
+    });
+    throw new Error(message);
+  }
+}
+
 function normalizeHttpUrl(value = '') {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) {
@@ -1516,6 +1576,7 @@ async function deployTask(task, worktreePath) {
       changedFiles
     }
   });
+  await validateDeployPrerequisites(task, inferredTargets);
   await installAndCheck(task, worktreePath, { targets: inferredTargets });
   if (deployRefs.rebased) {
     await pushRebasedTaskBranch(task, worktreePath);
@@ -1799,9 +1860,7 @@ async function hydrateColyseusDeployEnv() {
   }
 
   try {
-    const raw = await fsp.readFile(path.join(LOCAL_REPO_ROOT, '.colyseus-cloud.json'), 'utf8');
-    const envName = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
-    const config = JSON.parse(raw)?.[envName] ?? null;
+    const config = await readLocalColyseusDeployConfig();
     if (!String(process.env.COLYSEUS_APPLICATION_ID ?? process.env.COLYSEUS_APP_ID ?? '').trim() && config?.applicationId) {
       process.env.COLYSEUS_APPLICATION_ID = String(config.applicationId);
     }

@@ -1,6 +1,7 @@
 param(
   [switch]$Once,
-  [switch]$AutoDeploy
+  [switch]$AutoDeploy,
+  [switch]$Check
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +51,167 @@ function Import-EnvFile {
   }
 }
 
+function Add-CodexCandidate {
+  param(
+    [Parameter(Mandatory = $true)]$Candidates,
+    [Parameter(Mandatory = $true)]$Seen,
+    [string]$Candidate
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Candidate)) {
+    return
+  }
+
+  $trimmed = $Candidate.Trim()
+  if ($Seen.Add($trimmed)) {
+    [void]$Candidates.Add($trimmed)
+  }
+}
+
+function Test-CodexCommand {
+  param([Parameter(Mandatory = $true)][string]$Command)
+
+  try {
+    $output = & $Command --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+
+    return -not [string]::IsNullOrWhiteSpace(($output | Out-String))
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-CodexCommand {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $configuredCommand = [Environment]::GetEnvironmentVariable('CODEX_COMMAND', 'Process')
+
+  Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate $configuredCommand
+
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Add-CodexCandidate `
+      -Candidates $candidates `
+      -Seen $seen `
+      -Candidate (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe')
+  }
+
+  try {
+    $pathCandidates = @(where.exe codex 2>$null)
+    foreach ($candidate in ($pathCandidates | Where-Object { $_ -match '\.exe$' })) {
+      Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+    }
+    foreach ($candidate in ($pathCandidates | Where-Object { $_ -notmatch '\.exe$' })) {
+      Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+    }
+  } catch {}
+
+  try {
+    $npmRoot = (& npm root -g 2>$null | Select-Object -First 1)
+    if (-not [string]::IsNullOrWhiteSpace($npmRoot)) {
+      $codexPackageRoot = Join-Path $npmRoot '@openai\codex'
+      if (Test-Path -LiteralPath $codexPackageRoot) {
+        Get-ChildItem -LiteralPath $codexPackageRoot -Filter codex.exe -Recurse -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.FullName -match '\\vendor\\' } |
+          Sort-Object FullName |
+          ForEach-Object {
+            Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate $_.FullName
+          }
+      }
+
+      $npmPrefix = Split-Path -Parent $npmRoot
+      Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate (Join-Path $npmPrefix 'codex.cmd')
+      Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate (Join-Path $npmPrefix 'codex')
+    }
+  } catch {}
+
+  Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate 'codex.exe'
+  Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate 'codex.cmd'
+  Add-CodexCandidate -Candidates $candidates -Seen $seen -Candidate 'codex'
+
+  foreach ($candidate in $candidates) {
+    if (Test-CodexCommand -Command $candidate) {
+      return $candidate
+    }
+
+    if (
+      -not [string]::IsNullOrWhiteSpace($configuredCommand) -and
+      $candidate -eq $configuredCommand
+    ) {
+      Write-Warning "Configured CODEX_COMMAND did not respond to '--version'; trying auto-discovery."
+    }
+  }
+
+  $candidateList = ($candidates | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
+  Write-Error @"
+Could not find a working Codex CLI command.
+
+Install Codex or set CODEX_COMMAND in $envFile to an executable that supports:
+  codex --version
+
+Tried:
+$candidateList
+"@
+}
+
+function Test-TruthyEnv {
+  param([string]$Name)
+
+  $value = [Environment]::GetEnvironmentVariable($Name, 'Process')
+  return @('1', 'true', 'yes') -contains $value.ToLowerInvariant()
+}
+
+function Test-BackendDeployGitManaged {
+  $strategy = [Environment]::GetEnvironmentVariable('BACKEND_DEPLOY_STRATEGY', 'Process')
+  return @('git', 'git-integration', 'colyseus-git') -contains $strategy.ToLowerInvariant()
+}
+
+function Test-ColyseusBackendDeployCommand {
+  $command = [Environment]::GetEnvironmentVariable('BACKEND_DEPLOY_COMMAND', 'Process')
+  $normalized = $command.ToLowerInvariant()
+  return $normalized.Contains('deploy:colyseus') `
+    -or $normalized.Contains('deploy-colyseus-noninteractive.mjs') `
+    -or $normalized.Contains('@colyseus/cloud')
+}
+
+function Test-ColyseusDeployCredentials {
+  $applicationId = [Environment]::GetEnvironmentVariable('COLYSEUS_APPLICATION_ID', 'Process')
+  if ([string]::IsNullOrWhiteSpace($applicationId)) {
+    $applicationId = [Environment]::GetEnvironmentVariable('COLYSEUS_APP_ID', 'Process')
+  }
+
+  $token = [Environment]::GetEnvironmentVariable('COLYSEUS_DEPLOY_TOKEN', 'Process')
+  if ([string]::IsNullOrWhiteSpace($token)) {
+    $token = [Environment]::GetEnvironmentVariable('COLYSEUS_TOKEN', 'Process')
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($applicationId) -and -not [string]::IsNullOrWhiteSpace($token)) {
+    return $true
+  }
+
+  $colyseusConfigPath = Join-Path $repoRoot '.colyseus-cloud.json'
+  if (-not (Test-Path -LiteralPath $colyseusConfigPath)) {
+    return $false
+  }
+
+  try {
+    $envName = [Environment]::GetEnvironmentVariable('COLYSEUS_DEPLOY_ENV', 'Process')
+    if ([string]::IsNullOrWhiteSpace($envName)) {
+      $envName = [Environment]::GetEnvironmentVariable('COLYSEUS_ENV', 'Process')
+    }
+    if ([string]::IsNullOrWhiteSpace($envName)) {
+      $envName = 'production'
+    }
+
+    $config = (Get-Content -LiteralPath $colyseusConfigPath -Raw | ConvertFrom-Json).$envName
+    return -not [string]::IsNullOrWhiteSpace($config.applicationId) `
+      -and -not [string]::IsNullOrWhiteSpace($config.token)
+  } catch {
+    return $false
+  }
+}
+
 Import-EnvFile -Path $envFile
 
 Set-DefaultEnv -Name 'AGENT_API_BASE' -Value 'https://us-atl-06d422c8.vibetheftauto.xyz'
@@ -66,6 +228,10 @@ if ($AutoDeploy) {
   [Environment]::SetEnvironmentVariable('AUTO_DEPLOY', 'true', 'Process')
 }
 
+$codexCommand = Resolve-CodexCommand
+[Environment]::SetEnvironmentVariable('CODEX_COMMAND', $codexCommand, 'Process')
+Write-Host "Using Codex command: $codexCommand"
+
 $workerToken = [Environment]::GetEnvironmentVariable('AGENT_WORKER_TOKEN', 'Process')
 if ([string]::IsNullOrWhiteSpace($workerToken) -or $workerToken -eq '<production worker token>') {
   Write-Error @"
@@ -77,6 +243,25 @@ AGENT_WORKER_TOKEN=your-production-worker-token
 That file is ignored by git. After that, run:
 npm run worker:prod
 "@
+}
+
+$deployEnabled = (Test-TruthyEnv -Name 'DEPLOY_ENABLED') -or (Test-TruthyEnv -Name 'AUTO_DEPLOY')
+if (
+  $deployEnabled -and
+  -not (Test-BackendDeployGitManaged) -and
+  (Test-ColyseusBackendDeployCommand) -and
+  -not (Test-ColyseusDeployCredentials)
+) {
+  Write-Warning @"
+Backend deploys are enabled through the Colyseus CLI, but this worker has no Colyseus deploy credentials.
+Backend deploy approvals will fail before pushing main until COLYSEUS_APPLICATION_ID and COLYSEUS_DEPLOY_TOKEN
+are set, a local .colyseus-cloud.json is added, or BACKEND_DEPLOY_STRATEGY=git is configured.
+"@
+}
+
+if ($Check) {
+  Write-Host 'Worker startup check passed.'
+  exit 0
 }
 
 $workerArgs = @('scripts/agent-worker.mjs')
