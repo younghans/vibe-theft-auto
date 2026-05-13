@@ -56,6 +56,7 @@ const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
 const DEPLOY_REBASE_REPAIR_ATTEMPTS = getNonNegativeIntegerEnv('AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS', 2);
+const WORKER_LOG_RETENTION_DAYS = getNonNegativeIntegerEnv('AGENT_WORKER_LOG_RETENTION_DAYS', 21);
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 
@@ -156,6 +157,44 @@ async function writeWorkerDiagnostic(level = 'info', event = '', data = {}) {
     await fsp.appendFile(getWorkerLogPath(), `${JSON.stringify(entry)}\n`, 'utf8');
   } catch (error) {
     console.warn('[agent-worker] Could not write worker diagnostic log.', error);
+  }
+}
+
+async function pruneWorkerDiagnosticLogs() {
+  if (WORKER_LOG_RETENTION_DAYS <= 0) {
+    return;
+  }
+
+  try {
+    await fsp.mkdir(WORKER_LOG_ROOT, { recursive: true });
+    const cutoffTime = Date.now() - (WORKER_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const fileNames = await fsp.readdir(WORKER_LOG_ROOT);
+    let removedCount = 0;
+    for (const fileName of fileNames) {
+      const match = /^agent-worker-(\d{4}-\d{2}-\d{2})\.jsonl$/u.exec(fileName);
+      if (!match) {
+        continue;
+      }
+
+      const fileTime = Date.parse(`${match[1]}T00:00:00.000Z`);
+      if (!Number.isFinite(fileTime) || fileTime >= cutoffTime) {
+        continue;
+      }
+
+      await fsp.rm(path.join(WORKER_LOG_ROOT, fileName), { force: true });
+      removedCount += 1;
+    }
+
+    if (removedCount > 0) {
+      await writeWorkerDiagnostic('info', 'worker_log_retention_pruned', {
+        removedCount,
+        retentionDays: WORKER_LOG_RETENTION_DAYS
+      });
+    }
+  } catch (error) {
+    await writeWorkerDiagnostic('warn', 'worker_log_retention_failed', {
+      error: getErrorDiagnostic(error)
+    });
   }
 }
 
@@ -486,20 +525,22 @@ async function runCommand(command, args = [], {
       if (!settled) {
         child.kill('SIGTERM');
         settled = true;
-        if (taskId) {
-          void appendLog(taskId, `${label} timed out.`, {
-            level: 'error',
-            data: { command: printable, cwd, timeoutMs }
+        void (async () => {
+          if (taskId) {
+            await appendLog(taskId, `${label} timed out.`, {
+              level: 'error',
+              data: { command: printable, cwd, timeoutMs }
+            });
+          }
+          await writeWorkerDiagnostic('error', 'command_timeout', {
+            taskId,
+            label,
+            command: printable,
+            cwd,
+            timeoutMs
           });
-        }
-        void writeWorkerDiagnostic('error', 'command_timeout', {
-          taskId,
-          label,
-          command: printable,
-          cwd,
-          timeoutMs
-        });
-        reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+          reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+        })();
       }
     }, timeoutMs);
 
@@ -516,12 +557,12 @@ async function runCommand(command, args = [], {
 
     child.stdout.on('data', collect);
     child.stderr.on('data', collectError);
-    child.on('error', (error) => {
+    child.on('error', async (error) => {
       clearTimeout(timeout);
       if (!settled) {
         settled = true;
         if (taskId) {
-          void appendLog(taskId, `${label} could not start.`, {
+          await appendLog(taskId, `${label} could not start.`, {
             level: 'error',
             data: {
               command: printable,
@@ -530,7 +571,7 @@ async function runCommand(command, args = [], {
             }
           });
         }
-        void writeWorkerDiagnostic('error', 'command_spawn_failed', {
+        await writeWorkerDiagnostic('error', 'command_spawn_failed', {
           taskId,
           label,
           command: printable,
@@ -555,7 +596,7 @@ async function runCommand(command, args = [], {
       if (code === 0) {
         resolve(output);
       } else {
-        void writeWorkerDiagnostic('error', 'command_failed', {
+        await writeWorkerDiagnostic('error', 'command_failed', {
           taskId,
           label,
           command: printable,
@@ -2167,6 +2208,14 @@ async function handleCodeTask(task) {
         deployTargets,
         summary: `Branch pushed and checks passed. Deploy targets: ${formatDeployTargets(deployTargets)}.${autoDeployNote}`
       });
+      await appendLog(task.id, 'Task branch is ready for review.', {
+        data: {
+          branch: commit.branch,
+          commitSha: commit.commitSha,
+          changedFiles,
+          deployTargets
+        }
+      });
     }
   } catch (error) {
     const errorMessage = String(error?.message ?? '');
@@ -2279,6 +2328,14 @@ async function runIteration({
 
   const task = result.task;
   await appendLog(task.id, `Worker ${WORKER_ID} ${lane} lane started ${result.action || 'task'}.`);
+  await writeWorkerDiagnostic('info', 'task_started', {
+    taskId: task.id,
+    action: result.action || 'task',
+    lane,
+    status: task.status,
+    branch: task.branch ?? '',
+    commitSha: task.commitSha ?? ''
+  });
   if (result.action === 'deploy') {
     await handleDeployTask(task);
   } else if (result.action === 'reconcile_deploy') {
@@ -2288,6 +2345,12 @@ async function runIteration({
   } else {
     await handleCodeTask(task);
   }
+  await appendLog(task.id, `Worker ${WORKER_ID} ${lane} lane finished ${result.action || 'task'}.`);
+  await writeWorkerDiagnostic('info', 'task_completed', {
+    taskId: task.id,
+    action: result.action || 'task',
+    lane
+  });
   return true;
 }
 
@@ -2536,8 +2599,32 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  workerLogRoot: WORKER_LOG_ROOT,
+  workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
   runOnce: RUN_ONCE,
   selfTest: RUN_SELF_TEST
+});
+
+await pruneWorkerDiagnosticLogs();
+await writeWorkerDiagnostic('info', 'worker_started', {
+  apiBase: API_BASE,
+  workRoot: WORK_ROOT,
+  baseBranch: GIT_BASE_BRANCH,
+  gitCommand: GIT_COMMAND,
+  scope: DEFAULT_SCOPE,
+  autoDeploy: AUTO_DEPLOY,
+  deployEnabled: DEPLOY_ENABLED,
+  codeConcurrency: RUN_ONCE ? 1 : CODE_CONCURRENCY,
+  deployConcurrency: RUN_ONCE ? (DEPLOY_ENABLED ? 1 : 0) : DEPLOY_CONCURRENCY,
+  requestedDeployConcurrency: REQUESTED_DEPLOY_CONCURRENCY,
+  backendDeployStrategy: BACKEND_DEPLOY_STRATEGY,
+  backendVerifyUrl: BACKEND_VERIFY_URL ? 'configured' : 'missing',
+  frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
+  frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
+  frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  workerLogRoot: WORKER_LOG_ROOT,
+  workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
+  runOnce: RUN_ONCE
 });
 
 await runWorker();

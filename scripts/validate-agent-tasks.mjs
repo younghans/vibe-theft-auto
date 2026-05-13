@@ -294,6 +294,36 @@ try {
     cancelledBy: 'validator',
     filePath
   });
+
+  const offScopeStaleDeployTask = await createAgentTask({
+    scope: 'school_minigame',
+    contextType: 'hud',
+    prompt: 'Keep stale deploy reconciliation scoped to this lane.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  await updateAgentTask(offScopeStaleDeployTask.id, {
+    status: 'deploying',
+    branch: 'agent/task-off-scope-stale',
+    commitSha: 'offscope1234',
+    deployStartedAt: Date.now() - 60000
+  }, { filePath });
+  const scopedReconcileClaim = await claimNextAgentTask({
+    workerId: 'scoped-reconcile-worker',
+    scope: 'game',
+    staleDeployingAfterMs: 30000,
+    codeEnabled: false,
+    filePath
+  });
+  assert.equal(scopedReconcileClaim.action, '');
+  assert.equal(scopedReconcileClaim.task, null);
+  await cancelAgentTask(offScopeStaleDeployTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
+
   await updateAgentTask(created.id, {
     deployStartedAt: Date.now() - 60000
   }, { filePath });

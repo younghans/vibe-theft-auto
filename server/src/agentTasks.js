@@ -535,6 +535,10 @@ export async function claimNextAgentTask({
         const staleDeployingTask = sortTasks(state.tasks)
           .reverse()
           .find((task) => {
+            if (shouldFilterScope && task.scope !== normalizedScope) {
+              return false;
+            }
+
             if (task.status !== 'deploying' || !String(task.commitSha ?? '').trim()) {
               return false;
             }
