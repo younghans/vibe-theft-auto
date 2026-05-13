@@ -11,6 +11,6 @@
     "@gltf-transform/core": "^4.3.0",
     "@gltf-transform/functions": "^4.3.0",
     "fbx2gltf": "^0.9.7-p1",
-    "three": "^0.183.2"
+    "three": "^0.184.0"
   }
 }
