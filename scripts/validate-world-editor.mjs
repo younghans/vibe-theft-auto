@@ -1,5 +1,10 @@
 import { Box3, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
+import { WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
+import {
+  COMBAT_PICKUP_PROP_ITEM_IDS,
+  getCombatPickupSpawnDefinitions
+} from '../src/shared/combatPickupDefinitions.js';
 import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import { buildCity } from '../src/world/buildCity.js';
@@ -95,6 +100,20 @@ function validateCustomTileCatalogItems() {
 }
 
 function validateCustomPropCatalogItems() {
+  const pistolPickup = getBuilderItemById(COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
+  assert(pistolPickup, 'Pistol pickup prop should exist');
+  assert(pistolPickup.layer === 'prop', 'Pistol pickup should be a prop catalog item');
+  assert(pistolPickup.groupId === 'combat', 'Pistol pickup should be grouped under Combat');
+  assert(pistolPickup.collision === false, 'Pistol pickup should not block movement');
+  assert(pistolPickup.blocksShots === false, 'Pistol pickup should not block shots');
+  assert(typeof pistolPickup.createVisual === 'function', 'Pistol pickup should define a procedural builder visual');
+  assert(pistolPickup.combatPickup?.weaponId === WEAPON_IDS.pistol, 'Pistol pickup should spawn pistol ammo');
+  assert(pistolPickup.combatPickup?.ammoInClip === WEAPON_CLIP_SIZE, 'Pistol pickup should spawn a full clip');
+  assert(pistolPickup.combatPickup?.reserveAmmo === WEAPON_RESERVE_CAP, 'Pistol pickup should spawn full reserve ammo');
+  const pickupVisual = pistolPickup.createVisual();
+  assert(pickupVisual.getObjectByName('pistolPickupSpawnRing'), 'Pistol pickup visual should include a placement ring');
+  assert(pickupVisual.getObjectByName('pistolPickupSpawnBase'), 'Pistol pickup visual should include a small base');
+
   const basketballHoop = getBuilderItemById('basketball_hoop');
   assert(basketballHoop, 'Basketball hoop prop should exist');
   assert(basketballHoop.layer === 'prop', 'Basketball hoop should be a prop catalog item');
@@ -251,6 +270,15 @@ function validateProps() {
     assert(prop.position.every((value) => Number.isFinite(value)), `Prop ${index}: position values must be finite numbers`);
     validateRotationQuarterTurns(prop.rotationQuarterTurns, `Prop ${index}`);
   }
+
+  const pickupProps = defaultWorldLayout.props.filter((prop) => prop.itemId === COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
+  const pickupSpawns = getCombatPickupSpawnDefinitions(defaultWorldLayout.props, getBuilderItemById);
+  assert(pickupProps.length >= 4, 'Default world should seed pistol pickups as placeable props');
+  assert(pickupSpawns.length === pickupProps.length, 'Every default pistol pickup prop should resolve to a combat spawn');
+  assert(
+    pickupSpawns.every((spawn) => spawn.weaponId === WEAPON_IDS.pistol),
+    'Default pickup props should resolve to pistol pickup spawns'
+  );
 }
 
 async function validateBuildCity() {

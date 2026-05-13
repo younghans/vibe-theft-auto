@@ -1,5 +1,6 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import { rotationRadiansToQuarterTurns as toQuarterTurns } from '../shared/numberMath.js';
+import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 
 export const DEFAULT_WORLD_SPAWN = [0, 0, BUILDER_TILE_SIZE * 4.1];
 
@@ -93,6 +94,13 @@ const SIGNAL_CELLS = [
 const PERIMETER_BUSHES = [
   [-4.6, -4.4], [-3.7, -4.7], [4.4, -4.5], [4.8, -3.4],
   [-4.7, 4.3], [-3.4, 4.75], [4.45, 4.55], [3.35, 4.8]
+];
+
+const PICKUP_PROPS = [
+  { itemId: COMBAT_PICKUP_PROP_ITEM_IDS.pistol, position: [-2.2 * BUILDER_TILE_SIZE, -0.6 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: COMBAT_PICKUP_PROP_ITEM_IDS.pistol, position: [2.2 * BUILDER_TILE_SIZE, 0.6 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: COMBAT_PICKUP_PROP_ITEM_IDS.pistol, position: [0, -2.2 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: COMBAT_PICKUP_PROP_ITEM_IDS.pistol, position: [0, 2.2 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 
 const NPC_PLANS = [
@@ -272,6 +280,10 @@ function createPropLayout() {
 
   for (const [x, z] of PERIMETER_BUSHES) {
     pushProp('bush', [x * BUILDER_TILE_SIZE * 0.9, z * BUILDER_TILE_SIZE * 0.9], 0);
+  }
+
+  for (const plan of PICKUP_PROPS) {
+    pushProp(plan.itemId, plan.position, plan.angle);
   }
 
   return props;

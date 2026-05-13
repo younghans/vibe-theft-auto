@@ -11,6 +11,7 @@ export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
+export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
 
 const PORTAL_RING_RADIUS = 2.45;
 const PORTAL_RING_TUBE_RADIUS = 0.36;
@@ -1143,6 +1144,49 @@ export function createVibeJamStartPortalVisual() {
     phaseOffset: 1.8,
     topGeometry: new THREE.ConeGeometry(0.46, 0.88, 4)
   });
+}
+
+export function createPistolPickupSpawnVisual() {
+  const root = new THREE.Group();
+  root.name = 'PistolPickupSpawn';
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.82, 1.18, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0xf2c871,
+      transparent: true,
+      opacity: 0.72,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  ring.name = 'pistolPickupSpawnRing';
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.035;
+  root.add(ring);
+
+  const baseMaterial = createMaterial(0x242b3d, 0.58, 0.18);
+  const accentMaterial = createMaterial(0xf2c871, 0.42, 0.35);
+  const base = createCylinder(0.52, 0.66, 0.18, 24, baseMaterial);
+  base.name = 'pistolPickupSpawnBase';
+  base.position.y = 0.09;
+  root.add(base);
+
+  const core = createCylinder(0.18, 0.24, 0.28, 20, accentMaterial);
+  core.name = 'pistolPickupSpawnCore';
+  core.position.y = 0.32;
+  root.add(core);
+
+  const notch = createBox(
+    'pistolPickupSpawnNotch',
+    [0.82, 0.08, 0.18],
+    [0, 0.45, 0],
+    accentMaterial,
+    { castShadow: true, receiveShadow: false }
+  );
+  root.add(notch);
+
+  return root;
 }
 
 export const VIBE_JAM_PORTAL_INTERACTABLE = Object.freeze({

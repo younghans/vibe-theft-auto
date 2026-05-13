@@ -1,5 +1,4 @@
 import {
-  COMBAT_PICKUP_SPAWNS,
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
@@ -18,6 +17,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../shared/combatConstants.js';
+import { getCombatPickupSpawnDefinitions } from '../shared/combatPickupDefinitions.js';
 import { tickHealthRegen } from '../shared/combatRegen.js';
 import {
   DELIVERY_QUEST_ID,
@@ -465,8 +465,27 @@ export class NpcServiceMock {
 
   seedCombatPickups() {
     this.state.pickups.clear();
-    for (const spawn of COMBAT_PICKUP_SPAWNS) {
-      this.state.pickups.set(spawn.id, {
+    this.syncCombatPickupsFromWorld({ reset: true });
+  }
+
+  syncCombatPickupsFromWorld({ reset = false } = {}) {
+    const spawnDefinitions = getCombatPickupSpawnDefinitions(
+      this.worldState.getPlacements(),
+      getBuilderItemById
+    );
+    const nextSpawnIds = new Set(spawnDefinitions.map((spawn) => spawn.id));
+    let changed = false;
+
+    for (const [pickupId, pickup] of [...this.state.pickups.entries()]) {
+      if (pickup.kind === 'spawn' && (reset || !nextSpawnIds.has(pickupId))) {
+        this.state.pickups.delete(pickupId);
+        changed = true;
+      }
+    }
+
+    for (const spawn of spawnDefinitions) {
+      const existing = reset ? null : this.state.pickups.get(spawn.id);
+      const nextPickup = {
         id: spawn.id,
         weaponId: spawn.weaponId,
         x: spawn.position[0],
@@ -477,8 +496,31 @@ export class NpcServiceMock {
         active: true,
         respawnAt: 0,
         despawnAt: 0
-      });
+      };
+
+      if (!existing || existing.kind !== 'spawn') {
+        this.state.pickups.set(spawn.id, nextPickup);
+        changed = true;
+        continue;
+      }
+
+      if (
+        existing.weaponId !== nextPickup.weaponId
+        || existing.x !== nextPickup.x
+        || existing.z !== nextPickup.z
+        || existing.ammoInClip !== nextPickup.ammoInClip
+        || existing.reserveAmmo !== nextPickup.reserveAmmo
+      ) {
+        existing.weaponId = nextPickup.weaponId;
+        existing.x = nextPickup.x;
+        existing.z = nextPickup.z;
+        existing.ammoInClip = nextPickup.ammoInClip;
+        existing.reserveAmmo = nextPickup.reserveAmmo;
+        changed = true;
+      }
     }
+
+    return changed;
   }
 
   syncNpcStateFromWorld() {
@@ -607,6 +649,9 @@ export class NpcServiceMock {
           placement: this.worldState.serializePlacement(placement.id),
           replacedPlacementId: null
         });
+        if (this.syncCombatPickupsFromWorld()) {
+          this.emit();
+        }
         return { ok: true, placementId: placement.id };
       }
       case 'placeNpc': {
@@ -659,6 +704,8 @@ export class NpcServiceMock {
           this.syncNpcStateFromWorld();
           this.resetNpcRuntimeState(placement.id, { restartFromSpawn: true });
           this.emit();
+        } else if (this.syncCombatPickupsFromWorld()) {
+          this.emit();
         }
 
         this.emitWorldPatch({
@@ -679,6 +726,8 @@ export class NpcServiceMock {
           this.syncNpcStateFromWorld();
           this.resetNpcRuntimeState(result.placement.id, { restartFromSpawn: true });
           this.emit();
+        } else if (this.syncCombatPickupsFromWorld()) {
+          this.emit();
         }
 
         this.emitWorldPatch({
@@ -697,6 +746,8 @@ export class NpcServiceMock {
 
         if (placement.layer === 'npc') {
           this.syncNpcStateFromWorld();
+          this.emit();
+        } else if (this.syncCombatPickupsFromWorld()) {
           this.emit();
         }
 

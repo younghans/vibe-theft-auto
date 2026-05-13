@@ -6,8 +6,10 @@ import {
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
+  createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual
 } from './proceduralProps.js';
+import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 
 export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   const bounds = new THREE.Box3().setFromObject(root);
@@ -53,6 +55,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'blackjack_table' || item?.assetName === 'blackjack_table') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBlackjackTableVisual();
+  } else if (item?.id === COMBAT_PICKUP_PROP_ITEM_IDS.pistol || item?.assetName === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createPistolPickupSpawnVisual();
   } else if (typeof item?.asset === 'string' && item.asset) {
     primaryObject = await library.instantiate(item.asset);
   } else {

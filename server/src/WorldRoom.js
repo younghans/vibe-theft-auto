@@ -1,7 +1,6 @@
 import { CloseCode, Room } from '@colyseus/core';
 import { MapSchema, schema } from '@colyseus/schema';
 import {
-  COMBAT_PICKUP_SPAWNS,
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
@@ -22,6 +21,7 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../../src/shared/combatConstants.js';
+import { getCombatPickupSpawnDefinitions } from '../../src/shared/combatPickupDefinitions.js';
 import { tickHealthRegen } from '../../src/shared/combatRegen.js';
 import {
   DELIVERY_QUEST_ID,
@@ -1060,15 +1060,38 @@ export class WorldRoom extends Room {
 
   seedCombatPickups() {
     this.state.pickups.clear();
-    for (const spawn of COMBAT_PICKUP_SPAWNS) {
-      const pickup = createPickupState({
-        id: spawn.id,
-        weaponId: spawn.weaponId,
-        position: spawn.position,
-        ammoInClip: spawn.ammoInClip,
-        reserveAmmo: spawn.reserveAmmo
-      });
-      this.state.pickups.set(pickup.id, pickup);
+    this.syncCombatPickupsFromWorld({ reset: true });
+  }
+
+  syncCombatPickupsFromWorld({ reset = false } = {}) {
+    const spawnDefinitions = getCombatPickupSpawnDefinitions(
+      this.worldState.getPlacements(),
+      getBuilderItemById
+    );
+    const nextSpawnIds = new Set(spawnDefinitions.map((spawn) => spawn.id));
+
+    for (const [pickupId, pickup] of [...this.state.pickups.entries()]) {
+      if (pickup.kind === 'spawn' && (reset || !nextSpawnIds.has(pickupId))) {
+        this.state.pickups.delete(pickupId);
+      }
+    }
+
+    for (const spawn of spawnDefinitions) {
+      const existing = reset ? null : this.state.pickups.get(spawn.id);
+      if (!existing || existing.kind !== 'spawn') {
+        this.state.pickups.set(spawn.id, createPickupState(spawn));
+        continue;
+      }
+
+      const nextX = quantizePosition(spawn.position[0]);
+      const nextZ = quantizePosition(spawn.position[1]);
+      const nextAmmoInClip = Math.max(0, Math.floor(spawn.ammoInClip ?? 0));
+      const nextReserveAmmo = Math.max(0, Math.floor(spawn.reserveAmmo ?? 0));
+      if (existing.weaponId !== spawn.weaponId) existing.weaponId = spawn.weaponId;
+      if (existing.x !== nextX) existing.x = nextX;
+      if (existing.z !== nextZ) existing.z = nextZ;
+      if (existing.ammoInClip !== nextAmmoInClip) existing.ammoInClip = nextAmmoInClip;
+      if (existing.reserveAmmo !== nextReserveAmmo) existing.reserveAmmo = nextReserveAmmo;
     }
   }
 
@@ -2766,9 +2789,11 @@ export class WorldRoom extends Room {
     } catch (error) {
       this.worldState.loadLayout(previousLayout);
       this.syncNpcDefinitionsFromWorld();
+      this.syncCombatPickupsFromWorld();
       throw error;
     }
 
+    this.syncCombatPickupsFromWorld();
     this.broadcast('world:patch', patch);
     return {
       placementId: patch.placement?.id ?? patch.placementId ?? null

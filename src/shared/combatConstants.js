@@ -32,34 +32,3 @@ export const COMBAT_RESPAWN_POINTS = Object.freeze([
   Object.freeze([4.1 * T, 0]),
   Object.freeze([-4.1 * T, 0])
 ]);
-
-export const COMBAT_PICKUP_SPAWNS = Object.freeze([
-  Object.freeze({
-    id: 'pickup_spawn_pistol_1',
-    weaponId: WEAPON_IDS.pistol,
-    position: Object.freeze([-2.2 * T, -0.6 * T]),
-    ammoInClip: WEAPON_CLIP_SIZE,
-    reserveAmmo: WEAPON_RESERVE_CAP
-  }),
-  Object.freeze({
-    id: 'pickup_spawn_pistol_2',
-    weaponId: WEAPON_IDS.pistol,
-    position: Object.freeze([2.2 * T, 0.6 * T]),
-    ammoInClip: WEAPON_CLIP_SIZE,
-    reserveAmmo: WEAPON_RESERVE_CAP
-  }),
-  Object.freeze({
-    id: 'pickup_spawn_pistol_3',
-    weaponId: WEAPON_IDS.pistol,
-    position: Object.freeze([0, -2.2 * T]),
-    ammoInClip: WEAPON_CLIP_SIZE,
-    reserveAmmo: WEAPON_RESERVE_CAP
-  }),
-  Object.freeze({
-    id: 'pickup_spawn_pistol_4',
-    weaponId: WEAPON_IDS.pistol,
-    position: Object.freeze([0, 2.2 * T]),
-    ammoInClip: WEAPON_CLIP_SIZE,
-    reserveAmmo: WEAPON_RESERVE_CAP
-  })
-]);

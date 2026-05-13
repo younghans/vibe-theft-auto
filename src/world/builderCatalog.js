@@ -3,6 +3,11 @@ import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import {
+  COMBAT_PICKUP_ITEM_DEFINITIONS,
+  COMBAT_PICKUP_PROP_ITEM_IDS,
+  cloneCombatPickupDefinition
+} from '../shared/combatPickupDefinitions.js';
+import {
   cloneInteractableDefinition,
   cloneInteriorDefinition
 } from './interactableMetadata.js';
@@ -15,10 +20,12 @@ import {
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
+  createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
   OLYMPIC_BARBELL_FOOTPRINT,
+  PISTOL_PICKUP_SPAWN_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
   VIBE_JAM_PORTAL_FOOTPRINT,
   VIBE_JAM_PORTAL_INTERACTABLE
@@ -39,6 +46,7 @@ const TILE_GROUPS = Object.freeze({
 const PROP_GROUPS = Object.freeze({
   street: 'Street',
   greenery: 'Greenery',
+  combat: 'Combat',
   casino: 'Casino',
   fitness: 'Fitness',
   office: 'Office',
@@ -406,6 +414,20 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'tree_E', group: 'greenery' },
   { id: 'tower', assetName: 'watertower', label: 'Water Tower', group: 'utilities' },
   {
+    id: COMBAT_PICKUP_PROP_ITEM_IDS.pistol,
+    assetName: COMBAT_PICKUP_PROP_ITEM_IDS.pistol,
+    aliases: ['pistol_pickup', 'pick_up_pistol', 'Pick Up Pistol'],
+    label: 'Pistol Pickup',
+    asset: null,
+    group: 'combat',
+    size: PISTOL_PICKUP_SPAWN_FOOTPRINT,
+    collision: false,
+    blocksMovement: false,
+    blocksShots: false,
+    createVisual: createPistolPickupSpawnVisual,
+    combatPickup: COMBAT_PICKUP_ITEM_DEFINITIONS[COMBAT_PICKUP_PROP_ITEM_IDS.pistol]
+  },
+  {
     id: 'basketball_hoop',
     assetName: 'basketball_hoop',
     label: 'Basketball Hoop',
@@ -680,6 +702,7 @@ function createCityProp(definition) {
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
     interactable: cloneInteractableDefinition(definition.interactable),
+    combatPickup: cloneCombatPickupDefinition(definition.combatPickup),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     aliases: [...(definition.aliases ?? [])],
     groupId: definition.group,

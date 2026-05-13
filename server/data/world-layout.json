@@ -1645,6 +1645,42 @@
         11.8
       ],
       "rotationQuarterTurns": 2
+    },
+    {
+      "id": "placement_226",
+      "itemId": "pickup_pistol",
+      "position": [
+        -30.8,
+        -8.4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_227",
+      "itemId": "pickup_pistol",
+      "position": [
+        30.8,
+        8.4
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_228",
+      "itemId": "pickup_pistol",
+      "position": [
+        0,
+        -30.8
+      ],
+      "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_229",
+      "itemId": "pickup_pistol",
+      "position": [
+        0,
+        30.8
+      ],
+      "rotationQuarterTurns": 0
     }
   ],
   "npcs": [
