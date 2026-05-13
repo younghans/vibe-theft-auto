@@ -39,6 +39,7 @@
     "inspect:buildings": "node scripts/inspect-building-assets.mjs",
     "preview": "node scripts/dev-server.mjs dist 4174",
     "validate": "node scripts/validate-world-editor.mjs",
+    "validate:all": "npm run validate && npm run validate:phone-apps && npm run validate:skills && npm run validate:agent-tasks && npm run validate:world-backups && npm run validate:blackjack && npm run validate:computer-activity && npm run validate:portraits && npm run validate:mixamo",
     "validate:phone-apps": "node scripts/validate-phone-apps.mjs",
     "validate:skills": "node scripts/validate-skills.mjs",
     "validate:agent-tasks": "node scripts/validate-agent-tasks.mjs",
@@ -47,7 +48,8 @@
     "validate:computer-activity": "node scripts/validate-computer-activity.mjs",
     "validate:portraits": "node scripts/validate-npc-portraits.mjs",
     "validate:mixamo": "node scripts/validate-mixamo-assets.mjs \"assets/runtime/mixamo/characters/xBot.glb\" \"assets/mixamo/animations/walking.json\"",
-    "extract:mixamo-animation": "node scripts/extract-fbx-animation.mjs \"assets/source/mixamo/animations/walking.fbx\" \"assets/mixamo/animations/walking.json\" Walking"
+    "extract:mixamo-animation": "node scripts/extract-fbx-animation.mjs \"assets/source/mixamo/animations/walking.fbx\" \"assets/mixamo/animations/walking.json\" Walking",
+    "public:export": "node scripts/create-public-export.mjs"
   },
   "keywords": [
     "threejs",

@@ -83,7 +83,8 @@ function readGitCommitSha() {
 
 function readBackendCommitSha() {
   return String(
-    process.env.STICKRPG_BUILD_COMMIT_SHA
+    process.env.VTA_BUILD_COMMIT_SHA
+    ?? process.env.STICKRPG_BUILD_COMMIT_SHA
     ?? process.env.COLYSEUS_GIT_COMMIT_SHA
     ?? process.env.GITHUB_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
@@ -221,7 +222,7 @@ function normalizePublicAddress(value = '') {
 }
 
 const colyseusPublicAddress = normalizePublicAddress(
-  process.env.COLYSEUS_PUBLIC_ADDRESS ?? process.env.STICKRPG_PUBLIC_ADDRESS ?? ''
+  process.env.COLYSEUS_PUBLIC_ADDRESS ?? process.env.VTA_PUBLIC_ADDRESS ?? process.env.STICKRPG_PUBLIC_ADDRESS ?? ''
 );
 
 function getBearerToken(req) {
@@ -454,7 +455,7 @@ const server = defineServer({
       const playerSnapshots = getPlayerSnapshotsInfo();
       res.json({
         ok: true,
-        service: 'stickrpg-colyseus',
+        service: 'vibe-theft-auto-colyseus',
         transport: 'websocket',
         commitSha: BACKEND_COMMIT_SHA,
         buildCommitSha: BACKEND_COMMIT_SHA,

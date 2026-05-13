@@ -3,7 +3,7 @@
 ## 1. Create the application
 
 1. Sign in at <https://cloud.colyseus.io/>.
-2. Create a new application named `stickrpg`.
+2. Create a new application named `vibe-theft-auto`.
 3. Choose the nearest US-East / Virginia-style region.
 4. Start with a single instance on a production-oriented compute plan.
 

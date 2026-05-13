@@ -17,7 +17,7 @@ const CODEX_TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || (45 * 60 * 1000)
 const WORKER_ID = process.env.AGENT_WORKER_ID || `${os.hostname()}-${process.pid}`;
 const API_BASE = String(process.env.AGENT_API_BASE || '').replace(/\/+$/u, '');
 const WORKER_TOKEN = String(process.env.AGENT_WORKER_TOKEN || '');
-const WORK_ROOT = path.resolve(process.env.AGENT_WORK_ROOT || path.join(os.homedir(), 'stickrpg-agent-work'));
+const WORK_ROOT = path.resolve(process.env.AGENT_WORK_ROOT || path.join(os.homedir(), 'vibe-theft-auto-agent-work'));
 const REPO_PATH = path.join(WORK_ROOT, 'repo');
 const TASKS_ROOT = path.join(WORK_ROOT, 'tasks');
 const WORKER_LOG_ROOT = path.resolve(process.env.AGENT_WORKER_LOG_ROOT || path.join(WORK_ROOT, 'logs'));
@@ -830,7 +830,7 @@ function extractCodexSessionId(output = '') {
 async function writePromptFile(task, worktreePath) {
   const promptPath = path.join(worktreePath, '.codex', 'agent-task-prompt.md');
   await fsp.mkdir(path.dirname(promptPath), { recursive: true });
-  const prompt = `You are Codex working in the StickRPG repository.
+  const prompt = `You are Codex working in the Vibe Theft Auto repository.
 
 Task ID:
 ${task.id}
@@ -940,7 +940,7 @@ async function writeDeployRebaseRepairPrompt(task, worktreePath, {
 } = {}) {
   const promptPath = path.join(worktreePath, '.codex', 'deploy-rebase-repair-prompt.md');
   await fsp.mkdir(path.dirname(promptPath), { recursive: true });
-  const prompt = `You are Codex resolving a deploy rebase conflict in the StickRPG repository.
+  const prompt = `You are Codex resolving a deploy rebase conflict in the Vibe Theft Auto repository.
 
 Task ID:
 ${task.id}
@@ -1344,7 +1344,7 @@ async function getFrontendVerifyUrl(worktreePath) {
 
 function withVerifyCacheBuster(urlString) {
   const url = new URL(urlString);
-  url.searchParams.set('_stickrpg_verify', `${Date.now()}`);
+  url.searchParams.set('_vta_verify', `${Date.now()}`);
   return url.toString();
 }
 
@@ -2581,7 +2581,7 @@ if (RUN_SELF_TEST) {
 }
 
 validateConfig();
-console.log('[agent-worker] Starting StickRPG Codex worker.', {
+console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   workerId: WORKER_ID,
   apiBase: API_BASE,
   workRoot: WORK_ROOT,

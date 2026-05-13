@@ -22,7 +22,7 @@ import {
   getAgentTaskPromptTitle
 } from '../src/shared/agentTaskSummary.js';
 
-const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'stickrpg-agent-tasks-'));
+const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'vta-agent-tasks-'));
 const filePath = path.join(tempRoot, 'agent-tasks.json');
 const deploymentFilePath = path.join(tempRoot, 'agent-deployments.json');
 

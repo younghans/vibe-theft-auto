@@ -1,7 +1,8 @@
 import { NpcServiceColyseus } from './NpcServiceColyseus.js';
 import { NpcServiceMock } from './NpcServiceMock.js';
 
-const PLAYER_ID_STORAGE_KEY = 'stickrpg.playerId';
+const PLAYER_ID_STORAGE_KEY = 'vta.playerId';
+const LEGACY_PLAYER_ID_STORAGE_KEY = 'stickrpg.playerId';
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -21,6 +22,10 @@ function readConfiguredEndpoint(url) {
   }
 
   const metaValue = document
+    .querySelector('meta[name="vta-server-url"]')
+    ?.getAttribute('content')
+    ?.trim()
+    || document
     .querySelector('meta[name="stickrpg-server-url"]')
     ?.getAttribute('content')
     ?.trim();
@@ -28,7 +33,7 @@ function readConfiguredEndpoint(url) {
     return metaValue;
   }
 
-  const globalValue = globalThis.STICKRPG_SERVER_URL;
+  const globalValue = globalThis.VTA_SERVER_URL ?? globalThis.STICKRPG_SERVER_URL;
   if (typeof globalValue === 'string' && globalValue.trim()) {
     return globalValue.trim();
   }
@@ -56,9 +61,11 @@ function createPlayerId() {
 
 function readPersistentPlayerId() {
   try {
-    const stored = window.localStorage?.getItem(PLAYER_ID_STORAGE_KEY);
+    const stored = window.localStorage?.getItem(PLAYER_ID_STORAGE_KEY)
+      || window.localStorage?.getItem(LEGACY_PLAYER_ID_STORAGE_KEY);
     const normalized = typeof stored === 'string' ? stored.trim() : '';
     if (normalized) {
+      window.localStorage?.setItem(PLAYER_ID_STORAGE_KEY, normalized);
       return normalized;
     }
 

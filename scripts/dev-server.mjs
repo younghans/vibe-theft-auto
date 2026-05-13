@@ -10,8 +10,17 @@ const flags = new Set(cliArgs.filter((arg) => arg.startsWith('--')));
 
 const root = path.resolve(positionalArgs[0] ?? '.');
 const port = Number(process.env.PORT || positionalArgs[1] || 4173);
-const configuredServerUrl = (process.env.STICKRPG_SERVER_URL || positionalArgs[2] || '').trim();
-const liveReloadEnabled = flags.has('--live-reload') || process.env.STICKRPG_LIVE_RELOAD === '1';
+const configuredServerUrl = (
+  process.env.VTA_SERVER_URL
+  || process.env.VITE_VTA_SERVER_URL
+  || process.env.STICKRPG_SERVER_URL
+  || process.env.VITE_STICKRPG_SERVER_URL
+  || positionalArgs[2]
+  || ''
+).trim();
+const liveReloadEnabled = flags.has('--live-reload')
+  || process.env.VTA_LIVE_RELOAD === '1'
+  || process.env.STICKRPG_LIVE_RELOAD === '1';
 const liveReloadClients = new Set();
 const ignoredWatchPathSegments = new Set([
   '.codex',
@@ -103,7 +112,7 @@ function injectHtml(html) {
   if (configuredServerUrl) {
     nextHtml = nextHtml.replace(
       '</head>',
-      `    <script>globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(configuredServerUrl)};</script>\n  </head>`
+      `    <script>globalThis.VTA_SERVER_URL = ${JSON.stringify(configuredServerUrl)};globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(configuredServerUrl)};</script>\n  </head>`
     );
   }
 

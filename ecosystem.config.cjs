@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'stickrpg',
+      name: 'vibe-theft-auto',
       script: 'server/start-production.mjs',
       time: true,
       watch: false,

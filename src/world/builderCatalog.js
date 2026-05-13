@@ -57,7 +57,7 @@ const PROP_GROUPS = Object.freeze({
 });
 
 const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
-const CUSTOM_CITY_PACK = 'stickrpg_custom';
+const CUSTOM_CITY_PACK = 'vibe_theft_auto_custom';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 const CUSTOM_2X2_BUILDING_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
 const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;

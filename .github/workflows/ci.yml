@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and audit
+    name: Build, validate, and audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -26,15 +26,24 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/mixamo-optimizer/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend
-        run: npm run build:web
+      - name: Install optimizer dependencies
+        run: npm --prefix tools/mixamo-optimizer ci
 
-      - name: Build backend
-        run: npm run build
+      - name: Build frontend and backend
+        run: npm run build:all
 
-      - name: Audit dependencies
+      - name: Run validators
+        run: npm run validate:all
+
+      - name: Audit root dependencies
         run: npm audit --audit-level=moderate
+
+      - name: Audit optimizer dependencies
+        run: npm --prefix tools/mixamo-optimizer audit --audit-level=moderate

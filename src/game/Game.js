@@ -144,8 +144,10 @@ const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
 const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
-const CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
-const GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
+const CHARACTER_STORAGE_KEY = 'vta.selectedCharacterId';
+const LEGACY_CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
+const GAME_SETTINGS_STORAGE_KEY = 'vta.gameSettings';
+const LEGACY_GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
 const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
@@ -338,7 +340,7 @@ function getBackendHttpEndpoint(serviceEndpoint, endpointPath) {
 }
 
 function getClientBuildCommitSha() {
-  const value = globalThis.STICKRPG_BUILD_COMMIT_SHA;
+  const value = globalThis.VTA_BUILD_COMMIT_SHA ?? globalThis.STICKRPG_BUILD_COMMIT_SHA;
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -352,7 +354,12 @@ function clampVibeShaderIntensity(value) {
 
 function readStoredCharacterId() {
   try {
-    const stored = window.localStorage?.getItem(CHARACTER_STORAGE_KEY) ?? '';
+    const stored = window.localStorage?.getItem(CHARACTER_STORAGE_KEY)
+      || window.localStorage?.getItem(LEGACY_CHARACTER_STORAGE_KEY)
+      || '';
+    if (stored) {
+      window.localStorage?.setItem(CHARACTER_STORAGE_KEY, stored);
+    }
     return getPlayableCharacterById(stored).id;
   } catch {
     return DEFAULT_PLAYABLE_CHARACTER_ID;
@@ -361,7 +368,11 @@ function readStoredCharacterId() {
 
 function readStoredGameSettings() {
   try {
-    const raw = window.localStorage?.getItem(GAME_SETTINGS_STORAGE_KEY);
+    const raw = window.localStorage?.getItem(GAME_SETTINGS_STORAGE_KEY)
+      || window.localStorage?.getItem(LEGACY_GAME_SETTINGS_STORAGE_KEY);
+    if (raw) {
+      window.localStorage?.setItem(GAME_SETTINGS_STORAGE_KEY, raw);
+    }
     const parsed = raw ? JSON.parse(raw) : {};
     const masterVolume = Number(parsed?.masterVolume);
     return {

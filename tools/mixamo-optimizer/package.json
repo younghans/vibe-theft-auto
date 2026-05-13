@@ -1,5 +1,5 @@
 {
-  "name": "stickrpg-mixamo-optimizer",
+  "name": "vibe-theft-auto-mixamo-optimizer",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,6 @@
     "@gltf-transform/core": "^4.3.0",
     "@gltf-transform/functions": "^4.3.0",
     "fbx2gltf": "^0.9.7-p1",
-    "stickrpg": "file:../..",
     "three": "^0.183.2"
   }
 }

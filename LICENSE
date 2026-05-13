@@ -2,7 +2,8 @@ Vibe Theft Auto source code license
 
 The source code in this repository is licensed under the ISC License below,
 except for third-party vendored code and bundled game assets, which remain under
-their own terms. See ASSET_POLICY.md for the lightweight asset policy.
+their own terms. Mixamo-derived runtime assets are not ISC-licensed and are
+covered by the asset policy in ASSET_POLICY.md and assets/mixamo/NOTICE.md.
 
 ISC License
 

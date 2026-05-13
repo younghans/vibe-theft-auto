@@ -8,6 +8,7 @@
 node_modules/
 dist/
 .dist-staging/
+.public-export/
 .tmp-gltf-estimate/
 test-results/
 tmp-*.spec.cjs

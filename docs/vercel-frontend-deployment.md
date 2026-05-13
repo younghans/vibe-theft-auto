@@ -1,6 +1,6 @@
 # Vercel frontend deployment
 
-StickRPG uses a split production deployment:
+Vibe Theft Auto uses a split production deployment:
 
 - Vercel serves the static frontend from `dist`.
 - Colyseus Cloud runs the multiplayer websocket backend, persistence, and NPC services.
@@ -24,13 +24,13 @@ Import the GitHub repository into Vercel and use these settings:
 Set this Vercel environment variable for Production and Preview:
 
 ```text
-STICKRPG_SERVER_URL=wss://<colyseus-backend-host>
+VTA_SERVER_URL=wss://<colyseus-backend-host>
 ```
 
 Use a backend-only hostname, not the public frontend hostname. The current backend hostname is `us-atl-06d422c8.vibetheftauto.xyz`, so set:
 
 ```text
-STICKRPG_SERVER_URL=wss://us-atl-06d422c8.vibetheftauto.xyz
+VTA_SERVER_URL=wss://us-atl-06d422c8.vibetheftauto.xyz
 ```
 
 Do not copy backend secrets such as `DATABASE_URL`, `OPENAI_API_KEY`, or `ADMIN_KEYS` into Vercel unless a future frontend-only feature explicitly needs a public value. Those remain on Colyseus Cloud.
@@ -40,7 +40,7 @@ Do not copy backend secrets such as `DATABASE_URL`, `OPENAI_API_KEY`, or `ADMIN_
 1. Keep one hostname pointed at Colyseus Cloud for the backend.
 2. Confirm the backend responds at `https://<colyseus-backend-host>/health`.
 3. Point `vibetheftauto.xyz` and `www.vibetheftauto.xyz` to Vercel.
-4. Redeploy the Vercel project after `STICKRPG_SERVER_URL` is set.
+4. Redeploy the Vercel project after `VTA_SERVER_URL` is set.
 5. Open the Vercel-hosted site and confirm the browser console logs a Colyseus connection to the configured backend.
 
 ## Colyseus Cloud settings
@@ -66,7 +66,7 @@ The Codex worker must treat frontend and backend deploys separately:
 - Keep `AGENT_API_BASE` pointed at the Colyseus backend hostname because the task API lives on the backend.
 - The worker validation gate runs both `npm run build:web` and `npm run build:server`.
 - Frontend task changes deploy through Vercel after the worker pushes the approved commit to `main`. If Git integration is enabled, leave `FRONTEND_DEPLOY_COMMAND` unset. If the worker should run the Vercel CLI itself, set `FRONTEND_DEPLOY_COMMAND`, for example `npx vercel deploy --prod --yes`.
-- Frontend builds stamp the served HTML with `STICKRPG_BUILD_COMMIT_SHA`. Vercel sets this from `VERCEL_GIT_COMMIT_SHA`; other hosts can set `STICKRPG_BUILD_COMMIT_SHA` explicitly.
+- Frontend builds stamp the served HTML with `VTA_BUILD_COMMIT_SHA`. Vercel sets this from `VERCEL_GIT_COMMIT_SHA`; other hosts can set `VTA_BUILD_COMMIT_SHA` explicitly.
 - The worker waits for the production frontend to serve the expected commit before it marks frontend deploys or rollbacks complete. Set `FRONTEND_VERIFY_URL` to the production URL, for example `https://www.vibetheftauto.xyz/`; if unset, the worker falls back to the `homepage` field in `package.json`.
 - Backend task changes deploy through `BACKEND_DEPLOY_COMMAND`, normally `npm run deploy:colyseus`.
 - If Colyseus Cloud is also connected directly to `main`, every frontend push

@@ -13,8 +13,8 @@ const assetsRoot = path.join(root, 'assets');
 const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
-const DIST_TOTAL_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_TOTAL_BUDGET_BYTES', (35 * 1024 + 1792) * 1024);
-const DIST_FILE_BUDGET_BYTES = getByteBudget('STICKRPG_DIST_FILE_BUDGET_BYTES', 5 * 1024 * 1024);
+const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], (35 * 1024 + 1792) * 1024);
+const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 5 * 1024 * 1024);
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',
   '.glb',
@@ -26,9 +26,15 @@ const COMPRESSIBLE_EXTENSIONS = new Set([
   '.txt'
 ]);
 
-function getByteBudget(name, fallback) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
+function getByteBudget(names, fallback) {
+  const envNames = Array.isArray(names) ? names : [names];
+  for (const name of envNames) {
+    const value = Number(process.env[name]);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return fallback;
 }
 
 async function resetStagingDist() {
@@ -329,7 +335,9 @@ async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagin
 
 function readFrontendServerUrl() {
   return String(
-    process.env.STICKRPG_SERVER_URL
+    process.env.VTA_SERVER_URL
+    ?? process.env.VITE_VTA_SERVER_URL
+    ?? process.env.STICKRPG_SERVER_URL
     ?? process.env.VITE_STICKRPG_SERVER_URL
     ?? ''
   ).trim();
@@ -337,7 +345,8 @@ function readFrontendServerUrl() {
 
 function readFrontendBuildCommitSha() {
   return String(
-    process.env.STICKRPG_BUILD_COMMIT_SHA
+    process.env.VTA_BUILD_COMMIT_SHA
+    ?? process.env.STICKRPG_BUILD_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
     ?? process.env.GITHUB_SHA
     ?? ''
@@ -349,9 +358,11 @@ function getRuntimeConfigScript() {
   const buildCommitSha = readFrontendBuildCommitSha();
   const assignments = [];
   if (serverUrl) {
+    assignments.push(`globalThis.VTA_SERVER_URL = ${JSON.stringify(serverUrl)};`);
     assignments.push(`globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(serverUrl)};`);
   }
   if (buildCommitSha) {
+    assignments.push(`globalThis.VTA_BUILD_COMMIT_SHA = ${JSON.stringify(buildCommitSha)};`);
     assignments.push(`globalThis.STICKRPG_BUILD_COMMIT_SHA = ${JSON.stringify(buildCommitSha)};`);
   }
   if (assignments.length === 0) {

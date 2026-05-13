@@ -44,9 +44,9 @@ class NodeFileReader {
 globalThis.FileReader = globalThis.FileReader ?? NodeFileReader;
 
 const DEFAULT_REFERENCE_FILES = [
-  'assets/stickrpg_custom/models/bar-building-wide.glb',
-  'assets/stickrpg_custom/models/gym-building.glb',
-  'assets/stickrpg_custom/models/hospital-building.glb',
+  'assets/vibe_theft_auto_custom/models/bar-building-wide.glb',
+  'assets/vibe_theft_auto_custom/models/gym-building.glb',
+  'assets/vibe_theft_auto_custom/models/hospital-building.glb',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_A.gltf',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_B.gltf',
   'assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_C.gltf',
@@ -73,7 +73,7 @@ function usage() {
     '',
     'Usage:',
     '  npm run inspect:buildings',
-    '  npm run inspect:buildings -- assets/stickrpg_custom/models/my-building.glb',
+    '  npm run inspect:buildings -- assets/vibe_theft_auto_custom/models/my-building.glb',
     ''
   ].join('\n'));
 }
@@ -123,7 +123,7 @@ function readGltf(filePath) {
 
 function getFamilyLabel(filePath) {
   const relativePath = path.relative(repoRoot, filePath).replace(/\\/g, '/');
-  if (relativePath.includes('stickrpg_custom')) return 'custom';
+  if (relativePath.includes('vibe_theft_auto_custom')) return 'custom';
   if (relativePath.includes('KayKit')) return 'kaykit';
   if (relativePath.includes('kenney')) return 'kenney';
   return 'other';

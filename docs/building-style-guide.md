@@ -4,7 +4,7 @@ This repo already has a clear building language. New custom lots should feel lik
 
 - `assets/KayKit_City_Builder_Bits_1.0_FREE/Assets/gltf/building_*.gltf`
 - `assets/kenney_city-kit-commercial_2.1/Models/GLB format/building-*.glb`
-- `assets/stickrpg_custom/models/hospital-building.glb`
+- `assets/vibe_theft_auto_custom/models/hospital-building.glb`
 
 ## What the current style looks like
 
@@ -61,8 +61,8 @@ If a prompt only gives the building type, use these defaults unless the request 
 2. Block the building from large forms first so it reads at distance.
 3. Add only the signature details that sell the type.
 4. Keep the palette in the existing family: off-white or light concrete walls, charcoal roof, blue glass, restrained accent color.
-5. Export to `.glb` in `assets/stickrpg_custom/models/`.
-6. Run `npm run inspect:buildings -- assets/stickrpg_custom/models/your-building.glb`.
+5. Export to `.glb` in `assets/vibe_theft_auto_custom/models/`.
+6. Run `npm run inspect:buildings -- assets/vibe_theft_auto_custom/models/your-building.glb`.
 7. Confirm the footprint, estimated rendered height, and mesh count are in family.
 8. Register the asset in `src/world/builderCatalog.js` with the standard lot size unless the building is an intentional outlier.
 

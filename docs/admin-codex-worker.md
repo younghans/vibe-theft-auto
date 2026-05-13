@@ -396,7 +396,7 @@ PowerShell example:
 $env:DEPLOY_ENABLED = "true"
 $env:BACKEND_DEPLOY_COMMAND = "npm run deploy:colyseus"
 $env:BACKEND_DEPLOY_STRATEGY = "command"
-$env:COLYSEUS_APPLICATION_ID = "1388-stickrpg"
+$env:COLYSEUS_APPLICATION_ID = "<application-id>"
 $env:COLYSEUS_DEPLOY_TOKEN = "<copy from local .colyseus-cloud.json or Colyseus CLI>"
 $env:BACKEND_VERIFY_URL = "https://us-atl-06d422c8.vibetheftauto.xyz/health"
 $env:FRONTEND_VERIFY_URL = "https://www.vibetheftauto.xyz/"
@@ -488,7 +488,7 @@ The worker should generate a prompt file instead of passing raw admin text direc
 Template:
 
 ```md
-You are Codex working in the StickRPG repository.
+You are Codex working in the Vibe Theft Auto repository.
 
 Task ID:
 <task id>

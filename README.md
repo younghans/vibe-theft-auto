@@ -62,7 +62,7 @@ Important production values include:
 - `DATABASE_URL`: PostgreSQL connection string for world persistence.
 - `PLAYER_SNAPSHOT_TTL_MS`: optional time window for restoring players after
   backend restarts; defaults to 30 minutes.
-- `STICKRPG_SERVER_URL`: frontend build-time websocket URL for the Colyseus
+- `VTA_SERVER_URL`: frontend build-time websocket URL for the Colyseus
   backend, such as `wss://us-atl-06d422c8.vibetheftauto.xyz`.
 - `COLYSEUS_PUBLIC_ADDRESS`: optional hosted backend address override.
 - `OPENAI_API_KEY`: optional key for AI NPC replies.
@@ -89,4 +89,19 @@ animation extraction, and third-party asset import workflow.
 
 Source code is licensed under the ISC License. Bundled game assets, third-party
 assets, and vendored code remain under their own terms and are not relicensed as
-ISC. See [ASSET_POLICY.md](ASSET_POLICY.md) for details.
+ISC. Mixamo-derived runtime assets are included only so the game runs as
+intended and are not reusable as standalone assets. See
+[ASSET_POLICY.md](ASSET_POLICY.md) and
+[assets/mixamo/NOTICE.md](assets/mixamo/NOTICE.md) for details.
+
+## Open Source Release
+
+If you are publishing a public copy of this repository, prefer creating a fresh
+history from the current sanitized tree:
+
+```sh
+npm run public:export -- ../vibe-theft-auto-public --init-git
+```
+
+See [docs/open-source-release.md](docs/open-source-release.md) for the release
+checklist.

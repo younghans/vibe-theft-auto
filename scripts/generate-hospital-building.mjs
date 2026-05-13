@@ -38,8 +38,8 @@ globalThis.FileReader = globalThis.FileReader ?? NodeFileReader;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
-const outputPath = path.join(projectRoot, 'assets', 'stickrpg_custom', 'models', 'hospital-building.glb');
-const wideOutputPath = path.join(projectRoot, 'assets', 'stickrpg_custom', 'models', 'hospital-building-wide.glb');
+const outputPath = path.join(projectRoot, 'assets', 'vibe_theft_auto_custom', 'models', 'hospital-building.glb');
+const wideOutputPath = path.join(projectRoot, 'assets', 'vibe_theft_auto_custom', 'models', 'hospital-building-wide.glb');
 
 function createMaterial(color) {
   return new THREE.MeshStandardMaterial({
