@@ -896,6 +896,12 @@ export class NpcServiceColyseus {
     });
   }
 
+  async splitBlackjack(npcId = '') {
+    return this.rpc('blackjack:split', {
+      npcId: String(npcId ?? '').trim()
+    });
+  }
+
   async completeSchoolMicrogame(npcId = '', gameId = '', result = {}) {
     return this.rpc('schoolMicrogame:complete', {
       npcId: String(npcId ?? '').trim(),

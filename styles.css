@@ -5653,6 +5653,100 @@ body.is-admin-prompt-resizing * {
   background: rgba(8, 15, 18, 0.18);
 }
 
+.hud__blackjack-split-hands {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: min(100%, 680px);
+  min-width: 0;
+}
+
+.hud__blackjack-split-hand {
+  display: grid;
+  grid-template-rows: auto minmax(76px, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 244, 216, 0.16);
+  border-radius: 8px;
+  background: rgba(7, 18, 17, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(6, 10, 14, 0.16);
+}
+
+.hud__blackjack-split-hand.is-active {
+  border-color: rgba(242, 200, 113, 0.64);
+  background: rgba(242, 200, 113, 0.1);
+}
+
+.hud__blackjack-split-hand.is-win {
+  border-color: rgba(112, 227, 162, 0.44);
+}
+
+.hud__blackjack-split-hand.is-bust,
+.hud__blackjack-split-hand.is-dealer-win,
+.hud__blackjack-split-hand.is-dealer-blackjack {
+  border-color: rgba(255, 143, 125, 0.44);
+}
+
+.hud__blackjack-split-hand.is-push {
+  border-color: rgba(242, 200, 113, 0.44);
+}
+
+.hud__blackjack-split-head,
+.hud__blackjack-split-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hud__blackjack-split-head span,
+.hud__blackjack-split-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__blackjack-split-head {
+  color: rgba(255, 244, 216, 0.84);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__blackjack-split-head strong {
+  color: #fff1bf;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.hud__blackjack-split-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 76px;
+  perspective: 760px;
+  transform-style: preserve-3d;
+}
+
+.hud__blackjack-split-cards .hud__blackjack-card,
+.hud__blackjack-split-cards .hud__blackjack-card-slot {
+  width: clamp(42px, 6.2vw, 66px);
+  border-radius: 7px;
+}
+
+.hud__blackjack-split-meta {
+  color: rgba(255, 244, 216, 0.72);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .hud__blackjack-center {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -9939,6 +10033,26 @@ canvas {
 
   .hud__blackjack-action {
     flex: 1 1 118px;
+  }
+
+  .hud__blackjack-split-hands {
+    gap: 8px;
+  }
+
+  .hud__blackjack-split-hand {
+    grid-template-rows: auto minmax(62px, 1fr) auto;
+    gap: 6px;
+    padding: 7px;
+  }
+
+  .hud__blackjack-split-cards {
+    gap: 5px;
+    min-height: 62px;
+  }
+
+  .hud__blackjack-split-cards .hud__blackjack-card,
+  .hud__blackjack-split-cards .hud__blackjack-card-slot {
+    width: clamp(36px, 10vw, 50px);
   }
 
   .hud__school-locker,

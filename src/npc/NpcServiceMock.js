@@ -46,13 +46,18 @@ import {
 } from '../shared/stockMarket.js';
 import {
   BLACKJACK_MAX_WAGER,
+  canDoubleBlackjackSession,
+  canSplitBlackjackSession,
   createBlackjackSession,
   doubleBlackjackSession,
+  getBlackjackDoubleWager,
   getBlackjackPromptRadius,
+  getBlackjackSplitWager,
   hitBlackjackSession,
   isBlackjackDealerNpc,
   normalizeBlackjackWager,
   serializeBlackjackSession,
+  splitBlackjackSession,
   standBlackjackSession
 } from '../shared/blackjack.js';
 import {
@@ -1437,16 +1442,31 @@ export class NpcServiceMock {
       } else if (action === 'stand') {
         standBlackjackSession(session);
       } else if (action === 'double') {
-        if (session.playerHand.length !== 2) {
-          return { ok: false, error: 'Double is only available on the first two cards.' };
-        }
-        const extraWager = Math.max(0, Math.trunc(Number(session.wager ?? 0) || 0));
         const money = Math.trunc(Number(access.player.money ?? 0) || 0);
-        if (extraWager > money) {
-          return { ok: false, error: 'You need enough cash to double.' };
+        const extraWager = getBlackjackDoubleWager(session);
+        if (!canDoubleBlackjackSession(session, money)) {
+          return {
+            ok: false,
+            error: extraWager > money
+              ? 'You need enough cash to double.'
+              : 'Double is only available on the first two cards.'
+          };
         }
         access.player.money = money - extraWager;
         doubleBlackjackSession(session);
+      } else if (action === 'split') {
+        const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+        const splitWager = getBlackjackSplitWager(session);
+        if (!canSplitBlackjackSession(session, money)) {
+          return {
+            ok: false,
+            error: splitWager > money
+              ? 'You need enough cash to split.'
+              : 'Split is only available when the first two cards are a pair.'
+          };
+        }
+        access.player.money = money - splitWager;
+        splitBlackjackSession(session);
       } else {
         return { ok: false, error: 'That blackjack action is not available.' };
       }
@@ -1471,6 +1491,10 @@ export class NpcServiceMock {
 
   async doubleBlackjack(npcId = '') {
     return this.handleBlackjackAction(npcId, 'double');
+  }
+
+  async splitBlackjack(npcId = '') {
+    return this.handleBlackjackAction(npcId, 'split');
   }
 
   getSchoolMicrogameNpcForPlayer(player, requestedNpcId = '') {

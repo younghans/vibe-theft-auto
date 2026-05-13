@@ -9,13 +9,16 @@ import { assets } from '../src/world/assetManifest.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import {
+  canSplitBlackjackSession,
   createBlackjackSession,
   doubleBlackjackSession,
   getBlackjackHandValue,
   isBlackjackDealerNpc,
   isNaturalBlackjack,
   isSoftBlackjackHand,
-  serializeBlackjackSession
+  serializeBlackjackSession,
+  splitBlackjackSession,
+  standBlackjackSession
 } from '../src/shared/blackjack.js';
 
 function assert(condition, message) {
@@ -60,6 +63,32 @@ function validateSharedRules() {
   doubleBlackjackSession(doubleSession);
   assert(doubleSession.wager === 20, 'Double should double the wager.');
   assert(doubleSession.phase === 'complete', 'Double should finish the hand after one card.');
+
+  const splitSession = {
+    id: 'manual_split',
+    npcId: 'npc_table',
+    wager: 15,
+    deck: [{ rank: '4', suit: 'C', code: '4C' }, { rank: '3', suit: 'D', code: '3D' }],
+    playerHand: [{ rank: '8', suit: 'S', code: '8S' }, { rank: '8', suit: 'H', code: '8H' }],
+    dealerHand: [{ rank: '10', suit: 'D', code: '10D' }, { rank: '8', suit: 'C', code: '8C' }],
+    phase: 'playerTurn',
+    outcome: '',
+    payout: 0,
+    message: '',
+    rng: Math.random
+  };
+  assert(canSplitBlackjackSession(splitSession, 15), 'Pair should be eligible to split with enough cash.');
+  splitBlackjackSession(splitSession);
+  assert(splitSession.playerHands.length === 2, 'Split should create two player hands.');
+  assert(splitSession.wager === 30, 'Split should add an equal second wager.');
+  assert(splitSession.playerHands.every((hand) => hand.cards.length === 2), 'Each split hand should receive one card.');
+  const splitPublicState = serializeBlackjackSession(splitSession, { money: 0 });
+  assert(splitPublicState.split === true, 'Public state should mark split hands.');
+  assert(splitPublicState.playerHands.length === 2, 'Public state should include both split hands.');
+  assert(splitPublicState.canSplit === false, 'A split hand should not be split again.');
+  standBlackjackSession(splitSession);
+  standBlackjackSession(splitSession);
+  assert(splitSession.phase === 'complete', 'Standing both split hands should complete the round.');
 }
 
 function validateNpcFlag() {

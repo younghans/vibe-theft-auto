@@ -89,6 +89,7 @@ import {
   isBlackjackDealerNpc,
   normalizeBlackjackWager,
   serializeBlackjackSession,
+  splitBlackjackSession,
   standBlackjackSession
 } from '../shared/blackjack.js';
 import {
@@ -783,7 +784,8 @@ export class Game {
       onDeal: () => void this.startBlackjackRound(),
       onHit: () => void this.handleBlackjackAction('hit'),
       onStand: () => void this.handleBlackjackAction('stand'),
-      onDouble: () => void this.handleBlackjackAction('double')
+      onDouble: () => void this.handleBlackjackAction('double'),
+      onSplit: () => void this.handleBlackjackAction('split')
     });
     this.hud.bindSchoolMicrogameEvents({
       onClose: () => this.closeSchoolMicrogame(),
@@ -5199,6 +5201,8 @@ export class Game {
       standBlackjackSession(this.blackjackPreviewSession);
     } else if (action === 'double') {
       doubleBlackjackSession(this.blackjackPreviewSession);
+    } else if (action === 'split') {
+      splitBlackjackSession(this.blackjackPreviewSession);
     } else {
       return;
     }
@@ -5331,7 +5335,8 @@ export class Game {
     const methodByAction = {
       hit: 'hitBlackjack',
       stand: 'standBlackjack',
-      double: 'doubleBlackjack'
+      double: 'doubleBlackjack',
+      split: 'splitBlackjack'
     };
     const methodName = methodByAction[action];
     if (!methodName || typeof this.npcService?.[methodName] !== 'function') {

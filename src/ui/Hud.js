@@ -516,27 +516,45 @@ function getBlackjackCardDealOrigin(handKey = 'player', index = 0) {
   };
 }
 
+function getBlackjackPlayerHandCards(hand = {}) {
+  return Array.isArray(hand?.cards) ? hand.cards : [];
+}
+
 function createBlackjackCardVisuals({
   game = null,
   dealerHand = [],
   playerHand = [],
+  playerHands = [],
   previousState = null
 } = {}) {
   const sessionId = String(game?.id ?? '');
   const sameSession = Boolean(sessionId && previousState?.sessionId === sessionId);
-  const previous = sameSession ? previousState : { dealer: [], player: [] };
-  const hands = { dealer: dealerHand, player: playerHand };
-  const visuals = { dealer: [], player: [] };
+  const splitHands = Array.isArray(playerHands) && playerHands.length > 0
+    ? playerHands.map(getBlackjackPlayerHandCards)
+    : [playerHand];
+  const activeHandIndex = Math.max(
+    0,
+    Math.min(splitHands.length - 1, Math.trunc(Number(game?.activeHandIndex ?? 0) || 0))
+  );
+  const previous = sameSession ? previousState : { dealer: [], player: [], playerHands: [] };
+  const previousPlayerHands = Array.isArray(previous?.playerHands) && previous.playerHands.length > 0
+    ? previous.playerHands
+    : splitHands.length > 1 && Array.isArray(previous?.player)
+      ? previous.player.map((signature) => [signature])
+      : [previous?.player ?? []];
+  const visuals = { dealer: [], player: [], playerHands: [] };
   const nextState = {
     sessionId,
     dealer: dealerHand.map(getBlackjackCardSignature),
-    player: playerHand.map(getBlackjackCardSignature)
+    player: [],
+    playerHands: splitHands.map((cards) => cards.map(getBlackjackCardSignature))
   };
+  nextState.player = nextState.playerHands[activeHandIndex] ?? nextState.playerHands[0] ?? [];
 
-  for (const handKey of ['dealer', 'player']) {
-    hands[handKey].forEach((card, index) => {
-      const signature = nextState[handKey][index];
-      const previousSignature = previous[handKey]?.[index] ?? '';
+  const assignVisuals = (handKey, cards, nextSignatures, previousSignatures, target) => {
+    cards.forEach((card, index) => {
+      const signature = nextSignatures[index];
+      const previousSignature = previousSignatures?.[index] ?? '';
       const wasHidden = previousSignature.startsWith('hidden:');
       const isHidden = signature.startsWith('hidden:');
       const isNew = !sameSession || !previousSignature;
@@ -547,46 +565,71 @@ function createBlackjackCardVisuals({
           ? 'reveal'
           : '';
 
-      visuals[handKey][index] = {
+      target[index] = {
         animation,
         delay: 0,
         ...getBlackjackCardDealOrigin(handKey, index)
       };
     });
-  }
+  };
+
+  assignVisuals('dealer', dealerHand, nextState.dealer, previous.dealer, visuals.dealer);
+  splitHands.forEach((cards, handIndex) => {
+    visuals.playerHands[handIndex] = [];
+    assignVisuals(
+      `player${handIndex}`,
+      cards,
+      nextState.playerHands[handIndex],
+      previousPlayerHands[handIndex],
+      visuals.playerHands[handIndex]
+    );
+  });
+  visuals.player = visuals.playerHands[activeHandIndex] ?? visuals.playerHands[0] ?? [];
 
   const animatedSlots = [];
   const usedSlots = new Set();
   const pushSlot = (handKey, index) => {
     const slotId = `${handKey}:${index}`;
-    if (usedSlots.has(slotId) || !visuals[handKey]?.[index]?.animation) {
+    const target = handKey === 'dealer'
+      ? visuals.dealer
+      : visuals.playerHands[Number(handKey.replace('player', ''))] ?? [];
+    if (usedSlots.has(slotId) || !target[index]?.animation) {
       return;
     }
     usedSlots.add(slotId);
     animatedSlots.push({ handKey, index });
   };
 
+  const pushPlayerSlots = () => {
+    splitHands.forEach((cards, handIndex) => {
+      cards.forEach((_, index) => pushSlot(`player${handIndex}`, index));
+    });
+  };
+
   if (sameSession) {
-    playerHand.forEach((_, index) => pushSlot('player', index));
+    pushPlayerSlots();
     dealerHand.forEach((_, index) => pushSlot('dealer', index));
   } else {
     [
-      ['player', 0],
+      ['player0', 0],
       ['dealer', 0],
-      ['player', 1],
+      ['player0', 1],
       ['dealer', 1]
     ].forEach(([handKey, index]) => pushSlot(handKey, index));
-    playerHand.forEach((_, index) => pushSlot('player', index));
+    pushPlayerSlots();
     dealerHand.forEach((_, index) => pushSlot('dealer', index));
   }
 
   let duration = 0;
   animatedSlots.forEach(({ handKey, index }, sequence) => {
-    const animation = visuals[handKey][index].animation;
-    visuals[handKey][index].delay = sequence * BLACKJACK_CARD_STAGGER_MS;
+    const target = handKey === 'dealer'
+      ? visuals.dealer
+      : visuals.playerHands[Number(handKey.replace('player', ''))] ?? [];
+    const animation = target[index].animation;
+    target[index].delay = sequence * BLACKJACK_CARD_STAGGER_MS;
     duration = Math.max(
       duration,
-      visuals[handKey][index].delay + (BLACKJACK_CARD_ANIMATION_MS[animation] ?? 0)
+      target[index].delay + (BLACKJACK_CARD_ANIMATION_MS[animation] ?? 0)
     );
   });
 
@@ -632,6 +675,59 @@ function createBlackjackCardMarkup(card = {}, index = 0, visual = {}) {
         <span class="hud__blackjack-card-edge" aria-hidden="true"></span>
       </span>
     </span>
+  `;
+}
+
+function getBlackjackSplitOutcomeText(outcome = '', active = false) {
+  if (active) {
+    return 'Active';
+  }
+  if (outcome === 'win') {
+    return 'Win';
+  }
+  if (outcome === 'push') {
+    return 'Push';
+  }
+  if (outcome === 'bust') {
+    return 'Bust';
+  }
+  if (outcome === 'stand') {
+    return 'Stand';
+  }
+  if (outcome === 'dealer_win' || outcome === 'dealer_blackjack') {
+    return 'Loss';
+  }
+  return 'Waiting';
+}
+
+function createBlackjackSplitHandMarkup(hand = {}, index = 0, visuals = []) {
+  const cards = getBlackjackPlayerHandCards(hand);
+  const active = hand?.active === true;
+  const outcome = String(hand?.outcome ?? '');
+  const activeClass = active ? ' is-active' : '';
+  const outcomeClass = outcome ? ` is-${outcome.replaceAll('_', '-')}` : '';
+  const value = cards.length ? String(hand?.value ?? '-') : '-';
+  const wager = Math.max(0, Math.trunc(Number(hand?.wager ?? 0) || 0));
+  const label = escapeHtml(hand?.label ?? `Hand ${index + 1}`);
+  const status = getBlackjackSplitOutcomeText(outcome, active);
+  const cardMarkup = cards.length
+    ? cards.map((card, cardIndex) =>
+      createBlackjackCardMarkup(card, cardIndex, visuals[cardIndex])
+    ).join('')
+    : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+
+  return `
+    <section class="hud__blackjack-split-hand${activeClass}${outcomeClass}">
+      <div class="hud__blackjack-split-head">
+        <span>${label}</span>
+        <strong>${value}</strong>
+      </div>
+      <div class="hud__blackjack-split-cards">${cardMarkup}</div>
+      <div class="hud__blackjack-split-meta">
+        <span>${formatMoneyAmount(wager)}</span>
+        <span>${status}</span>
+      </div>
+    </section>
   `;
 }
 
@@ -2306,6 +2402,7 @@ export class Hud {
     this.blackjackHit = this.overlay.querySelector('[data-blackjack-hit]');
     this.blackjackStand = this.overlay.querySelector('[data-blackjack-stand]');
     this.blackjackDouble = this.overlay.querySelector('[data-blackjack-double]');
+    this.blackjackSplit = this.overlay.querySelector('[data-blackjack-split]');
     this.blackjackWagerChips = this.overlay.querySelector('[data-blackjack-wager-chips]');
     this.schoolMicrogameRoot = this.overlay.querySelector('[data-school-microgame]');
     this.schoolMicrogameClose = this.overlay.querySelector('[data-school-microgame-close]');
@@ -3261,6 +3358,7 @@ export class Hud {
             <button class="hud__blackjack-action" type="button" data-blackjack-hit>Hit</button>
             <button class="hud__blackjack-action" type="button" data-blackjack-stand>Stand</button>
             <button class="hud__blackjack-action" type="button" data-blackjack-double>Double</button>
+            <button class="hud__blackjack-action" type="button" data-blackjack-split>Split</button>
           </div>
         </footer>
       </section>
@@ -4972,7 +5070,8 @@ export class Hud {
     onDeal,
     onHit,
     onStand,
-    onDouble
+    onDouble,
+    onSplit
   }) {
     this.blackjackClose?.addEventListener('click', () => {
       onClose?.();
@@ -4996,6 +5095,10 @@ export class Hud {
 
     this.blackjackDouble?.addEventListener('click', () => {
       onDouble?.();
+    });
+
+    this.blackjackSplit?.addEventListener('click', () => {
+      onSplit?.();
     });
   }
 
@@ -5832,6 +5935,15 @@ export class Hud {
     const cash = Number(game?.money ?? 0);
     const currentWager = Number(game?.wager ?? wager ?? 0);
     const payout = Number(game?.payout ?? 0);
+    const dealerHand = Array.isArray(game?.dealerHand) ? game.dealerHand : [];
+    const playerHand = Array.isArray(game?.playerHand) ? game.playerHand : [];
+    const playerHands = Array.isArray(game?.playerHands) ? game.playerHands : [];
+    const splitActive = game?.split === true && playerHands.length > 1;
+    const activeHandIndex = Math.max(
+      0,
+      Math.min(playerHands.length - 1, Math.trunc(Number(game?.activeHandIndex ?? 0) || 0))
+    );
+    const activeSplitHand = splitActive ? playerHands[activeHandIndex] : null;
 
     if (this.blackjackStatus) {
       this.blackjackStatus.textContent = loading
@@ -5839,7 +5951,9 @@ export class Hud {
         : error
           ? error
           : handActive
-            ? 'Player action'
+            ? splitActive
+              ? `Hand ${activeHandIndex + 1} action`
+              : 'Player action'
             : handComplete
               ? 'Hand complete'
               : 'Open seat';
@@ -5859,12 +5973,11 @@ export class Hud {
       this.blackjackWager.disabled = loading || handActive;
     }
 
-    const dealerHand = Array.isArray(game?.dealerHand) ? game.dealerHand : [];
-    const playerHand = Array.isArray(game?.playerHand) ? game.playerHand : [];
     const blackjackCardVisuals = createBlackjackCardVisuals({
       game,
       dealerHand,
       playerHand,
+      playerHands: splitActive ? playerHands : [],
       previousState: this.blackjackCardVisualState
     });
     if (blackjackCardVisuals.duration > 0) {
@@ -5882,18 +5995,32 @@ export class Hud {
         : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
     }
     if (this.blackjackPlayerHand) {
-      this.blackjackPlayerHand.innerHTML = playerHand.length
-        ? playerHand.map((card, index) =>
-          createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.player[index])
-        ).join('')
-        : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+      if (splitActive) {
+        this.blackjackPlayerHand.innerHTML = `
+          <div class="hud__blackjack-split-hands">
+            ${playerHands.map((hand, index) =>
+              createBlackjackSplitHandMarkup(hand, index, blackjackCardVisuals.visuals.playerHands[index] ?? [])
+            ).join('')}
+          </div>
+        `;
+      } else {
+        this.blackjackPlayerHand.innerHTML = playerHand.length
+          ? playerHand.map((card, index) =>
+            createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.player[index])
+          ).join('')
+          : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+      }
     }
     this.blackjackCardVisualState = blackjackCardVisuals.nextState;
     if (this.blackjackDealerValue) {
       this.blackjackDealerValue.textContent = dealerHand.length ? String(game?.dealerValue ?? 0) : '-';
     }
     if (this.blackjackPlayerValue) {
-      this.blackjackPlayerValue.textContent = playerHand.length ? String(game?.playerValue ?? 0) : '-';
+      this.blackjackPlayerValue.textContent = splitActive
+        ? String(activeSplitHand?.value ?? game?.playerValue ?? 0)
+        : playerHand.length
+          ? String(game?.playerValue ?? 0)
+          : '-';
     }
     if (this.blackjackMessage) {
       this.blackjackMessage.textContent = error || game?.message || 'Place a wager and deal.';
@@ -5927,6 +6054,9 @@ export class Hud {
     }
     if (this.blackjackDouble) {
       this.blackjackDouble.disabled = loading || !game?.canDouble;
+    }
+    if (this.blackjackSplit) {
+      this.blackjackSplit.disabled = loading || !game?.canSplit;
     }
   }
 

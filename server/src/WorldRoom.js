@@ -56,13 +56,18 @@ import {
 } from '../../src/shared/stockMarket.js';
 import {
   BLACKJACK_MAX_WAGER,
+  canDoubleBlackjackSession,
+  canSplitBlackjackSession,
   createBlackjackSession,
   doubleBlackjackSession,
+  getBlackjackDoubleWager,
   getBlackjackPromptRadius,
+  getBlackjackSplitWager,
   hitBlackjackSession,
   isBlackjackDealerNpc,
   normalizeBlackjackWager,
   serializeBlackjackSession,
+  splitBlackjackSession,
   standBlackjackSession
 } from '../../src/shared/blackjack.js';
 import {
@@ -696,6 +701,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('blackjack:double', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'double'));
+    });
+
+    this.onMessage('blackjack:split', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBlackjackAction(client, message, 'split'));
     });
 
     this.onMessage('schoolMicrogame:complete', (client, message) => {
@@ -1635,16 +1644,27 @@ export class WorldRoom extends Room {
     } else if (action === 'stand') {
       standBlackjackSession(session);
     } else if (action === 'double') {
-      if (session.playerHand.length !== 2) {
-        throw new Error('Double is only available on the first two cards.');
-      }
-      const extraWager = Math.max(0, Math.trunc(Number(session.wager ?? 0) || 0));
       const money = Math.trunc(Number(player.money ?? 0) || 0);
-      if (extraWager > money) {
-        throw new Error('You need enough cash to double.');
+      const extraWager = getBlackjackDoubleWager(session);
+      if (!canDoubleBlackjackSession(session, money)) {
+        if (extraWager > money) {
+          throw new Error('You need enough cash to double.');
+        }
+        throw new Error('Double is only available on the first two cards.');
       }
       player.money = money - extraWager;
       doubleBlackjackSession(session);
+    } else if (action === 'split') {
+      const money = Math.trunc(Number(player.money ?? 0) || 0);
+      const splitWager = getBlackjackSplitWager(session);
+      if (!canSplitBlackjackSession(session, money)) {
+        if (splitWager > money) {
+          throw new Error('You need enough cash to split.');
+        }
+        throw new Error('Split is only available when the first two cards are a pair.');
+      }
+      player.money = money - splitWager;
+      splitBlackjackSession(session);
     } else {
       throw new Error('That blackjack action is not available.');
     }
