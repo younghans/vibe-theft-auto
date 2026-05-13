@@ -290,6 +290,76 @@ async function readJsonRequest(req, { maxBytes = ADMIN_WORLD_MAP_MAX_BYTES } = {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+function truncateDiagnosticText(value = '', maxLength = 2000) {
+  const text = String(value ?? '');
+  return text.length <= maxLength
+    ? text
+    : `${text.slice(0, Math.max(0, maxLength - 24))}\n...[truncated]`;
+}
+
+function getErrorDiagnostic(error) {
+  return {
+    name: String(error?.name ?? 'Error'),
+    message: truncateDiagnosticText(error?.message ?? String(error ?? ''), 1200),
+    stack: truncateDiagnosticText(error?.stack ?? '', 4000),
+    code: error?.code == null ? '' : String(error.code)
+  };
+}
+
+function getSafePromptPayloadDiagnostic(payload = null) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  return {
+    promptLength: String(payload.prompt ?? '').length,
+    mode: String(payload.mode ?? ''),
+    scope: String(payload.scope ?? ''),
+    gameId: String(payload.gameId ?? ''),
+    contextType: String(payload.contextType ?? ''),
+    contextLabel: String(payload.contextLabel ?? ''),
+    parentTaskId: String(payload.parentTaskId ?? ''),
+    createdBy: String(payload.createdBy ?? ''),
+    deployTargets: Array.isArray(payload.deployTargets) ? payload.deployTargets : []
+  };
+}
+
+async function recordAdminAgentRouteFailure(req, routeLabel, error, {
+  taskId = '',
+  payload = null
+} = {}) {
+  const diagnostic = {
+    route: routeLabel,
+    method: req.method,
+    path: req.path,
+    taskId: String(taskId || req.params?.id || ''),
+    workerId: typeof req.headers['x-agent-worker-id'] === 'string' ? req.headers['x-agent-worker-id'] : '',
+    hasAdminKey: Boolean(getAdminKeyFromRequest(req, payload)),
+    hasWorkerToken: Boolean(getBearerToken(req)),
+    payload: getSafePromptPayloadDiagnostic(payload),
+    error: getErrorDiagnostic(error)
+  };
+  console.warn(`[admin-agent] ${routeLabel} failed.`, diagnostic);
+  const canWriteTaskLog = isValidAdminKey(getAdminKeyFromRequest(req, payload))
+    || isValidAgentWorkerToken(getBearerToken(req));
+  if (!diagnostic.taskId || !canWriteTaskLog) {
+    return;
+  }
+
+  try {
+    await appendAgentTaskLog(diagnostic.taskId, {
+      level: 'error',
+      message: `${routeLabel} failed: ${diagnostic.error.message || 'unknown error'}`,
+      data: diagnostic
+    });
+  } catch (logError) {
+    console.warn('[admin-agent] Could not append route failure to task log.', {
+      taskId: diagnostic.taskId,
+      error: getErrorDiagnostic(logError)
+    });
+  }
+}
+
 function normalizeWorldMapBounds(bounds = {}) {
   const minX = Number(bounds.minX);
   const maxX = Number(bounds.maxX);
@@ -486,8 +556,9 @@ const server = defineServer({
     app.post('/admin/agent-tasks', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
-        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const adminKey = getAdminKeyFromRequest(req, payload);
         if (!isValidAdminKey(adminKey)) {
           sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
@@ -499,6 +570,7 @@ const server = defineServer({
         });
         sendJson(res, 201, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Queue agent task', error, { payload });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not queue agent task.'
@@ -522,6 +594,7 @@ const server = defineServer({
         });
         sendJson(res, 200, { ok: true, tasks });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'List agent tasks', error);
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not list agent tasks.'
@@ -532,8 +605,9 @@ const server = defineServer({
     app.post('/admin/agent-tasks/:id/followups', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
-        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const adminKey = getAdminKeyFromRequest(req, payload);
         if (!isValidAdminKey(adminKey)) {
           sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
@@ -548,6 +622,10 @@ const server = defineServer({
         });
         sendJson(res, 201, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Queue follow-up task', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not queue follow-up task.'
@@ -581,6 +659,7 @@ const server = defineServer({
           task: result.task
         });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Claim next agent task', error);
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not claim agent task.'
@@ -607,6 +686,9 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Read agent task', error, {
+          taskId: req.params.id
+        });
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not read agent task.'
@@ -617,13 +699,14 @@ const server = defineServer({
     app.patch('/admin/agent-tasks/:id', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
         if (!isValidAgentWorkerToken(getBearerToken(req))) {
           sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
           return;
         }
 
-        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const task = await updateAgentTask(req.params.id, payload);
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
@@ -632,6 +715,10 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Update agent task', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not update agent task.'
@@ -642,13 +729,14 @@ const server = defineServer({
     app.post('/admin/agent-tasks/:id/logs', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
         if (!isValidAgentWorkerToken(getBearerToken(req))) {
           sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
           return;
         }
 
-        const payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const task = await appendAgentTaskLog(req.params.id, payload);
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
@@ -657,6 +745,10 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Append agent task log', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not append agent task log.'
@@ -667,8 +759,9 @@ const server = defineServer({
     app.post('/admin/agent-tasks/:id/cancel', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
-        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const adminKey = getAdminKeyFromRequest(req, payload);
         if (!isValidAdminKey(adminKey)) {
           sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
@@ -685,6 +778,10 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Cancel agent task', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not cancel agent task.'
@@ -695,8 +792,9 @@ const server = defineServer({
     app.post('/admin/agent-tasks/:id/approve-deploy', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
-        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const adminKey = getAdminKeyFromRequest(req, payload);
         if (!isValidAdminKey(adminKey)) {
           sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
@@ -713,6 +811,10 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Approve deploy', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not approve deploy.'
@@ -723,8 +825,9 @@ const server = defineServer({
     app.post('/admin/agent-tasks/:id/rollback', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
-        const payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const adminKey = getAdminKeyFromRequest(req, payload);
         if (!isValidAdminKey(adminKey)) {
           sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
@@ -741,6 +844,10 @@ const server = defineServer({
 
         sendJson(res, 200, { ok: true, task });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Approve rollback', error, {
+          taskId: req.params.id,
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not approve rollback.'
@@ -762,6 +869,7 @@ const server = defineServer({
         const deployment = await getAgentDeploymentState();
         sendJson(res, 200, { ok: true, deployment });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Read agent deployment state', error);
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not read agent deployment state.'
@@ -772,16 +880,20 @@ const server = defineServer({
     app.patch('/admin/agent-deployments', async (req, res) => {
       setAdminAgentTaskCorsHeaders(req, res);
 
+      let payload = null;
       try {
         if (!isValidAgentWorkerToken(getBearerToken(req))) {
           sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
           return;
         }
 
-        const payload = await readJsonRequest(req, { maxBytes: 64 * 1024 });
+        payload = await readJsonRequest(req, { maxBytes: 64 * 1024 });
         const deployment = await recordAgentDeploymentState(payload);
         sendJson(res, 200, { ok: true, deployment });
       } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Update agent deployment state', error, {
+          payload
+        });
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not update agent deployment state.'

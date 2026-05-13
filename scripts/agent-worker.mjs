@@ -20,6 +20,7 @@ const WORKER_TOKEN = String(process.env.AGENT_WORKER_TOKEN || '');
 const WORK_ROOT = path.resolve(process.env.AGENT_WORK_ROOT || path.join(os.homedir(), 'stickrpg-agent-work'));
 const REPO_PATH = path.join(WORK_ROOT, 'repo');
 const TASKS_ROOT = path.join(WORK_ROOT, 'tasks');
+const WORKER_LOG_ROOT = path.resolve(process.env.AGENT_WORKER_LOG_ROOT || path.join(WORK_ROOT, 'logs'));
 const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
 const GIT_COMMAND = String(process.env.GIT_COMMAND || 'git').trim() || 'git';
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
@@ -96,6 +97,66 @@ function truncateText(value = '', maxLength = 6000) {
   }
 
   return `${text.slice(0, Math.max(0, maxLength - 24))}\n...[truncated]`;
+}
+
+function getErrorDiagnostic(error) {
+  return {
+    name: String(error?.name ?? 'Error'),
+    message: truncateText(error?.message ?? String(error ?? ''), 2000),
+    stack: truncateText(error?.stack ?? '', 6000),
+    code: error?.code == null ? '' : String(error.code),
+    status: error?.status == null ? '' : String(error.status)
+  };
+}
+
+function sanitizeDiagnosticValue(value, key = '', depth = 0) {
+  if (/token|secret|password|credential|authorization|adminKey|workerToken/iu.test(key)) {
+    return '<redacted>';
+  }
+  if (value == null || typeof value === 'boolean' || typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return truncateText(value, 2000);
+  }
+  if (value instanceof Error) {
+    return getErrorDiagnostic(value);
+  }
+  if (depth >= 4) {
+    return '[max-depth]';
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 40).map((item) => sanitizeDiagnosticValue(item, '', depth + 1));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).slice(0, 60).map(([entryKey, entryValue]) => [
+      entryKey,
+      sanitizeDiagnosticValue(entryValue, entryKey, depth + 1)
+    ]));
+  }
+  return String(value);
+}
+
+function getWorkerLogPath(now = new Date()) {
+  const day = now.toISOString().slice(0, 10);
+  return path.join(WORKER_LOG_ROOT, `agent-worker-${day}.jsonl`);
+}
+
+async function writeWorkerDiagnostic(level = 'info', event = '', data = {}) {
+  try {
+    await fsp.mkdir(WORKER_LOG_ROOT, { recursive: true });
+    const entry = {
+      at: new Date().toISOString(),
+      level,
+      event,
+      workerId: WORKER_ID,
+      pid: process.pid,
+      data: sanitizeDiagnosticValue(data)
+    };
+    await fsp.appendFile(getWorkerLogPath(), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch (error) {
+    console.warn('[agent-worker] Could not write worker diagnostic log.', error);
+  }
 }
 
 function normalizeRepoPath(value = '') {
@@ -316,7 +377,16 @@ async function apiRequest(endpoint, {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.ok) {
-    throw new Error(payload?.error || `API request failed: ${response.status}`);
+    await writeWorkerDiagnostic('error', 'api_request_failed', {
+      endpoint,
+      method,
+      responseStatus: response.status,
+      responseError: payload?.error || '',
+      responsePayload: payload
+    });
+    const error = new Error(payload?.error || `API request failed: ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   return payload;
@@ -341,6 +411,12 @@ async function appendLog(taskId, message, { level = 'info', data = null } = {}) 
     });
   } catch (error) {
     console.warn(`[agent-worker] Could not append task log for ${taskId}.`, error);
+    await writeWorkerDiagnostic('warn', 'append_task_log_failed', {
+      taskId,
+      message,
+      level,
+      error: getErrorDiagnostic(error)
+    });
   }
 }
 
@@ -349,6 +425,32 @@ async function recordDeployment(payload = {}) {
     method: 'PATCH',
     body: payload
   });
+}
+
+async function recordTaskFailure(task = {}, phase = 'task', error = null, details = {}) {
+  const taskId = String(task?.id ?? '').trim();
+  const diagnostic = sanitizeDiagnosticValue({
+    phase,
+    taskId,
+    status: task?.status ?? '',
+    branch: task?.branch ?? '',
+    commitSha: task?.commitSha ?? '',
+    deployTargets: task?.deployTargets ?? [],
+    changedFiles: task?.changedFiles ?? [],
+    workerId: WORKER_ID,
+    workRoot: WORK_ROOT,
+    repoPath: REPO_PATH,
+    baseBranch: GIT_BASE_BRANCH,
+    details,
+    error: getErrorDiagnostic(error)
+  });
+  await writeWorkerDiagnostic('error', 'task_failed', diagnostic);
+  if (taskId) {
+    await appendLog(taskId, `${phase} failed: ${diagnostic.error?.message || 'unknown error'}`, {
+      level: 'error',
+      data: diagnostic
+    });
+  }
 }
 
 async function runCommand(command, args = [], {
@@ -384,6 +486,19 @@ async function runCommand(command, args = [], {
       if (!settled) {
         child.kill('SIGTERM');
         settled = true;
+        if (taskId) {
+          void appendLog(taskId, `${label} timed out.`, {
+            level: 'error',
+            data: { command: printable, cwd, timeoutMs }
+          });
+        }
+        void writeWorkerDiagnostic('error', 'command_timeout', {
+          taskId,
+          label,
+          command: printable,
+          cwd,
+          timeoutMs
+        });
         reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
       }
     }, timeoutMs);
@@ -405,6 +520,23 @@ async function runCommand(command, args = [], {
       clearTimeout(timeout);
       if (!settled) {
         settled = true;
+        if (taskId) {
+          void appendLog(taskId, `${label} could not start.`, {
+            level: 'error',
+            data: {
+              command: printable,
+              cwd,
+              error: getErrorDiagnostic(error)
+            }
+          });
+        }
+        void writeWorkerDiagnostic('error', 'command_spawn_failed', {
+          taskId,
+          label,
+          command: printable,
+          cwd,
+          error: getErrorDiagnostic(error)
+        });
         reject(error);
       }
     });
@@ -423,6 +555,14 @@ async function runCommand(command, args = [], {
       if (code === 0) {
         resolve(output);
       } else {
+        void writeWorkerDiagnostic('error', 'command_failed', {
+          taskId,
+          label,
+          command: printable,
+          cwd,
+          exitCode: code,
+          output: truncateText(output, 8000)
+        });
         reject(new Error(`${label} failed with code ${code}.\n${truncateText(output, 8000)}`));
       }
     });
@@ -2031,6 +2171,10 @@ async function handleCodeTask(task) {
   } catch (error) {
     const errorMessage = String(error?.message ?? '');
     const status = /(npm ci|npm run build:(?:web|server)|diff --check)/u.test(errorMessage) ? 'test_failed' : 'failed';
+    await recordTaskFailure(task, 'code task', error, {
+      status,
+      worktreePath
+    });
     await updateTask(task.id, {
       status,
       error: String(error?.stack ?? error)
@@ -2052,6 +2196,9 @@ async function handleDeployTask(task) {
     worktreePath = worktree.worktreePath;
     await deployTask(task, worktreePath);
   } catch (error) {
+    await recordTaskFailure(task, 'deploy task', error, {
+      worktreePath
+    });
     await updateTask(task.id, {
       status: 'failed',
       error: String(error?.stack ?? error)
@@ -2070,6 +2217,7 @@ async function handleReconcileDeployTask(task) {
   try {
     await reconcileStaleDeployTask(task);
   } catch (error) {
+    await recordTaskFailure(task, 'deploy reconciliation', error);
     await updateTask(task.id, {
       status: 'failed',
       error: String(error?.stack ?? error)
@@ -2085,6 +2233,9 @@ async function handleRollbackTask(task) {
     worktreePath = worktree.worktreePath;
     await rollbackTask(task, worktreePath);
   } catch (error) {
+    await recordTaskFailure(task, 'rollback task', error, {
+      worktreePath
+    });
     await updateTask(task.id, {
       status: 'failed',
       error: String(error?.stack ?? error)
@@ -2164,6 +2315,12 @@ async function runLane({
       }
     } catch (error) {
       console.error(`[agent-worker] ${laneLabel} iteration failed.`, error);
+      await writeWorkerDiagnostic('error', 'lane_iteration_failed', {
+        lane: laneLabel,
+        deployEnabled,
+        codeEnabled,
+        error: getErrorDiagnostic(error)
+      });
       if (RUN_ONCE) {
         process.exitCode = 1;
         return false;

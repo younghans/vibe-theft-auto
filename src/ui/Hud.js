@@ -1134,6 +1134,75 @@ function formatAgentTaskMessage(value = '') {
   return escapeHtml(value).replace(/\r?\n/gu, '<br>');
 }
 
+function summarizeAgentTaskLogData(data = null) {
+  if (!data || typeof data !== 'object') {
+    return '';
+  }
+
+  const errorText = typeof data.error === 'string'
+    ? data.error
+    : data.error?.message;
+  const candidates = [
+    data.phase,
+    data.route,
+    data.label,
+    data.command,
+    data.cwd,
+    data.exitCode != null ? `exit ${data.exitCode}` : '',
+    data.responseStatus != null ? `HTTP ${data.responseStatus}` : '',
+    errorText,
+    data.output
+  ];
+  return candidates
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join(' - ')
+    .slice(0, 360);
+}
+
+function createAgentTaskLogMarkup(threadTasks = []) {
+  const logs = threadTasks.flatMap((task) => (
+    Array.isArray(task.logs)
+      ? task.logs.map((entry) => ({ ...entry, taskId: task.id }))
+      : []
+  ))
+    .filter((entry) => String(entry.message ?? '').trim())
+    .sort((a, b) => Number(b.at ?? 0) - Number(a.at ?? 0))
+    .slice(0, 10);
+
+  if (!logs.length) {
+    return '';
+  }
+
+  return `
+    <section class="hud__admin-prompt-log">
+      <header>
+        <strong>Diagnostics</strong>
+        <span>Latest ${escapeHtml(String(logs.length))}</span>
+      </header>
+      <div class="hud__admin-prompt-log-list">
+        ${logs.map((entry) => {
+          const level = String(entry.level ?? 'info').toLowerCase();
+          const levelClass = ['error', 'warn'].includes(level) ? ` is-${level}` : '';
+          const time = formatAgentTaskTime(entry.at);
+          const dataSummary = summarizeAgentTaskLogData(entry.data);
+          return `
+            <article class="hud__admin-prompt-log-entry${levelClass}">
+              <div>
+                <strong>${escapeHtml(level || 'info')}</strong>
+                ${time ? `<span>${escapeHtml(time)}</span>` : ''}
+                <span>${escapeHtml(getAgentTaskShortId({ id: entry.taskId }))}</span>
+              </div>
+              <p>${formatAgentTaskMessage(entry.message)}</p>
+              ${dataSummary ? `<small>${formatAgentTaskMessage(dataSummary)}</small>` : ''}
+            </article>
+          `;
+        }).join('')}
+      </div>
+    </section>
+  `;
+}
+
 function getAgentTaskCompletionMessage(task = {}) {
   return String(task.agentMessage || '').trim();
 }
@@ -1256,6 +1325,7 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
       <div class="hud__admin-prompt-thread">
         ${createAgentTaskThreadMessageMarkup(safeThreadTasks)}
       </div>
+      ${createAgentTaskLogMarkup(safeThreadTasks)}
       <div class="hud__admin-prompt-detail-actions">
         ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
         ${canRetryDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Retry Deploy</button>' : ''}
@@ -6407,7 +6477,13 @@ export class Hud {
           task.branch,
           task.commitSha,
           task.deployApprovedAt ?? 0,
-          task.rollbackApprovedAt ?? 0
+          task.rollbackApprovedAt ?? 0,
+          (task.logs ?? []).map((entry) => [
+            entry.at,
+            entry.level,
+            entry.message,
+            summarizeAgentTaskLogData(entry.data)
+          ])
         ]),
         status: selectedTask?.status ?? '',
         durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
