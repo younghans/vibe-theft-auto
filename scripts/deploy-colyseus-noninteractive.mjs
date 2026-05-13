@@ -8,9 +8,13 @@ const configPath = path.join(root, '.colyseus-cloud.json');
 const env = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
 const extraArgs = process.argv.slice(2);
 
+function hasCliOption(args = [], option = '') {
+  return args.some((arg) => arg === option || arg.startsWith(`${option}=`));
+}
+
 async function readLocalConfig() {
   try {
-    const raw = await fsp.readFile(configPath, 'utf8');
+    const raw = (await fsp.readFile(configPath, 'utf8')).replace(/^\uFEFF/u, '');
     return JSON.parse(raw)?.[env] ?? null;
   } catch {
     return null;
@@ -29,9 +33,22 @@ function readCredential(name, aliases = []) {
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env };
+    const gitCommand = String(childEnv.GIT_COMMAND ?? '').trim();
+    const gitDirectory = gitCommand ? path.dirname(gitCommand) : '';
+    if (gitDirectory) {
+      const currentPath = String(childEnv.PATH ?? childEnv.Path ?? '');
+      const separator = path.delimiter;
+      const pathEntries = currentPath.split(separator).filter(Boolean);
+      if (!pathEntries.some((entry) => entry.toLowerCase() === gitDirectory.toLowerCase())) {
+        childEnv.PATH = `${gitDirectory}${separator}${currentPath}`;
+        childEnv.Path = childEnv.PATH;
+      }
+    }
+
     const child = spawn(command, args, {
       cwd: root,
-      env: process.env,
+      env: childEnv,
       shell: process.platform === 'win32',
       stdio: 'inherit',
       ...options
@@ -52,6 +69,9 @@ const applicationId = readCredential('COLYSEUS_APPLICATION_ID', ['COLYSEUS_APP_I
   || String(localConfig?.applicationId ?? '').trim();
 const token = readCredential('COLYSEUS_DEPLOY_TOKEN', ['COLYSEUS_TOKEN'])
   || String(localConfig?.token ?? '').trim();
+const deployBranch = readCredential('COLYSEUS_DEPLOY_BRANCH', ['COLYSEUS_BRANCH', 'GIT_BASE_BRANCH'])
+  || 'main';
+const deployRemote = readCredential('COLYSEUS_DEPLOY_REMOTE', ['COLYSEUS_REMOTE']);
 
 if (!applicationId || !token) {
   throw new Error(
@@ -60,8 +80,7 @@ if (!applicationId || !token) {
   );
 }
 
-console.log(`[colyseus-deploy] Deploying application ${applicationId} to ${env}.`);
-await run('npx', [
+const deployArgs = [
   '@colyseus/cloud',
   'deploy',
   '--env',
@@ -70,5 +89,10 @@ await run('npx', [
   applicationId,
   '--token',
   token,
+  ...(!hasCliOption(extraArgs, '--branch') ? ['--branch', deployBranch] : []),
+  ...(deployRemote && !hasCliOption(extraArgs, '--remote') ? ['--remote', deployRemote] : []),
   ...extraArgs
-]);
+];
+
+console.log(`[colyseus-deploy] Deploying application ${applicationId} to ${env} from branch ${deployBranch}.`);
+await run('npx', deployArgs);

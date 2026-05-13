@@ -83,6 +83,94 @@ function Test-CodexCommand {
   }
 }
 
+function Add-CommandCandidate {
+  param(
+    [Parameter(Mandatory = $true)]$Candidates,
+    [Parameter(Mandatory = $true)]$Seen,
+    [string]$Candidate
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Candidate)) {
+    return
+  }
+
+  $trimmed = $Candidate.Trim()
+  if ($Seen.Add($trimmed)) {
+    [void]$Candidates.Add($trimmed)
+  }
+}
+
+function Test-GitCommand {
+  param([Parameter(Mandatory = $true)][string]$Command)
+
+  try {
+    $output = & $Command --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      return $false
+    }
+
+    return ($output | Out-String) -match '^git version '
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-GitCommand {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $configuredCommand = [Environment]::GetEnvironmentVariable('GIT_COMMAND', 'Process')
+
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $configuredCommand
+
+  foreach ($candidate in @(
+    'C:\Program Files\Git\cmd\git.exe',
+    'C:\Program Files\Git\bin\git.exe',
+    'C:\Program Files (x86)\Git\cmd\git.exe',
+    'C:\Program Files (x86)\Git\bin\git.exe'
+  )) {
+    Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate (Join-Path $env:LOCALAPPDATA 'Programs\Git\cmd\git.exe')
+    Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate (Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\git.exe')
+  }
+
+  try {
+    foreach ($candidate in @(where.exe git 2>$null)) {
+      Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+    }
+  } catch {}
+
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate 'git.exe'
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate 'git.cmd'
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate 'git'
+
+  foreach ($candidate in $candidates) {
+    if (Test-GitCommand -Command $candidate) {
+      return $candidate
+    }
+
+    if (
+      -not [string]::IsNullOrWhiteSpace($configuredCommand) -and
+      $candidate -eq $configuredCommand
+    ) {
+      Write-Warning "Configured GIT_COMMAND did not respond to '--version'; trying auto-discovery."
+    }
+  }
+
+  $candidateList = ($candidates | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
+  Write-Error @"
+Could not find a working Git command.
+
+Install Git for Windows or set GIT_COMMAND in $envFile to an executable that supports:
+  git --version
+
+Tried:
+$candidateList
+"@
+}
+
 function Resolve-CodexCommand {
   $candidates = [System.Collections.Generic.List[string]]::new()
   $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -231,6 +319,19 @@ if ($AutoDeploy) {
 $codexCommand = Resolve-CodexCommand
 [Environment]::SetEnvironmentVariable('CODEX_COMMAND', $codexCommand, 'Process')
 Write-Host "Using Codex command: $codexCommand"
+
+$gitCommand = Resolve-GitCommand
+[Environment]::SetEnvironmentVariable('GIT_COMMAND', $gitCommand, 'Process')
+$gitCommandDirectory = Split-Path -Parent $gitCommand
+if (-not [string]::IsNullOrWhiteSpace($gitCommandDirectory) -and (Test-Path -LiteralPath $gitCommandDirectory)) {
+  $pathSeparator = [System.IO.Path]::PathSeparator
+  $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+  $pathEntries = @($currentPath -split [Regex]::Escape([string]$pathSeparator) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if (-not ($pathEntries | Where-Object { $_ -ieq $gitCommandDirectory })) {
+    [Environment]::SetEnvironmentVariable('PATH', "$gitCommandDirectory$pathSeparator$currentPath", 'Process')
+  }
+}
+Write-Host "Using Git command: $gitCommand"
 
 $workerToken = [Environment]::GetEnvironmentVariable('AGENT_WORKER_TOKEN', 'Process')
 if ([string]::IsNullOrWhiteSpace($workerToken) -or $workerToken -eq '<production worker token>') {

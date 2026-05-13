@@ -21,6 +21,7 @@ const WORK_ROOT = path.resolve(process.env.AGENT_WORK_ROOT || path.join(os.homed
 const REPO_PATH = path.join(WORK_ROOT, 'repo');
 const TASKS_ROOT = path.join(WORK_ROOT, 'tasks');
 const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
+const GIT_COMMAND = String(process.env.GIT_COMMAND || 'git').trim() || 'git';
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
 const AUTO_DEPLOY = ['1', 'true', 'yes'].includes(String(process.env.AUTO_DEPLOY || '').toLowerCase());
 const DEPLOY_ENABLED = AUTO_DEPLOY || ['1', 'true', 'yes'].includes(String(process.env.DEPLOY_ENABLED || '').toLowerCase());
@@ -107,11 +108,23 @@ function normalizeChangedFiles(value = []) {
     .filter(Boolean);
 }
 
+function mergeChangedFiles(...values) {
+  return normalizeChangedFiles(values.flatMap((value) => (
+    Array.isArray(value) ? value : String(value ?? '').split(/[\n,]/u)
+  )));
+}
+
 function normalizeDeployTargets(value = []) {
   const allowedTargets = new Set(['frontend', 'backend']);
   return normalizeStringList(value)
     .map((target) => target.toLowerCase())
     .filter((target) => allowedTargets.has(target));
+}
+
+function mergeDeployTargets(...values) {
+  return normalizeDeployTargets(values.flatMap((value) => (
+    Array.isArray(value) ? value : String(value ?? '').split(/[\n,]/u)
+  )));
 }
 
 function isBackendSharedSourcePath(normalizedPath = '') {
@@ -153,6 +166,10 @@ function inferDeployTargets(changedFiles = []) {
   }
 
   return [...targets];
+}
+
+function resolveDeployTargets(changedFiles = [], recordedTargets = []) {
+  return mergeDeployTargets(recordedTargets, inferDeployTargets(changedFiles));
 }
 
 function formatDeployTargets(targets = []) {
@@ -405,7 +422,7 @@ async function runCommand(command, args = [], {
 }
 
 async function git(args = [], options = {}) {
-  return runCommand('git', args, {
+  return runCommand(GIT_COMMAND, args, {
     ...options,
     label: options.label || `git ${args[0] ?? ''}`
   });
@@ -795,15 +812,12 @@ async function getDiffChangedFiles(worktreePath, fromRef, toRef = 'HEAD') {
 
 async function getDeployChangedFiles(task, worktreePath, fromRef) {
   const taskChangedFiles = normalizeChangedFiles(task.changedFiles);
-  if (taskChangedFiles.length > 0) {
+  if (!fromRef) {
     return taskChangedFiles;
   }
 
-  if (!fromRef) {
-    return [];
-  }
-
-  return getDiffChangedFiles(worktreePath, fromRef, 'HEAD');
+  const diffChangedFiles = await getDiffChangedFiles(worktreePath, fromRef, 'HEAD');
+  return mergeChangedFiles(taskChangedFiles, diffChangedFiles);
 }
 
 async function runDeployCommand(task, worktreePath, {
@@ -1612,16 +1626,29 @@ async function deployTask(task, worktreePath) {
 
   const deployRefs = await prepareDeployCommit(task, worktreePath);
   const changedFiles = normalizeChangedFiles(deployRefs.changedFiles);
-  const deployTargets = normalizeDeployTargets(task.deployTargets);
-  const inferredTargets = deployTargets.length > 0 ? deployTargets : inferDeployTargets(changedFiles);
-  await appendLog(task.id, `Deploy targets: ${formatDeployTargets(inferredTargets)}.`, {
+  const recordedTargets = normalizeDeployTargets(task.deployTargets);
+  const inferredTargets = inferDeployTargets(changedFiles);
+  const deployTargets = resolveDeployTargets(changedFiles, recordedTargets);
+  await appendLog(task.id, `Deploy targets: ${formatDeployTargets(deployTargets)}.`, {
     data: {
-      deployTargets: inferredTargets,
+      deployTargets,
+      recordedDeployTargets: recordedTargets,
+      inferredDeployTargets: inferredTargets,
       changedFiles
     }
   });
-  await validateDeployPrerequisites(task, inferredTargets);
-  await installAndCheck(task, worktreePath, { targets: inferredTargets });
+  if (recordedTargets.length > 0 && deployTargets.length > recordedTargets.length) {
+    await appendLog(task.id, 'Deploy targets expanded from the commit diff.', {
+      level: 'warn',
+      data: {
+        recordedDeployTargets: recordedTargets,
+        inferredDeployTargets: inferredTargets,
+        deployTargets
+      }
+    });
+  }
+  await validateDeployPrerequisites(task, deployTargets);
+  await installAndCheck(task, worktreePath, { targets: deployTargets });
   if (deployRefs.rebased) {
     await pushRebasedTaskBranch(task, worktreePath);
   }
@@ -1630,14 +1657,14 @@ async function deployTask(task, worktreePath) {
       branch: String(task.branch || '').trim(),
       commitSha: deployRefs.newDeployCommitSha,
       changedFiles,
-      deployTargets: inferredTargets,
+      deployTargets,
       summary: deployRefs.rebased
         ? `Task branch rebased onto latest ${GIT_BASE_BRANCH}; checks passed and deploy is continuing.`
         : 'Task branch head verified; checks passed and deploy is continuing.'
     });
   }
   await pushWorktreeToMain(task, worktreePath);
-  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets, {
+  const deployResult = await runDeployTargets(task, worktreePath, deployTargets, {
     expectedCommitSha: deployRefs.newDeployCommitSha,
     actionLabel: 'Deployment'
   });
@@ -1647,7 +1674,7 @@ async function deployTask(task, worktreePath) {
     previousCommitSha: deployRefs.previousDeployCommitSha,
     currentCommitSha: deployRefs.newDeployCommitSha,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
-    deployTargets: inferredTargets
+    deployTargets
   });
   await updateTask(task.id, {
     status: 'deployed',
@@ -1656,10 +1683,10 @@ async function deployTask(task, worktreePath) {
     commitSha: deployRefs.newDeployCommitSha,
     deployedAt: Date.now(),
     changedFiles,
-    deployTargets: inferredTargets,
+    deployTargets,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     deployLog: truncateText(deployResult.output, 10000),
-    summary: summarizeDeployResult('Deployment', inferredTargets)
+    summary: summarizeDeployResult('Deployment', deployTargets)
   });
 }
 
@@ -1689,22 +1716,23 @@ async function rollbackTask(task, worktreePath) {
     taskId: task.id,
     label: 'git rev-parse rollback'
   })).trim();
-  const changedFiles = normalizeChangedFiles(task.changedFiles).length > 0
-    ? normalizeChangedFiles(task.changedFiles)
-    : await getDiffChangedFiles(worktreePath, previousDeployCommitSha, 'HEAD');
-  const deployTargets = normalizeDeployTargets(task.deployTargets);
-  const inferredTargets = deployTargets.length > 0 ? deployTargets : inferDeployTargets(changedFiles);
-  await appendLog(task.id, `Rollback deploy targets: ${formatDeployTargets(inferredTargets)}.`, {
+  const changedFiles = await getDeployChangedFiles(task, worktreePath, previousDeployCommitSha);
+  const recordedTargets = normalizeDeployTargets(task.deployTargets);
+  const inferredTargets = inferDeployTargets(changedFiles);
+  const deployTargets = resolveDeployTargets(changedFiles, recordedTargets);
+  await appendLog(task.id, `Rollback deploy targets: ${formatDeployTargets(deployTargets)}.`, {
     level: 'warn',
     data: {
-      deployTargets: inferredTargets,
+      deployTargets,
+      recordedDeployTargets: recordedTargets,
+      inferredDeployTargets: inferredTargets,
       changedFiles
     }
   });
 
-  await installAndCheck(task, worktreePath, { targets: inferredTargets });
+  await installAndCheck(task, worktreePath, { targets: deployTargets });
   await pushWorktreeToMain(task, worktreePath);
-  const deployResult = await runDeployTargets(task, worktreePath, inferredTargets, {
+  const deployResult = await runDeployTargets(task, worktreePath, deployTargets, {
     expectedCommitSha: rollbackCommitSha,
     actionLabel: 'Rollback deploy'
   });
@@ -1715,16 +1743,16 @@ async function rollbackTask(task, worktreePath) {
     currentCommitSha: rollbackCommitSha,
     rollbackCommitSha,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
-    deployTargets: inferredTargets
+    deployTargets
   });
   await updateTask(task.id, {
     status: 'rolled_back',
     rolledBackAt: Date.now(),
     rollbackCommitSha,
-    deployTargets: inferredTargets,
+    deployTargets,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     rollbackLog: truncateText(deployResult.output, 10000),
-    summary: summarizeDeployResult('Rollback deploy', inferredTargets)
+    summary: summarizeDeployResult('Rollback deploy', deployTargets)
   });
 }
 
@@ -1922,10 +1950,11 @@ function assertSelfTestEqual(actual, expected, label) {
   }
 }
 
-function getSimulatedDeployPlan(changedFiles = []) {
-  const deployTargets = inferDeployTargets(changedFiles);
+function getSimulatedDeployPlan(changedFiles = [], recordedTargets = []) {
+  const deployTargets = resolveDeployTargets(changedFiles, recordedTargets);
   return {
     changedFiles: normalizeChangedFiles(changedFiles),
+    recordedDeployTargets: normalizeDeployTargets(recordedTargets),
     deployTargets,
     checks: getInstallCheckPlan(deployTargets),
     frontendDeploy: deployTargets.includes('frontend')
@@ -1967,6 +1996,15 @@ function runSelfTest() {
       backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
     },
     {
+      label: 'stale-frontend-recorded-shared-world-catalog',
+      changedFiles: ['src/world/builderCatalog.js'],
+      recordedDeployTargets: ['frontend'],
+      deployTargets: ['frontend', 'backend'],
+      checks: ['npm ci', 'npm run build:web', 'npm run build:server', 'git diff --check'],
+      frontendDeploy: FRONTEND_DEPLOY_COMMAND.trim() ? 'command' : 'git-integration',
+      backendDeploy: isBackendDeployGitManaged() ? 'git-integration' : 'command'
+    },
+    {
       label: 'mixed',
       changedFiles: ['src/game/Game.js', 'server/src/WorldRoom.js'],
       deployTargets: ['frontend', 'backend'],
@@ -1985,7 +2023,7 @@ function runSelfTest() {
   ];
 
   const output = scenarios.map((scenario) => {
-    const plan = getSimulatedDeployPlan(scenario.changedFiles);
+    const plan = getSimulatedDeployPlan(scenario.changedFiles, scenario.recordedDeployTargets);
     assertSelfTestEqual(plan.deployTargets, scenario.deployTargets, `${scenario.label} deploy targets`);
     assertSelfTestEqual(plan.checks, scenario.checks, `${scenario.label} checks`);
     assertSelfTestEqual(plan.frontendDeploy, scenario.frontendDeploy, `${scenario.label} frontend deploy`);
@@ -2025,6 +2063,7 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   apiBase: API_BASE,
   workRoot: WORK_ROOT,
   baseBranch: GIT_BASE_BRANCH,
+  gitCommand: GIT_COMMAND,
   scope: DEFAULT_SCOPE,
   autoDeploy: AUTO_DEPLOY,
   deployEnabled: DEPLOY_ENABLED,
