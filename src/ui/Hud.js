@@ -1209,6 +1209,12 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
   const commitSha = String(latestTask.commitSha ?? '').trim();
   const deployApproved = Number(latestTask.deployApprovedAt ?? 0) > 0;
   const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
+  const canRetryDeploy = (
+    status === 'failed'
+    && Boolean(branch)
+    && Boolean(commitSha)
+    && Number(latestTask.deployStartedAt ?? 0) > 0
+  );
   const canCancel = ['queued', 'claimed', 'preparing'].includes(status);
   const canRollback = status === 'deployed' && Number(latestTask.rollbackApprovedAt ?? 0) <= 0;
   const rollbackApproved = Number(latestTask.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
@@ -1252,6 +1258,7 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
       </div>
       <div class="hud__admin-prompt-detail-actions">
         ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
+        ${canRetryDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Retry Deploy</button>' : ''}
         ${canRollback ? '<button class="hud__admin-prompt-small hud__admin-prompt-small--danger" type="button" data-admin-prompt-action="rollback">Rollback</button>' : ''}
         ${canCancel ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="cancel-task">Cancel</button>' : ''}
       </div>

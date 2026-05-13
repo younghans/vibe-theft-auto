@@ -169,6 +169,52 @@ try {
     filePath
   });
 
+  const retryDeployTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Retry a failed deploy from the prompt panel.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  await updateAgentTask(retryDeployTask.id, {
+    status: 'ready_for_review',
+    branch: 'agent/task-retry-deploy',
+    commitSha: 'retry1234',
+    changedFiles: ['src/ui/Hud.js'],
+    deployTargets: ['frontend'],
+    agentMessage: 'Retry deploy task is ready.'
+  }, { filePath });
+  const retryApprovedInitial = await approveAgentTaskDeploy(retryDeployTask.id, {
+    approvedBy: 'validator',
+    filePath
+  });
+  const retryClaim = await claimNextAgentTask({
+    workerId: 'retry-deploy-worker',
+    scope: 'game',
+    codeEnabled: false,
+    filePath
+  });
+  assert.equal(retryClaim.action, 'deploy');
+  assert.equal(retryClaim.task.id, retryDeployTask.id);
+  await updateAgentTask(retryDeployTask.id, {
+    status: 'failed',
+    error: 'deploy rebase conflict'
+  }, { filePath });
+  const retryApproved = await approveAgentTaskDeploy(retryDeployTask.id, {
+    approvedBy: 'validator',
+    filePath
+  });
+  assert.equal(retryApproved.status, 'ready_for_review');
+  assert.equal(retryApproved.deployStartedAt, 0);
+  assert.equal(retryApproved.error, '');
+  assert.ok(retryApproved.deployApprovedAt >= retryApprovedInitial.deployApprovedAt);
+  await cancelAgentTask(retryDeployTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
+
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',
     filePath

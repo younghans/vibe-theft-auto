@@ -54,6 +54,7 @@ const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECO
 const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
+const DEPLOY_REBASE_REPAIR_ATTEMPTS = getNonNegativeIntegerEnv('AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS', 2);
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 
@@ -352,6 +353,7 @@ async function recordDeployment(payload = {}) {
 
 async function runCommand(command, args = [], {
   cwd = process.cwd(),
+  env = {},
   input = null,
   timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
   taskId = '',
@@ -369,6 +371,10 @@ async function runCommand(command, args = [], {
     const platformCommand = commandForPlatform(command, args);
     const child = spawn(platformCommand.command, platformCommand.args, {
       cwd,
+      env: {
+        ...process.env,
+        ...env
+      },
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -722,6 +728,121 @@ async function runCodex(task, worktreePath, promptPath) {
   };
 }
 
+async function getUnmergedFiles(worktreePath, taskId = '') {
+  const output = await git(['diff', '--name-only', '--diff-filter=U'], {
+    cwd: worktreePath,
+    taskId,
+    label: 'git list unmerged files'
+  });
+  return normalizeChangedFiles(output
+    .split(/\r?\n/u)
+    .filter((line) => !line.startsWith('warning:')));
+}
+
+async function getFilesWithConflictMarkers(worktreePath, filePaths = []) {
+  const filesWithMarkers = [];
+  for (const filePath of normalizeChangedFiles(filePaths)) {
+    const absolutePath = path.resolve(worktreePath, filePath);
+    assertInside(worktreePath, absolutePath);
+    const text = await fsp.readFile(absolutePath, 'utf8').catch(() => '');
+    if (/^(<<<<<<<|=======|>>>>>>>)/mu.test(text)) {
+      filesWithMarkers.push(filePath);
+    }
+  }
+  return filesWithMarkers;
+}
+
+async function writeDeployRebaseRepairPrompt(task, worktreePath, {
+  conflictFiles = [],
+  attempt = 1,
+  rebaseError = null
+} = {}) {
+  const promptPath = path.join(worktreePath, '.codex', 'deploy-rebase-repair-prompt.md');
+  await fsp.mkdir(path.dirname(promptPath), { recursive: true });
+  const prompt = `You are Codex resolving a deploy rebase conflict in the StickRPG repository.
+
+Task ID:
+${task.id}
+
+Admin request:
+${indentBlock(task.prompt)}
+
+Current state:
+- The repository is mid-\`git rebase origin/${GIT_BASE_BRANCH}\`.
+- This is deploy conflict repair attempt ${attempt} of ${DEPLOY_REBASE_REPAIR_ATTEMPTS}.
+- Do not abort the rebase.
+- Do not run production deploy commands.
+- Do not push.
+
+Conflicted files:
+${conflictFiles.length ? conflictFiles.map((filePath) => `- ${filePath}`).join('\n') : '- none detected'}
+
+Ongoing thread context:
+${formatThreadHistoryForPrompt(task.threadHistory)}
+
+Rebase error:
+\`\`\`text
+${truncateText(rebaseError?.message || String(rebaseError ?? ''), 6000)}
+\`\`\`
+
+Instructions:
+- Resolve the conflict markers in the conflicted files.
+- Preserve current \`origin/${GIT_BASE_BRANCH}\` behavior unless the task explicitly needs to extend it.
+- Re-apply the task's intended behavior on top of current main.
+- Keep edits focused to the conflicted task files and any directly required companion files.
+- Leave the worktree with no conflict markers and no unmerged paths.
+- Do not run \`git rebase --continue\`; the worker will stage resolved files and continue the rebase after you finish.
+`;
+  await fsp.writeFile(promptPath, prompt, 'utf8');
+  return promptPath;
+}
+
+async function repairDeployRebaseConflict(task, worktreePath, {
+  conflictFiles = [],
+  attempt = 1,
+  rebaseError = null
+} = {}) {
+  await appendLog(task.id, `Deploy rebase conflict detected; asking Codex to repair it (${attempt}/${DEPLOY_REBASE_REPAIR_ATTEMPTS}).`, {
+    level: 'warn',
+    data: {
+      conflictFiles,
+      error: truncateText(rebaseError?.message || String(rebaseError ?? ''), 2000)
+    }
+  });
+
+  const promptPath = await writeDeployRebaseRepairPrompt(task, worktreePath, {
+    conflictFiles,
+    attempt,
+    rebaseError
+  });
+  const codexResult = await runCodex(task, worktreePath, promptPath);
+  if (codexResult.lastMessage) {
+    await appendLog(task.id, 'Codex deploy conflict repair response recorded.', {
+      data: { message: truncateText(codexResult.lastMessage, 4000) }
+    });
+  }
+
+  const filesWithMarkers = await getFilesWithConflictMarkers(worktreePath, conflictFiles);
+  if (filesWithMarkers.length > 0) {
+    throw new Error(`Codex left conflict markers in deploy rebase files: ${filesWithMarkers.join(', ')}`);
+  }
+
+  const resolutionFiles = mergeChangedFiles(conflictFiles, await getChangedFiles(worktreePath));
+  assertAllowedChangedFiles(resolutionFiles);
+  if (resolutionFiles.length > 0) {
+    await git(['add', '--', ...resolutionFiles], {
+      cwd: worktreePath,
+      taskId: task.id,
+      label: 'git add deploy rebase repair'
+    });
+  }
+
+  const remainingUnmerged = await getUnmergedFiles(worktreePath, task.id);
+  if (remainingUnmerged.length > 0) {
+    throw new Error(`Codex did not resolve all deploy rebase conflicts: ${remainingUnmerged.join(', ')}`);
+  }
+}
+
 async function installAndCheck(task, worktreePath, {
   targets = []
 } = {}) {
@@ -846,6 +967,89 @@ async function getDeployChangedFiles(task, worktreePath, fromRef) {
 
   const diffChangedFiles = await getDiffChangedFiles(worktreePath, fromRef, 'HEAD');
   return mergeChangedFiles(taskChangedFiles, diffChangedFiles);
+}
+
+function createDeployRebaseFailureError(headCommitSha, lastError, {
+  conflictFiles = [],
+  repairAttempts = 0
+} = {}) {
+  const repairText = repairAttempts > 0
+    ? ` The worker attempted automated conflict repair ${repairAttempts} time(s), but the rebase still could not finish.`
+    : '';
+  const conflictText = conflictFiles.length
+    ? ` Conflicted files: ${conflictFiles.join(', ')}.`
+    : '';
+  return new Error(`Task commit ${headCommitSha} could not be automatically rebased onto origin/${GIT_BASE_BRANCH}.${repairText}${conflictText} Retry deploy from the game after reviewing the failure, rerun the prompt, or resolve the task branch conflicts manually.\n${lastError?.message ?? lastError}`);
+}
+
+async function rebaseDeployTaskWithRepair(task, worktreePath, headCommitSha) {
+  try {
+    await git(['rebase', `origin/${GIT_BASE_BRANCH}`], {
+      cwd: worktreePath,
+      taskId: task.id,
+      timeoutMs: 10 * 60 * 1000,
+      label: 'git rebase deploy task'
+    });
+    return {
+      repairAttempts: 0,
+      conflictFiles: []
+    };
+  } catch (initialError) {
+    let lastError = initialError;
+    let allConflictFiles = [];
+    let repairAttemptsUsed = 0;
+
+    for (let attempt = 1; attempt <= DEPLOY_REBASE_REPAIR_ATTEMPTS; attempt += 1) {
+      const conflictFiles = await getUnmergedFiles(worktreePath, task.id);
+      if (conflictFiles.length === 0) {
+        break;
+      }
+
+      repairAttemptsUsed = attempt;
+      allConflictFiles = mergeChangedFiles(allConflictFiles, conflictFiles);
+      try {
+        await repairDeployRebaseConflict(task, worktreePath, {
+          conflictFiles,
+          attempt,
+          rebaseError: lastError
+        });
+        await git(['-c', 'core.editor=true', '-c', 'sequence.editor=true', 'rebase', '--continue'], {
+          cwd: worktreePath,
+          env: {
+            GIT_EDITOR: 'true',
+            GIT_SEQUENCE_EDITOR: 'true'
+          },
+          taskId: task.id,
+          timeoutMs: 10 * 60 * 1000,
+          label: 'git rebase continue deploy task'
+        });
+        await appendLog(task.id, `Automated deploy rebase repair succeeded (${attempt}/${DEPLOY_REBASE_REPAIR_ATTEMPTS}).`, {
+          data: { conflictFiles: allConflictFiles }
+        });
+        return {
+          repairAttempts: attempt,
+          conflictFiles: allConflictFiles
+        };
+      } catch (repairError) {
+        lastError = repairError;
+        const nextConflictFiles = await getUnmergedFiles(worktreePath, task.id).catch(() => []);
+        if (nextConflictFiles.length === 0) {
+          break;
+        }
+        allConflictFiles = mergeChangedFiles(allConflictFiles, nextConflictFiles);
+      }
+    }
+
+    await git(['rebase', '--abort'], {
+      cwd: worktreePath,
+      taskId: task.id,
+      label: 'git rebase abort'
+    }).catch(() => {});
+    throw createDeployRebaseFailureError(headCommitSha, lastError, {
+      conflictFiles: allConflictFiles,
+      repairAttempts: repairAttemptsUsed
+    });
+  }
 }
 
 async function runDeployCommand(task, worktreePath, {
@@ -1593,21 +1797,7 @@ async function prepareDeployCommit(task, worktreePath) {
     }
   });
 
-  try {
-    await git(['rebase', `origin/${GIT_BASE_BRANCH}`], {
-      cwd: worktreePath,
-      taskId: task.id,
-      timeoutMs: 10 * 60 * 1000,
-      label: 'git rebase deploy task'
-    });
-  } catch (error) {
-    await git(['rebase', '--abort'], {
-      cwd: worktreePath,
-      taskId: task.id,
-      label: 'git rebase abort'
-    }).catch(() => {});
-    throw new Error(`Task commit ${headCommitSha} could not be automatically rebased onto origin/${GIT_BASE_BRANCH}. Rerun the prompt or resolve the task branch conflicts before approving deploy again.\n${error?.message ?? error}`);
-  }
+  const rebaseResult = await rebaseDeployTaskWithRepair(task, worktreePath, headCommitSha);
 
   const rebasedCommitSha = (await git(['rev-parse', 'HEAD'], {
     cwd: worktreePath,
@@ -1620,7 +1810,9 @@ async function prepareDeployCommit(task, worktreePath) {
     data: {
       previousCommitSha: headCommitSha,
       rebasedCommitSha,
-      changedFiles
+      changedFiles,
+      rebaseRepairAttempts: rebaseResult.repairAttempts,
+      rebaseConflictFiles: rebaseResult.conflictFiles
     }
   });
 
@@ -1629,6 +1821,8 @@ async function prepareDeployCommit(task, worktreePath) {
     newDeployCommitSha: rebasedCommitSha,
     changedFiles,
     rebased: true,
+    rebaseRepairAttempts: rebaseResult.repairAttempts,
+    rebaseConflictFiles: rebaseResult.conflictFiles,
     taskBranchCommitChanged: true
   };
 }
@@ -1687,7 +1881,7 @@ async function deployTask(task, worktreePath) {
       changedFiles,
       deployTargets,
       summary: deployRefs.rebased
-        ? `Task branch rebased onto latest ${GIT_BASE_BRANCH}; checks passed and deploy is continuing.`
+        ? `Task branch rebased onto latest ${GIT_BASE_BRANCH}${deployRefs.rebaseRepairAttempts > 0 ? ' after automated conflict repair' : ''}; checks passed and deploy is continuing.`
         : 'Task branch head verified; checks passed and deploy is continuing.'
     });
   }
