@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import { promises as fsp } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,20 +31,109 @@ function readCredential(name, aliases = []) {
   return '';
 }
 
+function getPathValue(childEnv) {
+  return String(childEnv.PATH ?? childEnv.Path ?? '');
+}
+
+function setPathValue(childEnv, value) {
+  childEnv.PATH = value;
+  childEnv.Path = value;
+}
+
+function addPathDirectory(childEnv, directory = '') {
+  const normalizedDirectory = String(directory ?? '').trim();
+  if (!normalizedDirectory) {
+    return;
+  }
+
+  const currentPath = getPathValue(childEnv);
+  const pathEntries = currentPath.split(path.delimiter).filter(Boolean);
+  if (pathEntries.some((entry) => entry.toLowerCase() === normalizedDirectory.toLowerCase())) {
+    return;
+  }
+  setPathValue(childEnv, `${normalizedDirectory}${path.delimiter}${currentPath}`);
+}
+
+function getDiscoveredGitCommands(childEnv) {
+  const lookupCommand = process.platform === 'win32' ? 'where.exe' : 'which';
+  const result = spawnSync(lookupCommand, ['git'], {
+    cwd: root,
+    env: childEnv,
+    encoding: 'utf8',
+    shell: false
+  });
+  if (result.status !== 0) {
+    return [];
+  }
+  return String(result.stdout ?? '')
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function getGitCandidates(childEnv) {
+  const candidates = [];
+  const addCandidate = (candidate) => {
+    const normalized = String(candidate ?? '').trim();
+    if (normalized && !candidates.some((value) => value.toLowerCase() === normalized.toLowerCase())) {
+      candidates.push(normalized);
+    }
+  };
+
+  addCandidate(childEnv.GIT_COMMAND);
+  if (process.platform === 'win32') {
+    addCandidate('C:\\Program Files\\Git\\cmd\\git.exe');
+    addCandidate('C:\\Program Files\\Git\\bin\\git.exe');
+    addCandidate('C:\\Program Files (x86)\\Git\\cmd\\git.exe');
+    addCandidate('C:\\Program Files (x86)\\Git\\bin\\git.exe');
+    if (childEnv.LOCALAPPDATA) {
+      addCandidate(path.join(childEnv.LOCALAPPDATA, 'Programs\\Git\\cmd\\git.exe'));
+      addCandidate(path.join(childEnv.LOCALAPPDATA, 'Programs\\Git\\bin\\git.exe'));
+    }
+  }
+  for (const discovered of getDiscoveredGitCommands(childEnv)) {
+    addCandidate(discovered);
+  }
+  return candidates;
+}
+
+function getExecutableDirectory(command = '') {
+  const normalized = String(command ?? '').trim();
+  if (!normalized) {
+    return '';
+  }
+  if ((path.isAbsolute(normalized) || normalized.includes('\\') || normalized.includes('/')) && existsSync(normalized)) {
+    return path.dirname(normalized);
+  }
+  return '';
+}
+
+function addGitToPath(childEnv) {
+  const gitCandidates = getGitCandidates(childEnv);
+  for (const candidate of gitCandidates) {
+    const gitDirectory = getExecutableDirectory(candidate);
+    if (!gitDirectory) {
+      continue;
+    }
+
+    childEnv.GIT_COMMAND = candidate;
+    addPathDirectory(childEnv, gitDirectory);
+    if (process.platform === 'win32') {
+      const parentDirectory = path.dirname(gitDirectory);
+      if (path.basename(gitDirectory).toLowerCase() === 'cmd') {
+        addPathDirectory(childEnv, path.join(parentDirectory, 'bin'));
+      } else if (path.basename(gitDirectory).toLowerCase() === 'bin') {
+        addPathDirectory(childEnv, path.join(parentDirectory, 'cmd'));
+      }
+    }
+    return;
+  }
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = { ...process.env };
-    const gitCommand = String(childEnv.GIT_COMMAND ?? '').trim();
-    const gitDirectory = gitCommand ? path.dirname(gitCommand) : '';
-    if (gitDirectory) {
-      const currentPath = String(childEnv.PATH ?? childEnv.Path ?? '');
-      const separator = path.delimiter;
-      const pathEntries = currentPath.split(separator).filter(Boolean);
-      if (!pathEntries.some((entry) => entry.toLowerCase() === gitDirectory.toLowerCase())) {
-        childEnv.PATH = `${gitDirectory}${separator}${currentPath}`;
-        childEnv.Path = childEnv.PATH;
-      }
-    }
+    addGitToPath(childEnv);
 
     const child = spawn(command, args, {
       cwd: root,
