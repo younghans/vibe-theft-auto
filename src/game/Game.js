@@ -613,6 +613,10 @@ export class Game {
     this.aimRaycaster = new THREE.Raycaster();
     this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.aimTarget = new THREE.Vector3();
+    this.aimNdc = new THREE.Vector2();
+    this.aimDirectionScratch = new THREE.Vector3(0, 0, 1);
+    this.aimCameraForward = new THREE.Vector3();
+    this.aimCameraRight = new THREE.Vector3();
     this.currentAimDirection = new THREE.Vector3(0, 0, 1);
     this.muzzleFlashResources = this.createMuzzleFlashResources();
     this.muzzleFlashPrewarmed = false;
@@ -778,6 +782,10 @@ export class Game {
     this.workoutBarbellAxis = new THREE.Vector3();
     this.workoutForward = new THREE.Vector3();
     this.workoutBarbellQuaternion = new THREE.Quaternion();
+    this.cameraOffsetScratch = new THREE.Vector3();
+    this.cameraTargetPosition = new THREE.Vector3();
+    this.cameraLookTarget = new THREE.Vector3();
+    this.damageCameraSide = new THREE.Vector3();
     this.playerCameraOcclusionRenderState = null;
 
     this.hud.bindInteractionEvents({
@@ -9185,55 +9193,55 @@ export class Game {
     this.localStateInitialized = true;
   }
 
-  projectInputVectorOnCamera(inputVector) {
-    const forward = new THREE.Vector3();
+  projectInputVectorOnCamera(inputVector, target = this.aimDirectionScratch) {
+    const forward = this.aimCameraForward;
     this.camera.getWorldDirection(forward);
     forward.y = 0;
     if (forward.lengthSq() <= 0.000001) {
-      return new THREE.Vector3(0, 0, 1);
+      return target.set(0, 0, 1);
     }
 
     forward.normalize().multiplyScalar(-1);
-    const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize();
-    const direction = new THREE.Vector3();
-    direction.addScaledVector(right, inputVector.x);
-    direction.addScaledVector(forward, inputVector.z);
-    if (direction.lengthSq() > 1) {
-      direction.normalize();
+    const right = this.aimCameraRight.set(forward.z, 0, -forward.x).normalize();
+    target.set(0, 0, 0);
+    target.addScaledVector(right, inputVector.x);
+    target.addScaledVector(forward, inputVector.z);
+    if (target.lengthSq() > 1) {
+      target.normalize();
     }
-    return direction;
+    return target;
   }
 
-  getAimDirection() {
+  getAimDirection(target = this.aimDirectionScratch) {
     const aimInputVector = this.input.getAimVector();
     if (aimInputVector) {
-      const aimDirection = this.projectInputVectorOnCamera(aimInputVector);
+      const aimDirection = this.projectInputVectorOnCamera(aimInputVector, target);
       if (aimDirection.lengthSq() > 0.000001) {
         return aimDirection.normalize();
       }
     }
 
     const pointer = this.input.getPointerPosition();
-    const ndc = new THREE.Vector2(
+    this.aimNdc.set(
       (pointer.x / window.innerWidth) * 2 - 1,
       -((pointer.y / window.innerHeight) * 2 - 1)
     );
-    this.aimRaycaster.setFromCamera(ndc, this.camera);
+    this.aimRaycaster.setFromCamera(this.aimNdc, this.camera);
     const groundHeight = this.player?.position.y ?? 0;
     this.aimPlane.constant = -groundHeight;
     if (this.aimRaycaster.ray.intersectPlane(this.aimPlane, this.aimTarget)) {
-      const direction = new THREE.Vector3(
+      target.set(
         this.aimTarget.x - this.player.position.x,
         0,
         this.aimTarget.z - this.player.position.z
       );
-      if (direction.lengthSq() > AIM_DIRECTION_MIN_DISTANCE * AIM_DIRECTION_MIN_DISTANCE) {
-        direction.normalize();
-        return direction;
+      if (target.lengthSq() > AIM_DIRECTION_MIN_DISTANCE * AIM_DIRECTION_MIN_DISTANCE) {
+        target.normalize();
+        return target;
       }
     }
 
-    return this.currentAimDirection.clone();
+    return target.copy(this.currentAimDirection);
   }
 
   getShotVisualPoints(event = {}) {
@@ -10116,7 +10124,9 @@ export class Game {
       const activeSceneBounds = this.getActiveSceneBounds();
       const hipFirePending = this.pendingHipFireShot;
       const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
-      const aimDirection = canCursorAim ? this.getAimDirection() : this.currentAimDirection.clone();
+      const aimDirection = canCursorAim
+        ? this.getAimDirection()
+        : this.aimDirectionScratch.copy(this.currentAimDirection);
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
       if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
@@ -10245,9 +10255,11 @@ export class Game {
 
   updateCamera(aimDirection = this.currentAimDirection, isAiming = false, { snap = false } = {}) {
     const zoomLevel = this.getCameraZoomLevel();
-    const cameraOffset = (isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET).clone().multiplyScalar(zoomLevel);
-    const targetPosition = this.player.position.clone().add(cameraOffset);
-    const lookTarget = this.player.position.clone().add(CAMERA_LOOK_OFFSET);
+    const cameraOffset = this.cameraOffsetScratch
+      .copy(isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET)
+      .multiplyScalar(zoomLevel);
+    const targetPosition = this.cameraTargetPosition.copy(this.player.position).add(cameraOffset);
+    const lookTarget = this.cameraLookTarget.copy(this.player.position).add(CAMERA_LOOK_OFFSET);
     const now = performance.now();
 
     if (now < this.damageCameraKickEndsAt) {
@@ -10255,7 +10267,7 @@ export class Game {
       const progress = THREE.MathUtils.clamp((now - this.damageCameraKickStartedAt) / lifetime, 0, 1);
       const envelope = Math.pow(1 - progress, 1.35);
       const wave = Math.sin(progress * Math.PI * 3.2);
-      const side = new THREE.Vector3(-this.damageCameraDirection.z, 0, this.damageCameraDirection.x);
+      const side = this.damageCameraSide.set(-this.damageCameraDirection.z, 0, this.damageCameraDirection.x);
       targetPosition.addScaledVector(this.damageCameraDirection, envelope * 0.72);
       targetPosition.addScaledVector(side, wave * envelope * 0.26);
       targetPosition.y += Math.sin(progress * Math.PI) * envelope * 0.38;

@@ -189,23 +189,28 @@ function hideUnusedMeshes(root) {
   });
 }
 
-function projectMoveOnCamera(camera, inputVector) {
-  const forward = new THREE.Vector3();
+function projectMoveOnCamera(
+  camera,
+  inputVector,
+  target = new THREE.Vector3(),
+  forward = new THREE.Vector3(),
+  right = new THREE.Vector3()
+) {
   camera.getWorldDirection(forward);
   forward.y = 0;
   forward.normalize();
 
   forward.multiplyScalar(-1);
-  const right = new THREE.Vector3(forward.z, 0, -forward.x).normalize();
-  const movement = new THREE.Vector3();
-  movement.addScaledVector(right, inputVector.x);
-  movement.addScaledVector(forward, inputVector.z);
+  right.set(forward.z, 0, -forward.x).normalize();
+  target.set(0, 0, 0);
+  target.addScaledVector(right, inputVector.x);
+  target.addScaledVector(forward, inputVector.z);
 
-  if (movement.lengthSq() > 1) {
-    movement.normalize();
+  if (target.lengthSq() > 1) {
+    target.normalize();
   }
 
-  return movement;
+  return target;
 }
 
 function collidesWithBox(candidate, collider, radius) {
@@ -527,6 +532,12 @@ export async function createPlayer(library, {
   const reloadIkToTarget = new THREE.Vector3();
   const reloadIkAxisWorld = new THREE.Vector3();
   const reloadIkAxisLocal = new THREE.Vector3();
+  const moveCameraForward = new THREE.Vector3();
+  const moveCameraRight = new THREE.Vector3();
+  const moveDirection = new THREE.Vector3();
+  const moveProposedPosition = new THREE.Vector3();
+  const moveTarget = new THREE.Vector3();
+  const moveToTarget = new THREE.Vector3();
   const reloadIkParentWorldQuaternion = new THREE.Quaternion();
   const reloadIkDeltaQuaternion = new THREE.Quaternion();
   const reloadIkTargetQuaternion = new THREE.Quaternion();
@@ -1641,7 +1652,7 @@ export async function createPlayer(library, {
   }
 
   function moveWithWorldVector(direction, deltaSeconds, colliders, cityBounds, speedScale = 1) {
-    const movement = direction.clone();
+    const movement = moveDirection.copy(direction);
     movement.y = 0;
     if (movement.lengthSq() > 1) {
       movement.normalize();
@@ -1654,14 +1665,16 @@ export async function createPlayer(library, {
     const step = PLAYER_SPEED * Math.max(0, speedScale) * deltaSeconds;
     const [minX, maxX] = clampBoundsX(cityBounds, anchor.position.x);
     const [minZ, maxZ] = clampBoundsZ(cityBounds, anchor.position.z);
-    const proposedX = anchor.position.clone().addScaledVector(new THREE.Vector3(movement.x, 0, 0), step);
-    if (!collidesWithColliders(proposedX, colliders, PLAYER_RADIUS)) {
-      anchor.position.x = THREE.MathUtils.clamp(proposedX.x, minX, maxX);
+    moveProposedPosition.copy(anchor.position);
+    moveProposedPosition.x += movement.x * step;
+    if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
+      anchor.position.x = THREE.MathUtils.clamp(moveProposedPosition.x, minX, maxX);
     }
 
-    const proposedZ = anchor.position.clone().addScaledVector(new THREE.Vector3(0, 0, movement.z), step);
-    if (!collidesWithColliders(proposedZ, colliders, PLAYER_RADIUS)) {
-      anchor.position.z = THREE.MathUtils.clamp(proposedZ.z, minZ, maxZ);
+    moveProposedPosition.copy(anchor.position);
+    moveProposedPosition.z += movement.z * step;
+    if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
+      anchor.position.z = THREE.MathUtils.clamp(moveProposedPosition.z, minZ, maxZ);
     }
 
     const targetYaw = Math.atan2(movement.x, movement.z);
@@ -2041,7 +2054,9 @@ export async function createPlayer(library, {
       }
 
       const moving = wantsToMove && !ragdoll.isActive();
-      const movement = moving ? projectMoveOnCamera(camera, rawInput) : new THREE.Vector3();
+      const movement = moving
+        ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight)
+        : moveDirection.set(0, 0, 0);
 
       if (moving) {
         moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds);
@@ -2068,15 +2083,15 @@ export async function createPlayer(library, {
       }
 
       const target = targetPosition?.isVector3
-        ? targetPosition.clone()
-        : new THREE.Vector3(
+        ? moveTarget.copy(targetPosition)
+        : moveTarget.set(
           targetPosition?.x ?? anchor.position.x,
           targetPosition?.y ?? anchor.position.y,
           targetPosition?.z ?? anchor.position.z
         );
       const stopDistance = Math.max(0.05, Number(options.stopDistance) || 0.18);
       const speedScale = Number.isFinite(options.speedScale) ? options.speedScale : 1;
-      const toTarget = target.clone().sub(anchor.position);
+      const toTarget = moveToTarget.copy(target).sub(anchor.position);
       toTarget.y = 0;
       const distance = toTarget.length();
 
@@ -2092,7 +2107,7 @@ export async function createPlayer(library, {
       const moving = moveWithWorldVector(toTarget.normalize(), deltaSeconds, colliders, cityBounds, speedScale);
       updateAnimationState(deltaSeconds, moving, groundHeight);
 
-      const remaining = target.clone().sub(anchor.position).setY(0).length();
+      const remaining = moveToTarget.copy(target).sub(anchor.position).setY(0).length();
       return {
         arrived: remaining <= stopDistance,
         moving,

@@ -427,6 +427,28 @@ function normalizeNodeNameSet(nodeNames = []) {
   return new Set(values.filter(Boolean));
 }
 
+function hasNodeNameEntries(nodeNames = null) {
+  if (!nodeNames) {
+    return false;
+  }
+
+  if (typeof nodeNames === 'string') {
+    return Boolean(nodeNames);
+  }
+
+  if (typeof nodeNames[Symbol.iterator] !== 'function') {
+    return false;
+  }
+
+  for (const nodeName of nodeNames) {
+    if (nodeName) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function normalizeOpacity(opacity = 1) {
   const numericOpacity = Number(opacity);
   return Number.isFinite(numericOpacity)
@@ -751,6 +773,13 @@ export class WorldRenderer {
     this.cameraOcclusionNodeBounds = new THREE.Box3();
     this.cameraOcclusionBoundsHit = new THREE.Vector3();
     this.cameraOccludedPlacementIds = new Set();
+    this.cameraOcclusionCandidates = [];
+    this.cameraOcclusionIdsToClear = [];
+    this.nextCameraOccludedPlacementIds = new Set();
+    this.excludedCameraOcclusionPlacementIds = new Set();
+    this.preserveInteriorNodePlacementIds = new Set();
+    this.emptyCameraOcclusionPlacementIds = new Set();
+    this.emptyCameraOcclusionNodeNames = new Set();
 
     this.tileRoot = new THREE.Group();
     this.propRoot = new THREE.Group();
@@ -1072,8 +1101,11 @@ export class WorldRenderer {
     );
   }
 
-  getCameraOcclusionCandidates(excludedPlacementIds = new Set()) {
-    const candidates = [];
+  getCameraOcclusionCandidates(
+    excludedPlacementIds = this.emptyCameraOcclusionPlacementIds,
+    candidates = this.cameraOcclusionCandidates
+  ) {
+    candidates.length = 0;
 
     for (const rendered of this.renderedPlacements.values()) {
       if (excludedPlacementIds.has(rendered.id)) {
@@ -1098,7 +1130,9 @@ export class WorldRenderer {
       return;
     }
 
-    const preservedNodeNames = new Set(Array.from(options.preservedNodeNames ?? []).filter(Boolean));
+    const preservedNodeNames = hasNodeNameEntries(options.preservedNodeNames)
+      ? normalizeNodeNameSet(options.preservedNodeNames)
+      : this.emptyCameraOcclusionNodeNames;
     if (
       rendered.cameraOcclusionMaterialState
       && nextOccluded
@@ -1133,24 +1167,34 @@ export class WorldRenderer {
     }
   }
 
-  getCameraOcclusionPreservedNodeNames(rendered, preserveInteriorNodePlacementIds = new Set()) {
+  getCameraOcclusionPreservedNodeNames(
+    rendered,
+    preserveInteriorNodePlacementIds = this.emptyCameraOcclusionPlacementIds
+  ) {
     if (!preserveInteriorNodePlacementIds.has(rendered?.id)) {
-      return new Set();
+      return this.emptyCameraOcclusionNodeNames;
     }
 
     return normalizeNodeNameSet(rendered?.item?.cameraOcclusionPreserveNodeNames);
   }
 
   syncCameraOccludedPlacementIds(nextOccludedPlacementIds, options = {}) {
-    const preserveInteriorNodePlacementIds = new Set(
-      Array.from(options.preserveInteriorNodePlacementIds ?? []).filter(Boolean)
-    );
-
-    for (const placementId of [...this.cameraOccludedPlacementIds]) {
-      if (nextOccludedPlacementIds.has(placementId)) {
-        continue;
+    const preserveInteriorNodePlacementIds = this.preserveInteriorNodePlacementIds;
+    preserveInteriorNodePlacementIds.clear();
+    for (const placementId of options.preserveInteriorNodePlacementIds ?? []) {
+      if (placementId) {
+        preserveInteriorNodePlacementIds.add(placementId);
       }
+    }
 
+    this.cameraOcclusionIdsToClear.length = 0;
+    for (const placementId of this.cameraOccludedPlacementIds) {
+      if (!nextOccludedPlacementIds.has(placementId)) {
+        this.cameraOcclusionIdsToClear.push(placementId);
+      }
+    }
+
+    for (const placementId of this.cameraOcclusionIdsToClear) {
       const rendered = this.renderedPlacements.get(placementId);
       this.setPlacementCameraOccluded(rendered, false);
       this.cameraOccludedPlacementIds.delete(placementId);
@@ -1175,7 +1219,7 @@ export class WorldRenderer {
   }
 
   clearCameraOcclusion() {
-    return this.syncCameraOccludedPlacementIds(new Set());
+    return this.syncCameraOccludedPlacementIds(this.emptyCameraOcclusionPlacementIds);
   }
 
   updateCameraOcclusion(camera = this.camera, playerPosition = null, options = {}) {
@@ -1190,13 +1234,20 @@ export class WorldRenderer {
       return this.clearCameraOcclusion();
     }
 
-    const excludedPlacementIds = new Set((options.excludedPlacementIds ?? []).filter(Boolean));
+    const excludedPlacementIds = this.excludedCameraOcclusionPlacementIds;
+    excludedPlacementIds.clear();
+    for (const placementId of options.excludedPlacementIds ?? []) {
+      if (placementId) {
+        excludedPlacementIds.add(placementId);
+      }
+    }
     const candidates = this.getCameraOcclusionCandidates(excludedPlacementIds);
     if (!candidates.length) {
       return this.clearCameraOcclusion();
     }
 
-    const nextOccludedPlacementIds = new Set();
+    const nextOccludedPlacementIds = this.nextCameraOccludedPlacementIds;
+    nextOccludedPlacementIds.clear();
     this.cameraOcclusionRaycaster.near = 0;
 
     for (const height of CAMERA_OCCLUSION_PLAYER_HEIGHTS) {
