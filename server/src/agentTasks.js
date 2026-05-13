@@ -517,6 +517,7 @@ export async function claimNextAgentTask({
   workerId = '',
   scope = '',
   deployEnabled = true,
+  codeEnabled = true,
   staleDeployingAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
@@ -524,6 +525,7 @@ export async function claimNextAgentTask({
   const shouldFilterScope = String(scope ?? '').trim() !== '';
   const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
   const canClaimDeployActions = deployEnabled !== false;
+  const canClaimCodeActions = codeEnabled !== false;
   const staleDeployingMs = Math.max(0, Number(staleDeployingAfterMs) || 0);
   const now = Date.now();
 
@@ -559,53 +561,81 @@ export async function claimNextAgentTask({
         }
       }
 
-      const rollbackTask = sortTasks(state.tasks)
+      const activeDeployTask = sortTasks(state.tasks)
         .reverse()
-        .find((task) => (
-          (!shouldFilterScope || task.scope === normalizedScope)
-          && task.status === 'deployed'
-          && Number(task.rollbackApprovedAt) > 0
-          && !Number(task.rollbackStartedAt)
-        ));
+        .find((task) => {
+          if (shouldFilterScope && task.scope !== normalizedScope) {
+            return false;
+          }
 
-      if (rollbackTask) {
-        rollbackTask.status = 'rolling_back';
-        rollbackTask.claimedBy = normalizedWorkerId;
-        rollbackTask.claimedAt = now;
-        rollbackTask.rollbackStartedAt = now;
-        rollbackTask.updatedAt = now;
-        addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
-          data: { workerId: normalizedWorkerId }
+          if (!['deploying', 'rolling_back'].includes(task.status)) {
+            return false;
+          }
+
+          if (task.status === 'deploying' && staleDeployingMs > 0) {
+            const startedAt = Number(task.deployStartedAt || task.claimedAt || task.updatedAt || 0);
+            return !(startedAt > 0 && now - startedAt >= staleDeployingMs);
+          }
+
+          return true;
         });
-        return {
-          action: 'rollback',
-          task: rollbackTask
-        };
-      }
 
-      const deployTask = sortTasks(state.tasks)
-        .reverse()
-        .find((task) => (
-          (!shouldFilterScope || task.scope === normalizedScope)
-          && task.status === 'ready_for_review'
-          && Number(task.deployApprovedAt) > 0
-          && !Number(task.deployStartedAt)
-        ));
+      if (!activeDeployTask) {
+        const rollbackTask = sortTasks(state.tasks)
+          .reverse()
+          .find((task) => (
+            (!shouldFilterScope || task.scope === normalizedScope)
+            && task.status === 'deployed'
+            && Number(task.rollbackApprovedAt) > 0
+            && !Number(task.rollbackStartedAt)
+          ));
 
-      if (deployTask) {
-        deployTask.status = 'deploying';
-        deployTask.claimedBy = normalizedWorkerId;
-        deployTask.claimedAt = now;
-        deployTask.deployStartedAt = now;
-        deployTask.updatedAt = now;
-        addTaskLog(deployTask, 'Worker claimed deploy approval.', {
-          data: { workerId: normalizedWorkerId }
-        });
-        return {
-          action: 'deploy',
-          task: deployTask
-        };
+        if (rollbackTask) {
+          rollbackTask.status = 'rolling_back';
+          rollbackTask.claimedBy = normalizedWorkerId;
+          rollbackTask.claimedAt = now;
+          rollbackTask.rollbackStartedAt = now;
+          rollbackTask.updatedAt = now;
+          addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
+            data: { workerId: normalizedWorkerId }
+          });
+          return {
+            action: 'rollback',
+            task: rollbackTask
+          };
+        }
+
+        const deployTask = sortTasks(state.tasks)
+          .reverse()
+          .find((task) => (
+            (!shouldFilterScope || task.scope === normalizedScope)
+            && task.status === 'ready_for_review'
+            && Number(task.deployApprovedAt) > 0
+            && !Number(task.deployStartedAt)
+          ));
+
+        if (deployTask) {
+          deployTask.status = 'deploying';
+          deployTask.claimedBy = normalizedWorkerId;
+          deployTask.claimedAt = now;
+          deployTask.deployStartedAt = now;
+          deployTask.updatedAt = now;
+          addTaskLog(deployTask, 'Worker claimed deploy approval.', {
+            data: { workerId: normalizedWorkerId }
+          });
+          return {
+            action: 'deploy',
+            task: deployTask
+          };
+        }
       }
+    }
+
+    if (!canClaimCodeActions) {
+      return {
+        action: '',
+        task: null
+      };
     }
 
     const queuedTask = sortTasks(state.tasks)

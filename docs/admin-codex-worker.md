@@ -346,6 +346,16 @@ Then start the production worker:
 npm run worker:prod
 ```
 
+By default, the worker starts two code lanes and one deploy lane. Code lanes only
+claim queued coding tasks, while the deploy lane only claims approved deploy,
+rollback, or stale-deploy reconciliation work. Deploy claims are also serialized
+server-side, so two worker PCs cannot run overlapping production deploys for the
+same scope. To change the number of parallel coding tasks on a worker PC, add:
+
+```powershell
+"AGENT_CODE_CONCURRENCY=1" | Add-Content .env.worker.production
+```
+
 For a one-task smoke run with the same production defaults:
 
 ```powershell

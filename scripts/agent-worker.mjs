@@ -51,6 +51,9 @@ const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOU
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
+const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
+const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
+const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 
@@ -78,6 +81,11 @@ function sleep(ms) {
 function getPositiveIntegerEnv(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getNonNegativeIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
 function truncateText(value = '', maxLength = 6000) {
@@ -464,42 +472,53 @@ async function retryTransientCommand(taskId, label, operation, {
   throw lastError;
 }
 
-async function ensureBaseRepository(taskId = '') {
-  await fsp.mkdir(WORK_ROOT, { recursive: true });
-  await fsp.mkdir(TASKS_ROOT, { recursive: true });
+let baseRepoLock = Promise.resolve();
 
-  const gitDir = path.join(REPO_PATH, '.git');
-  const hasRepo = await fsp.stat(gitDir).then((stats) => stats.isDirectory()).catch(() => false);
-  if (!hasRepo) {
-    if (!GIT_REMOTE) {
-      throw new Error('GIT_REMOTE is required to clone the repository.');
+async function withBaseRepoLock(operation) {
+  const previousLock = baseRepoLock;
+  const nextLock = previousLock.then(operation, operation);
+  baseRepoLock = nextLock.catch(() => {});
+  return nextLock;
+}
+
+async function ensureBaseRepository(taskId = '') {
+  return withBaseRepoLock(async () => {
+    await fsp.mkdir(WORK_ROOT, { recursive: true });
+    await fsp.mkdir(TASKS_ROOT, { recursive: true });
+
+    const gitDir = path.join(REPO_PATH, '.git');
+    const hasRepo = await fsp.stat(gitDir).then((stats) => stats.isDirectory()).catch(() => false);
+    if (!hasRepo) {
+      if (!GIT_REMOTE) {
+        throw new Error('GIT_REMOTE is required to clone the repository.');
+      }
+      await git(['clone', GIT_REMOTE, REPO_PATH], {
+        cwd: WORK_ROOT,
+        taskId,
+        label: 'git clone'
+      });
+    } else if (GIT_REMOTE) {
+      await git(['remote', 'set-url', 'origin', GIT_REMOTE], {
+        cwd: REPO_PATH,
+        taskId,
+        label: 'git remote set-url'
+      });
     }
-    await git(['clone', GIT_REMOTE, REPO_PATH], {
-      cwd: WORK_ROOT,
-      taskId,
-      label: 'git clone'
-    });
-  } else if (GIT_REMOTE) {
-    await git(['remote', 'set-url', 'origin', GIT_REMOTE], {
+
+    await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
       cwd: REPO_PATH,
       taskId,
-      label: 'git remote set-url'
+      label: 'git fetch base'
     });
-  }
-
-  await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
-    cwd: REPO_PATH,
-    taskId,
-    label: 'git fetch base'
-  });
-  await git(['worktree', 'prune'], {
-    cwd: REPO_PATH,
-    taskId,
-    label: 'git worktree prune'
+    await git(['worktree', 'prune'], {
+      cwd: REPO_PATH,
+      taskId,
+      label: 'git worktree prune'
+    });
   });
 }
 
-async function cleanTaskWorktree(worktreePath, taskId = '') {
+async function removeTaskWorktree(worktreePath, taskId = '') {
   assertInside(TASKS_ROOT, worktreePath);
   const exists = await fsp.stat(worktreePath).then(() => true).catch(() => false);
   if (!exists) {
@@ -514,6 +533,10 @@ async function cleanTaskWorktree(worktreePath, taskId = '') {
   await fsp.rm(worktreePath, { recursive: true, force: true });
 }
 
+async function cleanTaskWorktree(worktreePath, taskId = '') {
+  return withBaseRepoLock(() => removeTaskWorktree(worktreePath, taskId));
+}
+
 async function createCodeWorktree(task) {
   await ensureBaseRepository(task.id);
   const slug = safeTaskSlug(task.id);
@@ -521,18 +544,20 @@ async function createCodeWorktree(task) {
   const worktreePath = path.join(TASKS_ROOT, slug);
   const baseBranch = String(task.baseBranch || '').trim();
   const baseRef = baseBranch ? `origin/${baseBranch}` : `origin/${GIT_BASE_BRANCH}`;
-  if (baseBranch) {
-    await git(['fetch', 'origin', `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], {
+  await withBaseRepoLock(async () => {
+    if (baseBranch) {
+      await git(['fetch', 'origin', `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], {
+        cwd: REPO_PATH,
+        taskId: task.id,
+        label: 'git fetch thread base'
+      });
+    }
+    await removeTaskWorktree(worktreePath, task.id);
+    await git(['worktree', 'add', '-B', branch, worktreePath, baseRef], {
       cwd: REPO_PATH,
       taskId: task.id,
-      label: 'git fetch thread base'
+      label: 'git worktree add'
     });
-  }
-  await cleanTaskWorktree(worktreePath, task.id);
-  await git(['worktree', 'add', '-B', branch, worktreePath, baseRef], {
-    cwd: REPO_PATH,
-    taskId: task.id,
-    label: 'git worktree add'
   });
   return { branch, worktreePath };
 }
@@ -545,22 +570,23 @@ async function createDeployWorktree(task) {
     throw new Error('Deploy task has no branch or commit SHA.');
   }
 
-  if (branch) {
-    await git(['fetch', 'origin', branch], {
-      cwd: REPO_PATH,
-      taskId: task.id,
-      label: 'git fetch deploy branch'
-    });
-  }
-
   const slug = `${safeTaskSlug(task.id)}-deploy`;
   const worktreePath = path.join(TASKS_ROOT, slug);
-  await cleanTaskWorktree(worktreePath, task.id);
   const ref = branch ? `origin/${branch}` : commitSha;
-  await git(['worktree', 'add', worktreePath, ref], {
-    cwd: REPO_PATH,
-    taskId: task.id,
-    label: 'git worktree add deploy'
+  await withBaseRepoLock(async () => {
+    if (branch) {
+      await git(['fetch', 'origin', branch], {
+        cwd: REPO_PATH,
+        taskId: task.id,
+        label: 'git fetch deploy branch'
+      });
+    }
+    await removeTaskWorktree(worktreePath, task.id);
+    await git(['worktree', 'add', worktreePath, ref], {
+      cwd: REPO_PATH,
+      taskId: task.id,
+      label: 'git worktree add deploy'
+    });
   });
   return { branch, worktreePath };
 }
@@ -570,11 +596,13 @@ async function createRollbackWorktree(task) {
   const slug = `${safeTaskSlug(task.id)}-rollback`;
   const branch = `agent/rollback-${safeTaskSlug(task.id)}`;
   const worktreePath = path.join(TASKS_ROOT, slug);
-  await cleanTaskWorktree(worktreePath, task.id);
-  await git(['worktree', 'add', '-B', branch, worktreePath, `origin/${GIT_BASE_BRANCH}`], {
-    cwd: REPO_PATH,
-    taskId: task.id,
-    label: 'git worktree add rollback'
+  await withBaseRepoLock(async () => {
+    await removeTaskWorktree(worktreePath, task.id);
+    await git(['worktree', 'add', '-B', branch, worktreePath, `origin/${GIT_BASE_BRANCH}`], {
+      cwd: REPO_PATH,
+      taskId: task.id,
+      label: 'git worktree add rollback'
+    });
   });
   return { branch, worktreePath };
 }
@@ -1877,24 +1905,35 @@ async function handleRollbackTask(task) {
   }
 }
 
-async function claimNextTask() {
+async function claimNextTask({
+  deployEnabled = DEPLOY_ENABLED,
+  codeEnabled = true
+} = {}) {
   return apiRequest('/admin/agent-tasks/next', {
     query: {
       scope: DEFAULT_SCOPE,
-      deployEnabled: DEPLOY_ENABLED ? '1' : '0',
-      staleDeployingAfterMs: String(STALE_DEPLOY_RECONCILE_AFTER_MS)
+      deployEnabled: deployEnabled ? '1' : '0',
+      codeEnabled: codeEnabled ? '1' : '0',
+      staleDeployingAfterMs: deployEnabled ? String(STALE_DEPLOY_RECONCILE_AFTER_MS) : '0'
     }
   });
 }
 
-async function runIteration() {
-  const result = await claimNextTask();
+async function runIteration({
+  lane = 'worker',
+  deployEnabled = DEPLOY_ENABLED,
+  codeEnabled = true
+} = {}) {
+  const result = await claimNextTask({
+    deployEnabled,
+    codeEnabled
+  });
   if (!result.task) {
     return false;
   }
 
   const task = result.task;
-  await appendLog(task.id, `Worker ${WORKER_ID} started ${result.action || 'task'}.`);
+  await appendLog(task.id, `Worker ${WORKER_ID} ${lane} lane started ${result.action || 'task'}.`);
   if (result.action === 'deploy') {
     await handleDeployTask(task);
   } else if (result.action === 'reconcile_deploy') {
@@ -1905,6 +1944,76 @@ async function runIteration() {
     await handleCodeTask(task);
   }
   return true;
+}
+
+async function runLane({
+  lane = 'worker',
+  slot = 1,
+  deployEnabled = DEPLOY_ENABLED,
+  codeEnabled = true,
+  idlePollMs = Number(process.env.AGENT_POLL_MS || DEFAULT_POLL_MS),
+  errorPollMs = Number(process.env.AGENT_ERROR_POLL_MS || 10000)
+} = {}) {
+  const laneLabel = `${lane}-${slot}`;
+  while (true) {
+    try {
+      const didWork = await runIteration({
+        lane: laneLabel,
+        deployEnabled,
+        codeEnabled
+      });
+      if (RUN_ONCE) {
+        return didWork;
+      }
+      if (!didWork) {
+        await sleep(idlePollMs);
+      }
+    } catch (error) {
+      console.error(`[agent-worker] ${laneLabel} iteration failed.`, error);
+      if (RUN_ONCE) {
+        process.exitCode = 1;
+        return false;
+      }
+      await sleep(errorPollMs);
+    }
+  }
+}
+
+async function runWorker() {
+  if (RUN_ONCE) {
+    await runLane({
+      lane: 'once',
+      slot: 1,
+      deployEnabled: DEPLOY_ENABLED,
+      codeEnabled: true
+    });
+    return;
+  }
+
+  const lanes = [];
+  for (let slot = 1; slot <= CODE_CONCURRENCY; slot += 1) {
+    lanes.push(runLane({
+      lane: 'code',
+      slot,
+      deployEnabled: false,
+      codeEnabled: true
+    }));
+  }
+
+  for (let slot = 1; slot <= DEPLOY_CONCURRENCY; slot += 1) {
+    lanes.push(runLane({
+      lane: 'deploy',
+      slot,
+      deployEnabled: true,
+      codeEnabled: false
+    }));
+  }
+
+  if (lanes.length === 0) {
+    throw new Error('No worker lanes are enabled. Set AGENT_CODE_CONCURRENCY above 0 or enable DEPLOY_ENABLED.');
+  }
+
+  await Promise.all(lanes);
 }
 
 function validateConfig() {
@@ -2067,6 +2176,9 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   scope: DEFAULT_SCOPE,
   autoDeploy: AUTO_DEPLOY,
   deployEnabled: DEPLOY_ENABLED,
+  codeConcurrency: RUN_ONCE ? 1 : CODE_CONCURRENCY,
+  deployConcurrency: RUN_ONCE ? (DEPLOY_ENABLED ? 1 : 0) : DEPLOY_CONCURRENCY,
+  requestedDeployConcurrency: REQUESTED_DEPLOY_CONCURRENCY,
   backendDeployCommand: BACKEND_DEPLOY_COMMAND ? 'configured' : 'missing',
   backendDeployStrategy: BACKEND_DEPLOY_STRATEGY,
   backendVerifyUrl: BACKEND_VERIFY_URL ? 'configured' : 'missing',
@@ -2077,21 +2189,4 @@ console.log('[agent-worker] Starting StickRPG Codex worker.', {
   selfTest: RUN_SELF_TEST
 });
 
-while (true) {
-  try {
-    const didWork = await runIteration();
-    if (RUN_ONCE) {
-      process.exit(0);
-    }
-    if (!didWork) {
-      await sleep(Number(process.env.AGENT_POLL_MS || DEFAULT_POLL_MS));
-    }
-  } catch (error) {
-    console.error('[agent-worker] Iteration failed.', error);
-    if (RUN_ONCE) {
-      process.exitCode = 1;
-      break;
-    }
-    await sleep(Number(process.env.AGENT_ERROR_POLL_MS || 10000));
-  }
-}
+await runWorker();

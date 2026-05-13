@@ -567,6 +567,7 @@ const server = defineServer({
         const result = await claimNextAgentTask({
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
           deployEnabled: ['1', 'true', 'yes'].includes(String(req.query?.deployEnabled ?? '').toLowerCase()),
+          codeEnabled: !['0', 'false', 'no'].includes(String(req.query?.codeEnabled ?? 'true').toLowerCase()),
           staleDeployingAfterMs: typeof req.query?.staleDeployingAfterMs === 'string'
             ? Number(req.query.staleDeployingAfterMs)
             : 0,

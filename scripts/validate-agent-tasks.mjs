@@ -130,6 +130,45 @@ try {
     filePath
   });
 
+  const laneBoundaryTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Keep deploy workers from claiming code tasks.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  const disabledClaim = await claimNextAgentTask({
+    workerId: 'disabled-worker',
+    scope: 'game',
+    deployEnabled: false,
+    codeEnabled: false,
+    filePath
+  });
+  assert.equal(disabledClaim.action, '');
+  assert.equal(disabledClaim.task, null);
+  const deployOnlyIdle = await claimNextAgentTask({
+    workerId: 'deploy-only-worker',
+    scope: 'game',
+    codeEnabled: false,
+    filePath
+  });
+  assert.equal(deployOnlyIdle.action, '');
+  assert.equal(deployOnlyIdle.task, null);
+  const codeLaneClaim = await claimNextAgentTask({
+    workerId: 'code-lane-worker',
+    scope: 'game',
+    deployEnabled: false,
+    filePath
+  });
+  assert.equal(codeLaneClaim.action, 'code_change');
+  assert.equal(codeLaneClaim.task.id, laneBoundaryTask.id);
+  await cancelAgentTask(laneBoundaryTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
+
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',
     filePath
@@ -178,6 +217,37 @@ try {
   assert.equal(deployClaim.action, 'deploy');
   assert.equal(deployClaim.task.status, 'deploying');
   assert.equal(deployClaim.task.claimedBy, 'deploy-worker');
+  const blockedParallelDeployTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Queue a second approved deploy while one is already deploying.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  await updateAgentTask(blockedParallelDeployTask.id, {
+    status: 'ready_for_review',
+    commitSha: 'def5678',
+    deployTargets: ['frontend'],
+    agentMessage: 'Second deploy is ready.'
+  }, { filePath });
+  await approveAgentTaskDeploy(blockedParallelDeployTask.id, {
+    approvedBy: 'validator',
+    filePath
+  });
+  const blockedDeployClaim = await claimNextAgentTask({
+    workerId: 'parallel-deploy-worker',
+    scope: 'game',
+    codeEnabled: false,
+    filePath
+  });
+  assert.equal(blockedDeployClaim.action, '');
+  assert.equal(blockedDeployClaim.task, null);
+  await cancelAgentTask(blockedParallelDeployTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
   await updateAgentTask(created.id, {
     deployStartedAt: Date.now() - 60000
   }, { filePath });
