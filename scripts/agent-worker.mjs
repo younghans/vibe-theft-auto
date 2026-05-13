@@ -403,6 +403,42 @@ async function git(args = [], options = {}) {
   });
 }
 
+function isRetryableNetworkError(error) {
+  const text = String(error?.stack || error?.message || error || '');
+  return /connection was reset|recv failure|failed to connect|could not resolve host|early eof|rpc failed|http\/2 stream|timeout|timed out|tls connection|network/i.test(text);
+}
+
+async function retryTransientCommand(taskId, label, operation, {
+  attempts = 3,
+  delayMs = 5000
+} = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isRetryableNetworkError(error)) {
+        throw error;
+      }
+
+      const nextDelayMs = delayMs * attempt;
+      if (taskId) {
+        await appendLog(taskId, `${label} hit a transient network error; retrying (${attempt + 1}/${attempts}).`, {
+          level: 'warn',
+          data: {
+            delayMs: nextDelayMs,
+            error: truncateText(error?.message || String(error), 1200)
+          }
+        });
+      }
+      await sleep(nextDelayMs);
+    }
+  }
+
+  throw lastError;
+}
+
 async function ensureBaseRepository(taskId = '') {
   await fsp.mkdir(WORK_ROOT, { recursive: true });
   await fsp.mkdir(TASKS_ROOT, { recursive: true });
@@ -730,12 +766,12 @@ async function commitAndPush(task, worktreePath, branch, changedFiles) {
     taskId: task.id,
     label: 'git rev-parse'
   })).trim();
-  await git(['push', '-u', 'origin', branch], {
+  await retryTransientCommand(task.id, 'git push', () => git(['push', '-u', 'origin', branch], {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 10 * 60 * 1000,
     label: 'git push'
-  });
+  }));
   return { branch, commitSha };
 }
 
@@ -1428,12 +1464,12 @@ async function pushRebasedTaskBranch(task, worktreePath, branch = '') {
     return;
   }
 
-  await git(['push', '--force-with-lease', 'origin', `HEAD:${normalizedBranch}`], {
+  await retryTransientCommand(task.id, 'git push rebased task branch', () => git(['push', '--force-with-lease', 'origin', `HEAD:${normalizedBranch}`], {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 10 * 60 * 1000,
     label: 'git push rebased task branch'
-  });
+  }));
 }
 
 async function prepareDeployCommit(task, worktreePath) {
@@ -1548,12 +1584,12 @@ async function prepareDeployCommit(task, worktreePath) {
 }
 
 async function pushWorktreeToMain(task, worktreePath) {
-  await git(['push', 'origin', `HEAD:${GIT_BASE_BRANCH}`], {
+  await retryTransientCommand(task.id, 'git push main', () => git(['push', 'origin', `HEAD:${GIT_BASE_BRANCH}`], {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 10 * 60 * 1000,
     label: 'git push main'
-  });
+  }));
   await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
     cwd: REPO_PATH,
     taskId: task.id,
