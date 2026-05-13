@@ -904,6 +904,14 @@ export class NpcServiceColyseus {
     });
   }
 
+  async completeOfficeJob(placementId = '', jobId = '', result = {}) {
+    return this.rpc('officeJob:complete', {
+      placementId: String(placementId ?? '').trim(),
+      jobId: String(jobId ?? '').trim(),
+      score: result?.score
+    });
+  }
+
   async selectMission(missionId = '') {
     return this.rpc('mission:select', {
       missionId: String(missionId ?? '').trim()

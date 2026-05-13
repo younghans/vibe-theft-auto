@@ -6757,6 +6757,143 @@ body.is-admin-prompt-resizing * {
   pointer-events: none;
 }
 
+.hud__school-requirement {
+  display: inline-grid;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(244, 238, 226, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hud__school-requirement strong {
+  color: #dff6ff;
+  font-size: 14px;
+}
+
+.hud__office-menu {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+}
+
+.hud__office-menu-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(244, 238, 226, 0.72);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__office-menu-summary strong {
+  color: #dff6ff;
+  font-size: 22px;
+}
+
+.hud__office-job-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hud__office-job-card {
+  min-width: 0;
+  min-height: 260px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(0, 0, 0, 0.2);
+  color: #fff6de;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.hud__office-job-card:hover:not(:disabled),
+.hud__office-job-card:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--school-accent) 62%, white 12%);
+  background: color-mix(in srgb, var(--school-accent) 12%, rgba(255, 255, 255, 0.07));
+  transform: translateY(-2px);
+}
+
+.hud__office-job-card.is-locked {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.hud__office-job-icon {
+  width: 62px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--school-accent), var(--school-secondary));
+  color: #111820;
+  font-size: 13px;
+  font-weight: 1000;
+  letter-spacing: 0;
+}
+
+.hud__office-job-copy {
+  min-width: 0;
+}
+
+.hud__office-job-copy strong,
+.hud__office-job-copy small,
+.hud__office-job-meta em,
+.hud__office-job-meta small {
+  display: block;
+}
+
+.hud__office-job-copy strong {
+  margin-bottom: 7px;
+  color: #fff7e3;
+  font-size: 24px;
+  line-height: 1.02;
+}
+
+.hud__office-job-copy small {
+  color: rgba(244, 238, 226, 0.7);
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.32;
+}
+
+.hud__office-job-meta {
+  display: grid;
+  gap: 5px;
+  color: rgba(244, 238, 226, 0.64);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hud__office-job-meta em {
+  color: #fff0bd;
+  font-size: 20px;
+  font-style: normal;
+}
+
 .hud__school-quiz-status {
   display: flex;
   justify-content: center;
@@ -8231,6 +8368,200 @@ body.is-admin-prompt-resizing * {
 
 .hud__school-bell-labels strong {
   color: #a7ffc2;
+}
+
+.hud__office-game {
+  min-height: 0;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.hud__office-trash,
+.hud__office-coffee {
+  align-content: center;
+}
+
+.hud__office-aim-meter {
+  position: relative;
+  height: 116px;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 58px),
+    linear-gradient(180deg, #25313a, #111820);
+}
+
+.hud__office-target-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--target-left, 62%);
+  width: var(--target-width, 16%);
+  background:
+    linear-gradient(180deg, rgba(111, 230, 162, 0.44), rgba(111, 230, 162, 0.12));
+  box-shadow: inset 0 0 0 2px rgba(111, 230, 162, 0.52);
+}
+
+.hud__office-marker {
+  position: absolute;
+  left: var(--marker, 0%);
+  top: 50%;
+  width: 34px;
+  height: 88px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--school-secondary), var(--school-accent));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--school-accent) 44%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.hud__office-cup {
+  position: relative;
+  justify-self: center;
+  width: min(280px, 68vw);
+  height: 310px;
+  overflow: hidden;
+  border: 5px solid rgba(255, 255, 255, 0.18);
+  border-top-width: 12px;
+  border-radius: 18px 18px 34px 34px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 28%, transparent 72%, rgba(255, 255, 255, 0.08)),
+    rgba(8, 12, 16, 0.64);
+  box-shadow: inset 0 -18px 32px rgba(0, 0, 0, 0.24), 0 22px 38px rgba(0, 0, 0, 0.24);
+}
+
+.hud__office-cup::after {
+  content: '';
+  position: absolute;
+  right: -58px;
+  top: 88px;
+  width: 80px;
+  height: 104px;
+  border: 8px solid rgba(255, 255, 255, 0.16);
+  border-left: 0;
+  border-radius: 0 48px 48px 0;
+}
+
+.hud__office-coffee-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--fill, 0%);
+  background:
+    linear-gradient(180deg, rgba(232, 173, 105, 0.96), rgba(115, 66, 36, 0.96));
+  box-shadow: 0 -8px 22px rgba(232, 173, 105, 0.22);
+  transition: height 90ms linear;
+}
+
+.hud__office-coffee-target {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: var(--target-bottom, 72%);
+  height: var(--target-height, 12%);
+  background: rgba(111, 230, 162, 0.14);
+  box-shadow: inset 0 0 0 2px rgba(111, 230, 162, 0.58);
+  pointer-events: none;
+}
+
+.hud__office-nap {
+  grid-template-rows: auto minmax(220px, 1fr) auto auto;
+}
+
+.hud__office-nap-scene {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%),
+    linear-gradient(180deg, #263543 0 58%, #151b22 58% 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.hud__office-desk {
+  position: absolute;
+  left: 16%;
+  right: 28%;
+  bottom: 52px;
+  height: 46px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #a8754f, #5a3824);
+  box-shadow: 0 18px 0 #342116;
+}
+
+.hud__office-sleeper {
+  position: absolute;
+  left: 28%;
+  bottom: 102px;
+  width: 84px;
+  height: 46px;
+  border-radius: 999px 999px 22px 22px;
+  background: linear-gradient(180deg, #f1c69a, #9a6742);
+  transform-origin: 50% 100%;
+  transition: transform 140ms ease;
+}
+
+.hud__office-sleeper::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 22px;
+  width: 60px;
+  height: 18px;
+  border-radius: 999px;
+  background: #1d2630;
+}
+
+.hud__office-sleeper.is-sleeping {
+  transform: rotate(-9deg) translateY(8px);
+}
+
+.hud__office-boss {
+  position: absolute;
+  right: 18%;
+  bottom: 98px;
+  width: 58px;
+  height: 112px;
+  border-radius: 22px 22px 10px 10px;
+  background: linear-gradient(180deg, #26313e 0 42%, #111820 42% 100%);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.24);
+  transition: transform 180ms ease;
+}
+
+.hud__office-boss::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: -34px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #d6a37b;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.12);
+}
+
+.hud__office-boss::after {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: -19px;
+  width: 20px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(12, 16, 22, 0.84);
+  opacity: 0;
+}
+
+.hud__office-boss.is-turning {
+  transform: rotateY(56deg);
+}
+
+.hud__office-boss.is-looking::after {
+  opacity: 1;
+  box-shadow: 0 0 18px rgba(255, 95, 126, 0.7);
 }
 
 .hud__school-answer-key {
@@ -10246,6 +10577,48 @@ canvas {
     font-size: 11px;
   }
 
+  .hud__school-requirement {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .hud__school-requirement strong {
+    font-size: 11px;
+  }
+
+  .hud__office-menu {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .hud__office-job-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    overflow: auto;
+  }
+
+  .hud__office-job-card {
+    min-height: 118px;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    padding: 10px;
+  }
+
+  .hud__office-job-icon {
+    width: 42px;
+    border-radius: 9px;
+    font-size: 10px;
+  }
+
+  .hud__office-job-copy strong {
+    font-size: 18px;
+  }
+
+  .hud__office-job-meta {
+    grid-column: 1 / -1;
+  }
+
   .hud__school-quiz,
   .hud__school-notes,
   .hud__school-locker,
@@ -10254,7 +10627,8 @@ canvas {
   .hud__school-dodge,
   .hud__school-sort,
   .hud__school-bell,
-  .hud__school-scantron {
+  .hud__school-scantron,
+  .hud__office-game {
     min-width: 0;
     gap: 8px;
     padding: 8px;
@@ -10265,6 +10639,23 @@ canvas {
     min-height: 38px;
     padding: 8px 10px;
     font-size: 13px;
+  }
+
+  .hud__office-aim-meter {
+    height: 78px;
+  }
+
+  .hud__office-marker {
+    width: 24px;
+    height: 58px;
+  }
+
+  .hud__office-cup {
+    height: 190px;
+  }
+
+  .hud__office-nap-scene {
+    min-height: 180px;
   }
 
   .hud__school-question {

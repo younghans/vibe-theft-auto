@@ -15,6 +15,12 @@ import {
   TYPING_WORKOUT_KIND,
   getWorkoutActivityConfig
 } from '../src/game/workoutActivities.js';
+import {
+  OFFICE_JOB_IDS,
+  OFFICE_JOB_TERMINAL_ITEM_ID,
+  getOfficeJobDefinition,
+  listOfficeJobDefinitions
+} from '../src/shared/officeJobs.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -34,15 +40,43 @@ function getBoundsForObject(root, name) {
 }
 
 function validateBuilderDefinition() {
-  const item = getBuilderItemById('standing_desk_computer');
+  const item = getBuilderItemById(OFFICE_JOB_TERMINAL_ITEM_ID);
   assert(item, 'Standing desk computer builder item is missing.');
   assert(item.layer === 'prop', 'Standing desk computer should be a prop.');
   assert(item.groupId === 'office', 'Standing desk computer should live in the office prop group.');
   assert(typeof item.createVisual === 'function', 'Standing desk computer should use a procedural visual.');
+  assert(item.interactable?.prompt === 'Open job board', 'Standing desk computer should open the office job board.');
   assert(item.interactable?.workoutType === TYPING_EMOTE_ID, 'Standing desk computer should start the typing workout.');
   assert(item.interactable?.hideDuringWorkout === false, 'Standing desk computer should remain visible while in use.');
   assert(Array.isArray(item.interactable?.approachLocalOffset), 'Standing desk computer needs an approach offset.');
   assert(Number.isFinite(item.interactable?.approachRotationY), 'Standing desk computer needs an approach facing.');
+}
+
+async function validateOfficeJobTerminalFlow() {
+  const jobs = listOfficeJobDefinitions();
+  assert(jobs.length === 3, 'Office computer should expose exactly three job tiers.');
+
+  const janitor = getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
+  const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
+  const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
+  assert(janitor?.rewardMoney === 25 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $25 and require 5 Intelligence.');
+  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 50, 'Office Manager job should pay $100 and require 50 Intelligence.');
+  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 200, 'CEO job should pay $500 and require 200 Intelligence.');
+
+  const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const serverSource = await readFile(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
+  const colyseusSource = await readFile(new URL('../src/npc/NpcServiceColyseus.js', import.meta.url), 'utf8');
+  const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
+
+  assert(gameSource.includes('openOfficeJobMenu'), 'Game should route the office computer to the office job menu.');
+  assert(gameSource.includes('finishOfficeTrashToss'), 'Game should implement the janitor trash toss task.');
+  assert(gameSource.includes('finishOfficeCoffeeFill'), 'Game should implement the office manager coffee fill task.');
+  assert(gameSource.includes('updateOfficeCeoNapState'), 'Game should implement the CEO sleep timing task.');
+  assert(hudSource.includes('office:select:'), 'HUD should render selectable office job tiers.');
+  assert(serverSource.includes("officeJob:complete"), 'Server should expose an office job completion RPC.');
+  assert(colyseusSource.includes('completeOfficeJob'), 'Colyseus service should call the office job completion RPC.');
+  assert(mockSource.includes('completeOfficeJob'), 'Mock service should support office job completion.');
 }
 
 function validateDeskModel() {
@@ -129,6 +163,7 @@ async function validateCheckedInPlacements() {
 
 async function main() {
   validateBuilderDefinition();
+  await validateOfficeJobTerminalFlow();
   validateDeskModel();
   validateEmoteConfig();
   validateActivityConfig();

@@ -62,6 +62,13 @@ import {
   isSchoolMicrogameNpc,
   normalizeSchoolMicrogameId
 } from '../shared/schoolMicrogames.js';
+import {
+  OFFICE_JOB_TERMINAL_ITEM_ID,
+  OFFICE_JOB_TERMINAL_RADIUS,
+  canPlayerWorkOfficeJob,
+  getOfficeJobDefinition,
+  getOfficeJobReward
+} from '../shared/officeJobs.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../shared/tileFootprint.js';
 import { resolveRentIntroPlan } from '../shared/rentIntro.js';
 import {
@@ -77,6 +84,7 @@ import {
   SKILL_IDS,
   STRENGTH_SNATCH_XP,
   applySkillXpToPlayer,
+  getPlayerSkillXp,
   normalizeSkillId
 } from '../shared/skills.js';
 import {
@@ -1542,6 +1550,97 @@ export class NpcServiceMock {
     return {
       ok: true,
       gameId: normalizedGameId,
+      money: access.player.money,
+      moneyAwarded,
+      xp: reward.xp,
+      message: rewardText,
+      skillAward
+    };
+  }
+
+  getOfficeJobComputerForPlayer(player, requestedPlacementId = '') {
+    if (!player) {
+      return null;
+    }
+
+    const normalizedPlacementId = typeof requestedPlacementId === 'string'
+      ? requestedPlacementId.trim()
+      : '';
+    const candidates = normalizedPlacementId
+      ? [this.worldState.getPlacement(normalizedPlacementId)].filter(Boolean)
+      : this.worldState.getPlacements();
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const placement of candidates) {
+      if (
+        placement?.layer !== 'prop'
+        || placement.itemId !== OFFICE_JOB_TERMINAL_ITEM_ID
+        || !Array.isArray(placement.position)
+      ) {
+        continue;
+      }
+
+      const radius = Math.max(
+        1.5,
+        Number(placement.interactable?.radius ?? getBuilderItemById(placement.itemId)?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
+      ) + 1.25;
+      const distance = distance2D(player.x, player.z, placement.position[0], placement.position[1]);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = placement;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getOfficeJobAccess(placementId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot work office jobs right now.' };
+    }
+
+    const terminal = this.getOfficeJobComputerForPlayer(player, placementId);
+    if (!terminal) {
+      return { ok: false, error: 'Move closer to the office computer.' };
+    }
+
+    return { ok: true, player, terminal };
+  }
+
+  async completeOfficeJob(placementId = '', jobId = '', _result = {}) {
+    const access = this.getOfficeJobAccess(placementId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const job = getOfficeJobDefinition(jobId);
+    if (!job) {
+      return { ok: false, error: 'That office job is not available.' };
+    }
+
+    const intelligence = getPlayerSkillXp(access.player, SKILL_IDS.intelligence);
+    if (!canPlayerWorkOfficeJob(intelligence, job)) {
+      return { ok: false, error: `${job.roleLabel} requires ${job.intelligenceRequired} Intelligence.` };
+    }
+
+    const reward = getOfficeJobReward(job.id);
+    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
+    access.player.money = Math.trunc(Number(access.player.money ?? 0) || 0) + moneyAwarded;
+    const skillAward = reward.xp > 0
+      ? this.awardPlayerSkillXp(access.player, reward.skill, reward.xp)
+      : null;
+    const rewardText = [
+      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
+      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
+    ].filter(Boolean).join('  ');
+    this.emit();
+    return {
+      ok: true,
+      jobId: job.id,
+      gameId: job.gameId,
+      placementId: access.terminal.id,
       money: access.player.money,
       moneyAwarded,
       xp: reward.xp,

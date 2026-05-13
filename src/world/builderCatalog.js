@@ -433,8 +433,8 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     createVisual: createStandingDeskComputerVisual,
     interactable: {
       label: 'Standing Desk Computer',
-      prompt: 'Work on computer',
-      actionText: 'Type up some work.',
+      prompt: 'Open job board',
+      actionText: 'Opened the office job board.',
       radius: 3.8,
       localOffset: [0, 0.1],
       workoutType: 'typing',

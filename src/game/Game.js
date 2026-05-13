@@ -106,8 +106,19 @@ import {
 } from '../shared/schoolMicrogames.js';
 import {
   SKILL_DEFINITIONS,
+  SKILL_IDS,
+  getPlayerSkillXp,
   getPlayerSkillsSnapshot
 } from '../shared/skills.js';
+import {
+  OFFICE_JOB_GAME_IDS,
+  OFFICE_JOB_IDS,
+  OFFICE_JOB_TERMINAL_ITEM_ID,
+  canPlayerWorkOfficeJob,
+  getOfficeJobDefinition,
+  getOfficeJobDefinitionByGameId,
+  listOfficeJobDefinitions
+} from '../shared/officeJobs.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -682,6 +693,7 @@ export class Game {
     this.schoolMicrogameSequence = 0;
     this.schoolMicrogameRandomCursor = 0;
     this.schoolTeacherPreviewRenderer = null;
+    this.officeJobPlacementId = '';
     this.adminPromptOpen = false;
     this.adminPromptActiveTab = 'new';
     this.adminPromptTasks = [];
@@ -5371,6 +5383,176 @@ export class Game {
     return games[index]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
   }
 
+  isOfficeJobComputerInteractable(interactable = null) {
+    return String(interactable?.itemId ?? '').trim() === OFFICE_JOB_TERMINAL_ITEM_ID;
+  }
+
+  getOfficeJobIntelligence() {
+    return getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.intelligence);
+  }
+
+  getOfficeJobMenuJobs() {
+    const intelligence = this.getOfficeJobIntelligence();
+    return listOfficeJobDefinitions().map((job) => ({
+      ...job,
+      unlocked: canPlayerWorkOfficeJob(intelligence, job)
+    }));
+  }
+
+  createOfficeJobMenuState() {
+    return {
+      id: `office_jobs_${++this.schoolMicrogameSequence}`,
+      context: 'office-job',
+      phase: 'menu',
+      round: {
+        gameId: 'office-job-menu',
+        title: 'Office Computer',
+        eyebrow: 'Work Terminal',
+        description: 'Choose a job tier and complete the task with no mistakes.',
+        accent: '#8cd6ff',
+        secondaryAccent: '#73f2d0',
+        icon: 'JOB',
+        rewardMoney: 0,
+        rewardXp: 0
+      },
+      data: {
+        intelligence: this.getOfficeJobIntelligence(),
+        jobs: this.getOfficeJobMenuJobs()
+      },
+      remainingMs: 0,
+      message: 'Choose work as Janitor, Office Manager, or CEO.',
+      resultTitle: '',
+      resultDetail: '',
+      preview: false
+    };
+  }
+
+  openOfficeJobMenu(interaction = null) {
+    this.closePhoneMenu();
+    const placementId = String(interaction?.placementId ?? this.officeJobPlacementId ?? '').trim();
+    this.officeJobPlacementId = placementId;
+    this.schoolMicrogameNpcId = '';
+    this.schoolMicrogameNpcName = 'Office Computer';
+    this.schoolMicrogameNpcModelId = 'martha';
+    this.schoolMicrogamePreviewMode = false;
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameRequestInFlight = false;
+    this.schoolMicrogame = this.createOfficeJobMenuState();
+    this.hud.hideLoading();
+    this.hud.setSchoolMicrogameState({
+      visible: true,
+      game: this.schoolMicrogame,
+      loading: false,
+      error: ''
+    });
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
+  }
+
+  createOfficeJobRound(jobId = OFFICE_JOB_IDS.janitor) {
+    const job = getOfficeJobDefinition(jobId) ?? getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
+    const round = {
+      ...job,
+      jobId: job.id,
+      gameId: job.gameId,
+      title: `Work as ${job.roleLabel}`,
+      shortTitle: job.shortTitle,
+      eyebrow: job.eyebrow ?? 'Office Job',
+      description: job.description,
+      prompt: job.prompt,
+      durationMs: job.id === OFFICE_JOB_IDS.ceo ? 12000 : 7000,
+      rewardMoney: job.rewardMoney,
+      rewardXp: job.rewardXp,
+      intelligenceRequired: job.intelligenceRequired,
+      accent: job.accent,
+      secondaryAccent: job.secondaryAccent,
+      icon: job.icon
+    };
+    const data = {};
+
+    if (job.id === OFFICE_JOB_IDS.janitor) {
+      const targetStart = 0.58 + this.schoolRandom() * 0.17;
+      round.targetStart = targetStart;
+      round.targetEnd = Math.min(0.92, targetStart + 0.16);
+      data.marker = this.schoolRandom() * 0.16;
+      data.direction = 1;
+      data.speed = 1.08 + this.schoolRandom() * 0.32;
+      data.thrown = false;
+    } else if (job.id === OFFICE_JOB_IDS.officeManager) {
+      const targetStart = 0.72 + this.schoolRandom() * 0.04;
+      round.targetStart = targetStart;
+      round.targetEnd = Math.min(0.9, targetStart + 0.11);
+      data.fill = 0;
+      data.filling = false;
+      data.fillSpeed = 0.47 + this.schoolRandom() * 0.08;
+    } else if (job.id === OFFICE_JOB_IDS.ceo) {
+      round.targetProgress = 100;
+      data.progress = 0;
+      data.sleeping = false;
+      data.bossLooking = false;
+      data.bossMode = 'away';
+      data.nextLookAt = performance.now() + this.schoolRandomInt(1900, 2800);
+      data.turnStartedAt = 0;
+      data.turnEndsAt = 0;
+      data.lookStartedAt = 0;
+      data.lookEndsAt = 0;
+    }
+
+    return { round, data };
+  }
+
+  prepareOfficeJobMicrogame(jobId = OFFICE_JOB_IDS.janitor, { visible = true } = {}) {
+    const job = getOfficeJobDefinition(jobId);
+    if (!job) {
+      this.hud.showToast('That office job is not available.');
+      return false;
+    }
+
+    const intelligence = this.getOfficeJobIntelligence();
+    if (!canPlayerWorkOfficeJob(intelligence, job)) {
+      const required = Math.max(0, Math.floor(Number(job.intelligenceRequired ?? 0) || 0));
+      const message = `${job.roleLabel} requires ${required} Intelligence.`;
+      if (this.schoolMicrogame?.context === 'office-job') {
+        this.schoolMicrogame.data = {
+          ...(this.schoolMicrogame.data ?? {}),
+          intelligence,
+          jobs: this.getOfficeJobMenuJobs()
+        };
+        this.schoolMicrogame.message = message;
+      }
+      this.hud.showToast(message);
+      this.syncSchoolMicrogameHud();
+      return false;
+    }
+
+    this.schoolMicrogameSequence += 1;
+    this.schoolMicrogameRandomCursor = (Date.now() + this.schoolMicrogameSequence * 2654435761) >>> 0;
+    const { round, data } = this.createOfficeJobRound(job.id);
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameLastTickAt = performance.now();
+    this.schoolMicrogame = {
+      id: `office_${round.jobId}_${this.schoolMicrogameSequence}`,
+      context: 'office-job',
+      phase: 'ready',
+      round,
+      data,
+      remainingMs: round.durationMs,
+      message: `${round.description} Perfect work only.`,
+      resultTitle: '',
+      resultDetail: '',
+      preview: false
+    };
+    this.hud.setSchoolMicrogameState({
+      visible,
+      game: this.schoolMicrogame,
+      loading: false,
+      error: ''
+    });
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
+    return true;
+  }
+
   schoolRandom() {
     this.schoolMicrogameRandomCursor = (Math.imul(this.schoolMicrogameRandomCursor || 1, 1664525) + 1013904223) >>> 0;
     return this.schoolMicrogameRandomCursor / 4294967296;
@@ -5632,6 +5814,21 @@ export class Game {
       this.schoolMicrogame.data.lastFlipEndsAt = 0;
       this.schoolMicrogame.data.completing = false;
       this.schoolMicrogame.data.completeAt = 0;
+    } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.janitor) {
+      this.schoolMicrogame.data.thrown = false;
+    } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+      this.schoolMicrogame.data.fill = 0;
+      this.schoolMicrogame.data.filling = false;
+    } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.ceo) {
+      this.schoolMicrogame.data.progress = 0;
+      this.schoolMicrogame.data.sleeping = false;
+      this.schoolMicrogame.data.bossLooking = false;
+      this.schoolMicrogame.data.bossMode = 'away';
+      this.schoolMicrogame.data.nextLookAt = now + this.schoolRandomInt(1900, 2800);
+      this.schoolMicrogame.data.turnStartedAt = 0;
+      this.schoolMicrogame.data.turnEndsAt = 0;
+      this.schoolMicrogame.data.lookStartedAt = 0;
+      this.schoolMicrogame.data.lookEndsAt = 0;
     }
     this.input.clearKeyPressQueue?.();
     this.schoolMicrogameLastTickAt = now;
@@ -5750,6 +5947,11 @@ export class Game {
     this.schoolMicrogame.resultDetail = resultDetail || (success ? 'Clean work.' : 'The bell got you.');
     this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
     this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogame.data = {
+      ...(this.schoolMicrogame.data ?? {}),
+      sleeping: false,
+      filling: false
+    };
 
     if (!success) {
       this.playSoundEffect(this.playingCardSound);
@@ -5761,21 +5963,35 @@ export class Game {
     this.hud.playTaskConfetti();
     this.syncSchoolMicrogameHud();
 
-    if (this.schoolMicrogamePreviewMode || typeof this.npcService?.completeSchoolMicrogame !== 'function') {
+    const completingOfficeJob = this.schoolMicrogame.context === 'office-job';
+    const canCompleteReward = completingOfficeJob
+      ? typeof this.npcService?.completeOfficeJob === 'function'
+      : typeof this.npcService?.completeSchoolMicrogame === 'function';
+    if (this.schoolMicrogamePreviewMode || !canCompleteReward) {
       return;
     }
 
     this.schoolMicrogameRequestInFlight = true;
     this.syncSchoolMicrogameHud({ loading: true, error: '' });
     try {
-      const result = await this.npcService.completeSchoolMicrogame(
-        this.schoolMicrogameNpcId,
-        this.schoolMicrogame.round?.gameId,
-        { score: 1 }
-      );
+      const officeJob = this.schoolMicrogame.context === 'office-job'
+        ? (getOfficeJobDefinition(this.schoolMicrogame.round?.jobId) ?? getOfficeJobDefinitionByGameId(this.schoolMicrogame.round?.gameId))
+        : null;
+      const result = officeJob && typeof this.npcService?.completeOfficeJob === 'function'
+        ? await this.npcService.completeOfficeJob(
+          this.officeJobPlacementId,
+          officeJob.id,
+          { score: 1 }
+        )
+        : await this.npcService.completeSchoolMicrogame(
+          this.schoolMicrogameNpcId,
+          this.schoolMicrogame.round?.gameId,
+          { score: 1 }
+        );
       if (!result?.ok) {
-        this.syncSchoolMicrogameHud({ loading: false, error: result?.error ?? 'School reward failed.' });
-        this.hud.showToast(result?.error ?? 'School reward failed.');
+        const fallbackError = officeJob ? 'Office payroll failed.' : 'School reward failed.';
+        this.syncSchoolMicrogameHud({ loading: false, error: result?.error ?? fallbackError });
+        this.hud.showToast(result?.error ?? fallbackError);
         return;
       }
 
@@ -5788,11 +6004,21 @@ export class Game {
       this.schoolMicrogame.resultDetail = rewardText;
       this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
       this.hud.showToast(rewardText);
+      if (result.money !== undefined) {
+        this.phoneWalletState = {
+          ...this.phoneWalletState,
+          cash: result.money
+        };
+        this.refreshPhoneWalletHud();
+      }
       this.syncSchoolMicrogameHud({ loading: false, error: '' });
     } catch (error) {
       console.warn('[SchoolMicrogame] Completion failed.', error);
-      this.syncSchoolMicrogameHud({ loading: false, error: 'School reward failed.' });
-      this.hud.showToast('School reward failed.');
+      const fallbackError = this.schoolMicrogame?.context === 'office-job'
+        ? 'Office payroll failed.'
+        : 'School reward failed.';
+      this.syncSchoolMicrogameHud({ loading: false, error: fallbackError });
+      this.hud.showToast(fallbackError);
     } finally {
       this.schoolMicrogameRequestInFlight = false;
       this.syncSchoolMicrogameHud();
@@ -5805,23 +6031,44 @@ export class Game {
       return;
     }
 
+    if (action === 'office:menu') {
+      this.openOfficeJobMenu();
+      return;
+    }
+
+    if (action.startsWith('office:select:')) {
+      this.prepareOfficeJobMicrogame(action.slice('office:select:'.length), { visible: true });
+      return;
+    }
+
     if (action === 'start') {
       this.beginSchoolMicrogame();
       return;
     }
 
     if (action === 'restart') {
-      this.prepareSchoolMicrogame(game.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID, { visible: true });
+      if (game.context === 'office-job') {
+        this.prepareOfficeJobMicrogame(game.round?.jobId ?? OFFICE_JOB_IDS.janitor, { visible: true });
+      } else {
+        this.prepareSchoolMicrogame(game.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID, { visible: true });
+      }
       return;
     }
 
     if (action === 'hold:start') {
       this.schoolMicrogameHoldActive = true;
+      if (game.phase === 'playing' && game.round?.gameId === OFFICE_JOB_GAME_IDS.ceo) {
+        game.data.sleeping = true;
+        this.syncSchoolMicrogameHud();
+      }
       return;
     }
 
     if (action === 'hold:end') {
       this.schoolMicrogameHoldActive = false;
+      if (game.phase === 'playing' && game.round?.gameId === OFFICE_JOB_GAME_IDS.ceo) {
+        game.data.sleeping = false;
+      }
       this.syncSchoolMicrogameHud();
       return;
     }
@@ -6056,7 +6303,56 @@ export class Game {
     if (gameId === SCHOOL_MICROGAME_IDS.scantron && action.startsWith('bubble:')) {
       const [, rowText, option] = action.split(':');
       this.fillScantronBubble(Math.floor(Number(rowText)), option);
+      return;
     }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.janitor && action === 'office:toss') {
+      this.finishOfficeTrashToss();
+      return;
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+      if (action === 'office:coffee:start') {
+        game.data.filling = true;
+        game.message = 'Pouring. Stop on the marked band.';
+        this.playSoundEffect(this.typingOnKeyboardSound);
+        this.syncSchoolMicrogameHud();
+      } else if (action === 'office:coffee:stop') {
+        this.finishOfficeCoffeeFill();
+      }
+    }
+  }
+
+  finishOfficeTrashToss() {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== OFFICE_JOB_GAME_IDS.janitor || game.phase !== 'playing' || game.data.thrown) {
+      return;
+    }
+
+    const marker = Number(game.data.marker ?? 0);
+    const inside = marker >= Number(game.round.targetStart ?? 0) && marker <= Number(game.round.targetEnd ?? 0);
+    game.data.thrown = true;
+    void this.finishSchoolMicrogame(
+      inside,
+      inside ? 'Clean Toss' : 'Missed Basket',
+      inside ? 'Trash lands cleanly in the basket.' : 'That miss counts as a mistake.'
+    );
+  }
+
+  finishOfficeCoffeeFill() {
+    const game = this.schoolMicrogame;
+    if (!game || game.round?.gameId !== OFFICE_JOB_GAME_IDS.officeManager || game.phase !== 'playing') {
+      return;
+    }
+
+    game.data.filling = false;
+    const fill = Number(game.data.fill ?? 0);
+    const inside = fill >= Number(game.round.targetStart ?? 0) && fill <= Number(game.round.targetEnd ?? 0);
+    void this.finishSchoolMicrogame(
+      inside,
+      inside ? 'Perfect Pour' : 'Bad Pour',
+      inside ? 'Coffee hits the perfect line.' : 'The cup missed the perfect fill line.'
+    );
   }
 
   pushLockerComboDigit(digit = '') {
@@ -6311,6 +6607,12 @@ export class Game {
         void this.finishSchoolMicrogame(false, 'Unfinished', 'The bell rang before the sentence was finished.');
       } else if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
         void this.finishSchoolMicrogame(false, 'Still Hidden', 'The last pairs stayed face down when the bell rang.');
+      } else if (gameId === OFFICE_JOB_GAME_IDS.janitor) {
+        void this.finishSchoolMicrogame(false, 'No Toss', 'The trash never made it to the basket.');
+      } else if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+        void this.finishSchoolMicrogame(false, 'Cold Coffee', 'The pour took too long.');
+      } else if (gameId === OFFICE_JOB_GAME_IDS.ceo) {
+        void this.finishSchoolMicrogame(false, 'Still Awake', 'The nap never got deep enough.');
       } else {
         void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
       }
@@ -6399,6 +6701,30 @@ export class Game {
           this.fillScantronBubble(row, option);
           return;
         }
+      }
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.janitor) {
+      if (this.input.consume('Space') || this.input.consume('Enter') || this.input.consume('KeyE')) {
+        this.finishOfficeTrashToss();
+      }
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+      if (this.input.consume('Space') || this.input.consume('Enter') || this.input.consume('KeyE')) {
+        if (game.data.filling) {
+          this.finishOfficeCoffeeFill();
+        } else {
+          this.handlePlayingSchoolMicrogameAction('office:coffee:start');
+        }
+      }
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.ceo) {
+      const sleeping = this.input.isPressed('Space') || this.input.isPressed('Enter');
+      if (game.data.sleeping !== sleeping) {
+        game.data.sleeping = sleeping;
+        this.schoolMicrogameHoldActive = sleeping;
       }
     }
   }
@@ -6531,6 +6857,87 @@ export class Game {
         game.data.marker = nextMarker;
       }
     }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.janitor && !game.data.thrown) {
+      const nextMarker = Number(game.data.marker ?? 0) + Number(game.data.direction ?? 1) * Number(game.data.speed ?? 1) * dt;
+      if (nextMarker >= 1) {
+        game.data.marker = 1;
+        game.data.direction = -1;
+      } else if (nextMarker <= 0) {
+        game.data.marker = 0;
+        game.data.direction = 1;
+      } else {
+        game.data.marker = nextMarker;
+      }
+      return;
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+      if (game.data.filling) {
+        game.data.fill = Math.min(1.05, Number(game.data.fill ?? 0) + Number(game.data.fillSpeed ?? 0.5) * dt);
+        if (game.data.fill > 1) {
+          void this.finishSchoolMicrogame(false, 'Overflow', 'The coffee spills over the rim.');
+        }
+      }
+      return;
+    }
+
+    if (gameId === OFFICE_JOB_GAME_IDS.ceo) {
+      this.updateOfficeCeoNapState(game, dt, now);
+    }
+  }
+
+  updateOfficeCeoNapState(game = this.schoolMicrogame, dt = 0, now = performance.now()) {
+    if (!game || game.round?.gameId !== OFFICE_JOB_GAME_IDS.ceo || game.phase !== 'playing') {
+      return false;
+    }
+
+    const bossMode = String(game.data.bossMode ?? (game.data.bossLooking ? 'looking' : 'away'));
+    let changed = false;
+    if (bossMode === 'away' && now >= Number(game.data.nextLookAt ?? 0)) {
+      game.data.bossMode = 'turning';
+      game.data.bossLooking = false;
+      game.data.turnStartedAt = now;
+      game.data.turnEndsAt = now + this.schoolRandomInt(520, 760);
+      game.message = 'Someone is coming. Wake up.';
+      changed = true;
+    } else if (bossMode === 'turning' && now >= Number(game.data.turnEndsAt ?? 0)) {
+      game.data.bossMode = 'looking';
+      game.data.bossLooking = true;
+      game.data.lookStartedAt = now;
+      game.data.lookEndsAt = now + this.schoolRandomInt(900, 1300);
+      game.message = 'Eyes on you.';
+      changed = true;
+    } else if (bossMode === 'looking' && now >= Number(game.data.lookEndsAt ?? 0)) {
+      game.data.bossMode = 'away';
+      game.data.bossLooking = false;
+      game.data.nextLookAt = now + this.schoolRandomInt(1400, 2300);
+      game.message = 'Coast is clear. Sleep.';
+      changed = true;
+    }
+
+    const sleeping = Boolean(game.data.sleeping || this.schoolMicrogameHoldActive);
+    game.data.sleeping = sleeping;
+    const nextBossMode = String(game.data.bossMode ?? bossMode);
+    if (sleeping && nextBossMode !== 'away') {
+      void this.finishSchoolMicrogame(false, 'Caught Napping', 'You were asleep while someone was looking.');
+      return true;
+    }
+
+    if (sleeping) {
+      game.data.progress = Math.min(100, Number(game.data.progress ?? 0) + dt * 22);
+      if (game.data.progress >= Number(game.round.targetProgress ?? 100)) {
+        void this.finishSchoolMicrogame(true, 'Rested', 'Executive nap completed with no witnesses.');
+        return true;
+      }
+      if (!changed) {
+        game.message = 'Sleeping. Keep an eye on the door.';
+      }
+    } else if (Number(game.data.progress ?? 0) > 0) {
+      game.data.progress = Math.max(0, Number(game.data.progress ?? 0) - dt * 2.5);
+    }
+
+    return changed;
   }
 
   resolveRotatedOffsetPosition(originPosition, rotationQuarterTurns = 0, offset = [0, 0]) {
@@ -9750,6 +10157,20 @@ export class Game {
       this.hud.setPrompt(schoolMicrogameInteraction);
       if (interactPressed) {
         this.openSchoolMicrogame(schoolMicrogameInteraction);
+      }
+      return;
+    }
+
+    if (this.isOfficeJobComputerInteractable(nearest)) {
+      const officeComputerInteraction = {
+        ...nearest,
+        kind: 'office-job-terminal',
+        prompt: 'Open job board',
+        actionText: 'Opened the office job board.'
+      };
+      this.hud.setPrompt(officeComputerInteraction);
+      if (interactPressed) {
+        this.openOfficeJobMenu(officeComputerInteraction);
       }
       return;
     }

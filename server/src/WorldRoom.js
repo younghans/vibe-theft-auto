@@ -73,12 +73,20 @@ import {
   normalizeSchoolMicrogameId
 } from '../../src/shared/schoolMicrogames.js';
 import {
+  OFFICE_JOB_TERMINAL_ITEM_ID,
+  OFFICE_JOB_TERMINAL_RADIUS,
+  canPlayerWorkOfficeJob,
+  getOfficeJobDefinition,
+  getOfficeJobReward
+} from '../../src/shared/officeJobs.js';
+import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
   SKILL_IDS,
   STRENGTH_SNATCH_XP,
   applySkillXpToPlayer,
+  getPlayerSkillXp,
   normalizeSkillId
 } from '../../src/shared/skills.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
@@ -692,6 +700,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('schoolMicrogame:complete', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleSchoolMicrogameComplete(client, message));
+    });
+
+    this.onMessage('officeJob:complete', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleOfficeJobComplete(client, message));
     });
 
     this.onMessage('combat:pickupRequest', (client, message) => {
@@ -1716,6 +1728,92 @@ export class WorldRoom extends Room {
     );
     return {
       gameId,
+      money: player.money,
+      moneyAwarded,
+      xp: reward.xp,
+      message: rewardText,
+      skillAward
+    };
+  }
+
+  getOfficeJobComputerForPlayer(player, requestedPlacementId = '') {
+    if (!player) {
+      return null;
+    }
+
+    const normalizedPlacementId = typeof requestedPlacementId === 'string'
+      ? requestedPlacementId.trim()
+      : '';
+    const candidates = normalizedPlacementId
+      ? [this.worldState.getPlacement(normalizedPlacementId)].filter(Boolean)
+      : this.worldState.getPlacements();
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const placement of candidates) {
+      if (
+        placement?.layer !== 'prop'
+        || placement.itemId !== OFFICE_JOB_TERMINAL_ITEM_ID
+        || !Array.isArray(placement.position)
+      ) {
+        continue;
+      }
+
+      const radius = Math.max(
+        1.5,
+        Number(placement.interactable?.radius ?? getBuilderItemById(placement.itemId)?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
+      ) + 1.25;
+      const distance = distance2D(player.x, player.z, placement.position[0], placement.position[1]);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = placement;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertOfficeJobAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot work office jobs right now.');
+    }
+
+    const terminal = this.getOfficeJobComputerForPlayer(player, message?.placementId);
+    if (!terminal) {
+      throw new Error('Move closer to the office computer.');
+    }
+
+    return { player, terminal };
+  }
+
+  handleOfficeJobComplete(client, message = {}) {
+    const { player, terminal } = this.assertOfficeJobAccess(client, message);
+    const job = getOfficeJobDefinition(message?.jobId);
+    if (!job) {
+      throw new Error('That office job is not available.');
+    }
+
+    const intelligence = getPlayerSkillXp(player, SKILL_IDS.intelligence);
+    if (!canPlayerWorkOfficeJob(intelligence, job)) {
+      throw new Error(`${job.roleLabel} requires ${job.intelligenceRequired} Intelligence.`);
+    }
+
+    const reward = getOfficeJobReward(job.id);
+    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) + moneyAwarded;
+    const skillAward = reward.xp > 0
+      ? this.awardPlayerSkillXp(player, reward.skill, reward.xp)
+      : null;
+    const rewardText = [
+      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
+      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
+    ].filter(Boolean).join('  ');
+    return {
+      ok: true,
+      jobId: job.id,
+      gameId: job.gameId,
+      placementId: terminal.id,
       money: player.money,
       moneyAwarded,
       xp: reward.xp,
