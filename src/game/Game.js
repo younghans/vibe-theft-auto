@@ -5995,12 +5995,8 @@ export class Game {
         return;
       }
 
-      const money = Math.max(0, Math.floor(Number(result.moneyAwarded ?? result.money ?? this.schoolMicrogame.round?.rewardMoney ?? 0) || 0));
       const xp = Math.max(0, Math.floor(Number(result.xp ?? this.schoolMicrogame.round?.rewardXp ?? 0) || 0));
-      const rewardText = [
-        money > 0 ? `+$${money}` : '',
-        xp > 0 ? `+${xp} Intelligence XP` : ''
-      ].filter(Boolean).join('  ');
+      const rewardText = xp > 0 ? `+${xp} Intelligence XP` : 'Nice work.';
       this.schoolMicrogame.resultDetail = rewardText;
       this.schoolMicrogame.message = this.schoolMicrogame.resultDetail;
       this.hud.showToast(rewardText);

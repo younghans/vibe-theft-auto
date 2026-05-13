@@ -695,10 +695,8 @@ function createSchoolGameButton(action, label, className = '', { disabled = fals
 }
 
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
-  const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
   return [
-    money > 0 ? `${prefix ? '+' : ''}$${money}` : '',
     xp > 0 ? `${prefix ? '+' : ''}${xp} Intelligence XP` : ''
   ].filter(Boolean).join(' / ');
 }

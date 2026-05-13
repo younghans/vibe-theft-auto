@@ -1533,11 +1533,9 @@ export class NpcServiceMock {
     }
 
     const reward = getSchoolMicrogameReward(normalizedGameId);
-    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
-    access.player.money = Math.trunc(Number(access.player.money ?? 0) || 0) + moneyAwarded;
+    const moneyAwarded = 0;
     const skillAward = this.awardPlayerSkillXp(access.player, SKILL_IDS.intelligence, reward.xp);
     const rewardText = [
-      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
     ].filter(Boolean).join('  ');
     this.setNpcChatPhase(

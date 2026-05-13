@@ -20,7 +20,7 @@ export const SCHOOL_MICROGAME_IDS = Object.freeze({
 export const SCHOOL_MICROGAME_DEFAULT_ID = SCHOOL_MICROGAME_IDS.popQuizPanic;
 export const SCHOOL_MICROGAME_ALL_ID = 'all';
 export const SCHOOL_MICROGAME_DEFAULT_REWARD_XP = 8;
-export const SCHOOL_MICROGAME_DEFAULT_REWARD_MONEY = 12;
+export const SCHOOL_MICROGAME_DEFAULT_REWARD_MONEY = 0;
 export const SCHOOL_POP_QUIZ_ROUND_COUNT = 3;
 
 const QUESTION_BANK = Object.freeze([
@@ -79,7 +79,94 @@ const QUESTION_BANK = Object.freeze([
   Object.freeze({ question: 'Which planet has rings most famously?', answers: Object.freeze(['Mars', 'Saturn', 'Mercury']), correctIndex: 1 }),
   Object.freeze({ question: 'Which word is a contraction?', answers: Object.freeze(['Cannot', 'Cant', "Can't"]), correctIndex: 2 }),
   Object.freeze({ question: 'What is 6 x 12?', answers: Object.freeze(['62', '72', '82']), correctIndex: 1 }),
-  Object.freeze({ question: 'Which fraction equals 0.5?', answers: Object.freeze(['1/2', '1/3', '2/3']), correctIndex: 0 })
+  Object.freeze({ question: 'Which fraction equals 0.5?', answers: Object.freeze(['1/2', '1/3', '2/3']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 8 x 9?', answers: Object.freeze(['63', '72', '81']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 45 divided by 5?', answers: Object.freeze(['8', '9', '10']), correctIndex: 1 }),
+  Object.freeze({ question: 'Solve: 16 + 27', answers: Object.freeze(['41', '43', '45']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 100 minus 37?', answers: Object.freeze(['53', '63', '73']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 14 x 3?', answers: Object.freeze(['38', '42', '46']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 81 divided by 9?', answers: Object.freeze(['7', '8', '9']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 2 to the 5th power?', answers: Object.freeze(['16', '25', '32']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which fraction equals 0.25?', answers: Object.freeze(['1/2', '1/4', '3/4']), correctIndex: 1 }),
+  Object.freeze({ question: 'How many items are in three dozen?', answers: Object.freeze(['24', '36', '48']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the area of a 5 by 6 rectangle?', answers: Object.freeze(['11', '22', '30']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is one third of 27?', answers: Object.freeze(['6', '9', '12']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 2.5 + 1.5?', answers: Object.freeze(['3', '4', '5']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 9 x 9?', answers: Object.freeze(['72', '81', '90']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 120 divided by 4?', answers: Object.freeze(['20', '30', '40']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the median of 3, 7, and 9?', answers: Object.freeze(['3', '7', '9']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which value is an integer?', answers: Object.freeze(['4.5', '7', '1/2']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 25 percent of 200?', answers: Object.freeze(['25', '50', '75']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 6 squared?', answers: Object.freeze(['12', '30', '36']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which number is even?', answers: Object.freeze(['17', '24', '31']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 13 x 4?', answers: Object.freeze(['42', '52', '62']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 99 + 1?', answers: Object.freeze(['90', '100', '101']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 72 minus 18?', answers: Object.freeze(['44', '54', '64']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which comparison is true?', answers: Object.freeze(['7 > 9', '12 < 10', '15 > 13']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is the next number: 2, 4, 8, 16?', answers: Object.freeze(['24', '30', '32']), correctIndex: 2 }),
+  Object.freeze({ question: 'What is 1 kilometer in meters?', answers: Object.freeze(['10', '100', '1,000']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which prefix means before?', answers: Object.freeze(['Pre', 'Post', 'Sub']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is a synonym for happy?', answers: Object.freeze(['Joyful', 'Nervous', 'Bitter']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is the antonym of shallow?', answers: Object.freeze(['Deep', 'Narrow', 'Smooth']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is an adverb?', answers: Object.freeze(['Softly', 'Table', 'Green']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which punctuation separates items in a list?', answers: Object.freeze(['Comma', 'Colon', 'Dash']), correctIndex: 0 }),
+  Object.freeze({ question: 'What marks the exact words someone says?', answers: Object.freeze(['Quotation marks', 'Parentheses', 'Hyphens']), correctIndex: 0 }),
+  Object.freeze({ question: "What does the apostrophe in don't show?", answers: Object.freeze(['A missing letter', 'A plural word', 'A question']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the subject in: The student reads?', answers: Object.freeze(['Student', 'Reads', 'The']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is a homophone for one?', answers: Object.freeze(['Won', 'Own', 'Open']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word is a proper noun?', answers: Object.freeze(['River', 'Tuesday', 'Mountain']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which sentence is in future tense?', answers: Object.freeze(['I walked', 'I walk', 'I will walk']), correctIndex: 2 }),
+  Object.freeze({ question: 'Which word is possessive?', answers: Object.freeze(["Teacher's", 'Teachers', 'Teaching']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is a group of lines in a poem called?', answers: Object.freeze(['Stanza', 'Chapter', 'Index']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which word best completes: She ___ to class?', answers: Object.freeze(['Go', 'Goes', 'Going']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which word is an interjection?', answers: Object.freeze(['Wow', 'Chair', 'Walked']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which sentence is a command?', answers: Object.freeze(['Close the door', 'The door is blue', 'Why is it open']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the process plants use to make food?', answers: Object.freeze(['Photosynthesis', 'Evaporation', 'Condensation']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is liquid changing into gas called?', answers: Object.freeze(['Melting', 'Evaporation', 'Freezing']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is solid changing into liquid called?', answers: Object.freeze(['Melting', 'Condensing', 'Depositing']), correctIndex: 0 }),
+  Object.freeze({ question: 'Earth revolves around what?', answers: Object.freeze(['The sun', 'The moon', 'Mars']), correctIndex: 0 }),
+  Object.freeze({ question: 'The moon shines mostly because it reflects what?', answers: Object.freeze(['Sunlight', 'City lights', 'Lightning']), correctIndex: 0 }),
+  Object.freeze({ question: 'What system supports the body with bones?', answers: Object.freeze(['Skeletal', 'Digestive', 'Nervous']), correctIndex: 0 }),
+  Object.freeze({ question: 'What force slows sliding objects?', answers: Object.freeze(['Friction', 'Gravity', 'Electricity']), correctIndex: 0 }),
+  Object.freeze({ question: 'Who studies weather?', answers: Object.freeze(['Meteorologist', 'Cartographer', 'Archaeologist']), correctIndex: 0 }),
+  Object.freeze({ question: 'At sea level, water boils at what Celsius temperature?', answers: Object.freeze(['0', '50', '100']), correctIndex: 2 }),
+  Object.freeze({ question: 'What element has the symbol O?', answers: Object.freeze(['Gold', 'Oxygen', 'Iron']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the center of an atom called?', answers: Object.freeze(['Nucleus', 'Crust', 'Orbit']), correctIndex: 0 }),
+  Object.freeze({ question: 'What does a simple circuit need to work?', answers: Object.freeze(['Closed path', 'Broken wire', 'Open switch']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which material is a good conductor?', answers: Object.freeze(['Copper', 'Rubber', 'Plastic']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which is a renewable energy source?', answers: Object.freeze(['Sunlight', 'Coal', 'Gasoline']), correctIndex: 0 }),
+  Object.freeze({ question: 'What part of a plant absorbs water?', answers: Object.freeze(['Roots', 'Flower', 'Stem tip']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which state of matter keeps its own shape?', answers: Object.freeze(['Solid', 'Liquid', 'Gas']), correctIndex: 0 }),
+  Object.freeze({ question: 'What tool measures temperature?', answers: Object.freeze(['Thermometer', 'Ruler', 'Compass']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the first stage of the water cycle?', answers: Object.freeze(['Evaporation', 'Subtraction', 'Multiplication']), correctIndex: 0 }),
+  Object.freeze({ question: 'Who was the first U.S. president?', answers: Object.freeze(['George Washington', 'Thomas Edison', 'Benjamin Franklin']), correctIndex: 0 }),
+  Object.freeze({ question: 'How many states are in the United States?', answers: Object.freeze(['48', '50', '52']), correctIndex: 1 }),
+  Object.freeze({ question: 'What does a map legend explain?', answers: Object.freeze(['Symbols', 'Lunch menus', 'Book chapters']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which direction is between north and east?', answers: Object.freeze(['Northwest', 'Northeast', 'Southeast']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which continent is Egypt in?', answers: Object.freeze(['Africa', 'Asia', 'Europe']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which country is directly north of the United States?', answers: Object.freeze(['Canada', 'Mexico', 'Brazil']), correctIndex: 0 }),
+  Object.freeze({ question: 'What do we call goods brought into a country?', answers: Object.freeze(['Imports', 'Exports', 'Budgets']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which document begins with We the People?', answers: Object.freeze(['U.S. Constitution', 'Bill of Sale', 'Class Schedule']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which branch interprets laws?', answers: Object.freeze(['Judicial', 'Executive', 'Legislative']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the study of Earth places called?', answers: Object.freeze(['Geography', 'Geometry', 'Grammar']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which is a city, state, and country order?', answers: Object.freeze(['Boston, MA, USA', 'USA, Boston, MA', 'MA, USA, Boston']), correctIndex: 0 }),
+  Object.freeze({ question: 'Binary code mainly uses which digits?', answers: Object.freeze(['0 and 1', '2 and 3', '8 and 9']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which key usually makes a capital letter?', answers: Object.freeze(['Shift', 'Space', 'Tab']), correctIndex: 0 }),
+  Object.freeze({ question: 'What does a URL point to?', answers: Object.freeze(['Web address', 'Math angle', 'Music note']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which file type is usually an image?', answers: Object.freeze(['.jpg', '.txt', '.mp3']), correctIndex: 0 }),
+  Object.freeze({ question: 'What does undo usually do?', answers: Object.freeze(['Reverse last action', 'Save a file', 'Open a menu']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which color do blue and yellow make?', answers: Object.freeze(['Green', 'Orange', 'Purple']), correctIndex: 0 }),
+  Object.freeze({ question: 'How many beats are in a whole note?', answers: Object.freeze(['2', '4', '8']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which instrument has keys?', answers: Object.freeze(['Piano', 'Drum', 'Triangle']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the top number of a fraction called?', answers: Object.freeze(['Numerator', 'Denominator', 'Remainder']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is a polygon with eight sides?', answers: Object.freeze(['Octagon', 'Hexagon', 'Decagon']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which unit measures length?', answers: Object.freeze(['Meter', 'Liter', 'Gram']), correctIndex: 0 }),
+  Object.freeze({ question: 'Which unit measures liquid volume?', answers: Object.freeze(['Liter', 'Meter', 'Watt']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is the product of 6 and 7?', answers: Object.freeze(['36', '42', '48']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is the quotient of 56 and 8?', answers: Object.freeze(['6', '7', '8']), correctIndex: 1 }),
+  Object.freeze({ question: 'Which number is divisible by 3?', answers: Object.freeze(['22', '24', '25']), correctIndex: 1 }),
+  Object.freeze({ question: 'What is 10 percent of 90?', answers: Object.freeze(['9', '10', '19']), correctIndex: 0 }),
+  Object.freeze({ question: 'What is 4.2 rounded to the nearest whole number?', answers: Object.freeze(['3', '4', '5']), correctIndex: 1 })
 ]);
 
 const NOTE_SEQUENCES = Object.freeze([
@@ -133,47 +220,11 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     overheadText: 'E to take pop quiz',
     durationMs: 18000,
     rewardXp: 12,
-    rewardMoney: 16,
+    rewardMoney: 0,
     accent: '#38d3ff',
     accent2: '#ffd84f',
     secondaryAccent: '#ffd84f',
     icon: '?',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.lockerCombo,
-    title: 'Locker Combo',
-    shortTitle: 'Locker',
-    subtitle: 'Memorize the flash, then punch it in clean.',
-    description: 'Memorize the flash, then punch in the combo cleanly.',
-    eyebrow: 'Hallway',
-    prompt: 'Crack locker combo',
-    overheadText: 'E to crack locker',
-    durationMs: 8500,
-    rewardXp: 10,
-    rewardMoney: 14,
-    accent: '#f28d35',
-    accent2: '#58e2a5',
-    secondaryAccent: '#58e2a5',
-    icon: '#',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.copyTheNotes,
-    title: 'Copy The Notes',
-    shortTitle: 'Notes',
-    subtitle: 'Repeat the chalkboard sequence fast.',
-    description: 'Repeat the sequence exactly while the board is still readable.',
-    eyebrow: 'Study Sprint',
-    prompt: 'Copy notes',
-    overheadText: 'E to copy notes',
-    durationMs: 8500,
-    rewardXp: 14,
-    rewardMoney: 15,
-    accent: '#7cc7ff',
-    accent2: '#f4d35e',
-    secondaryAccent: '#f4d35e',
-    icon: 'AB',
     skill: 'intelligence'
   }),
   Object.freeze({
@@ -187,7 +238,7 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     overheadText: 'E for risky writing',
     durationMs: 16000,
     rewardXp: 13,
-    rewardMoney: 20,
+    rewardMoney: 0,
     accent: '#ff7a66',
     accent2: '#78f0b5',
     secondaryAccent: '#78f0b5',
@@ -196,92 +247,20 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
   }),
   Object.freeze({
     id: SCHOOL_MICROGAME_IDS.memoryMatch,
-    title: 'Memory Match',
+    title: 'Memory Card Flip',
     shortTitle: 'Memory',
     subtitle: 'Flip cards and clear every matching pair.',
     description: 'Flip two cards at a time, remember the icons, and match the whole grid.',
     eyebrow: 'Brain Training',
-    prompt: 'Start memory match',
-    overheadText: 'E for memory match',
+    prompt: 'Start memory card flip',
+    overheadText: 'E for memory cards',
     durationMs: 45000,
     rewardXp: 16,
-    rewardMoney: 20,
+    rewardMoney: 0,
     accent: '#78f0b5',
     accent2: '#ffcf56',
     secondaryAccent: '#ffcf56',
     icon: 'MEM',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.dodgeTheChalk,
-    title: 'Dodge The Chalk',
-    shortTitle: 'Chalk Dodge',
-    subtitle: 'Three lanes, flying chalk, zero dignity lost.',
-    description: 'Shift lanes and stay sharp while chalk flies across the room.',
-    eyebrow: 'Class Chaos',
-    prompt: 'Dodge chalk',
-    overheadText: 'E to dodge chalk',
-    durationMs: 8500,
-    rewardXp: 10,
-    rewardMoney: 18,
-    accent: '#f5f7fa',
-    accent2: '#ff5f7e',
-    secondaryAccent: '#ff5f7e',
-    icon: '!',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.sortTheBackpack,
-    title: 'Sort The Backpack',
-    shortTitle: 'Backpack',
-    subtitle: 'Toss items into the right bins before the zipper gives up.',
-    description: 'Pick an item, then drop it into the right bin before time runs out.',
-    eyebrow: 'Bag Check',
-    prompt: 'Sort backpack',
-    overheadText: 'E to sort backpack',
-    durationMs: 10000,
-    rewardXp: 12,
-    rewardMoney: 16,
-    accent: '#b983ff',
-    accent2: '#68e08f',
-    secondaryAccent: '#68e08f',
-    icon: 'BAG',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.bellSprint,
-    title: 'Bell Sprint',
-    shortTitle: 'Bell Sprint',
-    subtitle: 'Stop on the classroom door, not the hallway wall.',
-    description: 'Stop the hallway marker inside the classroom-door zone.',
-    eyebrow: 'Final Seconds',
-    prompt: 'Run for bell',
-    overheadText: 'E for bell sprint',
-    durationMs: 7000,
-    rewardXp: 9,
-    rewardMoney: 13,
-    accent: '#ffcf56',
-    accent2: '#4da3ff',
-    secondaryAccent: '#4da3ff',
-    icon: 'GO',
-    skill: 'intelligence'
-  }),
-  Object.freeze({
-    id: SCHOOL_MICROGAME_IDS.scantronSpeedrun,
-    title: 'Scantron Speedrun',
-    shortTitle: 'Scantron',
-    subtitle: 'Bubble the key without melting your pencil.',
-    description: 'Fill the matching bubbles fast, clean, and in order.',
-    eyebrow: 'Test Sheet',
-    prompt: 'Fill scantron',
-    overheadText: 'E for scantron',
-    durationMs: 9000,
-    rewardXp: 15,
-    rewardMoney: 19,
-    accent: '#62d7ff',
-    accent2: '#ff8fb3',
-    secondaryAccent: '#ff8fb3',
-    icon: 'TEST',
     skill: 'intelligence'
   })
 ]);
@@ -306,13 +285,12 @@ for (const game of SCHOOL_MICROGAME_DEFINITIONS) {
 }
 
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('pop-quiz', SCHOOL_MICROGAME_IDS.popQuizPanic);
-SCHOOL_MICROGAME_ALIAS_BY_ID.set('copy-notes', SCHOOL_MICROGAME_IDS.copyTheNotes);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('teacher-looking', SCHOOL_MICROGAME_IDS.teacherIsLooking);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory', SCHOOL_MICROGAME_IDS.memoryMatch);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-card-flip', SCHOOL_MICROGAME_IDS.memoryMatch);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-card-game', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-game', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-cards', SCHOOL_MICROGAME_IDS.memoryMatch);
-SCHOOL_MICROGAME_ALIAS_BY_ID.set('dodge-chalk', SCHOOL_MICROGAME_IDS.dodgeTheChalk);
-SCHOOL_MICROGAME_ALIAS_BY_ID.set('sort-backpack', SCHOOL_MICROGAME_IDS.sortTheBackpack);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school', SCHOOL_MICROGAME_DEFAULT_ID);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school-microgame', SCHOOL_MICROGAME_DEFAULT_ID);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school-microgames', SCHOOL_MICROGAME_ALL_ID);
@@ -423,8 +401,16 @@ export function normalizeSchoolMicrogameNpcId(value = '') {
 
 export function getSchoolMicrogameReward(value = '') {
   const game = getSchoolMicrogameDefinition(value);
+  if (!game) {
+    return {
+      money: 0,
+      xp: 0,
+      skill: 'intelligence'
+    };
+  }
+
   return {
-    money: Math.max(0, Math.trunc(Number(game?.rewardMoney ?? SCHOOL_MICROGAME_DEFAULT_REWARD_MONEY) || 0)),
+    money: 0,
     xp: Math.max(0, Math.trunc(Number(game?.rewardXp ?? SCHOOL_MICROGAME_DEFAULT_REWARD_XP) || 0)),
     skill: 'intelligence'
   };

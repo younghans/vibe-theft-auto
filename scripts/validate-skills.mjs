@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  SCHOOL_MICROGAME_IDS,
+  createSchoolPopQuizQuestions,
+  getSchoolMicrogameReward,
+  listSchoolMicrogames
+} from '../src/shared/schoolMicrogames.js';
+import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   SKILL_IDS,
@@ -79,6 +85,37 @@ assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up 
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
 assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
+
+const activeSchoolGames = listSchoolMicrogames();
+assert.deepEqual(
+  activeSchoolGames.map((game) => game.id),
+  [
+    SCHOOL_MICROGAME_IDS.popQuizPanic,
+    SCHOOL_MICROGAME_IDS.teacherIsLooking,
+    SCHOOL_MICROGAME_IDS.memoryMatch
+  ],
+  'school microgame roster is limited to quiz, teacher, and memory card flip'
+);
+for (const game of activeSchoolGames) {
+  const reward = getSchoolMicrogameReward(game.id);
+  assert.equal(reward.money, 0, `${game.id} should not award cash`);
+  assert.equal(reward.skill, SKILL_IDS.intelligence, `${game.id} should award Intelligence XP`);
+  assert.ok(reward.xp > 0, `${game.id} should award positive Intelligence XP`);
+}
+
+const allPopQuizQuestions = createSchoolPopQuizQuestions({
+  count: 999,
+  rng: (() => {
+    let cursor = 0;
+    return () => ((cursor += 37) % 101) / 101;
+  })()
+});
+assert.ok(allPopQuizQuestions.length >= 120, 'pop quiz should have a large question bank for variation');
+assert.equal(
+  new Set(allPopQuizQuestions.map((question) => question.question)).size,
+  allPopQuizQuestions.length,
+  'pop quiz questions should be unique'
+);
 
 assert.ok(assets.audio.skillXpGain, 'Skill XP gain audio should be registered.');
 assert.match(assets.audio.skillXpGain, /gain_experience_point_ding\.mp3$/, 'Skill XP gain audio should use the optimized ding file.');

@@ -1713,11 +1713,9 @@ export class WorldRoom extends Room {
     }
 
     const reward = getSchoolMicrogameReward(gameId);
-    const moneyAwarded = Math.max(0, Math.trunc(Number(reward.money ?? 0) || 0));
-    player.money = Math.trunc(Number(player.money ?? 0) || 0) + moneyAwarded;
+    const moneyAwarded = 0;
     const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.intelligence, reward.xp);
     const rewardText = [
-      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
     ].filter(Boolean).join('  ');
     this.setNpcChatPhase(
