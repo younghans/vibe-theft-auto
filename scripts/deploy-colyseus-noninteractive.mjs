@@ -7,9 +7,22 @@ const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const configPath = path.join(root, '.colyseus-cloud.json');
 const env = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
 const extraArgs = process.argv.slice(2);
+const deployAttempts = getPositiveIntegerEnv('COLYSEUS_DEPLOY_ATTEMPTS', 3);
+const deployRetryDelayMs = getPositiveIntegerEnv('COLYSEUS_DEPLOY_RETRY_DELAY_MS', 10000);
+
+function getPositiveIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function hasCliOption(args = [], option = '') {
   return args.some((arg) => arg === option || arg.startsWith(`${option}=`));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function readLocalConfig() {
@@ -130,27 +143,101 @@ function addGitToPath(childEnv) {
   }
 }
 
+function commandForPlatform(command = '', args = []) {
+  if (process.platform !== 'win32') {
+    return { command, args, shell: false };
+  }
+
+  const normalizedCommand = path.basename(String(command)).toLowerCase();
+  if (normalizedCommand === 'npx' || normalizedCommand === 'npx.cmd') {
+    return {
+      command: process.execPath,
+      args: [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'), ...args],
+      shell: false
+    };
+  }
+
+  return { command, args, shell: false };
+}
+
+function getColyseusDeployFailure(output = '') {
+  const text = String(output ?? '');
+  const failurePatterns = [
+    /socket hang up/iu,
+    /deploy failed/iu,
+    /failed with exit code/iu,
+    /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/iu,
+    /unauthorized|forbidden|invalid token/iu,
+    /Error:\s+\S/iu
+  ];
+  return failurePatterns.find((pattern) => pattern.test(text))?.source ?? '';
+}
+
+function isRetryableColyseusDeployError(error) {
+  const text = String(error?.output || error?.message || error || '');
+  return /socket hang up|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/iu.test(text);
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const childEnv = { ...process.env };
     addGitToPath(childEnv);
+    const platformCommand = commandForPlatform(command, args);
 
-    const child = spawn(command, args, {
+    const child = spawn(platformCommand.command, platformCommand.args, {
       cwd: root,
       env: childEnv,
-      shell: process.platform === 'win32',
-      stdio: 'inherit',
+      shell: platformCommand.shell,
+      stdio: ['inherit', 'pipe', 'pipe'],
       ...options
     });
+    let output = '';
+    const collectOutput = (chunk, stream) => {
+      const text = chunk.toString('utf8');
+      output += text;
+      stream.write(text);
+    };
+
+    child.stdout.on('data', (chunk) => collectOutput(chunk, process.stdout));
+    child.stderr.on('data', (chunk) => collectOutput(chunk, process.stderr));
     child.on('error', reject);
     child.on('exit', (code, signal) => {
       if (code === 0) {
-        resolve();
-        return;
+        const failurePattern = getColyseusDeployFailure(output);
+        if (!failurePattern) {
+          resolve(output);
+          return;
+        }
+
+        const error = new Error(`Colyseus deploy output matched failure pattern: ${failurePattern}`);
+        error.output = output;
+        reject(error);
+      } else {
+        const error = new Error(`${command} exited with ${signal || code}`);
+        error.output = output;
+        reject(error);
       }
-      reject(new Error(`${command} exited with ${signal || code}`));
     });
   });
+}
+
+async function runWithRetries(command, args, options = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= deployAttempts; attempt += 1) {
+    try {
+      return await run(command, args, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= deployAttempts || !isRetryableColyseusDeployError(error)) {
+        throw error;
+      }
+
+      console.warn(`[colyseus-deploy] Deploy attempt ${attempt}/${deployAttempts} hit a transient error; retrying in ${Math.round(deployRetryDelayMs / 1000)}s.`);
+      await sleep(deployRetryDelayMs);
+    }
+  }
+
+  throw lastError;
 }
 
 const localConfig = await readLocalConfig();
@@ -170,6 +257,7 @@ if (!applicationId || !token) {
 }
 
 const deployArgs = [
+  '--yes',
   '@colyseus/cloud',
   'deploy',
   '--env',
@@ -183,5 +271,5 @@ const deployArgs = [
   ...extraArgs
 ];
 
-console.log(`[colyseus-deploy] Deploying application ${applicationId} to ${env} from branch ${deployBranch}.`);
-await run('npx', deployArgs);
+console.log(`[colyseus-deploy] Deploying application ${applicationId} to ${env} from branch ${deployBranch}. Attempts: ${deployAttempts}.`);
+await runWithRetries('npx', deployArgs);
