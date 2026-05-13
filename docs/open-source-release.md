@@ -1,23 +1,23 @@
 # Open Source Release
 
-Use this checklist before changing repository visibility or importing a public
-copy of Vibe Theft Auto.
+Use this checklist before changing repository visibility for Vibe Theft Auto.
 
-## Recommended Publishing Path
+## Publishing Path
 
-Create a fresh public repository from the current sanitized tree instead of
-making the existing private repository public with its full commit history.
-Older private history may contain raw source exports or experimental assets that
-are no longer present on `main`.
+This repository is intended to be made public directly after the release checks
+pass. Its Git history has been rewritten to remove historical raw/source assets
+and credential-shaped local files that should not be exposed publicly.
+
+The export script is still available if you ever want a separate tree-only copy
+without Git history:
 
 ```sh
 npm run public:export -- ../vibe-theft-auto-public --init-git
 ```
 
-Review the exported directory, commit it in the fresh repository, then push that
-new repository to GitHub. The export script copies only files tracked in the
-current tree; it does not copy `.git`, ignored local environment files, browser
-profiles, generated builds, or local worker state.
+The export script copies only files tracked in the current tree; it does not copy
+`.git`, ignored local environment files, browser profiles, generated builds, or
+local worker state.
 
 ## Before Publishing
 
@@ -26,16 +26,16 @@ profiles, generated builds, or local worker state.
 - Run `npm audit --audit-level=moderate`.
 - Run `npm --prefix tools/mixamo-optimizer audit --audit-level=moderate`.
 - Confirm `.env.local`, `.env.worker.production`, `.colyseus-cloud.json`,
-  `.codex/`, `dist/`, and other ignored local files are absent from the export.
+  `.codex/`, `dist/`, and other ignored local files are not tracked by git.
 - Rotate production admin keys, worker tokens, deploy tokens, and database
   credentials before announcing the public repository.
 - Verify `ASSET_POLICY.md`, `assets/mixamo/NOTICE.md`, and third-party asset
-  license files are included in the export.
+  license files are included.
 
-## If You Rewrite History Instead
+## History Rewrite Notes
 
-If you decide to publish this existing repository rather than importing a fresh
-copy, rewrite history first and then force-push only after taking a private
-backup. At minimum, remove historical raw assets such as `.fbx`, `.obj`, `.mtl`,
-`.wav`, old source-export directories, and any experimental third-party assets
-that are not intended for public redistribution.
+If history ever needs to be rewritten again, take a private backup first and
+force-push only after verifying a fresh clone. At minimum, remove historical raw
+assets such as `.fbx`, `.obj`, `.mtl`, `.wav`, old source-export directories,
+and any experimental third-party assets that are not intended for public
+redistribution.

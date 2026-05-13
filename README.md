@@ -96,12 +96,7 @@ intended and are not reusable as standalone assets. See
 
 ## Open Source Release
 
-If you are publishing a public copy of this repository, prefer creating a fresh
-history from the current sanitized tree:
-
-```sh
-npm run public:export -- ../vibe-theft-auto-public --init-git
-```
-
-See [docs/open-source-release.md](docs/open-source-release.md) for the release
-checklist.
+This repository is intended to be publishable directly after running the release
+checklist in [docs/open-source-release.md](docs/open-source-release.md). The
+`public:export` script remains available if you ever want to create a separate
+tree-only copy without Git history.
