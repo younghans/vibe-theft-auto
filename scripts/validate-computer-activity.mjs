@@ -70,9 +70,9 @@ async function validateOfficeJobTerminalFlow() {
   const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
 
   assert(gameSource.includes('openOfficeJobMenu'), 'Game should route the office computer to the office job menu.');
-  assert(gameSource.includes('finishOfficeTrashToss'), 'Game should implement the janitor trash toss task.');
-  assert(gameSource.includes('finishOfficeCoffeeFill'), 'Game should implement the office manager coffee fill task.');
-  assert(gameSource.includes('updateOfficeCeoNapState'), 'Game should implement the CEO sleep timing task.');
+  assert(gameSource.includes("office:throw"), 'Game should implement the janitor paper toss task.');
+  assert(gameSource.includes('handleOfficeJobHoldEnd'), 'Game should implement the office manager hold-to-brew task.');
+  assert(gameSource.includes("office:stamp"), 'Game should implement the CEO memo stamping task.');
   assert(hudSource.includes('office:select:'), 'HUD should render selectable office job tiers.');
   assert(serverSource.includes("officeJob:complete"), 'Server should expose an office job completion RPC.');
   assert(colyseusSource.includes('completeOfficeJob'), 'Colyseus service should call the office job completion RPC.');
@@ -148,6 +148,37 @@ function validateActivityConfig() {
   assert(snatchActivity?.attachBarbell === true, 'Snatch activity should preserve the carried barbell flow.');
 }
 
+function validateOfficeJobs() {
+  const janitor = getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
+  const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
+  const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
+
+  assert(/paper toss/i.test(janitor.description), 'Janitor task should be based on paper toss.');
+  assert(/fan/i.test(`${janitor.description} ${janitor.prompt}`), 'Janitor paper toss should include fan drift.');
+  assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
+  assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
+  assert(/stamp/i.test(`${ceo.description} ${ceo.prompt}`), 'CEO task should be the new memo stamping minigame.');
+  assert(!/sleep|nap|watcher/i.test(`${ceo.description} ${ceo.prompt}`), 'CEO task should no longer be the sleep/watcher minigame.');
+}
+
+async function validateOfficeJobHudSurfaces() {
+  const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const cssSource = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+
+  assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
+  assert(hudSource.includes('hud__office-fan'), 'Janitor HUD should render the desk fan.');
+  assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
+  assert(hudSource.includes('hud__office-cup'), 'Office Manager HUD should render a coffee mug.');
+  assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
+  assert(hudSource.includes("office:stamp"), 'CEO HUD should expose the stamp action.');
+
+  assert(cssSource.includes('@keyframes hud-office-paper-swish'), 'Janitor paper toss should have a swish animation.');
+  assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
+  assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
+  assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
+  assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
+}
+
 async function validateCheckedInPlacements() {
   assert(
     defaultWorldLayout.props.some((placement) => placement.itemId === 'standing_desk_computer'),
@@ -167,6 +198,8 @@ async function main() {
   validateDeskModel();
   validateEmoteConfig();
   validateActivityConfig();
+  validateOfficeJobs();
+  await validateOfficeJobHudSurfaces();
   await validateCheckedInPlacements();
   await validateAssets();
   console.log('Computer activity validation passed.');

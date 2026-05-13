@@ -12,7 +12,7 @@ export const OFFICE_JOB_IDS = Object.freeze({
 export const OFFICE_JOB_GAME_IDS = Object.freeze({
   janitor: 'office-janitor-trash-toss',
   officeManager: 'office-manager-coffee-fill',
-  ceo: 'office-ceo-power-nap'
+  ceo: 'office-ceo-memo-stamp'
 });
 
 export const OFFICE_JOB_SKILL_ID = SKILL_IDS.intelligence;
@@ -24,9 +24,10 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
     title: 'Janitor',
     roleLabel: 'Janitor',
     shortTitle: 'Janitor',
-    subtitle: 'Toss trash into the basket cleanly.',
-    description: 'Throw the trash when the marker lines up with the basket.',
-    prompt: 'Throw trash',
+    tier: 1,
+    subtitle: 'Beat the fan and sink the paper toss.',
+    description: 'Paper toss a crumpled report into the basket while the desk fan fights back.',
+    prompt: 'Throw when the aim beats the fan drift.',
     eyebrow: 'Office Job',
     rewardMoney: 25,
     rewardXp: 0,
@@ -41,9 +42,10 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
     title: 'Office Manager',
     roleLabel: 'Office Manager',
     shortTitle: 'Manager',
-    subtitle: 'Fill coffee to the perfect line.',
-    description: 'Start the pour, then stop inside the marked fill band.',
-    prompt: 'Fill coffee',
+    tier: 2,
+    subtitle: 'Brew the mug to the perfect line.',
+    description: 'Run the office coffee maker and land the brew inside the perfect mug line.',
+    prompt: 'Hold brew, release inside the marked mug band.',
     eyebrow: 'Office Job',
     rewardMoney: 100,
     rewardXp: 0,
@@ -58,16 +60,18 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
     title: 'CEO',
     roleLabel: 'CEO',
     shortTitle: 'CEO',
-    subtitle: 'Sleep only while no one is watching.',
-    description: 'Hold sleep while the coast is clear. Wake up before anyone looks.',
-    prompt: 'Power nap',
+    tier: 3,
+    subtitle: 'Stamp memos inside the approval window.',
+    description: 'Stamp absurd boardroom memos exactly inside the approval window.',
+    prompt: 'Stamp three memos cleanly. One bad stamp tanks the quarter.',
     eyebrow: 'Executive Job',
     rewardMoney: 500,
     rewardXp: 0,
     intelligenceRequired: 200,
-    accent: '#c38bff',
-    secondaryAccent: '#73f2d0',
-    icon: 'CEO'
+    durationMs: 14000,
+    accent: '#facc15',
+    secondaryAccent: '#fb7185',
+    icon: 'OK'
   })
 ]);
 

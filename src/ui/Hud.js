@@ -1275,6 +1275,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
   const gameId = String(round.gameId ?? '');
+  const domain = String(game?.context ?? round.domain ?? '');
   const base = [
     game?.id ?? '',
     gameId,
@@ -1306,7 +1307,30 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     return base.join('|');
   }
 
-  if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
+  if (domain === 'office-job') {
+    base.push(
+      String(round.officeJobId ?? round.jobId ?? ''),
+      String(Math.round(Number(round.targetStart ?? 0) * 100)),
+      String(Math.round(Number(round.targetEnd ?? 0) * 100)),
+      String(Math.round(Number(round.wind ?? 0) * 100)),
+      String(Math.round(Number(data.marker ?? 0) * 100)),
+      String(Math.round(Number(data.fill ?? 0))),
+      String(Math.round(Number(data.memoPosition ?? 0) * 100)),
+      String(data.memoLabel ?? ''),
+      String(data.throwMissSide ?? ''),
+      String(Boolean(data.throwMade)),
+      String(data.stampMissSide ?? ''),
+      String(Boolean(data.stampSuccess)),
+      String(Number(data.stampSeq ?? 0) || 0),
+      String(Number(data.approved ?? 0) || 0),
+      String(Number(data.requiredApprovals ?? round.requiredApprovals ?? 0) || 0),
+      String(Boolean(data.brewing)),
+      String(Boolean(data.released)),
+      String(Boolean(data.thrown)),
+      String(Boolean(data.stamped)),
+      String(Boolean(data.keyboardHolding))
+    );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
     const roundResults = Array.isArray(data.roundResults) ? data.roundResults : [];
     base.push(
       String(data.currentQuestionIndex ?? 0),
@@ -1355,22 +1379,6 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     base.push(String(Math.round(Number(data.marker ?? 0) * 100)));
   } else if (gameId === SCHOOL_MICROGAME_IDS.scantron) {
     base.push((data.filled ?? []).join(','), String(data.correct ?? 0), String(data.wrong ?? 0));
-  } else if (gameId === OFFICE_JOB_GAME_IDS.janitor) {
-    base.push(
-      String(Math.round(Number(data.marker ?? 0) * 100)),
-      String(Boolean(data.thrown))
-    );
-  } else if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
-    base.push(
-      String(Math.round(Number(data.fill ?? 0) * 100)),
-      String(Boolean(data.filling))
-    );
-  } else if (gameId === OFFICE_JOB_GAME_IDS.ceo) {
-    base.push(
-      String(data.bossMode ?? 'away'),
-      String(Math.round(Number(data.progress ?? 0))),
-      String(Boolean(data.sleeping))
-    );
   }
   return base.join('|');
 }
@@ -1814,19 +1822,41 @@ function createOfficeTrashTossMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
   const marker = Math.max(0, Math.min(1, Number(data.marker ?? 0) || 0));
-  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.62) || 0.62));
-  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.78) || 0.78));
+  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.48) || 0.48));
+  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.64) || 0.64));
+  const wind = Math.max(-0.35, Math.min(0.35, Number(round.wind ?? 0) || 0));
+  const thrown = data.thrown === true;
+  const made = data.throwMade === true;
+  const missSide = String(data.throwMissSide ?? '');
+  const windLabel = Math.abs(wind) < 0.025
+    ? 'Fan calm'
+    : `${wind > 0 ? 'Fan pushes right' : 'Fan pushes left'} ${Math.round(Math.abs(wind) * 100)}`;
+  const throwClass = thrown
+    ? made
+      ? ' is-thrown is-made'
+      : ` is-thrown is-missed${missSide ? ` is-miss-${escapeHtml(missSide)}` : ''}`
+    : '';
   return `
-    <div class="hud__office-game hud__office-trash">
-      <div class="hud__office-aim-meter">
+    <div class="hud__office-task hud__office-trash${throwClass}" style="--office-aim:${(marker * 100).toFixed(2)}%; --office-wind-shift:${(wind * 120).toFixed(1)}px; --office-wind-soft:${(wind * 28).toFixed(1)}px; --office-wind-long:${(wind * 80).toFixed(1)}px; --office-target-left:${(targetStart * 100).toFixed(2)}%; --office-target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
+      <div class="hud__office-trash-scene" aria-hidden="true">
+        <span class="hud__office-paper-desk"></span>
+        <span class="hud__office-fan"><span></span></span>
+        <span class="hud__office-wind is-one"></span>
+        <span class="hud__office-wind is-two"></span>
+        <span class="hud__office-wind is-three"></span>
+        <span class="hud__office-aim-arc"></span>
+        <span class="hud__office-paper-ball"></span>
+        <span class="hud__office-trash-basket"></span>
+      </div>
+      <div class="hud__office-precision-meter">
         <span class="hud__office-target-zone" style="--target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%"></span>
         <span class="hud__office-marker" style="--marker:${(marker * 100).toFixed(2)}%"></span>
       </div>
-      <div class="hud__school-bell-labels">
-        <span>Trash</span>
-        <strong>Basket</strong>
+      <div class="hud__school-score-strip">
+        <span>${escapeHtml(windLabel)}</span>
+        <span>Wastebasket line</span>
       </div>
-      ${createSchoolGameButton('office:toss', 'Toss', 'is-primary')}
+      ${createSchoolGameButton('office:throw', 'Throw', 'is-primary')}
     </div>
   `;
 }
@@ -1834,50 +1864,73 @@ function createOfficeTrashTossMarkup(game = null) {
 function createOfficeCoffeeFillMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const fill = Math.max(0, Math.min(1, Number(data.fill ?? 0) || 0));
-  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.72) || 0.72));
-  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.84) || 0.84));
-  const filling = Boolean(data.filling);
+  const fill = Math.max(0, Math.min(100, Number(data.fill ?? 0) || 0));
+  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? 72) || 72));
+  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? 82) || 82));
+  const brewing = data.brewing === true && data.released !== true;
   return `
-    <div class="hud__office-game hud__office-coffee">
-      <div class="hud__office-cup" aria-label="Coffee fill level">
-        <span class="hud__office-coffee-target" style="--target-bottom:${(targetStart * 100).toFixed(2)}%; --target-height:${((targetEnd - targetStart) * 100).toFixed(2)}%"></span>
-        <span class="hud__office-coffee-fill" style="--fill:${(fill * 100).toFixed(2)}%"></span>
+    <div class="hud__office-task hud__office-coffee${brewing ? ' is-brewing' : ''}${data.released === true ? ' is-released' : ''}" style="--fill:${fill.toFixed(2)}%; --target-bottom:${targetStart.toFixed(2)}%; --target-height:${(targetEnd - targetStart).toFixed(2)}%">
+      <div class="hud__office-coffee-station" aria-label="Coffee maker and mug">
+        <span class="hud__office-coffee-maker">
+          <span class="hud__office-coffee-light"></span>
+          <span class="hud__office-coffee-spout"></span>
+          <span class="hud__office-coffee-pot"></span>
+        </span>
+        <span class="hud__office-coffee-stream"></span>
+        <span class="hud__office-cup">
+          <span class="hud__office-coffee-fill"></span>
+          <span class="hud__office-coffee-shine"></span>
+          <span class="hud__office-coffee-target"></span>
+          <span class="hud__office-coffee-steam is-one"></span>
+          <span class="hud__office-coffee-steam is-two"></span>
+          <span class="hud__office-coffee-steam is-three"></span>
+        </span>
       </div>
       <div class="hud__school-score-strip">
-        <span>${Math.round(fill * 100)}% full</span>
-        <span>Target ${Math.round(targetStart * 100)}-${Math.round(targetEnd * 100)}%</span>
+        <span>${Math.round(fill)}% full</span>
+        <span>Target ${Math.round(targetStart)}-${Math.round(targetEnd)}%</span>
       </div>
-      ${createSchoolGameButton(filling ? 'office:coffee:stop' : 'office:coffee:start', filling ? 'Stop Pour' : 'Start Pour', 'is-primary')}
+      <button class="hud__school-hold-button" type="button" data-school-microgame-hold>
+        Hold Brew
+      </button>
     </div>
   `;
 }
 
-function createOfficeCeoNapMarkup(game = null) {
+function createOfficeCeoMarkup(game = null) {
+  const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const bossMode = String(data.bossMode ?? (data.bossLooking ? 'looking' : 'away'));
-  const modeClass = bossMode === 'looking' ? 'is-looking' : bossMode === 'turning' ? 'is-turning' : 'is-away';
-  const statusLabel = bossMode === 'looking' ? 'Wake' : bossMode === 'turning' ? 'Stir' : 'Sleep';
-  const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0) || 0));
+  const memoPosition = Math.max(0, Math.min(1.08, Number(data.memoPosition ?? 0) || 0));
+  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.44) || 0.44));
+  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.6) || 0.6));
+  const approved = Math.max(0, Math.floor(Number(data.approved ?? 0) || 0));
+  const required = Math.max(1, Math.floor(Number(data.requiredApprovals ?? round.requiredApprovals ?? 3) || 3));
+  const progress = Math.max(0, Math.min(100, (approved / required) * 100));
+  const stamped = data.stamped === true;
+  const stampSuccess = data.stampSuccess === true;
+  const stampState = stamped ? stampSuccess ? ' is-stamping is-approved' : ' is-stamping is-rejected' : '';
   return `
-    <div class="hud__office-game hud__office-nap hud__school-teacher ${modeClass}">
-      <div class="hud__school-teacher-topline">
-        <div class="hud__school-traffic" aria-hidden="true">
-          <span class="hud__school-light is-green${bossMode === 'away' ? ' is-active' : ''}"></span>
-          <span class="hud__school-light is-yellow${bossMode === 'turning' ? ' is-active' : ''}"></span>
-          <span class="hud__school-light is-red${bossMode === 'looking' ? ' is-active' : ''}"></span>
-        </div>
-        <div class="hud__school-teacher-status">${escapeHtml(statusLabel)}</div>
+    <div class="hud__office-task hud__office-ceo hud__office-ceo-stamp${stampState}" style="--memo-left:${(memoPosition * 100).toFixed(2)}%; --target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
+      <div class="hud__office-boardroom-scene" aria-hidden="true">
+        <span class="hud__office-boardroom-table"></span>
+        <span class="hud__office-approval-window"></span>
+        <span class="hud__office-ceo-memo">
+          <strong>${escapeHtml(data.memoLabel ?? 'Board Memo')}</strong>
+          <em>Q${escapeHtml(String(Math.min(required, approved + 1)))}</em>
+        </span>
+        <span class="hud__office-ceo-stamp-arm">
+          <span>APPROVE</span>
+        </span>
+        <span class="hud__office-ceo-stamp-mark">APPROVED</span>
+        <span class="hud__office-board-face is-left"></span>
+        <span class="hud__office-board-face is-right"></span>
       </div>
-      <div class="hud__office-nap-scene">
-        <span class="hud__office-desk" aria-hidden="true"></span>
-        <span class="hud__office-sleeper${data.sleeping ? ' is-sleeping' : ''}" aria-hidden="true"></span>
-        <span class="hud__office-boss ${modeClass}" aria-hidden="true"></span>
+      <div class="hud__school-score-strip">
+        <span>${escapeHtml(approved)}/${escapeHtml(required)} memos approved</span>
+        <span>Approval window</span>
       </div>
-      ${createSchoolProgressMarkup(progress, 'Nap progress')}
-      <button class="hud__school-hold-button" type="button" data-school-microgame-hold>
-        Hold Sleep
-      </button>
+      ${createSchoolProgressMarkup(progress, 'Approval progress')}
+      ${createSchoolGameButton('office:stamp', 'Stamp', 'is-primary')}
     </div>
   `;
 }
@@ -1908,7 +1961,7 @@ function createSchoolMicrogamePlayMarkup(game = null) {
     case OFFICE_JOB_GAME_IDS.officeManager:
       return createOfficeCoffeeFillMarkup(game);
     case OFFICE_JOB_GAME_IDS.ceo:
-      return createOfficeCeoNapMarkup(game);
+      return createOfficeCeoMarkup(game);
     default:
       return '<div class="hud__school-ready"><p>Unknown school microgame.</p></div>';
   }
