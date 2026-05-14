@@ -24,6 +24,11 @@ import {
 import { getCombatPickupSpawnDefinitions } from '../../src/shared/combatPickupDefinitions.js';
 import { tickHealthRegen } from '../../src/shared/combatRegen.js';
 import {
+  addInventoryWeapon,
+  hasInventoryWeapon,
+  serializeWeaponInventoryIds
+} from '../../src/shared/weaponInventory.js';
+import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
   DELIVERY_QUEST_STATUS,
@@ -197,6 +202,7 @@ const PlayerState = schema({
   respawnAt: 'number',
   spawnProtectedUntil: 'number',
   equippedWeaponId: 'string',
+  ownedWeaponIds: 'string',
   ammoInClip: 'number',
   reserveAmmo: 'number',
   isReloading: 'boolean',
@@ -447,6 +453,7 @@ function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
       respawnAt: player.respawnAt,
       spawnProtectedUntil: player.spawnProtectedUntil,
       equippedWeaponId: player.equippedWeaponId,
+      ownedWeaponIds: player.ownedWeaponIds,
       ammoInClip: player.ammoInClip,
       reserveAmmo: player.reserveAmmo,
       isReloading: player.isReloading,
@@ -513,6 +520,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.respawnAt = sanitizeSnapshotNumber(saved.respawnAt, 0, { integer: true, min: 0 });
   player.spawnProtectedUntil = sanitizeSnapshotNumber(saved.spawnProtectedUntil, 0, { integer: true, min: 0 });
   player.equippedWeaponId = isSnapshotWeaponId(saved.equippedWeaponId) ? saved.equippedWeaponId : '';
+  player.ownedWeaponIds = serializeWeaponInventoryIds(saved.ownedWeaponIds || player.equippedWeaponId);
   player.ammoInClip = sanitizeSnapshotNumber(saved.ammoInClip, 0, { integer: true, min: 0, max: WEAPON_CLIP_SIZE });
   player.reserveAmmo = sanitizeSnapshotNumber(saved.reserveAmmo, 0, { integer: true, min: 0, max: WEAPON_RESERVE_CAP });
   player.isReloading = sanitizeSnapshotBoolean(saved.isReloading, false) && sanitizeSnapshotNumber(saved.reloadEndsAt, 0) > now;
@@ -736,6 +744,17 @@ export class WorldRoom extends Room {
       }
     });
 
+    this.onMessage('combat:equipRequest', (client, message) => {
+      try {
+        this.handleEquipRequest(client, message);
+      } catch (error) {
+        logServerError('room', 'Equip request failed.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId
+        });
+      }
+    });
+
     this.onMessage('combat:fireRequest', (client, message) => {
       try {
         this.handleFireRequest(client, message);
@@ -834,6 +853,7 @@ export class WorldRoom extends Room {
     player.respawnAt = 0;
     player.spawnProtectedUntil = 0;
     player.equippedWeaponId = '';
+    player.ownedWeaponIds = '';
     player.ammoInClip = 0;
     player.reserveAmmo = 0;
     player.isReloading = false;
@@ -2189,6 +2209,7 @@ export class WorldRoom extends Room {
     player.respawnAt = 0;
     player.spawnProtectedUntil = 0;
     player.equippedWeaponId = '';
+    player.ownedWeaponIds = '';
     player.ammoInClip = 0;
     player.reserveAmmo = 0;
     player.isReloading = false;
@@ -2264,11 +2285,15 @@ export class WorldRoom extends Room {
       return;
     }
 
-    if (player.equippedWeaponId && player.equippedWeaponId !== pickup.weaponId) {
+    if (
+      player.equippedWeaponId
+      && player.equippedWeaponId !== pickup.weaponId
+      && !hasInventoryWeapon(player.ownedWeaponIds, pickup.weaponId)
+    ) {
       return;
     }
 
-    if (pickup.weaponId === WEAPON_IDS.pistol && player.equippedWeaponId === WEAPON_IDS.pistol) {
+    if (pickup.weaponId === WEAPON_IDS.pistol && hasInventoryWeapon(player.ownedWeaponIds, WEAPON_IDS.pistol)) {
       const nextClip = Math.min(WEAPON_CLIP_SIZE, player.ammoInClip + pickup.ammoInClip);
       const clipDelta = nextClip - player.ammoInClip;
       const remainingReserveFromPickup = Math.max(0, pickup.ammoInClip - clipDelta) + pickup.reserveAmmo;
@@ -2279,6 +2304,7 @@ export class WorldRoom extends Room {
       player.ammoInClip = nextClip;
       player.reserveAmmo = nextReserve;
     } else {
+      player.ownedWeaponIds = addInventoryWeapon(player.ownedWeaponIds, pickup.weaponId);
       player.equippedWeaponId = pickup.weaponId;
       player.ammoInClip = Math.min(WEAPON_CLIP_SIZE, pickup.ammoInClip);
       player.reserveAmmo = Math.min(WEAPON_RESERVE_CAP, pickup.reserveAmmo);
@@ -2293,6 +2319,28 @@ export class WorldRoom extends Room {
       pickupId: pickup.id,
       weaponId: pickup.weaponId
     });
+    this.queuePlayerSnapshotSave(client.sessionId);
+  }
+
+  handleEquipRequest(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    const nextWeaponId = String(message?.weaponId ?? '').trim() === WEAPON_IDS.pistol
+      ? WEAPON_IDS.pistol
+      : '';
+    if (nextWeaponId && !hasInventoryWeapon(player.ownedWeaponIds, nextWeaponId)) {
+      return;
+    }
+    if (player.equippedWeaponId === nextWeaponId) {
+      return;
+    }
+
+    player.equippedWeaponId = nextWeaponId;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
     this.queuePlayerSnapshotSave(client.sessionId);
   }
 
@@ -2435,6 +2483,7 @@ export class WorldRoom extends Room {
     player.emoteSeq += 1;
     this.dropWeaponPickup(player);
     player.equippedWeaponId = '';
+    player.ownedWeaponIds = '';
     player.ammoInClip = 0;
     player.reserveAmmo = 0;
 
@@ -2458,13 +2507,14 @@ export class WorldRoom extends Room {
 
   dropWeaponPickup(player) {
     const totalAmmo = player.ammoInClip + player.reserveAmmo;
-    if (!player.equippedWeaponId || totalAmmo <= 0) {
+    const weaponId = player.equippedWeaponId || (hasInventoryWeapon(player.ownedWeaponIds, WEAPON_IDS.pistol) ? WEAPON_IDS.pistol : '');
+    if (!weaponId || totalAmmo <= 0) {
       return;
     }
 
     const pickup = createPickupState({
       id: `pickup_drop_${++this.pickupSequence}`,
-      weaponId: player.equippedWeaponId,
+      weaponId,
       x: player.x,
       z: player.z,
       ammoInClip: player.ammoInClip,

@@ -2629,6 +2629,236 @@ body.is-admin-prompt-resizing * {
   color: #d8f4ff;
 }
 
+.hud__hotbar {
+  --hotbar-slot-size: clamp(46px, 4.8vw, 60px);
+  --hotbar-slot-gap: clamp(6px, 0.8vw, 9px);
+  position: absolute;
+  left: 50%;
+  bottom: calc(20px + var(--safe-bottom));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  z-index: 9;
+  backdrop-filter: none;
+  animation: hud-hotbar-enter 220ms ease-out both;
+}
+
+.hud__hotbar.is-disabled {
+  pointer-events: none;
+  opacity: 0.62;
+  filter: saturate(0.72);
+}
+
+.hud__hotbar-slots {
+  display: grid;
+  grid-template-columns: repeat(5, var(--hotbar-slot-size));
+  gap: var(--hotbar-slot-gap);
+}
+
+.hud__hotbar-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--hotbar-slot-size);
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid rgba(238, 244, 248, 0.16);
+  border-radius: 10px;
+  color: rgba(241, 245, 248, 0.86);
+  background: rgba(7, 11, 16, 0.6);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  isolation: isolate;
+  overflow: hidden;
+  transform: translateY(0) scale(1);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease,
+    transform 160ms ease;
+  animation: hud-hotbar-slot-enter 180ms ease-out both;
+  animation-delay: calc(var(--hotbar-order, 0) * 10ms);
+}
+
+.hud__hotbar-slot:nth-child(1) { --hotbar-order: 0; }
+.hud__hotbar-slot:nth-child(2) { --hotbar-order: 1; }
+.hud__hotbar-slot:nth-child(3) { --hotbar-order: 2; }
+.hud__hotbar-slot:nth-child(4) { --hotbar-order: 3; }
+.hud__hotbar-slot:nth-child(5) { --hotbar-order: 4; }
+.hud__hotbar-slot:nth-child(6) { --hotbar-order: 5; }
+.hud__hotbar-slot:nth-child(7) { --hotbar-order: 6; }
+.hud__hotbar-slot:nth-child(8) { --hotbar-order: 7; }
+.hud__hotbar-slot:nth-child(9) { --hotbar-order: 8; }
+.hud__hotbar-slot:nth-child(10) { --hotbar-order: 9; }
+
+.hud__hotbar-slot::before,
+.hud__hotbar-slot::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.hud__hotbar-slot::before {
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  opacity: 0;
+  transition: opacity 140ms ease, border-color 140ms ease;
+}
+
+.hud__hotbar-slot::after {
+  display: none;
+}
+
+.hud__hotbar-slot-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0;
+  transform: none;
+  transition: opacity 140ms ease;
+}
+
+.hud__hotbar-slot:hover,
+.hud__hotbar-slot:focus-visible {
+  border-color: rgba(219, 239, 249, 0.48);
+  background: rgba(14, 21, 29, 0.82);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.26),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transform: translateY(-3px);
+}
+
+.hud__hotbar-slot:hover .hud__hotbar-slot-glow,
+.hud__hotbar-slot:focus-visible .hud__hotbar-slot-glow {
+  opacity: 1;
+}
+
+.hud__hotbar-slot:hover::before,
+.hud__hotbar-slot:focus-visible::before {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.hud__hotbar-slot:focus-visible {
+  outline: 2px solid rgba(219, 239, 249, 0.72);
+  outline-offset: 2px;
+}
+
+.hud__hotbar-slot.is-selected {
+  border-color: rgba(142, 218, 255, 0.9);
+  background: rgba(22, 25, 27, 0.88);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.28),
+    0 0 0 2px rgba(142, 218, 255, 0.16);
+  transform: translateY(-3px);
+  animation: none;
+}
+
+.hud__hotbar-slot.is-selected .hud__hotbar-slot-glow {
+  opacity: 0.72;
+}
+
+.hud__hotbar-slot.is-selected::after {
+  display: none;
+}
+
+.hud__hotbar-slot.is-empty {
+  color: rgba(221, 229, 234, 0.5);
+}
+
+.hud__hotbar-slot.is-empty .hud__hotbar-item {
+  opacity: 0.5;
+}
+
+.hud__hotbar-key {
+  display: none;
+}
+
+.hud__hotbar-slot.is-selected .hud__hotbar-key {
+  color: #8edaff;
+  background: transparent;
+  text-shadow: none;
+}
+
+.hud__hotbar-slot:hover .hud__hotbar-key,
+.hud__hotbar-slot:focus-visible .hud__hotbar-key {
+  color: rgba(255, 255, 255, 0.9);
+  background: transparent;
+}
+
+.hud__hotbar-slot.is-selected:hover .hud__hotbar-key,
+.hud__hotbar-slot.is-selected:focus-visible .hud__hotbar-key {
+  color: #8edaff;
+  background: transparent;
+}
+
+.hud__hotbar-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 82%;
+  height: 82%;
+  z-index: 2;
+}
+
+.hud__hotbar-item-icon {
+  width: 86%;
+  height: 86%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.28));
+  transform: translateY(3%) rotate(-8deg);
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
+}
+
+.hud__hotbar-slot:hover .hud__hotbar-item-icon,
+.hud__hotbar-slot:focus-visible .hud__hotbar-item-icon,
+.hud__hotbar-slot.is-selected .hud__hotbar-item-icon {
+  filter: drop-shadow(0 7px 9px rgba(0, 0, 0, 0.34));
+  transform: translateY(-1%) rotate(-8deg) scale(1.06);
+}
+
+.hud__hotbar-slot.is-selected .hud__hotbar-item-icon {
+  animation: none;
+}
+
+.hud__hotbar-empty-mark {
+  display: none;
+}
+
+.hud__hotbar-empty-mark::after {
+  display: none;
+}
+
+.hud__hotbar-slot:hover .hud__hotbar-empty-mark,
+.hud__hotbar-slot:focus-visible .hud__hotbar-empty-mark {
+  border-color: rgba(222, 232, 238, 0.38);
+  background: rgba(222, 232, 238, 0.08);
+  box-shadow: none;
+}
+
+.hud__hotbar-name {
+  display: none;
+}
+
+.hud__hotbar-slot.is-selected:not(.is-empty) .hud__hotbar-name,
+.hud__hotbar-slot:hover:not(.is-empty) .hud__hotbar-name,
+.hud__hotbar-slot:focus-visible:not(.is-empty) .hud__hotbar-name {
+  display: none;
+}
+
 .hud__money {
   position: absolute;
   left: 24px;
@@ -2906,6 +3136,62 @@ body.is-admin-prompt-resizing * {
 
   64% {
     transform: rotate(1deg);
+  }
+}
+
+@keyframes hud-hotbar-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px) scale(0.98);
+    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes hud-hotbar-slot-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hud-hotbar-selected {
+  from {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.28),
+      inset 0 -7px 16px rgba(0, 0, 0, 0.14),
+      0 12px 24px rgba(0, 0, 0, 0.26),
+      0 0 0 1px rgba(255, 226, 132, 0.16),
+      0 0 18px rgba(242, 200, 113, 0.2);
+  }
+
+  to {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -7px 16px rgba(0, 0, 0, 0.14),
+      0 14px 28px rgba(0, 0, 0, 0.28),
+      0 0 0 1px rgba(255, 226, 132, 0.26),
+      0 0 30px rgba(242, 200, 113, 0.34);
+  }
+}
+
+@keyframes hud-hotbar-item-ready {
+  from {
+    transform: translateY(-1%) rotate(-8deg) scale(1.06);
+  }
+
+  to {
+    transform: translateY(-5%) rotate(-8deg) scale(1.1);
   }
 }
 
@@ -11161,7 +11447,32 @@ canvas {
   .hud__ammo {
     --ammo-size: 108px;
     right: 16px;
-    bottom: 16px;
+    bottom: calc(88px + var(--safe-bottom));
+  }
+
+  .hud__hotbar {
+    --hotbar-slot-size: clamp(34px, 7.5vw, 45px);
+    --hotbar-slot-gap: 4px;
+    bottom: calc(16px + var(--safe-bottom));
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .hud__hotbar-slot {
+    border-radius: 9px;
+  }
+
+  .hud__hotbar-key {
+    top: 4px;
+    left: 5px;
+    min-width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    font-size: 8px;
+  }
+
+  .hud__hotbar-name {
+    display: none;
   }
 
   .hud__ammo-core {
@@ -11748,6 +12059,12 @@ canvas {
     bottom: calc(176px + var(--safe-bottom));
   }
 
+  .hud__hotbar {
+    --hotbar-slot-size: clamp(28px, 5.8vw, 38px);
+    --hotbar-slot-gap: 4px;
+    bottom: calc(176px + var(--safe-bottom));
+  }
+
   .hud__prompt {
     bottom: calc(156px + var(--safe-bottom));
   }
@@ -11846,6 +12163,10 @@ canvas {
   .hud__phone-launcher {
     bottom: calc(178px + var(--safe-bottom));
     left: calc(36px + var(--safe-left));
+  }
+
+  .hud__hotbar {
+    bottom: calc(178px + var(--safe-bottom));
   }
 
   .hud__prompt {
@@ -12545,6 +12866,9 @@ canvas {
   .hud__blackjack-card-inner,
   .hud__blackjack-card-edge,
   .hud__blackjack-card-face::after,
+  .hud__hotbar,
+  .hud__hotbar-slot,
+  .hud__hotbar-item-icon,
   .hud__school-memory-card-inner,
   .hud__school-memory-edge,
   .hud__school-memory-front,

@@ -82,6 +82,7 @@ function clonePlayerState(player) {
     respawnAt: player.respawnAt ?? 0,
     spawnProtectedUntil: player.spawnProtectedUntil ?? 0,
     equippedWeaponId: player.equippedWeaponId || '',
+    ownedWeaponIds: player.ownedWeaponIds || '',
     ammoInClip: player.ammoInClip ?? 0,
     reserveAmmo: player.reserveAmmo ?? 0,
     isReloading: Boolean(player.isReloading),
@@ -939,6 +940,16 @@ export class NpcServiceColyseus {
 
     this.room?.send('combat:pickupRequest', {
       pickupId: String(pickupId ?? '')
+    });
+  }
+
+  equipWeapon(weaponId = '') {
+    if (!this.canSendRoomMessage()) {
+      return;
+    }
+
+    this.room?.send('combat:equipRequest', {
+      weaponId: String(weaponId ?? '').trim()
     });
   }
 

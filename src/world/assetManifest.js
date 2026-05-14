@@ -59,6 +59,9 @@ export const assets = {
     pistolCock: assetUrl('audio', 'combat', 'pistol_cock.mp3'),
     pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.mp3')
   },
+  ui: {
+    hotbarPistol: assetUrl('generated', 'hotbar-pistol.png')
+  },
   audio: {
     chaChing: assetUrl('audio', 'cha-ching.mp3'),
     skillXpGain: assetUrl('audio', 'gain_experience_point_ding.mp3'),

@@ -37,6 +37,14 @@ import {
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
 import {
+  HOTBAR_KEY_CODES,
+  createHotbarSlots,
+  getHotbarEquippedWeaponId,
+  getHotbarSlot,
+  getHotbarSlotIndexFromKeyCode,
+  normalizeHotbarSlotIndex
+} from '../shared/hotbarInventory.js';
+import {
   WORLD_FOG_FAR,
   WORLD_FOG_NEAR,
   WORLD_GROUND_RADIUS,
@@ -655,6 +663,10 @@ export class Game {
     this.currentAimMode = false;
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
+    this.hotbarSlots = createHotbarSlots();
+    this.selectedHotbarSlotIndex = 0;
+    this.pendingHotbarWeaponId = null;
+    this.pendingHotbarRequestedAt = 0;
     this.activeWorkout = null;
     this.pendingWorkoutPlacementId = '';
     this.claimedWorkoutPlacementId = '';
@@ -901,12 +913,16 @@ export class Game {
       onZoomIn: () => this.stepCameraZoom(-1),
       onZoomOut: () => this.stepCameraZoom(1)
     });
+    this.hud.bindHotbarEvents({
+      onSelectSlot: (slotIndex) => this.selectHotbarSlot(slotIndex, { source: 'pointer' })
+    });
     this.hud.bindCharacterSelectorEvents({
       onTogglePanel: (visible) => this.toggleCharacterSelector(visible),
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
       onSelectCharacter: (characterId) => this.selectCharacter(characterId),
       onViewportChange: () => this.queueCharacterSelectorViewportSync()
     });
+    this.refreshHotbarHud();
     this.refreshZoomHud();
     this.refreshCharacterSelectorHud();
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
@@ -8061,6 +8077,7 @@ export class Game {
           endsAtMs: localPlayerState.reloadEndsAt ?? 0
         });
       }
+      this.applyHotbarSelection({ force: true });
       if (portalSpawnApplied) {
         this.player.setAimingState(false);
         this.updateCamera(this.currentAimDirection, false, { snap: true });
@@ -9982,6 +9999,11 @@ export class Game {
         break;
       case 'pickup':
         if (event.playerId === this.npcServiceState.sessionId) {
+          if (event.weaponId === HELD_ITEM_IDS.pistol) {
+            this.selectedHotbarSlotIndex = 0;
+            this.pendingHotbarWeaponId = null;
+            this.refreshHotbarHud();
+          }
           this.hud.showToast('Pistol equipped.');
         }
         break;
@@ -10278,6 +10300,151 @@ export class Game {
     return this.setCameraZoomIndex(this.cameraZoomIndex + step);
   }
 
+  getSelectedHotbarSlot() {
+    return getHotbarSlot(this.selectedHotbarSlotIndex, this.hotbarSlots) ?? this.hotbarSlots[0] ?? null;
+  }
+
+  getSelectedHotbarWeaponId() {
+    return getHotbarEquippedWeaponId(this.getSelectedHotbarSlot());
+  }
+
+  canUseHotbarInput() {
+    return Boolean(
+      this.player
+      && !this.hud.isLoadingVisible()
+      && !this.worldBuilder?.enabled
+      && !this.emoteMenuOpen
+      && !this.hud.isPhoneOpen()
+      && !this.hud.isQuickChatOpen()
+      && !this.hud.isStockMarketOpen()
+      && !this.hud.isBlackjackOpen()
+      && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen()
+      && !this.hud.isAdminPromptOpen()
+      && !this.characterSelectorVisible
+      && !this.shaderDebugMenuVisible
+      && !this.aimPoseDebugVisible
+    );
+  }
+
+  refreshHotbarHud() {
+    const localPlayerState = this.getLocalPlayerState();
+    this.hotbarSlots = createHotbarSlots({
+      ownedWeaponIds: localPlayerState?.ownedWeaponIds ?? '',
+      equippedWeaponId: localPlayerState?.equippedWeaponId ?? ''
+    });
+
+    this.hud.setHotbarState({
+      visible: true,
+      slots: this.hotbarSlots,
+      selectedIndex: this.selectedHotbarSlotIndex,
+      disabled: !this.canUseHotbarInput()
+    });
+  }
+
+  selectHotbarSlot(slotIndex, { source = 'keyboard' } = {}) {
+    if (!this.canUseHotbarInput()) {
+      return false;
+    }
+
+    const normalizedIndex = normalizeHotbarSlotIndex(slotIndex);
+    if (normalizedIndex < 0) {
+      return false;
+    }
+
+    const previousWeaponId = this.getSelectedHotbarWeaponId();
+    const changed = normalizedIndex !== this.selectedHotbarSlotIndex;
+    this.selectedHotbarSlotIndex = normalizedIndex;
+    this.refreshHotbarHud();
+    const nextWeaponId = this.getSelectedHotbarWeaponId();
+    this.applyHotbarSelection({ force: changed || source === 'pointer' });
+
+    if (changed && previousWeaponId !== nextWeaponId) {
+      if (nextWeaponId === HELD_ITEM_IDS.pistol) {
+        this.playSoundEffect(this.pistolCockSound);
+      } else {
+        this.clearPendingHipFireShot();
+        this.currentAimMode = false;
+        this.player?.setAimingState(false);
+      }
+    }
+
+    return true;
+  }
+
+  handleHotbarKeyboardInput() {
+    if (!this.canUseHotbarInput()) {
+      return false;
+    }
+
+    const keyEvent = this.input.consumeNextKeyEvent(HOTBAR_KEY_CODES);
+    if (!keyEvent) {
+      return false;
+    }
+
+    const slotIndex = getHotbarSlotIndexFromKeyCode(keyEvent.code);
+    return this.selectHotbarSlot(slotIndex, { source: 'keyboard' });
+  }
+
+  applyHotbarSelection({ force = false } = {}) {
+    const localPlayerState = this.getLocalPlayerState();
+    if (!this.npcService || !localPlayerState || localPlayerState.alive === false) {
+      return false;
+    }
+
+    const desiredWeaponId = this.getSelectedHotbarWeaponId();
+    const currentWeaponId = localPlayerState.equippedWeaponId || '';
+    if (!force && currentWeaponId === desiredWeaponId) {
+      this.pendingHotbarWeaponId = null;
+      return false;
+    }
+
+    const now = performance.now();
+    if (
+      this.pendingHotbarWeaponId === desiredWeaponId
+      && now - this.pendingHotbarRequestedAt < 500
+    ) {
+      return false;
+    }
+
+    this.pendingHotbarWeaponId = desiredWeaponId;
+    this.pendingHotbarRequestedAt = now;
+    this.npcService.equipWeapon?.(desiredWeaponId);
+
+    if (!desiredWeaponId) {
+      this.clearPendingHipFireShot();
+      this.currentAimMode = false;
+      this.player?.setAimingState(false);
+    }
+    void this.player?.setWeaponState?.(desiredWeaponId, { visible: Boolean(desiredWeaponId) });
+    return true;
+  }
+
+  syncSelectedHotbarEquipment(localPlayerState = this.getLocalPlayerState()) {
+    if (!localPlayerState || localPlayerState.alive === false) {
+      return;
+    }
+
+    const desiredWeaponId = this.getSelectedHotbarWeaponId();
+    const currentWeaponId = localPlayerState.equippedWeaponId || '';
+    if (this.pendingHotbarWeaponId !== null && currentWeaponId === this.pendingHotbarWeaponId) {
+      this.pendingHotbarWeaponId = null;
+    }
+    if (this.pendingHotbarWeaponId !== null) {
+      if (performance.now() - this.pendingHotbarRequestedAt < 500) {
+        void this.player?.setWeaponState?.(this.pendingHotbarWeaponId, {
+          visible: Boolean(this.pendingHotbarWeaponId)
+        });
+      }
+      return;
+    }
+    if (currentWeaponId === desiredWeaponId) {
+      return;
+    }
+
+    this.applyHotbarSelection({ force: true });
+  }
+
   refreshZoomHud() {
     const zoomPercent = Math.round((1 / this.getCameraZoomLevel()) * 100);
     const builderEnabled = Boolean(this.worldBuilder?.enabled);
@@ -10348,6 +10515,7 @@ export class Game {
     this.processPendingFrontendReload();
     this.syncMobileControlsHud(localPlayerState);
     const emoteMenuActive = this.updateEmoteMenu();
+    this.refreshHotbarHud();
     if (this.hud.isStockMarketOpen()) {
       void this.refreshStockMarket();
     }
@@ -10394,6 +10562,7 @@ export class Game {
 
     this.handleCameraZoomInput();
     this.handlePhoneMapKeyboardInput(deltaSeconds);
+    this.handleHotbarKeyboardInput();
     this.updateNpcFocusTargets();
 
     if (
@@ -10405,6 +10574,7 @@ export class Game {
 
     if (localPlayerState) {
       this.syncLocalPlayerState(localPlayerState, deltaSeconds);
+      this.syncSelectedHotbarEquipment(localPlayerState);
     } else {
       this.syncTaskHud(null);
     }

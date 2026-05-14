@@ -1,6 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
-import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
+import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
+import { assets } from '../world/assetManifest.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
   BLACKJACK_MAX_WAGER
@@ -2417,6 +2418,38 @@ const HUD_CONTROLS = Object.freeze([
   { label: 'Emote', key: 'B' }
 ]);
 
+function getHotbarPistolIconMarkup() {
+  return `<img class="hud__hotbar-item-icon hud__hotbar-pistol-icon" src="${assets.ui.hotbarPistol}" alt="" aria-hidden="true" draggable="false">`;
+}
+
+function getHotbarItemIconMarkup(slot = {}) {
+  if (slot.itemId === HELD_ITEM_IDS.pistol) {
+    return getHotbarPistolIconMarkup();
+  }
+
+  return '';
+}
+
+function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
+  const index = Number(slot.index) || 0;
+  const isSelected = index === selectedSlotIndex;
+  const isEmpty = !slot.itemId;
+  const label = slot.label || (isEmpty ? 'Empty' : 'Item');
+  return `
+    <button
+      class="hud__hotbar-slot${isSelected ? ' is-selected' : ''}${isEmpty ? ' is-empty' : ''}"
+      type="button"
+      data-hotbar-slot="${index}"
+      aria-label="Hotbar ${escapeHtml(slot.key ?? String(index + 1))}: ${escapeHtml(label)}"
+      aria-pressed="${isSelected ? 'true' : 'false'}"
+    >
+      <span class="hud__hotbar-slot-glow" aria-hidden="true"></span>
+      <span class="hud__hotbar-item">${getHotbarItemIconMarkup(slot)}</span>
+      <span class="hud__hotbar-name">${escapeHtml(label)}</span>
+    </button>
+  `;
+}
+
 const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
@@ -2517,6 +2550,8 @@ export class Hud {
     this.ammoBullets = this.overlay.querySelector('[data-ammo-bullets]');
     this.ammoReserveValue = this.overlay.querySelector('[data-ammo-reserve-value]');
     this.ammoReserveLabel = this.overlay.querySelector('[data-ammo-reserve-label]');
+    this.hotbarRoot = this.overlay.querySelector('[data-hotbar-root]');
+    this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
@@ -2697,6 +2732,7 @@ export class Hud {
     this.lastCombatHealthPercent = null;
     this.lastAmmoClipSize = 0;
     this.lastAmmoSignature = '';
+    this.lastHotbarSignature = '';
     this.lastInteractionState = null;
     this.stockMarketVisible = false;
     this.stockMarketState = {
@@ -2958,6 +2994,9 @@ export class Hud {
           </div>
         </div>
       </section>
+      <nav class="hud__hotbar" data-hotbar-root aria-label="Hotbar" hidden>
+        <div class="hud__hotbar-slots" data-hotbar-slots></div>
+      </nav>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
       </section>
@@ -4631,6 +4670,22 @@ export class Hud {
 
     this.zoomOutButton?.addEventListener('click', () => {
       onZoomOut();
+    });
+  }
+
+  bindHotbarEvents({ onSelectSlot } = {}) {
+    this.hotbarSlotsRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-hotbar-slot]');
+      if (!button) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onSelectSlot?.(Number(button.dataset.hotbarSlot));
     });
   }
 
@@ -6879,6 +6934,47 @@ export class Hud {
       bullet.classList.toggle('is-next', loaded && index === loadedAmmo - 1);
     });
     this.lastAmmoSignature = signature;
+  }
+
+  setHotbarState({
+    visible = true,
+    slots = [],
+    selectedIndex = 0,
+    disabled = false
+  } = {}) {
+    if (!this.hotbarRoot || !this.hotbarSlotsRoot) {
+      return;
+    }
+
+    const safeSlots = Array.isArray(slots) ? slots : [];
+    const maxSelectedIndex = Math.max(0, safeSlots.length - 1);
+    const normalizedSelectedIndex = Math.max(0, Math.min(maxSelectedIndex, Math.trunc(Number(selectedIndex) || 0)));
+    this.hotbarRoot.hidden = !visible;
+    this.hotbarRoot.classList.toggle('is-disabled', Boolean(disabled));
+
+    const signature = JSON.stringify({
+      slots: safeSlots.map((slot) => ({
+        index: Number(slot?.index) || 0,
+        key: slot?.key ?? '',
+        itemId: slot?.itemId ?? '',
+        label: slot?.label ?? '',
+        kind: slot?.kind ?? ''
+      }))
+    });
+    if (signature !== this.lastHotbarSignature) {
+      this.lastHotbarSignature = signature;
+      this.hotbarSlotsRoot.innerHTML = safeSlots
+        .map((slot) => getHotbarSlotMarkup(slot, normalizedSelectedIndex))
+        .join('');
+    }
+
+    for (const button of this.hotbarSlotsRoot.querySelectorAll('[data-hotbar-slot]')) {
+      const slotIndex = Number(button.dataset.hotbarSlot);
+      const isSelected = slotIndex === normalizedSelectedIndex;
+      button.classList.toggle('is-selected', isSelected);
+      button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+      button.disabled = Boolean(disabled);
+    }
   }
 
   setCombatState({

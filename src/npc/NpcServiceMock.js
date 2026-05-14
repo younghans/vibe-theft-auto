@@ -20,6 +20,10 @@ import {
 import { getCombatPickupSpawnDefinitions } from '../shared/combatPickupDefinitions.js';
 import { tickHealthRegen } from '../shared/combatRegen.js';
 import {
+  addInventoryWeapon,
+  hasInventoryWeapon
+} from '../shared/weaponInventory.js';
+import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
   DELIVERY_QUEST_STATUS,
@@ -202,6 +206,7 @@ function createDefaultPlayerState(overrides = {}) {
     respawnAt: 0,
     spawnProtectedUntil: 0,
     equippedWeaponId: '',
+    ownedWeaponIds: '',
     ammoInClip: 0,
     reserveAmmo: 0,
     isReloading: false,
@@ -1066,11 +1071,15 @@ export class NpcServiceMock {
       return;
     }
 
-    if (player.equippedWeaponId && player.equippedWeaponId !== pickup.weaponId) {
+    if (
+      player.equippedWeaponId
+      && player.equippedWeaponId !== pickup.weaponId
+      && !hasInventoryWeapon(player.ownedWeaponIds, pickup.weaponId)
+    ) {
       return;
     }
 
-    if (pickup.weaponId === WEAPON_IDS.pistol && player.equippedWeaponId === WEAPON_IDS.pistol) {
+    if (pickup.weaponId === WEAPON_IDS.pistol && hasInventoryWeapon(player.ownedWeaponIds, WEAPON_IDS.pistol)) {
       const nextClip = Math.min(WEAPON_CLIP_SIZE, player.ammoInClip + pickup.ammoInClip);
       const clipDelta = nextClip - player.ammoInClip;
       const remainingReserveFromPickup = Math.max(0, pickup.ammoInClip - clipDelta) + pickup.reserveAmmo;
@@ -1081,6 +1090,7 @@ export class NpcServiceMock {
       player.ammoInClip = nextClip;
       player.reserveAmmo = nextReserve;
     } else {
+      player.ownedWeaponIds = addInventoryWeapon(player.ownedWeaponIds, pickup.weaponId);
       player.equippedWeaponId = pickup.weaponId;
       player.ammoInClip = Math.min(WEAPON_CLIP_SIZE, pickup.ammoInClip);
       player.reserveAmmo = Math.min(WEAPON_RESERVE_CAP, pickup.reserveAmmo);
@@ -1095,6 +1105,28 @@ export class NpcServiceMock {
       pickupId: pickup.id,
       weaponId: pickup.weaponId
     });
+    this.emit();
+  }
+
+  equipWeapon(weaponId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return;
+    }
+
+    const nextWeaponId = String(weaponId ?? '').trim() === WEAPON_IDS.pistol
+      ? WEAPON_IDS.pistol
+      : '';
+    if (nextWeaponId && !hasInventoryWeapon(player.ownedWeaponIds, nextWeaponId)) {
+      return;
+    }
+    if (player.equippedWeaponId === nextWeaponId) {
+      return;
+    }
+
+    player.equippedWeaponId = nextWeaponId;
+    player.isReloading = false;
+    player.reloadEndsAt = 0;
     this.emit();
   }
 
@@ -2214,6 +2246,7 @@ export class NpcServiceMock {
     player.respawnAt = 0;
     player.spawnProtectedUntil = 0;
     player.equippedWeaponId = '';
+    player.ownedWeaponIds = '';
     player.ammoInClip = 0;
     player.reserveAmmo = 0;
     player.isReloading = false;
@@ -2264,6 +2297,7 @@ export class NpcServiceMock {
 
     this.dropWeaponPickup(player);
     player.equippedWeaponId = '';
+    player.ownedWeaponIds = '';
     player.ammoInClip = 0;
     player.reserveAmmo = 0;
     this.emitCombatEvent({
@@ -2277,14 +2311,15 @@ export class NpcServiceMock {
 
   dropWeaponPickup(player) {
     const totalAmmo = player.ammoInClip + player.reserveAmmo;
-    if (!player.equippedWeaponId || totalAmmo <= 0) {
+    const weaponId = player.equippedWeaponId || (hasInventoryWeapon(player.ownedWeaponIds, WEAPON_IDS.pistol) ? WEAPON_IDS.pistol : '');
+    if (!weaponId || totalAmmo <= 0) {
       return;
     }
 
     const id = `pickup_drop_${++this.pickupSequence}`;
     this.state.pickups.set(id, {
       id,
-      weaponId: player.equippedWeaponId,
+      weaponId,
       x: player.x,
       z: player.z,
       ammoInClip: player.ammoInClip,
