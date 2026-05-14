@@ -2066,6 +2066,7 @@ function createOfficeTrashTossMarkup(game = null) {
   return `
     <div class="hud__office-task hud__office-trash${throwClass}" style="--office-aim:${(marker * 100).toFixed(2)}%; --office-aim-offset:${trajectoryOffset.toFixed(1)}px; --office-aim-tilt:${trajectoryTilt.toFixed(2)}deg; --office-wind-shift:${(wind * 120).toFixed(1)}px; --office-wind-soft:${(wind * 28).toFixed(1)}px; --office-wind-long:${(wind * 80).toFixed(1)}px; --office-target-left:${(targetStart * 100).toFixed(2)}%; --office-target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
       <div class="hud__office-trash-scene" aria-hidden="true">
+        ${createJanitorClosetBackdropMarkup()}
         <span class="hud__office-paper-desk"></span>
         <span class="hud__office-thrower">
           <span class="hud__office-thrower-head"></span>

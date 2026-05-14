@@ -188,6 +188,10 @@ async function validateOfficeJobHudSurfaces() {
   assert(!hudSource.includes('hud__office-fan'), 'Janitor HUD should no longer render the old desk fan.');
   assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
   assert(hudSource.includes('hud__office-janitor-closet'), 'Janitor ready screen should render a janitor closet background.');
+  assert(
+    /function\s+createOfficeTrashTossMarkup[\s\S]*createJanitorClosetBackdropMarkup\(\)/.test(hudSource),
+    'Janitor gameplay HUD should render the janitor closet background, not only the start screen.'
+  );
   assert(hudSource.includes('--office-aim-offset'), 'Janitor trajectory should be aligned from timing-window error.');
   assert(hudSource.includes('updateOfficeTrashTossLiveMarkup'), 'Janitor trajectory should update in place instead of rebuilding every marker tick.');
   assert(hudSource.includes('3..2..1.. GO!'), 'Office jobs should display the 3..2..1.. GO countdown.');
@@ -208,6 +212,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('transition: transform 150ms'), 'Janitor trajectory should damp transform updates instead of snapping.');
   assert(cssSource.includes('right: calc(16% + 47px)'), 'Janitor trajectory line should terminate at the trash can center.');
   assert(cssSource.includes('hud__office-janitor-closet-bucket'), 'Janitor start screen should include janitor closet props.');
+  assert(cssSource.includes('.hud__office-trash-scene .hud__office-janitor-closet'), 'Janitor gameplay should style the closet as the trash toss scene background.');
   assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
   assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');

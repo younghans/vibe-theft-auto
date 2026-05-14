@@ -9990,6 +9990,91 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-trash-scene {
   height: 180px;
+  isolation: isolate;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet {
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  opacity: 0.7;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-shelf {
+  left: 8%;
+  width: 142px;
+  height: 8px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-shelf.is-top {
+  top: 13%;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-shelf.is-mid {
+  top: 31%;
+  width: 118px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-supplies {
+  top: 15%;
+  width: 24px;
+  height: 32px;
+  box-shadow:
+    34px 5px 0 -4px #f4d35e,
+    65px 0 0 -5px #6fe6a2;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-supplies.is-left {
+  left: 11%;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-supplies.is-right {
+  top: 34%;
+  left: 18%;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-mop {
+  right: 34%;
+  bottom: 29%;
+  height: 138px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-mop::after {
+  width: 40px;
+  height: 31px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-broom {
+  right: 24%;
+  bottom: 26%;
+  height: 128px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-broom::after {
+  width: 34px;
+  height: 42px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-bucket {
+  right: 39%;
+  bottom: 12%;
+  width: 60px;
+  height: 42px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-bucket::before {
+  left: 9px;
+  right: 9px;
+  top: -18px;
+  height: 26px;
+  border-width: 3px;
+}
+
+.hud__office-trash-scene .hud__office-janitor-closet-door {
+  right: 6%;
+  top: 8%;
+  width: 94px;
+  height: 78%;
 }
 
 .hud__office-paper-desk {
