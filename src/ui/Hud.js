@@ -1,5 +1,6 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
+import { PLAYER_RESPAWN_COST } from '../shared/respawnRules.js';
 import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
 import { DRINK_ITEM_IDS, DRUNKNESS_MAX_LEVEL, getDrunknessLevelLabel } from '../shared/bartender.js';
 import { assets } from '../world/assetManifest.js';
@@ -50,6 +51,19 @@ const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
 const INTERACTION_MENU_VIEWPORT_PADDING = 12;
 const INTERACTION_MENU_ANCHOR_GAP = 14;
 const INTERACTION_MENU_ANCHOR_SIDE_GAP = 18;
+const RESPAWN_DEATH_LINES = Object.freeze([
+  'You tried your best.',
+  'Hope you have health insurance.',
+  'The pavement remains undefeated.',
+  'That was technically a strategy.',
+  'Maybe dodge next time.',
+  'Your survival plan had gaps.',
+  'The hospital knows you by name now.',
+  'Bold choices, terrible outcome.',
+  'You were almost intimidating.',
+  'At least the deductible is only fifty bucks.',
+  'Respawn department: frequent flyer.'
+]);
 
 function clampPanelPosition(value, min, max) {
   if (max <= min) {
@@ -57,6 +71,11 @@ function clampPanelPosition(value, min, max) {
   }
 
   return Math.min(Math.max(value, min), max);
+}
+
+function getRespawnDeathLine(deaths = 0) {
+  const index = Math.max(0, Math.floor(Number(deaths) || 0) - 1) % RESPAWN_DEATH_LINES.length;
+  return RESPAWN_DEATH_LINES[index];
 }
 
 const PHONE_APPS = Object.freeze([
@@ -2753,6 +2772,8 @@ export class Hud {
     this.skillLevelUpTitle = this.overlay.querySelector('[data-skill-level-up-title]');
     this.skillLevelUpSubtitle = this.overlay.querySelector('[data-skill-level-up-subtitle]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
+    this.respawnLine = this.overlay.querySelector('[data-respawn-line]');
+    this.respawnDetail = this.overlay.querySelector('[data-respawn-detail]');
     this.hitMarker = this.overlay.querySelector('[data-hitmarker]');
     this.zoomControls = this.overlay.querySelector('[data-zoom-controls]');
     this.zoomOutButton = this.overlay.querySelector('[data-zoom-out]');
@@ -3875,7 +3896,10 @@ export class Hud {
       </form>
       <section class="hud__overhead-health-layer" data-overhead-health-layer></section>
       <section class="hud__speech-layer" data-speech-layer></section>
-      <p class="hud__respawn" data-respawn></p>
+      <section class="hud__respawn" data-respawn aria-live="polite">
+        <p class="hud__respawn-line" data-respawn-line></p>
+        <p class="hud__respawn-detail" data-respawn-detail></p>
+      </section>
       <div class="hud__hitmarker" data-hitmarker></div>
       <section class="hud__emote-menu" data-emote-menu>
         <div class="hud__emote-wheel" data-emote-wheel>
@@ -7530,7 +7554,13 @@ export class Hud {
 
     if (!alive) {
       const seconds = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
-      this.respawnText.textContent = seconds > 0 ? `Respawning in ${seconds}s` : 'Respawning...';
+      if (this.respawnLine) {
+        this.respawnLine.textContent = getRespawnDeathLine(deaths);
+      }
+      if (this.respawnDetail) {
+        const countdownText = seconds > 0 ? `Respawning in ${seconds}s` : 'Respawning...';
+        this.respawnDetail.textContent = `${countdownText} - hospital bill: ${formatMoneyAmount(PLAYER_RESPAWN_COST)}`;
+      }
       this.respawnText.classList.add('is-visible');
       return;
     }

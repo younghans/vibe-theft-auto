@@ -21,6 +21,10 @@ import {
   WEAPON_RELOAD_MS,
   WEAPON_RESERVE_CAP
 } from '../../src/shared/combatConstants.js';
+import {
+  PLAYER_RESPAWN_COST,
+  getHospitalRespawnPoint
+} from '../../src/shared/respawnRules.js';
 import { getCombatPickupSpawnDefinitions } from '../../src/shared/combatPickupDefinitions.js';
 import {
   applyWeaponPickupToPlayerState,
@@ -1174,6 +1178,10 @@ export class WorldRoom extends Room {
       .filter(([sessionId, player]) => sessionId !== exceptSessionId && player.alive !== false)
       .map(([, player]) => ({ x: player.x, z: player.z }));
     return chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingPlayers);
+  }
+
+  chooseHospitalRespawnPoint() {
+    return getHospitalRespawnPoint(this.worldState.getPlacements(), getBuilderItemById);
   }
 
   getPlayerMeta(sessionId) {
@@ -2335,11 +2343,11 @@ export class WorldRoom extends Room {
   }
 
   finishRespawn(sessionId, player) {
-    const [spawnX, spawnZ] = this.chooseRespawnPoint(sessionId);
-    player.x = quantizePosition(spawnX);
-    player.z = quantizePosition(spawnZ);
-    player.rotationY = 0;
-    player.aimRotationY = 0;
+    const spawn = this.chooseHospitalRespawnPoint();
+    player.x = quantizePosition(spawn.x);
+    player.z = quantizePosition(spawn.z);
+    player.rotationY = quantizeRotation(spawn.rotationY);
+    player.aimRotationY = player.rotationY;
     player.aiming = false;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
@@ -2359,6 +2367,7 @@ export class WorldRoom extends Room {
     player.emoteActive = false;
     player.emoteStartedAt = 0;
     player.emoteSeq += 1;
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) - PLAYER_RESPAWN_COST;
     const meta = this.getPlayerMeta(sessionId);
     meta.x = player.x;
     meta.z = player.z;

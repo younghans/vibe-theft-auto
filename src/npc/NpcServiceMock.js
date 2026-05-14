@@ -16,6 +16,10 @@ import {
   WEAPON_RANGE,
   WEAPON_RELOAD_MS
 } from '../shared/combatConstants.js';
+import {
+  PLAYER_RESPAWN_COST,
+  getHospitalRespawnPoint
+} from '../shared/respawnRules.js';
 import { getCombatPickupSpawnDefinitions } from '../shared/combatPickupDefinitions.js';
 import {
   applyWeaponPickupToPlayerState,
@@ -2320,15 +2324,16 @@ export class NpcServiceMock {
     player.reloadEndsAt = 0;
   }
 
+  chooseHospitalRespawnPoint() {
+    return getHospitalRespawnPoint(this.worldState.getPlacements(), getBuilderItemById);
+  }
+
   finishRespawn(sessionId, player) {
-    const livingOthers = [...this.state.players.entries()]
-      .filter(([id, candidate]) => id !== sessionId && candidate.alive !== false)
-      .map(([, candidate]) => candidate);
-    const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingOthers);
-    player.x = spawnX;
-    player.z = spawnZ;
-    player.rotationY = 0;
-    player.aimRotationY = 0;
+    const spawn = this.chooseHospitalRespawnPoint();
+    player.x = quantizePosition(spawn.x);
+    player.z = quantizePosition(spawn.z);
+    player.rotationY = quantizeRotation(spawn.rotationY);
+    player.aimRotationY = player.rotationY;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;
@@ -2350,11 +2355,12 @@ export class NpcServiceMock {
     player.emoteActive = false;
     player.emoteStartedAt = 0;
     player.emoteSeq += 1;
+    player.money = Math.trunc(Number(player.money ?? 0) || 0) - PLAYER_RESPAWN_COST;
     this.emitCombatEvent({
       type: 'respawn',
       playerId: sessionId,
-      x: spawnX,
-      z: spawnZ
+      x: player.x,
+      z: player.z
     });
   }
 
