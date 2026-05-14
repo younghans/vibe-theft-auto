@@ -3,7 +3,9 @@ import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
 import {
+  OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL,
   OFFICE_INTERIOR_CEO_MEETING_TABLE,
+  OFFICE_INTERIOR_CUBICLE_WORKSTATIONS,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_JANITOR_CLOSET_SIZE,
@@ -699,24 +701,31 @@ function addOfficeCubicleFloorVisuals(group, materials) {
     cutouts: [OFFICE_STAIR_OPENING]
   });
   addOfficeFloorWalls(group, materials, floorY, layout);
-  for (const [x, z, rotationY] of [
-    [-4.35, -2.45, 0],
-    [3.55, -0.65, 0],
-    [5.85, 1.35, Math.PI * 0.5],
-    [-2.5, 1.2, Math.PI],
-    [1.6, 1.2, Math.PI],
-    [-5.1, 4.35, Math.PI],
-    [-1.0, 4.35, Math.PI],
-    [3.1, 4.35, Math.PI],
-    [6.7, 4.15, -Math.PI * 0.5]
-  ]) {
-    const cubicle = createOfficeCubicleVisual(materials, floorY, x, z, rotationY);
+  for (const { centerX, centerZ, rotationY } of OFFICE_INTERIOR_CUBICLE_WORKSTATIONS) {
+    const cubicle = createOfficeCubicleVisual(materials, floorY, centerX, centerZ, rotationY);
     cubicle.userData.officeFloorId = OFFICE_INTERIOR_FLOOR_IDS.cubicles;
     group.add(cubicle);
   }
 
   group.add(createInteriorBox([5.4, 2.5, 0.14], [-7.25, floorY + 1.52, -8.98], materials.partition));
   group.add(createInteriorBox([0.14, 2.5, 5.5], [-9.78, floorY + 1.52, -6.2], materials.partition));
+  const breakRoomRightWall = createInteriorBox(
+    [
+      OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.width,
+      OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.height,
+      OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.depth
+    ],
+    [
+      OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerX,
+      floorY + (OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.height * 0.5),
+      OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ
+    ],
+    materials.partition
+  );
+  breakRoomRightWall.name = 'office_break_room_right_wall';
+  breakRoomRightWall.userData.officeBreakRoomRightWall = true;
+  breakRoomRightWall.userData.officeBreakRoomRightWallSize = { ...OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL };
+  group.add(breakRoomRightWall);
   group.add(createInteriorBox([3.4, 0.22, 0.92], [-7.45, floorY + 1.22, -7.86], materials.wood));
   group.add(createInteriorBox([1.1, 2.45, 0.88], [-9.0, floorY + 1.34, -7.82], materials.metal));
   group.add(createInteriorBox([0.82, 1.1, 0.64], [-6.46, floorY + 1.78, -7.62], materials.screen));
@@ -998,6 +1007,26 @@ function createOfficeElevatorCollider(origin, rotationQuarterTurns, floorId) {
   );
 }
 
+function createOfficeBreakRoomRightWallCollider(origin, rotationQuarterTurns) {
+  const {
+    centerX,
+    centerZ,
+    width,
+    depth,
+    height
+  } = OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL;
+  return createOfficeObjectCollider(
+    origin,
+    rotationQuarterTurns,
+    OFFICE_INTERIOR_FLOOR_IDS.cubicles,
+    centerX,
+    centerZ,
+    width,
+    depth,
+    height
+  );
+}
+
 function createOfficeActiveFloorColliderMap(origin, rotationQuarterTurns) {
   return new Map([
     [
@@ -1011,6 +1040,7 @@ function createOfficeActiveFloorColliderMap(origin, rotationQuarterTurns) {
       OFFICE_INTERIOR_FLOOR_IDS.cubicles,
       [
         ...createOfficeFloorWallColliders(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.cubicles),
+        createOfficeBreakRoomRightWallCollider(origin, rotationQuarterTurns),
         createOfficeElevatorCollider(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.cubicles)
       ]
     ],

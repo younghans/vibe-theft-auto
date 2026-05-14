@@ -75,6 +75,26 @@ export const OFFICE_INTERIOR_CEO_MEETING_TABLE = Object.freeze({
   rugDepth: 3.9
 });
 
+export const OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL = Object.freeze({
+  centerX: -4.62,
+  centerZ: -6.2,
+  width: 0.14,
+  depth: 5.5,
+  height: 2.5
+});
+
+export const OFFICE_INTERIOR_CUBICLE_WORKSTATIONS = Object.freeze([
+  Object.freeze({ centerX: -5.35, centerZ: -0.35, rotationY: 0 }),
+  Object.freeze({ centerX: -1.15, centerZ: -0.35, rotationY: 0 }),
+  Object.freeze({ centerX: 3.05, centerZ: -0.35, rotationY: 0 }),
+  Object.freeze({ centerX: -5.35, centerZ: 2.9, rotationY: Math.PI }),
+  Object.freeze({ centerX: -1.15, centerZ: 2.9, rotationY: Math.PI }),
+  Object.freeze({ centerX: 3.05, centerZ: 2.9, rotationY: Math.PI }),
+  Object.freeze({ centerX: -5.35, centerZ: 6.05, rotationY: 0 }),
+  Object.freeze({ centerX: -1.15, centerZ: 6.05, rotationY: 0 }),
+  Object.freeze({ centerX: 3.05, centerZ: 6.05, rotationY: 0 })
+]);
+
 const OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP = 0.12;
 const OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE = 0.72;
 const OFFICE_INTERIOR_ELEVATOR_ARRIVAL_CLEARANCE = 1.78;

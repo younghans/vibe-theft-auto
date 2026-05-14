@@ -28,7 +28,9 @@ import {
 } from '../src/shared/officeJobs.js';
 import {
   OFFICE_BUILDING_ITEM_ID,
+  OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL,
   OFFICE_INTERIOR_CEO_MEETING_TABLE,
+  OFFICE_INTERIOR_CUBICLE_WORKSTATIONS,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_ID,
@@ -208,6 +210,8 @@ async function validateOfficeBuildingInteriorFlow() {
   let lobbyTableCount = 0;
   let ceoMeetingChairCount = 0;
   let ceoMeetingTableVisual = null;
+  let breakRoomRightWall = null;
+  let breakRoomRightWallCount = 0;
   const cubicleWorkstations = [];
   scene.group.traverse((node) => {
     if (node.userData?.officeFloorVisual && node.userData.officeFloorId) {
@@ -245,6 +249,10 @@ async function validateOfficeBuildingInteriorFlow() {
     if (node.userData?.officeCubicleWorkstation) {
       cubicleWorkstations.push(node);
     }
+    if (node.userData?.officeBreakRoomRightWall) {
+      breakRoomRightWall = node;
+      breakRoomRightWallCount += 1;
+    }
     if (node.userData?.officeCeoMeetingChair) {
       ceoMeetingChairCount += 1;
     }
@@ -264,7 +272,11 @@ async function validateOfficeBuildingInteriorFlow() {
   assert((janitorClosetProp?.userData?.officeJanitorClosetSize?.depth ?? 0) >= OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth, 'Janitor closet prop should use the larger closet depth.');
   assert(lobbyChairCount >= 10, 'Office lobby should include expanded waiting chairs.');
   assert(lobbyTableCount >= 3, 'Office lobby should include multiple waiting-area tables.');
-  assert(cubicleWorkstations.length >= 9, 'Second floor should keep a full cubicle layout.');
+  assert(cubicleWorkstations.length === OFFICE_INTERIOR_CUBICLE_WORKSTATIONS.length, 'Second floor should render one visual for each shared cubicle workstation slot.');
+  assert(breakRoomRightWallCount === 1, 'Second-floor break room should have one right-side partition wall.');
+  assert(Math.abs((breakRoomRightWall?.position?.x ?? 99) - OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerX) < 0.001, 'Break room right wall should sit on the shared X position.');
+  assert(Math.abs((breakRoomRightWall?.position?.z ?? 99) - OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ) < 0.001, 'Break room right wall should run beside the break room.');
+  assert((breakRoomRightWall?.userData?.officeBreakRoomRightWallSize?.depth ?? 0) >= OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.depth, 'Break room right wall should span the break room depth.');
   assert(ceoMeetingChairCount === 8, 'CEO meeting area should keep chair seating after the table resize.');
   assert(ceoMeetingTableVisual, 'CEO floor should render a tagged meeting table visual.');
 
@@ -274,6 +286,22 @@ async function validateOfficeBuildingInteriorFlow() {
     Math.abs(cubicle.position.x - cubicleElevatorVisualX) > 3.0
     || cubicle.position.z > cubicleElevatorApproachClearZ
   )), 'Second-floor cubicles should leave a clear elevator approach aisle.');
+  for (const expectedCubicle of OFFICE_INTERIOR_CUBICLE_WORKSTATIONS) {
+    assert(cubicleWorkstations.some((cubicle) => (
+      Math.abs(cubicle.position.x - expectedCubicle.centerX) < 0.001
+      && Math.abs(cubicle.position.z - expectedCubicle.centerZ) < 0.001
+      && Math.abs(cubicle.rotation.y - expectedCubicle.rotationY) < 0.001
+    )), 'Second-floor cubicles should use the shared compact grid layout.');
+  }
+  assert(new Set(cubicleWorkstations.map((cubicle) => cubicle.position.x.toFixed(2))).size === 3, 'Second-floor cubicles should form three clean columns.');
+  assert(new Set(cubicleWorkstations.map((cubicle) => cubicle.position.z.toFixed(2))).size === 3, 'Second-floor cubicles should form three clean rows.');
+  const closestCubicleToElevator = Math.min(...cubicleWorkstations.map((cubicle) => cubicle.position.z));
+  const breakRoomSouthEdge = OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ + (OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.depth * 0.5);
+  assert(closestCubicleToElevator - cubicleElevatorApproachClearZ > 2.4, 'Second-floor cubicle grid should not crowd the elevator aisle.');
+  assert(closestCubicleToElevator - breakRoomSouthEdge > 2.4, 'Second-floor cubicle grid should not crowd the break room.');
+  const breakRoomEastEdge = OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerX + (OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.width * 0.5);
+  const elevatorWestEdge = cubicleElevatorVisualX - (OFFICE_INTERIOR_ELEVATOR_SIZE.width * 0.5);
+  assert(elevatorWestEdge - breakRoomEastEdge > 2.8, 'Break room right wall should still leave a usable corridor to the elevator.');
   assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.width ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.width + 0.001, 'CEO meeting table should use the smaller table width.');
   assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.depth ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.depth + 0.001, 'CEO meeting table should use the smaller table depth.');
   assert(Math.abs((ceoMeetingTableVisual?.position?.x ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO meeting table visual should use the shared X position.');
@@ -365,6 +393,13 @@ async function validateOfficeBuildingInteriorFlow() {
     janitorDoorZ - (OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth * 0.5)
   ), 'Janitor closet should have an active first-floor movement blocker.');
   assert(collidersContainLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorX, cubicleElevatorZ), 'Second-floor elevator should have an active movement blocker.');
+  assert(collidersContainLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerX, OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ), 'Break room right wall should block movement between the break room and elevator.');
+  assert(!collidersBlockPlayerAtLocalPoint(
+    cubicleColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.cubicles,
+    (breakRoomEastEdge + elevatorWestEdge) * 0.5,
+    OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ
+  ), 'Break room right wall should not consume the elevator corridor.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorX, ceoElevatorZ), 'CEO elevator should have an active movement blocker.');
   assert(!collidersBlockPlayerAtLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorArrival[0], cubicleElevatorArrival[1]), 'Second-floor elevator arrival should not spawn the player inside elevator collision.');
   assert(!collidersBlockPlayerAtLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorArrival[0], ceoElevatorArrival[1]), 'CEO elevator arrival should not spawn the player inside elevator collision.');
