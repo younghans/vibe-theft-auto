@@ -3,6 +3,7 @@ import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
 import {
+  OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_ID,
   OFFICE_INTERIOR_STATION_TYPES,
   getNearestOfficeInteriorFloorDefinition,
@@ -17,6 +18,18 @@ import { rotateFootprintOffset as rotateLocalOffset } from '../shared/tileFootpr
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
 const INLINE_SHELL_TRIGGER_WIDTH_PADDING = 0.8;
+const OFFICE_INACTIVE_FLOOR_OPACITY = 0.24;
+const OFFICE_STAIR_STEP_COUNT = 18;
+const OFFICE_STAIR_WIDTH = 3.55;
+const OFFICE_STAIR_BOTTOM = Object.freeze({ x: 7.35, z: -7.35 });
+const OFFICE_STAIR_TOP = Object.freeze({ x: 7.05, z: -1.75 });
+const OFFICE_STAIR_RUN_DEPTH = OFFICE_STAIR_TOP.z - OFFICE_STAIR_BOTTOM.z;
+const OFFICE_STAIR_OPENING = Object.freeze({
+  centerX: 7.15,
+  centerZ: -4.65,
+  width: 4.8,
+  depth: 5.9
+});
 
 function createDistrictInteriorTemplate(id, label, palette) {
   return {
@@ -103,6 +116,66 @@ function transformLocalPoint(origin, rotationQuarterTurns, x, y, z) {
   );
 }
 
+function transformWorldPointToLocal(origin, rotationQuarterTurns, worldPosition = null) {
+  const relativeX = Number(worldPosition?.x ?? 0) - (origin?.[0] ?? 0);
+  const relativeZ = Number(worldPosition?.z ?? 0) - (origin?.[2] ?? 0);
+  return rotateLocalOffset(relativeX, relativeZ, -rotationQuarterTurns);
+}
+
+function getOfficeStairProgressAtLocalPosition(localX = 0, localZ = 0) {
+  if (
+    !Number.isFinite(localX)
+    || !Number.isFinite(localZ)
+    || localZ < OFFICE_STAIR_BOTTOM.z
+    || localZ > OFFICE_STAIR_TOP.z
+  ) {
+    return null;
+  }
+
+  const progress = THREE.MathUtils.clamp(
+    (localZ - OFFICE_STAIR_BOTTOM.z) / Math.max(0.001, OFFICE_STAIR_RUN_DEPTH),
+    0,
+    1
+  );
+  const centerX = THREE.MathUtils.lerp(OFFICE_STAIR_BOTTOM.x, OFFICE_STAIR_TOP.x, progress);
+  if (Math.abs(localX - centerX) > OFFICE_STAIR_WIDTH * 0.5) {
+    return null;
+  }
+
+  return progress;
+}
+
+function getOfficeGroundHeightAtWorldPosition(origin, rotationQuarterTurns, worldPosition = null) {
+  const originY = origin?.[1] ?? 0;
+  const relativeY = Number(worldPosition?.y ?? 0) - originY;
+  const cubicleHeight = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const ceoHeight = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const local = transformWorldPointToLocal(origin, rotationQuarterTurns, worldPosition);
+  const stairProgress = getOfficeStairProgressAtLocalPosition(local.x, local.z);
+  if (stairProgress !== null && relativeY < (cubicleHeight + ceoHeight) * 0.5) {
+    const lobbyHeight = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
+    return originY + THREE.MathUtils.lerp(lobbyHeight, cubicleHeight, stairProgress);
+  }
+
+  return originY + getNearestOfficeInteriorFloorDefinition(relativeY).height;
+}
+
+function getOfficeFloorIdAtWorldPosition(origin, rotationQuarterTurns, worldPosition = null) {
+  const originY = origin?.[1] ?? 0;
+  const relativeY = Number(worldPosition?.y ?? 0) - originY;
+  const cubicleHeight = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const ceoHeight = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const local = transformWorldPointToLocal(origin, rotationQuarterTurns, worldPosition);
+  const stairProgress = getOfficeStairProgressAtLocalPosition(local.x, local.z);
+  if (stairProgress !== null && relativeY < (cubicleHeight + ceoHeight) * 0.5) {
+    return stairProgress < 0.5
+      ? OFFICE_INTERIOR_FLOOR_IDS.lobby
+      : OFFICE_INTERIOR_FLOOR_IDS.cubicles;
+  }
+
+  return getNearestOfficeInteriorFloorDefinition(relativeY).id;
+}
+
 function createWallSegment(width, depth, height, color) {
   return new THREE.Mesh(
     new THREE.BoxGeometry(width, height, depth),
@@ -142,6 +215,140 @@ function createInteriorCylinder(radiusTop, radiusBottom, height, segments, posit
   return mesh;
 }
 
+function createOfficeFloorVisualGroup(floorId) {
+  const group = new THREE.Group();
+  group.name = `office_floor_${floorId}`;
+  group.userData.officeFloorId = floorId;
+  group.userData.officeFloorVisual = true;
+  return group;
+}
+
+function createOfficeStairsVisualGroup() {
+  const group = new THREE.Group();
+  group.name = 'office_stairs_always_opaque';
+  group.userData.officeStairsAlwaysOpaque = true;
+  return group;
+}
+
+function ensureUniqueOpacityMaterials(mesh) {
+  if (!mesh?.isMesh || !mesh.material || mesh.userData.officeOpacityMaterialCloned) {
+    return;
+  }
+
+  mesh.material = Array.isArray(mesh.material)
+    ? mesh.material.map((material) => material?.clone?.() ?? material)
+    : mesh.material.clone?.() ?? mesh.material;
+  mesh.userData.officeOpacityMaterialCloned = true;
+}
+
+function setOfficeVisualTreeOpacity(root, opacity = 1) {
+  const normalizedOpacity = THREE.MathUtils.clamp(Number(opacity) || 0, 0, 1);
+  root?.traverse?.((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    ensureUniqueOpacityMaterials(node);
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!material) {
+        continue;
+      }
+      material.opacity = normalizedOpacity;
+      material.transparent = normalizedOpacity < 0.999;
+      material.depthWrite = normalizedOpacity >= 0.999;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function setOfficeActiveFloor(officeVisuals = null, floorId = OFFICE_INTERIOR_FLOOR_IDS.lobby) {
+  if (!officeVisuals?.floorGroups?.size) {
+    return;
+  }
+
+  const activeFloorId = officeVisuals.floorGroups.has(floorId)
+    ? floorId
+    : OFFICE_INTERIOR_FLOOR_IDS.lobby;
+  if (officeVisuals.activeFloorId === activeFloorId) {
+    return;
+  }
+
+  for (const [candidateFloorId, floorGroup] of officeVisuals.floorGroups.entries()) {
+    setOfficeVisualTreeOpacity(
+      floorGroup,
+      candidateFloorId === activeFloorId ? 1 : OFFICE_INACTIVE_FLOOR_OPACITY
+    );
+  }
+  setOfficeVisualTreeOpacity(officeVisuals.stairsGroup, 1);
+  officeVisuals.activeFloorId = activeFloorId;
+}
+
+function toCutoutRect(cutout) {
+  const halfWidth = Math.max(0, Number(cutout?.width ?? 0)) * 0.5;
+  const halfDepth = Math.max(0, Number(cutout?.depth ?? 0)) * 0.5;
+  return {
+    xMin: Number(cutout?.centerX ?? 0) - halfWidth,
+    xMax: Number(cutout?.centerX ?? 0) + halfWidth,
+    zMin: Number(cutout?.centerZ ?? 0) - halfDepth,
+    zMax: Number(cutout?.centerZ ?? 0) + halfDepth
+  };
+}
+
+function addRectSegment(segments, xMin, xMax, zMin, zMax) {
+  if (xMax - xMin <= 0.02 || zMax - zMin <= 0.02) {
+    return;
+  }
+
+  segments.push({ xMin, xMax, zMin, zMax });
+}
+
+function splitRectAroundCutout(rect, cutout) {
+  const xMin = Math.max(rect.xMin, cutout.xMin);
+  const xMax = Math.min(rect.xMax, cutout.xMax);
+  const zMin = Math.max(rect.zMin, cutout.zMin);
+  const zMax = Math.min(rect.zMax, cutout.zMax);
+  if (xMin >= xMax || zMin >= zMax) {
+    return [rect];
+  }
+
+  const segments = [];
+  addRectSegment(segments, rect.xMin, xMin, rect.zMin, rect.zMax);
+  addRectSegment(segments, xMax, rect.xMax, rect.zMin, rect.zMax);
+  addRectSegment(segments, xMin, xMax, rect.zMin, zMin);
+  addRectSegment(segments, xMin, xMax, zMax, rect.zMax);
+  return segments;
+}
+
+function addOfficeRectWithCutouts(group, {
+  xMin,
+  xMax,
+  zMin,
+  zMax,
+  y,
+  height,
+  material,
+  cutouts = []
+}) {
+  const cutoutRects = cutouts.map(toCutoutRect);
+  let segments = [{ xMin, xMax, zMin, zMax }];
+  for (const cutout of cutoutRects) {
+    segments = segments.flatMap((segment) => splitRectAroundCutout(segment, cutout));
+  }
+
+  for (const segment of segments) {
+    group.add(createInteriorBox(
+      [segment.xMax - segment.xMin, height, segment.zMax - segment.zMin],
+      [
+        (segment.xMin + segment.xMax) * 0.5,
+        y,
+        (segment.zMin + segment.zMax) * 0.5
+      ],
+      material
+    ));
+  }
+}
+
 function createOfficeChairVisual(materials, floorY, x, z, rotationY = 0) {
   const chair = new THREE.Group();
   chair.position.set(x, floorY, z);
@@ -172,12 +379,33 @@ function addOfficeFloorVisual(group, materials, floorY, {
   width = 20.4,
   depth = 18.6,
   centerZ = 0.35,
-  material = materials.floor
+  material = materials.floor,
+  cutouts = []
 } = {}) {
-  group.add(createInteriorBox([width, 0.16, depth], [0, floorY - 0.08, centerZ], material));
-  group.add(createInteriorBox([width - 0.9, 0.035, 0.18], [0, floorY + 0.015, centerZ - 5.8], materials.floorStripe));
-  group.add(createInteriorBox([width - 0.9, 0.035, 0.18], [0, floorY + 0.015, centerZ], materials.floorStripe));
-  group.add(createInteriorBox([width - 0.9, 0.035, 0.18], [0, floorY + 0.015, centerZ + 5.8], materials.floorStripe));
+  addOfficeRectWithCutouts(group, {
+    xMin: -width * 0.5,
+    xMax: width * 0.5,
+    zMin: centerZ - (depth * 0.5),
+    zMax: centerZ + (depth * 0.5),
+    y: floorY - 0.08,
+    height: 0.16,
+    material,
+    cutouts
+  });
+
+  const stripeWidth = width - 0.9;
+  for (const stripeZ of [centerZ - 5.8, centerZ, centerZ + 5.8]) {
+    addOfficeRectWithCutouts(group, {
+      xMin: -stripeWidth * 0.5,
+      xMax: stripeWidth * 0.5,
+      zMin: stripeZ - 0.09,
+      zMax: stripeZ + 0.09,
+      y: floorY + 0.015,
+      height: 0.035,
+      material: materials.floorStripe,
+      cutouts
+    });
+  }
 }
 
 function addOfficeElevatorVisual(group, materials, floorY, x, z, rotationY = 0) {
@@ -194,24 +422,80 @@ function addOfficeElevatorVisual(group, materials, floorY, x, z, rotationY = 0) 
   group.add(elevator);
 }
 
-function addOfficeStairsVisual(group, materials, floorY, x, z, rotationY = 0) {
+function addOfficeStairsVisual(group, materials, floorY, x, z, rotationY = 0, {
+  targetFloorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles)
+} = {}) {
   const stairs = new THREE.Group();
   stairs.position.set(x, 0, z);
   stairs.rotation.y = rotationY;
-  for (let step = 0; step < 8; step += 1) {
+  stairs.name = 'office_stair_flight_lobby_to_cubicles';
+
+  const totalRise = Math.max(1, targetFloorY - floorY);
+  const stepHeight = totalRise / OFFICE_STAIR_STEP_COUNT;
+  const stepDepth = OFFICE_STAIR_RUN_DEPTH / OFFICE_STAIR_STEP_COUNT;
+  for (let step = 0; step < OFFICE_STAIR_STEP_COUNT; step += 1) {
     stairs.add(createInteriorBox(
-      [3.2, 0.18, 0.55],
-      [0, floorY + 0.12 + (step * 0.16), step * 0.46],
+      [OFFICE_STAIR_WIDTH, stepHeight, stepDepth + 0.035],
+      [0, floorY + (stepHeight * (step + 0.5)), stepDepth * (step + 0.5)],
       step % 2 === 0 ? materials.trimDark : materials.metalDark
     ));
   }
-  stairs.add(createInteriorBox([0.12, 1.65, 4.2], [-1.76, floorY + 0.9, 1.62], materials.metalDark));
-  stairs.add(createInteriorBox([0.12, 1.65, 4.2], [1.76, floorY + 0.9, 1.62], materials.metalDark));
+
+  const topLandingZ = OFFICE_STAIR_RUN_DEPTH + 0.44;
+  stairs.add(createInteriorBox([OFFICE_STAIR_WIDTH + 0.25, 0.18, 0.95], [0, targetFloorY - 0.09, topLandingZ], materials.metalDark));
+  const railAngle = -Math.atan2(totalRise, OFFICE_STAIR_RUN_DEPTH);
+  for (const sideX of [-((OFFICE_STAIR_WIDTH * 0.5) + 0.22), (OFFICE_STAIR_WIDTH * 0.5) + 0.22]) {
+    const rail = createInteriorBox(
+      [0.12, 0.16, OFFICE_STAIR_RUN_DEPTH + 0.75],
+      [sideX, floorY + (totalRise * 0.5) + 0.9, OFFICE_STAIR_RUN_DEPTH * 0.5],
+      materials.metalDark
+    );
+    rail.rotation.x = railAngle;
+    stairs.add(rail);
+
+    for (let post = 0; post <= 6; post += 1) {
+      const progress = post / 6;
+      stairs.add(createInteriorBox(
+        [0.12, 1.05, 0.12],
+        [
+          sideX,
+          floorY + (totalRise * progress) + 0.58,
+          OFFICE_STAIR_RUN_DEPTH * progress
+        ],
+        materials.metalDark
+      ));
+    }
+  }
   group.add(stairs);
 }
 
-function addOfficeLobbyVisuals(group, materials) {
-  const floorY = getOfficeInteriorFloorHeight('lobby');
+function addOfficeStairwellRailing(group, materials) {
+  const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const xMin = OFFICE_STAIR_OPENING.centerX - (OFFICE_STAIR_OPENING.width * 0.5);
+  const xMax = OFFICE_STAIR_OPENING.centerX + (OFFICE_STAIR_OPENING.width * 0.5);
+  const zMin = OFFICE_STAIR_OPENING.centerZ - (OFFICE_STAIR_OPENING.depth * 0.5);
+  const zMax = OFFICE_STAIR_OPENING.centerZ + (OFFICE_STAIR_OPENING.depth * 0.5);
+  const centerZ = (zMin + zMax) * 0.5;
+  const railY = floorY + 0.88;
+  const railHeight = 0.18;
+
+  group.add(createInteriorBox([0.16, railHeight, OFFICE_STAIR_OPENING.depth], [xMin, railY, centerZ], materials.metalDark));
+  group.add(createInteriorBox([0.16, railHeight, OFFICE_STAIR_OPENING.depth], [xMax, railY, centerZ], materials.metalDark));
+  group.add(createInteriorBox([OFFICE_STAIR_OPENING.width, railHeight, 0.16], [OFFICE_STAIR_OPENING.centerX, railY, zMin], materials.metalDark));
+  for (const [x, z] of [
+    [xMin, zMin],
+    [xMax, zMin],
+    [xMin, centerZ],
+    [xMax, centerZ],
+    [xMin, zMax - 0.4],
+    [xMax, zMax - 0.4]
+  ]) {
+    group.add(createInteriorBox([0.14, 1.45, 0.14], [x, floorY + 0.72, z], materials.metalDark));
+  }
+}
+
+function addOfficeLobbyVisuals(group, stairsGroup, materials) {
+  const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
   addOfficeFloorVisual(group, materials, floorY);
   for (const [x, z, rotationY] of [
     [-3.2, 4.7, Math.PI],
@@ -232,16 +516,18 @@ function addOfficeLobbyVisuals(group, materials) {
   group.add(createInteriorBox([3.35, 0.12, 0.58], [-7.35, floorY + 1.55, -8.55], materials.metalDark));
   group.add(createInteriorCylinder(0.06, 0.06, 2.35, 8, [-8.75, floorY + 1.45, -5.72], materials.wood));
   group.add(createInteriorCylinder(0.24, 0.34, 0.44, 10, [-8.95, floorY + 0.34, -5.42], materials.green));
-  addOfficeStairsVisual(group, materials, floorY, 7.35, -6.95, 0);
+  addOfficeStairsVisual(stairsGroup, materials, floorY, OFFICE_STAIR_BOTTOM.x, OFFICE_STAIR_BOTTOM.z, 0);
 }
 
 function addOfficeCubicleFloorVisuals(group, materials) {
-  const floorY = getOfficeInteriorFloorHeight('cubicles');
-  addOfficeFloorVisual(group, materials, floorY);
+  const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  addOfficeFloorVisual(group, materials, floorY, {
+    cutouts: [OFFICE_STAIR_OPENING]
+  });
   for (const [x, z, rotationY] of [
     [-1.6, -3.35, 0],
     [2.6, -3.35, 0],
-    [6.45, -1.15, Math.PI * 0.5],
+    [5.85, 1.35, Math.PI * 0.5],
     [-1.6, 0.4, Math.PI],
     [2.6, 0.4, Math.PI],
     [-5.1, 4.35, Math.PI],
@@ -259,11 +545,10 @@ function addOfficeCubicleFloorVisuals(group, materials) {
   group.add(createInteriorBox([0.82, 1.1, 0.64], [-6.46, floorY + 1.78, -7.62], materials.screen));
   group.add(createInteriorCylinder(0.24, 0.28, 0.46, 14, [-5.8, floorY + 1.55, -7.46], materials.gold));
   addOfficeElevatorVisual(group, materials, floorY, -8.55, -3.25, Math.PI);
-  addOfficeStairsVisual(group, materials, floorY, 7.05, -4.55, Math.PI);
 }
 
 function addOfficeCeoFloorVisuals(group, materials) {
-  const floorY = getOfficeInteriorFloorHeight('ceo');
+  const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   addOfficeFloorVisual(group, materials, floorY, {
     width: 15.8,
     depth: 10.2,
@@ -311,9 +596,30 @@ function addOfficeInteriorVisuals(group) {
     accentDark: createInteriorMaterial(0x355a78)
   };
 
-  addOfficeLobbyVisuals(group, materials);
-  addOfficeCubicleFloorVisuals(group, materials);
-  addOfficeCeoFloorVisuals(group, materials);
+  const floorGroups = new Map([
+    [OFFICE_INTERIOR_FLOOR_IDS.lobby, createOfficeFloorVisualGroup(OFFICE_INTERIOR_FLOOR_IDS.lobby)],
+    [OFFICE_INTERIOR_FLOOR_IDS.cubicles, createOfficeFloorVisualGroup(OFFICE_INTERIOR_FLOOR_IDS.cubicles)],
+    [OFFICE_INTERIOR_FLOOR_IDS.ceo, createOfficeFloorVisualGroup(OFFICE_INTERIOR_FLOOR_IDS.ceo)]
+  ]);
+  const stairsGroup = createOfficeStairsVisualGroup();
+
+  addOfficeLobbyVisuals(floorGroups.get(OFFICE_INTERIOR_FLOOR_IDS.lobby), stairsGroup, materials);
+  addOfficeCubicleFloorVisuals(floorGroups.get(OFFICE_INTERIOR_FLOOR_IDS.cubicles), materials);
+  addOfficeCeoFloorVisuals(floorGroups.get(OFFICE_INTERIOR_FLOOR_IDS.ceo), materials);
+  addOfficeStairwellRailing(stairsGroup, materials);
+
+  for (const floorGroup of floorGroups.values()) {
+    group.add(floorGroup);
+  }
+  group.add(stairsGroup);
+
+  const officeVisuals = {
+    floorGroups,
+    stairsGroup,
+    activeFloorId: ''
+  };
+  setOfficeActiveFloor(officeVisuals, OFFICE_INTERIOR_FLOOR_IDS.lobby);
+  return officeVisuals;
 }
 
 function createWorkoutPlatform(width, depth) {
@@ -438,6 +744,7 @@ export function createInteriorScene(interiorId, options = {}) {
   group.name = `InteriorScene_${template.id}`;
   group.position.set(origin[0] ?? 0, origin[1] ?? 0, origin[2] ?? 0);
   group.rotation.y = normalizedRotation * (Math.PI / 2);
+  let officeVisuals = null;
 
   const floor = new THREE.Mesh(
     new THREE.BoxGeometry(floorWidth, 0.25, floorDepth),
@@ -451,7 +758,7 @@ export function createInteriorScene(interiorId, options = {}) {
   if (!isOfficeInterior) {
     group.add(floor);
   } else {
-    addOfficeInteriorVisuals(group);
+    officeVisuals = addOfficeInteriorVisuals(group);
   }
 
   const northWall = createWallSegment(floorWidth, wallThickness, template.wallHeight, template.palette.wall);
@@ -670,11 +977,23 @@ export function createInteriorScene(interiorId, options = {}) {
     ],
     getGroundHeightAt(worldPosition = null) {
       if (isOfficeInterior) {
-        const relativeY = Number(worldPosition?.y ?? 0) - (origin[1] ?? 0);
-        return (origin[1] ?? 0) + getNearestOfficeInteriorFloorDefinition(relativeY).height;
+        return getOfficeGroundHeightAtWorldPosition(origin, normalizedRotation, worldPosition);
       }
 
       return origin[1] ?? 0;
+    },
+    setActiveFloorId(floorId = OFFICE_INTERIOR_FLOOR_IDS.lobby) {
+      if (isOfficeInterior) {
+        setOfficeActiveFloor(officeVisuals, floorId);
+      }
+    },
+    setActiveFloorForWorldPosition(worldPosition = null) {
+      if (isOfficeInterior && worldPosition) {
+        setOfficeActiveFloor(
+          officeVisuals,
+          getOfficeFloorIdAtWorldPosition(origin, normalizedRotation, worldPosition)
+        );
+      }
     },
     inlineOverlay: isOfficeInterior,
     setVisible(nextVisible) {

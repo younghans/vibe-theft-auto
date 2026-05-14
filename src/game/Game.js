@@ -3998,6 +3998,7 @@ export class Game {
     }
 
     this.activateInlineShell(desiredEntry);
+    this.activeInlineShell?.scene?.setActiveFloorForWorldPosition?.(this.player.position);
   }
 
   setRemotePlayersVisible(visible) {
@@ -5877,6 +5878,7 @@ export class Game {
     this.finishWorkout({ cancelled: true });
     this.player.position.copy(interaction.targetPosition);
     this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+    this.activeInlineShell?.scene?.setActiveFloorForWorldPosition?.(this.player.position);
     this.resetLocalPlayerKinematics(this.player.position);
     this.currentInteractable = null;
     this.hud.setPrompt(null);
