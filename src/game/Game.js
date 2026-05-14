@@ -5235,6 +5235,8 @@ export class Game {
 
       const level = Math.max(0, Math.floor(Number(result.drunkness?.drunknessLevel) || 0));
       this.player?.playEmote(DRINKING_EMOTE_ID);
+      this.hud.setDrunknessState({ level });
+      this.updateDrunknessEffects({ drunknessLevel: level });
       this.hud.showToast(level > 0
         ? `Drank ${item.label.toLowerCase()}. Drunkness level ${level}.`
         : `Drank ${item.label.toLowerCase()}.`);
@@ -9532,6 +9534,7 @@ export class Game {
     });
     const localDrunknessLevel = isAlive ? Math.max(0, Math.floor(Number(localPlayerState.drunknessLevel) || 0)) : 0;
     this.player.setDrunknessLevel(localDrunknessLevel);
+    this.hud.setDrunknessState({ level: localDrunknessLevel });
     const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
     if (
       this.localStateInitialized

@@ -122,6 +122,24 @@ export function getDrunknessDurationMs(level = 0) {
   return normalizeDrunknessLevel(level) * DRUNKNESS_LEVEL_DURATION_MS;
 }
 
+export function getDrunknessDoseForLevel(level = 0) {
+  const normalizedLevel = normalizeDrunknessLevel(level);
+  return normalizedLevel > 0
+    ? DRUNKNESS_DOSE_THRESHOLDS[normalizedLevel - 1] ?? DRUNKNESS_MAX_DOSE
+    : 0;
+}
+
+export function getDrunknessLevelForTimeRemaining(endsAt = 0, now = Date.now()) {
+  const normalizedEndsAt = Math.max(0, Math.floor(Number(endsAt) || 0));
+  const normalizedNow = Math.max(0, Math.floor(Number(now) || 0));
+  const remainingMs = Math.max(0, normalizedEndsAt - normalizedNow);
+  if (remainingMs <= 0) {
+    return 0;
+  }
+
+  return normalizeDrunknessLevel(Math.ceil(remainingMs / DRUNKNESS_LEVEL_DURATION_MS));
+}
+
 export function getPlayerDrinkCount(player = null, itemId = '') {
   const field = getDrinkInventoryField(itemId);
   return field ? normalizeDrinkInventoryCount(player?.[field]) : 0;
@@ -187,25 +205,25 @@ export function refreshPlayerDrunkness(player = null, now = Date.now()) {
 
   const level = normalizeDrunknessLevel(player.drunknessLevel);
   const endsAt = Math.max(0, Math.floor(Number(player.drunknessEndsAt) || 0));
-  if (level <= 0 && endsAt <= 0) {
-    player.drunknessDose = 0;
-    player.drunknessLevel = 0;
-    player.drunknessEndsAt = 0;
-    return false;
-  }
-
-  if (endsAt > 0 && now >= endsAt) {
-    return clearPlayerDrunkness(player);
-  }
-
   const dose = normalizeDrunknessDose(player.drunknessDose);
-  if (dose <= 0) {
+  if ((level <= 0 && endsAt <= 0) || endsAt <= 0 || dose <= 0) {
     return clearPlayerDrunkness(player);
   }
 
-  const nextLevel = getDrunknessLevelForDose(dose);
-  const changed = player.drunknessDose !== dose || player.drunknessLevel !== nextLevel || player.drunknessEndsAt !== endsAt;
-  player.drunknessDose = dose;
+  const timeLevel = getDrunknessLevelForTimeRemaining(endsAt, now);
+  if (timeLevel <= 0) {
+    return clearPlayerDrunkness(player);
+  }
+
+  const doseLevel = getDrunknessLevelForDose(dose);
+  const nextLevel = Math.min(timeLevel, doseLevel || timeLevel);
+  const nextDose = timeLevel < level
+    ? Math.min(dose, getDrunknessDoseForLevel(nextLevel))
+    : dose;
+  const changed = player.drunknessDose !== nextDose
+    || player.drunknessLevel !== nextLevel
+    || player.drunknessEndsAt !== endsAt;
+  player.drunknessDose = nextDose;
   player.drunknessLevel = nextLevel;
   player.drunknessEndsAt = endsAt;
   return changed;
@@ -222,6 +240,7 @@ export function consumePlayerDrink(player = null, itemId = '', now = Date.now())
     return { ok: false, error: `You do not have any ${item.label.toLowerCase()} left.` };
   }
 
+  refreshPlayerDrunkness(player, now);
   setPlayerDrinkCount(player, item.id, currentCount - 1);
   const nextDose = normalizeDrunknessDose(normalizeDrunknessDose(player.drunknessDose) + getDrinkDose(item.id));
   const nextLevel = getDrunknessLevelForDose(nextDose);

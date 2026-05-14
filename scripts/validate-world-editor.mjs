@@ -13,10 +13,13 @@ import {
   addPlayerDrink,
   consumePlayerDrink,
   getBartenderMenuItem,
+  getDrunknessDoseForLevel,
   getDrunknessDurationMs,
   getDrunknessLevelForDose,
+  getDrunknessLevelForTimeRemaining,
   isBartenderNpc,
-  listBartenderMenuItems
+  listBartenderMenuItems,
+  refreshPlayerDrunkness
 } from '../src/shared/bartender.js';
 import {
   createHotbarSlots,
@@ -375,6 +378,11 @@ function validateBartenderFunction() {
   assert(getDrunknessDurationMs(1) === 30000, 'Level 1 drunkness should last 30 seconds');
   assert(getDrunknessDurationMs(5) === DRUNKNESS_MAX_DURATION_MS, 'Level 5 drunkness should last the max duration');
   assert(DRUNKNESS_MAX_DURATION_MS === 150000, 'Level 5 drunkness should last two and a half minutes');
+  assert(getDrunknessDoseForLevel(4) === 15, 'Level 4 drunkness should decay to the level 4 dose floor');
+  assert(getDrunknessLevelForTimeRemaining(151000, 1000) === 5, 'Level 5 drunkness should show for the first 30 seconds');
+  assert(getDrunknessLevelForTimeRemaining(151000, 31000) === 4, 'Drunkness should drop from level 5 to 4 after 30 seconds');
+  assert(getDrunknessLevelForTimeRemaining(151000, 61000) === 3, 'Drunkness should drop one level every 30 seconds');
+  assert(getDrunknessLevelForTimeRemaining(151000, 121000) === 1, 'Level 5 drunkness should scale down to level 1 before clearing');
 
   const beerPlayer = { beerCount: 0, shotCount: 0, drunknessDose: 0, drunknessLevel: 0, drunknessEndsAt: 0 };
   addPlayerDrink(beerPlayer, DRINK_ITEM_IDS.beer, 20);
@@ -391,6 +399,13 @@ function validateBartenderFunction() {
   }
   assert(shotPlayer.shotCount === 0, 'Consuming shots should remove them from inventory');
   assert(shotPlayer.drunknessLevel === 5, 'Ten shots should reach max drunkness');
+
+  const decayingPlayer = { beerCount: 0, shotCount: 0, drunknessDose: 20, drunknessLevel: 5, drunknessEndsAt: 151000 };
+  refreshPlayerDrunkness(decayingPlayer, 31000);
+  assert(decayingPlayer.drunknessLevel === 4, 'Refreshing drunkness after 30 seconds should lower level 5 to level 4');
+  assert(decayingPlayer.drunknessDose === 15, 'Refreshing drunkness should lower the dose floor with the visible level');
+  refreshPlayerDrunkness(decayingPlayer, 121000);
+  assert(decayingPlayer.drunknessLevel === 1, 'Refreshing drunkness after two minutes should lower level 5 to level 1');
 
   const hotbarSlots = createHotbarSlots({ beerCount: 2, shotCount: 1 });
   assert(getHotbarDrinkItemId(hotbarSlots[1]) === DRINK_ITEM_IDS.beer, 'Beer should appear as a hotbar drink item');

@@ -2962,6 +2962,127 @@ body.is-admin-prompt-resizing * {
   display: none;
 }
 
+.hud__drunkness {
+  --drunkness-hue: 120;
+  --drunkness-fill: 0%;
+  position: absolute;
+  top: calc(88px + var(--safe-top));
+  right: calc(24px + var(--safe-right));
+  display: grid;
+  grid-template-columns: 30px auto;
+  align-items: end;
+  gap: 7px;
+  pointer-events: none;
+  z-index: 6;
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.34));
+  animation: hud-drunkness-enter 180ms ease-out both;
+}
+
+.hud__drunkness-thermometer {
+  position: relative;
+  width: 30px;
+  height: 142px;
+}
+
+.hud__drunkness-track {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 15px;
+  height: 114px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 28%),
+    rgba(7, 11, 16, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.36),
+    0 8px 18px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  transform: translateX(-50%);
+}
+
+.hud__drunkness-track::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: inherit;
+  background: linear-gradient(0deg, rgba(57, 218, 94, 0.2), rgba(244, 206, 62, 0.18) 50%, rgba(255, 55, 48, 0.2));
+  pointer-events: none;
+}
+
+.hud__drunkness-fill {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  height: var(--drunkness-fill);
+  min-height: 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, hsla(var(--drunkness-hue) 100% 68% / 0.98), hsla(var(--drunkness-hue) 92% 44% / 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 0 16px hsla(var(--drunkness-hue) 100% 58% / 0.48);
+  transition: height 260ms ease, background 220ms ease, box-shadow 220ms ease;
+}
+
+.hud__drunkness-bulb {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 30px;
+  height: 30px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.44), transparent 20%),
+    hsl(var(--drunkness-hue) 86% 46%);
+  box-shadow:
+    inset 0 -5px 10px rgba(0, 0, 0, 0.22),
+    0 0 18px hsla(var(--drunkness-hue) 100% 58% / 0.42);
+  transform: translateX(-50%);
+  transition: background 220ms ease, box-shadow 220ms ease;
+}
+
+.hud__drunkness-ticks {
+  position: absolute;
+  top: 5px;
+  right: -2px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 8px;
+  height: 104px;
+}
+
+.hud__drunkness-ticks span {
+  display: block;
+  width: 7px;
+  height: 1px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.42);
+}
+
+.hud__drunkness-level {
+  align-self: center;
+  min-width: 22px;
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  color: hsl(var(--drunkness-hue) 92% 58%);
+  -webkit-text-stroke: 1px rgba(24, 13, 8, 0.9);
+  paint-order: stroke fill;
+  text-align: left;
+  text-shadow:
+    0 2px 0 rgba(55, 19, 10, 0.78),
+    0 6px 14px rgba(0, 0, 0, 0.36);
+  transition: color 220ms ease;
+}
+
 .hud__money {
   position: absolute;
   left: 24px;
@@ -3295,6 +3416,18 @@ body.is-admin-prompt-resizing * {
 
   to {
     transform: translateY(-5%) rotate(-8deg) scale(1.1);
+  }
+}
+
+@keyframes hud-drunkness-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -11816,6 +11949,38 @@ canvas {
     border-radius: 9px;
   }
 
+  .hud__drunkness {
+    top: calc(78px + var(--safe-top));
+    right: calc(16px + var(--safe-right));
+    grid-template-columns: 26px auto;
+    gap: 5px;
+  }
+
+  .hud__drunkness-thermometer {
+    width: 26px;
+    height: 122px;
+  }
+
+  .hud__drunkness-track {
+    width: 13px;
+    height: 96px;
+  }
+
+  .hud__drunkness-bulb {
+    width: 26px;
+    height: 26px;
+  }
+
+  .hud__drunkness-ticks {
+    top: 5px;
+    height: 86px;
+  }
+
+  .hud__drunkness-level {
+    min-width: 18px;
+    font-size: 20px;
+  }
+
   .hud__hotbar-key {
     top: 4px;
     left: 5px;
@@ -13240,6 +13405,10 @@ canvas {
   .hud__blackjack-card-inner,
   .hud__blackjack-card-edge,
   .hud__blackjack-card-face::after,
+  .hud__drunkness,
+  .hud__drunkness-fill,
+  .hud__drunkness-bulb,
+  .hud__drunkness-level,
   .hud__hotbar,
   .hud__hotbar-slot,
   .hud__hotbar-item-icon,

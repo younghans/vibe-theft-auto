@@ -1,7 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
-import { DRINK_ITEM_IDS } from '../shared/bartender.js';
+import { DRINK_ITEM_IDS, DRUNKNESS_MAX_LEVEL } from '../shared/bartender.js';
 import { assets } from '../world/assetManifest.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
@@ -2499,6 +2499,13 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
   `;
 }
 
+function normalizeHudDrunknessLevel(level = 0) {
+  const numeric = Number(level);
+  return Number.isFinite(numeric)
+    ? Math.max(0, Math.min(DRUNKNESS_MAX_LEVEL, Math.floor(numeric)))
+    : 0;
+}
+
 const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
@@ -2601,6 +2608,9 @@ export class Hud {
     this.ammoReserveLabel = this.overlay.querySelector('[data-ammo-reserve-label]');
     this.hotbarRoot = this.overlay.querySelector('[data-hotbar-root]');
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
+    this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
+    this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
+    this.drunknessLevel = this.overlay.querySelector('[data-drunkness-level]');
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
@@ -3046,6 +3056,22 @@ export class Hud {
       <nav class="hud__hotbar" data-hotbar-root aria-label="Hotbar" hidden>
         <div class="hud__hotbar-slots" data-hotbar-slots></div>
       </nav>
+      <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
+        <div class="hud__drunkness-thermometer" aria-hidden="true">
+          <div class="hud__drunkness-track">
+            <div class="hud__drunkness-fill" data-drunkness-fill></div>
+          </div>
+          <div class="hud__drunkness-ticks">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="hud__drunkness-bulb"></div>
+        </div>
+        <strong class="hud__drunkness-level" data-drunkness-level>0</strong>
+      </section>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
       </section>
@@ -7025,6 +7051,28 @@ export class Hud {
       button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       button.disabled = Boolean(disabled);
     }
+  }
+
+  setDrunknessState({ level = 0 } = {}) {
+    if (!this.drunknessRoot || !this.drunknessFill || !this.drunknessLevel) {
+      return;
+    }
+
+    const normalizedLevel = normalizeHudDrunknessLevel(level);
+    const visible = normalizedLevel > 0;
+    const ratio = visible ? normalizedLevel / DRUNKNESS_MAX_LEVEL : 0;
+    const hue = normalizedLevel > 0
+      ? Math.round(120 - ((normalizedLevel - 1) / Math.max(1, DRUNKNESS_MAX_LEVEL - 1)) * 120)
+      : 120;
+
+    this.drunknessRoot.hidden = !visible;
+    this.drunknessRoot.style.setProperty('--drunkness-ratio', `${ratio}`);
+    this.drunknessRoot.style.setProperty('--drunkness-fill', `${Math.round(ratio * 100)}%`);
+    this.drunknessRoot.style.setProperty('--drunkness-hue', `${hue}`);
+    this.drunknessRoot.setAttribute('aria-valuenow', `${normalizedLevel}`);
+    this.drunknessRoot.setAttribute('aria-valuetext', visible ? `Drunkness level ${normalizedLevel}` : 'Sober');
+    this.drunknessRoot.title = visible ? `Drunkness level ${normalizedLevel}` : 'Sober';
+    this.drunknessLevel.textContent = `${normalizedLevel}`;
   }
 
   setCombatState({
