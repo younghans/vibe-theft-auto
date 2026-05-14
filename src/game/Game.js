@@ -138,6 +138,7 @@ import {
   getPlayerSkillsSnapshot
 } from '../shared/skills.js';
 import {
+  OFFICE_JANITOR_GAME_IDS,
   OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
@@ -829,6 +830,7 @@ export class Game {
     this.schoolMicrogameSessionXpEarned = 0;
     this.schoolTeacherPreviewRenderer = null;
     this.officeJobPlacementId = '';
+    this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
     this.adminPromptActiveTab = 'new';
     this.adminPromptTasks = [];
@@ -5999,10 +6001,40 @@ export class Game {
     this.refreshAdminPromptHud();
   }
 
-  chooseOfficeJanitorGameId() {
-    return this.schoolRandom() < 0.5
-      ? OFFICE_JOB_GAME_IDS.janitorTrashToss
-      : OFFICE_JOB_GAME_IDS.janitorMopHero;
+  getOfficeJanitorGameCycle() {
+    return OFFICE_JANITOR_GAME_IDS.length
+      ? OFFICE_JANITOR_GAME_IDS
+      : [
+        OFFICE_JOB_GAME_IDS.janitorTrashToss,
+        OFFICE_JOB_GAME_IDS.janitorMopHero
+      ];
+  }
+
+  getNextOfficeJanitorGameId() {
+    const games = this.getOfficeJanitorGameCycle();
+    const index = Math.max(0, Math.floor(Number(this.officeJanitorGameCycleIndex ?? 0) || 0)) % games.length;
+    return games[index] ?? OFFICE_JOB_GAME_IDS.janitorTrashToss;
+  }
+
+  advanceOfficeJanitorGameCycle(game = this.schoolMicrogame) {
+    if (!this.isOfficeJobGame(game) || game?.round?.officeJobId !== OFFICE_JOB_IDS.janitor) {
+      return;
+    }
+    if (game.data?.officeJanitorCycleConsumed) {
+      return;
+    }
+
+    const games = this.getOfficeJanitorGameCycle();
+    const gameId = String(game.round?.gameId ?? '');
+    const currentIndex = games.indexOf(gameId);
+    const normalizedIndex = currentIndex >= 0
+      ? currentIndex
+      : Math.max(0, Math.floor(Number(this.officeJanitorGameCycleIndex ?? 0) || 0)) % games.length;
+    this.officeJanitorGameCycleIndex = (normalizedIndex + 1) % games.length;
+    game.data = {
+      ...(game.data ?? {}),
+      officeJanitorCycleConsumed: true
+    };
   }
 
   isOfficeJanitorTrashTossGame(game = this.schoolMicrogame) {
@@ -6150,7 +6182,8 @@ export class Game {
     };
 
     if (job.id === OFFICE_JOB_IDS.janitor) {
-      const janitorGameId = this.chooseOfficeJanitorGameId();
+      const janitorGameId = this.getNextOfficeJanitorGameId();
+      data.officeJanitorCycleConsumed = false;
       if (janitorGameId === OFFICE_JOB_GAME_IDS.janitorMopHero) {
         this.configureJanitorMopHero(round, data);
       } else {
@@ -6479,6 +6512,7 @@ export class Game {
     }
 
     const now = performance.now();
+    this.advanceOfficeJanitorGameCycle(this.schoolMicrogame);
     this.schoolMicrogame.phase = 'playing';
     this.schoolMicrogame.startedAt = now;
     this.schoolMicrogame.endsAt = now + Math.max(1, Number(this.schoolMicrogame.round?.durationMs ?? 7000) || 7000);

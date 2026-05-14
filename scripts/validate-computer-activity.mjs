@@ -281,12 +281,13 @@ function validateOfficeJobs() {
   assert(Array.isArray(janitor.gameIds) && janitor.gameIds.includes(OFFICE_JOB_GAME_IDS.janitorTrashToss), 'Janitor should keep the paper toss game alongside other janitor work.');
   assert(Array.isArray(janitor.gameIds) && janitor.gameIds.includes(OFFICE_JOB_GAME_IDS.janitorMopHero), 'Janitor should expose the Mop Hero game.');
   assert(getOfficeJobDefinitionByGameId(OFFICE_JOB_GAME_IDS.janitorMopHero)?.id === OFFICE_JOB_IDS.janitor, 'Mop Hero should resolve to the Janitor office job for payroll.');
-  assert(/random/i.test(`${janitor.subtitle} ${janitor.description}`), 'Starting Janitor should randomly choose between Janitor games.');
-  assert(/paper toss/i.test(`${janitor.subtitle} ${janitor.description}`), 'Janitor task should keep paper toss in the random pool.');
-  assert(/mop hero/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.instructions}`), 'Janitor task should include Mop Hero in the random pool.');
+  assert(/alternate|cycle/i.test(`${janitor.subtitle} ${janitor.description}`), 'Starting Janitor should cycle between Janitor games.');
+  assert(!/random/i.test(`${janitor.subtitle} ${janitor.description}`), 'Janitor job copy should not describe random game selection.');
+  assert(/paper toss/i.test(`${janitor.subtitle} ${janitor.description}`), 'Janitor task should keep paper toss in the cycle.');
+  assert(/mop hero/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.instructions}`), 'Janitor task should include Mop Hero in the cycle.');
   assert(/spacebar/i.test(janitor.instructions) && /throw/i.test(janitor.instructions), 'Janitor menu should still explain Paper Toss controls.');
   assert(/mouse/i.test(janitor.instructions) && /mop/i.test(janitor.instructions) && /dirt/i.test(janitor.instructions), 'Janitor menu should explain mouse mopping controls.');
-  assert(Number(janitor.durationMs ?? 0) >= 16000, 'Janitor random game pool should allow enough time for Mop Hero.');
+  assert(Number(janitor.durationMs ?? 0) >= 16000, 'Janitor game cycle should allow enough time for Mop Hero.');
   assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
   assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
   assert(/hold spacebar/i.test(manager.instructions) && /release/i.test(manager.instructions), 'Office Manager start menu should explain hold/release coffee controls.');
@@ -304,7 +305,10 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
-  assert(gameSource.includes('chooseOfficeJanitorGameId'), 'Janitor should randomly choose which janitor game starts.');
+  assert(gameSource.includes('officeJanitorGameCycleIndex'), 'Janitor should track the next game in a deterministic cycle.');
+  assert(gameSource.includes('getNextOfficeJanitorGameId'), 'Janitor should use the cycle helper when preparing the next game.');
+  assert(gameSource.includes('advanceOfficeJanitorGameCycle'), 'Janitor should advance the cycle once a janitor game starts.');
+  assert(!gameSource.includes('chooseOfficeJanitorGameId'), 'Janitor should no longer use the old random game chooser.');
   assert(gameSource.includes('OFFICE_JOB_GAME_IDS.janitorMopHero'), 'Game logic should branch for the Mop Hero janitor game.');
   assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
   assert(gameSource.includes('OFFICE_JANITOR_BASE_TARGET_WIDTH'), 'Janitor paper toss should use explicit easier target timing constants.');
