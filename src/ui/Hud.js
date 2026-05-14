@@ -1927,9 +1927,9 @@ function createOfficeTrashTossMarkup(game = null) {
   const madeThrows = Math.max(0, Math.floor(Number(data.madeThrows ?? 0) || 0));
   const requiredThrows = Math.max(1, Math.floor(Number(data.requiredThrows ?? round.requiredThrows ?? 3) || 3));
   const progress = Math.max(0, Math.min(100, (madeThrows / requiredThrows) * 100));
-  const windLabel = Math.abs(wind) < 0.025
-    ? 'Fan calm'
-    : `${wind > 0 ? 'Fan pushes right' : 'Fan pushes left'} ${Math.round(Math.abs(wind) * 100)}`;
+  const driftLabel = Math.abs(wind) < 0.025
+    ? 'Straight toss'
+    : `${wind > 0 ? 'Throw bends right' : 'Throw bends left'} ${Math.round(Math.abs(wind) * 100)}`;
   const throwClass = thrown
     ? made
       ? ' is-thrown is-made'
@@ -1939,7 +1939,10 @@ function createOfficeTrashTossMarkup(game = null) {
     <div class="hud__office-task hud__office-trash${throwClass}" style="--office-aim:${(marker * 100).toFixed(2)}%; --office-wind-shift:${(wind * 120).toFixed(1)}px; --office-wind-soft:${(wind * 28).toFixed(1)}px; --office-wind-long:${(wind * 80).toFixed(1)}px; --office-target-left:${(targetStart * 100).toFixed(2)}%; --office-target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
       <div class="hud__office-trash-scene" aria-hidden="true">
         <span class="hud__office-paper-desk"></span>
-        <span class="hud__office-fan"><span></span></span>
+        <span class="hud__office-thrower">
+          <span class="hud__office-thrower-head"></span>
+          <span class="hud__office-thrower-arm"></span>
+        </span>
         <span class="hud__office-wind is-one"></span>
         <span class="hud__office-wind is-two"></span>
         <span class="hud__office-wind is-three"></span>
@@ -1953,7 +1956,7 @@ function createOfficeTrashTossMarkup(game = null) {
       </div>
       <div class="hud__school-score-strip">
         <span>Round ${escapeHtml(String(shotNumber))}/${escapeHtml(String(requiredThrows))}</span>
-        <span>${escapeHtml(windLabel)}</span>
+        <span>${escapeHtml(driftLabel)}</span>
         <span>${escapeHtml(String(madeThrows))} sunk</span>
       </div>
       ${createSchoolProgressMarkup(progress, 'Janitor toss progress')}
@@ -2032,7 +2035,9 @@ function createOfficeCeoMarkup(game = null) {
           <em>Q${escapeHtml(String(Math.min(required, approved + 1)))}</em>
         </span>
         <span class="hud__office-ceo-stamp-arm">
-          <span>APPROVE</span>
+          <span class="hud__office-ceo-stamp-handle"></span>
+          <span class="hud__office-ceo-stamp-neck"></span>
+          <span class="hud__office-ceo-stamp-pad">APPROVE</span>
         </span>
         <span class="hud__office-ceo-stamp-mark">APPROVED</span>
       </div>

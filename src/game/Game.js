@@ -7352,7 +7352,7 @@ export class Game {
     }
 
     this.configureJanitorTrashTossShot(game.round, game.data, madeThrows + 1);
-    game.message = `Round ${madeThrows + 1}. The fan gets meaner.`;
+    game.message = `Round ${madeThrows + 1}. The throwing lane gets tighter.`;
     this.syncSchoolMicrogameHud();
   }
 

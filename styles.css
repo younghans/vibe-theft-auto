@@ -9082,40 +9082,115 @@ body.is-admin-prompt-resizing * {
     linear-gradient(90deg, #6e4a31, #2f2118);
 }
 
-.hud__office-fan {
-  position: absolute;
-  left: 22px;
-  bottom: 42px;
-  width: 68px;
-  height: 86px;
-  border-radius: 16px 16px 8px 8px;
-  background: linear-gradient(180deg, #b7c0c8, #4d5a64);
-  box-shadow: inset -8px -8px 0 rgba(0, 0, 0, 0.16), 0 12px 18px rgba(0, 0, 0, 0.24);
-}
-
-.hud__office-fan::before {
-  content: '';
-  position: absolute;
-  left: 10px;
-  top: 8px;
-  width: 48px;
-  aspect-ratio: 1;
-  border: 4px solid rgba(20, 26, 30, 0.56);
-  border-radius: 999px;
-  background:
-    repeating-conic-gradient(from 8deg, rgba(255, 255, 255, 0.82) 0 16deg, rgba(59, 72, 84, 0.92) 16deg 38deg);
-  animation: hud-office-fan-spin 240ms linear infinite;
-}
-
-.hud__office-fan::after {
-  content: '';
+.hud__office-thrower {
   position: absolute;
   left: 20px;
-  right: 20px;
-  bottom: 9px;
-  height: 10px;
+  bottom: 42px;
+  width: 98px;
+  height: 118px;
+  transform-origin: 46px 100%;
+  z-index: 4;
+  animation: hud-office-thrower-ready 1500ms ease-in-out infinite;
+}
+
+.hud__office-thrower::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 40px;
+  width: 46px;
+  height: 58px;
+  border-radius: 18px 18px 9px 9px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 44%),
+    linear-gradient(180deg, #4c6372, #1f2a33);
+  box-shadow: inset -8px -8px 0 rgba(0, 0, 0, 0.16), 0 12px 18px rgba(0, 0, 0, 0.22);
+}
+
+.hud__office-thrower::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  bottom: 0;
+  width: 68px;
+  height: 18px;
   border-radius: 999px;
-  background: rgba(20, 26, 30, 0.58);
+  background: linear-gradient(90deg, #151a20, #303b45, #151a20);
+}
+
+.hud__office-thrower-head {
+  position: absolute;
+  left: 28px;
+  top: 6px;
+  width: 38px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 42%, rgba(40, 24, 18, 0.82) 0 2px, transparent 3px),
+    radial-gradient(circle at 65% 42%, rgba(40, 24, 18, 0.82) 0 2px, transparent 3px),
+    linear-gradient(180deg, #f2c29d, #aa7250);
+  box-shadow: inset 0 -7px 0 rgba(0, 0, 0, 0.12), 0 8px 12px rgba(0, 0, 0, 0.2);
+}
+
+.hud__office-thrower-head::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -3px;
+  height: 12px;
+  border-radius: 999px 999px 8px 8px;
+  background: #202833;
+}
+
+.hud__office-thrower-arm {
+  position: absolute;
+  left: 54px;
+  top: 55px;
+  width: 62px;
+  height: 13px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #314050 0 34%, #f0bd96 34% 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.22);
+  transform: rotate(-22deg);
+  transform-origin: 6px 50%;
+}
+
+.hud__office-thrower-arm::before {
+  content: '';
+  position: absolute;
+  right: -8px;
+  top: -5px;
+  width: 17px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #f0bd96;
+}
+
+.hud__office-thrower-arm::after {
+  content: '';
+  position: absolute;
+  right: -16px;
+  top: -11px;
+  width: 18px;
+  aspect-ratio: 1;
+  border-radius: 42% 58% 48% 52%;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(201, 212, 216, 0.9)),
+    repeating-linear-gradient(45deg, transparent 0 5px, rgba(60, 70, 76, 0.18) 5px 7px);
+  box-shadow: inset -4px -4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.hud__office-trash.is-thrown .hud__office-thrower {
+  animation: hud-office-thrower-toss 620ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+.hud__office-trash.is-thrown .hud__office-thrower-arm {
+  animation: hud-office-thrower-arm-release 620ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+.hud__office-trash.is-thrown .hud__office-thrower-arm::after {
+  opacity: 0;
 }
 
 .hud__office-wind {
@@ -9145,8 +9220,8 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-aim-arc {
   position: absolute;
-  left: 20%;
-  bottom: 52px;
+  left: 112px;
+  bottom: 72px;
   width: 48%;
   height: 108px;
   border-top: 3px dashed rgba(248, 211, 79, 0.48);
@@ -9159,8 +9234,8 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-paper-ball {
   position: absolute;
-  left: 20%;
-  bottom: 58px;
+  left: 116px;
+  bottom: 90px;
   width: 34px;
   aspect-ratio: 1;
   border-radius: 42% 58% 48% 52%;
@@ -9168,7 +9243,8 @@ body.is-admin-prompt-resizing * {
     linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(201, 212, 216, 0.88)),
     repeating-linear-gradient(45deg, transparent 0 8px, rgba(60, 70, 76, 0.18) 8px 10px);
   box-shadow: inset -6px -7px 0 rgba(0, 0, 0, 0.12), 0 8px 14px rgba(0, 0, 0, 0.26);
-  transform: rotate(-12deg);
+  transform: translateX(-50%) rotate(-12deg);
+  z-index: 4;
 }
 
 .hud__office-trash.is-thrown .hud__office-paper-ball {
@@ -9176,7 +9252,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__office-trash.is-made .hud__office-paper-ball {
-  animation-name: hud-office-paper-swish;
+  animation-name: hud-office-paper-score;
 }
 
 .hud__office-trash.is-miss-left .hud__office-paper-ball {
@@ -9186,6 +9262,7 @@ body.is-admin-prompt-resizing * {
 .hud__office-trash .hud__office-trash-basket {
   right: 16%;
   bottom: 34px;
+  z-index: 5;
 }
 
 .hud__office-trash.is-made .hud__office-trash-basket {
@@ -9524,30 +9601,89 @@ body.is-admin-prompt-resizing * {
 .hud__office-ceo-stamp-arm {
   position: absolute;
   left: var(--stamp-left, 50%);
-  top: 18px;
-  display: grid;
-  place-items: end center;
-  width: 92px;
-  height: 104px;
-  border-radius: 16px 16px 10px 10px;
-  background: linear-gradient(180deg, #facc15, #a16207);
-  box-shadow: inset -8px -10px 0 rgba(0, 0, 0, 0.16), 0 16px 24px rgba(0, 0, 0, 0.24);
+  top: 8px;
+  width: 118px;
+  height: 126px;
   transform: translateX(-50%);
   transform-origin: center top;
   z-index: 6;
 }
 
-.hud__office-ceo-stamp-arm span {
+.hud__office-ceo-stamp-handle {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 62px;
+  height: 54px;
+  border-radius: 999px 999px 16px 16px;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.38), transparent 24%),
+    linear-gradient(180deg, #ffe08a, #c9870d 72%, #8a5204);
+  box-shadow: inset -8px -10px 0 rgba(0, 0, 0, 0.14), 0 12px 18px rgba(0, 0, 0, 0.22);
+  transform: translateX(-50%);
+}
+
+.hud__office-ceo-stamp-handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: 22px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(84, 47, 4, 0.34);
+  transform: translateX(-50%);
+}
+
+.hud__office-ceo-stamp-neck {
+  position: absolute;
+  left: 50%;
+  top: 46px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #d99b1f, #7c4605);
+  box-shadow: inset -7px 0 0 rgba(0, 0, 0, 0.14);
+  transform: translateX(-50%);
+}
+
+.hud__office-ceo-stamp-pad {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
   display: grid;
   place-items: center;
-  width: 112px;
-  height: 32px;
-  margin-bottom: -18px;
-  border-radius: 5px;
-  background: #16100a;
+  width: 116px;
+  height: 40px;
+  border: 3px solid rgba(255, 224, 138, 0.34);
+  border-radius: 9px 9px 6px 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 42%),
+    linear-gradient(180deg, #24170a, #080503);
   color: #ffe08a;
   font-size: 11px;
   font-weight: 1000;
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.28), 0 12px 18px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+}
+
+.hud__office-ceo-stamp-pad::before,
+.hud__office-ceo-stamp-pad::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(255, 224, 138, 0.28);
+}
+
+.hud__office-ceo-stamp-pad::before {
+  left: 12px;
+}
+
+.hud__office-ceo-stamp-pad::after {
+  right: 12px;
 }
 
 .hud__office-ceo-stamp.is-stamping .hud__office-ceo-stamp-arm {
@@ -9558,9 +9694,13 @@ body.is-admin-prompt-resizing * {
   position: absolute;
   left: var(--stamp-left, 50%);
   bottom: 102px;
-  padding: 7px 10px;
-  border: 3px solid #16a34a;
-  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  width: 118px;
+  height: 42px;
+  border: 4px solid #16a34a;
+  border-radius: 999px / 48%;
+  background: rgba(22, 163, 74, 0.08);
   color: #16a34a;
   font-size: 14px;
   font-weight: 1000;
@@ -9680,9 +9820,37 @@ body.is-admin-prompt-resizing * {
   }
 }
 
-@keyframes hud-office-fan-spin {
-  to {
-    transform: rotate(1turn);
+@keyframes hud-office-thrower-ready {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(1deg);
+  }
+}
+
+@keyframes hud-office-thrower-toss {
+  0% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  42% {
+    transform: translateY(-4px) rotate(6deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+@keyframes hud-office-thrower-arm-release {
+  0% {
+    transform: rotate(-34deg);
+  }
+  45% {
+    transform: rotate(-4deg) translateX(5px);
+  }
+  100% {
+    transform: rotate(-18deg);
   }
 }
 
@@ -9700,41 +9868,67 @@ body.is-admin-prompt-resizing * {
   }
 }
 
-@keyframes hud-office-paper-swish {
+@keyframes hud-office-paper-score {
   0% {
-    transform: translate(0, 0) rotate(-12deg) scale(1);
+    left: 116px;
+    bottom: 90px;
+    opacity: 1;
+    transform: translateX(-50%) rotate(-12deg) scale(1);
   }
-  58% {
-    transform: translate(calc(43vw - 170px + var(--office-wind-soft, 0px)), -94px) rotate(420deg) scale(0.86);
+  45% {
+    left: calc(48% + var(--office-wind-soft, 0px));
+    bottom: 154px;
+    transform: translateX(-50%) rotate(390deg) scale(0.88);
+  }
+  78% {
+    left: calc(72% + var(--office-wind-soft, 0px));
+    bottom: 112px;
+    transform: translateX(-50%) rotate(640deg) scale(0.64);
   }
   100% {
-    transform: translate(calc(50vw - 206px), 18px) rotate(760deg) scale(0.42);
-    opacity: 0.16;
+    left: calc(84% - 47px);
+    bottom: 76px;
+    opacity: 0.72;
+    transform: translateX(-50%) rotate(780deg) scale(0.38);
   }
 }
 
 @keyframes hud-office-paper-miss-right {
   0% {
-    transform: translate(0, 0) rotate(-12deg) scale(1);
+    left: 116px;
+    bottom: 90px;
+    opacity: 1;
+    transform: translateX(-50%) rotate(-12deg) scale(1);
   }
-  60% {
-    transform: translate(calc(43vw - 132px + var(--office-wind-long, 0px)), -82px) rotate(360deg) scale(0.86);
+  58% {
+    left: calc(58% + var(--office-wind-long, 0px));
+    bottom: 142px;
+    transform: translateX(-50%) rotate(360deg) scale(0.86);
   }
   100% {
-    transform: translate(calc(50vw - 132px), -6px) rotate(710deg) scale(0.64);
+    left: calc(90% + var(--office-wind-long, 0px));
+    bottom: 106px;
+    transform: translateX(-50%) rotate(710deg) scale(0.64);
     opacity: 0.34;
   }
 }
 
 @keyframes hud-office-paper-miss-left {
   0% {
-    transform: translate(0, 0) rotate(-12deg) scale(1);
+    left: 116px;
+    bottom: 90px;
+    opacity: 1;
+    transform: translateX(-50%) rotate(-12deg) scale(1);
   }
-  60% {
-    transform: translate(calc(36vw - 170px + var(--office-wind-long, 0px)), -88px) rotate(360deg) scale(0.86);
+  58% {
+    left: calc(42% + var(--office-wind-long, 0px));
+    bottom: 148px;
+    transform: translateX(-50%) rotate(360deg) scale(0.86);
   }
   100% {
-    transform: translate(calc(42vw - 244px), 2px) rotate(680deg) scale(0.66);
+    left: calc(10% + var(--office-wind-long, 0px));
+    bottom: 104px;
+    transform: translateX(-50%) rotate(680deg) scale(0.66);
     opacity: 0.34;
   }
 }
@@ -9788,10 +9982,10 @@ body.is-admin-prompt-resizing * {
 
 @keyframes hud-office-stamp-slam {
   0% {
-    transform: translateX(-50%) translateY(-18px) rotate(-5deg);
+    transform: translateX(-50%) translateY(-26px) rotate(-3deg);
   }
   58% {
-    transform: translateX(-50%) translateY(78px) rotate(1deg) scaleY(0.92);
+    transform: translateX(-50%) translateY(32px) rotate(1deg) scaleY(0.94);
   }
   100% {
     transform: translateX(-50%) translateY(0) rotate(0deg);
@@ -10858,12 +11052,23 @@ canvas {
   }
 
   .hud__office-ceo-stamp-arm {
-    top: 4px;
-    width: 76px;
-    height: 72px;
+    top: 0;
+    width: 88px;
+    height: 88px;
   }
 
-  .hud__office-ceo-stamp-arm span {
+  .hud__office-ceo-stamp-handle {
+    width: 44px;
+    height: 38px;
+  }
+
+  .hud__office-ceo-stamp-neck {
+    top: 32px;
+    width: 30px;
+    height: 30px;
+  }
+
+  .hud__office-ceo-stamp-pad {
     width: 94px;
     height: 28px;
     font-size: 10px;
