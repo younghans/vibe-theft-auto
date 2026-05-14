@@ -136,6 +136,11 @@ const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const SCHOOL_MICROGAME_COUNTDOWN_MS = 3000;
+const OFFICE_JOB_COUNTDOWN_MS = 2500;
+const OFFICE_JOB_COUNTDOWN_GO_MS = 400;
+const OFFICE_JANITOR_REQUIRED_THROWS = 3;
+const OFFICE_JANITOR_THROW_RESOLVE_MS = 820;
+const OFFICE_CEO_STAMP_RESOLVE_MS = 680;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
@@ -5707,6 +5712,53 @@ export class Game {
     this.refreshAdminPromptHud();
   }
 
+  configureJanitorTrashTossShot(round = {}, data = {}, shotNumber = 1) {
+    const currentShot = Math.max(1, Math.floor(Number(shotNumber ?? 1) || 1));
+    const difficulty = Math.max(0, Math.min(2, currentShot - 1));
+    const wind = (this.schoolRandom() - 0.5) * (0.32 + difficulty * 0.1);
+    const targetWidth = Math.max(0.11, 0.17 - difficulty * 0.025);
+    const targetStart = 0.4 + this.schoolRandom() * 0.24 - wind * 0.34;
+    round.targetStart = THREE.MathUtils.clamp(targetStart, 0.1, 0.9 - targetWidth);
+    round.targetEnd = round.targetStart + targetWidth;
+    round.wind = wind;
+    data.marker = this.schoolRandom() * 0.22;
+    data.direction = this.schoolRandom() > 0.5 ? -1 : 1;
+    data.speed = 1.32 + difficulty * 0.24 + this.schoolRandom() * 0.34;
+    data.shotNumber = currentShot;
+    data.thrown = false;
+    data.throwMade = false;
+    data.throwResolveAt = 0;
+    data.throwMissSide = '';
+  }
+
+  startOfficeJobCountdown(game = this.schoolMicrogame) {
+    if (!this.isOfficeJobGame(game) || game.phase !== 'ready') {
+      this.beginSchoolMicrogame();
+      return;
+    }
+
+    const now = performance.now();
+    game.phase = 'countdown';
+    game.data = {
+      ...(game.data ?? {}),
+      countdownStartedAt: now,
+      countdownEndsAt: now + OFFICE_JOB_COUNTDOWN_MS,
+      countdownMs: OFFICE_JOB_COUNTDOWN_MS,
+      countdownGoMs: OFFICE_JOB_COUNTDOWN_GO_MS,
+      countdownStepMs: Math.max(1, (OFFICE_JOB_COUNTDOWN_MS - OFFICE_JOB_COUNTDOWN_GO_MS) / 3),
+      roundNumber: 1,
+      sessionXpEarned: 0
+    };
+    game.remainingMs = OFFICE_JOB_COUNTDOWN_MS;
+    game.message = '3..2..1.. GO!';
+    game.resultTitle = '';
+    game.resultDetail = '';
+    this.schoolMicrogameHoldActive = false;
+    this.schoolMicrogameLastTickAt = now;
+    this.playSoundEffect(this.phoneUnlockSound);
+    this.syncSchoolMicrogameHud();
+  }
+
   createOfficeJobRound(jobId = OFFICE_JOB_IDS.janitor) {
     const job = getOfficeJobDefinition(jobId) ?? getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
     const round = {
@@ -5733,18 +5785,11 @@ export class Game {
     };
 
     if (job.id === OFFICE_JOB_IDS.janitor) {
-      const wind = (this.schoolRandom() - 0.5) * 0.3;
-      const targetStart = 0.42 + this.schoolRandom() * 0.18 - wind * 0.32;
-      round.targetStart = Math.max(0.1, Math.min(0.73, targetStart));
-      round.targetEnd = Math.min(0.9, round.targetStart + 0.17);
-      round.wind = wind;
-      data.marker = this.schoolRandom() * 0.18;
-      data.direction = 1;
-      data.speed = 1.28 + this.schoolRandom() * 0.32;
-      data.thrown = false;
-      data.throwMade = false;
-      data.throwResolveAt = 0;
-      data.throwMissSide = '';
+      round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+      data.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+      data.madeThrows = 0;
+      data.throwSeq = 0;
+      this.configureJanitorTrashTossShot(round, data, 1);
     } else if (job.id === OFFICE_JOB_IDS.officeManager) {
       round.targetStart = 72;
       round.targetEnd = 82;
@@ -6115,10 +6160,11 @@ export class Game {
       this.schoolMicrogame.data.completing = false;
       this.schoolMicrogame.data.completeAt = 0;
     } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.janitor) {
-      this.schoolMicrogame.data.thrown = false;
-      this.schoolMicrogame.data.throwMade = false;
-      this.schoolMicrogame.data.throwResolveAt = 0;
-      this.schoolMicrogame.data.throwMissSide = '';
+      this.schoolMicrogame.round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+      this.schoolMicrogame.data.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+      this.schoolMicrogame.data.madeThrows = 0;
+      this.schoolMicrogame.data.throwSeq = 0;
+      this.configureJanitorTrashTossShot(this.schoolMicrogame.round, this.schoolMicrogame.data, 1);
     } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.officeManager) {
       this.schoolMicrogame.data.fill = 0;
       this.schoolMicrogame.data.released = false;
@@ -6443,6 +6489,10 @@ export class Game {
     }
 
     if (action === 'start' && game.context !== 'school-minigame') {
+      if (this.isOfficeJobGame(game)) {
+        this.startOfficeJobCountdown(game);
+        return;
+      }
       this.beginSchoolMicrogame();
       return;
     }
@@ -6715,10 +6765,12 @@ export class Game {
       const targetMid = (targetStart + targetEnd) / 2;
       const now = performance.now();
       game.data.throwMade = made;
+      game.data.throwSeq = Math.max(0, Math.floor(Number(game.data.throwSeq ?? 0) || 0)) + 1;
       game.data.throwMissSide = made ? '' : marker < targetMid ? 'left' : 'right';
-      game.data.throwResolveAt = now + 820;
+      game.data.throwResolveAt = now + OFFICE_JANITOR_THROW_RESOLVE_MS;
       game.endsAt = Math.max(Number(game.endsAt ?? now) || now, game.data.throwResolveAt + 100);
-      game.message = made ? 'Perfect arc. Basket is eating paper.' : 'That arc is trouble.';
+      const shot = Math.max(1, Math.floor(Number(game.data.shotNumber ?? 1) || 1));
+      game.message = made ? `Shot ${shot} is clean. Keep the streak alive.` : 'That arc is trouble.';
       this.playSoundEffect(made ? this.levelUpSound : this.playingCardSound);
       this.syncSchoolMicrogameHud();
       return;
@@ -6738,7 +6790,7 @@ export class Game {
       game.data.stampSuccess = made;
       game.data.stampSeq = Math.max(0, Math.floor(Number(game.data.stampSeq ?? 0) || 0)) + 1;
       game.data.stampMissSide = made ? '' : marker < targetMid ? 'early' : 'late';
-      game.data.stampResolveAt = now + 680;
+      game.data.stampResolveAt = now + OFFICE_CEO_STAMP_RESOLVE_MS;
       game.endsAt = Math.max(Number(game.endsAt ?? now) || now, game.data.stampResolveAt + 120);
 
       if (made) {
@@ -7286,6 +7338,24 @@ export class Game {
     }
   }
 
+  advanceJanitorTrashToss(game = this.schoolMicrogame) {
+    if (!this.isOfficeJobGame(game) || game.round?.officeJobId !== OFFICE_JOB_IDS.janitor || game.phase !== 'playing') {
+      return;
+    }
+
+    const madeThrows = Math.max(0, Math.floor(Number(game.data.madeThrows ?? 0) || 0)) + 1;
+    const required = Math.max(1, Math.floor(Number(game.data.requiredThrows ?? game.round.requiredThrows ?? OFFICE_JANITOR_REQUIRED_THROWS) || OFFICE_JANITOR_REQUIRED_THROWS));
+    game.data.madeThrows = madeThrows;
+    if (madeThrows >= required) {
+      void this.finishOfficeJob(true, 'Clean Sweep', 'Three wind-bent paper shots land in the basket.');
+      return;
+    }
+
+    this.configureJanitorTrashTossShot(game.round, game.data, madeThrows + 1);
+    game.message = `Round ${madeThrows + 1}. The fan gets meaner.`;
+    this.syncSchoolMicrogameHud();
+  }
+
   advanceCeoMemo(game = this.schoolMicrogame) {
     if (!this.isOfficeJobGame(game) || game.round?.officeJobId !== OFFICE_JOB_IDS.ceo || game.phase !== 'playing') {
       return;
@@ -7345,11 +7415,11 @@ export class Game {
       if (game.data.thrown) {
         const resolveAt = Number(game.data.throwResolveAt ?? 0) || 0;
         if (resolveAt > 0 && now >= resolveAt) {
-          void this.finishOfficeJob(
-            Boolean(game.data.throwMade),
-            game.data.throwMade ? 'Paper Swish' : 'Rim Disaster',
-            game.data.throwMade ? 'The crumpled report drops cleanly into the basket.' : 'The paper ricochets off corporate furniture.'
-          );
+          if (game.data.throwMade) {
+            this.advanceJanitorTrashToss(game);
+          } else {
+            void this.finishOfficeJob(false, 'Rim Disaster', 'The paper ricochets off corporate furniture.');
+          }
         }
         return;
       }

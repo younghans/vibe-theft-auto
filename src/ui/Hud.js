@@ -739,9 +739,24 @@ function formatMicrogameSeconds(remainingMs = 0) {
   return seconds < 10 ? seconds.toFixed(1) : String(Math.ceil(seconds));
 }
 
+function getSchoolCountdownCue(game = null) {
+  const data = game?.data ?? {};
+  const remainingMs = Math.max(0, Number(game?.remainingMs ?? data.countdownMs ?? 0) || 0);
+  const goMs = Math.max(0, Number(data.countdownGoMs ?? 0) || 0);
+  if (goMs > 0 && remainingMs <= goMs) {
+    return 'GO!';
+  }
+  const stepMs = Math.max(1, Number(data.countdownStepMs ?? 1000) || 1000);
+  const countSource = Math.max(1, remainingMs - goMs);
+  return String(Math.max(1, Math.min(3, Math.ceil(countSource / stepMs))));
+}
+
 function getSchoolMicrogameStatusText(game = null) {
   const phase = String(game?.phase ?? 'ready');
   if (phase === 'countdown') {
+    if (game?.context === 'office-job') {
+      return getSchoolCountdownCue(game) === 'GO!' ? 'GO!' : 'Starting';
+    }
     const roundNumber = Math.max(1, Math.floor(Number(game?.data?.roundNumber ?? 1) || 1));
     return `Round ${roundNumber}`;
   }
@@ -799,7 +814,9 @@ function createSchoolGameButton(action, label, className = '', { disabled = fals
 
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
+  const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
   return [
+    money > 0 ? `${prefix ? '+' : ''}${formatMoneyAmount(money)}` : '',
     xp > 0 ? `${prefix ? '+' : ''}${xp} Intelligence XP` : ''
   ].filter(Boolean).join(' / ');
 }
@@ -1367,7 +1384,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   }
   if (phase === 'countdown') {
     base.push(
-      String(Math.ceil(Math.max(0, Number(game?.remainingMs ?? data.countdownMs ?? 0) || 0) / 1000)),
+      getSchoolCountdownCue(game),
       String(data.roundNumber ?? 1),
       String(data.sessionXpEarned ?? 0),
       String(data.previousSuccess ?? ''),
@@ -1390,6 +1407,10 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Math.round(Number(data.fill ?? 0))),
       String(Math.round(Number(data.memoPosition ?? 0) * 100)),
       String(data.memoLabel ?? ''),
+      String(Number(data.shotNumber ?? 0) || 0),
+      String(Number(data.madeThrows ?? 0) || 0),
+      String(Number(data.requiredThrows ?? round.requiredThrows ?? 0) || 0),
+      String(Number(data.throwSeq ?? 0) || 0),
       String(data.throwMissSide ?? ''),
       String(Boolean(data.throwMade)),
       String(data.stampMissSide ?? ''),
@@ -1482,8 +1503,9 @@ function createReadySchoolMicrogameMarkup(game = null) {
 function createSchoolCountdownMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const remainingMs = Math.max(0, Number(game?.remainingMs ?? data.countdownMs ?? 0) || 0);
-  const count = Math.max(1, Math.min(3, Math.ceil(remainingMs / 1000)));
+  const cue = getSchoolCountdownCue(game);
+  const isGo = cue === 'GO!';
+  const isOfficeJob = game?.context === 'office-job';
   const roundNumber = Math.max(1, Math.floor(Number(data.roundNumber ?? 1) || 1));
   const sessionXp = Math.max(0, Math.floor(Number(data.sessionXpEarned ?? 0) || 0));
   const previousTitle = String(data.previousResultTitle ?? '').trim();
@@ -1498,11 +1520,11 @@ function createSchoolCountdownMarkup(game = null) {
           ${previousDetail ? `<span>${escapeHtml(previousDetail)}</span>` : ''}
         </div>
       ` : ''}
-      <div class="hud__school-countdown-number" aria-label="Starting in ${count}">${escapeHtml(String(count))}</div>
+      <div class="hud__school-countdown-number${isGo ? ' is-go' : ''}" aria-label="${isGo ? 'Go' : `Starting in ${cue}`}">${escapeHtml(cue)}</div>
       <div class="hud__school-countdown-meta">
-        <span>Round ${escapeHtml(String(roundNumber))}</span>
+        <span>${isOfficeJob ? '3..2..1.. GO!' : `Round ${escapeHtml(String(roundNumber))}`}</span>
         <strong>${escapeHtml(round.title ?? 'School Microgame')}</strong>
-        <em>${escapeHtml(String(sessionXp))} Intelligence XP</em>
+        <em>${isOfficeJob ? `${escapeHtml(formatMoneyAmount(round.rewardMoney ?? 0))} payday` : `${escapeHtml(String(sessionXp))} Intelligence XP`}</em>
       </div>
     </div>
   `;
@@ -1901,6 +1923,10 @@ function createOfficeTrashTossMarkup(game = null) {
   const thrown = data.thrown === true;
   const made = data.throwMade === true;
   const missSide = String(data.throwMissSide ?? '');
+  const shotNumber = Math.max(1, Math.floor(Number(data.shotNumber ?? 1) || 1));
+  const madeThrows = Math.max(0, Math.floor(Number(data.madeThrows ?? 0) || 0));
+  const requiredThrows = Math.max(1, Math.floor(Number(data.requiredThrows ?? round.requiredThrows ?? 3) || 3));
+  const progress = Math.max(0, Math.min(100, (madeThrows / requiredThrows) * 100));
   const windLabel = Math.abs(wind) < 0.025
     ? 'Fan calm'
     : `${wind > 0 ? 'Fan pushes right' : 'Fan pushes left'} ${Math.round(Math.abs(wind) * 100)}`;
@@ -1926,9 +1952,11 @@ function createOfficeTrashTossMarkup(game = null) {
         <span class="hud__office-marker" style="--marker:${(marker * 100).toFixed(2)}%"></span>
       </div>
       <div class="hud__school-score-strip">
+        <span>Round ${escapeHtml(String(shotNumber))}/${escapeHtml(String(requiredThrows))}</span>
         <span>${escapeHtml(windLabel)}</span>
-        <span>Wastebasket line</span>
+        <span>${escapeHtml(String(madeThrows))} sunk</span>
       </div>
+      ${createSchoolProgressMarkup(progress, 'Janitor toss progress')}
       ${createSchoolGameButton('office:throw', 'Throw', 'is-primary')}
     </div>
   `;
@@ -1944,6 +1972,10 @@ function createOfficeCoffeeFillMarkup(game = null) {
   return `
     <div class="hud__office-task hud__office-coffee${brewing ? ' is-brewing' : ''}${data.released === true ? ' is-released' : ''}" style="--fill:${fill.toFixed(2)}%; --target-bottom:${targetStart.toFixed(2)}%; --target-height:${(targetEnd - targetStart).toFixed(2)}%">
       <div class="hud__office-coffee-station" aria-label="Coffee maker and mug">
+        <span class="hud__office-breakroom-wall"></span>
+        <span class="hud__office-breakroom-cabinets"></span>
+        <span class="hud__office-breakroom-fridge"></span>
+        <span class="hud__office-breakroom-counter"></span>
         <span class="hud__office-coffee-maker">
           <span class="hud__office-coffee-light"></span>
           <span class="hud__office-coffee-spout"></span>
@@ -1982,10 +2014,18 @@ function createOfficeCeoMarkup(game = null) {
   const stamped = data.stamped === true;
   const stampSuccess = data.stampSuccess === true;
   const stampState = stamped ? stampSuccess ? ' is-stamping is-approved' : ' is-stamping is-rejected' : '';
+  const stampLeft = ((targetStart + targetEnd) / 2) * 100;
   return `
-    <div class="hud__office-task hud__office-ceo hud__office-ceo-stamp${stampState}" style="--memo-left:${(memoPosition * 100).toFixed(2)}%; --target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
+    <div class="hud__office-task hud__office-ceo hud__office-ceo-stamp${stampState}" style="--memo-left:${(memoPosition * 100).toFixed(2)}%; --target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%; --stamp-left:${stampLeft.toFixed(2)}%">
       <div class="hud__office-boardroom-scene" aria-hidden="true">
+        <span class="hud__office-boardroom-wall"></span>
+        <span class="hud__office-boardroom-window"></span>
         <span class="hud__office-boardroom-table"></span>
+        <span class="hud__office-board-face is-far-left"></span>
+        <span class="hud__office-board-face is-left"></span>
+        <span class="hud__office-board-face is-center"></span>
+        <span class="hud__office-board-face is-right"></span>
+        <span class="hud__office-board-face is-far-right"></span>
         <span class="hud__office-approval-window"></span>
         <span class="hud__office-ceo-memo">
           <strong>${escapeHtml(data.memoLabel ?? 'Board Memo')}</strong>
@@ -1995,8 +2035,6 @@ function createOfficeCeoMarkup(game = null) {
           <span>APPROVE</span>
         </span>
         <span class="hud__office-ceo-stamp-mark">APPROVED</span>
-        <span class="hud__office-board-face is-left"></span>
-        <span class="hud__office-board-face is-right"></span>
       </div>
       <div class="hud__school-score-strip">
         <span>${escapeHtml(approved)}/${escapeHtml(required)} memos approved</span>

@@ -155,6 +155,7 @@ function validateOfficeJobs() {
 
   assert(/paper toss/i.test(janitor.description), 'Janitor task should be based on paper toss.');
   assert(/fan/i.test(`${janitor.description} ${janitor.prompt}`), 'Janitor paper toss should include fan drift.');
+  assert(/three/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.prompt}`), 'Janitor task should require multiple paper toss rounds.');
   assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
   assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
   assert(/stamp/i.test(`${ceo.description} ${ceo.prompt}`), 'CEO task should be the new memo stamping minigame.');
@@ -164,19 +165,30 @@ function validateOfficeJobs() {
 async function validateOfficeJobHudSurfaces() {
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const cssSource = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+  const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
 
+  assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
+  assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
   assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
   assert(hudSource.includes('hud__office-fan'), 'Janitor HUD should render the desk fan.');
+  assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
+  assert(hudSource.includes('3..2..1.. GO!'), 'Office jobs should display the 3..2..1.. GO countdown.');
+  assert(hudSource.includes('hud__office-breakroom-fridge'), 'Office Manager HUD should render a break room background.');
   assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
   assert(hudSource.includes('hud__office-cup'), 'Office Manager HUD should render a coffee mug.');
   assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
+  assert(hudSource.includes('--stamp-left'), 'CEO stamp should align with the approval timing window.');
+  assert(hudSource.includes('hud__office-board-face is-center'), 'CEO boardroom should include animated board members.');
   assert(hudSource.includes("office:stamp"), 'CEO HUD should expose the stamp action.');
 
   assert(cssSource.includes('@keyframes hud-office-paper-swish'), 'Janitor paper toss should have a swish animation.');
   assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
+  assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
   assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
+  assert(cssSource.includes('@keyframes hud-office-board-member-bob'), 'CEO board members should animate.');
+  assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should appear at the timing window position.');
 }
 
 async function validateCheckedInPlacements() {

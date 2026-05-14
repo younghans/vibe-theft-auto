@@ -6919,6 +6919,10 @@ body.is-admin-prompt-resizing * {
   animation: hud-school-countdown-pop 620ms cubic-bezier(0.18, 0.9, 0.24, 1.18) both;
 }
 
+.hud__school-countdown-number.is-go {
+  font-size: clamp(42px, 10vw, 84px);
+}
+
 .hud__school-countdown-meta {
   display: grid;
   gap: 5px;
@@ -9196,7 +9200,67 @@ body.is-admin-prompt-resizing * {
   height: 300px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%),
-    linear-gradient(135deg, #27313b, #171b20);
+    linear-gradient(135deg, #29333b, #171b20);
+}
+
+.hud__office-breakroom-wall {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, #42505b 0 54%, #242b31 54% 100%);
+  background-size: 46px 46px, 46px 46px, 100% 100%;
+}
+
+.hud__office-breakroom-cabinets {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  width: 170px;
+  height: 62px;
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 32%, rgba(255, 255, 255, 0.16) 32% 34%, transparent 34% 66%, rgba(255, 255, 255, 0.16) 66% 68%, transparent 68%),
+    linear-gradient(180deg, #9e6a3f, #533520);
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.16), 0 12px 18px rgba(0, 0, 0, 0.18);
+}
+
+.hud__office-breakroom-fridge {
+  position: absolute;
+  right: 24px;
+  bottom: 58px;
+  width: 72px;
+  height: 164px;
+  border-radius: 8px 8px 4px 4px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.3), transparent 32%),
+    linear-gradient(180deg, #d6e1e8 0 46%, #b9c6d1 46% 48%, #e8eef2 48% 100%);
+  box-shadow: inset -8px 0 0 rgba(60, 72, 82, 0.14), 0 16px 24px rgba(0, 0, 0, 0.2);
+}
+
+.hud__office-breakroom-fridge::before {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 22px;
+  width: 5px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(34, 45, 54, 0.45);
+  box-shadow: 0 78px 0 rgba(34, 45, 54, 0.42);
+}
+
+.hud__office-breakroom-counter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 78px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 16%),
+    linear-gradient(90deg, #8b5a35, #3e2818);
+  box-shadow: 0 -5px 0 rgba(20, 25, 30, 0.35);
 }
 
 .hud__office-coffee-maker {
@@ -9211,6 +9275,7 @@ body.is-admin-prompt-resizing * {
     linear-gradient(180deg, #5c6670, #222930);
   box-shadow: inset -12px -14px 0 rgba(0, 0, 0, 0.18), 0 18px 30px rgba(0, 0, 0, 0.24);
   transform: translateX(-50%);
+  z-index: 2;
 }
 
 .hud__office-coffee-maker::before {
@@ -9286,6 +9351,7 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 0 16px rgba(217, 154, 95, 0.36);
   opacity: 0;
   transform: translateX(-50%);
+  z-index: 3;
 }
 
 .hud__office-coffee.is-brewing .hud__office-coffee-stream {
@@ -9304,6 +9370,7 @@ body.is-admin-prompt-resizing * {
   border-width: 7px;
   border-radius: 0 0 24px 24px;
   transform: translateX(-50%);
+  z-index: 3;
 }
 
 .hud__office-coffee .hud__office-cup::after {
@@ -9362,8 +9429,35 @@ body.is-admin-prompt-resizing * {
 .hud__office-boardroom-scene {
   height: 236px;
   background:
-    linear-gradient(180deg, rgba(250, 204, 21, 0.14), transparent 32%),
-    linear-gradient(135deg, #2b2d37, #12151b);
+    linear-gradient(180deg, rgba(250, 204, 21, 0.12), transparent 34%),
+    linear-gradient(135deg, #32323c, #12151b);
+}
+
+.hud__office-boardroom-wall {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 14%, rgba(255, 255, 255, 0.08) 14% 14.6%, transparent 14.6% 85%, rgba(255, 255, 255, 0.08) 85% 85.6%, transparent 85.6%),
+    radial-gradient(circle at 50% 12%, rgba(250, 204, 21, 0.22), transparent 26%),
+    linear-gradient(180deg, #3c3b47, #1a1d25 74%);
+}
+
+.hud__office-boardroom-window {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  width: 184px;
+  height: 76px;
+  border: 5px solid rgba(18, 24, 30, 0.72);
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, transparent 48%, rgba(18, 24, 30, 0.5) 48% 52%, transparent 52%),
+    linear-gradient(180deg, transparent 47%, rgba(18, 24, 30, 0.42) 47% 53%, transparent 53%),
+    linear-gradient(135deg, #213347, #5bb7df 54%, #ffd46a 55%, #293341 72%);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.22), inset 0 0 26px rgba(255, 255, 255, 0.14);
+  opacity: 0.78;
+  transform: translateX(-50%);
+  animation: hud-office-window-shimmer 5200ms ease-in-out infinite;
 }
 
 .hud__office-boardroom-table {
@@ -9374,7 +9468,9 @@ body.is-admin-prompt-resizing * {
   height: 74px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    radial-gradient(ellipse at 50% 0%, rgba(255, 214, 120, 0.22), transparent 54%),
     linear-gradient(90deg, #805231, #2c1b11);
+  z-index: 3;
 }
 
 .hud__office-approval-window {
@@ -9387,6 +9483,8 @@ body.is-admin-prompt-resizing * {
   border-bottom: 0;
   background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(250, 204, 21, 0.04));
   box-shadow: inset 0 0 18px rgba(250, 204, 21, 0.2);
+  z-index: 4;
+  animation: hud-office-approval-pulse 1100ms ease-in-out infinite;
 }
 
 .hud__office-ceo-memo {
@@ -9407,6 +9505,7 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 16px 20px rgba(0, 0, 0, 0.24);
   transform: translateX(-50%) rotate(-2deg);
   transition: left 70ms linear;
+  z-index: 5;
 }
 
 .hud__office-ceo-memo strong {
@@ -9424,7 +9523,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-ceo-stamp-arm {
   position: absolute;
-  left: 50%;
+  left: var(--stamp-left, 50%);
   top: 18px;
   display: grid;
   place-items: end center;
@@ -9435,6 +9534,7 @@ body.is-admin-prompt-resizing * {
   box-shadow: inset -8px -10px 0 rgba(0, 0, 0, 0.16), 0 16px 24px rgba(0, 0, 0, 0.24);
   transform: translateX(-50%);
   transform-origin: center top;
+  z-index: 6;
 }
 
 .hud__office-ceo-stamp-arm span {
@@ -9456,7 +9556,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-ceo-stamp-mark {
   position: absolute;
-  left: var(--memo-left, 50%);
+  left: var(--stamp-left, 50%);
   bottom: 102px;
   padding: 7px 10px;
   border: 3px solid #16a34a;
@@ -9467,6 +9567,7 @@ body.is-admin-prompt-resizing * {
   letter-spacing: 0;
   opacity: 0;
   transform: translateX(-50%) rotate(-8deg) scale(0.8);
+  z-index: 7;
 }
 
 .hud__office-ceo-stamp.is-approved .hud__office-ceo-stamp-mark {
@@ -9483,27 +9584,100 @@ body.is-admin-prompt-resizing * {
   width: 34px;
   aspect-ratio: 1;
   border-radius: 44% 44% 52% 52%;
-  background: linear-gradient(180deg, #f2c6a4, #9f6b4d);
-  box-shadow: 0 38px 0 6px #27313b;
+  background:
+    radial-gradient(circle at 34% 44%, rgba(40, 24, 18, 0.88) 0 2px, transparent 3px),
+    radial-gradient(circle at 66% 44%, rgba(40, 24, 18, 0.88) 0 2px, transparent 3px),
+    linear-gradient(180deg, #f2c6a4, #9f6b4d);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
+  transform: translateX(-50%);
+  transform-origin: center bottom;
+  z-index: 2;
+  animation: hud-office-board-member-bob 2600ms ease-in-out infinite;
 }
 
 .hud__office-board-face::before {
   content: '';
   position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 15px;
+  left: 9px;
+  right: 9px;
+  top: 22px;
   height: 3px;
   border-radius: 999px;
   background: rgba(32, 18, 12, 0.8);
 }
 
+.hud__office-board-face::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 30px;
+  width: 54px;
+  height: 56px;
+  border-radius: 18px 18px 8px 8px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 42%),
+    linear-gradient(180deg, #425066, #202833);
+  box-shadow: inset -8px 0 0 rgba(0, 0, 0, 0.16);
+  transform: translateX(-50%);
+}
+
+.hud__office-board-face.is-far-left {
+  left: 6%;
+  bottom: 116px;
+  animation-delay: -900ms;
+}
+
 .hud__office-board-face.is-left {
-  left: 12%;
+  left: 22%;
+  animation-delay: -340ms;
+}
+
+.hud__office-board-face.is-center {
+  left: 50%;
+  bottom: 124px;
+  width: 40px;
+  animation-delay: -1350ms;
 }
 
 .hud__office-board-face.is-right {
-  right: 12%;
+  left: 78%;
+  animation-delay: -720ms;
+}
+
+.hud__office-board-face.is-far-right {
+  left: 94%;
+  bottom: 116px;
+  animation-delay: -1700ms;
+}
+
+@keyframes hud-office-window-shimmer {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.18) saturate(1.08);
+  }
+}
+
+@keyframes hud-office-approval-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 18px rgba(250, 204, 21, 0.2), 0 0 0 rgba(250, 204, 21, 0);
+  }
+  50% {
+    box-shadow: inset 0 0 24px rgba(250, 204, 21, 0.34), 0 0 18px rgba(250, 204, 21, 0.22);
+  }
+}
+
+@keyframes hud-office-board-member-bob {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-4px) rotate(1deg);
+  }
 }
 
 @keyframes hud-office-fan-spin {
@@ -10626,8 +10800,50 @@ canvas {
     height: 96px;
   }
 
-  .hud__office-board-face {
+  .hud__office-breakroom-cabinets {
+    left: 10px;
+    width: 126px;
+    height: 48px;
+  }
+
+  .hud__office-breakroom-fridge {
+    right: 10px;
+    bottom: 46px;
+    width: 54px;
+    height: 122px;
+  }
+
+  .hud__office-breakroom-counter {
+    height: 62px;
+  }
+
+  .hud__office-board-face.is-far-left,
+  .hud__office-board-face.is-far-right {
     display: none;
+  }
+
+  .hud__office-board-face {
+    bottom: 92px;
+    width: 26px;
+  }
+
+  .hud__office-board-face::after {
+    width: 42px;
+    height: 42px;
+  }
+
+  .hud__office-board-face.is-left {
+    left: 12%;
+  }
+
+  .hud__office-board-face.is-center {
+    left: 50%;
+    bottom: 90px;
+    width: 30px;
+  }
+
+  .hud__office-board-face.is-right {
+    left: 88%;
   }
 
   .hud__office-approval-window {
