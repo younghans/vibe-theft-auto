@@ -7,6 +7,12 @@ import {
 } from '../src/shared/combatPickupDefinitions.js';
 import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
+import {
+  getBartenderMenuItem,
+  isBartenderNpc,
+  listBartenderMenuItems
+} from '../src/shared/bartender.js';
+import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import {
@@ -343,6 +349,29 @@ function validateTaskSequence() {
   );
 }
 
+function validateBartenderFunction() {
+  const beer = getBartenderMenuItem('beer');
+  const shot = getBartenderMenuItem('shot');
+  assert(beer?.price === 20, 'Bartender beer should cost $20');
+  assert(shot?.price === 50, 'Bartender shot should cost $50');
+  assert(listBartenderMenuItems().length === 2, 'Bartender menu should include exactly beer and shot');
+
+  const bartender = normalizeNpcBehavior({
+    modelId: 'brute',
+    name: 'Bartender',
+    bartenderEnabled: true,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  assert(isBartenderNpc(bartender), 'Normalized NPC should preserve bartenderEnabled');
+  assert(
+    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'bartenderEnabled')),
+    'Default NPC layout should serialize bartenderEnabled for world-builder compatibility'
+  );
+}
+
 async function main() {
   validateKenneyCatalogItems();
   validateCustomTileCatalogItems();
@@ -351,6 +380,7 @@ async function main() {
   validateTiles();
   validateProps();
   validateTaskSequence();
+  validateBartenderFunction();
   await validateBuildCity();
   console.log('World editor validation passed.');
 }

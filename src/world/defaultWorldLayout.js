@@ -334,6 +334,7 @@ function createNpcLayout(tiles, props) {
     gymCheckInEnabled: plan.gymCheckInEnabled === true,
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
     stockMarketEnabled: plan.stockMarketEnabled === true,
+    bartenderEnabled: plan.bartenderEnabled === true,
     blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
     schoolMicrogameId: plan.schoolMicrogameId ?? 'all',

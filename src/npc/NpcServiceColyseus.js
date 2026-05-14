@@ -37,6 +37,7 @@ function cloneNpcState(npc) {
     gymCheckInEnabled: npc.gymCheckInEnabled === true,
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
     stockMarketEnabled: npc.stockMarketEnabled === true,
+    bartenderEnabled: npc.bartenderEnabled === true,
     blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: npc.schoolMicrogameEnabled === true,
     schoolMicrogameId: npc.schoolMicrogameId || '',
@@ -869,6 +870,13 @@ export class NpcServiceColyseus {
 
   async getWalletSnapshot() {
     return this.rpc('wallet:getSnapshot');
+  }
+
+  async buyBartenderDrink(npcId = '', itemId = '') {
+    return this.rpc('bartender:buyDrink', {
+      npcId: String(npcId ?? '').trim(),
+      itemId: String(itemId ?? '').trim()
+    });
   }
 
   async startBlackjack(npcId = '', wager = 0) {

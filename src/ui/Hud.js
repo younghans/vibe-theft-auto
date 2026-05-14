@@ -2526,6 +2526,7 @@ export class Hud {
     this.builderNpcGymCheckIn = this.overlay.querySelector('[data-builder-npc-gym-check-in]');
     this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
     this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
+    this.builderNpcBartender = this.overlay.querySelector('[data-builder-npc-bartender]');
     this.builderNpcBlackjackDealer = this.overlay.querySelector('[data-builder-npc-blackjack-dealer]');
     this.builderNpcSchoolMicrogame = this.overlay.querySelector('[data-builder-npc-school-microgame]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
@@ -3319,6 +3320,12 @@ export class Hud {
                 <input class="hud__checkbox-control" type="checkbox" data-builder-npc-stock-market />
                 <span class="hud__checkbox-copy">
                   <span class="hud__field-label hud__checkbox-title">Stock Broker / Market</span>
+                </span>
+              </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-bartender />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Bartender / Drinks</span>
                 </span>
               </label>
               <label class="hud__field hud__checkbox-field">
@@ -4663,6 +4670,7 @@ export class Hud {
     onNpcGymCheckInChange,
     onNpcRentCollectorChange,
     onNpcStockMarketChange,
+    onNpcBartenderChange,
     onNpcBlackjackDealerChange,
     onNpcSchoolMicrogameChange,
     onNpcModelChange,
@@ -4797,6 +4805,10 @@ export class Hud {
 
     this.builderNpcStockMarket?.addEventListener('change', () => {
       onNpcStockMarketChange?.(this.builderNpcStockMarket.checked === true);
+    });
+
+    this.builderNpcBartender?.addEventListener('change', () => {
+      onNpcBartenderChange?.(this.builderNpcBartender.checked === true);
     });
 
     this.builderNpcBlackjackDealer?.addEventListener('change', () => {
@@ -5590,6 +5602,9 @@ export class Hud {
     if (this.builderNpcStockMarket && document.activeElement !== this.builderNpcStockMarket) {
       this.builderNpcStockMarket.checked = editorState.stockMarketEnabled === true;
     }
+    if (this.builderNpcBartender && document.activeElement !== this.builderNpcBartender) {
+      this.builderNpcBartender.checked = editorState.bartenderEnabled === true;
+    }
     if (this.builderNpcBlackjackDealer && document.activeElement !== this.builderNpcBlackjackDealer) {
       this.builderNpcBlackjackDealer.checked = editorState.blackjackDealerEnabled === true;
     }
@@ -5893,6 +5908,10 @@ export class Hud {
   hideInteractionMenu() {
     this.lastInteractionState = null;
     this.interactionRoot.classList.remove('is-visible');
+  }
+
+  isInteractionMenuOpen() {
+    return Boolean(this.interactionRoot?.classList.contains('is-visible'));
   }
 
   setStockMarketVisible(visible) {

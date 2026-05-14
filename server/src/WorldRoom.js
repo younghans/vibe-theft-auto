@@ -55,6 +55,11 @@ import {
   serializeStockMarket
 } from '../../src/shared/stockMarket.js';
 import {
+  getBartenderMenuItem,
+  getBartenderPromptRadius,
+  isBartenderNpc
+} from '../../src/shared/bartender.js';
+import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
   canSplitBlackjackSession,
@@ -270,6 +275,7 @@ const NpcState = schema({
   gymCheckInEnabled: 'boolean',
   rentCollectorEnabled: 'boolean',
   stockMarketEnabled: 'boolean',
+  bartenderEnabled: 'boolean',
   blackjackDealerEnabled: 'boolean',
   schoolMicrogameEnabled: 'boolean',
   schoolMicrogameId: 'string',
@@ -681,6 +687,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('stock:trade', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleStockTradeRequest(client, message));
+    });
+
+    this.onMessage('bartender:buyDrink', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleBartenderPurchase(client, message));
     });
 
     this.onMessage('wallet:getSnapshot', (client, message) => {
@@ -1558,6 +1568,76 @@ export class WorldRoom extends Room {
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
     return {
       wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      money: player.money
+    };
+  }
+
+  getBartenderNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isBartenderNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getBartenderPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertBartenderAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot order right now.');
+    }
+
+    const npc = this.getBartenderNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to the bartender.');
+    }
+
+    return { player, npc };
+  }
+
+  handleBartenderPurchase(client, message = {}) {
+    const { player, npc } = this.assertBartenderAccess(client, message);
+    const item = getBartenderMenuItem(message?.itemId);
+    if (!item) {
+      throw new Error('That drink is not on the menu.');
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      throw new Error(`You need $${item.price} for ${item.label.toLowerCase()}.`);
+    }
+
+    player.money = money - item.price;
+    this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
+    return {
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price
+      },
       money: player.money
     };
   }
@@ -3049,6 +3129,7 @@ export class WorldRoom extends Room {
           : model.id === 'remy',
         rentCollectorEnabled: message.rentCollectorEnabled === true,
         stockMarketEnabled: message.stockMarketEnabled === true,
+        bartenderEnabled: message.bartenderEnabled === true,
         blackjackDealerEnabled: message.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: message.schoolMicrogameEnabled === true,
         schoolMicrogameId: normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID),
@@ -3098,6 +3179,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'stockMarketEnabled')) {
       updates.stockMarketEnabled = message.stockMarketEnabled === true;
+    }
+    if (Object.hasOwn(message, 'bartenderEnabled')) {
+      updates.bartenderEnabled = message.bartenderEnabled === true;
     }
     if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
       updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
@@ -3249,6 +3333,7 @@ export class WorldRoom extends Room {
       existing.gymCheckInEnabled = normalizedDefinition.gymCheckInEnabled === true;
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
+      existing.bartenderEnabled = normalizedDefinition.bartenderEnabled === true;
       existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
       existing.schoolMicrogameEnabled = normalizedDefinition.schoolMicrogameEnabled === true;
       existing.schoolMicrogameId = normalizeSchoolMicrogameId(normalizedDefinition.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);

@@ -10087,6 +10087,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
 }
@@ -10097,6 +10098,7 @@ body.is-admin-prompt-resizing * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 1 1 110px;
   min-width: 110px;
   padding: 10px 14px;
   border-radius: 12px;

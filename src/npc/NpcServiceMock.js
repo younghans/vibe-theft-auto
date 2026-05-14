@@ -45,6 +45,11 @@ import {
   serializeStockMarket
 } from '../shared/stockMarket.js';
 import {
+  getBartenderMenuItem,
+  getBartenderPromptRadius,
+  isBartenderNpc
+} from '../shared/bartender.js';
+import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
   canSplitBlackjackSession,
@@ -550,6 +555,7 @@ export class NpcServiceMock {
         gymCheckInEnabled: definition.gymCheckInEnabled === true,
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
         stockMarketEnabled: definition.stockMarketEnabled === true,
+        bartenderEnabled: definition.bartenderEnabled === true,
         blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: definition.schoolMicrogameEnabled === true,
         schoolMicrogameId: definition.schoolMicrogameId || SCHOOL_MICROGAME_ALL_ID,
@@ -679,6 +685,7 @@ export class NpcServiceMock {
             gymCheckInEnabled: payload.gymCheckInEnabled,
             rentCollectorEnabled: payload.rentCollectorEnabled,
             stockMarketEnabled: payload.stockMarketEnabled,
+            bartenderEnabled: payload.bartenderEnabled,
             blackjackDealerEnabled: payload.blackjackDealerEnabled,
             schoolMicrogameEnabled: payload.schoolMicrogameEnabled,
             schoolMicrogameId: payload.schoolMicrogameId
@@ -1378,6 +1385,82 @@ export class NpcServiceMock {
       ok: true,
       wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
       money: player.money
+    };
+  }
+
+  getBartenderNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isBartenderNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getBartenderPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getBartenderAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot order right now.' };
+    }
+
+    const npc = this.getBartenderNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to the bartender.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async buyBartenderDrink(npcId = '', itemId = '') {
+    const access = this.getBartenderAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const item = getBartenderMenuItem(itemId);
+    if (!item) {
+      return { ok: false, error: 'That drink is not on the menu.' };
+    }
+
+    const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(access.npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error: `You need $${item.price} for ${item.label.toLowerCase()}.` };
+    }
+
+    access.player.money = money - item.price;
+    this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
+    this.emit();
+    return {
+      ok: true,
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price
+      },
+      money: access.player.money
     };
   }
 

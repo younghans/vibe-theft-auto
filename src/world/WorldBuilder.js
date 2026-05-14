@@ -379,6 +379,9 @@ export class WorldBuilder {
       onNpcStockMarketChange: (enabled) => void this.updateSelectedNpc({
         stockMarketEnabled: enabled === true
       }),
+      onNpcBartenderChange: (enabled) => void this.updateSelectedNpc({
+        bartenderEnabled: enabled === true
+      }),
       onNpcBlackjackDealerChange: (enabled) => void this.updateSelectedNpc({
         blackjackDealerEnabled: enabled === true
       }),
@@ -1427,6 +1430,7 @@ export class WorldBuilder {
         gymCheckInEnabled: item.modelId === 'remy',
         rentCollectorEnabled: false,
         stockMarketEnabled: false,
+        bartenderEnabled: false,
         blackjackDealerEnabled: false,
         schoolMicrogameEnabled: false,
         schoolMicrogameId: 'all'
@@ -2135,6 +2139,7 @@ export class WorldBuilder {
       gymCheckInEnabled: (npcDraft?.gymCheckInEnabled ?? placement.npc.gymCheckInEnabled) === true,
       rentCollectorEnabled: (npcDraft?.rentCollectorEnabled ?? placement.npc.rentCollectorEnabled) === true,
       stockMarketEnabled: (npcDraft?.stockMarketEnabled ?? placement.npc.stockMarketEnabled) === true,
+      bartenderEnabled: (npcDraft?.bartenderEnabled ?? placement.npc.bartenderEnabled) === true,
       blackjackDealerEnabled: (npcDraft?.blackjackDealerEnabled ?? placement.npc.blackjackDealerEnabled) === true,
       schoolMicrogameEnabled: (npcDraft?.schoolMicrogameEnabled ?? placement.npc.schoolMicrogameEnabled) === true,
       schoolMicrogameId: npcDraft?.schoolMicrogameId ?? placement.npc.schoolMicrogameId ?? 'all',

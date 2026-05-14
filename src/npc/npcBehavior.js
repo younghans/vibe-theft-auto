@@ -3,6 +3,7 @@ import { normalizeDeliveryQuestEnabled } from '../shared/deliveryQuest.js';
 import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 import { normalizeStockMarketEnabled } from '../shared/stockMarket.js';
+import { isBartenderNpc } from '../shared/bartender.js';
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 import {
   SCHOOL_MICROGAME_ALL_ID,
@@ -310,6 +311,7 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
       || Object.hasOwn(updates, 'gymCheckInEnabled')
       || Object.hasOwn(updates, 'rentCollectorEnabled')
       || Object.hasOwn(updates, 'stockMarketEnabled')
+      || Object.hasOwn(updates, 'bartenderEnabled')
       || Object.hasOwn(updates, 'blackjackDealerEnabled')
       || Object.hasOwn(updates, 'schoolMicrogameEnabled')
       || Object.hasOwn(updates, 'schoolMicrogameId')
@@ -355,6 +357,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     gymCheckInEnabled: false,
     rentCollectorEnabled: false,
     stockMarketEnabled: false,
+    bartenderEnabled: false,
     blackjackDealerEnabled: false,
     schoolMicrogameEnabled: false,
     schoolMicrogameId: SCHOOL_MICROGAME_ALL_ID,
@@ -396,6 +399,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     gymCheckInEnabled: normalizeGymCheckInEnabled(npc.gymCheckInEnabled ?? (npc.modelId === 'remy')),
     rentCollectorEnabled: normalizeRentCollectorEnabled(npc.rentCollectorEnabled),
     stockMarketEnabled: normalizeStockMarketEnabled(npc.stockMarketEnabled),
+    bartenderEnabled: isBartenderNpc(npc),
     blackjackDealerEnabled: isBlackjackDealerNpc(npc),
     schoolMicrogameEnabled: isSchoolMicrogameNpc(npc),
     schoolMicrogameId: normalizeSchoolMicrogameNpcId(npc.schoolMicrogameId),

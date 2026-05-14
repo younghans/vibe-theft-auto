@@ -81,6 +81,12 @@ import {
   normalizeStockTradeQuantity
 } from '../shared/stockMarket.js';
 import {
+  getBartenderMenuItem,
+  getBartenderPromptRadius,
+  isBartenderNpc,
+  listBartenderMenuItems
+} from '../shared/bartender.js';
+import {
   BLACKJACK_DEFAULT_WAGER,
   createBlackjackSession,
   doubleBlackjackSession,
@@ -426,6 +432,12 @@ function normalizeMoneyAmount(value) {
   return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
 }
 
+function formatMoneyAmount(value) {
+  const amount = normalizeMoneyAmount(value);
+  const formattedAmount = Math.abs(amount).toLocaleString('en-US');
+  return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
+}
+
 function formatMoneyDelta(value) {
   const amount = normalizeMoneyAmount(value);
   const formattedAmount = Math.abs(amount).toLocaleString('en-US');
@@ -702,6 +714,8 @@ export class Game {
     this.stockMarketQuantity = 1;
     this.stockMarketRequestInFlight = false;
     this.stockMarketRefreshAt = 0;
+    this.activeInteractionMenu = null;
+    this.bartenderRequestInFlight = false;
     this.blackjackNpcId = '';
     this.blackjackDealerName = 'Dealer';
     this.blackjackState = null;
@@ -800,8 +814,8 @@ export class Game {
     this.playerCameraOcclusionRenderState = null;
 
     this.hud.bindInteractionEvents({
-      onAction: () => {},
-      onCloseInteraction: () => this.hud.hideInteractionMenu()
+      onAction: (action) => this.handleInteractionMenuAction(action),
+      onCloseInteraction: () => this.closeInteractionMenu()
     });
     this.hud.bindStockMarketEvents({
       onClose: () => this.closeStockMarket(),
@@ -2751,6 +2765,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen()
       && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
@@ -4959,6 +4974,187 @@ export class Game {
       this.hud.showToast('Trade request failed.');
     } finally {
       this.stockMarketRequestInFlight = false;
+    }
+  }
+
+  getBartenderNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      bartenderEnabled: npcState?.bartenderEnabled === true || interactable?.npc?.bartenderEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getBartenderNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestBartenderInteractable() {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const npcDetails = this.getBartenderNpcDetails(interactable);
+      if (
+        !isBartenderNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getBartenderNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getBartenderPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'bartender',
+        npcId: interactable.npcId || interactable.placementId || '',
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Order drinks',
+        actionText: 'Bar menu opened.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  closeInteractionMenu() {
+    this.activeInteractionMenu = null;
+    this.hud.hideInteractionMenu();
+  }
+
+  handleInteractionMenuAction(action = '') {
+    if (action === 'close') {
+      this.closeInteractionMenu();
+      return;
+    }
+
+    if (action.startsWith('bartender:')) {
+      void this.buyBartenderDrink(action.slice('bartender:'.length));
+    }
+  }
+
+  renderBartenderMenu() {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'bartender') {
+      return;
+    }
+
+    const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
+    const items = listBartenderMenuItems();
+    const actions = items.map((item) => ({
+      id: `bartender:${item.id}`,
+      label: `${item.label} - ${formatMoneyAmount(item.price)}`,
+      primary: item.id === 'beer',
+      disabled: this.bartenderRequestInFlight || cash < item.price
+    }));
+
+    actions.push({
+      id: 'close',
+      label: 'Maybe later',
+      disabled: this.bartenderRequestInFlight
+    });
+
+    this.hud.showInteractionMenu({
+      title: menu.npcName || 'Bartender',
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}.`,
+      actions
+    });
+  }
+
+  openBartenderMenu(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.closePhoneMenu();
+    this.activeInteractionMenu = {
+      kind: 'bartender',
+      npcId,
+      npcName: String(interaction?.npc?.name ?? 'Bartender')
+    };
+    this.renderBartenderMenu();
+  }
+
+  async buyBartenderDrink(itemId = '') {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'bartender' || !menu.npcId || this.bartenderRequestInFlight) {
+      return;
+    }
+
+    const item = getBartenderMenuItem(itemId);
+    if (!item) {
+      return;
+    }
+
+    this.bartenderRequestInFlight = true;
+    this.renderBartenderMenu();
+    try {
+      const result = await this.npcService?.buyBartenderDrink?.(menu.npcId, item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That drink could not be purchased.');
+        return;
+      }
+
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        cash: normalizeMoneyAmount(result.money ?? this.phoneWalletState.cash ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+      this.playSoundEffect(this.rentChaChingSound);
+      this.closeInteractionMenu();
+      this.hud.showToast(`Bought ${item.label.toLowerCase()} for ${formatMoneyAmount(item.price)}.`);
+    } catch (error) {
+      console.warn('[Bartender] Drink purchase failed.', error);
+      this.hud.showToast('Drink purchase request failed.');
+    } finally {
+      this.bartenderRequestInFlight = false;
+      if (this.activeInteractionMenu?.kind === 'bartender') {
+        this.renderBartenderMenu();
+      }
     }
   }
 
@@ -8347,6 +8543,7 @@ export class Game {
         interactRadius: npc.interactRadius,
         gymCheckInEnabled: npc.gymCheckInEnabled === true,
         stockMarketEnabled: npc.stockMarketEnabled === true,
+        bartenderEnabled: npc.bartenderEnabled === true,
         blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
@@ -9888,7 +10085,8 @@ export class Game {
       && !this.hud.isPhoneOpen()
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
-      && !this.hud.isSchoolMicrogameOpen();
+      && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen();
   }
 
   processPendingFrontendReload() {
@@ -9942,6 +10140,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen()
     ) {
       const selection = this.getActiveEmoteSelection();
       this.emoteMenuOpen = true;
@@ -10009,6 +10208,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -10082,6 +10282,8 @@ export class Game {
         this.closeBlackjack();
       } else if (this.hud.isSchoolMicrogameOpen()) {
         this.closeSchoolMicrogame();
+      } else if (this.hud.isInteractionMenuOpen()) {
+        this.closeInteractionMenu();
       } else if (this.characterSelectorVisible) {
         this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
@@ -10089,7 +10291,12 @@ export class Game {
       }
     }
 
-    if (!this.worldBuilder?.enabled && !this.hud.isSchoolMicrogameOpen() && this.input.consumeAction('phone')) {
+    if (
+      !this.worldBuilder?.enabled
+      && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isInteractionMenuOpen()
+      && this.input.consumeAction('phone')
+    ) {
       this.togglePhoneMenu();
     }
 
@@ -10126,10 +10333,11 @@ export class Game {
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
       const schoolMicrogameOpen = this.hud.isSchoolMicrogameOpen();
+      const interactionMenuOpen = this.hud.isInteractionMenuOpen();
       const adminPromptOpen = this.hud.isAdminPromptOpen();
       const phoneOpen = this.hud.isPhoneOpen();
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -10453,6 +10661,9 @@ export class Game {
     const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
       ? null
       : this.getNearestSchoolMicrogameInteractable();
+    const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
+      ? null
+      : this.getNearestBartenderInteractable();
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -10488,6 +10699,14 @@ export class Game {
       this.hud.setPrompt(schoolMicrogameInteraction);
       if (interactPressed) {
         this.openSchoolMicrogame(schoolMicrogameInteraction);
+      }
+      return;
+    }
+
+    if (bartenderInteraction) {
+      this.hud.setPrompt(bartenderInteraction);
+      if (interactPressed) {
+        this.openBartenderMenu(bartenderInteraction);
       }
       return;
     }
@@ -10716,9 +10935,12 @@ export class Game {
     const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
       ? null
       : this.getNearestSchoolMicrogameInteractable();
+    const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
+      ? null
+      : this.getNearestBartenderInteractable();
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -10729,13 +10951,14 @@ export class Game {
       || this.hud.isStockMarketOpen()
       || this.hud.isBlackjackOpen()
       || this.hud.isSchoolMicrogameOpen()
+      || this.hud.isInteractionMenuOpen()
       || this.isRentIntroReservedNpc(npcId)
     ) {
       return;
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && npcState?.busy) {
       return;
     }
 
@@ -10830,6 +11053,20 @@ export class Game {
       bubbles.push({
         id: `npc-school-microgame:${npcId}`,
         text: game ? `E to play ${game.shortTitle ?? game.title}` : 'E to play school microgame',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (bartenderInteraction) {
+      bubbles.push({
+        id: `npc-bartender:${npcId}`,
+        text: 'E to order drinks',
         label: '',
         variant: 'interaction',
         status: 'done',
