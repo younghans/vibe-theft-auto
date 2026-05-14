@@ -20,6 +20,7 @@ import {
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
+  createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
@@ -122,6 +123,8 @@ function createCustom2x2BuildingDefinition({
   key,
   label,
   fileName,
+  asset = customCityAsset('models', fileName),
+  createVisual,
   prompt,
   interiorOverrides = {},
   cameraOcclusionPreserveNodeNames = [`${key}_interior`, `${key}_foundation`]
@@ -133,7 +136,7 @@ function createCustom2x2BuildingDefinition({
     id: `${key}_building`,
     assetName: `${key}_building`,
     label,
-    asset: customCityAsset('models', fileName),
+    asset,
     group: 'lots',
     size: CUSTOM_2X2_BUILDING_SIZE,
     tileFootprint: [2, 2],
@@ -145,6 +148,7 @@ function createCustom2x2BuildingDefinition({
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
     cameraOcclusionPreserveNodeNames,
+    createVisual,
     interior: {
       id: `${key}_interior`,
       mode: 'inline-cutaway',
@@ -204,6 +208,14 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     label: 'Casino',
     fileName: 'casino-building.glb',
     prompt: 'Enter casino'
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'pawn',
+    label: 'Pawn Shop',
+    fileName: 'pawn-building.glb',
+    asset: null,
+    createVisual: createPawnShopBuildingVisual,
+    prompt: 'Enter pawn shop'
   }),
   createCustom2x2BuildingDefinition({
     key: 'offices',

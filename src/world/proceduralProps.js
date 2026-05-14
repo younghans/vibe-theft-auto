@@ -549,6 +549,279 @@ export function createBasketballHalfCourtTileVisual() {
   return root;
 }
 
+function createPawnShopMaterials() {
+  return {
+    slab: createMaterial(0x565d62, 0.9, 0.04),
+    pavement: createMaterial(0xd8d1c4, 0.86, 0.02),
+    facade: createMaterial(0xb5b8ad, 0.9, 0.03),
+    facadeAlt: createMaterial(0x738078, 0.88, 0.04),
+    roof: createMaterial(0x4d555c, 0.86, 0.08),
+    trim: createMaterial(0xebdfc6, 0.66, 0.06),
+    trimDark: createMaterial(0x6c726d, 0.7, 0.12),
+    sign: createMaterial(0x26313a, 0.72, 0.08),
+    signFace: createMaterial(0xfff1bb, 0.55, 0.08),
+    signShadow: createMaterial(0x101820, 0.7, 0.06),
+    accent: createMaterial(0xd2a542, 0.5, 0.24),
+    accentDark: createMaterial(0x6b4e25, 0.68, 0.1),
+    glass: new THREE.MeshStandardMaterial({
+      color: 0x648891,
+      roughness: 0.18,
+      metalness: 0.02,
+      transparent: true,
+      opacity: 0.72
+    }),
+    glassLite: new THREE.MeshStandardMaterial({
+      color: 0xbde3dd,
+      roughness: 0.12,
+      metalness: 0.02,
+      transparent: true,
+      opacity: 0.66
+    }),
+    floor: createMaterial(0x5e625f, 0.92, 0.02),
+    floorStripe: createMaterial(0x696e69, 0.92, 0.02),
+    floorAccent: createMaterial(0x515651, 0.92, 0.02),
+    wood: createMaterial(0x9a6b3f, 0.7, 0.04),
+    woodDark: createMaterial(0x4f3322, 0.76, 0.04),
+    metalDark: createMaterial(0x2d3438, 0.46, 0.42),
+    gold: createMaterial(0xd2aa44, 0.38, 0.42),
+    screen: createMaterial(0x202b31, 0.36, 0.08)
+  };
+}
+
+function addPawnBox(group, name, size, position, material, options = {}) {
+  group.add(createBox(name, size, position, material, options));
+}
+
+function addPawnFloor(group, materials) {
+  addPawnBox(group, 'pawnShopFloorBase', [20.6, 0.16, 18.9], [0, 0.72, 0.35], materials.floor);
+  const rowDepth = 18.9 / 13;
+  for (let row = 0; row < 13; row += 1) {
+    const z = 0.35 - (18.9 * 0.5) + (rowDepth * 0.5) + (row * rowDepth);
+    addPawnBox(
+      group,
+      `pawnShopFloorStripe${row + 1}`,
+      [20.24, 0.03, Math.max(0.08, rowDepth - 0.08)],
+      [0, 0.82, z],
+      row % 2 === 0 ? materials.floorStripe : materials.floorAccent,
+      { castShadow: false, receiveShadow: true }
+    );
+  }
+}
+
+function createPawnShopSignLabel() {
+  const labelRoot = new THREE.Group();
+  labelRoot.name = 'pawnShopSignLabel';
+
+  if (typeof document === 'undefined') {
+    return labelRoot;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return labelRoot;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = '900 150px Arial Black, Impact, sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.lineWidth = 18;
+  context.strokeStyle = '#111820';
+  context.fillStyle = '#fff1bb';
+  context.strokeText('PAWN', canvas.width * 0.5, canvas.height * 0.54);
+  context.fillText('PAWN', canvas.width * 0.5, canvas.height * 0.54);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(8.8, 2.2),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      side: THREE.DoubleSide
+    })
+  );
+  label.name = 'pawnShopPawnLetters';
+  label.position.set(0, 6.14, 11.31);
+  labelRoot.add(label);
+  return labelRoot;
+}
+
+function addPawnWindow(group, materials, x) {
+  addPawnBox(group, `pawnShopFrontWindow${x}`, [1.46, 1.72, 0.1], [x, 2.35, 11.05], materials.glass);
+  addPawnBox(group, `pawnShopFrontWindowFrame${x}`, [1.72, 1.96, 0.08], [x, 2.35, 10.98], materials.trim);
+  for (const [index, offset] of [-0.42, 0, 0.42].entries()) {
+    addPawnBox(
+      group,
+      `pawnShopWindowSecurityBar${x}_${index}`,
+      [0.08, 1.78, 0.14],
+      [x + offset, 2.35, 11.14],
+      materials.metalDark
+    );
+  }
+}
+
+function addPawnCounterSegment(group, materials, name, {
+  position,
+  length,
+  rotationY = 0,
+  glassSide = 1
+}) {
+  const counter = new THREE.Group();
+  counter.name = name;
+  counter.position.set(...position);
+  counter.rotation.y = rotationY;
+  addPawnBox(counter, `${name}Base`, [length, 1.12, 1.02], [0, 0.82, 0], materials.woodDark);
+  addPawnBox(counter, `${name}Top`, [length + 0.28, 0.26, 1.34], [0, 1.48, 0], materials.wood);
+  addPawnBox(counter, `${name}Glass`, [length - 0.56, 0.58, 0.12], [0, 1.94, glassSide * 0.58], materials.glassLite);
+  addPawnBox(counter, `${name}GlassCap`, [length - 0.34, 0.08, 0.18], [0, 2.28, glassSide * 0.58], materials.metalDark);
+  group.add(counter);
+}
+
+function addPawnDisplayObject(group, materials, name, position, variant) {
+  const item = new THREE.Group();
+  item.name = name;
+  item.position.set(...position);
+
+  if (variant === 'guitar') {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), materials.accentDark);
+    body.name = `${name}Body`;
+    body.scale.set(0.82, 1.08, 0.26);
+    body.position.set(0, 0.42, 0);
+    item.add(body);
+    const neck = createCylinder(0.05, 0.06, 1.16, 8, materials.woodDark);
+    neck.name = `${name}Neck`;
+    neck.position.set(0, 1.05, 0);
+    neck.rotation.z = -0.2;
+    item.add(neck);
+    addPawnBox(item, `${name}Head`, [0.42, 0.08, 0.06], [0, 1.66, 0], materials.metalDark, {
+      rotation: [0, 0, -0.2]
+    });
+  } else if (variant === 'watch') {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.04, 8, 12), materials.gold);
+    ring.name = `${name}Ring`;
+    ring.rotation.x = Math.PI * 0.5;
+    ring.position.set(0, 0.56, 0);
+    item.add(ring);
+    const face = createCylinder(0.16, 0.16, 0.08, 14, materials.signFace);
+    face.name = `${name}Face`;
+    face.rotation.x = Math.PI * 0.5;
+    face.position.set(0, 0.56, 0.02);
+    item.add(face);
+  } else {
+    addPawnBox(item, `${name}Screen`, [0.76, 0.48, 0.12], [0, 0.64, 0], materials.screen);
+    addPawnBox(item, `${name}Base`, [0.9, 0.1, 0.18], [0, 0.34, 0.04], materials.metalDark);
+  }
+
+  group.add(item);
+}
+
+export function createPawnShopBuildingVisual() {
+  const root = new THREE.Group();
+  root.name = 'pawn_building';
+  root.userData.footprint = [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2];
+  const materials = createPawnShopMaterials();
+
+  const foundation = new THREE.Group();
+  foundation.name = 'pawn_foundation';
+  root.add(foundation);
+  addPawnBox(foundation, 'pawnShopSlab', [22.8, 0.62, 22.6], [0, 0.31, 0], materials.slab);
+  addPawnBox(foundation, 'pawnShopFrontPavement', [18.8, 0.16, 2.6], [0, 0.68, 10], materials.pavement);
+  addPawnBox(foundation, 'pawnShopDoorStep', [7.2, 0.18, 1.2], [0, 0.74, 11.1], materials.trimDark);
+
+  const interior = new THREE.Group();
+  interior.name = 'pawn_interior';
+  root.add(interior);
+  addPawnFloor(interior, materials);
+
+  const shell = new THREE.Group();
+  shell.name = 'pawn_hull_wall';
+  root.add(shell);
+  addPawnBox(shell, 'pawnShopBackWall', [21.7, 7.45, 0.36], [0, 4.3, -10.1], materials.facade);
+  addPawnBox(shell, 'pawnShopLeftWall', [0.36, 7.45, 20.9], [-10.67, 4.3, 0.35], materials.facade);
+  addPawnBox(shell, 'pawnShopRightWall', [0.36, 7.45, 20.9], [10.67, 4.3, 0.35], materials.facade);
+  addPawnBox(shell, 'pawnShopFrontWallLeft', [7.5, 7.45, 0.36], [-7.1, 4.3, 10.8], materials.facade);
+  addPawnBox(shell, 'pawnShopFrontWallRight', [7.5, 7.45, 0.36], [7.1, 4.3, 10.8], materials.facade);
+  addPawnBox(shell, 'pawnShopDoorHeader', [6.7, 3.9, 0.36], [0, 5.58, 10.8], materials.facade);
+
+  const roof = new THREE.Group();
+  roof.name = 'pawn_cutaway_roof';
+  root.add(roof);
+  addPawnBox(roof, 'pawnShopMainRoof', [21.7, 0.36, 20.9], [0, 7.85, 0.35], materials.roof);
+  addPawnBox(roof, 'pawnShopFrontParapet', [21.3, 0.34, 0.2], [0, 8.21, 10.5], materials.trim);
+  addPawnBox(roof, 'pawnShopBackParapet', [21.3, 0.34, 0.2], [0, 8.21, -9.8], materials.trim);
+  addPawnBox(roof, 'pawnShopLeftParapet', [0.2, 0.34, 20.5], [-10.55, 8.21, 0.35], materials.trim);
+  addPawnBox(roof, 'pawnShopRightParapet', [0.2, 0.34, 20.5], [10.55, 8.21, 0.35], materials.trim);
+
+  const upper = new THREE.Group();
+  upper.name = 'pawn_cutaway_upper';
+  root.add(upper);
+  addPawnBox(upper, 'pawnShopUpperBlock', [12.8, 4.3, 7.2], [0, 9.75, -2.9], materials.facadeAlt);
+  addPawnBox(upper, 'pawnShopUpperRoof', [13.2, 0.32, 7.6], [0, 12.08, -2.9], materials.roof);
+
+  const exterior = new THREE.Group();
+  exterior.name = 'pawn_exterior_detail';
+  root.add(exterior);
+  addPawnBox(exterior, 'pawnShopEntranceSignPanel', [14.4, 2.25, 0.48], [0, 6.12, 11.04], materials.sign);
+  exterior.add(createPawnShopSignLabel());
+  addPawnBox(exterior, 'pawnShopGoldAwning', [9.0, 0.38, 2.28], [0, 4.36, 10.68], materials.accent, {
+    rotation: [0.18, 0, 0]
+  });
+  addPawnBox(exterior, 'pawnShopFrontBand', [21.4, 0.28, 0.22], [0, 7.66, 10.84], materials.trim);
+  addPawnBox(exterior, 'pawnShopLowerBand', [21.0, 0.2, 0.24], [0, 4.18, 10.98], materials.accentDark);
+  for (const x of [-7.6, -5.25, 5.25, 7.6]) {
+    addPawnWindow(exterior, materials, x);
+  }
+
+  const medallion = createCylinder(0.76, 0.76, 0.18, 24, materials.gold);
+  medallion.name = 'pawnShopGoldMedallion';
+  medallion.rotation.x = Math.PI * 0.5;
+  medallion.position.set(7.25, 6.15, 11.32);
+  exterior.add(medallion);
+
+  addPawnBox(interior, 'pawnShopBackShelfPanel', [15.8, 2.15, 0.16], [0, 2.58, -9.12], materials.facadeAlt);
+  for (const [index, y] of [1.86, 2.56, 3.26].entries()) {
+    addPawnBox(interior, `pawnShopBackShelf${index + 1}`, [15.2, 0.16, 0.46], [0, y, -8.82], materials.woodDark);
+  }
+  addPawnBox(interior, 'pawnShopShelfGoldRail', [15.6, 0.12, 0.18], [0, 3.82, -8.72], materials.gold);
+  addPawnCounterSegment(interior, materials, 'pawnShopBackCounter', {
+    position: [0, 0, -7.2],
+    length: 15.8
+  });
+  addPawnCounterSegment(interior, materials, 'pawnShopLeftCounterReturn', {
+    position: [-7.55, 0, -4.1],
+    length: 6.4,
+    rotationY: Math.PI * 0.5,
+    glassSide: -1
+  });
+  addPawnCounterSegment(interior, materials, 'pawnShopRightCounterReturn', {
+    position: [7.55, 0, -4.1],
+    length: 6.4,
+    rotationY: -Math.PI * 0.5,
+    glassSide: -1
+  });
+
+  for (const [index, x] of [-6.3, -4.2, -2.1, 0, 2.1, 4.2, 6.3].entries()) {
+    addPawnDisplayObject(interior, materials, `pawnShopShelfItem${index + 1}`, [x, 1.56, -8.36], index % 2 === 0 ? 'watch' : 'screen');
+  }
+  for (const [index, entry] of [
+    [-6.4, -6.56, 'watch'],
+    [-3.2, -6.56, 'screen'],
+    [0, -6.56, 'watch'],
+    [3.2, -6.56, 'screen'],
+    [6.4, -6.56, 'watch'],
+    [-7.55, -4.35, 'guitar'],
+    [7.55, -4.35, 'guitar']
+  ].entries()) {
+    addPawnDisplayObject(interior, materials, `pawnShopCaseItem${index + 1}`, [entry[0], 1.52, entry[1]], entry[2]);
+  }
+
+  return root;
+}
+
 export function createOlympicBarbellVisual(options = {}) {
   const { origin = 'ground' } = options;
   const root = new THREE.Group();

@@ -6,6 +6,7 @@ import {
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createOlympicBarbellVisual,
+  createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual
 } from './proceduralProps.js';
@@ -55,6 +56,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'blackjack_table' || item?.assetName === 'blackjack_table') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBlackjackTableVisual();
+  } else if (item?.id === 'pawn_building' || item?.assetName === 'pawn_building') {
+    // Procedural tiles can lose function fields when copied through plain-object workflows.
+    primaryObject = createPawnShopBuildingVisual();
   } else if (item?.id === COMBAT_PICKUP_PROP_ITEM_IDS.pistol || item?.assetName === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createPistolPickupSpawnVisual();

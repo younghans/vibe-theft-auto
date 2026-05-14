@@ -57,6 +57,7 @@ function validateKenneyCatalogItems() {
     'bar_building',
     'bank_building',
     'casino_building',
+    'pawn_building',
     'offices_building',
     'gym_building',
     'gym_building_large',
@@ -237,11 +238,13 @@ function validateFootprintSupport() {
   const bar = getBuilderItemById('bar_building_wide');
   const gym = getBuilderItemById('gym_building');
   const largeGym = getBuilderItemById('gym_building_large');
+  const pawnShop = getBuilderItemById('pawn_building');
   const districtBuildings = [
     'school_building',
     'bar_building',
     'bank_building',
     'casino_building',
+    'pawn_building',
     'offices_building'
   ].map((itemId) => getBuilderItemById(itemId));
 
@@ -249,6 +252,7 @@ function validateFootprintSupport() {
   assert(bar, 'Wide bar tile should exist');
   assert(gym, 'Gym tile should exist');
   assert(largeGym, 'Large gym tile should exist');
+  assert(pawnShop, 'Pawn shop tile should exist');
   for (const [index, item] of districtBuildings.entries()) {
     assert(item, `District 2x2 building ${index} should exist`);
   }
@@ -262,6 +266,13 @@ function validateFootprintSupport() {
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
     assert(item.movementCollisionRects?.length >= 5, `${item.id} should define hull-wall movement collision`);
   }
+  assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
+  assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
+  const pawnVisual = pawnShop.createVisual();
+  assert(pawnVisual.getObjectByName('pawnShopBackCounter'), 'Pawn shop interior should include a back counter');
+  assert(pawnVisual.getObjectByName('pawnShopLeftCounterReturn'), 'Pawn shop counter should wrap along the left back side');
+  assert(pawnVisual.getObjectByName('pawnShopRightCounterReturn'), 'Pawn shop counter should wrap along the right back side');
+  assert(pawnVisual.getObjectByName('pawnShopEntranceSignPanel'), 'Pawn shop should include a front entrance sign panel');
 
   const rotatedBarSize = getTileFootprintWorldSize(bar, 1);
   assert(rotatedBarSize[0] === BUILDER_TILE_SIZE, '2x1 tiles should swap world width when rotated');
