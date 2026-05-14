@@ -14,15 +14,16 @@ import {
   WEAPON_FIRE_INTERVAL_MS,
   WEAPON_IDS,
   WEAPON_RANGE,
-  WEAPON_RELOAD_MS,
-  WEAPON_RESERVE_CAP
+  WEAPON_RELOAD_MS
 } from '../shared/combatConstants.js';
 import { getCombatPickupSpawnDefinitions } from '../shared/combatPickupDefinitions.js';
-import { tickHealthRegen } from '../shared/combatRegen.js';
 import {
-  addInventoryWeapon,
-  hasInventoryWeapon
-} from '../shared/weaponInventory.js';
+  applyWeaponPickupToPlayerState,
+  canEquipInventoryWeapon,
+  normalizeEquippableWeaponId
+} from '../shared/combatInventoryRules.js';
+import { tickHealthRegen } from '../shared/combatRegen.js';
+import { hasInventoryWeapon } from '../shared/weaponInventory.js';
 import {
   DELIVERY_QUEST_ID,
   DELIVERY_QUEST_REWARD_AMOUNT,
@@ -1088,39 +1089,17 @@ export class NpcServiceMock {
       return;
     }
 
-    if (
-      player.equippedWeaponId
-      && player.equippedWeaponId !== pickup.weaponId
-      && !hasInventoryWeapon(player.ownedWeaponIds, pickup.weaponId)
-    ) {
+    const result = applyWeaponPickupToPlayerState(player, pickup);
+    if (!result.changed) {
       return;
     }
 
-    if (pickup.weaponId === WEAPON_IDS.pistol && hasInventoryWeapon(player.ownedWeaponIds, WEAPON_IDS.pistol)) {
-      const nextClip = Math.min(WEAPON_CLIP_SIZE, player.ammoInClip + pickup.ammoInClip);
-      const clipDelta = nextClip - player.ammoInClip;
-      const remainingReserveFromPickup = Math.max(0, pickup.ammoInClip - clipDelta) + pickup.reserveAmmo;
-      const nextReserve = Math.min(WEAPON_RESERVE_CAP, player.reserveAmmo + remainingReserveFromPickup);
-      if (nextClip === player.ammoInClip && nextReserve === player.reserveAmmo) {
-        return;
-      }
-      player.ammoInClip = nextClip;
-      player.reserveAmmo = nextReserve;
-    } else {
-      player.ownedWeaponIds = addInventoryWeapon(player.ownedWeaponIds, pickup.weaponId);
-      player.equippedWeaponId = pickup.weaponId;
-      player.ammoInClip = Math.min(WEAPON_CLIP_SIZE, pickup.ammoInClip);
-      player.reserveAmmo = Math.min(WEAPON_RESERVE_CAP, pickup.reserveAmmo);
-    }
-
-    player.isReloading = false;
-    player.reloadEndsAt = 0;
     this.consumePickup(pickup);
     this.emitCombatEvent({
       type: 'pickup',
       playerId: this.state.sessionId,
       pickupId: pickup.id,
-      weaponId: pickup.weaponId
+      weaponId: result.weaponId
     });
     this.emit();
   }
@@ -1131,10 +1110,8 @@ export class NpcServiceMock {
       return;
     }
 
-    const nextWeaponId = String(weaponId ?? '').trim() === WEAPON_IDS.pistol
-      ? WEAPON_IDS.pistol
-      : '';
-    if (nextWeaponId && !hasInventoryWeapon(player.ownedWeaponIds, nextWeaponId)) {
+    const nextWeaponId = normalizeEquippableWeaponId(weaponId);
+    if (!canEquipInventoryWeapon(player.ownedWeaponIds, nextWeaponId)) {
       return;
     }
     if (player.equippedWeaponId === nextWeaponId) {

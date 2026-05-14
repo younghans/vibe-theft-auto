@@ -1,54 +1,67 @@
-import { WEAPON_IDS } from './combatConstants.js';
+import { getPlayerDrinkCount } from './bartender.js';
 import {
-  DRINK_ITEM_IDS,
-  getPlayerDrinkCount,
-  listDrinkInventoryItems
-} from './bartender.js';
+  ITEM_IDS,
+  ITEM_KINDS,
+  getItemDefinition,
+  getItemDrinkItemId,
+  getItemEquippedWeaponId
+} from './itemDefinitions.js';
 import { hasInventoryWeapon } from './weaponInventory.js';
 
 export const HOTBAR_SLOT_COUNT = 5;
 export const DEFAULT_HOTBAR_ITEM_ORDER = Object.freeze([
-  WEAPON_IDS.pistol,
-  DRINK_ITEM_IDS.beer,
-  DRINK_ITEM_IDS.shot,
+  ITEM_IDS.pistol,
+  ITEM_IDS.beer,
+  ITEM_IDS.shot,
   '',
   ''
 ]);
 const HOTBAR_ITEM_IDS = new Set(DEFAULT_HOTBAR_ITEM_ORDER.filter(Boolean));
+
+export const DEFAULT_HOTBAR_ASSIGNMENTS = Object.freeze([
+  Object.freeze({ slotIndex: 0, itemId: ITEM_IDS.pistol }),
+  Object.freeze({ slotIndex: 1, itemId: ITEM_IDS.beer }),
+  Object.freeze({ slotIndex: 2, itemId: ITEM_IDS.shot })
+]);
 
 function createEmptySlot(index) {
   return Object.freeze({
     index,
     key: String(index + 1),
     itemId: '',
+    quantity: 0,
+    count: 0,
     label: 'Empty',
-    kind: 'empty'
+    kind: ITEM_KINDS.empty,
+    hotbarIconId: '',
+    equippedWeaponId: '',
+    drinkItemId: ''
   });
 }
 
-function createPistolSlot(index) {
-  return Object.freeze({
-    index,
-    key: String(index + 1),
-    itemId: WEAPON_IDS.pistol,
-    label: 'Pistol',
-    kind: 'weapon'
-  });
-}
+function createItemSlot(index, itemId, { quantity = 1 } = {}) {
+  const definition = getItemDefinition(itemId);
+  if (!definition) {
+    return createEmptySlot(index);
+  }
 
-function createDrinkSlot(index, item, count) {
+  const safeQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
   return Object.freeze({
     index,
     key: String(index + 1),
-    itemId: item.id,
-    label: item.label,
-    kind: 'drink',
-    count
+    itemId: definition.id,
+    quantity: safeQuantity,
+    count: safeQuantity,
+    label: definition.label,
+    kind: definition.kind,
+    hotbarIconId: definition.hotbarIconId ?? '',
+    equippedWeaponId: definition.equippedWeaponId ?? '',
+    drinkItemId: definition.drinkItemId ?? ''
   });
 }
 
 function normalizeHotbarItemId(value = '') {
-  const itemId = String(value ?? '').trim();
+  const itemId = getItemDefinition(value)?.id ?? '';
   return HOTBAR_ITEM_IDS.has(itemId) ? itemId : '';
 }
 
@@ -103,6 +116,46 @@ export function moveHotbarItemOrderSlot(order = DEFAULT_HOTBAR_ITEM_ORDER, fromI
   return Object.freeze(nextOrder);
 }
 
+function getHotbarItemQuantity(itemId = '', {
+  beerCount = 0,
+  shotCount = 0
+} = {}) {
+  const definition = getItemDefinition(itemId);
+  if (!definition) {
+    return 0;
+  }
+
+  if (definition.kind === ITEM_KINDS.drink) {
+    return getPlayerDrinkCount({ beerCount, shotCount }, definition.drinkItemId);
+  }
+
+  return 1;
+}
+
+function canShowHotbarItem(itemId = '', {
+  ownedWeaponIds = '',
+  equippedWeaponId = '',
+  beerCount = 0,
+  shotCount = 0
+} = {}) {
+  const definition = getItemDefinition(itemId);
+  if (!definition) {
+    return false;
+  }
+
+  if (definition.kind === ITEM_KINDS.weapon) {
+    const weaponId = definition.equippedWeaponId ?? '';
+    return hasInventoryWeapon(ownedWeaponIds, weaponId)
+      || String(equippedWeaponId ?? '').trim() === weaponId;
+  }
+
+  if (definition.kind === ITEM_KINDS.drink) {
+    return getHotbarItemQuantity(definition.id, { beerCount, shotCount }) > 0;
+  }
+
+  return false;
+}
+
 export function createHotbarSlots({
   ownedWeaponIds = '',
   equippedWeaponId = '',
@@ -110,36 +163,15 @@ export function createHotbarSlots({
   shotCount = 0,
   hotbarItemOrder = DEFAULT_HOTBAR_ITEM_ORDER
 } = {}) {
-  const hasPistol = hasInventoryWeapon(ownedWeaponIds, WEAPON_IDS.pistol)
-    || String(equippedWeaponId ?? '').trim() === WEAPON_IDS.pistol;
-  const drinkCounts = {
-    [DRINK_ITEM_IDS.beer]: getPlayerDrinkCount({ beerCount, shotCount }, DRINK_ITEM_IDS.beer),
-    [DRINK_ITEM_IDS.shot]: getPlayerDrinkCount({ beerCount, shotCount }, DRINK_ITEM_IDS.shot)
-  };
-  const drinkItems = listDrinkInventoryItems();
-  const itemSlots = new Map();
-
-  if (hasPistol) {
-    itemSlots.set(WEAPON_IDS.pistol, (index) => createPistolSlot(index));
-  }
-
-  for (const drink of drinkItems) {
-    const count = drinkCounts[drink.id] ?? 0;
-    if (count > 0) {
-      itemSlots.set(drink.id, (index) => createDrinkSlot(index, drink, count));
-    }
-  }
-
+  const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount };
   const itemOrder = normalizeHotbarItemOrder(hotbarItemOrder);
 
   return Object.freeze(
     Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
-      const createSlot = itemSlots.get(itemOrder[index]);
-      if (createSlot) {
-        return createSlot(index);
-      }
-
-      return createEmptySlot(index);
+      const itemId = itemOrder[index];
+      return itemId && canShowHotbarItem(itemId, inventoryState)
+        ? createItemSlot(index, itemId, { quantity: getHotbarItemQuantity(itemId, inventoryState) })
+        : createEmptySlot(index);
     })
   );
 }
@@ -179,8 +211,8 @@ export function getHotbarEquippedWeaponId(slotOrIndex, slots = HOTBAR_SLOTS) {
     ? slotOrIndex
     : getHotbarSlot(slotOrIndex, slots);
 
-  return slot?.kind === 'weapon' && slot.itemId === WEAPON_IDS.pistol
-    ? WEAPON_IDS.pistol
+  return slot?.kind === ITEM_KINDS.weapon
+    ? getItemEquippedWeaponId(slot.itemId)
     : '';
 }
 
@@ -189,7 +221,26 @@ export function getHotbarDrinkItemId(slotOrIndex, slots = HOTBAR_SLOTS) {
     ? slotOrIndex
     : getHotbarSlot(slotOrIndex, slots);
 
-  return slot?.kind === 'drink' && getPlayerDrinkCount({ [`${slot.itemId}Count`]: slot.count }, slot.itemId) > 0
-    ? slot.itemId
+  const quantity = Math.max(0, Math.floor(Number(slot?.quantity ?? slot?.count) || 0));
+  return slot?.kind === ITEM_KINDS.drink && quantity > 0
+    ? getItemDrinkItemId(slot.itemId)
     : '';
+}
+
+export function getPreferredHotbarSlotIndexForItem(
+  itemId = '',
+  hotbarItemOrder = DEFAULT_HOTBAR_ITEM_ORDER
+) {
+  const normalizedItemId = getItemDefinition(itemId)?.id ?? '';
+  if (!normalizedItemId) {
+    return -1;
+  }
+
+  const orderedIndex = normalizeHotbarItemOrder(hotbarItemOrder).findIndex((entry) => entry === normalizedItemId);
+  if (orderedIndex >= 0) {
+    return normalizeHotbarSlotIndex(orderedIndex);
+  }
+
+  const assignment = DEFAULT_HOTBAR_ASSIGNMENTS.find((entry) => entry.itemId === normalizedItemId);
+  return assignment ? normalizeHotbarSlotIndex(assignment.slotIndex) : -1;
 }

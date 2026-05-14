@@ -42,12 +42,18 @@ import {
   createHotbarSlots,
   getHotbarDrinkItemId,
   getHotbarEquippedWeaponId,
+  getPreferredHotbarSlotIndexForItem,
   getHotbarSlot,
   getHotbarSlotIndexFromKeyCode,
   moveHotbarItemOrderSlot,
   normalizeHotbarItemOrder,
   normalizeHotbarSlotIndex
 } from '../shared/hotbarInventory.js';
+import {
+  getItemEquipAnimation,
+  getItemEquipAnimationForWeapon,
+  getItemLabel
+} from '../shared/itemDefinitions.js';
 import {
   WORLD_FOG_FAR,
   WORLD_FOG_NEAR,
@@ -73,7 +79,7 @@ import {
   listPlayableCharacters
 } from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
-import { PLAYER_MAX_HEALTH, PLAYER_RADIUS, WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
+import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
 import {
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -146,7 +152,6 @@ const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
-const HOTBAR_PISTOL_EQUIP_ANIMATION_MS = Math.min(850, WEAPON_RELOAD_MS);
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
@@ -704,7 +709,8 @@ export class Game {
       startedAtMs: 0,
       endsAtMs: 0,
       token: 0,
-      revealTimeoutId: 0
+      revealTimeoutId: 0,
+      animation: null
     };
     this.activeWorkout = null;
     this.pendingWorkoutPlacementId = '';
@@ -1230,7 +1236,7 @@ export class Game {
 
   fireLocalWeapon(aimDirection, origin = null) {
     const localPlayerState = this.getLocalPlayerState();
-    if (this.isHotbarEquipIntroActive(localPlayerState?.equippedWeaponId || this.getSelectedHotbarWeaponId())) {
+    if (this.isHotbarEquipIntroUseLocked(localPlayerState?.equippedWeaponId || this.getSelectedHotbarWeaponId())) {
       return false;
     }
 
@@ -9682,14 +9688,16 @@ export class Game {
     this.player.setDrunknessLevel(localDrunknessLevel);
     this.hud.setDrunknessState({ level: localDrunknessLevel });
     const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
+    const selectedHotbarWeaponId = this.getSelectedHotbarWeaponId();
     if (
       this.localStateInitialized
       && this.lastLocalAlive
       && isAlive
-      && this.lastLocalEquippedWeaponId !== HELD_ITEM_IDS.pistol
-      && localWeaponId === HELD_ITEM_IDS.pistol
-      && this.getSelectedHotbarWeaponId() === HELD_ITEM_IDS.pistol
-      && !this.isHotbarEquipIntroActive(HELD_ITEM_IDS.pistol)
+      && this.lastLocalEquippedWeaponId !== localWeaponId
+      && Boolean(localWeaponId)
+      && selectedHotbarWeaponId === localWeaponId
+      && this.getHotbarEquipAnimationForWeapon(localWeaponId)
+      && !this.isHotbarEquipIntroActive(localWeaponId)
     ) {
       this.startHotbarEquipIntro(localWeaponId);
     }
@@ -10235,15 +10243,16 @@ export class Game {
         break;
       case 'pickup':
         if (event.playerId === this.npcServiceState.sessionId) {
-          if (event.weaponId === HELD_ITEM_IDS.pistol) {
-            this.selectedHotbarSlotIndex = 0;
+          const preferredSlotIndex = getPreferredHotbarSlotIndexForItem(event.weaponId, this.hotbarItemOrder);
+          if (preferredSlotIndex >= 0) {
+            this.selectedHotbarSlotIndex = preferredSlotIndex;
             this.pendingHotbarWeaponId = null;
             this.refreshHotbarHud();
-            if (!this.isHotbarEquipIntroActive(event.weaponId)) {
+            if (this.getHotbarEquipAnimationForWeapon(event.weaponId) && !this.isHotbarEquipIntroActive(event.weaponId)) {
               this.startHotbarEquipIntro(event.weaponId);
             }
           }
-          this.hud.showToast('Pistol equipped.');
+          this.hud.showToast(`${getItemLabel(event.weaponId, 'Item')} equipped.`);
         }
         break;
       case 'reload':
@@ -10254,9 +10263,7 @@ export class Game {
             startedAtMs: Number(event.startedAt ?? 0),
             endsAtMs: Number(event.endsAt ?? 0)
           });
-          if (event.weaponId === HELD_ITEM_IDS.pistol) {
-            this.playSoundEffect(this.pistolCockSound);
-          }
+          this.playHotbarEquipSound(getItemEquipAnimationForWeapon(event.weaponId)?.soundId ?? '');
         }
         break;
       case 'death':
@@ -10543,12 +10550,34 @@ export class Game {
     return getHotbarSlot(this.selectedHotbarSlotIndex, this.hotbarSlots) ?? this.hotbarSlots[0] ?? null;
   }
 
+  getSelectedHotbarItemId() {
+    return this.getSelectedHotbarSlot()?.itemId || '';
+  }
+
   getSelectedHotbarWeaponId() {
     return getHotbarEquippedWeaponId(this.getSelectedHotbarSlot());
   }
 
   getSelectedHotbarDrinkItemId() {
     return getHotbarDrinkItemId(this.getSelectedHotbarSlot());
+  }
+
+  getSelectedHotbarEquipAnimation() {
+    return getItemEquipAnimation(this.getSelectedHotbarItemId());
+  }
+
+  getHotbarEquipAnimationForWeapon(weaponId = '') {
+    const normalizedWeaponId = String(weaponId ?? '').trim();
+    if (!normalizedWeaponId) {
+      return null;
+    }
+
+    const selectedSlot = this.getSelectedHotbarSlot();
+    if (getHotbarEquippedWeaponId(selectedSlot) === normalizedWeaponId) {
+      return this.getSelectedHotbarEquipAnimation();
+    }
+
+    return getItemEquipAnimationForWeapon(normalizedWeaponId);
   }
 
   canUseHotbarInput() {
@@ -10592,11 +10621,20 @@ export class Game {
       startedAtMs: 0,
       endsAtMs: 0,
       token: (intro?.token ?? 0) + 1,
-      revealTimeoutId: 0
+      revealTimeoutId: 0,
+      animation: null
     };
     if (weaponId) {
       this.player?.stopReloadPreview?.();
     }
+  }
+
+  isHotbarEquipIntroUseLocked(weaponId = '') {
+    if (!this.isHotbarEquipIntroActive(weaponId)) {
+      return false;
+    }
+
+    return this.hotbarEquipIntro?.animation?.lockUse !== false;
   }
 
   completeHotbarEquipIntro(token) {
@@ -10620,7 +10658,8 @@ export class Game {
       startedAtMs: 0,
       endsAtMs: 0,
       token: token + 1,
-      revealTimeoutId: 0
+      revealTimeoutId: 0,
+      animation: null
     };
     this.player?.stopReloadPreview?.();
     if (shouldReveal) {
@@ -10631,8 +10670,15 @@ export class Game {
     }
   }
 
+  playHotbarEquipSound(soundId = '') {
+    if (soundId === 'pistolCock') {
+      this.playSoundEffect(this.pistolCockSound);
+    }
+  }
+
   startHotbarEquipIntro(weaponId) {
-    if (weaponId !== HELD_ITEM_IDS.pistol || !this.player) {
+    const animation = this.getHotbarEquipAnimationForWeapon(weaponId);
+    if (!animation || !this.player) {
       return false;
     }
 
@@ -10642,12 +10688,14 @@ export class Game {
     this.player.setAimingState(false);
 
     const token = (this.hotbarEquipIntro?.token ?? 0) + 1;
+    const durationMs = Math.max(100, Number(animation.durationMs) || 0);
     this.hotbarEquipIntro = {
       weaponId,
       startedAtMs: 0,
       endsAtMs: Number.POSITIVE_INFINITY,
       token,
-      revealTimeoutId: 0
+      revealTimeoutId: 0,
+      animation
     };
 
     void Promise.resolve(this.player.setWeaponState(weaponId, { visible: true }))
@@ -10657,7 +10705,7 @@ export class Game {
         }
 
         const startedAtMs = Date.now();
-        const endsAtMs = startedAtMs + HOTBAR_PISTOL_EQUIP_ANIMATION_MS;
+        const endsAtMs = startedAtMs + durationMs;
         this.hotbarEquipIntro = {
           weaponId,
           startedAtMs,
@@ -10665,15 +10713,16 @@ export class Game {
           token,
           revealTimeoutId: window.setTimeout(
             () => this.completeHotbarEquipIntro(token),
-            HOTBAR_PISTOL_EQUIP_ANIMATION_MS
-          )
+            durationMs
+          ),
+          animation
         };
-        if (this.player.previewReload?.(weaponId, HOTBAR_PISTOL_EQUIP_ANIMATION_MS) !== false) {
-          this.playSoundEffect(this.pistolCockSound);
+        if (!animation.previewReload || this.player.previewReload?.(weaponId, durationMs) !== false) {
+          this.playHotbarEquipSound(animation.soundId);
         }
       })
       .catch((error) => {
-        console.warn('[Combat] Failed to play pistol equip intro.', error);
+        console.warn('[Combat] Failed to play hotbar equip intro.', error);
         if (this.hotbarEquipIntro?.token === token) {
           this.completeHotbarEquipIntro(token);
         }
@@ -10761,7 +10810,8 @@ export class Game {
     const nextWeaponId = this.getSelectedHotbarWeaponId();
     this.applyHotbarSelection({ force: changed || source === 'pointer' });
 
-    if (changed && previousWeaponId !== nextWeaponId && nextWeaponId !== HELD_ITEM_IDS.pistol) {
+    const nextEquipAnimation = this.getHotbarEquipAnimationForWeapon(nextWeaponId);
+    if (changed && previousWeaponId !== nextWeaponId && !nextEquipAnimation) {
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
@@ -10792,6 +10842,7 @@ export class Game {
 
     const desiredWeaponId = this.getSelectedHotbarWeaponId();
     const currentWeaponId = localPlayerState.equippedWeaponId || '';
+    const desiredEquipAnimation = this.getHotbarEquipAnimationForWeapon(desiredWeaponId);
     if (!force && currentWeaponId === desiredWeaponId) {
       this.pendingHotbarWeaponId = null;
       return false;
@@ -10814,10 +10865,10 @@ export class Game {
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
-    } else if (desiredWeaponId === HELD_ITEM_IDS.pistol && currentWeaponId !== desiredWeaponId) {
+    } else if (desiredEquipAnimation && currentWeaponId !== desiredWeaponId) {
       this.startHotbarEquipIntro(desiredWeaponId);
       return true;
-    } else if (desiredWeaponId !== HELD_ITEM_IDS.pistol || !this.isHotbarEquipIntroActive(desiredWeaponId)) {
+    } else if (!desiredEquipAnimation || !this.isHotbarEquipIntroActive(desiredWeaponId)) {
       this.cancelHotbarEquipIntro();
     }
     void this.player?.setWeaponState?.(desiredWeaponId, {

@@ -2594,24 +2594,26 @@ const HUD_CONTROLS = Object.freeze([
   { label: 'Emote', key: 'B' }
 ]);
 
-function getHotbarPistolIconMarkup() {
-  return `<img class="hud__hotbar-item-icon hud__hotbar-pistol-icon" src="${assets.ui.hotbarPistol}" alt="" aria-hidden="true" draggable="false">`;
-}
+const HOTBAR_ICON_ASSETS = Object.freeze({
+  hotbarPistol: assets.ui.hotbarPistol
+});
 
 function getHotbarItemIconMarkup(slot = {}) {
-  if (slot.itemId === HELD_ITEM_IDS.pistol) {
-    return getHotbarPistolIconMarkup();
-  }
-
-  if (slot.itemId === DRINK_ITEM_IDS.beer) {
+  if (slot.hotbarIconId === 'drinkBeer') {
     return '<span class="hud__hotbar-drink-icon hud__hotbar-drink-icon--beer" aria-hidden="true"><span class="hud__hotbar-drink-body"></span><span class="hud__hotbar-drink-foam"></span><span class="hud__hotbar-drink-handle"></span></span>';
   }
 
-  if (slot.itemId === DRINK_ITEM_IDS.shot) {
+  if (slot.hotbarIconId === 'drinkShot') {
     return '<span class="hud__hotbar-drink-icon hud__hotbar-drink-icon--shot" aria-hidden="true"><span class="hud__hotbar-drink-body"></span><span class="hud__hotbar-drink-fill"></span></span>';
   }
 
-  return '';
+  const iconUrl = HOTBAR_ICON_ASSETS[slot.hotbarIconId] ?? '';
+  if (!iconUrl) {
+    return '';
+  }
+
+  const iconClass = slot.hotbarIconId === 'hotbarPistol' ? ' hud__hotbar-pistol-icon' : '';
+  return `<img class="hud__hotbar-item-icon${iconClass}" src="${escapeHtml(iconUrl)}" alt="" aria-hidden="true" draggable="false">`;
 }
 
 function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
@@ -7413,9 +7415,12 @@ export class Hud {
         index: Number(slot?.index) || 0,
         key: slot?.key ?? '',
         itemId: slot?.itemId ?? '',
+        quantity: Number(slot?.quantity) || 0,
         label: slot?.label ?? '',
         kind: slot?.kind ?? '',
-        count: Number(slot?.count) || 0
+        count: Number(slot?.count) || 0,
+        hotbarIconId: slot?.hotbarIconId ?? '',
+        equippedWeaponId: slot?.equippedWeaponId ?? ''
       }))
     });
     if (signature !== this.lastHotbarSignature) {
