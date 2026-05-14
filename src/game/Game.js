@@ -153,6 +153,7 @@ const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
 const DEATH_CAMERA_ZOOM_LEVEL = 3.25;
+const DEATH_CAMERA_ZOOM_TRANSITION_MS = 2600;
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
@@ -845,6 +846,8 @@ export class Game {
       VIBE_SHADER_PRESETS.map((preset) => [preset.id, DEFAULT_VIBE_SHADER_INTENSITY])
     );
     this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
+    this.deathCameraZoomStartedAt = -Infinity;
+    this.deathCameraZoomFromLevel = CAMERA_ZOOM_LEVELS[DEFAULT_CAMERA_ZOOM_INDEX];
     this.damageCameraKickStartedAt = -Infinity;
     this.damageCameraKickEndsAt = -Infinity;
     this.damageCameraDirection = new THREE.Vector3(0, 0, 1);
@@ -9808,6 +9811,11 @@ export class Game {
     const distance = this.player.position.distanceTo(targetPosition);
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
+    if (died) {
+      this.startDeathCameraZoomTransition();
+    } else if (respawned) {
+      this.resetDeathCameraZoomTransition();
+    }
     const portalSpawnLocked = (performance.now() < this.portalSpawnLockUntil) && !respawned && !died;
 
     if (this.currentInterior?.scene && (died || respawned || !isAlive)) {
@@ -10445,6 +10453,7 @@ export class Game {
         break;
       case 'respawn':
         if (event.playerId === this.npcServiceState.sessionId) {
+          this.playSoundEffect(this.rentChaChingSound);
           this.hud.showToast('Respawned.');
         }
         break;
@@ -10704,8 +10713,32 @@ export class Game {
     return Boolean(!this.worldBuilder?.enabled && this.getLocalPlayerState()?.alive === false);
   }
 
+  startDeathCameraZoomTransition() {
+    this.deathCameraZoomStartedAt = performance.now();
+    this.deathCameraZoomFromLevel = this.getBaseCameraZoomLevel();
+  }
+
+  resetDeathCameraZoomTransition() {
+    this.deathCameraZoomStartedAt = -Infinity;
+    this.deathCameraZoomFromLevel = this.getBaseCameraZoomLevel();
+  }
+
+  getDeathCameraZoomLevel() {
+    if (!Number.isFinite(this.deathCameraZoomStartedAt) || this.deathCameraZoomStartedAt < 0) {
+      return DEATH_CAMERA_ZOOM_LEVEL;
+    }
+
+    const progress = THREE.MathUtils.clamp(
+      (performance.now() - this.deathCameraZoomStartedAt) / DEATH_CAMERA_ZOOM_TRANSITION_MS,
+      0,
+      1
+    );
+    const easedProgress = progress * progress * (3 - (2 * progress));
+    return THREE.MathUtils.lerp(this.deathCameraZoomFromLevel, DEATH_CAMERA_ZOOM_LEVEL, easedProgress);
+  }
+
   getCameraZoomLevel() {
-    return this.isDeathCameraActive() ? DEATH_CAMERA_ZOOM_LEVEL : this.getBaseCameraZoomLevel();
+    return this.isDeathCameraActive() ? this.getDeathCameraZoomLevel() : this.getBaseCameraZoomLevel();
   }
 
   setCameraZoomIndex(nextIndex) {
