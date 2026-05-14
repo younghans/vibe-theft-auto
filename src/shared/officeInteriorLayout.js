@@ -34,8 +34,71 @@ export const OFFICE_INTERIOR_FLOORS = Object.freeze([
   })
 ]);
 
+export const OFFICE_INTERIOR_WALL_THICKNESS = 0.46;
+
+export const OFFICE_INTERIOR_FLOOR_LAYOUTS = Object.freeze({
+  [OFFICE_INTERIOR_FLOOR_IDS.lobby]: Object.freeze({
+    width: 20.4,
+    depth: 18.6,
+    centerZ: 0.35
+  }),
+  [OFFICE_INTERIOR_FLOOR_IDS.cubicles]: Object.freeze({
+    width: 20.4,
+    depth: 18.6,
+    centerZ: 0.35
+  }),
+  [OFFICE_INTERIOR_FLOOR_IDS.ceo]: Object.freeze({
+    width: 15.8,
+    depth: 10.2,
+    centerZ: -2.75
+  })
+});
+
+export const OFFICE_INTERIOR_ELEVATOR_SIZE = Object.freeze({
+  width: 2.9,
+  depth: 2.7,
+  height: 3.05
+});
+
+export const OFFICE_INTERIOR_JANITOR_CLOSET_SIZE = Object.freeze({
+  width: 4.35,
+  depth: 3.65,
+  height: 3.05
+});
+
+const OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP = 0.12;
+const OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE = 0.72;
+
 const OFFICE_INTERIOR_FLOOR_BY_ID = new Map(
   OFFICE_INTERIOR_FLOORS.map((floor) => [floor.id, floor])
+);
+
+export function getOfficeInteriorFloorLayout(floorId = '') {
+  return OFFICE_INTERIOR_FLOOR_LAYOUTS[floorId] ?? OFFICE_INTERIOR_FLOOR_LAYOUTS[OFFICE_INTERIOR_FLOOR_IDS.lobby];
+}
+
+export function getOfficeInteriorElevatorCenter(floorId = OFFICE_INTERIOR_FLOOR_IDS.cubicles) {
+  const layout = getOfficeInteriorFloorLayout(floorId);
+  const topWallInnerZ = layout.centerZ - (layout.depth * 0.5) + OFFICE_INTERIOR_WALL_THICKNESS;
+  return [
+    0,
+    topWallInnerZ + (OFFICE_INTERIOR_ELEVATOR_SIZE.depth * 0.5) + OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP
+  ];
+}
+
+export function getOfficeInteriorElevatorDoorPosition(floorId = OFFICE_INTERIOR_FLOOR_IDS.cubicles) {
+  const [x, z] = getOfficeInteriorElevatorCenter(floorId);
+  return [
+    x,
+    z + (OFFICE_INTERIOR_ELEVATOR_SIZE.depth * 0.5) + OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE
+  ];
+}
+
+const OFFICE_CUBICLES_ELEVATOR_DOOR_POSITION = Object.freeze(
+  getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles)
+);
+const OFFICE_CEO_ELEVATOR_DOOR_POSITION = Object.freeze(
+  getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo)
 );
 
 export const OFFICE_INTERIOR_STATIONS = Object.freeze([
@@ -43,7 +106,7 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'janitor-closet',
     type: OFFICE_INTERIOR_STATION_TYPES.job,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.lobby,
-    localPosition: [-8.1, -5.65],
+    localPosition: [-7.55, -5.28],
     radius: 3.0,
     label: 'Janitor Closet',
     prompt: 'Start janitor shift',
@@ -89,13 +152,13 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'elevator-to-ceo',
     type: OFFICE_INTERIOR_STATION_TYPES.transport,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.cubicles,
-    localPosition: [-4.85, -5.55],
-    radius: 2.8,
-    label: 'Break Room Elevator',
+    localPosition: OFFICE_CUBICLES_ELEVATOR_DOOR_POSITION,
+    radius: 3.1,
+    label: 'Second-Floor Elevator',
     prompt: 'Ride elevator to top floor',
     actionText: 'Rode the elevator to the top-floor meeting room.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    targetLocalPosition: [-5.95, -5.55]
+    targetLocalPosition: OFFICE_CEO_ELEVATOR_DOOR_POSITION
   }),
   Object.freeze({
     id: 'ceo-meeting-table',
@@ -112,13 +175,13 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'elevator-to-cubicles',
     type: OFFICE_INTERIOR_STATION_TYPES.transport,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    localPosition: [-5.95, -5.55],
-    radius: 2.8,
+    localPosition: OFFICE_CEO_ELEVATOR_DOOR_POSITION,
+    radius: 3.1,
     label: 'CEO Elevator',
     prompt: 'Return to cubicles',
     actionText: 'Rode the elevator back to the cubicle floor.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.cubicles,
-    targetLocalPosition: [-4.85, -5.55]
+    targetLocalPosition: OFFICE_CUBICLES_ELEVATOR_DOOR_POSITION
   })
 ]);
 

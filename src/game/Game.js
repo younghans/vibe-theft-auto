@@ -148,7 +148,6 @@ import {
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
 import {
-  OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_ID
 } from '../shared/officeInteriorLayout.js';
 
@@ -4266,17 +4265,16 @@ export class Game {
       return [];
     }
 
-    const activeFloorId = scene.getOfficeFloorIdAtWorldPosition?.(this.player.position) ?? '';
-    if (activeFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby) {
-      return [];
-    }
-
-    return scene.getConditionalDoorColliders?.(this.player.position) ?? [];
+    return scene.getActiveOfficeColliders?.(this.player.position)
+      ?? scene.getConditionalDoorColliders?.(this.player.position)
+      ?? [];
   }
 
   getActiveColliders() {
     if (this.currentInterior?.scene) {
-      return this.currentInterior.scene.colliders ?? [];
+      return this.currentInterior.scene.getCollidersAt?.(this.player?.position)
+        ?? this.currentInterior.scene.colliders
+        ?? [];
     }
 
     return [

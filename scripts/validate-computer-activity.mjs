@@ -26,9 +26,15 @@ import {
 } from '../src/shared/officeJobs.js';
 import {
   OFFICE_BUILDING_ITEM_ID,
+  OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_ID,
+  OFFICE_INTERIOR_JANITOR_CLOSET_SIZE,
   OFFICE_INTERIOR_STATION_TYPES,
+  OFFICE_INTERIOR_WALL_THICKNESS,
+  getOfficeInteriorElevatorCenter,
+  getOfficeInteriorElevatorDoorPosition,
+  getOfficeInteriorFloorLayout,
   getOfficeInteriorFloorHeight,
   listOfficeInteriorStations,
   parseOfficeInteriorStationPlacementId
@@ -109,14 +115,20 @@ async function validateOfficeBuildingInteriorFlow() {
   const elevatorToCeo = stations.find((station) => station.id === 'elevator-to-ceo');
   const elevatorToCubicles = stations.find((station) => station.id === 'elevator-to-cubicles');
   const janitorCloset = stations.find((station) => station.id === 'janitor-closet');
+  const cubicleElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const ceoElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   assert(janitorCloset?.jobId === OFFICE_JOB_IDS.janitor, 'Janitor closet prop should start the janitor office job.');
   assert((janitorCloset?.localPosition?.[1] ?? -99) > -6.2, 'Janitor station prompt should sit at the prop door, not inside a room.');
   assert(stairsToCubicles?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.cubicles, 'Lobby stairs should target the second floor.');
   assert(stairsToLobby?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby, 'Second-floor stairs should target the lobby.');
   assert((stairsToCubicles?.targetLocalPosition?.[1] ?? -99) > -2, 'Lobby stairs should land past the second-floor stair opening.');
   assert(Math.abs((stairsToLobby?.localPosition?.[1] ?? 0) - (stairsToCubicles?.targetLocalPosition?.[1] ?? 99)) < 0.001, 'Second-floor stair prompt should share the clear upper landing.');
-  assert((elevatorToCeo?.localPosition?.[0] ?? -99) > -7.5, 'Second-floor elevator should be freestanding instead of embedded in the west wall.');
-  assert((elevatorToCubicles?.localPosition?.[0] ?? -99) > -7.5, 'CEO elevator should be freestanding instead of embedded in the west wall.');
+  assert(Math.abs((elevatorToCeo?.localPosition?.[0] ?? 99) - cubicleElevatorDoor[0]) < 0.001, 'Second-floor elevator prompt should sit in front of the centered elevator.');
+  assert(Math.abs((elevatorToCeo?.localPosition?.[1] ?? 99) - cubicleElevatorDoor[1]) < 0.001, 'Second-floor elevator prompt should sit on the door side of the elevator.');
+  assert(Math.abs((elevatorToCubicles?.localPosition?.[0] ?? 99) - ceoElevatorDoor[0]) < 0.001, 'CEO elevator prompt should sit in front of the centered elevator.');
+  assert(Math.abs((elevatorToCubicles?.localPosition?.[1] ?? 99) - ceoElevatorDoor[1]) < 0.001, 'CEO elevator prompt should sit on the door side of the elevator.');
+  assert(Math.abs((elevatorToCeo?.targetLocalPosition?.[0] ?? 99) - ceoElevatorDoor[0]) < 0.001, 'Second-floor elevator should deliver players outside the CEO elevator.');
+  assert(Math.abs((elevatorToCubicles?.targetLocalPosition?.[0] ?? 99) - cubicleElevatorDoor[0]) < 0.001, 'CEO elevator should deliver players outside the second-floor elevator.');
 
   const scene = createInteriorScene(OFFICE_INTERIOR_ID, {
     placementId: 'office_test',
@@ -142,6 +154,8 @@ async function validateOfficeBuildingInteriorFlow() {
   let stairsGroup = null;
   let floorWallGroupCount = 0;
   let elevatorBoxCount = 0;
+  const elevatorBoxesByFloorId = new Map();
+  let janitorClosetProp = null;
   let janitorClosetPropCount = 0;
   let janitorClosetDoorCount = 0;
   let janitorClosetMopCount = 0;
@@ -158,9 +172,11 @@ async function validateOfficeBuildingInteriorFlow() {
     }
     if (node.userData?.officeElevatorBox) {
       elevatorBoxCount += 1;
+      elevatorBoxesByFloorId.set(node.userData.officeFloorId, node);
     }
     if (node.userData?.officeJanitorClosetProp) {
       janitorClosetPropCount += 1;
+      janitorClosetProp = node;
     }
     if (node.userData?.officeJanitorClosetDoor) {
       janitorClosetDoorCount += 1;
@@ -176,10 +192,23 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(stairsGroup, 'Office scene should keep stairs in an always-opaque visual group.');
   assert(floorWallGroupCount === 3, 'Office scene should draw bold north/east/west walls for each floor.');
   assert(elevatorBoxCount === 2, 'Office scene should draw one freestanding elevator box on each elevator floor.');
-  assert(janitorClosetPropCount === 1, 'Lobby should render the janitor closet as one compact prop.');
+  assert(janitorClosetPropCount === 1, 'Lobby should render the janitor closet as one larger prop.');
   assert(janitorClosetDoorCount === 1, 'Janitor closet prop should include a visible door.');
   assert(janitorClosetMopCount === 1, 'Janitor closet prop should include a side mop.');
   assert(janitorClosetBucketCount === 1, 'Janitor closet prop should include a side bucket.');
+  assert((janitorClosetProp?.userData?.officeJanitorClosetSize?.width ?? 0) >= OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.width, 'Janitor closet prop should use the larger closet width.');
+  assert((janitorClosetProp?.userData?.officeJanitorClosetSize?.depth ?? 0) >= OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth, 'Janitor closet prop should use the larger closet depth.');
+
+  for (const floorId of [OFFICE_INTERIOR_FLOOR_IDS.cubicles, OFFICE_INTERIOR_FLOOR_IDS.ceo]) {
+    const elevatorBox = elevatorBoxesByFloorId.get(floorId);
+    const [expectedX, expectedZ] = getOfficeInteriorElevatorCenter(floorId);
+    assert(elevatorBox, `Office scene should render an elevator box on ${floorId}.`);
+    assert(Math.abs(elevatorBox.position.x - expectedX) < 0.001, `Elevator on ${floorId} should be centered on the floor.`);
+    assert(Math.abs(elevatorBox.position.z - expectedZ) < 0.001, `Elevator on ${floorId} should sit at the top middle of the floor.`);
+    assert(Math.abs(elevatorBox.rotation.y) < 0.001, `Elevator on ${floorId} should face into the room.`);
+    assert((elevatorBox.userData?.officeElevatorSize?.width ?? 0) >= OFFICE_INTERIOR_ELEVATOR_SIZE.width, `Elevator on ${floorId} should use the larger elevator width.`);
+    assert((elevatorBox.userData?.officeElevatorSize?.depth ?? 0) >= OFFICE_INTERIOR_ELEVATOR_SIZE.depth, `Elevator on ${floorId} should use the larger elevator depth.`);
+  }
 
   function getFirstMeshOpacity(root) {
     let opacity = null;
@@ -201,10 +230,46 @@ async function validateOfficeBuildingInteriorFlow() {
 
   assert(typeof scene.getOfficeFloorIdAtWorldPosition === 'function', 'Office scene should expose the active floor at a world position.');
   assert(typeof scene.getConditionalDoorColliders === 'function', 'Office scene should expose upper-floor doorway blockers.');
+  assert(typeof scene.getActiveOfficeColliders === 'function', 'Office scene should expose active-floor wall and prop blockers.');
+  assert(typeof scene.getCollidersAt === 'function', 'Office scene should expose floor-aware colliders.');
   const lobbyDoorBlockers = scene.getConditionalDoorColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby), 1010.55));
   const cubicleDoorBlockers = scene.getConditionalDoorColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles), 1010.55));
   assert(lobbyDoorBlockers.length === 0, 'Office front door should remain walkable on the first floor.');
   assert(cubicleDoorBlockers.length > 0, 'Office front door should be blocked while on upper floors.');
+
+  function collidersContainLocalPoint(colliders, floorId, localX, localZ) {
+    const point = new THREE.Vector3(
+      1000 + localX,
+      getOfficeInteriorFloorHeight(floorId) + 1,
+      1000 + localZ
+    );
+    return colliders.some((collider) => (collider.box ?? collider).containsPoint?.(point));
+  }
+
+  const lobbyColliders = scene.getActiveOfficeColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby), 1000));
+  const cubicleColliders = scene.getActiveOfficeColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles), 1000));
+  const ceoColliders = scene.getActiveOfficeColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo), 1000));
+  const [janitorDoorX, janitorDoorZ] = janitorCloset.localPosition;
+  const [cubicleElevatorX, cubicleElevatorZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const [ceoElevatorX, ceoElevatorZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const ceoLayout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const ceoHalfWidth = ceoLayout.width * 0.5;
+  const ceoHalfDepth = ceoLayout.depth * 0.5;
+  const ceoNorthWallZ = ceoLayout.centerZ - ceoHalfDepth + (OFFICE_INTERIOR_WALL_THICKNESS * 0.5);
+  const ceoWestWallX = -ceoHalfWidth + (OFFICE_INTERIOR_WALL_THICKNESS * 0.5);
+  const ceoEastWallX = ceoHalfWidth - (OFFICE_INTERIOR_WALL_THICKNESS * 0.5);
+  assert(collidersContainLocalPoint(
+    lobbyColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.lobby,
+    janitorDoorX,
+    janitorDoorZ - (OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth * 0.5)
+  ), 'Janitor closet should have an active first-floor movement blocker.');
+  assert(collidersContainLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorX, cubicleElevatorZ), 'Second-floor elevator should have an active movement blocker.');
+  assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorX, ceoElevatorZ), 'CEO elevator should have an active movement blocker.');
+  assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, 0, ceoNorthWallZ), 'CEO meeting room north wall should block movement at the visual wall.');
+  assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoWestWallX, ceoLayout.centerZ), 'CEO meeting room west wall should block movement at the visual wall.');
+  assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoEastWallX, ceoLayout.centerZ), 'CEO meeting room east wall should block movement at the visual wall.');
+  assert(scene.getCollidersAt(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo), 1000)).length > scene.colliders.length, 'Office colliders should include active-floor blockers in addition to shell walls.');
 
   const stairBottomHeight = scene.getGroundHeightAt(new THREE.Vector3(1007.35, 0, 992.65));
   const stairMiddleHeight = scene.getGroundHeightAt(new THREE.Vector3(1007.2, 0, 995.45));

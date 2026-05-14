@@ -3,9 +3,14 @@ import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
 import {
+  OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
+  OFFICE_INTERIOR_JANITOR_CLOSET_SIZE,
   OFFICE_INTERIOR_ID,
   OFFICE_INTERIOR_STATION_TYPES,
+  OFFICE_INTERIOR_WALL_THICKNESS,
+  getOfficeInteriorElevatorCenter,
+  getOfficeInteriorFloorLayout,
   getNearestOfficeInteriorFloorDefinition,
   getOfficeInteriorFloorHeight,
   getOfficeInteriorStationDefinition,
@@ -21,7 +26,7 @@ const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
 const INLINE_SHELL_TRIGGER_WIDTH_PADDING = 0.8;
 const OFFICE_INACTIVE_FLOOR_OPACITY = 0.08;
 const OFFICE_FLOOR_WALL_HEIGHT = 3.25;
-const OFFICE_FLOOR_WALL_THICKNESS = 0.46;
+const OFFICE_FLOOR_WALL_THICKNESS = OFFICE_INTERIOR_WALL_THICKNESS;
 const OFFICE_STAIR_STEP_COUNT = 18;
 const OFFICE_STAIR_WIDTH = 3.55;
 const OFFICE_STAIR_BOTTOM = Object.freeze({ x: 7.35, z: -7.35 });
@@ -33,6 +38,7 @@ const OFFICE_STAIR_OPENING = Object.freeze({
   width: 4.8,
   depth: 5.9
 });
+const OFFICE_DEFAULT_FLOOR_LAYOUT = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.lobby);
 
 function createDistrictInteriorTemplate(id, label, palette) {
   return {
@@ -386,9 +392,9 @@ function createOfficeCubicleVisual(materials, floorY, x, z, rotationY = 0) {
 }
 
 function addOfficeFloorVisual(group, materials, floorY, {
-  width = 20.4,
-  depth = 18.6,
-  centerZ = 0.35,
+  width = OFFICE_DEFAULT_FLOOR_LAYOUT.width,
+  depth = OFFICE_DEFAULT_FLOOR_LAYOUT.depth,
+  centerZ = OFFICE_DEFAULT_FLOOR_LAYOUT.centerZ,
   material = materials.floor,
   cutouts = []
 } = {}) {
@@ -419,9 +425,9 @@ function addOfficeFloorVisual(group, materials, floorY, {
 }
 
 function addOfficeFloorWalls(group, materials, floorY, {
-  width = 20.4,
-  depth = 18.6,
-  centerZ = 0.35
+  width = OFFICE_DEFAULT_FLOOR_LAYOUT.width,
+  depth = OFFICE_DEFAULT_FLOOR_LAYOUT.depth,
+  centerZ = OFFICE_DEFAULT_FLOOR_LAYOUT.centerZ
 } = {}) {
   const walls = new THREE.Group();
   walls.name = `office_floor_walls_${group.userData?.officeFloorId ?? 'unknown'}`;
@@ -473,27 +479,28 @@ function addOfficeFloorWalls(group, materials, floorY, {
   group.add(walls);
 }
 
-function addOfficeElevatorVisual(group, materials, floorY, x, z, rotationY = 0) {
+function addOfficeElevatorVisual(group, materials, floorY, x, z, rotationY = 0, floorId = '') {
   const elevator = new THREE.Group();
   elevator.name = 'office_elevator_box';
   elevator.userData.officeElevatorBox = true;
+  elevator.userData.officeFloorId = floorId;
+  elevator.userData.officeElevatorSize = { ...OFFICE_INTERIOR_ELEVATOR_SIZE };
   elevator.position.set(x, 0, z);
   elevator.rotation.y = rotationY;
 
-  const width = 2.18;
-  const depth = 2.05;
-  const height = 2.72;
+  const { width, depth, height } = OFFICE_INTERIOR_ELEVATOR_SIZE;
   const halfWidth = width * 0.5;
   const halfDepth = depth * 0.5;
+  const doorPanelWidth = (width - 0.38) * 0.5;
   const centerY = floorY + (height * 0.5);
   elevator.add(createInteriorBox([width, 0.16, depth], [0, floorY + 0.08, 0], materials.metalDark));
   elevator.add(createInteriorBox([width, 0.18, depth], [0, floorY + height + 0.09, 0], materials.metalDark));
   elevator.add(createInteriorBox([width, height, 0.16], [0, centerY, -halfDepth], materials.metalDark));
   elevator.add(createInteriorBox([0.16, height, depth], [-halfWidth, centerY, 0], materials.metalDark));
   elevator.add(createInteriorBox([0.16, height, depth], [halfWidth, centerY, 0], materials.metalDark));
-  elevator.add(createInteriorBox([0.84, height - 0.58, 0.1], [-0.43, floorY + 1.34, halfDepth], materials.metal));
-  elevator.add(createInteriorBox([0.84, height - 0.58, 0.1], [0.43, floorY + 1.34, halfDepth], materials.metal));
-  elevator.add(createInteriorBox([0.08, height - 0.48, 0.14], [0, floorY + 1.36, halfDepth + 0.04], materials.trimDark));
+  elevator.add(createInteriorBox([doorPanelWidth, height - 0.58, 0.1], [-doorPanelWidth * 0.5, floorY + 1.34, halfDepth], materials.metal));
+  elevator.add(createInteriorBox([doorPanelWidth, height - 0.58, 0.1], [doorPanelWidth * 0.5, floorY + 1.34, halfDepth], materials.metal));
+  elevator.add(createInteriorBox([0.1, height - 0.48, 0.14], [0, floorY + 1.36, halfDepth + 0.04], materials.trimDark));
   elevator.add(createInteriorBox([0.28, 0.62, 0.1], [halfWidth + 0.18, floorY + 1.34, 0.2], materials.sign));
   elevator.add(createInteriorCylinder(0.07, 0.07, 0.04, 12, [halfWidth + 0.18, floorY + 1.48, 0.28], materials.gold));
   elevator.add(createInteriorCylinder(0.07, 0.07, 0.04, 12, [halfWidth + 0.18, floorY + 1.2, 0.28], materials.glass));
@@ -574,14 +581,13 @@ function addOfficeStairwellRailing(group, materials) {
 
 function addOfficeJanitorClosetProp(group, materials, floorY) {
   const [doorX, doorZ] = getOfficeStationLocalPosition('janitor-closet', [-8.1, -5.65]);
-  const width = 2.9;
-  const depth = 3.18;
-  const height = 2.82;
+  const { width, depth, height } = OFFICE_INTERIOR_JANITOR_CLOSET_SIZE;
   const frontZ = depth * 0.5;
   const sideX = (width * 0.5) + 0.24;
   const prop = new THREE.Group();
   prop.name = 'office_janitor_closet_prop';
   prop.userData.officeJanitorClosetProp = true;
+  prop.userData.officeJanitorClosetSize = { ...OFFICE_INTERIOR_JANITOR_CLOSET_SIZE };
   prop.position.set(doorX, 0, doorZ - frontZ);
 
   prop.add(createInteriorBox([width, height, depth], [0, floorY + (height * 0.5), 0], materials.closet));
@@ -615,8 +621,9 @@ function addOfficeJanitorClosetProp(group, materials, floorY) {
 
 function addOfficeLobbyVisuals(group, stairsGroup, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
-  addOfficeFloorVisual(group, materials, floorY);
-  addOfficeFloorWalls(group, materials, floorY);
+  const layout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.lobby);
+  addOfficeFloorVisual(group, materials, floorY, layout);
+  addOfficeFloorWalls(group, materials, floorY, layout);
   for (const [x, z, rotationY] of [
     [-3.2, 4.7, Math.PI],
     [-1.25, 4.7, Math.PI],
@@ -635,10 +642,12 @@ function addOfficeLobbyVisuals(group, stairsGroup, materials) {
 
 function addOfficeCubicleFloorVisuals(group, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const layout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   addOfficeFloorVisual(group, materials, floorY, {
+    ...layout,
     cutouts: [OFFICE_STAIR_OPENING]
   });
-  addOfficeFloorWalls(group, materials, floorY);
+  addOfficeFloorWalls(group, materials, floorY, layout);
   for (const [x, z, rotationY] of [
     [-1.6, -3.35, 0],
     [2.6, -3.35, 0],
@@ -659,23 +668,18 @@ function addOfficeCubicleFloorVisuals(group, materials) {
   group.add(createInteriorBox([1.1, 2.45, 0.88], [-9.0, floorY + 1.34, -7.82], materials.metal));
   group.add(createInteriorBox([0.82, 1.1, 0.64], [-6.46, floorY + 1.78, -7.62], materials.screen));
   group.add(createInteriorCylinder(0.24, 0.28, 0.46, 14, [-5.8, floorY + 1.55, -7.46], materials.gold));
-  const [elevatorX, elevatorZ] = getOfficeStationLocalPosition('elevator-to-ceo', [-4.85, -5.55]);
-  addOfficeElevatorVisual(group, materials, floorY, elevatorX, elevatorZ, Math.PI * 0.5);
+  const [elevatorX, elevatorZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  addOfficeElevatorVisual(group, materials, floorY, elevatorX, elevatorZ, 0, OFFICE_INTERIOR_FLOOR_IDS.cubicles);
 }
 
 function addOfficeCeoFloorVisuals(group, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const layout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   addOfficeFloorVisual(group, materials, floorY, {
-    width: 15.8,
-    depth: 10.2,
-    centerZ: -2.75,
+    ...layout,
     material: materials.floorAccent
   });
-  addOfficeFloorWalls(group, materials, floorY, {
-    width: 15.8,
-    depth: 10.2,
-    centerZ: -2.75
-  });
+  addOfficeFloorWalls(group, materials, floorY, layout);
   group.add(createInteriorBox([9.4, 0.05, 4.7], [0, floorY + 0.04, -0.8], materials.accentDark));
   group.add(createInteriorBox([8.0, 0.24, 2.3], [0, floorY + 1.02, -0.8], materials.wood));
   group.add(createInteriorBox([7.5, 0.08, 1.84], [0, floorY + 1.18, -0.8], materials.woodDark));
@@ -693,8 +697,8 @@ function addOfficeCeoFloorVisuals(group, materials) {
   }
   group.add(createInteriorBox([10.4, 0.12, 0.18], [0, floorY + 3.35, -7.34], materials.gold));
   group.add(createInteriorCylinder(0.62, 0.62, 1.7, 12, [6.2, floorY + 1.18, -5.9], materials.green));
-  const [elevatorX, elevatorZ] = getOfficeStationLocalPosition('elevator-to-cubicles', [-5.95, -5.55]);
-  addOfficeElevatorVisual(group, materials, floorY, elevatorX, elevatorZ, Math.PI * 0.5);
+  const [elevatorX, elevatorZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  addOfficeElevatorVisual(group, materials, floorY, elevatorX, elevatorZ, 0, OFFICE_INTERIOR_FLOOR_IDS.ceo);
 }
 
 function addOfficeInteriorVisuals(group) {
@@ -832,6 +836,122 @@ function createBoundsFromLocalRect(
     minY,
     maxY
   ).box;
+}
+
+function createOfficeFloorWallColliders(origin, rotationQuarterTurns, floorId) {
+  const layout = getOfficeInteriorFloorLayout(floorId);
+  const floorY = getOfficeInteriorFloorHeight(floorId);
+  const halfWidth = layout.width * 0.5;
+  const halfDepth = layout.depth * 0.5;
+  const xMin = -halfWidth;
+  const xMax = halfWidth;
+  const zMin = layout.centerZ - halfDepth;
+  const northZ = zMin + (OFFICE_FLOOR_WALL_THICKNESS * 0.5);
+  const westX = xMin + (OFFICE_FLOOR_WALL_THICKNESS * 0.5);
+  const eastX = xMax - (OFFICE_FLOOR_WALL_THICKNESS * 0.5);
+
+  return [
+    createColliderFromLocalRect(
+      origin,
+      rotationQuarterTurns,
+      0,
+      northZ,
+      halfWidth,
+      OFFICE_FLOOR_WALL_THICKNESS * 0.5,
+      floorY,
+      floorY + OFFICE_FLOOR_WALL_HEIGHT
+    ),
+    createColliderFromLocalRect(
+      origin,
+      rotationQuarterTurns,
+      westX,
+      layout.centerZ,
+      OFFICE_FLOOR_WALL_THICKNESS * 0.5,
+      halfDepth,
+      floorY,
+      floorY + OFFICE_FLOOR_WALL_HEIGHT
+    ),
+    createColliderFromLocalRect(
+      origin,
+      rotationQuarterTurns,
+      eastX,
+      layout.centerZ,
+      OFFICE_FLOOR_WALL_THICKNESS * 0.5,
+      halfDepth,
+      floorY,
+      floorY + OFFICE_FLOOR_WALL_HEIGHT
+    )
+  ];
+}
+
+function createOfficeObjectCollider(origin, rotationQuarterTurns, floorId, centerX, centerZ, width, depth, height) {
+  const floorY = getOfficeInteriorFloorHeight(floorId);
+  return createColliderFromLocalRect(
+    origin,
+    rotationQuarterTurns,
+    centerX,
+    centerZ,
+    width * 0.5,
+    depth * 0.5,
+    floorY,
+    floorY + height
+  );
+}
+
+function createOfficeJanitorClosetCollider(origin, rotationQuarterTurns) {
+  const [doorX, doorZ] = getOfficeStationLocalPosition('janitor-closet', [-8.1, -5.65]);
+  const { width, depth, height } = OFFICE_INTERIOR_JANITOR_CLOSET_SIZE;
+  return createOfficeObjectCollider(
+    origin,
+    rotationQuarterTurns,
+    OFFICE_INTERIOR_FLOOR_IDS.lobby,
+    doorX,
+    doorZ - (depth * 0.5),
+    width,
+    depth,
+    height
+  );
+}
+
+function createOfficeElevatorCollider(origin, rotationQuarterTurns, floorId) {
+  const [centerX, centerZ] = getOfficeInteriorElevatorCenter(floorId);
+  const { width, depth, height } = OFFICE_INTERIOR_ELEVATOR_SIZE;
+  return createOfficeObjectCollider(
+    origin,
+    rotationQuarterTurns,
+    floorId,
+    centerX,
+    centerZ,
+    width,
+    depth,
+    height
+  );
+}
+
+function createOfficeActiveFloorColliderMap(origin, rotationQuarterTurns) {
+  return new Map([
+    [
+      OFFICE_INTERIOR_FLOOR_IDS.lobby,
+      [
+        ...createOfficeFloorWallColliders(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.lobby),
+        createOfficeJanitorClosetCollider(origin, rotationQuarterTurns)
+      ]
+    ],
+    [
+      OFFICE_INTERIOR_FLOOR_IDS.cubicles,
+      [
+        ...createOfficeFloorWallColliders(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.cubicles),
+        createOfficeElevatorCollider(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.cubicles)
+      ]
+    ],
+    [
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      [
+        ...createOfficeFloorWallColliders(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.ceo),
+        createOfficeElevatorCollider(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.ceo)
+      ]
+    ]
+  ]);
 }
 
 export function getInteriorTemplateById(id) {
@@ -997,7 +1117,22 @@ export function createInteriorScene(interiorId, options = {}) {
         template.wallHeight
       )
     : null;
+  const officeActiveFloorCollidersById = isOfficeInterior
+    ? createOfficeActiveFloorColliderMap(origin, normalizedRotation)
+    : null;
   const interiorInteractables = [];
+
+  function getActiveOfficeColliders(worldPosition = null) {
+    if (!isOfficeInterior || !worldPosition) {
+      return [];
+    }
+
+    const floorId = resolveOfficeFloorIdAtWorldPosition(origin, normalizedRotation, worldPosition);
+    const activeFloorColliders = officeActiveFloorCollidersById?.get(floorId) ?? [];
+    return floorId === OFFICE_INTERIOR_FLOOR_IDS.lobby || !upperFloorDoorwayBlocker
+      ? [...activeFloorColliders]
+      : [...activeFloorColliders, upperFloorDoorwayBlocker];
+  }
 
   for (const station of template.workoutStations ?? []) {
     const platform = createWorkoutPlatform(
@@ -1137,6 +1272,14 @@ export function createInteriorScene(interiorId, options = {}) {
       return resolveOfficeFloorIdAtWorldPosition(origin, normalizedRotation, worldPosition) === OFFICE_INTERIOR_FLOOR_IDS.lobby
         ? []
         : [upperFloorDoorwayBlocker];
+    },
+    getActiveOfficeColliders(worldPosition = null) {
+      return getActiveOfficeColliders(worldPosition);
+    },
+    getCollidersAt(worldPosition = null) {
+      return isOfficeInterior
+        ? [...colliders, ...getActiveOfficeColliders(worldPosition)]
+        : colliders;
     },
     setActiveFloorForWorldPosition(worldPosition = null) {
       if (isOfficeInterior && worldPosition) {
