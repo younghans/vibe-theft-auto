@@ -106,10 +106,14 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(stations.some((station) => station.type === OFFICE_INTERIOR_STATION_TYPES.transport && station.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.ceo), 'Office break room should include the CEO elevator.');
   const stairsToCubicles = stations.find((station) => station.id === 'stairs-to-cubicles');
   const stairsToLobby = stations.find((station) => station.id === 'stairs-to-lobby');
+  const elevatorToCeo = stations.find((station) => station.id === 'elevator-to-ceo');
+  const elevatorToCubicles = stations.find((station) => station.id === 'elevator-to-cubicles');
   assert(stairsToCubicles?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.cubicles, 'Lobby stairs should target the second floor.');
   assert(stairsToLobby?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby, 'Second-floor stairs should target the lobby.');
   assert((stairsToCubicles?.targetLocalPosition?.[1] ?? -99) > -2, 'Lobby stairs should land past the second-floor stair opening.');
   assert(Math.abs((stairsToLobby?.localPosition?.[1] ?? 0) - (stairsToCubicles?.targetLocalPosition?.[1] ?? 99)) < 0.001, 'Second-floor stair prompt should share the clear upper landing.');
+  assert((elevatorToCeo?.localPosition?.[0] ?? -99) > -7.5, 'Second-floor elevator should be freestanding instead of embedded in the west wall.');
+  assert((elevatorToCubicles?.localPosition?.[0] ?? -99) > -7.5, 'CEO elevator should be freestanding instead of embedded in the west wall.');
 
   const scene = createInteriorScene(OFFICE_INTERIOR_ID, {
     placementId: 'office_test',
@@ -133,6 +137,8 @@ async function validateOfficeBuildingInteriorFlow() {
 
   const floorGroupsById = new Map();
   let stairsGroup = null;
+  let floorWallGroupCount = 0;
+  let elevatorBoxCount = 0;
   scene.group.traverse((node) => {
     if (node.userData?.officeFloorVisual && node.userData.officeFloorId) {
       floorGroupsById.set(node.userData.officeFloorId, node);
@@ -140,9 +146,17 @@ async function validateOfficeBuildingInteriorFlow() {
     if (node.userData?.officeStairsAlwaysOpaque) {
       stairsGroup = node;
     }
+    if (node.userData?.officeFloorWalls) {
+      floorWallGroupCount += 1;
+    }
+    if (node.userData?.officeElevatorBox) {
+      elevatorBoxCount += 1;
+    }
   });
   assert(floorGroupsById.size === 3, 'Office scene should split lobby, second floor, and CEO floor visuals.');
   assert(stairsGroup, 'Office scene should keep stairs in an always-opaque visual group.');
+  assert(floorWallGroupCount === 3, 'Office scene should draw bold north/east/west walls for each floor.');
+  assert(elevatorBoxCount === 2, 'Office scene should draw one freestanding elevator box on each elevator floor.');
 
   function getFirstMeshOpacity(root) {
     let opacity = null;
@@ -158,9 +172,16 @@ async function validateOfficeBuildingInteriorFlow() {
 
   scene.setActiveFloorId(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.cubicles)) > 0.99, 'Active office floor should stay opaque.');
-  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.lobby)) < 0.5, 'Inactive lower office floor should become transparent.');
-  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.ceo)) < 0.5, 'Inactive upper office floor should become transparent.');
+  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.lobby)) < 0.12, 'Inactive lower office floor should become very transparent.');
+  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.ceo)) < 0.12, 'Inactive upper office floor should become very transparent.');
   assert(getFirstMeshOpacity(stairsGroup) > 0.99, 'Office stairs should remain opaque while other floors fade.');
+
+  assert(typeof scene.getOfficeFloorIdAtWorldPosition === 'function', 'Office scene should expose the active floor at a world position.');
+  assert(typeof scene.getConditionalDoorColliders === 'function', 'Office scene should expose upper-floor doorway blockers.');
+  const lobbyDoorBlockers = scene.getConditionalDoorColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby), 1010.55));
+  const cubicleDoorBlockers = scene.getConditionalDoorColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles), 1010.55));
+  assert(lobbyDoorBlockers.length === 0, 'Office front door should remain walkable on the first floor.');
+  assert(cubicleDoorBlockers.length > 0, 'Office front door should be blocked while on upper floors.');
 
   const stairBottomHeight = scene.getGroundHeightAt(new THREE.Vector3(1007.35, 0, 992.65));
   const stairMiddleHeight = scene.getGroundHeightAt(new THREE.Vector3(1007.2, 0, 995.45));
@@ -176,6 +197,7 @@ async function validateOfficeBuildingInteriorFlow() {
   const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
   assert(gameSource.includes('openOfficeInteriorJobStation'), 'Game should start room-specific office jobs.');
   assert(gameSource.includes('useOfficeInteriorTransport'), 'Game should route office stairs and elevators.');
+  assert(gameSource.includes('getInlineOfficeDoorBlockers'), 'Game should block the office front door from upper floors.');
   assert(gameSource.includes('getActiveInlineInteriorScene'), 'Game should use inline office floors for active ground height.');
   assert(gameSource.includes('setActiveFloorForWorldPosition'), 'Game should update active office floor transparency from the player position.');
   assert(serverSource.includes('parseOfficeInteriorStationPlacementId'), 'Server payroll should accept virtual office stations.');

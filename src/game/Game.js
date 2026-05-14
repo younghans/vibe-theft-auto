@@ -146,6 +146,10 @@ import {
   getOfficeJobDefinitionByGameId,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
+import {
+  OFFICE_INTERIOR_FLOOR_IDS,
+  OFFICE_INTERIOR_ID
+} from '../shared/officeInteriorLayout.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -4250,6 +4254,24 @@ export class Game {
       }));
   }
 
+  getInlineOfficeDoorBlockers() {
+    if (!this.player || this.currentInterior?.scene) {
+      return [];
+    }
+
+    const scene = this.getActiveInlineInteriorScene();
+    if (scene?.id !== OFFICE_INTERIOR_ID) {
+      return [];
+    }
+
+    const activeFloorId = scene.getOfficeFloorIdAtWorldPosition?.(this.player.position) ?? '';
+    if (activeFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby) {
+      return [];
+    }
+
+    return scene.getConditionalDoorColliders?.(this.player.position) ?? [];
+  }
+
   getActiveColliders() {
     if (this.currentInterior?.scene) {
       return this.currentInterior.scene.colliders ?? [];
@@ -4258,6 +4280,7 @@ export class Game {
     return [
       ...(this.baseColliders ?? []),
       ...(this.worldBuilder?.getColliders() ?? []),
+      ...this.getInlineOfficeDoorBlockers(),
       ...this.getGymCheckInColliders()
     ];
   }

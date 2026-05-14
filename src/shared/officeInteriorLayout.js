@@ -89,13 +89,13 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'elevator-to-ceo',
     type: OFFICE_INTERIOR_STATION_TYPES.transport,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.cubicles,
-    localPosition: [-8.55, -3.25],
-    radius: 3.3,
+    localPosition: [-4.85, -5.55],
+    radius: 2.8,
     label: 'Break Room Elevator',
     prompt: 'Ride elevator to top floor',
     actionText: 'Rode the elevator to the top-floor meeting room.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    targetLocalPosition: [-8.1, -4.45]
+    targetLocalPosition: [-5.95, -5.55]
   }),
   Object.freeze({
     id: 'ceo-meeting-table',
@@ -112,13 +112,13 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'elevator-to-cubicles',
     type: OFFICE_INTERIOR_STATION_TYPES.transport,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    localPosition: [-8.1, -4.45],
-    radius: 3.3,
+    localPosition: [-5.95, -5.55],
+    radius: 2.8,
     label: 'CEO Elevator',
     prompt: 'Return to cubicles',
     actionText: 'Rode the elevator back to the cubicle floor.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.cubicles,
-    targetLocalPosition: [-8.55, -3.25]
+    targetLocalPosition: [-4.85, -5.55]
   })
 ]);
 
