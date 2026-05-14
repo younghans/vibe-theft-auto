@@ -2033,10 +2033,21 @@ export class WorldRoom extends Room {
 
     let nearest = null;
     let nearestDistance = Infinity;
+    const requestedOfficeJobId = getOfficeJobDefinition(requestedJobId)?.id ?? '';
     for (const placement of candidates) {
+      const item = getBuilderItemById(placement?.itemId);
+      const placementOfficeJobId = getOfficeJobDefinition(
+        placement?.interactable?.officeJobId ?? item?.interactable?.officeJobId
+      )?.id ?? '';
+      const canUseOfficeJobPlacement = placement?.itemId === OFFICE_JOB_TERMINAL_ITEM_ID
+        || Boolean(placementOfficeJobId);
+      const placementMatchesRequestedJob = !placementOfficeJobId
+        || !requestedOfficeJobId
+        || placementOfficeJobId === requestedOfficeJobId;
       if (
         placement?.layer !== 'prop'
-        || placement.itemId !== OFFICE_JOB_TERMINAL_ITEM_ID
+        || !canUseOfficeJobPlacement
+        || !placementMatchesRequestedJob
         || !Array.isArray(placement.position)
       ) {
         continue;
@@ -2044,7 +2055,7 @@ export class WorldRoom extends Room {
 
       const radius = Math.max(
         1.5,
-        Number(placement.interactable?.radius ?? getBuilderItemById(placement.itemId)?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
+        Number(placement.interactable?.radius ?? item?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
       ) + 1.25;
       const distance = distance2D(player.x, player.z, placement.position[0], placement.position[1]);
       if (distance <= radius && distance < nearestDistance) {
@@ -2064,7 +2075,7 @@ export class WorldRoom extends Room {
 
     const terminal = this.getOfficeJobComputerForPlayer(player, message?.placementId, jobId);
     if (!terminal) {
-      throw new Error('Move closer to the office computer.');
+      throw new Error('Move closer to the office station.');
     }
 
     return { player, terminal };

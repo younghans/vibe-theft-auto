@@ -1,5 +1,9 @@
 import { assetUrl, cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
+import {
+  OFFICE_CEO_MEETING_TABLE_ITEM_ID,
+  OFFICE_JOB_IDS
+} from '../shared/officeJobs.js';
 import { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import {
@@ -21,12 +25,22 @@ import {
   createBlackjackTableVisual,
   createInstrumentClusterVisual,
   createOlympicBarbellVisual,
+  createOfficeCeoMeetingTableVisual,
+  createOfficeCubicleWorkstationVisual,
+  createOfficeLobbyChairVisual,
+  createOfficeLobbySideTableVisual,
+  createOfficeLobbyTableVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
   INSTRUMENT_CLUSTER_FOOTPRINT,
+  OFFICE_CEO_MEETING_TABLE_FOOTPRINT,
+  OFFICE_CUBICLE_WORKSTATION_FOOTPRINT,
+  OFFICE_LOBBY_CHAIR_FOOTPRINT,
+  OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT,
+  OFFICE_LOBBY_TABLE_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
   PISTOL_PICKUP_SPAWN_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
@@ -495,6 +509,73 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       hideDuringWorkout: false,
       approachLocalOffset: [0, 1.35],
       approachRotationY: Math.PI
+    }
+  },
+  {
+    id: 'office_lobby_chair',
+    assetName: 'office_lobby_chair',
+    aliases: ['office chair', 'lobby chair', 'Office Lobby Chair'],
+    label: 'Office Lobby Chair',
+    asset: null,
+    group: 'office',
+    size: OFFICE_LOBBY_CHAIR_FOOTPRINT,
+    collision: false,
+    createVisual: createOfficeLobbyChairVisual
+  },
+  {
+    id: 'office_lobby_table',
+    assetName: 'office_lobby_table',
+    aliases: ['office table', 'lobby table', 'office coffee table', 'Office Lobby Table'],
+    label: 'Office Lobby Table',
+    asset: null,
+    group: 'office',
+    size: OFFICE_LOBBY_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.12,
+    createVisual: createOfficeLobbyTableVisual
+  },
+  {
+    id: 'office_lobby_side_table',
+    assetName: 'office_lobby_side_table',
+    aliases: ['office side table', 'lobby side table', 'Office Lobby Side Table'],
+    label: 'Office Lobby Side Table',
+    asset: null,
+    group: 'office',
+    size: OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.1,
+    createVisual: createOfficeLobbySideTableVisual
+  },
+  {
+    id: 'office_cubicle_workstation',
+    assetName: 'office_cubicle_workstation',
+    aliases: ['office cubicle', 'cubicle', 'cubicle workstation', 'Office Cubicle'],
+    label: 'Office Cubicle Workstation',
+    asset: null,
+    group: 'office',
+    size: OFFICE_CUBICLE_WORKSTATION_FOOTPRINT,
+    collision: true,
+    padding: 0.14,
+    createVisual: createOfficeCubicleWorkstationVisual
+  },
+  {
+    id: OFFICE_CEO_MEETING_TABLE_ITEM_ID,
+    assetName: OFFICE_CEO_MEETING_TABLE_ITEM_ID,
+    aliases: ['ceo table', 'ceo meeting table', 'meeting table', 'ceo game', 'CEO Meeting Table'],
+    label: 'CEO Meeting Table',
+    asset: null,
+    group: 'office',
+    size: OFFICE_CEO_MEETING_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.18,
+    createVisual: createOfficeCeoMeetingTableVisual,
+    interactable: {
+      label: 'CEO Meeting Table',
+      prompt: 'Start CEO shift',
+      actionText: 'Stamp memos from the executive meeting table.',
+      radius: 4.1,
+      localOffset: [0, 0],
+      officeJobId: OFFICE_JOB_IDS.ceo
     }
   },
   {

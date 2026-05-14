@@ -77,6 +77,7 @@ export const OFFICE_INTERIOR_CEO_MEETING_TABLE = Object.freeze({
 
 const OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP = 0.12;
 const OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE = 0.72;
+const OFFICE_INTERIOR_ELEVATOR_ARRIVAL_CLEARANCE = 1.78;
 
 const OFFICE_INTERIOR_FLOOR_BY_ID = new Map(
   OFFICE_INTERIOR_FLOORS.map((floor) => [floor.id, floor])
@@ -103,11 +104,25 @@ export function getOfficeInteriorElevatorDoorPosition(floorId = OFFICE_INTERIOR_
   ];
 }
 
+export function getOfficeInteriorElevatorArrivalPosition(floorId = OFFICE_INTERIOR_FLOOR_IDS.cubicles) {
+  const [x, z] = getOfficeInteriorElevatorCenter(floorId);
+  return [
+    x,
+    z + (OFFICE_INTERIOR_ELEVATOR_SIZE.depth * 0.5) + OFFICE_INTERIOR_ELEVATOR_ARRIVAL_CLEARANCE
+  ];
+}
+
 const OFFICE_CUBICLES_ELEVATOR_DOOR_POSITION = Object.freeze(
   getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles)
 );
 const OFFICE_CEO_ELEVATOR_DOOR_POSITION = Object.freeze(
   getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo)
+);
+const OFFICE_CUBICLES_ELEVATOR_ARRIVAL_POSITION = Object.freeze(
+  getOfficeInteriorElevatorArrivalPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles)
+);
+const OFFICE_CEO_ELEVATOR_ARRIVAL_POSITION = Object.freeze(
+  getOfficeInteriorElevatorArrivalPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo)
 );
 
 export const OFFICE_INTERIOR_STATIONS = Object.freeze([
@@ -167,7 +182,7 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     prompt: 'Ride elevator to top floor',
     actionText: 'Rode the elevator to the top-floor meeting room.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    targetLocalPosition: OFFICE_CEO_ELEVATOR_DOOR_POSITION
+    targetLocalPosition: OFFICE_CEO_ELEVATOR_ARRIVAL_POSITION
   }),
   Object.freeze({
     id: 'ceo-meeting-table',
@@ -193,7 +208,7 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     prompt: 'Return to cubicles',
     actionText: 'Rode the elevator back to the cubicle floor.',
     targetFloorId: OFFICE_INTERIOR_FLOOR_IDS.cubicles,
-    targetLocalPosition: OFFICE_CUBICLES_ELEVATOR_DOOR_POSITION
+    targetLocalPosition: OFFICE_CUBICLES_ELEVATOR_ARRIVAL_POSITION
   })
 ]);
 

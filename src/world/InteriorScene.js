@@ -25,7 +25,7 @@ import { rotateFootprintOffset as rotateLocalOffset } from '../shared/tileFootpr
 const INTERIOR_WORLD_ORIGIN = Object.freeze([1000, 0, 1000]);
 const INLINE_SHELL_TRIGGER_DEPTH = 4.4;
 const INLINE_SHELL_TRIGGER_WIDTH_PADDING = 0.8;
-const OFFICE_INACTIVE_FLOOR_OPACITY = 0.08;
+const OFFICE_INACTIVE_FLOOR_OPACITY = 0;
 const OFFICE_FLOOR_WALL_HEIGHT = 3.25;
 const OFFICE_FLOOR_WALL_THICKNESS = OFFICE_INTERIOR_WALL_THICKNESS;
 const OFFICE_STAIR_STEP_COUNT = 18;
@@ -266,6 +266,10 @@ function setOfficeVisualTreeOpacity(root, opacity = 1) {
     }
 
     ensureUniqueOpacityMaterials(node);
+    if (node.userData.officeOpacityDefaultCastShadow === undefined) {
+      node.userData.officeOpacityDefaultCastShadow = node.castShadow;
+      node.userData.officeOpacityDefaultReceiveShadow = node.receiveShadow;
+    }
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const material of materials) {
       if (!material) {
@@ -276,6 +280,12 @@ function setOfficeVisualTreeOpacity(root, opacity = 1) {
       material.depthWrite = normalizedOpacity >= 0.999;
       material.needsUpdate = true;
     }
+    node.castShadow = normalizedOpacity > 0
+      ? Boolean(node.userData.officeOpacityDefaultCastShadow)
+      : false;
+    node.receiveShadow = normalizedOpacity > 0
+      ? Boolean(node.userData.officeOpacityDefaultReceiveShadow)
+      : false;
   });
 }
 

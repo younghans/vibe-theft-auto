@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { OFFICE_INTERIOR_CEO_MEETING_TABLE } from '../shared/officeInteriorLayout.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
 export const OLYMPIC_BARBELL_LENGTH = 5.6;
@@ -9,6 +10,14 @@ export const BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT = 0.7;
 export const BASKETBALL_HOOP_FOOTPRINT = Object.freeze([3.6, 3.6]);
 export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
+export const OFFICE_LOBBY_CHAIR_FOOTPRINT = Object.freeze([1.05, 1.05]);
+export const OFFICE_LOBBY_TABLE_FOOTPRINT = Object.freeze([3.15, 1.35]);
+export const OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT = Object.freeze([1.35, 1.15]);
+export const OFFICE_CUBICLE_WORKSTATION_FOOTPRINT = Object.freeze([3.15, 2.35]);
+export const OFFICE_CEO_MEETING_TABLE_FOOTPRINT = Object.freeze([
+  OFFICE_INTERIOR_CEO_MEETING_TABLE.rugWidth,
+  OFFICE_INTERIOR_CEO_MEETING_TABLE.rugDepth
+]);
 export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([3.2, 2.4]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
@@ -1120,6 +1129,144 @@ export function createBasketballHoopVisual() {
   addRimNet(root, rimMaterial, netMaterial);
   addBasketballHoopBolts(root, boltMaterial);
   addBasketball(root, ballMaterial, ballSeamMaterial);
+
+  return root;
+}
+
+function createOfficeFurnitureMaterials() {
+  return {
+    chair: createMaterial(0x415565, 0.74, 0.06),
+    partition: createMaterial(0xaeb8be, 0.78, 0.04),
+    trimDark: createMaterial(0x66727a, 0.72, 0.12),
+    metal: createMaterial(0xc4ccd2, 0.5, 0.34),
+    metalDark: createMaterial(0x59636b, 0.62, 0.26),
+    wood: createMaterial(0xa97948, 0.54, 0.05),
+    woodDark: createMaterial(0x68452b, 0.58, 0.08),
+    screen: createMaterial(0x253542, 0.42, 0.1),
+    green: createMaterial(0x5e8d58, 0.62, 0.02),
+    accentDark: createMaterial(0x355a78, 0.66, 0.05),
+    gold: createMaterial(0xd2aa44, 0.44, 0.18)
+  };
+}
+
+export function createOfficeLobbyChairVisual() {
+  const root = new THREE.Group();
+  root.name = 'OfficeLobbyChair';
+  root.userData.footprint = [...OFFICE_LOBBY_CHAIR_FOOTPRINT];
+  root.userData.officeLobbyChairProp = true;
+
+  const materials = createOfficeFurnitureMaterials();
+  root.add(createBox('officeLobbyChairSeat', [0.78, 0.14, 0.74], [0, 0.55, 0], materials.chair));
+  root.add(createBox('officeLobbyChairBack', [0.78, 0.86, 0.12], [0, 1.0, -0.34], materials.chair));
+  root.add(createBox('officeLobbyChairBackTrim', [0.86, 0.08, 0.16], [0, 1.44, -0.34], materials.trimDark));
+
+  for (const [legX, legZ] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.24], [0.28, 0.24]]) {
+    root.add(createBox('officeLobbyChairLeg', [0.08, 0.5, 0.08], [legX, 0.26, legZ], materials.metal));
+  }
+
+  return root;
+}
+
+function createOfficeLobbyTableRoot({
+  name,
+  footprint,
+  width,
+  depth,
+  includePlanter = true
+}) {
+  const root = new THREE.Group();
+  root.name = name;
+  root.userData.footprint = [...footprint];
+  root.userData.officeLobbyTableProp = true;
+
+  const materials = createOfficeFurnitureMaterials();
+  root.add(createBox(`${name}LowerTop`, [width, 0.14, depth], [0, 0.68, 0], materials.woodDark));
+  root.add(createBox(`${name}UpperTop`, [width + 0.14, 0.05, depth + 0.14], [0, 0.78, 0], materials.wood));
+  for (const [legX, legZ] of [
+    [-width * 0.38, -depth * 0.34],
+    [width * 0.38, -depth * 0.34],
+    [-width * 0.38, depth * 0.34],
+    [width * 0.38, depth * 0.34]
+  ]) {
+    root.add(createBox(`${name}Leg`, [0.1, 0.62, 0.1], [legX, 0.34, legZ], materials.metalDark));
+  }
+
+  if (includePlanter) {
+    const planter = createCylinder(0.16, 0.2, 0.16, 12, materials.green);
+    planter.name = `${name}Planter`;
+    planter.position.set(width * 0.22, 0.91, 0);
+    planter.castShadow = true;
+    planter.receiveShadow = true;
+    root.add(planter);
+  }
+
+  return root;
+}
+
+export function createOfficeLobbyTableVisual() {
+  return createOfficeLobbyTableRoot({
+    name: 'OfficeLobbyCoffeeTable',
+    footprint: OFFICE_LOBBY_TABLE_FOOTPRINT,
+    width: 3.0,
+    depth: 1.2
+  });
+}
+
+export function createOfficeLobbySideTableVisual() {
+  return createOfficeLobbyTableRoot({
+    name: 'OfficeLobbySideTable',
+    footprint: OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT,
+    width: 1.15,
+    depth: 0.95
+  });
+}
+
+export function createOfficeCubicleWorkstationVisual() {
+  const root = new THREE.Group();
+  root.name = 'OfficeCubicleWorkstation';
+  root.userData.footprint = [...OFFICE_CUBICLE_WORKSTATION_FOOTPRINT];
+  root.userData.officeCubicleWorkstationProp = true;
+
+  const materials = createOfficeFurnitureMaterials();
+  root.add(createBox('officeCubicleDesktop', [2.6, 0.16, 1.08], [0, 0.92, 0], materials.wood));
+  root.add(createBox('officeCubicleBackPartition', [2.82, 1.36, 0.12], [0, 1.2, -0.76], materials.partition));
+  root.add(createBox('officeCubicleSidePartition', [0.12, 1.36, 1.64], [-1.46, 1.2, 0], materials.partition));
+  root.add(createBox('officeCubicleModestyPanel', [2.46, 0.58, 0.1], [0.04, 0.42, -0.48], materials.woodDark));
+  for (const legX of [-1.06, 1.06]) {
+    root.add(createBox('officeCubicleDeskLeg', [0.12, 0.86, 0.12], [legX, 0.44, 0.38], materials.metalDark));
+  }
+  root.add(createBox('officeCubicleScreen', [0.74, 0.46, 0.08], [-0.52, 1.24, 0.58], materials.screen));
+  root.add(createBox('officeCubicleScreenStand', [0.18, 0.28, 0.14], [-0.52, 0.92, 0.5], materials.metalDark));
+  root.add(createBox('officeCubicleKeyboard', [0.56, 0.05, 0.2], [0.2, 1.03, 0.48], materials.metalDark));
+  root.add(createBox('officeCubicleChairSeat', [0.7, 0.1, 0.48], [0.76, 0.54, 0.9], materials.chair));
+  root.add(createBox('officeCubicleChairBack', [0.7, 0.8, 0.1], [0.76, 0.98, 1.16], materials.chair));
+
+  return root;
+}
+
+export function createOfficeCeoMeetingTableVisual() {
+  const root = new THREE.Group();
+  root.name = 'OfficeCeoMeetingTable';
+  root.userData.footprint = [...OFFICE_CEO_MEETING_TABLE_FOOTPRINT];
+  root.userData.officeCeoMeetingTableProp = true;
+
+  const {
+    width: tableWidth,
+    depth: tableDepth,
+    rugWidth,
+    rugDepth
+  } = OFFICE_INTERIOR_CEO_MEETING_TABLE;
+  const materials = createOfficeFurnitureMaterials();
+  root.add(createBox('officeCeoMeetingTableRug', [rugWidth, 0.05, rugDepth], [0, 0.04, 0], materials.accentDark, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('officeCeoMeetingTableTop', [tableWidth, 0.24, tableDepth], [0, 1.02, 0], materials.wood));
+  root.add(createBox('officeCeoMeetingTableInset', [tableWidth - 0.5, 0.08, tableDepth - 0.46], [0, 1.18, 0], materials.woodDark));
+  for (const pedestalX of [-tableWidth * 0.27, tableWidth * 0.27]) {
+    root.add(createBox('officeCeoMeetingTablePedestal', [0.48, 0.9, tableDepth * 0.48], [pedestalX, 0.52, 0], materials.metalDark));
+    root.add(createBox('officeCeoMeetingTableFoot', [1.4, 0.12, tableDepth * 0.72], [pedestalX, 0.12, 0], materials.gold));
+  }
 
   return root;
 }

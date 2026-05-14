@@ -1685,7 +1685,10 @@ export class WorldRenderer {
             distance
           )
           : null;
-        const workoutKind = interactable.workoutType ? `${interactable.workoutType}-workout` : 'world';
+        const officeJobId = String(interactable.officeJobId ?? '').trim();
+        const workoutKind = interactable.workoutType
+          ? `${interactable.workoutType}-workout`
+          : (officeJobId ? 'office-job-station' : 'world');
         const workoutBusy = Boolean(
           interactable.workoutType
           && occupiedWorkoutPlacementIds.has(placement.id)
@@ -1706,9 +1709,11 @@ export class WorldRenderer {
           originPosition: rendered.object.position.clone(),
           position,
           radius: interactable.radius ?? 4,
+          label: defaultLabel,
           prompt,
           actionText,
           busy: workoutBusy,
+          officeJobId,
           interior: cloneInteriorDefinition(interactable.interior),
           approachPosition,
           approachRotationY: Number.isFinite(interactable.approachRotationY)

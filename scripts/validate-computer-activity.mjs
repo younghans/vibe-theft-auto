@@ -10,6 +10,7 @@ import {
   createStandingDeskComputerVisual
 } from '../src/world/proceduralProps.js';
 import { EMOTES_BY_ID, TYPING_EMOTE_ID } from '../src/player/emotes.js';
+import { PLAYER_RADIUS } from '../src/shared/combatConstants.js';
 import {
   SNATCH_WORKOUT_KIND,
   TYPING_WORKOUT_DURATION_MS,
@@ -17,6 +18,7 @@ import {
   getWorkoutActivityConfig
 } from '../src/game/workoutActivities.js';
 import {
+  OFFICE_CEO_MEETING_TABLE_ITEM_ID,
   OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
@@ -33,6 +35,7 @@ import {
   OFFICE_INTERIOR_JANITOR_CLOSET_SIZE,
   OFFICE_INTERIOR_STATION_TYPES,
   OFFICE_INTERIOR_WALL_THICKNESS,
+  getOfficeInteriorElevatorArrivalPosition,
   getOfficeInteriorElevatorCenter,
   getOfficeInteriorElevatorDoorPosition,
   getOfficeInteriorFloorLayout,
@@ -69,6 +72,37 @@ function validateBuilderDefinition() {
   assert(item.interactable?.hideDuringWorkout === false, 'Standing desk computer should remain visible while in use.');
   assert(Array.isArray(item.interactable?.approachLocalOffset), 'Standing desk computer needs an approach offset.');
   assert(Number.isFinite(item.interactable?.approachRotationY), 'Standing desk computer needs an approach facing.');
+}
+
+function validateOfficeFurniturePropList() {
+  const expectedProps = [
+    ['office_lobby_chair', 'Office Lobby Chair'],
+    ['office_lobby_table', 'Office Lobby Table'],
+    ['office_lobby_side_table', 'Office Lobby Side Table'],
+    ['office_cubicle_workstation', 'Office Cubicle Workstation'],
+    [OFFICE_CEO_MEETING_TABLE_ITEM_ID, 'CEO Meeting Table']
+  ];
+
+  for (const [itemId, label] of expectedProps) {
+    const item = getBuilderItemById(itemId);
+    assert(item, `${label} builder prop is missing.`);
+    assert(item.layer === 'prop', `${label} should be a prop.`);
+    assert(item.groupId === 'office', `${label} should live in the office prop group.`);
+    assert(typeof item.createVisual === 'function', `${label} should use a procedural office visual.`);
+    assert(Array.isArray(item.size) && item.size[0] > 0 && item.size[1] > 0, `${label} needs a placement footprint.`);
+
+    const visual = item.createVisual();
+    visual.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(visual);
+    const size = bounds.getSize(new THREE.Vector3());
+    assert(size.x > 0.2 && size.z > 0.2 && size.y > 0.2, `${label} visual should have real dimensions.`);
+    assert(size.x <= item.size[0] + 0.05, `${label} visual should fit its prop-list width.`);
+    assert(size.z <= item.size[1] + 0.05, `${label} visual should fit its prop-list depth.`);
+  }
+
+  const ceoTable = getBuilderItemById(OFFICE_CEO_MEETING_TABLE_ITEM_ID);
+  assert(ceoTable.interactable?.officeJobId === OFFICE_JOB_IDS.ceo, 'CEO meeting table prop should start the CEO job.');
+  assert(ceoTable.interactable?.prompt === 'Start CEO shift', 'CEO meeting table prop should expose the CEO game prompt.');
 }
 
 async function validateOfficeJobTerminalFlow() {
@@ -119,6 +153,8 @@ async function validateOfficeBuildingInteriorFlow() {
   const ceoMeetingTableStation = stations.find((station) => station.id === 'ceo-meeting-table');
   const cubicleElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   const ceoElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const cubicleElevatorArrival = getOfficeInteriorElevatorArrivalPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const ceoElevatorArrival = getOfficeInteriorElevatorArrivalPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   assert(janitorCloset?.jobId === OFFICE_JOB_IDS.janitor, 'Janitor closet prop should start the janitor office job.');
   assert((janitorCloset?.localPosition?.[1] ?? -99) > -6.2, 'Janitor station prompt should sit at the prop door, not inside a room.');
   assert(Math.abs((ceoMeetingTableStation?.localPosition?.[0] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO station prompt should align with the meeting table center.');
@@ -131,8 +167,12 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(Math.abs((elevatorToCeo?.localPosition?.[1] ?? 99) - cubicleElevatorDoor[1]) < 0.001, 'Second-floor elevator prompt should sit on the door side of the elevator.');
   assert(Math.abs((elevatorToCubicles?.localPosition?.[0] ?? 99) - ceoElevatorDoor[0]) < 0.001, 'CEO elevator prompt should sit in front of the centered elevator.');
   assert(Math.abs((elevatorToCubicles?.localPosition?.[1] ?? 99) - ceoElevatorDoor[1]) < 0.001, 'CEO elevator prompt should sit on the door side of the elevator.');
-  assert(Math.abs((elevatorToCeo?.targetLocalPosition?.[0] ?? 99) - ceoElevatorDoor[0]) < 0.001, 'Second-floor elevator should deliver players outside the CEO elevator.');
-  assert(Math.abs((elevatorToCubicles?.targetLocalPosition?.[0] ?? 99) - cubicleElevatorDoor[0]) < 0.001, 'CEO elevator should deliver players outside the second-floor elevator.');
+  assert(Math.abs((elevatorToCeo?.targetLocalPosition?.[0] ?? 99) - ceoElevatorArrival[0]) < 0.001, 'Second-floor elevator should deliver players in front of the CEO elevator.');
+  assert(Math.abs((elevatorToCeo?.targetLocalPosition?.[1] ?? 99) - ceoElevatorArrival[1]) < 0.001, 'Second-floor elevator should land clear of the CEO elevator collision.');
+  assert(Math.abs((elevatorToCubicles?.targetLocalPosition?.[0] ?? 99) - cubicleElevatorArrival[0]) < 0.001, 'CEO elevator should deliver players in front of the second-floor elevator.');
+  assert(Math.abs((elevatorToCubicles?.targetLocalPosition?.[1] ?? 99) - cubicleElevatorArrival[1]) < 0.001, 'CEO elevator should land clear of the second-floor elevator collision.');
+  assert(ceoElevatorArrival[1] - ceoElevatorDoor[1] > 0.9, 'CEO elevator arrival should be farther into the room than its prompt.');
+  assert(cubicleElevatorArrival[1] - cubicleElevatorDoor[1] > 0.9, 'Second-floor elevator arrival should be farther into the room than its prompt.');
 
   const scene = createInteriorScene(OFFICE_INTERIOR_ID, {
     placementId: 'office_test',
@@ -265,8 +305,8 @@ async function validateOfficeBuildingInteriorFlow() {
 
   scene.setActiveFloorId(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.cubicles)) > 0.99, 'Active office floor should stay opaque.');
-  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.lobby)) < 0.12, 'Inactive lower office floor should become very transparent.');
-  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.ceo)) < 0.12, 'Inactive upper office floor should become very transparent.');
+  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.lobby)) <= 0.001, 'Inactive lower office floor should become fully transparent.');
+  assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.ceo)) <= 0.001, 'Inactive upper office floor should become fully transparent.');
   assert(getFirstMeshOpacity(stairsGroup) > 0.99, 'Office stairs should remain opaque while other floors fade.');
 
   assert(typeof scene.getOfficeFloorIdAtWorldPosition === 'function', 'Office scene should expose the active floor at a world position.');
@@ -285,6 +325,25 @@ async function validateOfficeBuildingInteriorFlow() {
       1000 + localZ
     );
     return colliders.some((collider) => (collider.box ?? collider).containsPoint?.(point));
+  }
+
+  function collidersBlockPlayerAtLocalPoint(colliders, floorId, localX, localZ) {
+    const point = new THREE.Vector3(
+      1000 + localX,
+      getOfficeInteriorFloorHeight(floorId) + 1,
+      1000 + localZ
+    );
+    return colliders.some((collider) => {
+      const box = collider.box ?? collider;
+      return Boolean(
+        box?.min
+        && box?.max
+        && point.x > box.min.x - PLAYER_RADIUS
+        && point.x < box.max.x + PLAYER_RADIUS
+        && point.z > box.min.z - PLAYER_RADIUS
+        && point.z < box.max.z + PLAYER_RADIUS
+      );
+    });
   }
 
   const lobbyColliders = scene.getActiveOfficeColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby), 1000));
@@ -307,6 +366,8 @@ async function validateOfficeBuildingInteriorFlow() {
   ), 'Janitor closet should have an active first-floor movement blocker.');
   assert(collidersContainLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorX, cubicleElevatorZ), 'Second-floor elevator should have an active movement blocker.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorX, ceoElevatorZ), 'CEO elevator should have an active movement blocker.');
+  assert(!collidersBlockPlayerAtLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorArrival[0], cubicleElevatorArrival[1]), 'Second-floor elevator arrival should not spawn the player inside elevator collision.');
+  assert(!collidersBlockPlayerAtLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorArrival[0], ceoElevatorArrival[1]), 'CEO elevator arrival should not spawn the player inside elevator collision.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, 0, ceoNorthWallZ), 'CEO meeting room north wall should block movement at the visual wall.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoWestWallX, ceoLayout.centerZ), 'CEO meeting room west wall should block movement at the visual wall.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoEastWallX, ceoLayout.centerZ), 'CEO meeting room east wall should block movement at the visual wall.');
@@ -322,6 +383,7 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(Math.abs(ceoHeightOverStairs - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo)) < 0.001, 'Office stair ramp should not pull the CEO floor down.');
 
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const rendererSource = await readFile(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
   const serverSource = await readFile(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
   assert(gameSource.includes('openOfficeInteriorJobStation'), 'Game should start room-specific office jobs.');
@@ -329,8 +391,11 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(gameSource.includes('getInlineOfficeDoorBlockers'), 'Game should block the office front door from upper floors.');
   assert(gameSource.includes('getActiveInlineInteriorScene'), 'Game should use inline office floors for active ground height.');
   assert(gameSource.includes('setActiveFloorForWorldPosition'), 'Game should update active office floor transparency from the player position.');
+  assert(rendererSource.includes('officeJobId ?') && rendererSource.includes('office-job-station'), 'World renderer should expose placed office job props as job stations.');
   assert(serverSource.includes('parseOfficeInteriorStationPlacementId'), 'Server payroll should accept virtual office stations.');
   assert(mockSource.includes('parseOfficeInteriorStationPlacementId'), 'Mock payroll should accept virtual office stations.');
+  assert(serverSource.includes('placementOfficeJobId'), 'Server payroll should accept placed office job props.');
+  assert(mockSource.includes('placementOfficeJobId'), 'Mock payroll should accept placed office job props.');
 }
 
 function validateDeskModel() {
@@ -529,6 +594,7 @@ async function validateCheckedInPlacements() {
 
 async function main() {
   validateBuilderDefinition();
+  validateOfficeFurniturePropList();
   await validateOfficeJobTerminalFlow();
   await validateOfficeBuildingInteriorFlow();
   validateDeskModel();

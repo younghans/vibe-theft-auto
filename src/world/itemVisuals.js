@@ -7,6 +7,11 @@ import {
   createBlackjackTableVisual,
   createInstrumentClusterVisual,
   createOlympicBarbellVisual,
+  createOfficeCeoMeetingTableVisual,
+  createOfficeCubicleWorkstationVisual,
+  createOfficeLobbyChairVisual,
+  createOfficeLobbySideTableVisual,
+  createOfficeLobbyTableVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual
@@ -54,6 +59,16 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'standing_desk_computer' || item?.assetName === 'standing_desk_computer') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createStandingDeskComputerVisual();
+  } else if (item?.id === 'office_lobby_chair' || item?.assetName === 'office_lobby_chair') {
+    primaryObject = createOfficeLobbyChairVisual();
+  } else if (item?.id === 'office_lobby_table' || item?.assetName === 'office_lobby_table') {
+    primaryObject = createOfficeLobbyTableVisual();
+  } else if (item?.id === 'office_lobby_side_table' || item?.assetName === 'office_lobby_side_table') {
+    primaryObject = createOfficeLobbySideTableVisual();
+  } else if (item?.id === 'office_cubicle_workstation' || item?.assetName === 'office_cubicle_workstation') {
+    primaryObject = createOfficeCubicleWorkstationVisual();
+  } else if (item?.id === 'office_ceo_meeting_table' || item?.assetName === 'office_ceo_meeting_table') {
+    primaryObject = createOfficeCeoMeetingTableVisual();
   } else if (item?.id === 'instrument_cluster' || item?.assetName === 'instrument_cluster') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createInstrumentClusterVisual();

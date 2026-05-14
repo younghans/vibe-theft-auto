@@ -1,6 +1,7 @@
 import { SKILL_IDS } from './skills.js';
 
 export const OFFICE_JOB_TERMINAL_ITEM_ID = 'standing_desk_computer';
+export const OFFICE_CEO_MEETING_TABLE_ITEM_ID = 'office_ceo_meeting_table';
 export const OFFICE_JOB_TERMINAL_RADIUS = 5.25;
 
 export const OFFICE_JOB_IDS = Object.freeze({
