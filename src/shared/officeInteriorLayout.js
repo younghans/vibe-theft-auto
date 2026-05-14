@@ -43,11 +43,11 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'janitor-closet',
     type: OFFICE_INTERIOR_STATION_TYPES.job,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.lobby,
-    localPosition: [-7.35, -6.95],
-    radius: 3.4,
+    localPosition: [-8.1, -5.65],
+    radius: 3.0,
     label: 'Janitor Closet',
     prompt: 'Start janitor shift',
-    actionText: 'Paper toss from the janitor closet.',
+    actionText: 'Started janitor work from the closet prop.',
     jobId: OFFICE_JOB_IDS.janitor
   }),
   Object.freeze({

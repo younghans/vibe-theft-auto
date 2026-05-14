@@ -108,6 +108,9 @@ async function validateOfficeBuildingInteriorFlow() {
   const stairsToLobby = stations.find((station) => station.id === 'stairs-to-lobby');
   const elevatorToCeo = stations.find((station) => station.id === 'elevator-to-ceo');
   const elevatorToCubicles = stations.find((station) => station.id === 'elevator-to-cubicles');
+  const janitorCloset = stations.find((station) => station.id === 'janitor-closet');
+  assert(janitorCloset?.jobId === OFFICE_JOB_IDS.janitor, 'Janitor closet prop should start the janitor office job.');
+  assert((janitorCloset?.localPosition?.[1] ?? -99) > -6.2, 'Janitor station prompt should sit at the prop door, not inside a room.');
   assert(stairsToCubicles?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.cubicles, 'Lobby stairs should target the second floor.');
   assert(stairsToLobby?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby, 'Second-floor stairs should target the lobby.');
   assert((stairsToCubicles?.targetLocalPosition?.[1] ?? -99) > -2, 'Lobby stairs should land past the second-floor stair opening.');
@@ -139,6 +142,10 @@ async function validateOfficeBuildingInteriorFlow() {
   let stairsGroup = null;
   let floorWallGroupCount = 0;
   let elevatorBoxCount = 0;
+  let janitorClosetPropCount = 0;
+  let janitorClosetDoorCount = 0;
+  let janitorClosetMopCount = 0;
+  let janitorClosetBucketCount = 0;
   scene.group.traverse((node) => {
     if (node.userData?.officeFloorVisual && node.userData.officeFloorId) {
       floorGroupsById.set(node.userData.officeFloorId, node);
@@ -152,11 +159,27 @@ async function validateOfficeBuildingInteriorFlow() {
     if (node.userData?.officeElevatorBox) {
       elevatorBoxCount += 1;
     }
+    if (node.userData?.officeJanitorClosetProp) {
+      janitorClosetPropCount += 1;
+    }
+    if (node.userData?.officeJanitorClosetDoor) {
+      janitorClosetDoorCount += 1;
+    }
+    if (node.userData?.officeJanitorClosetMop) {
+      janitorClosetMopCount += 1;
+    }
+    if (node.userData?.officeJanitorClosetBucket) {
+      janitorClosetBucketCount += 1;
+    }
   });
   assert(floorGroupsById.size === 3, 'Office scene should split lobby, second floor, and CEO floor visuals.');
   assert(stairsGroup, 'Office scene should keep stairs in an always-opaque visual group.');
   assert(floorWallGroupCount === 3, 'Office scene should draw bold north/east/west walls for each floor.');
   assert(elevatorBoxCount === 2, 'Office scene should draw one freestanding elevator box on each elevator floor.');
+  assert(janitorClosetPropCount === 1, 'Lobby should render the janitor closet as one compact prop.');
+  assert(janitorClosetDoorCount === 1, 'Janitor closet prop should include a visible door.');
+  assert(janitorClosetMopCount === 1, 'Janitor closet prop should include a side mop.');
+  assert(janitorClosetBucketCount === 1, 'Janitor closet prop should include a side bucket.');
 
   function getFirstMeshOpacity(root) {
     let opacity = null;

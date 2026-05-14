@@ -572,6 +572,47 @@ function addOfficeStairwellRailing(group, materials) {
   }
 }
 
+function addOfficeJanitorClosetProp(group, materials, floorY) {
+  const [doorX, doorZ] = getOfficeStationLocalPosition('janitor-closet', [-8.1, -5.65]);
+  const width = 2.9;
+  const depth = 3.18;
+  const height = 2.82;
+  const frontZ = depth * 0.5;
+  const sideX = (width * 0.5) + 0.24;
+  const prop = new THREE.Group();
+  prop.name = 'office_janitor_closet_prop';
+  prop.userData.officeJanitorClosetProp = true;
+  prop.position.set(doorX, 0, doorZ - frontZ);
+
+  prop.add(createInteriorBox([width, height, depth], [0, floorY + (height * 0.5), 0], materials.closet));
+  prop.add(createInteriorBox([width + 0.1, 0.16, depth + 0.1], [0, floorY + height + 0.08, 0], materials.trimDark));
+  prop.add(createInteriorBox([width + 0.1, 0.12, depth + 0.1], [0, floorY + 0.06, 0], materials.metalDark));
+
+  const door = createInteriorBox([1.34, 2.22, 0.12], [0, floorY + 1.2, frontZ + 0.07], materials.door);
+  door.name = 'office_janitor_closet_prop_door';
+  door.userData.officeJanitorClosetDoor = true;
+  prop.add(door);
+  prop.add(createInteriorBox([1.52, 0.12, 0.16], [0, floorY + 2.36, frontZ + 0.08], materials.metalDark));
+  prop.add(createInteriorBox([0.12, 2.28, 0.16], [-0.75, floorY + 1.23, frontZ + 0.08], materials.metalDark));
+  prop.add(createInteriorBox([0.12, 2.28, 0.16], [0.75, floorY + 1.23, frontZ + 0.08], materials.metalDark));
+  prop.add(createInteriorBox([0.13, 0.13, 0.08], [0.47, floorY + 1.34, frontZ + 0.15], materials.gold));
+
+  const mop = createInteriorCylinder(0.045, 0.045, 2.35, 8, [sideX, floorY + 1.34, -0.32], materials.wood);
+  mop.name = 'office_janitor_closet_side_mop';
+  mop.userData.officeJanitorClosetMop = true;
+  mop.rotation.z = -0.18;
+  prop.add(mop);
+  prop.add(createInteriorBox([0.58, 0.18, 0.18], [sideX + 0.18, floorY + 0.24, -0.08], materials.trimDark, -0.18));
+
+  const bucket = createInteriorCylinder(0.34, 0.42, 0.5, 14, [sideX + 0.22, floorY + 0.34, 0.68], materials.green);
+  bucket.name = 'office_janitor_closet_side_bucket';
+  bucket.userData.officeJanitorClosetBucket = true;
+  prop.add(bucket);
+  prop.add(createInteriorBox([0.72, 0.06, 0.08], [sideX + 0.22, floorY + 0.68, 0.68], materials.metal));
+
+  group.add(prop);
+}
+
 function addOfficeLobbyVisuals(group, stairsGroup, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
   addOfficeFloorVisual(group, materials, floorY);
@@ -588,13 +629,7 @@ function addOfficeLobbyVisuals(group, stairsGroup, materials) {
   }
 
   group.add(createInteriorBox([5.8, 0.2, 1.25], [0, floorY + 0.82, 7.05], materials.wood));
-  group.add(createInteriorBox([4.8, 2.8, 0.16], [-7.35, floorY + 1.55, -9.05], materials.partition));
-  group.add(createInteriorBox([0.16, 2.8, 4.3], [-9.72, floorY + 1.55, -6.9], materials.partition));
-  group.add(createInteriorBox([0.16, 2.8, 4.3], [-4.98, floorY + 1.55, -6.9], materials.partition));
-  group.add(createInteriorBox([1.46, 2.35, 0.12], [-7.35, floorY + 1.42, -4.62], materials.door));
-  group.add(createInteriorBox([3.35, 0.12, 0.58], [-7.35, floorY + 1.55, -8.55], materials.metalDark));
-  group.add(createInteriorCylinder(0.06, 0.06, 2.35, 8, [-8.75, floorY + 1.45, -5.72], materials.wood));
-  group.add(createInteriorCylinder(0.24, 0.34, 0.44, 10, [-8.95, floorY + 0.34, -5.42], materials.green));
+  addOfficeJanitorClosetProp(group, materials, floorY);
   addOfficeStairsVisual(stairsGroup, materials, floorY, OFFICE_STAIR_BOTTOM.x, OFFICE_STAIR_BOTTOM.z, 0);
 }
 
@@ -675,6 +710,7 @@ function addOfficeInteriorVisuals(group) {
     metalDark: createInteriorMaterial(0x59636b, 0.86, 0.16),
     wood: createInteriorMaterial(0xa97948),
     woodDark: createInteriorMaterial(0x68452b),
+    closet: createInteriorMaterial(0x7f8a8f),
     chair: createInteriorMaterial(0x415565),
     screen: createInteriorMaterial(0x253542, 0.76, 0.08),
     glass: createInteriorMaterial(0xb7dce8, 0.62, 0.02),
