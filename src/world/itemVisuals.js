@@ -5,6 +5,7 @@ import {
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createInstrumentClusterVisual,
   createOlympicBarbellVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
@@ -53,6 +54,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'standing_desk_computer' || item?.assetName === 'standing_desk_computer') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createStandingDeskComputerVisual();
+  } else if (item?.id === 'instrument_cluster' || item?.assetName === 'instrument_cluster') {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createInstrumentClusterVisual();
   } else if (item?.id === 'blackjack_table' || item?.assetName === 'blackjack_table') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBlackjackTableVisual();

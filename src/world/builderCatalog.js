@@ -19,12 +19,14 @@ import {
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createInstrumentClusterVisual,
   createOlympicBarbellVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
+  INSTRUMENT_CLUSTER_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
   PISTOL_PICKUP_SPAWN_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
@@ -50,6 +52,7 @@ const PROP_GROUPS = Object.freeze({
   combat: 'Combat',
   casino: 'Casino',
   fitness: 'Fitness',
+  music: 'Music',
   office: 'Office',
   portals: 'Portals',
   storage: 'Storage',
@@ -493,6 +496,17 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       approachLocalOffset: [0, 1.35],
       approachRotationY: Math.PI
     }
+  },
+  {
+    id: 'instrument_cluster',
+    assetName: 'instrument_cluster',
+    aliases: ['music_cluster', 'instrument_corner', 'guitar_piano_microphone', 'Instrument Cluster'],
+    label: 'Instrument Cluster',
+    asset: null,
+    group: 'music',
+    size: INSTRUMENT_CLUSTER_FOOTPRINT,
+    collision: false,
+    createVisual: createInstrumentClusterVisual
   },
   {
     id: 'blackjack_table',

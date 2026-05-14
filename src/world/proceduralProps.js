@@ -9,6 +9,7 @@ export const BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT = 0.7;
 export const BASKETBALL_HOOP_FOOTPRINT = Object.freeze([3.6, 3.6]);
 export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
+export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([3.2, 2.4]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
@@ -52,6 +53,25 @@ function createCylinder(radiusTop, radiusBottom, height, radialSegments, materia
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments),
     material
   );
+}
+
+function createSphere(name, radius, position, material, {
+  scale = [1, 1, 1],
+  widthSegments = 24,
+  heightSegments = 16,
+  castShadow = true,
+  receiveShadow = true
+} = {}) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, widthSegments, heightSegments),
+    material
+  );
+  mesh.name = name;
+  mesh.scale.set(scale[0], scale[1], scale[2]);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = receiveShadow;
+  return mesh;
 }
 
 function createBox(name, size, position, material, {
@@ -172,6 +192,27 @@ function createDTableGeometry(width, depth, thickness, {
     bevelSegments
   });
   geometry.rotateX(-Math.PI / 2);
+  geometry.center();
+  return geometry;
+}
+
+function createGuitarBodyGeometry(width, height, depth) {
+  const halfWidth = width * 0.5;
+  const halfHeight = height * 0.5;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -halfHeight);
+  shape.bezierCurveTo(halfWidth * 0.9, -halfHeight * 0.96, halfWidth * 1.05, -halfHeight * 0.36, halfWidth * 0.42, -halfHeight * 0.12);
+  shape.bezierCurveTo(halfWidth * 0.78, halfHeight * 0.14, halfWidth * 0.52, halfHeight * 0.78, 0, halfHeight);
+  shape.bezierCurveTo(-halfWidth * 0.52, halfHeight * 0.78, -halfWidth * 0.78, halfHeight * 0.14, -halfWidth * 0.42, -halfHeight * 0.12);
+  shape.bezierCurveTo(-halfWidth * 1.05, -halfHeight * 0.36, -halfWidth * 0.9, -halfHeight * 0.96, 0, -halfHeight);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelSize: 0.025,
+    bevelThickness: 0.018,
+    bevelSegments: 3
+  });
   geometry.center();
   return geometry;
 }
@@ -1229,6 +1270,209 @@ export function createStandingDeskComputerVisual() {
   keyboardCable.castShadow = true;
   keyboardCable.receiveShadow = true;
   root.add(keyboardCable);
+
+  return root;
+}
+
+function addInstrumentClusterPiano(root, materials) {
+  root.add(createBox('instrumentClusterPianoKeyboardCase', [2.24, 0.18, 0.62], [0.08, 0.9, -0.58], materials.pianoCase));
+  root.add(createBox('instrumentClusterPianoKeyboard', [1.92, 0.045, 0.27], [0.08, 1.015, -0.3], materials.keyWhite, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('instrumentClusterPianoBackRail', [2.32, 0.22, 0.1], [0.08, 1.0, -0.88], materials.pianoTrim));
+  root.add(createBox('instrumentClusterPianoControlPanel', [0.52, 0.048, 0.18], [0.84, 1.04, -0.55], materials.pianoPanel, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('instrumentClusterPianoMusicRest', [1.28, 0.42, 0.065], [0.02, 1.28, -0.9], materials.pianoTrim, {
+    rotation: [-0.32, 0, 0]
+  }));
+
+  for (let index = 0; index < 16; index += 1) {
+    root.add(createBox(
+      `instrumentClusterPianoWhiteKey${index + 1}`,
+      [0.096, 0.036, 0.24],
+      [-0.83 + (index * 0.122), 1.055, -0.23],
+      materials.keyWhite,
+      { castShadow: false, receiveShadow: true }
+    ));
+  }
+
+  const blackKeyOffsets = [0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14];
+  blackKeyOffsets.forEach((offset, index) => {
+    root.add(createBox(
+      `instrumentClusterPianoBlackKey${index + 1}`,
+      [0.066, 0.052, 0.16],
+      [-0.77 + (offset * 0.122), 1.092, -0.33],
+      materials.keyBlack,
+      { castShadow: true, receiveShadow: true }
+    ));
+  });
+
+  root.add(createCylinderBetween('instrumentClusterPianoStandFrontFoot', [-1.0, 0.08, -0.2], [1.16, 0.08, -0.2], 0.035, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterPianoStandBackFoot', [-1.0, 0.08, -0.92], [1.16, 0.08, -0.92], 0.035, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterPianoStandLeftFrontLeg', [-0.92, 0.08, -0.22], [-0.52, 0.82, -0.45], 0.032, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterPianoStandRightFrontLeg', [1.08, 0.08, -0.22], [0.68, 0.82, -0.45], 0.032, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterPianoStandLeftBackLeg', [-0.92, 0.08, -0.9], [-0.52, 0.82, -0.7], 0.032, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterPianoStandRightBackLeg', [1.08, 0.08, -0.9], [0.68, 0.82, -0.7], 0.032, materials.standMetal));
+}
+
+function addInstrumentClusterGuitar(root, materials) {
+  const guitar = new THREE.Group();
+  guitar.name = 'instrumentClusterGuitar';
+  guitar.position.set(-1.08, 0.08, 0.38);
+  guitar.rotation.set(0, 0.16, -0.16);
+  root.add(guitar);
+
+  const body = new THREE.Mesh(
+    createGuitarBodyGeometry(0.66, 0.82, 0.16),
+    materials.guitarBody
+  );
+  body.name = 'instrumentClusterGuitarBody';
+  body.position.set(0, 0.58, 0);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  guitar.add(body);
+
+  const soundHole = new THREE.Mesh(
+    new THREE.TorusGeometry(0.105, 0.012, 8, 30),
+    materials.guitarSoundHole
+  );
+  soundHole.name = 'instrumentClusterGuitarSoundHole';
+  soundHole.position.set(0, 0.69, -0.09);
+  soundHole.castShadow = false;
+  soundHole.receiveShadow = true;
+  guitar.add(soundHole);
+
+  guitar.add(createBox('instrumentClusterGuitarBridge', [0.32, 0.045, 0.035], [0, 0.38, -0.095], materials.guitarNeck));
+  guitar.add(createBox('instrumentClusterGuitarNeck', [0.12, 1.08, 0.075], [0, 1.28, -0.01], materials.guitarNeck));
+  guitar.add(createBox('instrumentClusterGuitarHeadstock', [0.32, 0.28, 0.09], [0, 1.97, -0.01], materials.guitarNeck, {
+    rotation: [0, 0, 0.1]
+  }));
+
+  for (let index = 0; index < 6; index += 1) {
+    const x = -0.045 + (index * 0.018);
+    guitar.add(createCylinderBetween(
+      `instrumentClusterGuitarString${index + 1}`,
+      [x, 0.39, -0.115],
+      [x * 0.46, 2.08, -0.115],
+      0.0045,
+      materials.guitarString,
+      { radialSegments: 4, castShadow: false, receiveShadow: true }
+    ));
+  }
+
+  for (const side of [-1, 1]) {
+    for (let index = 0; index < 3; index += 1) {
+      const peg = createCylinder(0.022, 0.022, 0.15, 10, materials.guitarString);
+      peg.name = `instrumentClusterGuitarTuningPeg${side < 0 ? 'Left' : 'Right'}${index + 1}`;
+      peg.rotation.z = Math.PI * 0.5;
+      peg.position.set(side * 0.19, 1.9 + (index * 0.08), -0.02);
+      peg.castShadow = true;
+      peg.receiveShadow = true;
+      guitar.add(peg);
+    }
+  }
+
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandLeft', [-1.38, 0.06, 0.58], [-1.16, 0.92, 0.4], 0.022, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandRight', [-0.74, 0.06, 0.56], [-1.0, 0.92, 0.39], 0.022, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandBase', [-1.42, 0.06, 0.64], [-0.7, 0.06, 0.64], 0.026, materials.standMetal));
+}
+
+function addInstrumentClusterMicrophoneStand(root, materials) {
+  const baseX = 1.14;
+  const baseZ = 0.48;
+  const legEnds = [
+    [baseX - 0.48, 0.06, baseZ + 0.34],
+    [baseX + 0.5, 0.06, baseZ + 0.28],
+    [baseX + 0.02, 0.06, baseZ - 0.5]
+  ];
+
+  for (const [index, end] of legEnds.entries()) {
+    root.add(createCylinderBetween(
+      `instrumentClusterMicrophoneStandTripodLeg${index + 1}`,
+      [baseX, 0.1, baseZ],
+      end,
+      0.026,
+      materials.standMetal
+    ));
+  }
+
+  root.add(createCylinderBetween('instrumentClusterMicrophoneStandPole', [baseX, 0.08, baseZ], [baseX, 1.72, baseZ], 0.034, materials.standMetal, {
+    radialSegments: 16
+  }));
+  root.add(createSphere('instrumentClusterMicrophoneStandClamp', 0.075, [baseX, 1.7, baseZ], materials.standMetal, {
+    scale: [1.2, 0.85, 1.2],
+    widthSegments: 16,
+    heightSegments: 10
+  }));
+  root.add(createCylinderBetween('instrumentClusterMicrophoneStandBoom', [baseX, 1.68, baseZ], [0.46, 1.93, 0.26], 0.024, materials.standMetal, {
+    radialSegments: 12
+  }));
+  root.add(createCylinderBetween('instrumentClusterMicrophoneHandle', [0.47, 1.93, 0.26], [0.22, 2.0, 0.18], 0.038, materials.micHandle, {
+    radialSegments: 12
+  }));
+  root.add(createCylinderBetween('instrumentClusterMicrophone', [0.2, 2.01, 0.18], [-0.02, 2.07, 0.12], 0.065, materials.micGrille, {
+    radialSegments: 16
+  }));
+}
+
+export function createInstrumentClusterVisual() {
+  const root = new THREE.Group();
+  root.name = 'InstrumentCluster';
+  root.userData.footprint = [...INSTRUMENT_CLUSTER_FOOTPRINT];
+
+  const materials = {
+    rug: createMaterial(0x263042, 0.82, 0.04),
+    rugTrim: createMaterial(0xd4a847, 0.5, 0.2),
+    pianoCase: createMaterial(0x111820, 0.42, 0.22),
+    pianoTrim: createMaterial(0x2d3744, 0.36, 0.34),
+    pianoPanel: createMaterial(0x4ec3d8, 0.3, 0.08),
+    keyWhite: createMaterial(0xf1eee6, 0.48, 0.02),
+    keyBlack: createMaterial(0x08090d, 0.5, 0.12),
+    standMetal: createMaterial(0x3d4652, 0.34, 0.52),
+    guitarBody: createMaterial(0xba6a2a, 0.38, 0.06),
+    guitarNeck: createMaterial(0x55331e, 0.44, 0.06),
+    guitarSoundHole: createMaterial(0x0c0b0a, 0.66, 0.02),
+    guitarString: createMaterial(0xd4d9dd, 0.24, 0.62),
+    micHandle: createMaterial(0x11151b, 0.44, 0.34),
+    micGrille: createMaterial(0xb8c3cc, 0.26, 0.64),
+    cable: createMaterial(0x080b10, 0.68, 0.12)
+  };
+
+  root.add(createBox('instrumentClusterCornerRug', [3.0, 0.045, 2.08], [0, 0.022, -0.04], materials.rug, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('instrumentClusterRugFrontTrim', [3.02, 0.02, 0.045], [0, 0.056, 1.0], materials.rugTrim, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('instrumentClusterRugLeftTrim', [0.045, 0.02, 2.05], [-1.48, 0.056, -0.04], materials.rugTrim, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+
+  addInstrumentClusterPiano(root, materials);
+  addInstrumentClusterGuitar(root, materials);
+  addInstrumentClusterMicrophoneStand(root, materials);
+
+  const cablePath = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.34, 0.07, -0.16),
+    new THREE.Vector3(0.74, 0.065, 0.04),
+    new THREE.Vector3(1.04, 0.065, 0.36),
+    new THREE.Vector3(0.36, 0.065, 0.62),
+    new THREE.Vector3(-0.42, 0.065, 0.5)
+  ]);
+  const cable = new THREE.Mesh(
+    new THREE.TubeGeometry(cablePath, 28, 0.018, 6),
+    materials.cable
+  );
+  cable.name = 'instrumentClusterAudioCable';
+  cable.castShadow = false;
+  cable.receiveShadow = true;
+  root.add(cable);
 
   return root;
 }

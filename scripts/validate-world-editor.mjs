@@ -34,7 +34,8 @@ import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
-  BASKETBALL_HOOP_RIM_HEIGHT
+  BASKETBALL_HOOP_RIM_HEIGHT,
+  INSTRUMENT_CLUSTER_FOOTPRINT
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
@@ -207,6 +208,34 @@ function validateCustomPropCatalogItems() {
     Math.abs(worldCollisionRect.z - (hoopTestPlacement.position[1] + hoopCollisionRect.centerZ)) < 0.001,
     'Basketball hoop prop collision should be relative to the pole position'
   );
+
+  const instrumentCluster = getBuilderItemById('instrument_cluster');
+  assert(instrumentCluster, 'Instrument cluster prop should exist');
+  assert(getBuilderItemById('Instrument Cluster') === instrumentCluster, 'Instrument cluster should resolve from the label used in builder workflows');
+  assert(getBuilderItemById('guitar_piano_microphone') === instrumentCluster, 'Instrument cluster should resolve from the descriptive alias');
+  assert(instrumentCluster.layer === 'prop', 'Instrument cluster should be a prop catalog item');
+  assert(instrumentCluster.groupId === 'music', 'Instrument cluster should be grouped under Music');
+  assert(instrumentCluster.asset === null, 'Instrument cluster should use a procedural visual');
+  assert(instrumentCluster.collision === false, 'Instrument cluster should not block movement in tight interior corners');
+  assert(typeof instrumentCluster.createVisual === 'function', 'Instrument cluster should define a procedural visual');
+  assert(
+    instrumentCluster.size[0] === INSTRUMENT_CLUSTER_FOOTPRINT[0]
+      && instrumentCluster.size[1] === INSTRUMENT_CLUSTER_FOOTPRINT[1],
+    'Instrument cluster should use the compact corner footprint constant'
+  );
+
+  const instrumentVisual = instrumentCluster.createVisual();
+  assert(instrumentVisual.getObjectByName('instrumentClusterGuitar'), 'Instrument cluster visual should include a guitar');
+  assert(instrumentVisual.getObjectByName('instrumentClusterGuitarBody'), 'Instrument cluster guitar should include a body');
+  assert(instrumentVisual.getObjectByName('instrumentClusterPianoKeyboard'), 'Instrument cluster visual should include a piano keyboard');
+  assert(instrumentVisual.getObjectByName('instrumentClusterMicrophoneStandPole'), 'Instrument cluster visual should include a microphone stand');
+  assert(instrumentVisual.getObjectByName('instrumentClusterMicrophone'), 'Instrument cluster visual should include a microphone');
+
+  const instrumentBounds = new Box3().setFromObject(instrumentVisual);
+  const instrumentSize = instrumentBounds.getSize(new Vector3());
+  assert(instrumentSize.x <= INSTRUMENT_CLUSTER_FOOTPRINT[0] + 0.05, 'Instrument cluster visual should stay narrow enough for a building corner');
+  assert(instrumentSize.z <= INSTRUMENT_CLUSTER_FOOTPRINT[1] + 0.05, 'Instrument cluster visual should stay shallow enough for a building corner');
+  assert(instrumentSize.y <= 2.4, 'Instrument cluster visual should stay below normal room height');
 }
 
 function validateTiles() {
