@@ -172,9 +172,9 @@ const OFFICE_JANITOR_TARGET_WIDTH_STEP = 0.02;
 const OFFICE_JANITOR_MIN_TARGET_WIDTH = 0.15;
 const OFFICE_JANITOR_BASE_MARKER_SPEED = 1.12;
 const OFFICE_JANITOR_MARKER_SPEED_STEP = 0.18;
-const OFFICE_JANITOR_MOP_HERO_DURATION_MS = 18000;
+const OFFICE_JANITOR_MOP_HERO_DURATION_MS = 8000;
 const OFFICE_JANITOR_MOP_BRUSH_RADIUS = 0.16;
-const OFFICE_JANITOR_MOP_CLEAN_RATE = 2.1;
+const OFFICE_JANITOR_MOP_CLEAN_RATE = 3.4;
 const OFFICE_JANITOR_MOP_COMPLETE_PROGRESS = 0.985;
 const OFFICE_JANITOR_MOP_DIRT_PATCHES = Object.freeze([
   Object.freeze({ x: 0.16, y: 0.74, size: 0.19, rotation: -14 }),
@@ -7816,9 +7816,13 @@ export class Game {
     }
 
     if (cleanProgress >= OFFICE_JANITOR_MOP_COMPLETE_PROGRESS) {
+      for (const patch of patches) {
+        patch.clean = 1;
+      }
+      game.data.cleanProgress = 1;
       game.data.sparklyClean = true;
       game.data.mopActive = false;
-      void this.finishOfficeJob(true, 'Sparkly Clean', 'The office room is clean enough to shine.');
+      void this.finishOfficeJob(true, 'Sparkly Clean', 'The office floor is 100% clean and sparkling.');
     }
   }
 

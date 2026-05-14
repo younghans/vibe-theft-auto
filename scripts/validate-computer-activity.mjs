@@ -302,9 +302,12 @@ async function validateOfficeJobHudSurfaces() {
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const officeCountdownMatch = gameSource.match(/const\s+OFFICE_JOB_COUNTDOWN_MS\s*=\s*(\d+)/);
   const officeCountdownMs = Number(officeCountdownMatch?.[1] ?? 0);
+  const mopHeroDurationMatch = gameSource.match(/const\s+OFFICE_JANITOR_MOP_HERO_DURATION_MS\s*=\s*(\d+)/);
+  const mopHeroDurationMs = Number(mopHeroDurationMatch?.[1] ?? 0);
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
+  assert(mopHeroDurationMs === 8000, 'Mop Hero should give the player exactly 8 seconds.');
   assert(gameSource.includes('officeJanitorGameCycleIndex'), 'Janitor should track the next game in a deterministic cycle.');
   assert(gameSource.includes('getNextOfficeJanitorGameId'), 'Janitor should use the cycle helper when preparing the next game.');
   assert(gameSource.includes('advanceOfficeJanitorGameCycle'), 'Janitor should advance the cycle once a janitor game starts.');
@@ -314,6 +317,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(gameSource.includes('OFFICE_JANITOR_BASE_TARGET_WIDTH'), 'Janitor paper toss should use explicit easier target timing constants.');
   assert(gameSource.includes('OFFICE_JANITOR_MOP_BRUSH_RADIUS'), 'Mop Hero should use an explicit mouse brush radius.');
   assert(gameSource.includes('updateJanitorMopHeroState'), 'Mop Hero should update cleaning progress from pointer movement.');
+  assert(/for\s*\(\s*const\s+patch\s+of\s+patches\s*\)\s*{\s*patch\.clean\s*=\s*1;\s*}/.test(gameSource), 'Mop Hero completion should mark every dirt patch completely clean.');
+  assert(gameSource.includes('game.data.cleanProgress = 1'), 'Mop Hero completion should snap progress to 100%.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
