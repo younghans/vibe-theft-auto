@@ -628,6 +628,11 @@ function isRetryableNetworkError(error) {
   return /connection was reset|recv failure|failed to connect|could not resolve host|early eof|rpc failed|http\/2 stream|timeout|timed out|tls connection|network/i.test(text);
 }
 
+function isMissingRemoteRefError(error) {
+  const text = String(error?.stack || error?.message || error || '');
+  return /couldn't find remote ref|could not find remote ref|couldn't find remote branch|could not find remote branch|remote ref does not exist/i.test(text);
+}
+
 async function retryTransientCommand(taskId, label, operation, {
   attempts = 3,
   delayMs = 5000
@@ -730,14 +735,36 @@ async function createCodeWorktree(task) {
   const branch = `agent/task-${slug}`;
   const worktreePath = path.join(TASKS_ROOT, slug);
   const baseBranch = String(task.baseBranch || '').trim();
-  const baseRef = baseBranch ? `origin/${baseBranch}` : `origin/${GIT_BASE_BRANCH}`;
+  const baseCommitSha = String(task.baseCommitSha || '').trim();
+  let baseRef = baseBranch ? `origin/${baseBranch}` : `origin/${GIT_BASE_BRANCH}`;
   await withBaseRepoLock(async () => {
     if (baseBranch) {
-      await git(['fetch', 'origin', `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], {
-        cwd: REPO_PATH,
-        taskId: task.id,
-        label: 'git fetch thread base'
-      });
+      try {
+        await git(['fetch', 'origin', `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], {
+          cwd: REPO_PATH,
+          taskId: task.id,
+          label: 'git fetch thread base'
+        });
+      } catch (error) {
+        if (!baseCommitSha || !isMissingRemoteRefError(error)) {
+          throw error;
+        }
+
+        await appendLog(task.id, 'Thread base branch was missing on origin; falling back to stored base commit.', {
+          level: 'warn',
+          data: {
+            baseBranch,
+            baseCommitSha,
+            error: truncateText(error?.message || String(error), 1200)
+          }
+        });
+        await git(['cat-file', '-e', `${baseCommitSha}^{commit}`], {
+          cwd: REPO_PATH,
+          taskId: task.id,
+          label: 'git verify thread base commit'
+        });
+        baseRef = baseCommitSha;
+      }
     }
     await removeTaskWorktree(worktreePath, task.id);
     await git(['worktree', 'add', '-B', branch, worktreePath, baseRef], {

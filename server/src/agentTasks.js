@@ -75,6 +75,10 @@ const THREAD_ACTIVE_STATUSES = new Set([
   'deploying',
   'rolling_back'
 ]);
+const FOLLOWUP_BASE_STATUSES = new Set([
+  'ready_for_review',
+  'deployed'
+]);
 
 let taskStoreQueue = Promise.resolve();
 
@@ -300,10 +304,32 @@ function buildThreadHistory(tasks = [], threadId = '') {
 function getFollowupBaseTask(threadTasks = []) {
   return sortTasks(threadTasks)
     .find((task) => (
-      task.status === 'ready_for_review'
-      && String(task.branch ?? '').trim()
-      && String(task.commitSha ?? '').trim()
+      FOLLOWUP_BASE_STATUSES.has(String(task.status ?? ''))
+      && (
+        String(task.branch ?? '').trim()
+        || String(task.newDeployCommitSha ?? '').trim()
+        || String(task.commitSha ?? '').trim()
+      )
+      && String(getFollowupBaseCommitSha(task)).trim()
     )) ?? null;
+}
+
+function getFollowupBaseBranch(task = null) {
+  if (!task || task.status === 'deployed') {
+    return '';
+  }
+
+  return String(task.branch ?? '').trim();
+}
+
+function getFollowupBaseCommitSha(task = null) {
+  if (!task) {
+    return '';
+  }
+
+  return String(task.status === 'deployed'
+    ? task.newDeployCommitSha || task.commitSha
+    : task.commitSha).trim();
 }
 
 async function readTaskState(filePath = AGENT_TASKS_FILE_PATH) {
@@ -472,14 +498,16 @@ export async function createAgentTask(payload = {}, {
       || (parentTask ? getThreadTitleFromTask(parentTask) : '')
       || prompt;
     const threadHistory = parentTask ? buildThreadHistory(state.tasks, threadId) : [];
+    const baseBranch = getFollowupBaseBranch(baseTask);
+    const baseCommitSha = getFollowupBaseCommitSha(baseTask);
     const task = normalizeTask({
       id,
       type: 'code_change',
       threadId,
       parentTaskId: parentTask?.id ?? '',
       threadTitle,
-      baseBranch: baseTask?.branch ?? '',
-      baseCommitSha: baseTask?.commitSha ?? '',
+      baseBranch,
+      baseCommitSha,
       scope: normalizeScope(payload.scope || parentTask?.scope),
       gameId: String(payload.gameId ?? parentTask?.gameId ?? '').trim(),
       contextType: normalizeContextType(payload.contextType ?? parentTask?.contextType ?? payload.scope),
@@ -503,7 +531,8 @@ export async function createAgentTask(payload = {}, {
             contextType: normalizeContextType(payload.contextType ?? parentTask?.contextType ?? payload.scope),
             threadId,
             parentTaskId: parentTask?.id ?? '',
-            baseBranch: baseTask?.branch ?? ''
+            baseBranch,
+            baseCommitSha
           }
         }
       ]

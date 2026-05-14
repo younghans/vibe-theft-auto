@@ -130,6 +130,39 @@ try {
     filePath
   });
 
+  const deployedThreadUpdate = await createAgentTask({
+    parentTaskId: readyWithoutDeployApproval.id,
+    prompt: 'Ship the prompt detail panel polish.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  await updateAgentTask(deployedThreadUpdate.id, {
+    status: 'deployed',
+    branch: 'agent/task-thread-deployed',
+    commitSha: 'threaddeployed1234',
+    newDeployCommitSha: 'maindeployed5678',
+    agentMessage: 'Prompt detail polish is deployed.'
+  }, { filePath });
+  const deployedFollowup = await createAgentTask({
+    parentTaskId: deployedThreadUpdate.id,
+    prompt: 'Continue from the deployed prompt detail polish.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  assert.equal(deployedFollowup.threadId, readyWithoutDeployApproval.threadId);
+  assert.equal(deployedFollowup.parentTaskId, deployedThreadUpdate.id);
+  assert.equal(deployedFollowup.baseBranch, '');
+  assert.equal(deployedFollowup.baseCommitSha, 'maindeployed5678');
+  assert.equal(deployedFollowup.threadHistory.at(-1).status, 'deployed');
+  await cancelAgentTask(deployedFollowup.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
+
   const laneBoundaryTask = await createAgentTask({
     scope: 'game',
     contextType: 'hud',
