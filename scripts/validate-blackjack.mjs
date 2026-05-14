@@ -9,6 +9,7 @@ import { assets } from '../src/world/assetManifest.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import {
+  BLACKJACK_MAX_WAGER,
   canSplitBlackjackSession,
   createBlackjackSession,
   doubleBlackjackSession,
@@ -16,6 +17,7 @@ import {
   isBlackjackDealerNpc,
   isNaturalBlackjack,
   isSoftBlackjackHand,
+  normalizeBlackjackWager,
   serializeBlackjackSession,
   splitBlackjackSession,
   standBlackjackSession
@@ -39,6 +41,9 @@ function validateSharedRules() {
   assert(isSoftBlackjackHand([{ rank: 'A' }, { rank: '9' }]), 'A+9 should be a soft hand.');
   assert(isSoftBlackjackHand([{ rank: 'A' }, { rank: 'A' }]), 'A+A should be a soft hand.');
   assert(isNaturalBlackjack([{ rank: 'A' }, { rank: 'K' }]), 'A+K should be a natural blackjack.');
+  assert(BLACKJACK_MAX_WAGER === 5000, 'Blackjack max wager should be $5000.');
+  assert(normalizeBlackjackWager(5000) === 5000, 'A $5000 blackjack wager should be allowed.');
+  assert(normalizeBlackjackWager(5001) === 5000, 'Blackjack wagers above $5000 should clamp to the max.');
 
   const session = createBlackjackSession({ npcId: 'npc_table', wager: 25, rng: () => 0.42, now: 1234 });
   const publicState = serializeBlackjackSession(session, { money: 75 });

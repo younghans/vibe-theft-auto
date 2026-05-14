@@ -1455,7 +1455,7 @@ export class NpcServiceMock {
     if (wager > money) {
       return {
         ok: false,
-        error: `You need ${wager > BLACKJACK_MAX_WAGER ? '$500 or less' : 'more cash'} for that wager.`
+        error: `You need ${wager > BLACKJACK_MAX_WAGER ? `$${BLACKJACK_MAX_WAGER} or less` : 'more cash'} for that wager.`
       };
     }
 

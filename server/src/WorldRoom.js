@@ -1631,7 +1631,7 @@ export class WorldRoom extends Room {
     const wager = normalizeBlackjackWager(message?.wager);
     const money = Math.trunc(Number(player.money ?? 0) || 0);
     if (wager > money) {
-      throw new Error(`You need ${wager > BLACKJACK_MAX_WAGER ? '$500 or less' : 'more cash'} for that wager.`);
+      throw new Error(`You need ${wager > BLACKJACK_MAX_WAGER ? `$${BLACKJACK_MAX_WAGER} or less` : 'more cash'} for that wager.`);
     }
 
     player.money = money - wager;

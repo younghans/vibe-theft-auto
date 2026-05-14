@@ -1,7 +1,10 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS } from '../shared/heldItemDefinitions.js';
-import { BLACKJACK_DEFAULT_WAGER } from '../shared/blackjack.js';
+import {
+  BLACKJACK_DEFAULT_WAGER,
+  BLACKJACK_MAX_WAGER
+} from '../shared/blackjack.js';
 import { escapeHtml } from '../shared/htmlEscape.js';
 import { getStockTradeValue } from '../shared/stockMarket.js';
 import { SCHOOL_MICROGAME_IDS } from '../shared/schoolMicrogames.js';
@@ -3529,7 +3532,7 @@ export class Hud {
           </div>
           <label class="hud__blackjack-wager">
             <span class="hud__field-label">Wager</span>
-            <input class="hud__field-control" type="number" min="0" max="500" step="5" value="${BLACKJACK_DEFAULT_WAGER}" data-blackjack-wager />
+            <input class="hud__field-control" type="number" min="0" max="${BLACKJACK_MAX_WAGER}" step="5" value="${BLACKJACK_DEFAULT_WAGER}" data-blackjack-wager />
           </label>
           <div class="hud__blackjack-chips" data-blackjack-wager-chips aria-hidden="true"></div>
           <div class="hud__blackjack-actions">
@@ -6093,7 +6096,7 @@ export class Hud {
     const numericWager = Number(wager);
     this.blackjackState = {
       game,
-      wager: Number.isFinite(numericWager) ? Math.max(0, Math.min(500, Math.trunc(numericWager))) : BLACKJACK_DEFAULT_WAGER,
+      wager: Number.isFinite(numericWager) ? Math.max(0, Math.min(BLACKJACK_MAX_WAGER, Math.trunc(numericWager))) : BLACKJACK_DEFAULT_WAGER,
       loading: Boolean(loading),
       error: String(error ?? ''),
       dealerName: String(dealerName || 'Dealer')
