@@ -169,6 +169,9 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
+  assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
+  assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
+  assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
   assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
   assert(hudSource.includes('hud__office-thrower'), 'Janitor HUD should render a person throwing the paper.');
   assert(!hudSource.includes('hud__office-fan'), 'Janitor HUD should no longer render the old desk fan.');
@@ -178,7 +181,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
   assert(hudSource.includes('hud__office-cup'), 'Office Manager HUD should render a coffee mug.');
   assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
-  assert(hudSource.includes('--stamp-left'), 'CEO stamp should align with the approval timing window.');
+  assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose a dynamic horizontal marker position.');
+  assert(hudSource.includes('is-returning'), 'CEO HUD should show the returning stamp pass.');
   assert(hudSource.includes('hud__office-board-face is-center'), 'CEO boardroom should include animated board members.');
   assert(hudSource.includes("office:stamp"), 'CEO HUD should expose the stamp action.');
 
@@ -191,7 +195,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
   assert(cssSource.includes('hud__office-ceo-stamp-pad'), 'CEO stamp should have a polished stamp pad.');
   assert(cssSource.includes('@keyframes hud-office-board-member-bob'), 'CEO board members should animate.');
-  assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should appear at the timing window position.');
+  assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should move with the timing marker.');
 }
 
 async function validateCheckedInPlacements() {

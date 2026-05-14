@@ -9582,6 +9582,7 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 16px 20px rgba(0, 0, 0, 0.24);
   transform: translateX(-50%) rotate(-2deg);
   transition: left 70ms linear;
+  will-change: left;
   z-index: 5;
 }
 
@@ -9606,6 +9607,8 @@ body.is-admin-prompt-resizing * {
   height: 126px;
   transform: translateX(-50%);
   transform-origin: center top;
+  transition: left 70ms linear, filter 140ms ease;
+  will-change: left;
   z-index: 6;
 }
 
@@ -9690,6 +9693,14 @@ body.is-admin-prompt-resizing * {
   animation: hud-office-stamp-slam 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.hud__office-ceo-stamp.is-returning .hud__office-ceo-stamp-arm {
+  filter: brightness(1.08) saturate(1.08);
+}
+
+.hud__office-ceo-stamp.is-returning .hud__office-ceo-memo {
+  transform: translateX(-50%) rotate(2deg);
+}
+
 .hud__office-ceo-stamp-mark {
   position: absolute;
   left: var(--stamp-left, 50%);
@@ -9707,6 +9718,7 @@ body.is-admin-prompt-resizing * {
   letter-spacing: 0;
   opacity: 0;
   transform: translateX(-50%) rotate(-8deg) scale(0.8);
+  transition: left 70ms linear;
   z-index: 7;
 }
 

@@ -1406,6 +1406,8 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Math.round(Number(data.marker ?? 0) * 100)),
       String(Math.round(Number(data.fill ?? 0))),
       String(Math.round(Number(data.memoPosition ?? 0) * 100)),
+      String(Number(data.memoDirection ?? 1) || 1),
+      String(Boolean(data.memoTurned)),
       String(data.memoLabel ?? ''),
       String(Number(data.shotNumber ?? 0) || 0),
       String(Number(data.madeThrows ?? 0) || 0),
@@ -2008,7 +2010,8 @@ function createOfficeCoffeeFillMarkup(game = null) {
 function createOfficeCeoMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const memoPosition = Math.max(0, Math.min(1.08, Number(data.memoPosition ?? 0) || 0));
+  const rawMemoPosition = Number(data.memoPosition);
+  const memoPosition = Number.isFinite(rawMemoPosition) ? Math.max(-0.16, Math.min(1.16, rawMemoPosition)) : -0.14;
   const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.44) || 0.44));
   const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.6) || 0.6));
   const approved = Math.max(0, Math.floor(Number(data.approved ?? 0) || 0));
@@ -2016,8 +2019,9 @@ function createOfficeCeoMarkup(game = null) {
   const progress = Math.max(0, Math.min(100, (approved / required) * 100));
   const stamped = data.stamped === true;
   const stampSuccess = data.stampSuccess === true;
-  const stampState = stamped ? stampSuccess ? ' is-stamping is-approved' : ' is-stamping is-rejected' : '';
-  const stampLeft = ((targetStart + targetEnd) / 2) * 100;
+  const returning = data.memoTurned === true || Number(data.memoDirection ?? 1) < 0;
+  const stampState = `${returning ? ' is-returning' : ''}${stamped ? stampSuccess ? ' is-stamping is-approved' : ' is-stamping is-rejected' : ''}`;
+  const stampLeft = memoPosition * 100;
   return `
     <div class="hud__office-task hud__office-ceo hud__office-ceo-stamp${stampState}" style="--memo-left:${(memoPosition * 100).toFixed(2)}%; --target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%; --stamp-left:${stampLeft.toFixed(2)}%">
       <div class="hud__office-boardroom-scene" aria-hidden="true">
@@ -2043,7 +2047,7 @@ function createOfficeCeoMarkup(game = null) {
       </div>
       <div class="hud__school-score-strip">
         <span>${escapeHtml(approved)}/${escapeHtml(required)} memos approved</span>
-        <span>Approval window</span>
+        <span>${returning ? 'Return pass' : 'Forward pass'}</span>
       </div>
       ${createSchoolProgressMarkup(progress, 'Approval progress')}
       ${createSchoolGameButton('office:stamp', 'Stamp', 'is-primary')}

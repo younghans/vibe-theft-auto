@@ -141,6 +141,10 @@ const OFFICE_JOB_COUNTDOWN_GO_MS = 400;
 const OFFICE_JANITOR_REQUIRED_THROWS = 3;
 const OFFICE_JANITOR_THROW_RESOLVE_MS = 820;
 const OFFICE_CEO_STAMP_RESOLVE_MS = 680;
+const OFFICE_CEO_STAMP_LEFT_EXIT = -0.14;
+const OFFICE_CEO_STAMP_RIGHT_EXIT = 1.14;
+const OFFICE_CEO_TARGET_MIN_WIDTH = 0.1;
+const OFFICE_CEO_TARGET_WIDTH_VARIANCE = 0.14;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
 const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
@@ -5731,6 +5735,17 @@ export class Game {
     data.throwMissSide = '';
   }
 
+  configureCeoMemoStamp(round = {}, data = {}, approvedCount = 0) {
+    const targetWidth = OFFICE_CEO_TARGET_MIN_WIDTH + this.schoolRandom() * OFFICE_CEO_TARGET_WIDTH_VARIANCE;
+    const maxTargetStart = 0.92 - targetWidth;
+    round.targetStart = 0.08 + this.schoolRandom() * Math.max(0.01, maxTargetStart - 0.08);
+    round.targetEnd = round.targetStart + targetWidth;
+    data.memoPosition = OFFICE_CEO_STAMP_LEFT_EXIT;
+    data.memoDirection = 1;
+    data.memoTurned = false;
+    data.memoSpeed = 0.66 + this.schoolRandom() * 0.22 + Math.max(0, Number(approvedCount ?? 0) || 0) * 0.04;
+  }
+
   startOfficeJobCountdown(game = this.schoolMicrogame) {
     if (!this.isOfficeJobGame(game) || game.phase !== 'ready') {
       this.beginSchoolMicrogame();
@@ -5799,10 +5814,7 @@ export class Game {
       data.brewing = false;
     } else if (job.id === OFFICE_JOB_IDS.ceo) {
       round.requiredApprovals = 3;
-      round.targetStart = 0.42 + this.schoolRandom() * 0.22;
-      round.targetEnd = Math.min(0.86, round.targetStart + 0.16);
-      data.memoPosition = this.schoolRandom() * 0.16;
-      data.memoSpeed = 0.58 + this.schoolRandom() * 0.12;
+      this.configureCeoMemoStamp(round, data, 0);
       data.approved = 0;
       data.requiredApprovals = round.requiredApprovals;
       data.memoLabel = this.schoolPick(OFFICE_CEO_MEMOS);
@@ -6171,10 +6183,7 @@ export class Game {
       this.schoolMicrogame.data.brewing = false;
       this.schoolMicrogame.data.keyboardHolding = false;
     } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.ceo) {
-      this.schoolMicrogame.round.targetStart = 0.42 + this.schoolRandom() * 0.22;
-      this.schoolMicrogame.round.targetEnd = Math.min(0.86, this.schoolMicrogame.round.targetStart + 0.16);
-      this.schoolMicrogame.data.memoPosition = this.schoolRandom() * 0.16;
-      this.schoolMicrogame.data.memoSpeed = 0.58 + this.schoolRandom() * 0.12;
+      this.configureCeoMemoStamp(this.schoolMicrogame.round, this.schoolMicrogame.data, 0);
       this.schoolMicrogame.data.approved = 0;
       this.schoolMicrogame.data.requiredApprovals = this.schoolMicrogame.round.requiredApprovals ?? 3;
       this.schoolMicrogame.data.memoLabel = this.schoolPick(OFFICE_CEO_MEMOS);
@@ -7361,10 +7370,8 @@ export class Game {
       return;
     }
 
-    game.round.targetStart = 0.36 + this.schoolRandom() * 0.34;
-    game.round.targetEnd = Math.min(0.9, game.round.targetStart + 0.15 + this.schoolRandom() * 0.04);
-    game.data.memoPosition = this.schoolRandom() * 0.1;
-    game.data.memoSpeed = 0.6 + this.schoolRandom() * 0.18 + Math.max(0, Number(game.data.approved ?? 0) || 0) * 0.04;
+    const approvedCount = Math.max(0, Number(game.data.approved ?? 0) || 0);
+    this.configureCeoMemoStamp(game.round, game.data, approvedCount);
     game.data.memoLabel = this.schoolPick(OFFICE_CEO_MEMOS);
     game.data.stamped = false;
     game.data.stampSuccess = false;
@@ -7395,13 +7402,28 @@ export class Game {
       return;
     }
 
-    game.data.memoPosition = Math.min(1.08, Number(game.data.memoPosition ?? 0) + Number(game.data.memoSpeed ?? 0.64) * dt);
-    if (game.data.memoPosition >= 1) {
-      void this.finishOfficeJob(false, 'Missed Quarter', 'The memo escaped unstamped and became a meeting.');
+    const speed = Math.max(0.1, Number(game.data.memoSpeed ?? 0.7) || 0.7);
+    const rawPosition = Number(game.data.memoPosition);
+    const currentPosition = Number.isFinite(rawPosition) ? rawPosition : OFFICE_CEO_STAMP_LEFT_EXIT;
+    const direction = Number(game.data.memoDirection ?? 1) >= 0 ? 1 : -1;
+    let nextPosition = currentPosition + speed * direction * dt;
+
+    if (direction > 0 && nextPosition >= OFFICE_CEO_STAMP_RIGHT_EXIT) {
+      nextPosition = OFFICE_CEO_STAMP_RIGHT_EXIT;
+      game.data.memoDirection = -1;
+      game.data.memoTurned = true;
+      game.message = 'Return pass. Last chance to stamp this memo.';
+    } else if (direction < 0 && nextPosition <= OFFICE_CEO_STAMP_LEFT_EXIT) {
+      game.data.memoPosition = OFFICE_CEO_STAMP_LEFT_EXIT;
+      void this.finishOfficeJob(false, 'Missed Quarter', 'The stamp left the boardroom unstamped.');
       return;
+    } else {
+      game.message = direction > 0
+        ? 'Stamp the memo when the moving stamp reaches the approval window.'
+        : 'Return pass. Last chance to stamp this memo.';
     }
 
-    game.message = 'Stamp the memo when it reaches the approval window.';
+    game.data.memoPosition = nextPosition;
   }
 
   updatePlayingOfficeJob(dt, now) {
