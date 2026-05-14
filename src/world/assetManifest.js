@@ -46,6 +46,9 @@ export const assets = {
       snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
       typing: assetUrl('mixamo', 'animations', 'typing.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
+      drunkIdle: assetUrl('mixamo', 'animations', 'drunk-idle.json'),
+      drinking: assetUrl('mixamo', 'animations', 'drinking.json'),
+      drunkWalk: assetUrl('mixamo', 'animations', 'drunk-walk.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
       waving: assetUrl('mixamo', 'animations', 'waving.json')
