@@ -69,7 +69,7 @@ import {
   listPlayableCharacters
 } from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
-import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
+import { PLAYER_MAX_HEALTH, PLAYER_RADIUS, WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
 import {
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -140,6 +140,7 @@ const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
+const HOTBAR_PISTOL_EQUIP_ANIMATION_MS = Math.min(850, WEAPON_RELOAD_MS);
 const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
@@ -667,6 +668,13 @@ export class Game {
     this.selectedHotbarSlotIndex = 0;
     this.pendingHotbarWeaponId = null;
     this.pendingHotbarRequestedAt = 0;
+    this.hotbarEquipIntro = {
+      weaponId: '',
+      startedAtMs: 0,
+      endsAtMs: 0,
+      token: 0,
+      revealTimeoutId: 0
+    };
     this.activeWorkout = null;
     this.pendingWorkoutPlacementId = '';
     this.claimedWorkoutPlacementId = '';
@@ -785,6 +793,7 @@ export class Game {
     this.damageCameraDirection = new THREE.Vector3(0, 0, 1);
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
+    this.lastLocalEquippedWeaponId = '';
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
     this.bootCriticalReady = false;
@@ -1187,13 +1196,18 @@ export class Game {
   }
 
   fireLocalWeapon(aimDirection, origin = null) {
+    const localPlayerState = this.getLocalPlayerState();
+    if (this.isHotbarEquipIntroActive(localPlayerState?.equippedWeaponId || this.getSelectedHotbarWeaponId())) {
+      return false;
+    }
+
     const didFire = this.npcService?.fireWeapon(
       { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
       Date.now(),
       origin
     ) === true;
 
-    if (didFire && this.getLocalPlayerState()?.equippedWeaponId === HELD_ITEM_IDS.pistol) {
+    if (didFire && localPlayerState?.equippedWeaponId === HELD_ITEM_IDS.pistol) {
       this.playSoundEffect(this.pistolShotSound);
     }
 
@@ -9463,12 +9477,29 @@ export class Game {
         ? localPlayerState.lastDamagedAt
         : Date.now()
     });
+    const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
+    if (
+      this.localStateInitialized
+      && this.lastLocalAlive
+      && isAlive
+      && this.lastLocalEquippedWeaponId !== HELD_ITEM_IDS.pistol
+      && localWeaponId === HELD_ITEM_IDS.pistol
+      && this.getSelectedHotbarWeaponId() === HELD_ITEM_IDS.pistol
+      && !this.isHotbarEquipIntroActive(HELD_ITEM_IDS.pistol)
+    ) {
+      this.startHotbarEquipIntro(localWeaponId);
+    }
+    if (!isAlive) {
+      this.cancelHotbarEquipIntro();
+    }
+    const introWeaponId = this.isHotbarEquipIntroActive() ? (this.hotbarEquipIntro.weaponId || '') : '';
+    const displayedWeaponId = introWeaponId && !localWeaponId ? introWeaponId : localWeaponId;
     this.player.setWeaponState(
-      isAlive ? localPlayerState.equippedWeaponId : '',
-      { visible: isAlive && Boolean(localPlayerState.equippedWeaponId) }
+      displayedWeaponId,
+      { visible: isAlive && Boolean(displayedWeaponId) }
     );
     this.player.setReloadState(Boolean(isAlive && localPlayerState.isReloading), {
-      weaponId: isAlive ? localPlayerState.equippedWeaponId : '',
+      weaponId: localWeaponId,
       endsAtMs: localPlayerState.reloadEndsAt ?? 0
     });
 
@@ -9507,6 +9538,7 @@ export class Game {
     }
 
     this.lastLocalAlive = isAlive;
+    this.lastLocalEquippedWeaponId = localWeaponId;
     this.localStateInitialized = true;
   }
 
@@ -10003,6 +10035,9 @@ export class Game {
             this.selectedHotbarSlotIndex = 0;
             this.pendingHotbarWeaponId = null;
             this.refreshHotbarHud();
+            if (!this.isHotbarEquipIntroActive(event.weaponId)) {
+              this.startHotbarEquipIntro(event.weaponId);
+            }
           }
           this.hud.showToast('Pistol equipped.');
         }
@@ -10327,6 +10362,118 @@ export class Game {
     );
   }
 
+  isHotbarEquipIntroActive(weaponId = '') {
+    const intro = this.hotbarEquipIntro;
+    if (!intro?.weaponId) {
+      return false;
+    }
+    if (weaponId && intro.weaponId !== weaponId) {
+      return false;
+    }
+    return !Number.isFinite(intro.endsAtMs) || Date.now() < intro.endsAtMs;
+  }
+
+  cancelHotbarEquipIntro() {
+    const intro = this.hotbarEquipIntro;
+    const weaponId = intro?.weaponId || '';
+    if (intro?.revealTimeoutId) {
+      window.clearTimeout(intro.revealTimeoutId);
+    }
+    this.hotbarEquipIntro = {
+      weaponId: '',
+      startedAtMs: 0,
+      endsAtMs: 0,
+      token: (intro?.token ?? 0) + 1,
+      revealTimeoutId: 0
+    };
+    if (weaponId) {
+      this.player?.stopReloadPreview?.();
+    }
+  }
+
+  completeHotbarEquipIntro(token) {
+    const intro = this.hotbarEquipIntro;
+    if (!intro?.weaponId || intro.token !== token) {
+      return;
+    }
+
+    const weaponId = intro.weaponId;
+    const localPlayerState = this.getLocalPlayerState();
+    const shouldReveal = Boolean(
+      this.player
+      && localPlayerState
+      && localPlayerState.alive !== false
+      && localPlayerState.equippedWeaponId === weaponId
+      && this.getSelectedHotbarWeaponId() === weaponId
+    );
+
+    this.hotbarEquipIntro = {
+      weaponId: '',
+      startedAtMs: 0,
+      endsAtMs: 0,
+      token: token + 1,
+      revealTimeoutId: 0
+    };
+    this.player?.stopReloadPreview?.();
+    if (shouldReveal) {
+      void this.player.setWeaponState(weaponId, { visible: true });
+    } else {
+      const fallbackWeaponId = localPlayerState?.alive !== false ? (localPlayerState?.equippedWeaponId || '') : '';
+      void this.player?.setWeaponState?.(fallbackWeaponId, { visible: Boolean(fallbackWeaponId) });
+    }
+  }
+
+  startHotbarEquipIntro(weaponId) {
+    if (weaponId !== HELD_ITEM_IDS.pistol || !this.player) {
+      return false;
+    }
+
+    this.cancelHotbarEquipIntro();
+    this.clearPendingHipFireShot();
+    this.currentAimMode = false;
+    this.player.setAimingState(false);
+
+    const token = (this.hotbarEquipIntro?.token ?? 0) + 1;
+    this.hotbarEquipIntro = {
+      weaponId,
+      startedAtMs: 0,
+      endsAtMs: Number.POSITIVE_INFINITY,
+      token,
+      revealTimeoutId: 0
+    };
+
+    void Promise.resolve(this.player.setWeaponState(weaponId, { visible: true }))
+      .then(() => {
+        if (!this.hotbarEquipIntro?.weaponId || this.hotbarEquipIntro.token !== token) {
+          return;
+        }
+
+        const startedAtMs = Date.now();
+        const endsAtMs = startedAtMs + HOTBAR_PISTOL_EQUIP_ANIMATION_MS;
+        this.hotbarEquipIntro = {
+          weaponId,
+          startedAtMs,
+          endsAtMs,
+          token,
+          revealTimeoutId: window.setTimeout(
+            () => this.completeHotbarEquipIntro(token),
+            HOTBAR_PISTOL_EQUIP_ANIMATION_MS
+          )
+        };
+        if (this.player.previewReload?.(weaponId, HOTBAR_PISTOL_EQUIP_ANIMATION_MS) !== false) {
+          this.playSoundEffect(this.pistolCockSound);
+        }
+      })
+      .catch((error) => {
+        console.warn('[Combat] Failed to play pistol equip intro.', error);
+        if (this.hotbarEquipIntro?.token === token) {
+          this.completeHotbarEquipIntro(token);
+        }
+      });
+
+    return true;
+  }
+
   refreshHotbarHud() {
     const localPlayerState = this.getLocalPlayerState();
     this.hotbarSlots = createHotbarSlots({
@@ -10359,14 +10506,10 @@ export class Game {
     const nextWeaponId = this.getSelectedHotbarWeaponId();
     this.applyHotbarSelection({ force: changed || source === 'pointer' });
 
-    if (changed && previousWeaponId !== nextWeaponId) {
-      if (nextWeaponId === HELD_ITEM_IDS.pistol) {
-        this.playSoundEffect(this.pistolCockSound);
-      } else {
-        this.clearPendingHipFireShot();
-        this.currentAimMode = false;
-        this.player?.setAimingState(false);
-      }
+    if (changed && previousWeaponId !== nextWeaponId && nextWeaponId !== HELD_ITEM_IDS.pistol) {
+      this.clearPendingHipFireShot();
+      this.currentAimMode = false;
+      this.player?.setAimingState(false);
     }
 
     return true;
@@ -10412,11 +10555,19 @@ export class Game {
     this.npcService.equipWeapon?.(desiredWeaponId);
 
     if (!desiredWeaponId) {
+      this.cancelHotbarEquipIntro();
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
+    } else if (desiredWeaponId === HELD_ITEM_IDS.pistol && currentWeaponId !== desiredWeaponId) {
+      this.startHotbarEquipIntro(desiredWeaponId);
+      return true;
+    } else if (desiredWeaponId !== HELD_ITEM_IDS.pistol || !this.isHotbarEquipIntroActive(desiredWeaponId)) {
+      this.cancelHotbarEquipIntro();
     }
-    void this.player?.setWeaponState?.(desiredWeaponId, { visible: Boolean(desiredWeaponId) });
+    void this.player?.setWeaponState?.(desiredWeaponId, {
+      visible: Boolean(desiredWeaponId)
+    });
     return true;
   }
 
