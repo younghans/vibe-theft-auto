@@ -66,6 +66,15 @@ export const OFFICE_INTERIOR_JANITOR_CLOSET_SIZE = Object.freeze({
   height: 3.05
 });
 
+export const OFFICE_INTERIOR_CEO_MEETING_TABLE = Object.freeze({
+  centerX: 0,
+  centerZ: 0.05,
+  width: 7.0,
+  depth: 2.0,
+  rugWidth: 8.4,
+  rugDepth: 3.9
+});
+
 const OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP = 0.12;
 const OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE = 0.72;
 
@@ -164,8 +173,11 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
     id: 'ceo-meeting-table',
     type: OFFICE_INTERIOR_STATION_TYPES.job,
     floorId: OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    localPosition: [0, -0.8],
-    radius: 4.0,
+    localPosition: [
+      OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX,
+      OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ
+    ],
+    radius: 3.5,
     label: 'CEO Meeting Table',
     prompt: 'Start CEO shift',
     actionText: 'Stamp memos from the executive meeting table.',

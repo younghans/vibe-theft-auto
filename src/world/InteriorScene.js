@@ -3,6 +3,7 @@ import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
 import {
+  OFFICE_INTERIOR_CEO_MEETING_TABLE,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_JANITOR_CLOSET_SIZE,
@@ -367,6 +368,8 @@ function addOfficeRectWithCutouts(group, {
 
 function createOfficeChairVisual(materials, floorY, x, z, rotationY = 0) {
   const chair = new THREE.Group();
+  chair.name = 'office_chair';
+  chair.userData.officeChairVisual = true;
   chair.position.set(x, floorY, z);
   chair.rotation.y = rotationY;
   chair.add(createInteriorBox([0.78, 0.14, 0.74], [0, 0.55, 0], materials.chair));
@@ -377,8 +380,31 @@ function createOfficeChairVisual(materials, floorY, x, z, rotationY = 0) {
   return chair;
 }
 
+function createOfficeLobbyTableVisual(materials, floorY, x, z, width = 1.45, depth = 1.05, rotationY = 0) {
+  const table = new THREE.Group();
+  table.name = 'office_lobby_table';
+  table.userData.officeLobbyTable = true;
+  table.userData.officeLobbyTableSize = { width, depth };
+  table.position.set(x, 0, z);
+  table.rotation.y = rotationY;
+  table.add(createInteriorBox([width, 0.14, depth], [0, floorY + 0.68, 0], materials.woodDark));
+  table.add(createInteriorBox([width + 0.14, 0.05, depth + 0.14], [0, floorY + 0.78, 0], materials.wood));
+  for (const [legX, legZ] of [
+    [-width * 0.38, -depth * 0.34],
+    [width * 0.38, -depth * 0.34],
+    [-width * 0.38, depth * 0.34],
+    [width * 0.38, depth * 0.34]
+  ]) {
+    table.add(createInteriorBox([0.1, 0.62, 0.1], [legX, floorY + 0.34, legZ], materials.metalDark));
+  }
+  table.add(createInteriorCylinder(0.16, 0.2, 0.16, 12, [width * 0.22, floorY + 0.91, 0], materials.green));
+  return table;
+}
+
 function createOfficeCubicleVisual(materials, floorY, x, z, rotationY = 0) {
   const cubicle = new THREE.Group();
+  cubicle.name = 'office_cubicle_workstation';
+  cubicle.userData.officeCubicleWorkstation = true;
   cubicle.position.set(x, floorY, z);
   cubicle.rotation.y = rotationY;
   cubicle.add(createInteriorBox([2.6, 0.16, 1.08], [0, 0.92, 0], materials.wood));
@@ -625,16 +651,26 @@ function addOfficeLobbyVisuals(group, stairsGroup, materials) {
   addOfficeFloorVisual(group, materials, floorY, layout);
   addOfficeFloorWalls(group, materials, floorY, layout);
   for (const [x, z, rotationY] of [
+    [-5.8, 4.7, Math.PI],
     [-3.2, 4.7, Math.PI],
     [-1.25, 4.7, Math.PI],
     [1.25, 4.7, Math.PI],
     [3.2, 4.7, Math.PI],
+    [5.8, 4.7, Math.PI],
     [-4.35, 1.8, Math.PI * 0.5],
-    [4.35, 1.8, -Math.PI * 0.5]
+    [4.35, 1.8, -Math.PI * 0.5],
+    [-1.75, 2.2, 0],
+    [1.75, 2.2, 0]
   ]) {
-    group.add(createOfficeChairVisual(materials, floorY, x, z, rotationY));
+    const chair = createOfficeChairVisual(materials, floorY, x, z, rotationY);
+    chair.userData.officeFloorId = OFFICE_INTERIOR_FLOOR_IDS.lobby;
+    chair.userData.officeLobbyChair = true;
+    group.add(chair);
   }
 
+  group.add(createOfficeLobbyTableVisual(materials, floorY, 0, 3.42, 3.0, 1.2));
+  group.add(createOfficeLobbyTableVisual(materials, floorY, -5.05, 2.75, 1.15, 0.95, Math.PI * 0.5));
+  group.add(createOfficeLobbyTableVisual(materials, floorY, 5.05, 2.75, 1.15, 0.95, -Math.PI * 0.5));
   group.add(createInteriorBox([5.8, 0.2, 1.25], [0, floorY + 0.82, 7.05], materials.wood));
   addOfficeJanitorClosetProp(group, materials, floorY);
   addOfficeStairsVisual(stairsGroup, materials, floorY, OFFICE_STAIR_BOTTOM.x, OFFICE_STAIR_BOTTOM.z, 0);
@@ -649,17 +685,19 @@ function addOfficeCubicleFloorVisuals(group, materials) {
   });
   addOfficeFloorWalls(group, materials, floorY, layout);
   for (const [x, z, rotationY] of [
-    [-1.6, -3.35, 0],
-    [2.6, -3.35, 0],
+    [-4.35, -2.45, 0],
+    [3.55, -0.65, 0],
     [5.85, 1.35, Math.PI * 0.5],
-    [-1.6, 0.4, Math.PI],
-    [2.6, 0.4, Math.PI],
+    [-2.5, 1.2, Math.PI],
+    [1.6, 1.2, Math.PI],
     [-5.1, 4.35, Math.PI],
     [-1.0, 4.35, Math.PI],
     [3.1, 4.35, Math.PI],
     [6.7, 4.15, -Math.PI * 0.5]
   ]) {
-    group.add(createOfficeCubicleVisual(materials, floorY, x, z, rotationY));
+    const cubicle = createOfficeCubicleVisual(materials, floorY, x, z, rotationY);
+    cubicle.userData.officeFloorId = OFFICE_INTERIOR_FLOOR_IDS.cubicles;
+    group.add(cubicle);
   }
 
   group.add(createInteriorBox([5.4, 2.5, 0.14], [-7.25, floorY + 1.52, -8.98], materials.partition));
@@ -675,25 +713,42 @@ function addOfficeCubicleFloorVisuals(group, materials) {
 function addOfficeCeoFloorVisuals(group, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   const layout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const {
+    centerX,
+    centerZ,
+    width: tableWidth,
+    depth: tableDepth,
+    rugWidth,
+    rugDepth
+  } = OFFICE_INTERIOR_CEO_MEETING_TABLE;
   addOfficeFloorVisual(group, materials, floorY, {
     ...layout,
     material: materials.floorAccent
   });
   addOfficeFloorWalls(group, materials, floorY, layout);
-  group.add(createInteriorBox([9.4, 0.05, 4.7], [0, floorY + 0.04, -0.8], materials.accentDark));
-  group.add(createInteriorBox([8.0, 0.24, 2.3], [0, floorY + 1.02, -0.8], materials.wood));
-  group.add(createInteriorBox([7.5, 0.08, 1.84], [0, floorY + 1.18, -0.8], materials.woodDark));
+  const meetingTable = new THREE.Group();
+  meetingTable.name = 'office_ceo_meeting_table';
+  meetingTable.userData.officeCeoMeetingTable = true;
+  meetingTable.userData.officeCeoMeetingTableSize = { width: tableWidth, depth: tableDepth };
+  meetingTable.position.set(centerX, 0, centerZ);
+  meetingTable.add(createInteriorBox([rugWidth, 0.05, rugDepth], [0, floorY + 0.04, 0], materials.accentDark));
+  meetingTable.add(createInteriorBox([tableWidth, 0.24, tableDepth], [0, floorY + 1.02, 0], materials.wood));
+  meetingTable.add(createInteriorBox([tableWidth - 0.5, 0.08, tableDepth - 0.46], [0, floorY + 1.18, 0], materials.woodDark));
+  group.add(meetingTable);
   for (const [x, z, rotationY] of [
-    [-3.2, -2.72, 0],
-    [-1.05, -2.72, 0],
-    [1.05, -2.72, 0],
-    [3.2, -2.72, 0],
-    [-3.2, 1.12, Math.PI],
-    [-1.05, 1.12, Math.PI],
-    [1.05, 1.12, Math.PI],
-    [3.2, 1.12, Math.PI]
+    [centerX - 2.65, centerZ - (tableDepth * 0.5) - 0.72, 0],
+    [centerX - 0.88, centerZ - (tableDepth * 0.5) - 0.72, 0],
+    [centerX + 0.88, centerZ - (tableDepth * 0.5) - 0.72, 0],
+    [centerX + 2.65, centerZ - (tableDepth * 0.5) - 0.72, 0],
+    [centerX - 2.65, centerZ + (tableDepth * 0.5) + 0.72, Math.PI],
+    [centerX - 0.88, centerZ + (tableDepth * 0.5) + 0.72, Math.PI],
+    [centerX + 0.88, centerZ + (tableDepth * 0.5) + 0.72, Math.PI],
+    [centerX + 2.65, centerZ + (tableDepth * 0.5) + 0.72, Math.PI]
   ]) {
-    group.add(createOfficeChairVisual(materials, floorY, x, z, rotationY));
+    const chair = createOfficeChairVisual(materials, floorY, x, z, rotationY);
+    chair.userData.officeFloorId = OFFICE_INTERIOR_FLOOR_IDS.ceo;
+    chair.userData.officeCeoMeetingChair = true;
+    group.add(chair);
   }
   group.add(createInteriorBox([10.4, 0.12, 0.18], [0, floorY + 3.35, -7.34], materials.gold));
   group.add(createInteriorCylinder(0.62, 0.62, 1.7, 12, [6.2, floorY + 1.18, -5.9], materials.green));

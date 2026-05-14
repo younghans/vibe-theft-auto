@@ -26,6 +26,7 @@ import {
 } from '../src/shared/officeJobs.js';
 import {
   OFFICE_BUILDING_ITEM_ID,
+  OFFICE_INTERIOR_CEO_MEETING_TABLE,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
   OFFICE_INTERIOR_ID,
@@ -115,10 +116,13 @@ async function validateOfficeBuildingInteriorFlow() {
   const elevatorToCeo = stations.find((station) => station.id === 'elevator-to-ceo');
   const elevatorToCubicles = stations.find((station) => station.id === 'elevator-to-cubicles');
   const janitorCloset = stations.find((station) => station.id === 'janitor-closet');
+  const ceoMeetingTableStation = stations.find((station) => station.id === 'ceo-meeting-table');
   const cubicleElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   const ceoElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   assert(janitorCloset?.jobId === OFFICE_JOB_IDS.janitor, 'Janitor closet prop should start the janitor office job.');
   assert((janitorCloset?.localPosition?.[1] ?? -99) > -6.2, 'Janitor station prompt should sit at the prop door, not inside a room.');
+  assert(Math.abs((ceoMeetingTableStation?.localPosition?.[0] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO station prompt should align with the meeting table center.');
+  assert(Math.abs((ceoMeetingTableStation?.localPosition?.[1] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO station prompt should move down with the meeting table.');
   assert(stairsToCubicles?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.cubicles, 'Lobby stairs should target the second floor.');
   assert(stairsToLobby?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby, 'Second-floor stairs should target the lobby.');
   assert((stairsToCubicles?.targetLocalPosition?.[1] ?? -99) > -2, 'Lobby stairs should land past the second-floor stair opening.');
@@ -160,6 +164,11 @@ async function validateOfficeBuildingInteriorFlow() {
   let janitorClosetDoorCount = 0;
   let janitorClosetMopCount = 0;
   let janitorClosetBucketCount = 0;
+  let lobbyChairCount = 0;
+  let lobbyTableCount = 0;
+  let ceoMeetingChairCount = 0;
+  let ceoMeetingTableVisual = null;
+  const cubicleWorkstations = [];
   scene.group.traverse((node) => {
     if (node.userData?.officeFloorVisual && node.userData.officeFloorId) {
       floorGroupsById.set(node.userData.officeFloorId, node);
@@ -187,6 +196,21 @@ async function validateOfficeBuildingInteriorFlow() {
     if (node.userData?.officeJanitorClosetBucket) {
       janitorClosetBucketCount += 1;
     }
+    if (node.userData?.officeLobbyChair) {
+      lobbyChairCount += 1;
+    }
+    if (node.userData?.officeLobbyTable) {
+      lobbyTableCount += 1;
+    }
+    if (node.userData?.officeCubicleWorkstation) {
+      cubicleWorkstations.push(node);
+    }
+    if (node.userData?.officeCeoMeetingChair) {
+      ceoMeetingChairCount += 1;
+    }
+    if (node.userData?.officeCeoMeetingTable) {
+      ceoMeetingTableVisual = node;
+    }
   });
   assert(floorGroupsById.size === 3, 'Office scene should split lobby, second floor, and CEO floor visuals.');
   assert(stairsGroup, 'Office scene should keep stairs in an always-opaque visual group.');
@@ -198,6 +222,23 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(janitorClosetBucketCount === 1, 'Janitor closet prop should include a side bucket.');
   assert((janitorClosetProp?.userData?.officeJanitorClosetSize?.width ?? 0) >= OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.width, 'Janitor closet prop should use the larger closet width.');
   assert((janitorClosetProp?.userData?.officeJanitorClosetSize?.depth ?? 0) >= OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth, 'Janitor closet prop should use the larger closet depth.');
+  assert(lobbyChairCount >= 10, 'Office lobby should include expanded waiting chairs.');
+  assert(lobbyTableCount >= 3, 'Office lobby should include multiple waiting-area tables.');
+  assert(cubicleWorkstations.length >= 9, 'Second floor should keep a full cubicle layout.');
+  assert(ceoMeetingChairCount === 8, 'CEO meeting area should keep chair seating after the table resize.');
+  assert(ceoMeetingTableVisual, 'CEO floor should render a tagged meeting table visual.');
+
+  const [cubicleElevatorVisualX, cubicleElevatorVisualZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+  const cubicleElevatorApproachClearZ = cubicleElevatorVisualZ + OFFICE_INTERIOR_ELEVATOR_SIZE.depth + 1.2;
+  assert(cubicleWorkstations.every((cubicle) => (
+    Math.abs(cubicle.position.x - cubicleElevatorVisualX) > 3.0
+    || cubicle.position.z > cubicleElevatorApproachClearZ
+  )), 'Second-floor cubicles should leave a clear elevator approach aisle.');
+  assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.width ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.width + 0.001, 'CEO meeting table should use the smaller table width.');
+  assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.depth ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.depth + 0.001, 'CEO meeting table should use the smaller table depth.');
+  assert(Math.abs((ceoMeetingTableVisual?.position?.x ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO meeting table visual should use the shared X position.');
+  assert(Math.abs((ceoMeetingTableVisual?.position?.z ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO meeting table visual should move down from the elevator.');
+  assert((ceoMeetingTableVisual?.position?.z ?? -99) - ceoElevatorDoor[1] > 3.4, 'CEO meeting table should leave movement space outside the elevator.');
 
   for (const floorId of [OFFICE_INTERIOR_FLOOR_IDS.cubicles, OFFICE_INTERIOR_FLOOR_IDS.ceo]) {
     const elevatorBox = elevatorBoxesByFloorId.get(floorId);
