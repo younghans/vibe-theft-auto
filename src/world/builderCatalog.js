@@ -211,6 +211,7 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     fileName: 'offices-building.glb',
     prompt: 'Enter offices',
     interiorOverrides: {
+      cutawayNodeNames: ['offices_cutaway_roof', 'offices_cutaway_upper', 'offices_interior'],
       cutawayFadeNodeNames: ['offices_cutaway_tower'],
       cutawayFadeOpacity: 0.1
     }

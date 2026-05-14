@@ -3770,6 +3770,7 @@ export class Game {
         entry?.originPosition?.z ?? 0
       ],
       rotationQuarterTurns: entry?.rotationQuarterTurns ?? 0,
+      placementId,
       visible: false,
       includeExitInteractable: false
     });
@@ -3778,7 +3779,7 @@ export class Game {
     }
 
     const mode = this.getInlineInteriorMode(entry);
-    const attached = mode === 'inline-shell';
+    const attached = mode === 'inline-shell' || shellScene.inlineOverlay === true;
     if (attached) {
       this.scene.add(shellScene.group);
     }
@@ -3885,7 +3886,7 @@ export class Game {
       }
 
       const mode = this.getInlineInteriorMode(entry);
-      shellScene.setVisible(mode !== 'inline-cutaway');
+      shellScene.setVisible(mode !== 'inline-cutaway' || shellScene.inlineOverlay === true);
       if (mode === 'inline-cutaway') {
         this.applyInlineCutawayPlacement(entry);
       } else {
@@ -3919,7 +3920,7 @@ export class Game {
       mode: this.getInlineInteriorMode(entry)
     };
     if (this.activeInlineShell.mode === 'inline-cutaway') {
-      shellScene.setVisible(false);
+      shellScene.setVisible(shellScene.inlineOverlay === true);
       this.applyInlineCutawayPlacement(entry);
       this.setInlineInteriorLightActive(true, shellScene);
     } else {
@@ -4021,9 +4022,27 @@ export class Game {
     return this.currentInterior?.scene?.bounds ?? this.cityBounds;
   }
 
+  getActiveInlineInteriorScene(worldPosition = this.player?.position ?? null) {
+    const scene = this.activeInlineShell?.scene ?? null;
+    if (!scene || !worldPosition) {
+      return null;
+    }
+
+    if (scene.bounds?.containsPoint(worldPosition) || scene.doorwayTriggerBounds?.containsPoint(worldPosition)) {
+      return scene;
+    }
+
+    return null;
+  }
+
   getActiveGroundHeightAt(worldPosition) {
     if (this.currentInterior?.scene) {
       return this.currentInterior.scene.getGroundHeightAt(worldPosition);
+    }
+
+    const inlineScene = this.getActiveInlineInteriorScene(worldPosition);
+    if (inlineScene) {
+      return inlineScene.getGroundHeightAt(worldPosition);
     }
 
     return this.worldBuilder?.getGroundHeightAt(worldPosition) ?? 0;
@@ -4219,9 +4238,14 @@ export class Game {
       return [...(this.currentInterior.scene.interactables ?? [])];
     }
 
+    const inlineInteriorInteractables = this.getActiveInlineInteriorScene()
+      ? [...(this.activeInlineShell?.scene?.interactables ?? [])]
+      : [];
+
     return [
       ...(this.staticInteractables ?? []),
       ...(this.worldBuilder?.getInteractables() ?? []),
+      ...inlineInteriorInteractables,
       ...[...this.npcServiceState.pickups.values()]
         .filter((pickup) => pickup.active)
         .map((pickup) => ({
@@ -5811,6 +5835,48 @@ export class Game {
 
   isOfficeJobComputerInteractable(interactable = null) {
     return String(interactable?.itemId ?? '').trim() === OFFICE_JOB_TERMINAL_ITEM_ID;
+  }
+
+  isOfficeInteriorJobStationInteractable(interactable = null) {
+    return interactable?.kind === 'office-job-station'
+      && Boolean(getOfficeJobDefinition(interactable?.officeJobId));
+  }
+
+  isOfficeInteriorTransportInteractable(interactable = null) {
+    return interactable?.kind === 'office-floor-transition'
+      && interactable?.targetPosition?.isVector3;
+  }
+
+  openOfficeInteriorJobStation(interaction = null) {
+    const job = getOfficeJobDefinition(interaction?.officeJobId);
+    if (!job) {
+      this.hud.showToast('That office job is not available.');
+      return false;
+    }
+
+    this.closePhoneMenu();
+    this.officeJobPlacementId = String(interaction?.placementId ?? '').trim();
+    this.schoolMicrogameNpcId = '';
+    this.schoolMicrogameNpcName = interaction?.label ?? job.roleLabel ?? 'Office Station';
+    this.schoolMicrogameNpcModelId = 'martha';
+    this.schoolMicrogamePreviewMode = false;
+    return this.prepareOfficeJobMicrogame(job.id, { visible: true });
+  }
+
+  useOfficeInteriorTransport(interaction = null) {
+    if (!this.player || !interaction?.targetPosition?.isVector3) {
+      return false;
+    }
+
+    this.finishWorkout({ cancelled: true });
+    this.player.position.copy(interaction.targetPosition);
+    this.player.position.y = this.getActiveGroundHeightAt(this.player.position);
+    this.resetLocalPlayerKinematics(this.player.position);
+    this.currentInteractable = null;
+    this.hud.setPrompt(null);
+    this.hud.showToast(interaction.actionText ?? 'Changed floors.');
+    this.updateCamera(this.currentAimDirection, this.currentAimMode, { snap: true });
+    return true;
   }
 
   isOfficeJobGame(game = this.schoolMicrogame) {
@@ -11323,6 +11389,22 @@ export class Game {
       this.hud.setPrompt(bartenderInteraction);
       if (interactPressed) {
         this.openBartenderMenu(bartenderInteraction);
+      }
+      return;
+    }
+
+    if (this.isOfficeInteriorTransportInteractable(nearest)) {
+      this.hud.setPrompt(nearest);
+      if (interactPressed) {
+        this.useOfficeInteriorTransport(nearest);
+      }
+      return;
+    }
+
+    if (this.isOfficeInteriorJobStationInteractable(nearest)) {
+      this.hud.setPrompt(nearest);
+      if (interactPressed) {
+        this.openOfficeInteriorJobStation(nearest);
       }
       return;
     }

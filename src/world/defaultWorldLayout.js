@@ -1,6 +1,8 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import { rotationRadiansToQuarterTurns as toQuarterTurns } from '../shared/numberMath.js';
+import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
+import { getBuilderItemById } from './builderCatalog.js';
 
 export const DEFAULT_WORLD_SPAWN = [0, 0, BUILDER_TILE_SIZE * 4.1];
 
@@ -28,6 +30,7 @@ for (let z = -3; z <= 1; z += 1) {
 }
 
 const BUILDING_PLANS = [
+  { cell: [0, -5], itemId: 'offices_building', angle: 0, label: 'Vibe Offices', action: 'The lobby, cubicles, break room, and CEO floor are open.' },
   { cell: [-4, -4], itemId: 'building_d', angle: Math.PI / 2, label: 'Loan office', action: 'Debt and hustle systems will live here later.' },
   { cell: [-2, -4], itemId: 'building_b', angle: 0, label: 'Greasy spoon diner', action: 'The coffee is not implemented yet, but the sign is trying.' },
   { cell: [2, -4], itemId: 'building_f', angle: 0, label: 'Convenience mart', action: 'Shelves and item pickups are a future pass.' },
@@ -228,11 +231,19 @@ function createTileLayout() {
   }
 
   for (const plan of BUILDING_PLANS) {
+    const item = getBuilderItemById(plan.itemId);
+    const rotationQuarterTurns = toQuarterTurns(plan.angle);
+    if (item) {
+      for (const occupiedCell of getTileOccupiedCells(item, plan.cell[0], plan.cell[1], rotationQuarterTurns)) {
+        tiles.delete(key(occupiedCell.x, occupiedCell.z));
+      }
+    }
+
     tiles.set(key(plan.cell[0], plan.cell[1]), {
       id: `placement_${++tileSequence}`,
       itemId: plan.itemId,
       cell: [...plan.cell],
-      rotationQuarterTurns: toQuarterTurns(plan.angle),
+      rotationQuarterTurns,
       interactable: {
         label: plan.label,
         actionText: plan.action,

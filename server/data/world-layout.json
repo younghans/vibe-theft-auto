@@ -422,18 +422,9 @@
     },
     {
       "id": "placement_176",
-      "itemId": "lot_base",
+      "itemId": "offices_building",
       "cell": [
         -1,
-        -1
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_175",
-      "itemId": "lot_base",
-      "cell": [
-        0,
         -1
       ],
       "rotationQuarterTurns": 0
@@ -527,24 +518,6 @@
         0
       ],
       "rotationQuarterTurns": 1
-    },
-    {
-      "id": "placement_177",
-      "itemId": "lot_base",
-      "cell": [
-        -1,
-        0
-      ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_178",
-      "itemId": "lot_base",
-      "cell": [
-        0,
-        0
-      ],
-      "rotationQuarterTurns": 0
     },
     {
       "id": "placement_42",

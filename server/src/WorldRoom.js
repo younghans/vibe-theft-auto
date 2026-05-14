@@ -103,6 +103,13 @@ import {
   getOfficeJobReward
 } from '../../src/shared/officeJobs.js';
 import {
+  OFFICE_BUILDING_ITEM_ID,
+  OFFICE_INTERIOR_STATION_TYPES,
+  getOfficeInteriorFloorHeight,
+  getOfficeInteriorStationDefinition,
+  parseOfficeInteriorStationPlacementId
+} from '../../src/shared/officeInteriorLayout.js';
+import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
@@ -1929,7 +1936,74 @@ export class WorldRoom extends Room {
     };
   }
 
-  getOfficeJobComputerForPlayer(player, requestedPlacementId = '') {
+  getOfficeInteriorJobStationForPlayer(player, requestedPlacementId = '', requestedJobId = '') {
+    if (!player) {
+      return null;
+    }
+
+    const parsedPlacementId = parseOfficeInteriorStationPlacementId(requestedPlacementId);
+    if (!parsedPlacementId) {
+      return null;
+    }
+
+    const station = getOfficeInteriorStationDefinition(parsedPlacementId.stationId);
+    if (
+      !station
+      || station.type !== OFFICE_INTERIOR_STATION_TYPES.job
+      || (requestedJobId && station.jobId !== requestedJobId)
+    ) {
+      return null;
+    }
+
+    const building = this.worldState.getPlacement(parsedPlacementId.buildingPlacementId);
+    const buildingItem = getBuilderItemById(building?.itemId);
+    if (
+      !building
+      || building.layer !== 'tile'
+      || buildingItem?.id !== OFFICE_BUILDING_ITEM_ID
+    ) {
+      return null;
+    }
+
+    const center = getTileCenterWorldPosition(
+      buildingItem,
+      building.cellX,
+      building.cellZ,
+      building.rotationQuarterTurns
+    );
+    const stationLocalPosition = station.localPosition ?? [0, 0];
+    const stationOffset = rotateFootprintOffset(
+      Number(stationLocalPosition[0]) || 0,
+      Number(stationLocalPosition[1]) || 0,
+      building.rotationQuarterTurns
+    );
+    const stationX = center.x + stationOffset.x;
+    const stationY = getOfficeInteriorFloorHeight(station.floorId);
+    const stationZ = center.z + stationOffset.z;
+    const playerY = Number.isFinite(Number(player.y)) ? Number(player.y) : stationY;
+    const radius = Math.max(1.5, Number(station.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS) + 1.25;
+    const distance = Math.hypot(
+      (Number(player.x) || 0) - stationX,
+      playerY - stationY,
+      (Number(player.z) || 0) - stationZ
+    );
+
+    if (distance > radius) {
+      return null;
+    }
+
+    return {
+      ...building,
+      id: requestedPlacementId,
+      itemId: OFFICE_JOB_TERMINAL_ITEM_ID,
+      position: [stationX, stationZ],
+      officeInteriorStationId: station.id,
+      officeJobId: station.jobId,
+      virtualOfficeStation: true
+    };
+  }
+
+  getOfficeJobComputerForPlayer(player, requestedPlacementId = '', requestedJobId = '') {
     if (!player) {
       return null;
     }
@@ -1937,6 +2011,10 @@ export class WorldRoom extends Room {
     const normalizedPlacementId = typeof requestedPlacementId === 'string'
       ? requestedPlacementId.trim()
       : '';
+    if (parseOfficeInteriorStationPlacementId(normalizedPlacementId)) {
+      return this.getOfficeInteriorJobStationForPlayer(player, normalizedPlacementId, requestedJobId);
+    }
+
     const candidates = normalizedPlacementId
       ? [this.worldState.getPlacement(normalizedPlacementId)].filter(Boolean)
       : this.worldState.getPlacements();
@@ -1966,13 +2044,13 @@ export class WorldRoom extends Room {
     return nearest;
   }
 
-  assertOfficeJobAccess(client, message = {}) {
+  assertOfficeJobAccess(client, message = {}, jobId = '') {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.alive === false) {
       throw new Error('You cannot work office jobs right now.');
     }
 
-    const terminal = this.getOfficeJobComputerForPlayer(player, message?.placementId);
+    const terminal = this.getOfficeJobComputerForPlayer(player, message?.placementId, jobId);
     if (!terminal) {
       throw new Error('Move closer to the office computer.');
     }
@@ -1981,11 +2059,11 @@ export class WorldRoom extends Room {
   }
 
   handleOfficeJobComplete(client, message = {}) {
-    const { player, terminal } = this.assertOfficeJobAccess(client, message);
     const job = getOfficeJobDefinition(message?.jobId);
     if (!job) {
       throw new Error('That office job is not available.');
     }
+    const { player, terminal } = this.assertOfficeJobAccess(client, message, job.id);
 
     const intelligence = getPlayerSkillXp(player, SKILL_IDS.intelligence);
     if (!canPlayerWorkOfficeJob(intelligence, job)) {

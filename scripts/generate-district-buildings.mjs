@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {
+  OFFICE_INTERIOR_FLOOR_IDS,
+  getOfficeInteriorFloorHeight
+} from '../src/shared/officeInteriorLayout.js';
 
 class NodeFileReader {
   constructor() {
@@ -1147,6 +1151,9 @@ const OFFICE_PENTHOUSE_FRONT_Z = OFFICE_PENTHOUSE_CENTER_Z + (OFFICE_PENTHOUSE_D
 const OFFICE_PENTHOUSE_BACK_Z = OFFICE_PENTHOUSE_CENTER_Z - (OFFICE_PENTHOUSE_DEPTH * 0.5) - 0.22;
 const OFFICE_PENTHOUSE_SIDE_X = (OFFICE_PENTHOUSE_WIDTH * 0.5) - 0.04;
 const OFFICE_PENTHOUSE_SIDE_WINDOW_X = (OFFICE_PENTHOUSE_WIDTH * 0.5) + 0.18;
+const OFFICE_LOBBY_FLOOR_Y = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
+const OFFICE_CUBICLE_FLOOR_Y = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
+const OFFICE_CEO_FLOOR_Y = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
 
 function getOfficeTowerWindowRows() {
   const rows = [];
@@ -1221,6 +1228,198 @@ function addOfficeSideBackWindowGridSegment(group, materials, {
       materials.trimDark
     ));
   }
+}
+
+function addOfficeFloorPanels(group, materials, floorY, {
+  width = 20.4,
+  depth = 18.6,
+  centerZ = 0.35,
+  panelCount = 13,
+  baseMaterial = materials.floor,
+  stripeMaterial = materials.floorStripe,
+  accentMaterial = materials.floorAccent
+} = {}) {
+  addFloorPanels(group, {
+    width,
+    depth,
+    centerX: 0,
+    centerY: floorY - 0.08,
+    centerZ,
+    panelCount,
+    baseMaterial,
+    stripeMaterial,
+    accentMaterial
+  });
+}
+
+function addOfficeChair(group, position, materials, rotationY = 0) {
+  const chair = new THREE.Group();
+  chair.position.set(...position);
+  chair.rotation.y = rotationY;
+  chair.add(createBox([0.78, 0.14, 0.74], [0, 0.55, 0], materials.chair));
+  chair.add(createBox([0.78, 0.86, 0.12], [0, 1.0, -0.34], materials.chair));
+  for (const [x, z] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.24], [0.28, 0.24]]) {
+    chair.add(createBox([0.08, 0.5, 0.08], [x, 0.26, z], materials.metalDark));
+  }
+  group.add(chair);
+}
+
+function addOfficeLobbyChairs(group, materials) {
+  const floorY = OFFICE_LOBBY_FLOOR_Y;
+  for (const [x, z, rotationY] of [
+    [-3.2, 4.7, Math.PI],
+    [-1.25, 4.7, Math.PI],
+    [1.25, 4.7, Math.PI],
+    [3.2, 4.7, Math.PI],
+    [-4.35, 1.8, Math.PI * 0.5],
+    [4.35, 1.8, -Math.PI * 0.5]
+  ]) {
+    addOfficeChair(group, [x, floorY, z], materials, rotationY);
+  }
+
+  group.add(createBox([5.8, 0.2, 1.25], [0, floorY + 0.82, 7.05], materials.wood));
+  group.add(createBox([5.4, 0.18, 0.22], [0, floorY + 1.28, 6.45], materials.woodDark));
+}
+
+function addJanitorCloset(group, materials) {
+  const floorY = OFFICE_LOBBY_FLOOR_Y;
+  const wallY = floorY + 1.55;
+  addBoxes(group, [
+    { size: [4.8, 2.8, 0.16], position: [-7.35, wallY, -9.05], material: materials.partition },
+    { size: [0.16, 2.8, 4.3], position: [-9.72, wallY, -6.9], material: materials.partition },
+    { size: [0.16, 2.8, 4.3], position: [-4.98, wallY, -6.9], material: materials.partition },
+    { size: [1.45, 2.8, 0.16], position: [-9.02, wallY, -4.78], material: materials.partition },
+    { size: [1.45, 2.8, 0.16], position: [-5.68, wallY, -4.78], material: materials.partition },
+    { size: [1.46, 2.35, 0.12], position: [-7.35, floorY + 1.42, -4.62], material: materials.door },
+    { size: [3.35, 0.12, 0.58], position: [-7.35, floorY + 1.55, -8.55], material: materials.metalDark },
+    { size: [3.35, 0.12, 0.58], position: [-7.35, floorY + 2.2, -8.55], material: materials.metalDark },
+    { size: [0.48, 0.62, 0.48], position: [-8.45, floorY + 0.38, -7.82], material: materials.blue },
+    { size: [0.52, 0.72, 0.52], position: [-6.25, floorY + 0.42, -7.74], material: materials.accent }
+  ]);
+  group.add(createCylinder(0.06, 0.06, 2.35, 8, [-8.75, floorY + 1.45, -5.72], materials.woodDark, [0.18, 0, -0.08]));
+  group.add(createCylinder(0.24, 0.34, 0.44, 10, [-8.95, floorY + 0.34, -5.42], materials.green));
+  group.add(createCylinder(0.05, 0.05, 2.18, 8, [-5.75, floorY + 1.37, -5.86], materials.woodDark, [-0.2, 0, 0.12]));
+  group.add(createBox([0.5, 0.18, 0.1], [-5.55, floorY + 0.42, -5.55], materials.accentDark));
+}
+
+function addOfficeStaircase(group, materials, floorY, position, rotationY = 0) {
+  const stairs = new THREE.Group();
+  stairs.position.set(...position);
+  stairs.rotation.y = rotationY;
+  for (let step = 0; step < 8; step += 1) {
+    stairs.add(createBox(
+      [3.2, 0.18, 0.55],
+      [0, floorY + 0.12 + (step * 0.16), step * 0.46],
+      step % 2 === 0 ? materials.trimDark : materials.metalDark
+    ));
+  }
+  stairs.add(createBox([0.12, 1.65, 4.2], [-1.76, floorY + 0.9, 1.62], materials.metalDark, [0.18, 0, 0]));
+  stairs.add(createBox([0.12, 1.65, 4.2], [1.76, floorY + 0.9, 1.62], materials.metalDark, [0.18, 0, 0]));
+  stairs.add(createBox([3.9, 0.12, 0.62], [0, floorY + 1.48, 3.75], materials.trim));
+  group.add(stairs);
+}
+
+function addOfficeElevator(group, materials, floorY, position, rotationY = 0) {
+  const elevator = new THREE.Group();
+  elevator.position.set(...position);
+  elevator.rotation.y = rotationY;
+  elevator.add(createBox([2.7, 3.3, 0.22], [0, floorY + 1.78, 0], materials.metalDark));
+  elevator.add(createBox([1.16, 2.72, 0.1], [-0.6, floorY + 1.54, 0.16], materials.metal));
+  elevator.add(createBox([1.16, 2.72, 0.1], [0.6, floorY + 1.54, 0.16], materials.metal));
+  elevator.add(createBox([0.08, 2.76, 0.14], [0, floorY + 1.54, 0.22], materials.trimDark));
+  elevator.add(createBox([0.28, 0.72, 0.12], [1.72, floorY + 1.55, 0.2], materials.sign));
+  elevator.add(createCylinder(0.08, 0.08, 0.04, 12, [1.72, floorY + 1.72, 0.28], materials.gold, [Math.PI * 0.5, 0, 0]));
+  elevator.add(createCylinder(0.08, 0.08, 0.04, 12, [1.72, floorY + 1.42, 0.28], materials.glassLite, [Math.PI * 0.5, 0, 0]));
+  group.add(elevator);
+}
+
+function addOfficeBreakRoom(group, materials) {
+  const floorY = OFFICE_CUBICLE_FLOOR_Y;
+  addBoxes(group, [
+    { size: [5.4, 2.5, 0.14], position: [-7.25, floorY + 1.52, -8.98], material: materials.partition },
+    { size: [0.14, 2.5, 5.5], position: [-9.78, floorY + 1.52, -6.2], material: materials.partition },
+    { size: [0.14, 2.5, 2.0], position: [-4.62, floorY + 1.52, -8.0], material: materials.partition },
+    { size: [3.15, 0.86, 0.74], position: [-7.45, floorY + 0.72, -7.86], material: materials.woodDark },
+    { size: [3.4, 0.22, 0.92], position: [-7.45, floorY + 1.22, -7.86], material: materials.wood },
+    { size: [1.1, 2.45, 0.88], position: [-9.0, floorY + 1.34, -7.82], material: materials.metal },
+    { size: [0.92, 0.1, 0.92], position: [-9.0, floorY + 1.36, -7.32], material: materials.trimDark },
+    { size: [0.82, 1.1, 0.64], position: [-6.46, floorY + 1.78, -7.62], material: materials.screen },
+    { size: [0.56, 0.42, 0.5], position: [-6.46, floorY + 1.24, -7.38], material: materials.metalDark },
+    { size: [0.42, 0.26, 0.42], position: [-5.78, floorY + 1.34, -7.46], material: materials.signFace }
+  ]);
+  group.add(createCylinder(0.24, 0.28, 0.46, 14, [-5.8, floorY + 1.55, -7.46], materials.gold));
+  group.add(createCylinder(0.16, 0.16, 0.12, 14, [-5.8, floorY + 1.85, -7.46], materials.signShadow));
+  addOfficeElevator(group, materials, floorY, [-8.55, 0, -3.25], Math.PI);
+}
+
+function addOfficeCubicleFloor(group, materials) {
+  addOfficeFloorPanels(group, materials, OFFICE_CUBICLE_FLOOR_Y, { panelCount: 12 });
+  for (const [x, z, rotationY] of [
+    [-1.6, -3.35, 0],
+    [2.6, -3.35, 0],
+    [6.45, -1.15, Math.PI * 0.5],
+    [-1.6, 0.4, Math.PI],
+    [2.6, 0.4, Math.PI],
+    [-5.1, 4.35, Math.PI],
+    [-1.0, 4.35, Math.PI],
+    [3.1, 4.35, Math.PI],
+    [6.7, 4.15, -Math.PI * 0.5]
+  ]) {
+    addCubicle(group, [x, OFFICE_CUBICLE_FLOOR_Y, z], materials, rotationY);
+  }
+
+  addOfficeBreakRoom(group, materials);
+  addOfficeStaircase(group, materials, OFFICE_CUBICLE_FLOOR_Y, [7.05, 0, -4.55], Math.PI);
+}
+
+function addExecutiveMeetingTable(group, materials) {
+  const floorY = OFFICE_CEO_FLOOR_Y;
+  group.add(createBox([9.4, 0.05, 4.7], [0, floorY + 0.04, -0.8], materials.accentDark));
+  group.add(createBox([8.0, 0.24, 2.3], [0, floorY + 1.02, -0.8], materials.wood));
+  group.add(createBox([7.5, 0.08, 1.84], [0, floorY + 1.18, -0.8], materials.woodDark));
+  for (const [x, z] of [[-3.35, -1.6], [3.35, -1.6], [-3.35, 0], [3.35, 0]]) {
+    group.add(createBox([0.24, 0.9, 0.24], [x, floorY + 0.55, z], materials.metalDark));
+  }
+
+  for (const [x, z, rotationY] of [
+    [-3.2, -2.72, 0],
+    [-1.05, -2.72, 0],
+    [1.05, -2.72, 0],
+    [3.2, -2.72, 0],
+    [-3.2, 1.12, Math.PI],
+    [-1.05, 1.12, Math.PI],
+    [1.05, 1.12, Math.PI],
+    [3.2, 1.12, Math.PI]
+  ]) {
+    addOfficeChair(group, [x, floorY, z], materials, rotationY);
+  }
+
+  group.add(createBox([1.25, 0.12, 0.62], [0, floorY + 1.25, -0.8], materials.sign));
+  group.add(createBox([1.05, 0.08, 0.46], [0, floorY + 1.34, -0.8], materials.gold));
+}
+
+function addOfficeCeoFloor(group, materials) {
+  addOfficeFloorPanels(group, materials, OFFICE_CEO_FLOOR_Y, {
+    width: 15.8,
+    depth: 10.2,
+    centerZ: -2.75,
+    panelCount: 8,
+    baseMaterial: materials.floorAccent,
+    stripeMaterial: materials.floor,
+    accentMaterial: materials.floorStripe
+  });
+  addBoxes(group, [
+    { size: [14.8, 3.0, 0.14], position: [0, OFFICE_CEO_FLOOR_Y + 1.72, -7.45], material: materials.facadeAlt },
+    { size: [0.14, 3.0, 8.6], position: [-7.6, OFFICE_CEO_FLOOR_Y + 1.72, -3.0], material: materials.facadeAlt },
+    { size: [0.14, 3.0, 8.6], position: [7.6, OFFICE_CEO_FLOOR_Y + 1.72, -3.0], material: materials.facadeAlt },
+    { size: [10.4, 0.12, 0.18], position: [0, OFFICE_CEO_FLOOR_Y + 3.35, -7.34], material: materials.gold },
+    { size: [0.62, 2.2, 0.62], position: [6.2, OFFICE_CEO_FLOOR_Y + 1.22, -5.9], material: materials.green },
+    { size: [0.82, 0.42, 0.82], position: [6.2, OFFICE_CEO_FLOOR_Y + 0.34, -5.9], material: materials.gold }
+  ]);
+  group.add(createSphere(0.72, 12, 8, [6.2, OFFICE_CEO_FLOOR_Y + 2.55, -5.9], materials.green));
+  group.add(createSphere(0.48, 12, 8, [5.82, OFFICE_CEO_FLOOR_Y + 2.08, -5.52], materials.green));
+  addExecutiveMeetingTable(group, materials);
+  addOfficeElevator(group, materials, OFFICE_CEO_FLOOR_Y, [-8.1, 0, -4.45], Math.PI * 0.5);
 }
 
 function addOfficesDetails(groups, materials) {
@@ -1397,18 +1596,11 @@ function addOfficesDetails(groups, materials) {
     { size: [0.18, 2.4, 0.18], position: [0, OFFICE_PENTHOUSE_TOP_Y + 2.25, OFFICE_PENTHOUSE_CENTER_Z], material: materials.trimDark }
   ]);
 
-  for (const x of [-6.0, -2.0, 2.0, 6.0]) {
-    for (const z of [-5.2, -1.6, 2.0, 5.6]) {
-      addCubicle(groups.interior, [x, 0, z], materials, z > 0 ? Math.PI : 0);
-    }
-  }
-  addBoxes(groups.interior, [
-    { size: [6.4, 0.22, 2.1], position: [0, 1.02, -8.0], material: materials.wood },
-    { size: [0.16, 1.35, 1.4], position: [-8.8, 1.32, 8.0], material: materials.glassLite },
-    { size: [0.16, 1.35, 1.4], position: [8.8, 1.32, 8.0], material: materials.glassLite }
-  ]);
-  groups.interior.add(createCylinder(0.32, 0.32, 1.35, 14, [-8.8, 1.08, 6.7], materials.glassLite));
-  groups.interior.add(createCylinder(0.38, 0.38, 0.18, 14, [-8.8, 1.84, 6.7], materials.blue));
+  addOfficeLobbyChairs(groups.interior, materials);
+  addJanitorCloset(groups.interior, materials);
+  addOfficeStaircase(groups.interior, materials, OFFICE_LOBBY_FLOOR_Y, [7.35, 0, -6.95], 0);
+  addOfficeCubicleFloor(groups.interior, materials);
+  addOfficeCeoFloor(groups.interior, materials);
 }
 
 function buildDistrictBuilding(definition) {

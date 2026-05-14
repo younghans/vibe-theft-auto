@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { assets } from '../src/world/assetManifest.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
+import { createInteriorScene } from '../src/world/InteriorScene.js';
 import {
   STANDING_DESK_COMPUTER_FOOTPRINT,
   createStandingDeskComputerVisual
@@ -21,6 +22,15 @@ import {
   getOfficeJobDefinition,
   listOfficeJobDefinitions
 } from '../src/shared/officeJobs.js';
+import {
+  OFFICE_BUILDING_ITEM_ID,
+  OFFICE_INTERIOR_FLOOR_IDS,
+  OFFICE_INTERIOR_ID,
+  OFFICE_INTERIOR_STATION_TYPES,
+  getOfficeInteriorFloorHeight,
+  listOfficeInteriorStations,
+  parseOfficeInteriorStationPlacementId
+} from '../src/shared/officeInteriorLayout.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -77,6 +87,47 @@ async function validateOfficeJobTerminalFlow() {
   assert(serverSource.includes("officeJob:complete"), 'Server should expose an office job completion RPC.');
   assert(colyseusSource.includes('completeOfficeJob'), 'Colyseus service should call the office job completion RPC.');
   assert(mockSource.includes('completeOfficeJob'), 'Mock service should support office job completion.');
+}
+
+async function validateOfficeBuildingInteriorFlow() {
+  const officeBuilding = getBuilderItemById(OFFICE_BUILDING_ITEM_ID);
+  assert(officeBuilding, 'Office building catalog item is missing.');
+  assert(officeBuilding.interior?.id === OFFICE_INTERIOR_ID, 'Office building should use the office interior.');
+  assert(officeBuilding.interior?.mode === 'inline-cutaway', 'Office building should use the inline cutaway interior.');
+
+  const stations = listOfficeInteriorStations();
+  assert(stations.length >= 7, 'Office interior should define lobby, cubicle, and CEO stations.');
+  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.janitor), 'Office lobby should expose the janitor station.');
+  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.officeManager), 'Office second floor should expose the office manager station.');
+  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.ceo), 'Office top floor should expose the CEO station.');
+  assert(stations.some((station) => station.type === OFFICE_INTERIOR_STATION_TYPES.transport && station.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.ceo), 'Office break room should include the CEO elevator.');
+
+  const scene = createInteriorScene(OFFICE_INTERIOR_ID, {
+    placementId: 'office_test',
+    includeExitInteractable: false
+  });
+  assert(scene, 'Office interior scene should be creatable.');
+  const jobStations = scene.interactables.filter((interactable) => interactable.kind === 'office-job-station');
+  const floorTransitions = scene.interactables.filter((interactable) => interactable.kind === 'office-floor-transition');
+  assert(jobStations.length === 3, 'Office interior should expose exactly three job station prompts.');
+  assert(floorTransitions.length >= 4, 'Office interior should expose stairs and elevator prompts.');
+  assert(jobStations.every((station) => parseOfficeInteriorStationPlacementId(station.placementId)), 'Office job stations should use parseable virtual placement IDs.');
+  const janitorStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.janitor);
+  const managerStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.officeManager);
+  const ceoStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.ceo);
+  assert(janitorStation && managerStation && ceoStation, 'Office scene should include all three room-specific job stations.');
+  assert(Math.abs(janitorStation.position.y - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby)) < 0.001, 'Janitor station should be on the lobby floor.');
+  assert(Math.abs(managerStation.position.y - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles)) < 0.001, 'Manager station should be on the second floor.');
+  assert(Math.abs(ceoStation.position.y - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo)) < 0.001, 'CEO station should be on the top floor.');
+
+  const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const serverSource = await readFile(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
+  const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
+  assert(gameSource.includes('openOfficeInteriorJobStation'), 'Game should start room-specific office jobs.');
+  assert(gameSource.includes('useOfficeInteriorTransport'), 'Game should route office stairs and elevators.');
+  assert(gameSource.includes('getActiveInlineInteriorScene'), 'Game should use inline office floors for active ground height.');
+  assert(serverSource.includes('parseOfficeInteriorStationPlacementId'), 'Server payroll should accept virtual office stations.');
+  assert(mockSource.includes('parseOfficeInteriorStationPlacementId'), 'Mock payroll should accept virtual office stations.');
 }
 
 function validateDeskModel() {
@@ -237,11 +288,20 @@ async function validateCheckedInPlacements() {
     savedLayout.props?.some((placement) => placement.itemId === 'standing_desk_computer'),
     'Fallback saved world layout should include a standing desk computer placement.'
   );
+  assert(
+    defaultWorldLayout.tiles.some((placement) => placement.itemId === OFFICE_BUILDING_ITEM_ID),
+    'Default world should include the multi-story office building.'
+  );
+  assert(
+    savedLayout.tiles?.some((placement) => placement.itemId === OFFICE_BUILDING_ITEM_ID),
+    'Fallback saved world layout should include the multi-story office building.'
+  );
 }
 
 async function main() {
   validateBuilderDefinition();
   await validateOfficeJobTerminalFlow();
+  await validateOfficeBuildingInteriorFlow();
   validateDeskModel();
   validateEmoteConfig();
   validateActivityConfig();
