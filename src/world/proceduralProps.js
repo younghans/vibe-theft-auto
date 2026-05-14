@@ -618,14 +618,16 @@ function createPawnShopMaterials() {
       roughness: 0.18,
       metalness: 0.02,
       transparent: true,
-      opacity: 0.72
+      opacity: 0.72,
+      depthWrite: false
     }),
     glassLite: new THREE.MeshStandardMaterial({
       color: 0xbde3dd,
       roughness: 0.12,
       metalness: 0.02,
       transparent: true,
-      opacity: 0.66
+      opacity: 0.66,
+      depthWrite: false
     }),
     floor: createMaterial(0x5e625f, 0.92, 0.02),
     floorStripe: createMaterial(0x696e69, 0.92, 0.02),
@@ -691,6 +693,7 @@ function createPawnShopSignLabel() {
     new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
+      depthWrite: false,
       side: THREE.DoubleSide
     })
   );

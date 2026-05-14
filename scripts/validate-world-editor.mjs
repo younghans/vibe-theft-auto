@@ -32,6 +32,7 @@ import {
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
+import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
 import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
@@ -293,6 +294,7 @@ function validateFootprintSupport() {
   for (const item of districtBuildings) {
     assert(item.tileFootprint[0] === 2 && item.tileFootprint[1] === 2, `${item.id} should use a 2x2 footprint`);
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
+    assert(getInteriorTemplateById(item.interior?.id), `${item.id} should have a registered inline interior template`);
     assert(item.movementCollisionRects?.length >= 5, `${item.id} should define hull-wall movement collision`);
   }
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
@@ -302,6 +304,24 @@ function validateFootprintSupport() {
   assert(pawnVisual.getObjectByName('pawnShopLeftCounterReturn'), 'Pawn shop counter should wrap along the left back side');
   assert(pawnVisual.getObjectByName('pawnShopRightCounterReturn'), 'Pawn shop counter should wrap along the right back side');
   assert(pawnVisual.getObjectByName('pawnShopEntranceSignPanel'), 'Pawn shop should include a front entrance sign panel');
+  const pawnGlassMeshes = [
+    'pawnShopFrontWindow-7.6',
+    'pawnShopFrontWindow-5.25',
+    'pawnShopFrontWindow5.25',
+    'pawnShopFrontWindow7.6',
+    'pawnShopBackCounterGlass',
+    'pawnShopLeftCounterReturnGlass',
+    'pawnShopRightCounterReturnGlass'
+  ].map((name) => pawnVisual.getObjectByName(name));
+  assert(pawnGlassMeshes.every(Boolean), 'Pawn shop should expose named glass meshes for depth validation');
+  for (const glassMesh of pawnGlassMeshes) {
+    assert(glassMesh.material?.transparent === true, `${glassMesh.name} should use a transparent material`);
+    assert(glassMesh.material?.depthWrite === false, `${glassMesh.name} should not write depth while transparent`);
+  }
+  const pawnLetters = pawnVisual.getObjectByName('pawnShopPawnLetters');
+  if (pawnLetters) {
+    assert(pawnLetters.material?.depthWrite === false, 'Pawn shop sign letters should not write depth through transparent canvas pixels');
+  }
 
   const rotatedBarSize = getTileFootprintWorldSize(bar, 1);
   assert(rotatedBarSize[0] === BUILDER_TILE_SIZE, '2x1 tiles should swap world width when rotated');
