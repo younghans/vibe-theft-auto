@@ -166,6 +166,24 @@ const OFFICE_JANITOR_TARGET_WIDTH_STEP = 0.02;
 const OFFICE_JANITOR_MIN_TARGET_WIDTH = 0.15;
 const OFFICE_JANITOR_BASE_MARKER_SPEED = 1.12;
 const OFFICE_JANITOR_MARKER_SPEED_STEP = 0.18;
+const OFFICE_JANITOR_MOP_HERO_DURATION_MS = 18000;
+const OFFICE_JANITOR_MOP_BRUSH_RADIUS = 0.16;
+const OFFICE_JANITOR_MOP_CLEAN_RATE = 2.1;
+const OFFICE_JANITOR_MOP_COMPLETE_PROGRESS = 0.985;
+const OFFICE_JANITOR_MOP_DIRT_PATCHES = Object.freeze([
+  Object.freeze({ x: 0.16, y: 0.74, size: 0.19, rotation: -14 }),
+  Object.freeze({ x: 0.29, y: 0.61, size: 0.15, rotation: 18 }),
+  Object.freeze({ x: 0.41, y: 0.78, size: 0.18, rotation: 9 }),
+  Object.freeze({ x: 0.53, y: 0.66, size: 0.14, rotation: -21 }),
+  Object.freeze({ x: 0.66, y: 0.77, size: 0.2, rotation: 12 }),
+  Object.freeze({ x: 0.82, y: 0.63, size: 0.16, rotation: -8 }),
+  Object.freeze({ x: 0.2, y: 0.46, size: 0.13, rotation: 22 }),
+  Object.freeze({ x: 0.35, y: 0.38, size: 0.12, rotation: -17 }),
+  Object.freeze({ x: 0.49, y: 0.49, size: 0.16, rotation: 4 }),
+  Object.freeze({ x: 0.61, y: 0.39, size: 0.13, rotation: 19 }),
+  Object.freeze({ x: 0.75, y: 0.48, size: 0.15, rotation: -24 }),
+  Object.freeze({ x: 0.88, y: 0.79, size: 0.12, rotation: 15 })
+]);
 const OFFICE_CEO_STAMP_RESOLVE_MS = 680;
 const OFFICE_CEO_STAMP_LEFT_EXIT = -0.14;
 const OFFICE_CEO_STAMP_RIGHT_EXIT = 1.14;
@@ -5955,6 +5973,36 @@ export class Game {
     this.refreshAdminPromptHud();
   }
 
+  chooseOfficeJanitorGameId() {
+    return this.schoolRandom() < 0.5
+      ? OFFICE_JOB_GAME_IDS.janitorTrashToss
+      : OFFICE_JOB_GAME_IDS.janitorMopHero;
+  }
+
+  isOfficeJanitorTrashTossGame(game = this.schoolMicrogame) {
+    return this.isOfficeJobGame(game)
+      && game?.round?.officeJobId === OFFICE_JOB_IDS.janitor
+      && game?.round?.gameId !== OFFICE_JOB_GAME_IDS.janitorMopHero;
+  }
+
+  isOfficeJanitorMopHeroGame(game = this.schoolMicrogame) {
+    return this.isOfficeJobGame(game)
+      && game?.round?.officeJobId === OFFICE_JOB_IDS.janitor
+      && game?.round?.gameId === OFFICE_JOB_GAME_IDS.janitorMopHero;
+  }
+
+  applyJanitorTrashTossRoundDetails(round = {}) {
+    round.gameId = OFFICE_JOB_GAME_IDS.janitorTrashToss;
+    round.shortTitle = 'Paper Toss';
+    round.title = 'Work as Janitor: Paper Toss';
+    round.subtitle = 'Sink three paper toss rounds from the janitor closet.';
+    round.description = 'Paper toss three crumpled reports into the basket from the office thrower\'s janitor closet.';
+    round.prompt = 'Land three clean throws. Watch the arc settle on the basket before tossing.';
+    round.instructions = 'Press Spacebar or click Throw when the marker is inside the target zone and the arc lines up with the basket.';
+    round.durationMs = 14000;
+    round.icon = 'TRASH';
+  }
+
   configureJanitorTrashTossShot(round = {}, data = {}, shotNumber = 1) {
     const currentShot = Math.max(1, Math.floor(Number(shotNumber ?? 1) || 1));
     const difficulty = Math.max(0, Math.min(2, currentShot - 1));
@@ -5972,6 +6020,42 @@ export class Game {
     data.throwMade = false;
     data.throwResolveAt = 0;
     data.throwMissSide = '';
+  }
+
+  createJanitorMopDirtPatches() {
+    return OFFICE_JANITOR_MOP_DIRT_PATCHES.map((patch, index) => {
+      const jitterX = (this.schoolRandom() - 0.5) * 0.035;
+      const jitterY = (this.schoolRandom() - 0.5) * 0.035;
+      const jitterSize = (this.schoolRandom() - 0.5) * 0.025;
+      return {
+        id: `mop-dirt-${index + 1}`,
+        x: THREE.MathUtils.clamp(Number(patch.x ?? 0.5) + jitterX, 0.08, 0.92),
+        y: THREE.MathUtils.clamp(Number(patch.y ?? 0.5) + jitterY, 0.2, 0.88),
+        size: THREE.MathUtils.clamp(Number(patch.size ?? 0.14) + jitterSize, 0.1, 0.23),
+        rotation: Number(patch.rotation ?? 0) + Math.round((this.schoolRandom() - 0.5) * 18),
+        clean: 0
+      };
+    });
+  }
+
+  configureJanitorMopHero(round = {}, data = {}) {
+    round.gameId = OFFICE_JOB_GAME_IDS.janitorMopHero;
+    round.shortTitle = 'Mop Hero';
+    round.title = 'Work as Janitor: Mop Hero';
+    round.subtitle = 'Mop every dirt patch from the office floor.';
+    round.description = 'Mop Hero: clean an office room covered in brown dirt until the floor sparkles.';
+    round.prompt = 'Move the mouse like a mop. Clean every brown dirt patch before time runs out.';
+    round.instructions = 'Move your mouse over the brown dirt. The janitor and mop follow the cursor as each patch gets scrubbed clean.';
+    round.durationMs = OFFICE_JANITOR_MOP_HERO_DURATION_MS;
+    round.icon = 'MOP';
+    data.dirtPatches = this.createJanitorMopDirtPatches();
+    data.cleanProgress = 0;
+    data.mopX = 0.5;
+    data.mopY = 0.66;
+    data.mopActive = false;
+    data.mopMoved = false;
+    data.sparklyClean = false;
+    data.dirtSeq = Math.max(0, Math.floor(Number(data.dirtSeq ?? 0) || 0)) + 1;
   }
 
   configureCeoMemoStamp(round = {}, data = {}, approvedCount = 0) {
@@ -6040,11 +6124,17 @@ export class Game {
     };
 
     if (job.id === OFFICE_JOB_IDS.janitor) {
-      round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
-      data.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
-      data.madeThrows = 0;
-      data.throwSeq = 0;
-      this.configureJanitorTrashTossShot(round, data, 1);
+      const janitorGameId = this.chooseOfficeJanitorGameId();
+      if (janitorGameId === OFFICE_JOB_GAME_IDS.janitorMopHero) {
+        this.configureJanitorMopHero(round, data);
+      } else {
+        this.applyJanitorTrashTossRoundDetails(round);
+        round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+        data.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
+        data.madeThrows = 0;
+        data.throwSeq = 0;
+        this.configureJanitorTrashTossShot(round, data, 1);
+      }
     } else if (job.id === OFFICE_JOB_IDS.officeManager) {
       round.targetStart = 72;
       round.targetEnd = 82;
@@ -6411,12 +6501,15 @@ export class Game {
       this.schoolMicrogame.data.lastFlipEndsAt = 0;
       this.schoolMicrogame.data.completing = false;
       this.schoolMicrogame.data.completeAt = 0;
-    } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.janitor) {
+    } else if (this.isOfficeJanitorTrashTossGame(this.schoolMicrogame)) {
+      this.applyJanitorTrashTossRoundDetails(this.schoolMicrogame.round);
       this.schoolMicrogame.round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
       this.schoolMicrogame.data.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
       this.schoolMicrogame.data.madeThrows = 0;
       this.schoolMicrogame.data.throwSeq = 0;
       this.configureJanitorTrashTossShot(this.schoolMicrogame.round, this.schoolMicrogame.data, 1);
+    } else if (this.isOfficeJanitorMopHeroGame(this.schoolMicrogame)) {
+      this.configureJanitorMopHero(this.schoolMicrogame.round, this.schoolMicrogame.data);
     } else if (this.schoolMicrogame.round?.gameId === OFFICE_JOB_GAME_IDS.officeManager) {
       this.schoolMicrogame.data.fill = 0;
       this.schoolMicrogame.data.released = false;
@@ -7002,7 +7095,7 @@ export class Game {
       return;
     }
 
-    if (game.round?.officeJobId === OFFICE_JOB_IDS.janitor && action === 'office:throw') {
+    if (this.isOfficeJanitorTrashTossGame(game) && action === 'office:throw') {
       if (game.data.thrown) {
         return;
       }
@@ -7373,7 +7466,7 @@ export class Game {
       if (this.isOfficeJobGame(game)) {
         const officeJobId = game.round?.officeJobId ?? game.round?.jobId;
         const resolvingOfficeAction = (
-          (officeJobId === OFFICE_JOB_IDS.janitor && game.data.thrown && Number(game.data.throwResolveAt ?? 0) > now)
+          (officeJobId === OFFICE_JOB_IDS.janitor && this.isOfficeJanitorTrashTossGame(game) && game.data.thrown && Number(game.data.throwResolveAt ?? 0) > now)
           || (officeJobId === OFFICE_JOB_IDS.ceo && game.data.stamped && Number(game.data.stampResolveAt ?? 0) > now)
         );
         if (resolvingOfficeAction) {
@@ -7408,7 +7501,7 @@ export class Game {
 
     const jobId = game.round?.officeJobId;
     if (jobId === OFFICE_JOB_IDS.janitor) {
-      if (this.input.consume('Space') || this.input.consume('Enter') || this.input.consume('KeyE')) {
+      if (this.isOfficeJanitorTrashTossGame(game) && (this.input.consume('Space') || this.input.consume('Enter') || this.input.consume('KeyE'))) {
         this.handlePlayingOfficeJobAction('office:throw');
       }
       return;
@@ -7588,7 +7681,7 @@ export class Game {
   }
 
   advanceJanitorTrashToss(game = this.schoolMicrogame) {
-    if (!this.isOfficeJobGame(game) || game.round?.officeJobId !== OFFICE_JOB_IDS.janitor || game.phase !== 'playing') {
+    if (!this.isOfficeJanitorTrashTossGame(game) || game.phase !== 'playing') {
       return;
     }
 
@@ -7603,6 +7696,70 @@ export class Game {
     this.configureJanitorTrashTossShot(game.round, game.data, madeThrows + 1);
     game.message = `Round ${madeThrows + 1}. The throwing lane gets tighter.`;
     this.syncSchoolMicrogameHud();
+  }
+
+  updateJanitorMopHeroState(game = this.schoolMicrogame, dt = 0, now = performance.now()) {
+    if (!this.isOfficeJanitorMopHeroGame(game) || game.phase !== 'playing') {
+      return;
+    }
+
+    const pointer = this.input.getPointerPosition();
+    const mopPointer = this.hud.getOfficeMopHeroPointerPosition?.(pointer) ?? null;
+    if (mopPointer) {
+      game.data.mopX = THREE.MathUtils.clamp(Number(mopPointer.x ?? 0.5), 0.04, 0.96);
+      game.data.mopY = THREE.MathUtils.clamp(Number(mopPointer.y ?? 0.66), 0.12, 0.9);
+      game.data.mopActive = mopPointer.inside === true;
+      game.data.mopMoved = game.data.mopMoved === true || mopPointer.inside === true;
+    } else {
+      game.data.mopActive = false;
+    }
+
+    const patches = Array.isArray(game.data.dirtPatches) ? game.data.dirtPatches : [];
+    if (!patches.length) {
+      this.configureJanitorMopHero(game.round, game.data);
+      return;
+    }
+
+    if (game.data.mopActive === true) {
+      const mopX = Number(game.data.mopX ?? 0.5) || 0.5;
+      const mopY = Number(game.data.mopY ?? 0.66) || 0.66;
+      for (const patch of patches) {
+        const patchX = Number(patch.x ?? 0.5) || 0.5;
+        const patchY = Number(patch.y ?? 0.5) || 0.5;
+        const patchSize = Number(patch.size ?? 0.14) || 0.14;
+        const reach = OFFICE_JANITOR_MOP_BRUSH_RADIUS + patchSize * 0.34;
+        const distance = Math.hypot(mopX - patchX, mopY - patchY);
+        if (distance > reach) {
+          continue;
+        }
+
+        const falloff = 1 - (distance / Math.max(0.001, reach));
+        const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
+        patch.clean = Math.min(1, clean + dt * OFFICE_JANITOR_MOP_CLEAN_RATE * (0.42 + falloff));
+      }
+    }
+
+    const cleanTotal = patches.reduce((sum, patch) => sum + Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)), 0);
+    const cleanProgress = patches.length > 0 ? cleanTotal / patches.length : 0;
+    game.data.cleanProgress = cleanProgress;
+    if (cleanProgress >= 0.72 && !game.data.sparkleHinted) {
+      game.data.sparkleHinted = true;
+      game.message = 'Almost there. Keep sweeping the last brown spots.';
+    } else if (game.data.mopMoved !== true) {
+      game.message = 'Move your mouse over the dirt to start mopping.';
+    } else if (game.data.mopActive === true) {
+      const messageBucket = Math.floor(cleanProgress * 10);
+      if (messageBucket !== Number(game.data.lastMopMessageBucket ?? -1)) {
+        game.data.lastMopMessageBucket = messageBucket;
+        game.message = `Mopping ${Math.floor(cleanProgress * 100)}% clean.`;
+      }
+    }
+
+    if (cleanProgress >= OFFICE_JANITOR_MOP_COMPLETE_PROGRESS) {
+      game.data.sparklyClean = true;
+      game.data.mopActive = false;
+      void this.finishOfficeJob(true, 'Sparkly Clean', 'The office room is clean enough to shine.');
+    }
   }
 
   advanceCeoMemo(game = this.schoolMicrogame) {
@@ -7674,6 +7831,11 @@ export class Game {
 
     const jobId = game.round?.officeJobId;
     if (jobId === OFFICE_JOB_IDS.janitor) {
+      if (this.isOfficeJanitorMopHeroGame(game)) {
+        this.updateJanitorMopHeroState(game, dt, now);
+        return;
+      }
+
       if (game.data.thrown) {
         const resolveAt = Number(game.data.throwResolveAt ?? 0) || 0;
         if (resolveAt > 0 && now >= resolveAt) {

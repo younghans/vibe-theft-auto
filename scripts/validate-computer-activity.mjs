@@ -17,9 +17,11 @@ import {
   getWorkoutActivityConfig
 } from '../src/game/workoutActivities.js';
 import {
+  OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
   getOfficeJobDefinition,
+  getOfficeJobDefinitionByGameId,
   listOfficeJobDefinitions
 } from '../src/shared/officeJobs.js';
 import {
@@ -81,6 +83,7 @@ async function validateOfficeJobTerminalFlow() {
 
   assert(gameSource.includes('openOfficeJobMenu'), 'Game should route the office computer to the office job menu.');
   assert(gameSource.includes("office:throw"), 'Game should implement the janitor paper toss task.');
+  assert(gameSource.includes('janitorMopHero'), 'Game should implement the janitor Mop Hero task.');
   assert(gameSource.includes('handleOfficeJobHoldEnd'), 'Game should implement the office manager hold-to-brew task.');
   assert(gameSource.includes("office:stamp"), 'Game should implement the CEO memo stamping task.');
   assert(hudSource.includes('office:select:'), 'HUD should render selectable office job tiers.');
@@ -253,12 +256,15 @@ function validateOfficeJobs() {
   const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
   const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
 
-  assert(/paper toss/i.test(janitor.description), 'Janitor task should be based on paper toss.');
-  assert(/thrower|throws?/i.test(`${janitor.description} ${janitor.prompt}`), 'Janitor paper toss should show a person throwing the paper.');
-  assert(/three/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.prompt}`), 'Janitor task should require multiple paper toss rounds.');
-  assert(/spacebar/i.test(janitor.instructions) && /throw/i.test(janitor.instructions), 'Janitor start menu should explain Spacebar/click throwing controls.');
-  assert(/arc/i.test(`${janitor.prompt} ${janitor.instructions}`) && /basket/i.test(`${janitor.prompt} ${janitor.instructions}`), 'Janitor instructions should explain the arc lining up with the basket.');
-  assert(Number(janitor.durationMs ?? 0) >= 14000, 'Janitor paper toss should be slightly easier with a little more time.');
+  assert(Array.isArray(janitor.gameIds) && janitor.gameIds.includes(OFFICE_JOB_GAME_IDS.janitorTrashToss), 'Janitor should keep the paper toss game alongside other janitor work.');
+  assert(Array.isArray(janitor.gameIds) && janitor.gameIds.includes(OFFICE_JOB_GAME_IDS.janitorMopHero), 'Janitor should expose the Mop Hero game.');
+  assert(getOfficeJobDefinitionByGameId(OFFICE_JOB_GAME_IDS.janitorMopHero)?.id === OFFICE_JOB_IDS.janitor, 'Mop Hero should resolve to the Janitor office job for payroll.');
+  assert(/random/i.test(`${janitor.subtitle} ${janitor.description}`), 'Starting Janitor should randomly choose between Janitor games.');
+  assert(/paper toss/i.test(`${janitor.subtitle} ${janitor.description}`), 'Janitor task should keep paper toss in the random pool.');
+  assert(/mop hero/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.instructions}`), 'Janitor task should include Mop Hero in the random pool.');
+  assert(/spacebar/i.test(janitor.instructions) && /throw/i.test(janitor.instructions), 'Janitor menu should still explain Paper Toss controls.');
+  assert(/mouse/i.test(janitor.instructions) && /mop/i.test(janitor.instructions) && /dirt/i.test(janitor.instructions), 'Janitor menu should explain mouse mopping controls.');
+  assert(Number(janitor.durationMs ?? 0) >= 16000, 'Janitor random game pool should allow enough time for Mop Hero.');
   assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
   assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
   assert(/hold spacebar/i.test(manager.instructions) && /release/i.test(manager.instructions), 'Office Manager start menu should explain hold/release coffee controls.');
@@ -276,18 +282,28 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
+  assert(gameSource.includes('chooseOfficeJanitorGameId'), 'Janitor should randomly choose which janitor game starts.');
+  assert(gameSource.includes('OFFICE_JOB_GAME_IDS.janitorMopHero'), 'Game logic should branch for the Mop Hero janitor game.');
   assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
   assert(gameSource.includes('OFFICE_JANITOR_BASE_TARGET_WIDTH'), 'Janitor paper toss should use explicit easier target timing constants.');
+  assert(gameSource.includes('OFFICE_JANITOR_MOP_BRUSH_RADIUS'), 'Mop Hero should use an explicit mouse brush radius.');
+  assert(gameSource.includes('updateJanitorMopHeroState'), 'Mop Hero should update cleaning progress from pointer movement.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
   assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
+  assert(hudSource.includes('createOfficeMopHeroMarkup'), 'Janitor HUD should render the Mop Hero game.');
+  assert(hudSource.includes('data-office-mop-stage'), 'Mop Hero HUD should expose a mouse tracking stage.');
+  assert(hudSource.includes('getOfficeMopHeroPointerPosition'), 'HUD should translate mouse position into Mop Hero room coordinates.');
+  assert(hudSource.includes('hud__office-mop-janitor'), 'Mop Hero should show a janitor character following the mouse.');
+  assert(hudSource.includes('hud__office-mop-dirt'), 'Mop Hero should render dirt patches to clean.');
   assert(hudSource.includes('hud__school-instructions'), 'Selected office job start screens should show how-to-play instructions.');
   assert(hudSource.includes('hud__office-job-instruction'), 'Office job menu cards should show how-to-play instructions.');
   assert(hudSource.includes('hud__office-thrower'), 'Janitor HUD should render a person throwing the paper.');
   assert(!hudSource.includes('hud__office-fan'), 'Janitor HUD should no longer render the old desk fan.');
   assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
   assert(hudSource.includes('hud__office-janitor-closet'), 'Janitor ready screen should render a janitor closet background.');
+  assert(hudSource.includes('hud__office-mop-room'), 'Mop Hero should render a dirty office room background.');
   assert(
     /function\s+createOfficeTrashTossMarkup[\s\S]*createJanitorClosetBackdropMarkup\(\)/.test(hudSource),
     'Janitor gameplay HUD should render the janitor closet background, not only the start screen.'
@@ -308,6 +324,10 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(cssSource.includes('@keyframes hud-office-paper-score'), 'Janitor paper toss should land made shots in the basket.');
   assert(cssSource.includes('@keyframes hud-office-trajectory-bob'), 'Janitor trajectory line should move up and down.');
+  assert(cssSource.includes('hud__office-mop-room-dirt'), 'Mop Hero office room should be visibly covered in brown dirt.');
+  assert(cssSource.includes('cursor: none'), 'Mop Hero should make the mouse act like the mop brush in the room.');
+  assert(cssSource.includes('@keyframes hud-office-mop-head-scrub'), 'Mop Hero mop head should animate while cleaning.');
+  assert(cssSource.includes('@keyframes hud-office-mop-sparkle'), 'Mop Hero should sparkle once the dirt is cleaned.');
   assert(cssSource.includes('translate3d(var(--office-aim-offset'), 'Janitor trajectory should use composited transform updates for smooth motion.');
   assert(cssSource.includes('transition: transform 150ms'), 'Janitor trajectory should damp transform updates instead of snapping.');
   assert(cssSource.includes('right: calc(16% + 47px)'), 'Janitor trajectory line should terminate at the trash can center.');

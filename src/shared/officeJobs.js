@@ -11,9 +11,16 @@ export const OFFICE_JOB_IDS = Object.freeze({
 
 export const OFFICE_JOB_GAME_IDS = Object.freeze({
   janitor: 'office-janitor-trash-toss',
+  janitorTrashToss: 'office-janitor-trash-toss',
+  janitorMopHero: 'office-janitor-mop-hero',
   officeManager: 'office-manager-coffee-fill',
   ceo: 'office-ceo-memo-stamp'
 });
+
+export const OFFICE_JANITOR_GAME_IDS = Object.freeze([
+  OFFICE_JOB_GAME_IDS.janitorTrashToss,
+  OFFICE_JOB_GAME_IDS.janitorMopHero
+]);
 
 export const OFFICE_JOB_SKILL_ID = SKILL_IDS.intelligence;
 
@@ -21,19 +28,20 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: OFFICE_JOB_IDS.janitor,
     gameId: OFFICE_JOB_GAME_IDS.janitor,
+    gameIds: OFFICE_JANITOR_GAME_IDS,
     title: 'Janitor',
     roleLabel: 'Janitor',
     shortTitle: 'Janitor',
     tier: 1,
-    subtitle: 'Sink three paper toss rounds from the janitor closet.',
-    description: 'Paper toss three crumpled reports into the basket from the office thrower\'s janitor closet.',
-    prompt: 'Land three clean throws. Watch the arc settle on the basket before tossing.',
-    instructions: 'Press Spacebar or click Throw when the marker is inside the target zone and the arc lines up with the basket.',
+    subtitle: 'Randomly play Paper Toss or Mop Hero.',
+    description: 'The Janitor shift randomly picks the office paper toss game or Mop Hero cleanup duty.',
+    prompt: 'Handle the Janitor task with no mistakes.',
+    instructions: 'Paper Toss uses Spacebar or Throw. Mop Hero uses your mouse as the mop to clean every brown dirt patch.',
     eyebrow: 'Office Job',
     rewardMoney: 25,
     rewardXp: 0,
     intelligenceRequired: 5,
-    durationMs: 14000,
+    durationMs: 16000,
     accent: '#6fe6a2',
     secondaryAccent: '#f4d35e',
     icon: 'TRASH'
@@ -80,7 +88,13 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
 ]);
 
 const OFFICE_JOB_BY_ID = new Map(OFFICE_JOB_DEFINITIONS.map((job) => [job.id, job]));
-const OFFICE_JOB_BY_GAME_ID = new Map(OFFICE_JOB_DEFINITIONS.map((job) => [job.gameId, job]));
+const OFFICE_JOB_BY_GAME_ID = new Map(OFFICE_JOB_DEFINITIONS.flatMap((job) => {
+  const gameIds = new Set([
+    job.gameId,
+    ...(Array.isArray(job.gameIds) ? job.gameIds : [])
+  ]);
+  return [...gameIds].map((gameId) => [gameId, job]);
+}));
 const OFFICE_JOB_ALIAS_BY_ID = new Map();
 
 for (const job of OFFICE_JOB_DEFINITIONS) {

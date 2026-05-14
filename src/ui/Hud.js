@@ -1425,6 +1425,9 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Number(data.throwSeq ?? 0) || 0),
       String(data.throwMissSide ?? ''),
       String(Boolean(data.throwMade)),
+      String(Number(data.dirtSeq ?? 0) || 0),
+      String(Math.floor(Number(data.cleanProgress ?? 0) * 20)),
+      String(Boolean(data.sparklyClean)),
       String(data.stampMissSide ?? ''),
       String(Boolean(data.stampSuccess)),
       String(Number(data.stampSeq ?? 0) || 0),
@@ -1494,9 +1497,9 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const requirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
   const instructions = String(round.instructions ?? '').trim();
   const officeJobId = String(round.officeJobId ?? round.jobId ?? '');
-  const officeReadyBackdrop = game?.context === 'office-job' ? createOfficeJobReadyBackdropMarkup(officeJobId) : '';
+  const officeReadyBackdrop = game?.context === 'office-job' ? createOfficeJobReadyBackdropMarkup(officeJobId, String(round.gameId ?? '')) : '';
   const officeReadyClass = officeReadyBackdrop
-    ? ` hud__school-ready--office-job hud__school-ready--${officeJobId === OFFICE_JOB_IDS.officeManager ? 'manager' : escapeHtml(officeJobId)}`
+    ? ` hud__school-ready--office-job hud__school-ready--${officeJobId === OFFICE_JOB_IDS.officeManager ? 'manager' : escapeHtml(officeJobId)}${round.gameId === OFFICE_JOB_GAME_IDS.janitorMopHero ? ' hud__school-ready--mop-hero' : ''}`
     : '';
   return `
     <div class="hud__school-ready${officeReadyClass}">
@@ -1525,9 +1528,12 @@ function createReadySchoolMicrogameMarkup(game = null) {
   `;
 }
 
-function createOfficeJobReadyBackdropMarkup(jobId = '') {
+function createOfficeJobReadyBackdropMarkup(jobId = '', gameId = '') {
   switch (jobId) {
     case OFFICE_JOB_IDS.janitor:
+      if (gameId === OFFICE_JOB_GAME_IDS.janitorMopHero) {
+        return createOfficeMopRoomBackdropMarkup();
+      }
       return createJanitorClosetBackdropMarkup();
     case OFFICE_JOB_IDS.officeManager:
       return createOfficeBreakroomBackdropMarkup();
@@ -1550,6 +1556,27 @@ function createJanitorClosetBackdropMarkup() {
         <span class="hud__office-janitor-closet-broom"></span>
         <span class="hud__office-janitor-closet-bucket"></span>
         <span class="hud__office-janitor-closet-door"></span>
+      </div>
+  `;
+}
+
+function createOfficeMopRoomBackdropMarkup({ gameplay = false } = {}) {
+  return `
+      <div class="${gameplay ? 'hud__office-mop-room' : 'hud__office-ready-backdrop hud__office-mop-room'}" aria-hidden="true">
+        <span class="hud__office-mop-room-wall"></span>
+        <span class="hud__office-mop-room-window"></span>
+        <span class="hud__office-mop-room-desk is-left"></span>
+        <span class="hud__office-mop-room-desk is-right"></span>
+        <span class="hud__office-mop-room-chair is-left"></span>
+        <span class="hud__office-mop-room-chair is-right"></span>
+        <span class="hud__office-mop-room-cabinet"></span>
+        <span class="hud__office-mop-room-floor"></span>
+        <span class="hud__office-mop-room-dirt is-one"></span>
+        <span class="hud__office-mop-room-dirt is-two"></span>
+        <span class="hud__office-mop-room-dirt is-three"></span>
+        <span class="hud__office-mop-room-shine is-one"></span>
+        <span class="hud__office-mop-room-shine is-two"></span>
+        <span class="hud__office-mop-room-shine is-three"></span>
       </div>
   `;
 }
@@ -2101,6 +2128,78 @@ function createOfficeTrashTossMarkup(game = null) {
   `;
 }
 
+function getOfficeMopHeroProgress(data = {}) {
+  const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
+  if (!patches.length) {
+    return 0;
+  }
+
+  const cleanTotal = patches.reduce((sum, patch) => {
+    const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
+    return sum + clean;
+  }, 0);
+  return Math.max(0, Math.min(100, (cleanTotal / patches.length) * 100));
+}
+
+function createOfficeMopDirtPatchMarkup(patch = {}, index = 0) {
+  const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
+  const x = Math.max(0, Math.min(1, Number(patch.x ?? 0.5) || 0.5));
+  const y = Math.max(0, Math.min(1, Number(patch.y ?? 0.5) || 0.5));
+  const size = Math.max(0.08, Math.min(0.26, Number(patch.size ?? 0.14) || 0.14));
+  const rotation = Math.max(-45, Math.min(45, Number(patch.rotation ?? 0) || 0));
+  const id = String(patch.id ?? `mop-dirt-${index + 1}`);
+  return `
+    <span
+      class="hud__office-mop-dirt${clean >= 0.98 ? ' is-clean' : ''}"
+      data-office-mop-dirt="${escapeHtml(id)}"
+      style="--dirt-x:${(x * 100).toFixed(2)}%; --dirt-y:${(y * 100).toFixed(2)}%; --dirt-size:${(size * 100).toFixed(2)}%; --dirt-rotation:${rotation.toFixed(1)}deg; --dirt-clean:${clean.toFixed(3)}"
+    ></span>
+  `;
+}
+
+function createOfficeMopHeroMarkup(game = null) {
+  const data = game?.data ?? {};
+  const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
+  const progress = getOfficeMopHeroProgress(data);
+  const dirtyCount = patches.filter((patch) => Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)) < 0.98).length;
+  const dirtyLabel = `${dirtyCount} dirty spot${dirtyCount === 1 ? '' : 's'}`;
+  const mopX = Math.max(0.04, Math.min(0.96, Number(data.mopX ?? 0.5) || 0.5));
+  const mopY = Math.max(0.12, Math.min(0.9, Number(data.mopY ?? 0.66) || 0.66));
+  const mopActive = data.mopActive === true;
+  const sparkly = progress >= 98 || data.sparklyClean === true;
+  return `
+    <div class="hud__office-task hud__office-mop${mopActive ? ' is-mopping' : ''}${sparkly ? ' is-sparkly' : ''}" style="--mop-x:${(mopX * 100).toFixed(2)}%; --mop-y:${(mopY * 100).toFixed(2)}%; --mop-progress:${progress.toFixed(2)}%">
+      <div class="hud__office-mop-stage" data-office-mop-stage aria-label="Mop Hero office room">
+        ${createOfficeMopRoomBackdropMarkup({ gameplay: true })}
+        <span class="hud__office-mop-clean-glow"></span>
+        <div class="hud__office-mop-dirt-layer">
+          ${patches.map(createOfficeMopDirtPatchMarkup).join('')}
+        </div>
+        <span class="hud__office-mop-sparkles" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+        <span class="hud__office-mop-janitor" aria-hidden="true">
+          <span class="hud__office-mop-janitor-shadow"></span>
+          <span class="hud__office-mop-janitor-body"></span>
+          <span class="hud__office-mop-janitor-head"></span>
+          <span class="hud__office-mop-janitor-arm"></span>
+          <span class="hud__office-mop-handle"></span>
+          <span class="hud__office-mop-head"></span>
+        </span>
+      </div>
+      <div class="hud__school-score-strip">
+        <span data-office-mop-progress-label>${Math.round(progress)}% clean</span>
+        <span data-office-mop-dirt-count>${escapeHtml(dirtyLabel)}</span>
+      </div>
+      ${createSchoolProgressMarkup(progress, 'Mop Hero cleaning progress')}
+    </div>
+  `;
+}
+
 function createOfficeCoffeeFillMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
@@ -2210,8 +2309,10 @@ function createSchoolMicrogamePlayMarkup(game = null) {
       return createBellSprintMarkup(game);
     case SCHOOL_MICROGAME_IDS.scantron:
       return createScantronMarkup(game);
-    case OFFICE_JOB_GAME_IDS.janitor:
+    case OFFICE_JOB_GAME_IDS.janitorTrashToss:
       return createOfficeTrashTossMarkup(game);
+    case OFFICE_JOB_GAME_IDS.janitorMopHero:
+      return createOfficeMopHeroMarkup(game);
     case OFFICE_JOB_GAME_IDS.officeManager:
       return createOfficeCoffeeFillMarkup(game);
     case OFFICE_JOB_GAME_IDS.ceo:
@@ -2250,8 +2351,67 @@ function updateOfficeTrashTossLiveMarkup(root = null, game = null) {
   }
 }
 
+function updateOfficeMopHeroLiveMarkup(root = null, game = null) {
+  const task = root?.querySelector?.('.hud__office-mop');
+  if (!task || game?.phase !== 'playing') {
+    return;
+  }
+
+  const data = game.data ?? {};
+  const mopX = Math.max(0.04, Math.min(0.96, Number(data.mopX ?? 0.5) || 0.5));
+  const mopY = Math.max(0.12, Math.min(0.9, Number(data.mopY ?? 0.66) || 0.66));
+  const progress = getOfficeMopHeroProgress(data);
+  const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
+  const dirtyCount = patches.filter((patch) => Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)) < 0.98).length;
+  const dirtyLabel = `${dirtyCount} dirty spot${dirtyCount === 1 ? '' : 's'}`;
+  task.style.setProperty('--mop-x', `${(mopX * 100).toFixed(3)}%`);
+  task.style.setProperty('--mop-y', `${(mopY * 100).toFixed(3)}%`);
+  task.style.setProperty('--mop-progress', `${progress.toFixed(2)}%`);
+  task.classList.toggle('is-mopping', data.mopActive === true);
+  task.classList.toggle('is-sparkly', progress >= 98 || data.sparklyClean === true);
+
+  const progressLabel = task.querySelector('[data-office-mop-progress-label]');
+  if (progressLabel) {
+    progressLabel.textContent = `${Math.round(progress)}% clean`;
+  }
+  const dirtCountLabel = task.querySelector('[data-office-mop-dirt-count]');
+  if (dirtCountLabel) {
+    dirtCountLabel.textContent = dirtyLabel;
+  }
+  const meterFill = task.querySelector('.hud__school-meter-fill');
+  if (meterFill instanceof HTMLElement) {
+    meterFill.style.setProperty('--meter', `${progress.toFixed(2)}%`);
+  }
+  const meter = task.querySelector('.hud__school-meter');
+  if (meter instanceof HTMLElement) {
+    meter.setAttribute('aria-valuenow', progress.toFixed(0));
+  }
+
+  for (const patch of patches) {
+    const id = String(patch.id ?? '');
+    if (!id) {
+      continue;
+    }
+    const escapedId = globalThis.CSS?.escape
+      ? globalThis.CSS.escape(id)
+      : id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const dirtNode = task.querySelector(`[data-office-mop-dirt="${escapedId}"]`);
+    if (!(dirtNode instanceof HTMLElement)) {
+      continue;
+    }
+    const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
+    dirtNode.style.setProperty('--dirt-clean', clean.toFixed(3));
+    dirtNode.classList.toggle('is-clean', clean >= 0.98);
+  }
+}
+
 function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
   if (!root || game?.context !== 'office-job' || game?.phase !== 'playing') {
+    return;
+  }
+
+  if (String(game.round?.gameId ?? '') === OFFICE_JOB_GAME_IDS.janitorMopHero) {
+    updateOfficeMopHeroLiveMarkup(root, game);
     return;
   }
 
@@ -6838,6 +6998,32 @@ export class Hud {
 
   getSchoolTeacherPreviewMount() {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
+  }
+
+  getOfficeMopHeroPointerPosition(pointer = {}) {
+    const stage = this.schoolMicrogameBody?.querySelector('[data-office-mop-stage]');
+    if (!(stage instanceof HTMLElement)) {
+      return null;
+    }
+
+    const rect = stage.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const clientX = Number(pointer.x);
+    const clientY = Number(pointer.y);
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+      return null;
+    }
+
+    const x = (clientX - rect.left) / rect.width;
+    const y = (clientY - rect.top) / rect.height;
+    return {
+      x: Math.max(0, Math.min(1, x)),
+      y: Math.max(0, Math.min(1, y)),
+      inside: x >= 0 && x <= 1 && y >= 0 && y <= 1
+    };
   }
 
   setAdminPromptState({
