@@ -90,6 +90,11 @@ function clonePlayerState(player) {
     kills: player.kills ?? 0,
     deaths: player.deaths ?? 0,
     money: player.money ?? 0,
+    beerCount: player.beerCount ?? 0,
+    shotCount: player.shotCount ?? 0,
+    drunknessDose: player.drunknessDose ?? 0,
+    drunknessLevel: player.drunknessLevel ?? 0,
+    drunknessEndsAt: player.drunknessEndsAt ?? 0,
     gymMembershipActive: player.gymMembershipActive === true,
     rentIntroSeq: player.rentIntroSeq ?? 0,
     rentIntroAmount: player.rentIntroAmount ?? 0,
@@ -876,6 +881,12 @@ export class NpcServiceColyseus {
   async buyBartenderDrink(npcId = '', itemId = '') {
     return this.rpc('bartender:buyDrink', {
       npcId: String(npcId ?? '').trim(),
+      itemId: String(itemId ?? '').trim()
+    });
+  }
+
+  async consumeInventoryItem(itemId = '') {
+    return this.rpc('inventory:consumeItem', {
       itemId: String(itemId ?? '').trim()
     });
   }

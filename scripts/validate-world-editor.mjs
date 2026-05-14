@@ -8,10 +8,20 @@ import {
 import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import {
+  DRINK_ITEM_IDS,
+  DRUNKNESS_MAX_DURATION_MS,
+  addPlayerDrink,
+  consumePlayerDrink,
   getBartenderMenuItem,
+  getDrunknessDurationMs,
+  getDrunknessLevelForDose,
   isBartenderNpc,
   listBartenderMenuItems
 } from '../src/shared/bartender.js';
+import {
+  createHotbarSlots,
+  getHotbarDrinkItemId
+} from '../src/shared/hotbarInventory.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
@@ -354,7 +364,37 @@ function validateBartenderFunction() {
   const shot = getBartenderMenuItem('shot');
   assert(beer?.price === 20, 'Bartender beer should cost $20');
   assert(shot?.price === 50, 'Bartender shot should cost $50');
+  assert(beer?.dose === 1, 'Beer should count as one drunkness dose');
+  assert(shot?.dose === 2, 'Shot should count as two drunkness doses');
   assert(listBartenderMenuItems().length === 2, 'Bartender menu should include exactly beer and shot');
+  assert(getDrunknessLevelForDose(1) === 1, 'One drink dose should create drunkness level 1');
+  assert(getDrunknessLevelForDose(5) === 2, 'Five drink doses should create drunkness level 2');
+  assert(getDrunknessLevelForDose(10) === 3, 'Ten drink doses should create drunkness level 3');
+  assert(getDrunknessLevelForDose(15) === 4, 'Fifteen drink doses should create drunkness level 4');
+  assert(getDrunknessLevelForDose(20) === 5, 'Twenty drink doses should create drunkness level 5');
+  assert(getDrunknessDurationMs(1) === 30000, 'Level 1 drunkness should last 30 seconds');
+  assert(getDrunknessDurationMs(5) === DRUNKNESS_MAX_DURATION_MS, 'Level 5 drunkness should last the max duration');
+  assert(DRUNKNESS_MAX_DURATION_MS === 150000, 'Level 5 drunkness should last two and a half minutes');
+
+  const beerPlayer = { beerCount: 0, shotCount: 0, drunknessDose: 0, drunknessLevel: 0, drunknessEndsAt: 0 };
+  addPlayerDrink(beerPlayer, DRINK_ITEM_IDS.beer, 20);
+  for (let index = 0; index < 20; index += 1) {
+    consumePlayerDrink(beerPlayer, DRINK_ITEM_IDS.beer, 1000);
+  }
+  assert(beerPlayer.beerCount === 0, 'Consuming beers should remove them from inventory');
+  assert(beerPlayer.drunknessLevel === 5, 'Twenty beers should reach max drunkness');
+
+  const shotPlayer = { beerCount: 0, shotCount: 0, drunknessDose: 0, drunknessLevel: 0, drunknessEndsAt: 0 };
+  addPlayerDrink(shotPlayer, DRINK_ITEM_IDS.shot, 10);
+  for (let index = 0; index < 10; index += 1) {
+    consumePlayerDrink(shotPlayer, DRINK_ITEM_IDS.shot, 1000);
+  }
+  assert(shotPlayer.shotCount === 0, 'Consuming shots should remove them from inventory');
+  assert(shotPlayer.drunknessLevel === 5, 'Ten shots should reach max drunkness');
+
+  const hotbarSlots = createHotbarSlots({ beerCount: 2, shotCount: 1 });
+  assert(getHotbarDrinkItemId(hotbarSlots[1]) === DRINK_ITEM_IDS.beer, 'Beer should appear as a hotbar drink item');
+  assert(getHotbarDrinkItemId(hotbarSlots[2]) === DRINK_ITEM_IDS.shot, 'Shot should appear as a hotbar drink item');
 
   const bartender = normalizeNpcBehavior({
     modelId: 'brute',

@@ -54,7 +54,9 @@ export function createVibeShaderDefinition() {
       uResolution: { value: new THREE.Vector2(1, 1) },
       uTime: { value: 0 },
       uPreset: { value: 0 },
-      uIntensity: { value: DEFAULT_VIBE_SHADER_INTENSITY }
+      uIntensity: { value: DEFAULT_VIBE_SHADER_INTENSITY },
+      uDrunknessLevel: { value: 0 },
+      uDrunknessIntensity: { value: 0 }
     },
     vertexShader: `
       varying vec2 vUv;
@@ -70,6 +72,8 @@ export function createVibeShaderDefinition() {
       uniform float uTime;
       uniform float uPreset;
       uniform float uIntensity;
+      uniform float uDrunknessLevel;
+      uniform float uDrunknessIntensity;
 
       varying vec2 vUv;
 
@@ -224,6 +228,38 @@ export function createVibeShaderDefinition() {
         return cold;
       }
 
+      vec3 applyDrunkness(vec2 uv, vec2 texel, vec3 baseColor) {
+        float intensity = clamp(uDrunknessIntensity, 0.0, 1.0);
+        if (intensity <= 0.001) {
+          return baseColor;
+        }
+
+        float level = clamp(uDrunknessLevel, 0.0, 5.0);
+        float wobbleScale = 0.003 + (intensity * 0.022);
+        float wobbleSpeed = 1.3 + (level * 0.42);
+        vec2 centered = uv * 2.0 - 1.0;
+        float radial = smoothstep(0.05, 1.15, length(centered));
+        vec2 drunkUv = uv + vec2(
+          sin((uv.y * (18.0 + level * 7.0)) + (uTime * wobbleSpeed * 2.0)),
+          cos((uv.x * (14.0 + level * 6.0)) - (uTime * wobbleSpeed * 1.7))
+        ) * wobbleScale * (0.35 + radial);
+        drunkUv += centered.yx * sin(uTime * (1.2 + intensity) + centered.x * 5.0) * wobbleScale * 0.34;
+
+        vec2 safeUv = clamp(drunkUv, 0.0, 1.0);
+        vec2 split = texel * (2.0 + level * 1.45) * intensity;
+        vec3 splitColor = vec3(
+          texture2D(tDiffuse, clamp(safeUv + split * vec2(1.2, 0.4), 0.0, 1.0)).r,
+          texture2D(tDiffuse, safeUv).g,
+          texture2D(tDiffuse, clamp(safeUv - split * vec2(1.0, 0.55), 0.0, 1.0)).b
+        );
+        vec3 purpleTint = vec3(0.54, 0.17, 0.92);
+        vec3 violetWash = mix(splitColor, purpleTint * (0.55 + luma(splitColor) * 0.72), 0.18 + intensity * 0.26);
+        float pulse = 0.5 + 0.5 * sin(uTime * (1.6 + level * 0.35) + length(centered) * 9.0);
+        violetWash += purpleTint * pulse * intensity * 0.08;
+        violetWash *= 1.0 - radial * intensity * 0.16;
+        return mix(baseColor, violetWash, 0.32 + intensity * 0.48);
+      }
+
       void main() {
         vec2 resolution = max(uResolution, vec2(1.0));
         vec2 texel = 1.0 / resolution;
@@ -251,6 +287,8 @@ export function createVibeShaderDefinition() {
         if (uPreset < 5.5) {
           color = mix(baseColor, color, intensity);
         }
+
+        color = applyDrunkness(uv, texel, color);
 
         gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
       }

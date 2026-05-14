@@ -1,6 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
+import { DRINK_ITEM_IDS } from '../shared/bartender.js';
 import { assets } from '../world/assetManifest.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
@@ -2437,6 +2438,14 @@ function getHotbarItemIconMarkup(slot = {}) {
     return getHotbarPistolIconMarkup();
   }
 
+  if (slot.itemId === DRINK_ITEM_IDS.beer) {
+    return '<span class="hud__hotbar-drink-icon hud__hotbar-drink-icon--beer" aria-hidden="true"><span class="hud__hotbar-drink-body"></span><span class="hud__hotbar-drink-foam"></span><span class="hud__hotbar-drink-handle"></span></span>';
+  }
+
+  if (slot.itemId === DRINK_ITEM_IDS.shot) {
+    return '<span class="hud__hotbar-drink-icon hud__hotbar-drink-icon--shot" aria-hidden="true"><span class="hud__hotbar-drink-body"></span><span class="hud__hotbar-drink-fill"></span></span>';
+  }
+
   return '';
 }
 
@@ -2455,6 +2464,7 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
     >
       <span class="hud__hotbar-slot-glow" aria-hidden="true"></span>
       <span class="hud__hotbar-item">${getHotbarItemIconMarkup(slot)}</span>
+      ${slot.count > 1 ? `<span class="hud__hotbar-count" aria-hidden="true">${formatHudCount(slot.count)}</span>` : ''}
       <span class="hud__hotbar-name">${escapeHtml(label)}</span>
     </button>
   `;
@@ -4198,7 +4208,7 @@ export class Hud {
     return Boolean(this.loading && !this.loading.hidden && !this.loading.classList.contains('is-hidden'));
   }
 
-  setMobileControlsState({ visible = true, armed = false } = {}) {
+  setMobileControlsState({ visible = true, armed = false, fireLabel = '' } = {}) {
     if (!this.mobileControls) {
       return;
     }
@@ -4207,7 +4217,7 @@ export class Hud {
     this.mobileControls.classList.toggle('is-hidden', !nextVisible);
     this.mobileControls.setAttribute('aria-hidden', nextVisible ? 'false' : 'true');
     if (this.mobileFireLabel) {
-      this.mobileFireLabel.textContent = armed ? 'Fire' : 'Hit';
+      this.mobileFireLabel.textContent = fireLabel || (armed ? 'Fire' : 'Hit');
     }
   }
 
@@ -6968,7 +6978,8 @@ export class Hud {
         key: slot?.key ?? '',
         itemId: slot?.itemId ?? '',
         label: slot?.label ?? '',
-        kind: slot?.kind ?? ''
+        kind: slot?.kind ?? '',
+        count: Number(slot?.count) || 0
       }))
     });
     if (signature !== this.lastHotbarSignature) {

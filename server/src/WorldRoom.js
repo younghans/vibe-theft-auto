@@ -60,9 +60,17 @@ import {
   serializeStockMarket
 } from '../../src/shared/stockMarket.js';
 import {
+  addPlayerDrink,
+  clearPlayerDrunkness,
+  consumePlayerDrink,
   getBartenderMenuItem,
   getBartenderPromptRadius,
-  isBartenderNpc
+  getPlayerDrinkInventorySnapshot,
+  getDrunknessLevelForDose,
+  isBartenderNpc,
+  normalizeDrinkInventoryCount,
+  normalizeDrunknessDose,
+  refreshPlayerDrunkness
 } from '../../src/shared/bartender.js';
 import {
   BLACKJACK_MAX_WAGER,
@@ -210,6 +218,11 @@ const PlayerState = schema({
   kills: 'number',
   deaths: 'number',
   money: 'number',
+  beerCount: 'number',
+  shotCount: 'number',
+  drunknessDose: 'number',
+  drunknessLevel: 'number',
+  drunknessEndsAt: 'number',
   gymMembershipActive: 'boolean',
   rentIntroSeq: 'number',
   rentIntroAmount: 'number',
@@ -461,6 +474,11 @@ function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
       kills: player.kills,
       deaths: player.deaths,
       money: player.money,
+      beerCount: player.beerCount,
+      shotCount: player.shotCount,
+      drunknessDose: player.drunknessDose,
+      drunknessLevel: player.drunknessLevel,
+      drunknessEndsAt: player.drunknessEndsAt,
       gymMembershipActive: player.gymMembershipActive,
       rentIntroSeq: player.rentIntroSeq,
       rentIntroAmount: player.rentIntroAmount,
@@ -528,6 +546,12 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.kills = sanitizeSnapshotNumber(saved.kills, 0, { integer: true, min: 0 });
   player.deaths = sanitizeSnapshotNumber(saved.deaths, 0, { integer: true, min: 0 });
   player.money = sanitizeSnapshotNumber(saved.money, 0, { integer: true });
+  player.beerCount = normalizeDrinkInventoryCount(saved.beerCount);
+  player.shotCount = normalizeDrinkInventoryCount(saved.shotCount);
+  player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
+  player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
+  player.drunknessEndsAt = sanitizeSnapshotNumber(saved.drunknessEndsAt, 0, { integer: true, min: 0 });
+  refreshPlayerDrunkness(player, now);
   player.gymMembershipActive = sanitizeSnapshotBoolean(saved.gymMembershipActive, false);
   player.rentIntroSeq = 0;
   player.rentIntroAmount = 0;
@@ -701,6 +725,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleBartenderPurchase(client, message));
     });
 
+    this.onMessage('inventory:consumeItem', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleInventoryConsumeRequest(client, message));
+    });
+
     this.onMessage('wallet:getSnapshot', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleWalletSnapshotRequest(client));
     });
@@ -861,6 +889,11 @@ export class WorldRoom extends Room {
     player.kills = 0;
     player.deaths = 0;
     player.money = rentIntro ? -Math.abs(Math.round(rentIntro.amount)) : 0;
+    player.beerCount = 0;
+    player.shotCount = 0;
+    player.drunknessDose = 0;
+    player.drunknessLevel = 0;
+    player.drunknessEndsAt = 0;
     player.gymMembershipActive = false;
     player.rentIntroSeq = introStartedAt;
     player.rentIntroAmount = rentIntro ? Math.abs(Math.round(rentIntro.amount)) : 0;
@@ -1651,15 +1684,34 @@ export class WorldRoom extends Room {
     }
 
     player.money = money - item.price;
+    const inventoryCount = addPlayerDrink(player, item.id, 1);
     this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
+    this.queuePlayerSnapshotSave(client.sessionId);
     return {
       item: {
         id: item.id,
         label: item.label,
-        price: item.price
+        price: item.price,
+        count: inventoryCount
       },
+      inventory: getPlayerDrinkInventorySnapshot(player),
       money: player.money
     };
+  }
+
+  handleInventoryConsumeRequest(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot use that right now.');
+    }
+
+    const result = consumePlayerDrink(player, message?.itemId, Date.now());
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return result;
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
@@ -2171,6 +2223,10 @@ export class WorldRoom extends Room {
       if (this.updatePlayerHealthRegen(sessionId, player, now, deltaMs)) {
         this.queuePlayerSnapshotSave(sessionId);
       }
+
+      if (refreshPlayerDrunkness(player, now)) {
+        this.queuePlayerSnapshotSave(sessionId);
+      }
     }
 
     for (const pickup of [...this.state.pickups.values()]) {
@@ -2214,6 +2270,7 @@ export class WorldRoom extends Room {
     player.reserveAmmo = 0;
     player.isReloading = false;
     player.reloadEndsAt = 0;
+    clearPlayerDrunkness(player);
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
     player.emoteId = '';

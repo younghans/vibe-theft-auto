@@ -28,6 +28,8 @@ export const assets = {
     fastRun: 'fastRun',
     punching: 'punching',
     snatch: 'snatch',
+    drunkIdle: 'drunkIdle',
+    drunkWalk: 'drunkWalk',
     emotes: PLAYER_EMOTES
   },
   mixamo: {

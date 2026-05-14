@@ -39,6 +39,7 @@ import {
 import {
   HOTBAR_KEY_CODES,
   createHotbarSlots,
+  getHotbarDrinkItemId,
   getHotbarEquippedWeaponId,
   getHotbarSlot,
   getHotbarSlotIndexFromKeyCode,
@@ -62,7 +63,7 @@ import { createInteriorScene } from '../world/InteriorScene.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -89,8 +90,10 @@ import {
   normalizeStockTradeQuantity
 } from '../shared/stockMarket.js';
 import {
+  DRUNKNESS_MAX_LEVEL,
   getBartenderMenuItem,
   getBartenderPromptRadius,
+  getPlayerDrinkCount,
   isBartenderNpc,
   listBartenderMenuItems
 } from '../shared/bartender.js';
@@ -745,6 +748,7 @@ export class Game {
     this.stockMarketRefreshAt = 0;
     this.activeInteractionMenu = null;
     this.bartenderRequestInFlight = false;
+    this.inventoryRequestInFlight = false;
     this.blackjackNpcId = '';
     this.blackjackDealerName = 'Dealer';
     this.blackjackState = null;
@@ -1236,6 +1240,17 @@ export class Game {
 
     this.renderer.getDrawingBufferSize(this.postProcessingResolution);
     this.vibeShaderPass.uniforms.uResolution.value.copy(this.postProcessingResolution);
+  }
+
+  updateDrunknessEffects(localPlayerState = this.getLocalPlayerState()) {
+    const level = Math.max(0, Math.min(DRUNKNESS_MAX_LEVEL, Math.floor(Number(localPlayerState?.drunknessLevel) || 0)));
+    const intensity = level > 0 ? level / DRUNKNESS_MAX_LEVEL : 0;
+    if (this.vibeShaderPass?.uniforms?.uDrunknessLevel) {
+      this.vibeShaderPass.uniforms.uDrunknessLevel.value = level;
+    }
+    if (this.vibeShaderPass?.uniforms?.uDrunknessIntensity) {
+      this.vibeShaderPass.uniforms.uDrunknessIntensity.value = intensity;
+    }
   }
 
   getActiveVibeShaderPreset() {
@@ -5120,10 +5135,11 @@ export class Game {
     }
 
     const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
+    const localPlayerState = this.getLocalPlayerState();
     const items = listBartenderMenuItems();
     const actions = items.map((item) => ({
       id: `bartender:${item.id}`,
-      label: `${item.label} - ${formatMoneyAmount(item.price)}`,
+      label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${getPlayerDrinkCount(localPlayerState, item.id)})`,
       primary: item.id === 'beer',
       disabled: this.bartenderRequestInFlight || cash < item.price
     }));
@@ -5136,7 +5152,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Bartender',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}.`,
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${items.map((item) => `${item.label}: ${getPlayerDrinkCount(localPlayerState, item.id)}`).join(', ')}.`,
       actions
     });
   }
@@ -5184,8 +5200,9 @@ export class Game {
       };
       this.refreshPhoneWalletHud();
       this.playSoundEffect(this.rentChaChingSound);
-      this.closeInteractionMenu();
+      this.refreshHotbarHud();
       this.hud.showToast(`Bought ${item.label.toLowerCase()} for ${formatMoneyAmount(item.price)}.`);
+      this.renderBartenderMenu();
     } catch (error) {
       console.warn('[Bartender] Drink purchase failed.', error);
       this.hud.showToast('Drink purchase request failed.');
@@ -5194,6 +5211,36 @@ export class Game {
       if (this.activeInteractionMenu?.kind === 'bartender') {
         this.renderBartenderMenu();
       }
+    }
+  }
+
+  async consumeInventoryDrink(itemId = '') {
+    const item = getBartenderMenuItem(itemId);
+    if (!item || this.inventoryRequestInFlight) {
+      return false;
+    }
+
+    this.inventoryRequestInFlight = true;
+    try {
+      const result = await this.npcService?.consumeInventoryItem?.(item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? `Could not drink ${item.label.toLowerCase()}.`);
+        return false;
+      }
+
+      const level = Math.max(0, Math.floor(Number(result.drunkness?.drunknessLevel) || 0));
+      this.player?.playEmote(DRINKING_EMOTE_ID);
+      this.hud.showToast(level > 0
+        ? `Drank ${item.label.toLowerCase()}. Drunkness level ${level}.`
+        : `Drank ${item.label.toLowerCase()}.`);
+      this.refreshHotbarHud();
+      return true;
+    } catch (error) {
+      console.warn('[Inventory] Drink consumption failed.', error);
+      this.hud.showToast('Could not use that drink.');
+      return false;
+    } finally {
+      this.inventoryRequestInFlight = false;
     }
   }
 
@@ -9478,6 +9525,8 @@ export class Game {
         ? localPlayerState.lastDamagedAt
         : Date.now()
     });
+    const localDrunknessLevel = isAlive ? Math.max(0, Math.floor(Number(localPlayerState.drunknessLevel) || 0)) : 0;
+    this.player.setDrunknessLevel(localDrunknessLevel);
     const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
     if (
       this.localStateInitialized
@@ -9521,7 +9570,7 @@ export class Game {
       respawnAt: localPlayerState.respawnAt ?? 0,
       kills: localPlayerState.kills ?? 0,
       deaths: localPlayerState.deaths ?? 0,
-      armed: Boolean(localPlayerState.equippedWeaponId)
+      armed: Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId())
     });
     this.syncTaskHud(localPlayerState);
     this.syncSkillProgress(localPlayerState);
@@ -10344,6 +10393,10 @@ export class Game {
     return getHotbarEquippedWeaponId(this.getSelectedHotbarSlot());
   }
 
+  getSelectedHotbarDrinkItemId() {
+    return getHotbarDrinkItemId(this.getSelectedHotbarSlot());
+  }
+
   canUseHotbarInput() {
     return Boolean(
       this.player
@@ -10479,7 +10532,9 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     this.hotbarSlots = createHotbarSlots({
       ownedWeaponIds: localPlayerState?.ownedWeaponIds ?? '',
-      equippedWeaponId: localPlayerState?.equippedWeaponId ?? ''
+      equippedWeaponId: localPlayerState?.equippedWeaponId ?? '',
+      beerCount: localPlayerState?.beerCount ?? 0,
+      shotCount: localPlayerState?.shotCount ?? 0
     });
 
     this.hud.setHotbarState({
@@ -10610,6 +10665,7 @@ export class Game {
   }
 
   syncMobileControlsHud(localPlayerState = this.getLocalPlayerState()) {
+    const selectedDrinkItemId = this.getSelectedHotbarDrinkItemId();
     const visible = Boolean(
       this.player
       && !this.hud.isLoadingVisible()
@@ -10624,9 +10680,10 @@ export class Game {
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );
-    const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId);
+    const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId && !selectedDrinkItemId);
+    const fireLabel = selectedDrinkItemId ? 'Drink' : (armed ? 'Fire' : 'Hit');
 
-    this.hud.setMobileControlsState({ visible, armed });
+    this.hud.setMobileControlsState({ visible, armed, fireLabel });
     this.input.setTouchControlsEnabled(visible);
   }
 
@@ -10750,7 +10807,9 @@ export class Game {
       const interactionMenuOpen = this.hud.isInteractionMenuOpen();
       const adminPromptOpen = this.hud.isAdminPromptOpen();
       const phoneOpen = this.hud.isPhoneOpen();
-      const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId);
+      const selectedDrinkItemId = this.getSelectedHotbarDrinkItemId();
+      const drinkSelected = Boolean(selectedDrinkItemId);
+      const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !drinkSelected);
       const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
@@ -10798,7 +10857,15 @@ export class Game {
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
-        if (armed) {
+        if (drinkSelected) {
+          this.clearPendingHipFireShot();
+          aimingMode = false;
+          this.currentAimMode = false;
+          this.player.setAimingState(false);
+          if (primaryFirePressed) {
+            void this.consumeInventoryDrink(selectedDrinkItemId);
+          }
+        } else if (armed) {
           aimingMode = secondaryAimHeld;
           this.currentAimMode = aimingMode;
           this.player.setAimingState(aimingMode || hipFirePoseActive);
@@ -10873,6 +10940,7 @@ export class Game {
     this.refreshAdminPositionHud();
     this.characterPreviewRenderer?.update(deltaSeconds);
     this.updateCameraOcclusion();
+    this.updateDrunknessEffects(localPlayerState);
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }

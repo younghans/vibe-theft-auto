@@ -49,9 +49,14 @@ import {
   serializeStockMarket
 } from '../shared/stockMarket.js';
 import {
+  addPlayerDrink,
+  clearPlayerDrunkness,
+  consumePlayerDrink,
   getBartenderMenuItem,
   getBartenderPromptRadius,
-  isBartenderNpc
+  getPlayerDrinkInventorySnapshot,
+  isBartenderNpc,
+  refreshPlayerDrunkness
 } from '../shared/bartender.js';
 import {
   BLACKJACK_MAX_WAGER,
@@ -214,6 +219,11 @@ function createDefaultPlayerState(overrides = {}) {
     kills: 0,
     deaths: 0,
     money: 0,
+    beerCount: 0,
+    shotCount: 0,
+    drunknessDose: 0,
+    drunknessLevel: 0,
+    drunknessEndsAt: 0,
     gymMembershipActive: false,
     rentIntroSeq: 0,
     rentIntroAmount: 0,
@@ -1483,6 +1493,7 @@ export class NpcServiceMock {
     }
 
     access.player.money = money - item.price;
+    const inventoryCount = addPlayerDrink(access.player, item.id, 1);
     this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
     this.emit();
     return {
@@ -1490,10 +1501,27 @@ export class NpcServiceMock {
       item: {
         id: item.id,
         label: item.label,
-        price: item.price
+        price: item.price,
+        count: inventoryCount
       },
+      inventory: getPlayerDrinkInventorySnapshot(access.player),
       money: access.player.money
     };
+  }
+
+  async consumeInventoryItem(itemId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot use that right now.' };
+    }
+
+    const result = consumePlayerDrink(player, itemId, Date.now());
+    if (!result.ok) {
+      return result;
+    }
+
+    this.emit();
+    return result;
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
@@ -2200,6 +2228,7 @@ export class NpcServiceMock {
       }
 
       stateChanged = this.updatePlayerHealthRegen(sessionId, player, now, deltaMs) || stateChanged;
+      stateChanged = refreshPlayerDrunkness(player, now) || stateChanged;
     }
 
     for (const pickup of this.state.pickups.values()) {
@@ -2251,6 +2280,7 @@ export class NpcServiceMock {
     player.reserveAmmo = 0;
     player.isReloading = false;
     player.reloadEndsAt = 0;
+    clearPlayerDrunkness(player);
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
     player.lastPunchAt = 0;

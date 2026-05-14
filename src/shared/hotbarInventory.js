@@ -1,4 +1,9 @@
 import { WEAPON_IDS } from './combatConstants.js';
+import {
+  DRINK_ITEM_IDS,
+  getPlayerDrinkCount,
+  listDrinkInventoryItems
+} from './bartender.js';
 import { hasInventoryWeapon } from './weaponInventory.js';
 
 export const HOTBAR_SLOT_COUNT = 5;
@@ -23,17 +28,45 @@ function createPistolSlot() {
   });
 }
 
+function createDrinkSlot(index, item, count) {
+  return Object.freeze({
+    index,
+    key: String(index + 1),
+    itemId: item.id,
+    label: item.label,
+    kind: 'drink',
+    count
+  });
+}
+
 export function createHotbarSlots({
   ownedWeaponIds = '',
-  equippedWeaponId = ''
+  equippedWeaponId = '',
+  beerCount = 0,
+  shotCount = 0
 } = {}) {
   const hasPistol = hasInventoryWeapon(ownedWeaponIds, WEAPON_IDS.pistol)
     || String(equippedWeaponId ?? '').trim() === WEAPON_IDS.pistol;
+  const drinkCounts = {
+    [DRINK_ITEM_IDS.beer]: getPlayerDrinkCount({ beerCount, shotCount }, DRINK_ITEM_IDS.beer),
+    [DRINK_ITEM_IDS.shot]: getPlayerDrinkCount({ beerCount, shotCount }, DRINK_ITEM_IDS.shot)
+  };
+  const drinkItems = listDrinkInventoryItems();
 
   return Object.freeze(
-    Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => (
-      index === 0 && hasPistol ? createPistolSlot() : createEmptySlot(index)
-    ))
+    Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
+      if (index === 0 && hasPistol) {
+        return createPistolSlot();
+      }
+
+      const drink = drinkItems[index - 1] ?? null;
+      const count = drink ? drinkCounts[drink.id] ?? 0 : 0;
+      if (drink && count > 0) {
+        return createDrinkSlot(index, drink, count);
+      }
+
+      return createEmptySlot(index);
+    })
   );
 }
 
@@ -74,5 +107,15 @@ export function getHotbarEquippedWeaponId(slotOrIndex, slots = HOTBAR_SLOTS) {
 
   return slot?.kind === 'weapon' && slot.itemId === WEAPON_IDS.pistol
     ? WEAPON_IDS.pistol
+    : '';
+}
+
+export function getHotbarDrinkItemId(slotOrIndex, slots = HOTBAR_SLOTS) {
+  const slot = typeof slotOrIndex === 'object' && slotOrIndex
+    ? slotOrIndex
+    : getHotbarSlot(slotOrIndex, slots);
+
+  return slot?.kind === 'drink' && getPlayerDrinkCount({ [`${slot.itemId}Count`]: slot.count }, slot.itemId) > 0
+    ? slot.itemId
     : '';
 }

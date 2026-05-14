@@ -34,6 +34,11 @@ import { EMOTES_BY_ID, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import { WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
+import {
+  DRUNKNESS_MAX_LEVEL,
+  DRUNKNESS_MIN_ANIMATION_LEVEL,
+  normalizeDrunknessLevel
+} from '../shared/bartender.js';
 
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
@@ -362,7 +367,9 @@ export async function createPlayer(library, {
   const characterDefinition = getPlayableCharacterById(characterId);
   const clipNamesToPreload = new Set([
     characterDefinition.idleClip,
-    characterDefinition.walkClip
+    characterDefinition.walkClip,
+    characterDefinition.drunkIdleClip,
+    characterDefinition.drunkWalkClip
   ]);
   const punchClipName = characterDefinition.emotes?.[PUNCH_EMOTE_ID];
   if (punchClipName) {
@@ -384,8 +391,12 @@ export async function createPlayer(library, {
   const sockets = ensureMixamoSockets(character);
   const idleClip = createInPlaceClip(getMixamoClip(characterDefinition.idleClip), MIXAMO_BONES.hips);
   const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
+  const drunkIdleClip = createInPlaceClip(getMixamoClip(characterDefinition.drunkIdleClip ?? characterDefinition.idleClip), MIXAMO_BONES.hips);
+  const drunkWalkClip = createInPlaceClip(getMixamoClip(characterDefinition.drunkWalkClip ?? characterDefinition.walkClip), MIXAMO_BONES.hips);
   const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
+  const drunkIdleLowerBodyClip = createBoneFilteredClip(drunkIdleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkIdleClip}_LowerBody`);
+  const drunkWalkLowerBodyClip = createBoneFilteredClip(drunkWalkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkWalkClip}_LowerBody`);
   const upperBodyMirrorMap = new Map(UPPER_BODY_MIRROR_BONE_PAIRS.flatMap(([leftBone, rightBone]) => ([
     [leftBone, rightBone],
     [rightBone, leftBone]
@@ -402,8 +413,12 @@ export async function createPlayer(library, {
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
+  const drunkIdleAction = mixer.clipAction(drunkIdleClip);
+  const drunkWalkAction = mixer.clipAction(drunkWalkClip);
   const idleLowerBodyAction = mixer.clipAction(idleLowerBodyClip);
   const walkLowerBodyAction = mixer.clipAction(walkLowerBodyClip);
+  const drunkIdleLowerBodyAction = mixer.clipAction(drunkIdleLowerBodyClip);
+  const drunkWalkLowerBodyAction = mixer.clipAction(drunkWalkLowerBodyClip);
   const punchGuardAction = punchGuardClip ? mixer.clipAction(punchGuardClip) : null;
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
@@ -415,12 +430,24 @@ export async function createPlayer(library, {
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
+  drunkIdleAction.play();
+  drunkIdleAction.enabled = true;
+  drunkIdleAction.setEffectiveWeight(0);
+  drunkWalkAction.play();
+  drunkWalkAction.enabled = true;
+  drunkWalkAction.setEffectiveWeight(0);
   idleLowerBodyAction.play();
   idleLowerBodyAction.enabled = true;
   idleLowerBodyAction.setEffectiveWeight(0);
   walkLowerBodyAction.play();
   walkLowerBodyAction.enabled = true;
   walkLowerBodyAction.setEffectiveWeight(0);
+  drunkIdleLowerBodyAction.play();
+  drunkIdleLowerBodyAction.enabled = true;
+  drunkIdleLowerBodyAction.setEffectiveWeight(0);
+  drunkWalkLowerBodyAction.play();
+  drunkWalkLowerBodyAction.enabled = true;
+  drunkWalkLowerBodyAction.setEffectiveWeight(0);
   if (punchGuardAction) {
     punchGuardAction.enabled = true;
     punchGuardAction.clampWhenFinished = true;
@@ -474,6 +501,8 @@ export async function createPlayer(library, {
 
   let idleWeight = 1;
   let walkWeight = 0;
+  let drunknessLevel = 0;
+  let drunkLocomotionWeight = 0;
   let activeEmoteId = null;
   let activeEmoteConfig = null;
   let activeEmoteStartedAt = 0;
@@ -1420,18 +1449,37 @@ export async function createPlayer(library, {
     const upperBodyOverlayActive = upperBodyOnlyEmoteActive || wantsGuardPose || guardPoseWeight > 0.0001;
     const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     const smoothing = locomotionEnabled ? 12 : 22;
+    const drunkBlendSpan = Math.max(1, DRUNKNESS_MAX_LEVEL - DRUNKNESS_MIN_ANIMATION_LEVEL + 1);
+    const targetDrunkLocomotionWeight = drunknessLevel >= DRUNKNESS_MIN_ANIMATION_LEVEL
+      ? THREE.MathUtils.clamp((drunknessLevel - DRUNKNESS_MIN_ANIMATION_LEVEL + 1) / drunkBlendSpan, 0, 1)
+      : 0;
+    drunkLocomotionWeight = THREE.MathUtils.damp(
+      drunkLocomotionWeight,
+      targetDrunkLocomotionWeight,
+      targetDrunkLocomotionWeight > drunkLocomotionWeight ? 7 : 10,
+      deltaSeconds
+    );
+    const soberLocomotionWeight = 1 - drunkLocomotionWeight;
     idleWeight = THREE.MathUtils.damp(idleWeight, locomotionEnabled && !moving ? 1 : 0, smoothing, deltaSeconds);
     walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving ? 1 : 0, smoothing, deltaSeconds);
     const fullBodyLocomotionWeight = upperBodyOverlayActive ? 0 : 1;
     const lowerBodyLocomotionWeight = upperBodyOverlayActive ? 1 : 0;
-    idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight);
-    walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight);
-    idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight);
-    walkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight);
+    idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
+    walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
+    drunkIdleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
+    drunkWalkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
+    idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * soberLocomotionWeight);
+    walkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * soberLocomotionWeight);
+    drunkIdleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight);
+    drunkWalkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight);
     idleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    drunkIdleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
+    drunkWalkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     idleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    drunkIdleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
+    drunkWalkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     if (punchGuardAction) {
       punchGuardAction.setEffectiveWeight(guardPoseWeight);
       punchGuardAction.setEffectiveTimeScale(0);
@@ -1885,6 +1933,9 @@ export async function createPlayer(library, {
     setAimingState(aiming) {
       aimingState = Boolean(aiming);
     },
+    setDrunknessLevel(level = 0) {
+      drunknessLevel = normalizeDrunknessLevel(level);
+    },
     stopEmote() {
       stopActiveEmote();
     },
@@ -2116,6 +2167,7 @@ export async function createPlayer(library, {
     },
     applyRemoteState(state, deltaSeconds, groundHeight = 0) {
       const remoteAlive = state?.alive !== false;
+      this.setDrunknessLevel(remoteAlive ? state?.drunknessLevel : 0);
       setAliveState(remoteAlive, {
         startedAtMs: Number.isFinite(state?.lastDamagedAt) && state.lastDamagedAt > 0
           ? state.lastDamagedAt
