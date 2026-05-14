@@ -47,6 +47,17 @@ const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
   'deal-hidden': 185,
   reveal: 254
 });
+const INTERACTION_MENU_VIEWPORT_PADDING = 12;
+const INTERACTION_MENU_ANCHOR_GAP = 14;
+const INTERACTION_MENU_ANCHOR_SIDE_GAP = 18;
+
+function clampPanelPosition(value, min, max) {
+  if (max <= min) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
+}
 
 const PHONE_APPS = Object.freeze([
   ['messages', 'Messages', 'messages', '#30d66a', 'Story texts will appear here.'],
@@ -6392,7 +6403,47 @@ export class Hud {
     this.lastBuildingEditorState = structuredClone(editorState);
   }
 
-  showInteractionMenu({ title, subtitle, actions }) {
+  setInteractionMenuAnchor(anchor = null) {
+    const screenX = Number(anchor?.screenX);
+    const screenY = Number(anchor?.screenY);
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+      this.interactionRoot.classList.remove('is-world-anchored');
+      this.interactionRoot.style.removeProperty('left');
+      this.interactionRoot.style.removeProperty('right');
+      this.interactionRoot.style.removeProperty('top');
+      this.interactionRoot.style.removeProperty('bottom');
+      return;
+    }
+
+    this.interactionRoot.classList.add('is-world-anchored');
+    this.interactionRoot.style.right = 'auto';
+    this.interactionRoot.style.bottom = 'auto';
+
+    const bounds = this.interactionRoot.getBoundingClientRect();
+    const panelWidth = Math.max(1, bounds.width || 360);
+    const panelHeight = Math.max(1, bounds.height || 180);
+    const minLeft = INTERACTION_MENU_VIEWPORT_PADDING;
+    const minTop = INTERACTION_MENU_VIEWPORT_PADDING;
+    const maxLeft = Math.max(minLeft, window.innerWidth - panelWidth - INTERACTION_MENU_VIEWPORT_PADDING);
+    const maxTop = Math.max(minTop, window.innerHeight - panelHeight - INTERACTION_MENU_VIEWPORT_PADDING);
+    let left = screenX + INTERACTION_MENU_ANCHOR_SIDE_GAP;
+    if (left + panelWidth > window.innerWidth - INTERACTION_MENU_VIEWPORT_PADDING) {
+      left = screenX - panelWidth - INTERACTION_MENU_ANCHOR_SIDE_GAP;
+    }
+    if (left < minLeft || left > maxLeft) {
+      left = screenX - (panelWidth * 0.5);
+    }
+
+    let top = screenY - panelHeight - INTERACTION_MENU_ANCHOR_GAP;
+    if (top < minTop) {
+      top = screenY + INTERACTION_MENU_ANCHOR_GAP;
+    }
+
+    this.interactionRoot.style.left = `${Math.round(clampPanelPosition(left, minLeft, maxLeft))}px`;
+    this.interactionRoot.style.top = `${Math.round(clampPanelPosition(top, minTop, maxTop))}px`;
+  }
+
+  showInteractionMenu({ title, subtitle, actions, anchor = null }) {
     this.lastInteractionState = { title, subtitle, actions };
     this.interactionTitle.textContent = title;
     this.interactionSubtitle.textContent = subtitle;
@@ -6407,11 +6458,13 @@ export class Hud {
       </button>
     `).join('');
     this.interactionRoot.classList.add('is-visible');
+    this.setInteractionMenuAnchor(anchor);
   }
 
   hideInteractionMenu() {
     this.lastInteractionState = null;
     this.interactionRoot.classList.remove('is-visible');
+    this.setInteractionMenuAnchor(null);
   }
 
   isInteractionMenuOpen() {

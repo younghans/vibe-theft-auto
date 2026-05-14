@@ -680,6 +680,7 @@ export class Game {
     };
     this.emoteMenuOpen = false;
     this.projectedSpeechPosition = new THREE.Vector3();
+    this.bartenderMenuAnchorPosition = new THREE.Vector3();
     this.aimRaycaster = new THREE.Raycaster();
     this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.aimTarget = new THREE.Vector3();
@@ -5090,16 +5091,22 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestBartenderInteractable() {
+  getNearestBartenderInteractable({ npcId = '' } = {}) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
 
+    const targetNpcId = String(npcId ?? '').trim();
     let nearest = null;
     let nearestDistance = Infinity;
 
     for (const interactable of this.worldBuilder.getInteractables()) {
       if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const resolvedNpcId = String(interactable.npcId || interactable.placementId || '').trim();
+      if (targetNpcId && resolvedNpcId !== targetNpcId) {
         continue;
       }
 
@@ -5127,7 +5134,7 @@ export class Game {
       nearest = {
         ...interactable,
         kind: 'bartender',
-        npcId: interactable.npcId || interactable.placementId || '',
+        npcId: resolvedNpcId,
         npc: npcDetails,
         position,
         radius: promptRadius,
@@ -5138,6 +5145,54 @@ export class Game {
     }
 
     return nearest;
+  }
+
+  getBartenderMenuAnchor(interaction = null) {
+    const npcId = String(interaction?.npcId || interaction?.placementId || '').trim();
+    const speechAnchor = npcId
+      ? this.worldBuilder?.getNpcSpeechAnchors?.()?.get(npcId)
+      : null;
+    const speechScreenPosition = speechAnchor ? this.projectSpeechAnchor(speechAnchor) : null;
+    if (speechScreenPosition) {
+      return {
+        screenX: speechScreenPosition.x,
+        screenY: speechScreenPosition.y
+      };
+    }
+
+    if (!interaction?.position) {
+      return null;
+    }
+
+    this.bartenderMenuAnchorPosition.copy(interaction.position);
+    this.bartenderMenuAnchorPosition.y += 2.35;
+    const fallbackScreenPosition = this.projectSpeechAnchor(this.bartenderMenuAnchorPosition);
+    return fallbackScreenPosition
+      ? {
+          screenX: fallbackScreenPosition.x,
+          screenY: fallbackScreenPosition.y
+        }
+      : null;
+  }
+
+  syncActiveBartenderMenu(bartenderInteraction = null) {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'bartender') {
+      return;
+    }
+
+    const npcId = String(menu.npcId ?? '').trim();
+    const activeInteraction = String(bartenderInteraction?.npcId ?? '').trim() === npcId
+      ? bartenderInteraction
+      : this.getNearestBartenderInteractable({ npcId });
+    if (!activeInteraction) {
+      this.closeInteractionMenu();
+      return;
+    }
+
+    menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Bartender');
+    menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    this.hud.setInteractionMenuAnchor(menu.anchor);
   }
 
   closeInteractionMenu() {
@@ -5181,7 +5236,8 @@ export class Game {
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Bartender',
       subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${items.map((item) => `${item.label}: ${getPlayerDrinkCount(localPlayerState, item.id)}`).join(', ')}.`,
-      actions
+      actions,
+      anchor: menu.anchor
     });
   }
 
@@ -5195,7 +5251,8 @@ export class Game {
     this.activeInteractionMenu = {
       kind: 'bartender',
       npcId,
-      npcName: String(interaction?.npc?.name ?? 'Bartender')
+      npcName: String(interaction?.npc?.name ?? 'Bartender'),
+      anchor: this.getBartenderMenuAnchor(interaction)
     };
     this.renderBartenderMenu();
   }
@@ -11222,6 +11279,7 @@ export class Game {
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
       : this.getNearestBartenderInteractable();
+    this.syncActiveBartenderMenu(bartenderInteraction);
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {

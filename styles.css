@@ -5551,6 +5551,11 @@ body.is-admin-prompt-resizing * {
   pointer-events: none;
 }
 
+.hud__interaction.is-world-anchored {
+  right: auto;
+  bottom: auto;
+}
+
 .hud__interaction.is-visible {
   opacity: 1;
   transform: translateY(0);

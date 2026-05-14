@@ -386,6 +386,32 @@ function validateBartenderFunction() {
   assert(getDrunknessLevelLabel(4) === 'wasted', 'Drunkness level 4 should be labeled wasted');
   assert(getDrunknessLevelLabel(5) === 'plastered', 'Drunkness level 5 should be labeled plastered');
   const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  assert(
+    /\.hud__interaction\.is-world-anchored\s*\{[^}]*bottom:\s*auto/s.test(styles),
+    'Bartender interaction menu should support anchored in-world placement'
+  );
+  assert(
+    /setInteractionMenuAnchor\(anchor = null\)/.test(hudSource),
+    'HUD interaction menu should expose an anchor updater'
+  );
+  assert(
+    /showInteractionMenu\(\{\s*title,\s*subtitle,\s*actions,\s*anchor = null\s*\}\)/.test(hudSource),
+    'HUD interaction menu should accept a world anchor'
+  );
+  assert(
+    /getNearestBartenderInteractable\(\{\s*npcId = ''\s*\} = \{\}\)/.test(gameSource),
+    'Bartender proximity lookup should support the active NPC id'
+  );
+  assert(
+    /this\.syncActiveBartenderMenu\(bartenderInteraction\);/.test(gameSource),
+    'Bartender menu should resync and close during interaction updates'
+  );
+  assert(
+    /anchor:\s*menu\.anchor/.test(gameSource),
+    'Bartender menu should pass its in-world anchor to the HUD'
+  );
   assert(
     /\.hud__drunkness-label\.is-active\s*\{[^}]*animation:\s*hud-drunkness-label-wobble/s.test(styles),
     'Only the active drunkness label should receive the wobble animation'
