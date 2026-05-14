@@ -26,6 +26,7 @@ function getArrayBuffer(buffer) {
 }
 
 const [, , inputArg, outputArg, clipNameArg] = process.argv;
+const NUMBERED_MIXAMO_PREFIX_PATTERN = /^mixamorig\d+(?=[A-Z])/;
 
 if (!inputArg || !outputArg) {
   console.error('Usage: node scripts/extract-fbx-animation.mjs <input.fbx> <output.json> [clipName]');
@@ -44,6 +45,9 @@ if (!sourceClip) {
 
 const clip = sourceClip.clone();
 clip.name = clipNameArg ?? clip.name ?? path.basename(inputPath, path.extname(inputPath));
+for (const track of clip.tracks) {
+  track.name = track.name.replace(NUMBERED_MIXAMO_PREFIX_PATTERN, 'mixamorig');
+}
 
 await fs.mkdir(path.dirname(outputPath), { recursive: true });
 await fs.writeFile(outputPath, JSON.stringify(AnimationClip.toJSON(clip), null, 2));
