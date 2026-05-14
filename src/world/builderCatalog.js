@@ -87,6 +87,15 @@ const STANDARD_2X2_HULL_COLLISION_RECTS = Object.freeze([
   { centerX: -7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 },
   { centerX: 7.25, centerZ: 10.8, halfWidth: 3.6, halfDepth: 0.36, minY: 0, maxY: 8 }
 ]);
+const PAWN_SHOP_COUNTER_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -7.2, halfWidth: 8.04, halfDepth: 0.67, minY: 0, maxY: 2.4 },
+  { centerX: -7.55, centerZ: -4.1, halfWidth: 0.67, halfDepth: 3.34, minY: 0, maxY: 2.4 },
+  { centerX: 7.55, centerZ: -4.1, halfWidth: 0.67, halfDepth: 3.34, minY: 0, maxY: 2.4 }
+]);
+const PAWN_SHOP_COLLISION_RECTS = Object.freeze([
+  ...STANDARD_2X2_HULL_COLLISION_RECTS,
+  ...PAWN_SHOP_COUNTER_COLLISION_RECTS
+]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
 ]);
@@ -143,6 +152,8 @@ function createCustom2x2BuildingDefinition({
   asset = customCityAsset('models', fileName),
   createVisual,
   prompt,
+  movementCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
+  shotCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
   interiorOverrides = {},
   cameraOcclusionPreserveNodeNames = [`${key}_interior`, `${key}_foundation`]
 }) {
@@ -160,8 +171,8 @@ function createCustom2x2BuildingDefinition({
     surfaceHeight: 0.76,
     collision: true,
     blocksShots: true,
-    movementCollisionRects: STANDARD_2X2_HULL_COLLISION_RECTS,
-    shotCollisionRects: STANDARD_2X2_HULL_COLLISION_RECTS,
+    movementCollisionRects,
+    shotCollisionRects,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
     cameraOcclusionPreserveNodeNames,
@@ -232,7 +243,10 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     fileName: 'pawn-building.glb',
     asset: null,
     createVisual: createPawnShopBuildingVisual,
-    prompt: 'Enter pawn shop'
+    prompt: 'Enter pawn shop',
+    movementCollisionRects: PAWN_SHOP_COLLISION_RECTS,
+    shotCollisionRects: PAWN_SHOP_COLLISION_RECTS,
+    cameraOcclusionPreserveNodeNames: ['pawn_interior', 'pawn_foundation', 'pawn_hull_wall']
   }),
   createCustom2x2BuildingDefinition({
     key: 'offices',

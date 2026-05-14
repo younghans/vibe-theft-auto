@@ -299,6 +299,37 @@ function validateFootprintSupport() {
   }
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
+  assert(
+    pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
+    'Pawn shop hull walls should stay visible during active cutaway camera occlusion'
+  );
+  assert(pawnShop.movementCollisionRects?.length >= 8, 'Pawn shop should block movement with hull and counter/table collision');
+  assert(pawnShop.shotCollisionRects?.length === pawnShop.movementCollisionRects.length, 'Pawn shop counter/table collision should also block shots');
+  const pawnCounterRects = pawnShop.movementCollisionRects.slice(-3);
+  assert(
+    pawnCounterRects.some((rect) => rect.centerZ === -7.2 && rect.halfWidth > 8 && rect.halfDepth >= 0.67),
+    'Pawn shop back counter/table should have movement collision'
+  );
+  assert(
+    pawnCounterRects.filter((rect) => rect.centerZ === -4.1 && rect.halfWidth >= 0.67 && rect.halfDepth > 3).length === 2,
+    'Pawn shop counter/table returns should have movement collision'
+  );
+  const pawnPlacement = {
+    id: 'validation-pawn-shop',
+    itemId: 'pawn_building',
+    layer: 'tile',
+    cellX: 0,
+    cellZ: 0,
+    rotationQuarterTurns: 0
+  };
+  assert(
+    placementToCollisionRects(pawnPlacement, pawnShop, { collisionKey: 'blocksMovement' }).length === pawnShop.movementCollisionRects.length,
+    'Pawn shop movement collision should resolve all hull and counter/table blockers'
+  );
+  assert(
+    placementToCollisionRects(pawnPlacement, pawnShop, { collisionKey: 'blocksShots' }).length === pawnShop.shotCollisionRects.length,
+    'Pawn shop shot collision should resolve all hull and counter/table blockers'
+  );
   const pawnVisual = pawnShop.createVisual();
   assert(pawnVisual.getObjectByName('pawnShopBackCounter'), 'Pawn shop interior should include a back counter');
   assert(pawnVisual.getObjectByName('pawnShopLeftCounterReturn'), 'Pawn shop counter should wrap along the left back side');
