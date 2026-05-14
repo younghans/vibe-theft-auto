@@ -1168,77 +1168,55 @@ function formatAgentTaskMessage(value = '') {
   return escapeHtml(value).replace(/\r?\n/gu, '<br>');
 }
 
-function summarizeAgentTaskLogData(data = null) {
-  if (!data || typeof data !== 'object') {
-    return '';
-  }
-
-  const errorText = typeof data.error === 'string'
-    ? data.error
-    : data.error?.message;
-  const candidates = [
-    data.phase,
-    data.route,
-    data.label,
-    data.command,
-    data.cwd,
-    data.exitCode != null ? `exit ${data.exitCode}` : '',
-    data.responseStatus != null ? `HTTP ${data.responseStatus}` : '',
-    errorText,
-    data.output
-  ];
-  return candidates
-    .map((value) => String(value ?? '').trim())
-    .filter(Boolean)
-    .join(' - ')
-    .slice(0, 360);
-}
-
-function createAgentTaskLogMarkup(threadTasks = []) {
-  const logs = threadTasks.flatMap((task) => (
-    Array.isArray(task.logs)
-      ? task.logs.map((entry) => ({ ...entry, taskId: task.id }))
-      : []
-  ))
-    .filter((entry) => String(entry.message ?? '').trim())
-    .sort((a, b) => Number(b.at ?? 0) - Number(a.at ?? 0))
-    .slice(0, 10);
-
-  if (!logs.length) {
-    return '';
-  }
-
-  return `
-    <section class="hud__admin-prompt-log">
-      <header>
-        <strong>Diagnostics</strong>
-        <span>Latest ${escapeHtml(String(logs.length))}</span>
-      </header>
-      <div class="hud__admin-prompt-log-list">
-        ${logs.map((entry) => {
-          const level = String(entry.level ?? 'info').toLowerCase();
-          const levelClass = ['error', 'warn'].includes(level) ? ` is-${level}` : '';
-          const time = formatAgentTaskTime(entry.at);
-          const dataSummary = summarizeAgentTaskLogData(entry.data);
-          return `
-            <article class="hud__admin-prompt-log-entry${levelClass}">
-              <div>
-                <strong>${escapeHtml(level || 'info')}</strong>
-                ${time ? `<span>${escapeHtml(time)}</span>` : ''}
-                <span>${escapeHtml(getAgentTaskShortId({ id: entry.taskId }))}</span>
-              </div>
-              <p>${formatAgentTaskMessage(entry.message)}</p>
-              ${dataSummary ? `<small>${formatAgentTaskMessage(dataSummary)}</small>` : ''}
-            </article>
-          `;
-        }).join('')}
-      </div>
-    </section>
-  `;
-}
-
 function getAgentTaskCompletionMessage(task = {}) {
-  return String(task.agentMessage || '').trim();
+  return getVisibleAgentTaskMessage(task.agentMessage);
+}
+
+function isHiddenAgentTaskMessageSectionHeading(line = '') {
+  return /^(?:#{1,6}\s*)?(?:verification|validation|verifications|validations|verified|tests?|testing|checks?|smoke checks?)(?:\s+(?:passed|complete|completed|notes?))?\s*:?\s*$/iu
+    .test(String(line ?? '').trim());
+}
+
+function isVisibleAgentTaskMessageSectionHeading(line = '') {
+  return /^(?:#{1,6}\s*)?(?:changed|changes|key changes|added|implemented|updated|fixed|details|summary)\s*:?\s*$/iu
+    .test(String(line ?? '').trim());
+}
+
+function collapseAgentTaskMessageBlankLines(lines = []) {
+  const collapsed = [];
+  for (const line of lines) {
+    const isBlank = !String(line ?? '').trim();
+    if (isBlank && (!collapsed.length || !String(collapsed.at(-1) ?? '').trim())) {
+      continue;
+    }
+    collapsed.push(line);
+  }
+
+  while (collapsed.length && !String(collapsed.at(-1) ?? '').trim()) {
+    collapsed.pop();
+  }
+
+  return collapsed;
+}
+
+function getVisibleAgentTaskMessage(value = '') {
+  const lines = String(value || '').replace(/\r\n/gu, '\n').split('\n');
+  const visibleLines = [];
+  let hiddenSection = false;
+  for (const line of lines) {
+    if (isHiddenAgentTaskMessageSectionHeading(line)) {
+      hiddenSection = true;
+      continue;
+    }
+    if (hiddenSection && isVisibleAgentTaskMessageSectionHeading(line)) {
+      hiddenSection = false;
+    }
+    if (!hiddenSection) {
+      visibleLines.push(line);
+    }
+  }
+
+  return collapseAgentTaskMessageBlankLines(visibleLines).join('\n').trim();
 }
 
 function isAgentThreadBusy(threadTasks = []) {
@@ -1258,7 +1236,7 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
     const status = String(task.status ?? 'queued');
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
     const agentMessage = getAgentTaskCompletionMessage(task);
-    const statusMessage = String(task.error || task.summary || '').trim();
+    const statusMessage = String(task.error || (!agentMessage ? task.summary : '') || '').trim();
     const showStatusMessage = statusMessage && statusMessage !== agentMessage;
     return `
       <section class="hud__admin-prompt-turn">
@@ -1356,10 +1334,9 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
         ${rollbackApproved ? '<span>Rollback approved</span>' : ''}
       </div>
       ${links ? `<div class="hud__admin-prompt-links">${links}</div>` : ''}
-      <div class="hud__admin-prompt-thread">
+      <div class="hud__admin-prompt-thread" data-admin-prompt-thread>
         ${createAgentTaskThreadMessageMarkup(safeThreadTasks)}
       </div>
-      ${createAgentTaskLogMarkup(safeThreadTasks)}
       <div class="hud__admin-prompt-detail-actions">
         ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
         ${canRetryDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Retry Deploy</button>' : ''}
@@ -2665,12 +2642,12 @@ const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
 const BUILDER_PANEL_MOBILE_BREAKPOINT = 900;
-const ADMIN_PROMPT_DEFAULT_WIDTH = 860;
-const ADMIN_PROMPT_DEFAULT_HEIGHT = 620;
 const ADMIN_PROMPT_MIN_WIDTH = 340;
 const ADMIN_PROMPT_MIN_HEIGHT = 280;
 const ADMIN_PROMPT_MAX_WIDTH = 980;
 const ADMIN_PROMPT_MAX_HEIGHT = 780;
+const ADMIN_PROMPT_DEFAULT_WIDTH = ADMIN_PROMPT_MAX_WIDTH;
+const ADMIN_PROMPT_DEFAULT_HEIGHT = ADMIN_PROMPT_MAX_HEIGHT;
 const ADMIN_PROMPT_VIEWPORT_MARGIN = 6;
 const ADMIN_PROMPT_TOP_ACTIONS_GAP = 12;
 
@@ -2997,6 +2974,7 @@ export class Hud {
     this.lastAdminPromptTabsSignature = '';
     this.lastAdminPromptTaskListSignature = '';
     this.lastAdminPromptDetailSignature = '';
+    this.lastAdminPromptSelectedThreadId = '';
     this.adminPromptThreadLimit = ADMIN_PROMPT_THREAD_LIST_LIMIT;
     this.adminPromptDurationTimer = 0;
     this.adminPromptDurationTick = 0;
@@ -6919,6 +6897,21 @@ export class Hud {
     }
   }
 
+  scrollAdminPromptThreadToBottom() {
+    const detailSlot = this.adminPromptDetail?.parentElement ?? null;
+    if (!(detailSlot instanceof HTMLElement)) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      detailSlot.scrollTop = detailSlot.scrollHeight;
+      const thread = this.adminPromptDetail?.querySelector('[data-admin-prompt-thread]');
+      const latestTurn = thread?.lastElementChild ?? null;
+      latestTurn?.scrollIntoView?.({ block: 'end' });
+      detailSlot.scrollTop = detailSlot.scrollHeight;
+    });
+  }
+
   renderAdminPromptPanel() {
     if (!this.adminPromptRoot) {
       return;
@@ -6939,6 +6932,9 @@ export class Hud {
     this.adminPromptRoot.hidden = !available || !open;
     this.adminPromptRoot.classList.toggle('is-visible', Boolean(available && open));
     this.adminPromptRoot.classList.toggle('is-loading', loading || submitting);
+    if (!open || activeTab === 'new') {
+      this.lastAdminPromptSelectedThreadId = '';
+    }
     if (available && open) {
       this.ensureAdminPromptLayout();
     }
@@ -7043,10 +7039,11 @@ export class Hud {
         ? null
         : visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
       const selectedThreadTasks = selectedTask ? getAgentThreadTasks(tasks, selectedTask) : [];
+      const selectedThreadId = selectedTask ? getAgentTaskThreadId(selectedTask) : '';
       const detailSignature = JSON.stringify({
         activeTab,
         selectedTaskId: selectedTask?.id ?? '',
-        threadId: selectedTask ? getAgentTaskThreadId(selectedTask) : '',
+        threadId: selectedThreadId,
         threadTasks: selectedThreadTasks.map((task) => [
           task.id,
           task.status,
@@ -7058,13 +7055,7 @@ export class Hud {
           task.branch,
           task.commitSha,
           task.deployApprovedAt ?? 0,
-          task.rollbackApprovedAt ?? 0,
-          (task.logs ?? []).map((entry) => [
-            entry.at,
-            entry.level,
-            entry.message,
-            summarizeAgentTaskLogData(entry.data)
-          ])
+          task.rollbackApprovedAt ?? 0
         ]),
         status: selectedTask?.status ?? '',
         durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
@@ -7087,7 +7078,15 @@ export class Hud {
         error: selectedTask?.error ?? '',
         prompt: selectedTask?.prompt ?? ''
       });
+      const shouldScrollSelectedThread = Boolean(
+        selectedThreadId
+        && selectedThreadId !== this.lastAdminPromptSelectedThreadId
+      );
       if (detailSignature === this.lastAdminPromptDetailSignature) {
+        if (shouldScrollSelectedThread) {
+          this.scrollAdminPromptThreadToBottom();
+          this.lastAdminPromptSelectedThreadId = selectedThreadId;
+        }
         return;
       }
       this.lastAdminPromptDetailSignature = detailSignature;
@@ -7095,6 +7094,10 @@ export class Hud {
         selectedTask,
         selectedThreadTasks
       );
+      if (shouldScrollSelectedThread) {
+        this.scrollAdminPromptThreadToBottom();
+      }
+      this.lastAdminPromptSelectedThreadId = selectedThreadId;
     }
   }
 
