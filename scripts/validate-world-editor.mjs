@@ -9,6 +9,7 @@ import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import {
   DRINK_ITEM_IDS,
+  DRUNKNESS_LEVEL_LABELS,
   DRUNKNESS_MAX_DURATION_MS,
   addPlayerDrink,
   consumePlayerDrink,
@@ -16,6 +17,7 @@ import {
   getDrunknessDoseForLevel,
   getDrunknessDurationMs,
   getDrunknessLevelForDose,
+  getDrunknessLevelLabel,
   getDrunknessLevelForTimeRemaining,
   isBartenderNpc,
   listBartenderMenuItems,
@@ -376,6 +378,12 @@ function validateBartenderFunction() {
   assert(getDrunknessLevelForDose(10) === 3, 'Ten drink doses should create drunkness level 3');
   assert(getDrunknessLevelForDose(15) === 4, 'Fifteen drink doses should create drunkness level 4');
   assert(getDrunknessLevelForDose(20) === 5, 'Twenty drink doses should create drunkness level 5');
+  assert(DRUNKNESS_LEVEL_LABELS.length === 6, 'Drunkness labels should include sober plus five drunkness levels');
+  assert(getDrunknessLevelLabel(1) === 'buzzed', 'Drunkness level 1 should be labeled buzzed');
+  assert(getDrunknessLevelLabel(2) === 'tipsy', 'Drunkness level 2 should be labeled tipsy');
+  assert(getDrunknessLevelLabel(3) === 'drunk', 'Drunkness level 3 should be labeled drunk');
+  assert(getDrunknessLevelLabel(4) === 'wasted', 'Drunkness level 4 should be labeled wasted');
+  assert(getDrunknessLevelLabel(5) === 'plastered', 'Drunkness level 5 should be labeled plastered');
   assert(getDrunknessDurationMs(1) === 30000, 'Level 1 drunkness should last 30 seconds');
   assert(getDrunknessDurationMs(5) === DRUNKNESS_MAX_DURATION_MS, 'Level 5 drunkness should last the max duration');
   assert(DRUNKNESS_MAX_DURATION_MS === 150000, 'Level 5 drunkness should last two and a half minutes');

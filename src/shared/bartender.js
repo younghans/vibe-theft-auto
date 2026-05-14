@@ -28,6 +28,7 @@ export const DRUNKNESS_MAX_DOSE = 20;
 export const DRUNKNESS_LEVEL_DURATION_MS = 30000;
 export const DRUNKNESS_MAX_DURATION_MS = DRUNKNESS_MAX_LEVEL * DRUNKNESS_LEVEL_DURATION_MS;
 export const DRUNKNESS_DOSE_THRESHOLDS = Object.freeze([1, 5, 10, 15, DRUNKNESS_MAX_DOSE]);
+export const DRUNKNESS_LEVEL_LABELS = Object.freeze(['sober', 'buzzed', 'tipsy', 'drunk', 'wasted', 'plastered']);
 
 const BARTENDER_MENU_ITEM_BY_ID = new Map(
   BARTENDER_MENU_ITEMS.map((item) => [item.id, item])
@@ -104,6 +105,10 @@ export function normalizeDrunknessLevel(value = 0) {
   }
 
   return Math.max(0, Math.min(DRUNKNESS_MAX_LEVEL, Math.floor(numeric)));
+}
+
+export function getDrunknessLevelLabel(level = 0) {
+  return DRUNKNESS_LEVEL_LABELS[normalizeDrunknessLevel(level)] ?? DRUNKNESS_LEVEL_LABELS[0];
 }
 
 export function getDrunknessLevelForDose(dose = 0) {

@@ -1,7 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
-import { DRINK_ITEM_IDS, DRUNKNESS_MAX_LEVEL } from '../shared/bartender.js';
+import { DRINK_ITEM_IDS, DRUNKNESS_MAX_LEVEL, getDrunknessLevelLabel } from '../shared/bartender.js';
 import { assets } from '../world/assetManifest.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
@@ -2632,6 +2632,21 @@ function normalizeHudDrunknessLevel(level = 0) {
     : 0;
 }
 
+function getHudDrunknessHue(level = 0) {
+  const normalizedLevel = normalizeHudDrunknessLevel(level);
+  return normalizedLevel > 0
+    ? Math.round(120 - ((normalizedLevel - 1) / Math.max(1, DRUNKNESS_MAX_LEVEL - 1)) * 120)
+    : 120;
+}
+
+function getHudDrunknessLabelMarkup() {
+  return Array.from({ length: DRUNKNESS_MAX_LEVEL }, (_, index) => {
+    const level = DRUNKNESS_MAX_LEVEL - index;
+    const hue = getHudDrunknessHue(level);
+    return `<span class="hud__drunkness-label" data-drunkness-label-level="${level}" style="--drunkness-label-hue: ${hue};">${escapeHtml(getDrunknessLevelLabel(level))}</span>`;
+  }).join('');
+}
+
 const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
@@ -2736,7 +2751,7 @@ export class Hud {
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
-    this.drunknessLevel = this.overlay.querySelector('[data-drunkness-level]');
+    this.drunknessLabels = Array.from(this.overlay.querySelectorAll('[data-drunkness-label-level]'));
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
@@ -3185,7 +3200,7 @@ export class Hud {
         <div class="hud__hotbar-slots" data-hotbar-slots></div>
       </nav>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
-        <div class="hud__drunkness-thermometer" aria-hidden="true">
+        <div class="hud__drunkness-cylinder" aria-hidden="true">
           <div class="hud__drunkness-track">
             <div class="hud__drunkness-fill" data-drunkness-fill></div>
           </div>
@@ -3196,9 +3211,10 @@ export class Hud {
             <span></span>
             <span></span>
           </div>
-          <div class="hud__drunkness-bulb"></div>
         </div>
-        <strong class="hud__drunkness-level" data-drunkness-level>0</strong>
+        <div class="hud__drunkness-labels" data-drunkness-labels aria-hidden="true">
+          ${getHudDrunknessLabelMarkup()}
+        </div>
       </section>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
@@ -7365,25 +7381,29 @@ export class Hud {
   }
 
   setDrunknessState({ level = 0 } = {}) {
-    if (!this.drunknessRoot || !this.drunknessFill || !this.drunknessLevel) {
+    if (!this.drunknessRoot || !this.drunknessFill) {
       return;
     }
 
     const normalizedLevel = normalizeHudDrunknessLevel(level);
     const visible = normalizedLevel > 0;
     const ratio = visible ? normalizedLevel / DRUNKNESS_MAX_LEVEL : 0;
-    const hue = normalizedLevel > 0
-      ? Math.round(120 - ((normalizedLevel - 1) / Math.max(1, DRUNKNESS_MAX_LEVEL - 1)) * 120)
-      : 120;
+    const label = getDrunknessLevelLabel(normalizedLevel);
+    const hue = getHudDrunknessHue(normalizedLevel);
 
     this.drunknessRoot.hidden = !visible;
     this.drunknessRoot.style.setProperty('--drunkness-ratio', `${ratio}`);
     this.drunknessRoot.style.setProperty('--drunkness-fill', `${Math.round(ratio * 100)}%`);
     this.drunknessRoot.style.setProperty('--drunkness-hue', `${hue}`);
     this.drunknessRoot.setAttribute('aria-valuenow', `${normalizedLevel}`);
-    this.drunknessRoot.setAttribute('aria-valuetext', visible ? `Drunkness level ${normalizedLevel}` : 'Sober');
-    this.drunknessRoot.title = visible ? `Drunkness level ${normalizedLevel}` : 'Sober';
-    this.drunknessLevel.textContent = `${normalizedLevel}`;
+    this.drunknessRoot.setAttribute('aria-valuetext', visible ? `Drunkness: ${label}` : 'Sober');
+    this.drunknessRoot.title = visible ? `Drunkness: ${label}` : 'Sober';
+
+    for (const labelNode of this.drunknessLabels) {
+      const labelLevel = Number(labelNode.dataset.drunknessLabelLevel) || 0;
+      labelNode.classList.toggle('is-filled', visible && labelLevel <= normalizedLevel);
+      labelNode.classList.toggle('is-active', visible && labelLevel === normalizedLevel);
+    }
   }
 
   setCombatState({
