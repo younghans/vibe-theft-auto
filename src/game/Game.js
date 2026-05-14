@@ -9975,6 +9975,8 @@ export class Game {
 
     if (respawned) {
       this.closeQuickChat();
+      this.playSoundEffect(this.rentChaChingSound);
+      this.hud.showToast('Respawned.');
       this.updateCamera(this.currentAimDirection, false, { snap: true });
     }
 
@@ -10511,10 +10513,6 @@ export class Game {
         }
         break;
       case 'respawn':
-        if (event.playerId === this.npcServiceState.sessionId) {
-          this.playSoundEffect(this.rentChaChingSound);
-          this.hud.showToast('Respawned.');
-        }
         break;
       default:
         break;
