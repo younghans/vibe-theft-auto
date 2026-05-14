@@ -1379,7 +1379,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   if (phase === 'menu' && game?.context === 'office-job') {
     base.push(
       String(data.intelligence ?? 0),
-      (Array.isArray(data.jobs) ? data.jobs : []).map((job) => `${job.id}:${job.unlocked ? '1' : '0'}`).join(',')
+      (Array.isArray(data.jobs) ? data.jobs : []).map((job) => `${job.id}:${job.unlocked ? '1' : '0'}:${job.instructions ?? ''}`).join(',')
     );
     return base.join('|');
   }
@@ -1395,6 +1395,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     return base.join('|');
   }
   if (phase !== 'playing') {
+    base.push(String(round.instructions ?? ''));
     return base.join('|');
   }
 
@@ -1483,11 +1484,18 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
 function createReadySchoolMicrogameMarkup(game = null) {
   const round = game?.round ?? {};
   const requirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
+  const instructions = String(round.instructions ?? '').trim();
   return `
     <div class="hud__school-ready">
       <div class="hud__school-ready-badge" aria-hidden="true">${escapeHtml(round.icon ?? 'GO')}</div>
       <h3>${escapeHtml(round.title ?? 'School Microgame')}</h3>
       <p>${escapeHtml(round.description ?? 'Play fast and clean.')}</p>
+      ${instructions ? `
+        <div class="hud__school-instructions">
+          <span>How to play</span>
+          <strong>${escapeHtml(instructions)}</strong>
+        </div>
+      ` : ''}
       ${requirement > 0 ? `
         <div class="hud__school-requirement">
           <span>Requirement</span>
@@ -1552,6 +1560,7 @@ function createOfficeJobMenuMarkup(game = null) {
       <div class="hud__office-job-grid">
         ${jobs.map((job) => {
           const unlocked = canPlayerWorkOfficeJob(intelligence, job);
+          const instructions = String(job.instructions ?? '').trim();
           return `
             <button
               class="hud__office-job-card${unlocked ? '' : ' is-locked'}"
@@ -1563,6 +1572,7 @@ function createOfficeJobMenuMarkup(game = null) {
               <span class="hud__office-job-copy">
                 <strong>${escapeHtml(job.roleLabel ?? job.title ?? 'Job')}</strong>
                 <small>${escapeHtml(job.subtitle ?? job.description ?? '')}</small>
+                ${instructions ? `<span class="hud__office-job-instruction">${escapeHtml(instructions)}</span>` : ''}
               </span>
               <span class="hud__office-job-meta">
                 <em>$${escapeHtml(String(job.rewardMoney ?? 0))}</em>

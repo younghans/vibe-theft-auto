@@ -145,8 +145,8 @@ const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const SCHOOL_MICROGAME_COUNTDOWN_MS = 3000;
-const OFFICE_JOB_COUNTDOWN_MS = 2500;
-const OFFICE_JOB_COUNTDOWN_GO_MS = 400;
+const OFFICE_JOB_COUNTDOWN_MS = 1600;
+const OFFICE_JOB_COUNTDOWN_GO_MS = 250;
 const OFFICE_JANITOR_REQUIRED_THROWS = 3;
 const OFFICE_JANITOR_THROW_RESOLVE_MS = 820;
 const OFFICE_CEO_STAMP_RESOLVE_MS = 680;
@@ -5817,6 +5817,7 @@ export class Game {
       eyebrow: job.eyebrow ?? 'Office Job',
       description: job.description,
       prompt: job.prompt,
+      instructions: job.instructions,
       durationMs: job.durationMs ?? (job.id === OFFICE_JOB_IDS.ceo ? 14000 : 7000),
       rewardMoney: job.rewardMoney,
       rewardXp: job.rewardXp,

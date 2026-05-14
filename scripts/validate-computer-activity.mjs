@@ -156,9 +156,12 @@ function validateOfficeJobs() {
   assert(/paper toss/i.test(janitor.description), 'Janitor task should be based on paper toss.');
   assert(/thrower|throws?/i.test(`${janitor.description} ${janitor.prompt}`), 'Janitor paper toss should show a person throwing the paper.');
   assert(/three/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.prompt}`), 'Janitor task should require multiple paper toss rounds.');
+  assert(/spacebar/i.test(janitor.instructions) && /throw/i.test(janitor.instructions), 'Janitor start menu should explain Spacebar/click throwing controls.');
   assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
   assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
+  assert(/hold spacebar/i.test(manager.instructions) && /release/i.test(manager.instructions), 'Office Manager start menu should explain hold/release coffee controls.');
   assert(/stamp/i.test(`${ceo.description} ${ceo.prompt}`), 'CEO task should be the new memo stamping minigame.');
+  assert(/spacebar/i.test(ceo.instructions) && /stamp/i.test(ceo.instructions), 'CEO start menu should explain Spacebar/click stamping controls.');
   assert(!/sleep|nap|watcher/i.test(`${ceo.description} ${ceo.prompt}`), 'CEO task should no longer be the sleep/watcher minigame.');
 }
 
@@ -166,13 +169,18 @@ async function validateOfficeJobHudSurfaces() {
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const cssSource = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const officeCountdownMatch = gameSource.match(/const\s+OFFICE_JOB_COUNTDOWN_MS\s*=\s*(\d+)/);
+  const officeCountdownMs = Number(officeCountdownMatch?.[1] ?? 0);
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
+  assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
   assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
   assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
+  assert(hudSource.includes('hud__school-instructions'), 'Selected office job start screens should show how-to-play instructions.');
+  assert(hudSource.includes('hud__office-job-instruction'), 'Office job menu cards should show how-to-play instructions.');
   assert(hudSource.includes('hud__office-thrower'), 'Janitor HUD should render a person throwing the paper.');
   assert(!hudSource.includes('hud__office-fan'), 'Janitor HUD should no longer render the old desk fan.');
   assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
