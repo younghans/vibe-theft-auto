@@ -189,10 +189,13 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
   assert(hudSource.includes('hud__office-janitor-closet'), 'Janitor ready screen should render a janitor closet background.');
   assert(hudSource.includes('--office-aim-offset'), 'Janitor trajectory should be aligned from timing-window error.');
+  assert(hudSource.includes('updateOfficeTrashTossLiveMarkup'), 'Janitor trajectory should update in place instead of rebuilding every marker tick.');
   assert(hudSource.includes('3..2..1.. GO!'), 'Office jobs should display the 3..2..1.. GO countdown.');
+  assert(hudSource.includes('hud__office-breakroom-backdrop'), 'Office Manager ready screen should render a break room background.');
   assert(hudSource.includes('hud__office-breakroom-fridge'), 'Office Manager HUD should render a break room background.');
   assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
   assert(hudSource.includes('hud__office-cup'), 'Office Manager HUD should render a coffee mug.');
+  assert(hudSource.includes('hud__office-boardroom-backdrop'), 'CEO ready screen should render a boardroom background.');
   assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
   assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose a dynamic horizontal marker position.');
   assert(hudSource.includes('is-returning'), 'CEO HUD should show the returning stamp pass.');
@@ -201,16 +204,20 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(cssSource.includes('@keyframes hud-office-paper-score'), 'Janitor paper toss should land made shots in the basket.');
   assert(cssSource.includes('@keyframes hud-office-trajectory-bob'), 'Janitor trajectory line should move up and down.');
+  assert(cssSource.includes('translate3d(var(--office-aim-offset'), 'Janitor trajectory should use composited transform updates for smooth motion.');
+  assert(cssSource.includes('transition: transform 150ms'), 'Janitor trajectory should damp transform updates instead of snapping.');
   assert(cssSource.includes('right: calc(16% + 47px)'), 'Janitor trajectory line should terminate at the trash can center.');
   assert(cssSource.includes('hud__office-janitor-closet-bucket'), 'Janitor start screen should include janitor closet props.');
   assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
   assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');
+  assert(cssSource.includes('hud__office-breakroom-backdrop'), 'Office Manager start screen should include the break room backdrop.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
   assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
   assert(cssSource.includes('hud__office-ceo-stamp-pad'), 'CEO stamp should have a polished stamp pad.');
   assert(cssSource.includes('@keyframes hud-office-board-member-bob'), 'CEO board members should animate.');
+  assert(cssSource.includes('hud__office-boardroom-backdrop'), 'CEO start screen should include the boardroom backdrop.');
   assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should move with the timing marker.');
 }
 

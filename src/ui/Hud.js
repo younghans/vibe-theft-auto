@@ -1407,7 +1407,6 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Math.round(Number(round.targetStart ?? 0) * 100)),
       String(Math.round(Number(round.targetEnd ?? 0) * 100)),
       String(Math.round(Number(round.wind ?? 0) * 100)),
-      String(Math.round(Number(data.marker ?? 0) * 100)),
       String(Math.round(Number(data.fill ?? 0))),
       String(Math.round(Number(data.memoPosition ?? 0) * 100)),
       String(Number(data.memoDirection ?? 1) || 1),
@@ -1487,10 +1486,14 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const round = game?.round ?? {};
   const requirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
   const instructions = String(round.instructions ?? '').trim();
-  const isJanitorOfficeJob = game?.context === 'office-job' && String(round.officeJobId ?? round.jobId ?? '') === OFFICE_JOB_IDS.janitor;
+  const officeJobId = String(round.officeJobId ?? round.jobId ?? '');
+  const officeReadyBackdrop = game?.context === 'office-job' ? createOfficeJobReadyBackdropMarkup(officeJobId) : '';
+  const officeReadyClass = officeReadyBackdrop
+    ? ` hud__school-ready--office-job hud__school-ready--${officeJobId === OFFICE_JOB_IDS.officeManager ? 'manager' : escapeHtml(officeJobId)}`
+    : '';
   return `
-    <div class="hud__school-ready${isJanitorOfficeJob ? ' hud__school-ready--janitor' : ''}">
-      ${isJanitorOfficeJob ? createJanitorClosetBackdropMarkup() : ''}
+    <div class="hud__school-ready${officeReadyClass}">
+      ${officeReadyBackdrop}
       <div class="hud__school-ready-badge" aria-hidden="true">${escapeHtml(round.icon ?? 'GO')}</div>
       <h3>${escapeHtml(round.title ?? 'School Microgame')}</h3>
       <p>${escapeHtml(round.description ?? 'Play fast and clean.')}</p>
@@ -1515,9 +1518,22 @@ function createReadySchoolMicrogameMarkup(game = null) {
   `;
 }
 
+function createOfficeJobReadyBackdropMarkup(jobId = '') {
+  switch (jobId) {
+    case OFFICE_JOB_IDS.janitor:
+      return createJanitorClosetBackdropMarkup();
+    case OFFICE_JOB_IDS.officeManager:
+      return createOfficeBreakroomBackdropMarkup();
+    case OFFICE_JOB_IDS.ceo:
+      return createOfficeBoardroomBackdropMarkup();
+    default:
+      return '';
+  }
+}
+
 function createJanitorClosetBackdropMarkup() {
   return `
-      <div class="hud__office-janitor-closet" aria-hidden="true">
+      <div class="hud__office-ready-backdrop hud__office-janitor-closet" aria-hidden="true">
         <span class="hud__office-janitor-closet-wall"></span>
         <span class="hud__office-janitor-closet-shelf is-top"></span>
         <span class="hud__office-janitor-closet-shelf is-mid"></span>
@@ -1527,6 +1543,55 @@ function createJanitorClosetBackdropMarkup() {
         <span class="hud__office-janitor-closet-broom"></span>
         <span class="hud__office-janitor-closet-bucket"></span>
         <span class="hud__office-janitor-closet-door"></span>
+      </div>
+  `;
+}
+
+function createOfficeBreakroomBackdropMarkup() {
+  return `
+      <div class="hud__office-ready-backdrop hud__office-breakroom-backdrop" aria-hidden="true">
+        <span class="hud__office-breakroom-wall"></span>
+        <span class="hud__office-breakroom-cabinets"></span>
+        <span class="hud__office-breakroom-fridge"></span>
+        <span class="hud__office-breakroom-counter"></span>
+        <span class="hud__office-coffee-maker">
+          <span class="hud__office-coffee-light"></span>
+          <span class="hud__office-coffee-spout"></span>
+          <span class="hud__office-coffee-pot"></span>
+        </span>
+        <span class="hud__office-cup">
+          <span class="hud__office-coffee-fill"></span>
+          <span class="hud__office-coffee-shine"></span>
+          <span class="hud__office-coffee-target"></span>
+          <span class="hud__office-coffee-steam is-one"></span>
+          <span class="hud__office-coffee-steam is-two"></span>
+          <span class="hud__office-coffee-steam is-three"></span>
+        </span>
+      </div>
+  `;
+}
+
+function createOfficeBoardroomBackdropMarkup() {
+  return `
+      <div class="hud__office-ready-backdrop hud__office-boardroom-backdrop" aria-hidden="true">
+        <span class="hud__office-boardroom-wall"></span>
+        <span class="hud__office-boardroom-window"></span>
+        <span class="hud__office-boardroom-table"></span>
+        <span class="hud__office-board-face is-far-left"></span>
+        <span class="hud__office-board-face is-left"></span>
+        <span class="hud__office-board-face is-center"></span>
+        <span class="hud__office-board-face is-right"></span>
+        <span class="hud__office-board-face is-far-right"></span>
+        <span class="hud__office-approval-window"></span>
+        <span class="hud__office-ceo-memo">
+          <strong>Board Memo</strong>
+          <em>Q1</em>
+        </span>
+        <span class="hud__office-ceo-stamp-arm">
+          <span class="hud__office-ceo-stamp-handle"></span>
+          <span class="hud__office-ceo-stamp-neck"></span>
+          <span class="hud__office-ceo-stamp-pad">APPROVE</span>
+        </span>
       </div>
   `;
 }
@@ -1946,23 +2011,43 @@ function createScantronMarkup(game = null) {
   `;
 }
 
-function createOfficeTrashTossMarkup(game = null) {
-  const round = game?.round ?? {};
-  const data = game?.data ?? {};
+function getOfficeTrashAimState(round = {}, data = {}) {
   const marker = Math.max(0, Math.min(1, Number(data.marker ?? 0) || 0));
   const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.48) || 0.48));
   const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.64) || 0.64));
   const wind = Math.max(-0.35, Math.min(0.35, Number(round.wind ?? 0) || 0));
   const targetWidth = Math.max(0.01, targetEnd - targetStart);
   const insideTarget = marker >= targetStart && marker <= targetEnd;
-  const timingError = insideTarget
+  const outsideDistance = insideTarget
     ? 0
     : marker < targetStart
-      ? (marker - targetStart) / targetWidth
-      : (marker - targetEnd) / targetWidth;
-  const aimError = Math.max(-1.35, Math.min(1.35, timingError));
-  const trajectoryOffset = aimError * 64;
-  const trajectoryTilt = aimError * 6;
+      ? marker - targetStart
+      : marker - targetEnd;
+  const rawAimError = Math.max(-1, Math.min(1, outsideDistance / Math.max(0.28, targetWidth * 2.4)));
+  const easedMagnitude = Math.abs(rawAimError) * Math.abs(rawAimError) * (3 - 2 * Math.abs(rawAimError));
+  const aimError = Math.sign(rawAimError) * easedMagnitude;
+  return {
+    marker,
+    targetStart,
+    targetEnd,
+    wind,
+    targetWidth,
+    trajectoryOffset: aimError * 40,
+    trajectoryTilt: aimError * 3.4
+  };
+}
+
+function createOfficeTrashTossMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const {
+    marker,
+    targetStart,
+    targetEnd,
+    wind,
+    trajectoryOffset,
+    trajectoryTilt
+  } = getOfficeTrashAimState(round, data);
   const thrown = data.thrown === true;
   const made = data.throwMade === true;
   const missSide = String(data.throwMissSide ?? '');
@@ -2125,6 +2210,45 @@ function createSchoolMicrogamePlayMarkup(game = null) {
       return createOfficeCeoMarkup(game);
     default:
       return '<div class="hud__school-ready"><p>Unknown school microgame.</p></div>';
+  }
+}
+
+function updateOfficeTrashTossLiveMarkup(root = null, game = null) {
+  const task = root?.querySelector?.('.hud__office-trash');
+  if (!task || game?.phase !== 'playing') {
+    return;
+  }
+
+  const {
+    marker,
+    targetStart,
+    targetEnd,
+    wind,
+    trajectoryOffset,
+    trajectoryTilt
+  } = getOfficeTrashAimState(game.round ?? {}, game.data ?? {});
+  task.style.setProperty('--office-aim', `${(marker * 100).toFixed(3)}%`);
+  task.style.setProperty('--office-aim-offset', `${trajectoryOffset.toFixed(2)}px`);
+  task.style.setProperty('--office-aim-tilt', `${trajectoryTilt.toFixed(3)}deg`);
+  task.style.setProperty('--office-wind-shift', `${(wind * 120).toFixed(1)}px`);
+  task.style.setProperty('--office-wind-soft', `${(wind * 28).toFixed(1)}px`);
+  task.style.setProperty('--office-wind-long', `${(wind * 80).toFixed(1)}px`);
+  task.style.setProperty('--office-target-left', `${(targetStart * 100).toFixed(2)}%`);
+  task.style.setProperty('--office-target-width', `${((targetEnd - targetStart) * 100).toFixed(2)}%`);
+
+  const markerNode = task.querySelector('.hud__office-marker');
+  if (markerNode instanceof HTMLElement) {
+    markerNode.style.setProperty('--marker', `${(marker * 100).toFixed(3)}%`);
+  }
+}
+
+function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
+  if (!root || game?.context !== 'office-job' || game?.phase !== 'playing') {
+    return;
+  }
+
+  if (String(game.round?.officeJobId ?? game.round?.jobId ?? '') === OFFICE_JOB_IDS.janitor) {
+    updateOfficeTrashTossLiveMarkup(root, game);
   }
 }
 
@@ -6967,6 +7091,7 @@ export class Hud {
       });
       this.schoolMicrogameBodyRenderKey = bodyRenderKey;
     }
+    updateSchoolMicrogameLiveMarkup(this.schoolMicrogameBody, game);
 
     if (this.schoolMicrogameMessage) {
       this.schoolMicrogameMessage.textContent = error || game?.message || round.description || 'Play fast.';

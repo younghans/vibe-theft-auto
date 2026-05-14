@@ -7409,6 +7409,7 @@ body.is-admin-prompt-resizing * {
   line-height: 1.4;
 }
 
+.hud__school-ready--office-job,
 .hud__school-ready--janitor {
   position: relative;
   min-height: 500px;
@@ -7416,9 +7417,21 @@ body.is-admin-prompt-resizing * {
   overflow: hidden;
 }
 
+.hud__school-ready--office-job > :not(.hud__office-ready-backdrop),
 .hud__school-ready--janitor > :not(.hud__office-janitor-closet) {
   position: relative;
   z-index: 1;
+}
+
+.hud__office-ready-backdrop {
+  position: absolute;
+  inset: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  opacity: 0.78;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .hud__office-janitor-closet {
@@ -7601,6 +7614,83 @@ body.is-admin-prompt-resizing * {
   border-radius: 50%;
   background: #f4d35e;
   box-shadow: 0 0 14px rgba(244, 211, 94, 0.35);
+}
+
+.hud__office-breakroom-backdrop {
+  --fill: 76%;
+  --target-bottom: 72%;
+  --target-height: 10%;
+  background:
+    linear-gradient(180deg, rgba(8, 14, 18, 0.03), rgba(8, 14, 18, 0.74)),
+    linear-gradient(135deg, #42505b, #171b20);
+}
+
+.hud__office-breakroom-backdrop .hud__office-coffee-maker {
+  top: 64px;
+}
+
+.hud__office-breakroom-backdrop .hud__office-cup {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  width: 146px;
+  height: 118px;
+  overflow: visible;
+  border-width: 7px;
+  border-radius: 0 0 24px 24px;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.hud__office-breakroom-backdrop .hud__office-cup::after {
+  right: -45px;
+  top: 32px;
+  width: 58px;
+  height: 54px;
+  border-width: 7px;
+  border-radius: 0 34px 34px 0;
+}
+
+.hud__office-breakroom-backdrop .hud__office-coffee-fill {
+  max-height: 100%;
+}
+
+.hud__office-breakroom-backdrop .hud__office-coffee-steam {
+  opacity: 0;
+}
+
+.hud__office-boardroom-backdrop {
+  --target-left: 42%;
+  --target-width: 18%;
+  --memo-left: 51%;
+  --stamp-left: 51%;
+  background:
+    linear-gradient(180deg, rgba(8, 10, 14, 0.03), rgba(8, 10, 14, 0.74)),
+    linear-gradient(135deg, #3c3b47, #12151b);
+}
+
+.hud__office-boardroom-backdrop .hud__office-boardroom-window {
+  top: 52px;
+}
+
+.hud__office-boardroom-backdrop .hud__office-board-face {
+  bottom: 148px;
+}
+
+.hud__office-boardroom-backdrop .hud__office-board-face.is-center {
+  bottom: 154px;
+}
+
+.hud__office-boardroom-backdrop .hud__office-ceo-stamp-arm {
+  top: 80px;
+}
+
+.hud__office-boardroom-backdrop .hud__office-approval-window {
+  bottom: 88px;
+}
+
+.hud__office-boardroom-backdrop .hud__office-ceo-memo {
+  bottom: 98px;
 }
 
 .hud__school-instructions {
@@ -10032,9 +10122,10 @@ body.is-admin-prompt-resizing * {
   bottom: 72px;
   height: 108px;
   opacity: 0.88;
-  transform: translateX(var(--office-aim-offset, 0px)) rotate(var(--office-aim-tilt, 0deg));
+  transform: translate3d(var(--office-aim-offset, 0px), 0, 0) rotate(var(--office-aim-tilt, 0deg));
   transform-origin: left bottom;
-  transition: transform 80ms linear;
+  transition: transform 150ms cubic-bezier(0.22, 0.68, 0.18, 1);
+  will-change: transform;
 }
 
 .hud__office-aim-arc::before {
@@ -10044,7 +10135,7 @@ body.is-admin-prompt-resizing * {
   border-top: 3px dashed rgba(248, 211, 79, 0.58);
   border-radius: 50% 50% 0 0;
   filter: drop-shadow(0 0 8px rgba(248, 211, 79, 0.24));
-  animation: hud-office-trajectory-bob 1180ms ease-in-out infinite;
+  animation: hud-office-trajectory-bob 1650ms ease-in-out infinite;
 }
 
 .hud__office-paper-ball {
@@ -10701,7 +10792,7 @@ body.is-admin-prompt-resizing * {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-8px);
+    transform: translateY(-5px);
   }
 }
 
