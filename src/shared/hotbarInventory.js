@@ -7,6 +7,14 @@ import {
 import { hasInventoryWeapon } from './weaponInventory.js';
 
 export const HOTBAR_SLOT_COUNT = 5;
+export const DEFAULT_HOTBAR_ITEM_ORDER = Object.freeze([
+  WEAPON_IDS.pistol,
+  DRINK_ITEM_IDS.beer,
+  DRINK_ITEM_IDS.shot,
+  '',
+  ''
+]);
+const HOTBAR_ITEM_IDS = new Set(DEFAULT_HOTBAR_ITEM_ORDER.filter(Boolean));
 
 function createEmptySlot(index) {
   return Object.freeze({
@@ -18,10 +26,10 @@ function createEmptySlot(index) {
   });
 }
 
-function createPistolSlot() {
+function createPistolSlot(index) {
   return Object.freeze({
-    index: 0,
-    key: '1',
+    index,
+    key: String(index + 1),
     itemId: WEAPON_IDS.pistol,
     label: 'Pistol',
     kind: 'weapon'
@@ -39,11 +47,68 @@ function createDrinkSlot(index, item, count) {
   });
 }
 
+function normalizeHotbarItemId(value = '') {
+  const itemId = String(value ?? '').trim();
+  return HOTBAR_ITEM_IDS.has(itemId) ? itemId : '';
+}
+
+export function normalizeHotbarItemOrder(value = DEFAULT_HOTBAR_ITEM_ORDER) {
+  const source = Array.isArray(value) ? value : [];
+  const order = Array.from({ length: HOTBAR_SLOT_COUNT }, () => '');
+  const usedItemIds = new Set();
+
+  for (let index = 0; index < HOTBAR_SLOT_COUNT; index += 1) {
+    const itemId = normalizeHotbarItemId(source[index]);
+    if (!itemId || usedItemIds.has(itemId)) {
+      continue;
+    }
+
+    order[index] = itemId;
+    usedItemIds.add(itemId);
+  }
+
+  for (const itemId of DEFAULT_HOTBAR_ITEM_ORDER) {
+    if (!itemId || usedItemIds.has(itemId)) {
+      continue;
+    }
+
+    const emptyIndex = order.findIndex((slotItemId) => !slotItemId);
+    if (emptyIndex < 0) {
+      break;
+    }
+
+    order[emptyIndex] = itemId;
+    usedItemIds.add(itemId);
+  }
+
+  return Object.freeze(order);
+}
+
+export function moveHotbarItemOrderSlot(order = DEFAULT_HOTBAR_ITEM_ORDER, fromIndex, toIndex) {
+  const normalizedFromIndex = normalizeHotbarSlotIndex(fromIndex);
+  const normalizedToIndex = normalizeHotbarSlotIndex(toIndex);
+  const nextOrder = [...normalizeHotbarItemOrder(order)];
+  if (
+    normalizedFromIndex < 0
+    || normalizedToIndex < 0
+    || normalizedFromIndex === normalizedToIndex
+    || !nextOrder[normalizedFromIndex]
+  ) {
+    return Object.freeze(nextOrder);
+  }
+
+  const movedItemId = nextOrder[normalizedFromIndex];
+  nextOrder[normalizedFromIndex] = nextOrder[normalizedToIndex] || '';
+  nextOrder[normalizedToIndex] = movedItemId;
+  return Object.freeze(nextOrder);
+}
+
 export function createHotbarSlots({
   ownedWeaponIds = '',
   equippedWeaponId = '',
   beerCount = 0,
-  shotCount = 0
+  shotCount = 0,
+  hotbarItemOrder = DEFAULT_HOTBAR_ITEM_ORDER
 } = {}) {
   const hasPistol = hasInventoryWeapon(ownedWeaponIds, WEAPON_IDS.pistol)
     || String(equippedWeaponId ?? '').trim() === WEAPON_IDS.pistol;
@@ -52,17 +117,26 @@ export function createHotbarSlots({
     [DRINK_ITEM_IDS.shot]: getPlayerDrinkCount({ beerCount, shotCount }, DRINK_ITEM_IDS.shot)
   };
   const drinkItems = listDrinkInventoryItems();
+  const itemSlots = new Map();
+
+  if (hasPistol) {
+    itemSlots.set(WEAPON_IDS.pistol, (index) => createPistolSlot(index));
+  }
+
+  for (const drink of drinkItems) {
+    const count = drinkCounts[drink.id] ?? 0;
+    if (count > 0) {
+      itemSlots.set(drink.id, (index) => createDrinkSlot(index, drink, count));
+    }
+  }
+
+  const itemOrder = normalizeHotbarItemOrder(hotbarItemOrder);
 
   return Object.freeze(
     Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
-      if (index === 0 && hasPistol) {
-        return createPistolSlot();
-      }
-
-      const drink = drinkItems[index - 1] ?? null;
-      const count = drink ? drinkCounts[drink.id] ?? 0 : 0;
-      if (drink && count > 0) {
-        return createDrinkSlot(index, drink, count);
+      const createSlot = itemSlots.get(itemOrder[index]);
+      if (createSlot) {
+        return createSlot(index);
       }
 
       return createEmptySlot(index);

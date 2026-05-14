@@ -37,12 +37,15 @@ import {
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
 import {
+  DEFAULT_HOTBAR_ITEM_ORDER,
   HOTBAR_KEY_CODES,
   createHotbarSlots,
   getHotbarDrinkItemId,
   getHotbarEquippedWeaponId,
   getHotbarSlot,
   getHotbarSlotIndexFromKeyCode,
+  moveHotbarItemOrderSlot,
+  normalizeHotbarItemOrder,
   normalizeHotbarSlotIndex
 } from '../shared/hotbarInventory.js';
 import {
@@ -180,6 +183,7 @@ const CHARACTER_STORAGE_KEY = 'vta.selectedCharacterId';
 const LEGACY_CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const GAME_SETTINGS_STORAGE_KEY = 'vta.gameSettings';
 const LEGACY_GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
+const HOTBAR_LAYOUT_STORAGE_KEY = 'vta.hotbarItemOrder';
 const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
@@ -422,6 +426,23 @@ function writeStoredGameSettings(settings = DEFAULT_GAME_SETTINGS) {
     window.localStorage?.setItem(GAME_SETTINGS_STORAGE_KEY, JSON.stringify({
       masterVolume: THREE.MathUtils.clamp(Number(settings.masterVolume), 0, 1)
     }));
+  } catch {
+    // Local persistence is best-effort; gameplay should continue if storage is unavailable.
+  }
+}
+
+function readStoredHotbarItemOrder() {
+  try {
+    const raw = window.localStorage?.getItem(HOTBAR_LAYOUT_STORAGE_KEY);
+    return normalizeHotbarItemOrder(raw ? JSON.parse(raw) : DEFAULT_HOTBAR_ITEM_ORDER);
+  } catch {
+    return normalizeHotbarItemOrder(DEFAULT_HOTBAR_ITEM_ORDER);
+  }
+}
+
+function writeStoredHotbarItemOrder(order = DEFAULT_HOTBAR_ITEM_ORDER) {
+  try {
+    window.localStorage?.setItem(HOTBAR_LAYOUT_STORAGE_KEY, JSON.stringify(normalizeHotbarItemOrder(order)));
   } catch {
     // Local persistence is best-effort; gameplay should continue if storage is unavailable.
   }
@@ -672,7 +693,8 @@ export class Game {
     this.currentAimMode = false;
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
-    this.hotbarSlots = createHotbarSlots();
+    this.hotbarItemOrder = readStoredHotbarItemOrder();
+    this.hotbarSlots = createHotbarSlots({ hotbarItemOrder: this.hotbarItemOrder });
     this.selectedHotbarSlotIndex = 0;
     this.pendingHotbarWeaponId = null;
     this.pendingHotbarRequestedAt = 0;
@@ -932,7 +954,8 @@ export class Game {
       onZoomOut: () => this.stepCameraZoom(1)
     });
     this.hud.bindHotbarEvents({
-      onSelectSlot: (slotIndex) => this.selectHotbarSlot(slotIndex, { source: 'pointer' })
+      onSelectSlot: (slotIndex) => this.selectHotbarSlot(slotIndex, { source: 'pointer' }),
+      onMoveSlot: (fromSlotIndex, toSlotIndex) => this.moveHotbarSlot(fromSlotIndex, toSlotIndex)
     });
     this.hud.bindCharacterSelectorEvents({
       onTogglePanel: (visible) => this.toggleCharacterSelector(visible),
@@ -10536,14 +10559,18 @@ export class Game {
     return true;
   }
 
-  refreshHotbarHud() {
-    const localPlayerState = this.getLocalPlayerState();
-    this.hotbarSlots = createHotbarSlots({
+  createCurrentHotbarSlots(localPlayerState = this.getLocalPlayerState()) {
+    return createHotbarSlots({
       ownedWeaponIds: localPlayerState?.ownedWeaponIds ?? '',
       equippedWeaponId: localPlayerState?.equippedWeaponId ?? '',
       beerCount: localPlayerState?.beerCount ?? 0,
-      shotCount: localPlayerState?.shotCount ?? 0
+      shotCount: localPlayerState?.shotCount ?? 0,
+      hotbarItemOrder: this.hotbarItemOrder
     });
+  }
+
+  refreshHotbarHud() {
+    this.hotbarSlots = this.createCurrentHotbarSlots();
 
     this.hud.setHotbarState({
       visible: true,
@@ -10551,6 +10578,47 @@ export class Game {
       selectedIndex: this.selectedHotbarSlotIndex,
       disabled: !this.canUseHotbarInput()
     });
+  }
+
+  moveHotbarSlot(fromSlotIndex, toSlotIndex) {
+    if (!this.canUseHotbarInput()) {
+      return false;
+    }
+
+    const normalizedFromIndex = normalizeHotbarSlotIndex(fromSlotIndex);
+    const normalizedToIndex = normalizeHotbarSlotIndex(toSlotIndex);
+    if (
+      normalizedFromIndex < 0
+      || normalizedToIndex < 0
+      || normalizedFromIndex === normalizedToIndex
+    ) {
+      return false;
+    }
+
+    const selectedItemId = this.getSelectedHotbarSlot()?.itemId || '';
+    const nextOrder = moveHotbarItemOrderSlot(
+      this.hotbarItemOrder,
+      normalizedFromIndex,
+      normalizedToIndex
+    );
+    if (nextOrder.join('|') === this.hotbarItemOrder.join('|')) {
+      return false;
+    }
+
+    this.hotbarItemOrder = nextOrder;
+    writeStoredHotbarItemOrder(this.hotbarItemOrder);
+    this.hotbarSlots = this.createCurrentHotbarSlots();
+
+    if (selectedItemId) {
+      const nextSelectedIndex = this.hotbarSlots.findIndex((slot) => slot.itemId === selectedItemId);
+      if (nextSelectedIndex >= 0) {
+        this.selectedHotbarSlotIndex = nextSelectedIndex;
+      }
+    }
+
+    this.refreshHotbarHud();
+    this.applyHotbarSelection({ force: true });
+    return true;
   }
 
   selectHotbarSlot(slotIndex, { source = 'keyboard' } = {}) {

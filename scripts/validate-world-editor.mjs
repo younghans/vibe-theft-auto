@@ -23,7 +23,8 @@ import {
 } from '../src/shared/bartender.js';
 import {
   createHotbarSlots,
-  getHotbarDrinkItemId
+  getHotbarDrinkItemId,
+  moveHotbarItemOrderSlot
 } from '../src/shared/hotbarInventory.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import { buildCity } from '../src/world/buildCity.js';
@@ -410,6 +411,22 @@ function validateBartenderFunction() {
   const hotbarSlots = createHotbarSlots({ beerCount: 2, shotCount: 1 });
   assert(getHotbarDrinkItemId(hotbarSlots[1]) === DRINK_ITEM_IDS.beer, 'Beer should appear as a hotbar drink item');
   assert(getHotbarDrinkItemId(hotbarSlots[2]) === DRINK_ITEM_IDS.shot, 'Shot should appear as a hotbar drink item');
+  const movedBeerOrder = moveHotbarItemOrderSlot(undefined, 1, 4);
+  const movedBeerSlots = createHotbarSlots({
+    beerCount: 2,
+    shotCount: 1,
+    hotbarItemOrder: movedBeerOrder
+  });
+  assert(!movedBeerSlots[1].itemId, 'Moving beer away from slot two should leave that slot empty');
+  assert(getHotbarDrinkItemId(movedBeerSlots[4]) === DRINK_ITEM_IDS.beer, 'Beer should move to the target hotbar slot');
+  const swappedDrinkOrder = moveHotbarItemOrderSlot(movedBeerOrder, 4, 2);
+  const swappedDrinkSlots = createHotbarSlots({
+    beerCount: 2,
+    shotCount: 1,
+    hotbarItemOrder: swappedDrinkOrder
+  });
+  assert(getHotbarDrinkItemId(swappedDrinkSlots[2]) === DRINK_ITEM_IDS.beer, 'Dropping on an occupied slot should swap hotbar items');
+  assert(getHotbarDrinkItemId(swappedDrinkSlots[4]) === DRINK_ITEM_IDS.shot, 'The displaced hotbar item should move into the source slot');
 
   const bartender = normalizeNpcBehavior({
     modelId: 'brute',

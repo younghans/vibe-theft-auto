@@ -2488,6 +2488,8 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
       class="hud__hotbar-slot${isSelected ? ' is-selected' : ''}${isEmpty ? ' is-empty' : ''}"
       type="button"
       data-hotbar-slot="${index}"
+      data-hotbar-item-id="${escapeHtml(slot.itemId ?? '')}"
+      draggable="false"
       aria-label="Hotbar ${escapeHtml(slot.key ?? String(index + 1))}: ${escapeHtml(label)}"
       aria-pressed="${isSelected ? 'true' : 'false'}"
     >
@@ -2792,6 +2794,8 @@ export class Hud {
     this.lastAmmoClipSize = 0;
     this.lastAmmoSignature = '';
     this.lastHotbarSignature = '';
+    this.hotbarDragState = null;
+    this.hotbarSuppressClickUntil = 0;
     this.lastInteractionState = null;
     this.stockMarketVisible = false;
     this.stockMarketState = {
@@ -4748,8 +4752,31 @@ export class Hud {
     });
   }
 
-  bindHotbarEvents({ onSelectSlot } = {}) {
+  bindHotbarEvents({ onSelectSlot, onMoveSlot } = {}) {
+    this.hotbarSlotsRoot?.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const button = target?.closest('[data-hotbar-slot]');
+      if (!button || button.disabled || (event.pointerType === 'mouse' && event.button !== 0)) {
+        return;
+      }
+
+      event.stopPropagation();
+      if (button.classList.contains('is-empty')) {
+        return;
+      }
+
+      this.startHotbarSlotDrag(event, button, onMoveSlot);
+    });
+
     this.hotbarSlotsRoot?.addEventListener('click', (event) => {
+      if (performance.now() < this.hotbarSuppressClickUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
@@ -4762,6 +4789,165 @@ export class Hud {
       event.stopPropagation();
       onSelectSlot?.(Number(button.dataset.hotbarSlot));
     });
+  }
+
+  startHotbarSlotDrag(event, button, onMoveSlot) {
+    this.endHotbarSlotDrag(null, { cancelled: true });
+
+    const fromIndex = Number(button.dataset.hotbarSlot);
+    if (!Number.isFinite(fromIndex)) {
+      return;
+    }
+
+    const state = {
+      pointerId: event.pointerId,
+      fromIndex,
+      source: button,
+      startX: event.clientX,
+      startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
+      dragging: false,
+      dropIndex: -1,
+      dropTarget: null,
+      ghost: null,
+      onMoveSlot,
+      moveHandler: null,
+      upHandler: null,
+      cancelHandler: null
+    };
+    state.moveHandler = (moveEvent) => this.handleHotbarSlotDragMove(moveEvent);
+    state.upHandler = (upEvent) => this.endHotbarSlotDrag(upEvent);
+    state.cancelHandler = (cancelEvent) => this.endHotbarSlotDrag(cancelEvent, { cancelled: true });
+
+    this.hotbarDragState = state;
+    try {
+      button.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture can fail if the browser has already cancelled the pointer.
+    }
+
+    window.addEventListener('pointermove', state.moveHandler, { passive: false });
+    window.addEventListener('pointerup', state.upHandler, { passive: false });
+    window.addEventListener('pointercancel', state.cancelHandler, { passive: false });
+  }
+
+  handleHotbarSlotDragMove(event) {
+    const state = this.hotbarDragState;
+    if (!state || event.pointerId !== state.pointerId) {
+      return;
+    }
+
+    state.currentX = event.clientX;
+    state.currentY = event.clientY;
+    const deltaX = event.clientX - state.startX;
+    const deltaY = event.clientY - state.startY;
+    if (!state.dragging && Math.hypot(deltaX, deltaY) < 6) {
+      return;
+    }
+
+    if (!state.dragging) {
+      this.startHotbarSlotDragVisual(state);
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.positionHotbarSlotDragGhost(state, event.clientX, event.clientY);
+    this.updateHotbarSlotDropTarget(event.clientX, event.clientY);
+  }
+
+  startHotbarSlotDragVisual(state) {
+    state.dragging = true;
+    this.hotbarSuppressClickUntil = performance.now() + 300;
+    this.hotbarRoot?.classList.add('is-dragging');
+    state.source?.classList.add('is-drag-source');
+    state.source?.setAttribute('aria-grabbed', 'true');
+
+    const ghost = state.source?.cloneNode(true);
+    if (ghost instanceof HTMLElement) {
+      const rect = state.source.getBoundingClientRect();
+      ghost.classList.add('hud__hotbar-drag-ghost');
+      ghost.classList.remove('is-drag-source', 'is-drop-target');
+      ghost.disabled = true;
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.removeAttribute('data-hotbar-slot');
+      ghost.style.width = `${rect.width}px`;
+      ghost.style.height = `${rect.height}px`;
+      document.body.append(ghost);
+      state.ghost = ghost;
+      this.positionHotbarSlotDragGhost(state, state.currentX, state.currentY);
+    }
+  }
+
+  positionHotbarSlotDragGhost(state, clientX, clientY) {
+    if (!state?.ghost) {
+      return;
+    }
+
+    state.ghost.style.left = `${clientX}px`;
+    state.ghost.style.top = `${clientY}px`;
+  }
+
+  updateHotbarSlotDropTarget(clientX, clientY) {
+    const state = this.hotbarDragState;
+    if (!state) {
+      return;
+    }
+
+    const element = document.elementFromPoint(clientX, clientY);
+    const button = element instanceof Element
+      ? element.closest('[data-hotbar-slot]')
+      : null;
+    const nextTarget = button && this.hotbarSlotsRoot?.contains(button)
+      ? button
+      : null;
+    const nextIndex = Number(nextTarget?.dataset.hotbarSlot);
+    const validTarget = Number.isFinite(nextIndex) && nextIndex !== state.fromIndex
+      ? nextTarget
+      : null;
+
+    if (state.dropTarget && state.dropTarget !== validTarget) {
+      state.dropTarget.classList.remove('is-drop-target');
+    }
+
+    state.dropTarget = validTarget;
+    state.dropIndex = validTarget ? nextIndex : -1;
+    validTarget?.classList.add('is-drop-target');
+  }
+
+  endHotbarSlotDrag(event = null, { cancelled = false } = {}) {
+    const state = this.hotbarDragState;
+    if (!state || (event && event.pointerId !== state.pointerId)) {
+      return;
+    }
+
+    if (state.dragging) {
+      event?.preventDefault();
+      event?.stopPropagation();
+      this.hotbarSuppressClickUntil = performance.now() + 350;
+      if (!cancelled && event) {
+        this.updateHotbarSlotDropTarget(event.clientX, event.clientY);
+      }
+      if (!cancelled && state.dropIndex >= 0) {
+        state.onMoveSlot?.(state.fromIndex, state.dropIndex);
+      }
+    }
+
+    state.moveHandler && window.removeEventListener('pointermove', state.moveHandler);
+    state.upHandler && window.removeEventListener('pointerup', state.upHandler);
+    state.cancelHandler && window.removeEventListener('pointercancel', state.cancelHandler);
+    try {
+      state.source?.releasePointerCapture?.(state.pointerId);
+    } catch {
+      // The pointer may already be released after cancellation.
+    }
+
+    this.hotbarRoot?.classList.remove('is-dragging');
+    state.source?.classList.remove('is-drag-source');
+    state.source?.removeAttribute('aria-grabbed');
+    state.dropTarget?.classList.remove('is-drop-target');
+    state.ghost?.remove();
+    this.hotbarDragState = null;
   }
 
   bindCharacterSelectorEvents({
