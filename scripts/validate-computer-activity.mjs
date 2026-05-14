@@ -157,6 +157,8 @@ function validateOfficeJobs() {
   assert(/thrower|throws?/i.test(`${janitor.description} ${janitor.prompt}`), 'Janitor paper toss should show a person throwing the paper.');
   assert(/three/i.test(`${janitor.subtitle} ${janitor.description} ${janitor.prompt}`), 'Janitor task should require multiple paper toss rounds.');
   assert(/spacebar/i.test(janitor.instructions) && /throw/i.test(janitor.instructions), 'Janitor start menu should explain Spacebar/click throwing controls.');
+  assert(/arc/i.test(`${janitor.prompt} ${janitor.instructions}`) && /basket/i.test(`${janitor.prompt} ${janitor.instructions}`), 'Janitor instructions should explain the arc lining up with the basket.');
+  assert(Number(janitor.durationMs ?? 0) >= 14000, 'Janitor paper toss should be slightly easier with a little more time.');
   assert(/coffee maker/i.test(manager.description), 'Office Manager task should mention the coffee maker.');
   assert(/mug/i.test(manager.description), 'Office Manager task should use a coffee mug.');
   assert(/hold spacebar/i.test(manager.instructions) && /release/i.test(manager.instructions), 'Office Manager start menu should explain hold/release coffee controls.');
@@ -175,6 +177,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
   assert(gameSource.includes('OFFICE_JANITOR_REQUIRED_THROWS'), 'Janitor paper toss should require multiple successful throws.');
+  assert(gameSource.includes('OFFICE_JANITOR_BASE_TARGET_WIDTH'), 'Janitor paper toss should use explicit easier target timing constants.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
@@ -184,6 +187,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('hud__office-thrower'), 'Janitor HUD should render a person throwing the paper.');
   assert(!hudSource.includes('hud__office-fan'), 'Janitor HUD should no longer render the old desk fan.');
   assert(hudSource.includes('Janitor toss progress'), 'Janitor HUD should show multi-round toss progress.');
+  assert(hudSource.includes('hud__office-janitor-closet'), 'Janitor ready screen should render a janitor closet background.');
+  assert(hudSource.includes('--office-aim-offset'), 'Janitor trajectory should be aligned from timing-window error.');
   assert(hudSource.includes('3..2..1.. GO!'), 'Office jobs should display the 3..2..1.. GO countdown.');
   assert(hudSource.includes('hud__office-breakroom-fridge'), 'Office Manager HUD should render a break room background.');
   assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
@@ -195,6 +200,9 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes("office:stamp"), 'CEO HUD should expose the stamp action.');
 
   assert(cssSource.includes('@keyframes hud-office-paper-score'), 'Janitor paper toss should land made shots in the basket.');
+  assert(cssSource.includes('@keyframes hud-office-trajectory-bob'), 'Janitor trajectory line should move up and down.');
+  assert(cssSource.includes('right: calc(16% + 47px)'), 'Janitor trajectory line should terminate at the trash can center.');
+  assert(cssSource.includes('hud__office-janitor-closet-bucket'), 'Janitor start screen should include janitor closet props.');
   assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
   assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');

@@ -12,6 +12,7 @@ import { getStockTradeValue } from '../shared/stockMarket.js';
 import { SCHOOL_MICROGAME_IDS } from '../shared/schoolMicrogames.js';
 import {
   OFFICE_JOB_GAME_IDS,
+  OFFICE_JOB_IDS,
   canPlayerWorkOfficeJob,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
@@ -1486,8 +1487,10 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const round = game?.round ?? {};
   const requirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
   const instructions = String(round.instructions ?? '').trim();
+  const isJanitorOfficeJob = game?.context === 'office-job' && String(round.officeJobId ?? round.jobId ?? '') === OFFICE_JOB_IDS.janitor;
   return `
-    <div class="hud__school-ready">
+    <div class="hud__school-ready${isJanitorOfficeJob ? ' hud__school-ready--janitor' : ''}">
+      ${isJanitorOfficeJob ? createJanitorClosetBackdropMarkup() : ''}
       <div class="hud__school-ready-badge" aria-hidden="true">${escapeHtml(round.icon ?? 'GO')}</div>
       <h3>${escapeHtml(round.title ?? 'School Microgame')}</h3>
       <p>${escapeHtml(round.description ?? 'Play fast and clean.')}</p>
@@ -1509,6 +1512,22 @@ function createReadySchoolMicrogameMarkup(game = null) {
       </div>
       ${createSchoolGameButton('start', 'Start', 'is-primary')}
     </div>
+  `;
+}
+
+function createJanitorClosetBackdropMarkup() {
+  return `
+      <div class="hud__office-janitor-closet" aria-hidden="true">
+        <span class="hud__office-janitor-closet-wall"></span>
+        <span class="hud__office-janitor-closet-shelf is-top"></span>
+        <span class="hud__office-janitor-closet-shelf is-mid"></span>
+        <span class="hud__office-janitor-closet-supplies is-left"></span>
+        <span class="hud__office-janitor-closet-supplies is-right"></span>
+        <span class="hud__office-janitor-closet-mop"></span>
+        <span class="hud__office-janitor-closet-broom"></span>
+        <span class="hud__office-janitor-closet-bucket"></span>
+        <span class="hud__office-janitor-closet-door"></span>
+      </div>
   `;
 }
 
@@ -1934,6 +1953,16 @@ function createOfficeTrashTossMarkup(game = null) {
   const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.48) || 0.48));
   const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.64) || 0.64));
   const wind = Math.max(-0.35, Math.min(0.35, Number(round.wind ?? 0) || 0));
+  const targetWidth = Math.max(0.01, targetEnd - targetStart);
+  const insideTarget = marker >= targetStart && marker <= targetEnd;
+  const timingError = insideTarget
+    ? 0
+    : marker < targetStart
+      ? (marker - targetStart) / targetWidth
+      : (marker - targetEnd) / targetWidth;
+  const aimError = Math.max(-1.35, Math.min(1.35, timingError));
+  const trajectoryOffset = aimError * 64;
+  const trajectoryTilt = aimError * 6;
   const thrown = data.thrown === true;
   const made = data.throwMade === true;
   const missSide = String(data.throwMissSide ?? '');
@@ -1950,7 +1979,7 @@ function createOfficeTrashTossMarkup(game = null) {
       : ` is-thrown is-missed${missSide ? ` is-miss-${escapeHtml(missSide)}` : ''}`
     : '';
   return `
-    <div class="hud__office-task hud__office-trash${throwClass}" style="--office-aim:${(marker * 100).toFixed(2)}%; --office-wind-shift:${(wind * 120).toFixed(1)}px; --office-wind-soft:${(wind * 28).toFixed(1)}px; --office-wind-long:${(wind * 80).toFixed(1)}px; --office-target-left:${(targetStart * 100).toFixed(2)}%; --office-target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
+    <div class="hud__office-task hud__office-trash${throwClass}" style="--office-aim:${(marker * 100).toFixed(2)}%; --office-aim-offset:${trajectoryOffset.toFixed(1)}px; --office-aim-tilt:${trajectoryTilt.toFixed(2)}deg; --office-wind-shift:${(wind * 120).toFixed(1)}px; --office-wind-soft:${(wind * 28).toFixed(1)}px; --office-wind-long:${(wind * 80).toFixed(1)}px; --office-target-left:${(targetStart * 100).toFixed(2)}%; --office-target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%">
       <div class="hud__office-trash-scene" aria-hidden="true">
         <span class="hud__office-paper-desk"></span>
         <span class="hud__office-thrower">
