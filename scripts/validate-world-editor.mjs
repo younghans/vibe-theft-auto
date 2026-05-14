@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Box3, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
@@ -384,6 +385,23 @@ function validateBartenderFunction() {
   assert(getDrunknessLevelLabel(3) === 'drunk', 'Drunkness level 3 should be labeled drunk');
   assert(getDrunknessLevelLabel(4) === 'wasted', 'Drunkness level 4 should be labeled wasted');
   assert(getDrunknessLevelLabel(5) === 'plastered', 'Drunkness level 5 should be labeled plastered');
+  const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert(
+    /\.hud__drunkness-label\.is-active\s*\{[^}]*animation:\s*hud-drunkness-label-wobble/s.test(styles),
+    'Only the active drunkness label should receive the wobble animation'
+  );
+  assert(
+    /\.hud__drunkness-label\.is-filled\s*\{[^}]*animation:/s.test(styles) === false,
+    'Filled inactive drunkness labels should not animate'
+  );
+  assert(
+    /\.hud__drunkness-label\[data-drunkness-label-level="5"\]\s*\{[^}]*--drunkness-label-active-scale:\s*1\.2/s.test(styles),
+    'Plastered should have the largest active drunkness label scale'
+  );
+  assert(
+    /\.hud__drunkness-label\[data-drunkness-label-level="5"\]\.is-active\s*\{[^}]*animation-name:\s*hud-drunkness-label-plastered/s.test(styles),
+    'Plastered should use the goofiest drunkness label animation'
+  );
   assert(getDrunknessDurationMs(1) === 30000, 'Level 1 drunkness should last 30 seconds');
   assert(getDrunknessDurationMs(5) === DRUNKNESS_MAX_DURATION_MS, 'Level 5 drunkness should last the max duration');
   assert(DRUNKNESS_MAX_DURATION_MS === 150000, 'Level 5 drunkness should last two and a half minutes');
