@@ -105,13 +105,23 @@ function truncateText(value = '', maxLength = 6000) {
 }
 
 function getErrorDiagnostic(error) {
-  return {
+  const diagnostic = {
     name: String(error?.name ?? 'Error'),
     message: truncateText(error?.message ?? String(error ?? ''), 2000),
     stack: truncateText(error?.stack ?? '', 6000),
     code: error?.code == null ? '' : String(error.code),
     status: error?.status == null ? '' : String(error.status)
   };
+  if (error?.timedOut === true) {
+    diagnostic.timedOut = true;
+  }
+  if (error?.outputTail) {
+    diagnostic.outputTail = truncateText(error.outputTail, 4000);
+  }
+  if (error?.processCleanup) {
+    diagnostic.processCleanup = sanitizeDiagnosticValue(error.processCleanup);
+  }
+  return diagnostic;
 }
 
 function sanitizeDiagnosticValue(value, key = '', depth = 0) {
@@ -439,6 +449,256 @@ function getSanitizedCodexEnv(sourceEnv = process.env) {
   return sanitized;
 }
 
+function quotePowerShellString(value = '') {
+  return `'${String(value ?? '').replace(/'/gu, "''")}'`;
+}
+
+async function runUtilityCommand(command, args = [], {
+  timeoutMs = 15000
+} = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let output = '';
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.\n${truncateText(output, 4000)}`));
+    }, timeoutMs);
+
+    const collect = (chunk) => {
+      output = truncateText(`${output}${chunk.toString('utf8')}`, 12000);
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+    child.on('close', (code) => {
+      clearTimeout(timeout);
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (code === 0) {
+        resolve(output);
+      } else {
+        const error = new Error(`${command} failed with code ${code}.\n${truncateText(output, 4000)}`);
+        error.output = output;
+        reject(error);
+      }
+    });
+  });
+}
+
+function getWindowsTaskProcessScript({
+  rootPid = 0,
+  taskId = '',
+  worktreePath = '',
+  sinceMs = 0,
+  includeDetachedLocalHelpers = false,
+  kill = false
+} = {}) {
+  const slug = safeTaskSlug(taskId);
+  return `
+$ErrorActionPreference = 'SilentlyContinue'
+$rootPid = ${Number(rootPid) || 0}
+$taskId = ${quotePowerShellString(taskId)}
+$slug = ${quotePowerShellString(slug)}
+$worktree = ${quotePowerShellString(worktreePath)}
+$sinceMs = ${Math.max(0, Math.floor(Number(sinceMs) || 0))}
+$includeDetachedLocalHelpers = ${includeDetachedLocalHelpers ? '$true' : '$false'}
+$killMatches = ${kill ? '$true' : '$false'}
+$all = @(Get-CimInstance Win32_Process)
+$descendantIds = [System.Collections.Generic.HashSet[int]]::new()
+if ($rootPid -gt 0) {
+  $frontier = @($rootPid)
+  while ($frontier.Count -gt 0) {
+    $next = @()
+    foreach ($parentPid in $frontier) {
+      foreach ($childProcess in @($all | Where-Object { $_.ParentProcessId -eq $parentPid })) {
+        if ($descendantIds.Add([int]$childProcess.ProcessId)) {
+          $next += [int]$childProcess.ProcessId
+        }
+      }
+    }
+    $frontier = $next
+  }
+}
+$since = if ($sinceMs -gt 0) { [DateTimeOffset]::FromUnixTimeMilliseconds($sinceMs).LocalDateTime } else { [DateTime]::MinValue }
+$worktreeNorm = if ([string]::IsNullOrWhiteSpace($worktree)) { '' } else { $worktree.Replace('/', '\\').ToLowerInvariant() }
+$taskNeedles = @($taskId, $slug, "vta-cdp-$taskId", "vta-cdp-$slug") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+$matches = @()
+foreach ($proc in $all) {
+  $pidValue = [int]$proc.ProcessId
+  if ($pidValue -eq $PID) { continue }
+  $commandLine = [string]$proc.CommandLine
+  $normalizedCommandLine = $commandLine.Replace('/', '\\').ToLowerInvariant()
+  $reasons = @()
+  if ($descendantIds.Contains($pidValue)) {
+    $reasons += 'descendant'
+  }
+  if ($worktreeNorm -and $normalizedCommandLine.Contains($worktreeNorm)) {
+    $reasons += 'worktree-path'
+  }
+  foreach ($needle in $taskNeedles) {
+    if ($commandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+      $reasons += "task-marker:$needle"
+      break
+    }
+  }
+  $isNew = $false
+  if ($sinceMs -gt 0 -and $null -ne $proc.CreationDate) {
+    $isNew = ([datetime]$proc.CreationDate) -ge $since
+  }
+  if ($includeDetachedLocalHelpers -and $isNew) {
+    if ($commandLine -match 'scripts[\\\\/]+dev-server\\.mjs') {
+      $reasons += 'new-dev-server'
+    } elseif ($commandLine -match '--remote-debugging-port' -or $commandLine -match 'headless') {
+      $reasons += 'new-browser-helper'
+    } elseif ($commandLine -match 'build-web\\.mjs' -or $commandLine -match 'npm-cli\\.js.*run\\s+build:web') {
+      $reasons += 'new-build-helper'
+    }
+  }
+  if ($reasons.Count -gt 0) {
+    $matches += [pscustomobject]@{
+      pid = $pidValue
+      parentPid = [int]$proc.ParentProcessId
+      name = [string]$proc.Name
+      createdAt = if ($null -ne $proc.CreationDate) { ([datetime]$proc.CreationDate).ToString('o') } else { '' }
+      reasons = $reasons
+      commandLine = $commandLine
+    }
+  }
+}
+if ($killMatches) {
+  foreach ($match in @($matches | Sort-Object -Property pid -Descending)) {
+    & taskkill.exe /PID $match.pid /T /F 2>&1 | Out-Null
+  }
+}
+$matches | ConvertTo-Json -Depth 6 -Compress
+`;
+}
+
+function parseJsonOutput(output = '') {
+  const text = String(output ?? '').trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+async function cleanupWindowsTaskProcesses({
+  rootPid = 0,
+  taskId = '',
+  worktreePath = '',
+  sinceMs = 0,
+  includeDetachedLocalHelpers = false,
+  kill = false
+} = {}) {
+  if (process.platform !== 'win32') {
+    return { skipped: true, reason: 'not-windows' };
+  }
+  const script = getWindowsTaskProcessScript({
+    rootPid,
+    taskId,
+    worktreePath,
+    sinceMs,
+    includeDetachedLocalHelpers,
+    kill
+  });
+  const output = await runUtilityCommand('powershell.exe', [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script
+  ], {
+    timeoutMs: 20000
+  });
+  const matches = parseJsonOutput(output);
+  const normalizedMatches = Array.isArray(matches)
+    ? matches
+    : matches
+      ? [matches]
+      : [];
+  return {
+    killed: Boolean(kill),
+    matchCount: normalizedMatches.length,
+    matches: normalizedMatches.map((entry) => ({
+      pid: entry.pid,
+      parentPid: entry.parentPid,
+      name: entry.name,
+      createdAt: entry.createdAt,
+      reasons: entry.reasons,
+      commandLine: truncateText(entry.commandLine ?? '', 500)
+    }))
+  };
+}
+
+async function terminateProcessTree(pid, {
+  taskId = '',
+  label = 'command',
+  cwd = '',
+  sinceMs = 0,
+  includeDetachedLocalHelpers = false
+} = {}) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) {
+    return { skipped: true, reason: 'missing-pid' };
+  }
+
+  if (process.platform === 'win32') {
+    const cleanup = await cleanupWindowsTaskProcesses({
+      rootPid: numericPid,
+      taskId,
+      worktreePath: cwd,
+      sinceMs,
+      includeDetachedLocalHelpers,
+      kill: true
+    }).catch((error) => ({
+      error: getErrorDiagnostic(error)
+    }));
+    await runUtilityCommand('taskkill.exe', ['/PID', String(numericPid), '/T', '/F'], {
+      timeoutMs: 15000
+    }).catch(() => {});
+    return {
+      strategy: 'taskkill-tree',
+      pid: numericPid,
+      label,
+      cleanup
+    };
+  }
+
+  try {
+    process.kill(numericPid, 'SIGTERM');
+    await sleep(2000);
+    process.kill(numericPid, 'SIGKILL');
+    return { strategy: 'signal', pid: numericPid, label };
+  } catch (error) {
+    return {
+      strategy: 'signal',
+      pid: numericPid,
+      label,
+      error: getErrorDiagnostic(error)
+    };
+  }
+}
+
 function assertInside(parentPath, childPath) {
   const parent = path.resolve(parentPath);
   const child = path.resolve(childPath);
@@ -601,7 +861,8 @@ async function runCommand(command, args = [], {
   input = null,
   timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
   taskId = '',
-  label = command
+  label = command,
+  cleanupDetachedProcesses = false
 } = {}) {
   const printable = [command, ...args].join(' ');
   console.log(`[agent-worker] ${label}: ${printable}`);
@@ -613,6 +874,7 @@ async function runCommand(command, args = [], {
 
   return new Promise((resolve, reject) => {
     const platformCommand = commandForPlatform(command, args);
+    const startedAtMs = Date.now();
     const child = spawn(platformCommand.command, platformCommand.args, {
       cwd,
       env: {
@@ -626,13 +888,26 @@ async function runCommand(command, args = [], {
     let settled = false;
     const timeout = setTimeout(() => {
       if (!settled) {
-        child.kill('SIGTERM');
         settled = true;
         void (async () => {
+          const outputTail = truncateText(output, 5000);
+          const processCleanup = await terminateProcessTree(child.pid, {
+            taskId,
+            label,
+            cwd,
+            sinceMs: startedAtMs,
+            includeDetachedLocalHelpers: cleanupDetachedProcesses
+          });
           if (taskId) {
             await appendLog(taskId, `${label} timed out.`, {
               level: 'error',
-              data: { command: printable, cwd, timeoutMs }
+              data: {
+                command: printable,
+                cwd,
+                timeoutMs,
+                outputTail,
+                processCleanup
+              }
             });
           }
           await writeWorkerDiagnostic('error', 'command_timeout', {
@@ -640,9 +915,16 @@ async function runCommand(command, args = [], {
             label,
             command: printable,
             cwd,
-            timeoutMs
+            timeoutMs,
+            outputTail,
+            processCleanup
           });
-          reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+          const error = new Error(`${label} timed out after ${timeoutMs}ms.\n\nLast output:\n${outputTail || '<no output captured>'}`);
+          error.code = 'COMMAND_TIMEOUT';
+          error.timedOut = true;
+          error.outputTail = outputTail;
+          error.processCleanup = processCleanup;
+          reject(error);
         })();
       }
     }, timeoutMs);
@@ -828,8 +1110,31 @@ async function removeTaskWorktree(worktreePath, taskId = '') {
   await fsp.rm(worktreePath, { recursive: true, force: true });
 }
 
-async function cleanTaskWorktree(worktreePath, taskId = '') {
-  return withBaseRepoLock(() => removeTaskWorktree(worktreePath, taskId));
+async function cleanTaskWorktree(worktreePath, taskId = '', {
+  sinceMs = 0,
+  includeDetachedLocalHelpers = false
+} = {}) {
+  await cleanupWindowsTaskProcesses({
+    taskId,
+    worktreePath,
+    sinceMs,
+    includeDetachedLocalHelpers: false,
+    kill: true
+  }).catch(() => {});
+
+  try {
+    return await withBaseRepoLock(() => removeTaskWorktree(worktreePath, taskId));
+  } catch (error) {
+    await cleanupWindowsTaskProcesses({
+      taskId,
+      worktreePath,
+      sinceMs,
+      includeDetachedLocalHelpers: Boolean(sinceMs) && includeDetachedLocalHelpers,
+      kill: true
+    }).catch(() => {});
+    await sleep(1000);
+    return withBaseRepoLock(() => removeTaskWorktree(worktreePath, taskId));
+  }
 }
 
 async function createCodeWorktree(task) {
@@ -1010,6 +1315,8 @@ Important constraints:
 - Do not run production deploy commands.
 - Do not revert unrelated user changes.
 - Keep the final result commit-ready.
+- If you start local browsers, dev servers, preview servers, or other background helper processes, stop them before finishing.
+- When starting a background helper, include the task id in a harmless flag or temp/profile path, for example \`--agent-task-${safeTaskSlug(task.id)}\` or \`vta-cdp-${safeTaskSlug(task.id)}\`, so the worker can clean it up if the run is interrupted.
 `;
   await fsp.writeFile(promptPath, prompt, 'utf8');
   return promptPath;
@@ -1019,6 +1326,7 @@ async function runCodex(task, worktreePath, promptPath) {
   const prompt = await fsp.readFile(promptPath, 'utf8');
   const lastMessagePath = path.join(worktreePath, '.codex', 'agent-task-last-message.md');
   const configuredArgs = getCodexExecArgs(worktreePath, lastMessagePath);
+  const codexStartedAtMs = Date.now();
   await writeWorkerDiagnostic('info', 'codex_exec_configured', {
     taskId: task.id,
     customArgs: Boolean(process.env.CODEX_EXEC_ARGS),
@@ -1028,14 +1336,49 @@ async function runCodex(task, worktreePath, promptPath) {
     sanitizedEnv: true
   });
 
-  const output = await runCommand(process.env.CODEX_COMMAND || 'codex', configuredArgs, {
-    cwd: worktreePath,
-    baseEnv: getSanitizedCodexEnv(),
-    input: prompt,
-    timeoutMs: CODEX_TIMEOUT_MS,
-    taskId: task.id,
-    label: 'codex exec'
-  });
+  let output = '';
+  let codexTimedOut = false;
+  try {
+    output = await runCommand(process.env.CODEX_COMMAND || 'codex', configuredArgs, {
+      cwd: worktreePath,
+      baseEnv: {
+        ...getSanitizedCodexEnv(),
+        VTA_AGENT_TASK_ID: safeTaskSlug(task.id),
+        VTA_AGENT_WORKTREE: worktreePath
+      },
+      input: prompt,
+      timeoutMs: CODEX_TIMEOUT_MS,
+      taskId: task.id,
+      label: 'codex exec',
+      cleanupDetachedProcesses: true
+    });
+  } catch (error) {
+    codexTimedOut = error?.timedOut === true || error?.code === 'COMMAND_TIMEOUT';
+    throw error;
+  } finally {
+    await cleanupWindowsTaskProcesses({
+      taskId: task.id,
+      worktreePath,
+      sinceMs: codexStartedAtMs,
+      includeDetachedLocalHelpers: codexTimedOut,
+      kill: true
+    }).then(async (cleanup) => {
+      if (cleanup.matchCount > 0) {
+        await appendLog(task.id, 'Cleaned up task-local helper processes after codex exec.', {
+          data: cleanup
+        });
+        await writeWorkerDiagnostic('info', 'codex_helper_process_cleanup', {
+          taskId: task.id,
+          cleanup
+        });
+      }
+    }).catch(async (error) => {
+      await writeWorkerDiagnostic('warn', 'codex_helper_process_cleanup_failed', {
+        taskId: task.id,
+        error: getErrorDiagnostic(error)
+      });
+    });
+  }
   const lastMessage = await fsp.readFile(lastMessagePath, 'utf8')
     .then((text) => truncateText(text.trim(), 10000))
     .catch(() => '');
@@ -2299,6 +2642,7 @@ async function rollbackTask(task, worktreePath) {
 async function handleCodeTask(task) {
   let worktreePath = '';
   let heartbeatStatus = 'preparing';
+  const taskStartedAtMs = Date.now();
   const stopHeartbeat = startTaskHeartbeat(task.id, {
     getStatus: () => heartbeatStatus
   });
@@ -2390,7 +2734,10 @@ async function handleCodeTask(task) {
   } finally {
     stopHeartbeat();
     if (worktreePath) {
-      await cleanTaskWorktree(worktreePath, task.id).catch((error) => {
+      await cleanTaskWorktree(worktreePath, task.id, {
+        sinceMs: taskStartedAtMs,
+        includeDetachedLocalHelpers: true
+      }).catch((error) => {
         console.warn('[agent-worker] Worktree cleanup failed.', error);
       });
     }
@@ -2399,6 +2746,7 @@ async function handleCodeTask(task) {
 
 async function handleDeployTask(task) {
   let worktreePath = '';
+  const taskStartedAtMs = Date.now();
   try {
     const worktree = await createDeployWorktree(task);
     worktreePath = worktree.worktreePath;
@@ -2414,7 +2762,9 @@ async function handleDeployTask(task) {
     throw error;
   } finally {
     if (worktreePath) {
-      await cleanTaskWorktree(worktreePath, task.id).catch((error) => {
+      await cleanTaskWorktree(worktreePath, task.id, {
+        sinceMs: taskStartedAtMs
+      }).catch((error) => {
         console.warn('[agent-worker] Deploy worktree cleanup failed.', error);
       });
     }
@@ -2436,6 +2786,7 @@ async function handleReconcileDeployTask(task) {
 
 async function handleRollbackTask(task) {
   let worktreePath = '';
+  const taskStartedAtMs = Date.now();
   try {
     const worktree = await createRollbackWorktree(task);
     worktreePath = worktree.worktreePath;
@@ -2451,7 +2802,9 @@ async function handleRollbackTask(task) {
     throw error;
   } finally {
     if (worktreePath) {
-      await cleanTaskWorktree(worktreePath, task.id).catch((error) => {
+      await cleanTaskWorktree(worktreePath, task.id, {
+        sinceMs: taskStartedAtMs
+      }).catch((error) => {
         console.warn('[agent-worker] Rollback worktree cleanup failed.', error);
       });
     }
