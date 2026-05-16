@@ -29,6 +29,11 @@ import {
   getHotbarDrinkItemId,
   moveHotbarItemOrderSlot
 } from '../src/shared/hotbarInventory.js';
+import {
+  VIBE_HERO_GAME_ID,
+  VIBE_HERO_LANE_COUNT,
+  listVibeHeroSongs
+} from '../src/shared/vibeHero.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
@@ -219,11 +224,16 @@ function validateCustomPropCatalogItems() {
   assert(instrumentCluster.asset === null, 'Instrument cluster should use a procedural visual');
   assert(instrumentCluster.collision === false, 'Instrument cluster should not block movement in tight interior corners');
   assert(typeof instrumentCluster.createVisual === 'function', 'Instrument cluster should define a procedural visual');
+  assert(instrumentCluster.interactable?.gameId === VIBE_HERO_GAME_ID, 'Instrument cluster should open Vibe Hero');
+  assert(instrumentCluster.interactable?.prompt === 'Play Vibe Hero', 'Instrument cluster should advertise the Vibe Hero interaction');
+  assert(Number(instrumentCluster.interactable?.radius) >= 4, 'Instrument cluster Vibe Hero prompt should be reachable');
   assert(
     instrumentCluster.size[0] === INSTRUMENT_CLUSTER_FOOTPRINT[0]
       && instrumentCluster.size[1] === INSTRUMENT_CLUSTER_FOOTPRINT[1],
-    'Instrument cluster should use the compact corner footprint constant'
+    'Instrument cluster should use the larger corner footprint constant'
   );
+  assert(INSTRUMENT_CLUSTER_FOOTPRINT[0] > 3.2, 'Instrument cluster should be slightly wider than the original compact prop');
+  assert(INSTRUMENT_CLUSTER_FOOTPRINT[1] > 2.4, 'Instrument cluster should be slightly deeper than the original compact prop');
 
   const instrumentVisual = instrumentCluster.createVisual();
   assert(instrumentVisual.getObjectByName('instrumentClusterGuitar'), 'Instrument cluster visual should include a guitar');
@@ -234,9 +244,30 @@ function validateCustomPropCatalogItems() {
 
   const instrumentBounds = new Box3().setFromObject(instrumentVisual);
   const instrumentSize = instrumentBounds.getSize(new Vector3());
-  assert(instrumentSize.x <= INSTRUMENT_CLUSTER_FOOTPRINT[0] + 0.05, 'Instrument cluster visual should stay narrow enough for a building corner');
-  assert(instrumentSize.z <= INSTRUMENT_CLUSTER_FOOTPRINT[1] + 0.05, 'Instrument cluster visual should stay shallow enough for a building corner');
+  assert(instrumentSize.x <= INSTRUMENT_CLUSTER_FOOTPRINT[0] + 0.05, 'Instrument cluster visual should stay inside the larger corner footprint width');
+  assert(instrumentSize.z <= INSTRUMENT_CLUSTER_FOOTPRINT[1] + 0.05, 'Instrument cluster visual should stay inside the larger corner footprint depth');
   assert(instrumentSize.y <= 2.4, 'Instrument cluster visual should stay below normal room height');
+}
+
+function validateVibeHero() {
+  const songs = listVibeHeroSongs();
+  assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
+  for (const song of songs) {
+    assert(song.id && song.title, 'Vibe Hero songs should have stable ids and titles');
+    assert(song.durationMs >= 20000 && song.durationMs <= 30000, `${song.title}: duration should be 20-30 seconds`);
+    assert(String(song.publicDomainBasis ?? '').toLowerCase().includes('traditional'), `${song.title}: should document a traditional/public-domain basis`);
+    assert(Array.isArray(song.chart) && song.chart.length >= 24, `${song.title}: chart should have enough notes to be playable`);
+    let previousTime = -1;
+    for (const [index, note] of song.chart.entries()) {
+      assert(note.timeMs > previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
+      previousTime = note.timeMs;
+      assert(Number.isFinite(note.frequency) && note.frequency > 0, `${song.title} note ${index + 1}: frequency should be playable`);
+      assert(Number.isInteger(note.lane) && note.lane >= 0 && note.lane < VIBE_HERO_LANE_COUNT, `${song.title} note ${index + 1}: lane should be 0-3`);
+      assert(note.timeMs >= 0 && note.timeMs < song.durationMs, `${song.title} note ${index + 1}: note should fit inside the song`);
+    }
+    const lanes = new Set(song.chart.map((note) => note.lane));
+    assert(lanes.size === VIBE_HERO_LANE_COUNT, `${song.title}: chart should use all four Vibe Hero lanes`);
+  }
 }
 
 function validateTiles() {
@@ -592,6 +623,7 @@ async function main() {
   validateCustomTileCatalogItems();
   validateCustomPropCatalogItems();
   validateFootprintSupport();
+  validateVibeHero();
   validateTiles();
   validateProps();
   validateTaskSequence();

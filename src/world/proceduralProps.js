@@ -18,7 +18,7 @@ export const OFFICE_CEO_MEETING_TABLE_FOOTPRINT = Object.freeze([
   OFFICE_INTERIOR_CEO_MEETING_TABLE.rugWidth,
   OFFICE_INTERIOR_CEO_MEETING_TABLE.rugDepth
 ]);
-export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([3.2, 2.4]);
+export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([4.2, 2.75]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
@@ -1471,7 +1471,7 @@ function addInstrumentClusterPiano(root, materials) {
 function addInstrumentClusterGuitar(root, materials) {
   const guitar = new THREE.Group();
   guitar.name = 'instrumentClusterGuitar';
-  guitar.position.set(-1.08, 0.08, 0.38);
+  guitar.position.set(-1.48, 0.08, 0.38);
   guitar.rotation.set(0, 0.16, -0.16);
   root.add(guitar);
 
@@ -1525,13 +1525,13 @@ function addInstrumentClusterGuitar(root, materials) {
     }
   }
 
-  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandLeft', [-1.38, 0.06, 0.58], [-1.16, 0.92, 0.4], 0.022, materials.standMetal));
-  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandRight', [-0.74, 0.06, 0.56], [-1.0, 0.92, 0.39], 0.022, materials.standMetal));
-  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandBase', [-1.42, 0.06, 0.64], [-0.7, 0.06, 0.64], 0.026, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandLeft', [-1.78, 0.06, 0.58], [-1.56, 0.92, 0.4], 0.022, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandRight', [-1.14, 0.06, 0.56], [-1.4, 0.92, 0.39], 0.022, materials.standMetal));
+  root.add(createCylinderBetween('instrumentClusterGuitarFloorStandBase', [-1.82, 0.06, 0.64], [-1.1, 0.06, 0.64], 0.026, materials.standMetal));
 }
 
 function addInstrumentClusterMicrophoneStand(root, materials) {
-  const baseX = 1.14;
+  const baseX = 1.52;
   const baseZ = 0.48;
   const legEnds = [
     [baseX - 0.48, 0.06, baseZ + 0.34],
@@ -1557,13 +1557,13 @@ function addInstrumentClusterMicrophoneStand(root, materials) {
     widthSegments: 16,
     heightSegments: 10
   }));
-  root.add(createCylinderBetween('instrumentClusterMicrophoneStandBoom', [baseX, 1.68, baseZ], [0.46, 1.93, 0.26], 0.024, materials.standMetal, {
+  root.add(createCylinderBetween('instrumentClusterMicrophoneStandBoom', [baseX, 1.68, baseZ], [0.78, 1.93, 0.26], 0.024, materials.standMetal, {
     radialSegments: 12
   }));
-  root.add(createCylinderBetween('instrumentClusterMicrophoneHandle', [0.47, 1.93, 0.26], [0.22, 2.0, 0.18], 0.038, materials.micHandle, {
+  root.add(createCylinderBetween('instrumentClusterMicrophoneHandle', [0.79, 1.93, 0.26], [0.54, 2.0, 0.18], 0.038, materials.micHandle, {
     radialSegments: 12
   }));
-  root.add(createCylinderBetween('instrumentClusterMicrophone', [0.2, 2.01, 0.18], [-0.02, 2.07, 0.12], 0.065, materials.micGrille, {
+  root.add(createCylinderBetween('instrumentClusterMicrophone', [0.52, 2.01, 0.18], [0.3, 2.07, 0.12], 0.065, materials.micGrille, {
     radialSegments: 16
   }));
 }
@@ -1591,15 +1591,15 @@ export function createInstrumentClusterVisual() {
     cable: createMaterial(0x080b10, 0.68, 0.12)
   };
 
-  root.add(createBox('instrumentClusterCornerRug', [3.0, 0.045, 2.08], [0, 0.022, -0.04], materials.rug, {
+  root.add(createBox('instrumentClusterCornerRug', [4.0, 0.045, 2.36], [0, 0.022, -0.04], materials.rug, {
     castShadow: false,
     receiveShadow: true
   }));
-  root.add(createBox('instrumentClusterRugFrontTrim', [3.02, 0.02, 0.045], [0, 0.056, 1.0], materials.rugTrim, {
+  root.add(createBox('instrumentClusterRugFrontTrim', [4.02, 0.02, 0.045], [0, 0.056, 1.14], materials.rugTrim, {
     castShadow: false,
     receiveShadow: true
   }));
-  root.add(createBox('instrumentClusterRugLeftTrim', [0.045, 0.02, 2.05], [-1.48, 0.056, -0.04], materials.rugTrim, {
+  root.add(createBox('instrumentClusterRugLeftTrim', [0.045, 0.02, 2.33], [-1.98, 0.056, -0.04], materials.rugTrim, {
     castShadow: false,
     receiveShadow: true
   }));
@@ -1610,10 +1610,10 @@ export function createInstrumentClusterVisual() {
 
   const cablePath = new THREE.CatmullRomCurve3([
     new THREE.Vector3(0.34, 0.07, -0.16),
-    new THREE.Vector3(0.74, 0.065, 0.04),
-    new THREE.Vector3(1.04, 0.065, 0.36),
-    new THREE.Vector3(0.36, 0.065, 0.62),
-    new THREE.Vector3(-0.42, 0.065, 0.5)
+    new THREE.Vector3(0.92, 0.065, 0.04),
+    new THREE.Vector3(1.4, 0.065, 0.36),
+    new THREE.Vector3(0.42, 0.065, 0.72),
+    new THREE.Vector3(-0.78, 0.065, 0.54)
   ]);
   const cable = new THREE.Mesh(
     new THREE.TubeGeometry(cablePath, 28, 0.018, 6),

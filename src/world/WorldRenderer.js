@@ -1713,6 +1713,7 @@ export class WorldRenderer {
           prompt,
           actionText,
           busy: workoutBusy,
+          gameId: String(interactable.gameId ?? ''),
           officeJobId,
           interior: cloneInteriorDefinition(interactable.interior),
           approachPosition,

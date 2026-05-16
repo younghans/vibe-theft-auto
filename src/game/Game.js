@@ -150,6 +150,14 @@ import {
 import {
   OFFICE_INTERIOR_ID
 } from '../shared/officeInteriorLayout.js';
+import {
+  VIBE_HERO_DEFAULT_SONG_ID,
+  VIBE_HERO_GAME_ID,
+  VIBE_HERO_LANE_COUNT,
+  getVibeHeroSong,
+  listVibeHeroSongs,
+  normalizeVibeHeroSongId
+} from '../shared/vibeHero.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -162,6 +170,13 @@ const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const SCHOOL_MICROGAME_COUNTDOWN_MS = 3000;
+const VIBE_HERO_COUNTDOWN_MS = 2400;
+const VIBE_HERO_COUNTDOWN_GO_MS = 450;
+const VIBE_HERO_NOTE_TRAVEL_MS = 1650;
+const VIBE_HERO_HIT_WINDOW_MS = 185;
+const VIBE_HERO_PERFECT_WINDOW_MS = 58;
+const VIBE_HERO_GREAT_WINDOW_MS = 112;
+const VIBE_HERO_POST_SONG_MS = 900;
 const OFFICE_JOB_COUNTDOWN_MS = 1600;
 const OFFICE_JOB_COUNTDOWN_GO_MS = 250;
 const OFFICE_JANITOR_REQUIRED_THROWS = 3;
@@ -828,6 +843,12 @@ export class Game {
     this.schoolMicrogameSessionRoundCount = 0;
     this.schoolMicrogameSessionXpEarned = 0;
     this.schoolTeacherPreviewRenderer = null;
+    this.vibeHero = null;
+    this.vibeHeroSelectedSongId = VIBE_HERO_DEFAULT_SONG_ID;
+    this.vibeHeroSequence = 0;
+    this.vibeHeroAudioContext = null;
+    this.vibeHeroAudioMaster = null;
+    this.vibeHeroAudioNodes = [];
     this.officeJobPlacementId = '';
     this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
@@ -932,6 +953,10 @@ export class Game {
     this.hud.bindSchoolMicrogameEvents({
       onClose: () => this.closeSchoolMicrogame(),
       onAction: (action) => this.handleSchoolMicrogameAction(action)
+    });
+    this.hud.bindVibeHeroEvents({
+      onClose: () => this.closeVibeHero(),
+      onAction: (action) => this.handleVibeHeroAction(action)
     });
     this.hud.bindAdminPromptEvents({
       onToggle: () => this.toggleAdminPromptPanel(),
@@ -1258,6 +1283,9 @@ export class Game {
       if (soundEffect?.template) {
         soundEffect.template.volume = this.getEffectiveSoundVolume(soundEffect);
       }
+    }
+    if (this.vibeHeroAudioMaster) {
+      this.vibeHeroAudioMaster.gain.value = THREE.MathUtils.clamp(0.16 * Number(this.gameSettings?.masterVolume ?? 1), 0, 0.26);
     }
   }
 
@@ -1953,6 +1981,14 @@ export class Game {
   }
 
   getAdminPromptContext() {
+    if (this.hud.isVibeHeroOpen()) {
+      return {
+        contextType: 'vibe_hero',
+        contextLabel: `Vibe Hero: ${this.vibeHero?.song?.title ?? 'Song Select'}`,
+        gameId: VIBE_HERO_GAME_ID
+      };
+    }
+
     if (this.hud.isSchoolMicrogameOpen()) {
       const gameId = this.schoolMicrogame?.round?.gameId ?? SCHOOL_MICROGAME_DEFAULT_ID;
       const definition = getSchoolMicrogameDefinition(gameId);
@@ -2055,10 +2091,27 @@ export class Game {
         stockMarketOpen: this.hud.isStockMarketOpen(),
         blackjackOpen: this.hud.isBlackjackOpen(),
         schoolMicrogameOpen: this.hud.isSchoolMicrogameOpen(),
+        vibeHeroOpen: this.hud.isVibeHeroOpen(),
         worldBuilderEnabled: Boolean(this.worldBuilder?.enabled),
         quickChatOpen: this.hud.isQuickChatOpen()
       },
       nearestInteractable: this.getAdminPromptInteractableSnapshot(this.currentInteractable),
+      vibeHero: this.vibeHero
+        ? {
+            gameId: VIBE_HERO_GAME_ID,
+            songId: this.vibeHero.selectedSongId ?? '',
+            title: this.vibeHero.song?.title ?? '',
+            phase: this.vibeHero.phase ?? '',
+            currentTimeMs: this.vibeHero.currentTimeMs ?? 0,
+            remainingMs: this.vibeHero.remainingMs ?? 0,
+            score: this.vibeHero.score ?? 0,
+            combo: this.vibeHero.combo ?? 0,
+            hits: this.vibeHero.hits ?? 0,
+            misses: this.vibeHero.misses ?? 0,
+            resultTitle: this.vibeHero.resultTitle ?? '',
+            resultDetail: this.vibeHero.resultDetail ?? ''
+          }
+        : null,
       schoolMicrogame: this.schoolMicrogame
         ? {
             gameId: this.schoolMicrogame.round?.gameId ?? '',
@@ -2881,6 +2934,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
       && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
@@ -5626,6 +5680,12 @@ export class Game {
 
   openDebugMinigameHud(minigameId = 'blackjack') {
     const normalizedId = String(minigameId ?? '').trim().toLowerCase();
+    if (normalizedId === VIBE_HERO_GAME_ID || normalizedId === 'vibehero') {
+      this.openVibeHero();
+      this.hud.showToast('Vibe Hero HUD preview opened.');
+      return true;
+    }
+
     if (normalizedId !== 'blackjack') {
       const schoolId = normalizeSchoolMicrogameId(normalizedId, '');
       if (schoolId) {
@@ -5758,6 +5818,451 @@ export class Game {
       error: '',
       dealerName: this.blackjackDealerName
     });
+  }
+
+  createVibeHeroState(songId = this.vibeHeroSelectedSongId) {
+    const normalizedSongId = normalizeVibeHeroSongId(songId);
+    const song = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
+    const songs = listVibeHeroSongs().map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      artist: entry.artist,
+      sourceTitle: entry.sourceTitle,
+      publicDomainBasis: entry.publicDomainBasis,
+      durationMs: entry.durationMs,
+      bpm: entry.bpm,
+      previewColor: entry.previewColor,
+      noteCount: entry.chart.length
+    }));
+
+    return {
+      id: `vibe_hero_${++this.vibeHeroSequence}`,
+      gameId: VIBE_HERO_GAME_ID,
+      phase: 'select',
+      selectedSongId: song?.id ?? VIBE_HERO_DEFAULT_SONG_ID,
+      song,
+      songs,
+      notes: (song?.chart ?? []).map((note, index) => ({
+        ...note,
+        id: note.id || `note-${index + 1}`,
+        status: 'pending',
+        hitErrorMs: null,
+        hitQuality: ''
+      })),
+      noteTravelMs: VIBE_HERO_NOTE_TRAVEL_MS,
+      hitWindowMs: VIBE_HERO_HIT_WINDOW_MS,
+      durationMs: song?.durationMs ?? 0,
+      currentTimeMs: 0,
+      remainingMs: song?.durationMs ?? 0,
+      score: 0,
+      combo: 0,
+      maxCombo: 0,
+      hits: 0,
+      misses: 0,
+      streak: 0,
+      startedAt: 0,
+      countdownStartedAt: 0,
+      countdownEndsAt: 0,
+      countdownMs: 0,
+      resultTitle: '',
+      resultDetail: '',
+      message: 'Pick a song and take the stage.',
+      laneFlashes: []
+    };
+  }
+
+  openVibeHero(interaction = null) {
+    this.closePhoneMenu();
+    this.stopVibeHeroAudio();
+    this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId);
+    this.hud.hideLoading();
+    this.hud.setVibeHeroState({
+      visible: true,
+      game: this.vibeHero
+    });
+    this.currentInteractable = interaction ?? this.currentInteractable;
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
+    return true;
+  }
+
+  closeVibeHero() {
+    this.stopVibeHeroAudio();
+    this.vibeHero = this.vibeHero
+      ? {
+          ...this.vibeHero,
+          phase: this.vibeHero.phase === 'playing' ? 'complete' : this.vibeHero.phase,
+          message: this.vibeHero.phase === 'playing' ? 'Set finished.' : this.vibeHero.message
+        }
+      : null;
+    this.hud.setVibeHeroState({
+      visible: false,
+      game: this.vibeHero
+    });
+    this.adminPromptError = '';
+    this.refreshAdminPromptHud();
+  }
+
+  syncVibeHeroHud() {
+    this.hud.setVibeHeroState({
+      visible: this.hud.isVibeHeroOpen(),
+      game: this.vibeHero
+    });
+  }
+
+  selectVibeHeroSong(songId = VIBE_HERO_DEFAULT_SONG_ID) {
+    if (!this.vibeHero || this.vibeHero.phase === 'playing' || this.vibeHero.phase === 'countdown') {
+      return false;
+    }
+
+    const normalizedSongId = normalizeVibeHeroSongId(songId);
+    this.vibeHeroSelectedSongId = normalizedSongId;
+    this.vibeHero = this.createVibeHeroState(normalizedSongId);
+    this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} loaded.`;
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  startVibeHeroCountdown() {
+    if (!this.vibeHero) {
+      this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId);
+    }
+
+    this.stopVibeHeroAudio();
+    const songId = this.vibeHero.selectedSongId ?? this.vibeHeroSelectedSongId;
+    this.vibeHero = this.createVibeHeroState(songId);
+    const now = performance.now();
+    this.vibeHero.phase = 'countdown';
+    this.vibeHero.countdownStartedAt = now;
+    this.vibeHero.countdownEndsAt = now + VIBE_HERO_COUNTDOWN_MS;
+    this.vibeHero.countdownGoMs = VIBE_HERO_COUNTDOWN_GO_MS;
+    this.vibeHero.countdownMs = VIBE_HERO_COUNTDOWN_MS;
+    this.vibeHero.remainingMs = VIBE_HERO_COUNTDOWN_MS;
+    this.vibeHero.message = 'Ready.';
+    this.input.clearKeyPressQueue?.();
+    this.playSoundEffect(this.phoneUnlockSound);
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  beginVibeHeroSong() {
+    if (!this.vibeHero || this.vibeHero.phase === 'playing') {
+      return false;
+    }
+
+    const now = performance.now();
+    this.vibeHero.phase = 'playing';
+    this.vibeHero.startedAt = now;
+    this.vibeHero.currentTimeMs = 0;
+    this.vibeHero.remainingMs = this.vibeHero.durationMs;
+    this.vibeHero.message = this.vibeHero.song?.title ?? 'Vibe Hero';
+    this.vibeHero.resultTitle = '';
+    this.vibeHero.resultDetail = '';
+    this.scheduleVibeHeroSong(this.vibeHero.song);
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  handleVibeHeroAction(action = '') {
+    const normalizedAction = String(action ?? '').trim();
+    if (!normalizedAction) {
+      return false;
+    }
+
+    if (normalizedAction === 'start' || normalizedAction === 'restart') {
+      return this.startVibeHeroCountdown();
+    }
+
+    if (normalizedAction.startsWith('song:')) {
+      return this.selectVibeHeroSong(normalizedAction.slice(5));
+    }
+
+    if (normalizedAction.startsWith('lane:')) {
+      const laneIndex = Math.trunc(Number(normalizedAction.slice(5)));
+      return this.hitVibeHeroLane(laneIndex);
+    }
+
+    return false;
+  }
+
+  updateVibeHero(deltaSeconds = 0, now = performance.now()) {
+    const game = this.vibeHero;
+    if (!game || !this.hud.isVibeHeroOpen()) {
+      return;
+    }
+
+    if (game.phase !== 'playing') {
+      this.handleVibeHeroKeyboardInput();
+    }
+
+    if (game.phase === 'countdown') {
+      game.countdownMs = Math.max(0, game.countdownEndsAt - now);
+      game.remainingMs = game.countdownMs;
+      if (game.countdownMs <= 0) {
+        this.beginVibeHeroSong();
+      } else {
+        this.syncVibeHeroHud();
+      }
+      return;
+    }
+
+    if (game.phase !== 'playing') {
+      return;
+    }
+
+    game.currentTimeMs = Math.max(0, now - game.startedAt);
+    game.remainingMs = Math.max(0, game.durationMs - game.currentTimeMs);
+    this.handleVibeHeroKeyboardInput();
+    this.updateVibeHeroMisses(game);
+    const pendingNotes = game.notes.some((note) => note.status === 'pending');
+    if (!pendingNotes && game.currentTimeMs >= Math.max(0, game.durationMs - VIBE_HERO_POST_SONG_MS)) {
+      this.finishVibeHero();
+      return;
+    }
+    if (game.currentTimeMs >= game.durationMs + VIBE_HERO_POST_SONG_MS) {
+      this.finishVibeHero();
+      return;
+    }
+
+    if (Number(deltaSeconds) >= 0) {
+      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < 180);
+    }
+    this.syncVibeHeroHud();
+  }
+
+  handleVibeHeroKeyboardInput() {
+    if (!this.vibeHero || !this.hud.isVibeHeroOpen()) {
+      return false;
+    }
+
+    let handled = false;
+    const laneCodes = [
+      ['Digit1', 'Numpad1'],
+      ['Digit2', 'Numpad2'],
+      ['Digit3', 'Numpad3'],
+      ['Digit4', 'Numpad4']
+    ];
+    laneCodes.forEach((codes, laneIndex) => {
+      if (codes.some((code) => this.input.consume(code))) {
+        handled = this.hitVibeHeroLane(laneIndex) || handled;
+      }
+    });
+
+    if ((this.vibeHero.phase === 'select' || this.vibeHero.phase === 'complete') && this.input.consume('Space')) {
+      handled = this.startVibeHeroCountdown() || handled;
+    }
+
+    return handled;
+  }
+
+  updateVibeHeroMisses(game = this.vibeHero) {
+    if (!game || game.phase !== 'playing') {
+      return;
+    }
+
+    let missed = 0;
+    for (const note of game.notes) {
+      if (note.status !== 'pending') {
+        continue;
+      }
+      if (game.currentTimeMs - note.timeMs <= VIBE_HERO_HIT_WINDOW_MS) {
+        continue;
+      }
+      note.status = 'missed';
+      game.misses += 1;
+      missed += 1;
+    }
+
+    if (missed > 0) {
+      game.combo = 0;
+      game.message = missed === 1 ? 'Miss' : `${missed} missed notes`;
+    }
+  }
+
+  hitVibeHeroLane(laneIndex = 0) {
+    const game = this.vibeHero;
+    const normalizedLane = Math.trunc(Number(laneIndex));
+    if (
+      !game
+      || game.phase !== 'playing'
+      || normalizedLane < 0
+      || normalizedLane >= VIBE_HERO_LANE_COUNT
+    ) {
+      return false;
+    }
+
+    const candidates = game.notes
+      .filter((note) => note.status === 'pending' && note.lane === normalizedLane)
+      .map((note) => ({
+        note,
+        errorMs: Math.abs(game.currentTimeMs - note.timeMs)
+      }))
+      .filter((entry) => entry.errorMs <= VIBE_HERO_HIT_WINDOW_MS)
+      .sort((a, b) => a.errorMs - b.errorMs);
+    const match = candidates[0] ?? null;
+    const now = performance.now();
+
+    game.laneFlashes = [
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      {
+        lane: normalizedLane,
+        at: now,
+        quality: match ? 'hit' : 'empty'
+      }
+    ];
+
+    if (!match) {
+      game.message = 'Too early';
+      this.syncVibeHeroHud();
+      return false;
+    }
+
+    const { note, errorMs } = match;
+    const quality = errorMs <= VIBE_HERO_PERFECT_WINDOW_MS
+      ? 'perfect'
+      : errorMs <= VIBE_HERO_GREAT_WINDOW_MS
+        ? 'great'
+        : 'good';
+    const baseScore = quality === 'perfect' ? 1000 : quality === 'great' ? 700 : 450;
+    const nextCombo = game.combo + 1;
+    note.status = 'hit';
+    note.hitErrorMs = Math.round(game.currentTimeMs - note.timeMs);
+    note.hitQuality = quality;
+    game.combo = nextCombo;
+    game.maxCombo = Math.max(game.maxCombo, nextCombo);
+    game.streak = nextCombo;
+    game.hits += 1;
+    game.score += baseScore + Math.min(250, nextCombo * 12);
+    game.message = `${quality.toUpperCase()} x${nextCombo}`;
+    this.playVibeHeroFeedbackTone(note.frequency, quality);
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  getVibeHeroAccuracy(game = this.vibeHero) {
+    const totalResolved = Math.max(0, Number(game?.hits ?? 0) + Number(game?.misses ?? 0));
+    if (totalResolved <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, Number(game?.hits ?? 0) / totalResolved));
+  }
+
+  finishVibeHero() {
+    const game = this.vibeHero;
+    if (!game || game.phase === 'complete') {
+      return false;
+    }
+
+    this.updateVibeHeroMisses(game);
+    const accuracy = this.getVibeHeroAccuracy(game);
+    game.phase = 'complete';
+    game.currentTimeMs = game.durationMs;
+    game.remainingMs = 0;
+    game.resultTitle = accuracy >= 0.9
+      ? 'Encore'
+      : accuracy >= 0.72
+        ? 'Set Complete'
+        : 'Keep Practicing';
+    game.resultDetail = `${game.hits}/${game.notes.length} notes - ${Math.round(accuracy * 100)}% accuracy - max combo ${game.maxCombo}`;
+    game.message = game.resultDetail;
+    if (accuracy >= 0.72) {
+      this.playSoundEffect(this.levelUpCelebrationSound);
+    } else {
+      this.playSoundEffect(this.playingCardSound);
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  getVibeHeroAudioContext() {
+    if (this.vibeHeroAudioContext) {
+      return this.vibeHeroAudioContext;
+    }
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      return null;
+    }
+
+    this.vibeHeroAudioContext = new AudioContextClass();
+    return this.vibeHeroAudioContext;
+  }
+
+  stopVibeHeroAudio() {
+    for (const node of this.vibeHeroAudioNodes) {
+      try {
+        node.stop(0);
+      } catch {
+        // Already stopped.
+      }
+      try {
+        node.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    }
+    this.vibeHeroAudioNodes = [];
+    if (this.vibeHeroAudioMaster) {
+      try {
+        this.vibeHeroAudioMaster.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+      this.vibeHeroAudioMaster = null;
+    }
+  }
+
+  scheduleVibeHeroSong(song = null) {
+    const context = this.getVibeHeroAudioContext();
+    if (!context || !song?.chart?.length) {
+      return false;
+    }
+
+    void context.resume?.().catch(() => {});
+    this.stopVibeHeroAudio();
+    const master = context.createGain();
+    master.gain.value = THREE.MathUtils.clamp(0.16 * Number(this.gameSettings?.masterVolume ?? 1), 0, 0.26);
+    master.connect(context.destination);
+    this.vibeHeroAudioMaster = master;
+    const startAt = context.currentTime + 0.055;
+    for (const [index, note] of song.chart.entries()) {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = startAt + (Math.max(0, Number(note.timeMs) || 0) / 1000);
+      const noteDuration = Math.max(0.12, Math.min(0.72, Number(note.durationMs ?? 320) / 1000));
+      oscillator.type = index % 3 === 0 ? 'triangle' : 'sine';
+      oscillator.frequency.setValueAtTime(Math.max(80, Number(note.frequency ?? 261.63) || 261.63), noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(0.78, noteStart + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + noteDuration);
+      oscillator.connect(gain);
+      gain.connect(master);
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + noteDuration + 0.04);
+      this.vibeHeroAudioNodes.push(oscillator);
+    }
+    return true;
+  }
+
+  playVibeHeroFeedbackTone(frequency = 440, quality = 'good') {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      return;
+    }
+
+    void context.resume?.().catch(() => {});
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const now = context.currentTime;
+    oscillator.type = quality === 'perfect' ? 'square' : 'triangle';
+    oscillator.frequency.setValueAtTime(Math.max(80, Number(frequency) || 440) * 2, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(THREE.MathUtils.clamp(0.045 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.08), now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.1);
   }
 
   async startBlackjackRound() {
@@ -10682,6 +11187,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen();
   }
 
@@ -10736,6 +11242,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
     ) {
       const selection = this.getActiveEmoteSelection();
@@ -10859,6 +11366,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
       && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
@@ -11194,6 +11702,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
@@ -11207,7 +11716,7 @@ export class Game {
   }
 
   handleCameraZoomInput(localPlayerState = this.getLocalPlayerState()) {
-    if (this.worldBuilder?.enabled || this.hud.isPhoneOpen() || localPlayerState?.alive === false) {
+    if (this.worldBuilder?.enabled || this.hud.isPhoneOpen() || this.hud.isVibeHeroOpen() || localPlayerState?.alive === false) {
       this.input.consumeAction('zoomIn');
       this.input.consumeAction('zoomOut');
       this.input.consumeWheelDirection();
@@ -11252,6 +11761,9 @@ export class Game {
       this.updateSchoolMicrogame(deltaSeconds);
       this.updateSchoolTeacherPreview(deltaSeconds);
     }
+    if (this.hud.isVibeHeroOpen()) {
+      this.updateVibeHero(deltaSeconds);
+    }
 
     if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
@@ -11268,6 +11780,8 @@ export class Game {
         this.closeStockMarket();
       } else if (this.hud.isBlackjackOpen()) {
         this.closeBlackjack();
+      } else if (this.hud.isVibeHeroOpen()) {
+        this.closeVibeHero();
       } else if (this.hud.isSchoolMicrogameOpen()) {
         this.closeSchoolMicrogame();
       } else if (this.hud.isInteractionMenuOpen()) {
@@ -11282,6 +11796,7 @@ export class Game {
     if (
       !this.worldBuilder?.enabled
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
       && this.input.consumeAction('phone')
     ) {
@@ -11323,13 +11838,14 @@ export class Game {
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
       const schoolMicrogameOpen = this.hud.isSchoolMicrogameOpen();
+      const vibeHeroOpen = this.hud.isVibeHeroOpen();
       const interactionMenuOpen = this.hud.isInteractionMenuOpen();
       const adminPromptOpen = this.hud.isAdminPromptOpen();
       const phoneOpen = this.hud.isPhoneOpen();
       const selectedDrinkItemId = this.getSelectedHotbarDrinkItemId();
       const drinkSelected = Boolean(selectedDrinkItemId);
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !drinkSelected);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
+      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -11340,11 +11856,11 @@ export class Game {
         : this.aimDirectionScratch.copy(this.currentAimDirection);
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
+      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -11372,7 +11888,7 @@ export class Game {
           groundHeight
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !adminPromptOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -11407,7 +11923,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) {
+        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -11435,7 +11951,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || adminPromptOpen || phoneOpen) {
+      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
@@ -11768,6 +12284,11 @@ export class Game {
       return;
     }
 
+    if (nearest.gameId === VIBE_HERO_GAME_ID) {
+      this.openVibeHero(nearest);
+      return;
+    }
+
     if (getWorkoutActivityConfig(nearest)) {
       void this.startWorkout(nearest);
       return;
@@ -11788,6 +12309,7 @@ export class Game {
       && !this.hud.isStockMarketOpen()
       && !this.hud.isBlackjackOpen()
       && !this.hud.isSchoolMicrogameOpen()
+      && !this.hud.isVibeHeroOpen()
       && !this.characterSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
@@ -11969,6 +12491,7 @@ export class Game {
       || this.hud.isStockMarketOpen()
       || this.hud.isBlackjackOpen()
       || this.hud.isSchoolMicrogameOpen()
+      || this.hud.isVibeHeroOpen()
       || this.hud.isInteractionMenuOpen()
       || this.isRentIntroReservedNpc(npcId)
     ) {

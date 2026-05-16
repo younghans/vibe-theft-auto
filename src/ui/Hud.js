@@ -845,6 +845,173 @@ function createSchoolGameButton(action, label, className = '', { disabled = fals
   `;
 }
 
+function formatVibeHeroSeconds(milliseconds = 0) {
+  const seconds = Math.max(0, Number(milliseconds) || 0) / 1000;
+  return seconds < 10 ? seconds.toFixed(1) : String(Math.ceil(seconds));
+}
+
+function getVibeHeroStatusText(game = null) {
+  const phase = String(game?.phase ?? 'select');
+  if (phase === 'countdown') {
+    const remainingMs = Math.max(0, Number(game?.countdownMs ?? game?.remainingMs ?? 0) || 0);
+    const goMs = Math.max(0, Number(game?.countdownGoMs ?? 0) || 0);
+    return goMs > 0 && remainingMs <= goMs ? 'GO!' : 'Ready';
+  }
+  if (phase === 'playing') {
+    return `${formatVibeHeroSeconds(game?.remainingMs)} seconds`;
+  }
+  if (phase === 'complete') {
+    return game?.resultTitle || 'Complete';
+  }
+  return 'Song Select';
+}
+
+function getVibeHeroCountdownCue(game = null) {
+  const remainingMs = Math.max(0, Number(game?.countdownMs ?? game?.remainingMs ?? 0) || 0);
+  const goMs = Math.max(0, Number(game?.countdownGoMs ?? 0) || 0);
+  if (goMs > 0 && remainingMs <= goMs) {
+    return 'GO!';
+  }
+  return String(Math.max(1, Math.min(3, Math.ceil((remainingMs - goMs) / 650))));
+}
+
+function createVibeHeroTimerMarkup(game = null) {
+  const duration = Math.max(1, Number(game?.durationMs ?? 1) || 1);
+  const remaining = Math.max(0, Number(game?.remainingMs ?? duration) || 0);
+  const percent = Math.max(0, Math.min(100, (remaining / duration) * 100));
+  return `
+    <div class="hud__vibe-hero-timer" aria-label="Song timer">
+      <span class="hud__vibe-hero-timer-fill" style="--timer:${percent.toFixed(2)}%"></span>
+      <strong>${formatVibeHeroSeconds(remaining)}</strong>
+    </div>
+  `;
+}
+
+function createVibeHeroSongSelectMarkup(game = null) {
+  const songs = Array.isArray(game?.songs) ? game.songs : [];
+  const selectedSongId = String(game?.selectedSongId ?? '');
+  return `
+    <div class="hud__vibe-hero-select">
+      <div class="hud__vibe-hero-record" aria-hidden="true">
+        <span></span>
+      </div>
+      <div class="hud__vibe-hero-song-list">
+        ${songs.map((song) => {
+          const active = song.id === selectedSongId;
+          return `
+            <button
+              class="hud__vibe-hero-song${active ? ' is-active' : ''}"
+              type="button"
+              data-vibe-hero-action="song:${escapeHtml(song.id)}"
+              style="--song-accent:${escapeHtml(song.previewColor ?? '#54d7ff')}"
+            >
+              <strong>${escapeHtml(song.title ?? 'Song')}</strong>
+              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes`)}</span>
+              <em>${escapeHtml(song.sourceTitle ?? song.artist ?? 'Traditional')}</em>
+            </button>
+          `;
+        }).join('')}
+      </div>
+      <button class="hud__vibe-hero-start" type="button" data-vibe-hero-action="start">Start</button>
+    </div>
+  `;
+}
+
+function createVibeHeroStatsMarkup(game = null) {
+  const totalNotes = Math.max(0, Array.isArray(game?.notes) ? game.notes.length : 0);
+  const resolved = Math.max(0, Number(game?.hits ?? 0) + Number(game?.misses ?? 0));
+  const accuracy = resolved > 0 ? Math.round((Number(game?.hits ?? 0) / resolved) * 100) : 0;
+  return `
+    <div class="hud__vibe-hero-stats">
+      <span><strong>${escapeHtml(String(game?.score ?? 0))}</strong><em>Score</em></span>
+      <span><strong>${escapeHtml(String(game?.combo ?? 0))}</strong><em>Combo</em></span>
+      <span><strong>${escapeHtml(String(game?.maxCombo ?? 0))}</strong><em>Max</em></span>
+      <span><strong>${escapeHtml(String(accuracy))}%</strong><em>${escapeHtml(String(game?.hits ?? 0))}/${escapeHtml(String(totalNotes))}</em></span>
+    </div>
+  `;
+}
+
+function createVibeHeroTrackMarkup(game = null) {
+  const notes = Array.isArray(game?.notes) ? game.notes : [];
+  const currentTimeMs = Math.max(0, Number(game?.currentTimeMs ?? 0) || 0);
+  const travelMs = Math.max(1, Number(game?.noteTravelMs ?? 1650) || 1650);
+  const hitWindowMs = Math.max(1, Number(game?.hitWindowMs ?? 185) || 185);
+  const laneFlashes = Array.isArray(game?.laneFlashes) ? game.laneFlashes : [];
+  const visibleNotes = notes.filter((note) => {
+    if (note.status !== 'pending') {
+      return false;
+    }
+    return note.timeMs >= currentTimeMs - hitWindowMs && note.timeMs <= currentTimeMs + travelMs;
+  });
+  const hitLineY = 82;
+
+  return `
+    <div class="hud__vibe-hero-track" aria-label="Vibe Hero track">
+      ${Array.from({ length: 4 }, (_, laneIndex) => {
+        const flash = laneFlashes.find((entry) => entry.lane === laneIndex);
+        return `
+          <div class="hud__vibe-hero-lane${flash ? ` is-${escapeHtml(flash.quality)}` : ''}">
+            <span class="hud__vibe-hero-lane-rail"></span>
+          </div>
+        `;
+      }).join('')}
+      <span class="hud__vibe-hero-hit-line" style="--hit-y:${hitLineY}%"></span>
+      ${visibleNotes.map((note) => {
+        const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
+        const progress = 1 - (distanceMs / travelMs);
+        const y = Math.max(4, Math.min(94, 8 + (progress * (hitLineY - 8))));
+        const lane = Math.max(0, Math.min(3, Math.trunc(Number(note.lane ?? 0) || 0)));
+        return `
+          <span
+            class="hud__vibe-hero-note is-lane-${lane}"
+            style="--note-y:${y.toFixed(2)}%; --note-delay:${Math.max(0, distanceMs).toFixed(0)}ms"
+            aria-hidden="true"
+          ></span>
+        `;
+      }).join('')}
+      <div class="hud__vibe-hero-lane-buttons">
+        ${Array.from({ length: 4 }, (_, laneIndex) => `
+          <button type="button" data-vibe-hero-action="lane:${laneIndex}">
+            <span>${laneIndex + 1}</span>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function createVibeHeroPlayMarkup(game = null) {
+  const phase = String(game?.phase ?? 'select');
+  const countdown = phase === 'countdown'
+    ? `<div class="hud__vibe-hero-countdown"><span>${escapeHtml(getVibeHeroCountdownCue(game))}</span></div>`
+    : '';
+  const result = phase === 'complete'
+    ? `
+      <div class="hud__vibe-hero-result">
+        <strong>${escapeHtml(game?.resultTitle ?? 'Complete')}</strong>
+        <span>${escapeHtml(game?.resultDetail ?? '')}</span>
+        <button type="button" data-vibe-hero-action="restart">Replay</button>
+      </div>
+    `
+    : '';
+
+  return `
+    <div class="hud__vibe-hero-play">
+      ${createVibeHeroStatsMarkup(game)}
+      ${createVibeHeroTrackMarkup(game)}
+      ${countdown}
+      ${result}
+    </div>
+  `;
+}
+
+function createVibeHeroBodyMarkup(game = null) {
+  const phase = String(game?.phase ?? 'select');
+  return phase === 'select'
+    ? createVibeHeroSongSelectMarkup(game)
+    : createVibeHeroPlayMarkup(game);
+}
+
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
   const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
@@ -3049,6 +3216,12 @@ export class Hud {
     this.schoolMicrogameTimer = this.overlay.querySelector('[data-school-microgame-timer]');
     this.schoolMicrogameBody = this.overlay.querySelector('[data-school-microgame-body]');
     this.schoolMicrogameMessage = this.overlay.querySelector('[data-school-microgame-message]');
+    this.vibeHeroRoot = this.overlay.querySelector('[data-vibe-hero]');
+    this.vibeHeroClose = this.overlay.querySelector('[data-vibe-hero-close]');
+    this.vibeHeroStatus = this.overlay.querySelector('[data-vibe-hero-status]');
+    this.vibeHeroTimer = this.overlay.querySelector('[data-vibe-hero-timer]');
+    this.vibeHeroBody = this.overlay.querySelector('[data-vibe-hero-body]');
+    this.vibeHeroMessage = this.overlay.querySelector('[data-vibe-hero-message]');
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
     this.adminPromptDragHandle = this.overlay.querySelector('[data-admin-prompt-drag-handle]');
@@ -3135,6 +3308,10 @@ export class Hud {
       game: null,
       loading: false,
       error: ''
+    };
+    this.vibeHeroVisible = false;
+    this.vibeHeroState = {
+      game: null
     };
     this.adminPromptState = {
       available: false,
@@ -4047,6 +4224,26 @@ export class Hud {
         <div class="hud__school-body" data-school-microgame-body></div>
         <footer class="hud__school-footer">
           <p data-school-microgame-message>Start when ready.</p>
+        </footer>
+      </section>
+      <section class="hud__vibe-hero" data-vibe-hero hidden>
+        <header class="hud__vibe-hero-header">
+          <div>
+            <p class="hud__eyebrow">Music Game</p>
+            <h2 class="hud__vibe-hero-title">Vibe Hero</h2>
+            <p class="hud__body hud__vibe-hero-status" data-vibe-hero-status>Song Select</p>
+          </div>
+          <button class="hud__builder-icon-button" type="button" data-vibe-hero-close aria-label="Close Vibe Hero" title="Close Vibe Hero">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12" />
+              <path d="M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="hud__vibe-hero-timer-slot" data-vibe-hero-timer></div>
+        <div class="hud__vibe-hero-body" data-vibe-hero-body></div>
+        <footer class="hud__vibe-hero-footer">
+          <p data-vibe-hero-message>Pick a song and take the stage.</p>
         </footer>
       </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
@@ -6048,6 +6245,31 @@ export class Hud {
     window.addEventListener('blur', releaseHold);
   }
 
+  bindVibeHeroEvents({
+    onClose,
+    onAction
+  }) {
+    this.vibeHeroClose?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose?.();
+    });
+
+    this.vibeHeroRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-vibe-hero-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(actionTarget.getAttribute('data-vibe-hero-action') ?? '');
+    });
+  }
+
   bindQuickChatEvents({ onSubmit, onCancel }) {
     this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -6996,6 +7218,20 @@ export class Hud {
     return Boolean(this.schoolMicrogameVisible && this.schoolMicrogameRoot && !this.schoolMicrogameRoot.hidden);
   }
 
+  setVibeHeroVisible(visible) {
+    this.vibeHeroVisible = Boolean(visible);
+    if (!this.vibeHeroRoot) {
+      return;
+    }
+
+    this.vibeHeroRoot.hidden = !this.vibeHeroVisible;
+    this.vibeHeroRoot.classList.toggle('is-visible', this.vibeHeroVisible);
+  }
+
+  isVibeHeroOpen() {
+    return Boolean(this.vibeHeroVisible && this.vibeHeroRoot && !this.vibeHeroRoot.hidden);
+  }
+
   getSchoolTeacherPreviewMount() {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
@@ -7069,6 +7305,46 @@ export class Hud {
     };
     this.renderAdminPromptPanel();
     this.syncAdminPromptDurationTimer();
+  }
+
+  setVibeHeroState({
+    visible = this.vibeHeroVisible,
+    game = this.vibeHeroState.game
+  } = {}) {
+    this.vibeHeroState = { game };
+    this.setVibeHeroVisible(visible);
+    this.renderVibeHero();
+  }
+
+  renderVibeHero() {
+    if (!this.vibeHeroRoot) {
+      return;
+    }
+
+    const game = this.vibeHeroState.game;
+    const phase = String(game?.phase ?? 'select');
+    this.vibeHeroRoot.classList.toggle('is-select', phase === 'select');
+    this.vibeHeroRoot.classList.toggle('is-countdown', phase === 'countdown');
+    this.vibeHeroRoot.classList.toggle('is-playing', phase === 'playing');
+    this.vibeHeroRoot.classList.toggle('is-complete', phase === 'complete');
+
+    if (this.vibeHeroStatus) {
+      this.vibeHeroStatus.textContent = getVibeHeroStatusText(game);
+    }
+
+    if (this.vibeHeroTimer) {
+      this.vibeHeroTimer.innerHTML = phase === 'playing' || phase === 'complete'
+        ? createVibeHeroTimerMarkup(game)
+        : '';
+    }
+
+    if (this.vibeHeroBody) {
+      this.vibeHeroBody.innerHTML = createVibeHeroBodyMarkup(game);
+    }
+
+    if (this.vibeHeroMessage) {
+      this.vibeHeroMessage.textContent = game?.message || game?.song?.title || 'Vibe Hero';
+    }
   }
 
   clearAdminPromptText() {

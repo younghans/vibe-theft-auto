@@ -5,6 +5,7 @@ import {
   OFFICE_JOB_IDS
 } from '../shared/officeJobs.js';
 import { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
+import { VIBE_HERO_GAME_ID } from '../shared/vibeHero.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import {
   COMBAT_PICKUP_ITEM_DEFINITIONS,
@@ -601,7 +602,15 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     group: 'music',
     size: INSTRUMENT_CLUSTER_FOOTPRINT,
     collision: false,
-    createVisual: createInstrumentClusterVisual
+    createVisual: createInstrumentClusterVisual,
+    interactable: {
+      label: 'Instrument Cluster',
+      prompt: 'Play Vibe Hero',
+      actionText: 'Vibe Hero is ready.',
+      radius: 4.2,
+      localOffset: [0, 0.35],
+      gameId: VIBE_HERO_GAME_ID
+    }
   },
   {
     id: 'blackjack_table',
