@@ -197,6 +197,16 @@ function parseAdminKeys(value = '') {
   );
 }
 
+function getNonNegativeIntegerEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+const AGENT_ACTIVE_TASK_STALE_AFTER_MS = getNonNegativeIntegerEnv(
+  'AGENT_ACTIVE_TASK_STALE_AFTER_MS',
+  10 * 60 * 1000
+);
+
 function isValidAdminKey(value = '') {
   const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -250,6 +260,10 @@ function getAdminKeyFromRequest(req, payload = null) {
   return headerKey;
 }
 
+function isTruthyRequestValue(value = '') {
+  return ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+}
+
 function setAdminWorldMapCorsHeaders(req, res) {
   const origin = typeof req.headers.origin === 'string' && req.headers.origin
     ? req.headers.origin
@@ -264,7 +278,7 @@ function setAdminAgentTaskCorsHeaders(req, res) {
     ? req.headers.origin
     : '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type,x-admin-key,x-agent-worker-id');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type,x-admin-key,x-agent-worker-id,x-agent-worker-heartbeat');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
 }
 
@@ -567,7 +581,8 @@ const server = defineServer({
         }
 
         const task = await createAgentTask(payload, {
-          createdBy: String(payload?.createdBy ?? 'in-game-admin')
+          createdBy: String(payload?.createdBy ?? 'in-game-admin'),
+          staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
         });
         sendJson(res, 201, { ok: true, task });
       } catch (error) {
@@ -591,7 +606,8 @@ const server = defineServer({
         const tasks = await listAgentTasks({
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
           gameId: typeof req.query?.gameId === 'string' ? req.query.gameId : '',
-          limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25
+          limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25,
+          staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
         });
         sendJson(res, 200, { ok: true, tasks });
       } catch (error) {
@@ -619,7 +635,8 @@ const server = defineServer({
           ...payload,
           parentTaskId: req.params.id
         }, {
-          createdBy: String(payload?.createdBy ?? 'in-game-admin')
+          createdBy: String(payload?.createdBy ?? 'in-game-admin'),
+          staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
         });
         sendJson(res, 201, { ok: true, task });
       } catch (error) {
@@ -650,6 +667,10 @@ const server = defineServer({
           staleDeployingAfterMs: typeof req.query?.staleDeployingAfterMs === 'string'
             ? Number(req.query.staleDeployingAfterMs)
             : 0,
+          staleActiveAfterMs: typeof req.query?.staleActiveAfterMs === 'string'
+            ? Number(req.query.staleActiveAfterMs)
+            : AGENT_ACTIVE_TASK_STALE_AFTER_MS,
+          workerHeartbeatEnabled: isTruthyRequestValue(req.headers['x-agent-worker-heartbeat']),
           workerId: typeof req.headers['x-agent-worker-id'] === 'string'
             ? req.headers['x-agent-worker-id']
             : ''
@@ -679,7 +700,9 @@ const server = defineServer({
           return;
         }
 
-        const task = await getAgentTask(req.params.id);
+        const task = await getAgentTask(req.params.id, {
+          staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
+        });
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
           return;

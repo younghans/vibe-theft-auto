@@ -202,6 +202,68 @@ try {
     filePath
   });
 
+  const heartbeatTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Fail stale coding tasks when worker heartbeat expires.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  const heartbeatClaim = await claimNextAgentTask({
+    workerId: 'heartbeat-worker',
+    scope: 'game',
+    deployEnabled: false,
+    workerHeartbeatEnabled: true,
+    filePath
+  });
+  assert.equal(heartbeatClaim.action, 'code_change');
+  assert.equal(heartbeatClaim.task.id, heartbeatTask.id);
+  assert.ok(heartbeatClaim.task.workerHeartbeatAt >= heartbeatClaim.task.claimedAt);
+  await updateAgentTask(heartbeatTask.id, {
+    status: 'coding',
+    workerHeartbeatAt: Date.now() - 60000,
+    workerHeartbeatStatus: 'coding'
+  }, { filePath });
+  const staleHeartbeatTasks = await listAgentTasks({
+    scope: 'game',
+    staleActiveAfterMs: 1,
+    filePath
+  });
+  const failedHeartbeatTask = staleHeartbeatTasks.find((task) => task.id === heartbeatTask.id);
+  assert.equal(failedHeartbeatTask.status, 'failed');
+  assert.match(failedHeartbeatTask.error, /heartbeat expired/u);
+
+  const legacyActiveTask = await createAgentTask({
+    scope: 'game',
+    contextType: 'hud',
+    prompt: 'Keep old active tasks without heartbeat from immediate stale failure.',
+    mode: 'preview'
+  }, {
+    createdBy: 'validator',
+    filePath
+  });
+  const legacyClaim = await claimNextAgentTask({
+    workerId: 'legacy-worker',
+    scope: 'game',
+    deployEnabled: false,
+    filePath
+  });
+  assert.equal(legacyClaim.task.id, legacyActiveTask.id);
+  await updateAgentTask(legacyActiveTask.id, {
+    status: 'coding'
+  }, { filePath });
+  const legacyAfterStaleSweep = await getAgentTask(legacyActiveTask.id, {
+    staleActiveAfterMs: 1,
+    filePath
+  });
+  assert.equal(legacyAfterStaleSweep.status, 'coding');
+  await cancelAgentTask(legacyActiveTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
+
   const retryDeployTask = await createAgentTask({
     scope: 'game',
     contextType: 'hud',

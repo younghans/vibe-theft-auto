@@ -53,6 +53,8 @@ const MUTABLE_TASK_FIELDS = new Set([
   'codexSessionId',
   'claimedBy',
   'claimedAt',
+  'workerHeartbeatAt',
+  'workerHeartbeatStatus',
   'workStartedAt',
   'workCompletedAt',
   'deployStartedAt',
@@ -74,6 +76,12 @@ const THREAD_ACTIVE_STATUSES = new Set([
   'testing',
   'deploying',
   'rolling_back'
+]);
+const WORKER_HEARTBEAT_ACTIVE_STATUSES = new Set([
+  'claimed',
+  'preparing',
+  'coding',
+  'testing'
 ]);
 const FOLLOWUP_BASE_STATUSES = new Set([
   'ready_for_review',
@@ -194,6 +202,7 @@ function normalizeTask(raw = {}) {
   const createdAt = normalizeTimestamp(raw.createdAt, now);
   const updatedAt = normalizeTimestamp(raw.updatedAt, now);
   const claimedAt = normalizeTimestamp(raw.claimedAt, 0);
+  const workerHeartbeatAt = normalizeTimestamp(raw.workerHeartbeatAt, 0);
   const workStartedAt = normalizeTimestamp(raw.workStartedAt, claimedAt);
   const workCompletedAt = normalizeTimestamp(
     raw.workCompletedAt,
@@ -220,6 +229,8 @@ function normalizeTask(raw = {}) {
     updatedAt,
     claimedBy: String(raw.claimedBy ?? ''),
     claimedAt,
+    workerHeartbeatAt,
+    workerHeartbeatStatus: String(raw.workerHeartbeatStatus ?? '').trim().slice(0, 120),
     workStartedAt,
     workCompletedAt,
     branch: String(raw.branch ?? ''),
@@ -430,37 +441,114 @@ function addTaskLog(task, message, { level = 'info', data = null, at = Date.now(
   ]);
 }
 
+function getStaleActiveMs(value) {
+  return Math.max(0, Number(value) || 0);
+}
+
+function failStaleActiveTasks(state, {
+  now = Date.now(),
+  staleActiveAfterMs = 0,
+  scope = '',
+  shouldFilterScope = false
+} = {}) {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  if (staleActiveMs <= 0) {
+    return [];
+  }
+
+  const failedTasks = [];
+  for (const task of state.tasks) {
+    if (shouldFilterScope && task.scope !== scope) {
+      continue;
+    }
+    if (!WORKER_HEARTBEAT_ACTIVE_STATUSES.has(String(task.status ?? ''))) {
+      continue;
+    }
+
+    const heartbeatAt = Number(task.workerHeartbeatAt || 0);
+    if (heartbeatAt <= 0 || now - heartbeatAt < staleActiveMs) {
+      continue;
+    }
+
+    const previousStatus = String(task.status ?? '');
+    const staleMs = now - heartbeatAt;
+    task.status = 'failed';
+    task.workCompletedAt = Number(task.workCompletedAt) > 0 ? task.workCompletedAt : now;
+    task.updatedAt = now;
+    task.workerHeartbeatStatus = 'expired';
+    task.error = truncateText(
+      `Worker heartbeat expired while task was ${previousStatus || 'active'}. Last heartbeat was ${Math.round(staleMs / 1000)} seconds ago.`,
+      AGENT_TASK_ERROR_MAX_LENGTH
+    );
+    task.summary = truncateText('Worker stopped sending heartbeats before completing the task.', AGENT_TASK_SUMMARY_MAX_LENGTH);
+    addTaskLog(task, 'Worker heartbeat expired; marking task failed.', {
+      level: 'error',
+      at: now,
+      data: {
+        previousStatus,
+        claimedBy: task.claimedBy ?? '',
+        workerHeartbeatAt: heartbeatAt,
+        staleActiveAfterMs: staleActiveMs,
+        staleMs
+      }
+    });
+    failedTasks.push(task);
+  }
+
+  return failedTasks;
+}
+
 export async function listAgentTasks({
   scope = '',
   gameId = '',
   limit = 25,
+  staleActiveAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
   return withTaskStore((state) => {
     const normalizedScope = normalizeScope(scope);
+    const shouldFilterScope = String(scope ?? '').trim() !== '';
+    failStaleActiveTasks(state, {
+      now: Date.now(),
+      staleActiveAfterMs: staleActiveMs,
+      scope: normalizedScope,
+      shouldFilterScope
+    });
     const normalizedGameId = String(gameId ?? '').trim();
     const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 25)));
     return sortTasks(state.tasks)
-      .filter((task) => !scope || task.scope === normalizedScope)
+      .filter((task) => !shouldFilterScope || task.scope === normalizedScope)
       .filter((task) => !normalizedGameId || task.gameId === normalizedGameId)
       .slice(0, safeLimit);
-  }, { filePath, write: false });
+  }, { filePath, write: staleActiveMs > 0 });
 }
 
-export async function getAgentTask(taskId, { filePath = AGENT_TASKS_FILE_PATH } = {}) {
+export async function getAgentTask(taskId, {
+  staleActiveAfterMs = 0,
+  filePath = AGENT_TASKS_FILE_PATH
+} = {}) {
   const id = normalizeTaskId(taskId);
   if (!id) {
     return null;
   }
 
-  return withTaskStore((state) => state.tasks.find((task) => task.id === id) ?? null, {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  return withTaskStore((state) => {
+    failStaleActiveTasks(state, {
+      now: Date.now(),
+      staleActiveAfterMs: staleActiveMs
+    });
+    return state.tasks.find((task) => task.id === id) ?? null;
+  }, {
     filePath,
-    write: false
+    write: staleActiveMs > 0
   });
 }
 
 export async function createAgentTask(payload = {}, {
   createdBy = '',
+  staleActiveAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const prompt = String(payload.prompt ?? '').trim();
@@ -473,6 +561,10 @@ export async function createAgentTask(payload = {}, {
 
   const now = Date.now();
   return withTaskStore((state) => {
+    failStaleActiveTasks(state, {
+      now,
+      staleActiveAfterMs: getStaleActiveMs(staleActiveAfterMs)
+    });
     const id = `task_${now.toString(36)}_${randomUUID().slice(0, 8)}`;
     const parentTaskId = normalizeTaskId(payload.parentTaskId);
     const parentTask = parentTaskId
@@ -548,6 +640,8 @@ export async function claimNextAgentTask({
   deployEnabled = true,
   codeEnabled = true,
   staleDeployingAfterMs = 0,
+  staleActiveAfterMs = 0,
+  workerHeartbeatEnabled = false,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const normalizedScope = normalizeScope(scope);
@@ -556,9 +650,18 @@ export async function claimNextAgentTask({
   const canClaimDeployActions = deployEnabled !== false;
   const canClaimCodeActions = codeEnabled !== false;
   const staleDeployingMs = Math.max(0, Number(staleDeployingAfterMs) || 0);
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  const shouldRecordHeartbeat = workerHeartbeatEnabled === true;
   const now = Date.now();
 
   return withTaskStore((state) => {
+    failStaleActiveTasks(state, {
+      now,
+      staleActiveAfterMs: staleActiveMs,
+      scope: normalizedScope,
+      shouldFilterScope
+    });
+
     if (canClaimDeployActions) {
       if (staleDeployingMs > 0) {
         const staleDeployingTask = sortTasks(state.tasks)
@@ -627,6 +730,10 @@ export async function claimNextAgentTask({
           rollbackTask.status = 'rolling_back';
           rollbackTask.claimedBy = normalizedWorkerId;
           rollbackTask.claimedAt = now;
+          if (shouldRecordHeartbeat) {
+            rollbackTask.workerHeartbeatAt = now;
+            rollbackTask.workerHeartbeatStatus = 'rolling_back';
+          }
           rollbackTask.rollbackStartedAt = now;
           rollbackTask.updatedAt = now;
           addTaskLog(rollbackTask, 'Worker claimed rollback approval.', {
@@ -651,6 +758,10 @@ export async function claimNextAgentTask({
           deployTask.status = 'deploying';
           deployTask.claimedBy = normalizedWorkerId;
           deployTask.claimedAt = now;
+          if (shouldRecordHeartbeat) {
+            deployTask.workerHeartbeatAt = now;
+            deployTask.workerHeartbeatStatus = 'deploying';
+          }
           deployTask.deployStartedAt = now;
           deployTask.updatedAt = now;
           addTaskLog(deployTask, 'Worker claimed deploy approval.', {
@@ -685,6 +796,10 @@ export async function claimNextAgentTask({
     queuedTask.status = 'claimed';
     queuedTask.claimedBy = normalizedWorkerId;
     queuedTask.claimedAt = now;
+    if (shouldRecordHeartbeat) {
+      queuedTask.workerHeartbeatAt = now;
+      queuedTask.workerHeartbeatStatus = 'claimed';
+    }
     queuedTask.workStartedAt = now;
     queuedTask.updatedAt = now;
     addTaskLog(queuedTask, 'Worker claimed task.', {
@@ -729,7 +844,7 @@ export async function updateAgentTask(taskId, updates = {}, {
         if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
           task.workCompletedAt = now;
         }
-      } else if (['claimedAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
+      } else if (['claimedAt', 'workerHeartbeatAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
         task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
       } else if (key === 'changedFiles') {
         task.changedFiles = normalizeStringList(value);
@@ -739,6 +854,8 @@ export async function updateAgentTask(taskId, updates = {}, {
         task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
       } else if (['summary', 'agentMessage', 'deployLog', 'rollbackLog'].includes(key)) {
         task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
+      } else if (key === 'workerHeartbeatStatus') {
+        task.workerHeartbeatStatus = String(value ?? '').trim().slice(0, 120);
       } else {
         task[key] = String(value ?? '');
       }

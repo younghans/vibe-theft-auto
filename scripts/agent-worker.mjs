@@ -52,6 +52,8 @@ const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOU
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
+const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 10 * 60 * 1000);
+const TASK_HEARTBEAT_MS = getPositiveIntegerEnv('AGENT_TASK_HEARTBEAT_MS', 60 * 1000);
 const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
@@ -464,7 +466,8 @@ async function apiRequest(endpoint, {
     headers: {
       authorization: `Bearer ${WORKER_TOKEN}`,
       'content-type': 'application/json',
-      'x-agent-worker-id': WORKER_ID
+      'x-agent-worker-id': WORKER_ID,
+      'x-agent-worker-heartbeat': '1'
     },
     body: body == null ? undefined : JSON.stringify(body)
   });
@@ -490,6 +493,45 @@ async function updateTask(taskId, updates = {}) {
     method: 'PATCH',
     body: updates
   });
+}
+
+async function updateTaskHeartbeat(taskId, status = 'active') {
+  return updateTask(taskId, {
+    workerHeartbeatAt: Date.now(),
+    workerHeartbeatStatus: String(status || 'active').slice(0, 120)
+  });
+}
+
+function startTaskHeartbeat(taskId, {
+  getStatus = () => 'active'
+} = {}) {
+  let stopped = false;
+  const beat = async () => {
+    if (stopped) {
+      return;
+    }
+
+    try {
+      await updateTaskHeartbeat(taskId, getStatus());
+    } catch (error) {
+      console.warn(`[agent-worker] Could not update task heartbeat for ${taskId}.`, error);
+      await writeWorkerDiagnostic('warn', 'task_heartbeat_failed', {
+        taskId,
+        heartbeatStatus: getStatus(),
+        error: getErrorDiagnostic(error)
+      });
+    }
+  };
+
+  void beat();
+  const interval = setInterval(() => {
+    void beat();
+  }, TASK_HEARTBEAT_MS);
+
+  return () => {
+    stopped = true;
+    clearInterval(interval);
+  };
 }
 
 async function appendLog(taskId, message, { level = 'info', data = null } = {}) {
@@ -2248,20 +2290,37 @@ async function rollbackTask(task, worktreePath) {
 
 async function handleCodeTask(task) {
   let worktreePath = '';
+  let heartbeatStatus = 'preparing';
+  const stopHeartbeat = startTaskHeartbeat(task.id, {
+    getStatus: () => heartbeatStatus
+  });
   try {
-    await updateTask(task.id, { status: 'preparing' });
+    await updateTask(task.id, {
+      status: 'preparing',
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
+    });
     const worktree = await createCodeWorktree(task);
     worktreePath = worktree.worktreePath;
     const promptPath = await writePromptFile(task, worktreePath);
 
-    await updateTask(task.id, { status: 'coding', branch: worktree.branch });
+    heartbeatStatus = 'coding';
+    await updateTask(task.id, {
+      status: 'coding',
+      branch: worktree.branch,
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
+    });
     const codexResult = await runCodex(task, worktreePath, promptPath);
 
+    heartbeatStatus = 'testing';
     await updateTask(task.id, {
       status: 'testing',
       summary: truncateText(codexResult.output, 10000),
       agentMessage: codexResult.lastMessage || truncateText(codexResult.output, 4000),
-      codexSessionId: codexResult.sessionId
+      codexSessionId: codexResult.sessionId,
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
     });
     const changedFiles = await enforceAllowlist(task, worktreePath);
     const deployTargets = inferDeployTargets(changedFiles);
@@ -2274,7 +2333,9 @@ async function handleCodeTask(task) {
         branch: commit.branch,
         commitSha: commit.commitSha,
         changedFiles,
-        deployTargets
+        deployTargets,
+        workerHeartbeatAt: Date.now(),
+        workerHeartbeatStatus: 'deploying'
       });
       await deployTask({
         ...task,
@@ -2293,6 +2354,8 @@ async function handleCodeTask(task) {
         commitSha: commit.commitSha,
         changedFiles,
         deployTargets,
+        workerHeartbeatAt: Date.now(),
+        workerHeartbeatStatus: 'completed',
         summary: `Branch pushed and checks passed. Deploy targets: ${formatDeployTargets(deployTargets)}.${autoDeployNote}`
       });
       await appendLog(task.id, 'Task branch is ready for review.', {
@@ -2317,6 +2380,7 @@ async function handleCodeTask(task) {
     }).catch(() => {});
     throw error;
   } finally {
+    stopHeartbeat();
     if (worktreePath) {
       await cleanTaskWorktree(worktreePath, task.id).catch((error) => {
         console.warn('[agent-worker] Worktree cleanup failed.', error);
@@ -2395,7 +2459,8 @@ async function claimNextTask({
       scope: DEFAULT_SCOPE,
       deployEnabled: deployEnabled ? '1' : '0',
       codeEnabled: codeEnabled ? '1' : '0',
-      staleDeployingAfterMs: deployEnabled ? String(STALE_DEPLOY_RECONCILE_AFTER_MS) : '0'
+      staleDeployingAfterMs: deployEnabled ? String(STALE_DEPLOY_RECONCILE_AFTER_MS) : '0',
+      staleActiveAfterMs: String(STALE_ACTIVE_TASK_AFTER_MS)
     }
   });
 }
@@ -2719,6 +2784,8 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
+  taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
   runOnce: RUN_ONCE,
@@ -2742,6 +2809,8 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
+  taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
   runOnce: RUN_ONCE
