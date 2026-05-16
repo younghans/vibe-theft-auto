@@ -377,6 +377,60 @@ function splitCommandLine(value = '') {
   return parts.filter(Boolean);
 }
 
+function formatCodexExecArgs(args = [], {
+  worktreePath = '',
+  lastMessagePath = ''
+} = {}) {
+  return args.map((arg) => String(arg)
+    .replaceAll('{worktree}', worktreePath)
+    .replaceAll('{lastMessage}', lastMessagePath));
+}
+
+function getDefaultCodexExecArgs(worktreePath, lastMessagePath) {
+  const trustArgs = process.platform === 'win32'
+    ? ['--dangerously-bypass-approvals-and-sandbox']
+    : ['--full-auto', '--sandbox', 'workspace-write'];
+  return [
+    'exec',
+    ...trustArgs,
+    '-C',
+    worktreePath,
+    '-o',
+    lastMessagePath
+  ];
+}
+
+function getCodexExecArgs(worktreePath, lastMessagePath) {
+  return process.env.CODEX_EXEC_ARGS
+    ? formatCodexExecArgs(splitCommandLine(process.env.CODEX_EXEC_ARGS), {
+      worktreePath,
+      lastMessagePath
+    })
+    : getDefaultCodexExecArgs(worktreePath, lastMessagePath);
+}
+
+function shouldStripCodexEnvKey(key = '') {
+  const normalized = String(key).toUpperCase();
+  return normalized === 'DATABASE_URL'
+    || normalized === 'ADMIN_KEYS'
+    || normalized.startsWith('AGENT_')
+    || normalized.startsWith('COLYSEUS_')
+    || normalized.startsWith('VERCEL_')
+    || normalized.startsWith('GITHUB_')
+    || normalized.startsWith('PG')
+    || /(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTHORIZATION|API_KEY)/u.test(normalized);
+}
+
+function getSanitizedCodexEnv(sourceEnv = process.env) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(sourceEnv ?? {})) {
+    if (!shouldStripCodexEnvKey(key)) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 function assertInside(parentPath, childPath) {
   const parent = path.resolve(parentPath);
   const child = path.resolve(childPath);
@@ -495,6 +549,7 @@ async function recordTaskFailure(task = {}, phase = 'task', error = null, detail
 async function runCommand(command, args = [], {
   cwd = process.cwd(),
   env = {},
+  baseEnv = process.env,
   input = null,
   timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
   taskId = '',
@@ -513,7 +568,7 @@ async function runCommand(command, args = [], {
     const child = spawn(platformCommand.command, platformCommand.args, {
       cwd,
       env: {
-        ...process.env,
+        ...(baseEnv ?? {}),
         ...env
       },
       windowsHide: true,
@@ -915,12 +970,17 @@ Important constraints:
 async function runCodex(task, worktreePath, promptPath) {
   const prompt = await fsp.readFile(promptPath, 'utf8');
   const lastMessagePath = path.join(worktreePath, '.codex', 'agent-task-last-message.md');
-  const configuredArgs = process.env.CODEX_EXEC_ARGS
-    ? splitCommandLine(process.env.CODEX_EXEC_ARGS).map((arg) => arg.replaceAll('{worktree}', worktreePath))
-    : ['exec', '--full-auto', '--sandbox', 'workspace-write', '-C', worktreePath, '-o', lastMessagePath];
+  const configuredArgs = getCodexExecArgs(worktreePath, lastMessagePath);
+  await writeWorkerDiagnostic('info', 'codex_exec_configured', {
+    taskId: task.id,
+    customArgs: Boolean(process.env.CODEX_EXEC_ARGS),
+    windowsSandboxBypass: process.platform === 'win32' && !process.env.CODEX_EXEC_ARGS,
+    sanitizedEnv: true
+  });
 
   const output = await runCommand(process.env.CODEX_COMMAND || 'codex', configuredArgs, {
     cwd: worktreePath,
+    baseEnv: getSanitizedCodexEnv(),
     input: prompt,
     timeoutMs: CODEX_TIMEOUT_MS,
     taskId: task.id,
@@ -2520,6 +2580,39 @@ function getSimulatedDeployPlan(changedFiles = [], recordedTargets = []) {
 }
 
 function runSelfTest() {
+  const defaultCodexArgs = getDefaultCodexExecArgs('C:/worktree', 'C:/worktree/.codex/last.md');
+  if (process.platform === 'win32') {
+    assertSelfTestEqual(
+      defaultCodexArgs.includes('--dangerously-bypass-approvals-and-sandbox'),
+      true,
+      'windows codex exec bypasses broken workspace sandbox'
+    );
+  } else {
+    assertSelfTestEqual(defaultCodexArgs.includes('workspace-write'), true, 'non-windows codex exec uses workspace sandbox');
+  }
+  assertSelfTestEqual(
+    formatCodexExecArgs(['exec', '-C', '{worktree}', '-o', '{lastMessage}'], {
+      worktreePath: 'C:/worktree',
+      lastMessagePath: 'C:/worktree/.codex/last.md'
+    }),
+    ['exec', '-C', 'C:/worktree', '-o', 'C:/worktree/.codex/last.md'],
+    'codex exec args placeholders'
+  );
+  const codexEnv = getSanitizedCodexEnv({
+    PATH: 'path-ok',
+    CODEX_HOME: 'codex-home-ok',
+    AGENT_WORKER_TOKEN: 'secret',
+    COLYSEUS_DEPLOY_TOKEN: 'secret',
+    OPENAI_API_KEY: 'secret',
+    DATABASE_URL: 'secret'
+  });
+  assertSelfTestEqual(codexEnv.PATH, 'path-ok', 'codex env keeps PATH');
+  assertSelfTestEqual(codexEnv.CODEX_HOME, 'codex-home-ok', 'codex env keeps CODEX_HOME');
+  assertSelfTestEqual(Object.hasOwn(codexEnv, 'AGENT_WORKER_TOKEN'), false, 'codex env strips worker token');
+  assertSelfTestEqual(Object.hasOwn(codexEnv, 'COLYSEUS_DEPLOY_TOKEN'), false, 'codex env strips deploy token');
+  assertSelfTestEqual(Object.hasOwn(codexEnv, 'OPENAI_API_KEY'), false, 'codex env strips api key');
+  assertSelfTestEqual(Object.hasOwn(codexEnv, 'DATABASE_URL'), false, 'codex env strips database url');
+
   const scenarios = [
     {
       label: 'frontend-only',

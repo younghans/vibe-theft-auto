@@ -84,7 +84,13 @@ Sign in once interactively. After that, the worker script should call Codex non-
 codex exec --full-auto --sandbox workspace-write -C <worktree> < <prompt-file>
 ```
 
-The exact flags may be adjusted after testing. Start with `workspace-write`, not unrestricted host access.
+On Windows worker machines, the repo defaults to:
+
+```bash
+codex exec --dangerously-bypass-approvals-and-sandbox -C <worktree> < <prompt-file>
+```
+
+This avoids the Codex Windows workspace sandbox runner failing before PowerShell starts. The worker still creates a throwaway git worktree, enforces the repo file allowlist, runs build/check gates, and strips admin, worker, deploy, database, and token-like environment variables before launching Codex. Non-Windows workers keep the `workspace-write` sandbox default. Override the command with `CODEX_EXEC_ARGS` only after smoke-testing that Codex can read and edit files in the task worktree.
 
 ## Task Lifecycle
 
