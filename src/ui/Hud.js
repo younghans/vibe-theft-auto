@@ -2930,6 +2930,10 @@ function getHotbarItemIconMarkup(slot = {}) {
     return '<span class="hud__hotbar-drink-icon hud__hotbar-drink-icon--shot" aria-hidden="true"><span class="hud__hotbar-drink-body"></span><span class="hud__hotbar-drink-fill"></span></span>';
   }
 
+  if (slot.hotbarIconId === 'consumableCigarettes') {
+    return '<span class="hud__hotbar-cigarette-icon" aria-hidden="true"><span class="hud__hotbar-cigarette-pack"></span><span class="hud__hotbar-cigarette-stick"></span><span class="hud__hotbar-cigarette-filter"></span></span>';
+  }
+
   const iconUrl = HOTBAR_ICON_ASSETS[slot.hotbarIconId] ?? '';
   if (!iconUrl) {
     return '';
@@ -3148,6 +3152,7 @@ export class Hud {
     this.builderNpcRentCollector = this.overlay.querySelector('[data-builder-npc-rent-collector]');
     this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
     this.builderNpcBartender = this.overlay.querySelector('[data-builder-npc-bartender]');
+    this.builderNpcPawnShopOwner = this.overlay.querySelector('[data-builder-npc-pawn-shop-owner]');
     this.builderNpcBlackjackDealer = this.overlay.querySelector('[data-builder-npc-blackjack-dealer]');
     this.builderNpcSchoolMicrogame = this.overlay.querySelector('[data-builder-npc-school-microgame]');
     this.builderNpcPrompt = this.overlay.querySelector('[data-builder-npc-prompt]');
@@ -3981,6 +3986,12 @@ export class Hud {
                 <input class="hud__checkbox-control" type="checkbox" data-builder-npc-bartender />
                 <span class="hud__checkbox-copy">
                   <span class="hud__field-label hud__checkbox-title">Bartender / Drinks</span>
+                </span>
+              </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-pawn-shop-owner />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Pawn Shop Owner</span>
                 </span>
               </label>
               <label class="hud__field hud__checkbox-field">
@@ -5547,6 +5558,7 @@ export class Hud {
     onNpcRentCollectorChange,
     onNpcStockMarketChange,
     onNpcBartenderChange,
+    onNpcPawnShopOwnerChange,
     onNpcBlackjackDealerChange,
     onNpcSchoolMicrogameChange,
     onNpcModelChange,
@@ -5685,6 +5697,10 @@ export class Hud {
 
     this.builderNpcBartender?.addEventListener('change', () => {
       onNpcBartenderChange?.(this.builderNpcBartender.checked === true);
+    });
+
+    this.builderNpcPawnShopOwner?.addEventListener('change', () => {
+      onNpcPawnShopOwnerChange?.(this.builderNpcPawnShopOwner.checked === true);
     });
 
     this.builderNpcBlackjackDealer?.addEventListener('change', () => {
@@ -6505,6 +6521,9 @@ export class Hud {
     }
     if (this.builderNpcBartender && document.activeElement !== this.builderNpcBartender) {
       this.builderNpcBartender.checked = editorState.bartenderEnabled === true;
+    }
+    if (this.builderNpcPawnShopOwner && document.activeElement !== this.builderNpcPawnShopOwner) {
+      this.builderNpcPawnShopOwner.checked = editorState.pawnShopOwnerEnabled === true;
     }
     if (this.builderNpcBlackjackDealer && document.activeElement !== this.builderNpcBlackjackDealer) {
       this.builderNpcBlackjackDealer.checked = editorState.blackjackDealerEnabled === true;

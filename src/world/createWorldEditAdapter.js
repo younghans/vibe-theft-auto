@@ -46,6 +46,7 @@ function toTransportPayload(edit) {
         rentCollectorEnabled: edit.npc.rentCollectorEnabled === true,
         stockMarketEnabled: edit.npc.stockMarketEnabled === true,
         bartenderEnabled: edit.npc.bartenderEnabled === true,
+        pawnShopOwnerEnabled: edit.npc.pawnShopOwnerEnabled === true,
         blackjackDealerEnabled: edit.npc.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: edit.npc.schoolMicrogameEnabled === true,
         schoolMicrogameId: edit.npc.schoolMicrogameId

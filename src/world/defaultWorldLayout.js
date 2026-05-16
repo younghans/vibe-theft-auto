@@ -34,7 +34,7 @@ const BUILDING_PLANS = [
   { cell: [-4, -4], itemId: 'building_d', angle: Math.PI / 2, label: 'Loan office', action: 'Debt and hustle systems will live here later.' },
   { cell: [-2, -4], itemId: 'building_b', angle: 0, label: 'Greasy spoon diner', action: 'The coffee is not implemented yet, but the sign is trying.' },
   { cell: [2, -4], itemId: 'building_f', angle: 0, label: 'Convenience mart', action: 'Shelves and item pickups are a future pass.' },
-  { cell: [4, -4], itemId: 'building_h', angle: -Math.PI / 2, label: 'Pawn and trade', action: 'Trading hooks will branch out from this corner.' },
+  { cell: [4, -4], itemId: 'pawn_building', angle: 0, label: 'Pawn Shop', action: 'The pawn shop owner buys and sells street gear.' },
   { cell: [-4, -2], itemId: 'building_a', angle: Math.PI / 2, label: 'Motel strip', action: 'Room rentals are on the roadmap.' },
   { cell: [4, -2], itemId: 'building_g', angle: -Math.PI / 2, label: 'Arcade block', action: 'The arcade is all atmosphere for now.' },
   { cell: [-4, 2], itemId: 'building_e', angle: Math.PI / 2, label: 'Corner pharmacy', action: 'Health items can plug into this storefront later.' },
@@ -162,6 +162,16 @@ const NPC_PLANS = [
     interactRadius: 5.4,
     schoolMicrogameEnabled: true,
     schoolMicrogameId: 'all'
+  },
+  {
+    id: 'npc_roth',
+    modelId: 'maynard',
+    position: [4.5 * BUILDER_TILE_SIZE, -4.0 * BUILDER_TILE_SIZE],
+    angle: 0,
+    name: 'Roth',
+    prompt: 'You are Roth, the pawn shop owner in Vibe Theft Auto. Keep answers short, guarded, and transactional. You sell cigarettes for twenty bucks and pistols for fifty.',
+    interactRadius: 5.4,
+    pawnShopOwnerEnabled: true
   }
 ];
 
@@ -346,6 +356,7 @@ function createNpcLayout(tiles, props) {
     rentCollectorEnabled: plan.rentCollectorEnabled === true,
     stockMarketEnabled: plan.stockMarketEnabled === true,
     bartenderEnabled: plan.bartenderEnabled === true,
+    pawnShopOwnerEnabled: plan.pawnShopOwnerEnabled === true,
     blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
     schoolMicrogameId: plan.schoolMicrogameId ?? 'all',

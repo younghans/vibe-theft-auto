@@ -38,6 +38,7 @@ function cloneNpcState(npc) {
     rentCollectorEnabled: npc.rentCollectorEnabled === true,
     stockMarketEnabled: npc.stockMarketEnabled === true,
     bartenderEnabled: npc.bartenderEnabled === true,
+    pawnShopOwnerEnabled: npc.pawnShopOwnerEnabled === true,
     blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: npc.schoolMicrogameEnabled === true,
     schoolMicrogameId: npc.schoolMicrogameId || '',
@@ -92,6 +93,7 @@ function clonePlayerState(player) {
     money: player.money ?? 0,
     beerCount: player.beerCount ?? 0,
     shotCount: player.shotCount ?? 0,
+    cigaretteCount: player.cigaretteCount ?? 0,
     drunknessDose: player.drunknessDose ?? 0,
     drunknessLevel: player.drunknessLevel ?? 0,
     drunknessEndsAt: player.drunknessEndsAt ?? 0,
@@ -880,6 +882,13 @@ export class NpcServiceColyseus {
 
   async buyBartenderDrink(npcId = '', itemId = '') {
     return this.rpc('bartender:buyDrink', {
+      npcId: String(npcId ?? '').trim(),
+      itemId: String(itemId ?? '').trim()
+    });
+  }
+
+  async buyPawnShopItem(npcId = '', itemId = '') {
+    return this.rpc('pawnShop:buyItem', {
       npcId: String(npcId ?? '').trim(),
       itemId: String(itemId ?? '').trim()
     });

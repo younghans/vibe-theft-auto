@@ -40,6 +40,7 @@ import {
   DEFAULT_HOTBAR_ITEM_ORDER,
   HOTBAR_KEY_CODES,
   createHotbarSlots,
+  getHotbarConsumableItemId,
   getHotbarDrinkItemId,
   getHotbarEquippedWeaponId,
   getPreferredHotbarSlotIndexForItem,
@@ -106,6 +107,13 @@ import {
   isBartenderNpc,
   listBartenderMenuItems
 } from '../shared/bartender.js';
+import {
+  getPawnShopMenuItem,
+  getPawnShopPromptRadius,
+  getPlayerPawnShopItemCount,
+  isPawnShopOwnerNpc,
+  listPawnShopMenuItems
+} from '../shared/pawnShop.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
   createBlackjackSession,
@@ -821,6 +829,7 @@ export class Game {
     this.stockMarketRefreshAt = 0;
     this.activeInteractionMenu = null;
     this.bartenderRequestInFlight = false;
+    this.pawnShopRequestInFlight = false;
     this.inventoryRequestInFlight = false;
     this.blackjackNpcId = '';
     this.blackjackDealerName = 'Dealer';
@@ -5338,6 +5347,8 @@ export class Game {
 
     if (action.startsWith('bartender:')) {
       void this.buyBartenderDrink(action.slice('bartender:'.length));
+    } else if (action.startsWith('pawnShop:')) {
+      void this.buyPawnShopItem(action.slice('pawnShop:'.length));
     }
   }
 
@@ -5429,6 +5440,207 @@ export class Game {
     }
   }
 
+  getPawnShopOwnerNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      pawnShopOwnerEnabled: npcState?.pawnShopOwnerEnabled === true
+        || interactable?.npc?.pawnShopOwnerEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getPawnShopOwnerNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestPawnShopOwnerInteractable({ npcId = '' } = {}) {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    const targetNpcId = String(npcId ?? '').trim();
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of this.worldBuilder.getInteractables()) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const resolvedNpcId = String(interactable.npcId || interactable.placementId || '').trim();
+      if (targetNpcId && resolvedNpcId !== targetNpcId) {
+        continue;
+      }
+
+      const npcDetails = this.getPawnShopOwnerNpcDetails(interactable);
+      if (
+        !isPawnShopOwnerNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getPawnShopOwnerNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getPawnShopPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'pawn-shop-owner',
+        npcId: resolvedNpcId,
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Browse pawn shop',
+        actionText: 'Pawn shop menu opened.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  syncActivePawnShopMenu(pawnShopOwnerInteraction = null) {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'pawn-shop') {
+      return;
+    }
+
+    const npcId = String(menu.npcId ?? '').trim();
+    const activeInteraction = String(pawnShopOwnerInteraction?.npcId ?? '').trim() === npcId
+      ? pawnShopOwnerInteraction
+      : this.getNearestPawnShopOwnerInteractable({ npcId });
+    if (!activeInteraction) {
+      this.closeInteractionMenu();
+      return;
+    }
+
+    menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Pawn Shop');
+    menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    this.hud.setInteractionMenuAnchor(menu.anchor);
+  }
+
+  renderPawnShopMenu() {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'pawn-shop') {
+      return;
+    }
+
+    const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
+    const localPlayerState = this.getLocalPlayerState();
+    const items = listPawnShopMenuItems();
+    const actions = items.map((item) => {
+      const count = item.kind === 'consumable'
+        ? ` (${getPlayerPawnShopItemCount(localPlayerState, item.id)})`
+        : '';
+      return {
+        id: `pawnShop:${item.id}`,
+        label: `Buy ${item.label} - ${formatMoneyAmount(item.price)}${count}`,
+        primary: item.id === 'cigarettes',
+        disabled: this.pawnShopRequestInFlight || cash < item.price
+      };
+    });
+
+    actions.push({
+      id: 'close',
+      label: 'Maybe later',
+      disabled: this.pawnShopRequestInFlight
+    });
+
+    this.hud.showInteractionMenu({
+      title: menu.npcName || 'Pawn Shop',
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
+      actions,
+      anchor: menu.anchor
+    });
+  }
+
+  openPawnShopMenu(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.closePhoneMenu();
+    this.activeInteractionMenu = {
+      kind: 'pawn-shop',
+      npcId,
+      npcName: String(interaction?.npc?.name ?? 'Pawn Shop'),
+      anchor: this.getBartenderMenuAnchor(interaction)
+    };
+    this.renderPawnShopMenu();
+  }
+
+  async buyPawnShopItem(itemId = '') {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'pawn-shop' || !menu.npcId || this.pawnShopRequestInFlight) {
+      return;
+    }
+
+    const item = getPawnShopMenuItem(itemId);
+    if (!item) {
+      return;
+    }
+
+    this.pawnShopRequestInFlight = true;
+    this.renderPawnShopMenu();
+    try {
+      const result = await this.npcService?.buyPawnShopItem?.(menu.npcId, item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That item could not be purchased.');
+        return;
+      }
+
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        cash: normalizeMoneyAmount(result.money ?? this.phoneWalletState.cash ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+      this.playSoundEffect(this.rentChaChingSound);
+      this.refreshHotbarHud();
+      this.hud.showToast(`Bought ${item.label.toLowerCase()} for ${formatMoneyAmount(item.price)}.`);
+      this.renderPawnShopMenu();
+    } catch (error) {
+      console.warn('[PawnShop] Purchase failed.', error);
+      this.hud.showToast('Pawn shop purchase request failed.');
+    } finally {
+      this.pawnShopRequestInFlight = false;
+      if (this.activeInteractionMenu?.kind === 'pawn-shop') {
+        this.renderPawnShopMenu();
+      }
+    }
+  }
+
   async consumeInventoryDrink(itemId = '') {
     const item = getBartenderMenuItem(itemId);
     if (!item || this.inventoryRequestInFlight) {
@@ -5455,6 +5667,33 @@ export class Game {
     } catch (error) {
       console.warn('[Inventory] Drink consumption failed.', error);
       this.hud.showToast('Could not use that drink.');
+      return false;
+    } finally {
+      this.inventoryRequestInFlight = false;
+    }
+  }
+
+  async consumeInventoryConsumable(itemId = '') {
+    const item = getPawnShopMenuItem(itemId);
+    if (!item || item.kind !== 'consumable' || this.inventoryRequestInFlight) {
+      return false;
+    }
+
+    this.inventoryRequestInFlight = true;
+    try {
+      const result = await this.npcService?.consumeInventoryItem?.(item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? `Could not use ${item.label.toLowerCase()}.`);
+        return false;
+      }
+
+      this.player?.playEmote(DRINKING_EMOTE_ID);
+      this.hud.showToast(result.message || `Used ${item.label.toLowerCase()}.`);
+      this.refreshHotbarHud();
+      return true;
+    } catch (error) {
+      console.warn('[Inventory] Consumable use failed.', error);
+      this.hud.showToast('Could not use that item.');
       return false;
     } finally {
       this.inventoryRequestInFlight = false;
@@ -9606,6 +9845,7 @@ export class Game {
         gymCheckInEnabled: npc.gymCheckInEnabled === true,
         stockMarketEnabled: npc.stockMarketEnabled === true,
         bartenderEnabled: npc.bartenderEnabled === true,
+        pawnShopOwnerEnabled: npc.pawnShopOwnerEnabled === true,
         blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
@@ -10469,7 +10709,7 @@ export class Game {
       respawnAt: localPlayerState.respawnAt ?? 0,
       kills: localPlayerState.kills ?? 0,
       deaths: localPlayerState.deaths ?? 0,
-      armed: Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId())
+      armed: Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId() && !this.getSelectedHotbarConsumableItemId())
     });
     this.syncTaskHud(localPlayerState);
     this.syncSkillProgress(localPlayerState);
@@ -11337,6 +11577,10 @@ export class Game {
     return getHotbarDrinkItemId(this.getSelectedHotbarSlot());
   }
 
+  getSelectedHotbarConsumableItemId() {
+    return getHotbarConsumableItemId(this.getSelectedHotbarSlot());
+  }
+
   getSelectedHotbarEquipAnimation() {
     return getItemEquipAnimation(this.getSelectedHotbarItemId());
   }
@@ -11513,6 +11757,7 @@ export class Game {
       equippedWeaponId: localPlayerState?.equippedWeaponId ?? '',
       beerCount: localPlayerState?.beerCount ?? 0,
       shotCount: localPlayerState?.shotCount ?? 0,
+      cigaretteCount: localPlayerState?.cigaretteCount ?? 0,
       hotbarItemOrder: this.hotbarItemOrder
     });
   }
@@ -11693,6 +11938,7 @@ export class Game {
 
   syncMobileControlsHud(localPlayerState = this.getLocalPlayerState()) {
     const selectedDrinkItemId = this.getSelectedHotbarDrinkItemId();
+    const selectedConsumableItemId = this.getSelectedHotbarConsumableItemId();
     const visible = Boolean(
       this.player
       && !this.hud.isLoadingVisible()
@@ -11708,8 +11954,8 @@ export class Game {
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );
-    const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId && !selectedDrinkItemId);
-    const fireLabel = selectedDrinkItemId ? 'Drink' : (armed ? 'Fire' : 'Hit');
+    const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId && !selectedDrinkItemId && !selectedConsumableItemId);
+    const fireLabel = selectedDrinkItemId ? 'Drink' : (selectedConsumableItemId ? 'Smoke' : (armed ? 'Fire' : 'Hit'));
 
     this.hud.setMobileControlsState({ visible, armed, fireLabel });
     this.input.setTouchControlsEnabled(visible);
@@ -11843,8 +12089,9 @@ export class Game {
       const adminPromptOpen = this.hud.isAdminPromptOpen();
       const phoneOpen = this.hud.isPhoneOpen();
       const selectedDrinkItemId = this.getSelectedHotbarDrinkItemId();
-      const drinkSelected = Boolean(selectedDrinkItemId);
-      const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !drinkSelected);
+      const selectedConsumableItemId = this.getSelectedHotbarConsumableItemId();
+      const consumableSelected = Boolean(selectedDrinkItemId || selectedConsumableItemId);
+      const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !consumableSelected);
       const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
@@ -11892,13 +12139,17 @@ export class Game {
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
-        if (drinkSelected) {
+        if (consumableSelected) {
           this.clearPendingHipFireShot();
           aimingMode = false;
           this.currentAimMode = false;
           this.player.setAimingState(false);
           if (primaryFirePressed) {
-            void this.consumeInventoryDrink(selectedDrinkItemId);
+            if (selectedDrinkItemId) {
+              void this.consumeInventoryDrink(selectedDrinkItemId);
+            } else {
+              void this.consumeInventoryConsumable(selectedConsumableItemId);
+            }
           }
         } else if (armed) {
           aimingMode = secondaryAimHeld;
@@ -12181,7 +12432,11 @@ export class Game {
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
       : this.getNearestBartenderInteractable();
+    const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
+      ? null
+      : this.getNearestPawnShopOwnerInteractable();
     this.syncActiveBartenderMenu(bartenderInteraction);
+    this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -12225,6 +12480,14 @@ export class Game {
       this.hud.setPrompt(bartenderInteraction);
       if (interactPressed) {
         this.openBartenderMenu(bartenderInteraction);
+      }
+      return;
+    }
+
+    if (pawnShopOwnerInteraction) {
+      this.hud.setPrompt(pawnShopOwnerInteraction);
+      if (interactPressed) {
+        this.openPawnShopMenu(pawnShopOwnerInteraction);
       }
       return;
     }
@@ -12478,9 +12741,12 @@ export class Game {
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
       : this.getNearestBartenderInteractable();
+    const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
+      ? null
+      : this.getNearestPawnShopOwnerInteractable();
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -12499,7 +12765,7 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && !pawnShopOwnerInteraction && npcState?.busy) {
       return;
     }
 
@@ -12608,6 +12874,20 @@ export class Game {
       bubbles.push({
         id: `npc-bartender:${npcId}`,
         text: 'E to order drinks',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (pawnShopOwnerInteraction) {
+      bubbles.push({
+        id: `npc-pawn-shop:${npcId}`,
+        text: 'E to browse pawn shop',
         label: '',
         variant: 'interaction',
         status: 'done',

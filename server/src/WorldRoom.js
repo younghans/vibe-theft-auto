@@ -81,6 +81,15 @@ import {
   refreshPlayerDrunkness
 } from '../../src/shared/bartender.js';
 import {
+  addPlayerPawnShopItem,
+  consumePlayerPawnShopItem,
+  getPawnShopMenuItem,
+  getPawnShopPromptRadius,
+  getPlayerPawnShopInventorySnapshot,
+  isPawnShopOwnerNpc,
+  normalizePawnShopInventoryCount
+} from '../../src/shared/pawnShop.js';
+import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
   canSplitBlackjackSession,
@@ -235,6 +244,7 @@ const PlayerState = schema({
   money: 'number',
   beerCount: 'number',
   shotCount: 'number',
+  cigaretteCount: 'number',
   drunknessDose: 'number',
   drunknessLevel: 'number',
   drunknessEndsAt: 'number',
@@ -310,6 +320,7 @@ const NpcState = schema({
   rentCollectorEnabled: 'boolean',
   stockMarketEnabled: 'boolean',
   bartenderEnabled: 'boolean',
+  pawnShopOwnerEnabled: 'boolean',
   blackjackDealerEnabled: 'boolean',
   schoolMicrogameEnabled: 'boolean',
   schoolMicrogameId: 'string',
@@ -491,6 +502,7 @@ function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
       money: player.money,
       beerCount: player.beerCount,
       shotCount: player.shotCount,
+      cigaretteCount: player.cigaretteCount,
       drunknessDose: player.drunknessDose,
       drunknessLevel: player.drunknessLevel,
       drunknessEndsAt: player.drunknessEndsAt,
@@ -563,6 +575,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.money = sanitizeSnapshotNumber(saved.money, 0, { integer: true });
   player.beerCount = normalizeDrinkInventoryCount(saved.beerCount);
   player.shotCount = normalizeDrinkInventoryCount(saved.shotCount);
+  player.cigaretteCount = normalizePawnShopInventoryCount(saved.cigaretteCount);
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
   player.drunknessEndsAt = sanitizeSnapshotNumber(saved.drunknessEndsAt, 0, { integer: true, min: 0 });
@@ -740,6 +753,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleBartenderPurchase(client, message));
     });
 
+    this.onMessage('pawnShop:buyItem', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handlePawnShopPurchase(client, message));
+    });
+
     this.onMessage('inventory:consumeItem', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleInventoryConsumeRequest(client, message));
     });
@@ -906,6 +923,7 @@ export class WorldRoom extends Room {
     player.money = rentIntro ? -Math.abs(Math.round(rentIntro.amount)) : 0;
     player.beerCount = 0;
     player.shotCount = 0;
+    player.cigaretteCount = 0;
     player.drunknessDose = 0;
     player.drunknessLevel = 0;
     player.drunknessEndsAt = 0;
@@ -1718,13 +1736,113 @@ export class WorldRoom extends Room {
     };
   }
 
+  getPawnShopOwnerNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isPawnShopOwnerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getPawnShopPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertPawnShopAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot buy that right now.');
+    }
+
+    const npc = this.getPawnShopOwnerNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to the pawn shop owner.');
+    }
+
+    return { player, npc };
+  }
+
+  handlePawnShopPurchase(client, message = {}) {
+    const { player, npc } = this.assertPawnShopAccess(client, message);
+    const item = getPawnShopMenuItem(message?.itemId);
+    if (!item) {
+      throw new Error('That item is not for sale.');
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      throw new Error(`You need $${item.price} for ${item.label.toLowerCase()}.`);
+    }
+
+    let inventoryCount = 0;
+    let weaponResult = null;
+    if (item.kind === 'weapon') {
+      weaponResult = applyWeaponPickupToPlayerState(player, item);
+      if (!weaponResult.changed) {
+        const error = weaponResult.reason === 'no-ammo-space'
+          ? 'You already have a fully stocked pistol.'
+          : 'That weapon is not available.';
+        this.setNpcChatPhase(npc, 'done', error, { bumpSeq: true });
+        throw new Error(error);
+      }
+    } else {
+      inventoryCount = addPlayerPawnShopItem(player, item.id, 1);
+    }
+
+    player.money = money - item.price;
+    this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return {
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: inventoryCount,
+        weaponId: item.weaponId ?? ''
+      },
+      inventory: getPlayerPawnShopInventorySnapshot(player),
+      weapon: weaponResult
+        ? {
+            weaponId: weaponResult.weaponId,
+            alreadyOwned: weaponResult.alreadyOwned === true,
+            ammoInClip: player.ammoInClip,
+            reserveAmmo: player.reserveAmmo
+          }
+        : null,
+      money: player.money
+    };
+  }
+
   handleInventoryConsumeRequest(client, message = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.alive === false) {
       throw new Error('You cannot use that right now.');
     }
 
-    const result = consumePlayerDrink(player, message?.itemId, Date.now());
+    const pawnItem = getPawnShopMenuItem(message?.itemId);
+    const result = pawnItem?.kind === 'consumable'
+      ? consumePlayerPawnShopItem(player, message?.itemId)
+      : consumePlayerDrink(player, message?.itemId, Date.now());
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -3315,6 +3433,7 @@ export class WorldRoom extends Room {
         rentCollectorEnabled: message.rentCollectorEnabled === true,
         stockMarketEnabled: message.stockMarketEnabled === true,
         bartenderEnabled: message.bartenderEnabled === true,
+        pawnShopOwnerEnabled: message.pawnShopOwnerEnabled === true,
         blackjackDealerEnabled: message.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: message.schoolMicrogameEnabled === true,
         schoolMicrogameId: normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID),
@@ -3367,6 +3486,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'bartenderEnabled')) {
       updates.bartenderEnabled = message.bartenderEnabled === true;
+    }
+    if (Object.hasOwn(message, 'pawnShopOwnerEnabled')) {
+      updates.pawnShopOwnerEnabled = message.pawnShopOwnerEnabled === true;
     }
     if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
       updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
@@ -3519,6 +3641,7 @@ export class WorldRoom extends Room {
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
       existing.bartenderEnabled = normalizedDefinition.bartenderEnabled === true;
+      existing.pawnShopOwnerEnabled = normalizedDefinition.pawnShopOwnerEnabled === true;
       existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
       existing.schoolMicrogameEnabled = normalizedDefinition.schoolMicrogameEnabled === true;
       existing.schoolMicrogameId = normalizeSchoolMicrogameId(normalizedDefinition.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);

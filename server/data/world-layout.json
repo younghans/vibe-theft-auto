@@ -119,15 +119,15 @@
     },
     {
       "id": "placement_85",
-      "itemId": "building_h",
+      "itemId": "pawn_building",
       "cell": [
         4,
         -4
       ],
-      "rotationQuarterTurns": 3,
+      "rotationQuarterTurns": 0,
       "interactable": {
-        "label": "Pawn and trade",
-        "actionText": "Trading hooks will branch out from this corner.",
+        "label": "Pawn Shop",
+        "actionText": "The pawn shop owner buys and sells street gear.",
         "radius": 4,
         "distance": 6.16
       }
@@ -221,15 +221,6 @@
         -3
       ],
       "rotationQuarterTurns": 2
-    },
-    {
-      "id": "placement_18",
-      "itemId": "lot_base",
-      "cell": [
-        4,
-        -3
-      ],
-      "rotationQuarterTurns": 0
     },
     {
       "id": "placement_156",
@@ -1789,6 +1780,20 @@
       "active": true,
       "schoolMicrogameEnabled": true,
       "schoolMicrogameId": "all"
+    },
+    {
+      "id": "npc_roth",
+      "modelId": "maynard",
+      "position": [
+        63,
+        -56
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "Roth",
+      "prompt": "You are Roth, the pawn shop owner in Vibe Theft Auto. Keep answers short, guarded, and transactional. You sell cigarettes for twenty bucks and pistols for fifty.",
+      "interactRadius": 5.4,
+      "active": true,
+      "pawnShopOwnerEnabled": true
     }
   ]
 }

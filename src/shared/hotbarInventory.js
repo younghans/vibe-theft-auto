@@ -1,7 +1,9 @@
 import { getPlayerDrinkCount } from './bartender.js';
+import { getPlayerPawnShopItemCount } from './pawnShop.js';
 import {
   ITEM_IDS,
   ITEM_KINDS,
+  getItemConsumableItemId,
   getItemDefinition,
   getItemDrinkItemId,
   getItemEquippedWeaponId
@@ -13,15 +15,16 @@ export const DEFAULT_HOTBAR_ITEM_ORDER = Object.freeze([
   ITEM_IDS.pistol,
   ITEM_IDS.beer,
   ITEM_IDS.shot,
+  ITEM_IDS.cigarettes,
   '',
-  ''
 ]);
 const HOTBAR_ITEM_IDS = new Set(DEFAULT_HOTBAR_ITEM_ORDER.filter(Boolean));
 
 export const DEFAULT_HOTBAR_ASSIGNMENTS = Object.freeze([
   Object.freeze({ slotIndex: 0, itemId: ITEM_IDS.pistol }),
   Object.freeze({ slotIndex: 1, itemId: ITEM_IDS.beer }),
-  Object.freeze({ slotIndex: 2, itemId: ITEM_IDS.shot })
+  Object.freeze({ slotIndex: 2, itemId: ITEM_IDS.shot }),
+  Object.freeze({ slotIndex: 3, itemId: ITEM_IDS.cigarettes })
 ]);
 
 function createEmptySlot(index) {
@@ -35,7 +38,8 @@ function createEmptySlot(index) {
     kind: ITEM_KINDS.empty,
     hotbarIconId: '',
     equippedWeaponId: '',
-    drinkItemId: ''
+    drinkItemId: '',
+    consumableItemId: ''
   });
 }
 
@@ -56,7 +60,8 @@ function createItemSlot(index, itemId, { quantity = 1 } = {}) {
     kind: definition.kind,
     hotbarIconId: definition.hotbarIconId ?? '',
     equippedWeaponId: definition.equippedWeaponId ?? '',
-    drinkItemId: definition.drinkItemId ?? ''
+    drinkItemId: definition.drinkItemId ?? '',
+    consumableItemId: definition.consumableItemId ?? ''
   });
 }
 
@@ -118,7 +123,8 @@ export function moveHotbarItemOrderSlot(order = DEFAULT_HOTBAR_ITEM_ORDER, fromI
 
 function getHotbarItemQuantity(itemId = '', {
   beerCount = 0,
-  shotCount = 0
+  shotCount = 0,
+  cigaretteCount = 0
 } = {}) {
   const definition = getItemDefinition(itemId);
   if (!definition) {
@@ -129,6 +135,10 @@ function getHotbarItemQuantity(itemId = '', {
     return getPlayerDrinkCount({ beerCount, shotCount }, definition.drinkItemId);
   }
 
+  if (definition.kind === ITEM_KINDS.consumable) {
+    return getPlayerPawnShopItemCount({ cigaretteCount }, definition.consumableItemId);
+  }
+
   return 1;
 }
 
@@ -136,7 +146,8 @@ function canShowHotbarItem(itemId = '', {
   ownedWeaponIds = '',
   equippedWeaponId = '',
   beerCount = 0,
-  shotCount = 0
+  shotCount = 0,
+  cigaretteCount = 0
 } = {}) {
   const definition = getItemDefinition(itemId);
   if (!definition) {
@@ -153,6 +164,10 @@ function canShowHotbarItem(itemId = '', {
     return getHotbarItemQuantity(definition.id, { beerCount, shotCount }) > 0;
   }
 
+  if (definition.kind === ITEM_KINDS.consumable) {
+    return getHotbarItemQuantity(definition.id, { cigaretteCount }) > 0;
+  }
+
   return false;
 }
 
@@ -161,9 +176,10 @@ export function createHotbarSlots({
   equippedWeaponId = '',
   beerCount = 0,
   shotCount = 0,
+  cigaretteCount = 0,
   hotbarItemOrder = DEFAULT_HOTBAR_ITEM_ORDER
 } = {}) {
-  const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount };
+  const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount, cigaretteCount };
   const itemOrder = normalizeHotbarItemOrder(hotbarItemOrder);
 
   return Object.freeze(
@@ -224,6 +240,17 @@ export function getHotbarDrinkItemId(slotOrIndex, slots = HOTBAR_SLOTS) {
   const quantity = Math.max(0, Math.floor(Number(slot?.quantity ?? slot?.count) || 0));
   return slot?.kind === ITEM_KINDS.drink && quantity > 0
     ? getItemDrinkItemId(slot.itemId)
+    : '';
+}
+
+export function getHotbarConsumableItemId(slotOrIndex, slots = HOTBAR_SLOTS) {
+  const slot = typeof slotOrIndex === 'object' && slotOrIndex
+    ? slotOrIndex
+    : getHotbarSlot(slotOrIndex, slots);
+
+  const quantity = Math.max(0, Math.floor(Number(slot?.quantity ?? slot?.count) || 0));
+  return slot?.kind === ITEM_KINDS.consumable && quantity > 0
+    ? getItemConsumableItemId(slot.itemId)
     : '';
 }
 

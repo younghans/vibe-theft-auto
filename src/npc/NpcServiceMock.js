@@ -64,6 +64,14 @@ import {
   refreshPlayerDrunkness
 } from '../shared/bartender.js';
 import {
+  addPlayerPawnShopItem,
+  consumePlayerPawnShopItem,
+  getPawnShopMenuItem,
+  getPawnShopPromptRadius,
+  getPlayerPawnShopInventorySnapshot,
+  isPawnShopOwnerNpc
+} from '../shared/pawnShop.js';
+import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
   canSplitBlackjackSession,
@@ -233,6 +241,7 @@ function createDefaultPlayerState(overrides = {}) {
     money: 0,
     beerCount: 0,
     shotCount: 0,
+    cigaretteCount: 0,
     drunknessDose: 0,
     drunknessLevel: 0,
     drunknessEndsAt: 0,
@@ -583,6 +592,7 @@ export class NpcServiceMock {
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
         stockMarketEnabled: definition.stockMarketEnabled === true,
         bartenderEnabled: definition.bartenderEnabled === true,
+        pawnShopOwnerEnabled: definition.pawnShopOwnerEnabled === true,
         blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: definition.schoolMicrogameEnabled === true,
         schoolMicrogameId: definition.schoolMicrogameId || SCHOOL_MICROGAME_ALL_ID,
@@ -713,6 +723,7 @@ export class NpcServiceMock {
             rentCollectorEnabled: payload.rentCollectorEnabled,
             stockMarketEnabled: payload.stockMarketEnabled,
             bartenderEnabled: payload.bartenderEnabled,
+            pawnShopOwnerEnabled: payload.pawnShopOwnerEnabled,
             blackjackDealerEnabled: payload.blackjackDealerEnabled,
             schoolMicrogameEnabled: payload.schoolMicrogameEnabled,
             schoolMicrogameId: payload.schoolMicrogameId
@@ -1497,13 +1508,119 @@ export class NpcServiceMock {
     };
   }
 
+  getPawnShopOwnerNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isPawnShopOwnerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getPawnShopPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getPawnShopAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot buy that right now.' };
+    }
+
+    const npc = this.getPawnShopOwnerNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to the pawn shop owner.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async buyPawnShopItem(npcId = '', itemId = '') {
+    const access = this.getPawnShopAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const item = getPawnShopMenuItem(itemId);
+    if (!item) {
+      return { ok: false, error: 'That item is not for sale.' };
+    }
+
+    const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(access.npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error: `You need $${item.price} for ${item.label.toLowerCase()}.` };
+    }
+
+    let inventoryCount = 0;
+    let weaponResult = null;
+    if (item.kind === 'weapon') {
+      weaponResult = applyWeaponPickupToPlayerState(access.player, item);
+      if (!weaponResult.changed) {
+        const error = weaponResult.reason === 'no-ammo-space'
+          ? 'You already have a fully stocked pistol.'
+          : 'That weapon is not available.';
+        this.setNpcChatPhase(access.npc, 'done', error, { bumpSeq: true });
+        this.emit();
+        return { ok: false, error };
+      }
+    } else {
+      inventoryCount = addPlayerPawnShopItem(access.player, item.id, 1);
+    }
+
+    access.player.money = money - item.price;
+    this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
+    this.emit();
+    return {
+      ok: true,
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: inventoryCount,
+        weaponId: item.weaponId ?? ''
+      },
+      inventory: getPlayerPawnShopInventorySnapshot(access.player),
+      weapon: weaponResult
+        ? {
+            weaponId: weaponResult.weaponId,
+            alreadyOwned: weaponResult.alreadyOwned === true,
+            ammoInClip: access.player.ammoInClip,
+            reserveAmmo: access.player.reserveAmmo
+          }
+        : null,
+      money: access.player.money
+    };
+  }
+
   async consumeInventoryItem(itemId = '') {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false) {
       return { ok: false, error: 'You cannot use that right now.' };
     }
 
-    const result = consumePlayerDrink(player, itemId, Date.now());
+    const pawnItem = getPawnShopMenuItem(itemId);
+    const result = pawnItem?.kind === 'consumable'
+      ? consumePlayerPawnShopItem(player, itemId)
+      : consumePlayerDrink(player, itemId, Date.now());
     if (!result.ok) {
       return result;
     }

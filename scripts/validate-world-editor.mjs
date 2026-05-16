@@ -25,7 +25,16 @@ import {
   refreshPlayerDrunkness
 } from '../src/shared/bartender.js';
 import {
+  PAWN_SHOP_ITEM_IDS,
+  addPlayerPawnShopItem,
+  consumePlayerPawnShopItem,
+  getPawnShopMenuItem,
+  isPawnShopOwnerNpc,
+  listPawnShopMenuItems
+} from '../src/shared/pawnShop.js';
+import {
   createHotbarSlots,
+  getHotbarConsumableItemId,
   getHotbarDrinkItemId,
   moveHotbarItemOrderSlot
 } from '../src/shared/hotbarInventory.js';
@@ -615,6 +624,52 @@ function validateBartenderFunction() {
   assert(
     defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'bartenderEnabled')),
     'Default NPC layout should serialize bartenderEnabled for world-builder compatibility'
+  );
+
+  const cigarettes = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes);
+  const pawnPistol = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.pistol);
+  assert(cigarettes?.price === 20, 'Pawn shop cigarettes should cost $20');
+  assert(cigarettes?.kind === 'consumable', 'Pawn shop cigarettes should be a consumable item');
+  assert(pawnPistol?.price === 50, 'Pawn shop pistol should cost $50');
+  assert(pawnPistol?.weaponId === WEAPON_IDS.pistol, 'Pawn shop pistol should sell the standard pistol');
+  assert(listPawnShopMenuItems().length === 2, 'Pawn shop menu should include exactly cigarettes and pistol');
+
+  const cigarettePlayer = { cigaretteCount: 0 };
+  addPlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes, 2);
+  assert(cigarettePlayer.cigaretteCount === 2, 'Pawn shop cigarettes should add to player inventory');
+  const smokeResult = consumePlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes);
+  assert(smokeResult.ok && cigarettePlayer.cigaretteCount === 1, 'Smoking should consume one cigarette');
+  const cigaretteSlots = createHotbarSlots({ cigaretteCount: 3 });
+  assert(
+    getHotbarConsumableItemId(cigaretteSlots[3]) === PAWN_SHOP_ITEM_IDS.cigarettes,
+    'Cigarettes should appear as a hotbar consumable'
+  );
+
+  const pawnOwner = normalizeNpcBehavior({
+    modelId: 'maynard',
+    name: 'Roth',
+    pawnShopOwnerEnabled: true,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  assert(isPawnShopOwnerNpc(pawnOwner), 'Normalized NPC should preserve pawnShopOwnerEnabled');
+  assert(
+    defaultWorldLayout.npcs.some((npc) => npc.id === 'npc_roth' && npc.pawnShopOwnerEnabled === true),
+    'Default NPC layout should seed Roth as the pawn shop owner'
+  );
+  assert(
+    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'pawnShopOwnerEnabled')),
+    'Default NPC layout should serialize pawnShopOwnerEnabled for world-builder compatibility'
+  );
+  assert(
+    /this\.syncActivePawnShopMenu\(pawnShopOwnerInteraction\);/.test(gameSource),
+    'Pawn shop owner menu should resync and close during interaction updates'
+  );
+  assert(
+    /buyPawnShopItem/.test(gameSource),
+    'Game client should route pawn shop menu actions to a purchase handler'
   );
 }
 

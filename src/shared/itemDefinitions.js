@@ -1,22 +1,26 @@
 import { WEAPON_IDS, WEAPON_RELOAD_MS } from './combatConstants.js';
 import { DRINK_ITEM_IDS, getBartenderMenuItem } from './bartender.js';
+import { PAWN_SHOP_ITEM_IDS, getPawnShopMenuItem } from './pawnShop.js';
 
 export const ITEM_IDS = Object.freeze({
   pistol: WEAPON_IDS.pistol,
   beer: DRINK_ITEM_IDS.beer,
-  shot: DRINK_ITEM_IDS.shot
+  shot: DRINK_ITEM_IDS.shot,
+  cigarettes: PAWN_SHOP_ITEM_IDS.cigarettes
 });
 
 export const ITEM_KINDS = Object.freeze({
   empty: 'empty',
   weapon: 'weapon',
-  drink: 'drink'
+  drink: 'drink',
+  consumable: 'consumable'
 });
 
 export const ITEM_HOTBAR_ICON_IDS = Object.freeze({
   pistol: 'hotbarPistol',
   beer: 'drinkBeer',
-  shot: 'drinkShot'
+  shot: 'drinkShot',
+  cigarettes: 'consumableCigarettes'
 });
 
 export const ITEM_EQUIP_ANIMATION_IDS = Object.freeze({
@@ -57,6 +61,15 @@ const ITEM_DEFINITIONS = Object.freeze({
     hotbarIconId: ITEM_HOTBAR_ICON_IDS.shot,
     drinkItemId: DRINK_ITEM_IDS.shot,
     maxStack: 999
+  }),
+  [ITEM_IDS.cigarettes]: Object.freeze({
+    id: ITEM_IDS.cigarettes,
+    kind: ITEM_KINDS.consumable,
+    label: getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes)?.label ?? 'Cigarettes',
+    hotbarIconId: ITEM_HOTBAR_ICON_IDS.cigarettes,
+    consumableItemId: PAWN_SHOP_ITEM_IDS.cigarettes,
+    actionLabel: 'Smoke',
+    maxStack: 999
   })
 });
 
@@ -91,6 +104,10 @@ export function getItemEquippedWeaponId(itemId = '') {
 
 export function getItemDrinkItemId(itemId = '') {
   return getItemDefinition(itemId)?.drinkItemId ?? '';
+}
+
+export function getItemConsumableItemId(itemId = '') {
+  return getItemDefinition(itemId)?.consumableItemId ?? '';
 }
 
 export function getItemByEquippedWeaponId(weaponId = '') {
