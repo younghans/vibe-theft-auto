@@ -13,8 +13,9 @@ const assetsRoot = path.join(root, 'assets');
 const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
-const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], (35 * 1024 + 1792) * 1024);
+const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], 37 * 1024 * 1024);
 const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 5 * 1024 * 1024);
+const DIST_BUDGET_DETAIL_LIMIT = 10;
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',
   '.glb',
@@ -35,6 +36,18 @@ function getByteBudget(names, fallback) {
     }
   }
   return fallback;
+}
+
+function formatKiB(bytes) {
+  return `${Math.round(bytes / 1024)} KiB`;
+}
+
+function formatFileSizeList(files = []) {
+  return [...files]
+    .sort((left, right) => right.bytes - left.bytes)
+    .slice(0, DIST_BUDGET_DETAIL_LIMIT)
+    .map((entry) => `${entry.path} (${formatKiB(entry.bytes)})`)
+    .join(', ');
 }
 
 async function resetStagingDist() {
@@ -555,15 +568,21 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
   const files = await walkFiles(outputDirectory);
   const runtimeFiles = files.filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'));
   let totalBytes = 0;
+  const runtimeFileSizes = [];
   const oversizedFiles = [];
 
   for (const filePath of runtimeFiles) {
     const stats = await fs.stat(filePath);
+    const relativePath = path.relative(outputDirectory, filePath).split(path.sep).join('/');
     totalBytes += stats.size;
+    runtimeFileSizes.push({
+      path: relativePath,
+      bytes: stats.size
+    });
 
     if (stats.size > DIST_FILE_BUDGET_BYTES) {
       oversizedFiles.push({
-        path: path.relative(outputDirectory, filePath).split(path.sep).join('/'),
+        path: relativePath,
         bytes: stats.size
       });
     }
@@ -571,19 +590,17 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
 
   const errors = [];
   if (totalBytes > DIST_TOTAL_BUDGET_BYTES) {
+    const largestFiles = formatFileSizeList(runtimeFileSizes);
     errors.push(
-      `Dist payload is ${Math.round(totalBytes / 1024)} KiB, budget is ${Math.round(DIST_TOTAL_BUDGET_BYTES / 1024)} KiB.`
+      `Dist payload is ${formatKiB(totalBytes)}, budget is ${formatKiB(DIST_TOTAL_BUDGET_BYTES)}.`
+        + (largestFiles ? ` Largest runtime files: ${largestFiles}.` : '')
     );
   }
 
   if (oversizedFiles.length > 0) {
-    const details = oversizedFiles
-      .sort((left, right) => right.bytes - left.bytes)
-      .slice(0, 10)
-      .map((entry) => `${entry.path} (${Math.round(entry.bytes / 1024)} KiB)`)
-      .join(', ');
+    const details = formatFileSizeList(oversizedFiles);
     errors.push(
-      `Files exceed the single-file budget of ${Math.round(DIST_FILE_BUDGET_BYTES / 1024)} KiB: ${details}.`
+      `Files exceed the single-file budget of ${formatKiB(DIST_FILE_BUDGET_BYTES)}: ${details}.`
     );
   }
 

@@ -171,6 +171,93 @@ $candidateList
 "@
 }
 
+function Get-NodeCommandVersion {
+  param([Parameter(Mandatory = $true)][string]$Command)
+
+  try {
+    $output = & $Command --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      return ''
+    }
+
+    return ($output | Select-Object -First 1).ToString().Trim()
+  } catch {
+    return ''
+  }
+}
+
+function Resolve-NodeCommand {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $configuredCommand = [Environment]::GetEnvironmentVariable('NODE_COMMAND', 'Process')
+  $fallbackCommand = ''
+  $fallbackVersion = ''
+
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $configuredCommand
+
+  foreach ($candidate in @(
+    'D:\tools\node22\node.exe',
+    'C:\Program Files\nodejs\node.exe',
+    'C:\Program Files (x86)\nodejs\node.exe'
+  )) {
+    Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+  }
+
+  try {
+    foreach ($candidate in @(where.exe node 2>$null)) {
+      Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate $candidate
+    }
+  } catch {}
+
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate 'node.exe'
+  Add-CommandCandidate -Candidates $candidates -Seen $seen -Candidate 'node'
+
+  foreach ($candidate in $candidates) {
+    $version = Get-NodeCommandVersion -Command $candidate
+    if ([string]::IsNullOrWhiteSpace($version)) {
+      if (
+        -not [string]::IsNullOrWhiteSpace($configuredCommand) -and
+        $candidate -eq $configuredCommand
+      ) {
+        Write-Warning "Configured NODE_COMMAND did not respond to '--version'; trying auto-discovery."
+      }
+      continue
+    }
+
+    if ([string]::IsNullOrWhiteSpace($fallbackCommand)) {
+      $fallbackCommand = $candidate
+      $fallbackVersion = $version
+    }
+
+    if ($version -match '^v22\.') {
+      return $candidate
+    }
+
+    if (
+      -not [string]::IsNullOrWhiteSpace($configuredCommand) -and
+      $candidate -eq $configuredCommand
+    ) {
+      Write-Warning "Configured NODE_COMMAND reports $version, but this project expects Node 22.x; trying auto-discovery."
+    }
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($fallbackCommand)) {
+    Write-Warning "Could not find Node 22.x; using $fallbackCommand ($fallbackVersion). Worker builds may differ from production."
+    return $fallbackCommand
+  }
+
+  $candidateList = ($candidates | ForEach-Object { "  - $_" }) -join [Environment]::NewLine
+  Write-Error @"
+Could not find a working Node.js command.
+
+Install Node 22.x or set NODE_COMMAND in $envFile to an executable that supports:
+  node --version
+
+Tried:
+$candidateList
+"@
+}
+
 function Resolve-CodexCommand {
   $candidates = [System.Collections.Generic.List[string]]::new()
   $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -333,6 +420,19 @@ if (-not [string]::IsNullOrWhiteSpace($gitCommandDirectory) -and (Test-Path -Lit
 }
 Write-Host "Using Git command: $gitCommand"
 
+$nodeCommand = Resolve-NodeCommand
+[Environment]::SetEnvironmentVariable('NODE_COMMAND', $nodeCommand, 'Process')
+$nodeCommandDirectory = Split-Path -Parent $nodeCommand
+if (-not [string]::IsNullOrWhiteSpace($nodeCommandDirectory) -and (Test-Path -LiteralPath $nodeCommandDirectory)) {
+  $pathSeparator = [System.IO.Path]::PathSeparator
+  $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+  $pathEntries = @($currentPath -split [Regex]::Escape([string]$pathSeparator) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if (-not ($pathEntries | Where-Object { $_ -ieq $nodeCommandDirectory })) {
+    [Environment]::SetEnvironmentVariable('PATH', "$nodeCommandDirectory$pathSeparator$currentPath", 'Process')
+  }
+}
+Write-Host "Using Node command: $nodeCommand"
+
 $workerToken = [Environment]::GetEnvironmentVariable('AGENT_WORKER_TOKEN', 'Process')
 if ([string]::IsNullOrWhiteSpace($workerToken) -or $workerToken -eq '<production worker token>') {
   Write-Error @"
@@ -372,7 +472,7 @@ if ($Once) {
 
 Push-Location $repoRoot
 try {
-  & node @workerArgs
+  & $nodeCommand @workerArgs
   exit $LASTEXITCODE
 } finally {
   Pop-Location
