@@ -51,6 +51,8 @@ const BACKEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('BACKEND_VERIFY_
 const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
+const CODEX_REASONING_EFFORT = String(process.env.CODEX_REASONING_EFFORT || 'xhigh').trim() || 'xhigh';
+const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim() || 'fast';
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
 const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 10 * 60 * 1000);
 const TASK_HEARTBEAT_MS = getPositiveIntegerEnv('AGENT_TASK_HEARTBEAT_MS', 60 * 1000);
@@ -395,6 +397,10 @@ function getDefaultCodexExecArgs(worktreePath, lastMessagePath) {
   return [
     'exec',
     ...trustArgs,
+    '-c',
+    `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
+    '-c',
+    `service_tier="${CODEX_SERVICE_TIER}"`,
     '-C',
     worktreePath,
     '-o',
@@ -1016,6 +1022,8 @@ async function runCodex(task, worktreePath, promptPath) {
   await writeWorkerDiagnostic('info', 'codex_exec_configured', {
     taskId: task.id,
     customArgs: Boolean(process.env.CODEX_EXEC_ARGS),
+    reasoningEffort: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_REASONING_EFFORT,
+    serviceTier: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_SERVICE_TIER,
     windowsSandboxBypass: process.platform === 'win32' && !process.env.CODEX_EXEC_ARGS,
     sanitizedEnv: true
   });
@@ -2656,6 +2664,16 @@ function runSelfTest() {
     assertSelfTestEqual(defaultCodexArgs.includes('workspace-write'), true, 'non-windows codex exec uses workspace sandbox');
   }
   assertSelfTestEqual(
+    defaultCodexArgs.includes(`model_reasoning_effort="${CODEX_REASONING_EFFORT}"`),
+    true,
+    'codex exec uses configured reasoning effort'
+  );
+  assertSelfTestEqual(
+    defaultCodexArgs.includes(`service_tier="${CODEX_SERVICE_TIER}"`),
+    true,
+    'codex exec uses configured service tier'
+  );
+  assertSelfTestEqual(
     formatCodexExecArgs(['exec', '-C', '{worktree}', '-o', '{lastMessage}'], {
       worktreePath: 'C:/worktree',
       lastMessagePath: 'C:/worktree/.codex/last.md'
@@ -2784,6 +2802,8 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  codexReasoningEffort: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_REASONING_EFFORT,
+  codexServiceTier: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_SERVICE_TIER,
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
@@ -2809,6 +2829,8 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   frontendDeployCommand: FRONTEND_DEPLOY_COMMAND ? 'configured' : 'git-integration',
   frontendVerifyUrl: FRONTEND_VERIFY_URL ? 'configured' : 'package-homepage',
   frontendVerifyTimeoutMs: FRONTEND_VERIFY_TIMEOUT_MS,
+  codexReasoningEffort: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_REASONING_EFFORT,
+  codexServiceTier: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_SERVICE_TIER,
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
