@@ -5,7 +5,7 @@ import { createRagdollController } from '../player/ragdollController.js';
 import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
-import { prepareNpcRenderObject } from './npcRenderUtils.js';
+import { applyNpcCharacterAdornment, prepareNpcRenderObject } from './npcRenderUtils.js';
 
 const DAMAGE_FEEDBACK_DURATION_MS = 380;
 const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
@@ -306,6 +306,7 @@ export class NpcActor {
     this.anchor.add(this.damageRipple);
     this.anchor.add(this.carriedBarbell);
     this.visual.add(this.character);
+    applyNpcCharacterAdornment(this.visual, model, definition);
     this.visual.add(this.damageBurst);
     this.anchor.add(this.busyIndicator);
     this.anchor.add(this.selectionIndicator);

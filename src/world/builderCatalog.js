@@ -100,11 +100,11 @@ const PAWN_SHOP_COLLISION_RECTS = Object.freeze([
   ...PAWN_SHOP_COUNTER_COLLISION_RECTS
 ]);
 const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
-  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 6.3 },
-  { centerX: -5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.3 },
-  { centerX: 5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.3 },
-  { centerX: -4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 4.4 },
-  { centerX: 4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 4.4 },
+  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 7.2 },
+  { centerX: -5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 7.2 },
+  { centerX: 5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 7.2 },
+  { centerX: -4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 5.9 },
+  { centerX: 4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 5.9 },
   { centerX: 0, centerZ: 1.05, halfWidth: 4.52, halfDepth: 0.72, minY: 0, maxY: 2.45 }
 ]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
@@ -312,6 +312,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     padding: 0.5,
     npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
     cameraOcclusionPreserveNodeNames: ['marthas_grille_hull_wall'],
+    cameraOcclusionAlwaysPreserveNodeNames: ['marthas_grille_hull_wall'],
     createVisual: createMarthasGrilleBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -831,6 +832,7 @@ function createCityTile(definition) {
       ? [...definition.npcRouteDoorOffset]
       : undefined,
     cameraOcclusionPreserveNodeNames: [...(definition.cameraOcclusionPreserveNodeNames ?? [])],
+    cameraOcclusionAlwaysPreserveNodeNames: [...(definition.cameraOcclusionAlwaysPreserveNodeNames ?? [])],
     interior: cloneInteriorDefinition(definition.interior),
     interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,

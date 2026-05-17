@@ -1676,6 +1676,19 @@
       "active": true
     },
     {
+      "id": "npc_martha",
+      "modelId": "martha",
+      "position": [
+        -28.7,
+        -55.72
+      ],
+      "rotationQuarterTurns": 0,
+      "name": "Martha",
+      "prompt": "You are Martha, the warm owner of Martha's Grille. You greet people with a huge smile, fuss over the grill, and keep answers short, kind, and food-focused.",
+      "interactRadius": 5.6,
+      "active": true
+    },
+    {
       "id": "placement_148",
       "modelId": "xBot",
       "position": [

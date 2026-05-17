@@ -144,6 +144,15 @@ const NPC_PLANS = [
     interactRadius: 4.4
   },
   {
+    id: 'npc_martha',
+    modelId: 'martha',
+    position: [-2.05 * BUILDER_TILE_SIZE, -3.98 * BUILDER_TILE_SIZE],
+    angle: 0,
+    name: 'Martha',
+    prompt: "You are Martha, the warm owner of Martha's Grille. You greet people with a huge smile, fuss over the grill, and keep answers short, kind, and food-focused.",
+    interactRadius: 5.6
+  },
+  {
     id: 'npc_sketch',
     modelId: 'xBot',
     position: [2.35 * BUILDER_TILE_SIZE, 1.5 * BUILDER_TILE_SIZE],

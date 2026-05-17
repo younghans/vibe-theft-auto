@@ -880,6 +880,89 @@ function addMarthasGrilleBox(group, name, size, position, material, options = {}
   group.add(createBox(name, size, position, material, options));
 }
 
+function createMarthasGrillePavilionRoof(materials) {
+  const roof = new THREE.Group();
+  roof.name = 'marthasGrillePavilionRoof';
+
+  const halfWidth = 5.48;
+  const halfDepth = 5.44;
+  const eaveY = 6.62;
+  const apexY = 8.08;
+  const roofGeometry = new THREE.BufferGeometry();
+  roofGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    -halfWidth, eaveY, halfDepth,
+    halfWidth, eaveY, halfDepth,
+    0, apexY, 0,
+
+    halfWidth, eaveY, halfDepth,
+    halfWidth, eaveY, -halfDepth,
+    0, apexY, 0,
+
+    halfWidth, eaveY, -halfDepth,
+    -halfWidth, eaveY, -halfDepth,
+    0, apexY, 0,
+
+    -halfWidth, eaveY, -halfDepth,
+    -halfWidth, eaveY, halfDepth,
+    0, apexY, 0
+  ], 3));
+  roofGeometry.computeVertexNormals();
+  const roofMesh = new THREE.Mesh(roofGeometry, materials.roof);
+  roofMesh.name = 'marthasGrillePavilionRoofHip';
+  roofMesh.castShadow = true;
+  roofMesh.receiveShadow = true;
+  roof.add(roofMesh);
+
+  addMarthasGrilleBox(roof, 'marthasGrillePavilionFrontFascia', [10.98, 0.24, 0.28], [0, eaveY - 0.04, halfDepth], materials.roofTrim);
+  addMarthasGrilleBox(roof, 'marthasGrillePavilionBackFascia', [10.98, 0.24, 0.28], [0, eaveY - 0.04, -halfDepth], materials.roofTrim);
+  addMarthasGrilleBox(roof, 'marthasGrillePavilionLeftFascia', [0.28, 0.24, 10.88], [-halfWidth, eaveY - 0.04, 0], materials.roofTrim);
+  addMarthasGrilleBox(roof, 'marthasGrillePavilionRightFascia', [0.28, 0.24, 10.88], [halfWidth, eaveY - 0.04, 0], materials.roofTrim);
+  addMarthasGrilleBox(roof, 'marthasGrillePavilionApexCap', [0.72, 0.18, 0.72], [0, apexY + 0.03, 0], materials.roofTrim, {
+    rotation: [0, Math.PI * 0.25, 0]
+  });
+
+  for (const [name, x, z] of [
+    ['FrontLeft', -4.98, 4.72],
+    ['FrontRight', 4.98, 4.72],
+    ['BackLeft', -4.98, -4.72],
+    ['BackRight', 4.98, -4.72]
+  ]) {
+    addMarthasGrilleBox(
+      roof,
+      `marthasGrillePavilionPost${name}`,
+      [0.28, 5.62, 0.28],
+      [x, 3.62, z],
+      materials.post
+    );
+  }
+
+  return roof;
+}
+
+function addMarthasGrilleWindow(group, materials, name, {
+  position,
+  side = 'front',
+  size = [1.44, 1.24]
+}) {
+  const [width, height] = size;
+  if (side === 'left' || side === 'right') {
+    const xDepth = 0.08;
+    const zWidth = width;
+    addMarthasGrilleBox(group, `${name}Frame`, [xDepth, height + 0.24, zWidth + 0.24], position, materials.windowFrame);
+    addMarthasGrilleBox(group, name, [xDepth + 0.03, height, zWidth], [position[0] + (side === 'left' ? -0.03 : 0.03), position[1], position[2]], materials.windowGlass);
+    addMarthasGrilleBox(group, `${name}CrossbarVertical`, [xDepth + 0.05, height + 0.06, 0.06], [position[0] + (side === 'left' ? -0.05 : 0.05), position[1], position[2]], materials.windowMuntin);
+    addMarthasGrilleBox(group, `${name}CrossbarHorizontal`, [xDepth + 0.05, 0.06, zWidth + 0.04], [position[0] + (side === 'left' ? -0.05 : 0.05), position[1], position[2]], materials.windowMuntin);
+    return;
+  }
+
+  const zDepth = 0.08;
+  const z = position[2] + (side === 'back' ? -0.03 : 0.03);
+  addMarthasGrilleBox(group, `${name}Frame`, [width + 0.24, height + 0.24, zDepth], position, materials.windowFrame);
+  addMarthasGrilleBox(group, name, [width, height, zDepth + 0.03], [position[0], position[1], z], materials.windowGlass);
+  addMarthasGrilleBox(group, `${name}CrossbarVertical`, [0.06, height + 0.06, zDepth + 0.05], [position[0], position[1], z], materials.windowMuntin);
+  addMarthasGrilleBox(group, `${name}CrossbarHorizontal`, [width + 0.04, 0.06, zDepth + 0.05], [position[0], position[1], z], materials.windowMuntin);
+}
+
 function createMarthasGrilleSignLabel() {
   const geometry = new THREE.PlaneGeometry(6.78, 1.28);
   let material;
@@ -1048,6 +1131,7 @@ export function createMarthasGrilleBuildingVisual() {
   const wall = createMaterial(0xf2dc9d, 0.86, 0.03);
   const wallTrim = createMaterial(0xffefbf, 0.7, 0.04);
   const roofMat = createMaterial(0x3e474d, 0.86, 0.08);
+  const roofTrim = createMaterial(0x2f363a, 0.78, 0.1);
   const trimDark = createMaterial(0x5f3a2a, 0.7, 0.08);
   const sign = createMaterial(0x2a1715, 0.72, 0.08);
   const awning = createMaterial(0xd65142, 0.58, 0.08);
@@ -1056,6 +1140,10 @@ export function createMarthasGrilleBuildingVisual() {
   const steel = createMaterial(0xb8bec2, 0.28, 0.58);
   const dark = createMaterial(0x242b30, 0.44, 0.26);
   const screen = createMaterial(0x16343a, 0.3, 0.06);
+  const windowFrame = createMaterial(0xffefbf, 0.58, 0.05);
+  const windowGlass = createMaterial(0x3f4a41, 0.34, 0.04);
+  const windowMuntin = createMaterial(0x5f3a2a, 0.66, 0.08);
+  const post = createMaterial(0x6b432f, 0.72, 0.08);
   const kitchenMaterials = {
     tile: createMaterial(0xf3ead7, 0.88, 0.02),
     grout: createMaterial(0x9a8f7e, 0.9, 0.01),
@@ -1089,23 +1177,56 @@ export function createMarthasGrilleBuildingVisual() {
   const shell = new THREE.Group();
   shell.name = 'marthas_grille_hull_wall';
   root.add(shell);
-  addMarthasGrilleBox(shell, 'mgBackWall', [10.65, 5.1, 0.34], [0, 3.23, -5.14], wall);
-  addMarthasGrilleBox(shell, 'mgLeftWall', [0.34, 5.1, 10.15], [-5.15, 3.23, -0.1], wall);
-  addMarthasGrilleBox(shell, 'mgRightWall', [0.34, 5.1, 10.15], [5.15, 3.23, -0.1], wall);
-  addMarthasGrilleBox(shell, 'mgFrontLeft', [2.38, 3.72, 0.34], [-4.05, 2.52, 5.03], wall);
-  addMarthasGrilleBox(shell, 'mgFrontRight', [2.38, 3.72, 0.34], [4.05, 2.52, 5.03], wall);
-  addMarthasGrilleBox(shell, 'mgFrontHeader', [10.58, 1.24, 0.36], [0, 4.86, 5.03], wall);
-  addMarthasGrilleBox(shell, 'marthasGrilleCreamFacadeBand', [10.42, 0.24, 0.42], [0, 4.08, 5.12], wallTrim);
+  addMarthasGrilleBox(shell, 'mgBackWall', [10.65, 6.24, 0.34], [0, 3.8, -5.14], wall);
+  addMarthasGrilleBox(shell, 'mgLeftWall', [0.34, 6.24, 10.15], [-5.15, 3.8, -0.1], wall);
+  addMarthasGrilleBox(shell, 'mgRightWall', [0.34, 6.24, 10.15], [5.15, 3.8, -0.1], wall);
+  addMarthasGrilleBox(shell, 'mgFrontLeft', [2.38, 4.86, 0.34], [-4.05, 3.09, 5.03], wall);
+  addMarthasGrilleBox(shell, 'mgFrontRight', [2.38, 4.86, 0.34], [4.05, 3.09, 5.03], wall);
+  addMarthasGrilleBox(shell, 'mgFrontHeader', [10.58, 1.48, 0.36], [0, 5.52, 5.03], wall);
+  addMarthasGrilleBox(shell, 'marthasGrilleCreamFacadeBand', [10.42, 0.24, 0.42], [0, 4.68, 5.12], wallTrim);
   addMarthasGrilleBox(shell, 'marthasGrilleLeftCreamKickTrim', [2.22, 0.2, 0.42], [-4.05, 1.05, 5.15], wallTrim);
   addMarthasGrilleBox(shell, 'marthasGrilleRightCreamKickTrim', [2.22, 0.2, 0.42], [4.05, 1.05, 5.15], wallTrim);
+  addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontLeftWindow', {
+    position: [-4.05, 3.1, 5.22],
+    side: 'front',
+    size: [1.18, 1.42]
+  });
+  addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontRightWindow', {
+    position: [4.05, 3.1, 5.22],
+    side: 'front',
+    size: [1.18, 1.42]
+  });
+  for (const [index, x] of [-3.2, 0, 3.2].entries()) {
+    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleBackWindow${index + 1}`, {
+      position: [x, 3.55, -5.34],
+      side: 'back',
+      size: [1.32, 1.28]
+    });
+  }
+  for (const [index, z] of [-3.2, -0.55, 2.1].entries()) {
+    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleLeftWindow${index + 1}`, {
+      position: [-5.34, 3.58, z],
+      side: 'left',
+      size: [1.22, 1.26]
+    });
+    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleRightWindow${index + 1}`, {
+      position: [5.34, 3.58, z],
+      side: 'right',
+      size: [1.22, 1.26]
+    });
+  }
 
-  addMarthasGrilleBox(root, 'mgRoof', [10.8, 0.34, 10.55], [0, 5.9, -0.12], roofMat);
-  addMarthasGrilleBox(root, 'marthasGrilleSignPanel', [7.34, 1.72, 0.28], [0, 4.58, 5.36], sign);
+  root.add(createMarthasGrillePavilionRoof({
+    roof: roofMat,
+    roofTrim,
+    post
+  }));
+  addMarthasGrilleBox(root, 'marthasGrilleSignPanel', [7.34, 1.72, 0.28], [0, 5.28, 5.36], sign);
   const signLabel = createMarthasGrilleSignLabel();
-  signLabel.position.set(0, 4.58, 5.53);
+  signLabel.position.set(0, 5.28, 5.53);
   root.add(signLabel);
-  addMarthasGrilleBox(root, 'mgAwning', [6.4, 0.28, 1.0], [0, 3.55, 4.86], awning, { rotation: [0.16, 0, 0] });
-  addMarthasGrilleBox(root, 'marthasGrilleAwningFaceStripe', [6.22, 0.1, 0.16], [0, 3.36, 5.31], wallTrim);
+  addMarthasGrilleBox(root, 'mgAwning', [6.4, 0.28, 1.0], [0, 4.08, 4.86], awning, { rotation: [0.16, 0, 0] });
+  addMarthasGrilleBox(root, 'marthasGrilleAwningFaceStripe', [6.22, 0.1, 0.16], [0, 3.89, 5.31], wallTrim);
   addMarthasGrilleBox(root, 'marthasGrilleOpenFrontThreshold', [5.65, 0.12, 0.34], [0, 0.86, 5.1], trimDark);
 
   return root;

@@ -48,6 +48,10 @@ import {
   listVibeHeroSongs
 } from '../src/shared/vibeHero.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
+import {
+  createMarthaNpcAdornment,
+  shouldApplyMarthaNpcAdornment
+} from '../src/npc/npcRenderUtils.js';
 import { buildCity } from '../src/world/buildCity.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
@@ -440,6 +444,15 @@ function validateFootprintSupport() {
     marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_hull_wall'),
     "Martha's Grille hull walls should stay visible during active camera occlusion"
   );
+  assert(
+    marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthas_grille_hull_wall'),
+    "Martha's Grille hull walls should stay opaque during normal camera occlusion"
+  );
+  const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
+  assert(
+    /cameraOcclusionAlwaysPreserveNodeNames/.test(worldRendererSource),
+    "World renderer should honor Martha's Grille always-opaque occlusion preserve nodes"
+  );
   assert(marthasGrille.movementCollisionRects?.length === 6, "Martha's Grille should define wall and counter movement collision");
   assert(marthasGrille.shotCollisionRects?.length === marthasGrille.movementCollisionRects.length, "Martha's Grille wall and counter collision should also block shots");
   const grilleCounterRect = marthasGrille.movementCollisionRects.find((rect) => rect.centerZ === 1.05);
@@ -470,6 +483,13 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrilleBurgerPatty1'), "Martha's Grille flat top should include visible grill food detail");
   assert(grilleVisual.getObjectByName('marthasGrilleTicketRail'), "Martha's Grille kitchen should include an order ticket rail");
   assert(grilleVisual.getObjectByName('marthasGrilleSignPanel'), "Martha's Grille visual should include a front sign panel");
+  assert(grilleVisual.getObjectByName('marthasGrillePavilionRoof'), "Martha's Grille visual should include a pavilion-style roof group");
+  assert(grilleVisual.getObjectByName('marthasGrillePavilionRoofHip'), "Martha's Grille pavilion roof should include a hipped roof surface");
+  assert(grilleVisual.getObjectByName('marthasGrillePavilionPostFrontLeft'), "Martha's Grille pavilion roof should read as post-supported");
+  assert(grilleVisual.getObjectByName('marthasGrilleFrontLeftWindow'), "Martha's Grille front wall should include a window");
+  assert(grilleVisual.getObjectByName('marthasGrilleBackWindow1'), "Martha's Grille back wall should include windows");
+  assert(grilleVisual.getObjectByName('marthasGrilleLeftWindow1'), "Martha's Grille side wall should include windows");
+  assert(grilleVisual.getObjectByName('marthasGrilleRightWindow1'), "Martha's Grille side wall should include windows");
   const grilleBackWall = grilleVisual.getObjectByName('mgBackWall');
   assert(grilleBackWall?.material?.color?.getHex() === 0xf2dc9d, "Martha's Grille should use a creamy yellow building facade");
   const grilleSignLabel = grilleVisual.getObjectByName('marthasGrilleSignLabel');
@@ -482,8 +502,34 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrilleOpenFrontThreshold'), "Martha's Grille visual should mark the open front threshold");
   const grilleBounds = new Box3().setFromObject(grilleVisual);
   const grilleSize = grilleBounds.getSize(new Vector3());
+  assert(grilleSize.y >= 8, "Martha's Grille visual should be taller with the pavilion roof");
   assert(grilleSize.x <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[0] + 0.02, "Martha's Grille visual should stay within one tile width before fitting");
   assert(grilleSize.z <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[1] + 0.02, "Martha's Grille visual should stay within one tile depth before fitting");
+  const defaultMartha = defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_martha');
+  assert(defaultMartha?.modelId === 'martha', 'Default world should create Martha using the Martha model');
+  assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
+  const savedLayout = JSON.parse(readFileSync(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
+  assert(
+    savedLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha'),
+    'Saved world layout should include Martha near the grille'
+  );
+  const marthaAdornment = createMarthaNpcAdornment({ height: 4.8 });
+  assert(marthaAdornment.getObjectByName('marthaFluffyHairHalo'), 'Martha NPC adornment should include fluffy hair');
+  assert(marthaAdornment.getObjectByName('marthaBigSmile'), 'Martha NPC adornment should include a big smile');
+  assert(marthaAdornment.getObjectByName('marthaApronPanel'), 'Martha NPC adornment should include a cook apron');
+  assert(
+    shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultMartha),
+    'Martha NPC adornment should apply to the named Martha NPC'
+  );
+  assert(
+    !shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte')),
+    'Martha NPC adornment should not affect the school teacher using the same base model'
+  );
+  const npcActorSource = readFileSync(new URL('../src/npc/NpcActor.js', import.meta.url), 'utf8');
+  assert(
+    /applyNpcCharacterAdornment\(this\.visual,\s*model,\s*definition\)/.test(npcActorSource),
+    'Martha NPC adornment should be attached to the unscaled NPC visual parent'
+  );
   assert(
     pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
     'Pawn shop hull walls should stay visible during active cutaway camera occlusion'

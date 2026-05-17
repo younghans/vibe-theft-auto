@@ -1214,11 +1214,18 @@ export class WorldRenderer {
     rendered,
     preserveInteriorNodePlacementIds = this.emptyCameraOcclusionPlacementIds
   ) {
+    const alwaysPreservedNames = normalizeNodeNameSet(
+      rendered?.item?.cameraOcclusionAlwaysPreserveNodeNames
+    );
     if (!preserveInteriorNodePlacementIds.has(rendered?.id)) {
-      return this.emptyCameraOcclusionNodeNames;
+      return alwaysPreservedNames.size ? alwaysPreservedNames : this.emptyCameraOcclusionNodeNames;
     }
 
-    return normalizeNodeNameSet(rendered?.item?.cameraOcclusionPreserveNodeNames);
+    const preservedNames = normalizeNodeNameSet(rendered?.item?.cameraOcclusionPreserveNodeNames);
+    for (const nodeName of alwaysPreservedNames) {
+      preservedNames.add(nodeName);
+    }
+    return preservedNames.size ? preservedNames : this.emptyCameraOcclusionNodeNames;
   }
 
   syncCameraOccludedPlacementIds(nextOccludedPlacementIds, options = {}) {
