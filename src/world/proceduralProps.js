@@ -1348,29 +1348,30 @@ function addRealEstateOfficeWindow(group, name, position, material, trimMaterial
 }
 
 function addRealEstateOfficeWindowGrid(group, materials) {
-  const frontRows = [7.35, 8.75, 10.15, 11.55, 12.95, 14.35, 15.65];
+  const frontRows = [8.6, 11.55, 14.5, 17.45, 20.4, 23.35];
   for (const [rowIndex, y] of frontRows.entries()) {
-    const z = rowIndex >= 5 ? 2.12 : rowIndex >= 3 ? 2.72 : 3.32;
-    const xValues = rowIndex >= 5 ? [-2.1, -0.7, 0.7, 2.1] : [-3, -1.5, 0, 1.5, 3];
+    const z = rowIndex >= 4 ? 2.12 : rowIndex >= 2 ? 2.72 : 3.32;
+    const xValues = rowIndex >= 4 ? [-2.1, -0.7, 0.7, 2.1] : [-3, -1.5, 0, 1.5, 3];
     for (const [columnIndex, x] of xValues.entries()) {
       addRealEstateOfficeWindow(
         group,
         `realEstateOfficeTallWindow${rowIndex + 1}_${columnIndex + 1}`,
         [x, y, z],
         materials.window,
-        materials.trim
+        materials.trim,
+        [0.78, 1.12, 0.08]
       );
     }
   }
 
-  for (const [index, y] of [8.1, 9.5, 10.9, 12.3, 13.7].entries()) {
+  for (const [index, y] of [9.15, 12.1, 15.05, 18, 20.95, 23.9].entries()) {
     addRealEstateOfficeWindow(
       group,
       `realEstateOfficeSideWindowLeft${index + 1}`,
       [-4.46, y, -1.3],
       materials.window,
       materials.trim,
-      [0.08, 0.58, 0.72]
+      [0.08, 1.02, 0.78]
     );
     addRealEstateOfficeWindow(
       group,
@@ -1378,7 +1379,7 @@ function addRealEstateOfficeWindowGrid(group, materials) {
       [4.46, y, -1.3],
       materials.window,
       materials.trim,
-      [0.08, 0.58, 0.72]
+      [0.08, 1.02, 0.78]
     );
   }
 }
@@ -1457,12 +1458,12 @@ export function createRealEstateOfficeBuildingVisual() {
   tower.name = 'real_estate_office_tall_facade';
   root.add(tower);
   addRealEstateOfficeBox(tower, 'realEstateOfficeGroundRoofDeck', [10.8, 0.34, 10.55], [0, 6.18, -0.12], materials.roof);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerBlock', [8.8, 4.1, 7.7], [0, 8.4, -0.62], materials.facadeAlt);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidBlock', [7.4, 4.0, 6.55], [0, 12.45, -0.62], materials.facade);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerTopBlock', [6.1, 2.85, 5.35], [0, 15.88, -0.62], materials.facadeAlt);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerCornice', [9.2, 0.22, 8.08], [0, 10.56, -0.62], materials.trim);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidCornice', [7.75, 0.2, 6.9], [0, 14.56, -0.62], materials.trim);
-  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerRoofCap', [6.45, 0.38, 5.65], [0, 17.5, -0.62], materials.roof);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerBlock', [8.8, 6.5, 7.7], [0, 9.65, -0.62], materials.facadeAlt);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidBlock', [7.4, 6.4, 6.55], [0, 16.15, -0.62], materials.facade);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerTopBlock', [6.1, 7.1, 5.35], [0, 23.25, -0.62], materials.facadeAlt);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerCornice', [9.2, 0.22, 8.08], [0, 12.95, -0.62], materials.trim);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidCornice', [7.75, 0.2, 6.9], [0, 19.5, -0.62], materials.trim);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerRoofCap', [6.45, 0.38, 5.65], [0, 27.25, -0.62], materials.roof);
   addRealEstateOfficeWindowGrid(tower, materials);
 
   const exterior = new THREE.Group();

@@ -11,6 +11,7 @@ export function cloneInteriorDefinition(interior) {
     ...interior,
     cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
     cutawayFadeNodeNames: [...(interior.cutawayFadeNodeNames ?? [])],
+    cutawayVisibleNodeNames: [...(interior.cutawayVisibleNodeNames ?? [])],
     exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
     exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
   };

@@ -4235,6 +4235,7 @@ export class Game {
       hiddenNodeNames: entry?.interior?.cutawayNodeNames ?? [],
       fadedNodeNames: entry?.interior?.cutawayFadeNodeNames ?? [],
       fadedNodeOpacity: entry?.interior?.cutawayFadeOpacity ?? 0.1,
+      visibleNodeNames: entry?.interior?.cutawayVisibleNodeNames ?? [],
       shadowOverrides: {
         castShadow: false,
         receiveShadow: false

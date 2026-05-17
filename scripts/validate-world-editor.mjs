@@ -403,13 +403,13 @@ function validateFootprintSupport() {
   const marthasGrille = getBuilderItemById('marthas_grille_building');
   const realEstateOffice = getBuilderItemById('real_estate_office_building');
   const districtBuildings = [
-    'school_building',
-    'bar_building',
-    'bank_building',
-    'casino_building',
-    'pawn_building',
-    'offices_building'
-  ].map((itemId) => getBuilderItemById(itemId));
+    { key: 'school', item: getBuilderItemById('school_building') },
+    { key: 'bar', item: getBuilderItemById('bar_building') },
+    { key: 'bank', item: getBuilderItemById('bank_building') },
+    { key: 'casino', item: getBuilderItemById('casino_building') },
+    { key: 'pawn', item: getBuilderItemById('pawn_building') },
+    { key: 'offices', item: getBuilderItemById('offices_building') }
+  ];
 
   assert(baseLot, 'Base lot tile should exist');
   assert(bar, 'Wide bar tile should exist');
@@ -418,7 +418,7 @@ function validateFootprintSupport() {
   assert(pawnShop, 'Pawn shop tile should exist');
   assert(marthasGrille, "Martha's Grille tile should exist");
   assert(realEstateOffice, 'Real Estate Office tile should exist');
-  for (const [index, item] of districtBuildings.entries()) {
+  for (const [index, { item }] of districtBuildings.entries()) {
     assert(item, `District 2x2 building ${index} should exist`);
   }
 
@@ -428,17 +428,36 @@ function validateFootprintSupport() {
   assert(bar.tileFootprint[0] === 2 && bar.tileFootprint[1] === 1, 'Wide bar should remain 2x1');
   assert(gym.tileFootprint[0] === 1 && gym.tileFootprint[1] === 1, 'Original gym should remain 1x1');
   assert(largeGym.tileFootprint[0] === 2 && largeGym.tileFootprint[1] === 2, 'Large gym should use a 2x2 footprint');
+  assert(
+    largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_foundation')
+      && largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_interior'),
+    'Large gym should keep only its floor and interior visible while the exterior is transparent'
+  );
   assert(marthasGrille.tileFootprint[0] === 1 && marthasGrille.tileFootprint[1] === 1, "Martha's Grille should remain a 1x1 building");
   assert(marthasGrille.size[0] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[0], "Martha's Grille should use the standard compact building width");
   assert(marthasGrille.size[1] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[1], "Martha's Grille should use the standard compact building depth");
   assert(realEstateOffice.tileFootprint[0] === 1 && realEstateOffice.tileFootprint[1] === 1, 'Real Estate Office should be a 1x1 building');
   assert(realEstateOffice.size[0] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0], 'Real Estate Office should use the standard compact building width');
   assert(realEstateOffice.size[1] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1], 'Real Estate Office should use the standard compact building depth');
-  for (const item of districtBuildings) {
+  for (const { key, item } of districtBuildings) {
     assert(item.tileFootprint[0] === 2 && item.tileFootprint[1] === 2, `${item.id} should use a 2x2 footprint`);
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
     assert(getInteriorTemplateById(item.interior?.id), `${item.id} should have a registered inline interior template`);
     assert(item.movementCollisionRects?.length >= 5, `${item.id} should define hull-wall movement collision`);
+    assert(
+      item.interior?.cutawayVisibleNodeNames?.includes(`${key}_foundation`),
+      `${item.id} should keep its floor/foundation visible while the exterior is transparent`
+    );
+    if (key !== 'offices') {
+      assert(
+        item.interior?.cutawayVisibleNodeNames?.includes(`${key}_interior`),
+        `${item.id} should keep its interior props visible while the exterior is transparent`
+      );
+    }
+    assert(
+      !item.interior?.cutawayFadeNodeNames?.length,
+      `${item.id} should not leave a faded exterior shell after entering`
+    );
   }
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
@@ -461,29 +480,33 @@ function validateFootprintSupport() {
     'Fallback saved world layout should place the Real Estate Office'
   );
   assert(
-    marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_hull_wall'),
-    "Martha's Grille hull walls should stay visible during active camera occlusion"
+    marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_kitchen_detail'),
+    "Martha's Grille kitchen should stay visible when the exterior becomes transparent"
   );
   assert(
-    marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthas_grille_hull_wall'),
-    "Martha's Grille hull walls should stay opaque during normal camera occlusion"
+    !marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthas_grille_hull_wall'),
+    "Martha's Grille exterior hull should not stay opaque during camera occlusion"
   );
   const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
   assert(
-    /cameraOcclusionAlwaysPreserveNodeNames/.test(worldRendererSource),
-    "World renderer should honor Martha's Grille always-opaque occlusion preserve nodes"
+    /const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;/.test(worldRendererSource),
+    'World renderer should make occluding building exteriors fully transparent'
   );
   assert(
-    realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_hull_wall'),
-    'Real Estate Office hull walls should stay visible during active camera occlusion'
+    /visibleNodeNames/.test(worldRendererSource),
+    'World renderer should support interior-only cutaway visibility'
+  );
+  assert(
+    realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_foundation'),
+    'Real Estate Office foundation should stay visible during camera occlusion'
   );
   assert(
     realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_interior'),
-    'Real Estate Office interior should stay visible during active camera occlusion'
+    'Real Estate Office interior should stay visible during camera occlusion'
   );
   assert(
-    realEstateOffice.cameraOcclusionAlwaysPreserveNodeNames?.includes('real_estate_office_hull_wall'),
-    'Real Estate Office hull walls should stay opaque during normal camera occlusion'
+    !realEstateOffice.cameraOcclusionAlwaysPreserveNodeNames?.includes('real_estate_office_hull_wall'),
+    'Real Estate Office hull walls should become transparent during camera occlusion'
   );
   assert(marthasGrille.movementCollisionRects?.length === 6, "Martha's Grille should define wall and counter movement collision");
   assert(marthasGrille.shotCollisionRects?.length === marthasGrille.movementCollisionRects.length, "Martha's Grille wall and counter collision should also block shots");
@@ -602,10 +625,10 @@ function validateFootprintSupport() {
   const realEstateSize = realEstateBounds.getSize(new Vector3());
   assert(realEstateSize.x <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0] + 0.02, 'Real Estate Office visual should stay within one tile width before fitting');
   assert(realEstateSize.z <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1] + 0.02, 'Real Estate Office visual should stay within one tile depth before fitting');
-  assert(realEstateSize.y >= 17.2, 'Real Estate Office should read as a tall Kenney Building L-style structure');
+  assert(realEstateSize.y >= 26.8, 'Real Estate Office upper floors should be about 1.5x taller and better proportioned');
   assert(
-    pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
-    'Pawn shop hull walls should stay visible during active cutaway camera occlusion'
+    !pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
+    'Pawn shop exterior hull walls should become transparent during active cutaway camera occlusion'
   );
   assert(pawnShop.movementCollisionRects?.length >= 8, 'Pawn shop should block movement with hull and counter/table collision');
   assert(pawnShop.shotCollisionRects?.length === pawnShop.movementCollisionRects.length, 'Pawn shop counter/table collision should also block shots');

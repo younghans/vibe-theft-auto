@@ -110,7 +110,7 @@ const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: 1.05, halfWidth: 4.52, halfDepth: 0.72, minY: 0, maxY: 2.45 }
 ]);
 const REAL_ESTATE_OFFICE_COLLISION_RECTS = Object.freeze([
-  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 17.8 },
+  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 27.8 },
   { centerX: -5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.5 },
   { centerX: 5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.5 },
   { centerX: -4.32, centerZ: 5.03, halfWidth: 0.92, halfDepth: 0.24, minY: 0, maxY: 4.6 },
@@ -182,6 +182,8 @@ function createCustom2x2BuildingDefinition({
 }) {
   const cutawayNodeNames = interiorOverrides.cutawayNodeNames
     ?? [`${key}_cutaway_roof`, `${key}_cutaway_upper`];
+  const cutawayVisibleNodeNames = interiorOverrides.cutawayVisibleNodeNames
+    ?? [`${key}_foundation`, `${key}_interior`];
 
   return {
     id: `${key}_building`,
@@ -207,6 +209,7 @@ function createCustom2x2BuildingDefinition({
       prompt: prompt ?? `Enter ${label}`,
       ...interiorOverrides,
       cutawayNodeNames,
+      cutawayVisibleNodeNames,
       exteriorDoorOffset: [0, 10.95],
       exteriorSpawnOffset: [0, 16.05],
       exteriorInteractRadius: 4.8
@@ -269,7 +272,7 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     prompt: 'Enter pawn shop',
     movementCollisionRects: PAWN_SHOP_COLLISION_RECTS,
     shotCollisionRects: PAWN_SHOP_COLLISION_RECTS,
-    cameraOcclusionPreserveNodeNames: ['pawn_interior', 'pawn_foundation', 'pawn_hull_wall']
+    cameraOcclusionPreserveNodeNames: ['pawn_interior', 'pawn_foundation']
   }),
   createCustom2x2BuildingDefinition({
     key: 'offices',
@@ -278,8 +281,7 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     prompt: 'Enter offices',
     interiorOverrides: {
       cutawayNodeNames: ['offices_cutaway_roof', 'offices_cutaway_upper', 'offices_interior'],
-      cutawayFadeNodeNames: ['offices_cutaway_tower'],
-      cutawayFadeOpacity: 0.1
+      cutawayVisibleNodeNames: ['offices_foundation']
     }
   })
 ]);
@@ -323,8 +325,30 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     shotCollisionRects: MARTHAS_GRILLE_COLLISION_RECTS,
     padding: 0.5,
     npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
-    cameraOcclusionPreserveNodeNames: ['marthas_grille_hull_wall'],
-    cameraOcclusionAlwaysPreserveNodeNames: ['marthas_grille_hull_wall'],
+    cameraOcclusionPreserveNodeNames: [
+      'mgSlab',
+      'marthasGrilleDiningFloor',
+      'marthasGrilleCounterBase',
+      'mgCounterTop',
+      'mgRegisterBase',
+      'marthasGrilleRegisterScreen',
+      'marthasGrilleFlatTopGrill',
+      'mgRangeHood',
+      'marthas_grille_kitchen_detail',
+      'marthasGrilleOpenFrontThreshold'
+    ],
+    cameraOcclusionAlwaysPreserveNodeNames: [
+      'mgSlab',
+      'marthasGrilleDiningFloor',
+      'marthasGrilleCounterBase',
+      'mgCounterTop',
+      'mgRegisterBase',
+      'marthasGrilleRegisterScreen',
+      'marthasGrilleFlatTopGrill',
+      'mgRangeHood',
+      'marthas_grille_kitchen_detail',
+      'marthasGrilleOpenFrontThreshold'
+    ],
     createVisual: createMarthasGrilleBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -343,8 +367,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     shotCollisionRects: REAL_ESTATE_OFFICE_COLLISION_RECTS,
     padding: 0.5,
     npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
-    cameraOcclusionPreserveNodeNames: ['real_estate_office_hull_wall', 'real_estate_office_interior'],
-    cameraOcclusionAlwaysPreserveNodeNames: ['real_estate_office_hull_wall'],
+    cameraOcclusionPreserveNodeNames: ['real_estate_office_foundation', 'real_estate_office_interior'],
+    cameraOcclusionAlwaysPreserveNodeNames: ['real_estate_office_foundation', 'real_estate_office_interior'],
     createVisual: createRealEstateOfficeBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -426,6 +450,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       label: 'Fitness Gym',
       prompt: 'Enter gym',
       cutawayNodeNames: ['gym_cutaway_roof', 'gym_cutaway_upper', 'gym_cutaway_corner'],
+      cutawayVisibleNodeNames: ['gym_foundation', 'gym_interior'],
       exteriorDoorOffset: [0, 10.95],
       exteriorSpawnOffset: [0, 16.05],
       exteriorInteractRadius: 4.8

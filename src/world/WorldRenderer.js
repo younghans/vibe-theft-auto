@@ -18,7 +18,7 @@ import {
 } from './interactableMetadata.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
-const CAMERA_OCCLUDED_BUILDING_OPACITY = 0.1;
+const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
 const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
@@ -1060,6 +1060,7 @@ export class WorldRenderer {
       hiddenNodeNames: new Set(),
       fadedNodeNames: new Set(),
       fadedNodeOpacity: 1,
+      visibleNodeNames: new Set(),
       nodeFadeMaterialState: null,
       shadowOverrides: null,
       item,
@@ -1439,6 +1440,7 @@ export class WorldRenderer {
       hiddenNodeNames: nodeNames,
       fadedNodeNames: rendered.fadedNodeNames,
       fadedNodeOpacity: rendered.fadedNodeOpacity,
+      visibleNodeNames: rendered.visibleNodeNames,
       shadowOverrides: rendered.shadowOverrides
     });
   }
@@ -1453,6 +1455,7 @@ export class WorldRenderer {
       hiddenNodeNames: rendered.hiddenNodeNames,
       fadedNodeNames: nodeNames,
       fadedNodeOpacity: opacity,
+      visibleNodeNames: rendered.visibleNodeNames,
       shadowOverrides: rendered.shadowOverrides
     });
   }
@@ -1467,6 +1470,7 @@ export class WorldRenderer {
       hiddenNodeNames: rendered.hiddenNodeNames,
       fadedNodeNames: rendered.fadedNodeNames,
       fadedNodeOpacity: rendered.fadedNodeOpacity,
+      visibleNodeNames: rendered.visibleNodeNames,
       shadowOverrides: overrides
     });
   }
@@ -1481,24 +1485,27 @@ export class WorldRenderer {
       hiddenNodeNames = [],
       fadedNodeNames = [],
       fadedNodeOpacity = 1,
+      visibleNodeNames = [],
       shadowOverrides = null
     } = state ?? {};
 
     const nextHiddenNodeNames = normalizeNodeNameSet(hiddenNodeNames);
     const nextFadedNodeNames = normalizeNodeNameSet(fadedNodeNames);
     const nextFadedNodeOpacity = normalizeOpacity(fadedNodeOpacity);
+    const nextVisibleNodeNames = normalizeNodeNameSet(visibleNodeNames);
     const nextShadowOverrides = normalizeShadowOverrides(shadowOverrides);
 
     const hiddenChanged = !nodeNameSetsEqual(rendered.hiddenNodeNames, nextHiddenNodeNames);
     const fadedChanged = !nodeNameSetsEqual(rendered.fadedNodeNames, nextFadedNodeNames)
       || rendered.fadedNodeOpacity !== nextFadedNodeOpacity;
+    const visibleChanged = !nodeNameSetsEqual(rendered.visibleNodeNames, nextVisibleNodeNames);
     const shadowChanged = !shadowOverridesEqual(rendered.shadowOverrides, nextShadowOverrides);
 
-    if (!hiddenChanged && !fadedChanged && !shadowChanged) {
+    if (!hiddenChanged && !fadedChanged && !visibleChanged && !shadowChanged) {
       return;
     }
 
-    if (hiddenChanged || fadedChanged) {
+    if (hiddenChanged || fadedChanged || visibleChanged) {
       restoreCameraOcclusionMaterials(rendered);
       this.cameraOccludedPlacementIds.delete(id);
     }
@@ -1506,6 +1513,7 @@ export class WorldRenderer {
     rendered.hiddenNodeNames = nextHiddenNodeNames;
     rendered.fadedNodeNames = nextFadedNodeNames;
     rendered.fadedNodeOpacity = nextFadedNodeOpacity;
+    rendered.visibleNodeNames = nextVisibleNodeNames;
     rendered.shadowOverrides = nextShadowOverrides;
     this.applyPlacementVisibility(rendered);
   }
@@ -1815,6 +1823,7 @@ export class WorldRenderer {
 
   applyPlacementVisibility(rendered) {
     const visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
+    const hasVisibleNodeFilter = visible && (rendered.visibleNodeNames?.size ?? 0) > 0;
     const hasFadedNodes = visible
       && (rendered.fadedNodeNames?.size ?? 0) > 0
       && rendered.fadedNodeOpacity < 1;
@@ -1826,10 +1835,15 @@ export class WorldRenderer {
 
     rendered.object.visible = visible;
     rendered.object.traverse((node) => {
-      const nodeHidden = nodeNameMatches(node, rendered.hiddenNodeNames);
+      const nodeHidden = nodeNameMatches(node, rendered.hiddenNodeNames)
+        || (
+          hasVisibleNodeFilter
+          && node !== rendered.object
+          && !nodeOrAncestorNameMatches(node, rendered.visibleNodeNames, rendered.object)
+        );
       const nodeVisible = visible && !nodeHidden;
       if (node !== rendered.object) {
-        node.visible = !nodeHidden;
+        node.visible = nodeVisible;
       }
       if (node.isMesh && rendered.nodeFadeMaterialState) {
         const nodeFaded = hasFadedNodes
