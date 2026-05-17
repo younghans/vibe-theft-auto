@@ -219,6 +219,26 @@ function isValidAgentWorkerToken(value = '') {
   return Boolean(normalized && workerTokens.size > 0 && workerTokens.has(normalized));
 }
 
+function getAccessRuntimeDiagnostics() {
+  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
+  const workerTokens = parseAdminKeys(process.env.AGENT_WORKER_TOKENS ?? process.env.AGENT_WORKER_TOKEN ?? '');
+
+  return {
+    adminKeysConfigured: adminKeys.size > 0,
+    adminKeyCount: adminKeys.size,
+    adminKeyEnvNames: [
+      'ADMIN_KEYS',
+      'ADMIN_KEY'
+    ].filter((key) => process.env[key] !== undefined),
+    workerTokensConfigured: workerTokens.size > 0,
+    workerTokenCount: workerTokens.size,
+    workerTokenEnvNames: [
+      'AGENT_WORKER_TOKENS',
+      'AGENT_WORKER_TOKEN'
+    ].filter((key) => process.env[key] !== undefined)
+  };
+}
+
 function normalizePublicAddress(value = '') {
   const trimmed = String(value).trim();
   if (!trimmed) {
@@ -560,6 +580,7 @@ const server = defineServer({
       '/admin/agent-tasks/:id/cancel',
       '/admin/agent-tasks/:id/approve-deploy',
       '/admin/agent-tasks/:id/rollback',
+      '/admin/runtime-diagnostics',
       '/admin/agent-deployments'
     ]) {
       app.options(route, (req, res) => {
@@ -875,6 +896,29 @@ const server = defineServer({
         sendJson(res, 400, {
           ok: false,
           error: error?.message || 'Could not approve rollback.'
+        });
+      }
+    });
+
+    app.get('/admin/runtime-diagnostics', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        if (!isValidAgentWorkerToken(getBearerToken(req))) {
+          sendJson(res, 403, { ok: false, error: 'Invalid worker token.' });
+          return;
+        }
+
+        sendJson(res, 200, {
+          ok: true,
+          access: getAccessRuntimeDiagnostics(),
+          commitSha: BACKEND_COMMIT_SHA,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not read runtime diagnostics.'
         });
       }
     });
