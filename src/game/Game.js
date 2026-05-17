@@ -207,6 +207,7 @@ const OFFICE_JANITOR_MOP_HERO_DURATION_MS = 8000;
 const OFFICE_JANITOR_MOP_BRUSH_RADIUS = 0.16;
 const OFFICE_JANITOR_MOP_CLEAN_RATE = 3.4;
 const OFFICE_JANITOR_MOP_COMPLETE_PROGRESS = 0.985;
+const OFFICE_JANITOR_MOP_CLEAN_SHOWCASE_MS = 1000;
 const OFFICE_JANITOR_MOP_DIRT_PATCHES = Object.freeze([
   Object.freeze({ x: 0.16, y: 0.74, size: 0.19, rotation: -14 }),
   Object.freeze({ x: 0.29, y: 0.61, size: 0.15, rotation: 18 }),
@@ -7237,6 +7238,7 @@ export class Game {
     data.mopActive = false;
     data.mopMoved = false;
     data.sparklyClean = false;
+    data.mopCleanShowcaseAt = 0;
     data.dirtSeq = Math.max(0, Math.floor(Number(data.dirtSeq ?? 0) || 0)) + 1;
   }
 
@@ -8904,6 +8906,25 @@ export class Game {
       return;
     }
 
+    const mopCleanShowcaseAt = Number(game.data.mopCleanShowcaseAt ?? 0) || 0;
+    if (mopCleanShowcaseAt > 0) {
+      for (const patch of patches) {
+        patch.clean = 1;
+      }
+      game.data.cleanProgress = 1;
+      game.data.sparklyClean = true;
+      game.data.mopActive = false;
+      game.message = 'Squeaky clean floor. Enjoy the shine.';
+      if (now >= mopCleanShowcaseAt) {
+        game.data.mopCleanShowcaseAt = 0;
+        void this.finishOfficeJob(true, 'Sparkly Clean', 'The office floor is 100% clean and sparkling.');
+        return;
+      }
+      game.endsAt = Math.max(Number(game.endsAt ?? now) || now, mopCleanShowcaseAt + 80);
+      game.remainingMs = Math.max(1, Number(game.endsAt ?? now) - now);
+      return;
+    }
+
     if (game.data.mopActive === true) {
       const mopX = Number(game.data.mopX ?? 0.5) || 0.5;
       const mopY = Number(game.data.mopY ?? 0.66) || 0.66;
@@ -8946,7 +8967,10 @@ export class Game {
       game.data.cleanProgress = 1;
       game.data.sparklyClean = true;
       game.data.mopActive = false;
-      void this.finishOfficeJob(true, 'Sparkly Clean', 'The office floor is 100% clean and sparkling.');
+      game.data.mopCleanShowcaseAt = now + OFFICE_JANITOR_MOP_CLEAN_SHOWCASE_MS;
+      game.endsAt = Math.max(Number(game.endsAt ?? now) || now, game.data.mopCleanShowcaseAt + 80);
+      game.remainingMs = Math.max(1, Number(game.endsAt ?? now) - now);
+      game.message = 'Squeaky clean floor. Enjoy the shine.';
     }
   }
 

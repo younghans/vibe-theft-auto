@@ -533,10 +533,13 @@ async function validateOfficeJobHudSurfaces() {
   const officeCountdownMs = Number(officeCountdownMatch?.[1] ?? 0);
   const mopHeroDurationMatch = gameSource.match(/const\s+OFFICE_JANITOR_MOP_HERO_DURATION_MS\s*=\s*(\d+)/);
   const mopHeroDurationMs = Number(mopHeroDurationMatch?.[1] ?? 0);
+  const mopHeroShowcaseMatch = gameSource.match(/const\s+OFFICE_JANITOR_MOP_CLEAN_SHOWCASE_MS\s*=\s*(\d+)/);
+  const mopHeroShowcaseMs = Number(mopHeroShowcaseMatch?.[1] ?? 0);
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
   assert(mopHeroDurationMs === 8000, 'Mop Hero should give the player exactly 8 seconds.');
+  assert(mopHeroShowcaseMs === 1000, 'Mop Hero should hold the clean floor reveal for exactly one second.');
   assert(gameSource.includes('officeJanitorGameCycleIndex'), 'Janitor should track the next game in a deterministic cycle.');
   assert(gameSource.includes('getNextOfficeJanitorGameId'), 'Janitor should use the cycle helper when preparing the next game.');
   assert(gameSource.includes('advanceOfficeJanitorGameCycle'), 'Janitor should advance the cycle once a janitor game starts.');
@@ -548,6 +551,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(gameSource.includes('updateJanitorMopHeroState'), 'Mop Hero should update cleaning progress from pointer movement.');
   assert(/for\s*\(\s*const\s+patch\s+of\s+patches\s*\)\s*{\s*patch\.clean\s*=\s*1;\s*}/.test(gameSource), 'Mop Hero completion should mark every dirt patch completely clean.');
   assert(gameSource.includes('game.data.cleanProgress = 1'), 'Mop Hero completion should snap progress to 100%.');
+  assert(gameSource.includes('mopCleanShowcaseAt'), 'Mop Hero should delay completion while the clean floor is visible.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
@@ -557,6 +561,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('getOfficeMopHeroPointerPosition'), 'HUD should translate mouse position into Mop Hero room coordinates.');
   assert(hudSource.includes('hud__office-mop-janitor'), 'Mop Hero should show a janitor character following the mouse.');
   assert(hudSource.includes('hud__office-mop-dirt'), 'Mop Hero should render dirt patches to clean.');
+  assert(hudSource.includes('is-squeaky-clean'), 'Mop Hero HUD should expose the squeaky clean floor reveal state.');
+  assert(hudSource.includes('Squeaky clean floor'), 'Mop Hero HUD should label the clean floor reveal.');
   assert(hudSource.includes('hud__school-instructions'), 'Selected office job start screens should show how-to-play instructions.');
   assert(hudSource.includes('hud__office-job-instruction'), 'Office job menu cards should show how-to-play instructions.');
   assert(hudSource.includes('hud__office-thrower'), 'Janitor HUD should render a person throwing the paper.');
@@ -599,6 +605,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('cursor: none'), 'Mop Hero should make the mouse act like the mop brush in the room.');
   assert(cssSource.includes('@keyframes hud-office-mop-head-scrub'), 'Mop Hero mop head should animate while cleaning.');
   assert(cssSource.includes('@keyframes hud-office-mop-sparkle'), 'Mop Hero should sparkle once the dirt is cleaned.');
+  assert(cssSource.includes('.hud__office-mop.is-squeaky-clean'), 'Mop Hero should style the one-second squeaky clean floor reveal.');
   assert(cssSource.includes('translate3d(var(--office-aim-offset'), 'Janitor trajectory should use composited transform updates for smooth motion.');
   assert(cssSource.includes('transition: transform 150ms'), 'Janitor trajectory should damp transform updates instead of snapping.');
   assert(cssSource.includes('right: calc(16% + 47px)'), 'Janitor trajectory line should terminate at the trash can center.');
@@ -610,6 +617,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('hud__office-breakroom-backdrop'), 'Office Manager start screen should include the break room backdrop.');
   assert(cssSource.includes('.hud__office-brew-button:hover') && cssSource.includes('.hud__office-brew-button:active') && cssSource.includes('transform: none'), 'Office Manager hold brew button should not shift on hover or active press.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
+  assert(cssSource.includes('top: -38px'), 'CEO stamp should rest higher above the memo so prompt text stays readable.');
+  assert(cssSource.includes('translateY(72px)'), 'CEO stamp slam should still travel down from the raised rest position.');
   assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
   assert(cssSource.includes('hud__office-ceo-stamp-pad'), 'CEO stamp should have a polished stamp pad.');

@@ -1623,6 +1623,7 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Number(data.dirtSeq ?? 0) || 0),
       String(Math.floor(Number(data.cleanProgress ?? 0) * 20)),
       String(Boolean(data.sparklyClean)),
+      String(Boolean(Number(data.mopCleanShowcaseAt ?? 0) || 0)),
       String(data.stampMissSide ?? ''),
       String(Boolean(data.stampSuccess)),
       String(Number(data.stampSeq ?? 0) || 0),
@@ -2383,8 +2384,10 @@ function createOfficeMopHeroMarkup(game = null) {
   const mopY = Math.max(0.12, Math.min(0.9, Number(data.mopY ?? 0.66) || 0.66));
   const mopActive = data.mopActive === true;
   const sparkly = progress >= 98 || data.sparklyClean === true;
+  const squeakyClean = Number(data.mopCleanShowcaseAt ?? 0) > 0;
+  const dirtStatusLabel = squeakyClean || dirtyCount === 0 ? 'Squeaky clean floor' : dirtyLabel;
   return `
-    <div class="hud__office-task hud__office-mop${mopActive ? ' is-mopping' : ''}${sparkly ? ' is-sparkly' : ''}" style="--mop-x:${(mopX * 100).toFixed(2)}%; --mop-y:${(mopY * 100).toFixed(2)}%; --mop-progress:${progress.toFixed(2)}%">
+    <div class="hud__office-task hud__office-mop${mopActive ? ' is-mopping' : ''}${sparkly ? ' is-sparkly' : ''}${squeakyClean ? ' is-squeaky-clean' : ''}" style="--mop-x:${(mopX * 100).toFixed(2)}%; --mop-y:${(mopY * 100).toFixed(2)}%; --mop-progress:${progress.toFixed(2)}%">
       <div class="hud__office-mop-stage" data-office-mop-stage aria-label="Mop Hero office room">
         ${createOfficeMopRoomBackdropMarkup({ gameplay: true })}
         <span class="hud__office-mop-clean-glow"></span>
@@ -2409,7 +2412,7 @@ function createOfficeMopHeroMarkup(game = null) {
       </div>
       <div class="hud__school-score-strip">
         <span data-office-mop-progress-label>${Math.round(progress)}% clean</span>
-        <span data-office-mop-dirt-count>${escapeHtml(dirtyLabel)}</span>
+        <span data-office-mop-dirt-count>${escapeHtml(dirtStatusLabel)}</span>
       </div>
       ${createSchoolProgressMarkup(progress, 'Mop Hero cleaning progress')}
     </div>
@@ -2576,11 +2579,14 @@ function updateOfficeMopHeroLiveMarkup(root = null, game = null) {
   const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
   const dirtyCount = patches.filter((patch) => Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)) < 0.98).length;
   const dirtyLabel = `${dirtyCount} dirty spot${dirtyCount === 1 ? '' : 's'}`;
+  const squeakyClean = Number(data.mopCleanShowcaseAt ?? 0) > 0;
+  const dirtStatusLabel = squeakyClean || dirtyCount === 0 ? 'Squeaky clean floor' : dirtyLabel;
   task.style.setProperty('--mop-x', `${(mopX * 100).toFixed(3)}%`);
   task.style.setProperty('--mop-y', `${(mopY * 100).toFixed(3)}%`);
   task.style.setProperty('--mop-progress', `${progress.toFixed(2)}%`);
   task.classList.toggle('is-mopping', data.mopActive === true);
   task.classList.toggle('is-sparkly', progress >= 98 || data.sparklyClean === true);
+  task.classList.toggle('is-squeaky-clean', squeakyClean);
 
   const progressLabel = task.querySelector('[data-office-mop-progress-label]');
   if (progressLabel) {
@@ -2588,7 +2594,7 @@ function updateOfficeMopHeroLiveMarkup(root = null, game = null) {
   }
   const dirtCountLabel = task.querySelector('[data-office-mop-dirt-count]');
   if (dirtCountLabel) {
-    dirtCountLabel.textContent = dirtyLabel;
+    dirtCountLabel.textContent = dirtStatusLabel;
   }
   const meterFill = task.querySelector('.hud__school-meter-fill');
   if (meterFill instanceof HTMLElement) {
