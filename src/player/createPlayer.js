@@ -104,7 +104,6 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   'mixamorigRightToeBase'
 ]);
 const SKATEBOARD_SIDEWAYS_FOOT_YAW = Math.PI / 2;
-const SKATEBOARD_REVERSED_LOWER_BODY_YAW = Math.PI;
 const SKATEBOARD_LOWER_BODY_STILL_BONES = Object.freeze([...LOWER_BODY_LOCOMOTION_BONES]);
 const SKATEBOARD_UPPER_BODY_STILL_BONES = Object.freeze([...UPPER_BODY_EMOTE_BONES]);
 const SKATEBOARD_STILL_BODY_BONES = Object.freeze([
@@ -112,8 +111,7 @@ const SKATEBOARD_STILL_BODY_BONES = Object.freeze([
   ...SKATEBOARD_UPPER_BODY_STILL_BONES
 ]);
 const SKATEBOARD_STILL_BODY_POSE_ROTATIONS = Object.freeze({
-  [MIXAMO_BONES.hips]: Object.freeze([0, SKATEBOARD_REVERSED_LOWER_BODY_YAW, 0]),
-  [MIXAMO_BONES.spine]: Object.freeze([0, -SKATEBOARD_REVERSED_LOWER_BODY_YAW, 0]),
+  [MIXAMO_BONES.hips]: Object.freeze([0, 0, 0]),
   mixamorigLeftUpLeg: Object.freeze([0.04, 0, -0.04]),
   mixamorigLeftLeg: Object.freeze([0.05, 0, 0.02]),
   mixamorigLeftFoot: Object.freeze([0, SKATEBOARD_SIDEWAYS_FOOT_YAW, 0]),
