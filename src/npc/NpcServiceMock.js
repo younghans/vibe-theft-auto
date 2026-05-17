@@ -197,13 +197,25 @@ function clampTranscript(transcript, limit = 16) {
   return transcript.slice(Math.max(0, transcript.length - limit));
 }
 
-function hashText(text) {
-  let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(index);
-    hash |= 0;
+function buildMockNpcReply(definition = {}) {
+  const name = String(definition.name ?? '').toLowerCase();
+
+  if (definition.pawnShopOwnerEnabled) {
+    return 'Pistol $50, smokes $20, board $200. Cash first.';
   }
-  return Math.abs(hash);
+  if (definition.blackjackDealerEnabled) {
+    return 'Blackjack: hit, stand, double, split. Do not bust.';
+  }
+  if (definition.schoolMicrogameEnabled) {
+    return 'School challenge ready. Focus.';
+  }
+  if (definition.deliveryQuestEnabled) {
+    return 'Package and payout. Quiet.';
+  }
+  if (definition.gymCheckInEnabled || name.includes('bruno')) {
+    return 'Barbell first. Keep your form tight.';
+  }
+  return 'Head up. Pockets close.';
 }
 
 function cloneLayout(layout) {
@@ -1141,10 +1153,6 @@ export class NpcServiceMock {
       return sanitized;
     }
 
-    console.info('[NPC] Mock say.', {
-      messageLength: sanitized.message.length
-    });
-
     const player = this.state.players.get(this.state.sessionId);
     if (!player) {
       return { ok: false, error: 'Your player is not connected.' };
@@ -1175,7 +1183,7 @@ export class NpcServiceMock {
 
     await new Promise((resolve) => window.setTimeout(resolve, 320));
 
-    const reply = this.buildReply(definition, sanitized.message);
+    const reply = this.buildReply(definition);
     const words = reply.split(/\s+/).filter(Boolean);
     let partial = '';
     for (const word of words) {
@@ -1195,15 +1203,8 @@ export class NpcServiceMock {
     return { ok: true };
   }
 
-  buildReply(definition, message) {
-    const signatures = [
-      'Keep your head up and your money tucked away.',
-      'Town remembers everything, so move smart.',
-      'That block talks louder at night than it does by day.',
-      'You did not hear this from me, but that sounds like a real opportunity.'
-    ];
-    const signature = signatures[hashText(`${definition.name}:${message}`) % signatures.length];
-    return `${message.trim()}? ${signature}`;
+  buildReply(definition) {
+    return buildMockNpcReply(definition);
   }
 
   pickupWeapon(pickupId) {

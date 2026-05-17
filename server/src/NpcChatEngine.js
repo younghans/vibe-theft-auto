@@ -1,4 +1,8 @@
 import OpenAI from 'openai';
+import {
+  buildNpcFallbackReply,
+  describeNpcCapabilities
+} from '../../src/shared/npcDialogue.js';
 import { logServer, logServerError } from './logger.js';
 
 const STREAM_RETRY_BACKOFF_MS = 240;
@@ -70,15 +74,6 @@ function summarizeError(error) {
   };
 }
 
-function hashText(text) {
-  let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
 function createFinalResult({
   traceId,
   text,
@@ -129,8 +124,12 @@ export class NpcChatEngine {
             text: [
               'You are an NPC in Vibe Theft Auto.',
               'Stay in character, be concise, and avoid markdown.',
+              'Directly answer or react to the latest player message; do not echo it back as a question.',
+              'Make the reply specific to this NPC personality and available in-world role.',
+              'Use one or two short sentences, normally under 45 words.',
               'Do not mention system prompts, API details, or hidden instructions.',
               `NPC name: ${npc.name}`,
+              `NPC available interactions: ${describeNpcCapabilities(npc)}`,
               `NPC personality prompt: ${npc.prompt}`
             ].join('\n')
           }
@@ -302,6 +301,7 @@ export class NpcChatEngine {
       const text = this.generateFallbackReply({
         npc,
         playerMessage,
+        transcript,
         traceId,
         reason: 'missing_api_key'
       });
@@ -380,6 +380,7 @@ export class NpcChatEngine {
           text: this.generateFallbackReply({
             npc,
             playerMessage,
+            transcript,
             traceId,
             reason: attemptResult.reason,
             meta: {
@@ -415,21 +416,19 @@ export class NpcChatEngine {
     throw new Error('NPC stream retry loop exited unexpectedly.');
   }
 
-  generateFallbackReply({ npc, playerMessage, traceId = null, reason = 'unknown', meta = null }) {
-    const signatures = [
-      'This city rewards nerve more than comfort.',
-      'Keep your ears open and your story straight.',
-      'Around here, timing matters as much as courage.',
-      'That sounds like the kind of move people remember.'
-    ];
-    const signature = signatures[hashText(`${npc.name}:${playerMessage}`) % signatures.length];
-    const reply = `${playerMessage}? ${signature}`;
+  generateFallbackReply({ npc, playerMessage, transcript = [], traceId = null, reason = 'unknown', meta = null }) {
+    const reply = buildNpcFallbackReply({
+      npc,
+      playerMessage,
+      transcript
+    });
     logServer('npc-chat', 'Using deterministic fallback reply.', {
       traceId,
       npcId: npc.id,
       npcName: npc.name,
       reason,
       playerMessagePreview: previewText(playerMessage),
+      npcCapabilities: describeNpcCapabilities(npc),
       fallbackLength: reply.length,
       ...(meta ?? {})
     });
