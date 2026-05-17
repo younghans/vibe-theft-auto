@@ -4,7 +4,9 @@ import {
 } from './proceduralProps.js';
 import {
   OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL,
+  OFFICE_INTERIOR_CEO_GLASS_WALL,
   OFFICE_INTERIOR_CEO_MEETING_TABLE,
+  OFFICE_INTERIOR_CEO_ROOFTOP_DECK,
   OFFICE_INTERIOR_CUBICLE_WORKSTATIONS,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
@@ -219,6 +221,17 @@ function createInteriorMaterial(color, roughness = 0.94, metalness = 0.04) {
   });
 }
 
+function createInteriorTransparentMaterial(color, opacity, roughness = 0.62, metalness = 0.02) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness,
+    metalness,
+    opacity,
+    transparent: true,
+    depthWrite: false
+  });
+}
+
 function createInteriorBox(size, position, material, rotationY = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   mesh.position.set(...position);
@@ -231,6 +244,17 @@ function createInteriorBox(size, position, material, rotationY = 0) {
 function createInteriorCylinder(radiusTop, radiusBottom, height, segments, position, material) {
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments),
+    material
+  );
+  mesh.position.set(...position);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function createInteriorSphere(radius, widthSegments, heightSegments, position, material) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, widthSegments, heightSegments),
     material
   );
   mesh.position.set(...position);
@@ -282,9 +306,22 @@ function setOfficeVisualTreeOpacity(root, opacity = 1) {
       if (!material) {
         continue;
       }
-      material.opacity = normalizedOpacity;
-      material.transparent = normalizedOpacity < 0.999;
-      material.depthWrite = normalizedOpacity >= 0.999;
+      if (material.userData.officeOpacityBaseOpacity === undefined) {
+        material.userData.officeOpacityBaseOpacity = Number.isFinite(material.opacity)
+          ? material.opacity
+          : 1;
+        material.userData.officeOpacityBaseTransparent = material.transparent === true;
+        material.userData.officeOpacityBaseDepthWrite = material.depthWrite !== false;
+      }
+      const baseOpacity = THREE.MathUtils.clamp(
+        Number(material.userData.officeOpacityBaseOpacity) || 0,
+        0,
+        1
+      );
+      const targetOpacity = baseOpacity * normalizedOpacity;
+      material.opacity = targetOpacity;
+      material.transparent = targetOpacity < 0.999 || material.userData.officeOpacityBaseTransparent === true;
+      material.depthWrite = targetOpacity >= 0.999 && material.userData.officeOpacityBaseDepthWrite === true;
       material.needsUpdate = true;
     }
     node.castShadow = normalizedOpacity > 0
@@ -416,6 +453,46 @@ function createOfficeLobbyTableVisual(materials, floorY, x, z, width = 1.45, dep
   }
   table.add(createInteriorCylinder(0.16, 0.2, 0.16, 12, [width * 0.22, floorY + 0.91, 0], materials.green));
   return table;
+}
+
+function createOfficePottedPlantVisual(materials, floorY, x, z, scale = 1) {
+  const plant = new THREE.Group();
+  plant.name = 'office_ceo_rooftop_plant';
+  plant.userData.officeCeoRooftopPlant = true;
+  plant.position.set(x, 0, z);
+
+  plant.add(createInteriorCylinder(
+    0.34 * scale,
+    0.44 * scale,
+    0.58 * scale,
+    14,
+    [0, floorY + (0.29 * scale), 0],
+    materials.planter
+  ));
+  plant.add(createInteriorCylinder(
+    0.09 * scale,
+    0.13 * scale,
+    0.78 * scale,
+    8,
+    [0, floorY + (0.92 * scale), 0],
+    materials.woodDark
+  ));
+  for (const [leafX, leafY, leafZ, radius] of [
+    [0, 1.34, 0, 0.48],
+    [-0.34, 1.12, -0.12, 0.34],
+    [0.32, 1.14, 0.14, 0.36],
+    [0.08, 1.54, -0.24, 0.3]
+  ]) {
+    plant.add(createInteriorSphere(
+      radius * scale,
+      12,
+      8,
+      [leafX * scale, floorY + (leafY * scale), leafZ * scale],
+      materials.plantLeaf
+    ));
+  }
+
+  return plant;
 }
 
 function createOfficeCubicleVisual(materials, floorY, x, z, rotationY = 0) {
@@ -734,6 +811,116 @@ function addOfficeCubicleFloorVisuals(group, materials) {
   addOfficeElevatorVisual(group, materials, floorY, elevatorX, elevatorZ, 0, OFFICE_INTERIOR_FLOOR_IDS.cubicles);
 }
 
+function addOfficeCeoRooftopDeckVisuals(group, materials, floorY) {
+  const {
+    centerX: deckX,
+    centerZ: deckZ,
+    width: deckWidth,
+    depth: deckDepth,
+    railingHeight,
+    railingThickness
+  } = OFFICE_INTERIOR_CEO_ROOFTOP_DECK;
+  const deck = createInteriorBox([deckWidth, 0.16, deckDepth], [deckX, floorY - 0.08, deckZ], materials.deck);
+  deck.name = 'office_ceo_rooftop_deck';
+  deck.userData.officeCeoRooftopDeck = true;
+  deck.userData.officeCeoRooftopDeckSize = { ...OFFICE_INTERIOR_CEO_ROOFTOP_DECK };
+  group.add(deck);
+
+  const xMin = deckX - (deckWidth * 0.5);
+  const xMax = deckX + (deckWidth * 0.5);
+  const zMax = deckZ + (deckDepth * 0.5);
+  const railY = floorY + (railingHeight * 0.5);
+  for (const [name, size, position] of [
+    ['office_ceo_rooftop_west_rail', [railingThickness, railingHeight, deckDepth], [xMin + (railingThickness * 0.5), railY, deckZ]],
+    ['office_ceo_rooftop_east_rail', [railingThickness, railingHeight, deckDepth], [xMax - (railingThickness * 0.5), railY, deckZ]],
+    ['office_ceo_rooftop_south_rail', [deckWidth, railingHeight, railingThickness], [deckX, railY, zMax - (railingThickness * 0.5)]]
+  ]) {
+    const rail = createInteriorBox(size, position, materials.metalDark);
+    rail.name = name;
+    rail.userData.officeCeoRooftopRailing = true;
+    group.add(rail);
+  }
+
+  for (const x of [xMin + 0.55, xMin + 3.1, deckX, xMax - 3.1, xMax - 0.55]) {
+    group.add(createInteriorBox([0.14, railingHeight + 0.32, 0.14], [x, floorY + ((railingHeight + 0.32) * 0.5), zMax - 0.18], materials.trimDark));
+  }
+
+  const {
+    centerX: glassX,
+    centerZ: glassZ,
+    width: glassWidth,
+    depth: glassDepth,
+    height: glassHeight,
+    doorWidth
+  } = OFFICE_INTERIOR_CEO_GLASS_WALL;
+  const glassWall = new THREE.Group();
+  glassWall.name = 'office_ceo_rooftop_glass_wall';
+  glassWall.userData.officeCeoRooftopGlassWall = true;
+  glassWall.userData.officeCeoRooftopGlassWallSize = { ...OFFICE_INTERIOR_CEO_GLASS_WALL };
+  const sidePanelWidth = Math.max(0.2, (glassWidth - doorWidth) * 0.5);
+  const panelY = floorY + (glassHeight * 0.5);
+  for (const panelX of [
+    glassX - (doorWidth * 0.5) - (sidePanelWidth * 0.5),
+    glassX + (doorWidth * 0.5) + (sidePanelWidth * 0.5)
+  ]) {
+    const panel = createInteriorBox([sidePanelWidth, glassHeight, glassDepth], [panelX, panelY, glassZ], materials.glassClear);
+    panel.name = 'office_ceo_rooftop_glass_panel';
+    panel.userData.officeCeoRooftopGlassPanel = true;
+    glassWall.add(panel);
+  }
+
+  for (const [frameWidth, frameHeight, frameDepth, frameX, frameY, frameZ] of [
+    [glassWidth, 0.1, glassDepth + 0.05, glassX, floorY + glassHeight + 0.05, glassZ],
+    [glassWidth, 0.08, glassDepth + 0.05, glassX, floorY + 0.04, glassZ],
+    [0.1, glassHeight, glassDepth + 0.06, glassX - (glassWidth * 0.5), panelY, glassZ],
+    [0.1, glassHeight, glassDepth + 0.06, glassX + (glassWidth * 0.5), panelY, glassZ],
+    [0.09, glassHeight, glassDepth + 0.06, glassX - (doorWidth * 0.5), panelY, glassZ],
+    [0.09, glassHeight, glassDepth + 0.06, glassX + (doorWidth * 0.5), panelY, glassZ]
+  ]) {
+    glassWall.add(createInteriorBox([frameWidth, frameHeight, frameDepth], [frameX, frameY, frameZ], materials.metalDark));
+  }
+
+  const doorLeafWidth = Math.min(1.08, (doorWidth * 0.5) - 0.08);
+  for (const [doorX, rotationY, handleX] of [
+    [glassX - (doorWidth * 0.5) + (doorLeafWidth * 0.5), -0.35, glassX - 0.18],
+    [glassX + (doorWidth * 0.5) - (doorLeafWidth * 0.5), 0.35, glassX + 0.18]
+  ]) {
+    const door = createInteriorBox(
+      [doorLeafWidth, glassHeight * 0.88, glassDepth * 0.85],
+      [doorX, floorY + (glassHeight * 0.48), glassZ + 0.32],
+      materials.glassClear,
+      rotationY
+    );
+    door.name = 'office_ceo_rooftop_glass_door';
+    door.userData.officeCeoRooftopGlassDoor = true;
+    glassWall.add(door);
+    glassWall.add(createInteriorBox([0.07, 0.72, 0.07], [handleX, floorY + 1.42, glassZ + 0.65], materials.gold));
+  }
+  group.add(glassWall);
+
+  for (const [x, z, rotationY] of [
+    [-4.95, deckZ - 0.85, Math.PI * 0.58],
+    [-3.25, deckZ + 0.7, Math.PI * 0.85],
+    [3.25, deckZ + 0.7, -Math.PI * 0.85],
+    [4.95, deckZ - 0.85, -Math.PI * 0.58]
+  ]) {
+    const chair = createOfficeChairVisual(materials, floorY, x, z, rotationY);
+    chair.name = 'office_ceo_rooftop_chair';
+    chair.userData.officeFloorId = OFFICE_INTERIOR_FLOOR_IDS.ceo;
+    chair.userData.officeCeoRooftopChair = true;
+    group.add(chair);
+  }
+
+  for (const [x, z, scale] of [
+    [xMin + 0.95, glassZ + 0.8, 0.92],
+    [xMax - 0.95, glassZ + 0.8, 0.92],
+    [xMin + 1.05, zMax - 0.92, 1.08],
+    [xMax - 1.05, zMax - 0.92, 1.08]
+  ]) {
+    group.add(createOfficePottedPlantVisual(materials, floorY, x, z, scale));
+  }
+}
+
 function addOfficeCeoFloorVisuals(group, materials) {
   const floorY = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   const layout = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.ceo);
@@ -750,6 +937,7 @@ function addOfficeCeoFloorVisuals(group, materials) {
     material: materials.floorAccent
   });
   addOfficeFloorWalls(group, materials, floorY, layout);
+  addOfficeCeoRooftopDeckVisuals(group, materials, floorY);
   const meetingTable = new THREE.Group();
   meetingTable.name = 'office_ceo_meeting_table';
   meetingTable.userData.officeCeoMeetingTable = true;
@@ -793,14 +981,18 @@ function addOfficeInteriorVisuals(group) {
     metalDark: createInteriorMaterial(0x59636b, 0.86, 0.16),
     wood: createInteriorMaterial(0xa97948),
     woodDark: createInteriorMaterial(0x68452b),
+    deck: createInteriorMaterial(0x8f7657, 0.92, 0.04),
     closet: createInteriorMaterial(0x7f8a8f),
     chair: createInteriorMaterial(0x415565),
     screen: createInteriorMaterial(0x253542, 0.76, 0.08),
     glass: createInteriorMaterial(0xb7dce8, 0.62, 0.02),
+    glassClear: createInteriorTransparentMaterial(0xaee3f1, 0.42, 0.34, 0.02),
     sign: createInteriorMaterial(0x263746),
     door: createInteriorMaterial(0x27313a),
     gold: createInteriorMaterial(0xd2aa44, 0.58, 0.18),
     green: createInteriorMaterial(0x5e8d58),
+    plantLeaf: createInteriorMaterial(0x2f774c, 0.82, 0.02),
+    planter: createInteriorMaterial(0x3f5058, 0.78, 0.05),
     accentDark: createInteriorMaterial(0x355a78)
   };
 
@@ -1027,6 +1219,80 @@ function createOfficeBreakRoomRightWallCollider(origin, rotationQuarterTurns) {
   );
 }
 
+function createOfficeCeoGlassWallColliders(origin, rotationQuarterTurns) {
+  const {
+    centerX,
+    centerZ,
+    width,
+    depth,
+    height,
+    doorWidth
+  } = OFFICE_INTERIOR_CEO_GLASS_WALL;
+  const sidePanelWidth = Math.max(0.2, (width - doorWidth) * 0.5);
+  const leftCenterX = centerX - (doorWidth * 0.5) - (sidePanelWidth * 0.5);
+  const rightCenterX = centerX + (doorWidth * 0.5) + (sidePanelWidth * 0.5);
+
+  return [leftCenterX, rightCenterX].map((panelCenterX) => createOfficeObjectCollider(
+    origin,
+    rotationQuarterTurns,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    panelCenterX,
+    centerZ,
+    sidePanelWidth,
+    depth,
+    height
+  ));
+}
+
+function createOfficeCeoRooftopRailingColliders(origin, rotationQuarterTurns) {
+  const {
+    centerX,
+    centerZ,
+    width,
+    depth,
+    railingHeight,
+    railingThickness
+  } = OFFICE_INTERIOR_CEO_ROOFTOP_DECK;
+  const halfWidth = width * 0.5;
+  const halfDepth = depth * 0.5;
+  const westX = centerX - halfWidth + (railingThickness * 0.5);
+  const eastX = centerX + halfWidth - (railingThickness * 0.5);
+  const southZ = centerZ + halfDepth - (railingThickness * 0.5);
+
+  return [
+    createOfficeObjectCollider(
+      origin,
+      rotationQuarterTurns,
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      westX,
+      centerZ,
+      railingThickness,
+      depth,
+      railingHeight
+    ),
+    createOfficeObjectCollider(
+      origin,
+      rotationQuarterTurns,
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      eastX,
+      centerZ,
+      railingThickness,
+      depth,
+      railingHeight
+    ),
+    createOfficeObjectCollider(
+      origin,
+      rotationQuarterTurns,
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      centerX,
+      southZ,
+      width,
+      railingThickness,
+      railingHeight
+    )
+  ];
+}
+
 function createOfficeActiveFloorColliderMap(origin, rotationQuarterTurns) {
   return new Map([
     [
@@ -1048,6 +1314,8 @@ function createOfficeActiveFloorColliderMap(origin, rotationQuarterTurns) {
       OFFICE_INTERIOR_FLOOR_IDS.ceo,
       [
         ...createOfficeFloorWallColliders(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.ceo),
+        ...createOfficeCeoGlassWallColliders(origin, rotationQuarterTurns),
+        ...createOfficeCeoRooftopRailingColliders(origin, rotationQuarterTurns),
         createOfficeElevatorCollider(origin, rotationQuarterTurns, OFFICE_INTERIOR_FLOOR_IDS.ceo)
       ]
     ]

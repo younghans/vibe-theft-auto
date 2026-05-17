@@ -29,7 +29,9 @@ import {
 import {
   OFFICE_BUILDING_ITEM_ID,
   OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL,
+  OFFICE_INTERIOR_CEO_GLASS_WALL,
   OFFICE_INTERIOR_CEO_MEETING_TABLE,
+  OFFICE_INTERIOR_CEO_ROOFTOP_DECK,
   OFFICE_INTERIOR_CUBICLE_WORKSTATIONS,
   OFFICE_INTERIOR_ELEVATOR_SIZE,
   OFFICE_INTERIOR_FLOOR_IDS,
@@ -210,6 +212,14 @@ async function validateOfficeBuildingInteriorFlow() {
   let lobbyTableCount = 0;
   let ceoMeetingChairCount = 0;
   let ceoMeetingTableVisual = null;
+  let ceoRooftopDeck = null;
+  let ceoRooftopDeckCount = 0;
+  let ceoRooftopChairCount = 0;
+  let ceoRooftopPlantCount = 0;
+  let ceoRooftopGlassWall = null;
+  let ceoRooftopGlassWallCount = 0;
+  let ceoRooftopGlassPanelCount = 0;
+  let ceoRooftopGlassDoorCount = 0;
   let breakRoomRightWall = null;
   let breakRoomRightWallCount = 0;
   const cubicleWorkstations = [];
@@ -259,6 +269,26 @@ async function validateOfficeBuildingInteriorFlow() {
     if (node.userData?.officeCeoMeetingTable) {
       ceoMeetingTableVisual = node;
     }
+    if (node.userData?.officeCeoRooftopDeck) {
+      ceoRooftopDeck = node;
+      ceoRooftopDeckCount += 1;
+    }
+    if (node.userData?.officeCeoRooftopChair) {
+      ceoRooftopChairCount += 1;
+    }
+    if (node.userData?.officeCeoRooftopPlant) {
+      ceoRooftopPlantCount += 1;
+    }
+    if (node.userData?.officeCeoRooftopGlassWall) {
+      ceoRooftopGlassWall = node;
+      ceoRooftopGlassWallCount += 1;
+    }
+    if (node.userData?.officeCeoRooftopGlassPanel) {
+      ceoRooftopGlassPanelCount += 1;
+    }
+    if (node.userData?.officeCeoRooftopGlassDoor) {
+      ceoRooftopGlassDoorCount += 1;
+    }
   });
   assert(floorGroupsById.size === 3, 'Office scene should split lobby, second floor, and CEO floor visuals.');
   assert(stairsGroup, 'Office scene should keep stairs in an always-opaque visual group.');
@@ -307,6 +337,21 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(Math.abs((ceoMeetingTableVisual?.position?.x ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO meeting table visual should use the shared X position.');
   assert(Math.abs((ceoMeetingTableVisual?.position?.z ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO meeting table visual should move down from the elevator.');
   assert((ceoMeetingTableVisual?.position?.z ?? -99) - ceoElevatorDoor[1] > 3.4, 'CEO meeting table should leave movement space outside the elevator.');
+  assert(ceoRooftopDeckCount === 1, 'CEO floor should add one rooftop deck below the meeting room.');
+  assert(ceoRooftopChairCount >= 4, 'CEO rooftop deck should include decorative outdoor chairs.');
+  assert(ceoRooftopPlantCount >= 4, 'CEO rooftop deck should include decorative potted plants.');
+  assert(ceoRooftopGlassWallCount === 1, 'CEO meeting room should have one glass wall separating the rooftop deck.');
+  assert(ceoRooftopGlassPanelCount >= 2, 'CEO rooftop glass wall should include fixed glass panels.');
+  assert(ceoRooftopGlassDoorCount === 2, 'CEO rooftop glass wall should include double glass doors.');
+  const ceoRoomLayoutForDeck = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const ceoRoomSouthEdge = ceoRoomLayoutForDeck.centerZ + (ceoRoomLayoutForDeck.depth * 0.5);
+  const deckNorthEdge = OFFICE_INTERIOR_CEO_ROOFTOP_DECK.centerZ - (OFFICE_INTERIOR_CEO_ROOFTOP_DECK.depth * 0.5);
+  assert(Math.abs(OFFICE_INTERIOR_CEO_GLASS_WALL.centerZ - ceoRoomSouthEdge) < 0.001, 'CEO glass wall should sit at the meeting room south edge.');
+  assert(Math.abs(deckNorthEdge - ceoRoomSouthEdge) < 0.001, 'CEO rooftop deck should start directly below the meeting room.');
+  assert(Math.abs((ceoRooftopDeck?.position?.x ?? 99) - OFFICE_INTERIOR_CEO_ROOFTOP_DECK.centerX) < 0.001, 'CEO rooftop deck should use the shared deck X position.');
+  assert(Math.abs((ceoRooftopDeck?.position?.z ?? 99) - OFFICE_INTERIOR_CEO_ROOFTOP_DECK.centerZ) < 0.001, 'CEO rooftop deck should use the shared deck Z position.');
+  assert((ceoRooftopDeck?.position?.z ?? -99) > (ceoMeetingTableVisual?.position?.z ?? 99), 'CEO rooftop deck should be visually below the meeting table.');
+  assert((ceoRooftopGlassWall?.userData?.officeCeoRooftopGlassWallSize?.doorWidth ?? 0) >= 2.4, 'CEO rooftop glass doors should leave a walkable doorway.');
 
   for (const floorId of [OFFICE_INTERIOR_FLOOR_IDS.cubicles, OFFICE_INTERIOR_FLOOR_IDS.ceo]) {
     const elevatorBox = elevatorBoxesByFloorId.get(floorId);
@@ -330,6 +375,26 @@ async function validateOfficeBuildingInteriorFlow() {
     });
     return opacity ?? 1;
   }
+
+  function getFirstMaterialForUserData(root, key) {
+    let foundMaterial = null;
+    root?.traverse?.((node) => {
+      if (foundMaterial || !node.userData?.[key] || !node.isMesh || !node.material) {
+        return;
+      }
+      foundMaterial = Array.isArray(node.material) ? node.material[0] : node.material;
+    });
+    return foundMaterial;
+  }
+
+  scene.setActiveFloorId(OFFICE_INTERIOR_FLOOR_IDS.ceo);
+  const activeGlassMaterial = getFirstMaterialForUserData(
+    floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.ceo),
+    'officeCeoRooftopGlassPanel'
+  );
+  assert(activeGlassMaterial?.transparent === true, 'CEO rooftop glass wall should use a transparent material while active.');
+  assert(activeGlassMaterial?.depthWrite === false, 'CEO rooftop glass wall should not depth-write over the deck view.');
+  assert((activeGlassMaterial?.opacity ?? 1) > 0.25 && (activeGlassMaterial?.opacity ?? 1) < 0.7, 'CEO rooftop glass wall should remain visibly translucent while active.');
 
   scene.setActiveFloorId(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   assert(getFirstMeshOpacity(floorGroupsById.get(OFFICE_INTERIOR_FLOOR_IDS.cubicles)) > 0.99, 'Active office floor should stay opaque.');
@@ -401,6 +466,36 @@ async function validateOfficeBuildingInteriorFlow() {
     OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ
   ), 'Break room right wall should not consume the elevator corridor.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorX, ceoElevatorZ), 'CEO elevator should have an active movement blocker.');
+  assert(collidersContainLocalPoint(
+    ceoColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    -3.0,
+    OFFICE_INTERIOR_CEO_GLASS_WALL.centerZ
+  ), 'CEO rooftop glass wall left panel should block movement.');
+  assert(collidersContainLocalPoint(
+    ceoColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    3.0,
+    OFFICE_INTERIOR_CEO_GLASS_WALL.centerZ
+  ), 'CEO rooftop glass wall right panel should block movement.');
+  assert(!collidersBlockPlayerAtLocalPoint(
+    ceoColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    0,
+    OFFICE_INTERIOR_CEO_GLASS_WALL.centerZ
+  ), 'CEO rooftop glass doors should keep the central doorway walkable.');
+  assert(!collidersBlockPlayerAtLocalPoint(
+    ceoColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    0,
+    OFFICE_INTERIOR_CEO_ROOFTOP_DECK.centerZ
+  ), 'CEO rooftop deck should have open walking space past the glass doors.');
+  assert(collidersContainLocalPoint(
+    ceoColliders,
+    OFFICE_INTERIOR_FLOOR_IDS.ceo,
+    0,
+    OFFICE_INTERIOR_CEO_ROOFTOP_DECK.centerZ + (OFFICE_INTERIOR_CEO_ROOFTOP_DECK.depth * 0.5) - (OFFICE_INTERIOR_CEO_ROOFTOP_DECK.railingThickness * 0.5)
+  ), 'CEO rooftop deck should have a south railing movement blocker.');
   assert(!collidersBlockPlayerAtLocalPoint(cubicleColliders, OFFICE_INTERIOR_FLOOR_IDS.cubicles, cubicleElevatorArrival[0], cubicleElevatorArrival[1]), 'Second-floor elevator arrival should not spawn the player inside elevator collision.');
   assert(!collidersBlockPlayerAtLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, ceoElevatorArrival[0], ceoElevatorArrival[1]), 'CEO elevator arrival should not spawn the player inside elevator collision.');
   assert(collidersContainLocalPoint(ceoColliders, OFFICE_INTERIOR_FLOOR_IDS.ceo, 0, ceoNorthWallZ), 'CEO meeting room north wall should block movement at the visual wall.');

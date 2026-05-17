@@ -75,6 +75,24 @@ export const OFFICE_INTERIOR_CEO_MEETING_TABLE = Object.freeze({
   rugDepth: 3.9
 });
 
+export const OFFICE_INTERIOR_CEO_ROOFTOP_DECK = Object.freeze({
+  centerX: 0,
+  centerZ: 5.1,
+  width: 15.8,
+  depth: 5.5,
+  railingHeight: 1.12,
+  railingThickness: 0.16
+});
+
+export const OFFICE_INTERIOR_CEO_GLASS_WALL = Object.freeze({
+  centerX: 0,
+  centerZ: 2.35,
+  width: 14.9,
+  depth: 0.16,
+  height: 2.72,
+  doorWidth: 4.2
+});
+
 export const OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL = Object.freeze({
   centerX: -4.62,
   centerZ: -6.2,
