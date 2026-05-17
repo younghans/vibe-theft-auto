@@ -199,6 +199,7 @@ const VIBE_HERO_POST_SONG_MS = 900;
 const VIBE_HERO_EDITOR_SEEK_MS = 5000;
 const VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS = 120;
 const VIBE_HERO_EDITOR_RECORD_STEP_MS = 95;
+const VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS = 220;
 const VIBE_HERO_EDITOR_NOTE_DURATION_MS = 150;
 const VIBE_HERO_EDITOR_STORAGE_PREFIX = 'vta:vibeHero:chart-editor:v1:';
 const VIBE_HERO_EDITOR_LANE_PITCHES = Object.freeze(['C4', 'D4', 'E4', 'G4', 'A4']);
@@ -6912,7 +6913,9 @@ export class Game {
       editorSeekStepMs: VIBE_HERO_EDITOR_SEEK_MS,
       editorRecordWindowMs: VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS,
       editorRecordStepMs: VIBE_HERO_EDITOR_RECORD_STEP_MS,
+      editorHoldRepeatDelayMs: VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS,
       editorLaneLastRecordMs: Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity),
+      editorLaneHeld: Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false),
       editorDirty: false,
       editorSavedAt: 0,
       message: editing ? 'Pick a song to edit.' : 'Pick a song and take the stage.',
@@ -7169,6 +7172,7 @@ export class Game {
     this.vibeHero.editorPlaybackStartedAt = now;
     this.vibeHero.editorLastOverwriteMs = 0;
     this.vibeHero.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+    this.vibeHero.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
     this.vibeHero.currentTimeMs = 0;
     this.vibeHero.remainingMs = this.vibeHero.durationMs;
     this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} chart editor.`;
@@ -7243,6 +7247,7 @@ export class Game {
       game.editorPlaybackStartedAt = now;
       game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, game.currentTimeMs - 1) : game.currentTimeMs;
       game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+      game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
       game.message = game.editorRecording ? 'Recording.' : 'Playing.';
       this.scheduleVibeHeroSong(game.song, { offsetMs: game.currentTimeMs });
     } else {
@@ -7268,6 +7273,7 @@ export class Game {
     const currentTimeMs = Math.max(0, Number(game.currentTimeMs ?? 0) || 0);
     game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, currentTimeMs - 1) : currentTimeMs;
     game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+    game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
     game.message = game.editorRecording ? 'Recording.' : 'Recording stopped.';
     if (!game.editorRecording) {
       this.saveVibeHeroEditorChart(game);
@@ -7296,6 +7302,7 @@ export class Game {
     game.editorPlaybackStartedAt = now;
     game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, nextTimeMs - 1) : nextTimeMs;
     game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+    game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
     game.message = `${deltaMs < 0 ? 'Rewind' : 'Fast forward'} to ${formatVibeHeroTimestamp(nextTimeMs)}.`;
     if (wasPlaying) {
       this.scheduleVibeHeroSong(game.song, { offsetMs: nextTimeMs });
@@ -7345,37 +7352,61 @@ export class Game {
     }
 
     const activeLanes = this.getVibeHeroEditorPressedLaneIndexes();
+    const activeLaneSet = new Set(activeLanes);
     const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
     const retainedChart = chart.filter((note) => !(note.timeMs > startMs && note.timeMs <= endMs));
     const lastRecordMs = Array.isArray(game.editorLaneLastRecordMs)
       ? [...game.editorLaneLastRecordMs]
       : Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+    const laneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, (_, lane) => Boolean(game.editorLaneHeld?.[lane]));
     const stepMs = Math.max(50, Math.min(
       220,
       Number(game.editorRecordStepMs ?? VIBE_HERO_EDITOR_RECORD_STEP_MS) || VIBE_HERO_EDITOR_RECORD_STEP_MS
     ));
+    const holdRepeatDelayMs = Math.max(stepMs, Math.min(
+      420,
+      Number(game.editorHoldRepeatDelayMs ?? VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS) || VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS
+    ));
     const recordedNotes = [];
 
-    for (const lane of activeLanes) {
+    for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
+      if (!activeLaneSet.has(lane)) {
+        laneHeld[lane] = false;
+        continue;
+      }
+
       const previousLaneRecordMs = Number(lastRecordMs[lane]);
-      let nextTimeMs = Number.isFinite(previousLaneRecordMs)
-        ? Math.max(previousLaneRecordMs + stepMs, startMs)
-        : startMs;
+      const laneWasHeld = laneHeld[lane] === true;
+      let nextTimeMs = startMs;
+      if (!laneWasHeld || !Number.isFinite(previousLaneRecordMs)) {
+        const recordedAtMs = Math.round(startMs);
+        recordedNotes.push(this.createVibeHeroEditorRecordedNote(lane, recordedAtMs, recordedNotes.length));
+        lastRecordMs[lane] = recordedAtMs + holdRepeatDelayMs - stepMs;
+        nextTimeMs = recordedAtMs + holdRepeatDelayMs;
+      } else {
+        nextTimeMs = Math.max(previousLaneRecordMs + stepMs, startMs);
+      }
       while (nextTimeMs <= endMs + 0.5) {
         const recordedAtMs = Math.round(nextTimeMs);
         recordedNotes.push(this.createVibeHeroEditorRecordedNote(lane, recordedAtMs, recordedNotes.length));
         lastRecordMs[lane] = recordedAtMs;
         nextTimeMs += stepMs;
       }
+      laneHeld[lane] = true;
     }
 
     game.editorLaneLastRecordMs = lastRecordMs;
+    game.editorLaneHeld = laneHeld;
     if (recordedNotes.length <= 0 && retainedChart.length === chart.length) {
       return false;
     }
 
     const laneText = activeLanes.map((lane) => String(lane + 1)).join(' ');
-    this.setVibeHeroEditorChart(game, [...retainedChart, ...recordedNotes], {
+    const recordedKeys = new Set(recordedNotes.map((note) => `${note.lane}:${note.timeMs}`));
+    const mergedChart = recordedKeys.size > 0
+      ? retainedChart.filter((note) => !recordedKeys.has(`${note.lane}:${note.timeMs}`))
+      : retainedChart;
+    this.setVibeHeroEditorChart(game, [...mergedChart, ...recordedNotes], {
       save: false,
       message: recordedNotes.length > 0
         ? `Recording ${laneText} at ${formatVibeHeroTimestamp(endMs)}.`
