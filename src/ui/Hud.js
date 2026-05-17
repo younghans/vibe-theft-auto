@@ -9,7 +9,7 @@ import {
   BLACKJACK_MAX_WAGER
 } from '../shared/blackjack.js';
 import { escapeHtml } from '../shared/htmlEscape.js';
-import { getStockTradeValue } from '../shared/stockMarket.js';
+import { getStockTradeValue, normalizeStockTradeQuantity } from '../shared/stockMarket.js';
 import { SCHOOL_MICROGAME_IDS } from '../shared/schoolMicrogames.js';
 import {
   OFFICE_JOB_GAME_IDS,
@@ -325,7 +325,7 @@ function getPhoneStocksAppMarkup(app) {
       <footer class="hud__phone-stocks-trade">
         <label class="hud__phone-stocks-quantity">
           <span>Shares</span>
-          <input type="number" min="1" max="999" step="1" value="1" data-phone-stock-quantity />
+          <input type="number" min="1" step="1" value="1" data-phone-stock-quantity />
         </label>
         <button class="hud__phone-stock-trade-button is-buy" type="button" data-phone-stock-trade="buy">Buy</button>
         <button class="hud__phone-stock-trade-button is-sell" type="button" data-phone-stock-trade="sell">Sell</button>
@@ -4326,7 +4326,7 @@ export class Hud {
         <footer class="hud__stock-trade">
           <label class="hud__stock-quantity-field">
             <span class="hud__field-label">Shares</span>
-            <input class="hud__field-control" type="number" min="1" max="999" step="1" value="1" data-stock-market-quantity />
+            <input class="hud__field-control" type="number" min="1" step="1" value="1" data-stock-market-quantity />
           </label>
           <button class="hud__stock-trade-button is-buy" type="button" data-stock-market-buy>Buy</button>
           <button class="hud__stock-trade-button is-sell" type="button" data-stock-market-sell>Sell</button>
@@ -7322,7 +7322,7 @@ export class Hud {
     this.stockMarketState = {
       market,
       selectedSymbol: String(selectedSymbol ?? ''),
-      quantity: Math.max(1, Math.min(999, Math.floor(Number(quantity) || 1))),
+      quantity: normalizeStockTradeQuantity(quantity),
       loading: Boolean(loading),
       error: String(error ?? '')
     };
@@ -9072,7 +9072,7 @@ export class Hud {
 
     const safeMarket = market && typeof market === 'object' ? market : null;
     const stocks = Array.isArray(safeMarket?.stocks) ? safeMarket.stocks : [];
-    const safeQuantity = Math.max(1, Math.min(999, Math.floor(Number(quantity) || 1)));
+    const safeQuantity = normalizeStockTradeQuantity(quantity);
     const selected = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0] ?? null;
     const resolvedSelectedSymbol = selected?.symbol ?? '';
     const signature = JSON.stringify({

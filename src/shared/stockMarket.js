@@ -4,7 +4,7 @@ export const STOCK_MARKET_TICK_MS = 5200;
 export const STOCK_MARKET_HISTORY_LIMIT = 56;
 export const STOCK_MARKET_MAX_CATCH_UP_TICKS = 96;
 export const STOCK_MARKET_FEE_RATE = 0;
-export const STOCK_MARKET_MAX_QUANTITY = 999;
+const STOCK_MARKET_SAFE_MAX_QUANTITY = Number.MAX_SAFE_INTEGER;
 
 export const STOCK_MARKET_MODES = Object.freeze({
   steady: Object.freeze({
@@ -169,6 +169,11 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeTimestamp(value, fallback = 0) {
+  const timestamp = Math.floor(Number(value));
+  return Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : fallback;
+}
+
 function randomBetween(min, max) {
   return min + (Math.random() * (max - min));
 }
@@ -295,7 +300,7 @@ export function normalizeStockTradeQuantity(value = 1) {
     return 1;
   }
 
-  return clamp(numeric, 1, STOCK_MARKET_MAX_QUANTITY);
+  return Math.max(1, Math.min(numeric, STOCK_MARKET_SAFE_MAX_QUANTITY));
 }
 
 export function getStockTradeValue(price = 0, quantity = 1) {
@@ -316,8 +321,38 @@ export function createInitialStockMarketState(now = Date.now()) {
   };
 }
 
+export function normalizeStockMarketSnapshot(snapshot = null, now = Date.now()) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return null;
+  }
+
+  const rawStocks = snapshot.stocks;
+  if (!rawStocks || typeof rawStocks !== 'object' || Array.isArray(rawStocks)) {
+    return null;
+  }
+
+  const safeNow = normalizeTimestamp(now, Date.now());
+  const createdAt = normalizeTimestamp(snapshot.createdAt, safeNow);
+  const lastUpdatedAt = Math.max(createdAt, normalizeTimestamp(snapshot.lastUpdatedAt, createdAt));
+  const nextTickAt = normalizeTimestamp(
+    snapshot.nextTickAt,
+    lastUpdatedAt + STOCK_MARKET_TICK_MS
+  );
+  const stocks = {};
+  for (const item of STOCK_MARKET_ITEMS) {
+    stocks[item.symbol] = normalizeStockState(item, rawStocks[item.symbol]);
+  }
+
+  return {
+    createdAt,
+    lastUpdatedAt,
+    nextTickAt,
+    stocks
+  };
+}
+
 export function advanceStockMarket(state = null, now = Date.now()) {
-  const market = state && typeof state === 'object'
+  const market = state && typeof state === 'object' && !Array.isArray(state)
     ? state
     : createInitialStockMarketState(now);
   if (!market.stocks || typeof market.stocks !== 'object') {

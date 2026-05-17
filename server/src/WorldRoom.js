@@ -61,7 +61,6 @@ import {
   resolveSelectedMissionId
 } from '../../src/shared/missions.js';
 import {
-  createInitialStockMarketState,
   executeStockTrade,
   getStockMarketPromptRadius,
   isStockMarketNpc,
@@ -192,6 +191,7 @@ import { NpcChatEngine } from './NpcChatEngine.js';
 import { isNpcDebugEnabled, logNpcDebug, logServer, logServerError } from './logger.js';
 import { getWorldPersistence } from './worldPersistence.js';
 import { getPlayerSnapshots, normalizePlayerSnapshotId } from './playerSnapshots.js';
+import { getStockMarketPersistence } from './stockMarketPersistence.js';
 
 const MAX_MESSAGE_LENGTH = 280;
 const MAX_TRANSCRIPT_ENTRIES = 18;
@@ -892,6 +892,7 @@ export class WorldRoom extends Room {
     this.chatEngine = new NpcChatEngine();
     this.worldState = new WorldState();
     this.worldPersistence = getWorldPersistence();
+    this.stockMarketPersistence = getStockMarketPersistence();
     this.npcDefinitions = new Map();
     this.npcRuntimeMeta = new Map();
     this.transcripts = new Map();
@@ -901,7 +902,7 @@ export class WorldRoom extends Room {
     this.playerAliasSequence = 0;
     this.playerPositionMeta = new Map();
     this.pickupSequence = 0;
-    this.stockMarket = createInitialStockMarketState(Date.now());
+    this.stockMarket = this.stockMarketPersistence.getInitialMarket(Date.now());
     this.stockPortfolios = new Map();
     this.playerSnapshots = getPlayerSnapshots();
     this.playerSnapshotIds = new Map();
@@ -1319,6 +1320,7 @@ export class WorldRoom extends Room {
 
   async onDispose() {
     await this.flushDirtyPlayerSnapshots({ force: true });
+    await this.persistStockMarket('room-dispose');
   }
 
   isClientSessionConnected(sessionId = '') {
@@ -1419,6 +1421,18 @@ export class WorldRoom extends Room {
       ? [...this.state.players.keys()]
       : [...this.dirtyPlayerSnapshots];
     await Promise.all(sessionIds.map((sessionId) => this.savePlayerSnapshot(sessionId)));
+  }
+
+  async persistStockMarket(reason = 'update') {
+    try {
+      return await this.stockMarketPersistence.save(this.stockMarket);
+    } catch (error) {
+      logServerError('room', 'Failed to persist stock market.', error, {
+        roomId: this.roomId,
+        reason
+      });
+      return null;
+    }
   }
 
   isAdminJoin(options = {}) {
@@ -1906,8 +1920,10 @@ export class WorldRoom extends Room {
   handleStockMarketRequest(client, message = {}) {
     const { player } = this.assertStockMarketAccess(client, message);
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
+    const market = serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now());
+    void this.persistStockMarket('market-request');
     return {
-      market: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      market,
       money: player.money
     };
   }
@@ -1939,6 +1955,7 @@ export class WorldRoom extends Room {
     if (this.dirtyPlayerSnapshots.has(client.sessionId)) {
       await this.savePlayerSnapshot(client.sessionId);
     }
+    await this.persistStockMarket('stock-trade');
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     if (npc) {
       this.setNpcChatPhase(
@@ -1962,8 +1979,10 @@ export class WorldRoom extends Room {
     }
 
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
+    const wallet = serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now());
+    void this.persistStockMarket('wallet-snapshot');
     return {
-      wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      wallet,
       money: player.money
     };
   }

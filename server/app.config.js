@@ -22,6 +22,7 @@ import {
 } from './src/agentDeployments.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 import { getPlayerSnapshotsInfo } from './src/playerSnapshots.js';
+import { getStockMarketPersistenceInfo } from './src/stockMarketPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST_ROOT = path.join(PROJECT_ROOT, 'dist');
@@ -487,6 +488,7 @@ const server = defineServer({
       res.setHeader('Cache-Control', 'no-store, max-age=0');
       const persistence = getWorldPersistenceInfo();
       const playerSnapshots = getPlayerSnapshotsInfo();
+      const stockMarketPersistence = getStockMarketPersistenceInfo();
       res.json({
         ok: true,
         service: 'vibe-theft-auto-colyseus',
@@ -496,6 +498,7 @@ const server = defineServer({
         publicAddressConfigured: Boolean(colyseusPublicAddress),
         persistenceMode: persistence.mode,
         worldKey: persistence.worldKey,
+        stockMarketPersistenceMode: stockMarketPersistence.mode,
         playerSnapshotPersistenceMode: playerSnapshots.mode,
         playerSnapshotTtlMs: playerSnapshots.ttlMs,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),

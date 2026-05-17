@@ -51,6 +51,7 @@ import {
   executeStockTrade,
   getStockMarketPromptRadius,
   isStockMarketNpc,
+  normalizeStockMarketSnapshot,
   normalizeStockPortfolioSnapshot,
   serializeStockMarket
 } from '../shared/stockMarket.js';
@@ -177,6 +178,7 @@ const NPC_SHOT_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
 const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
+const MOCK_STOCK_MARKET_STORAGE_KEY = 'vta.mockStockMarket';
 const MOCK_STOCK_PORTFOLIOS_STORAGE_KEY = 'vta.mockStockPortfolios';
 
 function makeTranscriptEntry(id, speaker, author, text) {
@@ -260,6 +262,27 @@ function writeMockStockPortfolios(playerId = 'local-player', stockPortfolios = {
       getMockStockPortfoliosStorageKey(playerId),
       JSON.stringify(normalizeMockCharacterStockPortfolios(stockPortfolios))
     );
+  } catch {
+    // Local mock persistence is best-effort.
+  }
+}
+
+function readMockStockMarket() {
+  try {
+    const raw = window.localStorage?.getItem(MOCK_STOCK_MARKET_STORAGE_KEY);
+    return normalizeStockMarketSnapshot(raw ? JSON.parse(raw) : null, Date.now());
+  } catch {
+    return null;
+  }
+}
+
+function writeMockStockMarket(stockMarket = null) {
+  try {
+    const normalized = normalizeStockMarketSnapshot(stockMarket, Date.now());
+    if (!normalized) {
+      return;
+    }
+    window.localStorage?.setItem(MOCK_STOCK_MARKET_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // Local mock persistence is best-effort.
   }
@@ -413,7 +436,7 @@ export class NpcServiceMock {
       npcDebug: new Map(),
       pickups: new Map()
     };
-    this.stockMarket = createInitialStockMarketState(Date.now());
+    this.stockMarket = readMockStockMarket() ?? createInitialStockMarketState(Date.now());
     this.stockPortfolios = new Map();
     this.blackjackSessions = new Map();
     this.sequence = 0;
@@ -1396,6 +1419,10 @@ export class NpcServiceMock {
     writeMockStockPortfolios(this.playerId, this.stockPortfolios.get(this.state.sessionId) ?? {});
   }
 
+  persistStockMarket() {
+    writeMockStockMarket(this.stockMarket);
+  }
+
   getStockMarketNpcForPlayer(player, requestedNpcId = '') {
     const normalizedNpcId = typeof requestedNpcId === 'string'
       ? requestedNpcId.trim()
@@ -1447,9 +1474,11 @@ export class NpcServiceMock {
     }
 
     const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
+    const market = serializeStockMarket(this.stockMarket, portfolio, access.player.money, Date.now());
+    this.persistStockMarket();
     return {
       ok: true,
-      market: serializeStockMarket(this.stockMarket, portfolio, access.player.money, Date.now()),
+      market,
       money: access.player.money
     };
   }
@@ -1488,6 +1517,7 @@ export class NpcServiceMock {
       this.normalizePlayerSelectedMission(access.player);
     }
     this.persistStockPortfolios();
+    this.persistStockMarket();
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     if (access.npc) {
       this.setNpcChatPhase(
@@ -1513,9 +1543,11 @@ export class NpcServiceMock {
     }
 
     const portfolio = this.getPlayerStockPortfolio(this.state.sessionId);
+    const wallet = serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now());
+    this.persistStockMarket();
     return {
       ok: true,
-      wallet: serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now()),
+      wallet,
       money: player.money
     };
   }

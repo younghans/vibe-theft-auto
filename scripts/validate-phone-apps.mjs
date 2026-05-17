@@ -4,7 +4,9 @@ import path from 'node:path';
 import {
   createInitialStockMarketState,
   executeStockTrade,
+  normalizeStockMarketSnapshot,
   normalizeStockPortfolioSnapshot,
+  normalizeStockTradeQuantity,
   serializeStockMarket
 } from '../src/shared/stockMarket.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -24,6 +26,8 @@ assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
 assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
 assert.match(hudSource, /data-phone-stock-trade/, 'Stocks app exposes buy and sell actions');
+assert.doesNotMatch(hudSource, /max="999"/, 'Stock share inputs do not cap trades at 999 shares');
+assert.doesNotMatch(hudSource, /Math\.min\(999/, 'Stock HUD state does not clamp trades to 999 shares');
 assert.match(hudSource, /data-money-net-worth/, 'Main cash HUD displays net worth beside cash');
 assert.match(hudSource, /setMoneyState\(\{ amount = 0, netWorth = amount, stockProfit = 0 \}/, 'Main cash HUD accepts stock-aware net worth state');
 assert.match(hudSource, /data-phone-skills-app/, 'Skills app has dedicated phone markup');
@@ -77,11 +81,15 @@ assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet
 assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade access path for phone trading');
 assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
 assert.match(serverSource, /stockPortfolios:/, 'Server snapshots persist character-specific stock portfolios');
+assert.match(serverSource, /getStockMarketPersistence/, 'Server loads persistent stock market state');
+assert.match(serverSource, /persistStockMarket\('wallet-snapshot'\)/, 'Server persists market tape after wallet/phone refreshes');
+assert.match(serverSource, /persistStockMarket\('stock-trade'\)/, 'Server persists market tape after stock trades');
 assert.match(serverSource, /async handleStockTradeRequest[\s\S]*queuePlayerSnapshotSave\(client\.sessionId\)/, 'Server queues a snapshot save after stock trades');
 assert.match(serverSource, /async handleStockTradeRequest[\s\S]*await this\.savePlayerSnapshot\(client\.sessionId\)/, 'Server persists stock trades before confirming them');
 assert.match(colyseusNpcSource, /source:\s*options\?\.source/, 'Colyseus stock trades forward source metadata');
 assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock trades support phone source metadata');
 assert.match(mockNpcSource, /MOCK_STOCK_PORTFOLIOS_STORAGE_KEY/, 'Mock transport persists stock portfolios locally');
+assert.match(mockNpcSource, /MOCK_STOCK_MARKET_STORAGE_KEY/, 'Mock transport persists stock market tape locally');
 
 const market = createInitialStockMarketState(1000);
 const portfolio = {};
@@ -115,5 +123,21 @@ assert.equal(
   'number',
   'stock portfolio snapshots preserve average cost'
 );
+
+assert.equal(normalizeStockTradeQuantity(1200), 1200, 'stock trades support quantities above 999');
+const largePortfolio = {};
+const largeTrade = executeStockTrade({
+  state: market,
+  portfolio: largePortfolio,
+  cash: 1000000,
+  symbol: before.stocks[0].symbol,
+  side: 'buy',
+  quantity: 1200,
+  now: 1000
+});
+assert.equal(largeTrade.ok, true, 'stock buys over 999 shares are accepted when cash is available');
+assert.equal(largeTrade.trade.quantity, 1200, 'stock buys over 999 shares preserve requested quantity');
+const persistedMarket = normalizeStockMarketSnapshot(market, 1000);
+assert.ok(persistedMarket?.stocks?.[before.stocks[0].symbol], 'stock market snapshots preserve listed stock tape');
 
 console.log('Phone apps validation passed.');
