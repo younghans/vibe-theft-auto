@@ -3399,7 +3399,11 @@ body.is-admin-prompt-resizing * {
   position: absolute;
   left: 24px;
   top: 64px;
-  width: min(280px, calc(100vw - 48px));
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 0.38em;
+  width: min(420px, calc(100vw - 48px));
   max-width: calc(100vw - 48px);
   transform: none;
   pointer-events: none;
@@ -3407,7 +3411,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__money-value {
-  display: block;
+  display: inline-block;
   font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
   font-size: clamp(1.2rem, 2.6vw, 1.7rem);
   font-weight: 900;
@@ -3426,6 +3430,24 @@ body.is-admin-prompt-resizing * {
   white-space: nowrap;
 }
 
+.hud__money-net-worth {
+  display: inline-block;
+  font-family: Impact, Haettenschweiler, "Arial Black", sans-serif;
+  font-size: clamp(0.9rem, 1.9vw, 1.18rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0;
+  color: #d7d9d7;
+  -webkit-text-stroke: clamp(1px, 0.1vw, 1.5px) #180d08;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 0 #180d08,
+    0 0.04em 0 #180d08,
+    0 0.1em 0 rgba(29, 11, 5, 0.78),
+    0 0.18em 0.2em rgba(0, 0, 0, 0.42);
+  white-space: nowrap;
+}
+
 .hud__money.is-negative .hud__money-value {
   color: #ff3434;
   text-shadow:
@@ -3434,6 +3456,24 @@ body.is-admin-prompt-resizing * {
     0 0.08em 0 #5a0909,
     0 0.14em 0 rgba(58, 8, 8, 0.88),
     0 0.22em 0.24em rgba(0, 0, 0, 0.46);
+}
+
+.hud__money-net-worth.is-up {
+  color: #4df28b;
+  text-shadow:
+    0 0 0 #12301b,
+    0 0.04em 0 #12301b,
+    0 0.1em 0 rgba(14, 58, 29, 0.82),
+    0 0.18em 0.26em rgba(13, 129, 55, 0.36);
+}
+
+.hud__money-net-worth.is-down {
+  color: #ff3434;
+  text-shadow:
+    0 0 0 #180d08,
+    0 0.04em 0 #180d08,
+    0 0.1em 0 rgba(58, 8, 8, 0.88),
+    0 0.18em 0.24em rgba(0, 0, 0, 0.46);
 }
 
 .hud__task {
@@ -13976,7 +14016,7 @@ canvas {
   .hud__money {
     left: 16px;
     top: 54px;
-    width: clamp(144px, calc(100vw - 152px), 220px);
+    width: clamp(172px, calc(100vw - 132px), 320px);
     max-width: calc(100vw - 32px);
   }
 
@@ -14087,6 +14127,10 @@ canvas {
 
   .hud__money-value {
     font-size: clamp(1rem, 6vw, 1.45rem);
+  }
+
+  .hud__money-net-worth {
+    font-size: clamp(0.78rem, 4.4vw, 1rem);
   }
 
   .hud__phone-launcher {

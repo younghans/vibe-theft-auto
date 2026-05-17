@@ -24,6 +24,8 @@ assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
 assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
 assert.match(hudSource, /data-phone-stock-trade/, 'Stocks app exposes buy and sell actions');
+assert.match(hudSource, /data-money-net-worth/, 'Main cash HUD displays net worth beside cash');
+assert.match(hudSource, /setMoneyState\(\{ amount = 0, netWorth = amount, stockProfit = 0 \}/, 'Main cash HUD accepts stock-aware net worth state');
 assert.match(hudSource, /data-phone-skills-app/, 'Skills app has dedicated phone markup');
 assert.match(hudSource, /data-phone-map-app/, 'Map app has dedicated phone markup');
 assert.match(hudSource, /data-phone-map-zoom-in/, 'Map app exposes zoom in control');
@@ -36,12 +38,18 @@ assert.match(hudSource, /data-map-capture-toggle/, 'Admin map capture button is 
 assert.match(hudSource, /setMapCaptureState/, 'HUD can show admin map capture state');
 assert.match(stylesSource, /\.hud__top-right-stack\s*{\s*display:\s*contents;/, 'Mobile HUD keeps fixed admin prompt panel renderable');
 assert.match(stylesSource, /\.hud__top-right-stack > \.hud__admin-position,[\s\S]*\.hud__top-right-stack > \.hud__panel\s*{\s*display:\s*none;/, 'Mobile HUD only hides passive top-right admin controls');
+assert.match(stylesSource, /\.hud__money-net-worth\.is-up/, 'Main HUD net worth turns green when stocks are up');
+assert.match(stylesSource, /\.hud__money-net-worth\.is-down/, 'Main HUD net worth turns red when stocks are down');
 assert.match(hudSource, /data-phone-settings-app/, 'Settings app has dedicated phone markup');
 assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio slider');
 assert.match(hudSource, /WASD \/ left touch stick/, 'Settings controls list includes movement binding');
 assert.match(hudSource, /Tab \/ phone button/, 'Settings controls list includes phone binding');
 
 assert.match(gameSource, /getWalletSnapshot/, 'Game requests authoritative wallet snapshots');
+assert.match(gameSource, /refreshWalletSnapshot\(\{ passive: true \}\)/, 'Game passively refreshes wallet snapshots for the main HUD');
+assert.match(gameSource, /scheduleWalletSnapshotRefresh\(result\.wallet, STOCK_MARKET_TICK_MS\)/, 'Wallet HUD refresh follows stock market ticks');
+assert.match(gameSource, /stockMarketSnapshotCharacterId/, 'Wallet market snapshots are scoped to the active character');
+assert.match(gameSource, /getStockUnrealizedProfit/, 'Game derives main HUD stock gain/loss coloring from unrealized profit');
 assert.match(gameSource, /openWalletStocks/, 'Game wires Wallet Stocks action');
 assert.match(gameSource, /handlePhoneStockTrade/, 'Game wires phone stock trading');
 assert.match(gameSource, /source:\s*'phone'/, 'Phone stock trades identify the phone as the trade source');

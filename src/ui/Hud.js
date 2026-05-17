@@ -3137,6 +3137,7 @@ export class Hud {
     this.drunknessLabels = Array.from(this.overlay.querySelectorAll('[data-drunkness-label-level]'));
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
+    this.moneyNetWorth = this.overlay.querySelector('[data-money-net-worth]');
     this.taskRoot = this.overlay.querySelector('[data-task]');
     this.taskTitle = this.overlay.querySelector('[data-task-title]');
     this.taskConfetti = this.overlay.querySelector('[data-task-confetti]');
@@ -3622,6 +3623,7 @@ export class Hud {
       </section>
       <section class="hud__money" data-money aria-label="Money" aria-live="polite">
         <span class="hud__money-value" data-money-value>$0</span>
+        <span class="hud__money-net-worth is-flat" data-money-net-worth>($0)</span>
       </section>
       <section class="hud__task" data-task aria-live="polite" hidden>
         <div class="hud__task-viewport">
@@ -8372,15 +8374,32 @@ export class Hud {
     this.hitMarker.classList.toggle('is-visible', visible);
   }
 
-  setMoneyState({ amount = 0 } = {}) {
+  setMoneyState({ amount = 0, netWorth = amount, stockProfit = 0 } = {}) {
     if (!this.moneyRoot || !this.moneyValue) {
       return;
     }
 
     const numeric = Number(amount ?? 0);
     const money = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+    const netWorthNumeric = Number(netWorth ?? money);
+    const displayedNetWorth = Number.isFinite(netWorthNumeric) ? Math.trunc(netWorthNumeric) : money;
+    const profitNumeric = Number(stockProfit ?? 0);
+    const displayedProfit = Number.isFinite(profitNumeric) ? Math.trunc(profitNumeric) : 0;
+    const trendClass = getStockTrendClass(displayedProfit);
     this.moneyValue.textContent = formatMoneyAmount(money);
     this.moneyRoot.classList.toggle('is-negative', money < 0);
+    this.moneyRoot.classList.toggle('has-net-worth', true);
+    this.moneyRoot.setAttribute(
+      'aria-label',
+      `Cash ${formatMoneyAmount(money)}. Net worth ${formatMoneyAmount(displayedNetWorth)}.`
+    );
+
+    if (this.moneyNetWorth) {
+      this.moneyNetWorth.textContent = `(${formatMoneyAmount(displayedNetWorth)})`;
+      this.moneyNetWorth.classList.toggle('is-up', trendClass === 'is-up');
+      this.moneyNetWorth.classList.toggle('is-down', trendClass === 'is-down');
+      this.moneyNetWorth.classList.toggle('is-flat', trendClass === 'is-flat');
+    }
   }
 
   setTaskState({ visible = false, title = '' } = {}) {

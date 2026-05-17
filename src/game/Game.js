@@ -95,6 +95,7 @@ import {
 } from '../shared/gymMembership.js';
 import { RENT_INTRO_LINE } from '../shared/rentIntro.js';
 import {
+  STOCK_MARKET_TICK_MS,
   getStockMarketPromptRadius,
   isStockMarketNpc,
   normalizeStockTradeQuantity
@@ -178,6 +179,8 @@ const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
+const STOCK_SNAPSHOT_TICK_GRACE_MS = 180;
+const STOCK_SNAPSHOT_RETRY_MS = 3500;
 const DEATH_CAMERA_ZOOM_LEVEL = 3.25;
 const DEATH_CAMERA_ZOOM_TRANSITION_MS = 2600;
 const AIM_DIRECTION_MIN_DISTANCE = 3;
@@ -830,6 +833,7 @@ export class Game {
     this.gymMembershipRequestInFlight = false;
     this.stockMarketNpcId = '';
     this.stockMarketSnapshot = null;
+    this.stockMarketSnapshotCharacterId = '';
     this.stockMarketSelectedSymbol = '';
     this.stockMarketQuantity = 1;
     this.stockMarketRequestInFlight = false;
@@ -1667,13 +1671,16 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     this.phoneWalletState = {
       ...this.phoneWalletState,
+      wallet: this.getActiveStockMarketSnapshot(localPlayerState) ?? this.phoneWalletState.wallet,
       cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0)
     };
     this.hud.setPhoneWalletState(this.phoneWalletState);
   }
 
   refreshPhoneStocksHud() {
-    const market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+    const market = this.getActiveStockMarketSnapshot()
+      ?? this.phoneStocksState.market
+      ?? this.phoneWalletState.wallet;
     const stocks = Array.isArray(market?.stocks) ? market.stocks : [];
     const listedSymbols = new Set(stocks.map((stock) => stock.symbol));
     if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
@@ -1686,6 +1693,74 @@ export class Game {
       quantity: this.stockMarketQuantity
     };
     this.hud.setPhoneStocksState(this.phoneStocksState);
+  }
+
+  getLocalPlayerCharacterId(localPlayerState = this.getLocalPlayerState()) {
+    return getPlayableCharacterById(
+      localPlayerState?.characterId
+      ?? this.player?.characterId
+      ?? this.desiredLocalCharacterId
+    ).id;
+  }
+
+  setStockMarketSnapshot(snapshot = null, characterId = this.getLocalPlayerCharacterId()) {
+    this.stockMarketSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : null;
+    this.stockMarketSnapshotCharacterId = this.stockMarketSnapshot
+      ? getPlayableCharacterById(characterId).id
+      : '';
+  }
+
+  clearStockMarketSnapshot() {
+    this.setStockMarketSnapshot(null);
+    this.phoneWalletState = {
+      ...this.phoneWalletState,
+      wallet: null
+    };
+    this.phoneStocksState = {
+      ...this.phoneStocksState,
+      market: null
+    };
+    this.walletRefreshAt = 0;
+    this.stockMarketRefreshAt = 0;
+  }
+
+  getActiveStockMarketSnapshot(localPlayerState = this.getLocalPlayerState()) {
+    if (!this.stockMarketSnapshot) {
+      return null;
+    }
+
+    const characterId = this.getLocalPlayerCharacterId(localPlayerState);
+    return this.stockMarketSnapshotCharacterId === characterId
+      ? this.stockMarketSnapshot
+      : null;
+  }
+
+  getStockSnapshotRefreshDelay(snapshot = null, fallbackMs = STOCK_SNAPSHOT_RETRY_MS) {
+    const nextTickAt = Number(snapshot?.nextTickAt ?? 0);
+    if (Number.isFinite(nextTickAt) && nextTickAt > 0) {
+      const delayUntilTick = nextTickAt - Date.now() + STOCK_SNAPSHOT_TICK_GRACE_MS;
+      if (delayUntilTick > 0) {
+        return Math.max(750, delayUntilTick);
+      }
+    }
+
+    return Math.max(750, Number(fallbackMs) || STOCK_MARKET_TICK_MS);
+  }
+
+  scheduleWalletSnapshotRefresh(snapshot = null, fallbackMs = STOCK_SNAPSHOT_RETRY_MS) {
+    this.walletRefreshAt = performance.now() + this.getStockSnapshotRefreshDelay(snapshot, fallbackMs);
+  }
+
+  scheduleStockMarketRefresh(snapshot = null, fallbackMs = STOCK_MARKET_TICK_MS) {
+    this.stockMarketRefreshAt = performance.now() + this.getStockSnapshotRefreshDelay(snapshot, fallbackMs);
+  }
+
+  getStockUnrealizedProfit(snapshot = null) {
+    const stocks = Array.isArray(snapshot?.stocks) ? snapshot.stocks : [];
+    return stocks.reduce(
+      (sum, stock) => sum + normalizeMoneyAmount(stock?.unrealizedProfit ?? 0),
+      0
+    );
   }
 
   refreshPhoneMapHud(localPlayerState = this.getLocalPlayerState(), { force = false } = {}) {
@@ -2094,7 +2169,8 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     const selectedPlacement = this.worldBuilder?.getSelectedPlacement?.();
     const hoveredPlacement = this.worldBuilder?.getHoveredPlacement?.();
-    const selectedStock = this.stockMarketSnapshot?.stocks?.find?.((stock) => stock.symbol === this.stockMarketSelectedSymbol) ?? null;
+    const activeStockMarketSnapshot = this.getActiveStockMarketSnapshot(localPlayerState);
+    const selectedStock = activeStockMarketSnapshot?.stocks?.find?.((stock) => stock.symbol === this.stockMarketSelectedSymbol) ?? null;
     const snapshot = {
       url: window.location.href,
       buildVersion: this.currentBuildCommitSha,
@@ -2157,11 +2233,13 @@ export class Game {
             state: this.blackjackState
           }
         : null,
-      stockMarket: this.stockMarketSnapshot
+      stockMarket: activeStockMarketSnapshot
         ? {
             selectedSymbol: this.stockMarketSelectedSymbol,
             quantity: this.stockMarketQuantity,
-            marketMood: this.stockMarketSnapshot.marketMood ?? '',
+            marketMood: activeStockMarketSnapshot.marketMood ?? '',
+            netWorth: activeStockMarketSnapshot.netWorth ?? 0,
+            stockProfit: this.getStockUnrealizedProfit(activeStockMarketSnapshot),
             selectedStock
           }
         : null,
@@ -3177,53 +3255,79 @@ export class Game {
     };
   }
 
-  async refreshWalletSnapshot({ force = false } = {}) {
-    if (this.walletRequestInFlight) {
+  async refreshWalletSnapshot({ force = false, passive = false } = {}) {
+    if (this.walletRequestInFlight || !this.npcService?.getWalletSnapshot || !this.npcServiceState?.sessionId) {
       return;
     }
 
     const now = performance.now();
     if (!force && now < this.walletRefreshAt) {
-      this.refreshPhoneWalletHud();
-      this.refreshPhoneStocksHud();
+      if (!passive) {
+        this.refreshPhoneWalletHud();
+        this.refreshPhoneStocksHud();
+      }
       return;
     }
 
     this.walletRequestInFlight = true;
-    this.walletRefreshAt = now + 3500;
-    this.phoneWalletState = {
-      ...this.phoneWalletState,
-      loading: true,
-      error: ''
-    };
-    this.phoneStocksState = {
-      ...this.phoneStocksState,
-      loading: true,
-      error: ''
-    };
-    this.refreshPhoneWalletHud();
-    this.refreshPhoneStocksHud();
+    this.walletRefreshAt = now + STOCK_SNAPSHOT_RETRY_MS;
+    const requestCharacterId = this.getLocalPlayerCharacterId();
+    if (!passive) {
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        loading: true,
+        error: ''
+      };
+      this.phoneStocksState = {
+        ...this.phoneStocksState,
+        loading: true,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+      this.refreshPhoneStocksHud();
+    }
 
     try {
       const result = await this.npcService?.getWalletSnapshot?.();
       if (!result?.ok || !result.wallet) {
         const error = result?.error ?? 'Wallet sync failed.';
-        this.phoneWalletState = {
-          ...this.phoneWalletState,
-          loading: false,
-          error
-        };
-        this.phoneStocksState = {
-          ...this.phoneStocksState,
-          loading: false,
-          error
-        };
-        this.refreshPhoneWalletHud();
-        this.refreshPhoneStocksHud();
+        this.scheduleWalletSnapshotRefresh(null, STOCK_SNAPSHOT_RETRY_MS);
+        if (!passive) {
+          this.phoneWalletState = {
+            ...this.phoneWalletState,
+            loading: false,
+            error
+          };
+          this.phoneStocksState = {
+            ...this.phoneStocksState,
+            loading: false,
+            error
+          };
+          this.refreshPhoneWalletHud();
+          this.refreshPhoneStocksHud();
+        }
         return;
       }
 
-      this.stockMarketSnapshot = result.wallet;
+      if (requestCharacterId !== this.getLocalPlayerCharacterId()) {
+        this.scheduleWalletSnapshotRefresh(null, 750);
+        if (!passive) {
+          this.phoneWalletState = {
+            ...this.phoneWalletState,
+            loading: false
+          };
+          this.phoneStocksState = {
+            ...this.phoneStocksState,
+            loading: false
+          };
+          this.refreshPhoneWalletHud();
+          this.refreshPhoneStocksHud();
+        }
+        return;
+      }
+
+      this.setStockMarketSnapshot(result.wallet, requestCharacterId);
+      this.scheduleWalletSnapshotRefresh(result.wallet, STOCK_MARKET_TICK_MS);
       this.phoneWalletState = {
         ...this.phoneWalletState,
         wallet: result.wallet,
@@ -3241,18 +3345,21 @@ export class Game {
       this.refreshPhoneStocksHud();
     } catch (error) {
       console.warn('[Wallet] Snapshot failed.', error);
-      this.phoneWalletState = {
-        ...this.phoneWalletState,
-        loading: false,
-        error: 'Wallet sync failed.'
-      };
-      this.phoneStocksState = {
-        ...this.phoneStocksState,
-        loading: false,
-        error: 'Wallet sync failed.'
-      };
-      this.refreshPhoneWalletHud();
-      this.refreshPhoneStocksHud();
+      this.scheduleWalletSnapshotRefresh(null, STOCK_SNAPSHOT_RETRY_MS);
+      if (!passive) {
+        this.phoneWalletState = {
+          ...this.phoneWalletState,
+          loading: false,
+          error: 'Wallet sync failed.'
+        };
+        this.phoneStocksState = {
+          ...this.phoneStocksState,
+          loading: false,
+          error: 'Wallet sync failed.'
+        };
+        this.refreshPhoneWalletHud();
+        this.refreshPhoneStocksHud();
+      }
     } finally {
       this.walletRequestInFlight = false;
     }
@@ -3328,8 +3435,11 @@ export class Game {
     this.desiredLocalCharacterId = nextCharacterId;
     this.storeSelectedCharacterId(nextCharacterId);
     this.pendingCharacterRequestId = '';
+    this.clearStockMarketSnapshot();
     this.refreshCharacterSelectorHud();
     this.refreshPhoneCharacterHud();
+    this.refreshPhoneWalletHud();
+    this.refreshPhoneStocksHud();
     void this.swapLocalPlayerCharacter(nextCharacterId);
     this.syncPreferredCharacterSelection();
   }
@@ -4980,10 +5090,10 @@ export class Game {
       return;
     }
 
-    let market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+    let market = this.getActiveStockMarketSnapshot() ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
     if (!Array.isArray(market?.stocks) || !market.stocks.length) {
       await this.refreshPhoneStocksSnapshot({ force: true });
-      market = this.stockMarketSnapshot ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
+      market = this.getActiveStockMarketSnapshot() ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
     }
 
     const listedSymbols = new Set((market?.stocks ?? []).map((stock) => stock.symbol));
@@ -5023,7 +5133,8 @@ export class Game {
         return;
       }
 
-      this.stockMarketSnapshot = result.market;
+      this.setStockMarketSnapshot(result.market);
+      this.scheduleWalletSnapshotRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.phoneWalletState = {
         ...this.phoneWalletState,
         wallet: result.market,
@@ -5041,7 +5152,7 @@ export class Game {
       this.stockMarketSelectedSymbol = listedAfterTrade.has(symbol)
         ? symbol
         : result.market.stocks?.[0]?.symbol ?? '';
-      this.stockMarketRefreshAt = performance.now() + 4600;
+      this.scheduleStockMarketRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.refreshPhoneStocksHud();
       this.refreshPhoneWalletHud();
       this.hud.setStockMarketState({
@@ -5132,7 +5243,7 @@ export class Game {
     }
 
     this.stockMarketRequestInFlight = true;
-    this.stockMarketRefreshAt = now + 4600;
+    this.stockMarketRefreshAt = now + STOCK_SNAPSHOT_RETRY_MS;
     if (force) {
       this.hud.setStockMarketState({
         visible: true,
@@ -5160,7 +5271,9 @@ export class Game {
         return;
       }
 
-      this.stockMarketSnapshot = result.market;
+      this.setStockMarketSnapshot(result.market);
+      this.scheduleStockMarketRefresh(result.market, STOCK_MARKET_TICK_MS);
+      this.scheduleWalletSnapshotRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.phoneWalletState = {
         ...this.phoneWalletState,
         wallet: result.market,
@@ -5247,7 +5360,8 @@ export class Game {
         return;
       }
 
-      this.stockMarketSnapshot = result.market;
+      this.setStockMarketSnapshot(result.market);
+      this.scheduleWalletSnapshotRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.phoneWalletState = {
         ...this.phoneWalletState,
         wallet: result.market,
@@ -5266,7 +5380,7 @@ export class Game {
       this.stockMarketSelectedSymbol = listedSymbols.has(symbol)
         ? symbol
         : result.market.stocks?.[0]?.symbol ?? '';
-      this.stockMarketRefreshAt = performance.now() + 4600;
+      this.scheduleStockMarketRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.hud.setStockMarketState({
         visible: this.hud.isStockMarketOpen(),
         market: this.stockMarketSnapshot,
@@ -10520,8 +10634,13 @@ export class Game {
   }
 
   syncMoneyHud(targetAmount) {
+    const amount = this.getAnimatedMoneyAmount(targetAmount);
+    const wallet = this.getActiveStockMarketSnapshot();
+    const portfolioValue = normalizeMoneyAmount(wallet?.portfolioValue ?? 0);
     this.hud.setMoneyState({
-      amount: this.getAnimatedMoneyAmount(targetAmount)
+      amount,
+      netWorth: amount + portfolioValue,
+      stockProfit: this.getStockUnrealizedProfit(wallet)
     });
   }
 
@@ -10793,10 +10912,13 @@ export class Game {
 
     if (this.player.characterId !== authoritativeCharacterId) {
       if (!this.pendingCharacterRequestId || authoritativeCharacterId === this.desiredLocalCharacterId) {
+        this.clearStockMarketSnapshot();
         this.desiredLocalCharacterId = authoritativeCharacterId;
         this.storeSelectedCharacterId(authoritativeCharacterId);
         this.refreshCharacterSelectorHud();
         this.refreshPhoneCharacterHud();
+        this.refreshPhoneWalletHud();
+        this.refreshPhoneStocksHud();
         void this.swapLocalPlayerCharacter(authoritativeCharacterId);
         return;
       }
@@ -12203,6 +12325,8 @@ export class Game {
     this.refreshHotbarHud();
     if (this.hud.isStockMarketOpen()) {
       void this.refreshStockMarket();
+    } else if (localPlayerState?.alive !== false) {
+      void this.refreshWalletSnapshot({ passive: true });
     }
     this.updateAdminPromptPolling();
     if (this.hud.isSchoolMicrogameOpen()) {
