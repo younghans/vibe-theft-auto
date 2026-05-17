@@ -11,6 +11,7 @@ import { assets } from '../src/world/assetManifest.js';
 const root = process.cwd();
 const hudSource = fs.readFileSync(path.join(root, 'src/ui/Hud.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'src/game/Game.js'), 'utf8');
+const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
 const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'), 'utf8');
@@ -32,6 +33,8 @@ assert.match(hudSource, /data-phone-map-tooltip-popover/, 'Map app renders a cus
 assert.match(hudSource, /showPhoneMapTooltip/, 'Map app shows instant waypoint tooltips');
 assert.match(hudSource, /data-map-capture-toggle/, 'Admin map capture button is present');
 assert.match(hudSource, /setMapCaptureState/, 'HUD can show admin map capture state');
+assert.match(stylesSource, /\.hud__top-right-stack\s*{\s*display:\s*contents;/, 'Mobile HUD keeps fixed admin prompt panel renderable');
+assert.match(stylesSource, /\.hud__top-right-stack > \.hud__admin-position,[\s\S]*\.hud__top-right-stack > \.hud__panel\s*{\s*display:\s*none;/, 'Mobile HUD only hides passive top-right admin controls');
 assert.match(hudSource, /data-phone-settings-app/, 'Settings app has dedicated phone markup');
 assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio slider');
 assert.match(hudSource, /WASD \/ left touch stick/, 'Settings controls list includes movement binding');

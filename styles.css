@@ -14457,6 +14457,11 @@ canvas {
   }
 
   .hud__top-right-stack {
+    display: contents;
+  }
+
+  .hud__top-right-stack > .hud__admin-position,
+  .hud__top-right-stack > .hud__panel {
     display: none;
   }
 
