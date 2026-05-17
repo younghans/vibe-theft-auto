@@ -104,6 +104,7 @@ import {
   OFFICE_JOB_TERMINAL_RADIUS,
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
+  getOfficeJobLockedMessage,
   getOfficeJobReward
 } from '../shared/officeJobs.js';
 import {
@@ -132,6 +133,7 @@ import {
   applySkillXpToPlayer,
   getCharismaDrinkXp,
   getPlayerSkillXp,
+  getSkillLevelFromXp,
   normalizeSkillId
 } from '../shared/skills.js';
 import { normalizeVibeHeroSongId } from '../shared/vibeHero.js';
@@ -2209,8 +2211,9 @@ export class NpcServiceMock {
     }
 
     const intelligence = getPlayerSkillXp(access.player, SKILL_IDS.intelligence);
-    if (!canPlayerWorkOfficeJob(intelligence, job)) {
-      return { ok: false, error: `${job.roleLabel} requires ${job.intelligenceRequired} Intelligence.` };
+    const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(access.player, SKILL_IDS.charisma));
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
+      return { ok: false, error: getOfficeJobLockedMessage(job, { intelligence, charismaLevel }) };
     }
 
     const reward = getOfficeJobReward(job.id);

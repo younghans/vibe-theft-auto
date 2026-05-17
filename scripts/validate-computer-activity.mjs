@@ -22,8 +22,11 @@ import {
   OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
+  canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
   getOfficeJobDefinitionByGameId,
+  getOfficeJobLockedMessage,
+  getOfficeJobRequirementSummary,
   listOfficeJobDefinitions
 } from '../src/shared/officeJobs.js';
 import {
@@ -117,8 +120,14 @@ async function validateOfficeJobTerminalFlow() {
   const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
   const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
   assert(janitor?.rewardMoney === 25 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $25 and require 5 Intelligence.');
-  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 50, 'Office Manager job should pay $100 and require 50 Intelligence.');
-  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 200, 'CEO job should pay $500 and require 200 Intelligence.');
+  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 50 && manager?.charismaLevelRequired === 5, 'Office Manager job should pay $100 and require 50 Intelligence plus level 5 Charisma.');
+  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 200 && ceo?.charismaLevelRequired === 10, 'CEO job should pay $500 and require 200 Intelligence plus level 10 Charisma.');
+  assert(canPlayerWorkOfficeJob(50, manager, 5), 'Office Manager should unlock at level 5 Charisma.');
+  assert(!canPlayerWorkOfficeJob(50, manager, 4), 'Office Manager should stay locked below level 5 Charisma.');
+  assert(canPlayerWorkOfficeJob(200, ceo, 10), 'CEO should unlock at level 10 Charisma.');
+  assert(!canPlayerWorkOfficeJob(200, ceo, 9), 'CEO should stay locked below level 10 Charisma.');
+  assert(getOfficeJobRequirementSummary(manager, { intelligence: 50, charismaLevel: 4 }).includes('Charisma Lv 4/5'), 'Office Manager requirement text should show current and required Charisma level.');
+  assert(getOfficeJobLockedMessage(ceo, { intelligence: 200, charismaLevel: 9 }).includes('Level 10 Charisma'), 'CEO locked message should mention the Charisma level prerequisite.');
 
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');

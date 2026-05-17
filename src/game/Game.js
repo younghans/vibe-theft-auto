@@ -149,6 +149,7 @@ import {
   CHARISMA_VIBE_HERO_XP,
   SKILL_DEFINITIONS,
   SKILL_IDS,
+  getSkillLevelFromXp,
   getPlayerSkillXp,
   getPlayerSkillsSnapshot
 } from '../shared/skills.js';
@@ -160,6 +161,7 @@ import {
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
   getOfficeJobDefinitionByGameId,
+  getOfficeJobLockedMessage,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
 import {
@@ -7858,11 +7860,16 @@ export class Game {
     return getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.intelligence);
   }
 
+  getOfficeJobCharismaLevel() {
+    return getSkillLevelFromXp(getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.charisma));
+  }
+
   getOfficeJobMenuJobs() {
     const intelligence = this.getOfficeJobIntelligence();
+    const charismaLevel = this.getOfficeJobCharismaLevel();
     return listOfficeJobDefinitions().map((job) => ({
       ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job)
+      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel)
     }));
   }
 
@@ -7884,6 +7891,7 @@ export class Game {
       },
       data: {
         intelligence: this.getOfficeJobIntelligence(),
+        charismaLevel: this.getOfficeJobCharismaLevel(),
         jobs: this.getOfficeJobMenuJobs()
       },
       remainingMs: 0,
@@ -8090,6 +8098,7 @@ export class Game {
       rewardMoney: job.rewardMoney,
       rewardXp: job.rewardXp,
       intelligenceRequired: job.intelligenceRequired,
+      charismaLevelRequired: job.charismaLevelRequired,
       accent: job.accent,
       secondaryAccent: job.secondaryAccent,
       icon: job.icon
@@ -8142,13 +8151,14 @@ export class Game {
     }
 
     const intelligence = this.getOfficeJobIntelligence();
-    if (!canPlayerWorkOfficeJob(intelligence, job)) {
-      const required = Math.max(0, Math.floor(Number(job.intelligenceRequired ?? 0) || 0));
-      const message = `${job.roleLabel} requires ${required} Intelligence.`;
+    const charismaLevel = this.getOfficeJobCharismaLevel();
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
+      const message = getOfficeJobLockedMessage(job, { intelligence, charismaLevel });
       if (this.schoolMicrogame?.context === 'office-job') {
         this.schoolMicrogame.data = {
           ...(this.schoolMicrogame.data ?? {}),
           intelligence,
+          charismaLevel,
           jobs: this.getOfficeJobMenuJobs()
         };
         this.schoolMicrogame.message = message;

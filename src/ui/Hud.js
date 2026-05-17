@@ -15,6 +15,7 @@ import {
   OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   canPlayerWorkOfficeJob,
+  getOfficeJobRequirementSummary,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
 import {
@@ -1091,10 +1092,14 @@ function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   ].filter(Boolean).join(' / ');
 }
 
-function getOfficeJobRequirementText(job = {}, intelligence = 0) {
-  const required = Math.max(0, Math.floor(Number(job.intelligenceRequired ?? 0) || 0));
-  const current = Math.max(0, Math.floor(Number(intelligence ?? 0) || 0));
-  return `Intelligence ${current}/${required}`;
+function getOfficeJobRequirementText(job = {}, skills = {}) {
+  const intelligence = typeof skills === 'object'
+    ? skills.intelligence
+    : skills;
+  const charismaLevel = typeof skills === 'object'
+    ? skills.charismaLevel
+    : 0;
+  return getOfficeJobRequirementSummary(job, { intelligence, charismaLevel });
 }
 
 const AGENT_TASK_STATUS_LABELS = Object.freeze({
@@ -1746,7 +1751,12 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
 
 function createReadySchoolMicrogameMarkup(game = null) {
   const round = game?.round ?? {};
-  const requirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
+  const intelligenceRequirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
+  const charismaLevelRequirement = Math.max(0, Math.floor(Number(round.charismaLevelRequired ?? 0) || 0));
+  const requirementText = [
+    intelligenceRequirement > 0 ? `${intelligenceRequirement} Intelligence` : '',
+    charismaLevelRequirement > 0 ? `Level ${charismaLevelRequirement} Charisma` : ''
+  ].filter(Boolean).join(' / ');
   const instructions = String(round.instructions ?? '').trim();
   const officeJobId = String(round.officeJobId ?? round.jobId ?? '');
   const officeReadyBackdrop = game?.context === 'office-job' ? createOfficeJobReadyBackdropMarkup(officeJobId, String(round.gameId ?? '')) : '';
@@ -1765,10 +1775,10 @@ function createReadySchoolMicrogameMarkup(game = null) {
           <strong>${escapeHtml(instructions)}</strong>
         </div>
       ` : ''}
-      ${requirement > 0 ? `
+      ${requirementText ? `
         <div class="hud__school-requirement">
           <span>Requirement</span>
-          <strong>${escapeHtml(String(requirement))} Intelligence</strong>
+          <strong>${escapeHtml(requirementText)}</strong>
         </div>
       ` : ''}
       <div class="hud__school-reward">
@@ -1936,22 +1946,23 @@ function createSchoolCountdownMarkup(game = null) {
 function createOfficeJobMenuMarkup(game = null) {
   const data = game?.data ?? {};
   const intelligence = Math.max(0, Math.floor(Number(data.intelligence ?? 0) || 0));
+  const charismaLevel = Math.max(0, Math.floor(Number(data.charismaLevel ?? 0) || 0));
   const jobs = Array.isArray(data.jobs) && data.jobs.length > 0
     ? data.jobs
     : listOfficeJobDefinitions().map((job) => ({
       ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job)
+      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel)
     }));
 
   return `
     <div class="hud__office-menu">
       <section class="hud__office-menu-summary">
-        <span>Current Intelligence</span>
-        <strong>${escapeHtml(String(intelligence))}</strong>
+        <span>Current Skills</span>
+        <strong>Int ${escapeHtml(String(intelligence))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
       </section>
       <div class="hud__office-job-grid">
         ${jobs.map((job) => {
-          const unlocked = canPlayerWorkOfficeJob(intelligence, job);
+          const unlocked = canPlayerWorkOfficeJob(intelligence, job, charismaLevel);
           const instructions = String(job.instructions ?? '').trim();
           return `
             <button
@@ -1968,7 +1979,7 @@ function createOfficeJobMenuMarkup(game = null) {
               </span>
               <span class="hud__office-job-meta">
                 <em>$${escapeHtml(String(job.rewardMoney ?? 0))}</em>
-                <small>${escapeHtml(getOfficeJobRequirementText(job, intelligence))}</small>
+                <small>${escapeHtml(getOfficeJobRequirementText(job, { intelligence, charismaLevel }))}</small>
               </span>
             </button>
           `;

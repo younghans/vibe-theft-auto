@@ -124,6 +124,7 @@ import {
   OFFICE_JOB_TERMINAL_RADIUS,
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
+  getOfficeJobLockedMessage,
   getOfficeJobReward
 } from '../../src/shared/officeJobs.js';
 import {
@@ -144,6 +145,7 @@ import {
   applySkillXpToPlayer,
   getCharismaDrinkXp,
   getPlayerSkillXp,
+  getSkillLevelFromXp,
   normalizeSkillId
 } from '../../src/shared/skills.js';
 import { normalizeVibeHeroSongId } from '../../src/shared/vibeHero.js';
@@ -2587,8 +2589,9 @@ export class WorldRoom extends Room {
     const { player, terminal } = this.assertOfficeJobAccess(client, message, job.id);
 
     const intelligence = getPlayerSkillXp(player, SKILL_IDS.intelligence);
-    if (!canPlayerWorkOfficeJob(intelligence, job)) {
-      throw new Error(`${job.roleLabel} requires ${job.intelligenceRequired} Intelligence.`);
+    const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(player, SKILL_IDS.charisma));
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
+      throw new Error(getOfficeJobLockedMessage(job, { intelligence, charismaLevel }));
     }
 
     const reward = getOfficeJobReward(job.id);
