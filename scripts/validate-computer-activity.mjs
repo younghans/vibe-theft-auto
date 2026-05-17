@@ -580,6 +580,14 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose a dynamic horizontal marker position.');
   assert(hudSource.includes('is-returning'), 'CEO HUD should show the returning stamp pass.');
   assert(hudSource.includes('hud__office-board-face is-center'), 'CEO boardroom should include animated board members.');
+  assert(hudSource.includes('createOfficeBoardMembersMarkup'), 'CEO board members should use shared markup in ready and active scenes.');
+  assert(hudSource.includes('hud__office-board-top-hat'), 'CEO board members should include top hat props.');
+  assert(hudSource.includes('hud__office-board-monocle'), 'CEO board members should include monocle props.');
+  assert(hudSource.includes('hud__office-board-cane'), 'CEO board members should include cane props.');
+  assert(hudSource.includes('hud__office-board-cash-stack'), 'CEO board members should include stacks of money.');
+  assert(hudSource.includes('hud__office-board-money-bag'), 'CEO board members should include a money bag prop.');
+  assert(hudSource.includes('hud__office-board-cash-fan'), 'CEO board members should include a cash fan prop.');
+  assert(hudSource.includes('hud__office-board-pocket-watch'), 'CEO board members should include a pocket watch prop.');
   assert(hudSource.includes("office:stamp"), 'CEO HUD should expose the stamp action.');
 
   assert(cssSource.includes('@keyframes hud-office-paper-score'), 'Janitor paper toss should land made shots in the basket.');
@@ -602,6 +610,14 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
   assert(cssSource.includes('hud__office-ceo-stamp-pad'), 'CEO stamp should have a polished stamp pad.');
   assert(cssSource.includes('@keyframes hud-office-board-member-bob'), 'CEO board members should animate.');
+  assert(cssSource.includes('.hud__office-board-prop'), 'CEO board props should be separate absolute layers on existing figures.');
+  assert(cssSource.includes('.hud__office-board-top-hat'), 'CEO board members should style top hats.');
+  assert(cssSource.includes('.hud__office-board-monocle'), 'CEO board members should style monocles.');
+  assert(cssSource.includes('.hud__office-board-cane'), 'CEO board members should style canes.');
+  assert(cssSource.includes('.hud__office-board-cash-stack'), 'CEO board members should style money stacks.');
+  assert(cssSource.includes('.hud__office-board-money-bag'), 'CEO board members should style money bags.');
+  assert(cssSource.includes('.hud__office-board-cash-fan'), 'CEO board members should style cash fans.');
+  assert(cssSource.includes('.hud__office-board-pocket-watch'), 'CEO board members should style pocket watches.');
   assert(cssSource.includes('hud__office-boardroom-backdrop'), 'CEO start screen should include the boardroom backdrop.');
   assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should move with the timing marker.');
 }

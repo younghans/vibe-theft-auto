@@ -1780,17 +1780,38 @@ function createOfficeBreakroomBackdropMarkup() {
   `;
 }
 
+function createOfficeBoardMembersMarkup() {
+  return `
+        <span class="hud__office-board-face is-far-left hud__office-board-member--cane">
+          <span class="hud__office-board-prop hud__office-board-top-hat"></span>
+          <span class="hud__office-board-prop hud__office-board-cane"></span>
+        </span>
+        <span class="hud__office-board-face is-left hud__office-board-member--monocle">
+          <span class="hud__office-board-prop hud__office-board-monocle"></span>
+          <span class="hud__office-board-prop hud__office-board-cash-stack"></span>
+        </span>
+        <span class="hud__office-board-face is-center hud__office-board-member--money-bag">
+          <span class="hud__office-board-prop hud__office-board-top-hat"></span>
+          <span class="hud__office-board-prop hud__office-board-money-bag"></span>
+        </span>
+        <span class="hud__office-board-face is-right hud__office-board-member--cash-fan">
+          <span class="hud__office-board-prop hud__office-board-monocle"></span>
+          <span class="hud__office-board-prop hud__office-board-cash-fan"></span>
+        </span>
+        <span class="hud__office-board-face is-far-right hud__office-board-member--watch">
+          <span class="hud__office-board-prop hud__office-board-top-hat"></span>
+          <span class="hud__office-board-prop hud__office-board-pocket-watch"></span>
+        </span>
+  `;
+}
+
 function createOfficeBoardroomBackdropMarkup() {
   return `
       <div class="hud__office-ready-backdrop hud__office-boardroom-backdrop" aria-hidden="true">
         <span class="hud__office-boardroom-wall"></span>
         <span class="hud__office-boardroom-window"></span>
         <span class="hud__office-boardroom-table"></span>
-        <span class="hud__office-board-face is-far-left"></span>
-        <span class="hud__office-board-face is-left"></span>
-        <span class="hud__office-board-face is-center"></span>
-        <span class="hud__office-board-face is-right"></span>
-        <span class="hud__office-board-face is-far-right"></span>
+        ${createOfficeBoardMembersMarkup()}
         <span class="hud__office-approval-window"></span>
         <span class="hud__office-ceo-memo">
           <strong>Board Memo</strong>
@@ -2436,11 +2457,7 @@ function createOfficeCeoMarkup(game = null) {
         <span class="hud__office-boardroom-wall"></span>
         <span class="hud__office-boardroom-window"></span>
         <span class="hud__office-boardroom-table"></span>
-        <span class="hud__office-board-face is-far-left"></span>
-        <span class="hud__office-board-face is-left"></span>
-        <span class="hud__office-board-face is-center"></span>
-        <span class="hud__office-board-face is-right"></span>
-        <span class="hud__office-board-face is-far-right"></span>
+        ${createOfficeBoardMembersMarkup()}
         <span class="hud__office-approval-window"></span>
         <span class="hud__office-ceo-memo">
           <strong>${escapeHtml(data.memoLabel ?? 'Board Memo')}</strong>
