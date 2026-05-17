@@ -92,6 +92,20 @@ function assert(condition, message) {
   }
 }
 
+function collectMeshMaterials(root) {
+  const entries = [];
+  root.traverse?.((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      entries.push({ node, material });
+    }
+  });
+  return entries;
+}
+
 function validateRotationQuarterTurns(value, context) {
   assert(Number.isInteger(value), `${context}: rotationQuarterTurns must be an integer`);
   assert(value >= 0 && value <= 3, `${context}: rotationQuarterTurns must be between 0 and 3`);
@@ -450,7 +464,21 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrilleCounterBase'), "Martha's Grille visual should include a counter");
   assert(grilleVisual.getObjectByName('marthasGrilleRegisterScreen'), "Martha's Grille visual should include a register");
   assert(grilleVisual.getObjectByName('marthasGrilleFlatTopGrill'), "Martha's Grille visual should include kitchen equipment behind the counter");
+  assert(grilleVisual.getObjectByName('marthas_grille_kitchen_detail'), "Martha's Grille visual should include a detailed kitchen group");
+  assert(grilleVisual.getObjectByName('marthasGrilleFryerBody'), "Martha's Grille kitchen should include a fryer station");
+  assert(grilleVisual.getObjectByName('marthasGrillePrepCounter'), "Martha's Grille kitchen should include a prep counter");
+  assert(grilleVisual.getObjectByName('marthasGrilleBurgerPatty1'), "Martha's Grille flat top should include visible grill food detail");
+  assert(grilleVisual.getObjectByName('marthasGrilleTicketRail'), "Martha's Grille kitchen should include an order ticket rail");
   assert(grilleVisual.getObjectByName('marthasGrilleSignPanel'), "Martha's Grille visual should include a front sign panel");
+  const grilleBackWall = grilleVisual.getObjectByName('mgBackWall');
+  assert(grilleBackWall?.material?.color?.getHex() === 0xf2dc9d, "Martha's Grille should use a creamy yellow building facade");
+  const grilleSignLabel = grilleVisual.getObjectByName('marthasGrilleSignLabel');
+  assert(grilleSignLabel?.material?.transparent !== true, "Martha's Grille sign label should avoid transparent material sorting");
+  assert(grilleSignLabel?.material?.depthWrite !== false, "Martha's Grille sign label should write depth as an opaque sign");
+  const grilleTransparentMeshes = collectMeshMaterials(grilleVisual)
+    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
+    .map(({ node }) => node.name || '(unnamed mesh)');
+  assert(grilleTransparentMeshes.length === 0, `Martha's Grille should not use transparent materials that can tint the building blue: ${grilleTransparentMeshes.join(', ')}`);
   assert(grilleVisual.getObjectByName('marthasGrilleOpenFrontThreshold'), "Martha's Grille visual should mark the open front threshold");
   const grilleBounds = new Box3().setFromObject(grilleVisual);
   const grilleSize = grilleBounds.getSize(new Vector3());
