@@ -146,6 +146,7 @@ import {
   normalizeSchoolMicrogameId
 } from '../shared/schoolMicrogames.js';
 import {
+  CHARISMA_VIBE_HERO_XP,
   SKILL_DEFINITIONS,
   SKILL_IDS,
   getPlayerSkillXp,
@@ -250,7 +251,8 @@ const DEFAULT_GAME_SETTINGS = Object.freeze({
 const SKILL_XP_EMOJIS = Object.freeze({
   strength: String.fromCodePoint(0x1f4aa),
   agility: String.fromCodePoint(0x1f3c3),
-  intelligence: String.fromCodePoint(0x1f9e0)
+  intelligence: String.fromCodePoint(0x1f9e0),
+  charisma: String.fromCodePoint(0x1f60e)
 });
 const OFFICE_CEO_MEMOS = Object.freeze([
   'Synergy Budget',
@@ -6331,6 +6333,8 @@ export class Game {
       countdownMs: 0,
       resultTitle: '',
       resultDetail: '',
+      charismaRewardClaimed: false,
+      charismaRewardPending: false,
       message: 'Pick a song and take the stage.',
       laneFlashes: []
     };
@@ -6636,6 +6640,76 @@ export class Game {
     return Math.max(0, Math.min(1, Number(game?.hits ?? 0) / totalResolved));
   }
 
+  async claimVibeHeroCharismaReward(game = this.vibeHero, accuracy = this.getVibeHeroAccuracy(game)) {
+    if (
+      !game
+      || game.charismaRewardClaimed === true
+      || typeof this.npcService?.completeVibeHero !== 'function'
+    ) {
+      return false;
+    }
+
+    game.charismaRewardClaimed = true;
+    game.charismaRewardPending = true;
+    this.syncVibeHeroHud();
+
+    try {
+      const result = await this.npcService.completeVibeHero(
+        game.selectedSongId ?? game.song?.id ?? '',
+        {
+          score: game.score,
+          accuracy,
+          hits: game.hits,
+          misses: game.misses
+        }
+      );
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Vibe Hero reward failed.');
+        return false;
+      }
+
+      const xp = Math.max(0, Math.floor(Number(result.xp ?? CHARISMA_VIBE_HERO_XP) || 0));
+      const rewardText = xp > 0 ? `+${xp} Charisma XP` : 'Charisma gained';
+      if (this.vibeHero === game) {
+        game.resultDetail = game.resultDetail.includes('Charisma XP')
+          ? game.resultDetail
+          : `${game.resultDetail} | ${rewardText}`;
+        game.message = game.resultDetail;
+      }
+      this.hud.showToast(rewardText);
+
+      const award = result.skillAward;
+      if (award?.seq && award.seq > this.lastSkillAwardSeq) {
+        this.lastSkillAwardSeq = award.seq;
+        const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
+          id: award.skillId,
+          label: award.label,
+          icon: award.icon,
+          accent: award.accent
+        };
+        this.phoneSkillsState = {
+          ...this.phoneSkillsState,
+          recentAward: {
+            ...award,
+            skill
+          }
+        };
+        this.presentSkillAwardFeedback(award, skill);
+        this.refreshPhoneSkillsHud();
+      }
+      return true;
+    } catch (error) {
+      console.warn('[VibeHero] Reward failed.', error);
+      this.hud.showToast('Vibe Hero reward failed.');
+      return false;
+    } finally {
+      if (this.vibeHero === game) {
+        game.charismaRewardPending = false;
+        this.syncVibeHeroHud();
+      }
+    }
+  }
+
   finishVibeHero() {
     const game = this.vibeHero;
     if (!game || game.phase === 'complete') {
@@ -6660,6 +6734,7 @@ export class Game {
     } else {
       this.playSoundEffect(this.playingCardSound);
     }
+    void this.claimVibeHeroCharismaReward(game, accuracy);
     this.syncVibeHeroHud();
     return true;
   }

@@ -136,12 +136,16 @@ import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
+  CHARISMA_NPC_CHAT_XP,
+  CHARISMA_VIBE_HERO_XP,
   SKILL_IDS,
   STRENGTH_SNATCH_XP,
   applySkillXpToPlayer,
+  getCharismaDrinkXp,
   getPlayerSkillXp,
   normalizeSkillId
 } from '../../src/shared/skills.js';
+import { normalizeVibeHeroSongId } from '../../src/shared/vibeHero.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import {
   chooseFarthestSpawnPoint,
@@ -342,6 +346,7 @@ const PlayerSkillState = schema({
   strengthXp: 'number',
   agilityXp: 'number',
   intelligenceXp: 'number',
+  charismaXp: 'number',
   skillAwardSeq: 'number',
   skillAwardSkillId: 'string',
   skillAwardXpGained: 'number',
@@ -453,6 +458,7 @@ const PLAYER_STATE_SECTIONS = [
       'strengthXp',
       'agilityXp',
       'intelligenceXp',
+      'charismaXp',
       'skillAwardSeq',
       'skillAwardSkillId',
       'skillAwardXpGained',
@@ -758,6 +764,7 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       strengthXp: player.strengthXp,
       agilityXp: player.agilityXp,
       intelligenceXp: player.intelligenceXp,
+      charismaXp: player.charismaXp,
       skillAwardSeq: player.skillAwardSeq,
       skillAwardSkillId: player.skillAwardSkillId,
       skillAwardXpGained: player.skillAwardXpGained,
@@ -836,6 +843,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.strengthXp = sanitizeSnapshotNumber(saved.strengthXp, 0, { integer: true, min: 0 });
   player.agilityXp = sanitizeSnapshotNumber(saved.agilityXp, 0, { integer: true, min: 0 });
   player.intelligenceXp = sanitizeSnapshotNumber(saved.intelligenceXp, 0, { integer: true, min: 0 });
+  player.charismaXp = sanitizeSnapshotNumber(saved.charismaXp, 0, { integer: true, min: 0 });
   player.skillAwardSeq = sanitizeSnapshotNumber(saved.skillAwardSeq, 0, { integer: true, min: 0 });
   player.skillAwardSkillId = normalizeSkillId(saved.skillAwardSkillId);
   player.skillAwardXpGained = sanitizeSnapshotNumber(saved.skillAwardXpGained, 0, { integer: true, min: 0 });
@@ -993,6 +1001,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('inventory:consumeItem', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleInventoryConsumeRequest(client, message));
+    });
+
+    this.onMessage('vibeHero:complete', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleVibeHeroComplete(client, message));
     });
 
     this.onMessage('wallet:getSnapshot', (client, message) => {
@@ -1185,6 +1197,7 @@ export class WorldRoom extends Room {
     player.strengthXp = 0;
     player.agilityXp = 0;
     player.intelligenceXp = 0;
+    player.charismaXp = 0;
     player.skillAwardSeq = 0;
     player.skillAwardSkillId = '';
     player.skillAwardXpGained = 0;
@@ -2111,22 +2124,62 @@ export class WorldRoom extends Room {
     };
   }
 
+  awardCharismaForDrink(player, result = null, previousDrunknessLevel = 0) {
+    const xp = getCharismaDrinkXp({
+      itemId: result?.item?.id ?? '',
+      previousDrunknessLevel,
+      nextDrunknessLevel: result?.drunkness?.drunknessLevel ?? 0
+    });
+    return this.awardPlayerSkillXp(player, SKILL_IDS.charisma, xp);
+  }
+
   handleInventoryConsumeRequest(client, message = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.alive === false) {
       throw new Error('You cannot use that right now.');
     }
 
+    const now = Date.now();
     const pawnItem = getPawnShopMenuItem(message?.itemId);
+    const isDrinkItem = !pawnItem || pawnItem.kind !== 'consumable';
+    let previousDrunknessLevel = 0;
+    if (isDrinkItem) {
+      refreshPlayerDrunkness(player, now);
+      previousDrunknessLevel = player.drunknessLevel;
+    }
+
     const result = pawnItem?.kind === 'consumable'
       ? consumePlayerPawnShopItem(player, message?.itemId)
-      : consumePlayerDrink(player, message?.itemId, Date.now());
+      : consumePlayerDrink(player, message?.itemId, now);
     if (!result.ok) {
       throw new Error(result.error);
     }
 
+    const skillAward = isDrinkItem
+      ? this.awardCharismaForDrink(player, result, previousDrunknessLevel)
+      : null;
     this.queuePlayerSnapshotSave(client.sessionId);
-    return result;
+    return skillAward
+      ? { ...result, skillAward }
+      : result;
+  }
+
+  handleVibeHeroComplete(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot finish Vibe Hero right now.');
+    }
+
+    const songId = normalizeVibeHeroSongId(message?.songId);
+    const score = Math.max(0, Math.floor(Number(message?.score ?? 0) || 0));
+    const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.charisma, CHARISMA_VIBE_HERO_XP);
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return {
+      songId,
+      score,
+      xp: CHARISMA_VIBE_HERO_XP,
+      skillAward
+    };
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
@@ -4175,6 +4228,8 @@ export class WorldRoom extends Room {
 
     const npc = this.findNearestHeardNpc(player);
     if (npc && !npc.busy) {
+      this.awardPlayerSkillXp(player, SKILL_IDS.charisma, CHARISMA_NPC_CHAT_XP);
+      this.queuePlayerSnapshotSave(client.sessionId);
       npc.busy = true;
       this.setNpcChatPhase(npc, 'thinking', '', { bumpSeq: true });
       void this.handleNpcReply({

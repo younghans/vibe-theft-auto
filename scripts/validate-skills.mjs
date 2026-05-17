@@ -9,11 +9,16 @@ import {
 import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
+  CHARISMA_BEER_XP,
+  CHARISMA_NPC_CHAT_XP,
+  CHARISMA_PLASTERED_XP,
+  CHARISMA_VIBE_HERO_XP,
   SKILL_IDS,
   SKILL_MAX_LEVEL,
   STRENGTH_SNATCH_XP,
   applySkillXpToPlayer,
   createSkillAward,
+  getCharismaDrinkXp,
   getClassicXpForLevel,
   getPlayerSkillsSnapshot,
   getSkillLevelFromXp,
@@ -25,6 +30,8 @@ import { assets } from '../src/world/assetManifest.js';
 const root = process.cwd();
 const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
 const hudSource = fs.readFileSync(`${root}/src/ui/Hud.js`, 'utf8');
+const roomSource = fs.readFileSync(`${root}/server/src/WorldRoom.js`, 'utf8');
+const mockServiceSource = fs.readFileSync(`${root}/src/npc/NpcServiceMock.js`, 'utf8');
 const stylesSource = fs.readFileSync(`${root}/styles.css`, 'utf8');
 
 function assertMp3Audio(buffer, label) {
@@ -41,6 +48,25 @@ assert.equal(getSkillLevelFromXp(getSkillXpForLevel(2)), 2, 'threshold XP reache
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99)), SKILL_MAX_LEVEL, 'level 99 threshold reaches level 99');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99) + 999999), SKILL_MAX_LEVEL, 'levels cap at 99');
 assert.equal(STRENGTH_SNATCH_XP, 10, 'barbell snatching awards 10 strength XP');
+assert.equal(CHARISMA_NPC_CHAT_XP, 2, 'NPC chat awards a small amount of charisma XP');
+assert.equal(CHARISMA_BEER_XP, 2, 'beer awards a small amount of charisma XP');
+assert.equal(CHARISMA_PLASTERED_XP, 15, 'getting plastered awards a medium amount of charisma XP');
+assert.equal(CHARISMA_VIBE_HERO_XP, 40, 'Vibe Hero awards a large amount of charisma XP');
+assert.equal(
+  getCharismaDrinkXp({ itemId: 'beer', previousDrunknessLevel: 0, nextDrunknessLevel: 1 }),
+  CHARISMA_BEER_XP,
+  'one beer grants the beer charisma reward'
+);
+assert.equal(
+  getCharismaDrinkXp({ itemId: 'shot', previousDrunknessLevel: 4, nextDrunknessLevel: 5 }),
+  CHARISMA_PLASTERED_XP,
+  'crossing into plastered grants the plastered charisma reward'
+);
+assert.equal(
+  getCharismaDrinkXp({ itemId: 'beer', previousDrunknessLevel: 4, nextDrunknessLevel: 5 }),
+  CHARISMA_BEER_XP + CHARISMA_PLASTERED_XP,
+  'a beer that gets the player plastered combines both charisma rewards'
+);
 
 const levelTwoSnapshot = getSkillSnapshot(SKILL_IDS.strength, getSkillXpForLevel(2));
 assert.equal(levelTwoSnapshot.level, 2, 'snapshot level is derived from XP');
@@ -61,12 +87,14 @@ assert.ok(award.newLevel >= 1, 'award reports new level');
 const playerSkills = getPlayerSkillsSnapshot({
   strengthXp: STRENGTH_SNATCH_XP,
   agilityXp: AGILITY_MAX_XP_PER_UPDATE,
-  intelligenceXp: 0
+  intelligenceXp: 0,
+  charismaXp: CHARISMA_BEER_XP
 });
-assert.equal(playerSkills.length, 3, 'all initial skills are present');
+assert.equal(playerSkills.length, 4, 'all initial skills are present');
 assert.equal(playerSkills.find((skill) => skill.id === SKILL_IDS.strength)?.xp, STRENGTH_SNATCH_XP, 'strength XP reads from player state');
+assert.equal(playerSkills.find((skill) => skill.id === SKILL_IDS.charisma)?.xp, CHARISMA_BEER_XP, 'charisma XP reads from player state');
 
-const serverPlayerShape = { strengthXp: 0, agilityXp: 0, intelligenceXp: 0 };
+const serverPlayerShape = { strengthXp: 0, agilityXp: 0, intelligenceXp: 0, charismaXp: 0 };
 const strengthAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
 assert.equal(serverPlayerShape.strengthXp, STRENGTH_SNATCH_XP, 'shared award mutates server player XP field');
 assert.equal(strengthAward.xpGained, STRENGTH_SNATCH_XP, 'shared award payload reports strength XP');
@@ -75,17 +103,29 @@ const agilityAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.agility, 
 assert.equal(serverPlayerShape.agilityXp, AGILITY_MAX_XP_PER_UPDATE, 'shared award mutates agility XP field');
 assert.equal(agilityAward.skillId, SKILL_IDS.agility, 'shared award payload reports agility skill');
 
+const charismaAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.charisma, CHARISMA_VIBE_HERO_XP);
+assert.equal(serverPlayerShape.charismaXp, CHARISMA_VIBE_HERO_XP, 'shared award mutates charisma XP field');
+assert.equal(charismaAward.skillId, SKILL_IDS.charisma, 'shared award payload reports charisma skill');
+
 assert.equal(AGILITY_DISTANCE_PER_XP, 90, 'agility distance rate is five times slower than the original walking XP pace');
 assert.equal(AGILITY_MAX_XP_PER_UPDATE, 3, 'agility per-update cap matches plan');
 
 assert.match(gameSource, /spawnSkillXpFloater/, 'game spawns XP floaters for skill awards');
 assert.match(gameSource, /0x1f3c3/, 'agility XP floaters use a running icon');
+assert.match(gameSource, /0x1f60e/, 'charisma XP floaters use a charisma icon');
 assert.match(gameSource, /skillXpGainSound/, 'game registers the skill XP gain sound');
 assert.match(gameSource, /levelUpSound/, 'game registers the level-up sound');
 assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
 assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
+assert.match(hudSource, /charisma: '&#128526;'/, 'charisma skill UI uses a charisma icon');
 assert.match(hudSource, /originElement: this\.skillLevelUpRoot/, 'level-up popup triggers confetti from the popup');
+assert.match(roomSource, /CHARISMA_NPC_CHAT_XP/, 'server awards charisma XP when NPC chat starts');
+assert.match(roomSource, /getCharismaDrinkXp/, 'server awards charisma XP for beer and plastered drunkness');
+assert.match(roomSource, /vibeHero:complete/, 'server exposes a Vibe Hero charisma reward RPC');
+assert.match(mockServiceSource, /CHARISMA_NPC_CHAT_XP/, 'mock service awards charisma XP when NPC chat starts');
+assert.match(mockServiceSource, /getCharismaDrinkXp/, 'mock service awards charisma XP for beer and plastered drunkness');
+assert.match(mockServiceSource, /completeVibeHero/, 'mock service exposes a Vibe Hero charisma reward method');
 assert.match(gameSource, /phase:\s*countdown\s*\?\s*'countdown'/, 'school rounds start in countdown instead of a start-button ready state');
 assert.match(gameSource, /continueSchoolMicrogameSession/, 'school minigame sessions continue into another random round');
 assert.match(hudSource, /createSchoolCountdownMarkup/, 'HUD renders the school round countdown');

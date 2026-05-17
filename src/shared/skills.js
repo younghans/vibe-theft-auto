@@ -1,7 +1,8 @@
 export const SKILL_IDS = Object.freeze({
   strength: 'strength',
   agility: 'agility',
-  intelligence: 'intelligence'
+  intelligence: 'intelligence',
+  charisma: 'charisma'
 });
 
 export const SKILL_MAX_LEVEL = 99;
@@ -10,11 +11,17 @@ export const STRENGTH_SNATCH_XP = 10;
 export const AGILITY_DISTANCE_PER_XP = 90;
 export const AGILITY_MIN_DISTANCE = 0.05;
 export const AGILITY_MAX_XP_PER_UPDATE = 3;
+export const CHARISMA_NPC_CHAT_XP = 2;
+export const CHARISMA_BEER_XP = 2;
+export const CHARISMA_PLASTERED_XP = 15;
+export const CHARISMA_VIBE_HERO_XP = 40;
+export const CHARISMA_PLASTERED_LEVEL = 5;
 
 export const SKILL_XP_FIELDS = Object.freeze({
   [SKILL_IDS.strength]: 'strengthXp',
   [SKILL_IDS.agility]: 'agilityXp',
-  [SKILL_IDS.intelligence]: 'intelligenceXp'
+  [SKILL_IDS.intelligence]: 'intelligenceXp',
+  [SKILL_IDS.charisma]: 'charismaXp'
 });
 
 export const SKILL_DEFINITIONS = Object.freeze([
@@ -35,6 +42,12 @@ export const SKILL_DEFINITIONS = Object.freeze([
     label: 'Intelligence',
     icon: 'intelligence',
     accent: '#58b8ff'
+  }),
+  Object.freeze({
+    id: SKILL_IDS.charisma,
+    label: 'Charisma',
+    icon: 'charisma',
+    accent: '#ff7ab6'
   })
 ]);
 
@@ -181,4 +194,19 @@ export function applySkillXpToPlayer(player = null, skillId = '', amount = 0) {
   const nextXp = oldXp + xpAmount;
   player[xpField] = nextXp;
   return createSkillAward(id, oldXp, nextXp);
+}
+
+export function getCharismaDrinkXp({
+  itemId = '',
+  previousDrunknessLevel = 0,
+  nextDrunknessLevel = 0
+} = {}) {
+  const normalizedItemId = String(itemId ?? '').trim().toLowerCase();
+  const previousLevel = Math.max(0, Math.floor(Number(previousDrunknessLevel) || 0));
+  const nextLevel = Math.max(0, Math.floor(Number(nextDrunknessLevel) || 0));
+  let xp = normalizedItemId === 'beer' ? CHARISMA_BEER_XP : 0;
+  if (previousLevel < CHARISMA_PLASTERED_LEVEL && nextLevel >= CHARISMA_PLASTERED_LEVEL) {
+    xp += CHARISMA_PLASTERED_XP;
+  }
+  return xp;
 }

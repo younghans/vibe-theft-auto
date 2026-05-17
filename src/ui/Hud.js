@@ -113,7 +113,8 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
 const PHONE_SKILL_ICON_ENTITIES = Object.freeze({
   strength: '&#127947;',
   agility: '&#127939;',
-  intelligence: '&#129504;'
+  intelligence: '&#129504;',
+  charisma: '&#128526;'
 });
 
 const PHONE_SETTINGS_CONTROLS = Object.freeze([

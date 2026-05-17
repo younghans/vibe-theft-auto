@@ -122,12 +122,16 @@ import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
+  CHARISMA_NPC_CHAT_XP,
+  CHARISMA_VIBE_HERO_XP,
   SKILL_IDS,
   STRENGTH_SNATCH_XP,
   applySkillXpToPlayer,
+  getCharismaDrinkXp,
   getPlayerSkillXp,
   normalizeSkillId
 } from '../shared/skills.js';
+import { normalizeVibeHeroSongId } from '../shared/vibeHero.js';
 import {
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
@@ -317,6 +321,7 @@ function createDefaultPlayerState(overrides = {}) {
     strengthXp: 0,
     agilityXp: 0,
     intelligenceXp: 0,
+    charismaXp: 0,
     skillAwardSeq: 0,
     skillAwardSkillId: '',
     skillAwardXpGained: 0,
@@ -1119,6 +1124,7 @@ export class NpcServiceMock {
       return { ok: true };
     }
 
+    this.awardPlayerSkillXp(player, SKILL_IDS.charisma, CHARISMA_NPC_CHAT_XP);
     npc.busy = true;
     this.setNpcChatPhase(npc, 'thinking', '', { bumpSeq: true });
     this.appendTranscript(
@@ -1699,22 +1705,63 @@ export class NpcServiceMock {
     };
   }
 
+  awardCharismaForDrink(player, result = null, previousDrunknessLevel = 0) {
+    const xp = getCharismaDrinkXp({
+      itemId: result?.item?.id ?? '',
+      previousDrunknessLevel,
+      nextDrunknessLevel: result?.drunkness?.drunknessLevel ?? 0
+    });
+    return this.awardPlayerSkillXp(player, SKILL_IDS.charisma, xp);
+  }
+
   async consumeInventoryItem(itemId = '') {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false) {
       return { ok: false, error: 'You cannot use that right now.' };
     }
 
+    const now = Date.now();
     const pawnItem = getPawnShopMenuItem(itemId);
+    const isDrinkItem = !pawnItem || pawnItem.kind !== 'consumable';
+    let previousDrunknessLevel = 0;
+    if (isDrinkItem) {
+      refreshPlayerDrunkness(player, now);
+      previousDrunknessLevel = player.drunknessLevel;
+    }
+
     const result = pawnItem?.kind === 'consumable'
       ? consumePlayerPawnShopItem(player, itemId)
-      : consumePlayerDrink(player, itemId, Date.now());
+      : consumePlayerDrink(player, itemId, now);
     if (!result.ok) {
       return result;
     }
 
+    const skillAward = isDrinkItem
+      ? this.awardCharismaForDrink(player, result, previousDrunknessLevel)
+      : null;
     this.emit();
-    return result;
+    return skillAward
+      ? { ...result, skillAward }
+      : result;
+  }
+
+  async completeVibeHero(songId = '', result = {}) {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot finish Vibe Hero right now.' };
+    }
+
+    const normalizedSongId = normalizeVibeHeroSongId(songId);
+    const score = Math.max(0, Math.floor(Number(result?.score ?? 0) || 0));
+    const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.charisma, CHARISMA_VIBE_HERO_XP);
+    this.emit();
+    return {
+      ok: true,
+      songId: normalizedSongId,
+      score,
+      xp: CHARISMA_VIBE_HERO_XP,
+      skillAward
+    };
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {

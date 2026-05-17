@@ -132,6 +132,7 @@ function clonePlayerState(player) {
     strengthXp: skills.strengthXp ?? player?.strengthXp ?? 0,
     agilityXp: skills.agilityXp ?? player?.agilityXp ?? 0,
     intelligenceXp: skills.intelligenceXp ?? player?.intelligenceXp ?? 0,
+    charismaXp: skills.charismaXp ?? player?.charismaXp ?? 0,
     skillAwardSeq: skills.skillAwardSeq ?? player?.skillAwardSeq ?? 0,
     skillAwardSkillId: skills.skillAwardSkillId || player?.skillAwardSkillId || '',
     skillAwardXpGained: skills.skillAwardXpGained ?? player?.skillAwardXpGained ?? 0,
@@ -914,6 +915,16 @@ export class NpcServiceColyseus {
   async consumeInventoryItem(itemId = '') {
     return this.rpc('inventory:consumeItem', {
       itemId: String(itemId ?? '').trim()
+    });
+  }
+
+  async completeVibeHero(songId = '', result = {}) {
+    return this.rpc('vibeHero:complete', {
+      songId: String(songId ?? '').trim(),
+      score: result?.score,
+      accuracy: result?.accuracy,
+      hits: result?.hits,
+      misses: result?.misses
     });
   }
 
