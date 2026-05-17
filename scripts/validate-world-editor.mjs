@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { Box3, Scene, Vector3 } from 'three';
+import { Box3, Group, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
 import {
@@ -61,6 +61,7 @@ import { assets } from '../src/world/assetManifest.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_IDS,
+  applyAttachmentTransform,
   getHeldItemDefinition
 } from '../src/shared/heldItemDefinitions.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
@@ -569,6 +570,15 @@ function validateDeliveryQuestCarry() {
   assert(
     typeof deliveryBox.createModel === 'function',
     'Delivery quest should use a dedicated cardboard-box 3D model.'
+  );
+  const nullTransformTarget = new Group();
+  applyAttachmentTransform(nullTransformTarget, null);
+  assert(
+    nullTransformTarget.position.lengthSq() === 0
+      && nullTransformTarget.rotation.x === 0
+      && nullTransformTarget.rotation.y === 0
+      && nullTransformTarget.rotation.z === 0,
+    'Held item attachment transforms should tolerate optional/null profiles.'
   );
   const deliveryBoxModel = deliveryBox.createModel();
   const deliveryBoxBounds = new Box3().setFromObject(deliveryBoxModel);

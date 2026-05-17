@@ -257,9 +257,10 @@ function centerModel(root) {
 }
 
 function applyTransform(target, transform = EMPTY_TRANSFORM) {
-  const position = transform.position ?? EMPTY_TRANSFORM.position;
-  const rotation = transform.rotation ?? EMPTY_TRANSFORM.rotation;
-  const scale = transform.scale ?? EMPTY_TRANSFORM.scale;
+  const resolvedTransform = transform ?? EMPTY_TRANSFORM;
+  const position = resolvedTransform.position ?? EMPTY_TRANSFORM.position;
+  const rotation = resolvedTransform.rotation ?? EMPTY_TRANSFORM.rotation;
+  const scale = resolvedTransform.scale ?? EMPTY_TRANSFORM.scale;
   target.position.set(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0);
   target.rotation.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
   target.scale.set(scale[0] ?? 1, scale[1] ?? 1, scale[2] ?? 1);
