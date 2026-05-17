@@ -647,6 +647,12 @@ async function validateOfficeJobHudSurfaces() {
   assert(/for\s*\(\s*const\s+patch\s+of\s+patches\s*\)\s*{\s*patch\.clean\s*=\s*1;\s*}/.test(gameSource), 'Mop Hero completion should mark every dirt patch completely clean.');
   assert(gameSource.includes('game.data.cleanProgress = 1'), 'Mop Hero completion should snap progress to 100%.');
   assert(gameSource.includes('mopCleanShowcaseAt'), 'Mop Hero should delay completion while the clean floor is visible.');
+  assert(gameSource.includes('playTaskCompleteSound'), 'Task and game completion should use a shared completion sound helper.');
+  assert(!gameSource.includes('this.playSoundEffect(this.levelUpCelebrationSound)'), 'Task and game completion should no longer play the old celebration MP3.');
+  assert(gameSource.includes('playbackRate: 0.72') && gameSource.includes('preservePitch: false'), 'Completion should reuse the individual-game level-up ding at a lower pitch.');
+  assert(gameSource.includes('delayMs: 135') && gameSource.includes('delayMs: 310'), 'Completion should draw out the ding with delayed reverb-style echoes.');
+  assert(gameSource.includes('playTaskCompleteChaChing') && gameSource.includes('TASK_COMPLETE_CHA_CHING_DELAY_MS'), 'Money-paying completions should append a delayed cha-ching.');
+  assert(gameSource.includes('moneyChangeChaChingSuppressedUntil'), 'Completion cha-ching should suppress duplicate positive money-change sounds.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
   assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
   assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');

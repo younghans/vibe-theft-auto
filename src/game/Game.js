@@ -419,6 +419,9 @@ const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 const MONEY_REWARD_ANIMATION_MS = 900;
 const SKILL_XP_FLOATER_MS = 1550;
+const TASK_COMPLETE_SOUND_COOLDOWN_MS = 1800;
+const TASK_COMPLETE_CHA_CHING_DELAY_MS = 760;
+const TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS = 1750;
 const RENT_INTRO_LOADING_CLEAR_MS = 900;
 const RENT_INTRO_AFTER_LOADING_DELAY_MS = 500;
 const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
@@ -948,6 +951,9 @@ export class Game {
     this.phoneUnlockSound = this.createSoundEffect(assets.audio?.phoneUnlock, { volume: 0.58 });
     this.playingCardSound = this.createSoundEffect(assets.audio?.playingCard, { volume: 0.6 });
     this.typingOnKeyboardSound = this.createSoundEffect(assets.audio?.typingOnKeyboard, { volume: 0.45 });
+    this.lastTaskCompleteSoundAt = -Infinity;
+    this.lastTaskCompleteChaChingAt = -Infinity;
+    this.moneyChangeChaChingSuppressedUntil = 0;
     this.handledRentIntroSeq = 0;
     this.rentIntroLoadingClearedAt = 0;
     this.pendingRentIntro = null;
@@ -1300,15 +1306,102 @@ export class Game {
     return soundEffect.template;
   }
 
-  playSoundEffect(soundEffect) {
-    const template = this.getSoundEffectTemplate(soundEffect);
-    if (!template) {
+  playSoundEffect(
+    soundEffect,
+    {
+      volumeScale = 1,
+      playbackRate = 1,
+      preservePitch = true,
+      delayMs = 0
+    } = {}
+  ) {
+    const play = () => {
+      const template = this.getSoundEffectTemplate(soundEffect);
+      if (!template) {
+        return;
+      }
+
+      const sound = template.cloneNode();
+      const rate = THREE.MathUtils.clamp(Number(playbackRate) || 1, 0.25, 4);
+      const shouldPreservePitch = preservePitch !== false;
+      try {
+        sound.playbackRate = rate;
+      } catch {
+        // Some embedded browsers expose read-only media playback controls.
+      }
+      for (const pitchProperty of ['preservesPitch', 'mozPreservesPitch', 'webkitPreservesPitch']) {
+        if (pitchProperty in sound) {
+          try {
+            sound[pitchProperty] = shouldPreservePitch;
+          } catch {
+            // Ignore unsupported pitch-preservation flags.
+          }
+        }
+      }
+      sound.volume = THREE.MathUtils.clamp(
+        this.getEffectiveSoundVolume(soundEffect) * (Number(volumeScale) || 1),
+        0,
+        1
+      );
+      void sound.play().catch(() => {});
+    };
+
+    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (safeDelayMs > 0 && typeof window !== 'undefined') {
+      window.setTimeout(play, safeDelayMs);
       return;
     }
 
-    const sound = template.cloneNode();
-    sound.volume = this.getEffectiveSoundVolume(soundEffect);
-    void sound.play().catch(() => {});
+    play();
+  }
+
+  playTaskCompleteChaChing(delayMs = TASK_COMPLETE_CHA_CHING_DELAY_MS) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    const scheduledAt = now + safeDelayMs;
+    const lastChaChingAt = Number(this.lastTaskCompleteChaChingAt ?? -Infinity);
+    if (scheduledAt - lastChaChingAt < TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS) {
+      return;
+    }
+
+    this.lastTaskCompleteChaChingAt = scheduledAt;
+    this.moneyChangeChaChingSuppressedUntil = Math.max(
+      Number(this.moneyChangeChaChingSuppressedUntil ?? 0) || 0,
+      scheduledAt + TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS
+    );
+    this.playSoundEffect(this.rentChaChingSound, {
+      delayMs: safeDelayMs,
+      volumeScale: 0.9
+    });
+  }
+
+  playTaskCompleteSound({ withMoney = false } = {}) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const lastPlayedAt = Number(this.lastTaskCompleteSoundAt ?? -Infinity);
+    if (now - lastPlayedAt >= TASK_COMPLETE_SOUND_COOLDOWN_MS) {
+      this.lastTaskCompleteSoundAt = now;
+      this.playSoundEffect(this.levelUpSound, {
+        playbackRate: 0.72,
+        preservePitch: false,
+        volumeScale: 1.05
+      });
+      this.playSoundEffect(this.levelUpSound, {
+        playbackRate: 0.68,
+        preservePitch: false,
+        volumeScale: 0.34,
+        delayMs: 135
+      });
+      this.playSoundEffect(this.levelUpSound, {
+        playbackRate: 0.62,
+        preservePitch: false,
+        volumeScale: 0.2,
+        delayMs: 310
+      });
+    }
+
+    if (withMoney) {
+      this.playTaskCompleteChaChing(TASK_COMPLETE_CHA_CHING_DELAY_MS);
+    }
   }
 
   applyAudioSettings() {
@@ -4618,6 +4711,7 @@ export class Game {
         nextTitle: task.title,
         withConfetti: !skipConfetti
       });
+      this.playTaskCompleteSound();
       if (completedTaskId === TASK_IDS.gymPump) {
         this.gymPumpTaskConfettiPlayed = false;
       }
@@ -7383,7 +7477,7 @@ export class Game {
     game.resultDetail = `${game.hits}/${game.notes.length} notes - ${Math.round(accuracy * 100)}% accuracy - max combo ${game.maxCombo}`;
     game.message = game.resultDetail;
     if (accuracy >= 0.72) {
-      this.playSoundEffect(this.levelUpCelebrationSound);
+      this.playTaskCompleteSound();
     } else {
       this.playSoundEffect(this.playingCardSound);
     }
@@ -8531,6 +8625,10 @@ export class Game {
     const completedGame = this.schoolMicrogame;
     const completedGameId = completedGame.round?.gameId ?? '';
     const isSchoolSession = completedGame.context === 'school-minigame';
+    const completingOfficeJob = completedGame.context === 'office-job';
+    const officeJobRewardMoney = completingOfficeJob
+      ? Math.max(0, Math.floor(Number(completedGame.round?.rewardMoney ?? 0) || 0))
+      : 0;
     this.schoolMicrogame.phase = success ? 'success' : 'failure';
     this.schoolMicrogame.remainingMs = 0;
     this.schoolMicrogame.resultTitle = resultTitle || (success ? 'Passed' : 'Try again');
@@ -8560,11 +8658,11 @@ export class Game {
       return;
     }
 
-    this.playSoundEffect(this.levelUpCelebrationSound);
+    const completionSoundStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.playTaskCompleteSound();
     this.hud.playTaskConfetti();
     this.syncSchoolMicrogameHud();
 
-    const completingOfficeJob = this.schoolMicrogame.context === 'office-job';
     const canCompleteReward = completingOfficeJob
       ? typeof this.npcService?.completeOfficeJob === 'function'
       : typeof this.npcService?.completeSchoolMicrogame === 'function';
@@ -8635,6 +8733,14 @@ export class Game {
           cash: result.money
         };
         this.refreshPhoneWalletHud();
+        if (officeJob && officeJobRewardMoney > 0) {
+          const elapsedSinceCompletionSound = (
+            typeof performance !== 'undefined' ? performance.now() : Date.now()
+          ) - completionSoundStartedAt;
+          this.playTaskCompleteChaChing(
+            Math.max(0, TASK_COMPLETE_CHA_CHING_DELAY_MS - elapsedSinceCompletionSound)
+          );
+        }
       }
       this.syncSchoolMicrogameHud({ loading: false, error: '' });
       if (isSchoolSession && this.schoolMicrogame === completedGame) {
@@ -11434,7 +11540,10 @@ export class Game {
     });
     this.spawnMoneyFloater(delta);
     if (delta > 0) {
-      this.playSoundEffect(this.rentChaChingSound);
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now >= Number(this.moneyChangeChaChingSuppressedUntil ?? 0)) {
+        this.playSoundEffect(this.rentChaChingSound);
+      }
     }
   }
 
