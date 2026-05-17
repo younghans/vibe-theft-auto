@@ -1083,16 +1083,18 @@ function validateBartenderFunction() {
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
+      && /SKATEBOARD_UPPER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.UPPER_BODY_EMOTE_BONES\]\)/.test(playerSource)
+      && /SKATEBOARD_STILL_BODY_BONES\s*=\s*Object\.freeze\(\[\s*\.\.\.SKATEBOARD_LOWER_BODY_STILL_BONES,\s*\.\.\.SKATEBOARD_UPPER_BODY_STILL_BONES\s*\]\)/.test(playerSource)
       && /SKATEBOARD_SIDEWAYS_FOOT_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
       && /mixamorigLeftFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigRightFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource),
-    'Skating should hold the full lower body still with both feet perpendicular to the skateboard'
+    'Skating should hold the full player body still with both feet perpendicular to the skateboard'
   );
   assert(
-    /function applySkateboardLowerBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
-      && /skateboardLowerBodyPoseWeight\s*=\s*active\s*\?\s*1\s*:\s*THREE\.MathUtils\.damp/.test(playerSource)
-      && /applySkateboardLowerBodyPose\(deltaSeconds,\s*skateboardPoseActive\)/.test(playerSource),
-    'Skating should apply the static lower-body stance every active skating frame'
+    /function applySkateboardStaticBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
+      && /skateboardStaticBodyPoseWeight\s*=\s*active\s*\?\s*1\s*:\s*THREE\.MathUtils\.damp/.test(playerSource)
+      && /applyReloadArmIk\(activeAimItemId,\s*reloadProfile\);\s*applySkateboardStaticBodyPose\(deltaSeconds,\s*skateboardPoseActive\)/.test(playerSource),
+    'Skating should apply the static full-body stance after upper-body overlays every active skating frame'
   );
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)

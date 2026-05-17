@@ -105,7 +105,12 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
 ]);
 const SKATEBOARD_SIDEWAYS_FOOT_YAW = Math.PI / 2;
 const SKATEBOARD_LOWER_BODY_STILL_BONES = Object.freeze([...LOWER_BODY_LOCOMOTION_BONES]);
-const SKATEBOARD_LOWER_BODY_POSE_ROTATIONS = Object.freeze({
+const SKATEBOARD_UPPER_BODY_STILL_BONES = Object.freeze([...UPPER_BODY_EMOTE_BONES]);
+const SKATEBOARD_STILL_BODY_BONES = Object.freeze([
+  ...SKATEBOARD_LOWER_BODY_STILL_BONES,
+  ...SKATEBOARD_UPPER_BODY_STILL_BONES
+]);
+const SKATEBOARD_STILL_BODY_POSE_ROTATIONS = Object.freeze({
   [MIXAMO_BONES.hips]: Object.freeze([0, 0, 0]),
   mixamorigLeftUpLeg: Object.freeze([0.04, 0, -0.04]),
   mixamorigLeftLeg: Object.freeze([0.05, 0, 0.02]),
@@ -391,10 +396,10 @@ function createPlayerSkateboardVisual() {
   return group;
 }
 
-function createSkateboardLowerBodyPose(root) {
+function createSkateboardStaticBodyPose(root) {
   const offsetEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const offsetQuaternion = new THREE.Quaternion();
-  return SKATEBOARD_LOWER_BODY_STILL_BONES
+  return SKATEBOARD_STILL_BODY_BONES
     .map((boneName) => {
       const bone = root.getObjectByName(boneName);
       if (!bone) {
@@ -402,7 +407,7 @@ function createSkateboardLowerBodyPose(root) {
       }
 
       const targetQuaternion = bone.quaternion.clone();
-      const rotation = SKATEBOARD_LOWER_BODY_POSE_ROTATIONS[boneName];
+      const rotation = SKATEBOARD_STILL_BODY_POSE_ROTATIONS[boneName];
       if (rotation) {
         offsetEuler.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
         offsetQuaternion.setFromEuler(offsetEuler);
@@ -659,7 +664,7 @@ export async function createPlayer(library, {
     Object.entries(aimPoseBones).map(([key, bone]) => [key, bone ? { quaternion: bone.quaternion.clone() } : null])
   );
   mixer.setTime(0);
-  const skateboardLowerBodyPose = createSkateboardLowerBodyPose(character);
+  const skateboardStaticBodyPose = createSkateboardStaticBodyPose(character);
   const aimPoseIdleBases = Object.fromEntries(
     AIM_IDLE_LOCK_BONES.map((boneKey) => {
       const bone = aimPoseBones[boneKey];
@@ -706,7 +711,7 @@ export async function createPlayer(library, {
   let skateboardOwned = false;
   let skateboardSkating = false;
   let skateboardMotion = 0;
-  let skateboardLowerBodyPoseWeight = 0;
+  let skateboardStaticBodyPoseWeight = 0;
   let reloadPoseWeight = 0;
   let reloadPoseAmount = 0;
   let reloadSlideAmount = 0;
@@ -1633,21 +1638,21 @@ export async function createPlayer(library, {
     }
   }
 
-  function applySkateboardLowerBodyPose(deltaSeconds, active) {
-    if (skateboardLowerBodyPose.length === 0) {
-      skateboardLowerBodyPoseWeight = 0;
+  function applySkateboardStaticBodyPose(deltaSeconds, active) {
+    if (skateboardStaticBodyPose.length === 0) {
+      skateboardStaticBodyPoseWeight = 0;
       return;
     }
 
-    skateboardLowerBodyPoseWeight = active
+    skateboardStaticBodyPoseWeight = active
       ? 1
-      : THREE.MathUtils.damp(skateboardLowerBodyPoseWeight, 0, 18, deltaSeconds);
-    if (skateboardLowerBodyPoseWeight <= 0.0001) {
+      : THREE.MathUtils.damp(skateboardStaticBodyPoseWeight, 0, 18, deltaSeconds);
+    if (skateboardStaticBodyPoseWeight <= 0.0001) {
       return;
     }
 
-    for (const { bone, targetQuaternion } of skateboardLowerBodyPose) {
-      bone.quaternion.slerp(targetQuaternion, skateboardLowerBodyPoseWeight);
+    for (const { bone, targetQuaternion } of skateboardStaticBodyPose) {
+      bone.quaternion.slerp(targetQuaternion, skateboardStaticBodyPoseWeight);
     }
   }
 
@@ -1719,7 +1724,6 @@ export async function createPlayer(library, {
     updateSkateboardVisual(deltaSeconds, moving);
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
-    applySkateboardLowerBodyPose(deltaSeconds, skateboardPoseActive);
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const reloadProfile = updateReloadOverlayState(deltaSeconds, activeAimItemId);
     const reloadForcesAimPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile);
@@ -1730,6 +1734,7 @@ export async function createPlayer(library, {
     applyUpperBodyPose();
     applyHeldItemReloadMotion(activeAimItemId, reloadProfile);
     applyReloadArmIk(activeAimItemId, reloadProfile);
+    applySkateboardStaticBodyPose(deltaSeconds, skateboardPoseActive);
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, wantsAimPose ? 22 : 18, deltaSeconds);
     const now = performance.now();
     const damageLifetime = Math.max(1, damageFeedbackEndsAt - damageFeedbackStartedAt);
