@@ -34,6 +34,15 @@ import {
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../src/shared/pawnShop.js';
+import {
+  MARTHA_ITEM_IDS,
+  addPlayerMarthaItem,
+  consumePlayerMarthaItem,
+  getMarthaMenuItem,
+  getPlayerMarthaInventorySnapshot,
+  isMarthaNpc,
+  listMarthaMenuItems
+} from '../src/shared/martha.js';
 import { SKATEBOARD_SPEED_MULTIPLIER } from '../src/shared/skateboard.js';
 import {
   createHotbarSlots,
@@ -585,18 +594,23 @@ function validateFootprintSupport() {
   const defaultMartha = defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_martha');
   assert(defaultMartha?.modelId === 'martha', 'Default world should create Martha using the Martha model');
   assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
+  assert(defaultMartha?.marthaEnabled === true, 'Default world should enable the Martha NPC food function');
   assert(
-    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha'),
+    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha' && npc.marthaEnabled === true),
     'Saved world layout should include Martha near the grille'
   );
   const marthaAdornment = createMarthaNpcAdornment({ height: 4.8 });
   assert(marthaAdornment.getObjectByName('marthaFluffyHairHalo'), 'Martha NPC adornment should include fluffy hair');
+  assert(marthaAdornment.getObjectByName('marthaFluffyHairCrownLeft'), 'Martha NPC adornment should make the white hair extra fluffy');
+  assert(marthaAdornment.getObjectByName('marthaLeftGlassesLens'), 'Martha NPC adornment should include glasses');
+  assert(marthaAdornment.getObjectByName('marthaRoundBelly'), 'Martha NPC adornment should give Martha a heavier silhouette');
   assert(marthaAdornment.getObjectByName('marthaBigSmile'), 'Martha NPC adornment should include a big smile');
   assert(marthaAdornment.getObjectByName('marthaApronPanel'), 'Martha NPC adornment should include a cook apron');
   assert(
     shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultMartha),
     'Martha NPC adornment should apply to the named Martha NPC'
   );
+  assert(isMarthaNpc(defaultMartha), 'Martha NPC food function should be detected from the default NPC definition');
   assert(
     !shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte')),
     'Martha NPC adornment should not affect the school teacher using the same base model'
@@ -1360,8 +1374,36 @@ function validateBartenderFunction() {
   );
   assert(
     createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== PAWN_SHOP_ITEM_IDS.skateboard),
-    'Skateboard should not occupy one of the five hotbar slots'
+    'Skateboard should not occupy a hotbar slot'
   );
+  const burger = getMarthaMenuItem(MARTHA_ITEM_IDS.burger);
+  const glizzy = getMarthaMenuItem(MARTHA_ITEM_IDS.glizzy);
+  const soda = getMarthaMenuItem(MARTHA_ITEM_IDS.soda);
+  assert(burger?.price === 20, 'Martha burger should cost $20');
+  assert(glizzy?.price === 10, 'Martha glizzy should cost $10');
+  assert(soda?.price === 10, 'Martha soda should cost $10');
+  assert(burger?.kind === 'consumable' && glizzy?.kind === 'consumable' && soda?.kind === 'consumable', 'All Martha menu items should be consumable');
+  assert(burger?.restorePercent === 35, 'Martha burger should restore the most health at 35%');
+  assert(glizzy?.restorePercent === 25, 'Martha glizzy should restore 25% health');
+  assert(soda?.restorePercent === 20, 'Martha soda should restore 20% health');
+  assert(listMarthaMenuItems().length === 3, 'Martha menu should include burger, glizzy, and soda');
+
+  const marthaFoodPlayer = { health: 50, maxHealth: 100, burgerCount: 0, glizzyCount: 0, sodaCount: 0 };
+  addPlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.burger, 1);
+  addPlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.glizzy, 1);
+  addPlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.soda, 1);
+  assert(getPlayerMarthaInventorySnapshot(marthaFoodPlayer).burgerCount === 1, 'Martha food should add burgers to inventory');
+  const burgerResult = consumePlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.burger);
+  assert(burgerResult.ok && marthaFoodPlayer.health === 85, 'Eating a Martha burger should restore 35 health from a 100 max-health player');
+  const glizzyResult = consumePlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.glizzy);
+  assert(glizzyResult.ok && marthaFoodPlayer.health === 100, 'Eating a Martha glizzy should restore health and cap at max health');
+  const sodaAtFull = consumePlayerMarthaItem(marthaFoodPlayer, MARTHA_ITEM_IDS.soda);
+  assert(!sodaAtFull.ok && marthaFoodPlayer.sodaCount === 1, 'Martha food should not be wasted at full health');
+  const marthaFoodSlots = createHotbarSlots({ burgerCount: 1, glizzyCount: 1, sodaCount: 1 });
+  assert(getHotbarConsumableItemId(marthaFoodSlots[4]) === MARTHA_ITEM_IDS.burger, 'Martha burgers should appear as a hotbar consumable');
+  assert(getHotbarConsumableItemId(marthaFoodSlots[5]) === MARTHA_ITEM_IDS.glizzy, 'Martha glizzies should appear as a hotbar consumable');
+  assert(getHotbarConsumableItemId(marthaFoodSlots[6]) === MARTHA_ITEM_IDS.soda, 'Martha soda should appear as a hotbar consumable');
+
   assert(SKATEBOARD_SPEED_MULTIPLIER === 1.6, 'Skateboard skating speed multiplier should be 1.6x');
 
   const pawnOwner = normalizeNpcBehavior({
@@ -1382,13 +1424,38 @@ function validateBartenderFunction() {
     defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'pawnShopOwnerEnabled')),
     'Default NPC layout should serialize pawnShopOwnerEnabled for world-builder compatibility'
   );
+  const marthaNpc = normalizeNpcBehavior({
+    modelId: 'martha',
+    name: 'Martha',
+    marthaEnabled: true,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  assert(isMarthaNpc(marthaNpc), 'Normalized NPC should preserve marthaEnabled');
+  assert(
+    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'marthaEnabled')),
+    'Default NPC layout should serialize marthaEnabled for world-builder compatibility'
+  );
   assert(
     /this\.syncActivePawnShopMenu\(pawnShopOwnerInteraction\);/.test(gameSource),
     'Pawn shop owner menu should resync and close during interaction updates'
   );
   assert(
+    /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
+    'Game client should route Martha food menu actions to a purchase handler'
+  );
+  assert(
     /buyPawnShopItem/.test(gameSource),
     'Game client should route pawn shop menu actions to a purchase handler'
+  );
+  assert(
+    /burgerCount:\s*'number'/.test(serverSource)
+      && /glizzyCount:\s*'number'/.test(serverSource)
+      && /sodaCount:\s*'number'/.test(serverSource)
+      && /martha:buyItem/.test(serverSource),
+    'Server state should persist Martha food inventory and expose the Martha purchase RPC'
   );
   assert(
     /setPlayerBoundItemsState/.test(hudSource) && /\.hud__bound-items/.test(styles),

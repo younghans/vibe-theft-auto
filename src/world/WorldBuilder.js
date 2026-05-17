@@ -409,6 +409,9 @@ export class WorldBuilder {
       onNpcPawnShopOwnerChange: (enabled) => void this.updateSelectedNpc({
         pawnShopOwnerEnabled: enabled === true
       }),
+      onNpcMarthaChange: (enabled) => void this.updateSelectedNpc({
+        marthaEnabled: enabled === true
+      }),
       onNpcBlackjackDealerChange: (enabled) => void this.updateSelectedNpc({
         blackjackDealerEnabled: enabled === true
       }),
@@ -1556,6 +1559,7 @@ export class WorldBuilder {
         stockMarketEnabled: false,
         bartenderEnabled: false,
         pawnShopOwnerEnabled: false,
+        marthaEnabled: false,
         blackjackDealerEnabled: false,
         schoolMicrogameEnabled: false,
         schoolMicrogameId: 'all'
@@ -2274,6 +2278,7 @@ export class WorldBuilder {
       stockMarketEnabled: (npcDraft?.stockMarketEnabled ?? placement.npc.stockMarketEnabled) === true,
       bartenderEnabled: (npcDraft?.bartenderEnabled ?? placement.npc.bartenderEnabled) === true,
       pawnShopOwnerEnabled: (npcDraft?.pawnShopOwnerEnabled ?? placement.npc.pawnShopOwnerEnabled) === true,
+      marthaEnabled: (npcDraft?.marthaEnabled ?? placement.npc.marthaEnabled) === true,
       blackjackDealerEnabled: (npcDraft?.blackjackDealerEnabled ?? placement.npc.blackjackDealerEnabled) === true,
       schoolMicrogameEnabled: (npcDraft?.schoolMicrogameEnabled ?? placement.npc.schoolMicrogameEnabled) === true,
       schoolMicrogameId: npcDraft?.schoolMicrogameId ?? placement.npc.schoolMicrogameId ?? 'all',

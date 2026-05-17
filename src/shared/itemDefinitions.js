@@ -1,12 +1,16 @@
 import { WEAPON_IDS, WEAPON_RELOAD_MS } from './combatConstants.js';
 import { DRINK_ITEM_IDS, getBartenderMenuItem } from './bartender.js';
 import { PAWN_SHOP_ITEM_IDS, getPawnShopMenuItem } from './pawnShop.js';
+import { MARTHA_ITEM_IDS, getMarthaMenuItem } from './martha.js';
 
 export const ITEM_IDS = Object.freeze({
   pistol: WEAPON_IDS.pistol,
   beer: DRINK_ITEM_IDS.beer,
   shot: DRINK_ITEM_IDS.shot,
-  cigarettes: PAWN_SHOP_ITEM_IDS.cigarettes
+  cigarettes: PAWN_SHOP_ITEM_IDS.cigarettes,
+  burger: MARTHA_ITEM_IDS.burger,
+  glizzy: MARTHA_ITEM_IDS.glizzy,
+  soda: MARTHA_ITEM_IDS.soda
 });
 
 export const ITEM_KINDS = Object.freeze({
@@ -20,7 +24,10 @@ export const ITEM_HOTBAR_ICON_IDS = Object.freeze({
   pistol: 'hotbarPistol',
   beer: 'drinkBeer',
   shot: 'drinkShot',
-  cigarettes: 'consumableCigarettes'
+  cigarettes: 'consumableCigarettes',
+  burger: 'foodBurger',
+  glizzy: 'foodGlizzy',
+  soda: 'foodSoda'
 });
 
 export const ITEM_EQUIP_ANIMATION_IDS = Object.freeze({
@@ -70,6 +77,33 @@ const ITEM_DEFINITIONS = Object.freeze({
     consumableItemId: PAWN_SHOP_ITEM_IDS.cigarettes,
     actionLabel: 'Smoke',
     maxStack: 999
+  }),
+  [ITEM_IDS.burger]: Object.freeze({
+    id: ITEM_IDS.burger,
+    kind: ITEM_KINDS.consumable,
+    label: getMarthaMenuItem(MARTHA_ITEM_IDS.burger)?.label ?? 'Burger',
+    hotbarIconId: ITEM_HOTBAR_ICON_IDS.burger,
+    consumableItemId: MARTHA_ITEM_IDS.burger,
+    actionLabel: 'Eat',
+    maxStack: 999
+  }),
+  [ITEM_IDS.glizzy]: Object.freeze({
+    id: ITEM_IDS.glizzy,
+    kind: ITEM_KINDS.consumable,
+    label: getMarthaMenuItem(MARTHA_ITEM_IDS.glizzy)?.label ?? 'Glizzy',
+    hotbarIconId: ITEM_HOTBAR_ICON_IDS.glizzy,
+    consumableItemId: MARTHA_ITEM_IDS.glizzy,
+    actionLabel: 'Eat',
+    maxStack: 999
+  }),
+  [ITEM_IDS.soda]: Object.freeze({
+    id: ITEM_IDS.soda,
+    kind: ITEM_KINDS.consumable,
+    label: getMarthaMenuItem(MARTHA_ITEM_IDS.soda)?.label ?? 'Soda',
+    hotbarIconId: ITEM_HOTBAR_ICON_IDS.soda,
+    consumableItemId: MARTHA_ITEM_IDS.soda,
+    actionLabel: 'Drink',
+    maxStack: 999
   })
 });
 
@@ -108,6 +142,10 @@ export function getItemDrinkItemId(itemId = '') {
 
 export function getItemConsumableItemId(itemId = '') {
   return getItemDefinition(itemId)?.consumableItemId ?? '';
+}
+
+export function getItemActionLabel(itemId = '', fallback = 'Use') {
+  return getItemDefinition(itemId)?.actionLabel ?? fallback;
 }
 
 export function getItemByEquippedWeaponId(weaponId = '') {

@@ -1,4 +1,5 @@
 import { getPlayerDrinkCount } from './bartender.js';
+import { getPlayerMarthaItemCount } from './martha.js';
 import { getPlayerPawnShopItemCount } from './pawnShop.js';
 import {
   ITEM_IDS,
@@ -10,12 +11,15 @@ import {
 } from './itemDefinitions.js';
 import { hasInventoryWeapon } from './weaponInventory.js';
 
-export const HOTBAR_SLOT_COUNT = 5;
+export const HOTBAR_SLOT_COUNT = 8;
 export const DEFAULT_HOTBAR_ITEM_ORDER = Object.freeze([
   ITEM_IDS.pistol,
   ITEM_IDS.beer,
   ITEM_IDS.shot,
   ITEM_IDS.cigarettes,
+  ITEM_IDS.burger,
+  ITEM_IDS.glizzy,
+  ITEM_IDS.soda,
   '',
 ]);
 const HOTBAR_ITEM_IDS = new Set(DEFAULT_HOTBAR_ITEM_ORDER.filter(Boolean));
@@ -24,7 +28,10 @@ export const DEFAULT_HOTBAR_ASSIGNMENTS = Object.freeze([
   Object.freeze({ slotIndex: 0, itemId: ITEM_IDS.pistol }),
   Object.freeze({ slotIndex: 1, itemId: ITEM_IDS.beer }),
   Object.freeze({ slotIndex: 2, itemId: ITEM_IDS.shot }),
-  Object.freeze({ slotIndex: 3, itemId: ITEM_IDS.cigarettes })
+  Object.freeze({ slotIndex: 3, itemId: ITEM_IDS.cigarettes }),
+  Object.freeze({ slotIndex: 4, itemId: ITEM_IDS.burger }),
+  Object.freeze({ slotIndex: 5, itemId: ITEM_IDS.glizzy }),
+  Object.freeze({ slotIndex: 6, itemId: ITEM_IDS.soda })
 ]);
 
 function createEmptySlot(index) {
@@ -124,7 +131,10 @@ export function moveHotbarItemOrderSlot(order = DEFAULT_HOTBAR_ITEM_ORDER, fromI
 function getHotbarItemQuantity(itemId = '', {
   beerCount = 0,
   shotCount = 0,
-  cigaretteCount = 0
+  cigaretteCount = 0,
+  burgerCount = 0,
+  glizzyCount = 0,
+  sodaCount = 0
 } = {}) {
   const definition = getItemDefinition(itemId);
   if (!definition) {
@@ -136,7 +146,10 @@ function getHotbarItemQuantity(itemId = '', {
   }
 
   if (definition.kind === ITEM_KINDS.consumable) {
-    return getPlayerPawnShopItemCount({ cigaretteCount }, definition.consumableItemId);
+    return Math.max(
+      getPlayerPawnShopItemCount({ cigaretteCount }, definition.consumableItemId),
+      getPlayerMarthaItemCount({ burgerCount, glizzyCount, sodaCount }, definition.consumableItemId)
+    );
   }
 
   return 1;
@@ -147,7 +160,10 @@ function canShowHotbarItem(itemId = '', {
   equippedWeaponId = '',
   beerCount = 0,
   shotCount = 0,
-  cigaretteCount = 0
+  cigaretteCount = 0,
+  burgerCount = 0,
+  glizzyCount = 0,
+  sodaCount = 0
 } = {}) {
   const definition = getItemDefinition(itemId);
   if (!definition) {
@@ -165,7 +181,7 @@ function canShowHotbarItem(itemId = '', {
   }
 
   if (definition.kind === ITEM_KINDS.consumable) {
-    return getHotbarItemQuantity(definition.id, { cigaretteCount }) > 0;
+    return getHotbarItemQuantity(definition.id, { cigaretteCount, burgerCount, glizzyCount, sodaCount }) > 0;
   }
 
   return false;
@@ -177,9 +193,12 @@ export function createHotbarSlots({
   beerCount = 0,
   shotCount = 0,
   cigaretteCount = 0,
+  burgerCount = 0,
+  glizzyCount = 0,
+  sodaCount = 0,
   hotbarItemOrder = DEFAULT_HOTBAR_ITEM_ORDER
 } = {}) {
-  const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount, cigaretteCount };
+  const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount, cigaretteCount, burgerCount, glizzyCount, sodaCount };
   const itemOrder = normalizeHotbarItemOrder(hotbarItemOrder);
 
   return Object.freeze(

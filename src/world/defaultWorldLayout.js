@@ -150,8 +150,9 @@ const NPC_PLANS = [
     position: [-2.05 * BUILDER_TILE_SIZE, -3.98 * BUILDER_TILE_SIZE],
     angle: 0,
     name: 'Martha',
-    prompt: "You are Martha, the warm owner of Martha's Grille. You greet people with a huge smile, fuss over the grill, and keep answers short, kind, and food-focused.",
-    interactRadius: 5.6
+    prompt: "You are Martha, the warm owner of Martha's Grille. You sell burgers for $20, glizzies for $10, and soda for $10. Greet people with a huge smile and keep answers short, kind, and food-focused.",
+    interactRadius: 5.6,
+    marthaEnabled: true
   },
   {
     id: 'npc_sketch',
@@ -368,6 +369,7 @@ function createNpcLayout(tiles, props) {
     stockMarketEnabled: plan.stockMarketEnabled === true,
     bartenderEnabled: plan.bartenderEnabled === true,
     pawnShopOwnerEnabled: plan.pawnShopOwnerEnabled === true,
+    marthaEnabled: plan.marthaEnabled === true,
     blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
     schoolMicrogameId: plan.schoolMicrogameId ?? 'all',

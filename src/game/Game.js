@@ -53,6 +53,7 @@ import {
 import {
   getItemEquipAnimation,
   getItemEquipAnimationForWeapon,
+  getItemActionLabel,
   getItemLabel
 } from '../shared/itemDefinitions.js';
 import {
@@ -116,6 +117,13 @@ import {
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../shared/pawnShop.js';
+import {
+  getMarthaMenuItem,
+  getMarthaPromptRadius,
+  getPlayerMarthaItemCount,
+  isMarthaNpc,
+  listMarthaMenuItems
+} from '../shared/martha.js';
 import {
   SKATEBOARD_SPEED_MULTIPLIER,
   isPlayerSkateboardOwner
@@ -1001,6 +1009,7 @@ export class Game {
     this.activeInteractionMenu = null;
     this.bartenderRequestInFlight = false;
     this.pawnShopRequestInFlight = false;
+    this.marthaRequestInFlight = false;
     this.inventoryRequestInFlight = false;
     this.blackjackNpcId = '';
     this.blackjackDealerName = 'Dealer';
@@ -5984,6 +5993,8 @@ export class Game {
       void this.buyBartenderDrink(action.slice('bartender:'.length));
     } else if (action.startsWith('pawnShop:')) {
       void this.buyPawnShopItem(action.slice('pawnShop:'.length));
+    } else if (action.startsWith('martha:')) {
+      void this.buyMarthaItem(action.slice('martha:'.length));
     }
   }
 
@@ -6281,6 +6292,205 @@ export class Game {
     }
   }
 
+  getMarthaNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      marthaEnabled: npcState?.marthaEnabled === true
+        || interactable?.npc?.marthaEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getMarthaNpcPosition(interactable = null, npcDetails = null) {
+    const x = Number(
+      npcDetails?.x
+      ?? npcDetails?.position?.[0]
+      ?? interactable?.originPosition?.x
+      ?? interactable?.position?.x
+    );
+    const z = Number(
+      npcDetails?.z
+      ?? npcDetails?.position?.[1]
+      ?? interactable?.originPosition?.z
+      ?? interactable?.position?.z
+    );
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+  }
+
+  getNearestMarthaInteractable({
+    npcId = '',
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  } = {}) {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    const targetNpcId = String(npcId ?? '').trim();
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of worldBuilderInteractables) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const resolvedNpcId = String(interactable.npcId || interactable.placementId || '').trim();
+      if (targetNpcId && resolvedNpcId !== targetNpcId) {
+        continue;
+      }
+
+      const npcDetails = this.getMarthaNpcDetails(interactable);
+      if (
+        !isMarthaNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getMarthaNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getMarthaPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'martha',
+        npcId: resolvedNpcId,
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Order food',
+        actionText: "Martha's menu opened."
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  syncActiveMarthaMenu(marthaInteraction = null) {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'martha') {
+      return;
+    }
+
+    const npcId = String(menu.npcId ?? '').trim();
+    const activeInteraction = String(marthaInteraction?.npcId ?? '').trim() === npcId
+      ? marthaInteraction
+      : this.getNearestMarthaInteractable({ npcId });
+    if (!activeInteraction) {
+      this.closeInteractionMenu();
+      return;
+    }
+
+    menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Martha');
+    menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    this.hud.setInteractionMenuAnchor(menu.anchor);
+  }
+
+  renderMarthaMenu() {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'martha') {
+      return;
+    }
+
+    const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
+    const localPlayerState = this.getLocalPlayerState();
+    const items = listMarthaMenuItems();
+    const actions = items.map((item) => ({
+      id: `martha:${item.id}`,
+      label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${getPlayerMarthaItemCount(localPlayerState, item.id)})`,
+      primary: item.id === 'burger',
+      disabled: this.marthaRequestInFlight || cash < item.price
+    }));
+
+    actions.push({
+      id: 'close',
+      label: 'Maybe later',
+      disabled: this.marthaRequestInFlight
+    });
+
+    this.hud.showInteractionMenu({
+      title: menu.npcName || 'Martha',
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${items.map((item) => `${item.label}: ${getPlayerMarthaItemCount(localPlayerState, item.id)}`).join(', ')}.`,
+      actions,
+      anchor: menu.anchor
+    });
+  }
+
+  openMarthaMenu(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.closePhoneMenu();
+    this.activeInteractionMenu = {
+      kind: 'martha',
+      npcId,
+      npcName: String(interaction?.npc?.name ?? 'Martha'),
+      anchor: this.getBartenderMenuAnchor(interaction)
+    };
+    this.renderMarthaMenu();
+  }
+
+  async buyMarthaItem(itemId = '') {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'martha' || !menu.npcId || this.marthaRequestInFlight) {
+      return;
+    }
+
+    const item = getMarthaMenuItem(itemId);
+    if (!item) {
+      return;
+    }
+
+    this.marthaRequestInFlight = true;
+    this.renderMarthaMenu();
+    try {
+      const result = await this.npcService?.buyMarthaItem?.(menu.npcId, item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That item could not be purchased.');
+        return;
+      }
+
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        cash: normalizeMoneyAmount(result.money ?? this.phoneWalletState.cash ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+      this.playSoundEffect(this.rentChaChingSound);
+      this.refreshHotbarHud();
+      this.hud.showToast(`Bought ${item.label.toLowerCase()} for ${formatMoneyAmount(item.price)}.`);
+      this.renderMarthaMenu();
+    } catch (error) {
+      console.warn('[Martha] Purchase failed.', error);
+      this.hud.showToast("Martha's purchase request failed.");
+    } finally {
+      this.marthaRequestInFlight = false;
+      if (this.activeInteractionMenu?.kind === 'martha') {
+        this.renderMarthaMenu();
+      }
+    }
+  }
+
   async consumeInventoryDrink(itemId = '') {
     const item = getBartenderMenuItem(itemId);
     if (!item || this.inventoryRequestInFlight) {
@@ -6314,7 +6524,7 @@ export class Game {
   }
 
   async consumeInventoryConsumable(itemId = '') {
-    const item = getPawnShopMenuItem(itemId);
+    const item = getPawnShopMenuItem(itemId) ?? getMarthaMenuItem(itemId);
     if (!item || item.kind !== 'consumable' || this.inventoryRequestInFlight) {
       return false;
     }
@@ -6328,7 +6538,10 @@ export class Game {
       }
 
       this.player?.playEmote(DRINKING_EMOTE_ID);
-      this.hud.showToast(result.message || `Used ${item.label.toLowerCase()}.`);
+      const healed = Math.max(0, Math.floor(Number(result.health?.healed) || 0));
+      this.hud.showToast(result.message
+        ? `${result.message}${healed > 0 ? ` +${healed} health.` : ''}`
+        : `Used ${item.label.toLowerCase()}.`);
       this.refreshHotbarHud();
       return true;
     } catch (error) {
@@ -13454,6 +13667,9 @@ export class Game {
       beerCount: localPlayerState?.beerCount ?? 0,
       shotCount: localPlayerState?.shotCount ?? 0,
       cigaretteCount: localPlayerState?.cigaretteCount ?? 0,
+      burgerCount: localPlayerState?.burgerCount ?? 0,
+      glizzyCount: localPlayerState?.glizzyCount ?? 0,
+      sodaCount: localPlayerState?.sodaCount ?? 0,
       hotbarItemOrder: this.hotbarItemOrder
     });
   }
@@ -13651,7 +13867,9 @@ export class Game {
       && !this.aimPoseDebugVisible
     );
     const armed = Boolean(localPlayerState?.alive !== false && localPlayerState?.equippedWeaponId && !selectedDrinkItemId && !selectedConsumableItemId);
-    const fireLabel = selectedDrinkItemId ? 'Drink' : (selectedConsumableItemId ? 'Smoke' : (armed ? 'Fire' : 'Hit'));
+    const fireLabel = selectedDrinkItemId
+      ? 'Drink'
+      : (selectedConsumableItemId ? getItemActionLabel(this.getSelectedHotbarItemId()) : (armed ? 'Fire' : 'Hit'));
 
     this.hud.setMobileControlsState({ visible, armed, fireLabel });
     this.input.setTouchControlsEnabled(visible);
@@ -14160,8 +14378,12 @@ export class Game {
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
       : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
+    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+      ? null
+      : this.getNearestMarthaInteractable({ worldBuilderInteractables });
     this.syncActiveBartenderMenu(bartenderInteraction);
     this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
+    this.syncActiveMarthaMenu(marthaInteraction);
     const interactPressed = this.input.consumeAction('interact');
 
     if (deliveryInteraction?.action && interactPressed) {
@@ -14213,6 +14435,14 @@ export class Game {
       this.hud.setPrompt(pawnShopOwnerInteraction);
       if (interactPressed) {
         this.openPawnShopMenu(pawnShopOwnerInteraction);
+      }
+      return;
+    }
+
+    if (marthaInteraction) {
+      this.hud.setPrompt(marthaInteraction);
+      if (interactPressed) {
+        this.openMarthaMenu(marthaInteraction);
       }
       return;
     }
@@ -14486,9 +14716,12 @@ export class Game {
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
       : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
+    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+      ? null
+      : this.getNearestMarthaInteractable({ worldBuilderInteractables });
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? marthaInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -14507,7 +14740,7 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && !pawnShopOwnerInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && !pawnShopOwnerInteraction && !marthaInteraction && npcState?.busy) {
       return;
     }
 
@@ -14630,6 +14863,20 @@ export class Game {
       bubbles.push({
         id: `npc-pawn-shop:${npcId}`,
         text: 'E to browse pawn shop',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (marthaInteraction) {
+      bubbles.push({
+        id: `npc-martha:${npcId}`,
+        text: 'E to order food',
         label: '',
         variant: 'interaction',
         status: 'done',

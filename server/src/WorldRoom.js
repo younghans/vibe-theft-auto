@@ -92,6 +92,15 @@ import {
   normalizePawnShopInventoryCount
 } from '../../src/shared/pawnShop.js';
 import {
+  addPlayerMarthaItem,
+  consumePlayerMarthaItem,
+  getMarthaMenuItem,
+  getMarthaPromptRadius,
+  getPlayerMarthaInventorySnapshot,
+  isMarthaNpc,
+  normalizeMarthaInventoryCount
+} from '../../src/shared/martha.js';
+import {
   SKATEBOARD_SPEED_MULTIPLIER,
   normalizeSkateboardOwned
 } from '../../src/shared/skateboard.js';
@@ -319,6 +328,9 @@ const PlayerInventoryState = schema({
   beerCount: 'number',
   shotCount: 'number',
   cigaretteCount: 'number',
+  burgerCount: 'number',
+  glizzyCount: 'number',
+  sodaCount: 'number',
   skateboardOwned: 'boolean',
   drunknessDose: 'number',
   drunknessLevel: 'number',
@@ -433,6 +445,9 @@ const PLAYER_STATE_SECTIONS = [
       'beerCount',
       'shotCount',
       'cigaretteCount',
+      'burgerCount',
+      'glizzyCount',
+      'sodaCount',
       'skateboardOwned',
       'drunknessDose',
       'drunknessLevel',
@@ -561,6 +576,7 @@ const NpcState = schema({
   stockMarketEnabled: 'boolean',
   bartenderEnabled: 'boolean',
   pawnShopOwnerEnabled: 'boolean',
+  marthaEnabled: 'boolean',
   blackjackDealerEnabled: 'boolean',
   schoolMicrogameEnabled: 'boolean',
   schoolMicrogameId: 'string',
@@ -760,6 +776,9 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       beerCount: player.beerCount,
       shotCount: player.shotCount,
       cigaretteCount: player.cigaretteCount,
+      burgerCount: player.burgerCount,
+      glizzyCount: player.glizzyCount,
+      sodaCount: player.sodaCount,
       skateboardOwned: normalizeSkateboardOwned(player.skateboardOwned),
       drunknessDose: player.drunknessDose,
       drunknessLevel: player.drunknessLevel,
@@ -840,6 +859,9 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.beerCount = normalizeDrinkInventoryCount(saved.beerCount);
   player.shotCount = normalizeDrinkInventoryCount(saved.shotCount);
   player.cigaretteCount = normalizePawnShopInventoryCount(saved.cigaretteCount);
+  player.burgerCount = normalizeMarthaInventoryCount(saved.burgerCount);
+  player.glizzyCount = normalizeMarthaInventoryCount(saved.glizzyCount);
+  player.sodaCount = normalizeMarthaInventoryCount(saved.sodaCount);
   player.skateboardOwned = normalizeSkateboardOwned(saved.skateboardOwned);
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
@@ -1027,6 +1049,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handlePawnShopPurchase(client, message));
     });
 
+    this.onMessage('martha:buyItem', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleMarthaPurchase(client, message));
+    });
+
     this.onMessage('inventory:consumeItem', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleInventoryConsumeRequest(client, message));
     });
@@ -1200,6 +1226,9 @@ export class WorldRoom extends Room {
     player.beerCount = 0;
     player.shotCount = 0;
     player.cigaretteCount = 0;
+    player.burgerCount = 0;
+    player.glizzyCount = 0;
+    player.sodaCount = 0;
     player.skateboardOwned = false;
     player.drunknessDose = 0;
     player.drunknessLevel = 0;
@@ -2191,6 +2220,80 @@ export class WorldRoom extends Room {
     };
   }
 
+  getMarthaNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isMarthaNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getMarthaPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertMarthaAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot buy that right now.');
+    }
+
+    const npc = this.getMarthaNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to Martha.');
+    }
+
+    return { player, npc };
+  }
+
+  handleMarthaPurchase(client, message = {}) {
+    const { player, npc } = this.assertMarthaAccess(client, message);
+    const item = getMarthaMenuItem(message?.itemId);
+    if (!item) {
+      throw new Error("That is not on Martha's menu.");
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      throw new Error(`You need $${item.price} for ${item.label.toLowerCase()}.`);
+    }
+
+    player.money = money - item.price;
+    const inventoryCount = addPlayerMarthaItem(player, item.id, 1);
+    this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return {
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: inventoryCount
+      },
+      inventory: getPlayerMarthaInventorySnapshot(player),
+      money: player.money
+    };
+  }
+
   awardCharismaForDrink(player, result = null, previousDrunknessLevel = 0) {
     const xp = getCharismaDrinkXp({
       itemId: result?.item?.id ?? '',
@@ -2208,16 +2311,20 @@ export class WorldRoom extends Room {
 
     const now = Date.now();
     const pawnItem = getPawnShopMenuItem(message?.itemId);
-    const isDrinkItem = !pawnItem || pawnItem.kind !== 'consumable';
+    const marthaItem = getMarthaMenuItem(message?.itemId);
+    const isFoodItem = marthaItem?.kind === 'consumable';
+    const isDrinkItem = !isFoodItem && (!pawnItem || pawnItem.kind !== 'consumable');
     let previousDrunknessLevel = 0;
     if (isDrinkItem) {
       refreshPlayerDrunkness(player, now);
       previousDrunknessLevel = player.drunknessLevel;
     }
 
-    const result = pawnItem?.kind === 'consumable'
-      ? consumePlayerPawnShopItem(player, message?.itemId)
-      : consumePlayerDrink(player, message?.itemId, now);
+    const result = isFoodItem
+      ? consumePlayerMarthaItem(player, message?.itemId)
+      : pawnItem?.kind === 'consumable'
+        ? consumePlayerPawnShopItem(player, message?.itemId)
+        : consumePlayerDrink(player, message?.itemId, now);
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -3863,6 +3970,7 @@ export class WorldRoom extends Room {
         stockMarketEnabled: message.stockMarketEnabled === true,
         bartenderEnabled: message.bartenderEnabled === true,
         pawnShopOwnerEnabled: message.pawnShopOwnerEnabled === true,
+        marthaEnabled: message.marthaEnabled === true,
         blackjackDealerEnabled: message.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: message.schoolMicrogameEnabled === true,
         schoolMicrogameId: normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID),
@@ -3918,6 +4026,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'pawnShopOwnerEnabled')) {
       updates.pawnShopOwnerEnabled = message.pawnShopOwnerEnabled === true;
+    }
+    if (Object.hasOwn(message, 'marthaEnabled')) {
+      updates.marthaEnabled = message.marthaEnabled === true;
     }
     if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
       updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
@@ -4071,6 +4182,7 @@ export class WorldRoom extends Room {
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
       existing.bartenderEnabled = normalizedDefinition.bartenderEnabled === true;
       existing.pawnShopOwnerEnabled = normalizedDefinition.pawnShopOwnerEnabled === true;
+      existing.marthaEnabled = normalizedDefinition.marthaEnabled === true;
       existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
       existing.schoolMicrogameEnabled = normalizedDefinition.schoolMicrogameEnabled === true;
       existing.schoolMicrogameId = normalizeSchoolMicrogameId(normalizedDefinition.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);

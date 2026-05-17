@@ -5,12 +5,14 @@ const CAPABILITIES = Object.freeze([
   ['stockMarketEnabled', 'stock trading'],
   ['bartenderEnabled', 'bar orders'],
   ['pawnShopOwnerEnabled', 'pawn shop sales'],
+  ['marthaEnabled', "Martha's Grille food"],
   ['blackjackDealerEnabled', 'blackjack'],
   ['schoolMicrogameEnabled', 'school challenges']
 ]);
 
 const PROFILES = Object.freeze({
   pawn: ['pawnShopOwnerEnabled', 'roth|pawn|cigarette|pistol|skateboard', 'pawn shop prices', 'Cash first.'],
+  martha: ['marthaEnabled', 'martha|grille|burger|glizzy|soda', "Martha's Grille menu", 'Eat up, sugar.'],
   bartender: ['bartenderEnabled', 'bartender|bar|beer|shot|drink', 'bar orders', 'Sip slower than you talk.'],
   teacher: ['schoolMicrogameEnabled', 'professor|teacher|school|quiz', 'school challenge', 'Show your work.'],
   gym: ['gymCheckInEnabled', 'bruno|gym|training|workout|barbell', 'gym training', 'Keep your form tight.'],
@@ -30,7 +32,8 @@ const SERVICE_INTENTS = Object.freeze({
   blackjack: ['blackjackDealerEnabled', 'dealer'],
   stock: ['stockMarketEnabled', 'broker'],
   drink: ['bartenderEnabled', 'bartender'],
-  shop: ['pawnShopOwnerEnabled', 'pawn']
+  shop: ['pawnShopOwnerEnabled', 'pawn'],
+  food: ['marthaEnabled', 'martha']
 });
 
 const INTENTS = Object.freeze([
@@ -40,6 +43,7 @@ const INTENTS = Object.freeze([
   ['blackjack', 'blackjack|cards|dealer|bet|wager|casino'],
   ['stock', 'stock|market|share|shares|portfolio|invest|trade|trading'],
   ['drink', 'bar|beer|shot|drink|drunk|bartender'],
+  ['food', 'martha|grille|burger|glizzy|soda|food|eat|hungry'],
   ['shop', 'price|buy|sell|shop|cost|weapon|gun|pistol|cigarette|skateboard'],
   ['work', 'job|work|mission|task|quest|hustle'],
   ['money', 'money|cash|paid|payout|rich|earn'],
@@ -72,6 +76,9 @@ function chooseFreshLine(lines, transcript = []) {
 function getServiceReply(profileKey, profile) {
   if (profileKey === 'pawn') {
     return 'Cigarettes $20, pistol $50, skateboard $200. Cash first.';
+  }
+  if (profileKey === 'martha') {
+    return 'Burger $20, glizzy $10, soda $10. They patch you right up.';
   }
   if (profileKey === 'dealer') {
     return 'Blackjack: hit, stand, double, or split without busting.';
@@ -148,7 +155,9 @@ export function buildNpcFallbackReply({ npc = {}, playerMessage = '', transcript
   const profile = PROFILES[profileKey] ?? PROFILES.local;
   const intent = detectNpcChatIntent(playerMessage);
   const service = SERVICE_INTENTS[intent];
-  const serviceKey = service && (npc?.[service[0]] === true || profileKey === service[1]) ? service[1] : '';
+  const serviceKey = profileKey === 'martha' && intent === 'shop'
+    ? 'martha'
+    : (service && (npc?.[service[0]] === true || profileKey === service[1]) ? service[1] : '');
   const lines = serviceKey
     ? [getServiceReply(serviceKey, PROFILES[serviceKey]), `I can help with ${profile[2]}. ${profile[3]}`]
     : getProfileLines(profile, intent);

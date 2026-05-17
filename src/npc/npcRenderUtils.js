@@ -36,6 +36,19 @@ function createAdornmentBox(name, size, position, material, rotation = null) {
   return mesh;
 }
 
+function createAdornmentTorus(name, radius, tube, position, material, scale = [1, 1, 1]) {
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, tube, 8, 24),
+    material
+  );
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.scale.set(scale[0], scale[1], scale[2]);
+  mesh.castShadow = true;
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
 function createMarthaSmile(material) {
   const curve = new THREE.CatmullRomCurve3([
     new THREE.Vector3(-0.25, -0.08, 0),
@@ -66,6 +79,8 @@ export function createMarthaNpcAdornment(model = {}) {
     skin: createAdornmentMaterial(0xe7b885, 0.78, 0.02),
     cheek: createAdornmentMaterial(0xd87673, 0.74, 0.02),
     smile: createAdornmentMaterial(0x7c2f2b, 0.62, 0.02),
+    glasses: createAdornmentMaterial(0x251b16, 0.48, 0.05),
+    wrinkle: createAdornmentMaterial(0xaa765d, 0.82, 0.01),
     apron: createAdornmentMaterial(0xfff4d2, 0.82, 0.02),
     dress: createAdornmentMaterial(0x7b6295, 0.74, 0.04)
   };
@@ -76,11 +91,22 @@ export function createMarthaNpcAdornment(model = {}) {
   root.add(head);
 
   head.add(createAdornmentSphere('marthaRoundFace', 0.38, [0, 0, 0.24], materials.skin, [0.92, 1.02, 0.54]));
-  head.add(createAdornmentSphere('marthaFluffyHairHalo', 0.46, [0, 0.16, 0.04], materials.hair, [1.1, 0.82, 0.76]));
-  head.add(createAdornmentSphere('marthaFluffyHairTop', 0.3, [0, 0.48, 0.02], materials.hair, [1.05, 0.82, 0.94]));
-  head.add(createAdornmentSphere('marthaFluffyHairLeft', 0.28, [-0.34, 0.18, 0.08], materials.hair, [0.86, 1.1, 0.78]));
-  head.add(createAdornmentSphere('marthaFluffyHairRight', 0.28, [0.34, 0.18, 0.08], materials.hair, [0.86, 1.1, 0.78]));
-  head.add(createAdornmentSphere('marthaFluffyHairBack', 0.34, [0, 0.08, -0.18], materials.hairShadow, [1.02, 0.9, 0.72]));
+  head.add(createAdornmentSphere('marthaFluffyHairHalo', 0.5, [0, 0.16, 0.04], materials.hair, [1.26, 0.92, 0.84]));
+  head.add(createAdornmentSphere('marthaFluffyHairTop', 0.34, [0, 0.52, 0.02], materials.hair, [1.12, 0.9, 1.04]));
+  head.add(createAdornmentSphere('marthaFluffyHairCrownLeft', 0.22, [-0.23, 0.58, 0.06], materials.hair, [1.02, 0.88, 0.9]));
+  head.add(createAdornmentSphere('marthaFluffyHairCrownRight', 0.22, [0.23, 0.58, 0.06], materials.hair, [1.02, 0.88, 0.9]));
+  head.add(createAdornmentSphere('marthaFluffyHairLeft', 0.34, [-0.42, 0.18, 0.08], materials.hair, [0.92, 1.2, 0.82]));
+  head.add(createAdornmentSphere('marthaFluffyHairRight', 0.34, [0.42, 0.18, 0.08], materials.hair, [0.92, 1.2, 0.82]));
+  head.add(createAdornmentSphere('marthaFluffyHairSideLeftLower', 0.22, [-0.5, -0.04, 0.08], materials.hair, [0.88, 0.95, 0.72]));
+  head.add(createAdornmentSphere('marthaFluffyHairSideRightLower', 0.22, [0.5, -0.04, 0.08], materials.hair, [0.88, 0.95, 0.72]));
+  head.add(createAdornmentSphere('marthaFluffyHairBack', 0.4, [0, 0.08, -0.2], materials.hairShadow, [1.18, 1.02, 0.82]));
+  head.add(createAdornmentTorus('marthaLeftGlassesLens', 0.105, 0.014, [-0.15, 0.05, 0.54], materials.glasses, [1.18, 0.86, 1]));
+  head.add(createAdornmentTorus('marthaRightGlassesLens', 0.105, 0.014, [0.15, 0.05, 0.54], materials.glasses, [1.18, 0.86, 1]));
+  head.add(createAdornmentBox('marthaGlassesBridge', [0.12, 0.025, 0.025], [0, 0.05, 0.54], materials.glasses));
+  head.add(createAdornmentBox('marthaLeftGlassesArm', [0.14, 0.025, 0.025], [-0.31, 0.06, 0.47], materials.glasses, [0, -0.42, 0]));
+  head.add(createAdornmentBox('marthaRightGlassesArm', [0.14, 0.025, 0.025], [0.31, 0.06, 0.47], materials.glasses, [0, 0.42, 0]));
+  head.add(createAdornmentBox('marthaForeheadWrinkle1', [0.28, 0.012, 0.018], [0, 0.2, 0.56], materials.wrinkle));
+  head.add(createAdornmentBox('marthaForeheadWrinkle2', [0.22, 0.012, 0.018], [0, 0.15, 0.565], materials.wrinkle));
   head.add(createAdornmentSphere('marthaLeftCheek', 0.08, [-0.19, -0.04, 0.53], materials.cheek, [1.25, 0.76, 0.28]));
   head.add(createAdornmentSphere('marthaRightCheek', 0.08, [0.19, -0.04, 0.53], materials.cheek, [1.25, 0.76, 0.28]));
   head.add(createMarthaSmile(materials.smile));
@@ -89,10 +115,13 @@ export function createMarthaNpcAdornment(model = {}) {
   body.name = 'marthaCookOutfitDetail';
   body.position.set(0, height * 0.44, 0.31);
   root.add(body);
-  body.add(createAdornmentBox('marthaApronPanel', [0.72, 1.24, 0.08], [0, 0, 0], materials.apron));
-  body.add(createAdornmentBox('marthaApronTop', [0.52, 0.34, 0.09], [0, 0.72, 0.02], materials.apron));
-  body.add(createAdornmentBox('marthaDressLeftHint', [0.16, 1.16, 0.07], [-0.48, -0.1, -0.01], materials.dress, [0, 0, -0.08]));
-  body.add(createAdornmentBox('marthaDressRightHint', [0.16, 1.16, 0.07], [0.48, -0.1, -0.01], materials.dress, [0, 0, 0.08]));
+  body.add(createAdornmentSphere('marthaRoundBelly', 0.5, [0, -0.06, -0.05], materials.dress, [1.34, 1.12, 0.72]));
+  body.add(createAdornmentSphere('marthaWideHipLeft', 0.28, [-0.46, -0.34, -0.04], materials.dress, [0.94, 0.86, 0.62]));
+  body.add(createAdornmentSphere('marthaWideHipRight', 0.28, [0.46, -0.34, -0.04], materials.dress, [0.94, 0.86, 0.62]));
+  body.add(createAdornmentBox('marthaApronPanel', [0.88, 1.24, 0.08], [0, 0, 0.22], materials.apron));
+  body.add(createAdornmentBox('marthaApronTop', [0.62, 0.34, 0.09], [0, 0.72, 0.24], materials.apron));
+  body.add(createAdornmentBox('marthaDressLeftHint', [0.2, 1.16, 0.07], [-0.58, -0.1, -0.01], materials.dress, [0, 0, -0.08]));
+  body.add(createAdornmentBox('marthaDressRightHint', [0.2, 1.16, 0.07], [0.58, -0.1, -0.01], materials.dress, [0, 0, 0.08]));
 
   return root;
 }

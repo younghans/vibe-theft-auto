@@ -2665,7 +2665,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__hotbar-slots {
   display: grid;
-  grid-template-columns: repeat(5, var(--hotbar-slot-size));
+  grid-template-columns: repeat(8, var(--hotbar-slot-size));
   gap: var(--hotbar-slot-gap);
 }
 
@@ -3011,6 +3011,138 @@ body.is-admin-prompt-resizing * {
   transform: rotate(-18deg);
 }
 
+.hud__hotbar-food-icon {
+  position: relative;
+  display: block;
+  width: 70%;
+  height: 70%;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.28));
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
+}
+
+.hud__hotbar-food-icon--burger::before,
+.hud__hotbar-food-icon--burger::after,
+.hud__hotbar-food-patty,
+.hud__hotbar-food-cheese {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.hud__hotbar-food-icon--burger::before {
+  top: 18%;
+  height: 34%;
+  background: linear-gradient(180deg, #f2be67 0%, #ce793a 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 244, 199, 0.45);
+}
+
+.hud__hotbar-food-icon--burger::after {
+  bottom: 18%;
+  height: 20%;
+  background: linear-gradient(180deg, #d99548 0%, #a85f2f 100%);
+}
+
+.hud__hotbar-food-patty {
+  top: 52%;
+  height: 18%;
+  background: #5d321e;
+}
+
+.hud__hotbar-food-cheese {
+  top: 46%;
+  left: 18%;
+  right: 18%;
+  height: 14%;
+  border-radius: 2px;
+  background: #ffd54f;
+  transform: skewX(-12deg);
+}
+
+.hud__hotbar-food-icon--glizzy {
+  transform: rotate(-18deg);
+}
+
+.hud__hotbar-food-icon--glizzy::before,
+.hud__hotbar-food-icon--glizzy::after,
+.hud__hotbar-food-sausage {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.hud__hotbar-food-icon--glizzy::before {
+  top: 32%;
+  height: 38%;
+  background: linear-gradient(180deg, #f3c06d 0%, #bf7433 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 242, 185, 0.45);
+}
+
+.hud__hotbar-food-icon--glizzy::after {
+  top: 48%;
+  left: 18%;
+  right: 18%;
+  height: 12%;
+  background: #f6e19d;
+}
+
+.hud__hotbar-food-sausage {
+  top: 38%;
+  left: 20%;
+  right: 20%;
+  height: 24%;
+  background: linear-gradient(180deg, #c55e3f 0%, #8f3528 100%);
+}
+
+.hud__hotbar-food-icon--soda {
+  width: 48%;
+}
+
+.hud__hotbar-soda-cup,
+.hud__hotbar-soda-lid,
+.hud__hotbar-soda-straw {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.hud__hotbar-soda-cup {
+  left: 14%;
+  right: 14%;
+  bottom: 8%;
+  height: 70%;
+  border-radius: 4px 4px 7px 7px;
+  background: linear-gradient(180deg, #e54d5e 0%, #8d2538 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.hud__hotbar-soda-lid {
+  left: 6%;
+  right: 6%;
+  top: 18%;
+  height: 15%;
+  border-radius: 4px;
+  background: #f3f4f0;
+}
+
+.hud__hotbar-soda-straw {
+  left: 58%;
+  top: 0;
+  width: 12%;
+  height: 44%;
+  border-radius: 2px;
+  background: #f4f0db;
+  transform: rotate(14deg);
+  transform-origin: bottom center;
+}
+
 .hud__hotbar-slot:focus-visible .hud__hotbar-item-icon,
 .hud__hotbar-slot.is-selected .hud__hotbar-item-icon {
   filter: drop-shadow(0 7px 9px rgba(0, 0, 0, 0.34));
@@ -3020,7 +3152,9 @@ body.is-admin-prompt-resizing * {
 .hud__hotbar-slot:focus-visible .hud__hotbar-drink-icon,
 .hud__hotbar-slot.is-selected .hud__hotbar-drink-icon,
 .hud__hotbar-slot:focus-visible .hud__hotbar-cigarette-icon,
-.hud__hotbar-slot.is-selected .hud__hotbar-cigarette-icon {
+.hud__hotbar-slot.is-selected .hud__hotbar-cigarette-icon,
+.hud__hotbar-slot:focus-visible .hud__hotbar-food-icon,
+.hud__hotbar-slot.is-selected .hud__hotbar-food-icon {
   filter: drop-shadow(0 7px 9px rgba(0, 0, 0, 0.34));
   transform: translateY(-2%) scale(1.07);
 }

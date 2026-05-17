@@ -76,6 +76,14 @@ import {
   isPawnShopOwnerNpc
 } from '../shared/pawnShop.js';
 import {
+  addPlayerMarthaItem,
+  consumePlayerMarthaItem,
+  getMarthaMenuItem,
+  getMarthaPromptRadius,
+  getPlayerMarthaInventorySnapshot,
+  isMarthaNpc
+} from '../shared/martha.js';
+import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
   canSplitBlackjackSession,
@@ -202,6 +210,9 @@ function buildMockNpcReply(definition = {}) {
 
   if (definition.pawnShopOwnerEnabled) {
     return 'Pistol $50, smokes $20, board $200. Cash first.';
+  }
+  if (definition.marthaEnabled) {
+    return 'Burger $20, glizzy $10, soda $10. Eat up.';
   }
   if (definition.blackjackDealerEnabled) {
     return 'Blackjack: hit, stand, double, split. Do not bust.';
@@ -335,6 +346,9 @@ function createDefaultPlayerState(overrides = {}) {
     beerCount: 0,
     shotCount: 0,
     cigaretteCount: 0,
+    burgerCount: 0,
+    glizzyCount: 0,
+    sodaCount: 0,
     skateboardOwned: false,
     drunknessDose: 0,
     drunknessLevel: 0,
@@ -694,6 +708,7 @@ export class NpcServiceMock {
         stockMarketEnabled: definition.stockMarketEnabled === true,
         bartenderEnabled: definition.bartenderEnabled === true,
         pawnShopOwnerEnabled: definition.pawnShopOwnerEnabled === true,
+        marthaEnabled: definition.marthaEnabled === true,
         blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: definition.schoolMicrogameEnabled === true,
         schoolMicrogameId: definition.schoolMicrogameId || SCHOOL_MICROGAME_ALL_ID,
@@ -825,6 +840,7 @@ export class NpcServiceMock {
             stockMarketEnabled: payload.stockMarketEnabled,
             bartenderEnabled: payload.bartenderEnabled,
             pawnShopOwnerEnabled: payload.pawnShopOwnerEnabled,
+            marthaEnabled: payload.marthaEnabled,
             blackjackDealerEnabled: payload.blackjackDealerEnabled,
             schoolMicrogameEnabled: payload.schoolMicrogameEnabled,
             schoolMicrogameId: payload.schoolMicrogameId
@@ -1758,6 +1774,85 @@ export class NpcServiceMock {
     };
   }
 
+  getMarthaNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isMarthaNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getMarthaPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getMarthaAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot buy that right now.' };
+    }
+
+    const npc = this.getMarthaNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to Martha.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async buyMarthaItem(npcId = '', itemId = '') {
+    const access = this.getMarthaAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const item = getMarthaMenuItem(itemId);
+    if (!item) {
+      return { ok: false, error: "That is not on Martha's menu." };
+    }
+
+    const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(access.npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error: `You need $${item.price} for ${item.label.toLowerCase()}.` };
+    }
+
+    access.player.money = money - item.price;
+    const inventoryCount = addPlayerMarthaItem(access.player, item.id, 1);
+    this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
+    this.emit();
+    return {
+      ok: true,
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: inventoryCount
+      },
+      inventory: getPlayerMarthaInventorySnapshot(access.player),
+      money: access.player.money
+    };
+  }
+
   awardCharismaForDrink(player, result = null, previousDrunknessLevel = 0) {
     const xp = getCharismaDrinkXp({
       itemId: result?.item?.id ?? '',
@@ -1775,16 +1870,20 @@ export class NpcServiceMock {
 
     const now = Date.now();
     const pawnItem = getPawnShopMenuItem(itemId);
-    const isDrinkItem = !pawnItem || pawnItem.kind !== 'consumable';
+    const marthaItem = getMarthaMenuItem(itemId);
+    const isFoodItem = marthaItem?.kind === 'consumable';
+    const isDrinkItem = !isFoodItem && (!pawnItem || pawnItem.kind !== 'consumable');
     let previousDrunknessLevel = 0;
     if (isDrinkItem) {
       refreshPlayerDrunkness(player, now);
       previousDrunknessLevel = player.drunknessLevel;
     }
 
-    const result = pawnItem?.kind === 'consumable'
-      ? consumePlayerPawnShopItem(player, itemId)
-      : consumePlayerDrink(player, itemId, now);
+    const result = isFoodItem
+      ? consumePlayerMarthaItem(player, itemId)
+      : pawnItem?.kind === 'consumable'
+        ? consumePlayerPawnShopItem(player, itemId)
+        : consumePlayerDrink(player, itemId, now);
     if (!result.ok) {
       return result;
     }

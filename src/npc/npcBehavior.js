@@ -4,6 +4,7 @@ import { normalizeGymCheckInEnabled } from '../shared/gymMembership.js';
 import { normalizeRentCollectorEnabled } from '../shared/rentIntro.js';
 import { normalizeStockMarketEnabled } from '../shared/stockMarket.js';
 import { isBartenderNpc } from '../shared/bartender.js';
+import { isMarthaNpc, normalizeMarthaEnabled } from '../shared/martha.js';
 import { isPawnShopOwnerNpc } from '../shared/pawnShop.js';
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 import {
@@ -314,6 +315,7 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
       || Object.hasOwn(updates, 'stockMarketEnabled')
       || Object.hasOwn(updates, 'bartenderEnabled')
       || Object.hasOwn(updates, 'pawnShopOwnerEnabled')
+      || Object.hasOwn(updates, 'marthaEnabled')
       || Object.hasOwn(updates, 'blackjackDealerEnabled')
       || Object.hasOwn(updates, 'schoolMicrogameEnabled')
       || Object.hasOwn(updates, 'schoolMicrogameId')
@@ -361,6 +363,7 @@ export function createDefaultNpcBehavior(overrides = {}) {
     stockMarketEnabled: false,
     bartenderEnabled: false,
     pawnShopOwnerEnabled: false,
+    marthaEnabled: false,
     blackjackDealerEnabled: false,
     schoolMicrogameEnabled: false,
     schoolMicrogameId: SCHOOL_MICROGAME_ALL_ID,
@@ -404,6 +407,7 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     stockMarketEnabled: normalizeStockMarketEnabled(npc.stockMarketEnabled),
     bartenderEnabled: isBartenderNpc(npc),
     pawnShopOwnerEnabled: isPawnShopOwnerNpc(npc),
+    marthaEnabled: normalizeMarthaEnabled(npc.marthaEnabled) || isMarthaNpc(npc),
     blackjackDealerEnabled: isBlackjackDealerNpc(npc),
     schoolMicrogameEnabled: isSchoolMicrogameNpc(npc),
     schoolMicrogameId: normalizeSchoolMicrogameNpcId(npc.schoolMicrogameId),
