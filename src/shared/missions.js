@@ -27,7 +27,7 @@ export const MISSION_STATUS = Object.freeze({
 });
 
 export const SCHOOL_TEACHER_TASKS_REQUIRED = 3;
-export const JANITOR_TASKS_REQUIRED = 3;
+export const JANITOR_TASKS_REQUIRED = 4;
 export const CHARISMA_LEVEL_MISSION_TARGET_LEVEL = 5;
 export const CHARISMA_LEVEL_MISSION_DESCRIPTION = 'Up your social skills. Grind for Charisma level 5.';
 
@@ -58,10 +58,10 @@ export const MISSION_CATALOG = Object.freeze([
   },
   {
     id: MISSION_IDS.janitorTasks,
-    title: 'Get a job: Complete 3 janitor tasks',
+    title: 'Get a job: Complete 4 janitor tasks',
     label: 'Janitor Shift',
     icon: 'janitor',
-    description: 'Work three janitor tasks from the office job board.',
+    description: 'Work four janitor tasks from the office job board.',
     requirement: 'Finish school first.'
   },
   {
@@ -140,10 +140,10 @@ const DEFAULT_MISSION_SEQUENCE = Object.freeze([
   Object.freeze({
     missionId: MISSION_IDS.janitorTasks,
     custom: true,
-    title: 'Get a job : Complete 3 janitor tasks',
-    label: 'Get a job : Complete 3 janitor tasks',
-    description: 'Get a job : Complete 3 janitor tasks',
-    prompt: 'Get a job : Complete 3 janitor tasks',
+    title: 'Get a job : Complete 4 janitor tasks',
+    label: 'Get a job : Complete 4 janitor tasks',
+    description: 'Get a job : Complete 4 janitor tasks',
+    prompt: 'Get a job : Complete 4 janitor tasks',
     icon: 'custom',
     makeAvailableAfterMission: true,
     availableAfterMissionNumber: 3

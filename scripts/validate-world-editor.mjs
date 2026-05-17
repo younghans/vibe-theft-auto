@@ -547,6 +547,7 @@ function validateTaskSequence() {
     deliveryQuestCompletedAt: 1000
   };
 
+  assert(JANITOR_TASKS_REQUIRED === 4, 'Get a job mission should require four janitor tasks.');
   assert(
     resolvePlayerTask({ localPlayerState: basePlayer }).id === TASK_IDS.schoolTeacherTasks,
     'Task sequence should route to school after first delivery.'
@@ -554,6 +555,15 @@ function validateTaskSequence() {
   assert(
     resolvePlayerTask({ localPlayerState: schoolCompletePlayer }).id === TASK_IDS.janitorTasks,
     'Task sequence should route to janitor work after school.'
+  );
+  assert(
+    resolvePlayerTask({
+      localPlayerState: {
+        ...schoolCompletePlayer,
+        janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED - 1
+      }
+    }).id === TASK_IDS.janitorTasks,
+    'Task sequence should keep routing to janitor work after only three janitor tasks.'
   );
   assert(
     resolvePlayerTask({ localPlayerState: janitorCompletePlayer }).id === TASK_IDS.gymPump,
@@ -831,6 +841,10 @@ function validateMissionSequencer() {
     JSON.stringify(sequence.map((entry) => entry.missionId)) === JSON.stringify(expectedOrder),
     'Mission sequencer should use the admin-authored mission order'
   );
+  const janitorMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.janitorTasks);
+  assert(janitorMission?.title === 'Get a job: Complete 4 janitor tasks', 'Janitor mission should require four tasks in the catalog title');
+  assert(janitorMission?.description === 'Work four janitor tasks from the office job board.', 'Janitor mission should require four tasks in the catalog description');
+  assert(sequence[3]?.title === 'Get a job : Complete 4 janitor tasks', 'Janitor sequencer row should show four janitor tasks');
   const charismaMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.charismaLevel5);
   assert(charismaMission?.title === 'Get Charisma level 5', 'Sequenced Charisma mission should use the admin title');
   assert(
