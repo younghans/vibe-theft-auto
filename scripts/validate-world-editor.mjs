@@ -265,23 +265,30 @@ function validateCustomPropCatalogItems() {
 }
 
 function validateVibeHero() {
+  const licenseNotice = readFileSync(new URL('../assets/audio/vibe-hero/License.txt', import.meta.url), 'utf8');
   const songs = listVibeHeroSongs();
+  assert(VIBE_HERO_LANE_COUNT === 5, 'Vibe Hero should expose five lanes for keys 1-5');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
   for (const song of songs) {
     assert(song.id && song.title, 'Vibe Hero songs should have stable ids and titles');
-    assert(song.durationMs >= 20000 && song.durationMs <= 30000, `${song.title}: duration should be 20-30 seconds`);
-    assert(String(song.publicDomainBasis ?? '').toLowerCase().includes('traditional'), `${song.title}: should document a traditional/public-domain basis`);
-    assert(Array.isArray(song.chart) && song.chart.length >= 24, `${song.title}: chart should have enough notes to be playable`);
+    assert(song.durationMs >= 45000 && song.durationMs <= 90000, `${song.title}: duration should be a 45-90 second opening snippet`);
+    assert(String(song.sourceUrl ?? '').startsWith('https://'), `${song.title}: should document the source page`);
+    assert(/^https:\/\/.+\.mp3(?:$|\?)/u.test(String(song.sourceDownloadUrl ?? '')), `${song.title}: should document a playable original MP3 URL`);
+    assert(String(song.publicDomainBasis ?? '').toLowerCase().includes('public domain'), `${song.title}: should document the composition/public-domain basis`);
+    assert(String(song.sourceLicense ?? '').length > 20, `${song.title}: should document the recording license/source terms`);
+    assert(licenseNotice.includes(song.sourceDownloadUrl), `${song.title}: source MP3 should be listed in the Vibe Hero audio notice`);
+
+    assert(Array.isArray(song.chart) && song.chart.length >= 120, `${song.title}: expert chart should have enough notes to be difficult`);
     let previousTime = -1;
     for (const [index, note] of song.chart.entries()) {
       assert(note.timeMs > previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
       previousTime = note.timeMs;
       assert(Number.isFinite(note.frequency) && note.frequency > 0, `${song.title} note ${index + 1}: frequency should be playable`);
-      assert(Number.isInteger(note.lane) && note.lane >= 0 && note.lane < VIBE_HERO_LANE_COUNT, `${song.title} note ${index + 1}: lane should be 0-3`);
+      assert(Number.isInteger(note.lane) && note.lane >= 0 && note.lane < VIBE_HERO_LANE_COUNT, `${song.title} note ${index + 1}: lane should be 0-4`);
       assert(note.timeMs >= 0 && note.timeMs < song.durationMs, `${song.title} note ${index + 1}: note should fit inside the song`);
     }
     const lanes = new Set(song.chart.map((note) => note.lane));
-    assert(lanes.size === VIBE_HERO_LANE_COUNT, `${song.title}: chart should use all four Vibe Hero lanes`);
+    assert(lanes.size === VIBE_HERO_LANE_COUNT, `${song.title}: chart should use all five Vibe Hero lanes`);
   }
 }
 

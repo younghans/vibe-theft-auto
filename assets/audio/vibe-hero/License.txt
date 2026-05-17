@@ -1,0 +1,25 @@
+Vibe Hero classical MP3 sources
+
+Vibe Hero streams these original MP3 source URLs and plays only the opening
+snippet length defined in src/shared/vibeHero.js. The MP3 files are not bundled
+locally so the web build stays inside its existing runtime asset budget.
+
+Debussy - Arabesque No. 1
+- Work: Claude Debussy, Arabesque No. 1, L. 66
+- Performer/source credit: Gregor Quendel / Classicals.de
+- Source page: https://www.classicals.de/debussy-arabesques
+- Original MP3 source: https://library.classicalmusicarchive.org/music/GQ%20Collection/Classicals.de%20-%20Debussy%20-%20Arabesque%20No.%201%20-%20L.%2066.mp3
+- Notes: The composition is public domain in the United States. Classicals.de
+  publishes the recording with attribution requirements; Gregor Quendel also
+  publishes this recording on Pixabay as "Debussy - Arabesque No. 1 - L 66" for
+  use under the Pixabay Content License.
+
+Vivaldi - Winter
+- Work: Antonio Vivaldi, The Four Seasons, Winter - I. Allegro non molto
+- Performer/source credit: John Harrison with the Wichita State University
+  Chamber Players / Classicals.de
+- Source page: https://www.classicals.de/vivaldi-seasons
+- Original MP3 source: https://www.classicals.de/s/Classicalsde-Vivaldi-The-Four-Seasons-10-John-Harrison-with-the-Wichita-State-University-Chamber-Pla.mp3
+- Notes: The composition is public domain. Classicals.de lists the John Harrison
+  movement recordings under CC BY-SA 4.0, and Wikimedia Commons/Musopen also
+  identify the same movement recording as public-domain material.

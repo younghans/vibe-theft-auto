@@ -860,6 +860,8 @@ export class Game {
     this.vibeHeroAudioContext = null;
     this.vibeHeroAudioMaster = null;
     this.vibeHeroAudioNodes = [];
+    this.vibeHeroAudioElement = null;
+    this.vibeHeroAudioPreloads = new Map();
     this.officeJobPlacementId = '';
     this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
@@ -1297,6 +1299,12 @@ export class Game {
     }
     if (this.vibeHeroAudioMaster) {
       this.vibeHeroAudioMaster.gain.value = THREE.MathUtils.clamp(0.16 * Number(this.gameSettings?.masterVolume ?? 1), 0, 0.26);
+    }
+    if (this.vibeHeroAudioElement) {
+      this.vibeHeroAudioElement.volume = this.getVibeHeroMusicVolume(this.vibeHero);
+    }
+    for (const audio of this.vibeHeroAudioPreloads?.values?.() ?? []) {
+      audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
     }
   }
 
@@ -6145,22 +6153,34 @@ export class Game {
 
   createVibeHeroState(songId = this.vibeHeroSelectedSongId) {
     const normalizedSongId = normalizeVibeHeroSongId(songId);
-    const song = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
+    const baseSong = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
+    const song = baseSong
+      ? {
+          ...baseSong,
+          audioUrl: this.getVibeHeroSongAudioUrl(baseSong)
+        }
+      : null;
     const songs = listVibeHeroSongs().map((entry) => ({
       id: entry.id,
       title: entry.title,
       artist: entry.artist,
+      performer: entry.performer,
       sourceTitle: entry.sourceTitle,
+      sourceUrl: entry.sourceUrl,
       publicDomainBasis: entry.publicDomainBasis,
+      sourceLicense: entry.sourceLicense,
       durationMs: entry.durationMs,
       bpm: entry.bpm,
+      difficulty: entry.difficulty,
       previewColor: entry.previewColor,
-      noteCount: entry.chart.length
+      noteCount: entry.chart.length,
+      audioUrl: this.getVibeHeroSongAudioUrl(entry)
     }));
 
     return {
       id: `vibe_hero_${++this.vibeHeroSequence}`,
       gameId: VIBE_HERO_GAME_ID,
+      laneCount: VIBE_HERO_LANE_COUNT,
       phase: 'select',
       selectedSongId: song?.id ?? VIBE_HERO_DEFAULT_SONG_ID,
       song,
@@ -6194,10 +6214,33 @@ export class Game {
     };
   }
 
+  getVibeHeroSongAudioUrl(song = null) {
+    const audioAssetKey = String(song?.audioAssetKey ?? '').trim();
+    if (audioAssetKey && assets.audio?.vibeHero?.[audioAssetKey]) {
+      return assets.audio.vibeHero[audioAssetKey];
+    }
+    return String(song?.sourceDownloadUrl ?? '').trim();
+  }
+
+  preloadVibeHeroSongAudio(song = null) {
+    const audioUrl = this.getVibeHeroSongAudioUrl(song);
+    if (!audioUrl || this.vibeHeroAudioPreloads.has(audioUrl)) {
+      return false;
+    }
+
+    const audio = new Audio(audioUrl);
+    audio.preload = 'auto';
+    audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
+    audio.load();
+    this.vibeHeroAudioPreloads.set(audioUrl, audio);
+    return true;
+  }
+
   openVibeHero(interaction = null) {
     this.closePhoneMenu();
     this.stopVibeHeroAudio();
     this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId);
+    this.preloadVibeHeroSongAudio(this.vibeHero.song);
     this.hud.hideLoading();
     this.hud.setVibeHeroState({
       visible: true,
@@ -6242,6 +6285,7 @@ export class Game {
     this.vibeHeroSelectedSongId = normalizedSongId;
     this.vibeHero = this.createVibeHeroState(normalizedSongId);
     this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} loaded.`;
+    this.preloadVibeHeroSongAudio(this.vibeHero.song);
     this.syncVibeHeroHud();
     return true;
   }
@@ -6254,6 +6298,7 @@ export class Game {
     this.stopVibeHeroAudio();
     const songId = this.vibeHero.selectedSongId ?? this.vibeHeroSelectedSongId;
     this.vibeHero = this.createVibeHeroState(songId);
+    this.preloadVibeHeroSongAudio(this.vibeHero.song);
     const now = performance.now();
     this.vibeHero.phase = 'countdown';
     this.vibeHero.countdownStartedAt = now;
@@ -6335,6 +6380,7 @@ export class Game {
 
     game.currentTimeMs = Math.max(0, now - game.startedAt);
     game.remainingMs = Math.max(0, game.durationMs - game.currentTimeMs);
+    this.updateVibeHeroAudioFade(game);
     this.handleVibeHeroKeyboardInput();
     this.updateVibeHeroMisses(game);
     const pendingNotes = game.notes.some((note) => note.status === 'pending');
@@ -6359,12 +6405,10 @@ export class Game {
     }
 
     let handled = false;
-    const laneCodes = [
-      ['Digit1', 'Numpad1'],
-      ['Digit2', 'Numpad2'],
-      ['Digit3', 'Numpad3'],
-      ['Digit4', 'Numpad4']
-    ];
+    const laneCodes = Array.from({ length: VIBE_HERO_LANE_COUNT }, (_, index) => [
+      `Digit${index + 1}`,
+      `Numpad${index + 1}`
+    ]);
     laneCodes.forEach((codes, laneIndex) => {
       if (codes.some((code) => this.input.consume(code))) {
         handled = this.hitVibeHeroLane(laneIndex) || handled;
@@ -6481,6 +6525,7 @@ export class Game {
     game.phase = 'complete';
     game.currentTimeMs = game.durationMs;
     game.remainingMs = 0;
+    this.stopVibeHeroAudio();
     game.resultTitle = accuracy >= 0.9
       ? 'Encore'
       : accuracy >= 0.72
@@ -6512,6 +6557,15 @@ export class Game {
   }
 
   stopVibeHeroAudio() {
+    if (this.vibeHeroAudioElement) {
+      try {
+        this.vibeHeroAudioElement.pause();
+        this.vibeHeroAudioElement.currentTime = 0;
+      } catch {
+        // Already stopped.
+      }
+      this.vibeHeroAudioElement = null;
+    }
     for (const node of this.vibeHeroAudioNodes) {
       try {
         node.stop(0);
@@ -6535,7 +6589,54 @@ export class Game {
     }
   }
 
+  getVibeHeroMusicVolume(game = this.vibeHero) {
+    const masterVolume = Number(this.gameSettings?.masterVolume ?? 1);
+    const baseVolume = THREE.MathUtils.clamp(0.68 * masterVolume, 0, 0.86);
+    const durationMs = Math.max(1, Number(game?.durationMs ?? 0) || 0);
+    const currentTimeMs = Math.max(0, Number(game?.currentTimeMs ?? 0) || 0);
+    const remainingMs = Math.max(0, durationMs - currentTimeMs);
+    const fadeMultiplier = remainingMs < 2200 ? THREE.MathUtils.clamp(remainingMs / 2200, 0.04, 1) : 1;
+    return THREE.MathUtils.clamp(baseVolume * fadeMultiplier, 0, 0.86);
+  }
+
+  updateVibeHeroAudioFade(game = this.vibeHero) {
+    if (!this.vibeHeroAudioElement || !game || game.phase !== 'playing') {
+      return;
+    }
+    this.vibeHeroAudioElement.volume = this.getVibeHeroMusicVolume(game);
+  }
+
+  playVibeHeroSongAudio(song = null) {
+    const audioUrl = String(song?.audioUrl ?? '').trim();
+    if (!audioUrl) {
+      return false;
+    }
+
+    this.stopVibeHeroAudio();
+    const audio = this.vibeHeroAudioPreloads.get(audioUrl) ?? new Audio(audioUrl);
+    this.vibeHeroAudioPreloads.delete(audioUrl);
+    audio.preload = 'auto';
+    audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
+    audio.currentTime = Math.max(0, Number(song?.snippetStartMs ?? 0) || 0) / 1000;
+    this.vibeHeroAudioElement = audio;
+    void audio.play().catch((error) => {
+      console.warn('[VibeHero] MP3 playback failed; using fallback synth chart.', error);
+      if (this.vibeHeroAudioElement === audio) {
+        this.vibeHeroAudioElement = null;
+      }
+      this.scheduleVibeHeroSynthSong(song);
+    });
+    return true;
+  }
+
   scheduleVibeHeroSong(song = null) {
+    if (this.playVibeHeroSongAudio(song)) {
+      return true;
+    }
+    return this.scheduleVibeHeroSynthSong(song);
+  }
+
+  scheduleVibeHeroSynthSong(song = null) {
     const context = this.getVibeHeroAudioContext();
     if (!context || !song?.chart?.length) {
       return false;

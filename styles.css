@@ -7113,7 +7113,7 @@ body.is-admin-prompt-resizing * {
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--lane-count, 5), minmax(0, 1fr));
   gap: 8px;
   padding: 12px 12px 82px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -7148,6 +7148,10 @@ body.is-admin-prompt-resizing * {
   --lane-color: #61ef8a;
 }
 
+.hud__vibe-hero-lane:nth-child(5) {
+  --lane-color: #b790ff;
+}
+
 .hud__vibe-hero-lane.is-hit {
   background: color-mix(in srgb, var(--lane-color) 28%, rgba(255, 255, 255, 0.055));
 }
@@ -7173,38 +7177,41 @@ body.is-admin-prompt-resizing * {
   border-radius: 999px;
   background: #fff6df;
   box-shadow: 0 0 18px rgba(255, 246, 223, 0.5);
+  z-index: 3;
 }
 
 .hud__vibe-hero-note {
   position: absolute;
   top: var(--note-y, 0%);
-  width: calc(25% - 21px);
+  left: 8px;
+  right: 8px;
   height: 22px;
   border: 2px solid rgba(255, 255, 255, 0.78);
   border-radius: 8px;
-  background: linear-gradient(180deg, #fff8df, #54d7ff);
+  background: linear-gradient(180deg, #fff8df, var(--lane-color, #54d7ff));
   box-shadow: 0 7px 18px rgba(0, 0, 0, 0.32);
   transform: translateY(-50%);
+  z-index: 2;
 }
 
 .hud__vibe-hero-note.is-lane-0 {
-  left: 19px;
   background: linear-gradient(180deg, #fff8df, #54d7ff);
 }
 
 .hud__vibe-hero-note.is-lane-1 {
-  left: calc(25% + 13px);
   background: linear-gradient(180deg, #fff8df, #f26d78);
 }
 
 .hud__vibe-hero-note.is-lane-2 {
-  left: calc(50% + 7px);
   background: linear-gradient(180deg, #fff8df, #ffd15c);
 }
 
 .hud__vibe-hero-note.is-lane-3 {
-  left: calc(75% + 1px);
   background: linear-gradient(180deg, #fff8df, #61ef8a);
+}
+
+.hud__vibe-hero-note.is-lane-4 {
+  background: linear-gradient(180deg, #fff8df, #b790ff);
 }
 
 .hud__vibe-hero-lane-buttons {
@@ -7212,6 +7219,7 @@ body.is-admin-prompt-resizing * {
   left: 12px;
   right: 12px;
   bottom: 12px;
+  z-index: 4;
 }
 
 .hud__vibe-hero-lane-buttons button {
@@ -7242,6 +7250,10 @@ body.is-admin-prompt-resizing * {
 
 .hud__vibe-hero-lane-buttons button:nth-child(4) {
   border-color: rgba(97, 239, 138, 0.55);
+}
+
+.hud__vibe-hero-lane-buttons button:nth-child(5) {
+  border-color: rgba(183, 144, 255, 0.55);
 }
 
 .hud__vibe-hero-countdown,

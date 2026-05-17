@@ -17,6 +17,7 @@ import {
   canPlayerWorkOfficeJob,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
+import { VIBE_HERO_LANE_COUNT } from '../shared/vibeHero.js';
 import { getAgentTaskPromptTitle } from '../shared/agentTaskSummary.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
@@ -906,8 +907,8 @@ function createVibeHeroSongSelectMarkup(game = null) {
               style="--song-accent:${escapeHtml(song.previewColor ?? '#54d7ff')}"
             >
               <strong>${escapeHtml(song.title ?? 'Song')}</strong>
-              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes`)}</span>
-              <em>${escapeHtml(song.sourceTitle ?? song.artist ?? 'Traditional')}</em>
+              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes | ${song.difficulty ?? 'Expert'}`)}</span>
+              <em>${escapeHtml(song.performer ?? song.sourceTitle ?? song.artist ?? 'Classical')}</em>
             </button>
           `;
         }).join('')}
@@ -933,6 +934,7 @@ function createVibeHeroStatsMarkup(game = null) {
 
 function createVibeHeroTrackMarkup(game = null) {
   const notes = Array.isArray(game?.notes) ? game.notes : [];
+  const laneCount = Math.max(1, Math.min(8, Math.trunc(Number(game?.laneCount ?? VIBE_HERO_LANE_COUNT) || VIBE_HERO_LANE_COUNT)));
   const currentTimeMs = Math.max(0, Number(game?.currentTimeMs ?? 0) || 0);
   const travelMs = Math.max(1, Number(game?.noteTravelMs ?? 1650) || 1650);
   const hitWindowMs = Math.max(1, Number(game?.hitWindowMs ?? 185) || 185);
@@ -946,31 +948,34 @@ function createVibeHeroTrackMarkup(game = null) {
   const hitLineY = 82;
 
   return `
-    <div class="hud__vibe-hero-track" aria-label="Vibe Hero track">
-      ${Array.from({ length: 4 }, (_, laneIndex) => {
+    <div class="hud__vibe-hero-track" aria-label="Vibe Hero track" style="--lane-count:${laneCount}">
+      ${Array.from({ length: laneCount }, (_, laneIndex) => {
         const flash = laneFlashes.find((entry) => entry.lane === laneIndex);
+        const laneNotes = visibleNotes.filter((note) => {
+          const lane = Math.max(0, Math.min(laneCount - 1, Math.trunc(Number(note.lane ?? 0) || 0)));
+          return lane === laneIndex;
+        });
         return `
           <div class="hud__vibe-hero-lane${flash ? ` is-${escapeHtml(flash.quality)}` : ''}">
             <span class="hud__vibe-hero-lane-rail"></span>
+            ${laneNotes.map((note) => {
+              const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
+              const progress = 1 - (distanceMs / travelMs);
+              const y = Math.max(4, Math.min(94, 8 + (progress * (hitLineY - 8))));
+              return `
+                <span
+                  class="hud__vibe-hero-note is-lane-${laneIndex}"
+                  style="--note-y:${y.toFixed(2)}%; --note-delay:${Math.max(0, distanceMs).toFixed(0)}ms"
+                  aria-hidden="true"
+                ></span>
+              `;
+            }).join('')}
           </div>
         `;
       }).join('')}
       <span class="hud__vibe-hero-hit-line" style="--hit-y:${hitLineY}%"></span>
-      ${visibleNotes.map((note) => {
-        const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
-        const progress = 1 - (distanceMs / travelMs);
-        const y = Math.max(4, Math.min(94, 8 + (progress * (hitLineY - 8))));
-        const lane = Math.max(0, Math.min(3, Math.trunc(Number(note.lane ?? 0) || 0)));
-        return `
-          <span
-            class="hud__vibe-hero-note is-lane-${lane}"
-            style="--note-y:${y.toFixed(2)}%; --note-delay:${Math.max(0, distanceMs).toFixed(0)}ms"
-            aria-hidden="true"
-          ></span>
-        `;
-      }).join('')}
       <div class="hud__vibe-hero-lane-buttons">
-        ${Array.from({ length: 4 }, (_, laneIndex) => `
+        ${Array.from({ length: laneCount }, (_, laneIndex) => `
           <button type="button" data-vibe-hero-action="lane:${laneIndex}">
             <span>${laneIndex + 1}</span>
           </button>
