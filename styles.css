@@ -7606,6 +7606,91 @@ body.is-admin-prompt-resizing * {
   font-weight: 850;
 }
 
+.hud__vibe-hero-editor {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+}
+
+.hud__vibe-hero-editor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1.3fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.hud__vibe-hero-editor-meta,
+.hud__vibe-hero-editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.hud__vibe-hero-editor-meta span {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.hud__vibe-hero-editor-meta strong {
+  overflow: hidden;
+  color: #fff6df;
+  font-size: 17px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__vibe-hero-editor-meta em {
+  color: rgba(244, 238, 226, 0.66);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hud__vibe-hero-editor-actions {
+  justify-content: flex-end;
+}
+
+.hud__vibe-hero-editor-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.075);
+  color: #fff6df;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.hud__vibe-hero-editor-actions button:hover {
+  border-color: rgba(84, 215, 255, 0.52);
+  background: rgba(84, 215, 255, 0.13);
+}
+
+.hud__vibe-hero-editor-actions button.is-recording,
+.hud__vibe-hero.is-recording .hud__vibe-hero-timer-fill {
+  background: linear-gradient(90deg, #f26d78, #ffd15c);
+  color: #130b0d;
+}
+
+.hud__vibe-hero.is-editor::before {
+  border-top-color: #ffd15c;
+}
+
 .hud__admin-prompt-toggle {
   display: inline-flex;
   width: 52px;
@@ -14499,6 +14584,24 @@ canvas {
   .hud__vibe-hero-play {
     gap: 8px;
     padding: 10px;
+  }
+
+  .hud__vibe-hero-editor {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .hud__vibe-hero-editor-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__vibe-hero-editor-actions {
+    flex-wrap: wrap;
+  }
+
+  .hud__vibe-hero-editor-actions button {
+    flex-basis: calc(50% - 4px);
+    min-height: 38px;
   }
 
   .hud__vibe-hero-stats {

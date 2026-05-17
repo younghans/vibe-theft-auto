@@ -287,9 +287,19 @@ function validateCustomPropCatalogItems() {
 
 function validateVibeHero() {
   const licenseNotice = readFileSync(new URL('../assets/audio/vibe-hero/License.txt', import.meta.url), 'utf8');
+  const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const songs = listVibeHeroSongs();
   assert(VIBE_HERO_LANE_COUNT === 5, 'Vibe Hero should expose five lanes for keys 1-5');
   assert(VIBE_HERO_NOTE_TRAVEL_MS <= 950, 'Vibe Hero notes should use hyperspeed travel timing');
+  assert(gameSource.includes('openVibeHeroChartEditor'), 'Vibe Hero should expose a dedicated chart editor opener');
+  assert(gameSource.includes('this.canUseVibeHeroChartEditor()') && gameSource.includes("this.input.consume('KeyF')"), 'Instrument cluster chart editor should be gated to admins on F');
+  assert(gameSource.includes("this.input.consume('KeyR')"), 'Vibe Hero chart editor should toggle recording with R');
+  assert(gameSource.includes("this.input.consume('KeyN')") && gameSource.includes("this.input.consume('KeyM')"), 'Vibe Hero chart editor should support N/M seek controls');
+  assert(gameSource.includes("this.input.consume('Space')") && gameSource.includes('toggleVibeHeroEditorPlayback'), 'Vibe Hero chart editor should pause/play with Space');
+  assert(gameSource.includes('overwriteVibeHeroEditorRange') && gameSource.includes('recordVibeHeroEditorLanes'), 'Vibe Hero chart editor should overwrite chart ranges from keyboard lane recording');
+  assert(gameSource.includes('VIBE_HERO_EDITOR_STORAGE_PREFIX'), 'Vibe Hero chart editor should persist edited charts locally for admins');
+  assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
   for (const song of songs) {
     assert(song.id && song.title, 'Vibe Hero songs should have stable ids and titles');

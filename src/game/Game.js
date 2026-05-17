@@ -194,6 +194,20 @@ const VIBE_HERO_HIT_WINDOW_MS = 185;
 const VIBE_HERO_PERFECT_WINDOW_MS = 58;
 const VIBE_HERO_GREAT_WINDOW_MS = 112;
 const VIBE_HERO_POST_SONG_MS = 900;
+const VIBE_HERO_EDITOR_SEEK_MS = 5000;
+const VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS = 120;
+const VIBE_HERO_EDITOR_NOTE_DURATION_MS = 150;
+const VIBE_HERO_EDITOR_STORAGE_PREFIX = 'vta:vibeHero:chart-editor:v1:';
+const VIBE_HERO_EDITOR_LANE_PITCHES = Object.freeze(['C4', 'D4', 'E4', 'G4', 'A4']);
+const VIBE_HERO_EDITOR_LANE_FREQUENCIES = Object.freeze([261.63, 293.66, 329.63, 392, 440]);
+
+function formatVibeHeroTimestamp(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 const OFFICE_JOB_COUNTDOWN_MS = 1600;
 const OFFICE_JOB_COUNTDOWN_GO_MS = 250;
 const OFFICE_JANITOR_REQUIRED_THROWS = 3;
@@ -2084,9 +2098,10 @@ export class Game {
 
   getAdminPromptContext() {
     if (this.hud.isVibeHeroOpen()) {
+      const editorMode = this.vibeHero?.editorMode === true;
       return {
-        contextType: 'vibe_hero',
-        contextLabel: `Vibe Hero: ${this.vibeHero?.song?.title ?? 'Song Select'}`,
+        contextType: editorMode ? 'vibe_hero_chart_editor' : 'vibe_hero',
+        contextLabel: `${editorMode ? 'Vibe Hero Editor' : 'Vibe Hero'}: ${this.vibeHero?.song?.title ?? 'Song Select'}`,
         gameId: VIBE_HERO_GAME_ID
       };
     }
@@ -2205,6 +2220,10 @@ export class Game {
             songId: this.vibeHero.selectedSongId ?? '',
             title: this.vibeHero.song?.title ?? '',
             phase: this.vibeHero.phase ?? '',
+            editorMode: this.vibeHero.editorMode === true,
+            editorPaused: this.vibeHero.editorPaused === true,
+            editorRecording: this.vibeHero.editorRecording === true,
+            noteCount: Array.isArray(this.vibeHero.notes) ? this.vibeHero.notes.length : 0,
             currentTimeMs: this.vibeHero.currentTimeMs ?? 0,
             remainingMs: this.vibeHero.remainingMs ?? 0,
             score: this.vibeHero.score ?? 0,
@@ -6136,6 +6155,14 @@ export class Game {
 
   openDebugMinigameHud(minigameId = 'blackjack') {
     const normalizedId = String(minigameId ?? '').trim().toLowerCase();
+    if (['vibe-hero-editor', 'vibeheroeditor', 'vibe-hero-chart-editor'].includes(normalizedId)) {
+      const opened = this.openVibeHeroChartEditor();
+      if (opened) {
+        this.hud.showToast('Vibe Hero chart editor opened.');
+      }
+      return opened;
+    }
+
     if (normalizedId === VIBE_HERO_GAME_ID || normalizedId === 'vibehero') {
       this.openVibeHero();
       this.hud.showToast('Vibe Hero HUD preview opened.');
@@ -6276,47 +6303,186 @@ export class Game {
     });
   }
 
-  createVibeHeroState(songId = this.vibeHeroSelectedSongId) {
+  getVibeHeroChartEditorStorage() {
+    try {
+      return window.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  getVibeHeroStoredChartKey(songId = '') {
+    const normalizedSongId = normalizeVibeHeroSongId(songId);
+    return `${VIBE_HERO_EDITOR_STORAGE_PREFIX}${normalizedSongId}`;
+  }
+
+  normalizeVibeHeroEditorChart(chart = []) {
+    if (!Array.isArray(chart)) {
+      return [];
+    }
+
+    return chart
+      .map((note, index) => this.normalizeVibeHeroEditorChartNote(note, index))
+      .filter(Boolean)
+      .sort((left, right) => left.timeMs - right.timeMs)
+      .map((note, index) => ({
+        ...note,
+        id: note.id || `editor-note-${index + 1}`
+      }));
+  }
+
+  normalizeVibeHeroEditorChartNote(note = null, index = 0) {
+    if (!note || typeof note !== 'object') {
+      return null;
+    }
+
+    const timeMs = Math.round(Number(note.timeMs));
+    if (!Number.isFinite(timeMs) || timeMs < 0) {
+      return null;
+    }
+
+    const lane = THREE.MathUtils.clamp(
+      Math.trunc(Number(note.lane) || 0),
+      0,
+      VIBE_HERO_LANE_COUNT - 1
+    );
+    const fallbackPitch = VIBE_HERO_EDITOR_LANE_PITCHES[lane] ?? 'A4';
+    const fallbackFrequency = VIBE_HERO_EDITOR_LANE_FREQUENCIES[lane] ?? 440;
+    const frequency = Math.max(80, Number(note.frequency ?? fallbackFrequency) || fallbackFrequency);
+    return {
+      id: String(note.id ?? `editor-note-${index + 1}`),
+      timeMs,
+      durationMs: Math.max(60, Math.min(900, Math.round(Number(note.durationMs ?? VIBE_HERO_EDITOR_NOTE_DURATION_MS) || VIBE_HERO_EDITOR_NOTE_DURATION_MS))),
+      lane,
+      pitch: String(note.pitch ?? fallbackPitch),
+      frequency
+    };
+  }
+
+  createVibeHeroNoteState(note = null, index = 0) {
+    return {
+      ...note,
+      id: note?.id || `note-${index + 1}`,
+      status: 'pending',
+      hitErrorMs: null,
+      hitQuality: ''
+    };
+  }
+
+  loadVibeHeroStoredEditorChart(song = null) {
+    if (!song?.id || !this.isLocalAdmin()) {
+      return null;
+    }
+
+    const storage = this.getVibeHeroChartEditorStorage();
+    if (!storage) {
+      return null;
+    }
+
+    try {
+      const raw = storage.getItem(this.getVibeHeroStoredChartKey(song.id));
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      const chart = this.normalizeVibeHeroEditorChart(parsed?.chart ?? parsed);
+      return chart.length > 0 ? chart : null;
+    } catch (error) {
+      console.warn('[VibeHero] Stored chart could not be loaded.', error);
+      return null;
+    }
+  }
+
+  serializeVibeHeroEditorChart(chart = []) {
+    return this.normalizeVibeHeroEditorChart(chart).map((note) => ({
+      id: note.id,
+      timeMs: note.timeMs,
+      durationMs: note.durationMs,
+      lane: note.lane,
+      pitch: note.pitch,
+      frequency: note.frequency
+    }));
+  }
+
+  saveVibeHeroEditorChart(game = this.vibeHero, { force = false } = {}) {
+    if (!game?.editorMode || !game?.song?.id || !this.isLocalAdmin()) {
+      return false;
+    }
+    if (!force && game.editorDirty !== true) {
+      return false;
+    }
+
+    const storage = this.getVibeHeroChartEditorStorage();
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
+      storage.setItem(
+        this.getVibeHeroStoredChartKey(game.song.id),
+        JSON.stringify({
+          songId: game.song.id,
+          savedAt: new Date().toISOString(),
+          chart
+        })
+      );
+      game.editorDirty = false;
+      game.editorSavedAt = performance.now();
+      return true;
+    } catch (error) {
+      console.warn('[VibeHero] Stored chart could not be saved.', error);
+      return false;
+    }
+  }
+
+  createVibeHeroState(songId = this.vibeHeroSelectedSongId, { editorMode = false } = {}) {
     const normalizedSongId = normalizeVibeHeroSongId(songId);
     const baseSong = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
+    const sourceChart = this.normalizeVibeHeroEditorChart(baseSong?.chart ?? []);
+    const storedChart = this.loadVibeHeroStoredEditorChart(baseSong);
+    const activeChart = storedChart ?? sourceChart;
     const song = baseSong
       ? {
           ...baseSong,
+          chart: activeChart.map((note) => ({ ...note })),
           audioUrl: this.getVibeHeroSongAudioUrl(baseSong)
         }
       : null;
-    const songs = listVibeHeroSongs().map((entry) => ({
-      id: entry.id,
-      title: entry.title,
-      artist: entry.artist,
-      performer: entry.performer,
-      sourceTitle: entry.sourceTitle,
-      sourceUrl: entry.sourceUrl,
-      publicDomainBasis: entry.publicDomainBasis,
-      sourceLicense: entry.sourceLicense,
-      durationMs: entry.durationMs,
-      bpm: entry.bpm,
-      difficulty: entry.difficulty,
-      previewColor: entry.previewColor,
-      noteCount: entry.chart.length,
-      audioUrl: this.getVibeHeroSongAudioUrl(entry)
-    }));
+    const songs = listVibeHeroSongs().map((entry) => {
+      const storedEntryChart = this.loadVibeHeroStoredEditorChart(entry);
+      return {
+        id: entry.id,
+        title: entry.title,
+        artist: entry.artist,
+        performer: entry.performer,
+        sourceTitle: entry.sourceTitle,
+        sourceUrl: entry.sourceUrl,
+        publicDomainBasis: entry.publicDomainBasis,
+        sourceLicense: entry.sourceLicense,
+        durationMs: entry.durationMs,
+        bpm: entry.bpm,
+        difficulty: entry.difficulty,
+        previewColor: entry.previewColor,
+        noteCount: (storedEntryChart ?? entry.chart).length,
+        chartEdited: Boolean(storedEntryChart),
+        audioUrl: this.getVibeHeroSongAudioUrl(entry)
+      };
+    });
+    const editing = Boolean(editorMode && this.isLocalAdmin());
 
     return {
       id: `vibe_hero_${++this.vibeHeroSequence}`,
       gameId: VIBE_HERO_GAME_ID,
       laneCount: VIBE_HERO_LANE_COUNT,
-      phase: 'select',
+      phase: editing ? 'editor-select' : 'select',
+      editorMode: editing,
       selectedSongId: song?.id ?? VIBE_HERO_DEFAULT_SONG_ID,
       song,
       songs,
-      notes: (song?.chart ?? []).map((note, index) => ({
-        ...note,
-        id: note.id || `note-${index + 1}`,
-        status: 'pending',
-        hitErrorMs: null,
-        hitQuality: ''
-      })),
+      sourceChart: sourceChart.map((note) => ({ ...note })),
+      editorChart: activeChart.map((note) => ({ ...note })),
+      notes: (song?.chart ?? []).map((note, index) => this.createVibeHeroNoteState(note, index)),
       noteTravelMs: VIBE_HERO_NOTE_TRAVEL_MS,
       hitWindowMs: VIBE_HERO_HIT_WINDOW_MS,
       durationMs: song?.durationMs ?? 0,
@@ -6336,7 +6502,16 @@ export class Game {
       resultDetail: '',
       charismaRewardClaimed: false,
       charismaRewardPending: false,
-      message: 'Pick a song and take the stage.',
+      editorPaused: true,
+      editorRecording: false,
+      editorPlaybackStartedAt: 0,
+      editorPlaybackBaseMs: 0,
+      editorLastOverwriteMs: 0,
+      editorSeekStepMs: VIBE_HERO_EDITOR_SEEK_MS,
+      editorRecordWindowMs: VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS,
+      editorDirty: false,
+      editorSavedAt: 0,
+      message: editing ? 'Pick a song to edit.' : 'Pick a song and take the stage.',
       laneFlashes: []
     };
   }
@@ -6363,10 +6538,20 @@ export class Game {
     return true;
   }
 
-  openVibeHero(interaction = null) {
+  canUseVibeHeroChartEditor() {
+    return this.isLocalAdmin();
+  }
+
+  openVibeHero(interaction = null, { editorMode = false } = {}) {
+    const editing = Boolean(editorMode && this.canUseVibeHeroChartEditor());
+    if (editorMode && !editing) {
+      this.hud.showToast('Chart editor is admin only.');
+      return false;
+    }
+
     this.closePhoneMenu();
     this.stopVibeHeroAudio();
-    this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId);
+    this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId, { editorMode: editing });
     this.preloadVibeHeroSongAudio(this.vibeHero.song);
     this.hud.hideLoading();
     this.hud.setVibeHeroState({
@@ -6379,7 +6564,12 @@ export class Game {
     return true;
   }
 
+  openVibeHeroChartEditor(interaction = null) {
+    return this.openVibeHero(interaction, { editorMode: true });
+  }
+
   closeVibeHero() {
+    this.saveVibeHeroEditorChart(this.vibeHero);
     this.stopVibeHeroAudio();
     this.vibeHero = this.vibeHero
       ? {
@@ -6408,16 +6598,24 @@ export class Game {
       return false;
     }
 
+    this.saveVibeHeroEditorChart(this.vibeHero);
     const normalizedSongId = normalizeVibeHeroSongId(songId);
+    const editorMode = this.vibeHero.editorMode === true;
     this.vibeHeroSelectedSongId = normalizedSongId;
-    this.vibeHero = this.createVibeHeroState(normalizedSongId);
-    this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} loaded.`;
+    this.vibeHero = this.createVibeHeroState(normalizedSongId, { editorMode });
+    this.vibeHero.message = editorMode
+      ? `${this.vibeHero.song?.title ?? 'Song'} ready to edit.`
+      : `${this.vibeHero.song?.title ?? 'Song'} loaded.`;
     this.preloadVibeHeroSongAudio(this.vibeHero.song);
     this.syncVibeHeroHud();
     return true;
   }
 
   startVibeHeroCountdown() {
+    if (this.vibeHero?.editorMode) {
+      return this.startVibeHeroChartEditor();
+    }
+
     if (!this.vibeHero) {
       this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId);
     }
@@ -6468,6 +6666,22 @@ export class Game {
       return this.startVibeHeroCountdown();
     }
 
+    if (normalizedAction === 'editor:play-pause') {
+      return this.toggleVibeHeroEditorPlayback();
+    }
+
+    if (normalizedAction === 'editor:record') {
+      return this.toggleVibeHeroEditorRecording();
+    }
+
+    if (normalizedAction === 'editor:rewind') {
+      return this.seekVibeHeroEditor(-VIBE_HERO_EDITOR_SEEK_MS);
+    }
+
+    if (normalizedAction === 'editor:forward') {
+      return this.seekVibeHeroEditor(VIBE_HERO_EDITOR_SEEK_MS);
+    }
+
     if (normalizedAction.startsWith('song:')) {
       return this.selectVibeHeroSong(normalizedAction.slice(5));
     }
@@ -6483,6 +6697,11 @@ export class Game {
   updateVibeHero(deltaSeconds = 0, now = performance.now()) {
     const game = this.vibeHero;
     if (!game || !this.hud.isVibeHeroOpen()) {
+      return;
+    }
+
+    if (game.phase === 'editor') {
+      this.updateVibeHeroEditor(deltaSeconds, now);
       return;
     }
 
@@ -6526,23 +6745,360 @@ export class Game {
     this.syncVibeHeroHud();
   }
 
+  startVibeHeroChartEditor() {
+    if (!this.vibeHero?.editorMode) {
+      return false;
+    }
+
+    this.saveVibeHeroEditorChart(this.vibeHero);
+    this.stopVibeHeroAudio();
+    const songId = this.vibeHero.selectedSongId ?? this.vibeHeroSelectedSongId;
+    this.vibeHero = this.createVibeHeroState(songId, { editorMode: true });
+    const now = performance.now();
+    this.vibeHero.phase = 'editor';
+    this.vibeHero.editorPaused = false;
+    this.vibeHero.editorRecording = false;
+    this.vibeHero.editorPlaybackBaseMs = 0;
+    this.vibeHero.editorPlaybackStartedAt = now;
+    this.vibeHero.editorLastOverwriteMs = 0;
+    this.vibeHero.currentTimeMs = 0;
+    this.vibeHero.remainingMs = this.vibeHero.durationMs;
+    this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} chart editor.`;
+    this.input.clearKeyPressQueue?.();
+    this.scheduleVibeHeroSong(this.vibeHero.song, { offsetMs: 0 });
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  updateVibeHeroEditor(deltaSeconds = 0, now = performance.now()) {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    const previousTimeMs = Math.max(0, Number(game.currentTimeMs ?? 0) || 0);
+    this.updateVibeHeroEditorTime(game, now);
+    if (game.editorRecording && !game.editorPaused) {
+      const fromMs = Math.max(0, Number(game.editorLastOverwriteMs ?? previousTimeMs) || 0);
+      const toMs = Math.max(0, Number(game.currentTimeMs ?? previousTimeMs) || 0);
+      if (toMs > fromMs) {
+        this.overwriteVibeHeroEditorRange(game, fromMs, toMs);
+      }
+      game.editorLastOverwriteMs = toMs;
+    }
+
+    this.updateVibeHeroAudioFade(game);
+    this.handleVibeHeroKeyboardInput();
+    if (Number(deltaSeconds) >= 0) {
+      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < 180);
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  updateVibeHeroEditorTime(game = this.vibeHero, now = performance.now()) {
+    if (!game || game.phase !== 'editor') {
+      return 0;
+    }
+
+    if (!game.editorPaused) {
+      const baseMs = Math.max(0, Number(game.editorPlaybackBaseMs ?? game.currentTimeMs ?? 0) || 0);
+      const startedAt = Math.max(0, Number(game.editorPlaybackStartedAt ?? now) || now);
+      const elapsedMs = Math.max(0, now - startedAt);
+      game.currentTimeMs = THREE.MathUtils.clamp(baseMs + elapsedMs, 0, game.durationMs);
+      if (game.currentTimeMs >= game.durationMs) {
+        game.editorPaused = true;
+        game.editorPlaybackBaseMs = game.durationMs;
+        game.editorPlaybackStartedAt = now;
+        game.editorLastOverwriteMs = game.durationMs;
+        this.stopVibeHeroAudio();
+        this.saveVibeHeroEditorChart(game);
+        game.message = 'Reached the end of the chart.';
+      }
+    }
+
+    game.remainingMs = Math.max(0, game.durationMs - game.currentTimeMs);
+    return game.currentTimeMs;
+  }
+
+  toggleVibeHeroEditorPlayback() {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    const now = performance.now();
+    this.updateVibeHeroEditorTime(game, now);
+    if (game.editorPaused) {
+      game.editorPaused = false;
+      game.editorPlaybackBaseMs = THREE.MathUtils.clamp(game.currentTimeMs, 0, game.durationMs);
+      game.editorPlaybackStartedAt = now;
+      game.editorLastOverwriteMs = game.currentTimeMs;
+      game.message = game.editorRecording ? 'Recording.' : 'Playing.';
+      this.scheduleVibeHeroSong(game.song, { offsetMs: game.currentTimeMs });
+    } else {
+      game.editorPaused = true;
+      game.editorPlaybackBaseMs = THREE.MathUtils.clamp(game.currentTimeMs, 0, game.durationMs);
+      game.editorPlaybackStartedAt = now;
+      game.message = game.editorRecording ? 'Recording paused.' : 'Paused.';
+      this.stopVibeHeroAudio();
+      this.saveVibeHeroEditorChart(game);
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  toggleVibeHeroEditorRecording() {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    this.updateVibeHeroEditorTime(game);
+    game.editorRecording = !game.editorRecording;
+    game.editorLastOverwriteMs = Math.max(0, Number(game.currentTimeMs ?? 0) || 0);
+    game.message = game.editorRecording ? 'Recording.' : 'Recording stopped.';
+    if (!game.editorRecording) {
+      this.saveVibeHeroEditorChart(game);
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  seekVibeHeroEditor(deltaMs = 0) {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    const now = performance.now();
+    const wasPlaying = !game.editorPaused;
+    this.updateVibeHeroEditorTime(game, now);
+    const nextTimeMs = THREE.MathUtils.clamp(
+      Math.round((Number(game.currentTimeMs ?? 0) || 0) + (Number(deltaMs) || 0)),
+      0,
+      game.durationMs
+    );
+    game.currentTimeMs = nextTimeMs;
+    game.remainingMs = Math.max(0, game.durationMs - nextTimeMs);
+    game.editorPlaybackBaseMs = nextTimeMs;
+    game.editorPlaybackStartedAt = now;
+    game.editorLastOverwriteMs = nextTimeMs;
+    game.message = `${deltaMs < 0 ? 'Rewind' : 'Fast forward'} to ${formatVibeHeroTimestamp(nextTimeMs)}.`;
+    if (wasPlaying) {
+      this.scheduleVibeHeroSong(game.song, { offsetMs: nextTimeMs });
+    } else {
+      this.stopVibeHeroAudio();
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  overwriteVibeHeroEditorRange(game = this.vibeHero, fromMs = 0, toMs = 0) {
+    if (!game?.editorMode) {
+      return false;
+    }
+
+    const startMs = Math.max(0, Math.min(Number(fromMs) || 0, Number(toMs) || 0));
+    const endMs = Math.max(startMs, Math.max(Number(fromMs) || 0, Number(toMs) || 0));
+    const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
+    const nextChart = chart.filter((note) => !(note.timeMs > startMs && note.timeMs <= endMs));
+    if (nextChart.length === chart.length) {
+      return false;
+    }
+
+    this.setVibeHeroEditorChart(game, nextChart, { save: false, message: game.message });
+    return true;
+  }
+
+  setVibeHeroEditorChart(game = this.vibeHero, chart = [], { save = false, message = '' } = {}) {
+    if (!game?.editorMode) {
+      return false;
+    }
+
+    const normalizedChart = this.serializeVibeHeroEditorChart(chart);
+    game.editorChart = normalizedChart.map((note) => ({ ...note }));
+    game.notes = normalizedChart.map((note, index) => this.createVibeHeroNoteState(note, index));
+    game.song = game.song
+      ? {
+          ...game.song,
+          chart: normalizedChart.map((note) => ({ ...note }))
+        }
+      : game.song;
+    game.songs = (game.songs ?? []).map((song) => song.id === game.selectedSongId
+      ? {
+          ...song,
+          noteCount: normalizedChart.length,
+          chartEdited: true
+        }
+      : song);
+    game.editorDirty = true;
+    if (message) {
+      game.message = message;
+    }
+    if (save) {
+      this.saveVibeHeroEditorChart(game);
+    }
+    return true;
+  }
+
+  getVibeHeroEditorReferenceNote(laneIndex = 0, timeMs = 0) {
+    const game = this.vibeHero;
+    const sourceChart = Array.isArray(game?.sourceChart) ? game.sourceChart : [];
+    let bestNote = null;
+    let bestDistance = Infinity;
+    for (const note of sourceChart) {
+      if (note.lane !== laneIndex) {
+        continue;
+      }
+      const distance = Math.abs((Number(note.timeMs) || 0) - timeMs);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestNote = note;
+      }
+    }
+    return bestDistance <= 420 ? bestNote : null;
+  }
+
+  createVibeHeroEditorRecordedNote(laneIndex = 0, timeMs = 0, sequence = 0) {
+    const lane = THREE.MathUtils.clamp(
+      Math.trunc(Number(laneIndex) || 0),
+      0,
+      VIBE_HERO_LANE_COUNT - 1
+    );
+    const recordedAtMs = THREE.MathUtils.clamp(
+      Math.round(Number(timeMs) || 0),
+      0,
+      Math.max(0, Number(this.vibeHero?.durationMs ?? 0) || 0)
+    );
+    const referenceNote = this.getVibeHeroEditorReferenceNote(lane, recordedAtMs);
+    const pitch = referenceNote?.pitch ?? VIBE_HERO_EDITOR_LANE_PITCHES[lane] ?? 'A4';
+    const frequency = referenceNote?.frequency ?? VIBE_HERO_EDITOR_LANE_FREQUENCIES[lane] ?? 440;
+    return {
+      id: `editor-${this.vibeHero?.selectedSongId ?? 'song'}-${recordedAtMs}-${lane}-${sequence}`,
+      timeMs: recordedAtMs,
+      durationMs: referenceNote?.durationMs ?? VIBE_HERO_EDITOR_NOTE_DURATION_MS,
+      lane,
+      pitch,
+      frequency
+    };
+  }
+
+  previewVibeHeroEditorLane(laneIndex = 0) {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    const lane = THREE.MathUtils.clamp(Math.trunc(Number(laneIndex) || 0), 0, VIBE_HERO_LANE_COUNT - 1);
+    const now = performance.now();
+    const frequency = VIBE_HERO_EDITOR_LANE_FREQUENCIES[lane] ?? 440;
+    game.laneFlashes = [
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      {
+        lane,
+        at: now,
+        quality: game.editorRecording ? 'hit' : 'empty'
+      }
+    ];
+    this.playVibeHeroFeedbackTone(frequency, game.editorRecording ? 'great' : 'good');
+    this.syncVibeHeroHud();
+    return true;
+  }
+
+  recordVibeHeroEditorLanes(laneIndexes = []) {
+    const game = this.vibeHero;
+    if (!game || game.phase !== 'editor') {
+      return false;
+    }
+
+    const lanes = [...new Set(laneIndexes
+      .map((laneIndex) => Math.trunc(Number(laneIndex)))
+      .filter((laneIndex) => Number.isInteger(laneIndex) && laneIndex >= 0 && laneIndex < VIBE_HERO_LANE_COUNT))];
+    if (lanes.length <= 0) {
+      return false;
+    }
+
+    if (!game.editorRecording) {
+      lanes.forEach((laneIndex) => this.previewVibeHeroEditorLane(laneIndex));
+      game.message = 'Recording is off.';
+      return true;
+    }
+
+    this.updateVibeHeroEditorTime(game);
+    const currentTimeMs = Math.round(Number(game.currentTimeMs ?? 0) || 0);
+    const windowMs = Math.max(20, Number(game.editorRecordWindowMs ?? VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS) || VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS);
+    const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
+    const retainedChart = chart.filter((note) => Math.abs(note.timeMs - currentTimeMs) > windowMs);
+    const recordedNotes = lanes.map((laneIndex, index) => this.createVibeHeroEditorRecordedNote(laneIndex, currentTimeMs, index));
+    this.setVibeHeroEditorChart(game, [...retainedChart, ...recordedNotes], {
+      save: true,
+      message: `${recordedNotes.length} note${recordedNotes.length === 1 ? '' : 's'} recorded at ${formatVibeHeroTimestamp(currentTimeMs)}.`
+    });
+    game.editorLastOverwriteMs = currentTimeMs;
+    const now = performance.now();
+    game.laneFlashes = [
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      ...lanes.map((lane) => ({
+        lane,
+        at: now,
+        quality: 'hit'
+      }))
+    ];
+    for (const note of recordedNotes) {
+      this.playVibeHeroFeedbackTone(note.frequency, 'perfect');
+    }
+    this.syncVibeHeroHud();
+    return true;
+  }
+
   handleVibeHeroKeyboardInput() {
     if (!this.vibeHero || !this.hud.isVibeHeroOpen()) {
       return false;
     }
 
     let handled = false;
+    if (this.vibeHero.phase === 'editor') {
+      if (this.input.consume('KeyR')) {
+        handled = this.toggleVibeHeroEditorRecording() || handled;
+      }
+      if (this.input.consume('KeyN')) {
+        handled = this.seekVibeHeroEditor(-VIBE_HERO_EDITOR_SEEK_MS) || handled;
+      }
+      if (this.input.consume('KeyM')) {
+        handled = this.seekVibeHeroEditor(VIBE_HERO_EDITOR_SEEK_MS) || handled;
+      }
+      if (this.input.consume('Space')) {
+        handled = this.toggleVibeHeroEditorPlayback() || handled;
+      }
+    }
+
     const laneCodes = Array.from({ length: VIBE_HERO_LANE_COUNT }, (_, index) => [
       `Digit${index + 1}`,
       `Numpad${index + 1}`
     ]);
+    const editorLaneIndexes = [];
     laneCodes.forEach((codes, laneIndex) => {
       if (codes.some((code) => this.input.consume(code))) {
-        handled = this.hitVibeHeroLane(laneIndex) || handled;
+        if (this.vibeHero.phase === 'editor') {
+          editorLaneIndexes.push(laneIndex);
+        } else {
+          handled = this.hitVibeHeroLane(laneIndex) || handled;
+        }
       }
     });
+    if (editorLaneIndexes.length > 0) {
+      handled = this.recordVibeHeroEditorLanes(editorLaneIndexes) || handled;
+    }
 
-    if ((this.vibeHero.phase === 'select' || this.vibeHero.phase === 'complete') && this.input.consume('Space')) {
+    if (
+      (
+        this.vibeHero.phase === 'select'
+        || this.vibeHero.phase === 'editor-select'
+        || this.vibeHero.phase === 'complete'
+      )
+      && this.input.consume('Space')
+    ) {
       handled = this.startVibeHeroCountdown() || handled;
     }
 
@@ -6798,13 +7354,20 @@ export class Game {
   }
 
   updateVibeHeroAudioFade(game = this.vibeHero) {
-    if (!this.vibeHeroAudioElement || !game || game.phase !== 'playing') {
+    if (
+      !this.vibeHeroAudioElement
+      || !game
+      || (
+        game.phase !== 'playing'
+        && !(game.phase === 'editor' && game.editorPaused !== true)
+      )
+    ) {
       return;
     }
     this.vibeHeroAudioElement.volume = this.getVibeHeroMusicVolume(game);
   }
 
-  playVibeHeroSongAudio(song = null) {
+  playVibeHeroSongAudio(song = null, { offsetMs = 0 } = {}) {
     const audioUrl = String(song?.audioUrl ?? '').trim();
     if (!audioUrl) {
       return false;
@@ -6815,26 +7378,29 @@ export class Game {
     this.vibeHeroAudioPreloads.delete(audioUrl);
     audio.preload = 'auto';
     audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
-    audio.currentTime = Math.max(0, Number(song?.snippetStartMs ?? 0) || 0) / 1000;
+    audio.currentTime = (
+      Math.max(0, Number(song?.snippetStartMs ?? 0) || 0)
+      + Math.max(0, Number(offsetMs) || 0)
+    ) / 1000;
     this.vibeHeroAudioElement = audio;
     void audio.play().catch((error) => {
       console.warn('[VibeHero] MP3 playback failed; using fallback synth chart.', error);
       if (this.vibeHeroAudioElement === audio) {
         this.vibeHeroAudioElement = null;
       }
-      this.scheduleVibeHeroSynthSong(song);
+      this.scheduleVibeHeroSynthSong(song, { offsetMs });
     });
     return true;
   }
 
-  scheduleVibeHeroSong(song = null) {
-    if (this.playVibeHeroSongAudio(song)) {
+  scheduleVibeHeroSong(song = null, { offsetMs = 0 } = {}) {
+    if (this.playVibeHeroSongAudio(song, { offsetMs })) {
       return true;
     }
-    return this.scheduleVibeHeroSynthSong(song);
+    return this.scheduleVibeHeroSynthSong(song, { offsetMs });
   }
 
-  scheduleVibeHeroSynthSong(song = null) {
+  scheduleVibeHeroSynthSong(song = null, { offsetMs = 0 } = {}) {
     const context = this.getVibeHeroAudioContext();
     if (!context || !song?.chart?.length) {
       return false;
@@ -6847,10 +7413,15 @@ export class Game {
     master.connect(context.destination);
     this.vibeHeroAudioMaster = master;
     const startAt = context.currentTime + 0.055;
+    const safeOffsetMs = Math.max(0, Number(offsetMs) || 0);
     for (const [index, note] of song.chart.entries()) {
+      const offsetNoteTimeMs = Math.max(0, Number(note.timeMs) || 0) - safeOffsetMs;
+      if (offsetNoteTimeMs < -VIBE_HERO_HIT_WINDOW_MS) {
+        continue;
+      }
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-      const noteStart = startAt + (Math.max(0, Number(note.timeMs) || 0) / 1000);
+      const noteStart = startAt + (Math.max(0, offsetNoteTimeMs) / 1000);
       const noteDuration = Math.max(0.12, Math.min(0.72, Number(note.durationMs ?? 320) / 1000));
       oscillator.type = index % 3 === 0 ? 'triangle' : 'sine';
       oscillator.frequency.setValueAtTime(Math.max(80, Number(note.frequency ?? 261.63) || 261.63), noteStart);
@@ -12968,7 +13539,23 @@ export class Game {
       return;
     }
 
-    this.hud.setPrompt(nearest);
+    const vibeHeroChartEditorPressed = Boolean(
+      nearest?.gameId === VIBE_HERO_GAME_ID
+      && this.canUseVibeHeroChartEditor()
+      && this.input.consume('KeyF')
+    );
+    const promptInteractable = nearest?.gameId === VIBE_HERO_GAME_ID && this.canUseVibeHeroChartEditor()
+      ? {
+          ...nearest,
+          prompt: `${nearest.prompt ?? 'Play Vibe Hero'} / F Chart Editor`
+        }
+      : nearest;
+    this.hud.setPrompt(promptInteractable);
+
+    if (vibeHeroChartEditorPressed) {
+      this.openVibeHeroChartEditor(nearest);
+      return;
+    }
 
     if (!nearest || !interactPressed) {
       return;

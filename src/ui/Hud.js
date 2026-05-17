@@ -860,8 +860,24 @@ function formatVibeHeroSeconds(milliseconds = 0) {
   return seconds < 10 ? seconds.toFixed(1) : String(Math.ceil(seconds));
 }
 
+function formatVibeHeroTimestamp(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function getVibeHeroStatusText(game = null) {
   const phase = String(game?.phase ?? 'select');
+  if (phase === 'editor-select') {
+    return 'Chart Editor';
+  }
+  if (phase === 'editor') {
+    if (game?.editorRecording) {
+      return game?.editorPaused ? 'Recording Paused' : 'Recording';
+    }
+    return game?.editorPaused ? 'Paused' : 'Editing';
+  }
   if (phase === 'countdown') {
     const remainingMs = Math.max(0, Number(game?.countdownMs ?? game?.remainingMs ?? 0) || 0);
     const goMs = Math.max(0, Number(game?.countdownGoMs ?? 0) || 0);
@@ -889,10 +905,13 @@ function createVibeHeroTimerMarkup(game = null) {
   const duration = Math.max(1, Number(game?.durationMs ?? 1) || 1);
   const remaining = Math.max(0, Number(game?.remainingMs ?? duration) || 0);
   const percent = Math.max(0, Math.min(100, (remaining / duration) * 100));
+  const label = game?.editorMode
+    ? `${formatVibeHeroTimestamp(game?.currentTimeMs)} / ${formatVibeHeroTimestamp(duration)}`
+    : formatVibeHeroSeconds(remaining);
   return `
     <div class="hud__vibe-hero-timer" aria-label="Song timer">
       <span class="hud__vibe-hero-timer-fill" style="--timer:${percent.toFixed(2)}%"></span>
-      <strong>${formatVibeHeroSeconds(remaining)}</strong>
+      <strong>${escapeHtml(label)}</strong>
     </div>
   `;
 }
@@ -900,8 +919,9 @@ function createVibeHeroTimerMarkup(game = null) {
 function createVibeHeroSongSelectMarkup(game = null) {
   const songs = Array.isArray(game?.songs) ? game.songs : [];
   const selectedSongId = String(game?.selectedSongId ?? '');
+  const editorMode = game?.editorMode === true;
   return `
-    <div class="hud__vibe-hero-select">
+    <div class="hud__vibe-hero-select${editorMode ? ' is-editor' : ''}">
       <div class="hud__vibe-hero-record" aria-hidden="true">
         <span></span>
       </div>
@@ -916,13 +936,13 @@ function createVibeHeroSongSelectMarkup(game = null) {
               style="--song-accent:${escapeHtml(song.previewColor ?? '#54d7ff')}"
             >
               <strong>${escapeHtml(song.title ?? 'Song')}</strong>
-              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes | ${song.difficulty ?? 'Expert'}`)}</span>
+              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes | ${song.difficulty ?? 'Expert'}${song.chartEdited ? ' | Edited' : ''}`)}</span>
               <em>${escapeHtml(song.performer ?? song.sourceTitle ?? song.artist ?? 'Classical')}</em>
             </button>
           `;
         }).join('')}
       </div>
-      <button class="hud__vibe-hero-start" type="button" data-vibe-hero-action="start">Start</button>
+      <button class="hud__vibe-hero-start" type="button" data-vibe-hero-action="start">${editorMode ? 'Edit Chart' : 'Start'}</button>
     </div>
   `;
 }
@@ -1019,11 +1039,46 @@ function createVibeHeroPlayMarkup(game = null) {
   `;
 }
 
+function createVibeHeroEditorToolbarMarkup(game = null) {
+  const noteCount = Math.max(0, Array.isArray(game?.notes) ? game.notes.length : 0);
+  const seekStepSeconds = Math.max(1, Math.round((Number(game?.editorSeekStepMs ?? 5000) || 5000) / 1000));
+  const currentTime = formatVibeHeroTimestamp(game?.currentTimeMs);
+  const recordLabel = game?.editorRecording ? 'Stop R' : 'Record R';
+  const playLabel = game?.editorPaused ? 'Play Space' : 'Pause Space';
+  return `
+    <div class="hud__vibe-hero-editor-toolbar">
+      <div class="hud__vibe-hero-editor-meta">
+        <span><strong>${escapeHtml(currentTime)}</strong><em>Position</em></span>
+        <span><strong>${escapeHtml(String(noteCount))}</strong><em>Notes</em></span>
+      </div>
+      <div class="hud__vibe-hero-editor-actions">
+        <button class="${game?.editorRecording ? 'is-recording' : ''}" type="button" data-vibe-hero-action="editor:record">${escapeHtml(recordLabel)}</button>
+        <button type="button" data-vibe-hero-action="editor:rewind">N -${escapeHtml(String(seekStepSeconds))}s</button>
+        <button type="button" data-vibe-hero-action="editor:play-pause">${escapeHtml(playLabel)}</button>
+        <button type="button" data-vibe-hero-action="editor:forward">M +${escapeHtml(String(seekStepSeconds))}s</button>
+      </div>
+    </div>
+  `;
+}
+
+function createVibeHeroEditorMarkup(game = null) {
+  return `
+    <div class="hud__vibe-hero-editor">
+      ${createVibeHeroEditorToolbarMarkup(game)}
+      ${createVibeHeroTrackMarkup(game)}
+    </div>
+  `;
+}
+
 function createVibeHeroBodyMarkup(game = null) {
   const phase = String(game?.phase ?? 'select');
-  return phase === 'select'
-    ? createVibeHeroSongSelectMarkup(game)
-    : createVibeHeroPlayMarkup(game);
+  if (phase === 'select' || phase === 'editor-select') {
+    return createVibeHeroSongSelectMarkup(game);
+  }
+  if (phase === 'editor') {
+    return createVibeHeroEditorMarkup(game);
+  }
+  return createVibeHeroPlayMarkup(game);
 }
 
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
@@ -7709,8 +7764,11 @@ export class Hud {
     const game = this.vibeHeroState.game;
     const phase = String(game?.phase ?? 'select');
     this.vibeHeroRoot.classList.toggle('is-select', phase === 'select');
+    this.vibeHeroRoot.classList.toggle('is-editor-select', phase === 'editor-select');
     this.vibeHeroRoot.classList.toggle('is-countdown', phase === 'countdown');
     this.vibeHeroRoot.classList.toggle('is-playing', phase === 'playing');
+    this.vibeHeroRoot.classList.toggle('is-editor', phase === 'editor');
+    this.vibeHeroRoot.classList.toggle('is-recording', game?.editorRecording === true);
     this.vibeHeroRoot.classList.toggle('is-complete', phase === 'complete');
 
     if (this.vibeHeroStatus) {
@@ -7718,7 +7776,7 @@ export class Hud {
     }
 
     if (this.vibeHeroTimer) {
-      this.vibeHeroTimer.innerHTML = phase === 'playing' || phase === 'complete'
+      this.vibeHeroTimer.innerHTML = phase === 'playing' || phase === 'complete' || phase === 'editor'
         ? createVibeHeroTimerMarkup(game)
         : '';
     }
