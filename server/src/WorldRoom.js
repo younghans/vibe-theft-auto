@@ -260,7 +260,9 @@ export function getWorldRoomAdminDiagnostics() {
   };
 }
 
+// Colyseus schema fields use 6-bit indexes; keep synchronized player fields at 64 or fewer.
 const PlayerState = schema({
+  isAdmin: 'boolean',
   x: 'number',
   z: 'number',
   rotationY: 'number',
@@ -322,10 +324,8 @@ const PlayerState = schema({
   skillAwardXpGained: 'number',
   skillAwardOldLevel: 'number',
   skillAwardNewLevel: 'number',
-  skillAwardAt: 'number',
   selectedMissionId: 'string',
-  characterId: 'string',
-  isAdmin: 'boolean'
+  characterId: 'string'
 });
 
 const PickupState = schema({

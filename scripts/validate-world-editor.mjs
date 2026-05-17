@@ -832,6 +832,17 @@ function validateBartenderFunction() {
   );
 }
 
+function validatePlayerSchemaFieldBudget() {
+  const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
+  const match = /const PlayerState = schema\(\{(?<body>[\s\S]*?)\n\}\);/.exec(serverSource);
+  assert(match?.groups?.body, 'WorldRoom should define a PlayerState schema');
+  const fields = [...match.groups.body.matchAll(/^\s+([A-Za-z0-9_]+):/gm)]
+    .map((fieldMatch) => fieldMatch[1]);
+  const adminIndex = fields.indexOf('isAdmin');
+  assert(fields.length <= 64, `PlayerState schema should stay at or below 64 fields; found ${fields.length}`);
+  assert(adminIndex >= 0 && adminIndex < 64, 'PlayerState isAdmin must be inside the Colyseus schema field budget');
+}
+
 async function main() {
   validateKenneyCatalogItems();
   validateCustomTileCatalogItems();
@@ -844,6 +855,7 @@ async function main() {
   validateDeliveryQuestCarry();
   validateMissionSequencer();
   validateBartenderFunction();
+  validatePlayerSchemaFieldBudget();
   await validateBuildCity();
   console.log('World editor validation passed.');
 }
