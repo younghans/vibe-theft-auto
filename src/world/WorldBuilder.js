@@ -96,11 +96,10 @@ async function createPreviewObject(library, item) {
   return visual.root;
 }
 
-function snapToCell(worldPosition) {
-  return {
-    x: Math.round(worldPosition.x / BUILDER_TILE_SIZE),
-    z: Math.round(worldPosition.z / BUILDER_TILE_SIZE)
-  };
+function snapToCell(worldPosition, target = { x: 0, z: 0 }) {
+  target.x = Math.round(worldPosition.x / BUILDER_TILE_SIZE);
+  target.z = Math.round(worldPosition.z / BUILDER_TILE_SIZE);
+  return target;
 }
 
 function screenClamp(value, min, max) {
@@ -238,6 +237,8 @@ export class WorldBuilder {
     this.state = createDefaultEditorState();
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this.hoverHit = new THREE.Vector3();
+    this.hoverCell = { x: 0, z: 0 };
     this.previewLoadToken = 0;
     this.builderPreviewCategoryId = null;
     this.builderPreviewGroupId = null;
@@ -250,6 +251,9 @@ export class WorldBuilder {
     this.activeMovePlacementId = null;
     this.awaitingMovedPlacementIds = new Set();
     this.builderInteriorPreviewPlacementIds = new Set();
+    this.builderInteriorPreviewNextPlacementIds = new Set();
+    this.builderInteriorPreviewIdsToClear = [];
+    this.inlineShellEntries = [];
     this.activeNpcEditorPlacementId = null;
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
@@ -587,20 +591,24 @@ export class WorldBuilder {
     return this.builderPreviewRendererPromise;
   }
 
-  getColliders() {
-    return this.worldRenderer.getColliders();
+  getColliders(target = []) {
+    return this.worldRenderer.getColliders(target);
   }
 
   getGroundHeightAt(worldPosition) {
     return this.worldRenderer.getGroundHeightAt(worldPosition, this.worldState);
   }
 
-  getInteractables() {
-    return this.worldRenderer.getInteractables(this.worldState);
+  getInteractables(target = []) {
+    return this.worldRenderer.getInteractables(this.worldState, target);
   }
 
-  getInlineShellEntries() {
-    return this.worldRenderer.getInlineShellEntries(this.worldState);
+  forEachPlacement(callback) {
+    this.worldState.forEachPlacement(callback);
+  }
+
+  getInlineShellEntries(target = []) {
+    return this.worldRenderer.getInlineShellEntries(this.worldState, target);
   }
 
   getLayout() {
@@ -708,14 +716,23 @@ export class WorldBuilder {
       return;
     }
 
-    const entries = this.getInlineShellEntries();
-    const nextPlacementIds = new Set(entries.map((entry) => entry.placementId));
+    const entries = this.getInlineShellEntries(this.inlineShellEntries);
+    const nextPlacementIds = this.builderInteriorPreviewNextPlacementIds;
+    nextPlacementIds.clear();
+    for (const entry of entries) {
+      nextPlacementIds.add(entry.placementId);
+    }
 
-    for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
+    const idsToClear = this.builderInteriorPreviewIdsToClear;
+    idsToClear.length = 0;
+    for (const placementId of this.builderInteriorPreviewPlacementIds) {
       if (nextPlacementIds.has(placementId)) {
         continue;
       }
+      idsToClear.push(placementId);
+    }
 
+    for (const placementId of idsToClear) {
       this.worldRenderer.setPlacementCutawayState(placementId);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
       this.builderInteriorPreviewPlacementIds.delete(placementId);
@@ -1167,7 +1184,7 @@ export class WorldBuilder {
 
   resolveHoverState() {
     this.raycaster.setFromCamera(this.state.pointer, this.camera);
-    const hit = new THREE.Vector3();
+    const hit = this.hoverHit;
     const intersects = this.raycaster.ray.intersectPlane(this.groundPlane, hit);
 
     if (!intersects) {
@@ -1177,7 +1194,7 @@ export class WorldBuilder {
       return;
     }
 
-    const hoverCell = snapToCell(hit);
+    const hoverCell = snapToCell(hit, this.hoverCell);
     const hoveredPropId = this.worldRenderer.pickPlacementId(this.state.pointer, this.camera);
     const hoveredProp = hoveredPropId ? this.worldState.getPlacement(hoveredPropId) : null;
     const hoveredTile = (this.canEditHoveredTiles || this.npcTargetPickState)

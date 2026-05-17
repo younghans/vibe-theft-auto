@@ -210,19 +210,19 @@ function cloneLayout(layout) {
   return structuredClone(layout);
 }
 
-function sanitizePlayerAnimationState(animationState = {}) {
+function sanitizePlayerAnimationState(animationState = {}, target = {}) {
   const emoteId = typeof animationState.emoteId === 'string' ? animationState.emoteId : '';
   const aimRotationY = Number(animationState.aimRotationY);
+  const output = target && typeof target === 'object' ? target : {};
 
-  return {
-    emoteId,
-    emoteActive: Boolean(animationState.emoteActive && emoteId),
-    emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
-    emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0,
-    aimRotationY: Number.isFinite(aimRotationY) ? aimRotationY : 0,
-    aiming: Boolean(animationState.aiming),
-    skating: Boolean(animationState.skating)
-  };
+  output.emoteId = emoteId;
+  output.emoteActive = Boolean(animationState.emoteActive && emoteId);
+  output.emoteStartedAt = Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0;
+  output.emoteSeq = Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0;
+  output.aimRotationY = Number.isFinite(aimRotationY) ? aimRotationY : 0;
+  output.aiming = Boolean(animationState.aiming);
+  output.skating = Boolean(animationState.skating);
+  return output;
 }
 
 function getMockStockPortfoliosStorageKey(playerId = 'local-player') {
@@ -298,6 +298,7 @@ function createDefaultPlayerState(overrides = {}) {
     aimRotationY: 0,
     aiming: false,
     skating: false,
+    transformSeq: 0,
     emoteId: '',
     emoteActive: false,
     emoteStartedAt: 0,
@@ -442,6 +443,8 @@ export class NpcServiceMock {
     this.stockPortfolios = new Map();
     this.blackjackSessions = new Map();
     this.sequence = 0;
+    this.lastTransformSeq = 0;
+    this.nextAnimationState = {};
     this.pickupSequence = 0;
     this.playerAliasSequence = 0;
     this.npcRouteGraph = null;
@@ -956,9 +959,11 @@ export class NpcServiceMock {
       return;
     }
 
-    const nextAnimation = sanitizePlayerAnimationState(animationState);
+    const transformSeq = ++this.lastTransformSeq;
+    const nextAnimation = sanitizePlayerAnimationState(animationState, this.nextAnimationState);
     const clamped = clampToWorldBounds(position.x, position.z);
     if (this.isGymGateBlockingPosition(player, clamped)) {
+      player.transformSeq = transformSeq;
       return;
     }
     const meta = this.getPlayerRuntimeMeta(this.state.sessionId);
@@ -970,10 +975,15 @@ export class NpcServiceMock {
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
     player.skating = Boolean(nextAnimation.skating && player.skateboardOwned);
+    player.transformSeq = transformSeq;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
     player.emoteSeq = nextAnimation.emoteSeq;
+  }
+
+  getLastTransformSeq() {
+    return this.lastTransformSeq;
   }
 
   setCharacter(characterId = '') {

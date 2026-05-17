@@ -66,12 +66,29 @@ function getTaskPositionForInteractable(interactable = null, context = {}) {
   );
 }
 
+function getWorldBuilderInteractables(context = {}) {
+  return context.worldBuilderInteractables
+    ?? context.worldBuilder?.getInteractables?.()
+    ?? [];
+}
+
+function forEachWorldPlacement(context = {}, callback = () => {}) {
+  if (typeof context.worldBuilder?.forEachPlacement === 'function') {
+    context.worldBuilder.forEachPlacement(callback);
+    return;
+  }
+
+  for (const placement of context.worldBuilder?.getLayout?.()?.tiles ?? []) {
+    callback(placement);
+  }
+}
+
 function getNpcInteractableById(npcId = '', context = {}) {
   if (!npcId) {
     return null;
   }
 
-  for (const interactable of context.worldBuilder?.getInteractables?.() ?? []) {
+  for (const interactable of getWorldBuilderInteractables(context)) {
     if (
       interactable.kind === 'npc'
       && (interactable.npcId === npcId || interactable.placementId === npcId)
@@ -105,7 +122,7 @@ function getDeliveryQuestGiverTaskTarget(context = {}) {
     return candidateTarget;
   }
 
-  for (const interactable of context.worldBuilder?.getInteractables?.() ?? []) {
+  for (const interactable of getWorldBuilderInteractables(context)) {
     if (interactable.kind !== 'npc') {
       continue;
     }
@@ -130,7 +147,7 @@ function getNpcTaskTargetByPredicate(predicate, context = {}) {
     }
   }
 
-  for (const interactable of context.worldBuilder?.getInteractables?.() ?? []) {
+  for (const interactable of getWorldBuilderInteractables(context)) {
     if (interactable.kind !== 'npc') {
       continue;
     }
@@ -170,16 +187,22 @@ function isNamedTaskBuildingPlacement(placement = null, item = null, keyword = '
 }
 
 function getBuildingTaskTarget(context = {}, predicate = () => false) {
-  for (const placement of context.worldBuilder?.getLayout?.()?.tiles ?? []) {
+  let target = null;
+
+  forEachWorldPlacement(context, (placement) => {
+    if (target || (placement?.layer && placement.layer !== 'tile')) {
+      return;
+    }
+
     const item = getBuilderItemById(placement?.itemId);
     if (!item || !predicate(placement, item)) {
-      continue;
+      return;
     }
 
     const cellX = Number(placement.cell?.[0] ?? placement.cellX);
     const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
     if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
-      continue;
+      return;
     }
 
     const center = getTileCenterWorldPosition(
@@ -188,10 +211,10 @@ function getBuildingTaskTarget(context = {}, predicate = () => false) {
       cellZ,
       placement.rotationQuarterTurns ?? 0
     );
-    return getTaskPositionFromValue(center, context);
-  }
+    target = getTaskPositionFromValue(center, context);
+  });
 
-  return null;
+  return target;
 }
 
 function getGymBuildingTaskTarget(context = {}) {
@@ -211,7 +234,7 @@ function getGymTaskTarget(context = {}) {
     return activeSnatchTarget;
   }
 
-  const worldSnatch = (context.worldBuilder?.getInteractables?.() ?? [])
+  const worldSnatch = getWorldBuilderInteractables(context)
     .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
   const worldSnatchTarget = getTaskPositionForInteractable(worldSnatch, context);
   if (worldSnatchTarget) {

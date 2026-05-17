@@ -19,6 +19,22 @@ window.addEventListener('contextmenu', (event) => {
   event.preventDefault();
 }, { capture: true });
 
+function reportWavedashLoadProgress(progress) {
+  try {
+    globalThis.Wavedash?.updateLoadProgressZeroToOne?.(progress);
+  } catch (error) {
+    console.warn('[Wavedash] Load progress report failed.', error);
+  }
+}
+
+function initializeWavedash() {
+  try {
+    globalThis.Wavedash?.init?.();
+  } catch (error) {
+    console.warn('[Wavedash] SDK initialization failed.', error);
+  }
+}
+
 const root = document.querySelector('#app');
 console.info('[Boot] Vibe Theft Auto booting.', {
   href: window.location.href,
@@ -27,6 +43,13 @@ console.info('[Boot] Vibe Theft Auto booting.', {
 
 const game = new Game(root);
 
-game.start().catch((error) => {
-  console.error('[Boot] Game startup failed.', error);
-});
+reportWavedashLoadProgress(0);
+
+game.start()
+  .then(() => {
+    reportWavedashLoadProgress(1);
+    initializeWavedash();
+  })
+  .catch((error) => {
+    console.error('[Boot] Game startup failed.', error);
+  });

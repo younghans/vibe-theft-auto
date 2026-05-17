@@ -22,6 +22,11 @@ function schemaMapToEntries(schemaMap) {
   return Object.entries(schemaMap);
 }
 
+function normalizeTransformSeq(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : fallback;
+}
+
 function cloneNpcState(npc) {
   return {
     id: npc.id,
@@ -82,6 +87,7 @@ function clonePlayerState(player) {
     aimRotationY: transform.aimRotationY ?? player?.aimRotationY ?? transform.rotationY ?? player?.rotationY ?? 0,
     aiming: Boolean(transform.aiming ?? player?.aiming),
     skating: Boolean(transform.skating ?? player?.skating),
+    transformSeq: normalizeTransformSeq(transform.transformSeq ?? player?.transformSeq, null),
     emoteId: animation.emoteId || player?.emoteId || '',
     emoteActive: Boolean((animation.emoteActive ?? player?.emoteActive) && (animation.emoteId || player?.emoteId)),
     emoteStartedAt: animation.emoteStartedAt ?? player?.emoteStartedAt ?? 0,
@@ -349,6 +355,20 @@ export class NpcServiceColyseus {
     };
     this.lastTransformSentAt = 0;
     this.lastTransform = null;
+    this.nextTransform = {
+      x: 0,
+      z: 0,
+      rotationY: 0,
+      aimRotationY: 0,
+      aiming: false,
+      skating: false,
+      emoteId: '',
+      emoteActive: false,
+      emoteStartedAt: 0,
+      emoteSeq: 0,
+      seq: 0
+    };
+    this.lastTransformSeq = 0;
     this.lastBuilderPresenceSentAt = 0;
     this.lastBuilderPresenceSignature = '';
     this.lastFireSentAt = 0;
@@ -417,7 +437,6 @@ export class NpcServiceColyseus {
       for (const [id, player] of schemaMapToEntries(state.players)) {
         nextPlayers.set(id, clonePlayerState(player));
       }
-
       const nextBuilders = new Map();
       for (const [id, builder] of schemaMapToEntries(state.builders)) {
         nextBuilders.set(id, cloneBuilderState(builder));
@@ -570,6 +589,10 @@ export class NpcServiceColyseus {
     }
 
     this.scheduleRejoin(0);
+  }
+
+  getLastTransformSeq() {
+    return this.lastTransformSeq;
   }
 
   scheduleRejoin(delayMs) {
@@ -769,18 +792,17 @@ export class NpcServiceColyseus {
     const now = performance.now();
     const emoteId = typeof animationState.emoteId === 'string' ? animationState.emoteId : '';
     const aimRotationY = Number(animationState.aimRotationY);
-    const next = {
-      x: quantize(position.x),
-      z: quantize(position.z),
-      rotationY: quantize(rotationY, 3),
-      aimRotationY: quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3),
-      aiming: Boolean(animationState.aiming),
-      skating: Boolean(animationState.skating),
-      emoteId,
-      emoteActive: Boolean(animationState.emoteActive && emoteId),
-      emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
-      emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0
-    };
+    const next = this.nextTransform;
+    next.x = quantize(position.x);
+    next.z = quantize(position.z);
+    next.rotationY = quantize(rotationY, 3);
+    next.aimRotationY = quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3);
+    next.aiming = Boolean(animationState.aiming);
+    next.skating = Boolean(animationState.skating);
+    next.emoteId = emoteId;
+    next.emoteActive = Boolean(animationState.emoteActive && emoteId);
+    next.emoteStartedAt = Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0;
+    next.emoteSeq = Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0;
     const moved = !this.lastTransform
       || Math.abs(this.lastTransform.x - next.x) > PLAYER_TRANSFORM_MOVE_EPSILON
       || Math.abs(this.lastTransform.z - next.z) > PLAYER_TRANSFORM_MOVE_EPSILON;
@@ -811,7 +833,12 @@ export class NpcServiceColyseus {
       return;
     }
 
-    this.lastTransform = next;
+    const transformSeq = ++this.lastTransformSeq;
+    if (!this.lastTransform) {
+      this.lastTransform = {};
+    }
+    next.seq = transformSeq;
+    Object.assign(this.lastTransform, next);
     this.lastTransformSentAt = now;
     this.room.send('player:updateTransform', next);
   }

@@ -187,6 +187,12 @@ export class WorldState {
     return [...this.placementsById.values()].map(clonePlacement);
   }
 
+  forEachPlacement(callback) {
+    for (const placement of this.placementsById.values()) {
+      callback(placement);
+    }
+  }
+
   getMissionSequence() {
     return cloneMissionSequence(this.missionSequence);
   }

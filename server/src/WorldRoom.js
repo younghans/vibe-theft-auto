@@ -259,6 +259,11 @@ function recordAdminJoinDiagnostic(diagnostic = {}) {
   }
 }
 
+function normalizeTransformSeq(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
 export function getWorldRoomAdminDiagnostics() {
   const runtime = getAdminJoinRuntimeAccess();
   return {
@@ -275,7 +280,8 @@ const PlayerTransformState = schema({
   rotationY: 'number',
   aimRotationY: 'number',
   aiming: 'boolean',
-  skating: 'boolean'
+  skating: 'boolean',
+  transformSeq: 'number'
 });
 
 const PlayerAnimationState = schema({
@@ -387,7 +393,7 @@ const PLAYER_STATE_SECTIONS = [
   {
     section: 'transform',
     type: PlayerTransformState,
-    fields: ['x', 'z', 'rotationY', 'aimRotationY', 'aiming', 'skating']
+    fields: ['x', 'z', 'rotationY', 'aimRotationY', 'aiming', 'skating', 'transformSeq']
   },
   {
     section: 'animation',
@@ -1169,6 +1175,7 @@ export class WorldRoom extends Room {
     player.aimRotationY = player.rotationY;
     player.aiming = false;
     player.skating = false;
+    player.transformSeq = 0;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -1246,6 +1253,7 @@ export class WorldRoom extends Room {
       x: player.x,
       z: player.z,
       acceptedAt: Date.now(),
+      lastTransformSeq: player.transformSeq,
       lastPunchAt: 0,
       lastShotAt: 0,
       healthRegenCarryMs: 0,
@@ -1511,6 +1519,7 @@ export class WorldRoom extends Room {
         x: player?.x ?? 0,
         z: player?.z ?? 0,
         acceptedAt: Date.now(),
+        lastTransformSeq: player?.transformSeq ?? 0,
         lastPunchAt: 0,
         lastShotAt: 0,
         healthRegenCarryMs: 0,
@@ -1595,6 +1604,13 @@ export class WorldRoom extends Room {
     const now = Date.now();
     const requestedPosition = clampToWorldBounds(Number(message.x), Number(message.z));
     const meta = this.getPlayerMeta(client.sessionId);
+    const messageSeq = normalizeTransformSeq(message.seq ?? message.transformSeq);
+    const nextTransformSeq = messageSeq > 0
+      ? messageSeq
+      : normalizeTransformSeq(meta.lastTransformSeq ?? player.transformSeq ?? 0) + 1;
+    if (nextTransformSeq <= normalizeTransformSeq(meta.lastTransformSeq)) {
+      return;
+    }
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
     const requestedSkating = player.skateboardOwned === true && message?.skating === true;
     const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? SKATEBOARD_SPEED_MULTIPLIER : 1);
@@ -1623,15 +1639,20 @@ export class WorldRoom extends Room {
         acceptedX: quantizePosition(meta.x),
         acceptedZ: quantizePosition(meta.z)
       });
+      meta.lastTransformSeq = nextTransformSeq;
+      meta.acceptedAt = now;
+      player.transformSeq = nextTransformSeq;
       return;
     }
 
     this.awardAgilityXpFromDistance(player, meta, travelled);
     player.x = quantizePosition(nextPosition.x);
     player.z = quantizePosition(nextPosition.z);
+    player.transformSeq = nextTransformSeq;
     meta.x = player.x;
     meta.z = player.z;
     meta.acceptedAt = now;
+    meta.lastTransformSeq = nextTransformSeq;
 
     const rotationY = Number(message.rotationY);
     if (Number.isFinite(rotationY)) {
@@ -2895,6 +2916,8 @@ export class WorldRoom extends Room {
     meta.x = player.x;
     meta.z = player.z;
     meta.acceptedAt = Date.now();
+    meta.lastTransformSeq = normalizeTransformSeq(meta.lastTransformSeq ?? player.transformSeq ?? 0);
+    player.transformSeq = meta.lastTransformSeq;
     meta.lastPunchAt = 0;
     meta.lastShotAt = 0;
     meta.healthRegenCarryMs = 0;

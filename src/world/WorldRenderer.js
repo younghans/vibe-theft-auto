@@ -209,65 +209,100 @@ function areDebugPointsClose(a, b, epsilon = 0.08) {
   return Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.z ?? 0) - (b.z ?? 0)) <= epsilon;
 }
 
-function getPlacementOffsetWorldPosition(rendered, placement, localOffset = null) {
+function getReusableVector(value) {
+  return value?.isVector3 ? value : new THREE.Vector3();
+}
+
+function syncPlainObject(target, source = {}) {
+  for (const key of Object.keys(target)) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) {
+      delete target[key];
+    }
+  }
+  Object.assign(target, source);
+  return target;
+}
+
+function getCachedInteractable(cache, key) {
+  let interactable = cache.get(key);
+  if (!interactable) {
+    interactable = {};
+    cache.set(key, interactable);
+  }
+  return interactable;
+}
+
+function getPlacementOffsetWorldPosition(rendered, placement, localOffset = null, target = new THREE.Vector3()) {
   if (Array.isArray(localOffset) && localOffset.length >= 2) {
     const rotatedOffset = rotateLocalOffset(
       Number(localOffset[0]) || 0,
       Number(localOffset[1]) || 0,
       placement.rotationQuarterTurns
     );
-    return rendered.object.position.clone().add(new THREE.Vector3(rotatedOffset.x, 0, rotatedOffset.z));
+    const position = target.copy(rendered.object.position);
+    position.x += rotatedOffset.x;
+    position.z += rotatedOffset.z;
+    return position;
   }
 
   return null;
 }
 
-function getInteractableWorldPosition(rendered, placement, interactable, defaultDistance) {
-  const offsetPosition = getPlacementOffsetWorldPosition(rendered, placement, interactable?.localOffset);
+function getInteractableWorldPosition(rendered, placement, interactable, defaultDistance, target = new THREE.Vector3()) {
+  const offsetPosition = getPlacementOffsetWorldPosition(rendered, placement, interactable?.localOffset, target);
   if (offsetPosition) {
     return offsetPosition;
   }
 
-  const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
-    new THREE.Vector3(0, 1, 0),
-    toRotationY(placement.rotationQuarterTurns)
-  );
-  return rendered.object.position.clone().addScaledVector(forward, defaultDistance);
+  const rotationY = toRotationY(placement.rotationQuarterTurns);
+  const position = target.copy(rendered.object.position);
+  position.x += Math.sin(rotationY) * defaultDistance;
+  position.z += Math.cos(rotationY) * defaultDistance;
+  return position;
 }
 
-function createPortalInteractable(rendered, placement, item, interactable) {
+function createPortalInteractable(rendered, placement, item, interactable, target = {}) {
   const portal = clonePortalDefinition(interactable?.portal);
   if (!portal) {
     return null;
   }
 
   const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
-  const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
-  const triggerPosition = getPlacementOffsetWorldPosition(rendered, placement, portal.triggerLocalOffset)
-    ?? rendered.object.position.clone();
-  const spawnPosition = getPlacementOffsetWorldPosition(rendered, placement, portal.spawnLocalOffset)
-    ?? rendered.object.position.clone();
+  const position = getInteractableWorldPosition(
+    rendered,
+    placement,
+    interactable,
+    distance,
+    getReusableVector(target.position)
+  );
+  const triggerPosition = getReusableVector(target.triggerPosition);
+  if (!getPlacementOffsetWorldPosition(rendered, placement, portal.triggerLocalOffset, triggerPosition)) {
+    triggerPosition.copy(rendered.object.position);
+  }
+  const spawnPosition = getReusableVector(target.spawnPosition);
+  if (!getPlacementOffsetWorldPosition(rendered, placement, portal.spawnLocalOffset, spawnPosition)) {
+    spawnPosition.copy(rendered.object.position);
+  }
 
-  return {
-    kind: 'portal',
-    placementId: placement.id,
-    itemId: item.id,
-    rotationQuarterTurns: placement.rotationQuarterTurns,
-    originPosition: rendered.object.position.clone(),
-    position,
-    radius: interactable.radius ?? 4,
-    prompt: interactable.prompt ?? `Enter ${interactable.label ?? item.label}`,
-    actionText: interactable.actionText ?? `${interactable.label ?? item.label} is shimmering nearby.`,
-    portalRole: portal.role ?? '',
-    targetUrl: portal.destinationUrl ?? '',
-    portal,
-    triggerPosition,
-    triggerRadius: Number.isFinite(portal.triggerRadius) ? portal.triggerRadius : 2.2,
-    triggerHalfHeight: Number.isFinite(portal.triggerHalfHeight) ? portal.triggerHalfHeight : 4.5,
-    spawnPosition,
-    spawnRotationY: toRotationY(placement.rotationQuarterTurns)
-      + (Number.isFinite(portal.spawnRotationOffsetY) ? portal.spawnRotationOffsetY : Math.PI)
-  };
+  target.kind = 'portal';
+  target.placementId = placement.id;
+  target.itemId = item.id;
+  target.rotationQuarterTurns = placement.rotationQuarterTurns;
+  target.originPosition = getReusableVector(target.originPosition).copy(rendered.object.position);
+  target.position = position;
+  target.radius = interactable.radius ?? 4;
+  target.prompt = interactable.prompt ?? `Enter ${interactable.label ?? item.label}`;
+  target.actionText = interactable.actionText ?? `${interactable.label ?? item.label} is shimmering nearby.`;
+  target.portalRole = portal.role ?? '';
+  target.targetUrl = portal.destinationUrl ?? '';
+  target.portal = portal;
+  target.triggerPosition = triggerPosition;
+  target.triggerRadius = Number.isFinite(portal.triggerRadius) ? portal.triggerRadius : 2.2;
+  target.triggerHalfHeight = Number.isFinite(portal.triggerHalfHeight) ? portal.triggerHalfHeight : 4.5;
+  target.spawnPosition = spawnPosition;
+  target.spawnRotationY = toRotationY(placement.rotationQuarterTurns)
+    + (Number.isFinite(portal.spawnRotationOffsetY) ? portal.spawnRotationOffsetY : Math.PI);
+  return target;
 }
 
 function createInlineShellEntry(rendered, placement, interactable) {
@@ -279,7 +314,7 @@ function createInlineShellEntry(rendered, placement, interactable) {
     rendered,
     placement,
     {
-      localOffset: [...(interactable.localOffset ?? interactable.interior.exteriorDoorOffset ?? [0, 0])]
+      localOffset: interactable.localOffset ?? interactable.interior.exteriorDoorOffset ?? [0, 0]
     },
     BUILDER_TILE_SIZE * 0.44
   );
@@ -803,6 +838,12 @@ export class WorldRenderer {
     this.npcRuntimeState = new Map();
     this.npcFocusTargets = new Map();
     this.npcDebugState = new Map();
+    this.npcSpeechAnchors = new Map();
+    this.npcSpeechAnchorVectors = new Map();
+    this.interactableCache = new Map();
+    this.activeInteractableCacheKeys = new Set();
+    this.occupiedWorkoutPlacementIds = new Set();
+    this.visibleWorkoutPlacementIds = new Set();
     this.playerState = new Map();
     this.localWorkoutState = {
       pendingPlacementId: '',
@@ -855,6 +896,8 @@ export class WorldRenderer {
     this.renderedPlacements.clear();
     this.actorPlacementIds.clear();
     this.staticColliderEntries.clear();
+    this.interactableCache.clear();
+    this.activeInteractableCacheKeys.clear();
     this.visibleStaticColliders = [];
     this.staticCollidersDirty = true;
     this.surfaceHeightByCell.clear();
@@ -1481,8 +1524,12 @@ export class WorldRenderer {
     this.refreshNpcDebugGizmos();
   }
 
-  getColliders() {
-    const colliders = [...this.getVisibleStaticColliders()];
+  getColliders(target = []) {
+    const colliders = target;
+    colliders.length = 0;
+    for (const collider of this.getVisibleStaticColliders()) {
+      colliders.push(collider);
+    }
 
     for (const placementId of this.actorPlacementIds) {
       const rendered = this.renderedPlacements.get(placementId);
@@ -1503,8 +1550,9 @@ export class WorldRenderer {
     return this.getSurfaceHeightAtPosition(worldPosition.x, worldPosition.z);
   }
 
-  getOccupiedWorkoutPlacementIds(worldState) {
-    const occupiedPlacementIds = new Set();
+  getOccupiedWorkoutPlacementIds(worldState, target = this.occupiedWorkoutPlacementIds) {
+    const occupiedPlacementIds = target;
+    occupiedPlacementIds.clear();
 
     for (const npcState of this.npcRuntimeState.values()) {
       if (
@@ -1557,8 +1605,9 @@ export class WorldRenderer {
     return Boolean(interactable?.workoutType && interactable.hideDuringWorkout !== false);
   }
 
-  getVisibleWorkoutPlacementIds(worldState) {
-    const visiblePlacementIds = new Set();
+  getVisibleWorkoutPlacementIds(worldState, target = this.visibleWorkoutPlacementIds) {
+    const visiblePlacementIds = target;
+    visiblePlacementIds.clear();
 
     for (const npcState of this.npcRuntimeState.values()) {
       if (
@@ -1619,111 +1668,142 @@ export class WorldRenderer {
     return visiblePlacementIds;
   }
 
-  getInteractables(worldState) {
+  getInteractables(worldState, target = []) {
     const occupiedWorkoutPlacementIds = this.getOccupiedWorkoutPlacementIds(worldState);
+    const interactables = target;
+    const activeKeys = this.activeInteractableCacheKeys;
+    interactables.length = 0;
+    activeKeys.clear();
 
-    return worldState.getPlacements()
-      .filter((placement) => {
-        if (placement.layer === 'npc') {
-          return true;
+    worldState.forEachPlacement((placement) => {
+      if (placement.layer !== 'npc') {
+        const placementItem = getBuilderItemById(placement.itemId);
+        if (!placement.interactable && !placementItem?.interior && !placementItem?.interactable) {
+          return;
+        }
+      }
+
+      const rendered = this.renderedPlacements.get(placement.id);
+      const item = getBuilderItemById(placement.itemId);
+      if (!rendered || rendered.hidden || !item) {
+        return;
+      }
+
+      if (placement.layer === 'npc' && placement.npc) {
+        const runtimeState = this.npcRuntimeState.get(placement.id);
+        if (runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
+          return;
         }
 
-        const item = getBuilderItemById(placement.itemId);
-        return Boolean(placement.interactable || item?.interior || item?.interactable);
-      })
-      .map((placement) => {
-        const rendered = this.renderedPlacements.get(placement.id);
-        const item = getBuilderItemById(placement.itemId);
-        if (!rendered || rendered.hidden || !item) {
-          return null;
-        }
+        const rotationY = toRotationY(placement.rotationQuarterTurns);
+        const distance = item.interactionOffset ?? BUILDER_TILE_SIZE * 0.16;
+        const cacheKey = `npc:${placement.id}`;
+        const npcInteractable = getCachedInteractable(this.interactableCache, cacheKey);
+        const originPosition = getReusableVector(npcInteractable.originPosition).copy(rendered.object.position);
+        const position = getReusableVector(npcInteractable.position).copy(rendered.object.position);
+        position.x += Math.sin(rotationY) * distance;
+        position.z += Math.cos(rotationY) * distance;
+        activeKeys.add(cacheKey);
+        npcInteractable.kind = 'npc';
+        npcInteractable.placementId = placement.id;
+        npcInteractable.npcId = placement.id;
+        npcInteractable.npc = syncPlainObject(npcInteractable.npc ?? {}, placement.npc);
+        npcInteractable.originPosition = originPosition;
+        npcInteractable.position = position;
+        npcInteractable.radius = placement.npc.interactRadius ?? item.interactionRadius ?? 4.2;
+        npcInteractable.prompt = `Talk to ${placement.npc.name}`;
+        npcInteractable.actionText = `Talk to ${placement.npc.name}`;
+        interactables.push(npcInteractable);
+        return;
+      }
 
-        if (placement.layer === 'npc' && placement.npc) {
-          const runtimeState = this.npcRuntimeState.get(placement.id);
-          if (runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
-            return null;
-          }
+      const interactable = resolvePlacementInteractableDefinition(placement, item);
+      if (!interactable || ['inline-shell', 'inline-cutaway'].includes(interactable.interior?.mode)) {
+        return;
+      }
 
-          const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            toRotationY(placement.rotationQuarterTurns)
-          );
-          const distance = item.interactionOffset ?? BUILDER_TILE_SIZE * 0.16;
-          return {
-            kind: 'npc',
-            placementId: placement.id,
-            npcId: placement.id,
-            npc: { ...placement.npc },
-            originPosition: rendered.object.position.clone(),
-            position: rendered.object.position.clone().addScaledVector(forward, distance),
-            radius: placement.npc.interactRadius ?? item.interactionRadius ?? 4.2,
-            prompt: `Talk to ${placement.npc.name}`,
-            actionText: `Talk to ${placement.npc.name}`
-          };
-        }
-
-        const interactable = resolvePlacementInteractableDefinition(placement, item);
-        if (!interactable) {
-          return null;
-        }
-
-        if (['inline-shell', 'inline-cutaway'].includes(interactable.interior?.mode)) {
-          return null;
-        }
-
-        if (interactable.portal) {
-          return createPortalInteractable(rendered, placement, item, interactable);
-        }
-
-        const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
-        const position = getInteractableWorldPosition(rendered, placement, interactable, distance);
-        const approachPosition = Array.isArray(interactable.approachLocalOffset)
-          ? getInteractableWorldPosition(
-            rendered,
-            placement,
-            { localOffset: interactable.approachLocalOffset },
-            distance
-          )
-          : null;
-        const officeJobId = String(interactable.officeJobId ?? '').trim();
-        const workoutKind = interactable.workoutType
-          ? `${interactable.workoutType}-workout`
-          : (officeJobId ? 'office-job-station' : 'world');
-        const workoutBusy = Boolean(
-          interactable.workoutType
-          && occupiedWorkoutPlacementIds.has(placement.id)
+      if (interactable.portal) {
+        const cacheKey = `portal:${placement.id}`;
+        const portalInteractable = createPortalInteractable(
+          rendered,
+          placement,
+          item,
+          interactable,
+          getCachedInteractable(this.interactableCache, cacheKey)
         );
-        const defaultLabel = interactable.label ?? item.label ?? 'Workout station';
-        const prompt = workoutBusy
-          ? `${defaultLabel} in use`
-          : (interactable.prompt ?? `Enter ${interactable.label ?? item.label}`);
-        const actionText = workoutBusy
-          ? `Wait until ${defaultLabel.toLowerCase()} is free.`
-          : (interactable.actionText ?? `${item.label} is not hooked up yet.`);
+        if (portalInteractable) {
+          activeKeys.add(cacheKey);
+          interactables.push(portalInteractable);
+        }
+        return;
+      }
 
-        return {
-          kind: workoutKind,
-          placementId: placement.id,
-          itemId: item.id,
-          rotationQuarterTurns: placement.rotationQuarterTurns,
-          originPosition: rendered.object.position.clone(),
-          position,
-          radius: interactable.radius ?? 4,
-          label: defaultLabel,
-          prompt,
-          actionText,
-          busy: workoutBusy,
-          gameId: String(interactable.gameId ?? ''),
-          officeJobId,
-          interior: cloneInteriorDefinition(interactable.interior),
-          approachPosition,
-          approachRotationY: Number.isFinite(interactable.approachRotationY)
-            ? toRotationY(placement.rotationQuarterTurns) + interactable.approachRotationY
-            : undefined,
-          barbellObject: interactable.workoutType ? rendered.object : null
-        };
-      })
-      .filter(Boolean);
+      const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
+      const cacheKey = `world:${placement.id}`;
+      const worldInteractable = getCachedInteractable(this.interactableCache, cacheKey);
+      const position = getInteractableWorldPosition(
+        rendered,
+        placement,
+        interactable,
+        distance,
+        getReusableVector(worldInteractable.position)
+      );
+      let approachPosition = null;
+      if (Array.isArray(interactable.approachLocalOffset)) {
+        approachPosition = getInteractableWorldPosition(
+          rendered,
+          placement,
+          { localOffset: interactable.approachLocalOffset },
+          distance,
+          getReusableVector(worldInteractable.approachPosition)
+        );
+      }
+      const officeJobId = String(interactable.officeJobId ?? '').trim();
+      const workoutKind = interactable.workoutType
+        ? `${interactable.workoutType}-workout`
+        : (officeJobId ? 'office-job-station' : 'world');
+      const workoutBusy = Boolean(
+        interactable.workoutType
+        && occupiedWorkoutPlacementIds.has(placement.id)
+      );
+      const defaultLabel = interactable.label ?? item.label ?? 'Workout station';
+      const prompt = workoutBusy
+        ? `${defaultLabel} in use`
+        : (interactable.prompt ?? `Enter ${interactable.label ?? item.label}`);
+      const actionText = workoutBusy
+        ? `Wait until ${defaultLabel.toLowerCase()} is free.`
+        : (interactable.actionText ?? `${item.label} is not hooked up yet.`);
+
+      activeKeys.add(cacheKey);
+      worldInteractable.kind = workoutKind;
+      worldInteractable.placementId = placement.id;
+      worldInteractable.itemId = item.id;
+      worldInteractable.rotationQuarterTurns = placement.rotationQuarterTurns;
+      worldInteractable.originPosition = getReusableVector(worldInteractable.originPosition).copy(rendered.object.position);
+      worldInteractable.position = position;
+      worldInteractable.radius = interactable.radius ?? 4;
+      worldInteractable.label = defaultLabel;
+      worldInteractable.prompt = prompt;
+      worldInteractable.actionText = actionText;
+      worldInteractable.busy = workoutBusy;
+      worldInteractable.gameId = String(interactable.gameId ?? '');
+      worldInteractable.officeJobId = officeJobId;
+      worldInteractable.interior = cloneInteriorDefinition(interactable.interior);
+      worldInteractable.approachPosition = approachPosition;
+      worldInteractable.approachRotationY = Number.isFinite(interactable.approachRotationY)
+        ? toRotationY(placement.rotationQuarterTurns) + interactable.approachRotationY
+        : undefined;
+      worldInteractable.barbellObject = interactable.workoutType ? rendered.object : null;
+      interactables.push(worldInteractable);
+    });
+
+    for (const cacheKey of this.interactableCache.keys()) {
+      if (!activeKeys.has(cacheKey)) {
+        this.interactableCache.delete(cacheKey);
+      }
+    }
+
+    return interactables;
   }
 
   applyPlacementVisibility(rendered) {
@@ -1785,26 +1865,32 @@ export class WorldRenderer {
     }
   }
 
-  getInlineShellEntries(worldState) {
-    return worldState.getPlacements()
-      .map((placement) => {
-        const rendered = this.renderedPlacements.get(placement.id);
-        const item = getBuilderItemById(placement.itemId);
-        if (!rendered || !item) {
-          return null;
-        }
+  getInlineShellEntries(worldState, target = []) {
+    const entries = target;
+    entries.length = 0;
 
-        const interactable = resolvePlacementInteractableDefinition(placement, item);
-        if (
-          !interactable?.interior?.id
-          || !['inline-shell', 'inline-cutaway'].includes(interactable.interior.mode)
-        ) {
-          return null;
-        }
+    worldState.forEachPlacement((placement) => {
+      const rendered = this.renderedPlacements.get(placement.id);
+      const item = getBuilderItemById(placement.itemId);
+      if (!rendered || !item) {
+        return;
+      }
 
-        return createInlineShellEntry(rendered, placement, interactable);
-      })
-      .filter(Boolean);
+      const interactable = resolvePlacementInteractableDefinition(placement, item);
+      if (
+        !interactable?.interior?.id
+        || !['inline-shell', 'inline-cutaway'].includes(interactable.interior.mode)
+      ) {
+        return;
+      }
+
+      const entry = createInlineShellEntry(rendered, placement, interactable);
+      if (entry) {
+        entries.push(entry);
+      }
+    });
+
+    return entries;
   }
 
   applyNpcRuntimeState(npcStateMap = new Map()) {
@@ -1848,11 +1934,16 @@ export class WorldRenderer {
   }
 
   applyNpcFocusTargets(npcFocusTargets = new Map()) {
-    this.npcFocusTargets = new Map(
-      [...npcFocusTargets.entries()]
-        .filter(([, target]) => target && Number.isFinite(target.x) && Number.isFinite(target.z))
-        .map(([npcId, target]) => [npcId, { x: Number(target.x), z: Number(target.z) }])
-    );
+    this.npcFocusTargets.clear();
+    for (const [npcId, target] of npcFocusTargets.entries()) {
+      if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) {
+        continue;
+      }
+      this.npcFocusTargets.set(npcId, {
+        x: Number(target.x),
+        z: Number(target.z)
+      });
+    }
 
     for (const [placementId, rendered] of this.renderedPlacements.entries()) {
       if (!rendered.actor) {
@@ -1948,14 +2039,26 @@ export class WorldRenderer {
   }
 
   getNpcSpeechAnchors() {
-    const anchors = new Map();
+    const anchors = this.npcSpeechAnchors;
+    anchors.clear();
 
     for (const [placementId, rendered] of this.renderedPlacements.entries()) {
       if (!rendered.actor || rendered.actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }
 
-      anchors.set(placementId, rendered.actor.getSpeechAnchorWorldPosition(new THREE.Vector3()));
+      let anchor = this.npcSpeechAnchorVectors.get(placementId);
+      if (!anchor) {
+        anchor = new THREE.Vector3();
+        this.npcSpeechAnchorVectors.set(placementId, anchor);
+      }
+      anchors.set(placementId, rendered.actor.getSpeechAnchorWorldPosition(anchor));
+    }
+
+    for (const placementId of this.npcSpeechAnchorVectors.keys()) {
+      if (!this.renderedPlacements.has(placementId)) {
+        this.npcSpeechAnchorVectors.delete(placementId);
+      }
     }
 
     return anchors;

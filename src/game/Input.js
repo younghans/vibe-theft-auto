@@ -18,18 +18,19 @@ const ACTION_POINTER_BUTTONS = Object.freeze({
 const MOBILE_STICK_DEADZONE = 0.12;
 const TOUCH_MOUSE_SUPPRESSION_MS = 700;
 
-function clampStickVector(dx, dy, radius) {
+function clampStickVector(dx, dy, radius, target = { x: 0, y: 0 }) {
   const safeRadius = Math.max(1, Number(radius) || 1);
   const distance = Math.hypot(dx, dy);
   if (distance <= safeRadius) {
-    return { x: dx, y: dy };
+    target.x = dx;
+    target.y = dy;
+    return target;
   }
 
   const scale = safeRadius / distance;
-  return {
-    x: dx * scale,
-    y: dy * scale
-  };
+  target.x = dx * scale;
+  target.y = dy * scale;
+  return target;
 }
 
 function applyDeadzone(value) {
@@ -47,8 +48,11 @@ export class Input {
     this.touchControlsEnabled = true;
     this.touchActionPointers = new Map();
     this.justPressedActions = new Set();
+    this.movementVector = { x: 0, z: 0 };
     this.touchMovementVector = { x: 0, z: 0 };
     this.touchAimVector = { x: 0, z: 0 };
+    this.mobileControlVector = { knobX: 0, knobY: 0, normalizedX: 0, normalizedY: 0 };
+    this.mobileClampVector = { x: 0, y: 0 };
     this.touchAimActive = false;
     this.mobileControlsRoot = null;
     this.mobileJoystick = null;
@@ -127,22 +131,29 @@ export class Input {
       this.keys.delete(event.code);
       this.justPressed.delete(event.code);
     });
+    document.addEventListener('keyup', (event) => {
+      if (this.isEditableTarget(event.target)) {
+        return;
+      }
+
+      this.keys.delete(event.code);
+      this.justPressed.delete(event.code);
+    }, { capture: true });
 
     window.addEventListener('focusin', (event) => {
       if (this.isEditableTarget(event.target)) {
-        this.keys.clear();
-        this.justPressed.clear();
-        this.keyPressQueue = [];
+        this.releaseAllInputs();
       }
     });
 
     window.addEventListener('blur', () => {
-      this.keys.clear();
-      this.justPressed.clear();
-      this.keyPressQueue = [];
-      this.pointerButtons.clear();
-      this.justPressedPointerButtons.clear();
-      this.releaseAllTouchControls();
+      this.releaseAllInputs();
+    });
+    window.addEventListener('pagehide', () => this.releaseAllInputs());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.releaseAllInputs();
+      }
     });
 
     window.addEventListener('pointermove', (event) => {
@@ -269,7 +280,8 @@ export class Input {
     event.preventDefault();
     event.stopPropagation();
     this.mobileJoystickPointerId = null;
-    this.touchMovementVector = { x: 0, z: 0 };
+    this.touchMovementVector.x = 0;
+    this.touchMovementVector.z = 0;
     this.mobileJoystick?.classList.remove('is-active');
     this.syncMobileControlStyles();
   }
@@ -309,7 +321,8 @@ export class Input {
     this.endTouchAction('aim', event.pointerId);
     this.mobileAimPointerId = null;
     this.touchAimActive = false;
-    this.touchAimVector = { x: 0, z: 0 };
+    this.touchAimVector.x = 0;
+    this.touchAimVector.z = 0;
     this.mobileAimPad?.classList.remove('is-active');
     this.syncMobileControlStyles();
   }
@@ -366,46 +379,40 @@ export class Input {
 
   updateMobileJoystick(event) {
     const vector = this.getMobileControlVector(this.mobileJoystick, event);
-    this.touchMovementVector = {
-      x: applyDeadzone(vector.normalizedX),
-      z: applyDeadzone(vector.normalizedY)
-    };
+    this.touchMovementVector.x = applyDeadzone(vector.normalizedX);
+    this.touchMovementVector.z = applyDeadzone(vector.normalizedY);
     this.syncMobileControlStyles();
   }
 
   updateMobileAim(event) {
     const vector = this.getMobileControlVector(this.mobileAimPad, event);
     this.touchAimActive = true;
-    this.touchAimVector = {
-      x: applyDeadzone(vector.normalizedX),
-      z: applyDeadzone(vector.normalizedY)
-    };
+    this.touchAimVector.x = applyDeadzone(vector.normalizedX);
+    this.touchAimVector.z = applyDeadzone(vector.normalizedY);
     this.pointerPosition.x = event.clientX;
     this.pointerPosition.y = event.clientY;
     this.syncMobileControlStyles();
   }
 
-  getMobileControlVector(element, event) {
+  getMobileControlVector(element, event, target = this.mobileControlVector) {
     const bounds = element?.getBoundingClientRect?.();
     if (!bounds?.width || !bounds?.height) {
-      return {
-        knobX: 0,
-        knobY: 0,
-        normalizedX: 0,
-        normalizedY: 0
-      };
+      target.knobX = 0;
+      target.knobY = 0;
+      target.normalizedX = 0;
+      target.normalizedY = 0;
+      return target;
     }
 
     const radius = Math.min(bounds.width, bounds.height) * 0.34;
     const centerX = bounds.left + bounds.width * 0.5;
     const centerY = bounds.top + bounds.height * 0.5;
-    const clamped = clampStickVector(event.clientX - centerX, event.clientY - centerY, radius);
-    return {
-      knobX: clamped.x,
-      knobY: clamped.y,
-      normalizedX: clamped.x / radius,
-      normalizedY: clamped.y / radius
-    };
+    const clamped = clampStickVector(event.clientX - centerX, event.clientY - centerY, radius, this.mobileClampVector);
+    target.knobX = clamped.x;
+    target.knobY = clamped.y;
+    target.normalizedX = clamped.x / radius;
+    target.normalizedY = clamped.y / radius;
+    return target;
   }
 
   syncMobileControlStyles() {
@@ -451,8 +458,10 @@ export class Input {
   releaseAllTouchControls() {
     this.touchActionPointers.clear();
     this.justPressedActions.clear();
-    this.touchMovementVector = { x: 0, z: 0 };
-    this.touchAimVector = { x: 0, z: 0 };
+    this.touchMovementVector.x = 0;
+    this.touchMovementVector.z = 0;
+    this.touchAimVector.x = 0;
+    this.touchAimVector.z = 0;
     this.touchAimActive = false;
     this.mobileJoystickPointerId = null;
     this.mobileAimPointerId = null;
@@ -464,6 +473,16 @@ export class Input {
       button.classList.remove('is-active');
     }
     this.syncMobileControlStyles();
+  }
+
+  releaseAllInputs() {
+    this.keys.clear();
+    this.justPressed.clear();
+    this.keyPressQueue = [];
+    this.pointerButtons.clear();
+    this.justPressedPointerButtons.clear();
+    this.wheelDirection = 0;
+    this.releaseAllTouchControls();
   }
 
   isEditableTarget(target) {
@@ -497,14 +516,16 @@ export class Input {
     }
 
     const length = Math.hypot(x, z);
+    const output = this.movementVector;
     if (length > 1) {
-      return {
-        x: x / length,
-        z: z / length
-      };
+      output.x = x / length;
+      output.z = z / length;
+      return output;
     }
 
-    return { x, z };
+    output.x = x;
+    output.z = z;
+    return output;
   }
 
   consumeAction(action) {
@@ -552,7 +573,7 @@ export class Input {
       return null;
     }
 
-    return { x, z };
+    return this.touchAimVector;
   }
 
   consume(code) {
@@ -582,8 +603,15 @@ export class Input {
       return null;
     }
 
-    const allowed = new Set(codes);
-    const queueIndex = this.keyPressQueue.findIndex((entry) => allowed.has(entry.code));
+    let queueIndex = -1;
+    const codesHas = typeof codes.has === 'function';
+    for (let index = 0; index < this.keyPressQueue.length; index += 1) {
+      const code = this.keyPressQueue[index].code;
+      if (codesHas ? codes.has(code) : codes.includes(code)) {
+        queueIndex = index;
+        break;
+      }
+    }
     if (queueIndex < 0) {
       return null;
     }
@@ -621,8 +649,14 @@ export class Input {
     return direction;
   }
 
-  getPointerPosition() {
-    return { ...this.pointerPosition };
+  getPointerPosition(target = null) {
+    if (!target) {
+      return this.pointerPosition;
+    }
+
+    target.x = this.pointerPosition.x;
+    target.y = this.pointerPosition.y;
+    return target;
   }
 
   endFrame() {

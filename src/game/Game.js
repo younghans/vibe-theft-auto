@@ -261,7 +261,8 @@ const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
-const ZERO_INPUT = { getMovementVector: () => ({ x: 0, z: 0 }) };
+const ZERO_MOVEMENT_VECTOR = Object.freeze({ x: 0, z: 0 });
+const ZERO_INPUT = { getMovementVector: () => ZERO_MOVEMENT_VECTOR };
 const CHARACTER_STORAGE_KEY = 'vta.selectedCharacterId';
 const LEGACY_CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const GAME_SETTINGS_STORAGE_KEY = 'vta.gameSettings';
@@ -440,12 +441,47 @@ const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
 const PORTAL_SPAWN_LOCK_MS = 1500;
+const FRAME_DELTA_MAX_SECONDS = 0.12;
+const FRAME_TIMING_SAMPLE_LIMIT = 120;
+const FRAME_TIMING_SUMMARY_INTERVAL_MS = 250;
+const LOCAL_AUTHORITATIVE_MAX_TRANSFORM_SEQ_LAG = 2;
 const LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE = 2.5;
 const LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE = 3;
 const LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE = 5;
 const LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS = 220;
 const LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE = 8;
 const LOCAL_AUTHORITATIVE_RECONCILE_RATE = 5.5;
+const ADAPTIVE_RENDER_SAMPLE_MIN_COUNT = 45;
+const ADAPTIVE_RENDER_SLOW_FRAME_P95_MS = 44;
+const ADAPTIVE_RENDER_RECOVERY_FRAME_P95_MS = 25;
+const ADAPTIVE_RENDER_ADJUST_INTERVAL_MS = 3000;
+const ADAPTIVE_RENDER_PIXEL_RATIO_STEP = 0.25;
+const ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP = 1;
+const EMPTY_NPC_FOCUS_TARGETS = new Map();
+const EMPTY_NPC_SPEECH_ANCHORS = new Map();
+const EMPTY_VISIBLE_OVERHEAD_HEALTH_BAR_IDS = new Set();
+const EMPTY_INTERACTABLES = Object.freeze([]);
+
+function getSortedPercentile(values, percentile) {
+  if (!values.length) {
+    return 0;
+  }
+
+  const sorted = values.sort((a, b) => a - b);
+  const index = THREE.MathUtils.clamp(Math.ceil(sorted.length * percentile) - 1, 0, sorted.length - 1);
+  return sorted[index];
+}
+
+function appendList(target, values) {
+  if (!values?.length) {
+    return target;
+  }
+
+  for (const value of values) {
+    target.push(value);
+  }
+  return target;
+}
 
 function getNearestMajorKeySemitone(semitones = 0) {
   const safeSemitones = Number.isFinite(semitones) ? semitones : 0;
@@ -738,6 +774,19 @@ export class Game {
     this.input = new Input();
     this.input.attachMobileControls(this.hud.getMobileControlsRoot());
     this.input.bindActionPress('chat', () => this.maybeOpenQuickChatFromInput());
+    this.frameTimingMs = new Array(FRAME_TIMING_SAMPLE_LIMIT);
+    this.frameTimingSortedMs = [];
+    this.frameTimingCursor = 0;
+    this.frameTimingCount = 0;
+    this.frameTimingSummary = {
+      sampleCount: 0,
+      p95Ms: 0
+    };
+    this.frameTimingLastSummaryAt = 0;
+    this.lastAuthoritativeTransformLag = 0;
+    this.lastSkippedStaleAuthoritativePosition = false;
+    this.dynamicPixelRatioCap = RUNTIME_PIXEL_RATIO_CAP;
+    this.lastAdaptiveRenderAdjustAt = 0;
     this.library = new ModelLibrary();
     this.characterRoster = listPlayableCharacters();
     this.desiredLocalCharacterId = readStoredCharacterId();
@@ -757,8 +806,12 @@ export class Game {
     this.remoteAvatarBuildRequests = new Map();
     this.remotePlayers = new Map();
     this.pendingRemotePlayers = new Set();
+    this.desiredRemoteSessionIds = new Set();
+    this.remoteSessionIdsToRemove = [];
     this.pickupVisuals = new Map();
     this.pendingPickupVisuals = new Set();
+    this.desiredPickupIds = new Set();
+    this.pickupIdsToRemove = [];
     this.combatEffects = [];
     this.currentInteractable = null;
     this.portalArrival = parsePortalArrival(window.location.search);
@@ -767,8 +820,22 @@ export class Game {
     this.portalSpawnPlacementId = '';
     this.portalSpawnLockUntil = 0;
     this.localPlayerVelocity = new THREE.Vector3();
+    this.localPlayerDelta = new THREE.Vector3();
+    this.localAnimationSyncState = {};
+    this.activeColliders = [];
+    this.worldBuilderColliders = [];
+    this.gymCheckInColliders = [];
+    this.activeInteractables = [];
+    this.worldBuilderInteractables = [];
+    this.portalInteractables = [];
+    this.gymDoorBlockers = [];
+    this.gymDoorBlockersDirty = true;
+    this.pickupInteractables = new Map();
     this.lastLocalPlayerSample = null;
     this.authoritativeLocalPosition = new THREE.Vector3();
+    this.localAuthoritativeTargetPosition = new THREE.Vector3();
+    this.remotePlayerGroundProbe = new THREE.Vector3();
+    this.pickupGroundProbe = new THREE.Vector3();
     this.authoritativeLocalPositionInitialized = false;
     this.authoritativeLocalPositionChangedAt = 0;
     this.currentLayout = null;
@@ -777,9 +844,35 @@ export class Game {
     this.interiorScenes = new Map();
     this.activeInlineShell = null;
     this.inlineShellScenes = new Map();
+    this.inlineShellEntries = [];
+    this.inlineShellPlacementIds = new Set();
+    this.inlineShellScenesToRemove = [];
     this.builderInlineShellPreviewPlacementIds = new Set();
+    this.builderInlineShellPreviewNextPlacementIds = new Set();
+    this.builderInlineShellPreviewIdsToClear = [];
     this.inlineInteriorLight = null;
+    this.inlineInteriorLightCenter = new THREE.Vector3();
     this.lastNpcTransportSignature = '';
+    this.lastNpcFocusTargetSignature = '';
+    this.npcFocusTargets = new Map();
+    this.npcFocusTargetValues = new Map();
+    this.taskTrackerRentIntroState = {
+      pendingSeq: 0,
+      activeSeq: 0,
+      activeCharged: false,
+      handledSeq: 0
+    };
+    this.taskTrackerContext = {
+      localPlayerState: null,
+      npcStates: null,
+      worldBuilder: null,
+      worldBuilderInteractables: EMPTY_INTERACTABLES,
+      missionSequence: null,
+      activeInteractables: EMPTY_INTERACTABLES,
+      gymDoorBlockers: EMPTY_INTERACTABLES,
+      rentIntroState: this.taskTrackerRentIntroState,
+      getGroundHeightAt: (position) => this.getActiveGroundHeightAt(position)
+    };
     this.pendingWorldPatches = [];
     this.worldLayoutReady = false;
     this.worldPatchUnsubscribe = null;
@@ -801,6 +894,11 @@ export class Game {
     };
     this.emoteMenuOpen = false;
     this.projectedSpeechPosition = new THREE.Vector3();
+    this.projectedSpeechScreen = { x: 0, y: 0 };
+    this.speechAnchorScratch = new THREE.Vector3();
+    this.visibleOverheadHealthBarIds = new Set();
+    this.overheadHealthBars = [];
+    this.speechBubbles = [];
     this.bartenderMenuAnchorPosition = new THREE.Vector3();
     this.aimRaycaster = new THREE.Raycaster();
     this.aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1013,6 +1111,10 @@ export class Game {
     this.cameraTargetPosition = new THREE.Vector3();
     this.cameraLookTarget = new THREE.Vector3();
     this.damageCameraSide = new THREE.Vector3();
+    this.cameraOcclusionPreservePlacementIds = [];
+    this.cameraOcclusionOptions = {
+      preserveInteriorNodePlacementIds: this.cameraOcclusionPreservePlacementIds
+    };
     this.playerCameraOcclusionRenderState = null;
 
     this.hud.bindInteractionEvents({
@@ -1119,7 +1221,11 @@ export class Game {
   }
 
   getTargetPixelRatio() {
-    const cap = this.detailedRenderingEnabled ? RUNTIME_PIXEL_RATIO_CAP : BOOT_PIXEL_RATIO_CAP;
+    const runtimeCap = Math.min(
+      RUNTIME_PIXEL_RATIO_CAP,
+      Math.max(ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP, Number(this.dynamicPixelRatioCap) || RUNTIME_PIXEL_RATIO_CAP)
+    );
+    const cap = this.detailedRenderingEnabled ? runtimeCap : BOOT_PIXEL_RATIO_CAP;
     return Math.min(window.devicePixelRatio || 1, cap);
   }
 
@@ -3867,7 +3973,7 @@ export class Game {
       return;
     }
 
-    const delta = this.player.position.clone().sub(this.lastLocalPlayerSample.position);
+    const delta = this.localPlayerDelta.copy(this.player.position).sub(this.lastLocalPlayerSample.position);
     if (delta.lengthSq() > 900) {
       this.localPlayerVelocity.set(0, 0, 0);
     } else {
@@ -3878,25 +3984,34 @@ export class Game {
     this.lastLocalPlayerSample.timeMs = now;
   }
 
-  getPortalInteractables() {
-    return (this.worldBuilder?.getInteractables?.() ?? [])
-      .filter((interactable) => interactable?.kind === 'portal');
+  getPortalInteractables(target = this.portalInteractables) {
+    target.length = 0;
+    for (const interactable of this.getWorldBuilderInteractables()) {
+      if (interactable?.kind === 'portal') {
+        target.push(interactable);
+      }
+    }
+    return target;
   }
 
   getStartPortalSpawnInteractable(anchorPosition = null) {
-    const candidates = this.getPortalInteractables()
-      .filter((interactable) => interactable?.portalRole === 'start' && interactable.spawnPosition?.isVector3);
-    if (!candidates.length) {
-      return null;
-    }
-
-    if (!anchorPosition) {
-      return candidates[0] ?? null;
-    }
-
+    const candidates = this.getPortalInteractables();
+    let firstCandidate = null;
     let bestCandidate = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const candidate of candidates) {
+      if (candidate?.portalRole !== 'start' || !candidate.spawnPosition?.isVector3) {
+        continue;
+      }
+
+      if (!firstCandidate) {
+        firstCandidate = candidate;
+      }
+
+      if (!anchorPosition) {
+        return candidate;
+      }
+
       const origin = candidate.originPosition?.isVector3
         ? candidate.originPosition
         : candidate.spawnPosition;
@@ -3912,7 +4027,7 @@ export class Game {
       bestDistance = distance;
     }
 
-    return bestCandidate ?? candidates[0] ?? null;
+    return bestCandidate ?? firstCandidate;
   }
 
   applyInitialPortalSpawn(fallbackSpawnPoint = null) {
@@ -4202,7 +4317,7 @@ export class Game {
       return;
     }
 
-    const center = shellScene.bounds.getCenter(new THREE.Vector3());
+    const center = shellScene.bounds.getCenter(this.inlineInteriorLightCenter);
     const height = Math.max(4.5, shellScene.bounds.max.y - 2.2);
     this.inlineInteriorLight.position.set(center.x, height, center.z);
     this.inlineInteriorLight.visible = true;
@@ -4247,7 +4362,13 @@ export class Game {
       return;
     }
 
-    for (const placementId of [...this.builderInlineShellPreviewPlacementIds]) {
+    const idsToClear = this.builderInlineShellPreviewIdsToClear;
+    idsToClear.length = 0;
+    for (const placementId of this.builderInlineShellPreviewPlacementIds) {
+      idsToClear.push(placementId);
+    }
+
+    for (const placementId of idsToClear) {
       const instance = this.inlineShellScenes.get(placementId);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
@@ -4262,13 +4383,22 @@ export class Game {
   }
 
   syncBuilderInlineShellPreview(entries = []) {
-    const nextPlacementIds = new Set(entries.map((entry) => entry.placementId));
+    const nextPlacementIds = this.builderInlineShellPreviewNextPlacementIds;
+    nextPlacementIds.clear();
+    for (const entry of entries) {
+      nextPlacementIds.add(entry.placementId);
+    }
 
-    for (const placementId of [...this.builderInlineShellPreviewPlacementIds]) {
+    const idsToClear = this.builderInlineShellPreviewIdsToClear;
+    idsToClear.length = 0;
+    for (const placementId of this.builderInlineShellPreviewPlacementIds) {
       if (nextPlacementIds.has(placementId)) {
         continue;
       }
+      idsToClear.push(placementId);
+    }
 
+    for (const placementId of idsToClear) {
       const instance = this.inlineShellScenes.get(placementId);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
@@ -4369,12 +4499,22 @@ export class Game {
       return;
     }
 
-    const entries = this.worldBuilder.getInlineShellEntries();
-    const placementIds = new Set(entries.map((entry) => entry.placementId));
-    for (const placementId of [...this.inlineShellScenes.keys()]) {
+    const entries = this.worldBuilder.getInlineShellEntries(this.inlineShellEntries);
+    const placementIds = this.inlineShellPlacementIds;
+    placementIds.clear();
+    for (const entry of entries) {
+      placementIds.add(entry.placementId);
+    }
+
+    const scenesToRemove = this.inlineShellScenesToRemove;
+    scenesToRemove.length = 0;
+    for (const placementId of this.inlineShellScenes.keys()) {
       if (!placementIds.has(placementId)) {
-        this.removeInlineShellScene(placementId);
+        scenesToRemove.push(placementId);
       }
+    }
+    for (const placementId of scenesToRemove) {
+      this.removeInlineShellScene(placementId);
     }
 
     if (this.worldBuilder.enabled) {
@@ -4484,12 +4624,12 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  hasActiveGymCheckInNpc() {
+  hasActiveGymCheckInNpc(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.worldBuilder) {
       return false;
     }
 
-    return this.worldBuilder.getInteractables().some((interactable) => {
+    return worldBuilderInteractables.some((interactable) => {
       if (interactable.kind !== 'npc') {
         return false;
       }
@@ -4511,45 +4651,72 @@ export class Game {
     return itemId.includes('gym') || interiorId.includes('gym') || label.includes('gym');
   }
 
-  getGymDoorBlockers() {
-    return (this.worldBuilder?.getLayout?.()?.tiles ?? [])
-      .map((placement) => {
-        const item = getBuilderItemById(placement?.itemId);
-        if (!item || !this.isGymDoorPlacement(placement, item)) {
-          return null;
-        }
+  rebuildGymDoorBlockers(target = this.gymDoorBlockers) {
+    if (!this.worldBuilder) {
+      target.length = 0;
+      return target;
+    }
 
-        const doorOffset = item.interior?.exteriorDoorOffset
-          ?? placement.interactable?.interior?.exteriorDoorOffset
-          ?? item.npcRouteDoorOffset
-          ?? null;
-        if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
-          return null;
-        }
+    let blockerCount = 0;
+    this.worldBuilder.forEachPlacement((placement) => {
+      if (placement?.layer !== 'tile') {
+        return;
+      }
 
-        const cellX = Number(placement.cell?.[0] ?? placement.cellX);
-        const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
-        if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
-          return null;
-        }
+      const item = getBuilderItemById(placement.itemId);
+      if (!item || !this.isGymDoorPlacement(placement, item)) {
+        return;
+      }
 
-        const rotationQuarterTurns = placement.rotationQuarterTurns ?? 0;
-        const center = getTileCenterWorldPosition(item, cellX, cellZ, rotationQuarterTurns);
-        const rotatedOffset = rotateFootprintOffset(
-          Number(doorOffset[0]) || 0,
-          Number(doorOffset[1]) || 0,
-          rotationQuarterTurns
-        );
-        return {
-          x: center.x + rotatedOffset.x,
-          z: center.z + rotatedOffset.z,
-          radius: GYM_DOOR_BLOCKER_RADIUS
-        };
-      })
-      .filter(Boolean);
+      const doorOffset = item.interior?.exteriorDoorOffset
+        ?? placement.interactable?.interior?.exteriorDoorOffset
+        ?? item.npcRouteDoorOffset
+        ?? null;
+      if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
+        return;
+      }
+
+      const cellX = Number(placement.cell?.[0] ?? placement.cellX);
+      const cellZ = Number(placement.cell?.[1] ?? placement.cellZ);
+      if (!Number.isFinite(cellX) || !Number.isFinite(cellZ)) {
+        return;
+      }
+
+      const rotationQuarterTurns = placement.rotationQuarterTurns ?? 0;
+      const center = getTileCenterWorldPosition(item, cellX, cellZ, rotationQuarterTurns);
+      const rotatedOffset = rotateFootprintOffset(
+        Number(doorOffset[0]) || 0,
+        Number(doorOffset[1]) || 0,
+        rotationQuarterTurns
+      );
+      const blocker = target[blockerCount] ?? {};
+      blocker.x = center.x + rotatedOffset.x;
+      blocker.z = center.z + rotatedOffset.z;
+      blocker.radius = GYM_DOOR_BLOCKER_RADIUS;
+      target[blockerCount] = blocker;
+      blockerCount += 1;
+    });
+
+    target.length = blockerCount;
+    return target;
   }
 
-  getNearestGymCheckInInteractable() {
+  getGymDoorBlockers(target = this.gymDoorBlockers) {
+    if (this.gymDoorBlockersDirty) {
+      this.rebuildGymDoorBlockers(this.gymDoorBlockers);
+      this.gymDoorBlockersDirty = false;
+    }
+
+    if (target !== this.gymDoorBlockers) {
+      target.length = 0;
+      appendList(target, this.gymDoorBlockers);
+      return target;
+    }
+
+    return this.gymDoorBlockers;
+  }
+
+  getNearestGymCheckInInteractable(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder || this.hasGymMembership()) {
       return null;
     }
@@ -4557,7 +4724,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -4599,7 +4766,7 @@ export class Game {
     return nearest;
   }
 
-  getGymCheckInColliders() {
+  getGymCheckInColliders(target = this.gymCheckInColliders) {
     if (
       !this.player
       || this.currentInterior?.scene
@@ -4607,19 +4774,26 @@ export class Game {
       || this.hasGymMembership()
       || !this.hasActiveGymCheckInNpc()
     ) {
-      return [];
+      target.length = 0;
+      return target;
     }
 
-    return this.getGymDoorBlockers().map((blocker) => ({
-        kind: 'gym-door-membership-gate',
-        blocksMovement: true,
-        type: 'cylinder',
-        x: blocker.x,
-        z: blocker.z,
-        y: this.getActiveGroundHeightAt(blocker),
-        radius: blocker.radius,
-        height: 5
-      }));
+    const blockers = this.getGymDoorBlockers();
+    for (let index = 0; index < blockers.length; index += 1) {
+      const blocker = blockers[index];
+      const collider = target[index] ?? {};
+      collider.kind = 'gym-door-membership-gate';
+      collider.blocksMovement = true;
+      collider.type = 'cylinder';
+      collider.x = blocker.x;
+      collider.z = blocker.z;
+      collider.y = this.getActiveGroundHeightAt(blocker);
+      collider.radius = blocker.radius;
+      collider.height = 5;
+      target[index] = collider;
+    }
+    target.length = blockers.length;
+    return target;
   }
 
   getInlineOfficeDoorBlockers() {
@@ -4644,45 +4818,84 @@ export class Game {
         ?? [];
     }
 
-    return [
-      ...(this.baseColliders ?? []),
-      ...(this.worldBuilder?.getColliders() ?? []),
-      ...this.getInlineOfficeDoorBlockers(),
-      ...this.getGymCheckInColliders()
-    ];
+    const colliders = this.activeColliders;
+    colliders.length = 0;
+    appendList(colliders, this.baseColliders);
+    appendList(colliders, this.worldBuilder?.getColliders(this.worldBuilderColliders));
+    appendList(colliders, this.getInlineOfficeDoorBlockers());
+    appendList(colliders, this.getGymCheckInColliders());
+    return colliders;
   }
 
-  getActiveInteractables() {
-    if (this.currentInterior?.scene) {
-      return [...(this.currentInterior.scene.interactables ?? [])];
+  getWorldBuilderInteractables() {
+    if (!this.worldBuilder) {
+      return EMPTY_INTERACTABLES;
     }
 
-    const inlineInteriorInteractables = this.getActiveInlineInteriorScene()
-      ? [...(this.activeInlineShell?.scene?.interactables ?? [])]
-      : [];
+    return this.worldBuilder.getInteractables(this.worldBuilderInteractables);
+  }
 
-    return [
-      ...(this.staticInteractables ?? []),
-      ...(this.worldBuilder?.getInteractables() ?? []),
-      ...inlineInteriorInteractables,
-      ...[...this.npcServiceState.pickups.values()]
-        .filter((pickup) => pickup.active)
-        .map((pickup) => ({
+  getActiveInteractables(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
+    const interactables = this.activeInteractables;
+    interactables.length = 0;
+
+    if (this.currentInterior?.scene) {
+      appendList(interactables, this.currentInterior.scene.interactables);
+      return interactables;
+    }
+
+    for (const interactable of this.staticInteractables ?? []) {
+      if (interactable?.kind !== 'npc') {
+        interactables.push(interactable);
+      }
+    }
+
+    for (const interactable of worldBuilderInteractables) {
+      if (interactable?.kind !== 'npc') {
+        interactables.push(interactable);
+      }
+    }
+
+    if (this.getActiveInlineInteriorScene()) {
+      appendList(interactables, this.activeInlineShell?.scene?.interactables);
+    }
+
+    for (const pickup of this.npcServiceState.pickups.values()) {
+      if (!pickup?.active) {
+        continue;
+      }
+
+      let interactable = this.pickupInteractables.get(pickup.id);
+      if (!interactable) {
+        interactable = {
           kind: 'pickup',
           pickupId: pickup.id,
-          position: new THREE.Vector3(
-            pickup.x,
-            this.getActiveGroundHeightAt({ x: pickup.x, z: pickup.z }),
-            pickup.z
-          ),
+          position: new THREE.Vector3(),
           radius: 3.2,
           prompt: 'Pick up pistol',
           actionText: 'Pistol secured.'
-        }))
-    ].filter((interactable) => interactable.kind !== 'npc');
+        };
+        this.pickupInteractables.set(pickup.id, interactable);
+      }
+      const groundProbe = this.pickupGroundProbe.set(pickup.x, 0, pickup.z);
+      interactable.position.set(
+        pickup.x,
+        this.getActiveGroundHeightAt(groundProbe),
+        pickup.z
+      );
+      interactables.push(interactable);
+    }
+
+    for (const pickupId of this.pickupInteractables.keys()) {
+      if (!this.npcServiceState.pickups.get(pickupId)?.active) {
+        this.pickupInteractables.delete(pickupId);
+      }
+    }
+
+    return interactables;
   }
 
-  getNearestNpcInteractable() {
+  getNearestNpcInteractable(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
@@ -4690,7 +4903,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc' || !interactable.position) {
         continue;
       }
@@ -4710,12 +4923,12 @@ export class Game {
     return nearest;
   }
 
-  getNpcInteractableById(npcId = '') {
+  getNpcInteractableById(npcId = '', worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!npcId || !this.worldBuilder) {
       return null;
     }
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (
         interactable.kind === 'npc'
         && (interactable.npcId === npcId || interactable.placementId === npcId)
@@ -4728,21 +4941,28 @@ export class Game {
   }
 
   createTaskTrackerContext(localPlayerState = null) {
-    return {
-      localPlayerState,
-      npcStates: this.npcServiceState.npcs,
-      worldBuilder: this.worldBuilder,
-      missionSequence: this.currentLayout?.missionSequence ?? null,
-      activeInteractables: localPlayerState ? this.getActiveInteractables() : [],
-      gymDoorBlockers: localPlayerState ? this.getGymDoorBlockers() : [],
-      rentIntroState: {
-        pendingSeq: this.pendingRentIntro?.seq ?? 0,
-        activeSeq: this.activeRentIntro?.seq ?? 0,
-        activeCharged: this.activeRentIntro?.charged === true,
-        handledSeq: this.handledRentIntroSeq
-      },
-      getGroundHeightAt: (position) => this.getActiveGroundHeightAt(position)
-    };
+    const worldBuilderInteractables = localPlayerState
+      ? this.getWorldBuilderInteractables()
+      : EMPTY_INTERACTABLES;
+    const rentIntroState = this.taskTrackerRentIntroState;
+    rentIntroState.pendingSeq = this.pendingRentIntro?.seq ?? 0;
+    rentIntroState.activeSeq = this.activeRentIntro?.seq ?? 0;
+    rentIntroState.activeCharged = this.activeRentIntro?.charged === true;
+    rentIntroState.handledSeq = this.handledRentIntroSeq;
+
+    const context = this.taskTrackerContext;
+    context.localPlayerState = localPlayerState;
+    context.npcStates = this.npcServiceState.npcs;
+    context.worldBuilder = this.worldBuilder;
+    context.worldBuilderInteractables = worldBuilderInteractables;
+    context.missionSequence = this.currentLayout?.missionSequence ?? null;
+    context.activeInteractables = localPlayerState
+      ? this.getActiveInteractables(worldBuilderInteractables)
+      : EMPTY_INTERACTABLES;
+    context.gymDoorBlockers = localPlayerState
+      ? this.getGymDoorBlockers()
+      : EMPTY_INTERACTABLES;
+    return context;
   }
 
   syncTaskHud(localPlayerState = null) {
@@ -4947,7 +5167,10 @@ export class Game {
     }
   }
 
-  syncDeliveryQuestReminderGate(playerState = this.getLocalPlayerState()) {
+  syncDeliveryQuestReminderGate(
+    playerState = this.getLocalPlayerState(),
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  ) {
     if (!isDeliveryQuestActive(playerState)) {
       if (
         this.deliveryQuestReminderSuppressedKey
@@ -4966,7 +5189,7 @@ export class Game {
       return false;
     }
 
-    const giver = this.getNpcInteractableById(playerState.deliveryQuestGiverNpcId);
+    const giver = this.getNpcInteractableById(playerState.deliveryQuestGiverNpcId, worldBuilderInteractables);
     const radius = Number(giver?.radius);
     const insideGiverRadius = Boolean(
       this.player
@@ -4984,9 +5207,13 @@ export class Game {
     return true;
   }
 
-  getDeliveryQuestInteractionForNpc(interactable = this.getNearestNpcInteractable()) {
-    const npcId = interactable?.kind === 'npc'
-      ? (interactable.npcId || interactable.placementId || '')
+  getDeliveryQuestInteractionForNpc(
+    interactable = null,
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  ) {
+    const resolvedInteractable = interactable ?? this.getNearestNpcInteractable(worldBuilderInteractables);
+    const npcId = resolvedInteractable?.kind === 'npc'
+      ? (resolvedInteractable.npcId || resolvedInteractable.placementId || '')
       : '';
     if (!npcId) {
       return null;
@@ -4999,7 +5226,7 @@ export class Game {
     }
     const npcDetails = {
       ...npcState,
-      deliveryQuestEnabled: npcState.deliveryQuestEnabled === true || interactable?.npc?.deliveryQuestEnabled === true
+      deliveryQuestEnabled: npcState.deliveryQuestEnabled === true || resolvedInteractable?.npc?.deliveryQuestEnabled === true
     };
 
     if (isDeliveryQuestActive(playerState)) {
@@ -5018,7 +5245,7 @@ export class Game {
         npcId === playerState.deliveryQuestGiverNpcId
         && isDeliveryQuestGiver(npcId, npcDetails)
       ) {
-        if (this.syncDeliveryQuestReminderGate(playerState)) {
+        if (this.syncDeliveryQuestReminderGate(playerState, worldBuilderInteractables)) {
           return null;
         }
 
@@ -5086,7 +5313,10 @@ export class Game {
     }
   }
 
-  getActiveDeliveryTargetProximity(playerState = this.getLocalPlayerState()) {
+  getActiveDeliveryTargetProximity(
+    playerState = this.getLocalPlayerState(),
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  ) {
     if (!this.player || !isDeliveryQuestActive(playerState)) {
       return null;
     }
@@ -5097,7 +5327,7 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(targetNpcId);
-    const interactable = this.getNpcInteractableById(targetNpcId);
+    const interactable = this.getNpcInteractableById(targetNpcId, worldBuilderInteractables);
     if (!npcState || !interactable) {
       return null;
     }
@@ -5118,14 +5348,17 @@ export class Game {
     };
   }
 
-  maybeAutoCompleteDelivery(playerState = this.getLocalPlayerState()) {
+  maybeAutoCompleteDelivery(
+    playerState = this.getLocalPlayerState(),
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  ) {
     if (!isDeliveryQuestActive(playerState)) {
       this.deliveryQuestAutoCompleteAttemptKey = '';
       this.deliveryQuestAutoCompleteAttemptAt = 0;
       return false;
     }
 
-    const proximity = this.getActiveDeliveryTargetProximity(playerState);
+    const proximity = this.getActiveDeliveryTargetProximity(playerState, worldBuilderInteractables);
     if (!proximity || proximity.distance > proximity.radius) {
       this.deliveryQuestAutoCompleteAttemptKey = '';
       this.deliveryQuestAutoCompleteAttemptAt = 0;
@@ -5136,7 +5369,7 @@ export class Game {
       return true;
     }
 
-    const interaction = this.getDeliveryQuestInteractionForNpc(proximity.interactable);
+    const interaction = this.getDeliveryQuestInteractionForNpc(proximity.interactable, worldBuilderInteractables);
     if (interaction?.kind !== 'completeDelivery' || !interaction.action) {
       return false;
     }
@@ -5210,7 +5443,7 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestStockMarketInteractable() {
+  getNearestStockMarketInteractable(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
@@ -5218,7 +5451,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -5627,7 +5860,10 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestBartenderInteractable({ npcId = '' } = {}) {
+  getNearestBartenderInteractable({
+    npcId = '',
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  } = {}) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
@@ -5636,7 +5872,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -5869,7 +6105,10 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestPawnShopOwnerInteractable({ npcId = '' } = {}) {
+  getNearestPawnShopOwnerInteractable({
+    npcId = '',
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  } = {}) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
@@ -5878,7 +6117,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -6131,7 +6370,7 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestBlackjackDealerInteractable() {
+  getNearestBlackjackDealerInteractable(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
@@ -6139,7 +6378,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -6216,7 +6455,7 @@ export class Game {
     return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
   }
 
-  getNearestSchoolMicrogameInteractable() {
+  getNearestSchoolMicrogameInteractable(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     if (!this.player || !this.worldBuilder) {
       return null;
     }
@@ -6224,7 +6463,7 @@ export class Game {
     let nearest = null;
     let nearestDistance = Infinity;
 
-    for (const interactable of this.worldBuilder.getInteractables()) {
+    for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
         continue;
       }
@@ -10441,6 +10680,7 @@ export class Game {
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
+          this.gymDoorBlockersDirty = true;
         }
       });
       this.refreshZoomHud();
@@ -10475,6 +10715,7 @@ export class Game {
         npcs: sharedLayout.npcs?.length ?? 0
       });
       this.currentLayout = sharedLayout;
+      this.gymDoorBlockersDirty = true;
       this.markBoot('boot:avatar:start');
       const avatarPromise = this.buildAvatar(this.desiredLocalCharacterId)
         .then((avatar) => ({ avatar }), (error) => ({ error }));
@@ -11122,7 +11363,8 @@ export class Game {
       return;
     }
 
-    const focusTargets = new Map();
+    const focusTargets = this.npcFocusTargets;
+    focusTargets.clear();
     for (const [npcId, npc] of this.npcServiceState.npcs.entries()) {
       if (
         !npc
@@ -11136,10 +11378,11 @@ export class Game {
 
       const targetAvatar = this.getAvatarForSessionId(npc.lastAttackerId);
       if (targetAvatar?.position) {
-        focusTargets.set(npcId, {
-          x: targetAvatar.position.x,
-          z: targetAvatar.position.z
-        });
+        const target = this.npcFocusTargetValues.get(npcId) ?? { x: 0, z: 0 };
+        target.x = targetAvatar.position.x;
+        target.z = targetAvatar.position.z;
+        this.npcFocusTargetValues.set(npcId, target);
+        focusTargets.set(npcId, target);
         continue;
       }
 
@@ -11148,13 +11391,35 @@ export class Game {
         continue;
       }
 
-      focusTargets.set(npcId, {
-        x: Number(targetPlayerState.x ?? 0),
-        z: Number(targetPlayerState.z ?? 0)
-      });
+      const target = this.npcFocusTargetValues.get(npcId) ?? { x: 0, z: 0 };
+      target.x = Number(targetPlayerState.x ?? 0);
+      target.z = Number(targetPlayerState.z ?? 0);
+      this.npcFocusTargetValues.set(npcId, target);
+      focusTargets.set(npcId, target);
     }
 
-    this.worldBuilder.setNpcFocusTargets(focusTargets);
+    const focusSignature = this.getNpcFocusTargetSignature(focusTargets);
+    if (focusSignature === this.lastNpcFocusTargetSignature) {
+      return;
+    }
+
+    this.lastNpcFocusTargetSignature = focusSignature;
+    this.worldBuilder.setNpcFocusTargets(focusTargets.size ? focusTargets : EMPTY_NPC_FOCUS_TARGETS);
+  }
+
+  getNpcFocusTargetSignature(focusTargets) {
+    if (!focusTargets?.size) {
+      return '';
+    }
+
+    let signature = '';
+    for (const [npcId, target] of focusTargets.entries()) {
+      if (signature) {
+        signature += '|';
+      }
+      signature += `${npcId}:${Math.round(Number(target.x) * 20)}:${Math.round(Number(target.z) * 20)}`;
+    }
+    return signature;
   }
 
   captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {
@@ -11308,6 +11573,7 @@ export class Game {
 
     await this.worldBuilder.applyWorldPatch(patch);
     this.currentLayout = this.worldBuilder.getLayout();
+    this.gymDoorBlockersDirty = true;
   }
 
   async ensureRemotePlayer(sessionId, initialState) {
@@ -11355,7 +11621,8 @@ export class Game {
     let createsStarted = 0;
     let swapsStarted = 0;
     let hasMoreWork = false;
-    const desiredSessionIds = new Set();
+    const desiredSessionIds = this.desiredRemoteSessionIds;
+    desiredSessionIds.clear();
     for (const [sessionId, playerState] of this.npcServiceState.players.entries()) {
       if (sessionId === this.npcServiceState.sessionId) {
         continue;
@@ -11383,10 +11650,15 @@ export class Game {
       }
     }
 
-    for (const sessionId of [...this.remotePlayers.keys()]) {
+    const sessionIdsToRemove = this.remoteSessionIdsToRemove;
+    sessionIdsToRemove.length = 0;
+    for (const sessionId of this.remotePlayers.keys()) {
       if (!desiredSessionIds.has(sessionId)) {
-        this.removeRemotePlayer(sessionId);
+        sessionIdsToRemove.push(sessionId);
       }
+    }
+    for (const sessionId of sessionIdsToRemove) {
+      this.removeRemotePlayer(sessionId);
     }
 
     return !hasMoreWork;
@@ -11399,7 +11671,7 @@ export class Game {
         continue;
       }
 
-      const groundProbe = new THREE.Vector3(state.x, avatar.position.y, state.z);
+      const groundProbe = this.remotePlayerGroundProbe.set(state.x, avatar.position.y, state.z);
       const groundHeight = this.worldBuilder?.getGroundHeightAt(groundProbe) ?? 0;
       avatar.applyRemoteState(state, deltaSeconds, groundHeight);
     }
@@ -11428,7 +11700,8 @@ export class Game {
 
     let createsStarted = 0;
     let hasMoreWork = false;
-    const desiredIds = new Set();
+    const desiredIds = this.desiredPickupIds;
+    desiredIds.clear();
     for (const [pickupId, pickup] of this.npcServiceState.pickups.entries()) {
       if (!pickup?.active) {
         continue;
@@ -11445,10 +11718,15 @@ export class Game {
       }
     }
 
-    for (const pickupId of [...this.pickupVisuals.keys()]) {
+    const pickupIdsToRemove = this.pickupIdsToRemove;
+    pickupIdsToRemove.length = 0;
+    for (const pickupId of this.pickupVisuals.keys()) {
       if (!desiredIds.has(pickupId)) {
-        this.removePickupVisual(pickupId);
+        pickupIdsToRemove.push(pickupId);
       }
+    }
+    for (const pickupId of pickupIdsToRemove) {
+      this.removePickupVisual(pickupId);
     }
 
     return !hasMoreWork;
@@ -11483,7 +11761,8 @@ export class Game {
       ring.position.y = 0.05;
       group.add(ring);
       group.add(weapon);
-      const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(latestPickup.x, 0, latestPickup.z)) ?? 0;
+      const groundProbe = this.pickupGroundProbe.set(latestPickup.x, 0, latestPickup.z);
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(groundProbe) ?? 0;
       group.position.set(latestPickup.x, groundHeight, latestPickup.z);
       group.visible = !this.currentInterior?.scene;
       this.scene.add(group);
@@ -11522,7 +11801,8 @@ export class Game {
         continue;
       }
 
-      const groundHeight = this.worldBuilder?.getGroundHeightAt(new THREE.Vector3(pickup.x, 0, pickup.z)) ?? 0;
+      const groundProbe = this.pickupGroundProbe.set(pickup.x, 0, pickup.z);
+      const groundHeight = this.worldBuilder?.getGroundHeightAt(groundProbe) ?? 0;
       visual.phase += deltaSeconds * 2.4;
       visual.spin += deltaSeconds * 1.8;
       visual.object.position.set(pickup.x, groundHeight, pickup.z);
@@ -11826,6 +12106,97 @@ export class Game {
     this.skillXpFloaters = activeFloaters;
   }
 
+  recordMovementFrameTiming(rawDeltaSeconds, deltaSeconds) {
+    const frameMs = Math.max(0, Number(deltaSeconds) || 0) * 1000;
+    this.frameTimingMs[this.frameTimingCursor] = frameMs;
+    this.frameTimingCursor = (this.frameTimingCursor + 1) % FRAME_TIMING_SAMPLE_LIMIT;
+    this.frameTimingCount = Math.min(
+      FRAME_TIMING_SAMPLE_LIMIT,
+      this.frameTimingCount + 1
+    );
+  }
+
+  getMovementFrameSummary({ force = false } = {}) {
+    const now = performance.now();
+    if (
+      !force
+      && this.frameTimingSummary
+      && now - this.frameTimingLastSummaryAt < FRAME_TIMING_SUMMARY_INTERVAL_MS
+    ) {
+      return this.frameTimingSummary;
+    }
+
+    const samples = this.frameTimingMs;
+    const sampleCount = this.frameTimingCount;
+    const summary = this.frameTimingSummary;
+    if (!sampleCount) {
+      summary.sampleCount = 0;
+      summary.p95Ms = 0;
+      this.frameTimingLastSummaryAt = now;
+      return summary;
+    }
+
+    const sortedSamples = this.frameTimingSortedMs;
+    sortedSamples.length = sampleCount;
+    for (let index = 0; index < sampleCount; index += 1) {
+      const value = Number(samples[index]) || 0;
+      sortedSamples[index] = value;
+    }
+    summary.sampleCount = sampleCount;
+    summary.p95Ms = getSortedPercentile(sortedSamples, 0.95);
+    this.frameTimingLastSummaryAt = now;
+    return summary;
+  }
+
+  updateAdaptiveRenderQuality(frameSummary = this.getMovementFrameSummary()) {
+    if (!this.detailedRenderingEnabled || frameSummary.sampleCount < ADAPTIVE_RENDER_SAMPLE_MIN_COUNT) {
+      return;
+    }
+
+    const now = performance.now();
+    if (now - this.lastAdaptiveRenderAdjustAt < ADAPTIVE_RENDER_ADJUST_INTERVAL_MS) {
+      return;
+    }
+
+    const currentCap = Math.max(ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP, Number(this.dynamicPixelRatioCap) || RUNTIME_PIXEL_RATIO_CAP);
+    let nextCap = currentCap;
+    if (frameSummary.p95Ms >= ADAPTIVE_RENDER_SLOW_FRAME_P95_MS && currentCap > ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP) {
+      nextCap = Math.max(ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP, currentCap - ADAPTIVE_RENDER_PIXEL_RATIO_STEP);
+    } else if (
+      frameSummary.p95Ms <= ADAPTIVE_RENDER_RECOVERY_FRAME_P95_MS
+      && currentCap < RUNTIME_PIXEL_RATIO_CAP
+    ) {
+      nextCap = Math.min(RUNTIME_PIXEL_RATIO_CAP, currentCap + ADAPTIVE_RENDER_PIXEL_RATIO_STEP);
+    }
+
+    if (nextCap === currentCap) {
+      return;
+    }
+
+    this.dynamicPixelRatioCap = nextCap;
+    this.lastAdaptiveRenderAdjustAt = now;
+    this.onResize();
+  }
+
+  getAuthoritativeTransformLag(localPlayerState = this.getLocalPlayerState()) {
+    const rawAuthoritativeSeq = localPlayerState?.transformSeq;
+    const authoritativeValue = Number(rawAuthoritativeSeq);
+    const hasAuthoritativeSeq = rawAuthoritativeSeq !== null
+      && rawAuthoritativeSeq !== undefined
+      && Number.isFinite(authoritativeValue);
+    const authoritativeSeq = hasAuthoritativeSeq
+      ? Math.max(0, Math.floor(authoritativeValue))
+      : null;
+    const localSeq = Math.max(0, Math.floor(Number(this.npcService?.getLastTransformSeq?.() ?? 0) || 0));
+
+    return {
+      hasAuthoritativeSeq,
+      authoritativeSeq,
+      localSeq,
+      lag: hasAuthoritativeSeq ? Math.max(0, localSeq - authoritativeSeq) : 0
+    };
+  }
+
   updateAuthoritativeLocalPositionSample(targetPosition) {
     const now = performance.now();
     const changed = !this.authoritativeLocalPositionInitialized
@@ -11877,11 +12248,26 @@ export class Game {
     }
 
     const isAlive = localPlayerState.alive !== false;
-    const targetPosition = new THREE.Vector3(localPlayerState.x, this.player.position.y, localPlayerState.z);
+    const targetPosition = this.localAuthoritativeTargetPosition.set(
+      localPlayerState.x,
+      this.player.position.y,
+      localPlayerState.z
+    );
     const authoritativeSample = this.updateAuthoritativeLocalPositionSample(targetPosition);
     const distance = this.player.position.distanceTo(targetPosition);
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
+    const transformLag = this.getAuthoritativeTransformLag(localPlayerState);
+    const skipStaleAuthoritativePosition = Boolean(
+      isAlive
+      && this.localStateInitialized
+      && !respawned
+      && !died
+      && transformLag.hasAuthoritativeSeq
+      && transformLag.lag > LOCAL_AUTHORITATIVE_MAX_TRANSFORM_SEQ_LAG
+    );
+    this.lastAuthoritativeTransformLag = transformLag.lag;
+    this.lastSkippedStaleAuthoritativePosition = skipStaleAuthoritativePosition;
     if (died) {
       this.startDeathCameraZoomTransition();
     } else if (respawned) {
@@ -11906,6 +12292,7 @@ export class Game {
     if (
       (!this.currentInterior?.scene)
       && !portalSpawnLocked
+      && !skipStaleAuthoritativePosition
       && (!this.localStateInitialized || respawned || died || distance > LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE)
     ) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
@@ -11914,6 +12301,7 @@ export class Game {
       isAlive
       && !this.currentInterior?.scene
       && !portalSpawnLocked
+      && !skipStaleAuthoritativePosition
       && distance > LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE
       && (
         authoritativeSample.staleMs >= LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS
@@ -13269,7 +13657,9 @@ export class Game {
       }
     }
 
-    const deltaSeconds = Math.min(this.clock.getDelta(), 0.05);
+    const rawDeltaSeconds = this.clock.getDelta();
+    const deltaSeconds = Math.min(rawDeltaSeconds, FRAME_DELTA_MAX_SECONDS);
+    this.recordMovementFrameTiming(rawDeltaSeconds, deltaSeconds);
     const localPlayerState = this.getLocalPlayerState();
     this.processPendingFrontendReload();
     this.syncMobileControlsHud(localPlayerState);
@@ -13388,7 +13778,7 @@ export class Game {
       }
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
-      const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : { x: 0, z: 0 };
+      const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
         skateboardOwned
         && playerInput !== ZERO_INPUT
@@ -13486,13 +13876,12 @@ export class Game {
         this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
       }
       this.updateLocalPlayerKinematics();
+      const animationSyncState = this.player.getAnimationSyncState(this.localAnimationSyncState);
+      animationSyncState.aiming = Boolean(this.currentAimMode || hipFirePoseActive);
       this.npcService?.setPlayerTransform(
         this.player.position,
         this.player.object.rotation.y,
-        {
-          ...this.player.getAnimationSyncState(),
-          aiming: Boolean(this.currentAimMode || hipFirePoseActive)
-        }
+        animationSyncState
       );
       this.updateNpcInteractRadiusIndicators();
 
@@ -13512,8 +13901,9 @@ export class Game {
       this.hud.setHitMarkerVisible(hitMarkerVisible);
       this.lastHudHitMarkerVisible = hitMarkerVisible;
     }
-    const visibleOverheadHealthBarIds = this.updateOverheadHealthBars();
-    this.updateSpeechBubbles(visibleOverheadHealthBarIds);
+    const npcSpeechAnchors = this.getNpcSpeechAnchorsForHud();
+    const visibleOverheadHealthBarIds = this.updateOverheadHealthBars(npcSpeechAnchors);
+    this.updateSpeechBubbles(visibleOverheadHealthBarIds, npcSpeechAnchors);
     if (this.aimPoseDebugVisible) {
       this.refreshAimPoseDebugHud();
     }
@@ -13521,6 +13911,7 @@ export class Game {
     this.characterPreviewRenderer?.update(deltaSeconds);
     this.updateCameraOcclusion();
     this.updateDrunknessEffects(localPlayerState);
+    this.updateAdaptiveRenderQuality(this.getMovementFrameSummary());
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }
@@ -13677,23 +14068,25 @@ export class Game {
       return;
     }
 
+    const preservePlacementIds = this.cameraOcclusionPreservePlacementIds;
+    preservePlacementIds.length = 0;
+    if (this.activeInlineShell?.mode === 'inline-cutaway' && this.activeInlineShell.placementId) {
+      preservePlacementIds.push(this.activeInlineShell.placementId);
+    }
     const occludedBuildingCount = this.worldBuilder.updateCameraOcclusion(
       this.camera,
       this.player.position,
-      {
-        preserveInteriorNodePlacementIds:
-          this.activeInlineShell?.mode === 'inline-cutaway'
-            ? [this.activeInlineShell.placementId]
-            : []
-      }
+      this.cameraOcclusionOptions
     );
     this.setLocalPlayerCameraOcclusionRenderActive(occludedBuildingCount > 0);
   }
 
   updateInteraction() {
-    this.syncDeliveryQuestReminderGate();
+    const worldBuilderInteractables = this.getWorldBuilderInteractables();
+    const localPlayerState = this.getLocalPlayerState();
+    this.syncDeliveryQuestReminderGate(localPlayerState, worldBuilderInteractables);
 
-    const interactables = this.getActiveInteractables();
+    const interactables = this.getActiveInteractables(worldBuilderInteractables);
     let nearest = null;
     let nearestDistance = Infinity;
 
@@ -13710,30 +14103,31 @@ export class Game {
     }
 
     this.currentInteractable = nearest;
-    if (this.maybeAutoCompleteDelivery()) {
+    if (this.maybeAutoCompleteDelivery(localPlayerState, worldBuilderInteractables)) {
       this.hud.setPrompt(null);
       return;
     }
 
-    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
+    const npcInteractable = this.getNearestNpcInteractable(worldBuilderInteractables);
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable, worldBuilderInteractables);
     const gymCheckInInteraction = deliveryInteraction
       ? null
-      : this.getNearestGymCheckInInteractable();
+      : this.getNearestGymCheckInInteractable(worldBuilderInteractables);
     const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
       ? null
-      : this.getNearestStockMarketInteractable();
+      : this.getNearestStockMarketInteractable(worldBuilderInteractables);
     const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
       ? null
-      : this.getNearestBlackjackDealerInteractable();
+      : this.getNearestBlackjackDealerInteractable(worldBuilderInteractables);
     const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
       ? null
-      : this.getNearestSchoolMicrogameInteractable();
+      : this.getNearestSchoolMicrogameInteractable(worldBuilderInteractables);
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
-      : this.getNearestBartenderInteractable();
+      : this.getNearestBartenderInteractable({ worldBuilderInteractables });
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
-      : this.getNearestPawnShopOwnerInteractable();
+      : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
     this.syncActiveBartenderMenu(bartenderInteraction);
     this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
     const interactPressed = this.input.consumeAction('interact');
@@ -14039,26 +14433,27 @@ export class Game {
   }
 
   addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = new Set()) {
-    const npcInteractable = this.getNearestNpcInteractable();
-    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable);
+    const worldBuilderInteractables = this.getWorldBuilderInteractables();
+    const npcInteractable = this.getNearestNpcInteractable(worldBuilderInteractables);
+    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable, worldBuilderInteractables);
     const gymCheckInInteraction = deliveryInteraction
       ? null
-      : this.getNearestGymCheckInInteractable();
+      : this.getNearestGymCheckInInteractable(worldBuilderInteractables);
     const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
       ? null
-      : this.getNearestStockMarketInteractable();
+      : this.getNearestStockMarketInteractable(worldBuilderInteractables);
     const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
       ? null
-      : this.getNearestBlackjackDealerInteractable();
+      : this.getNearestBlackjackDealerInteractable(worldBuilderInteractables);
     const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
       ? null
-      : this.getNearestSchoolMicrogameInteractable();
+      : this.getNearestSchoolMicrogameInteractable(worldBuilderInteractables);
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
-      : this.getNearestBartenderInteractable();
+      : this.getNearestBartenderInteractable({ worldBuilderInteractables });
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
-      : this.getNearestPawnShopOwnerInteractable();
+      : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
     const interactable = deliveryInteraction
       ? npcInteractable
       : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? npcInteractable);
@@ -14255,19 +14650,30 @@ export class Game {
     }
   }
 
-  updateOverheadHealthBars() {
+  getNpcSpeechAnchorsForHud() {
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
-      this.hud.setOverheadHealthBars([]);
-      return new Set();
+      return EMPTY_NPC_SPEECH_ANCHORS;
     }
 
-    const bars = [];
-    const visibleIds = new Set();
+    return this.worldBuilder.getNpcSpeechAnchors();
+  }
+
+  updateOverheadHealthBars(npcSpeechAnchors = EMPTY_NPC_SPEECH_ANCHORS) {
+    const visibleIds = this.visibleOverheadHealthBarIds;
+    const bars = this.overheadHealthBars;
+    visibleIds.clear();
+    bars.length = 0;
+
+    if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
+      this.hud.setOverheadHealthBars(bars);
+      return visibleIds;
+    }
+
     const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
     if (localPlayerState) {
       const bar = this.collectOverheadHealthBar(
         `player:${this.npcServiceState.sessionId}`,
-        this.player.getSpeechAnchorWorldPosition(),
+        this.player.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         {
           health: localPlayerState.health,
           maxHealth: localPlayerState.maxHealth,
@@ -14289,7 +14695,7 @@ export class Game {
 
       const bar = this.collectOverheadHealthBar(
         `player:${sessionId}`,
-        avatar.getSpeechAnchorWorldPosition(),
+        avatar.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         {
           health: playerState.health,
           maxHealth: playerState.maxHealth,
@@ -14303,7 +14709,6 @@ export class Game {
       }
     }
 
-    const npcSpeechAnchors = this.worldBuilder.getNpcSpeechAnchors();
     for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
       const anchor = npcSpeechAnchors.get(npcId);
       if (!anchor) {
@@ -14330,7 +14735,7 @@ export class Game {
     return visibleIds;
   }
 
-  projectSpeechAnchor(worldPosition) {
+  projectSpeechAnchor(worldPosition, target = this.projectedSpeechScreen) {
     const projected = this.projectedSpeechPosition.copy(worldPosition).project(this.camera);
     if (projected.z < -1 || projected.z > 1) {
       return null;
@@ -14342,23 +14747,29 @@ export class Game {
       return null;
     }
 
-    return { x, y };
+    target.x = x;
+    target.y = y;
+    return target;
   }
 
-  updateSpeechBubbles(visibleOverheadHealthBarIds = new Set()) {
+  updateSpeechBubbles(
+    visibleOverheadHealthBarIds = EMPTY_VISIBLE_OVERHEAD_HEALTH_BAR_IDS,
+    npcSpeechAnchors = EMPTY_NPC_SPEECH_ANCHORS
+  ) {
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
       this.hud.setSpeechBubbles([]);
       return;
     }
 
-    const bubbles = [];
+    const bubbles = this.speechBubbles;
+    bubbles.length = 0;
     const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
     if (localPlayerState) {
       this.addPlayerSpeechBubble(
         bubbles,
         this.npcServiceState.sessionId,
         localPlayerState,
-        this.player.getSpeechAnchorWorldPosition(),
+        this.player.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         'self',
         {
           screenYOffset: visibleOverheadHealthBarIds.has(`player:${this.npcServiceState.sessionId}`)
@@ -14378,7 +14789,7 @@ export class Game {
         bubbles,
         sessionId,
         playerState,
-        avatar.getSpeechAnchorWorldPosition(),
+        avatar.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         'player',
         {
           screenYOffset: visibleOverheadHealthBarIds.has(`player:${sessionId}`)
@@ -14388,7 +14799,6 @@ export class Game {
       );
     }
 
-    const npcSpeechAnchors = this.worldBuilder.getNpcSpeechAnchors();
     for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
       const anchor = npcSpeechAnchors.get(npcId);
       if (!anchor) {

@@ -46,10 +46,12 @@ defaults to port `2567`.
 ## Useful Scripts
 
 ```sh
-npm run build:web      # build the Vercel frontend bundle
+npm run build:web      # build the frontend bundle into dist/
 npm run build          # run backend syntax checks for Colyseus Cloud
 npm run build:all      # build frontend and check backend
 npm run validate       # validate world editor data
+npm run wavedash:dev   # build dist/ and test it in the Wavedash sandbox
+npm run deploy:wavedash
 npm run deploy:colyseus
 ```
 
@@ -75,9 +77,10 @@ The frontend and backend are deployed separately:
 - Vercel builds the frontend with `npm run build:web` and serves `dist/`.
 - Colyseus Cloud runs the backend with `npm run build` as a backend-only check.
 
-See [docs/vercel-frontend-deployment.md](docs/vercel-frontend-deployment.md)
-and [docs/colyseus-cloud-deployment.md](docs/colyseus-cloud-deployment.md) for
-the production setup notes.
+See the setup notes for
+[Vercel frontend](docs/vercel-frontend-deployment.md),
+[Colyseus Cloud](docs/colyseus-cloud-deployment.md), and
+[Wavedash](docs/wavedash-deployment.md).
 
 ## Asset Pipeline
 

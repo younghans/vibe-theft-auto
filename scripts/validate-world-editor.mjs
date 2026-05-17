@@ -1015,7 +1015,7 @@ function validateBartenderFunction() {
     'HUD interaction menu should accept a world anchor'
   );
   assert(
-    /getNearestBartenderInteractable\(\{\s*npcId = ''\s*\} = \{\}\)/.test(gameSource),
+    /getNearestBartenderInteractable\(\{\s*npcId = ''[\s\S]*?worldBuilderInteractables = this\.getWorldBuilderInteractables\(\)[\s\S]*?\} = \{\}\)/.test(gameSource),
     'Bartender proximity lookup should support the active NPC id'
   );
   assert(

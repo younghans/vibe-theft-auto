@@ -3221,6 +3221,7 @@ export class Hud {
     this.loadingProgressDelayTimeout = 0;
     this.loadingProgressLastFrameAt = 0;
     this.loadingProgressUnlockAt = performance.now() + 900;
+    this.officeMopHeroPointerPosition = { x: 0, y: 0, inside: false };
     this.setLoadingProgress(0);
     this.overlay = this.createOverlay();
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
@@ -3438,7 +3439,12 @@ export class Hud {
     this.phoneClose = this.overlay.querySelector('[data-phone-close]');
     this.emoteSliceNodes = [];
     this.overheadHealthBarNodes = new Map();
+    this.overheadHealthBarFillNodes = new Map();
+    this.overheadHealthBarActiveIds = new Set();
     this.speechBubbleNodes = new Map();
+    this.speechBubbleLabelNodes = new Map();
+    this.speechBubbleTextNodes = new Map();
+    this.speechBubbleActiveIds = new Set();
     this.aimDebugInputs = new Map();
     this.poseDebugExtraInputs = new Map();
     this.joinTitleTimeout = 0;
@@ -7713,7 +7719,7 @@ export class Hud {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
 
-  getOfficeMopHeroPointerPosition(pointer = {}) {
+  getOfficeMopHeroPointerPosition(pointer = {}, target = this.officeMopHeroPointerPosition) {
     const stage = this.schoolMicrogameBody?.querySelector('[data-office-mop-stage]');
     if (!(stage instanceof HTMLElement)) {
       return null;
@@ -7732,11 +7738,10 @@ export class Hud {
 
     const x = (clientX - rect.left) / rect.width;
     const y = (clientY - rect.top) / rect.height;
-    return {
-      x: Math.max(0, Math.min(1, x)),
-      y: Math.max(0, Math.min(1, y)),
-      inside: x >= 0 && x <= 1 && y >= 0 && y <= 1
-    };
+    target.x = Math.max(0, Math.min(1, x));
+    target.y = Math.max(0, Math.min(1, y));
+    target.inside = x >= 0 && x <= 1 && y >= 0 && y <= 1;
+    return target;
   }
 
   setAdminPromptState({
@@ -9707,7 +9712,8 @@ export class Hud {
   }
 
   setSpeechBubbles(bubbles = []) {
-    const activeIds = new Set();
+    const activeIds = this.speechBubbleActiveIds;
+    activeIds.clear();
 
     for (const bubble of bubbles) {
       if (!bubble?.id || !bubble.visible) {
@@ -9716,19 +9722,24 @@ export class Hud {
 
       activeIds.add(bubble.id);
       let node = this.speechBubbleNodes.get(bubble.id);
-      if (!node) {
+      let labelNode = this.speechBubbleLabelNodes.get(bubble.id) ?? null;
+      let textNode = this.speechBubbleTextNodes.get(bubble.id) ?? null;
+      if (!node || !labelNode || !textNode) {
+        node?.remove();
         node = document.createElement('article');
         node.className = 'hud__speech-bubble';
 
-        const label = document.createElement('p');
-        label.className = 'hud__speech-label';
+        labelNode = document.createElement('p');
+        labelNode.className = 'hud__speech-label';
 
-        const text = document.createElement('p');
-        text.className = 'hud__speech-text';
+        textNode = document.createElement('p');
+        textNode.className = 'hud__speech-text';
 
-        node.append(label, text);
+        node.append(labelNode, textNode);
         this.speechLayer.append(node);
         this.speechBubbleNodes.set(bubble.id, node);
+        this.speechBubbleLabelNodes.set(bubble.id, labelNode);
+        this.speechBubbleTextNodes.set(bubble.id, textNode);
       }
 
       node.classList.toggle('is-self', bubble.variant === 'self');
@@ -9744,10 +9755,13 @@ export class Hud {
       node.style.top = `${bubble.screenY}px`;
       node.style.opacity = Number.isFinite(Number(bubble.opacity)) ? String(bubble.opacity) : '';
 
-      const [labelNode, textNode] = node.children;
-      labelNode.textContent = bubble.label ?? '';
-      labelNode.hidden = !bubble.label;
-      textNode.textContent = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
+      if (labelNode) {
+        labelNode.textContent = bubble.label ?? '';
+        labelNode.hidden = !bubble.label;
+      }
+      if (textNode) {
+        textNode.textContent = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
+      }
     }
 
     for (const [id, node] of this.speechBubbleNodes.entries()) {
@@ -9757,11 +9771,14 @@ export class Hud {
 
       node.remove();
       this.speechBubbleNodes.delete(id);
+      this.speechBubbleLabelNodes.delete(id);
+      this.speechBubbleTextNodes.delete(id);
     }
   }
 
   setOverheadHealthBars(bars = []) {
-    const activeIds = new Set();
+    const activeIds = this.overheadHealthBarActiveIds;
+    activeIds.clear();
 
     for (const bar of bars) {
       if (!bar?.id || !bar.visible) {
@@ -9770,8 +9787,9 @@ export class Hud {
 
       activeIds.add(bar.id);
       let node = this.overheadHealthBarNodes.get(bar.id);
-      let fillNode = node?.querySelector('.hud__overhead-health-fill') ?? null;
+      let fillNode = this.overheadHealthBarFillNodes.get(bar.id) ?? null;
       if (!node || !fillNode) {
+        node?.remove();
         node = document.createElement('div');
         node.className = 'hud__overhead-health';
         node.setAttribute('aria-hidden', 'true');
@@ -9786,6 +9804,7 @@ export class Hud {
         node.append(track);
         this.overheadHealthLayer?.append(node);
         this.overheadHealthBarNodes.set(bar.id, node);
+        this.overheadHealthBarFillNodes.set(bar.id, fillNode);
       }
 
       const healthRatio = Math.max(0, Math.min(1, Number(bar.healthRatio) || 0));
@@ -9810,6 +9829,7 @@ export class Hud {
 
       node.remove();
       this.overheadHealthBarNodes.delete(id);
+      this.overheadHealthBarFillNodes.delete(id);
     }
   }
 

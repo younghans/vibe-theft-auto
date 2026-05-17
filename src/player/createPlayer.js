@@ -45,6 +45,8 @@ import { isDeliveryQuestActive } from '../shared/deliveryQuest.js';
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
+const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
+const PLAYER_TURN_RESPONSE = 12;
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
@@ -92,6 +94,19 @@ const UPPER_BODY_EMOTE_BONES = Object.freeze([
   MIXAMO_BONES.leftHand,
   MIXAMO_BONES.rightHand
 ]);
+
+function poseHasAimIdleLockField(pose = null) {
+  if (!pose) {
+    return false;
+  }
+
+  for (const fieldKey of AIM_IDLE_LOCK_FIELD_KEYS) {
+    if (Object.hasOwn(pose, fieldKey)) {
+      return true;
+    }
+  }
+  return false;
+}
 const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   MIXAMO_BONES.hips,
   'mixamorigLeftUpLeg',
@@ -675,6 +690,10 @@ export async function createPlayer(library, {
   );
   const aimPoseEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const aimPoseQuaternion = new THREE.Quaternion();
+  const aimPoseTargetQuaternion = new THREE.Quaternion();
+  const aimPoseRotationsByBone = new Map();
+  const aimPoseBlendWeightsByBone = new Map();
+  const activeAimBones = new Set();
   const footPlantBones = FOOT_PLANT_BONE_NAMES
     .map((boneName) => character.getObjectByName(boneName))
     .filter(Boolean);
@@ -1375,15 +1394,17 @@ export async function createPlayer(library, {
     const stabilizeUpperBody = aimingState && Boolean(pose);
     const leftArmIdleLockActive = hasAimPose
       && !hasReloadPose
-      && !Object.keys(pose ?? {}).some((fieldKey) => AIM_IDLE_LOCK_FIELD_KEYS.has(fieldKey));
+      && !poseHasAimIdleLockField(pose);
 
     if ((!hasLookPose && !hasAimPose && !hasReloadPose) || !aliveState || ragdoll.isActive()) {
       return;
     }
 
-    const rotationsByBone = new Map();
-    const blendWeightsByBone = new Map();
-    const activeAimBones = new Set();
+    const rotationsByBone = aimPoseRotationsByBone;
+    const blendWeightsByBone = aimPoseBlendWeightsByBone;
+    rotationsByBone.clear();
+    blendWeightsByBone.clear();
+    activeAimBones.clear();
     if (hasLookPose) {
       const emoteAimYawOffset = Number(
         activeEmoteConfig?.aimYawOffset
@@ -1427,8 +1448,16 @@ export async function createPlayer(library, {
     }
 
     if (stabilizeUpperBody) {
-      const bonesToStabilize = new Set([UPPER_BODY_ROOT_BONE, ...activeAimBones]);
-      for (const boneKey of bonesToStabilize) {
+      const rootBone = aimPoseBones[UPPER_BODY_ROOT_BONE];
+      const rootBase = aimPoseBoneBases[UPPER_BODY_ROOT_BONE];
+      if (rootBone && rootBase) {
+        rootBone.quaternion.copy(rootBase.quaternion);
+      }
+
+      for (const boneKey of activeAimBones) {
+        if (boneKey === UPPER_BODY_ROOT_BONE) {
+          continue;
+        }
         const bone = aimPoseBones[boneKey];
         const base = aimPoseBoneBases[boneKey];
         if (!bone || !base) {
@@ -1449,8 +1478,8 @@ export async function createPlayer(library, {
 
       aimPoseEuler.set(rotation.x ?? 0, rotation.y ?? 0, rotation.z ?? 0);
       aimPoseQuaternion.setFromEuler(aimPoseEuler);
-      const targetQuaternion = base.quaternion.clone().multiply(aimPoseQuaternion);
-      bone.quaternion.slerp(targetQuaternion, blendWeight);
+      aimPoseTargetQuaternion.copy(base.quaternion).multiply(aimPoseQuaternion);
+      bone.quaternion.slerp(aimPoseTargetQuaternion, blendWeight);
     }
 
     if (leftArmIdleLockActive) {
@@ -1951,23 +1980,30 @@ export async function createPlayer(library, {
       return false;
     }
 
-    const step = PLAYER_SPEED * Math.max(0, speedScale) * deltaSeconds;
+    const safeDeltaSeconds = Math.max(0, Number(deltaSeconds) || 0);
+    const substepCount = Math.max(1, Math.ceil(safeDeltaSeconds / PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS));
+    const substepSeconds = safeDeltaSeconds / substepCount;
+    const step = PLAYER_SPEED * Math.max(0, speedScale) * substepSeconds;
     const [minX, maxX] = clampBoundsX(cityBounds, anchor.position.x);
     const [minZ, maxZ] = clampBoundsZ(cityBounds, anchor.position.z);
-    moveProposedPosition.copy(anchor.position);
-    moveProposedPosition.x += movement.x * step;
-    if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
-      anchor.position.x = THREE.MathUtils.clamp(moveProposedPosition.x, minX, maxX);
-    }
 
-    moveProposedPosition.copy(anchor.position);
-    moveProposedPosition.z += movement.z * step;
-    if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
-      anchor.position.z = THREE.MathUtils.clamp(moveProposedPosition.z, minZ, maxZ);
+    for (let index = 0; index < substepCount; index += 1) {
+      moveProposedPosition.copy(anchor.position);
+      moveProposedPosition.x += movement.x * step;
+      if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
+        anchor.position.x = THREE.MathUtils.clamp(moveProposedPosition.x, minX, maxX);
+      }
+
+      moveProposedPosition.copy(anchor.position);
+      moveProposedPosition.z += movement.z * step;
+      if (!collidesWithColliders(moveProposedPosition, colliders, PLAYER_RADIUS)) {
+        anchor.position.z = THREE.MathUtils.clamp(moveProposedPosition.z, minZ, maxZ);
+      }
     }
 
     const targetYaw = Math.atan2(movement.x, movement.z);
-    anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, 0.18);
+    const turnSmoothing = 1 - Math.exp(-PLAYER_TURN_RESPONSE * safeDeltaSeconds);
+    anchor.rotation.y = dampAngle(anchor.rotation.y, targetYaw, turnSmoothing);
     return true;
   }
 
@@ -2033,26 +2069,25 @@ export async function createPlayer(library, {
     getWeaponMuzzleWorldPosition(target = new THREE.Vector3()) {
       return this.getAttachmentWorldPoint('muzzle', target);
     },
-    getAnimationSyncState() {
+    getAnimationSyncState(target = {}) {
+      const output = target && typeof target === 'object' ? target : {};
       if (ragdoll.isActive()) {
-        return {
-          emoteId: LIMP_EMOTE_ID,
-          emoteActive: true,
-          emoteStartedAt: limpStartedAt,
-          emoteSeq: emoteSequence,
-          aimRotationY,
-          skating: false
-        };
+        output.emoteId = LIMP_EMOTE_ID;
+        output.emoteActive = true;
+        output.emoteStartedAt = limpStartedAt;
+        output.emoteSeq = emoteSequence;
+        output.aimRotationY = aimRotationY;
+        output.skating = false;
+        return output;
       }
 
-      return {
-        emoteId: activeEmoteId ?? '',
-        emoteActive: Boolean(activeEmoteId),
-        emoteStartedAt: activeEmoteId ? activeEmoteStartedAt : 0,
-        emoteSeq: emoteSequence,
-        aimRotationY,
-        skating: skateboardSkating
-      };
+      output.emoteId = activeEmoteId ?? '';
+      output.emoteActive = Boolean(activeEmoteId);
+      output.emoteStartedAt = activeEmoteId ? activeEmoteStartedAt : 0;
+      output.emoteSeq = emoteSequence;
+      output.aimRotationY = aimRotationY;
+      output.skating = skateboardSkating;
+      return output;
     },
     playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
       if (emoteId === LIMP_EMOTE_ID) {
