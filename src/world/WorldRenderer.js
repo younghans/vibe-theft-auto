@@ -439,6 +439,28 @@ function nodeOrAncestorNameMatches(node, nodeNames = new Set(), root = null) {
   return false;
 }
 
+function nodeOrDescendantNameMatches(node, nodeNames = new Set()) {
+  if (nodeNameMatches(node, nodeNames)) {
+    return true;
+  }
+
+  let matched = false;
+  node.traverse?.((child) => {
+    if (matched || child === node) {
+      return;
+    }
+    if (nodeNameMatches(child, nodeNames)) {
+      matched = true;
+    }
+  });
+  return matched;
+}
+
+function nodeWithinVisibleNameFilter(node, nodeNames = new Set(), root = null) {
+  return nodeOrAncestorNameMatches(node, nodeNames, root)
+    || nodeOrDescendantNameMatches(node, nodeNames);
+}
+
 function nodeNameSetsEqual(a = new Set(), b = new Set()) {
   if ((a?.size ?? 0) !== (b?.size ?? 0)) {
     return false;
@@ -1839,7 +1861,7 @@ export class WorldRenderer {
         || (
           hasVisibleNodeFilter
           && node !== rendered.object
-          && !nodeOrAncestorNameMatches(node, rendered.visibleNodeNames, rendered.object)
+          && !nodeWithinVisibleNameFilter(node, rendered.visibleNodeNames, rendered.object)
         );
       const nodeVisible = visible && !nodeHidden;
       if (node !== rendered.object) {

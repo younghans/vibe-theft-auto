@@ -168,6 +168,31 @@ function createKenneyPropDefinition({ key, label, fileName, size }) {
   };
 }
 
+function createCutawayInteriorWallNodeNames(key) {
+  return [
+    `${key}_hull_wall_back`,
+    `${key}_hull_wall_left`,
+    `${key}_hull_wall_right`
+  ];
+}
+
+function createCutawayVisibleNodeNames(key, { includeInterior = true } = {}) {
+  return [
+    `${key}_foundation`,
+    ...(includeInterior ? [`${key}_interior`] : []),
+    ...createCutawayInteriorWallNodeNames(key)
+  ];
+}
+
+function createCutawayHiddenNodeNames(key) {
+  return [
+    `${key}_cutaway_roof`,
+    `${key}_cutaway_upper`,
+    `${key}_exterior_detail`,
+    `${key}_hull_wall_front`
+  ];
+}
+
 function createCustom2x2BuildingDefinition({
   key,
   label,
@@ -178,12 +203,12 @@ function createCustom2x2BuildingDefinition({
   movementCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
   shotCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
   interiorOverrides = {},
-  cameraOcclusionPreserveNodeNames = [`${key}_interior`, `${key}_foundation`]
+  cameraOcclusionPreserveNodeNames = createCutawayVisibleNodeNames(key)
 }) {
   const cutawayNodeNames = interiorOverrides.cutawayNodeNames
-    ?? [`${key}_cutaway_roof`, `${key}_cutaway_upper`];
+    ?? createCutawayHiddenNodeNames(key);
   const cutawayVisibleNodeNames = interiorOverrides.cutawayVisibleNodeNames
-    ?? [`${key}_foundation`, `${key}_interior`];
+    ?? createCutawayVisibleNodeNames(key);
 
   return {
     id: `${key}_building`,
@@ -271,17 +296,17 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     createVisual: createPawnShopBuildingVisual,
     prompt: 'Enter pawn shop',
     movementCollisionRects: PAWN_SHOP_COLLISION_RECTS,
-    shotCollisionRects: PAWN_SHOP_COLLISION_RECTS,
-    cameraOcclusionPreserveNodeNames: ['pawn_interior', 'pawn_foundation']
+    shotCollisionRects: PAWN_SHOP_COLLISION_RECTS
   }),
   createCustom2x2BuildingDefinition({
     key: 'offices',
     label: 'Offices',
     fileName: 'offices-building.glb',
     prompt: 'Enter offices',
+    cameraOcclusionPreserveNodeNames: createCutawayVisibleNodeNames('offices', { includeInterior: false }),
     interiorOverrides: {
-      cutawayNodeNames: ['offices_cutaway_roof', 'offices_cutaway_upper', 'offices_interior'],
-      cutawayVisibleNodeNames: ['offices_foundation']
+      cutawayNodeNames: [...createCutawayHiddenNodeNames('offices'), 'offices_interior'],
+      cutawayVisibleNodeNames: createCutawayVisibleNodeNames('offices', { includeInterior: false })
     }
   })
 ]);
@@ -335,7 +360,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       'marthasGrilleFlatTopGrill',
       'mgRangeHood',
       'marthas_grille_kitchen_detail',
-      'marthasGrilleOpenFrontThreshold'
+      'marthasGrilleOpenFrontThreshold',
+      ...createCutawayInteriorWallNodeNames('marthas_grille')
     ],
     cameraOcclusionAlwaysPreserveNodeNames: [
       'mgSlab',
@@ -347,7 +373,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       'marthasGrilleFlatTopGrill',
       'mgRangeHood',
       'marthas_grille_kitchen_detail',
-      'marthasGrilleOpenFrontThreshold'
+      'marthasGrilleOpenFrontThreshold',
+      ...createCutawayInteriorWallNodeNames('marthas_grille')
     ],
     createVisual: createMarthasGrilleBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
@@ -367,8 +394,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     shotCollisionRects: REAL_ESTATE_OFFICE_COLLISION_RECTS,
     padding: 0.5,
     npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
-    cameraOcclusionPreserveNodeNames: ['real_estate_office_foundation', 'real_estate_office_interior'],
-    cameraOcclusionAlwaysPreserveNodeNames: ['real_estate_office_foundation', 'real_estate_office_interior'],
+    cameraOcclusionPreserveNodeNames: createCutawayVisibleNodeNames('real_estate_office'),
+    cameraOcclusionAlwaysPreserveNodeNames: createCutawayVisibleNodeNames('real_estate_office'),
     createVisual: createRealEstateOfficeBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -443,14 +470,14 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     ],
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
-    cameraOcclusionPreserveNodeNames: ['gym_interior', 'gym_foundation'],
+    cameraOcclusionPreserveNodeNames: createCutawayVisibleNodeNames('gym'),
     interior: {
       id: 'gym_large_blank',
       mode: 'inline-cutaway',
       label: 'Fitness Gym',
       prompt: 'Enter gym',
-      cutawayNodeNames: ['gym_cutaway_roof', 'gym_cutaway_upper', 'gym_cutaway_corner'],
-      cutawayVisibleNodeNames: ['gym_foundation', 'gym_interior'],
+      cutawayNodeNames: ['gym_cutaway_roof', 'gym_cutaway_upper', 'gym_cutaway_corner', 'gym_exterior_detail', 'gym_hull_wall_front'],
+      cutawayVisibleNodeNames: createCutawayVisibleNodeNames('gym'),
       exteriorDoorOffset: [0, 10.95],
       exteriorSpawnOffset: [0, 16.05],
       exteriorInteractRadius: 4.8

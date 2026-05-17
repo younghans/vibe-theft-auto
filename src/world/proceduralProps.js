@@ -795,12 +795,21 @@ export function createPawnShopBuildingVisual() {
   const shell = new THREE.Group();
   shell.name = 'pawn_hull_wall';
   root.add(shell);
-  addPawnBox(shell, 'pawnShopBackWall', [21.7, 7.45, 0.36], [0, 4.3, -10.1], materials.facade);
-  addPawnBox(shell, 'pawnShopLeftWall', [0.36, 7.45, 20.9], [-10.67, 4.3, 0.35], materials.facade);
-  addPawnBox(shell, 'pawnShopRightWall', [0.36, 7.45, 20.9], [10.67, 4.3, 0.35], materials.facade);
-  addPawnBox(shell, 'pawnShopFrontWallLeft', [7.5, 7.45, 0.36], [-7.1, 4.3, 10.8], materials.facade);
-  addPawnBox(shell, 'pawnShopFrontWallRight', [7.5, 7.45, 0.36], [7.1, 4.3, 10.8], materials.facade);
-  addPawnBox(shell, 'pawnShopDoorHeader', [6.7, 3.9, 0.36], [0, 5.58, 10.8], materials.facade);
+  const shellBack = new THREE.Group();
+  shellBack.name = 'pawn_hull_wall_back';
+  const shellLeft = new THREE.Group();
+  shellLeft.name = 'pawn_hull_wall_left';
+  const shellRight = new THREE.Group();
+  shellRight.name = 'pawn_hull_wall_right';
+  const shellFront = new THREE.Group();
+  shellFront.name = 'pawn_hull_wall_front';
+  shell.add(shellBack, shellLeft, shellRight, shellFront);
+  addPawnBox(shellBack, 'pawnShopBackWall', [21.7, 7.45, 0.36], [0, 4.3, -10.1], materials.facade);
+  addPawnBox(shellLeft, 'pawnShopLeftWall', [0.36, 7.45, 20.9], [-10.67, 4.3, 0.35], materials.facade);
+  addPawnBox(shellRight, 'pawnShopRightWall', [0.36, 7.45, 20.9], [10.67, 4.3, 0.35], materials.facade);
+  addPawnBox(shellFront, 'pawnShopFrontWallLeft', [7.5, 7.45, 0.36], [-7.1, 4.3, 10.8], materials.facade);
+  addPawnBox(shellFront, 'pawnShopFrontWallRight', [7.5, 7.45, 0.36], [7.1, 4.3, 10.8], materials.facade);
+  addPawnBox(shellFront, 'pawnShopDoorHeader', [6.7, 3.9, 0.36], [0, 5.58, 10.8], materials.facade);
 
   const roof = new THREE.Group();
   roof.name = 'pawn_cutaway_roof';
@@ -1178,39 +1187,48 @@ export function createMarthasGrilleBuildingVisual() {
   const shell = new THREE.Group();
   shell.name = 'marthas_grille_hull_wall';
   root.add(shell);
-  addMarthasGrilleBox(shell, 'mgBackWall', [10.65, 6.24, 0.34], [0, 3.8, -5.14], wall);
-  addMarthasGrilleBox(shell, 'mgLeftWall', [0.34, 6.24, 10.15], [-5.15, 3.8, -0.1], wall);
-  addMarthasGrilleBox(shell, 'mgRightWall', [0.34, 6.24, 10.15], [5.15, 3.8, -0.1], wall);
-  addMarthasGrilleBox(shell, 'mgFrontLeft', [2.38, 4.86, 0.34], [-4.05, 3.09, 5.03], wall);
-  addMarthasGrilleBox(shell, 'mgFrontRight', [2.38, 4.86, 0.34], [4.05, 3.09, 5.03], wall);
-  addMarthasGrilleBox(shell, 'mgFrontHeader', [10.58, 1.48, 0.36], [0, 5.52, 5.03], wall);
-  addMarthasGrilleBox(shell, 'marthasGrilleCreamFacadeBand', [10.42, 0.24, 0.42], [0, 4.68, 5.12], wallTrim);
-  addMarthasGrilleBox(shell, 'marthasGrilleLeftCreamKickTrim', [2.22, 0.2, 0.42], [-4.05, 1.05, 5.15], wallTrim);
-  addMarthasGrilleBox(shell, 'marthasGrilleRightCreamKickTrim', [2.22, 0.2, 0.42], [4.05, 1.05, 5.15], wallTrim);
-  addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontLeftWindow', {
+  const shellBack = new THREE.Group();
+  shellBack.name = 'marthas_grille_hull_wall_back';
+  const shellLeft = new THREE.Group();
+  shellLeft.name = 'marthas_grille_hull_wall_left';
+  const shellRight = new THREE.Group();
+  shellRight.name = 'marthas_grille_hull_wall_right';
+  const shellFront = new THREE.Group();
+  shellFront.name = 'marthas_grille_hull_wall_front';
+  shell.add(shellBack, shellLeft, shellRight, shellFront);
+  addMarthasGrilleBox(shellBack, 'mgBackWall', [10.65, 6.24, 0.34], [0, 3.8, -5.14], wall);
+  addMarthasGrilleBox(shellLeft, 'mgLeftWall', [0.34, 6.24, 10.15], [-5.15, 3.8, -0.1], wall);
+  addMarthasGrilleBox(shellRight, 'mgRightWall', [0.34, 6.24, 10.15], [5.15, 3.8, -0.1], wall);
+  addMarthasGrilleBox(shellFront, 'mgFrontLeft', [2.38, 4.86, 0.34], [-4.05, 3.09, 5.03], wall);
+  addMarthasGrilleBox(shellFront, 'mgFrontRight', [2.38, 4.86, 0.34], [4.05, 3.09, 5.03], wall);
+  addMarthasGrilleBox(shellFront, 'mgFrontHeader', [10.58, 1.48, 0.36], [0, 5.52, 5.03], wall);
+  addMarthasGrilleBox(shellFront, 'marthasGrilleCreamFacadeBand', [10.42, 0.24, 0.42], [0, 4.68, 5.12], wallTrim);
+  addMarthasGrilleBox(shellFront, 'marthasGrilleLeftCreamKickTrim', [2.22, 0.2, 0.42], [-4.05, 1.05, 5.15], wallTrim);
+  addMarthasGrilleBox(shellFront, 'marthasGrilleRightCreamKickTrim', [2.22, 0.2, 0.42], [4.05, 1.05, 5.15], wallTrim);
+  addMarthasGrilleWindow(shellFront, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontLeftWindow', {
     position: [-4.05, 3.1, 5.22],
     side: 'front',
     size: [1.18, 1.42]
   });
-  addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontRightWindow', {
+  addMarthasGrilleWindow(shellFront, { windowFrame, windowGlass, windowMuntin }, 'marthasGrilleFrontRightWindow', {
     position: [4.05, 3.1, 5.22],
     side: 'front',
     size: [1.18, 1.42]
   });
   for (const [index, x] of [-3.2, 0, 3.2].entries()) {
-    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleBackWindow${index + 1}`, {
+    addMarthasGrilleWindow(shellBack, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleBackWindow${index + 1}`, {
       position: [x, 3.55, -5.34],
       side: 'back',
       size: [1.32, 1.28]
     });
   }
   for (const [index, z] of [-3.2, -0.55, 2.1].entries()) {
-    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleLeftWindow${index + 1}`, {
+    addMarthasGrilleWindow(shellLeft, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleLeftWindow${index + 1}`, {
       position: [-5.34, 3.58, z],
       side: 'left',
       size: [1.22, 1.26]
     });
-    addMarthasGrilleWindow(shell, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleRightWindow${index + 1}`, {
+    addMarthasGrilleWindow(shellRight, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleRightWindow${index + 1}`, {
       position: [5.34, 3.58, z],
       side: 'right',
       size: [1.22, 1.26]
@@ -1444,15 +1462,24 @@ export function createRealEstateOfficeBuildingVisual() {
   const shell = new THREE.Group();
   shell.name = 'real_estate_office_hull_wall';
   root.add(shell);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeBackWall', [10.65, 5.3, 0.34], [0, 3.36, -5.14], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeLeftWall', [0.34, 5.3, 10.15], [-5.15, 3.36, -0.1], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeRightWall', [0.34, 5.3, 10.15], [5.15, 3.36, -0.1], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontLeft', [1.76, 4.1, 0.34], [-4.32, 2.77, 5.03], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontRight', [1.76, 4.1, 0.34], [4.32, 2.77, 5.03], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontHeader', [10.58, 1.3, 0.36], [0, 5.31, 5.03], materials.facade);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontStoneBand', [10.42, 0.22, 0.42], [0, 4.1, 5.14], materials.trimLight);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeLeftKickTrim', [1.62, 0.2, 0.42], [-4.32, 1.05, 5.15], materials.trim);
-  addRealEstateOfficeBox(shell, 'realEstateOfficeRightKickTrim', [1.62, 0.2, 0.42], [4.32, 1.05, 5.15], materials.trim);
+  const shellBack = new THREE.Group();
+  shellBack.name = 'real_estate_office_hull_wall_back';
+  const shellLeft = new THREE.Group();
+  shellLeft.name = 'real_estate_office_hull_wall_left';
+  const shellRight = new THREE.Group();
+  shellRight.name = 'real_estate_office_hull_wall_right';
+  const shellFront = new THREE.Group();
+  shellFront.name = 'real_estate_office_hull_wall_front';
+  shell.add(shellBack, shellLeft, shellRight, shellFront);
+  addRealEstateOfficeBox(shellBack, 'realEstateOfficeBackWall', [10.65, 5.3, 0.34], [0, 3.36, -5.14], materials.facade);
+  addRealEstateOfficeBox(shellLeft, 'realEstateOfficeLeftWall', [0.34, 5.3, 10.15], [-5.15, 3.36, -0.1], materials.facade);
+  addRealEstateOfficeBox(shellRight, 'realEstateOfficeRightWall', [0.34, 5.3, 10.15], [5.15, 3.36, -0.1], materials.facade);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeFrontLeft', [1.76, 4.1, 0.34], [-4.32, 2.77, 5.03], materials.facade);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeFrontRight', [1.76, 4.1, 0.34], [4.32, 2.77, 5.03], materials.facade);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeFrontHeader', [10.58, 1.3, 0.36], [0, 5.31, 5.03], materials.facade);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeFrontStoneBand', [10.42, 0.22, 0.42], [0, 4.1, 5.14], materials.trimLight);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeLeftKickTrim', [1.62, 0.2, 0.42], [-4.32, 1.05, 5.15], materials.trim);
+  addRealEstateOfficeBox(shellFront, 'realEstateOfficeRightKickTrim', [1.62, 0.2, 0.42], [4.32, 1.05, 5.15], materials.trim);
 
   const tower = new THREE.Group();
   tower.name = 'real_estate_office_tall_facade';

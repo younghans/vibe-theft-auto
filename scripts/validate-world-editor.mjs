@@ -106,6 +106,26 @@ function assert(condition, message) {
   }
 }
 
+function readGlbNodeNames(relativePath) {
+  const buffer = readFileSync(new URL(`../${relativePath}`, import.meta.url));
+  assert(buffer.toString('ascii', 0, 4) === 'glTF', `${relativePath} should be a GLB file`);
+
+  let offset = 12;
+  while (offset + 8 <= buffer.length) {
+    const chunkLength = buffer.readUInt32LE(offset);
+    offset += 4;
+    const chunkType = buffer.toString('ascii', offset, offset + 4);
+    offset += 4;
+    if (chunkType === 'JSON') {
+      const json = JSON.parse(buffer.toString('utf8', offset, offset + chunkLength).trim());
+      return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
+    }
+    offset += chunkLength;
+  }
+
+  throw new Error(`${relativePath} should contain a JSON chunk`);
+}
+
 function collectMeshMaterials(root) {
   const entries = [];
   root.traverse?.((node) => {
@@ -419,6 +439,11 @@ function validateFootprintSupport() {
     { key: 'pawn', item: getBuilderItemById('pawn_building') },
     { key: 'offices', item: getBuilderItemById('offices_building') }
   ];
+  const cutawayVisibleWallNames = (key) => [
+    `${key}_hull_wall_back`,
+    `${key}_hull_wall_left`,
+    `${key}_hull_wall_right`
+  ];
 
   assert(baseLot, 'Base lot tile should exist');
   assert(bar, 'Wide bar tile should exist');
@@ -439,8 +464,14 @@ function validateFootprintSupport() {
   assert(largeGym.tileFootprint[0] === 2 && largeGym.tileFootprint[1] === 2, 'Large gym should use a 2x2 footprint');
   assert(
     largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_foundation')
-      && largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_interior'),
-    'Large gym should keep only its floor and interior visible while the exterior is transparent'
+      && largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_interior')
+      && cutawayVisibleWallNames('gym').every((nodeName) => largeGym.interior?.cutawayVisibleNodeNames?.includes(nodeName)),
+    'Large gym should keep its floor, interior, and back/side walls visible while the exterior is transparent'
+  );
+  assert(
+    largeGym.interior?.cutawayNodeNames?.includes('gym_hull_wall_front')
+      && largeGym.interior?.cutawayNodeNames?.includes('gym_exterior_detail'),
+    'Large gym should hide its front exterior wall and outside detail during cutaway'
   );
   assert(marthasGrille.tileFootprint[0] === 1 && marthasGrille.tileFootprint[1] === 1, "Martha's Grille should remain a 1x1 building");
   assert(marthasGrille.size[0] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[0], "Martha's Grille should use the standard compact building width");
@@ -457,6 +488,19 @@ function validateFootprintSupport() {
       item.interior?.cutawayVisibleNodeNames?.includes(`${key}_foundation`),
       `${item.id} should keep its floor/foundation visible while the exterior is transparent`
     );
+    assert(
+      cutawayVisibleWallNames(key).every((nodeName) => item.interior?.cutawayVisibleNodeNames?.includes(nodeName)),
+      `${item.id} should keep its back and side walls visible while the exterior is transparent`
+    );
+    assert(
+      item.interior?.cutawayNodeNames?.includes(`${key}_hull_wall_front`)
+        && item.interior?.cutawayNodeNames?.includes(`${key}_exterior_detail`),
+      `${item.id} should hide its front exterior wall and outside detail during cutaway`
+    );
+    assert(
+      cutawayVisibleWallNames(key).every((nodeName) => item.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+      `${item.id} should preserve its back and side walls during active camera occlusion`
+    );
     if (key !== 'offices') {
       assert(
         item.interior?.cutawayVisibleNodeNames?.includes(`${key}_interior`),
@@ -467,6 +511,24 @@ function validateFootprintSupport() {
       !item.interior?.cutawayFadeNodeNames?.length,
       `${item.id} should not leave a faded exterior shell after entering`
     );
+  }
+  for (const { key, item } of districtBuildings) {
+    if (!item.asset) {
+      continue;
+    }
+    const nodeNames = readGlbNodeNames(`assets/vibe_theft_auto_custom/models/${key}-building.glb`);
+    for (const nodeName of [
+      `${key}_hull_wall_back`,
+      `${key}_hull_wall_left`,
+      `${key}_hull_wall_right`,
+      `${key}_hull_wall_front`
+    ]) {
+      assert(nodeNames.has(nodeName), `${key} GLB should expose ${nodeName} for cutaway visibility`);
+    }
+  }
+  const largeGymNodeNames = readGlbNodeNames('assets/vibe_theft_auto_custom/models/gym-building-large.glb');
+  for (const nodeName of ['gym_hull_wall_back', 'gym_hull_wall_left', 'gym_hull_wall_right', 'gym_hull_wall_front']) {
+    assert(largeGymNodeNames.has(nodeName), `Large gym GLB should expose ${nodeName} for cutaway visibility`);
   }
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
@@ -493,6 +555,10 @@ function validateFootprintSupport() {
     "Martha's Grille kitchen should stay visible when the exterior becomes transparent"
   );
   assert(
+    cutawayVisibleWallNames('marthas_grille').every((nodeName) => marthasGrille.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+    "Martha's Grille should keep its back and side walls visible during camera occlusion"
+  );
+  assert(
     !marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthas_grille_hull_wall'),
     "Martha's Grille exterior hull should not stay opaque during camera occlusion"
   );
@@ -506,12 +572,20 @@ function validateFootprintSupport() {
     'World renderer should support interior-only cutaway visibility'
   );
   assert(
+    /nodeWithinVisibleNameFilter/.test(worldRendererSource),
+    'World renderer should keep parent containers visible when a cutaway preserves descendant interior nodes'
+  );
+  assert(
     realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_foundation'),
     'Real Estate Office foundation should stay visible during camera occlusion'
   );
   assert(
     realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_interior'),
     'Real Estate Office interior should stay visible during camera occlusion'
+  );
+  assert(
+    cutawayVisibleWallNames('real_estate_office').every((nodeName) => realEstateOffice.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+    'Real Estate Office should keep its back and side walls visible during camera occlusion'
   );
   assert(
     !realEstateOffice.cameraOcclusionAlwaysPreserveNodeNames?.includes('real_estate_office_hull_wall'),
@@ -564,6 +638,9 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrilleRegisterScreen'), "Martha's Grille visual should include a register");
   assert(grilleVisual.getObjectByName('marthasGrilleFlatTopGrill'), "Martha's Grille visual should include kitchen equipment behind the counter");
   assert(grilleVisual.getObjectByName('marthas_grille_kitchen_detail'), "Martha's Grille visual should include a detailed kitchen group");
+  for (const nodeName of cutawayVisibleWallNames('marthas_grille')) {
+    assert(grilleVisual.getObjectByName(nodeName), `Martha's Grille visual should expose ${nodeName} for transparent exterior views`);
+  }
   assert(grilleVisual.getObjectByName('marthasGrilleFryerBody'), "Martha's Grille kitchen should include a fryer station");
   assert(grilleVisual.getObjectByName('marthasGrillePrepCounter'), "Martha's Grille kitchen should include a prep counter");
   assert(grilleVisual.getObjectByName('marthasGrilleBurgerPatty1'), "Martha's Grille flat top should include visible grill food detail");
@@ -627,6 +704,9 @@ function validateFootprintSupport() {
   assert(realEstateVisual.getObjectByName('realEstateOfficeDesk1'), 'Real Estate Office should include a first small desk');
   assert(realEstateVisual.getObjectByName('realEstateOfficeDesk2'), 'Real Estate Office should include a second small desk');
   assert(realEstateVisual.getObjectByName('realEstateOfficeDesk3'), 'Real Estate Office should include a third small desk');
+  for (const nodeName of cutawayVisibleWallNames('real_estate_office')) {
+    assert(realEstateVisual.getObjectByName(nodeName), `Real Estate Office visual should expose ${nodeName} for transparent exterior views`);
+  }
   assert(realEstateVisual.getObjectByName('realEstateOfficeTallWindow1_1'), 'Real Estate Office facade should include named upper window panels');
   const realEstateSignLabel = realEstateVisual.getObjectByName('realEstateOfficeSignLabel');
   assert(realEstateSignLabel?.material?.transparent !== true, 'Real Estate Office sign label should avoid transparent material sorting');
@@ -672,6 +752,10 @@ function validateFootprintSupport() {
     'Pawn shop shot collision should resolve all hull and counter/table blockers'
   );
   const pawnVisual = pawnShop.createVisual();
+  for (const nodeName of cutawayVisibleWallNames('pawn')) {
+    assert(pawnVisual.getObjectByName(nodeName), `Pawn shop visual should expose ${nodeName} for cutaway visibility`);
+  }
+  assert(pawnVisual.getObjectByName('pawn_hull_wall_front'), 'Pawn shop visual should expose its front wall for cutaway hiding');
   assert(pawnVisual.getObjectByName('pawnShopBackCounter'), 'Pawn shop interior should include a back counter');
   assert(pawnVisual.getObjectByName('pawnShopLeftCounterReturn'), 'Pawn shop counter should wrap along the left back side');
   assert(pawnVisual.getObjectByName('pawnShopRightCounterReturn'), 'Pawn shop counter should wrap along the right back side');

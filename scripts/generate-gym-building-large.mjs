@@ -163,9 +163,11 @@ function addShellBlock(group, {
   doorwaySide = '',
   doorwayWidth = 0,
   doorwayHeight = 0,
-  doorwayOffset = 0
+  doorwayOffset = 0,
+  wallGroups = null
 }) {
   const targetRoofGroup = roofGroup ?? group;
+  const getWallGroup = (side) => wallGroups?.[side] ?? group;
   const halfWidth = width * 0.5;
   const halfHeight = height * 0.5;
   const halfDepth = depth * 0.5;
@@ -180,9 +182,10 @@ function addShellBlock(group, {
   const addFrontOrBackWall = (side) => {
     const z = centerZ + ((side === 'front' ? 1 : -1) * (halfDepth - (wallThickness * 0.5)));
     const hasDoorway = doorwaySide === side && clampedDoorwayWidth > 0.2 && clampedDoorwayHeight > 0.2;
+    const wallGroup = getWallGroup(side);
 
     if (!hasDoorway) {
-      group.add(createBox([width, height, wallThickness], [centerX, centerY, z], material));
+      wallGroup.add(createBox([width, height, wallThickness], [centerX, centerY, z], material));
       return;
     }
 
@@ -195,7 +198,7 @@ function addShellBlock(group, {
     const topHeight = height - clampedDoorwayHeight;
 
     if (leftWidth > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [leftWidth, height, wallThickness],
         [centerX + ((leftBoundary + doorMin) * 0.5), centerY, z],
         material
@@ -203,7 +206,7 @@ function addShellBlock(group, {
     }
 
     if (rightWidth > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [rightWidth, height, wallThickness],
         [centerX + ((doorMax + rightBoundary) * 0.5), centerY, z],
         material
@@ -211,7 +214,7 @@ function addShellBlock(group, {
     }
 
     if (topHeight > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [clampedDoorwayWidth, topHeight, wallThickness],
         [centerX + doorwayCenterX, centerY - halfHeight + clampedDoorwayHeight + (topHeight * 0.5), z],
         material
@@ -226,14 +229,14 @@ function addShellBlock(group, {
     addFrontOrBackWall('front');
   }
   if (!omitLeftWall) {
-    group.add(createBox(
+    getWallGroup('left').add(createBox(
       [wallThickness, height, depth],
       [centerX - halfWidth + (wallThickness * 0.5), centerY, centerZ],
       material
     ));
   }
   if (!omitRightWall) {
-    group.add(createBox(
+    getWallGroup('right').add(createBox(
       [wallThickness, height, depth],
       [centerX + halfWidth - (wallThickness * 0.5), centerY, centerZ],
       material
@@ -570,6 +573,14 @@ function buildGym() {
   foundationGroup.name = 'gym_foundation';
   const shellGroup = new THREE.Group();
   shellGroup.name = 'gym_shell';
+  const shellBackGroup = new THREE.Group();
+  shellBackGroup.name = 'gym_hull_wall_back';
+  const shellLeftGroup = new THREE.Group();
+  shellLeftGroup.name = 'gym_hull_wall_left';
+  const shellRightGroup = new THREE.Group();
+  shellRightGroup.name = 'gym_hull_wall_right';
+  const shellFrontGroup = new THREE.Group();
+  shellFrontGroup.name = 'gym_hull_wall_front';
   const roofGroup = new THREE.Group();
   roofGroup.name = 'gym_cutaway_roof';
   const upperCutawayGroup = new THREE.Group();
@@ -585,6 +596,10 @@ function buildGym() {
 
   gym.add(foundationGroup);
   gym.add(shellGroup);
+  shellGroup.add(shellBackGroup);
+  shellGroup.add(shellLeftGroup);
+  shellGroup.add(shellRightGroup);
+  shellGroup.add(shellFrontGroup);
   gym.add(roofGroup);
   gym.add(upperCutawayGroup);
   gym.add(cornerCutawayGroup);
@@ -619,7 +634,13 @@ function buildGym() {
     roofGroup,
     doorwaySide: 'front',
     doorwayWidth: 6.8,
-    doorwayHeight: 3.4
+    doorwayHeight: 3.4,
+    wallGroups: {
+      back: shellBackGroup,
+      left: shellLeftGroup,
+      right: shellRightGroup,
+      front: shellFrontGroup
+    }
   });
   addShellBlock(upperCutawayGroup, {
     centerX: 0,

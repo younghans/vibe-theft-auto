@@ -319,9 +319,11 @@ function addShellBlock(group, {
   doorwaySide = '',
   doorwayWidth = 0,
   doorwayHeight = 0,
-  doorwayOffset = 0
+  doorwayOffset = 0,
+  wallGroups = null
 }) {
   const targetRoofGroup = roofGroup ?? group;
+  const getWallGroup = (side) => wallGroups?.[side] ?? group;
   const halfWidth = width * 0.5;
   const halfHeight = height * 0.5;
   const halfDepth = depth * 0.5;
@@ -336,9 +338,10 @@ function addShellBlock(group, {
   const addFrontOrBackWall = (side) => {
     const z = centerZ + ((side === 'front' ? 1 : -1) * (halfDepth - (wallThickness * 0.5)));
     const hasDoorway = doorwaySide === side && clampedDoorwayWidth > 0.2 && clampedDoorwayHeight > 0.2;
+    const wallGroup = getWallGroup(side);
 
     if (!hasDoorway) {
-      group.add(createBox([width, height, wallThickness], [centerX, centerY, z], material));
+      wallGroup.add(createBox([width, height, wallThickness], [centerX, centerY, z], material));
       return;
     }
 
@@ -351,7 +354,7 @@ function addShellBlock(group, {
     const topHeight = height - clampedDoorwayHeight;
 
     if (leftWidth > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [leftWidth, height, wallThickness],
         [centerX + ((leftBoundary + doorMin) * 0.5), centerY, z],
         material
@@ -359,7 +362,7 @@ function addShellBlock(group, {
     }
 
     if (rightWidth > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [rightWidth, height, wallThickness],
         [centerX + ((doorMax + rightBoundary) * 0.5), centerY, z],
         material
@@ -367,7 +370,7 @@ function addShellBlock(group, {
     }
 
     if (topHeight > 0.08) {
-      group.add(createBox(
+      wallGroup.add(createBox(
         [clampedDoorwayWidth, topHeight, wallThickness],
         [centerX + doorwayCenterX, centerY - halfHeight + clampedDoorwayHeight + (topHeight * 0.5), z],
         material
@@ -377,12 +380,12 @@ function addShellBlock(group, {
 
   addFrontOrBackWall('back');
   addFrontOrBackWall('front');
-  group.add(createBox(
+  getWallGroup('left').add(createBox(
     [wallThickness, height, depth],
     [centerX - halfWidth + (wallThickness * 0.5), centerY, centerZ],
     material
   ));
-  group.add(createBox(
+  getWallGroup('right').add(createBox(
     [wallThickness, height, depth],
     [centerX + halfWidth - (wallThickness * 0.5), centerY, centerZ],
     material
@@ -579,7 +582,10 @@ function mergeMeshesByMaterial(group) {
 function optimizeBuildingGroups(groups) {
   for (const group of [
     groups.foundation,
-    groups.shell,
+    groups.shellBack,
+    groups.shellLeft,
+    groups.shellRight,
+    groups.shellFront,
     groups.tower,
     groups.roof,
     groups.upper,
@@ -701,6 +707,10 @@ function createBaseGroups(key) {
     building,
     foundation: new THREE.Group(),
     shell: new THREE.Group(),
+    shellBack: new THREE.Group(),
+    shellLeft: new THREE.Group(),
+    shellRight: new THREE.Group(),
+    shellFront: new THREE.Group(),
     tower: new THREE.Group(),
     roof: new THREE.Group(),
     upper: new THREE.Group(),
@@ -710,6 +720,10 @@ function createBaseGroups(key) {
 
   groups.foundation.name = `${key}_foundation`;
   groups.shell.name = `${key}_hull_wall`;
+  groups.shellBack.name = `${key}_hull_wall_back`;
+  groups.shellLeft.name = `${key}_hull_wall_left`;
+  groups.shellRight.name = `${key}_hull_wall_right`;
+  groups.shellFront.name = `${key}_hull_wall_front`;
   groups.tower.name = `${key}_cutaway_tower`;
   groups.roof.name = `${key}_cutaway_roof`;
   groups.upper.name = `${key}_cutaway_upper`;
@@ -718,6 +732,10 @@ function createBaseGroups(key) {
 
   building.add(groups.foundation);
   building.add(groups.shell);
+  groups.shell.add(groups.shellBack);
+  groups.shell.add(groups.shellLeft);
+  groups.shell.add(groups.shellRight);
+  groups.shell.add(groups.shellFront);
   building.add(groups.roof);
   building.add(groups.upper);
   building.add(groups.exterior);
@@ -764,7 +782,13 @@ function addCommonBuildingShell(groups, materials, options = {}) {
     includeRoof: !splitWallForCutaway,
     doorwaySide: 'front',
     doorwayWidth: 6.7,
-    doorwayHeight: 3.55
+    doorwayHeight: 3.55,
+    wallGroups: {
+      back: groups.shellBack,
+      left: groups.shellLeft,
+      right: groups.shellRight,
+      front: groups.shellFront
+    }
   });
 
   if (splitWallForCutaway) {
@@ -1596,11 +1620,8 @@ function addOfficesDetails(groups, materials) {
     { size: [0.18, 2.4, 0.18], position: [0, OFFICE_PENTHOUSE_TOP_Y + 2.25, OFFICE_PENTHOUSE_CENTER_Z], material: materials.trimDark }
   ]);
 
-  addOfficeLobbyChairs(groups.interior, materials);
-  addJanitorCloset(groups.interior, materials);
-  addOfficeStaircase(groups.interior, materials, OFFICE_LOBBY_FLOOR_Y, [7.35, 0, -6.95], 0);
-  addOfficeCubicleFloor(groups.interior, materials);
-  addOfficeCeoFloor(groups.interior, materials);
+  // The active office interior is rendered by InteriorScene as an inline overlay.
+  // Keeping that duplicate out of the GLB preserves the exterior shell budget.
 }
 
 function buildDistrictBuilding(definition) {
