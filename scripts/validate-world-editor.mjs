@@ -64,6 +64,10 @@ import {
   applyAttachmentTransform,
   getHeldItemDefinition
 } from '../src/shared/heldItemDefinitions.js';
+import {
+  DELIVERY_QUEST_ID,
+  DELIVERY_QUEST_STATUS
+} from '../src/shared/deliveryQuest.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 import {
   JANITOR_TASKS_REQUIRED,
@@ -510,6 +514,20 @@ function validateTaskSequence() {
     ...schoolCompletePlayer,
     janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
   };
+  const acceptedDeliveryPlayer = {
+    ...basePlayer,
+    deliveryQuestId: DELIVERY_QUEST_ID,
+    deliveryQuestStatus: DELIVERY_QUEST_STATUS.active,
+    deliveryQuestTargetNpcId: 'npc_delivery_target',
+    deliveryQuestCompletionCount: 0,
+    deliveryQuestCompletedAt: 0
+  };
+  const completedDeliveryPlayer = {
+    ...acceptedDeliveryPlayer,
+    deliveryQuestStatus: DELIVERY_QUEST_STATUS.completed,
+    deliveryQuestCompletionCount: 1,
+    deliveryQuestCompletedAt: 1000
+  };
 
   assert(
     resolvePlayerTask({ localPlayerState: basePlayer }).id === TASK_IDS.schoolTeacherTasks,
@@ -566,6 +584,22 @@ function validateTaskSequence() {
       }
     }).id === TASK_IDS.makeMoney,
     'Task sequence should return to the make-money prompt after the sequenced missions.'
+  );
+
+  const deliveryTracker = new TaskTracker();
+  deliveryTracker.update({
+    localPlayerState: {
+      ...basePlayer,
+      deliveryQuestCompletionCount: 0
+    }
+  });
+  assert(
+    deliveryTracker.update({ localPlayerState: acceptedDeliveryPlayer }).completedTask === false,
+    'Task tracker should not complete the Shady Figure delivery task when delivery work is only accepted.'
+  );
+  assert(
+    deliveryTracker.update({ localPlayerState: completedDeliveryPlayer }).completedTask,
+    'Task tracker should complete the Shady Figure delivery task when the delivery is completed.'
   );
 
   const schoolTracker = new TaskTracker();

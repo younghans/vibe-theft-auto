@@ -465,10 +465,7 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
   }
 
   if (previousTaskId === TASK_IDS.makeMoney) {
-    return (
-      (progress.deliveryActive && !previousProgress.deliveryActive)
-      || progress.deliveryCompletionCount > previousProgress.deliveryCompletionCount
-    );
+    return progress.deliveryCompletionCount > previousProgress.deliveryCompletionCount;
   }
 
   return false;
