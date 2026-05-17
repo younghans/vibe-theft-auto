@@ -361,6 +361,43 @@ function getPortfolioEntry(portfolio, symbol) {
   };
 }
 
+export function normalizeStockPortfolioSnapshot(portfolio = {}) {
+  const output = {};
+  const entries = portfolio instanceof Map
+    ? [...portfolio.entries()]
+    : Object.entries(portfolio && typeof portfolio === 'object' ? portfolio : {});
+
+  for (const [symbol, entry] of entries) {
+    const normalizedSymbol = normalizeStockSymbol(symbol);
+    if (!getStockMarketItem(normalizedSymbol)) {
+      continue;
+    }
+
+    const shares = Math.max(
+      0,
+      Math.floor(Number(
+        entry && typeof entry === 'object'
+          ? entry.shares
+          : entry
+      ) || 0)
+    );
+    if (shares <= 0) {
+      continue;
+    }
+
+    output[normalizedSymbol] = {
+      shares,
+      averageCost: roundCents(
+        entry && typeof entry === 'object'
+          ? entry.averageCost ?? entry.avgCost ?? 0
+          : 0
+      )
+    };
+  }
+
+  return output;
+}
+
 function setPortfolioEntry(portfolio, symbol, entry) {
   const nextEntry = {
     shares: Math.max(0, Math.floor(Number(entry?.shares ?? 0) || 0)),

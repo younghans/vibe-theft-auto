@@ -65,6 +65,7 @@ import {
   executeStockTrade,
   getStockMarketPromptRadius,
   isStockMarketNpc,
+  normalizeStockPortfolioSnapshot,
   serializeStockMarket
 } from '../../src/shared/stockMarket.js';
 import {
@@ -675,24 +676,40 @@ function isSnapshotWeaponId(value = '') {
   return Object.values(WEAPON_IDS).includes(String(value ?? '').trim());
 }
 
-function sanitizeStockPortfolioSnapshot(portfolio = {}) {
+function sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios = {}) {
   const output = {};
-  if (!portfolio || typeof portfolio !== 'object' || Array.isArray(portfolio)) {
+  if (!stockPortfolios || typeof stockPortfolios !== 'object' || Array.isArray(stockPortfolios)) {
     return output;
   }
 
-  for (const [symbol, quantity] of Object.entries(portfolio)) {
-    const normalizedSymbol = String(symbol ?? '').trim().toUpperCase().slice(0, 12);
-    const normalizedQuantity = Math.max(0, Math.floor(Number(quantity) || 0));
-    if (normalizedSymbol && normalizedQuantity > 0) {
-      output[normalizedSymbol] = normalizedQuantity;
+  for (const [characterId, portfolio] of Object.entries(stockPortfolios)) {
+    const normalizedCharacterId = sanitizeCharacterId(characterId);
+    const normalizedPortfolio = normalizeStockPortfolioSnapshot(portfolio);
+    if (Object.keys(normalizedPortfolio).length > 0) {
+      output[normalizedCharacterId] = normalizedPortfolio;
     }
   }
 
   return output;
 }
 
-function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
+function restoreCharacterStockPortfoliosSnapshot(snapshot = {}, fallbackCharacterId = DEFAULT_PLAYABLE_CHARACTER_ID) {
+  const output = sanitizeCharacterStockPortfoliosSnapshot(snapshot?.stockPortfolios);
+  const legacyPortfolio = normalizeStockPortfolioSnapshot(snapshot?.stockPortfolio);
+  if (Object.keys(legacyPortfolio).length > 0) {
+    const legacyCharacterId = sanitizeCharacterId(snapshot?.player?.characterId ?? fallbackCharacterId);
+    output[legacyCharacterId] = {
+      ...(output[legacyCharacterId] ?? {}),
+      ...legacyPortfolio
+    };
+  }
+
+  return output;
+}
+
+function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
+  const characterId = sanitizeCharacterId(player?.characterId);
+  const normalizedStockPortfolios = sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios);
   return {
     player: {
       x: player.x,
@@ -750,7 +767,8 @@ function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
       selectedMissionId: player.selectedMissionId,
       characterId: player.characterId
     },
-    stockPortfolio: sanitizeStockPortfolioSnapshot(stockPortfolio)
+    stockPortfolio: normalizedStockPortfolios[characterId] ?? {},
+    stockPortfolios: normalizedStockPortfolios
   };
 }
 
@@ -1178,7 +1196,10 @@ export class WorldRoom extends Room {
     player.isAdmin = isAdmin;
     const restoredPlayerSnapshot = applyPlayerSnapshotPayload(player, playerSnapshot);
     if (restoredPlayerSnapshot) {
-      this.stockPortfolios.set(client.sessionId, sanitizeStockPortfolioSnapshot(playerSnapshot.stockPortfolio));
+      this.stockPortfolios.set(
+        client.sessionId,
+        restoreCharacterStockPortfoliosSnapshot(playerSnapshot, player.characterId)
+      );
       player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId, this.worldState.getMissionSequence());
     }
     this.state.players.set(client.sessionId, player);
@@ -1779,7 +1800,14 @@ export class WorldRoom extends Room {
       this.stockPortfolios.set(sessionId, {});
     }
 
-    return this.stockPortfolios.get(sessionId);
+    const portfolios = this.stockPortfolios.get(sessionId);
+    const player = this.state.players.get(sessionId);
+    const characterId = sanitizeCharacterId(player?.characterId);
+    if (!portfolios[characterId] || typeof portfolios[characterId] !== 'object' || Array.isArray(portfolios[characterId])) {
+      portfolios[characterId] = {};
+    }
+
+    return portfolios[characterId];
   }
 
   getStockMarketNpcForPlayer(player, requestedNpcId = '') {
@@ -1849,7 +1877,7 @@ export class WorldRoom extends Room {
     };
   }
 
-  handleStockTradeRequest(client, message = {}) {
+  async handleStockTradeRequest(client, message = {}) {
     const { player, npc } = this.getStockTradeAccess(client, message);
     const portfolio = this.getPlayerStockPortfolio(client.sessionId);
     const result = executeStockTrade({
@@ -1870,6 +1898,11 @@ export class WorldRoom extends Room {
     if (trade.side === 'buy' && Number(player.stockBoughtAt ?? 0) <= 0) {
       player.stockBoughtAt = Date.now();
       this.normalizePlayerSelectedMission(player);
+    }
+    this.queuePlayerSnapshotSave(client.sessionId);
+    await this.savePlayerSnapshot(client.sessionId);
+    if (this.dirtyPlayerSnapshots.has(client.sessionId)) {
+      await this.savePlayerSnapshot(client.sessionId);
     }
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     if (npc) {

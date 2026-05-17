@@ -51,6 +51,7 @@ import {
   executeStockTrade,
   getStockMarketPromptRadius,
   isStockMarketNpc,
+  normalizeStockPortfolioSnapshot,
   serializeStockMarket
 } from '../shared/stockMarket.js';
 import {
@@ -170,6 +171,7 @@ const NPC_SHOT_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
 const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
+const MOCK_STOCK_PORTFOLIOS_STORAGE_KEY = 'vta.mockStockPortfolios';
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -211,6 +213,50 @@ function sanitizePlayerAnimationState(animationState = {}) {
     aiming: Boolean(animationState.aiming),
     skating: Boolean(animationState.skating)
   };
+}
+
+function getMockStockPortfoliosStorageKey(playerId = 'local-player') {
+  const normalizedPlayerId = typeof playerId === 'string' && playerId.trim()
+    ? playerId.trim()
+    : 'local-player';
+  return `${MOCK_STOCK_PORTFOLIOS_STORAGE_KEY}:${normalizedPlayerId}`;
+}
+
+function normalizeMockCharacterStockPortfolios(stockPortfolios = {}) {
+  const output = {};
+  if (!stockPortfolios || typeof stockPortfolios !== 'object' || Array.isArray(stockPortfolios)) {
+    return output;
+  }
+
+  for (const [characterId, portfolio] of Object.entries(stockPortfolios)) {
+    const normalizedCharacterId = getPlayableCharacterById(characterId).id;
+    const normalizedPortfolio = normalizeStockPortfolioSnapshot(portfolio);
+    if (Object.keys(normalizedPortfolio).length > 0) {
+      output[normalizedCharacterId] = normalizedPortfolio;
+    }
+  }
+
+  return output;
+}
+
+function readMockStockPortfolios(playerId = 'local-player') {
+  try {
+    const raw = window.localStorage?.getItem(getMockStockPortfoliosStorageKey(playerId));
+    return normalizeMockCharacterStockPortfolios(raw ? JSON.parse(raw) : {});
+  } catch {
+    return {};
+  }
+}
+
+function writeMockStockPortfolios(playerId = 'local-player', stockPortfolios = {}) {
+  try {
+    window.localStorage?.setItem(
+      getMockStockPortfoliosStorageKey(playerId),
+      JSON.stringify(normalizeMockCharacterStockPortfolios(stockPortfolios))
+    );
+  } catch {
+    // Local mock persistence is best-effort.
+  }
 }
 
 function createDefaultPlayerState(overrides = {}) {
@@ -367,6 +413,7 @@ export class NpcServiceMock {
     this.lastNpcSimulationAt = Date.now();
     this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
     this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
+    this.stockPortfolios.set(this.state.sessionId, readMockStockPortfolios(this.playerId));
     this.playerRuntimeMeta = new Map();
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
@@ -1324,7 +1371,18 @@ export class NpcServiceMock {
       this.stockPortfolios.set(sessionId, {});
     }
 
-    return this.stockPortfolios.get(sessionId);
+    const portfolios = this.stockPortfolios.get(sessionId);
+    const player = this.state.players.get(sessionId);
+    const characterId = getPlayableCharacterById(player?.characterId).id;
+    if (!portfolios[characterId] || typeof portfolios[characterId] !== 'object' || Array.isArray(portfolios[characterId])) {
+      portfolios[characterId] = {};
+    }
+
+    return portfolios[characterId];
+  }
+
+  persistStockPortfolios() {
+    writeMockStockPortfolios(this.playerId, this.stockPortfolios.get(this.state.sessionId) ?? {});
   }
 
   getStockMarketNpcForPlayer(player, requestedNpcId = '') {
@@ -1418,6 +1476,7 @@ export class NpcServiceMock {
       access.player.stockBoughtAt = Date.now();
       this.normalizePlayerSelectedMission(access.player);
     }
+    this.persistStockPortfolios();
     const verb = trade.side === 'sell' ? 'Sold' : 'Bought';
     if (access.npc) {
       this.setNpcChatPhase(

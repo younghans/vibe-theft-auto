@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   createInitialStockMarketState,
   executeStockTrade,
+  normalizeStockPortfolioSnapshot,
   serializeStockMarket
 } from '../src/shared/stockMarket.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -67,8 +68,12 @@ assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
 assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade access path for phone trading');
 assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
+assert.match(serverSource, /stockPortfolios:/, 'Server snapshots persist character-specific stock portfolios');
+assert.match(serverSource, /async handleStockTradeRequest[\s\S]*queuePlayerSnapshotSave\(client\.sessionId\)/, 'Server queues a snapshot save after stock trades');
+assert.match(serverSource, /async handleStockTradeRequest[\s\S]*await this\.savePlayerSnapshot\(client\.sessionId\)/, 'Server persists stock trades before confirming them');
 assert.match(colyseusNpcSource, /source:\s*options\?\.source/, 'Colyseus stock trades forward source metadata');
 assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock trades support phone source metadata');
+assert.match(mockNpcSource, /MOCK_STOCK_PORTFOLIOS_STORAGE_KEY/, 'Mock transport persists stock portfolios locally');
 
 const market = createInitialStockMarketState(1000);
 const portfolio = {};
@@ -90,5 +95,17 @@ assert.equal(trade.ok, true, 'stock buy can create a wallet holding');
 const after = trade.market;
 assert.ok(after.stocks.some((stock) => stock.shares > 0), 'wallet market snapshot includes owned stock');
 assert.equal(after.netWorth, after.cash + after.portfolioValue, 'wallet net worth is cash plus portfolio value');
+
+const persistedPortfolio = normalizeStockPortfolioSnapshot(portfolio);
+assert.equal(
+  persistedPortfolio[before.stocks[0].symbol]?.shares,
+  1,
+  'stock portfolio snapshots preserve owned shares'
+);
+assert.equal(
+  typeof persistedPortfolio[before.stocks[0].symbol]?.averageCost,
+  'number',
+  'stock portfolio snapshots preserve average cost'
+);
 
 console.log('Phone apps validation passed.');

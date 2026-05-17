@@ -74,7 +74,8 @@ function normalizeSnapshot(raw = {}, {
     updatedAt,
     expiresAt,
     player: raw.player && typeof raw.player === 'object' ? cloneJson(raw.player) : {},
-    stockPortfolio: raw.stockPortfolio && typeof raw.stockPortfolio === 'object' ? cloneJson(raw.stockPortfolio) : {}
+    stockPortfolio: raw.stockPortfolio && typeof raw.stockPortfolio === 'object' ? cloneJson(raw.stockPortfolio) : {},
+    stockPortfolios: raw.stockPortfolios && typeof raw.stockPortfolios === 'object' ? cloneJson(raw.stockPortfolios) : {}
   };
 }
 
