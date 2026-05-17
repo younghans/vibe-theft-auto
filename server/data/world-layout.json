@@ -53,15 +53,15 @@
     },
     {
       "id": "placement_83",
-      "itemId": "building_b",
+      "itemId": "marthas_grille_building",
       "cell": [
         -2,
         -4
       ],
       "rotationQuarterTurns": 0,
       "interactable": {
-        "label": "Greasy spoon diner",
-        "actionText": "The coffee is not implemented yet, but the sign is trying.",
+        "label": "Martha's Grille",
+        "actionText": "The counter is open, and the kitchen is visible behind the register.",
         "radius": 4,
         "distance": 6.16
       }

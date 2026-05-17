@@ -25,6 +25,7 @@ import {
   createBasketballHoopVisual,
   createBlackjackTableVisual,
   createInstrumentClusterVisual,
+  createMarthasGrilleBuildingVisual,
   createOlympicBarbellVisual,
   createOfficeCeoMeetingTableVisual,
   createOfficeCubicleWorkstationVisual,
@@ -37,6 +38,7 @@ import {
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
   INSTRUMENT_CLUSTER_FOOTPRINT,
+  MARTHAS_GRILLE_BUILDING_FOOTPRINT,
   OFFICE_CEO_MEETING_TABLE_FOOTPRINT,
   OFFICE_CUBICLE_WORKSTATION_FOOTPRINT,
   OFFICE_LOBBY_CHAIR_FOOTPRINT,
@@ -96,6 +98,14 @@ const PAWN_SHOP_COUNTER_COLLISION_RECTS = Object.freeze([
 const PAWN_SHOP_COLLISION_RECTS = Object.freeze([
   ...STANDARD_2X2_HULL_COLLISION_RECTS,
   ...PAWN_SHOP_COUNTER_COLLISION_RECTS
+]);
+const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 6.3 },
+  { centerX: -5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.3 },
+  { centerX: 5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.3 },
+  { centerX: -4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 4.4 },
+  { centerX: 4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 4.4 },
+  { centerX: 0, centerZ: 1.05, halfWidth: 4.52, halfDepth: 0.72, minY: 0, maxY: 2.45 }
 ]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
@@ -286,6 +296,25 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
   { id: 'building_g_without_base', assetName: 'building_G_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
   { id: 'building_h', assetName: 'building_H_withoutBase', label: 'Building H', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
   { id: 'building_h_without_base', assetName: 'building_H_withoutBase', group: 'lots', underlayTileId: BUILDING_UNDERLAY_TILE_ID },
+  {
+    id: 'marthas_grille_building',
+    assetName: 'marthas_grille_building',
+    aliases: ["Martha's Grille"],
+    label: "Martha's Grille",
+    asset: null,
+    group: 'lots',
+    size: MARTHAS_GRILLE_BUILDING_FOOTPRINT,
+    tileFootprint: [1, 1],
+    collision: true,
+    blocksShots: true,
+    movementCollisionRects: MARTHAS_GRILLE_COLLISION_RECTS,
+    shotCollisionRects: MARTHAS_GRILLE_COLLISION_RECTS,
+    padding: 0.5,
+    npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
+    cameraOcclusionPreserveNodeNames: ['marthas_grille_hull_wall'],
+    createVisual: createMarthasGrilleBuildingVisual,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
   {
     id: 'bar_building_wide',
     assetName: 'bar_building_wide',

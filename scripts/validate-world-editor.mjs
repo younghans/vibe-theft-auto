@@ -54,7 +54,8 @@ import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
 import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
-  INSTRUMENT_CLUSTER_FOOTPRINT
+  INSTRUMENT_CLUSTER_FOOTPRINT,
+  MARTHAS_GRILLE_BUILDING_FOOTPRINT
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -105,6 +106,7 @@ function validateKenneyCatalogItems() {
     'casino_building',
     'pawn_building',
     'offices_building',
+    'marthas_grille_building',
     'gym_building',
     'gym_building_large',
     'hospital_building',
@@ -378,6 +380,7 @@ function validateFootprintSupport() {
   const gym = getBuilderItemById('gym_building');
   const largeGym = getBuilderItemById('gym_building_large');
   const pawnShop = getBuilderItemById('pawn_building');
+  const marthasGrille = getBuilderItemById('marthas_grille_building');
   const districtBuildings = [
     'school_building',
     'bar_building',
@@ -392,6 +395,7 @@ function validateFootprintSupport() {
   assert(gym, 'Gym tile should exist');
   assert(largeGym, 'Large gym tile should exist');
   assert(pawnShop, 'Pawn shop tile should exist');
+  assert(marthasGrille, "Martha's Grille tile should exist");
   for (const [index, item] of districtBuildings.entries()) {
     assert(item, `District 2x2 building ${index} should exist`);
   }
@@ -400,6 +404,9 @@ function validateFootprintSupport() {
   assert(bar.tileFootprint[0] === 2 && bar.tileFootprint[1] === 1, 'Wide bar should remain 2x1');
   assert(gym.tileFootprint[0] === 1 && gym.tileFootprint[1] === 1, 'Original gym should remain 1x1');
   assert(largeGym.tileFootprint[0] === 2 && largeGym.tileFootprint[1] === 2, 'Large gym should use a 2x2 footprint');
+  assert(marthasGrille.tileFootprint[0] === 1 && marthasGrille.tileFootprint[1] === 1, "Martha's Grille should remain a 1x1 building");
+  assert(marthasGrille.size[0] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[0], "Martha's Grille should use the standard compact building width");
+  assert(marthasGrille.size[1] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[1], "Martha's Grille should use the standard compact building depth");
   for (const item of districtBuildings) {
     assert(item.tileFootprint[0] === 2 && item.tileFootprint[1] === 2, `${item.id} should use a 2x2 footprint`);
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
@@ -408,6 +415,47 @@ function validateFootprintSupport() {
   }
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
+  assert(marthasGrille.asset === null, "Martha's Grille should use a procedural building visual");
+  assert(typeof marthasGrille.createVisual === 'function', "Martha's Grille should define a procedural building visual");
+  assert(getBuilderItemById("Martha's Grille") === marthasGrille, "Martha's Grille should resolve from its display label");
+  assert(
+    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'marthas_grille_building'),
+    "Default world should place Martha's Grille"
+  );
+  assert(
+    marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_hull_wall'),
+    "Martha's Grille hull walls should stay visible during active camera occlusion"
+  );
+  assert(marthasGrille.movementCollisionRects?.length === 6, "Martha's Grille should define wall and counter movement collision");
+  assert(marthasGrille.shotCollisionRects?.length === marthasGrille.movementCollisionRects.length, "Martha's Grille wall and counter collision should also block shots");
+  const grilleCounterRect = marthasGrille.movementCollisionRects.find((rect) => rect.centerZ === 1.05);
+  assert(grilleCounterRect?.halfWidth > 4.4 && grilleCounterRect?.halfDepth >= 0.72, "Martha's Grille counter should be impervious across the service line");
+  assert(
+    !marthasGrille.movementCollisionRects.some((rect) => rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5),
+    "Martha's Grille should leave a large unblocked front opening"
+  );
+  const grillePlacement = {
+    id: 'validation-marthas-grille',
+    itemId: 'marthas_grille_building',
+    layer: 'tile',
+    cellX: -2,
+    cellZ: -4,
+    rotationQuarterTurns: 0
+  };
+  assert(
+    placementToCollisionRects(grillePlacement, marthasGrille, { collisionKey: 'blocksMovement' }).length === marthasGrille.movementCollisionRects.length,
+    "Martha's Grille movement collision should resolve all wall and counter blockers"
+  );
+  const grilleVisual = marthasGrille.createVisual();
+  assert(grilleVisual.getObjectByName('marthasGrilleCounterBase'), "Martha's Grille visual should include a counter");
+  assert(grilleVisual.getObjectByName('marthasGrilleRegisterScreen'), "Martha's Grille visual should include a register");
+  assert(grilleVisual.getObjectByName('marthasGrilleFlatTopGrill'), "Martha's Grille visual should include kitchen equipment behind the counter");
+  assert(grilleVisual.getObjectByName('marthasGrilleSignPanel'), "Martha's Grille visual should include a front sign panel");
+  assert(grilleVisual.getObjectByName('marthasGrilleOpenFrontThreshold'), "Martha's Grille visual should mark the open front threshold");
+  const grilleBounds = new Box3().setFromObject(grilleVisual);
+  const grilleSize = grilleBounds.getSize(new Vector3());
+  assert(grilleSize.x <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[0] + 0.02, "Martha's Grille visual should stay within one tile width before fitting");
+  assert(grilleSize.z <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[1] + 0.02, "Martha's Grille visual should stay within one tile depth before fitting");
   assert(
     pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
     'Pawn shop hull walls should stay visible during active cutaway camera occlusion'

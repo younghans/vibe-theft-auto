@@ -22,6 +22,7 @@ export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([4.2, 2.75]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
+export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 
 const PORTAL_RING_RADIUS = 2.45;
 const PORTAL_RING_TUBE_RADIUS = 0.36;
@@ -871,6 +872,61 @@ export function createPawnShopBuildingVisual() {
   ].entries()) {
     addPawnDisplayObject(interior, materials, `pawnShopCaseItem${index + 1}`, [entry[0], 1.52, entry[1]], entry[2]);
   }
+
+  return root;
+}
+
+export function createMarthasGrilleBuildingVisual() {
+  const root = new THREE.Group();
+  root.name = 'marthas_grille_building';
+  root.userData.footprint = [...MARTHAS_GRILLE_BUILDING_FOOTPRINT];
+
+  const slab = createMaterial(0x555b5f, 0.9, 0.04);
+  const floor = createMaterial(0x675f55, 0.92, 0.02);
+  const wall = createMaterial(0xc9c0ae, 0.9, 0.03);
+  const accent = createMaterial(0x8d3e34, 0.82, 0.04);
+  const roofMat = createMaterial(0x3e474d, 0.86, 0.08);
+  const trimDark = createMaterial(0x5f3a2a, 0.7, 0.08);
+  const sign = createMaterial(0x2a1715, 0.72, 0.08);
+  const awning = createMaterial(0xd65142, 0.58, 0.08);
+  const counter = createMaterial(0x6f3f2f, 0.72, 0.04);
+  const counterTop = createMaterial(0xd0b681, 0.58, 0.08);
+  const steel = createMaterial(0xb8bec2, 0.28, 0.58);
+  const dark = createMaterial(0x242b30, 0.44, 0.26);
+  const screen = createMaterial(0x73d8c9, 0.22, 0.08);
+  const box = (parent, name, size, position, material, options = {}) => {
+    parent.add(createBox(name, size, position, material, options));
+  };
+
+  box(root, 'mgSlab', [11.32, 0.62, 11.3], [0, 0.31, 0], slab);
+  box(root, 'marthasGrilleDiningFloor', [10.32, 0.14, 10.1], [0, 0.72, -0.12], floor);
+  box(root, 'marthasGrilleCounterBase', [8.7, 1.18, 1.08], [0, 1.28, 1.05], counter);
+  box(root, 'mgCounterTop', [9.05, 0.24, 1.36], [0, 2.0, 1.05], counterTop);
+  box(root, 'mgRegisterBase', [0.72, 0.34, 0.54], [2.9, 2.28, 1.24], dark);
+  box(root, 'marthasGrilleRegisterScreen', [0.56, 0.36, 0.08], [2.9, 2.56, 0.93], screen, { rotation: [-0.18, 0, 0] });
+  box(root, 'marthasGrilleFlatTopGrill', [3.1, 0.74, 1.28], [-1.55, 1.22, -3.92], steel);
+  box(root, 'mgRangeHood', [3.5, 0.42, 1.45], [-1.55, 3.1, -3.92], dark);
+
+  const shell = new THREE.Group();
+  shell.name = 'marthas_grille_hull_wall';
+  root.add(shell);
+  box(shell, 'mgBackWall', [10.65, 5.1, 0.34], [0, 3.23, -5.14], wall);
+  box(shell, 'mgLeftWall', [0.34, 5.1, 10.15], [-5.15, 3.23, -0.1], wall);
+  box(shell, 'mgRightWall', [0.34, 5.1, 10.15], [5.15, 3.23, -0.1], wall);
+  box(shell, 'mgFrontLeft', [2.38, 3.72, 0.34], [-4.05, 2.52, 5.03], accent);
+  box(shell, 'mgFrontRight', [2.38, 3.72, 0.34], [4.05, 2.52, 5.03], accent);
+  box(shell, 'mgFrontHeader', [10.58, 1.24, 0.36], [0, 4.86, 5.03], accent);
+
+  box(root, 'mgRoof', [10.8, 0.34, 10.55], [0, 5.9, -0.12], roofMat);
+  box(root, 'marthasGrilleSignPanel', [7.34, 1.72, 0.28], [0, 4.58, 5.36], sign);
+  const signLabel = typeof document === 'undefined'
+    ? new THREE.Group()
+    : createPortalLabel("MARTHA'S GRILLE", '#f8e7bd', '#180d0b');
+  signLabel.name = 'marthasGrilleSignLabel';
+  signLabel.position.set(0, 4.58, 5.62);
+  root.add(signLabel);
+  box(root, 'mgAwning', [6.4, 0.28, 1.0], [0, 3.55, 4.86], awning, { rotation: [0.16, 0, 0] });
+  box(root, 'marthasGrilleOpenFrontThreshold', [5.65, 0.12, 0.34], [0, 0.86, 5.1], trimDark);
 
   return root;
 }
