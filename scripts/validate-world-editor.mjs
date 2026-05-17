@@ -44,6 +44,7 @@ import {
 import {
   VIBE_HERO_GAME_ID,
   VIBE_HERO_LANE_COUNT,
+  VIBE_HERO_NOTE_TRAVEL_MS,
   listVibeHeroSongs
 } from '../src/shared/vibeHero.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
@@ -280,25 +281,43 @@ function validateVibeHero() {
   const licenseNotice = readFileSync(new URL('../assets/audio/vibe-hero/License.txt', import.meta.url), 'utf8');
   const songs = listVibeHeroSongs();
   assert(VIBE_HERO_LANE_COUNT === 5, 'Vibe Hero should expose five lanes for keys 1-5');
+  assert(VIBE_HERO_NOTE_TRAVEL_MS <= 950, 'Vibe Hero notes should use hyperspeed travel timing');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
   for (const song of songs) {
     assert(song.id && song.title, 'Vibe Hero songs should have stable ids and titles');
-    assert(song.durationMs >= 45000 && song.durationMs <= 90000, `${song.title}: duration should be a 45-90 second opening snippet`);
+    assert(song.durationMs >= 45000 && song.durationMs <= 120000, `${song.title}: duration should be a 45-120 second snippet`);
     assert(String(song.sourceUrl ?? '').startsWith('https://'), `${song.title}: should document the source page`);
     assert(/^https:\/\/.+\.mp3(?:$|\?)/u.test(String(song.sourceDownloadUrl ?? '')), `${song.title}: should document a playable original MP3 URL`);
     assert(String(song.publicDomainBasis ?? '').toLowerCase().includes('public domain'), `${song.title}: should document the composition/public-domain basis`);
     assert(String(song.sourceLicense ?? '').length > 20, `${song.title}: should document the recording license/source terms`);
+    assert(String(song.chartSource ?? '').toLowerCase().includes('source-mp3 onset'), `${song.title}: should document source-MP3 onset charting`);
     assert(licenseNotice.includes(song.sourceDownloadUrl), `${song.title}: source MP3 should be listed in the Vibe Hero audio notice`);
+    if (song.id === 'vivaldi-winter') {
+      assert(song.snippetStartMs === 30000, 'Vivaldi - Winter should skip the first 30 seconds of the MP3');
+      assert(song.durationMs === 95000, 'Vivaldi - Winter should chart a 95 second snippet after the 30 second skip');
+    }
 
     assert(Array.isArray(song.chart) && song.chart.length >= 120, `${song.title}: expert chart should have enough notes to be difficult`);
     let previousTime = -1;
+    let totalGapMs = 0;
+    let minGapMs = Infinity;
     for (const [index, note] of song.chart.entries()) {
       assert(note.timeMs > previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
+      if (previousTime >= 0) {
+        const gapMs = note.timeMs - previousTime;
+        totalGapMs += gapMs;
+        minGapMs = Math.min(minGapMs, gapMs);
+      }
       previousTime = note.timeMs;
       assert(Number.isFinite(note.frequency) && note.frequency > 0, `${song.title} note ${index + 1}: frequency should be playable`);
       assert(Number.isInteger(note.lane) && note.lane >= 0 && note.lane < VIBE_HERO_LANE_COUNT, `${song.title} note ${index + 1}: lane should be 0-4`);
       assert(note.timeMs >= 0 && note.timeMs < song.durationMs, `${song.title} note ${index + 1}: note should fit inside the song`);
     }
+    const averageGapMs = totalGapMs / Math.max(1, song.chart.length - 1);
+    const notesPerSecond = song.chart.length / Math.max(1, song.durationMs / 1000);
+    assert(minGapMs >= 70, `${song.title}: onset chart should avoid stacked filler notes`);
+    assert(averageGapMs >= 140, `${song.title}: chart should emphasize substantial attacks`);
+    assert(notesPerSecond <= 5.6, `${song.title}: chart should not fill quiet music with extra notes`);
     const lanes = new Set(song.chart.map((note) => note.lane));
     assert(lanes.size === VIBE_HERO_LANE_COUNT, `${song.title}: chart should use all five Vibe Hero lanes`);
   }

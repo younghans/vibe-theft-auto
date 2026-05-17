@@ -17,7 +17,10 @@ import {
   canPlayerWorkOfficeJob,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
-import { VIBE_HERO_LANE_COUNT } from '../shared/vibeHero.js';
+import {
+  VIBE_HERO_LANE_COUNT,
+  VIBE_HERO_NOTE_TRAVEL_MS
+} from '../shared/vibeHero.js';
 import { getAgentTaskPromptTitle } from '../shared/agentTaskSummary.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
@@ -936,7 +939,7 @@ function createVibeHeroTrackMarkup(game = null) {
   const notes = Array.isArray(game?.notes) ? game.notes : [];
   const laneCount = Math.max(1, Math.min(8, Math.trunc(Number(game?.laneCount ?? VIBE_HERO_LANE_COUNT) || VIBE_HERO_LANE_COUNT)));
   const currentTimeMs = Math.max(0, Number(game?.currentTimeMs ?? 0) || 0);
-  const travelMs = Math.max(1, Number(game?.noteTravelMs ?? 1650) || 1650);
+  const travelMs = Math.max(1, Number(game?.noteTravelMs ?? VIBE_HERO_NOTE_TRAVEL_MS) || VIBE_HERO_NOTE_TRAVEL_MS);
   const hitWindowMs = Math.max(1, Number(game?.hitWindowMs ?? 185) || 185);
   const laneFlashes = Array.isArray(game?.laneFlashes) ? game.laneFlashes : [];
   const visibleNotes = notes.filter((note) => {

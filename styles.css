@@ -7433,7 +7433,7 @@ body.is-admin-prompt-resizing * {
   top: var(--note-y, 0%);
   left: 8px;
   right: 8px;
-  height: 22px;
+  height: 18px;
   border: 2px solid rgba(255, 255, 255, 0.78);
   border-radius: 8px;
   background: linear-gradient(180deg, #fff8df, var(--lane-color, #54d7ff));
