@@ -1038,6 +1038,19 @@ function validateBartenderFunction() {
     'Player avatar should include a simple skateboard visual below the feet'
   );
   assert(
+    /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
+      && /SKATEBOARD_SIDEWAYS_FOOT_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
+      && /mixamorigLeftFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource)
+      && /mixamorigRightFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource),
+    'Skating should hold the full lower body still with both feet perpendicular to the skateboard'
+  );
+  assert(
+    /function applySkateboardLowerBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
+      && /skateboardLowerBodyPoseWeight\s*=\s*active\s*\?\s*1\s*:\s*THREE\.MathUtils\.damp/.test(playerSource)
+      && /applySkateboardLowerBodyPose\(deltaSeconds,\s*skateboardPoseActive\)/.test(playerSource),
+    'Skating should apply the static lower-body stance every active skating frame'
+  );
+  assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
       && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
     'Game client should use Shift skating input and the shared speed multiplier'

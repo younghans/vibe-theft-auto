@@ -103,6 +103,19 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   'mixamorigRightFoot',
   'mixamorigRightToeBase'
 ]);
+const SKATEBOARD_SIDEWAYS_FOOT_YAW = Math.PI / 2;
+const SKATEBOARD_LOWER_BODY_STILL_BONES = Object.freeze([...LOWER_BODY_LOCOMOTION_BONES]);
+const SKATEBOARD_LOWER_BODY_POSE_ROTATIONS = Object.freeze({
+  [MIXAMO_BONES.hips]: Object.freeze([0, 0, 0]),
+  mixamorigLeftUpLeg: Object.freeze([0.04, 0, -0.04]),
+  mixamorigLeftLeg: Object.freeze([0.05, 0, 0.02]),
+  mixamorigLeftFoot: Object.freeze([0, SKATEBOARD_SIDEWAYS_FOOT_YAW, 0]),
+  mixamorigLeftToeBase: Object.freeze([0, 0, 0]),
+  mixamorigRightUpLeg: Object.freeze([0.04, 0, 0.04]),
+  mixamorigRightLeg: Object.freeze([0.05, 0, -0.02]),
+  mixamorigRightFoot: Object.freeze([0, SKATEBOARD_SIDEWAYS_FOOT_YAW, 0]),
+  mixamorigRightToeBase: Object.freeze([0, 0, 0])
+});
 const FOOT_PLANT_BONE_NAMES = Object.freeze([
   'mixamorigLeftFoot',
   'mixamorigLeftToeBase',
@@ -378,6 +391,32 @@ function createPlayerSkateboardVisual() {
   return group;
 }
 
+function createSkateboardLowerBodyPose(root) {
+  const offsetEuler = new THREE.Euler(0, 0, 0, 'XYZ');
+  const offsetQuaternion = new THREE.Quaternion();
+  return SKATEBOARD_LOWER_BODY_STILL_BONES
+    .map((boneName) => {
+      const bone = root.getObjectByName(boneName);
+      if (!bone) {
+        return null;
+      }
+
+      const targetQuaternion = bone.quaternion.clone();
+      const rotation = SKATEBOARD_LOWER_BODY_POSE_ROTATIONS[boneName];
+      if (rotation) {
+        offsetEuler.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
+        offsetQuaternion.setFromEuler(offsetEuler);
+        targetQuaternion.multiply(offsetQuaternion);
+      }
+
+      return {
+        bone,
+        targetQuaternion
+      };
+    })
+    .filter(Boolean);
+}
+
 function cloneTrackedMaterial(material) {
   if (!material?.clone) {
     return { material, tracked: null };
@@ -620,6 +659,7 @@ export async function createPlayer(library, {
     Object.entries(aimPoseBones).map(([key, bone]) => [key, bone ? { quaternion: bone.quaternion.clone() } : null])
   );
   mixer.setTime(0);
+  const skateboardLowerBodyPose = createSkateboardLowerBodyPose(character);
   const aimPoseIdleBases = Object.fromEntries(
     AIM_IDLE_LOCK_BONES.map((boneKey) => {
       const bone = aimPoseBones[boneKey];
@@ -666,6 +706,7 @@ export async function createPlayer(library, {
   let skateboardOwned = false;
   let skateboardSkating = false;
   let skateboardMotion = 0;
+  let skateboardLowerBodyPoseWeight = 0;
   let reloadPoseWeight = 0;
   let reloadPoseAmount = 0;
   let reloadSlideAmount = 0;
@@ -1592,9 +1633,28 @@ export async function createPlayer(library, {
     }
   }
 
+  function applySkateboardLowerBodyPose(deltaSeconds, active) {
+    if (skateboardLowerBodyPose.length === 0) {
+      skateboardLowerBodyPoseWeight = 0;
+      return;
+    }
+
+    skateboardLowerBodyPoseWeight = active
+      ? 1
+      : THREE.MathUtils.damp(skateboardLowerBodyPoseWeight, 0, 18, deltaSeconds);
+    if (skateboardLowerBodyPoseWeight <= 0.0001) {
+      return;
+    }
+
+    for (const { bone, targetQuaternion } of skateboardLowerBodyPose) {
+      bone.quaternion.slerp(targetQuaternion, skateboardLowerBodyPoseWeight);
+    }
+  }
+
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
+    const skateboardPoseActive = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
     const wantsGuardPose = Boolean(
       punchGuardAction
       && aimingState
@@ -1659,6 +1719,7 @@ export async function createPlayer(library, {
     updateSkateboardVisual(deltaSeconds, moving);
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
+    applySkateboardLowerBodyPose(deltaSeconds, skateboardPoseActive);
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
     const reloadProfile = updateReloadOverlayState(deltaSeconds, activeAimItemId);
     const reloadForcesAimPose = reloadDisplayedPoseAmount > 0.0001 && Boolean(reloadProfile);
