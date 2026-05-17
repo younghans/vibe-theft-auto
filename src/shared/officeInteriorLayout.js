@@ -68,7 +68,7 @@ export const OFFICE_INTERIOR_JANITOR_CLOSET_SIZE = Object.freeze({
 
 export const OFFICE_INTERIOR_CEO_MEETING_TABLE = Object.freeze({
   centerX: 0,
-  centerZ: 0.05,
+  centerZ: -0.95,
   width: 7.0,
   depth: 2.0,
   rugWidth: 8.4,

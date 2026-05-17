@@ -176,7 +176,8 @@ async function validateOfficeBuildingInteriorFlow() {
   assert(janitorCloset?.jobId === OFFICE_JOB_IDS.janitor, 'Janitor closet prop should start the janitor office job.');
   assert((janitorCloset?.localPosition?.[1] ?? -99) > -6.2, 'Janitor station prompt should sit at the prop door, not inside a room.');
   assert(Math.abs((ceoMeetingTableStation?.localPosition?.[0] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO station prompt should align with the meeting table center.');
-  assert(Math.abs((ceoMeetingTableStation?.localPosition?.[1] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO station prompt should move down with the meeting table.');
+  assert(OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ < -0.8 && OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ > -1.2, 'CEO meeting table should sit a few feet upward on the top floor.');
+  assert(Math.abs((ceoMeetingTableStation?.localPosition?.[1] ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO station prompt should move with the meeting table.');
   assert(stairsToCubicles?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.cubicles, 'Lobby stairs should target the second floor.');
   assert(stairsToLobby?.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.lobby, 'Second-floor stairs should target the lobby.');
   assert((stairsToCubicles?.targetLocalPosition?.[1] ?? -99) > -2, 'Lobby stairs should land past the second-floor stair opening.');
@@ -349,8 +350,8 @@ async function validateOfficeBuildingInteriorFlow() {
   assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.width ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.width + 0.001, 'CEO meeting table should use the smaller table width.');
   assert((ceoMeetingTableVisual?.userData?.officeCeoMeetingTableSize?.depth ?? 99) <= OFFICE_INTERIOR_CEO_MEETING_TABLE.depth + 0.001, 'CEO meeting table should use the smaller table depth.');
   assert(Math.abs((ceoMeetingTableVisual?.position?.x ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerX) < 0.001, 'CEO meeting table visual should use the shared X position.');
-  assert(Math.abs((ceoMeetingTableVisual?.position?.z ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO meeting table visual should move down from the elevator.');
-  assert((ceoMeetingTableVisual?.position?.z ?? -99) - ceoElevatorDoor[1] > 3.4, 'CEO meeting table should leave movement space outside the elevator.');
+  assert(Math.abs((ceoMeetingTableVisual?.position?.z ?? 99) - OFFICE_INTERIOR_CEO_MEETING_TABLE.centerZ) < 0.001, 'CEO meeting table visual should use the shared Z position.');
+  assert((ceoMeetingTableVisual?.position?.z ?? -99) - ceoElevatorDoor[1] > 2.7, 'CEO meeting table should leave movement space outside the elevator after moving upward.');
   assert(ceoRooftopDeckCount === 1, 'CEO floor should add one rooftop deck below the meeting room.');
   assert(ceoRooftopChairCount >= 4, 'CEO rooftop deck should include decorative outdoor chairs.');
   assert(ceoRooftopPlantCount >= 4, 'CEO rooftop deck should include decorative potted plants.');
