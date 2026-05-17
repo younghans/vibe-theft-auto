@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineRoom, defineServer } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { WorldRoom } from './src/WorldRoom.js';
+import { WorldRoom, getWorldRoomAdminDiagnostics } from './src/WorldRoom.js';
 import {
   appendAgentTaskLog,
   approveAgentTaskDeploy,
@@ -912,6 +912,7 @@ const server = defineServer({
         sendJson(res, 200, {
           ok: true,
           access: getAccessRuntimeDiagnostics(),
+          worldRoomAccess: getWorldRoomAdminDiagnostics(),
           commitSha: BACKEND_COMMIT_SHA,
           timestamp: new Date().toISOString()
         });

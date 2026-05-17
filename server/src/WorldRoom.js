@@ -220,6 +220,46 @@ function parseAdminKeys(value = '') {
   );
 }
 
+const ADMIN_JOIN_DIAGNOSTIC_LIMIT = 20;
+const adminJoinDiagnostics = [];
+
+function getAdminKeyEnvNames() {
+  return [
+    'ADMIN_KEYS',
+    'ADMIN_KEY'
+  ].filter((key) => process.env[key] !== undefined);
+}
+
+function getAdminJoinRuntimeAccess() {
+  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
+  return {
+    adminKeys,
+    adminKeysConfigured: adminKeys.size > 0,
+    adminKeyCount: adminKeys.size,
+    adminKeyEnvNames: getAdminKeyEnvNames()
+  };
+}
+
+function recordAdminJoinDiagnostic(diagnostic = {}) {
+  adminJoinDiagnostics.push({
+    at: new Date().toISOString(),
+    ...diagnostic
+  });
+  while (adminJoinDiagnostics.length > ADMIN_JOIN_DIAGNOSTIC_LIMIT) {
+    adminJoinDiagnostics.shift();
+  }
+}
+
+export function getWorldRoomAdminDiagnostics() {
+  const runtime = getAdminJoinRuntimeAccess();
+  return {
+    adminKeysConfigured: runtime.adminKeysConfigured,
+    adminKeyCount: runtime.adminKeyCount,
+    adminKeyEnvNames: runtime.adminKeyEnvNames,
+    recentJoins: adminJoinDiagnostics.slice(-ADMIN_JOIN_DIAGNOSTIC_LIMIT)
+  };
+}
+
 const PlayerState = schema({
   x: 'number',
   z: 'number',
@@ -990,6 +1030,17 @@ export class WorldRoom extends Room {
     void this.savePlayerSnapshot(client.sessionId);
     this.playerAliasSequence += 1;
     this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
+    const adminRuntime = getAdminJoinRuntimeAccess();
+    recordAdminJoinDiagnostic({
+      roomId: this.roomId,
+      sessionId: client.sessionId,
+      providedAdminKey: typeof options.adminKey === 'string' && options.adminKey.trim().length > 0,
+      isAdmin,
+      adminKeysConfigured: adminRuntime.adminKeysConfigured,
+      adminKeyCount: adminRuntime.adminKeyCount,
+      adminKeyEnvNames: adminRuntime.adminKeyEnvNames,
+      configuredAdminKeyCountAtCreate: this.adminKeys.size
+    });
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
       sessionId: client.sessionId,
@@ -1153,8 +1204,9 @@ export class WorldRoom extends Room {
     const providedKey = typeof options.adminKey === 'string'
       ? options.adminKey.trim()
       : '';
+    const runtime = getAdminJoinRuntimeAccess();
 
-    return Boolean(providedKey && this.adminKeys.size > 0 && this.adminKeys.has(providedKey));
+    return Boolean(providedKey && runtime.adminKeys.size > 0 && runtime.adminKeys.has(providedKey));
   }
 
   isAdminClient(client) {
