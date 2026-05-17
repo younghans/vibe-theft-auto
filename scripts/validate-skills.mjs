@@ -114,6 +114,8 @@ assert.match(gameSource, /spawnSkillXpFloater/, 'game spawns XP floaters for ski
 assert.match(gameSource, /0x1f3c3/, 'agility XP floaters use a running icon');
 assert.match(gameSource, /0x1f60e/, 'charisma XP floaters use a charisma icon');
 assert.match(gameSource, /skillXpGainSound/, 'game registers the skill XP gain sound');
+assert.match(gameSource, /shouldPlaySkillXpGainSound/, 'game gates skill XP gain audio per skill');
+assert.match(gameSource, /skillId !== SKILL_IDS\.agility/, 'agility movement XP should keep feedback animation without playing the XP gain sound');
 assert.match(gameSource, /levelUpSound/, 'game registers the level-up sound');
 assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');

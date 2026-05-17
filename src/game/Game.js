@@ -4775,6 +4775,11 @@ export class Game {
     this.playSoundEffect(this.levelUpSound);
   }
 
+  shouldPlaySkillXpGainSound(award = null, skill = null) {
+    const skillId = String(skill?.id ?? award?.skillId ?? '');
+    return skillId !== SKILL_IDS.agility;
+  }
+
   presentSkillAwardFeedback(award = null, skill = null) {
     if (!award || !skill) {
       return;
@@ -4785,7 +4790,7 @@ export class Game {
       skill,
       xpGained
     });
-    if (xpGained > 0) {
+    if (xpGained > 0 && this.shouldPlaySkillXpGainSound(award, skill)) {
       this.playSoundEffect(this.skillXpGainSound);
     }
 
