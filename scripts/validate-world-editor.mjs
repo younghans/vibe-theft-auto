@@ -67,6 +67,7 @@ import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracke
 import {
   MISSION_CATALOG,
   MISSION_STATUS,
+  appendMissionSequencePromptEntry,
   getMissionSnapshots,
   getMissionSequenceViewModel,
   moveMissionSequenceEntry,
@@ -617,6 +618,36 @@ function validateMissionSequencer() {
   const rows = getMissionSequenceViewModel(sequence);
   assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
   assert(rows[0].canRequireMission === false, 'The opening mission row should not allow a self dependency');
+
+  const customPrompt = 'Win a street race behind the casino.';
+  const sequenceWithCustomMission = appendMissionSequencePromptEntry(sequence, customPrompt);
+  assert(sequenceWithCustomMission.length === sequence.length + 1, 'Mission prompt form should append a custom mission');
+  const customMission = sequenceWithCustomMission.at(-1);
+  assert(customMission?.custom === true, 'Prompt-created missions should be marked as custom sequence entries');
+  assert(customMission?.description === customPrompt, 'Prompt-created missions should preserve the admin text');
+  assert(customMission?.makeAvailableAfterMission === true, 'Prompt-created missions should default to a prior-mission gate');
+  assert(customMission?.availableAfterMissionNumber === sequence.length, 'Prompt-created missions should default to the previous mission number');
+
+  const customRows = getMissionSequenceViewModel(sequenceWithCustomMission);
+  assert(customRows.at(-1)?.label, 'Custom mission rows should expose a display label');
+
+  const completePlayer = {
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1,
+    gymPumpCompletedAt: 1,
+    stockBoughtAt: 1,
+    blackjackHandPlayedAt: 1
+  };
+  const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)
+    .find((mission) => mission.id === customMission.missionId);
+  assert(customSnapshot?.status === MISSION_STATUS.available, 'Custom missions should become available when their sequence gate is satisfied');
+  assert(customSnapshot?.selectable === true, 'Available custom missions should be selectable from the mission app');
+
+  const chainedCustomSequence = appendMissionSequencePromptEntry(sequenceWithCustomMission, 'Check off the crew board.');
+  const chainedCustomMission = chainedCustomSequence.at(-1);
+  const chainedCustomSnapshot = getMissionSnapshots(completePlayer, chainedCustomMission.missionId, chainedCustomSequence)
+    .find((mission) => mission.id === chainedCustomMission.missionId);
+  assert(chainedCustomSnapshot?.status === MISSION_STATUS.available, 'Custom missions should not permanently block later sequenced missions');
 }
 
 function validateBartenderFunction() {

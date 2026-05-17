@@ -242,7 +242,11 @@ function getMissionTarget(missionId = '', context = {}) {
     return getBlackjackTaskTarget(context);
   }
 
-  return getDeliveryQuestGiverTaskTarget(context);
+  if (missionId === TASK_IDS.makeMoney) {
+    return getDeliveryQuestGiverTaskTarget(context);
+  }
+
+  return null;
 }
 
 function getMissionTitle(mission = null, context = {}) {

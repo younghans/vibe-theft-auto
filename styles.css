@@ -5444,6 +5444,32 @@ body.is-admin-prompt-resizing * {
   gap: 8px;
 }
 
+.hud__mission-sequencer-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(242, 200, 113, 0.18);
+  background: rgba(9, 15, 24, 0.62);
+}
+
+.hud__mission-sequencer-prompt {
+  margin: 0;
+}
+
+.hud__mission-sequencer-prompt-input {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.hud__mission-sequencer-add-button {
+  min-width: 116px;
+  min-height: 38px;
+  border-radius: 8px;
+}
+
 .hud__mission-sequencer-row {
   display: grid;
   grid-template-columns: 26px 32px minmax(0, 1fr);
@@ -14252,6 +14278,14 @@ canvas {
 
   .hud__mission-sequencer-row {
     grid-template-columns: 24px 30px minmax(0, 1fr);
+  }
+
+  .hud__mission-sequencer-add {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__mission-sequencer-add-button {
+    width: 100%;
   }
 
   .hud__mission-sequencer-rule-copy {

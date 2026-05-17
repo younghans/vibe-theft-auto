@@ -133,7 +133,8 @@ const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   package: '&#128230;',
   muscle: '&#128170;',
   chart: '&#128200;',
-  'playing-card': '&#127183;'
+  'playing-card': '&#127183;',
+  custom: '&#10022;'
 });
 
 const PHONE_MISSION_STATUS_LABELS = Object.freeze({
@@ -5623,7 +5624,9 @@ export class Hud {
     onBuildingRadiusChange,
     onBuildingDistanceChange,
     onMissionSequenceReorder,
-    onMissionSequenceRuleChange
+    onMissionSequenceRuleChange,
+    onMissionSequencePromptInput,
+    onMissionSequencePromptSubmit
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -5786,6 +5789,30 @@ export class Hud {
     };
 
     this.builderTiles.addEventListener('change', handleMissionSequenceRuleChange);
+
+    this.builderTiles.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement) || !target.matches('[data-builder-mission-prompt]')) {
+        return;
+      }
+
+      onMissionSequencePromptInput?.(target.value);
+    });
+
+    this.builderTiles.addEventListener('submit', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : null;
+      const form = target?.closest('[data-builder-mission-add-form]');
+      if (!form || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      const field = form.querySelector('[data-builder-mission-prompt]');
+      const prompt = field instanceof HTMLTextAreaElement ? field.value : '';
+      onMissionSequencePromptSubmit?.(prompt);
+    });
 
     this.builderClose.addEventListener('click', () => {
       if (!this.isElementInteractive(this.builderRoot)) {
@@ -6542,12 +6569,26 @@ export class Hud {
 
   getBuilderMissionSequencerMarkup(missionSequencer = {}) {
     const rows = Array.isArray(missionSequencer.rows) ? missionSequencer.rows : [];
+    const prompt = String(missionSequencer.prompt ?? '');
     return `
       <section class="hud__builder-section hud__mission-sequencer" data-builder-mission-sequencer>
         <div class="hud__builder-section-header">
           <p class="hud__builder-section-title">Mission Sequencer</p>
           <span class="hud__builder-section-count">${rows.length}</span>
         </div>
+        <form class="hud__mission-sequencer-add" data-builder-mission-add-form>
+          <label class="hud__field hud__mission-sequencer-prompt">
+            <span class="hud__field-label">New mission prompt</span>
+            <textarea
+              class="hud__field-control hud__field-control--textarea hud__mission-sequencer-prompt-input"
+              rows="3"
+              maxlength="220"
+              placeholder="Add a mission for the sequence"
+              data-builder-mission-prompt
+            >${escapeHtml(prompt)}</textarea>
+          </label>
+          <button class="hud__builder-action hud__mission-sequencer-add-button" type="submit">Add Mission</button>
+        </form>
         <div class="hud__mission-sequencer-list">
           ${rows.map((row) => this.getBuilderMissionSequencerRowMarkup(row)).join('')}
         </div>

@@ -14,6 +14,7 @@ import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared
 import { quantizeNumber, rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
+  appendMissionSequencePromptEntry,
   getMissionSequenceViewModel,
   moveMissionSequenceEntry,
   updateMissionSequenceEntry
@@ -203,6 +204,7 @@ function createDefaultEditorState() {
     activeCategoryId: BUILDER_CATEGORIES[0].id,
     activeGroupIdByCategory: Object.fromEntries(BUILDER_CATEGORIES.map((category) => [category.id, 'all'])),
     activeItemIndex: 0,
+    missionSequencerPrompt: '',
     rotationQuarterTurns: 0,
     hover: {
       point: null,
@@ -427,7 +429,9 @@ export class WorldBuilder {
         distance: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1, BUILDER_TILE_SIZE * 2) : undefined
       }),
       onMissionSequenceReorder: (fromIndex, toIndex) => void this.reorderMissionSequence(fromIndex, toIndex),
-      onMissionSequenceRuleChange: (missionId, updates) => void this.updateMissionSequenceRule(missionId, updates)
+      onMissionSequenceRuleChange: (missionId, updates) => void this.updateMissionSequenceRule(missionId, updates),
+      onMissionSequencePromptInput: (value) => this.setMissionSequencerPrompt(value),
+      onMissionSequencePromptSubmit: (value) => void this.addMissionSequencePrompt(value)
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
@@ -510,6 +514,7 @@ export class WorldBuilder {
       sections,
       missionSequencer: this.state.activeCategoryId === BUILDER_MISSION_SEQUENCER_CATEGORY.id
         ? {
+            prompt: this.state.missionSequencerPrompt,
             rows: missionSequenceRows
           }
         : null
@@ -1010,6 +1015,28 @@ export class WorldBuilder {
     await this.updateMissionSequence(nextMissionSequence, 'Mission availability updated.');
   }
 
+  setMissionSequencerPrompt(value = '') {
+    this.state.missionSequencerPrompt = String(value ?? '').slice(0, 220);
+  }
+
+  async addMissionSequencePrompt(prompt = '') {
+    const missionPrompt = String(prompt ?? this.state.missionSequencerPrompt ?? '').trim();
+    if (!missionPrompt) {
+      this.hud.showToast('Enter a mission prompt first.');
+      return;
+    }
+
+    const nextMissionSequence = appendMissionSequencePromptEntry(
+      this.worldState.getMissionSequence(),
+      missionPrompt
+    );
+    const updated = await this.updateMissionSequence(nextMissionSequence, 'Mission added to sequencer.');
+    if (updated) {
+      this.state.missionSequencerPrompt = '';
+      this.updateBuilderHud();
+    }
+  }
+
   async updateMissionSequence(missionSequence, successMessage = 'Mission sequence updated.') {
     const result = await this.worldEditAdapter.edit({
       op: 'updateMissionSequence',
@@ -1017,7 +1044,7 @@ export class WorldBuilder {
     });
     if (!result?.ok) {
       this.hud.showToast(result?.error ?? 'Could not update mission sequence.');
-      return;
+      return false;
     }
 
     if (result.appliedImmediately) {
@@ -1027,6 +1054,7 @@ export class WorldBuilder {
     }
 
     this.hud.showToast(successMessage);
+    return true;
   }
 
   ensureActiveItemVisible() {

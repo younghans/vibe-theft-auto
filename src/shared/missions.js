@@ -60,17 +60,155 @@ export const MISSION_CATALOG = Object.freeze([
 ].map(Object.freeze));
 
 const MISSION_BY_ID = new Map(MISSION_CATALOG.map((mission) => [mission.id, mission]));
+const CUSTOM_MISSION_ID_PREFIX = 'custom-mission-';
+const CUSTOM_MISSION_ID_MAX_LENGTH = 96;
+const CUSTOM_MISSION_LABEL_MAX_LENGTH = 54;
+const CUSTOM_MISSION_PROMPT_MAX_LENGTH = 220;
+const CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH = 180;
+
+function normalizeMissionText(value = '', maxLength = CUSTOM_MISSION_PROMPT_MAX_LENGTH) {
+  return String(value ?? '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, maxLength)
+    .trim();
+}
+
+function truncateMissionText(value = '', maxLength = CUSTOM_MISSION_LABEL_MAX_LENGTH) {
+  const normalized = normalizeMissionText(value, maxLength + 1);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  const clipped = normalized.slice(0, Math.max(0, maxLength - 3)).trim();
+  const wordBoundary = clipped.lastIndexOf(' ');
+  const safeClip = wordBoundary > 20 ? clipped.slice(0, wordBoundary).trim() : clipped;
+  return `${safeClip}...`;
+}
+
+function slugifyMissionPrompt(value = '') {
+  return normalizeMissionText(value, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 36)
+    || 'mission';
+}
+
+function hashMissionPrompt(value = '') {
+  let hash = 2166136261;
+  const text = normalizeMissionText(value, CUSTOM_MISSION_PROMPT_MAX_LENGTH);
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).slice(0, 7);
+}
+
+function normalizeCustomMissionId(missionId = '') {
+  const normalized = String(missionId ?? '').trim();
+  if (
+    normalized.startsWith(CUSTOM_MISSION_ID_PREFIX)
+    && normalized.length <= CUSTOM_MISSION_ID_MAX_LENGTH
+    && /^[a-z0-9-]+$/u.test(normalized)
+  ) {
+    return normalized;
+  }
+
+  return '';
+}
+
+function createCustomMissionId(prompt = '', sequence = null) {
+  const base = `${CUSTOM_MISSION_ID_PREFIX}${slugifyMissionPrompt(prompt)}-${hashMissionPrompt(prompt)}`;
+  const existingIds = new Set(normalizeMissionSequenceConfig(sequence).map((entry) => entry.missionId));
+  if (!existingIds.has(base)) {
+    return base;
+  }
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${base}-${suffix}`;
+    if (!existingIds.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${base}-${Date.now().toString(36).slice(-5)}`;
+}
+
+function getCustomMissionPrompt(entry = {}) {
+  return normalizeMissionText(
+    entry.prompt
+    ?? entry.description
+    ?? entry.title
+    ?? entry.label
+    ?? '',
+    CUSTOM_MISSION_PROMPT_MAX_LENGTH
+  );
+}
+
+function getCustomMissionDefinition(entry = {}) {
+  const missionId = normalizeCustomMissionId(entry.missionId ?? entry.id);
+  if (!missionId) {
+    return null;
+  }
+
+  const prompt = getCustomMissionPrompt(entry);
+  const label = normalizeMissionText(entry.label, CUSTOM_MISSION_LABEL_MAX_LENGTH)
+    || truncateMissionText(prompt || missionId.replace(CUSTOM_MISSION_ID_PREFIX, '').replace(/-/gu, ' '));
+  const title = normalizeMissionText(entry.title, CUSTOM_MISSION_PROMPT_MAX_LENGTH) || prompt || label;
+  const description = normalizeMissionText(entry.description, CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH)
+    || (prompt && prompt !== title ? prompt : 'Admin-authored mission.');
+
+  return Object.freeze({
+    id: missionId,
+    title,
+    label,
+    icon: 'custom',
+    description,
+    requirement: '',
+    repeatable: false,
+    custom: true,
+    prompt: prompt || title || label
+  });
+}
 
 function cloneMissionSequenceEntry(entry) {
-  return {
+  const base = {
     missionId: entry.missionId,
     makeAvailableAfterMission: entry.makeAvailableAfterMission === true,
     availableAfterMissionNumber: Math.max(0, Math.floor(Number(entry.availableAfterMissionNumber) || 0))
   };
+
+  const customDefinition = getCustomMissionDefinition(entry);
+  if (!customDefinition) {
+    return base;
+  }
+
+  return {
+    ...base,
+    custom: true,
+    title: customDefinition.title,
+    label: customDefinition.label,
+    description: customDefinition.description,
+    prompt: customDefinition.prompt,
+    icon: customDefinition.icon
+  };
 }
 
 function getRawMissionSequenceEntryMissionId(entry = {}) {
-  return normalizeMissionId(entry?.missionId ?? entry?.id);
+  const rawMissionId = String(entry?.missionId ?? entry?.id ?? '').trim();
+  const catalogMissionId = MISSION_BY_ID.has(rawMissionId) ? rawMissionId : '';
+  if (catalogMissionId) {
+    return catalogMissionId;
+  }
+
+  const customMissionId = normalizeCustomMissionId(rawMissionId);
+  if (customMissionId) {
+    return customMissionId;
+  }
+
+  const prompt = getCustomMissionPrompt(entry);
+  return prompt ? createCustomMissionId(prompt) : '';
 }
 
 function getRawMissionSequenceEntryGateNumber(entry = {}, fallback = 0) {
@@ -120,16 +258,56 @@ export function normalizeMissionSequenceConfig(sequence = null) {
       ? Math.min(Math.max(1, getRawMissionSequenceEntryGateNumber(rawEntry, defaultGateNumber)), maxGateNumber)
       : 0;
 
-    return Object.freeze({
+    const baseEntry = {
       missionId,
       makeAvailableAfterMission,
       availableAfterMissionNumber
+    };
+    const customDefinition = getCustomMissionDefinition({
+      ...rawEntry,
+      missionId
+    });
+
+    if (!customDefinition) {
+      return Object.freeze(baseEntry);
+    }
+
+    return Object.freeze({
+      ...baseEntry,
+      custom: true,
+      title: customDefinition.title,
+      label: customDefinition.label,
+      description: customDefinition.description,
+      prompt: customDefinition.prompt,
+      icon: customDefinition.icon
     });
   });
 }
 
 export function cloneMissionSequence(sequence = null) {
   return normalizeMissionSequenceConfig(sequence).map(cloneMissionSequenceEntry);
+}
+
+export function appendMissionSequencePromptEntry(sequence = null, prompt = '') {
+  const missionPrompt = normalizeMissionText(prompt, CUSTOM_MISSION_PROMPT_MAX_LENGTH);
+  if (!missionPrompt) {
+    return normalizeMissionSequenceConfig(sequence);
+  }
+
+  const entries = cloneMissionSequence(sequence);
+  entries.push({
+    missionId: createCustomMissionId(missionPrompt, entries),
+    custom: true,
+    title: missionPrompt,
+    label: truncateMissionText(missionPrompt, CUSTOM_MISSION_LABEL_MAX_LENGTH),
+    description: missionPrompt,
+    prompt: missionPrompt,
+    icon: 'custom',
+    makeAvailableAfterMission: entries.length > 0,
+    availableAfterMissionNumber: entries.length
+  });
+
+  return normalizeMissionSequenceConfig(entries);
 }
 
 export function moveMissionSequenceEntry(sequence = null, fromIndex = 0, toIndex = 0) {
@@ -181,7 +359,7 @@ export function updateMissionSequenceEntry(sequence = null, missionId = '', upda
 export function getMissionSequenceViewModel(sequence = null) {
   const normalizedSequence = normalizeMissionSequenceConfig(sequence);
   return normalizedSequence.map((entry, index) => {
-    const definition = getMissionDefinition(entry.missionId);
+    const definition = getMissionDefinition(entry.missionId, normalizedSequence);
     const missionNumber = index + 1;
     return Object.freeze({
       ...cloneMissionSequenceEntry(entry),
@@ -195,13 +373,31 @@ export function getMissionSequenceViewModel(sequence = null) {
   });
 }
 
-export function getMissionDefinition(missionId = '') {
-  return MISSION_BY_ID.get(String(missionId ?? '')) ?? null;
+function getMissionDefinitionFromSequence(missionId = '', sequence = null) {
+  const normalizedMissionId = normalizeMissionId(missionId);
+  if (!normalizedMissionId || !normalizeCustomMissionId(normalizedMissionId)) {
+    return null;
+  }
+
+  const entry = normalizeMissionSequenceConfig(sequence)
+    .find((sequenceEntry) => sequenceEntry.missionId === normalizedMissionId);
+  return entry ? getCustomMissionDefinition(entry) : null;
+}
+
+export function getMissionDefinition(missionId = '', sequence = null) {
+  const normalized = String(missionId ?? '').trim();
+  return MISSION_BY_ID.get(normalized)
+    ?? getMissionDefinitionFromSequence(normalized, sequence)
+    ?? getCustomMissionDefinition({ missionId: normalized });
+}
+
+export function isCustomMissionId(missionId = '') {
+  return Boolean(normalizeCustomMissionId(missionId));
 }
 
 export function normalizeMissionId(missionId = '') {
   const normalized = String(missionId ?? '').trim();
-  return MISSION_BY_ID.has(normalized) ? normalized : '';
+  return MISSION_BY_ID.has(normalized) || normalizeCustomMissionId(normalized) ? normalized : '';
 }
 
 export function getDeliveryCompletionCount(player = null) {
@@ -226,10 +422,27 @@ export function getMissionProgressSnapshot(player = null) {
   };
 }
 
-export function isMissionCompleteForSequence(missionId = '', player = null) {
+export function isMissionCompleteForSequence(missionId = '', player = null, sequence = null) {
   const id = normalizeMissionId(missionId);
   if (!id || !player) {
     return false;
+  }
+
+  if (isCustomMissionId(id)) {
+    const normalizedSequence = normalizeMissionSequenceConfig(sequence);
+    const entry = normalizedSequence.find((sequenceEntry) => sequenceEntry.missionId === id);
+    if (!entry) {
+      return false;
+    }
+
+    if (!entry.makeAvailableAfterMission || entry.availableAfterMissionNumber <= 0) {
+      return true;
+    }
+
+    const requiredEntry = normalizedSequence[entry.availableAfterMissionNumber - 1] ?? null;
+    return requiredEntry
+      ? isMissionCompleteForSequence(requiredEntry.missionId, player, normalizedSequence)
+      : true;
   }
 
   const progress = getMissionProgressSnapshot(player);
@@ -280,7 +493,7 @@ export function getMissionSequenceGate(missionId = '', player = null, sequence =
     missionNumber: entryIndex + 1,
     requiredMissionNumber: entry.availableAfterMissionNumber,
     requiredMissionId: requiredEntry.missionId,
-    satisfied: isMissionCompleteForSequence(requiredEntry.missionId, player)
+    satisfied: isMissionCompleteForSequence(requiredEntry.missionId, player, normalizedSequence)
   };
 }
 
@@ -295,8 +508,16 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
     return MISSION_STATUS.locked;
   }
 
+  if (isCustomMissionId(id) && !normalizeMissionSequenceConfig(sequence).some((entry) => entry.missionId === id)) {
+    return MISSION_STATUS.locked;
+  }
+
   if (!isMissionSequenceGateSatisfied(id, player, sequence)) {
     return MISSION_STATUS.locked;
+  }
+
+  if (isCustomMissionId(id)) {
+    return MISSION_STATUS.available;
   }
 
   const progress = getMissionProgressSnapshot(player);
@@ -327,8 +548,12 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
 }
 
 export function isMissionSelectable(missionId = '', player = null, sequence = null) {
-  const definition = getMissionDefinition(missionId);
+  const definition = getMissionDefinition(missionId, sequence);
   if (!definition || !player) {
+    return false;
+  }
+
+  if (definition.custom && !normalizeMissionSequenceConfig(sequence).some((entry) => entry.missionId === definition.id)) {
     return false;
   }
 
@@ -341,7 +566,7 @@ export function isMissionSelectable(missionId = '', player = null, sequence = nu
 }
 
 export function getMissionRequirement(missionId = '', player = null, sequence = null) {
-  const definition = getMissionDefinition(missionId);
+  const definition = getMissionDefinition(missionId, sequence);
   if (!definition) {
     return '';
   }
@@ -377,8 +602,8 @@ export function resolveSelectedMissionId(player = null, requestedMissionId = pla
     .map((entry) => entry.missionId)
     .filter((missionId) => isMissionSelectable(missionId, player, sequence));
   return selectableFallbacks.find((missionId) => {
-    const definition = getMissionDefinition(missionId);
-    return definition?.repeatable !== true || !isMissionCompleteForSequence(missionId, player);
+    const definition = getMissionDefinition(missionId, sequence);
+    return definition?.repeatable !== true || !isMissionCompleteForSequence(missionId, player, sequence);
   }) ?? selectableFallbacks[0] ?? '';
 }
 
@@ -386,7 +611,7 @@ export function getMissionSnapshots(player = null, selectedMissionId = player?.s
   const normalizedSequence = normalizeMissionSequenceConfig(sequence);
   const resolvedSelectedMissionId = resolveSelectedMissionId(player, selectedMissionId, normalizedSequence);
   return normalizedSequence.map((entry, index) => {
-    const definition = getMissionDefinition(entry.missionId);
+    const definition = getMissionDefinition(entry.missionId, normalizedSequence);
     const status = getMissionStatus(entry.missionId, player, normalizedSequence);
     const selectable = isMissionSelectable(entry.missionId, player, normalizedSequence);
     return {
