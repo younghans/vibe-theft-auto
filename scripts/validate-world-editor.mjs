@@ -566,6 +566,24 @@ function validateDeliveryQuestCarry() {
     Number(deliveryBox.normalize?.maxDimension) > 0 && Number(deliveryBox.normalize?.maxDimension) < 1,
     'Delivery box should be scaled as a small package.'
   );
+  assert(
+    typeof deliveryBox.createModel === 'function',
+    'Delivery quest should use a dedicated cardboard-box 3D model.'
+  );
+  const deliveryBoxModel = deliveryBox.createModel();
+  const deliveryBoxBounds = new Box3().setFromObject(deliveryBoxModel);
+  const deliveryBoxSize = deliveryBoxBounds.getSize(new Vector3());
+  const deliveryBoxMeshes = [];
+  deliveryBoxModel.traverse((node) => {
+    if (node.isMesh) {
+      deliveryBoxMeshes.push(node);
+    }
+  });
+  assert(deliveryBoxMeshes.length >= 8, 'Delivery box model should include visible 3D box, tape, and edge detail meshes.');
+  assert(
+    deliveryBoxSize.x > 0.8 && deliveryBoxSize.y > 0.5 && deliveryBoxSize.z > 0.6,
+    'Delivery box model should have package-like 3D proportions before normalization.'
+  );
 
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
@@ -576,6 +594,10 @@ function validateDeliveryQuestCarry() {
   assert(
     /setDeliveryPackageActive/.test(playerSource) && /DELIVERY_CARRY_CLIP_NAME = 'carrying'/.test(playerSource),
     'Player avatar should expose delivery package visuals backed by the carrying animation.'
+  );
+  assert(
+    /import\s*\{[^}]*HELD_ITEM_IDS[^}]*\}\s*from '\.\.\/shared\/heldItemDefinitions\.js'/su.test(playerSource),
+    'Player delivery package logic should import held item ids before attaching the delivery box.'
   );
 }
 

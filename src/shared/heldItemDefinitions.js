@@ -39,11 +39,84 @@ export const HELD_ITEM_AIM_POSE_FIELDS = Object.freeze([
 ]);
 
 const DEFAULT_SCALE = Object.freeze([1, 1, 1]);
+const CARDBOARD_FACE_COLOR = 0xb9793f;
+const CARDBOARD_SIDE_COLOR = 0x96602f;
+const CARDBOARD_EDGE_COLOR = 0x6f4724;
+const CARDBOARD_TAPE_COLOR = 0xd6b56f;
 const EMPTY_TRANSFORM = Object.freeze({
   position: Object.freeze([0, 0, 0]),
   rotation: Object.freeze([0, 0, 0]),
   scale: DEFAULT_SCALE
 });
+
+function createBoxMesh(size, position, material, name) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  return mesh;
+}
+
+function createCardboardBoxModel() {
+  const root = new THREE.Group();
+  root.name = 'DeliveryCardboardBox';
+
+  const faceMaterial = new THREE.MeshStandardMaterial({
+    color: CARDBOARD_FACE_COLOR,
+    roughness: 0.92,
+    metalness: 0.02
+  });
+  const sideMaterial = new THREE.MeshStandardMaterial({
+    color: CARDBOARD_SIDE_COLOR,
+    roughness: 0.95,
+    metalness: 0
+  });
+  const edgeMaterial = new THREE.MeshStandardMaterial({
+    color: CARDBOARD_EDGE_COLOR,
+    roughness: 0.98,
+    metalness: 0
+  });
+  const tapeMaterial = new THREE.MeshStandardMaterial({
+    color: CARDBOARD_TAPE_COLOR,
+    roughness: 0.72,
+    metalness: 0.01
+  });
+
+  const body = createBoxMesh([1.08, 0.66, 0.78], [0, 0, 0], faceMaterial, 'DeliveryBox_Body');
+  root.add(body);
+
+  const topY = 0.348;
+  const flapThickness = 0.035;
+  const frontFlap = createBoxMesh([1.04, flapThickness, 0.29], [0, topY, 0.2], sideMaterial, 'DeliveryBox_FrontTopFlap');
+  const rearFlap = createBoxMesh([1.04, flapThickness, 0.29], [0, topY, -0.2], sideMaterial, 'DeliveryBox_RearTopFlap');
+  root.add(frontFlap, rearFlap);
+
+  const centerTape = createBoxMesh([0.12, 0.045, 0.86], [0, topY + 0.02, 0], tapeMaterial, 'DeliveryBox_TopTape');
+  const crossTape = createBoxMesh([1.12, 0.043, 0.075], [0, topY + 0.021, 0.01], tapeMaterial, 'DeliveryBox_CrossTape');
+  root.add(centerTape, crossTape);
+
+  const edgeSize = 0.028;
+  const edgeY = 0;
+  for (const x of [-0.555, 0.555]) {
+    for (const z of [-0.405, 0.405]) {
+      root.add(createBoxMesh([edgeSize, 0.7, edgeSize], [x, edgeY, z], edgeMaterial, 'DeliveryBox_VerticalEdge'));
+    }
+  }
+  for (const y of [-0.345, 0.345]) {
+    for (const z of [-0.405, 0.405]) {
+      root.add(createBoxMesh([1.12, edgeSize, edgeSize], [0, y, z], edgeMaterial, 'DeliveryBox_LongEdge'));
+    }
+    for (const x of [-0.555, 0.555]) {
+      root.add(createBoxMesh([edgeSize, edgeSize, 0.82], [x, y, 0], edgeMaterial, 'DeliveryBox_ShortEdge'));
+    }
+  }
+
+  const frontLabel = createBoxMesh([0.36, 0.22, 0.014], [-0.21, -0.05, 0.398], tapeMaterial, 'DeliveryBox_FrontLabel');
+  const frontLabelLineA = createBoxMesh([0.25, 0.018, 0.018], [-0.21, -0.02, 0.411], edgeMaterial, 'DeliveryBox_FrontLabelLineA');
+  const frontLabelLineB = createBoxMesh([0.18, 0.018, 0.018], [-0.245, -0.085, 0.411], edgeMaterial, 'DeliveryBox_FrontLabelLineB');
+  root.add(frontLabel, frontLabelLineA, frontLabelLineB);
+
+  return root;
+}
 
 const HELD_ITEM_DEFINITIONS = Object.freeze({
   [HELD_ITEM_IDS.pistol]: Object.freeze({
@@ -143,7 +216,8 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
   }),
   [HELD_ITEM_IDS.deliveryBox]: Object.freeze({
     id: HELD_ITEM_IDS.deliveryBox,
-    assetUrl: assets.city.boxA,
+    assetUrl: null,
+    createModel: createCardboardBoxModel,
     attachmentSlot: ATTACHMENT_SLOTS.handLeft,
     normalize: Object.freeze({
       maxDimension: 0.82,

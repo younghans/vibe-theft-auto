@@ -17,6 +17,7 @@ import {
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_AIM_POSE_FIELDS,
+  HELD_ITEM_IDS,
   applyAttachmentTransform,
   applyHeldItemGripTransform,
   getHeldItemAssetUrl,
@@ -1427,11 +1428,15 @@ export async function createPlayer(library, {
       const assetUrl = getHeldItemAssetUrl(itemId);
       const slot = getHeldItemAttachmentSlot(itemId);
       const motionRoot = getSlotMotionRoot(slot);
-      if (!definition || !assetUrl || !motionRoot) {
+      if (!definition || (!assetUrl && typeof definition.createModel !== 'function') || !motionRoot) {
         return null;
       }
 
-      heldItemLoads.set(itemId, library.instantiate(assetUrl)
+      const modelPromise = typeof definition.createModel === 'function'
+        ? Promise.resolve(definition.createModel())
+        : library.instantiate(assetUrl);
+
+      heldItemLoads.set(itemId, modelPromise
         .then((object) => {
           prepareHeldItemModel(object, itemId, 'equipped');
           const container = new THREE.Group();
