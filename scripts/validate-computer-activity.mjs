@@ -649,7 +649,10 @@ async function validateOfficeJobHudSurfaces() {
   assert(gameSource.includes('mopCleanShowcaseAt'), 'Mop Hero should delay completion while the clean floor is visible.');
   assert(gameSource.includes('playTaskCompleteSound'), 'Task and game completion should use a shared completion sound helper.');
   assert(!gameSource.includes('this.playSoundEffect(this.levelUpCelebrationSound)'), 'Task and game completion should no longer play the old celebration MP3.');
-  assert(gameSource.includes('playbackRate: 0.72') && gameSource.includes('preservePitch: false'), 'Completion should reuse the individual-game level-up ding at a lower pitch.');
+  assert(gameSource.includes('TASK_COMPLETE_MAJOR_KEY_PITCH_CLASSES') && gameSource.includes('[0, 2, 4, 5, 7, 9, 11]'), 'Completion should define a major-key pitch set.');
+  assert(gameSource.includes('tunePlaybackRateToNearestMajorKey') && gameSource.includes('Math.log2') && gameSource.includes('2 ** (tunedSemitones / 12)'), 'Completion should autotune the ding layers to the nearest major-key notes.');
+  assert(gameSource.includes('rawPlaybackRate: 0.72') && gameSource.includes('rawPlaybackRate: 0.84') && gameSource.includes('rawPlaybackRate: 0.98'), 'Completion should keep the individual-game ding recognizable while resolving happier.');
+  assert(gameSource.includes('preservePitch: false'), 'Completion should let playback-rate tuning change pitch.');
   assert(gameSource.includes('delayMs: 135') && gameSource.includes('delayMs: 310'), 'Completion should draw out the ding with delayed reverb-style echoes.');
   assert(gameSource.includes('playTaskCompleteChaChing') && gameSource.includes('TASK_COMPLETE_CHA_CHING_DELAY_MS'), 'Money-paying completions should append a delayed cha-ching.');
   assert(gameSource.includes('moneyChangeChaChingSuppressedUntil'), 'Completion cha-ching should suppress duplicate positive money-change sounds.');

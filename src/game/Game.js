@@ -422,6 +422,12 @@ const SKILL_XP_FLOATER_MS = 1550;
 const TASK_COMPLETE_SOUND_COOLDOWN_MS = 1800;
 const TASK_COMPLETE_CHA_CHING_DELAY_MS = 760;
 const TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS = 1750;
+const TASK_COMPLETE_MAJOR_KEY_PITCH_CLASSES = Object.freeze([0, 2, 4, 5, 7, 9, 11]);
+const TASK_COMPLETE_MAJOR_KEY_LAYERS = Object.freeze([
+  Object.freeze({ rawPlaybackRate: 0.72, volumeScale: 1.05, delayMs: 0 }),
+  Object.freeze({ rawPlaybackRate: 0.84, volumeScale: 0.34, delayMs: 135 }),
+  Object.freeze({ rawPlaybackRate: 0.98, volumeScale: 0.2, delayMs: 310 })
+]);
 const RENT_INTRO_LOADING_CLEAR_MS = 900;
 const RENT_INTRO_AFTER_LOADING_DELAY_MS = 500;
 const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
@@ -438,6 +444,34 @@ const LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE = 5;
 const LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS = 220;
 const LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE = 8;
 const LOCAL_AUTHORITATIVE_RECONCILE_RATE = 5.5;
+
+function getNearestMajorKeySemitone(semitones = 0) {
+  const safeSemitones = Number.isFinite(semitones) ? semitones : 0;
+  const baseOctave = Math.floor(safeSemitones / 12);
+  let nearestSemitone = 0;
+  let nearestDistance = Infinity;
+
+  for (let octaveOffset = -1; octaveOffset <= 1; octaveOffset += 1) {
+    const octave = baseOctave + octaveOffset;
+    for (const pitchClass of TASK_COMPLETE_MAJOR_KEY_PITCH_CLASSES) {
+      const candidate = octave * 12 + pitchClass;
+      const distance = Math.abs(candidate - safeSemitones);
+      if (distance < nearestDistance) {
+        nearestSemitone = candidate;
+        nearestDistance = distance;
+      }
+    }
+  }
+
+  return nearestSemitone;
+}
+
+function tunePlaybackRateToNearestMajorKey(playbackRate = 1) {
+  const safePlaybackRate = Math.min(4, Math.max(0.25, Number(playbackRate) || 1));
+  const semitones = 12 * Math.log2(safePlaybackRate);
+  const tunedSemitones = getNearestMajorKeySemitone(semitones);
+  return Number((2 ** (tunedSemitones / 12)).toFixed(6));
+}
 
 function getBackendHttpEndpoint(serviceEndpoint, endpointPath) {
   if (typeof serviceEndpoint !== 'string' || !/^(https?|wss?):\/\//iu.test(serviceEndpoint)) {
@@ -1380,23 +1414,14 @@ export class Game {
     const lastPlayedAt = Number(this.lastTaskCompleteSoundAt ?? -Infinity);
     if (now - lastPlayedAt >= TASK_COMPLETE_SOUND_COOLDOWN_MS) {
       this.lastTaskCompleteSoundAt = now;
-      this.playSoundEffect(this.levelUpSound, {
-        playbackRate: 0.72,
-        preservePitch: false,
-        volumeScale: 1.05
-      });
-      this.playSoundEffect(this.levelUpSound, {
-        playbackRate: 0.68,
-        preservePitch: false,
-        volumeScale: 0.34,
-        delayMs: 135
-      });
-      this.playSoundEffect(this.levelUpSound, {
-        playbackRate: 0.62,
-        preservePitch: false,
-        volumeScale: 0.2,
-        delayMs: 310
-      });
+      for (const layer of TASK_COMPLETE_MAJOR_KEY_LAYERS) {
+        this.playSoundEffect(this.levelUpSound, {
+          playbackRate: tunePlaybackRateToNearestMajorKey(layer.rawPlaybackRate),
+          preservePitch: false,
+          volumeScale: layer.volumeScale,
+          delayMs: layer.delayMs
+        });
+      }
     }
 
     if (withMoney) {
