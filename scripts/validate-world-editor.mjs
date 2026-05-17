@@ -298,6 +298,8 @@ function validateVibeHero() {
   assert(gameSource.includes("this.input.consume('KeyN')") && gameSource.includes("this.input.consume('KeyM')"), 'Vibe Hero chart editor should support N/M seek controls');
   assert(gameSource.includes("this.input.consume('Space')") && gameSource.includes('toggleVibeHeroEditorPlayback'), 'Vibe Hero chart editor should pause/play with Space');
   assert(gameSource.includes('overwriteVibeHeroEditorRange') && gameSource.includes('recordVibeHeroEditorLanes'), 'Vibe Hero chart editor should overwrite chart ranges from keyboard lane recording');
+  assert(gameSource.includes('recordVibeHeroEditorPlaybackRange') && gameSource.includes('getVibeHeroEditorPressedLaneIndexes'), 'Vibe Hero chart editor should continuously record held 1-5 keys across the elapsed playback range');
+  assert(gameSource.includes('VIBE_HERO_EDITOR_RECORD_STEP_MS') && gameSource.includes('this.input.isPressed(code)'), 'Vibe Hero chart editor should sample held note keys instead of only single keydown events');
   assert(gameSource.includes('VIBE_HERO_EDITOR_STORAGE_PREFIX'), 'Vibe Hero chart editor should persist edited charts locally for admins');
   assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
