@@ -1391,6 +1391,38 @@ export class Game {
     play();
   }
 
+  playOfficeJobLockError() {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      this.playSoundEffect(this.playingCardSound, {
+        playbackRate: 0.55,
+        preservePitch: false,
+        volumeScale: 0.7
+      });
+      return;
+    }
+
+    void context.resume?.().catch(() => {});
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(230, now);
+    oscillator.frequency.exponentialRampToValueAtTime(92, now + 0.34);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(
+      THREE.MathUtils.clamp(0.14 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.18),
+      now + 0.012
+    );
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.38);
+  }
+
   playTaskCompleteChaChing(delayMs = TASK_COMPLETE_CHA_CHING_DELAY_MS) {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const safeDelayMs = Math.max(0, Number(delayMs) || 0);
@@ -8154,6 +8186,10 @@ export class Game {
     const charismaLevel = this.getOfficeJobCharismaLevel();
     if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
       const message = getOfficeJobLockedMessage(job, { intelligence, charismaLevel });
+      const alertMessage = message
+        .replace(`${job.roleLabel} requires `, 'You need ')
+        .replace(/(\d+) Intelligence/g, 'Level $1 Intelligence')
+        .replace(/\.$/, ` to do ${job.roleLabel} job.`);
       if (this.schoolMicrogame?.context === 'office-job') {
         this.schoolMicrogame.data = {
           ...(this.schoolMicrogame.data ?? {}),
@@ -8161,9 +8197,10 @@ export class Game {
           charismaLevel,
           jobs: this.getOfficeJobMenuJobs()
         };
-        this.schoolMicrogame.message = message;
+        this.schoolMicrogame.message = alertMessage;
       }
-      this.hud.showToast(message);
+      this.playOfficeJobLockError();
+      this.hud.showOfficeJobLockAlert(alertMessage);
       this.syncSchoolMicrogameHud();
       return false;
     }

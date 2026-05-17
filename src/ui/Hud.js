@@ -1969,7 +1969,7 @@ function createOfficeJobMenuMarkup(game = null) {
               class="hud__office-job-card${unlocked ? '' : ' is-locked'}"
               type="button"
               data-school-microgame-action="office:select:${escapeHtml(job.id)}"
-              ${unlocked ? '' : 'disabled'}
+              aria-disabled="${unlocked ? 'false' : 'true'}"
             >
               <span class="hud__office-job-icon" aria-hidden="true">${escapeHtml(job.icon ?? 'JOB')}</span>
               <span class="hud__office-job-copy">
@@ -3226,6 +3226,8 @@ export class Hud {
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
+    this.jobLockAlert = this.overlay.querySelector('[data-office-prereq-alert]');
+    this.jobLockAlertText = this.overlay.querySelector('[data-office-prereq-text]');
     this.connectionStatusRoot = this.overlay.querySelector('[data-connection-status]');
     this.connectionStatusLabel = this.overlay.querySelector('[data-connection-status-label]');
     this.connectionPlayers = this.overlay.querySelector('[data-connection-players]');
@@ -3442,6 +3444,7 @@ export class Hud {
     this.joinTitleTimeout = 0;
     this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
+    this.jobLockAlertTimeout = 0;
     this.phoneCloseTimeout = 0;
     this.taskCompleteTimeout = 0;
     this.taskConfettiFrame = 0;
@@ -3811,6 +3814,9 @@ export class Hud {
         </section>
         <section class="hud__toast">
           <p class="hud__toast-text" data-toast></p>
+        </section>
+        <section class="hud__job-lock-alert" data-office-prereq-alert aria-live="assertive" aria-hidden="true">
+          <h2 data-office-prereq-text></h2>
         </section>
         <div class="hud__top-actions-stack">
           <div class="hud__top-actions-buttons">
@@ -5080,6 +5086,25 @@ export class Hud {
     this.toastTimeout = window.setTimeout(() => {
       toast.classList.remove('is-visible');
     }, 2200);
+  }
+
+  showOfficeJobLockAlert(message) {
+    const text = String(message ?? '').trim();
+    if (!text || !this.jobLockAlert || !this.jobLockAlertText) {
+      return;
+    }
+
+    this.jobLockAlertText.textContent = text;
+    this.jobLockAlert.classList.remove('is-visible');
+    void this.jobLockAlert.offsetWidth;
+    this.jobLockAlert.classList.add('is-visible');
+    this.jobLockAlert.setAttribute('aria-hidden', 'false');
+
+    window.clearTimeout(this.jobLockAlertTimeout);
+    this.jobLockAlertTimeout = window.setTimeout(() => {
+      this.jobLockAlert?.classList.remove('is-visible');
+      this.jobLockAlert?.setAttribute('aria-hidden', 'true');
+    }, 2500);
   }
 
   setConnectionStatus({

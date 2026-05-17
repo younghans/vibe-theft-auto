@@ -131,6 +131,7 @@ async function validateOfficeJobTerminalFlow() {
 
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const stylesSource = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
   const serverSource = await readFile(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   const colyseusSource = await readFile(new URL('../src/npc/NpcServiceColyseus.js', import.meta.url), 'utf8');
   const mockSource = await readFile(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
@@ -140,7 +141,11 @@ async function validateOfficeJobTerminalFlow() {
   assert(gameSource.includes('janitorMopHero'), 'Game should implement the janitor Mop Hero task.');
   assert(gameSource.includes('handleOfficeJobHoldEnd'), 'Game should implement the office manager hold-to-brew task.');
   assert(gameSource.includes("office:stamp"), 'Game should implement the CEO memo stamping task.');
+  assert(gameSource.includes('playOfficeJobLockError') && gameSource.includes('showOfficeJobLockAlert'), 'Locked office job entry should play an error beep and show the centered prerequisite alert.');
+  assert(gameSource.includes("'You need '") && gameSource.includes('to do ${job.roleLabel} job.'), 'Prerequisite alert should say what level is needed to do the selected job.');
   assert(hudSource.includes('office:select:'), 'HUD should render selectable office job tiers.');
+  assert(hudSource.includes('data-office-prereq-alert') && hudSource.includes('aria-disabled='), 'HUD should expose a centered prerequisite alert and keep locked job cards actionable.');
+  assert(stylesSource.includes('.hud__job-lock-alert') && stylesSource.includes('font-size: clamp(30px, 5.4vw, 66px)'), 'Prerequisite alert should be large and centered on screen.');
   assert(serverSource.includes("officeJob:complete"), 'Server should expose an office job completion RPC.');
   assert(colyseusSource.includes('completeOfficeJob'), 'Colyseus service should call the office job completion RPC.');
   assert(mockSource.includes('completeOfficeJob'), 'Mock service should support office job completion.');
