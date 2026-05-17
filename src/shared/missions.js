@@ -29,8 +29,7 @@ export const MISSION_CATALOG = Object.freeze([
     label: 'Make Money',
     icon: 'money',
     description: 'Find the Shady Figure and take a quick cash job.',
-    requirement: '',
-    repeatable: true
+    requirement: ''
   },
   {
     id: MISSION_IDS.delivery,
@@ -651,7 +650,7 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
 
   const progress = getMissionProgressSnapshot(player);
   if (id === MISSION_IDS.makeMoney) {
-    return MISSION_STATUS.available;
+    return progress.deliveryCompletionCount > 0 ? MISSION_STATUS.completed : MISSION_STATUS.available;
   }
 
   if (id === MISSION_IDS.schoolTeacherTasks) {

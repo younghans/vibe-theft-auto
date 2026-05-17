@@ -484,7 +484,7 @@ export class TaskTracker {
     const completedTask = Boolean(
       this.initialized
       && context.localPlayerState
-      && task.visible
+      && this.currentTaskId
       && didTaskComplete(this.currentTaskId, progress, this.progress)
     );
 

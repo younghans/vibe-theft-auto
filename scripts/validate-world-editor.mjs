@@ -582,18 +582,26 @@ function validateTaskSequence() {
     }).id === TASK_IDS.officeManagerPromotion,
     'Task sequence should route to office manager after buying a skateboard.'
   );
+  const allSequencedMissionsCompletePlayer = {
+    ...janitorCompletePlayer,
+    gymPumpCompletedAt: 1000,
+    stockBoughtAt: 2000,
+    blackjackHandPlayedAt: 3000,
+    skateboardOwned: true,
+    officeManagerCompletedAt: 4000
+  };
+  assert(
+    resolvePlayerTask({ localPlayerState: allSequencedMissionsCompletePlayer }).id === '',
+    'Task sequence should stop showing Shady Figure delivery work after the sequenced missions are complete.'
+  );
   assert(
     resolvePlayerTask({
       localPlayerState: {
-        ...janitorCompletePlayer,
-        gymPumpCompletedAt: 1000,
-        stockBoughtAt: 2000,
-        blackjackHandPlayedAt: 3000,
-        skateboardOwned: true,
-        officeManagerCompletedAt: 4000
+        ...allSequencedMissionsCompletePlayer,
+        selectedMissionId: TASK_IDS.makeMoney
       }
-    }).id === TASK_IDS.makeMoney,
-    'Task sequence should return to the make-money prompt after the sequenced missions.'
+    }).id === '',
+    'A stale selected make-money mission should not keep the Shady Figure delivery prompt alive after completion.'
   );
 
   const deliveryTracker = new TaskTracker();
@@ -827,6 +835,9 @@ function validateMissionSequencer() {
   const schoolSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.schoolTeacherTasks);
   const janitorLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.janitorTasks);
   const stockLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.stockBuy);
+  const makeMoneySnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.makeMoney);
+  assert(makeMoneySnapshot?.status === MISSION_STATUS.completed, 'Default sequence should complete the make-money prompt after the first delivery');
+  assert(makeMoneySnapshot?.selectable === false, 'Completed make-money prompt should not remain selectable as a repeatable Shady Figure mission');
   assert(schoolSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock school after delivery');
   assert(janitorLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep janitor work locked until school is complete');
   assert(stockLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep stock locked until janitor work is complete');
