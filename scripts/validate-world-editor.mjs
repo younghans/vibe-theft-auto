@@ -1183,9 +1183,12 @@ function validateBartenderFunction() {
       && /SKATEBOARD_UPPER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.UPPER_BODY_EMOTE_BONES\]\)/.test(playerSource)
       && /SKATEBOARD_STILL_BODY_BONES\s*=\s*Object\.freeze\(\[\s*\.\.\.SKATEBOARD_LOWER_BODY_STILL_BONES,\s*\.\.\.SKATEBOARD_UPPER_BODY_STILL_BONES\s*\]\)/.test(playerSource)
       && /SKATEBOARD_SIDEWAYS_FOOT_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
+      && /SKATEBOARD_LOWER_BODY_TURN_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
+      && /\[MIXAMO_BONES\.hips\]:\s*Object\.freeze\(\[0,\s*SKATEBOARD_LOWER_BODY_TURN_YAW,\s*0\]\)/.test(playerSource)
+      && /\[MIXAMO_BONES\.spine\]:\s*Object\.freeze\(\[0,\s*-SKATEBOARD_LOWER_BODY_TURN_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigLeftFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigRightFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource),
-    'Skating should hold the full player body still with both feet perpendicular to the skateboard'
+    'Skating should hold the full player body still with the lower body rotated 90 degrees and both feet perpendicular to the skateboard'
   );
   assert(
     /function applySkateboardStaticBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
