@@ -260,22 +260,29 @@ export function getWorldRoomAdminDiagnostics() {
   };
 }
 
-// Colyseus schema fields use 6-bit indexes; keep synchronized player fields at 64 or fewer.
-const PlayerState = schema({
-  isAdmin: 'boolean',
+const PlayerTransformState = schema({
   x: 'number',
   z: 'number',
   rotationY: 'number',
   aimRotationY: 'number',
   aiming: 'boolean',
-  skating: 'boolean',
+  skating: 'boolean'
+});
+
+const PlayerAnimationState = schema({
   emoteId: 'string',
   emoteActive: 'boolean',
   emoteStartedAt: 'number',
-  emoteSeq: 'number',
+  emoteSeq: 'number'
+});
+
+const PlayerChatState = schema({
   chatText: 'string',
   chatStartedAt: 'number',
-  chatSeq: 'number',
+  chatSeq: 'number'
+});
+
+const PlayerCombatState = schema({
   health: 'number',
   maxHealth: 'number',
   alive: 'boolean',
@@ -289,6 +296,10 @@ const PlayerState = schema({
   reloadEndsAt: 'number',
   kills: 'number',
   deaths: 'number',
+  lastDamagedAt: 'number'
+});
+
+const PlayerInventoryState = schema({
   money: 'number',
   beerCount: 'number',
   shotCount: 'number',
@@ -297,14 +308,18 @@ const PlayerState = schema({
   drunknessDose: 'number',
   drunknessLevel: 'number',
   drunknessEndsAt: 'number',
-  gymMembershipActive: 'boolean',
+  gymMembershipActive: 'boolean'
+});
+
+const PlayerRentIntroState = schema({
   rentIntroSeq: 'number',
   rentIntroAmount: 'number',
   rentIntroNpcId: 'string',
   rentIntroBuildingPlacementId: 'string',
-  rentIntroStartedAt: 'number',
-  lastDamagedAt: 'number',
-  workoutPlacementId: 'string',
+  rentIntroStartedAt: 'number'
+});
+
+const PlayerDeliveryQuestState = schema({
   deliveryQuestId: 'string',
   deliveryQuestStatus: 'string',
   deliveryQuestGiverNpcId: 'string',
@@ -312,10 +327,17 @@ const PlayerState = schema({
   deliveryQuestAcceptedAt: 'number',
   deliveryQuestCompletedAt: 'number',
   deliveryQuestRecentTargetNpcIds: 'string',
-  deliveryQuestCompletionCount: 'number',
+  deliveryQuestCompletionCount: 'number'
+});
+
+const PlayerActivityState = schema({
+  workoutPlacementId: 'string',
   gymPumpCompletedAt: 'number',
   stockBoughtAt: 'number',
-  blackjackHandPlayedAt: 'number',
+  blackjackHandPlayedAt: 'number'
+});
+
+const PlayerSkillState = schema({
   strengthXp: 'number',
   agilityXp: 'number',
   intelligenceXp: 'number',
@@ -324,9 +346,152 @@ const PlayerState = schema({
   skillAwardXpGained: 'number',
   skillAwardOldLevel: 'number',
   skillAwardNewLevel: 'number',
+  skillAwardAt: 'number'
+});
+
+const PlayerProfileState = schema({
   selectedMissionId: 'string',
   characterId: 'string'
 });
+
+// Colyseus schema fields use 6-bit indexes. Keep PlayerState grouped so future
+// feature fields expand nested schemas instead of overflowing the top-level budget.
+const PlayerState = schema({
+  isAdmin: 'boolean',
+  transform: PlayerTransformState,
+  animation: PlayerAnimationState,
+  chat: PlayerChatState,
+  combat: PlayerCombatState,
+  inventory: PlayerInventoryState,
+  rentIntro: PlayerRentIntroState,
+  deliveryQuest: PlayerDeliveryQuestState,
+  activity: PlayerActivityState,
+  skills: PlayerSkillState,
+  profile: PlayerProfileState
+});
+
+const PLAYER_STATE_SECTIONS = [
+  {
+    section: 'transform',
+    type: PlayerTransformState,
+    fields: ['x', 'z', 'rotationY', 'aimRotationY', 'aiming', 'skating']
+  },
+  {
+    section: 'animation',
+    type: PlayerAnimationState,
+    fields: ['emoteId', 'emoteActive', 'emoteStartedAt', 'emoteSeq']
+  },
+  {
+    section: 'chat',
+    type: PlayerChatState,
+    fields: ['chatText', 'chatStartedAt', 'chatSeq']
+  },
+  {
+    section: 'combat',
+    type: PlayerCombatState,
+    fields: [
+      'health',
+      'maxHealth',
+      'alive',
+      'respawnAt',
+      'spawnProtectedUntil',
+      'equippedWeaponId',
+      'ownedWeaponIds',
+      'ammoInClip',
+      'reserveAmmo',
+      'isReloading',
+      'reloadEndsAt',
+      'kills',
+      'deaths',
+      'lastDamagedAt'
+    ]
+  },
+  {
+    section: 'inventory',
+    type: PlayerInventoryState,
+    fields: [
+      'money',
+      'beerCount',
+      'shotCount',
+      'cigaretteCount',
+      'skateboardOwned',
+      'drunknessDose',
+      'drunknessLevel',
+      'drunknessEndsAt',
+      'gymMembershipActive'
+    ]
+  },
+  {
+    section: 'rentIntro',
+    type: PlayerRentIntroState,
+    fields: ['rentIntroSeq', 'rentIntroAmount', 'rentIntroNpcId', 'rentIntroBuildingPlacementId', 'rentIntroStartedAt']
+  },
+  {
+    section: 'deliveryQuest',
+    type: PlayerDeliveryQuestState,
+    fields: [
+      'deliveryQuestId',
+      'deliveryQuestStatus',
+      'deliveryQuestGiverNpcId',
+      'deliveryQuestTargetNpcId',
+      'deliveryQuestAcceptedAt',
+      'deliveryQuestCompletedAt',
+      'deliveryQuestRecentTargetNpcIds',
+      'deliveryQuestCompletionCount'
+    ]
+  },
+  {
+    section: 'activity',
+    type: PlayerActivityState,
+    fields: ['workoutPlacementId', 'gymPumpCompletedAt', 'stockBoughtAt', 'blackjackHandPlayedAt']
+  },
+  {
+    section: 'skills',
+    type: PlayerSkillState,
+    fields: [
+      'strengthXp',
+      'agilityXp',
+      'intelligenceXp',
+      'skillAwardSeq',
+      'skillAwardSkillId',
+      'skillAwardXpGained',
+      'skillAwardOldLevel',
+      'skillAwardNewLevel',
+      'skillAwardAt'
+    ]
+  },
+  {
+    section: 'profile',
+    type: PlayerProfileState,
+    fields: ['selectedMissionId', 'characterId']
+  }
+];
+
+function getPlayerStateSection(player, section, SectionState) {
+  if (!player[section]) {
+    player[section] = new SectionState();
+  }
+  return player[section];
+}
+
+function definePlayerStateAliases() {
+  for (const { section, type, fields } of PLAYER_STATE_SECTIONS) {
+    for (const field of fields) {
+      Object.defineProperty(PlayerState.prototype, field, {
+        get() {
+          return getPlayerStateSection(this, section, type)[field];
+        },
+        set(value) {
+          getPlayerStateSection(this, section, type)[field] = value;
+        },
+        enumerable: false,
+        configurable: true
+      });
+    }
+  }
+}
+
+definePlayerStateAliases();
 
 const PickupState = schema({
   id: 'string',

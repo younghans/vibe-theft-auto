@@ -834,13 +834,25 @@ function validateBartenderFunction() {
 
 function validatePlayerSchemaFieldBudget() {
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
-  const match = /const PlayerState = schema\(\{(?<body>[\s\S]*?)\n\}\);/.exec(serverSource);
-  assert(match?.groups?.body, 'WorldRoom should define a PlayerState schema');
-  const fields = [...match.groups.body.matchAll(/^\s+([A-Za-z0-9_]+):/gm)]
-    .map((fieldMatch) => fieldMatch[1]);
-  const adminIndex = fields.indexOf('isAdmin');
-  assert(fields.length <= 64, `PlayerState schema should stay at or below 64 fields; found ${fields.length}`);
+  const playerSchemas = [...serverSource.matchAll(/const (?<name>Player[A-Za-z0-9]*State) = schema\(\{(?<body>[\s\S]*?)\n\}\);/g)]
+    .map((match) => ({
+      name: match.groups.name,
+      fields: [...match.groups.body.matchAll(/^\s+([A-Za-z0-9_]+):/gm)]
+        .map((fieldMatch) => fieldMatch[1])
+    }));
+  const playerState = playerSchemas.find((entry) => entry.name === 'PlayerState');
+  assert(playerState, 'WorldRoom should define a PlayerState schema');
+
+  for (const { name, fields } of playerSchemas) {
+    assert(fields.length <= 64, `${name} schema should stay at or below 64 fields; found ${fields.length}`);
+  }
+
+  const adminIndex = playerState.fields.indexOf('isAdmin');
   assert(adminIndex >= 0 && adminIndex < 64, 'PlayerState isAdmin must be inside the Colyseus schema field budget');
+  assert(
+    ['transform', 'combat', 'inventory', 'deliveryQuest', 'skills', 'profile'].every((field) => playerState.fields.includes(field)),
+    'PlayerState should remain grouped into nested schemas so future features do not overflow the top-level field budget'
+  );
 }
 
 async function main() {
