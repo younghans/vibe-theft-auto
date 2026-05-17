@@ -8,6 +8,7 @@ const clipSourceUrls = Object.freeze({
   fastRun: assets.mixamo.animations.fastRun,
   punching: assets.mixamo.animations.punching,
   snatch: assets.mixamo.animations.snatch,
+  carrying: assets.mixamo.animations.carrying,
   typing: assets.mixamo.animations.typing,
   walking: assets.mixamo.animations.walking,
   drunkIdle: assets.mixamo.animations.drunkIdle,

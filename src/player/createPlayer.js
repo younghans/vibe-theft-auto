@@ -39,6 +39,7 @@ import {
   DRUNKNESS_MIN_ANIMATION_LEVEL,
   normalizeDrunknessLevel
 } from '../shared/bartender.js';
+import { isDeliveryQuestActive } from '../shared/deliveryQuest.js';
 
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
@@ -51,6 +52,7 @@ const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
 const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
+const DELIVERY_CARRY_CLIP_NAME = 'carrying';
 
 const UPPER_BODY_ROOT_BONE = 'spine';
 
@@ -369,7 +371,8 @@ export async function createPlayer(library, {
     characterDefinition.idleClip,
     characterDefinition.walkClip,
     characterDefinition.drunkIdleClip,
-    characterDefinition.drunkWalkClip
+    characterDefinition.drunkWalkClip,
+    DELIVERY_CARRY_CLIP_NAME
   ]);
   const punchClipName = characterDefinition.emotes?.[PUNCH_EMOTE_ID];
   if (punchClipName) {
@@ -410,6 +413,11 @@ export async function createPlayer(library, {
   const punchGuardClip = punchUpperBodyClip
     ? createPoseClip(punchUpperBodyClip, 0, `${punchClipName}_UpperBodyGuard`)
     : null;
+  const deliveryCarryUpperBodyClip = createBoneFilteredClip(
+    getMixamoClip(DELIVERY_CARRY_CLIP_NAME),
+    UPPER_BODY_EMOTE_BONES,
+    `${DELIVERY_CARRY_CLIP_NAME}_UpperBody`
+  );
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
@@ -420,6 +428,7 @@ export async function createPlayer(library, {
   const drunkIdleLowerBodyAction = mixer.clipAction(drunkIdleLowerBodyClip);
   const drunkWalkLowerBodyAction = mixer.clipAction(drunkWalkLowerBodyClip);
   const punchGuardAction = punchGuardClip ? mixer.clipAction(punchGuardClip) : null;
+  const deliveryCarryAction = mixer.clipAction(deliveryCarryUpperBodyClip);
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
   const emoteConfigOverrides = new Map();
@@ -456,6 +465,11 @@ export async function createPlayer(library, {
     punchGuardAction.setEffectiveWeight(0);
     punchGuardAction.play();
   }
+  deliveryCarryAction.enabled = true;
+  deliveryCarryAction.clampWhenFinished = false;
+  deliveryCarryAction.setLoop(THREE.LoopRepeat, Infinity);
+  deliveryCarryAction.setEffectiveWeight(0);
+  deliveryCarryAction.play();
 
   hideUnusedMeshes(character);
   const characterScale = normalizeCharacter(character);
@@ -573,6 +587,9 @@ export async function createPlayer(library, {
   const reloadIkParentInverseQuaternion = new THREE.Quaternion();
   const reloadIkLocalTargetQuaternion = new THREE.Quaternion();
   let desiredWeaponId = '';
+  let deliveryPackageActive = false;
+  let deliveryPackageRequestId = 0;
+  let deliveryCarryWeight = 0;
   let aliveState = true;
   let recoilAmount = 0;
   let aimingState = false;
@@ -1434,6 +1451,45 @@ export async function createPlayer(library, {
     return entry;
   }
 
+  async function setDeliveryPackageActive(active) {
+    const nextActive = Boolean(active);
+    if (deliveryPackageActive === nextActive) {
+      if (nextActive && getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) !== HELD_ITEM_IDS.deliveryBox) {
+        const requestId = deliveryPackageRequestId;
+        await attachHeldItem(HELD_ITEM_IDS.deliveryBox, { visible: aliveState });
+        if (requestId !== deliveryPackageRequestId || !deliveryPackageActive) {
+          if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
+            detachHeldItem(ATTACHMENT_SLOTS.handLeft);
+          } else {
+            updateHeldItemVisibility();
+          }
+          return deliveryPackageActive;
+        }
+      }
+      updateHeldItemVisibility();
+      return nextActive;
+    }
+
+    const requestId = ++deliveryPackageRequestId;
+    deliveryPackageActive = nextActive;
+    if (deliveryPackageActive) {
+      await attachHeldItem(HELD_ITEM_IDS.deliveryBox, { visible: aliveState });
+      if (requestId !== deliveryPackageRequestId || !deliveryPackageActive) {
+        if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
+          detachHeldItem(ATTACHMENT_SLOTS.handLeft);
+        } else {
+          updateHeldItemVisibility();
+        }
+      }
+    } else if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
+      detachHeldItem(ATTACHMENT_SLOTS.handLeft);
+    } else {
+      updateHeldItemVisibility();
+    }
+
+    return deliveryPackageActive;
+  }
+
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
@@ -1445,8 +1501,18 @@ export async function createPlayer(library, {
       && aliveState
       && !isLimpTransitioning()
     );
+    const wantsDeliveryCarry = Boolean(
+      deliveryPackageActive
+      && aliveState
+      && !activeEmoteId
+      && !aimingState
+      && !reloadState.active
+      && !reloadPreviewState.active
+      && !isLimpTransitioning()
+    );
     guardPoseWeight = THREE.MathUtils.damp(guardPoseWeight, wantsGuardPose ? 1 : 0, wantsGuardPose ? 18 : 14, deltaSeconds);
-    const upperBodyOverlayActive = upperBodyOnlyEmoteActive || wantsGuardPose || guardPoseWeight > 0.0001;
+    deliveryCarryWeight = THREE.MathUtils.damp(deliveryCarryWeight, wantsDeliveryCarry ? 1 : 0, wantsDeliveryCarry ? 12 : 16, deltaSeconds);
+    const upperBodyOverlayActive = upperBodyOnlyEmoteActive || wantsGuardPose || guardPoseWeight > 0.0001 || deliveryCarryWeight > 0.0001;
     const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     const smoothing = locomotionEnabled ? 12 : 22;
     const drunkBlendSpan = Math.max(1, DRUNKNESS_MAX_LEVEL - DRUNKNESS_MIN_ANIMATION_LEVEL + 1);
@@ -1484,6 +1550,8 @@ export async function createPlayer(library, {
       punchGuardAction.setEffectiveWeight(guardPoseWeight);
       punchGuardAction.setEffectiveTimeScale(0);
     }
+    deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight);
+    deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
     ragdoll.update(deltaSeconds);
@@ -1618,6 +1686,7 @@ export async function createPlayer(library, {
     }
 
     aliveState = nextAlive;
+    updateHeldItemVisibility();
     if (!nextAlive) {
       setReloadPreviewState(false);
       setReloadState(false);
@@ -1959,6 +2028,9 @@ export async function createPlayer(library, {
     detachHeldItem(slot = ATTACHMENT_SLOTS.handRight) {
       detachHeldItem(slot);
     },
+    setDeliveryPackageActive(active) {
+      return setDeliveryPackageActive(active);
+    },
     getHeldItemGripProfile(itemId = desiredWeaponId) {
       return itemId ? getMergedGripProfile(itemId) : null;
     },
@@ -2173,6 +2245,7 @@ export async function createPlayer(library, {
           ? state.lastDamagedAt
           : Date.now()
       });
+      void setDeliveryPackageActive(remoteAlive && isDeliveryQuestActive(state));
       void setWeaponState(
         remoteAlive ? (typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '') : '',
         { visible: remoteAlive && Boolean(state?.equippedWeaponId) }

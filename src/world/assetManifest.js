@@ -46,6 +46,7 @@ export const assets = {
       fastRun: assetUrl('mixamo', 'animations', 'fast-run.json'),
       punching: assetUrl('mixamo', 'animations', 'punching.json'),
       snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
+      carrying: assetUrl('mixamo', 'animations', 'carrying-upper-body.json'),
       typing: assetUrl('mixamo', 'animations', 'typing.json'),
       walking: assetUrl('mixamo', 'animations', 'walking.json'),
       drunkIdle: assetUrl('mixamo', 'animations', 'drunk-idle.json'),

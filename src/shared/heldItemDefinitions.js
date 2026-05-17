@@ -10,7 +10,8 @@ export const ATTACHMENT_SLOTS = Object.freeze({
 
 export const HELD_ITEM_IDS = Object.freeze({
   pistol: WEAPON_IDS.pistol,
-  crateA: 'crate_a'
+  crateA: 'crate_a',
+  deliveryBox: 'delivery_box'
 });
 
 export const HELD_ITEM_AIM_POSE_FIELDS = Object.freeze([
@@ -134,6 +135,30 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
       maxDimension: 2.2,
       transform: Object.freeze({
         position: Object.freeze([0, 0.82, 0]),
+        rotation: Object.freeze([0, Math.PI / 4, 0]),
+        scale: DEFAULT_SCALE
+      })
+    }),
+    aimPose: null
+  }),
+  [HELD_ITEM_IDS.deliveryBox]: Object.freeze({
+    id: HELD_ITEM_IDS.deliveryBox,
+    assetUrl: assets.city.boxA,
+    attachmentSlot: ATTACHMENT_SLOTS.handLeft,
+    normalize: Object.freeze({
+      maxDimension: 0.82,
+      center: true
+    }),
+    gripOffset: Object.freeze({
+      position: Object.freeze([0.04, -0.06, 0.03]),
+      rotation: Object.freeze([Math.PI * 0.06, Math.PI * 0.14, 0]),
+      scale: DEFAULT_SCALE
+    }),
+    points: Object.freeze({}),
+    pickupDisplay: Object.freeze({
+      maxDimension: 1.2,
+      transform: Object.freeze({
+        position: Object.freeze([0, 0.54, 0]),
         rotation: Object.freeze([0, Math.PI / 4, 0]),
         scale: DEFAULT_SCALE
       })

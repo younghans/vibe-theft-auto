@@ -53,6 +53,12 @@ import {
   INSTRUMENT_CLUSTER_FOOTPRINT
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
+import { assets } from '../src/world/assetManifest.js';
+import {
+  ATTACHMENT_SLOTS,
+  HELD_ITEM_IDS,
+  getHeldItemDefinition
+} from '../src/shared/heldItemDefinitions.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 
 function assert(condition, message) {
@@ -497,6 +503,43 @@ function validateTaskSequence() {
   );
 }
 
+function validateDeliveryQuestCarry() {
+  const deliveryBox = getHeldItemDefinition(HELD_ITEM_IDS.deliveryBox);
+  assert(
+    String(assets.mixamo.animations.carrying ?? '').includes('/mixamo/animations/carrying-upper-body.json'),
+    'Delivery carry animation should use the optimized upper-body asset.'
+  );
+  const carryingClip = JSON.parse(readFileSync(new URL('../assets/mixamo/animations/carrying-upper-body.json', import.meta.url), 'utf8'));
+  assert(
+    Array.isArray(carryingClip.tracks) && carryingClip.tracks.length > 0,
+    'Optimized delivery carry clip should include animation tracks.'
+  );
+  assert(
+    carryingClip.tracks.every((track) => !/^mixamorig(?:Hips|LeftUpLeg|RightUpLeg|LeftLeg|RightLeg|LeftFoot|RightFoot)/u.test(track.name ?? '')),
+    'Optimized delivery carry clip should not include lower-body tracks.'
+  );
+  assert(deliveryBox, 'Delivery quest should define a held delivery box item.');
+  assert(
+    deliveryBox.attachmentSlot === ATTACHMENT_SLOTS.handLeft,
+    'Delivery box should attach to the left hand so it can ride the carrying pose.'
+  );
+  assert(
+    Number(deliveryBox.normalize?.maxDimension) > 0 && Number(deliveryBox.normalize?.maxDimension) < 1,
+    'Delivery box should be scaled as a small package.'
+  );
+
+  const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
+  assert(
+    /maybeAutoCompleteDelivery\(/.test(gameSource),
+    'Game client should auto-complete active deliveries in the target NPC interact radius.'
+  );
+  assert(
+    /setDeliveryPackageActive/.test(playerSource) && /DELIVERY_CARRY_CLIP_NAME = 'carrying'/.test(playerSource),
+    'Player avatar should expose delivery package visuals backed by the carrying animation.'
+  );
+}
+
 function validateBartenderFunction() {
   const beer = getBartenderMenuItem('beer');
   const shot = getBartenderMenuItem('shot');
@@ -682,6 +725,7 @@ async function main() {
   validateTiles();
   validateProps();
   validateTaskSequence();
+  validateDeliveryQuestCarry();
   validateBartenderFunction();
   await validateBuildCity();
   console.log('World editor validation passed.');

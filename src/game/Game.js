@@ -818,6 +818,8 @@ export class Game {
     this.lastPhoneMapRefreshAt = 0;
     this.missionSelectRequestInFlight = false;
     this.deliveryQuestRequestInFlight = false;
+    this.deliveryQuestAutoCompleteAttemptKey = '';
+    this.deliveryQuestAutoCompleteAttemptAt = 0;
     this.deliveryQuestReminderSuppressedKey = '';
     this.deliveryQuestReminderSuppressionExpiresAt = 0;
     this.gymMembershipRequestInFlight = false;
@@ -4618,6 +4620,16 @@ export class Game {
     return `${giverNpcId}:${targetNpcId}:${acceptedAt}`;
   }
 
+  syncDeliveryPackageVisual(localPlayerState = this.getLocalPlayerState()) {
+    if (!this.player) {
+      return;
+    }
+
+    void this.player.setDeliveryPackageActive?.(
+      localPlayerState?.alive !== false && isDeliveryQuestActive(localPlayerState)
+    );
+  }
+
   suppressCurrentDeliveryReminder(questState = null) {
     const key = this.getDeliveryQuestReminderKey(questState);
     if (key) {
@@ -4688,7 +4700,7 @@ export class Game {
           action: true,
           npcId,
           label: '',
-          overheadText: 'E to deliver',
+          overheadText: 'Delivering package...',
           variant: 'interaction'
         };
       }
@@ -4749,11 +4761,13 @@ export class Game {
       }
 
       if (interaction.kind === 'completeDelivery') {
+        void this.player?.setDeliveryPackageActive?.(false);
         this.hud.showToast(`Delivered to ${result.targetName ?? 'the contact'}.`);
         return;
       }
 
       this.suppressCurrentDeliveryReminder(result);
+      void this.player?.setDeliveryPackageActive?.(true);
       this.hud.showToast(`Delivery accepted. Find ${result.targetName ?? interaction.targetName ?? 'the contact'}.`);
     } catch (error) {
       console.warn('[Quest] Delivery interaction failed.', error);
@@ -4761,6 +4775,76 @@ export class Game {
     } finally {
       this.deliveryQuestRequestInFlight = false;
     }
+  }
+
+  getActiveDeliveryTargetProximity(playerState = this.getLocalPlayerState()) {
+    if (!this.player || !isDeliveryQuestActive(playerState)) {
+      return null;
+    }
+
+    const targetNpcId = String(playerState.deliveryQuestTargetNpcId ?? '').trim();
+    if (!targetNpcId) {
+      return null;
+    }
+
+    const npcState = this.npcServiceState.npcs.get(targetNpcId);
+    const interactable = this.getNpcInteractableById(targetNpcId);
+    if (!npcState || !interactable) {
+      return null;
+    }
+
+    const radius = Math.max(1.5, Number(npcState.interactRadius ?? interactable.radius ?? 4.2) || 4.2);
+    const x = Number.isFinite(npcState.x) ? npcState.x : (interactable.originPosition?.x ?? interactable.position?.x);
+    const z = Number.isFinite(npcState.z) ? npcState.z : (interactable.originPosition?.z ?? interactable.position?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+
+    return {
+      npcId: targetNpcId,
+      npcState,
+      interactable,
+      radius,
+      distance: Math.hypot(this.player.position.x - x, this.player.position.z - z)
+    };
+  }
+
+  maybeAutoCompleteDelivery(playerState = this.getLocalPlayerState()) {
+    if (!isDeliveryQuestActive(playerState)) {
+      this.deliveryQuestAutoCompleteAttemptKey = '';
+      this.deliveryQuestAutoCompleteAttemptAt = 0;
+      return false;
+    }
+
+    const proximity = this.getActiveDeliveryTargetProximity(playerState);
+    if (!proximity || proximity.distance > proximity.radius) {
+      this.deliveryQuestAutoCompleteAttemptKey = '';
+      this.deliveryQuestAutoCompleteAttemptAt = 0;
+      return false;
+    }
+
+    if (this.deliveryQuestRequestInFlight) {
+      return true;
+    }
+
+    const interaction = this.getDeliveryQuestInteractionForNpc(proximity.interactable);
+    if (interaction?.kind !== 'completeDelivery' || !interaction.action) {
+      return false;
+    }
+
+    const now = performance.now();
+    const attemptKey = `complete:${this.getDeliveryQuestReminderKey(playerState)}`;
+    if (
+      this.deliveryQuestAutoCompleteAttemptKey === attemptKey
+      && now - this.deliveryQuestAutoCompleteAttemptAt < 1200
+    ) {
+      return true;
+    }
+
+    this.deliveryQuestAutoCompleteAttemptKey = attemptKey;
+    this.deliveryQuestAutoCompleteAttemptAt = now;
+    void this.handleDeliveryQuestInteraction(interaction);
+    return true;
   }
 
   async handleGymCheckInInteraction(interaction = null) {
@@ -10663,6 +10747,7 @@ export class Game {
     });
     const localDrunknessLevel = isAlive ? Math.max(0, Math.floor(Number(localPlayerState.drunknessLevel) || 0)) : 0;
     this.player.setDrunknessLevel(localDrunknessLevel);
+    this.syncDeliveryPackageVisual(localPlayerState);
     this.hud.setDrunknessState({ level: localDrunknessLevel });
     const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
     const selectedHotbarWeaponId = this.getSelectedHotbarWeaponId();
@@ -12416,6 +12501,11 @@ export class Game {
     }
 
     this.currentInteractable = nearest;
+    if (this.maybeAutoCompleteDelivery()) {
+      this.hud.setPrompt(null);
+      return;
+    }
+
     const deliveryInteraction = this.getDeliveryQuestInteractionForNpc();
     const gymCheckInInteraction = deliveryInteraction
       ? null
