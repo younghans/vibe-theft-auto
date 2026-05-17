@@ -139,6 +139,7 @@ const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   'playing-card': '&#127183;',
   skateboard: '&#128761;',
   office: '&#128188;',
+  charisma: '&#128526;',
   custom: '&#10022;'
 });
 

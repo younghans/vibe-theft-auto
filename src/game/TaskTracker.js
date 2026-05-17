@@ -8,6 +8,7 @@ import {
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 import {
   JANITOR_TASKS_REQUIRED,
+  CHARISMA_LEVEL_MISSION_TARGET_LEVEL,
   MISSION_CATALOG,
   MISSION_IDS,
   MISSION_STATUS,
@@ -344,6 +345,13 @@ function getMissionDescription(mission = null, context = {}) {
     return 'Office manager shift complete.';
   }
 
+  if (mission?.id === TASK_IDS.charismaLevel5) {
+    const currentLevel = Math.min(CHARISMA_LEVEL_MISSION_TARGET_LEVEL, progress.charismaLevel);
+    return currentLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
+      ? `Charisma level ${CHARISMA_LEVEL_MISSION_TARGET_LEVEL} reached.`
+      : `Reach Charisma level ${CHARISMA_LEVEL_MISSION_TARGET_LEVEL}. Current: ${currentLevel}/${CHARISMA_LEVEL_MISSION_TARGET_LEVEL}.`;
+  }
+
   return mission?.description ?? '';
 }
 
@@ -461,6 +469,13 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return (
       progress.officeManagerCompletedAt > 0
       && progress.officeManagerCompletedAt !== previousProgress.officeManagerCompletedAt
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.charismaLevel5) {
+    return (
+      previousProgress.charismaLevel < CHARISMA_LEVEL_MISSION_TARGET_LEVEL
+      && progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
     );
   }
 

@@ -1,4 +1,10 @@
 import { isDeliveryQuestActive } from './deliveryQuest.js';
+import {
+  SKILL_IDS,
+  getPlayerSkillXp,
+  getSkillLevelFromXp,
+  getSkillXpForLevel
+} from './skills.js';
 
 export const MISSION_IDS = Object.freeze({
   delivery: 'delivery',
@@ -9,6 +15,7 @@ export const MISSION_IDS = Object.freeze({
   blackjackHand: 'blackjack-hand',
   transportationUpgrade: 'custom-mission-transportation-upgrade-buy-a-skatebo-1mk4jok',
   officeManagerPromotion: 'custom-mission-your-first-promotion-get-a-job-as-th-kehj25',
+  charismaLevel5: 'custom-mission-up-your-social-skills-grind-for-char-1knt645',
   makeMoney: 'make-money'
 });
 
@@ -21,6 +28,8 @@ export const MISSION_STATUS = Object.freeze({
 
 export const SCHOOL_TEACHER_TASKS_REQUIRED = 3;
 export const JANITOR_TASKS_REQUIRED = 3;
+export const CHARISMA_LEVEL_MISSION_TARGET_LEVEL = 5;
+export const CHARISMA_LEVEL_MISSION_DESCRIPTION = 'Up your social skills. Grind for Charisma level 5.';
 
 export const MISSION_CATALOG = Object.freeze([
   {
@@ -94,6 +103,14 @@ export const MISSION_CATALOG = Object.freeze([
     icon: 'office',
     description: 'Complete an office manager shift after proving yourself.',
     requirement: 'Finish the earlier city missions first.'
+  },
+  {
+    id: MISSION_IDS.charismaLevel5,
+    title: 'Get Charisma level 5',
+    label: 'Get Charisma level 5',
+    icon: 'charisma',
+    description: CHARISMA_LEVEL_MISSION_DESCRIPTION,
+    requirement: 'Complete the office manager promotion first.'
   }
 ].map(Object.freeze));
 
@@ -167,6 +184,17 @@ const DEFAULT_MISSION_SEQUENCE = Object.freeze([
     icon: 'custom',
     makeAvailableAfterMission: true,
     availableAfterMissionNumber: 7
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.charismaLevel5,
+    custom: true,
+    title: 'Get Charisma level 5',
+    label: 'Get Charisma level 5',
+    description: CHARISMA_LEVEL_MISSION_DESCRIPTION,
+    prompt: CHARISMA_LEVEL_MISSION_DESCRIPTION,
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 9
   })
 ]);
 const CUSTOM_MISSION_ID_PREFIX = 'custom-mission-';
@@ -521,6 +549,7 @@ export function getMissionProgressSnapshot(player = null) {
   const schoolTasksCompletedCount = Number(player?.schoolTasksCompletedCount ?? 0);
   const janitorTasksCompletedCount = Number(player?.janitorTasksCompletedCount ?? 0);
   const officeManagerCompletedAt = Number(player?.officeManagerCompletedAt ?? 0);
+  const charismaXp = getPlayerSkillXp(player, SKILL_IDS.charisma);
   return {
     deliveryCompletionCount: getDeliveryCompletionCount(player),
     deliveryActive: isDeliveryQuestActive(player),
@@ -534,7 +563,9 @@ export function getMissionProgressSnapshot(player = null) {
       ? Math.max(0, Math.floor(janitorTasksCompletedCount))
       : 0,
     skateboardOwned: player?.skateboardOwned === true,
-    officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0
+    officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0,
+    charismaXp,
+    charismaLevel: getSkillLevelFromXp(charismaXp)
   };
 }
 
@@ -560,6 +591,10 @@ export function isMissionCompleteForSequence(missionId = '', player = null, sequ
 
   if (id === MISSION_IDS.officeManagerPromotion) {
     return progress.officeManagerCompletedAt > 0;
+  }
+
+  if (id === MISSION_IDS.charismaLevel5) {
+    return progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL;
   }
 
   if (isCustomMissionId(id)) {
@@ -673,6 +708,12 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
     return progress.officeManagerCompletedAt > 0 ? MISSION_STATUS.completed : MISSION_STATUS.available;
   }
 
+  if (id === MISSION_IDS.charismaLevel5) {
+    return progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
+      ? MISSION_STATUS.completed
+      : MISSION_STATUS.available;
+  }
+
   if (isCustomMissionId(id)) {
     return MISSION_STATUS.available;
   }
@@ -741,6 +782,12 @@ export function getMissionRequirement(missionId = '', player = null, sequence = 
   if (definition.id === MISSION_IDS.janitorTasks) {
     const remaining = Math.max(0, JANITOR_TASKS_REQUIRED - progress.janitorTasksCompletedCount);
     return remaining > 0 ? `Complete ${remaining} more janitor task${remaining === 1 ? '' : 's'}.` : '';
+  }
+
+  if (definition.id === MISSION_IDS.charismaLevel5) {
+    const targetXp = getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL);
+    const remainingXp = Math.max(0, targetXp - progress.charismaXp);
+    return remainingXp > 0 ? `Earn ${remainingXp} more Charisma XP.` : '';
   }
 
   return definition.requirement ?? '';

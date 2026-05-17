@@ -70,6 +70,8 @@ import {
 } from '../src/shared/deliveryQuest.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 import {
+  CHARISMA_LEVEL_MISSION_DESCRIPTION,
+  CHARISMA_LEVEL_MISSION_TARGET_LEVEL,
   JANITOR_TASKS_REQUIRED,
   MISSION_CATALOG,
   MISSION_STATUS,
@@ -81,6 +83,7 @@ import {
   normalizeMissionSequenceConfig,
   updateMissionSequenceEntry
 } from '../src/shared/missions.js';
+import { getSkillXpForLevel } from '../src/shared/skills.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -507,6 +510,8 @@ async function validateBuildCity() {
 }
 
 function validateTaskSequence() {
+  const charismaLevel5Xp = getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL);
+  const charismaLevel4Xp = Math.max(0, charismaLevel5Xp - 1);
   const basePlayer = {
     deliveryQuestCompletionCount: 1,
     deliveryQuestStatus: '',
@@ -516,7 +521,8 @@ function validateTaskSequence() {
     schoolTasksCompletedCount: 0,
     janitorTasksCompletedCount: 0,
     skateboardOwned: false,
-    officeManagerCompletedAt: 0
+    officeManagerCompletedAt: 0,
+    charismaXp: 0
   };
   const schoolCompletePlayer = {
     ...basePlayer,
@@ -584,13 +590,21 @@ function validateTaskSequence() {
     }).id === TASK_IDS.officeManagerPromotion,
     'Task sequence should route to office manager after buying a skateboard.'
   );
-  const allSequencedMissionsCompletePlayer = {
+  const officeManagerCompletePlayer = {
     ...janitorCompletePlayer,
     gymPumpCompletedAt: 1000,
     stockBoughtAt: 2000,
     blackjackHandPlayedAt: 3000,
     skateboardOwned: true,
     officeManagerCompletedAt: 4000
+  };
+  assert(
+    resolvePlayerTask({ localPlayerState: officeManagerCompletePlayer }).id === TASK_IDS.charismaLevel5,
+    'Task sequence should route to the Charisma level mission after office manager.'
+  );
+  const allSequencedMissionsCompletePlayer = {
+    ...officeManagerCompletePlayer,
+    charismaXp: charismaLevel5Xp
   };
   assert(
     resolvePlayerTask({ localPlayerState: allSequencedMissionsCompletePlayer }).id === '',
@@ -710,6 +724,23 @@ function validateTaskSequence() {
     }).completedTask,
     'Task tracker should complete the promotion mission when office manager work is completed.'
   );
+
+  const charismaTracker = new TaskTracker();
+  charismaTracker.update({
+    localPlayerState: {
+      ...officeManagerCompletePlayer,
+      charismaXp: charismaLevel4Xp
+    }
+  });
+  assert(
+    charismaTracker.update({
+      localPlayerState: {
+        ...officeManagerCompletePlayer,
+        charismaXp: charismaLevel5Xp
+      }
+    }).completedTask,
+    'Task tracker should complete the Charisma mission when Charisma reaches level 5.'
+  );
 }
 
 function validateDeliveryQuestCarry() {
@@ -791,13 +822,20 @@ function validateMissionSequencer() {
     TASK_IDS.stockBuy,
     TASK_IDS.blackjackHand,
     TASK_IDS.transportationUpgrade,
-    TASK_IDS.officeManagerPromotion
+    TASK_IDS.officeManagerPromotion,
+    TASK_IDS.charismaLevel5
   ];
-  const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7];
+  const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7, 9];
   assert(sequence.length === MISSION_CATALOG.length, 'Mission sequencer should include every catalog mission');
   assert(
     JSON.stringify(sequence.map((entry) => entry.missionId)) === JSON.stringify(expectedOrder),
     'Mission sequencer should use the admin-authored mission order'
+  );
+  const charismaMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  assert(charismaMission?.title === 'Get Charisma level 5', 'Sequenced Charisma mission should use the admin title');
+  assert(
+    charismaMission?.description === CHARISMA_LEVEL_MISSION_DESCRIPTION,
+    'Sequenced Charisma mission should preserve the admin description'
   );
   assert(sequence[0].makeAvailableAfterMission === false, 'The first mission should be available without a prior mission');
   for (let index = 1; index < sequence.length; index += 1) {
@@ -824,7 +862,8 @@ function validateMissionSequencer() {
     schoolTasksCompletedCount: 0,
     janitorTasksCompletedCount: 0,
     skateboardOwned: false,
-    officeManagerCompletedAt: 0
+    officeManagerCompletedAt: 0,
+    charismaXp: 0
   };
   const stockSnapshot = getMissionSnapshots(noProgressPlayer, '', ungatedStock)
     .find((mission) => mission.id === TASK_IDS.stockBuy);
@@ -855,6 +894,36 @@ function validateMissionSequencer() {
   assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after janitor work');
   assert(skateboardSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the skateboard mission after janitor work');
 
+  const postOfficeSnapshots = getMissionSnapshots({
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED,
+    gymPumpCompletedAt: 1,
+    stockBoughtAt: 1,
+    blackjackHandPlayedAt: 1,
+    skateboardOwned: true,
+    officeManagerCompletedAt: 1
+  }, '', sequence);
+  const charismaSnapshot = postOfficeSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  assert(charismaSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the Charisma mission after office manager work');
+  assert(charismaSnapshot?.selectable === true, 'Unlocked Charisma mission should be selectable before level 5');
+
+  const postCharismaSnapshots = getMissionSnapshots({
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED,
+    gymPumpCompletedAt: 1,
+    stockBoughtAt: 1,
+    blackjackHandPlayedAt: 1,
+    skateboardOwned: true,
+    officeManagerCompletedAt: 1,
+    charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
+  }, '', sequence);
+  const completedCharismaSnapshot = postCharismaSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  assert(completedCharismaSnapshot?.status === MISSION_STATUS.completed, 'Charisma mission should complete at level 5');
+
   const rows = getMissionSequenceViewModel(sequence);
   assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
   assert(rows[0].canRequireMission === false, 'The opening mission row should not allow a self dependency');
@@ -880,7 +949,8 @@ function validateMissionSequencer() {
     stockBoughtAt: 1,
     blackjackHandPlayedAt: 1,
     skateboardOwned: true,
-    officeManagerCompletedAt: 1
+    officeManagerCompletedAt: 1,
+    charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   };
   const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)
     .find((mission) => mission.id === customMission.missionId);
