@@ -111,9 +111,14 @@ import {
   getPawnShopMenuItem,
   getPawnShopPromptRadius,
   getPlayerPawnShopItemCount,
+  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../shared/pawnShop.js';
+import {
+  SKATEBOARD_SPEED_MULTIPLIER,
+  isPlayerSkateboardOwner
+} from '../shared/skateboard.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
   createBlackjackSession,
@@ -5651,14 +5656,15 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     const items = listPawnShopMenuItems();
     const actions = items.map((item) => {
+      const owned = item.kind === 'permanent' && isPlayerPawnShopItemOwned(localPlayerState, item.id);
       const count = item.kind === 'consumable'
         ? ` (${getPlayerPawnShopItemCount(localPlayerState, item.id)})`
         : '';
       return {
         id: `pawnShop:${item.id}`,
-        label: `Buy ${item.label} - ${formatMoneyAmount(item.price)}${count}`,
+        label: owned ? `${item.label} - Owned` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}${count}`,
         primary: item.id === 'cigarettes',
-        disabled: this.pawnShopRequestInFlight || cash < item.price
+        disabled: this.pawnShopRequestInFlight || owned || cash < item.price
       };
     });
 
@@ -5670,7 +5676,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Pawn Shop',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}. Skateboard: ${isPlayerSkateboardOwner(localPlayerState) ? 'Owned' : 'Not owned'}.`,
       actions,
       anchor: menu.anchor
     });
@@ -5721,6 +5727,7 @@ export class Game {
       this.refreshPhoneWalletHud();
       this.playSoundEffect(this.rentChaChingSound);
       this.refreshHotbarHud();
+      this.syncPlayerBoundItemsHud();
       this.hud.showToast(`Bought ${item.label.toLowerCase()} for ${formatMoneyAmount(item.price)}.`);
       this.renderPawnShopMenu();
     } catch (error) {
@@ -10883,6 +10890,7 @@ export class Game {
     this.updateRentIntroPresentation();
     this.maybeAnimateMoneyChange(localPlayerState.money ?? 0);
     this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0));
+    this.syncPlayerBoundItemsHud(localPlayerState);
 
     this.hud.setCombatState({
       visible: true,
@@ -11938,6 +11946,13 @@ export class Game {
     return true;
   }
 
+  syncPlayerBoundItemsHud(localPlayerState = this.getLocalPlayerState()) {
+    this.hud.setPlayerBoundItemsState({
+      skateboardOwned: isPlayerSkateboardOwner(localPlayerState),
+      skating: Boolean(localPlayerState?.skating)
+    });
+  }
+
   createCurrentHotbarSlots(localPlayerState = this.getLocalPlayerState()) {
     return createHotbarSlots({
       ownedWeaponIds: localPlayerState?.ownedWeaponIds ?? '',
@@ -12263,6 +12278,7 @@ export class Game {
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
+      this.player?.setSkateboardState?.({ skating: false });
       this.updateBuilderCamera();
       this.currentInteractable = null;
       this.hud.setPrompt(null);
@@ -12295,6 +12311,15 @@ export class Game {
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
       const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
+      const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : { x: 0, z: 0 };
+      const skatingInputHeld = Boolean(
+        skateboardOwned
+        && playerInput !== ZERO_INPUT
+        && this.input.isActionPressed('skate')
+        && (skateboardMovementInput.x !== 0 || skateboardMovementInput.z !== 0)
+      );
+      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: skatingInputHeld });
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -12306,6 +12331,7 @@ export class Game {
       if (workoutActive) {
         this.clearPendingHipFireShot();
         this.currentAimMode = false;
+        this.player.setSkateboardState?.({ owned: skateboardOwned, skating: false });
         const facing = this.player.object.rotation.y;
         this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
         this.syncInlineShellState();
@@ -12319,7 +12345,12 @@ export class Game {
           this.camera,
           activeColliders,
           activeSceneBounds,
-          groundHeight
+          groundHeight,
+          {
+            skateboardOwned,
+            skating: skatingInputHeld,
+            speedScale: SKATEBOARD_SPEED_MULTIPLIER
+          }
         );
         this.syncInlineShellState();
         const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen;

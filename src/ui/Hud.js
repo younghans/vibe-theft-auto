@@ -2971,6 +2971,20 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
   `;
 }
 
+function getSkateboardBadgeMarkup() {
+  return `
+    <span class="hud__bound-skateboard-icon" aria-hidden="true">
+      <span class="hud__bound-skateboard-deck"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--front"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--back"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-right"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-right"></span>
+    </span>
+  `;
+}
+
 function normalizeHudDrunknessLevel(level = 0) {
   const numeric = Number(level);
   return Number.isFinite(numeric)
@@ -3095,6 +3109,8 @@ export class Hud {
     this.ammoReserveLabel = this.overlay.querySelector('[data-ammo-reserve-label]');
     this.hotbarRoot = this.overlay.querySelector('[data-hotbar-root]');
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
+    this.boundItemsRoot = this.overlay.querySelector('[data-bound-items]');
+    this.boundSkateboardRoot = this.overlay.querySelector('[data-bound-item-skateboard]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
     this.drunknessLabels = Array.from(this.overlay.querySelectorAll('[data-drunkness-label-level]'));
@@ -3560,6 +3576,12 @@ export class Hud {
       <nav class="hud__hotbar" data-hotbar-root aria-label="Hotbar" hidden>
         <div class="hud__hotbar-slots" data-hotbar-slots></div>
       </nav>
+      <section class="hud__bound-items" data-bound-items aria-label="Permanent items" hidden>
+        <div class="hud__bound-item hud__bound-item--skateboard" data-bound-item-skateboard>
+          ${getSkateboardBadgeMarkup()}
+          <span class="hud__bound-item-label">Skateboard</span>
+        </div>
+      </section>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
         <div class="hud__drunkness-cylinder" aria-hidden="true">
           <div class="hud__drunkness-track">
@@ -8163,6 +8185,24 @@ export class Hud {
       button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       button.disabled = Boolean(disabled);
     }
+  }
+
+  setPlayerBoundItemsState({
+    skateboardOwned = false,
+    skating = false
+  } = {}) {
+    if (!this.boundItemsRoot || !this.boundSkateboardRoot) {
+      return;
+    }
+
+    const hasSkateboard = skateboardOwned === true;
+    this.boundItemsRoot.hidden = !hasSkateboard;
+    this.boundSkateboardRoot.hidden = !hasSkateboard;
+    this.boundSkateboardRoot.classList.toggle('is-active', hasSkateboard && skating === true);
+    this.boundSkateboardRoot.setAttribute(
+      'aria-label',
+      hasSkateboard && skating === true ? 'Skateboard active' : 'Skateboard owned'
+    );
   }
 
   setDrunknessState({ level = 0 } = {}) {

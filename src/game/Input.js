@@ -5,6 +5,7 @@ const ACTION_KEY_CODES = Object.freeze({
   interact: ['KeyE'],
   phone: ['Tab'],
   reload: ['KeyR'],
+  skate: ['ShiftLeft', 'ShiftRight'],
   zoomIn: ['Equal', 'NumpadAdd'],
   zoomOut: ['Minus', 'NumpadSubtract']
 });

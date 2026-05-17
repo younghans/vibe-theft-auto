@@ -86,9 +86,14 @@ import {
   getPawnShopMenuItem,
   getPawnShopPromptRadius,
   getPlayerPawnShopInventorySnapshot,
+  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
   normalizePawnShopInventoryCount
 } from '../../src/shared/pawnShop.js';
+import {
+  SKATEBOARD_SPEED_MULTIPLIER,
+  normalizeSkateboardOwned
+} from '../../src/shared/skateboard.js';
 import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
@@ -221,6 +226,7 @@ const PlayerState = schema({
   rotationY: 'number',
   aimRotationY: 'number',
   aiming: 'boolean',
+  skating: 'boolean',
   emoteId: 'string',
   emoteActive: 'boolean',
   emoteStartedAt: 'number',
@@ -245,6 +251,7 @@ const PlayerState = schema({
   beerCount: 'number',
   shotCount: 'number',
   cigaretteCount: 'number',
+  skateboardOwned: 'boolean',
   drunknessDose: 'number',
   drunknessLevel: 'number',
   drunknessEndsAt: 'number',
@@ -392,7 +399,8 @@ function sanitizePlayerAnimationState(message = {}) {
     emoteStartedAt: emoteActive && Number.isFinite(emoteStartedAt) ? Math.max(0, Math.floor(emoteStartedAt)) : 0,
     emoteSeq: Number.isFinite(emoteSeq) ? Math.max(0, Math.floor(emoteSeq)) : 0,
     aimRotationY: Number.isFinite(aimRotationY) ? quantizeRotation(aimRotationY) : 0,
-    aiming: Boolean(message.aiming)
+    aiming: Boolean(message.aiming),
+    skating: Boolean(message.skating)
   };
 }
 
@@ -503,6 +511,7 @@ function createPlayerSnapshotPayload(player, stockPortfolio = {}) {
       beerCount: player.beerCount,
       shotCount: player.shotCount,
       cigaretteCount: player.cigaretteCount,
+      skateboardOwned: normalizeSkateboardOwned(player.skateboardOwned),
       drunknessDose: player.drunknessDose,
       drunknessLevel: player.drunknessLevel,
       drunknessEndsAt: player.drunknessEndsAt,
@@ -552,6 +561,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.rotationY = quantizeRotation(saved.rotationY);
   player.aimRotationY = quantizeRotation(saved.aimRotationY ?? saved.rotationY);
   player.aiming = false;
+  player.skating = false;
   player.emoteId = '';
   player.emoteActive = false;
   player.emoteStartedAt = 0;
@@ -576,6 +586,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.beerCount = normalizeDrinkInventoryCount(saved.beerCount);
   player.shotCount = normalizeDrinkInventoryCount(saved.shotCount);
   player.cigaretteCount = normalizePawnShopInventoryCount(saved.cigaretteCount);
+  player.skateboardOwned = normalizeSkateboardOwned(saved.skateboardOwned);
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
   player.drunknessEndsAt = sanitizeSnapshotNumber(saved.drunknessEndsAt, 0, { integer: true, min: 0 });
@@ -900,6 +911,7 @@ export class WorldRoom extends Room {
     player.rotationY = Number.isFinite(introSpawn?.rotationY) ? quantizeRotation(introSpawn.rotationY) : 0;
     player.aimRotationY = player.rotationY;
     player.aiming = false;
+    player.skating = false;
     player.emoteId = '';
     player.emoteActive = false;
     player.emoteStartedAt = 0;
@@ -924,6 +936,7 @@ export class WorldRoom extends Room {
     player.beerCount = 0;
     player.shotCount = 0;
     player.cigaretteCount = 0;
+    player.skateboardOwned = false;
     player.drunknessDose = 0;
     player.drunknessLevel = 0;
     player.drunknessEndsAt = 0;
@@ -1294,7 +1307,9 @@ export class WorldRoom extends Room {
     const requestedPosition = clampToWorldBounds(Number(message.x), Number(message.z));
     const meta = this.getPlayerMeta(client.sessionId);
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
-    const maxDistance = PLAYER_POSITION_FORGIVENESS + (PLAYER_MAX_ACCEPTED_SPEED * elapsedSeconds);
+    const requestedSkating = player.skateboardOwned === true && message?.skating === true;
+    const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? SKATEBOARD_SPEED_MULTIPLIER : 1);
+    const maxDistance = PLAYER_POSITION_FORGIVENESS + (maxAcceptedSpeed * elapsedSeconds);
     let nextPosition = requestedPosition;
     let travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
     if (travelled > maxDistance) {
@@ -1307,7 +1322,8 @@ export class WorldRoom extends Room {
         requestedDistance: quantizePosition(travelled),
         acceptedDistance: quantizePosition(distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z)),
         maxDistance: quantizePosition(maxDistance),
-        elapsedMs: Math.round(elapsedSeconds * 1000)
+        elapsedMs: Math.round(elapsedSeconds * 1000),
+        skating: requestedSkating
       });
       travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
     }
@@ -1340,6 +1356,7 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
+    player.skating = Boolean(animationState.skating && player.skateboardOwned);
     this.queuePlayerSnapshotSave(client.sessionId);
   }
 
@@ -1809,6 +1826,13 @@ export class WorldRoom extends Room {
         this.setNpcChatPhase(npc, 'done', error, { bumpSeq: true });
         throw new Error(error);
       }
+    } else if (item.kind === 'permanent') {
+      if (isPlayerPawnShopItemOwned(player, item.id)) {
+        const error = `You already own a ${item.label.toLowerCase()}.`;
+        this.setNpcChatPhase(npc, 'done', error, { bumpSeq: true });
+        throw new Error(error);
+      }
+      inventoryCount = addPlayerPawnShopItem(player, item.id, 1);
     } else {
       inventoryCount = addPlayerPawnShopItem(player, item.id, 1);
     }
@@ -2482,6 +2506,7 @@ export class WorldRoom extends Room {
     player.rotationY = quantizeRotation(spawn.rotationY);
     player.aimRotationY = player.rotationY;
     player.aiming = false;
+    player.skating = false;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;
@@ -2730,6 +2755,7 @@ export class WorldRoom extends Room {
     player.alive = false;
     player.health = 0;
     player.respawnAt = Date.now() + PLAYER_RESPAWN_MS;
+    player.skating = false;
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.deaths += 1;

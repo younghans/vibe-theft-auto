@@ -70,6 +70,7 @@ function clonePlayerState(player) {
     rotationY: player.rotationY ?? 0,
     aimRotationY: player.aimRotationY ?? player.rotationY ?? 0,
     aiming: Boolean(player.aiming),
+    skating: Boolean(player.skating),
     emoteId: player.emoteId || '',
     emoteActive: Boolean(player.emoteActive && player.emoteId),
     emoteStartedAt: player.emoteStartedAt ?? 0,
@@ -94,6 +95,7 @@ function clonePlayerState(player) {
     beerCount: player.beerCount ?? 0,
     shotCount: player.shotCount ?? 0,
     cigaretteCount: player.cigaretteCount ?? 0,
+    skateboardOwned: player.skateboardOwned === true,
     drunknessDose: player.drunknessDose ?? 0,
     drunknessLevel: player.drunknessLevel ?? 0,
     drunknessEndsAt: player.drunknessEndsAt ?? 0,
@@ -758,6 +760,7 @@ export class NpcServiceColyseus {
       rotationY: quantize(rotationY, 3),
       aimRotationY: quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3),
       aiming: Boolean(animationState.aiming),
+      skating: Boolean(animationState.skating),
       emoteId,
       emoteActive: Boolean(animationState.emoteActive && emoteId),
       emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
@@ -777,13 +780,16 @@ export class NpcServiceColyseus {
       || this.lastTransform.emoteSeq !== next.emoteSeq;
     const aimStateChanged = !this.lastTransform
       || this.lastTransform.aiming !== next.aiming;
+    const skatingStateChanged = !this.lastTransform
+      || this.lastTransform.skating !== next.skating;
 
     if (
-      (!moved && !rotated && !aimRotated && !emoteChanged && !aimStateChanged)
+      (!moved && !rotated && !aimRotated && !emoteChanged && !aimStateChanged && !skatingStateChanged)
       || (
         !emoteChanged
         && !aimRotated
         && !aimStateChanged
+        && !skatingStateChanged
         && now - this.lastTransformSentAt < PLAYER_TRANSFORM_SEND_INTERVAL_MS
       )
     ) {

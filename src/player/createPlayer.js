@@ -315,6 +315,68 @@ function createPlayerTaskArrow(material) {
   return group;
 }
 
+function createPlayerSkateboardVisual() {
+  const group = new THREE.Group();
+  group.name = 'PlayerSkateboard';
+  group.visible = false;
+
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(1.18, 0.12, 2.28),
+    new THREE.MeshStandardMaterial({
+      color: 0x3aa686,
+      roughness: 0.62,
+      metalness: 0.05
+    })
+  );
+  deck.name = 'PlayerSkateboardDeck';
+  deck.position.y = 0.12;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.92, 0.028, 1.86),
+    new THREE.MeshStandardMaterial({
+      color: 0x14191f,
+      roughness: 0.84,
+      metalness: 0.02
+    })
+  );
+  grip.name = 'PlayerSkateboardGrip';
+  grip.position.y = 0.198;
+  group.add(grip);
+
+  const truckMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb9c3c8,
+    roughness: 0.4,
+    metalness: 0.55
+  });
+  const wheelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x171b20,
+    roughness: 0.68,
+    metalness: 0.06
+  });
+  for (const z of [-0.76, 0.76]) {
+    const truck = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.08, 0.12), truckMaterial);
+    truck.name = z < 0 ? 'PlayerSkateboardTruckBack' : 'PlayerSkateboardTruckFront';
+    truck.position.set(0, 0.035, z);
+    truck.castShadow = true;
+    group.add(truck);
+
+    for (const x of [-0.58, 0.58]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.24, 14), wheelMaterial);
+      wheel.name = `PlayerSkateboardWheel_${x < 0 ? 'L' : 'R'}_${z < 0 ? 'B' : 'F'}`;
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, -0.04, z);
+      wheel.castShadow = true;
+      group.add(wheel);
+    }
+  }
+
+  group.position.y = 0.1;
+  return group;
+}
+
 function cloneTrackedMaterial(material) {
   if (!material?.clone) {
     return { material, tracked: null };
@@ -511,6 +573,8 @@ export async function createPlayer(library, {
   damageBurst.position.set(0, PLAYER_HEIGHT * 0.58, 0);
   damageBurst.visible = false;
   visual.add(damageBurst);
+  const skateboard = createPlayerSkateboardVisual();
+  visual.add(skateboard);
   anchor.add(visual);
 
   let idleWeight = 1;
@@ -598,6 +662,9 @@ export async function createPlayer(library, {
   let upperBodyLookWeight = 0;
   let taskArrowTarget = null;
   let aimRotationY = 0;
+  let skateboardOwned = false;
+  let skateboardSkating = false;
+  let skateboardMotion = 0;
   let reloadPoseWeight = 0;
   let reloadPoseAmount = 0;
   let reloadSlideAmount = 0;
@@ -1490,6 +1557,36 @@ export async function createPlayer(library, {
     return deliveryPackageActive;
   }
 
+  function setSkateboardState({
+    owned = skateboardOwned,
+    skating = skateboardSkating
+  } = {}) {
+    skateboardOwned = owned === true;
+    skateboardSkating = Boolean(skateboardOwned && skating && aliveState && !ragdoll.isActive());
+    if (!skateboardOwned || !skateboardSkating) {
+      skateboard.visible = false;
+    }
+    return skateboardSkating;
+  }
+
+  function updateSkateboardVisual(deltaSeconds, moving) {
+    const active = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    skateboard.visible = active;
+    if (!active) {
+      return;
+    }
+
+    skateboardMotion += deltaSeconds * 12;
+    skateboard.position.y = 0.1 + (Math.sin(skateboardMotion * 2.4) * 0.018);
+    skateboard.rotation.x = Math.sin(skateboardMotion * 1.6) * 0.035;
+    skateboard.rotation.z = Math.sin(skateboardMotion * 1.9) * 0.045;
+    for (const child of skateboard.children) {
+      if (child.name?.startsWith('PlayerSkateboardWheel_')) {
+        child.rotation.x -= deltaSeconds * 11;
+      }
+    }
+  }
+
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
@@ -1554,6 +1651,7 @@ export async function createPlayer(library, {
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
+    updateSkateboardVisual(deltaSeconds, moving);
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
@@ -1690,6 +1788,7 @@ export async function createPlayer(library, {
     if (!nextAlive) {
       setReloadPreviewState(false);
       setReloadState(false);
+      setSkateboardState({ skating: false });
       setLimpActive(true, { startedAtMs, trackSync: false });
       if (desiredWeaponId) {
         void setWeaponState(desiredWeaponId, { visible: false });
@@ -1868,7 +1967,8 @@ export async function createPlayer(library, {
           emoteActive: true,
           emoteStartedAt: limpStartedAt,
           emoteSeq: emoteSequence,
-          aimRotationY
+          aimRotationY,
+          skating: false
         };
       }
 
@@ -1877,7 +1977,8 @@ export async function createPlayer(library, {
         emoteActive: Boolean(activeEmoteId),
         emoteStartedAt: activeEmoteId ? activeEmoteStartedAt : 0,
         emoteSeq: emoteSequence,
-        aimRotationY
+        aimRotationY,
+        skating: skateboardSkating
       };
     },
     playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
@@ -2031,6 +2132,9 @@ export async function createPlayer(library, {
     setDeliveryPackageActive(active) {
       return setDeliveryPackageActive(active);
     },
+    setSkateboardState(options = {}) {
+      return setSkateboardState(options);
+    },
     getHeldItemGripProfile(itemId = desiredWeaponId) {
       return itemId ? getMergedGripProfile(itemId) : null;
     },
@@ -2159,14 +2263,19 @@ export async function createPlayer(library, {
     stopReloadPreview() {
       return setReloadPreviewState(false);
     },
-    update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0) {
+    update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0, options = {}) {
       if (!aliveState) {
+        setSkateboardState({ skating: false });
         updateAnimationState(deltaSeconds, false, groundHeight);
         return;
       }
 
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
+      const wantsToSkate = Boolean(options.skateboardOwned && options.skating && wantsToMove && !ragdoll.isActive());
+      const movementSpeedScale = wantsToSkate && Number.isFinite(options.speedScale)
+        ? options.speedScale
+        : 1;
 
       if (wantsToMove && isLimpTransitioning()) {
         setLimpActive(false, { trackSync: false });
@@ -2180,15 +2289,20 @@ export async function createPlayer(library, {
       const movement = moving
         ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight)
         : moveDirection.set(0, 0, 0);
+      setSkateboardState({
+        owned: options.skateboardOwned === true,
+        skating: wantsToSkate && moving
+      });
 
       if (moving) {
-        moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds);
+        moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds, movementSpeedScale);
       }
 
       updateAnimationState(deltaSeconds, moving, groundHeight);
     },
     moveToward(targetPosition, deltaSeconds, colliders, cityBounds, groundHeight = 0, options = {}) {
       if (!aliveState) {
+        setSkateboardState({ skating: false });
         updateAnimationState(deltaSeconds, false, groundHeight);
         return {
           arrived: false,
@@ -2217,6 +2331,7 @@ export async function createPlayer(library, {
       const toTarget = moveToTarget.copy(target).sub(anchor.position);
       toTarget.y = 0;
       const distance = toTarget.length();
+      setSkateboardState({ skating: false });
 
       if (distance <= stopDistance) {
         updateAnimationState(deltaSeconds, false, groundHeight);
@@ -2245,6 +2360,10 @@ export async function createPlayer(library, {
           ? state.lastDamagedAt
           : Date.now()
       });
+      setSkateboardState({
+        owned: remoteAlive && state?.skateboardOwned === true,
+        skating: remoteAlive && state?.skating === true
+      });
       void setDeliveryPackageActive(remoteAlive && isDeliveryQuestActive(state));
       void setWeaponState(
         remoteAlive ? (typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '') : '',
@@ -2253,6 +2372,7 @@ export async function createPlayer(library, {
 
       if (!remoteAlive) {
         aimingState = false;
+        setSkateboardState({ skating: false });
         setReloadState(false);
         updateAnimationState(deltaSeconds, false, groundHeight);
         return;

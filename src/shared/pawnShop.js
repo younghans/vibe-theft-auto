@@ -3,10 +3,16 @@ import {
   WEAPON_IDS,
   WEAPON_RESERVE_CAP
 } from './combatConstants.js';
+import {
+  SKATEBOARD_ITEM_ID,
+  isPlayerSkateboardOwner,
+  normalizeSkateboardOwned
+} from './skateboard.js';
 
 export const PAWN_SHOP_ITEM_IDS = Object.freeze({
   cigarettes: 'cigarettes',
-  pistol: WEAPON_IDS.pistol
+  pistol: WEAPON_IDS.pistol,
+  skateboard: SKATEBOARD_ITEM_ID
 });
 
 export const PAWN_SHOP_MENU_ITEMS = Object.freeze([
@@ -28,6 +34,14 @@ export const PAWN_SHOP_MENU_ITEMS = Object.freeze([
     ammoInClip: WEAPON_CLIP_SIZE,
     reserveAmmo: WEAPON_RESERVE_CAP,
     kind: 'weapon'
+  }),
+  Object.freeze({
+    id: PAWN_SHOP_ITEM_IDS.skateboard,
+    label: 'Skateboard',
+    price: 200,
+    orderLine: 'Skateboard sold. Two hundred bucks.',
+    ownedField: 'skateboardOwned',
+    kind: 'permanent'
   })
 ]);
 
@@ -40,6 +54,14 @@ const PAWN_SHOP_INVENTORY_FIELDS = Object.freeze(
     PAWN_SHOP_MENU_ITEMS
       .filter((item) => item.inventoryField)
       .map((item) => [item.id, item.inventoryField])
+  )
+);
+
+const PAWN_SHOP_OWNED_FIELDS = Object.freeze(
+  Object.fromEntries(
+    PAWN_SHOP_MENU_ITEMS
+      .filter((item) => item.ownedField)
+      .map((item) => [item.id, item.ownedField])
   )
 );
 
@@ -73,6 +95,10 @@ export function getPawnShopInventoryField(itemId = '') {
   return PAWN_SHOP_INVENTORY_FIELDS[normalizePawnShopMenuItemId(itemId)] ?? '';
 }
 
+export function getPawnShopOwnedField(itemId = '') {
+  return PAWN_SHOP_OWNED_FIELDS[normalizePawnShopMenuItemId(itemId)] ?? '';
+}
+
 export function normalizePawnShopInventoryCount(value = 0) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -87,9 +113,24 @@ export function getPlayerPawnShopItemCount(player = null, itemId = '') {
   return field ? normalizePawnShopInventoryCount(player?.[field]) : 0;
 }
 
+export function isPlayerPawnShopItemOwned(player = null, itemId = '') {
+  const normalizedItemId = normalizePawnShopMenuItemId(itemId);
+  const field = getPawnShopOwnedField(normalizedItemId);
+  if (!field) {
+    return false;
+  }
+
+  if (normalizedItemId === PAWN_SHOP_ITEM_IDS.skateboard) {
+    return isPlayerSkateboardOwner(player);
+  }
+
+  return player?.[field] === true;
+}
+
 export function getPlayerPawnShopInventorySnapshot(player = null) {
   return {
-    cigaretteCount: getPlayerPawnShopItemCount(player, PAWN_SHOP_ITEM_IDS.cigarettes)
+    cigaretteCount: getPlayerPawnShopItemCount(player, PAWN_SHOP_ITEM_IDS.cigarettes),
+    skateboardOwned: isPlayerSkateboardOwner(player)
   };
 }
 
@@ -106,8 +147,14 @@ export function setPlayerPawnShopItemCount(player = null, itemId = '', count = 0
 
 export function addPlayerPawnShopItem(player = null, itemId = '', quantity = 1) {
   const field = getPawnShopInventoryField(itemId);
-  if (!player || !field) {
+  const ownedField = getPawnShopOwnedField(itemId);
+  if (!player || (!field && !ownedField)) {
     return 0;
+  }
+
+  if (ownedField) {
+    player[ownedField] = true;
+    return 1;
   }
 
   const nextCount = normalizePawnShopInventoryCount(
@@ -115,6 +162,12 @@ export function addPlayerPawnShopItem(player = null, itemId = '', quantity = 1) 
   );
   player[field] = nextCount;
   return nextCount;
+}
+
+export function normalizePawnShopPlayerBoundItems(player = null) {
+  return {
+    skateboardOwned: normalizeSkateboardOwned(player?.skateboardOwned)
+  };
 }
 
 export function consumePlayerPawnShopItem(player = null, itemId = '') {

@@ -29,9 +29,12 @@ import {
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
+  getPlayerPawnShopInventorySnapshot,
+  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../src/shared/pawnShop.js';
+import { SKATEBOARD_SPEED_MULTIPLIER } from '../src/shared/skateboard.js';
 import {
   createHotbarSlots,
   getHotbarConsumableItemId,
@@ -619,6 +622,8 @@ function validateBartenderFunction() {
   const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
+  const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   assert(
     /\.hud__interaction\.is-world-anchored\s*\{[^}]*bottom:\s*auto/s.test(styles),
     'Bartender interaction menu should support anchored in-world placement'
@@ -728,11 +733,14 @@ function validateBartenderFunction() {
 
   const cigarettes = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes);
   const pawnPistol = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.pistol);
+  const skateboard = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.skateboard);
   assert(cigarettes?.price === 20, 'Pawn shop cigarettes should cost $20');
   assert(cigarettes?.kind === 'consumable', 'Pawn shop cigarettes should be a consumable item');
   assert(pawnPistol?.price === 50, 'Pawn shop pistol should cost $50');
   assert(pawnPistol?.weaponId === WEAPON_IDS.pistol, 'Pawn shop pistol should sell the standard pistol');
-  assert(listPawnShopMenuItems().length === 2, 'Pawn shop menu should include exactly cigarettes and pistol');
+  assert(skateboard?.price === 200, 'Pawn shop skateboard should cost $200');
+  assert(skateboard?.kind === 'permanent', 'Pawn shop skateboard should be a permanent item');
+  assert(listPawnShopMenuItems().length === 3, 'Pawn shop menu should include cigarettes, pistol, and skateboard');
 
   const cigarettePlayer = { cigaretteCount: 0 };
   addPlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes, 2);
@@ -744,6 +752,19 @@ function validateBartenderFunction() {
     getHotbarConsumableItemId(cigaretteSlots[3]) === PAWN_SHOP_ITEM_IDS.cigarettes,
     'Cigarettes should appear as a hotbar consumable'
   );
+  const skateboardPlayer = { skateboardOwned: false };
+  addPlayerPawnShopItem(skateboardPlayer, PAWN_SHOP_ITEM_IDS.skateboard, 1);
+  assert(skateboardPlayer.skateboardOwned === true, 'Pawn shop skateboard should set a permanent owned flag');
+  assert(isPlayerPawnShopItemOwned(skateboardPlayer, PAWN_SHOP_ITEM_IDS.skateboard), 'Pawn shop skateboard ownership should be readable');
+  assert(
+    getPlayerPawnShopInventorySnapshot(skateboardPlayer).skateboardOwned === true,
+    'Pawn shop inventory snapshot should include skateboard ownership'
+  );
+  assert(
+    createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== PAWN_SHOP_ITEM_IDS.skateboard),
+    'Skateboard should not occupy one of the five hotbar slots'
+  );
+  assert(SKATEBOARD_SPEED_MULTIPLIER === 1.6, 'Skateboard skating speed multiplier should be 1.6x');
 
   const pawnOwner = normalizeNpcBehavior({
     modelId: 'maynard',
@@ -770,6 +791,25 @@ function validateBartenderFunction() {
   assert(
     /buyPawnShopItem/.test(gameSource),
     'Game client should route pawn shop menu actions to a purchase handler'
+  );
+  assert(
+    /setPlayerBoundItemsState/.test(hudSource) && /\.hud__bound-items/.test(styles),
+    'HUD should display permanent skateboard ownership outside the hotbar'
+  );
+  assert(
+    /PlayerSkateboardDeck/.test(playerSource) && /setSkateboardState/.test(playerSource),
+    'Player avatar should include a simple skateboard visual below the feet'
+  );
+  assert(
+    /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
+      && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
+    'Game client should use Shift skating input and the shared speed multiplier'
+  );
+  assert(
+    /skateboardOwned:\s*'boolean'/.test(serverSource)
+      && /skating:\s*'boolean'/.test(serverSource)
+      && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
+    'Server player state should persist skateboard ownership and authorize skating speed'
   );
 }
 

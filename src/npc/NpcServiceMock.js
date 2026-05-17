@@ -69,6 +69,7 @@ import {
   getPawnShopMenuItem,
   getPawnShopPromptRadius,
   getPlayerPawnShopInventorySnapshot,
+  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc
 } from '../shared/pawnShop.js';
 import {
@@ -207,7 +208,8 @@ function sanitizePlayerAnimationState(animationState = {}) {
     emoteStartedAt: Number.isFinite(animationState.emoteStartedAt) ? Math.max(0, Math.floor(animationState.emoteStartedAt)) : 0,
     emoteSeq: Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0,
     aimRotationY: Number.isFinite(aimRotationY) ? aimRotationY : 0,
-    aiming: Boolean(animationState.aiming)
+    aiming: Boolean(animationState.aiming),
+    skating: Boolean(animationState.skating)
   };
 }
 
@@ -218,6 +220,7 @@ function createDefaultPlayerState(overrides = {}) {
     rotationY: 0,
     aimRotationY: 0,
     aiming: false,
+    skating: false,
     emoteId: '',
     emoteActive: false,
     emoteStartedAt: 0,
@@ -242,6 +245,7 @@ function createDefaultPlayerState(overrides = {}) {
     beerCount: 0,
     shotCount: 0,
     cigaretteCount: 0,
+    skateboardOwned: false,
     drunknessDose: 0,
     drunknessLevel: 0,
     drunknessEndsAt: 0,
@@ -883,6 +887,7 @@ export class NpcServiceMock {
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
+    player.skating = Boolean(nextAnimation.skating && player.skateboardOwned);
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
     player.emoteStartedAt = nextAnimation.emoteStartedAt;
@@ -1598,6 +1603,14 @@ export class NpcServiceMock {
         this.emit();
         return { ok: false, error };
       }
+    } else if (item.kind === 'permanent') {
+      if (isPlayerPawnShopItemOwned(access.player, item.id)) {
+        const error = `You already own a ${item.label.toLowerCase()}.`;
+        this.setNpcChatPhase(access.npc, 'done', error, { bumpSeq: true });
+        this.emit();
+        return { ok: false, error };
+      }
+      inventoryCount = addPlayerPawnShopItem(access.player, item.id, 1);
     } else {
       inventoryCount = addPlayerPawnShopItem(access.player, item.id, 1);
     }
@@ -2478,6 +2491,7 @@ export class NpcServiceMock {
     player.z = quantizePosition(spawn.z);
     player.rotationY = quantizeRotation(spawn.rotationY);
     player.aimRotationY = player.rotationY;
+    player.skating = false;
     player.health = PLAYER_MAX_HEALTH;
     player.maxHealth = PLAYER_MAX_HEALTH;
     player.alive = true;
@@ -2519,6 +2533,7 @@ export class NpcServiceMock {
     player.alive = false;
     player.health = 0;
     player.respawnAt = Date.now() + PLAYER_RESPAWN_MS;
+    player.skating = false;
     player.isReloading = false;
     player.reloadEndsAt = 0;
     player.deaths += 1;
