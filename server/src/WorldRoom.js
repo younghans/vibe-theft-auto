@@ -955,13 +955,13 @@ export class WorldRoom extends Room {
     player.skillAwardOldLevel = 1;
     player.skillAwardNewLevel = 1;
     player.skillAwardAt = 0;
-    player.selectedMissionId = resolveSelectedMissionId(player);
+    player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId, this.worldState.getMissionSequence());
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
     const restoredPlayerSnapshot = applyPlayerSnapshotPayload(player, playerSnapshot);
     if (restoredPlayerSnapshot) {
       this.stockPortfolios.set(client.sessionId, sanitizeStockPortfolioSnapshot(playerSnapshot.stockPortfolio));
-      player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+      player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId, this.worldState.getMissionSequence());
     }
     this.state.players.set(client.sessionId, player);
     this.syncConnectedPlayerCount({ includingSessionId: client.sessionId });
@@ -1358,7 +1358,11 @@ export class WorldRoom extends Room {
       return '';
     }
 
-    const nextMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+    const nextMissionId = resolveSelectedMissionId(
+      player,
+      player.selectedMissionId,
+      this.worldState.getMissionSequence()
+    );
     if (player.selectedMissionId !== nextMissionId) {
       player.selectedMissionId = nextMissionId;
     }
@@ -1376,7 +1380,7 @@ export class WorldRoom extends Room {
       throw new Error('That mission is not available.');
     }
 
-    if (!isMissionSelectable(missionId, player)) {
+    if (!isMissionSelectable(missionId, player, this.worldState.getMissionSequence())) {
       throw new Error('That mission is locked or already complete.');
     }
 
@@ -3319,6 +3323,17 @@ export class WorldRoom extends Room {
           type: 'upsertPlacement',
           placement: this.worldState.serializePlacement(updatedPlacement.id),
           replacedPlacementId: null
+        }, previousLayout);
+      }
+      case 'updateMissionSequence': {
+        const missionSequence = this.worldState.updateMissionSequence(payload.missionSequence);
+        for (const player of this.state.players.values()) {
+          this.normalizePlayerSelectedMission(player);
+        }
+
+        return this.commitWorldPatch({
+          type: 'updateMissionSequence',
+          missionSequence
         }, previousLayout);
       }
       default:

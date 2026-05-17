@@ -288,9 +288,10 @@ function getMissionDefinitionById(missionId = '') {
 
 export function resolvePlayerMissions(context = {}) {
   const { localPlayerState } = context;
+  const missionSequence = context.worldBuilder?.getMissionSequence?.() ?? context.missionSequence ?? null;
   const progress = getMissionProgressSnapshot(localPlayerState);
-  const selectedMissionId = resolveSelectedMissionId(localPlayerState, localPlayerState?.selectedMissionId);
-  const missions = getMissionSnapshots(localPlayerState, selectedMissionId)
+  const selectedMissionId = resolveSelectedMissionId(localPlayerState, localPlayerState?.selectedMissionId, missionSequence);
+  const missions = getMissionSnapshots(localPlayerState, selectedMissionId, missionSequence)
     .map((mission) => ({
       ...mission,
       title: getMissionTitle(mission, context),
@@ -353,6 +354,13 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return (
       progress.blackjackHandPlayedAt > 0
       && progress.blackjackHandPlayedAt !== previousProgress.blackjackHandPlayedAt
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.makeMoney) {
+    return (
+      (progress.deliveryActive && !previousProgress.deliveryActive)
+      || progress.deliveryCompletionCount > previousProgress.deliveryCompletionCount
     );
   }
 

@@ -5,6 +5,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
+import { cloneMissionSequence } from '../../src/shared/missions.js';
 import { logServer } from './logger.js';
 
 const { Pool } = pg;
@@ -23,7 +24,8 @@ function cloneLayout(layout = defaultWorldLayout) {
   return structuredClone({
     tiles: layout.tiles ?? [],
     props: layout.props ?? [],
-    npcs: layout.npcs ?? []
+    npcs: layout.npcs ?? [],
+    missionSequence: cloneMissionSequence(layout.missionSequence)
   });
 }
 

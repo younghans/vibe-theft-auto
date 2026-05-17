@@ -60,6 +60,15 @@ import {
   getHeldItemDefinition
 } from '../src/shared/heldItemDefinitions.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
+import {
+  MISSION_CATALOG,
+  MISSION_STATUS,
+  getMissionSnapshots,
+  getMissionSequenceViewModel,
+  moveMissionSequenceEntry,
+  normalizeMissionSequenceConfig,
+  updateMissionSequenceEntry
+} from '../src/shared/missions.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -547,6 +556,47 @@ function validateDeliveryQuestCarry() {
   );
 }
 
+function validateMissionSequencer() {
+  const sequence = normalizeMissionSequenceConfig(defaultWorldLayout.missionSequence);
+  assert(sequence.length === MISSION_CATALOG.length, 'Mission sequencer should include every catalog mission');
+  assert(sequence[0].makeAvailableAfterMission === false, 'The first mission should be available without a prior mission');
+  for (let index = 1; index < sequence.length; index += 1) {
+    assert(sequence[index].makeAvailableAfterMission === true, `Mission ${index + 1} should default to a prior-mission gate`);
+    assert(sequence[index].availableAfterMissionNumber === index, `Mission ${index + 1} should default to the previous mission number`);
+  }
+
+  const moved = moveMissionSequenceEntry(sequence, 3, 1);
+  assert(moved[1].missionId === TASK_IDS.stockBuy, 'Mission sequencer drag reorder should move missions by index');
+  assert(moved[1].availableAfterMissionNumber === 1, 'Moved missions should clamp their gate to an earlier mission number');
+
+  const ungatedStock = updateMissionSequenceEntry(moved, TASK_IDS.stockBuy, {
+    makeAvailableAfterMission: false
+  });
+  const noProgressPlayer = {
+    deliveryQuestCompletionCount: 0,
+    deliveryQuestStatus: '',
+    gymPumpCompletedAt: 0,
+    stockBoughtAt: 0,
+    blackjackHandPlayedAt: 0
+  };
+  const stockSnapshot = getMissionSnapshots(noProgressPlayer, '', ungatedStock)
+    .find((mission) => mission.id === TASK_IDS.stockBuy);
+  assert(stockSnapshot?.status === MISSION_STATUS.available, 'Unchecked mission gates should make that mission available when its own task is unfinished');
+
+  const defaultSnapshots = getMissionSnapshots({
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1
+  }, '', sequence);
+  const gymSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
+  const stockLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.stockBuy);
+  assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after delivery');
+  assert(stockLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep stock locked until gym is complete');
+
+  const rows = getMissionSequenceViewModel(sequence);
+  assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
+  assert(rows[0].canRequireMission === false, 'The opening mission row should not allow a self dependency');
+}
+
 function validateBartenderFunction() {
   const beer = getBartenderMenuItem('beer');
   const shot = getBartenderMenuItem('shot');
@@ -733,6 +783,7 @@ async function main() {
   validateProps();
   validateTaskSequence();
   validateDeliveryQuestCarry();
+  validateMissionSequencer();
   validateBartenderFunction();
   await validateBuildCity();
   console.log('World editor validation passed.');

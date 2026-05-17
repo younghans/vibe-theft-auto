@@ -847,6 +847,18 @@ export class NpcServiceMock {
         });
         return { ok: true, placementId: payload.placementId };
       }
+      case 'updateMissionSequence': {
+        const missionSequence = this.worldState.updateMissionSequence(payload.missionSequence);
+        for (const player of this.state.players.values()) {
+          this.normalizePlayerSelectedMission(player);
+        }
+        this.emitWorldPatch({
+          type: 'updateMissionSequence',
+          missionSequence
+        });
+        this.emit();
+        return { ok: true };
+      }
       default:
         return { ok: false, error: 'That world edit is not supported.' };
     }
@@ -897,7 +909,11 @@ export class NpcServiceMock {
       return '';
     }
 
-    const nextMissionId = resolveSelectedMissionId(player, player.selectedMissionId);
+    const nextMissionId = resolveSelectedMissionId(
+      player,
+      player.selectedMissionId,
+      this.worldState.getMissionSequence()
+    );
     if (player.selectedMissionId !== nextMissionId) {
       player.selectedMissionId = nextMissionId;
     }
@@ -911,7 +927,7 @@ export class NpcServiceMock {
     }
 
     const normalizedMissionId = normalizeMissionId(missionId);
-    if (!normalizedMissionId || !isMissionSelectable(normalizedMissionId, player)) {
+    if (!normalizedMissionId || !isMissionSelectable(normalizedMissionId, player, this.worldState.getMissionSequence())) {
       return { ok: false, error: 'That mission is locked or already complete.' };
     }
 

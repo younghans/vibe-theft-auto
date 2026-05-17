@@ -8,6 +8,9 @@ import {
   normalizeRotationQuarterTurns,
   quantizePosition as normalizePositionValue
 } from '../shared/numberMath.js';
+import {
+  cloneMissionSequence
+} from '../shared/missions.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
@@ -163,6 +166,7 @@ export class WorldState {
     this.npcPlacements = new Map();
     this.placementsById = new Map();
     this.placementSequence = 0;
+    this.missionSequence = cloneMissionSequence();
   }
 
   clear() {
@@ -172,6 +176,7 @@ export class WorldState {
     this.npcPlacements.clear();
     this.placementsById.clear();
     this.placementSequence = 0;
+    this.missionSequence = cloneMissionSequence();
   }
 
   getPlacement(id) {
@@ -182,6 +187,15 @@ export class WorldState {
     return [...this.placementsById.values()].map(clonePlacement);
   }
 
+  getMissionSequence() {
+    return cloneMissionSequence(this.missionSequence);
+  }
+
+  updateMissionSequence(sequence = null) {
+    this.missionSequence = cloneMissionSequence(sequence);
+    return this.getMissionSequence();
+  }
+
   getPlacementAtCell(cellX, cellZ) {
     const placementId = this.tileCells.get(this.getCellKey(cellX, cellZ));
     return placementId ? (this.tilePlacements.get(placementId) ?? null) : null;
@@ -189,6 +203,7 @@ export class WorldState {
 
   loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
     this.clear();
+    this.missionSequence = cloneMissionSequence(layout.missionSequence);
 
     for (const entry of layout.tiles ?? []) {
       const item = getBuilderItemById(entry.itemId);
@@ -557,7 +572,12 @@ export class WorldState {
         )
       }));
 
-    return { tiles, props, npcs };
+    return {
+      tiles,
+      props,
+      npcs,
+      missionSequence: cloneMissionSequence(this.missionSequence)
+    };
   }
 
   serializePlacement(idOrPlacement) {

@@ -4438,6 +4438,7 @@ export class Game {
       localPlayerState,
       npcStates: this.npcServiceState.npcs,
       worldBuilder: this.worldBuilder,
+      missionSequence: this.currentLayout?.missionSequence ?? null,
       activeInteractables: localPlayerState ? this.getActiveInteractables() : [],
       gymDoorBlockers: localPlayerState ? this.getGymDoorBlockers() : [],
       rentIntroState: {

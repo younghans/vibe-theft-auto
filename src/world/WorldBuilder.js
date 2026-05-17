@@ -14,11 +14,16 @@ import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared
 import { quantizeNumber, rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
+  getMissionSequenceViewModel,
+  moveMissionSequenceEntry,
+  updateMissionSequenceEntry
+} from '../shared/missions.js';
+import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
 } from '../shared/worldConstants.js';
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
-import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItem, getBuilderItemById } from './builderCatalog.js';
+import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import { RemoteBuilderRenderer } from './RemoteBuilderRenderer.js';
@@ -34,6 +39,15 @@ const PREVIEW_RENDER_ORDER = 10;
 const NPC_TARGET_PICK_VALID_COLOR = 0x6cff95;
 const NPC_TARGET_PICK_INVALID_COLOR = 0xff6b6b;
 const NPC_TARGET_PICK_UNSUPPORTED_COLOR = 0xffd166;
+const BUILDER_MISSION_SEQUENCER_CATEGORY = Object.freeze({
+  id: 'mission-sequencer',
+  label: 'Mission Sequencer',
+  items: []
+});
+const BUILDER_TAB_CATEGORIES = Object.freeze([
+  ...BUILDER_CATEGORIES,
+  BUILDER_MISSION_SEQUENCER_CATEGORY
+]);
 
 function clonePreviewMaterial(material, opacity = 0.86) {
   const next = material.clone();
@@ -170,6 +184,10 @@ function groupVisibleEntries(entries) {
     ...section,
     count: section.cards.length
   }));
+}
+
+function getBuilderTabCategoryById(categoryId) {
+  return BUILDER_TAB_CATEGORIES.find((entry) => entry.id === categoryId) ?? null;
 }
 
 function isFiniteNumber(value) {
@@ -407,7 +425,9 @@ export class WorldBuilder {
       }),
       onBuildingDistanceChange: (value) => void this.updateSelectedBuildingInstance({
         distance: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1, BUILDER_TILE_SIZE * 2) : undefined
-      })
+      }),
+      onMissionSequenceReorder: (fromIndex, toIndex) => void this.reorderMissionSequence(fromIndex, toIndex),
+      onMissionSequenceRuleChange: (missionId, updates) => void this.updateMissionSequenceRule(missionId, updates)
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
@@ -420,11 +440,11 @@ export class WorldBuilder {
   }
 
   get activeCategory() {
-    return BUILDER_CATEGORIES.find((entry) => entry.id === this.state.activeCategoryId) ?? BUILDER_CATEGORIES[0];
+    return getBuilderTabCategoryById(this.state.activeCategoryId) ?? BUILDER_CATEGORIES[0];
   }
 
   get activeItem() {
-    return getBuilderItem(this.state.activeCategoryId, this.state.activeItemIndex);
+    return this.activeCategory.items[this.state.activeItemIndex] ?? null;
   }
 
   get canEditHoveredTiles() {
@@ -436,7 +456,7 @@ export class WorldBuilder {
   }
 
   getVisibleCategoryEntries(categoryId = this.state.activeCategoryId) {
-    const category = BUILDER_CATEGORIES.find((entry) => entry.id === categoryId) ?? BUILDER_CATEGORIES[0];
+    const category = getBuilderTabCategoryById(categoryId) ?? BUILDER_CATEGORIES[0];
     const activeGroupId = this.state.activeGroupIdByCategory[category.id] ?? 'all';
     const entries = category.items.map((item, index) => ({ item, index }));
 
@@ -451,24 +471,29 @@ export class WorldBuilder {
     const activeCategory = this.activeCategory;
     const visibleEntries = this.getVisibleCategoryEntries()
       .map((entry, visibleIndex) => ({ ...entry, visibleIndex }));
-    const tabs = BUILDER_CATEGORIES.map((category) => ({
+    const missionSequenceRows = getMissionSequenceViewModel(this.worldState.getMissionSequence());
+    const tabs = BUILDER_TAB_CATEGORIES.map((category) => ({
       id: category.id,
       label: category.label,
-      count: category.items.length,
+      count: category.id === BUILDER_MISSION_SEQUENCER_CATEGORY.id
+        ? missionSequenceRows.length
+        : category.items.length,
       active: category.id === this.state.activeCategoryId
     }));
-    const groupTabs = [
-      {
-        id: 'all',
-        label: 'All',
-        count: activeCategory.items.length,
-        active: this.activeGroupId === 'all'
-      },
-      ...collectBuilderGroups(activeCategory.items).map((group) => ({
-        ...group,
-        active: group.id === this.activeGroupId
-      }))
-    ];
+    const groupTabs = activeCategory.items.length
+      ? [
+          {
+            id: 'all',
+            label: 'All',
+            count: activeCategory.items.length,
+            active: this.activeGroupId === 'all'
+          },
+          ...collectBuilderGroups(activeCategory.items).map((group) => ({
+            ...group,
+            active: group.id === this.activeGroupId
+          }))
+        ]
+      : [];
     const sections = groupVisibleEntries(visibleEntries).map((section) => ({
       ...section,
       cards: section.cards.map((card) => ({
@@ -482,7 +507,12 @@ export class WorldBuilder {
       enabled: this.state.enabled,
       tabs,
       groupTabs,
-      sections
+      sections,
+      missionSequencer: this.state.activeCategoryId === BUILDER_MISSION_SEQUENCER_CATEGORY.id
+        ? {
+            rows: missionSequenceRows
+          }
+        : null
     };
   }
 
@@ -938,6 +968,10 @@ export class WorldBuilder {
   }
 
   selectCategory(categoryId) {
+    if (!getBuilderTabCategoryById(categoryId)) {
+      return;
+    }
+
     this.state.activeCategoryId = categoryId;
     this.state.activeItemIndex = this.getVisibleCategoryEntries(categoryId)[0]?.index ?? 0;
     this.updateBuilderHud({ syncPreviews: true });
@@ -945,6 +979,10 @@ export class WorldBuilder {
   }
 
   selectGroup(groupId) {
+    if (!this.activeCategory.items.length) {
+      return;
+    }
+
     this.state.activeGroupIdByCategory[this.state.activeCategoryId] = groupId;
     this.ensureActiveItemVisible();
     this.updateBuilderHud({ syncPreviews: true });
@@ -952,10 +990,43 @@ export class WorldBuilder {
   }
 
   selectItem(index) {
+    if (!this.activeCategory.items.length) {
+      return;
+    }
+
     const maxIndex = this.activeCategory.items.length - 1;
     this.state.activeItemIndex = THREE.MathUtils.clamp(index, 0, maxIndex);
     this.updateBuilderHud();
     void this.syncPreviewToState(true);
+  }
+
+  async reorderMissionSequence(fromIndex, toIndex) {
+    const nextMissionSequence = moveMissionSequenceEntry(this.worldState.getMissionSequence(), fromIndex, toIndex);
+    await this.updateMissionSequence(nextMissionSequence, 'Mission sequence updated.');
+  }
+
+  async updateMissionSequenceRule(missionId, updates = {}) {
+    const nextMissionSequence = updateMissionSequenceEntry(this.worldState.getMissionSequence(), missionId, updates);
+    await this.updateMissionSequence(nextMissionSequence, 'Mission availability updated.');
+  }
+
+  async updateMissionSequence(missionSequence, successMessage = 'Mission sequence updated.') {
+    const result = await this.worldEditAdapter.edit({
+      op: 'updateMissionSequence',
+      missionSequence
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not update mission sequence.');
+      return;
+    }
+
+    if (result.appliedImmediately) {
+      this.worldState.updateMissionSequence(missionSequence);
+      this.updateBuilderHud();
+      this.notifyLayoutChanged();
+    }
+
+    this.hud.showToast(successMessage);
   }
 
   ensureActiveItemVisible() {
@@ -1024,17 +1095,21 @@ export class WorldBuilder {
       }
       if (input.consume('BracketRight')) {
         const visibleEntries = this.getVisibleCategoryEntries();
-        const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
-        this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
+        if (visibleEntries.length) {
+          const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+          this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
+        }
       }
       if (input.consume('BracketLeft')) {
         const visibleEntries = this.getVisibleCategoryEntries();
-        const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
-        this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
+        if (visibleEntries.length) {
+          const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+          this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
+        }
       }
       if (input.consume('Tab')) {
-        const currentIndex = BUILDER_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
-        const nextCategory = BUILDER_CATEGORIES[(currentIndex + 1) % BUILDER_CATEGORIES.length];
+        const currentIndex = BUILDER_TAB_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
+        const nextCategory = BUILDER_TAB_CATEGORIES[(currentIndex + 1) % BUILDER_TAB_CATEGORIES.length];
         this.selectCategory(nextCategory.id);
       }
 
@@ -1466,6 +1541,7 @@ export class WorldBuilder {
     await this.worldRenderer.syncFromState(this.worldState);
     this.syncInteriorPlacementPreview();
     this.resolveHoverState();
+    this.updateBuilderHud({ syncPreviews: this.state.enabled });
     await this.syncPreviewToState(true);
   }
 
@@ -1478,6 +1554,9 @@ export class WorldBuilder {
       await this.applyUpsertPlacementPatch(patch);
     } else if (patch.type === 'deletePlacement') {
       this.applyDeletePlacementPatch(patch);
+    } else if (patch.type === 'updateMissionSequence') {
+      this.worldState.updateMissionSequence(patch.missionSequence);
+      this.updateBuilderHud();
     } else {
       return;
     }
@@ -1489,6 +1568,10 @@ export class WorldBuilder {
     this.updateBuilderNpcEditor();
     this.updateBuildingInstanceEditor();
     this.notifyLayoutChanged();
+  }
+
+  getMissionSequence() {
+    return this.worldState.getMissionSequence();
   }
 
   async applyUpsertPlacementPatch(patch) {

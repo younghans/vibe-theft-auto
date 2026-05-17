@@ -5298,6 +5298,114 @@ body.is-admin-prompt-resizing * {
   word-break: break-word;
 }
 
+.hud__mission-sequencer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud__mission-sequencer-row {
+  display: grid;
+  grid-template-columns: 26px 32px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 15, 24, 0.78);
+  color: #f4eee2;
+}
+
+.hud__mission-sequencer-row.is-dragging {
+  opacity: 0.58;
+}
+
+.hud__mission-sequencer-row.is-drag-over {
+  border-color: rgba(242, 200, 113, 0.8);
+  background: rgba(242, 200, 113, 0.13);
+}
+
+.hud__mission-sequencer-handle,
+.hud__mission-sequencer-number {
+  display: inline-grid;
+  place-items: center;
+  align-self: stretch;
+  min-height: 34px;
+  border-radius: 7px;
+}
+
+.hud__mission-sequencer-handle {
+  color: rgba(244, 238, 226, 0.62);
+  cursor: grab;
+  touch-action: none;
+}
+
+.hud__mission-sequencer-handle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+}
+
+.hud__mission-sequencer-row:active .hud__mission-sequencer-handle {
+  cursor: grabbing;
+}
+
+.hud__mission-sequencer-number {
+  background: rgba(242, 200, 113, 0.13);
+  color: #f8d98d;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud__mission-sequencer-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.hud__mission-sequencer-title {
+  font-size: 13px;
+  line-height: 1.2;
+  color: #f7f0e5;
+}
+
+.hud__mission-sequencer-detail {
+  overflow: hidden;
+  color: rgba(244, 238, 226, 0.62);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__mission-sequencer-rule {
+  grid-column: 2 / -1;
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 7px;
+}
+
+.hud__mission-sequencer-rule-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.hud__mission-sequencer-number-input {
+  min-height: 30px;
+  padding: 5px 7px;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .hud__builder-key {
   display: inline-flex;
   min-width: 20px;
@@ -13753,6 +13861,14 @@ canvas {
   .hud__builder-card-grid {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 88px), 1fr));
     gap: 8px;
+  }
+
+  .hud__mission-sequencer-row {
+    grid-template-columns: 24px 30px minmax(0, 1fr);
+  }
+
+  .hud__mission-sequencer-rule-copy {
+    grid-template-columns: minmax(0, 1fr) 64px;
   }
 
   .hud__interaction,

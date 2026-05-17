@@ -3363,6 +3363,7 @@ export class Hud {
     this.builderAvailable = false;
     this.builderEnabled = false;
     this.builderPanelWidth = BUILDER_PANEL_DEFAULT_WIDTH;
+    this.builderMissionDragIndex = null;
     this.activeBuilderResizePointerId = null;
     this.builderResizeRightEdge = 0;
     this.builderNpcEditorVisible = false;
@@ -5578,7 +5579,9 @@ export class Hud {
     onBuildingPromptChange,
     onBuildingActionTextChange,
     onBuildingRadiusChange,
-    onBuildingDistanceChange
+    onBuildingDistanceChange,
+    onMissionSequenceReorder,
+    onMissionSequenceRuleChange
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -5619,6 +5622,128 @@ export class Hud {
       }
       onSelectTile(Number(button.dataset.builderIndex));
     });
+
+    this.builderTiles.addEventListener('dragstart', (event) => {
+      if (!this.isElementInteractive(this.builderRoot)) {
+        event.preventDefault();
+        return;
+      }
+
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (target?.closest('input, select, textarea, button')) {
+        event.preventDefault();
+        return;
+      }
+
+      const row = target?.closest('[data-builder-mission-index]');
+      if (!row) {
+        return;
+      }
+
+      const fromIndex = Number(row.dataset.builderMissionIndex);
+      if (!Number.isFinite(fromIndex)) {
+        event.preventDefault();
+        return;
+      }
+
+      this.builderMissionDragIndex = fromIndex;
+      row.classList.add('is-dragging');
+      event.dataTransfer?.setData('text/plain', String(fromIndex));
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+      }
+    });
+
+    this.builderTiles.addEventListener('dragover', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const row = target?.closest('[data-builder-mission-index]');
+      if (!row) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+      this.builderTiles
+        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over')
+        .forEach((entry) => {
+          if (entry !== row) {
+            entry.classList.remove('is-drag-over');
+          }
+        });
+      row.classList.add('is-drag-over');
+    });
+
+    this.builderTiles.addEventListener('dragleave', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const row = target?.closest('[data-builder-mission-index]');
+      const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+      if (row && !row.contains(related)) {
+        row.classList.remove('is-drag-over');
+      }
+    });
+
+    this.builderTiles.addEventListener('drop', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const row = target?.closest('[data-builder-mission-index]');
+      if (!row) {
+        return;
+      }
+
+      event.preventDefault();
+      const transferIndex = Number(event.dataTransfer?.getData('text/plain'));
+      const fromIndex = Number.isFinite(transferIndex) ? transferIndex : this.builderMissionDragIndex;
+      const toIndex = Number(row.dataset.builderMissionIndex);
+      this.clearMissionSequencerDragClasses();
+      this.builderMissionDragIndex = null;
+      if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex) || fromIndex === toIndex) {
+        return;
+      }
+
+      onMissionSequenceReorder?.(fromIndex, toIndex);
+    });
+
+    this.builderTiles.addEventListener('dragend', () => {
+      this.clearMissionSequencerDragClasses();
+      this.builderMissionDragIndex = null;
+    });
+
+    const handleMissionSequenceRuleChange = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const row = target.closest('[data-builder-mission-id]');
+      const missionId = row?.getAttribute('data-builder-mission-id') ?? '';
+      if (!missionId) {
+        return;
+      }
+
+      if (target.matches('[data-builder-mission-rule-enabled]')) {
+        onMissionSequenceRuleChange?.(missionId, {
+          makeAvailableAfterMission: target.checked === true
+        });
+        return;
+      }
+
+      if (target.matches('[data-builder-mission-rule-number]')) {
+        onMissionSequenceRuleChange?.(missionId, {
+          availableAfterMissionNumber: Number(target.value)
+        });
+      }
+    };
+
+    this.builderTiles.addEventListener('change', handleMissionSequenceRuleChange);
 
     this.builderClose.addEventListener('click', () => {
       if (!this.isElementInteractive(this.builderRoot)) {
@@ -6307,12 +6432,94 @@ export class Hud {
     });
   }
 
+  clearMissionSequencerDragClasses() {
+    this.builderTiles
+      ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over')
+      .forEach((entry) => {
+        entry.classList.remove('is-dragging', 'is-drag-over');
+      });
+  }
+
+  getBuilderMissionSequencerRowMarkup(row = {}) {
+    const missionNumber = Math.max(1, Math.floor(Number(row.missionNumber) || 1));
+    const canRequireMission = row.canRequireMission === true;
+    const gateEnabled = canRequireMission && row.makeAvailableAfterMission === true;
+    const maxGateNumber = Math.max(0, Math.floor(Number(row.maxAvailableAfterMissionNumber) || 0));
+    const gateNumber = canRequireMission
+      ? Math.min(
+          Math.max(1, Math.floor(Number(row.availableAfterMissionNumber) || maxGateNumber || 1)),
+          Math.max(1, maxGateNumber)
+        )
+      : 0;
+    const checkboxDisabled = canRequireMission ? '' : ' disabled';
+    const numberDisabled = canRequireMission && gateEnabled ? '' : ' disabled';
+    const checked = gateEnabled ? ' checked' : '';
+
+    return `
+      <article
+        class="hud__mission-sequencer-row"
+        draggable="true"
+        data-builder-mission-id="${escapeHtml(row.missionId ?? '')}"
+        data-builder-mission-index="${missionNumber - 1}"
+      >
+        <span class="hud__mission-sequencer-handle" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M9 6.5h.01M15 6.5h.01M9 12h.01M15 12h.01M9 17.5h.01M15 17.5h.01" />
+          </svg>
+        </span>
+        <span class="hud__mission-sequencer-number">${missionNumber}</span>
+        <span class="hud__mission-sequencer-copy">
+          <span class="hud__mission-sequencer-title">${escapeHtml(row.label ?? row.title ?? 'Mission')}</span>
+          <span class="hud__mission-sequencer-detail">${escapeHtml(row.description ?? '')}</span>
+        </span>
+        <label class="hud__field hud__checkbox-field hud__mission-sequencer-rule">
+          <input
+            class="hud__checkbox-control"
+            type="checkbox"
+            data-builder-mission-rule-enabled
+            ${checked}${checkboxDisabled}
+          />
+          <span class="hud__checkbox-copy hud__mission-sequencer-rule-copy">
+            <span class="hud__field-label hud__checkbox-title">Make available after mission</span>
+            <input
+              class="hud__field-control hud__mission-sequencer-number-input"
+              type="number"
+              min="${canRequireMission ? 1 : 0}"
+              max="${maxGateNumber}"
+              step="1"
+              value="${gateNumber}"
+              data-builder-mission-rule-number
+              aria-label="Required mission number for ${escapeHtml(row.label ?? 'mission')}"
+              ${numberDisabled}
+            />
+          </span>
+        </label>
+      </article>
+    `;
+  }
+
+  getBuilderMissionSequencerMarkup(missionSequencer = {}) {
+    const rows = Array.isArray(missionSequencer.rows) ? missionSequencer.rows : [];
+    return `
+      <section class="hud__builder-section hud__mission-sequencer" data-builder-mission-sequencer>
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Mission Sequencer</p>
+          <span class="hud__builder-section-count">${rows.length}</span>
+        </div>
+        <div class="hud__mission-sequencer-list">
+          ${rows.map((row) => this.getBuilderMissionSequencerRowMarkup(row)).join('')}
+        </div>
+      </section>
+    `;
+  }
+
   setBuilderState({
     available = false,
     enabled,
     tabs = [],
     groupTabs = [],
-    sections = []
+    sections = [],
+    missionSequencer = null
   }) {
     this.builderAvailable = available;
     this.builderEnabled = enabled;
@@ -6333,6 +6540,7 @@ export class Hud {
       </button>
     `).join('');
 
+    this.builderGroups.hidden = Boolean(missionSequencer) || groupTabs.length === 0;
     this.builderGroups.innerHTML = groupTabs.map((group) => `
         <button
           class="hud__builder-subchip${group.active ? ' is-active' : ''}"
@@ -6343,6 +6551,11 @@ export class Hud {
           <span class="hud__builder-chip-count">${group.count ?? 0}</span>
         </button>
       `).join('');
+
+    if (missionSequencer) {
+      this.builderTiles.innerHTML = this.getBuilderMissionSequencerMarkup(missionSequencer);
+      return;
+    }
 
     this.builderTiles.innerHTML = sections.map((section) => `
       <section class="hud__builder-section">

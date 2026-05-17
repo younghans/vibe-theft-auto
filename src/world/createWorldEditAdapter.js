@@ -75,6 +75,10 @@ function toTransportPayload(edit) {
         placementId: edit.placementId,
         interactable: edit.interactable
       };
+    case 'updateMissionSequence':
+      return {
+        missionSequence: edit.missionSequence
+      };
     default:
       return {};
   }
@@ -185,6 +189,9 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
       worldRenderer.updatePlacement(updatedPlacement);
       return successResult(updatedPlacement.id);
     }
+    case 'updateMissionSequence':
+      worldState.updateMissionSequence(edit.missionSequence);
+      return successResult(null);
     default:
       return errorResult('That world edit is not supported.');
   }
