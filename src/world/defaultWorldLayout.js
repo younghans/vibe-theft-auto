@@ -33,6 +33,7 @@ for (let z = -3; z <= 1; z += 1) {
 const BUILDING_PLANS = [
   { cell: [0, -5], itemId: 'offices_building', angle: 0, label: 'Vibe Offices', action: 'The lobby, cubicles, break room, and CEO floor are open.' },
   { cell: [-4, -4], itemId: 'building_d', angle: Math.PI / 2, label: 'Loan office', action: 'Debt and hustle systems will live here later.' },
+  { cell: [-3, -4], itemId: 'real_estate_office_building', angle: 0, label: 'Real Estate Office', action: 'Walk in to meet a broker or use the desks inside.' },
   { cell: [-2, -4], itemId: 'marthas_grille_building', angle: 0, label: "Martha's Grille", action: 'The counter is open, and the kitchen is visible behind the register.' },
   { cell: [2, -4], itemId: 'building_f', angle: 0, label: 'Convenience mart', action: 'Shelves and item pickups are a future pass.' },
   { cell: [4, -4], itemId: 'pawn_building', angle: 0, label: 'Pawn Shop', action: 'The pawn shop owner buys and sells street gear.' },

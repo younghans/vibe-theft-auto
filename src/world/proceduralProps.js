@@ -23,6 +23,7 @@ export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
 export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+export const REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 
 const PORTAL_RING_RADIUS = 2.45;
 const PORTAL_RING_TUBE_RADIUS = 0.36;
@@ -1228,6 +1229,253 @@ export function createMarthasGrilleBuildingVisual() {
   addMarthasGrilleBox(root, 'mgAwning', [6.4, 0.28, 1.0], [0, 4.08, 4.86], awning, { rotation: [0.16, 0, 0] });
   addMarthasGrilleBox(root, 'marthasGrilleAwningFaceStripe', [6.22, 0.1, 0.16], [0, 3.89, 5.31], wallTrim);
   addMarthasGrilleBox(root, 'marthasGrilleOpenFrontThreshold', [5.65, 0.12, 0.34], [0, 0.86, 5.1], trimDark);
+
+  return root;
+}
+
+function addRealEstateOfficeBox(group, name, size, position, material, options = {}) {
+  group.add(createBox(name, size, position, material, options));
+}
+
+function createRealEstateOfficeSignLabel() {
+  const geometry = new THREE.PlaneGeometry(6.55, 1.18);
+  let material;
+
+  if (typeof document === 'undefined') {
+    material = new THREE.MeshBasicMaterial({
+      color: 0x21463e,
+      side: THREE.DoubleSide
+    });
+  } else {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 256;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = '#21463e';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#d6b76c';
+      context.fillRect(28, 28, canvas.width - 56, 14);
+      context.fillRect(28, canvas.height - 42, canvas.width - 56, 14);
+      context.font = '900 84px Arial Black, Impact, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.lineWidth = 10;
+      context.strokeStyle = '#132822';
+      context.fillStyle = '#f5ead0';
+      context.strokeText('REAL ESTATE', canvas.width * 0.5, canvas.height * 0.43);
+      context.fillText('REAL ESTATE', canvas.width * 0.5, canvas.height * 0.43);
+      context.font = '800 52px Arial, sans-serif';
+      context.fillStyle = '#d6b76c';
+      context.fillText('OFFICE', canvas.width * 0.5, canvas.height * 0.74);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    material = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.DoubleSide
+    });
+  }
+
+  const label = new THREE.Mesh(geometry, material);
+  label.name = 'realEstateOfficeSignLabel';
+  label.castShadow = false;
+  label.receiveShadow = false;
+  return label;
+}
+
+function addRealEstateOfficeDesk(group, materials, deskIndex, position, rotationY = 0) {
+  const desk = new THREE.Group();
+  desk.name = `realEstateOfficeDesk${deskIndex}`;
+  desk.position.set(position[0], 0, position[1]);
+  desk.rotation.y = rotationY;
+  group.add(desk);
+
+  addRealEstateOfficeBox(desk, `${desk.name}Top`, [1.55, 0.16, 0.9], [0, 1.13, 0], materials.deskTop);
+  addRealEstateOfficeBox(desk, `${desk.name}FrontPanel`, [1.45, 0.82, 0.12], [0, 0.7, 0.39], materials.deskWood);
+  for (const [legIndex, [x, z]] of [[-0.62, -0.34], [0.62, -0.34], [-0.62, 0.34], [0.62, 0.34]].entries()) {
+    addRealEstateOfficeBox(
+      desk,
+      `${desk.name}Leg${legIndex + 1}`,
+      [0.12, 0.92, 0.12],
+      [x, 0.62, z],
+      materials.deskWood
+    );
+  }
+
+  addRealEstateOfficeBox(desk, `${desk.name}ChairBack`, [0.72, 0.78, 0.12], [0, 0.98, -0.82], materials.chair);
+  addRealEstateOfficeBox(desk, `${desk.name}ChairSeat`, [0.78, 0.16, 0.68], [0, 0.62, -0.58], materials.chair);
+  addRealEstateOfficeBox(desk, `${desk.name}MonitorBase`, [0.36, 0.08, 0.28], [-0.42, 1.25, -0.04], materials.dark);
+  addRealEstateOfficeBox(desk, `${desk.name}MonitorScreen`, [0.52, 0.34, 0.08], [-0.42, 1.5, 0.02], materials.screen, {
+    rotation: [-0.1, 0, 0]
+  });
+  addRealEstateOfficeBox(desk, `${desk.name}PaperStack`, [0.46, 0.045, 0.32], [0.36, 1.25, 0.12], materials.paper, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addRealEstateOfficeBox(desk, `${desk.name}DeskLamp`, [0.12, 0.34, 0.12], [0.62, 1.39, -0.2], materials.brass);
+}
+
+function addRealEstateOfficeListingBoard(group, materials) {
+  addRealEstateOfficeBox(group, 'realEstateOfficeListingBoard', [0.1, 1.75, 3.15], [-4.88, 2.28, -1.25], materials.board);
+  for (const [index, [x, y]] of [
+    [-4.9, 2.78],
+    [-4.9, 2.22],
+    [-4.9, 1.66]
+  ].entries()) {
+    addRealEstateOfficeBox(
+      group,
+      `realEstateOfficeListingCard${index + 1}`,
+      [0.08, 0.36, 0.68],
+      [x, y, -1.25 + ((index - 1) * 0.78)],
+      index === 1 ? materials.listingAccent : materials.paper,
+      { castShadow: false, receiveShadow: true }
+    );
+  }
+}
+
+function addRealEstateOfficeWindow(group, name, position, material, trimMaterial, size = [0.72, 0.62, 0.08]) {
+  addRealEstateOfficeBox(group, name, size, position, material, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addRealEstateOfficeBox(group, `${name}Sill`, [size[0] + 0.18, 0.08, size[2] + 0.04], [position[0], position[1] - (size[1] * 0.5) - 0.08, position[2]], trimMaterial, {
+    castShadow: false,
+    receiveShadow: true
+  });
+}
+
+function addRealEstateOfficeWindowGrid(group, materials) {
+  const frontRows = [7.35, 8.75, 10.15, 11.55, 12.95, 14.35, 15.65];
+  for (const [rowIndex, y] of frontRows.entries()) {
+    const z = rowIndex >= 5 ? 2.12 : rowIndex >= 3 ? 2.72 : 3.32;
+    const xValues = rowIndex >= 5 ? [-2.1, -0.7, 0.7, 2.1] : [-3, -1.5, 0, 1.5, 3];
+    for (const [columnIndex, x] of xValues.entries()) {
+      addRealEstateOfficeWindow(
+        group,
+        `realEstateOfficeTallWindow${rowIndex + 1}_${columnIndex + 1}`,
+        [x, y, z],
+        materials.window,
+        materials.trim
+      );
+    }
+  }
+
+  for (const [index, y] of [8.1, 9.5, 10.9, 12.3, 13.7].entries()) {
+    addRealEstateOfficeWindow(
+      group,
+      `realEstateOfficeSideWindowLeft${index + 1}`,
+      [-4.46, y, -1.3],
+      materials.window,
+      materials.trim,
+      [0.08, 0.58, 0.72]
+    );
+    addRealEstateOfficeWindow(
+      group,
+      `realEstateOfficeSideWindowRight${index + 1}`,
+      [4.46, y, -1.3],
+      materials.window,
+      materials.trim,
+      [0.08, 0.58, 0.72]
+    );
+  }
+}
+
+export function createRealEstateOfficeBuildingVisual() {
+  const root = new THREE.Group();
+  root.name = 'real_estate_office_building';
+  root.userData.footprint = [...REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT];
+
+  const materials = {
+    slab: createMaterial(0x555b5f, 0.9, 0.04),
+    floor: createMaterial(0x746e63, 0.88, 0.03),
+    facade: createMaterial(0xc9c3ad, 0.84, 0.03),
+    facadeAlt: createMaterial(0xa8a28f, 0.86, 0.03),
+    trim: createMaterial(0x516158, 0.62, 0.08),
+    trimLight: createMaterial(0xdfd4b4, 0.66, 0.04),
+    roof: createMaterial(0x333b3c, 0.82, 0.08),
+    window: createMaterial(0x262d2c, 0.38, 0.12),
+    signPanel: createMaterial(0x21463e, 0.72, 0.08),
+    brass: createMaterial(0xd6b76c, 0.42, 0.36),
+    deskWood: createMaterial(0x7a5234, 0.66, 0.08),
+    deskTop: createMaterial(0xb98b58, 0.58, 0.08),
+    chair: createMaterial(0x343a3a, 0.54, 0.12),
+    dark: createMaterial(0x232929, 0.44, 0.2),
+    screen: createMaterial(0x172725, 0.32, 0.08),
+    paper: createMaterial(0xf1ead9, 0.86, 0.01),
+    board: createMaterial(0x42534d, 0.74, 0.04),
+    listingAccent: createMaterial(0xd6b76c, 0.7, 0.05),
+    plant: createMaterial(0x376b45, 0.82, 0.02),
+    planter: createMaterial(0x4d3528, 0.76, 0.04)
+  };
+
+  const foundation = new THREE.Group();
+  foundation.name = 'real_estate_office_foundation';
+  root.add(foundation);
+  addRealEstateOfficeBox(foundation, 'realEstateOfficeSlab', [11.32, 0.62, 11.3], [0, 0.31, 0], materials.slab);
+  addRealEstateOfficeBox(foundation, 'realEstateOfficeLobbyFloor', [10.3, 0.14, 10.05], [0, 0.72, -0.1], materials.floor);
+  addRealEstateOfficeBox(foundation, 'realEstateOfficeOpenFrontThreshold', [6.55, 0.12, 0.34], [0, 0.86, 5.1], materials.brass);
+
+  const interior = new THREE.Group();
+  interior.name = 'real_estate_office_interior';
+  root.add(interior);
+  addRealEstateOfficeDesk(interior, materials, 1, [-3.05, -3.25], 0);
+  addRealEstateOfficeDesk(interior, materials, 2, [0, -3.35], 0);
+  addRealEstateOfficeDesk(interior, materials, 3, [3.05, -3.25], 0);
+  addRealEstateOfficeListingBoard(interior, materials);
+  addRealEstateOfficeBox(interior, 'realEstateOfficePlanterLeft', [0.56, 0.48, 0.56], [-4.38, 0.98, 3.52], materials.planter);
+  const plantLeft = createCylinder(0.32, 0.18, 0.9, 8, materials.plant);
+  plantLeft.name = 'realEstateOfficePlantLeft';
+  plantLeft.position.set(-4.38, 1.62, 3.52);
+  plantLeft.castShadow = true;
+  plantLeft.receiveShadow = true;
+  interior.add(plantLeft);
+  addRealEstateOfficeBox(interior, 'realEstateOfficePlanterRight', [0.56, 0.48, 0.56], [4.38, 0.98, 3.52], materials.planter);
+  const plantRight = createCylinder(0.32, 0.18, 0.9, 8, materials.plant);
+  plantRight.name = 'realEstateOfficePlantRight';
+  plantRight.position.set(4.38, 1.62, 3.52);
+  plantRight.castShadow = true;
+  plantRight.receiveShadow = true;
+  interior.add(plantRight);
+
+  const shell = new THREE.Group();
+  shell.name = 'real_estate_office_hull_wall';
+  root.add(shell);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeBackWall', [10.65, 5.3, 0.34], [0, 3.36, -5.14], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeLeftWall', [0.34, 5.3, 10.15], [-5.15, 3.36, -0.1], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeRightWall', [0.34, 5.3, 10.15], [5.15, 3.36, -0.1], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontLeft', [1.76, 4.1, 0.34], [-4.32, 2.77, 5.03], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontRight', [1.76, 4.1, 0.34], [4.32, 2.77, 5.03], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontHeader', [10.58, 1.3, 0.36], [0, 5.31, 5.03], materials.facade);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeFrontStoneBand', [10.42, 0.22, 0.42], [0, 4.1, 5.14], materials.trimLight);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeLeftKickTrim', [1.62, 0.2, 0.42], [-4.32, 1.05, 5.15], materials.trim);
+  addRealEstateOfficeBox(shell, 'realEstateOfficeRightKickTrim', [1.62, 0.2, 0.42], [4.32, 1.05, 5.15], materials.trim);
+
+  const tower = new THREE.Group();
+  tower.name = 'real_estate_office_tall_facade';
+  root.add(tower);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeGroundRoofDeck', [10.8, 0.34, 10.55], [0, 6.18, -0.12], materials.roof);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerBlock', [8.8, 4.1, 7.7], [0, 8.4, -0.62], materials.facadeAlt);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidBlock', [7.4, 4.0, 6.55], [0, 12.45, -0.62], materials.facade);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerTopBlock', [6.1, 2.85, 5.35], [0, 15.88, -0.62], materials.facadeAlt);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerLowerCornice', [9.2, 0.22, 8.08], [0, 10.56, -0.62], materials.trim);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerMidCornice', [7.75, 0.2, 6.9], [0, 14.56, -0.62], materials.trim);
+  addRealEstateOfficeBox(tower, 'realEstateOfficeTowerRoofCap', [6.45, 0.38, 5.65], [0, 17.5, -0.62], materials.roof);
+  addRealEstateOfficeWindowGrid(tower, materials);
+
+  const exterior = new THREE.Group();
+  exterior.name = 'real_estate_office_exterior_detail';
+  root.add(exterior);
+  addRealEstateOfficeBox(exterior, 'realEstateOfficeSignPanel', [7.1, 1.52, 0.28], [0, 4.5, 5.36], materials.signPanel);
+  const signLabel = createRealEstateOfficeSignLabel();
+  signLabel.position.set(0, 4.5, 5.53);
+  exterior.add(signLabel);
+  addRealEstateOfficeBox(exterior, 'realEstateOfficeGoldAwning', [6.85, 0.26, 0.92], [0, 3.52, 4.9], materials.brass, {
+    rotation: [0.14, 0, 0]
+  });
+  addRealEstateOfficeBox(exterior, 'realEstateOfficeAwningFaceTrim', [6.7, 0.1, 0.14], [0, 3.35, 5.31], materials.trimLight);
 
   return root;
 }

@@ -59,7 +59,8 @@ import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
   INSTRUMENT_CLUSTER_FOOTPRINT,
-  MARTHAS_GRILLE_BUILDING_FOOTPRINT
+  MARTHAS_GRILLE_BUILDING_FOOTPRINT,
+  REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -125,6 +126,7 @@ function validateKenneyCatalogItems() {
     'pawn_building',
     'offices_building',
     'marthas_grille_building',
+    'real_estate_office_building',
     'gym_building',
     'gym_building_large',
     'hospital_building',
@@ -399,6 +401,7 @@ function validateFootprintSupport() {
   const largeGym = getBuilderItemById('gym_building_large');
   const pawnShop = getBuilderItemById('pawn_building');
   const marthasGrille = getBuilderItemById('marthas_grille_building');
+  const realEstateOffice = getBuilderItemById('real_estate_office_building');
   const districtBuildings = [
     'school_building',
     'bar_building',
@@ -414,9 +417,12 @@ function validateFootprintSupport() {
   assert(largeGym, 'Large gym tile should exist');
   assert(pawnShop, 'Pawn shop tile should exist');
   assert(marthasGrille, "Martha's Grille tile should exist");
+  assert(realEstateOffice, 'Real Estate Office tile should exist');
   for (const [index, item] of districtBuildings.entries()) {
     assert(item, `District 2x2 building ${index} should exist`);
   }
+
+  const savedWorldLayout = JSON.parse(readFileSync(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
 
   assert(baseLot.tileFootprint[0] === 1 && baseLot.tileFootprint[1] === 1, 'Base lot should remain 1x1');
   assert(bar.tileFootprint[0] === 2 && bar.tileFootprint[1] === 1, 'Wide bar should remain 2x1');
@@ -425,6 +431,9 @@ function validateFootprintSupport() {
   assert(marthasGrille.tileFootprint[0] === 1 && marthasGrille.tileFootprint[1] === 1, "Martha's Grille should remain a 1x1 building");
   assert(marthasGrille.size[0] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[0], "Martha's Grille should use the standard compact building width");
   assert(marthasGrille.size[1] === MARTHAS_GRILLE_BUILDING_FOOTPRINT[1], "Martha's Grille should use the standard compact building depth");
+  assert(realEstateOffice.tileFootprint[0] === 1 && realEstateOffice.tileFootprint[1] === 1, 'Real Estate Office should be a 1x1 building');
+  assert(realEstateOffice.size[0] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0], 'Real Estate Office should use the standard compact building width');
+  assert(realEstateOffice.size[1] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1], 'Real Estate Office should use the standard compact building depth');
   for (const item of districtBuildings) {
     assert(item.tileFootprint[0] === 2 && item.tileFootprint[1] === 2, `${item.id} should use a 2x2 footprint`);
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
@@ -436,9 +445,20 @@ function validateFootprintSupport() {
   assert(marthasGrille.asset === null, "Martha's Grille should use a procedural building visual");
   assert(typeof marthasGrille.createVisual === 'function', "Martha's Grille should define a procedural building visual");
   assert(getBuilderItemById("Martha's Grille") === marthasGrille, "Martha's Grille should resolve from its display label");
+  assert(realEstateOffice.asset === null, 'Real Estate Office should use a procedural building visual');
+  assert(typeof realEstateOffice.createVisual === 'function', 'Real Estate Office should define a procedural building visual');
+  assert(getBuilderItemById('Real Estate Office') === realEstateOffice, 'Real Estate Office should resolve from its display label');
   assert(
     defaultWorldLayout.tiles.some((placement) => placement.itemId === 'marthas_grille_building'),
     "Default world should place Martha's Grille"
+  );
+  assert(
+    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'real_estate_office_building'),
+    'Default world should place the Real Estate Office'
+  );
+  assert(
+    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'real_estate_office_building'),
+    'Fallback saved world layout should place the Real Estate Office'
   );
   assert(
     marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_hull_wall'),
@@ -453,6 +473,18 @@ function validateFootprintSupport() {
     /cameraOcclusionAlwaysPreserveNodeNames/.test(worldRendererSource),
     "World renderer should honor Martha's Grille always-opaque occlusion preserve nodes"
   );
+  assert(
+    realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_hull_wall'),
+    'Real Estate Office hull walls should stay visible during active camera occlusion'
+  );
+  assert(
+    realEstateOffice.cameraOcclusionPreserveNodeNames?.includes('real_estate_office_interior'),
+    'Real Estate Office interior should stay visible during active camera occlusion'
+  );
+  assert(
+    realEstateOffice.cameraOcclusionAlwaysPreserveNodeNames?.includes('real_estate_office_hull_wall'),
+    'Real Estate Office hull walls should stay opaque during normal camera occlusion'
+  );
   assert(marthasGrille.movementCollisionRects?.length === 6, "Martha's Grille should define wall and counter movement collision");
   assert(marthasGrille.shotCollisionRects?.length === marthasGrille.movementCollisionRects.length, "Martha's Grille wall and counter collision should also block shots");
   const grilleCounterRect = marthasGrille.movementCollisionRects.find((rect) => rect.centerZ === 1.05);
@@ -460,6 +492,16 @@ function validateFootprintSupport() {
   assert(
     !marthasGrille.movementCollisionRects.some((rect) => rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5),
     "Martha's Grille should leave a large unblocked front opening"
+  );
+  assert(realEstateOffice.movementCollisionRects?.length === 8, 'Real Estate Office should define wall and desk movement collision');
+  assert(realEstateOffice.shotCollisionRects?.length === realEstateOffice.movementCollisionRects.length, 'Real Estate Office collision should also block shots');
+  assert(
+    !realEstateOffice.movementCollisionRects.some((rect) => rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5),
+    'Real Estate Office should leave a large unblocked front opening'
+  );
+  assert(
+    realEstateOffice.movementCollisionRects.filter((rect) => rect.centerZ < -3 && rect.halfWidth <= 0.9).length === 3,
+    'Real Estate Office should give its three small desks focused collision'
   );
   const grillePlacement = {
     id: 'validation-marthas-grille',
@@ -472,6 +514,18 @@ function validateFootprintSupport() {
   assert(
     placementToCollisionRects(grillePlacement, marthasGrille, { collisionKey: 'blocksMovement' }).length === marthasGrille.movementCollisionRects.length,
     "Martha's Grille movement collision should resolve all wall and counter blockers"
+  );
+  const realEstatePlacement = {
+    id: 'validation-real-estate-office',
+    itemId: 'real_estate_office_building',
+    layer: 'tile',
+    cellX: -3,
+    cellZ: -4,
+    rotationQuarterTurns: 0
+  };
+  assert(
+    placementToCollisionRects(realEstatePlacement, realEstateOffice, { collisionKey: 'blocksMovement' }).length === realEstateOffice.movementCollisionRects.length,
+    'Real Estate Office movement collision should resolve all wall and desk blockers'
   );
   const grilleVisual = marthasGrille.createVisual();
   assert(grilleVisual.getObjectByName('marthasGrilleCounterBase'), "Martha's Grille visual should include a counter");
@@ -508,9 +562,8 @@ function validateFootprintSupport() {
   const defaultMartha = defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_martha');
   assert(defaultMartha?.modelId === 'martha', 'Default world should create Martha using the Martha model');
   assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
-  const savedLayout = JSON.parse(readFileSync(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
   assert(
-    savedLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha'),
+    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha'),
     'Saved world layout should include Martha near the grille'
   );
   const marthaAdornment = createMarthaNpcAdornment({ height: 4.8 });
@@ -530,6 +583,26 @@ function validateFootprintSupport() {
     /applyNpcCharacterAdornment\(this\.visual,\s*model,\s*definition\)/.test(npcActorSource),
     'Martha NPC adornment should be attached to the unscaled NPC visual parent'
   );
+  const realEstateVisual = realEstateOffice.createVisual();
+  assert(realEstateVisual.getObjectByName('real_estate_office_tall_facade'), 'Real Estate Office visual should include a tall Kenney Building L-style facade');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeOpenFrontThreshold'), 'Real Estate Office visual should mark the open front threshold');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeSignPanel'), 'Real Estate Office visual should include a front sign panel');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeDesk1'), 'Real Estate Office should include a first small desk');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeDesk2'), 'Real Estate Office should include a second small desk');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeDesk3'), 'Real Estate Office should include a third small desk');
+  assert(realEstateVisual.getObjectByName('realEstateOfficeTallWindow1_1'), 'Real Estate Office facade should include named upper window panels');
+  const realEstateSignLabel = realEstateVisual.getObjectByName('realEstateOfficeSignLabel');
+  assert(realEstateSignLabel?.material?.transparent !== true, 'Real Estate Office sign label should avoid transparent material sorting');
+  assert(realEstateSignLabel?.material?.depthWrite !== false, 'Real Estate Office sign label should write depth as an opaque sign');
+  const realEstateTransparentMeshes = collectMeshMaterials(realEstateVisual)
+    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
+    .map(({ node }) => node.name || '(unnamed mesh)');
+  assert(realEstateTransparentMeshes.length === 0, `Real Estate Office should not use transparent materials that can tint the building blue: ${realEstateTransparentMeshes.join(', ')}`);
+  const realEstateBounds = new Box3().setFromObject(realEstateVisual);
+  const realEstateSize = realEstateBounds.getSize(new Vector3());
+  assert(realEstateSize.x <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0] + 0.02, 'Real Estate Office visual should stay within one tile width before fitting');
+  assert(realEstateSize.z <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1] + 0.02, 'Real Estate Office visual should stay within one tile depth before fitting');
+  assert(realEstateSize.y >= 17.2, 'Real Estate Office should read as a tall Kenney Building L-style structure');
   assert(
     pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
     'Pawn shop hull walls should stay visible during active cutaway camera occlusion'

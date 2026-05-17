@@ -34,6 +34,7 @@ import {
   createOfficeLobbyTableVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
+  createRealEstateOfficeBuildingVisual,
   createStandingDeskComputerVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
@@ -46,6 +47,7 @@ import {
   OFFICE_LOBBY_TABLE_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
   PISTOL_PICKUP_SPAWN_FOOTPRINT,
+  REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
   VIBE_JAM_PORTAL_FOOTPRINT,
   VIBE_JAM_PORTAL_INTERACTABLE
@@ -106,6 +108,16 @@ const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
   { centerX: -4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 5.9 },
   { centerX: 4.05, centerZ: 5.03, halfWidth: 1.22, halfDepth: 0.24, minY: 0, maxY: 5.9 },
   { centerX: 0, centerZ: 1.05, halfWidth: 4.52, halfDepth: 0.72, minY: 0, maxY: 2.45 }
+]);
+const REAL_ESTATE_OFFICE_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 17.8 },
+  { centerX: -5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.5 },
+  { centerX: 5.15, centerZ: -0.1, halfWidth: 0.24, halfDepth: 5.08, minY: 0, maxY: 6.5 },
+  { centerX: -4.32, centerZ: 5.03, halfWidth: 0.92, halfDepth: 0.24, minY: 0, maxY: 4.6 },
+  { centerX: 4.32, centerZ: 5.03, halfWidth: 0.92, halfDepth: 0.24, minY: 0, maxY: 4.6 },
+  { centerX: -3.05, centerZ: -3.25, halfWidth: 0.86, halfDepth: 0.54, minY: 0, maxY: 1.65 },
+  { centerX: 0, centerZ: -3.35, halfWidth: 0.86, halfDepth: 0.54, minY: 0, maxY: 1.65 },
+  { centerX: 3.05, centerZ: -3.25, halfWidth: 0.86, halfDepth: 0.54, minY: 0, maxY: 1.65 }
 ]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
@@ -314,6 +326,26 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     cameraOcclusionPreserveNodeNames: ['marthas_grille_hull_wall'],
     cameraOcclusionAlwaysPreserveNodeNames: ['marthas_grille_hull_wall'],
     createVisual: createMarthasGrilleBuildingVisual,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
+    id: 'real_estate_office_building',
+    assetName: 'real_estate_office_building',
+    aliases: ['Real Estate Office', 'real_estate_office'],
+    label: 'Real Estate Office',
+    asset: null,
+    group: 'lots',
+    size: REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
+    tileFootprint: [1, 1],
+    collision: true,
+    blocksShots: true,
+    movementCollisionRects: REAL_ESTATE_OFFICE_COLLISION_RECTS,
+    shotCollisionRects: REAL_ESTATE_OFFICE_COLLISION_RECTS,
+    padding: 0.5,
+    npcRouteDoorOffset: [0, BUILDER_TILE_SIZE * 0.38],
+    cameraOcclusionPreserveNodeNames: ['real_estate_office_hull_wall', 'real_estate_office_interior'],
+    cameraOcclusionAlwaysPreserveNodeNames: ['real_estate_office_hull_wall'],
+    createVisual: createRealEstateOfficeBuildingVisual,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
   {

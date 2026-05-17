@@ -15,6 +15,7 @@ import {
   createOfficeLobbyTableVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
+  createRealEstateOfficeBuildingVisual,
   createStandingDeskComputerVisual
 } from './proceduralProps.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
@@ -82,6 +83,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'marthas_grille_building' || item?.assetName === 'marthas_grille_building') {
     // Procedural tiles can lose function fields when copied through plain-object workflows.
     primaryObject = createMarthasGrilleBuildingVisual();
+  } else if (item?.id === 'real_estate_office_building' || item?.assetName === 'real_estate_office_building') {
+    // Procedural tiles can lose function fields when copied through plain-object workflows.
+    primaryObject = createRealEstateOfficeBuildingVisual();
   } else if (item?.id === COMBAT_PICKUP_PROP_ITEM_IDS.pistol || item?.assetName === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createPistolPickupSpawnVisual();

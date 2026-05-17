@@ -44,12 +44,18 @@
     },
     {
       "id": "placement_2",
-      "itemId": "lot_base",
+      "itemId": "real_estate_office_building",
       "cell": [
         -3,
         -4
       ],
-      "rotationQuarterTurns": 0
+      "rotationQuarterTurns": 0,
+      "interactable": {
+        "label": "Real Estate Office",
+        "actionText": "Walk in to meet a broker or use the desks inside.",
+        "radius": 4,
+        "distance": 6.16
+      }
     },
     {
       "id": "placement_83",
