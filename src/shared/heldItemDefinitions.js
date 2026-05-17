@@ -220,12 +220,12 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
     createModel: createCardboardBoxModel,
     attachmentSlot: ATTACHMENT_SLOTS.handLeft,
     normalize: Object.freeze({
-      maxDimension: 0.82,
+      maxDimension: 0.98,
       center: true
     }),
     gripOffset: Object.freeze({
-      position: Object.freeze([0.04, -0.06, 0.03]),
-      rotation: Object.freeze([Math.PI * 0.06, Math.PI * 0.14, 0]),
+      position: Object.freeze([0.46, 0.186, 0.385]),
+      rotation: Object.freeze([1.304, 0.168, 0.922]),
       scale: DEFAULT_SCALE
     }),
     points: Object.freeze({}),

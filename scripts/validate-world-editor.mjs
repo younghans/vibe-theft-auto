@@ -1008,8 +1008,20 @@ function validateDeliveryQuestCarry() {
     'Delivery box should attach to the left hand so it can ride the carrying pose.'
   );
   assert(
-    Number(deliveryBox.normalize?.maxDimension) > 0 && Number(deliveryBox.normalize?.maxDimension) < 1,
-    'Delivery box should be scaled as a small package.'
+    Number(deliveryBox.normalize?.maxDimension) >= 0.95 && Number(deliveryBox.normalize?.maxDimension) <= 1,
+    'Delivery box should be sized wide enough for the two-hand carry pose.'
+  );
+  assert(
+    deliveryBox.gripOffset?.position?.[0] > 0.35
+      && deliveryBox.gripOffset?.position?.[1] > 0.12
+      && deliveryBox.gripOffset?.position?.[2] > 0.3,
+    'Delivery box grip should place the package between the carry-pose hands instead of on one palm.'
+  );
+  assert(
+    deliveryBox.gripOffset?.rotation?.[0] > 1
+      && deliveryBox.gripOffset?.rotation?.[1] > 0.05
+      && deliveryBox.gripOffset?.rotation?.[2] > 0.7,
+    'Delivery box grip should rotate the box width across the two carry-pose hands.'
   );
   assert(
     typeof deliveryBox.createModel === 'function',
