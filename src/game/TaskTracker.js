@@ -7,14 +7,19 @@ import {
 } from '../shared/deliveryQuest.js';
 import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 import {
+  JANITOR_TASKS_REQUIRED,
   MISSION_CATALOG,
   MISSION_IDS,
   MISSION_STATUS,
+  SCHOOL_TEACHER_TASKS_REQUIRED,
   getDeliveryCompletionCount,
   getMissionProgressSnapshot,
   getMissionSnapshots,
   resolveSelectedMissionId
 } from '../shared/missions.js';
+import { OFFICE_JOB_IDS } from '../shared/officeJobs.js';
+import { isPawnShopOwnerNpc } from '../shared/pawnShop.js';
+import { isSchoolMicrogameNpc } from '../shared/schoolMicrogames.js';
 import { isStockMarketNpc } from '../shared/stockMarket.js';
 import { getTileCenterWorldPosition } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
@@ -225,9 +230,51 @@ function getBlackjackTaskTarget(context = {}) {
     ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'casino'));
 }
 
+function getSchoolTaskTarget(context = {}) {
+  return getNpcTaskTargetByPredicate(isSchoolMicrogameNpc, context)
+    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'school'));
+}
+
+function getOfficeJobTaskTarget(context = {}, jobId = '') {
+  const activeStation = (context.activeInteractables ?? [])
+    .find((interactable) =>
+      interactable.kind === 'office-job-station'
+      && (!jobId || interactable.officeJobId === jobId)
+    );
+  const activeStationTarget = getTaskPositionForInteractable(activeStation, context);
+  if (activeStationTarget) {
+    return activeStationTarget;
+  }
+
+  const worldStation = (context.worldBuilder?.getInteractables?.() ?? [])
+    .find((interactable) =>
+      interactable.kind === 'office-job-station'
+      && (!jobId || interactable.officeJobId === jobId)
+    );
+  const worldStationTarget = getTaskPositionForInteractable(worldStation, context);
+  if (worldStationTarget) {
+    return worldStationTarget;
+  }
+
+  return getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'offices'));
+}
+
+function getPawnShopTaskTarget(context = {}) {
+  return getNpcTaskTargetByPredicate(isPawnShopOwnerNpc, context)
+    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'pawn'));
+}
+
 function getMissionTarget(missionId = '', context = {}) {
   if (missionId === TASK_IDS.delivery) {
     return getNpcTaskTarget(context.localPlayerState?.deliveryQuestTargetNpcId, context);
+  }
+
+  if (missionId === TASK_IDS.schoolTeacherTasks) {
+    return getSchoolTaskTarget(context);
+  }
+
+  if (missionId === TASK_IDS.janitorTasks) {
+    return getOfficeJobTaskTarget(context, OFFICE_JOB_IDS.janitor);
   }
 
   if (missionId === TASK_IDS.gymPump) {
@@ -240,6 +287,14 @@ function getMissionTarget(missionId = '', context = {}) {
 
   if (missionId === TASK_IDS.blackjackHand) {
     return getBlackjackTaskTarget(context);
+  }
+
+  if (missionId === TASK_IDS.transportationUpgrade) {
+    return getPawnShopTaskTarget(context);
+  }
+
+  if (missionId === TASK_IDS.officeManagerPromotion) {
+    return getOfficeJobTaskTarget(context, OFFICE_JOB_IDS.officeManager);
   }
 
   if (missionId === TASK_IDS.makeMoney) {
@@ -264,6 +319,29 @@ function getMissionDescription(mission = null, context = {}) {
     const targetNpcId = context.localPlayerState.deliveryQuestTargetNpcId;
     const targetName = getDeliveryQuestTargetName(context.npcStates?.get?.(targetNpcId));
     return `Find ${targetName} and complete the delivery.`;
+  }
+
+  const progress = getMissionProgressSnapshot(context.localPlayerState);
+  if (mission?.id === TASK_IDS.schoolTeacherTasks) {
+    const completed = Math.min(SCHOOL_TEACHER_TASKS_REQUIRED, progress.schoolTasksCompletedCount);
+    return completed >= SCHOOL_TEACHER_TASKS_REQUIRED
+      ? 'Teacher tasks complete.'
+      : `Complete ${completed}/${SCHOOL_TEACHER_TASKS_REQUIRED} teacher tasks.`;
+  }
+
+  if (mission?.id === TASK_IDS.janitorTasks) {
+    const completed = Math.min(JANITOR_TASKS_REQUIRED, progress.janitorTasksCompletedCount);
+    return completed >= JANITOR_TASKS_REQUIRED
+      ? 'Janitor tasks complete.'
+      : `Complete ${completed}/${JANITOR_TASKS_REQUIRED} janitor tasks.`;
+  }
+
+  if (mission?.id === TASK_IDS.transportationUpgrade && progress.skateboardOwned) {
+    return 'Skateboard owned.';
+  }
+
+  if (mission?.id === TASK_IDS.officeManagerPromotion && progress.officeManagerCompletedAt > 0) {
+    return 'Office manager shift complete.';
   }
 
   return mission?.description ?? '';
@@ -340,6 +418,20 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return progress.deliveryCompletionCount > previousProgress.deliveryCompletionCount;
   }
 
+  if (previousTaskId === TASK_IDS.schoolTeacherTasks) {
+    return (
+      previousProgress.schoolTasksCompletedCount < SCHOOL_TEACHER_TASKS_REQUIRED
+      && progress.schoolTasksCompletedCount >= SCHOOL_TEACHER_TASKS_REQUIRED
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.janitorTasks) {
+    return (
+      previousProgress.janitorTasksCompletedCount < JANITOR_TASKS_REQUIRED
+      && progress.janitorTasksCompletedCount >= JANITOR_TASKS_REQUIRED
+    );
+  }
+
   if (previousTaskId === TASK_IDS.gymPump) {
     return (
       progress.gymPumpCompletedAt > 0
@@ -358,6 +450,17 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return (
       progress.blackjackHandPlayedAt > 0
       && progress.blackjackHandPlayedAt !== previousProgress.blackjackHandPlayedAt
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.transportationUpgrade) {
+    return progress.skateboardOwned === true && previousProgress.skateboardOwned !== true;
+  }
+
+  if (previousTaskId === TASK_IDS.officeManagerPromotion) {
+    return (
+      progress.officeManagerCompletedAt > 0
+      && progress.officeManagerCompletedAt !== previousProgress.officeManagerCompletedAt
     );
   }
 

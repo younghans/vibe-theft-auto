@@ -2,9 +2,13 @@ import { isDeliveryQuestActive } from './deliveryQuest.js';
 
 export const MISSION_IDS = Object.freeze({
   delivery: 'delivery',
+  schoolTeacherTasks: 'custom-mission-go-to-school-complete-3-tasks-for-th-fqyqp8',
+  janitorTasks: 'custom-mission-get-a-job-complete-3-janitor-tasks-106oriq',
   gymPump: 'gym-pump',
   stockBuy: 'stock-buy',
   blackjackHand: 'blackjack-hand',
+  transportationUpgrade: 'custom-mission-transportation-upgrade-buy-a-skatebo-1mk4jok',
+  officeManagerPromotion: 'custom-mission-your-first-promotion-get-a-job-as-th-kehj25',
   makeMoney: 'make-money'
 });
 
@@ -14,6 +18,9 @@ export const MISSION_STATUS = Object.freeze({
   inProgress: 'inProgress',
   locked: 'locked'
 });
+
+export const SCHOOL_TEACHER_TASKS_REQUIRED = 3;
+export const JANITOR_TASKS_REQUIRED = 3;
 
 export const MISSION_CATALOG = Object.freeze([
   {
@@ -32,6 +39,22 @@ export const MISSION_CATALOG = Object.freeze([
     icon: 'package',
     description: 'Get the package to the contact without losing time.',
     requirement: 'Accept work from the Shady Figure.'
+  },
+  {
+    id: MISSION_IDS.schoolTeacherTasks,
+    title: 'Go to school: Complete 3 tasks for the teacher',
+    label: 'Go to School',
+    icon: 'school',
+    description: 'Find a teacher and complete three school challenges.',
+    requirement: 'Complete the delivery first.'
+  },
+  {
+    id: MISSION_IDS.janitorTasks,
+    title: 'Get a job: Complete 3 janitor tasks',
+    label: 'Janitor Shift',
+    icon: 'janitor',
+    description: 'Work three janitor tasks from the office job board.',
+    requirement: 'Finish school first.'
   },
   {
     id: MISSION_IDS.gymPump,
@@ -56,10 +79,97 @@ export const MISSION_CATALOG = Object.freeze([
     icon: 'playing-card',
     description: 'Sit with the dealer and play one hand.',
     requirement: 'Help the Shady Figure first.'
+  },
+  {
+    id: MISSION_IDS.transportationUpgrade,
+    title: 'Transportation upgrade: Buy a skateboard',
+    label: 'Transportation Upgrade',
+    icon: 'skateboard',
+    description: 'Buy a skateboard from the pawn shop.',
+    requirement: 'Complete the janitor work first.'
+  },
+  {
+    id: MISSION_IDS.officeManagerPromotion,
+    title: 'Your first promotion: Get a job as the office manager',
+    label: 'First Promotion',
+    icon: 'office',
+    description: 'Complete an office manager shift after proving yourself.',
+    requirement: 'Finish the earlier city missions first.'
   }
 ].map(Object.freeze));
 
 const MISSION_BY_ID = new Map(MISSION_CATALOG.map((mission) => [mission.id, mission]));
+const DEFAULT_MISSION_SEQUENCE = Object.freeze([
+  Object.freeze({
+    missionId: MISSION_IDS.makeMoney,
+    makeAvailableAfterMission: false,
+    availableAfterMissionNumber: 0
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.delivery,
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 1
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.schoolTeacherTasks,
+    custom: true,
+    title: 'Go to school : Complete 3 tasks for the teacher',
+    label: 'Go to school : Complete 3 tasks for the teacher',
+    description: 'Go to school : Complete 3 tasks for the teacher',
+    prompt: 'Go to school : Complete 3 tasks for the teacher',
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 2
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.janitorTasks,
+    custom: true,
+    title: 'Get a job : Complete 3 janitor tasks',
+    label: 'Get a job : Complete 3 janitor tasks',
+    description: 'Get a job : Complete 3 janitor tasks',
+    prompt: 'Get a job : Complete 3 janitor tasks',
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 3
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.gymPump,
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 4
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.stockBuy,
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 4
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.blackjackHand,
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 4
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.transportationUpgrade,
+    custom: true,
+    title: 'Transportation upgrade : Buy a skateboard,',
+    label: 'Transportation upgrade : Buy a skateboard,',
+    description: 'Transportation upgrade : Buy a skateboard,',
+    prompt: 'Transportation upgrade : Buy a skateboard,',
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 4
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.officeManagerPromotion,
+    custom: true,
+    title: 'Your first promotion : Get a job as the office manager.',
+    label: 'Your first promotion : Get a job as the office...',
+    description: 'Your first promotion : Get a job as the office manager.',
+    prompt: 'Your first promotion : Get a job as the office manager.',
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 7
+  })
+]);
 const CUSTOM_MISSION_ID_PREFIX = 'custom-mission-';
 const CUSTOM_MISSION_ID_MAX_LENGTH = 96;
 const CUSTOM_MISSION_LABEL_MAX_LENGTH = 54;
@@ -218,11 +328,7 @@ function getRawMissionSequenceEntryGateNumber(entry = {}, fallback = 0) {
 }
 
 export function createDefaultMissionSequence() {
-  return MISSION_CATALOG.map((mission, index) => Object.freeze({
-    missionId: mission.id,
-    makeAvailableAfterMission: index > 0,
-    availableAfterMissionNumber: index
-  }));
+  return DEFAULT_MISSION_SEQUENCE.map((entry) => Object.freeze({ ...entry }));
 }
 
 export function normalizeMissionSequenceConfig(sequence = null) {
@@ -413,12 +519,23 @@ export function getMissionProgressSnapshot(player = null) {
   const gymPumpCompletedAt = Number(player?.gymPumpCompletedAt ?? 0);
   const stockBoughtAt = Number(player?.stockBoughtAt ?? 0);
   const blackjackHandPlayedAt = Number(player?.blackjackHandPlayedAt ?? 0);
+  const schoolTasksCompletedCount = Number(player?.schoolTasksCompletedCount ?? 0);
+  const janitorTasksCompletedCount = Number(player?.janitorTasksCompletedCount ?? 0);
+  const officeManagerCompletedAt = Number(player?.officeManagerCompletedAt ?? 0);
   return {
     deliveryCompletionCount: getDeliveryCompletionCount(player),
     deliveryActive: isDeliveryQuestActive(player),
     gymPumpCompletedAt: Number.isFinite(gymPumpCompletedAt) ? Math.max(0, gymPumpCompletedAt) : 0,
     stockBoughtAt: Number.isFinite(stockBoughtAt) ? Math.max(0, stockBoughtAt) : 0,
-    blackjackHandPlayedAt: Number.isFinite(blackjackHandPlayedAt) ? Math.max(0, blackjackHandPlayedAt) : 0
+    blackjackHandPlayedAt: Number.isFinite(blackjackHandPlayedAt) ? Math.max(0, blackjackHandPlayedAt) : 0,
+    schoolTasksCompletedCount: Number.isFinite(schoolTasksCompletedCount)
+      ? Math.max(0, Math.floor(schoolTasksCompletedCount))
+      : 0,
+    janitorTasksCompletedCount: Number.isFinite(janitorTasksCompletedCount)
+      ? Math.max(0, Math.floor(janitorTasksCompletedCount))
+      : 0,
+    skateboardOwned: player?.skateboardOwned === true,
+    officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0
   };
 }
 
@@ -426,6 +543,24 @@ export function isMissionCompleteForSequence(missionId = '', player = null, sequ
   const id = normalizeMissionId(missionId);
   if (!id || !player) {
     return false;
+  }
+
+  const progress = getMissionProgressSnapshot(player);
+
+  if (id === MISSION_IDS.schoolTeacherTasks) {
+    return progress.schoolTasksCompletedCount >= SCHOOL_TEACHER_TASKS_REQUIRED;
+  }
+
+  if (id === MISSION_IDS.janitorTasks) {
+    return progress.janitorTasksCompletedCount >= JANITOR_TASKS_REQUIRED;
+  }
+
+  if (id === MISSION_IDS.transportationUpgrade) {
+    return progress.skateboardOwned === true;
+  }
+
+  if (id === MISSION_IDS.officeManagerPromotion) {
+    return progress.officeManagerCompletedAt > 0;
   }
 
   if (isCustomMissionId(id)) {
@@ -444,8 +579,6 @@ export function isMissionCompleteForSequence(missionId = '', player = null, sequ
       ? isMissionCompleteForSequence(requiredEntry.missionId, player, normalizedSequence)
       : true;
   }
-
-  const progress = getMissionProgressSnapshot(player);
 
   if (id === MISSION_IDS.makeMoney) {
     return progress.deliveryActive || progress.deliveryCompletionCount > 0;
@@ -516,12 +649,32 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
     return MISSION_STATUS.locked;
   }
 
-  if (isCustomMissionId(id)) {
+  const progress = getMissionProgressSnapshot(player);
+  if (id === MISSION_IDS.makeMoney) {
     return MISSION_STATUS.available;
   }
 
-  const progress = getMissionProgressSnapshot(player);
-  if (id === MISSION_IDS.makeMoney) {
+  if (id === MISSION_IDS.schoolTeacherTasks) {
+    return progress.schoolTasksCompletedCount >= SCHOOL_TEACHER_TASKS_REQUIRED
+      ? MISSION_STATUS.completed
+      : MISSION_STATUS.available;
+  }
+
+  if (id === MISSION_IDS.janitorTasks) {
+    return progress.janitorTasksCompletedCount >= JANITOR_TASKS_REQUIRED
+      ? MISSION_STATUS.completed
+      : MISSION_STATUS.available;
+  }
+
+  if (id === MISSION_IDS.transportationUpgrade) {
+    return progress.skateboardOwned ? MISSION_STATUS.completed : MISSION_STATUS.available;
+  }
+
+  if (id === MISSION_IDS.officeManagerPromotion) {
+    return progress.officeManagerCompletedAt > 0 ? MISSION_STATUS.completed : MISSION_STATUS.available;
+  }
+
+  if (isCustomMissionId(id)) {
     return MISSION_STATUS.available;
   }
 
@@ -579,6 +732,16 @@ export function getMissionRequirement(missionId = '', player = null, sequence = 
   const progress = getMissionProgressSnapshot(player);
   if (definition.id === MISSION_IDS.delivery && !progress.deliveryActive && progress.deliveryCompletionCount <= 0) {
     return 'Accept work from the Shady Figure.';
+  }
+
+  if (definition.id === MISSION_IDS.schoolTeacherTasks) {
+    const remaining = Math.max(0, SCHOOL_TEACHER_TASKS_REQUIRED - progress.schoolTasksCompletedCount);
+    return remaining > 0 ? `Complete ${remaining} more teacher task${remaining === 1 ? '' : 's'}.` : '';
+  }
+
+  if (definition.id === MISSION_IDS.janitorTasks) {
+    const remaining = Math.max(0, JANITOR_TASKS_REQUIRED - progress.janitorTasksCompletedCount);
+    return remaining > 0 ? `Complete ${remaining} more janitor task${remaining === 1 ? '' : 's'}.` : '';
   }
 
   return definition.requirement ?? '';

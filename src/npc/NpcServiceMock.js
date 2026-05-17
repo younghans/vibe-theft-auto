@@ -65,6 +65,7 @@ import {
   refreshPlayerDrunkness
 } from '../shared/bartender.js';
 import {
+  PAWN_SHOP_ITEM_IDS,
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
@@ -97,6 +98,7 @@ import {
   normalizeSchoolMicrogameId
 } from '../shared/schoolMicrogames.js';
 import {
+  OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
   OFFICE_JOB_TERMINAL_RADIUS,
   canPlayerWorkOfficeJob,
@@ -318,6 +320,9 @@ function createDefaultPlayerState(overrides = {}) {
     gymPumpCompletedAt: 0,
     stockBoughtAt: 0,
     blackjackHandPlayedAt: 0,
+    schoolTasksCompletedCount: 0,
+    janitorTasksCompletedCount: 0,
+    officeManagerCompletedAt: 0,
     strengthXp: 0,
     agilityXp: 0,
     intelligenceXp: 0,
@@ -1681,6 +1686,9 @@ export class NpcServiceMock {
     }
 
     access.player.money = money - item.price;
+    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
+      this.normalizePlayerSelectedMission(access.player);
+    }
     this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
     this.emit();
     return {
@@ -1993,6 +2001,11 @@ export class NpcServiceMock {
     const reward = getSchoolMicrogameReward(normalizedGameId);
     const moneyAwarded = 0;
     const skillAward = this.awardPlayerSkillXp(access.player, SKILL_IDS.intelligence, reward.xp);
+    access.player.schoolTasksCompletedCount = Math.max(
+      0,
+      Math.floor(Number(access.player.schoolTasksCompletedCount ?? 0) || 0)
+    ) + 1;
+    this.normalizePlayerSelectedMission(access.player);
     const rewardText = [
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
     ].filter(Boolean).join('  ');
@@ -2174,6 +2187,16 @@ export class NpcServiceMock {
     const skillAward = reward.xp > 0
       ? this.awardPlayerSkillXp(access.player, reward.skill, reward.xp)
       : null;
+    if (job.id === OFFICE_JOB_IDS.janitor) {
+      access.player.janitorTasksCompletedCount = Math.max(
+        0,
+        Math.floor(Number(access.player.janitorTasksCompletedCount ?? 0) || 0)
+      ) + 1;
+      this.normalizePlayerSelectedMission(access.player);
+    } else if (job.id === OFFICE_JOB_IDS.officeManager) {
+      access.player.officeManagerCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(access.player);
+    }
     const rewardText = [
       moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''

@@ -132,9 +132,13 @@ const PHONE_SETTINGS_CONTROLS = Object.freeze([
 const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   money: '&#128181;',
   package: '&#128230;',
+  school: '&#127979;',
+  janitor: '&#129529;',
   muscle: '&#128170;',
   chart: '&#128200;',
   'playing-card': '&#127183;',
+  skateboard: '&#128761;',
+  office: '&#128188;',
   custom: '&#10022;'
 });
 

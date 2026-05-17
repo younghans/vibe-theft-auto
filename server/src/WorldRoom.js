@@ -82,6 +82,7 @@ import {
   refreshPlayerDrunkness
 } from '../../src/shared/bartender.js';
 import {
+  PAWN_SHOP_ITEM_IDS,
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
@@ -119,6 +120,7 @@ import {
   normalizeSchoolMicrogameId
 } from '../../src/shared/schoolMicrogames.js';
 import {
+  OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
   OFFICE_JOB_TERMINAL_RADIUS,
   canPlayerWorkOfficeJob,
@@ -339,7 +341,10 @@ const PlayerActivityState = schema({
   workoutPlacementId: 'string',
   gymPumpCompletedAt: 'number',
   stockBoughtAt: 'number',
-  blackjackHandPlayedAt: 'number'
+  blackjackHandPlayedAt: 'number',
+  schoolTasksCompletedCount: 'number',
+  janitorTasksCompletedCount: 'number',
+  officeManagerCompletedAt: 'number'
 });
 
 const PlayerSkillState = schema({
@@ -449,7 +454,15 @@ const PLAYER_STATE_SECTIONS = [
   {
     section: 'activity',
     type: PlayerActivityState,
-    fields: ['workoutPlacementId', 'gymPumpCompletedAt', 'stockBoughtAt', 'blackjackHandPlayedAt']
+    fields: [
+      'workoutPlacementId',
+      'gymPumpCompletedAt',
+      'stockBoughtAt',
+      'blackjackHandPlayedAt',
+      'schoolTasksCompletedCount',
+      'janitorTasksCompletedCount',
+      'officeManagerCompletedAt'
+    ]
   },
   {
     section: 'skills',
@@ -761,6 +774,9 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       gymPumpCompletedAt: player.gymPumpCompletedAt,
       stockBoughtAt: player.stockBoughtAt,
       blackjackHandPlayedAt: player.blackjackHandPlayedAt,
+      schoolTasksCompletedCount: player.schoolTasksCompletedCount,
+      janitorTasksCompletedCount: player.janitorTasksCompletedCount,
+      officeManagerCompletedAt: player.officeManagerCompletedAt,
       strengthXp: player.strengthXp,
       agilityXp: player.agilityXp,
       intelligenceXp: player.intelligenceXp,
@@ -840,6 +856,9 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.gymPumpCompletedAt = sanitizeSnapshotNumber(saved.gymPumpCompletedAt, 0, { integer: true, min: 0 });
   player.stockBoughtAt = sanitizeSnapshotNumber(saved.stockBoughtAt, 0, { integer: true, min: 0 });
   player.blackjackHandPlayedAt = sanitizeSnapshotNumber(saved.blackjackHandPlayedAt, 0, { integer: true, min: 0 });
+  player.schoolTasksCompletedCount = sanitizeSnapshotNumber(saved.schoolTasksCompletedCount, 0, { integer: true, min: 0 });
+  player.janitorTasksCompletedCount = sanitizeSnapshotNumber(saved.janitorTasksCompletedCount, 0, { integer: true, min: 0 });
+  player.officeManagerCompletedAt = sanitizeSnapshotNumber(saved.officeManagerCompletedAt, 0, { integer: true, min: 0 });
   player.strengthXp = sanitizeSnapshotNumber(saved.strengthXp, 0, { integer: true, min: 0 });
   player.agilityXp = sanitizeSnapshotNumber(saved.agilityXp, 0, { integer: true, min: 0 });
   player.intelligenceXp = sanitizeSnapshotNumber(saved.intelligenceXp, 0, { integer: true, min: 0 });
@@ -1194,6 +1213,9 @@ export class WorldRoom extends Room {
     player.gymPumpCompletedAt = 0;
     player.stockBoughtAt = 0;
     player.blackjackHandPlayedAt = 0;
+    player.schoolTasksCompletedCount = 0;
+    player.janitorTasksCompletedCount = 0;
+    player.officeManagerCompletedAt = 0;
     player.strengthXp = 0;
     player.agilityXp = 0;
     player.intelligenceXp = 0;
@@ -2101,6 +2123,9 @@ export class WorldRoom extends Room {
     }
 
     player.money = money - item.price;
+    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
+      this.normalizePlayerSelectedMission(player);
+    }
     this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
     this.queuePlayerSnapshotSave(client.sessionId);
     return {
@@ -2378,6 +2403,11 @@ export class WorldRoom extends Room {
     const reward = getSchoolMicrogameReward(gameId);
     const moneyAwarded = 0;
     const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.intelligence, reward.xp);
+    player.schoolTasksCompletedCount = Math.max(
+      0,
+      Math.floor(Number(player.schoolTasksCompletedCount ?? 0) || 0)
+    ) + 1;
+    this.normalizePlayerSelectedMission(player);
     const rewardText = [
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
     ].filter(Boolean).join('  ');
@@ -2548,6 +2578,16 @@ export class WorldRoom extends Room {
     const skillAward = reward.xp > 0
       ? this.awardPlayerSkillXp(player, reward.skill, reward.xp)
       : null;
+    if (job.id === OFFICE_JOB_IDS.janitor) {
+      player.janitorTasksCompletedCount = Math.max(
+        0,
+        Math.floor(Number(player.janitorTasksCompletedCount ?? 0) || 0)
+      ) + 1;
+      this.normalizePlayerSelectedMission(player);
+    } else if (job.id === OFFICE_JOB_IDS.officeManager) {
+      player.officeManagerCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(player);
+    }
     const rewardText = [
       moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
       reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''

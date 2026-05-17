@@ -66,8 +66,10 @@ import {
 } from '../src/shared/heldItemDefinitions.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 import {
+  JANITOR_TASKS_REQUIRED,
   MISSION_CATALOG,
   MISSION_STATUS,
+  SCHOOL_TEACHER_TASKS_REQUIRED,
   appendMissionSequencePromptEntry,
   getMissionSnapshots,
   getMissionSequenceViewModel,
@@ -494,52 +496,165 @@ function validateTaskSequence() {
     deliveryQuestStatus: '',
     gymPumpCompletedAt: 0,
     stockBoughtAt: 0,
-    blackjackHandPlayedAt: 0
+    blackjackHandPlayedAt: 0,
+    schoolTasksCompletedCount: 0,
+    janitorTasksCompletedCount: 0,
+    skateboardOwned: false,
+    officeManagerCompletedAt: 0
+  };
+  const schoolCompletePlayer = {
+    ...basePlayer,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED
+  };
+  const janitorCompletePlayer = {
+    ...schoolCompletePlayer,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
   };
 
   assert(
-    resolvePlayerTask({ localPlayerState: basePlayer }).id === TASK_IDS.gymPump,
-    'Task sequence should route to the gym after first delivery.'
+    resolvePlayerTask({ localPlayerState: basePlayer }).id === TASK_IDS.schoolTeacherTasks,
+    'Task sequence should route to school after first delivery.'
   );
   assert(
-    resolvePlayerTask({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000 } }).id === TASK_IDS.stockBuy,
+    resolvePlayerTask({ localPlayerState: schoolCompletePlayer }).id === TASK_IDS.janitorTasks,
+    'Task sequence should route to janitor work after school.'
+  );
+  assert(
+    resolvePlayerTask({ localPlayerState: janitorCompletePlayer }).id === TASK_IDS.gymPump,
+    'Task sequence should route to the gym after janitor work.'
+  );
+  assert(
+    resolvePlayerTask({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000 } }).id === TASK_IDS.stockBuy,
     'Task sequence should route to buying a stock after gym pump.'
   );
   assert(
-    resolvePlayerTask({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).id === TASK_IDS.blackjackHand,
+    resolvePlayerTask({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).id === TASK_IDS.blackjackHand,
     'Task sequence should route to blackjack after buying a stock.'
   );
   assert(
     resolvePlayerTask({
       localPlayerState: {
-        ...basePlayer,
+        ...janitorCompletePlayer,
         gymPumpCompletedAt: 1000,
         stockBoughtAt: 2000,
         blackjackHandPlayedAt: 3000
       }
+    }).id === TASK_IDS.transportationUpgrade,
+    'Task sequence should route to buying a skateboard after blackjack.'
+  );
+  assert(
+    resolvePlayerTask({
+      localPlayerState: {
+        ...janitorCompletePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000,
+        skateboardOwned: true
+      }
+    }).id === TASK_IDS.officeManagerPromotion,
+    'Task sequence should route to office manager after buying a skateboard.'
+  );
+  assert(
+    resolvePlayerTask({
+      localPlayerState: {
+        ...janitorCompletePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000,
+        skateboardOwned: true,
+        officeManagerCompletedAt: 4000
+      }
     }).id === TASK_IDS.makeMoney,
-    'Task sequence should return to the make-money prompt after blackjack.'
+    'Task sequence should return to the make-money prompt after the sequenced missions.'
+  );
+
+  const schoolTracker = new TaskTracker();
+  schoolTracker.update({ localPlayerState: basePlayer });
+  assert(
+    schoolTracker.update({ localPlayerState: { ...basePlayer, schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED - 1 } }).completedTask === false,
+    'Task tracker should not complete the school mission before all teacher tasks are done.'
+  );
+  assert(
+    schoolTracker.update({ localPlayerState: schoolCompletePlayer }).completedTask,
+    'Task tracker should complete the school mission when all teacher tasks are done.'
+  );
+
+  const janitorTracker = new TaskTracker();
+  janitorTracker.update({ localPlayerState: schoolCompletePlayer });
+  assert(
+    janitorTracker.update({ localPlayerState: { ...schoolCompletePlayer, janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED - 1 } }).completedTask === false,
+    'Task tracker should not complete the janitor mission before all janitor tasks are done.'
+  );
+  assert(
+    janitorTracker.update({ localPlayerState: janitorCompletePlayer }).completedTask,
+    'Task tracker should complete the janitor mission when all janitor tasks are done.'
   );
 
   const stockTracker = new TaskTracker();
-  stockTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000 } });
+  stockTracker.update({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000 } });
   assert(
-    stockTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).completedTask,
+    stockTracker.update({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).completedTask,
     'Task tracker should complete the stock-buy task when a stock is bought.'
   );
 
   const blackjackTracker = new TaskTracker();
-  blackjackTracker.update({ localPlayerState: { ...basePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } });
+  blackjackTracker.update({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } });
   assert(
     blackjackTracker.update({
       localPlayerState: {
-        ...basePlayer,
+        ...janitorCompletePlayer,
         gymPumpCompletedAt: 1000,
         stockBoughtAt: 2000,
         blackjackHandPlayedAt: 3000
       }
     }).completedTask,
     'Task tracker should complete the blackjack task when a hand is played.'
+  );
+
+  const skateboardTracker = new TaskTracker();
+  skateboardTracker.update({
+    localPlayerState: {
+      ...janitorCompletePlayer,
+      gymPumpCompletedAt: 1000,
+      stockBoughtAt: 2000,
+      blackjackHandPlayedAt: 3000
+    }
+  });
+  assert(
+    skateboardTracker.update({
+      localPlayerState: {
+        ...janitorCompletePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000,
+        skateboardOwned: true
+      }
+    }).completedTask,
+    'Task tracker should complete the transportation mission when a skateboard is bought.'
+  );
+
+  const managerTracker = new TaskTracker();
+  managerTracker.update({
+    localPlayerState: {
+      ...janitorCompletePlayer,
+      gymPumpCompletedAt: 1000,
+      stockBoughtAt: 2000,
+      blackjackHandPlayedAt: 3000,
+      skateboardOwned: true
+    }
+  });
+  assert(
+    managerTracker.update({
+      localPlayerState: {
+        ...janitorCompletePlayer,
+        gymPumpCompletedAt: 1000,
+        stockBoughtAt: 2000,
+        blackjackHandPlayedAt: 3000,
+        skateboardOwned: true,
+        officeManagerCompletedAt: 4000
+      }
+    }).completedTask,
+    'Task tracker should complete the promotion mission when office manager work is completed.'
   );
 }
 
@@ -613,14 +728,33 @@ function validateDeliveryQuestCarry() {
 
 function validateMissionSequencer() {
   const sequence = normalizeMissionSequenceConfig(defaultWorldLayout.missionSequence);
+  const expectedOrder = [
+    TASK_IDS.makeMoney,
+    TASK_IDS.delivery,
+    TASK_IDS.schoolTeacherTasks,
+    TASK_IDS.janitorTasks,
+    TASK_IDS.gymPump,
+    TASK_IDS.stockBuy,
+    TASK_IDS.blackjackHand,
+    TASK_IDS.transportationUpgrade,
+    TASK_IDS.officeManagerPromotion
+  ];
+  const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7];
   assert(sequence.length === MISSION_CATALOG.length, 'Mission sequencer should include every catalog mission');
+  assert(
+    JSON.stringify(sequence.map((entry) => entry.missionId)) === JSON.stringify(expectedOrder),
+    'Mission sequencer should use the admin-authored mission order'
+  );
   assert(sequence[0].makeAvailableAfterMission === false, 'The first mission should be available without a prior mission');
   for (let index = 1; index < sequence.length; index += 1) {
-    assert(sequence[index].makeAvailableAfterMission === true, `Mission ${index + 1} should default to a prior-mission gate`);
-    assert(sequence[index].availableAfterMissionNumber === index, `Mission ${index + 1} should default to the previous mission number`);
+    assert(sequence[index].makeAvailableAfterMission === true, `Mission ${index + 1} should default to a sequence gate`);
+    assert(
+      sequence[index].availableAfterMissionNumber === expectedGateNumbers[index],
+      `Mission ${index + 1} should preserve its authored gate`
+    );
   }
 
-  const moved = moveMissionSequenceEntry(sequence, 3, 1);
+  const moved = moveMissionSequenceEntry(sequence, 5, 1);
   assert(moved[1].missionId === TASK_IDS.stockBuy, 'Mission sequencer drag reorder should move missions by index');
   assert(moved[1].availableAfterMissionNumber === 1, 'Moved missions should clamp their gate to an earlier mission number');
 
@@ -632,7 +766,11 @@ function validateMissionSequencer() {
     deliveryQuestStatus: '',
     gymPumpCompletedAt: 0,
     stockBoughtAt: 0,
-    blackjackHandPlayedAt: 0
+    blackjackHandPlayedAt: 0,
+    schoolTasksCompletedCount: 0,
+    janitorTasksCompletedCount: 0,
+    skateboardOwned: false,
+    officeManagerCompletedAt: 0
   };
   const stockSnapshot = getMissionSnapshots(noProgressPlayer, '', ungatedStock)
     .find((mission) => mission.id === TASK_IDS.stockBuy);
@@ -642,10 +780,23 @@ function validateMissionSequencer() {
     ...noProgressPlayer,
     deliveryQuestCompletionCount: 1
   }, '', sequence);
-  const gymSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
+  const schoolSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.schoolTeacherTasks);
+  const janitorLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.janitorTasks);
   const stockLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.stockBuy);
-  assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after delivery');
-  assert(stockLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep stock locked until gym is complete');
+  assert(schoolSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock school after delivery');
+  assert(janitorLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep janitor work locked until school is complete');
+  assert(stockLockedSnapshot?.status === MISSION_STATUS.locked, 'Default sequence should keep stock locked until janitor work is complete');
+
+  const postJanitorSnapshots = getMissionSnapshots({
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
+  }, '', sequence);
+  const gymSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
+  const skateboardSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
+  assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after janitor work');
+  assert(skateboardSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the skateboard mission after janitor work');
 
   const rows = getMissionSequenceViewModel(sequence);
   assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
@@ -666,9 +817,13 @@ function validateMissionSequencer() {
   const completePlayer = {
     ...noProgressPlayer,
     deliveryQuestCompletionCount: 1,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED,
     gymPumpCompletedAt: 1,
     stockBoughtAt: 1,
-    blackjackHandPlayedAt: 1
+    blackjackHandPlayedAt: 1,
+    skateboardOwned: true,
+    officeManagerCompletedAt: 1
   };
   const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)
     .find((mission) => mission.id === customMission.missionId);
