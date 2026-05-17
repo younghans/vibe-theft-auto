@@ -10092,6 +10092,23 @@ body.is-admin-prompt-resizing * {
   min-width: 220px;
 }
 
+.hud__office-brew-button {
+  transform: none;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hud__office-brew-button:hover,
+.hud__office-brew-button:active,
+.hud__office-brew-button[aria-pressed="true"] {
+  transform: none;
+}
+
+.hud__office-brew-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--school-secondary) 66%, white 16%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--school-secondary) 88%, white 8%), var(--school-accent));
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.24), 0 12px 24px rgba(0, 0, 0, 0.22);
+}
+
 .hud__school-memory {
   gap: 12px;
 }

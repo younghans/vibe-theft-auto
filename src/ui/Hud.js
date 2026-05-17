@@ -1586,6 +1586,20 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   }
 
   if (domain === 'office-job') {
+    if (gameId === OFFICE_JOB_GAME_IDS.officeManager) {
+      return [
+        game?.id ?? '',
+        gameId,
+        phase,
+        String(error ?? ''),
+        String(game?.resultTitle ?? ''),
+        String(game?.resultDetail ?? ''),
+        String(round.officeJobId ?? round.jobId ?? ''),
+        String(Math.round(Number(round.targetStart ?? 0) * 100)),
+        String(Math.round(Number(round.targetEnd ?? 0) * 100))
+      ].join('|');
+    }
+
     base.push(
       String(round.officeJobId ?? round.jobId ?? ''),
       String(Math.round(Number(round.targetStart ?? 0) * 100)),
@@ -2428,10 +2442,10 @@ function createOfficeCoffeeFillMarkup(game = null) {
         </span>
       </div>
       <div class="hud__school-score-strip">
-        <span>${Math.round(fill)}% full</span>
-        <span>Target ${Math.round(targetStart)}-${Math.round(targetEnd)}%</span>
+        <span data-office-coffee-fill-label>${Math.round(fill)}% full</span>
+        <span data-office-coffee-target-label>Target ${Math.round(targetStart)}-${Math.round(targetEnd)}%</span>
       </div>
-      <button class="hud__school-hold-button" type="button" data-school-microgame-hold>
+      <button class="hud__school-hold-button hud__office-brew-button" type="button" data-school-microgame-hold aria-pressed="${brewing ? 'true' : 'false'}">
         Hold Brew
       </button>
     </div>
@@ -2599,8 +2613,46 @@ function updateOfficeMopHeroLiveMarkup(root = null, game = null) {
   }
 }
 
+function updateOfficeCoffeeFillLiveMarkup(root = null, game = null) {
+  const task = root?.querySelector?.('.hud__office-coffee');
+  if (!task || game?.phase !== 'playing') {
+    return;
+  }
+
+  const round = game.round ?? {};
+  const data = game.data ?? {};
+  const fill = Math.max(0, Math.min(100, Number(data.fill ?? 0) || 0));
+  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? 72) || 72));
+  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? 82) || 82));
+  const brewing = data.brewing === true && data.released !== true;
+
+  task.style.setProperty('--fill', `${fill.toFixed(2)}%`);
+  task.style.setProperty('--target-bottom', `${targetStart.toFixed(2)}%`);
+  task.style.setProperty('--target-height', `${(targetEnd - targetStart).toFixed(2)}%`);
+  task.classList.toggle('is-brewing', brewing);
+  task.classList.toggle('is-released', data.released === true);
+
+  const fillLabel = task.querySelector('[data-office-coffee-fill-label]');
+  if (fillLabel) {
+    fillLabel.textContent = `${Math.round(fill)}% full`;
+  }
+  const targetLabel = task.querySelector('[data-office-coffee-target-label]');
+  if (targetLabel) {
+    targetLabel.textContent = `Target ${Math.round(targetStart)}-${Math.round(targetEnd)}%`;
+  }
+  const holdButton = task.querySelector('[data-school-microgame-hold]');
+  if (holdButton) {
+    holdButton.setAttribute('aria-pressed', brewing ? 'true' : 'false');
+  }
+}
+
 function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
   if (!root || game?.context !== 'office-job' || game?.phase !== 'playing') {
+    return;
+  }
+
+  if (String(game.round?.gameId ?? '') === OFFICE_JOB_GAME_IDS.officeManager) {
+    updateOfficeCoffeeFillLiveMarkup(root, game);
     return;
   }
 

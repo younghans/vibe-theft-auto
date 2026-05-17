@@ -575,6 +575,9 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('hud__office-breakroom-fridge'), 'Office Manager HUD should render a break room background.');
   assert(hudSource.includes('hud__office-coffee-maker'), 'Office Manager HUD should render a coffee maker.');
   assert(hudSource.includes('hud__office-cup'), 'Office Manager HUD should render a coffee mug.');
+  assert(hudSource.includes('updateOfficeCoffeeFillLiveMarkup'), 'Office Manager coffee fill should update live without rebuilding the hold button.');
+  assert(hudSource.includes('data-office-coffee-fill-label'), 'Office Manager coffee fill label should be live-updated in place.');
+  assert(hudSource.includes('hud__office-brew-button'), 'Office Manager hold brew button should have stable button-specific styling.');
   assert(hudSource.includes('hud__office-boardroom-backdrop'), 'CEO ready screen should render a boardroom background.');
   assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
   assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose a dynamic horizontal marker position.');
@@ -605,6 +608,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
   assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');
   assert(cssSource.includes('hud__office-breakroom-backdrop'), 'Office Manager start screen should include the break room backdrop.');
+  assert(cssSource.includes('.hud__office-brew-button:hover') && cssSource.includes('.hud__office-brew-button:active') && cssSource.includes('transform: none'), 'Office Manager hold brew button should not shift on hover or active press.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
   assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
