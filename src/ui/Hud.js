@@ -1178,7 +1178,10 @@ function getOfficeJobRequirementText(job = {}, skills = {}) {
   const charismaLevel = typeof skills === 'object'
     ? skills.charismaLevel
     : 0;
-  return getOfficeJobRequirementSummary(job, { intelligence, charismaLevel });
+  const strengthLevel = typeof skills === 'object'
+    ? skills.strengthLevel
+    : 0;
+  return getOfficeJobRequirementSummary(job, { intelligence, charismaLevel, strengthLevel });
 }
 
 const AGENT_TASK_STATUS_LABELS = Object.freeze({
@@ -1709,6 +1712,8 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
   if (phase === 'menu' && game?.context === 'office-job') {
     base.push(
       String(data.intelligence ?? 0),
+      String(data.strengthLevel ?? 0),
+      String(data.charismaLevel ?? 0),
       (Array.isArray(data.jobs) ? data.jobs : []).map((job) => `${job.id}:${job.unlocked ? '1' : '0'}:${job.instructions ?? ''}`).join(',')
     );
     return base.join('|');
@@ -1832,8 +1837,10 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const round = game?.round ?? {};
   const intelligenceRequirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
   const charismaLevelRequirement = Math.max(0, Math.floor(Number(round.charismaLevelRequired ?? 0) || 0));
+  const strengthLevelRequirement = Math.max(0, Math.floor(Number(round.strengthLevelRequired ?? 0) || 0));
   const requirementText = [
     intelligenceRequirement > 0 ? `${intelligenceRequirement} Intelligence` : '',
+    strengthLevelRequirement > 0 ? `Level ${strengthLevelRequirement} Strength` : '',
     charismaLevelRequirement > 0 ? `Level ${charismaLevelRequirement} Charisma` : ''
   ].filter(Boolean).join(' / ');
   const instructions = String(round.instructions ?? '').trim();
@@ -2026,22 +2033,23 @@ function createOfficeJobMenuMarkup(game = null) {
   const data = game?.data ?? {};
   const intelligence = Math.max(0, Math.floor(Number(data.intelligence ?? 0) || 0));
   const charismaLevel = Math.max(0, Math.floor(Number(data.charismaLevel ?? 0) || 0));
+  const strengthLevel = Math.max(0, Math.floor(Number(data.strengthLevel ?? 0) || 0));
   const jobs = Array.isArray(data.jobs) && data.jobs.length > 0
     ? data.jobs
     : listOfficeJobDefinitions().map((job) => ({
       ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel)
+      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
     }));
 
   return `
     <div class="hud__office-menu">
       <section class="hud__office-menu-summary">
         <span>Current Skills</span>
-        <strong>Int ${escapeHtml(String(intelligence))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
+        <strong>Int ${escapeHtml(String(intelligence))} / Str Lv ${escapeHtml(String(strengthLevel))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
       </section>
       <div class="hud__office-job-grid">
         ${jobs.map((job) => {
-          const unlocked = canPlayerWorkOfficeJob(intelligence, job, charismaLevel);
+          const unlocked = canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel);
           const instructions = String(job.instructions ?? '').trim();
           return `
             <button
@@ -2058,7 +2066,7 @@ function createOfficeJobMenuMarkup(game = null) {
               </span>
               <span class="hud__office-job-meta">
                 <em>$${escapeHtml(String(job.rewardMoney ?? 0))}</em>
-                <small>${escapeHtml(getOfficeJobRequirementText(job, { intelligence, charismaLevel }))}</small>
+                <small>${escapeHtml(getOfficeJobRequirementText(job, { intelligence, charismaLevel, strengthLevel }))}</small>
               </span>
             </button>
           `;

@@ -2720,8 +2720,9 @@ export class WorldRoom extends Room {
 
     const intelligence = getPlayerSkillXp(player, SKILL_IDS.intelligence);
     const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(player, SKILL_IDS.charisma));
-    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
-      throw new Error(getOfficeJobLockedMessage(job, { intelligence, charismaLevel }));
+    const strengthLevel = getSkillLevelFromXp(getPlayerSkillXp(player, SKILL_IDS.strength));
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)) {
+      throw new Error(getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel }));
     }
 
     const reward = getOfficeJobReward(job.id);

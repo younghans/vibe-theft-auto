@@ -2324,8 +2324,9 @@ export class NpcServiceMock {
 
     const intelligence = getPlayerSkillXp(access.player, SKILL_IDS.intelligence);
     const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(access.player, SKILL_IDS.charisma));
-    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
-      return { ok: false, error: getOfficeJobLockedMessage(job, { intelligence, charismaLevel }) };
+    const strengthLevel = getSkillLevelFromXp(getPlayerSkillXp(access.player, SKILL_IDS.strength));
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)) {
+      return { ok: false, error: getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel }) };
     }
 
     const reward = getOfficeJobReward(job.id);

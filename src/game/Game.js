@@ -8479,12 +8479,17 @@ export class Game {
     return getSkillLevelFromXp(getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.charisma));
   }
 
+  getOfficeJobStrengthLevel() {
+    return getSkillLevelFromXp(getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.strength));
+  }
+
   getOfficeJobMenuJobs() {
     const intelligence = this.getOfficeJobIntelligence();
     const charismaLevel = this.getOfficeJobCharismaLevel();
+    const strengthLevel = this.getOfficeJobStrengthLevel();
     return listOfficeJobDefinitions().map((job) => ({
       ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel)
+      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
     }));
   }
 
@@ -8507,6 +8512,7 @@ export class Game {
       data: {
         intelligence: this.getOfficeJobIntelligence(),
         charismaLevel: this.getOfficeJobCharismaLevel(),
+        strengthLevel: this.getOfficeJobStrengthLevel(),
         jobs: this.getOfficeJobMenuJobs()
       },
       remainingMs: 0,
@@ -8714,6 +8720,7 @@ export class Game {
       rewardXp: job.rewardXp,
       intelligenceRequired: job.intelligenceRequired,
       charismaLevelRequired: job.charismaLevelRequired,
+      strengthLevelRequired: job.strengthLevelRequired,
       accent: job.accent,
       secondaryAccent: job.secondaryAccent,
       icon: job.icon
@@ -8767,8 +8774,9 @@ export class Game {
 
     const intelligence = this.getOfficeJobIntelligence();
     const charismaLevel = this.getOfficeJobCharismaLevel();
-    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel)) {
-      const message = getOfficeJobLockedMessage(job, { intelligence, charismaLevel });
+    const strengthLevel = this.getOfficeJobStrengthLevel();
+    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)) {
+      const message = getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel });
       const alertMessage = message
         .replace(`${job.roleLabel} requires `, 'You need ')
         .replace(/(\d+) Intelligence/g, 'Level $1 Intelligence')
@@ -8778,6 +8786,7 @@ export class Game {
           ...(this.schoolMicrogame.data ?? {}),
           intelligence,
           charismaLevel,
+          strengthLevel,
           jobs: this.getOfficeJobMenuJobs()
         };
         this.schoolMicrogame.message = alertMessage;

@@ -83,6 +83,7 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
     rewardXp: 0,
     intelligenceRequired: 200,
     charismaLevelRequired: 10,
+    strengthLevelRequired: 10,
     durationMs: 18000,
     accent: '#facc15',
     secondaryAccent: '#fb7185',
@@ -170,6 +171,11 @@ export function getOfficeJobCharismaLevelRequirement(value = '') {
   return Math.max(0, Math.trunc(Number(job?.charismaLevelRequired ?? 0) || 0));
 }
 
+export function getOfficeJobStrengthLevelRequirement(value = '') {
+  const job = resolveOfficeJob(value);
+  return Math.max(0, Math.trunc(Number(job?.strengthLevelRequired ?? 0) || 0));
+}
+
 function resolveOfficeJob(jobOrId = '') {
   return typeof jobOrId === 'object' && jobOrId
     ? jobOrId
@@ -180,17 +186,19 @@ function normalizeOfficeJobSkillValue(value = 0) {
   return Math.max(0, Math.trunc(Number(value ?? 0) || 0));
 }
 
-export function getOfficeJobRequirementSummary(jobOrId = '', { intelligence = 0, charismaLevel = 0 } = {}) {
+export function getOfficeJobRequirementSummary(jobOrId = '', { intelligence = 0, charismaLevel = 0, strengthLevel = 0 } = {}) {
   const job = resolveOfficeJob(jobOrId);
   const intelligenceRequired = normalizeOfficeJobSkillValue(job?.intelligenceRequired);
   const charismaLevelRequired = normalizeOfficeJobSkillValue(job?.charismaLevelRequired);
+  const strengthLevelRequired = normalizeOfficeJobSkillValue(job?.strengthLevelRequired);
   return [
     intelligenceRequired > 0 ? `Intelligence ${normalizeOfficeJobSkillValue(intelligence)}/${intelligenceRequired}` : '',
+    strengthLevelRequired > 0 ? `Strength Lv ${normalizeOfficeJobSkillValue(strengthLevel)}/${strengthLevelRequired}` : '',
     charismaLevelRequired > 0 ? `Charisma Lv ${normalizeOfficeJobSkillValue(charismaLevel)}/${charismaLevelRequired}` : ''
   ].filter(Boolean).join(' / ');
 }
 
-export function getOfficeJobLockedMessage(jobOrId = '', { intelligence = 0, charismaLevel = 0 } = {}) {
+export function getOfficeJobLockedMessage(jobOrId = '', { intelligence = 0, charismaLevel = 0, strengthLevel = 0 } = {}) {
   const job = resolveOfficeJob(jobOrId);
   if (!job) {
     return 'That office job is not available.';
@@ -198,20 +206,24 @@ export function getOfficeJobLockedMessage(jobOrId = '', { intelligence = 0, char
 
   const intelligenceRequired = normalizeOfficeJobSkillValue(job.intelligenceRequired);
   const charismaLevelRequired = normalizeOfficeJobSkillValue(job.charismaLevelRequired);
+  const strengthLevelRequired = normalizeOfficeJobSkillValue(job.strengthLevelRequired);
   const missing = [
     normalizeOfficeJobSkillValue(intelligence) < intelligenceRequired ? `${intelligenceRequired} Intelligence` : '',
+    normalizeOfficeJobSkillValue(strengthLevel) < strengthLevelRequired ? `Level ${strengthLevelRequired} Strength` : '',
     normalizeOfficeJobSkillValue(charismaLevel) < charismaLevelRequired ? `Level ${charismaLevelRequired} Charisma` : ''
   ].filter(Boolean);
   return missing.length > 0 ? `${job.roleLabel} requires ${missing.join(' and ')}.` : '';
 }
 
-export function canPlayerWorkOfficeJob(playerIntelligence = 0, jobOrId = '', playerCharismaLevel = 0) {
+export function canPlayerWorkOfficeJob(playerIntelligence = 0, jobOrId = '', playerCharismaLevel = 0, playerStrengthLevel = 0) {
   const job = resolveOfficeJob(jobOrId);
   const intelligence = normalizeOfficeJobSkillValue(playerIntelligence);
   const charismaLevel = normalizeOfficeJobSkillValue(playerCharismaLevel);
+  const strengthLevel = normalizeOfficeJobSkillValue(playerStrengthLevel);
   return Boolean(
     job
     && intelligence >= getOfficeJobRequirement(job.id)
     && charismaLevel >= getOfficeJobCharismaLevelRequirement(job.id)
+    && strengthLevel >= getOfficeJobStrengthLevelRequirement(job.id)
   );
 }
