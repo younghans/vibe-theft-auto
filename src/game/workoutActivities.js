@@ -5,6 +5,11 @@ export const SNATCH_WORKOUT_KIND = 'snatch-workout';
 export const SNATCH_WORKOUT_DURATION_MS = 5435;
 export const SNATCH_APPROACH_STOP_DISTANCE = 0.18;
 
+export const BASKETBALL_SHOT_WORKOUT_TYPE = 'basketball-shot';
+export const BASKETBALL_SHOT_WORKOUT_KIND = 'basketball-shot-workout';
+export const BASKETBALL_SHOT_DURATION_MS = 5200;
+export const BASKETBALL_SHOT_APPROACH_STOP_DISTANCE = 0.2;
+
 export const TYPING_WORKOUT_KIND = 'typing-workout';
 export const TYPING_WORKOUT_DURATION_MS = 5200;
 export const TYPING_APPROACH_STOP_DISTANCE = 0.14;
@@ -21,6 +26,21 @@ export const WORKOUT_ACTIVITY_CONFIGS = Object.freeze({
     completeToast: 'Snatch complete.',
     attachBarbell: true,
     stopEmoteOnFinish: false
+  }),
+  [BASKETBALL_SHOT_WORKOUT_KIND]: Object.freeze({
+    id: BASKETBALL_SHOT_WORKOUT_TYPE,
+    label: 'Basketball Shot',
+    kind: BASKETBALL_SHOT_WORKOUT_KIND,
+    emoteId: '',
+    durationMs: BASKETBALL_SHOT_DURATION_MS,
+    stopDistance: BASKETBALL_SHOT_APPROACH_STOP_DISTANCE,
+    activePhase: 'basketball-shot',
+    busyToast: 'That hoop is already in use.',
+    unavailableToast: 'Could not use that hoop right now.',
+    completeToast: 'Clean release.',
+    basketballShot: true,
+    playEmoteOnBegin: false,
+    stopEmoteOnFinish: true
   }),
   [TYPING_WORKOUT_KIND]: Object.freeze({
     kind: TYPING_WORKOUT_KIND,

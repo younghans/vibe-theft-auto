@@ -71,7 +71,10 @@ import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
 import { createInteriorScene } from '../world/InteriorScene.js';
-import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
+import {
+  BASKETBALL_HOOP_RIM_HEIGHT,
+  createOlympicBarbellVisual
+} from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
@@ -217,6 +220,15 @@ const VIBE_HERO_LANE_KEY_CODES = Object.freeze(Array.from({ length: VIBE_HERO_LA
   `Digit${index + 1}`,
   `Numpad${index + 1}`
 ])));
+const BASKETBALL_SHOT_SWEEP_MS = 1320;
+const BASKETBALL_SHOT_CLEAN_WINDOW = 0.055;
+const BASKETBALL_SHOT_GREAT_WINDOW = 0.13;
+const BASKETBALL_SHOT_FLIGHT_MS = 920;
+const BASKETBALL_SHOT_RESULT_HOLD_MS = 980;
+const BASKETBALL_SHOT_RIM_LOCAL_Z = 0.44;
+const BASKETBALL_SHOT_RIM_WORLD_HEIGHT = BASKETBALL_HOOP_RIM_HEIGHT * 1.045;
+const BASKETBALL_SHOT_BALL_RADIUS = 0.23;
+const BASKETBALL_SHOT_CAMERA_SMOOTHING = 0.18;
 
 function formatVibeHeroTimestamp(milliseconds = 0) {
   const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
@@ -702,6 +714,49 @@ function disposeObjectResources(root) {
   });
 }
 
+function createBasketballShotBall() {
+  const group = new THREE.Group();
+  group.name = 'BasketballShotBall';
+
+  const ballMaterial = new THREE.MeshStandardMaterial({
+    color: 0xc86822,
+    roughness: 0.58,
+    metalness: 0.03
+  });
+  const seamMaterial = new THREE.MeshStandardMaterial({
+    color: 0x20120b,
+    roughness: 0.72,
+    metalness: 0.02
+  });
+  const ball = new THREE.Mesh(
+    new THREE.SphereGeometry(BASKETBALL_SHOT_BALL_RADIUS, 28, 18),
+    ballMaterial
+  );
+  ball.castShadow = true;
+  ball.receiveShadow = true;
+  group.add(ball);
+
+  [
+    [0, 0, 0],
+    [Math.PI * 0.5, 0, 0],
+    [0, Math.PI * 0.5, 0],
+    [0.58, 0, 0.34],
+    [-0.58, 0, -0.34]
+  ].forEach((rotation, index) => {
+    const seam = new THREE.Mesh(
+      new THREE.TorusGeometry(BASKETBALL_SHOT_BALL_RADIUS * 1.012, 0.006, 5, 54),
+      seamMaterial
+    );
+    seam.name = `BasketballShotSeam${index + 1}`;
+    seam.rotation.set(rotation[0], rotation[1], rotation[2]);
+    seam.castShadow = false;
+    seam.receiveShadow = true;
+    group.add(seam);
+  });
+
+  return group;
+}
+
 function disposeObjectMaterials(root) {
   root?.traverse?.((node) => {
     disposeMaterial(node.material);
@@ -1118,6 +1173,10 @@ export class Game {
     this.workoutBarbellAxis = new THREE.Vector3();
     this.workoutForward = new THREE.Vector3();
     this.workoutBarbellQuaternion = new THREE.Quaternion();
+    this.basketballShotHandPosition = new THREE.Vector3();
+    this.basketballShotRimPosition = new THREE.Vector3();
+    this.basketballShotForward = new THREE.Vector3();
+    this.basketballShotSide = new THREE.Vector3();
     this.cameraOffsetScratch = new THREE.Vector3();
     this.cameraTargetPosition = new THREE.Vector3();
     this.cameraLookTarget = new THREE.Vector3();
@@ -1156,6 +1215,9 @@ export class Game {
     this.hud.bindVibeHeroEvents({
       onClose: () => this.closeVibeHero(),
       onAction: (action) => this.handleVibeHeroAction(action)
+    });
+    this.hud.bindBasketballShotEvents({
+      onAction: (action) => this.handleBasketballShotAction(action)
     });
     this.hud.bindAdminPromptEvents({
       onToggle: () => this.toggleAdminPromptPanel(),
@@ -2484,6 +2546,7 @@ export class Game {
         blackjackOpen: this.hud.isBlackjackOpen(),
         schoolMicrogameOpen: this.hud.isSchoolMicrogameOpen(),
         vibeHeroOpen: this.hud.isVibeHeroOpen(),
+        basketballShotOpen: this.hud.isBasketballShotOpen(),
         worldBuilderEnabled: Boolean(this.worldBuilder?.enabled),
         quickChatOpen: this.hud.isQuickChatOpen()
       },
@@ -5092,6 +5155,41 @@ export class Game {
         newLevel: award.newLevel
       });
     }
+  }
+
+  presentSkillAwardsFromResult(result = null) {
+    const awards = Array.isArray(result?.skillAwards) && result.skillAwards.length > 0
+      ? result.skillAwards
+      : [result?.skillAward].filter(Boolean);
+    let presented = false;
+
+    for (const award of awards) {
+      if (!award?.seq || award.seq <= this.lastSkillAwardSeq) {
+        continue;
+      }
+
+      this.lastSkillAwardSeq = award.seq;
+      const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
+        id: award.skillId,
+        label: award.label,
+        icon: award.icon,
+        accent: award.accent
+      };
+      this.phoneSkillsState = {
+        ...this.phoneSkillsState,
+        recentAward: {
+          ...award,
+          skill
+        }
+      };
+      this.presentSkillAwardFeedback(award, skill);
+      presented = true;
+    }
+
+    if (presented) {
+      this.refreshPhoneSkillsHud();
+    }
+    return presented;
   }
 
   syncSkillProgress(localPlayerState = null) {
@@ -10610,25 +10708,7 @@ export class Game {
           this.releaseWorkoutPlacement(normalizedPlacementId);
           return;
         }
-        const award = result.skillAward;
-        if (award?.seq && award.seq > this.lastSkillAwardSeq) {
-          this.lastSkillAwardSeq = award.seq;
-          const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
-            id: award.skillId,
-            label: award.label,
-            icon: award.icon,
-            accent: award.accent
-          };
-          this.phoneSkillsState = {
-            ...this.phoneSkillsState,
-            recentAward: {
-              ...award,
-              skill
-            }
-          };
-          this.presentSkillAwardFeedback(award, skill);
-          this.refreshPhoneSkillsHud();
-        }
+        this.presentSkillAwardsFromResult(result);
       })
       .catch(() => {
         this.releaseWorkoutPlacement(normalizedPlacementId);
@@ -10689,7 +10769,9 @@ export class Game {
       return false;
     }
 
-    void preloadMixamoClips([activityConfig.emoteId]);
+    if (activityConfig.emoteId) {
+      void preloadMixamoClips([activityConfig.emoteId]);
+    }
     this.clearPendingHipFireShot();
     this.currentAimMode = false;
     this.player.setAimingState(false);
@@ -10731,7 +10813,9 @@ export class Game {
     this.player.setFacing(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.setAimRotation(interactable?.approachRotationY ?? this.player.object.rotation.y);
     this.player.stopEmote?.();
-    this.player.playEmote(activityConfig.emoteId);
+    if (activityConfig.emoteId && activityConfig.playEmoteOnBegin !== false) {
+      this.player.playEmote(activityConfig.emoteId);
+    }
     if (activityConfig.playTypingSound) {
       this.playSoundEffect(this.typingOnKeyboardSound);
     }
@@ -10740,6 +10824,321 @@ export class Game {
       this.hud.playTaskConfetti();
     }
     this.syncWorkoutBarbell();
+    if (activityConfig.basketballShot) {
+      this.beginBasketballShotActivity();
+    }
+    return true;
+  }
+
+  beginBasketballShotActivity() {
+    if (!this.activeWorkout || !this.player) {
+      return false;
+    }
+
+    const ball = createBasketballShotBall();
+    this.scene.add(ball);
+    const now = performance.now();
+    const rimPosition = this.getBasketballShotRimPosition(
+      this.activeWorkout.interactable,
+      this.basketballShotRimPosition
+    );
+    this.activeWorkout.basketballShot = {
+      ball,
+      startedAt: now,
+      phase: 'playing',
+      progress: 0,
+      released: false,
+      release: 'set',
+      releaseProgress: 0,
+      made: null,
+      score: 0,
+      message: 'Release at the top of the meter.',
+      releaseAt: 0,
+      resolveAt: 0,
+      shotStart: new THREE.Vector3(),
+      shotControl: new THREE.Vector3(),
+      shotEnd: new THREE.Vector3(),
+      rimPosition: rimPosition.clone()
+    };
+    this.syncBasketballShotBall(now);
+    this.updateBasketballShotHud();
+    this.updateBasketballShotCamera({ snap: true });
+    return true;
+  }
+
+  getBasketballShotRimPosition(interactable = this.activeWorkout?.interactable, target = this.basketballShotRimPosition) {
+    const origin = interactable?.originPosition ?? interactable?.position ?? this.player?.position;
+    const rotatedOffset = rotateFootprintOffset(
+      0,
+      BASKETBALL_SHOT_RIM_LOCAL_Z,
+      interactable?.rotationQuarterTurns ?? 0
+    );
+    target.set(
+      (origin?.x ?? 0) + rotatedOffset.x,
+      (origin?.y ?? 0) + BASKETBALL_SHOT_RIM_WORLD_HEIGHT,
+      (origin?.z ?? 0) + rotatedOffset.z
+    );
+    return target;
+  }
+
+  getBasketballShotForward(target = this.basketballShotForward) {
+    const shot = this.activeWorkout?.basketballShot;
+    if (shot?.rimPosition && this.player) {
+      target.subVectors(shot.rimPosition, this.player.position);
+      target.y = 0;
+    } else {
+      const facing = this.player?.object?.rotation?.y ?? 0;
+      target.set(Math.sin(facing), 0, Math.cos(facing));
+    }
+
+    if (target.lengthSq() <= 0.0001) {
+      const facing = this.player?.object?.rotation?.y ?? 0;
+      target.set(Math.sin(facing), 0, Math.cos(facing));
+    }
+    return target.normalize();
+  }
+
+  getBasketballShotSide(target = this.basketballShotSide) {
+    const forward = this.getBasketballShotForward(this.basketballShotForward);
+    target.set(forward.z, 0, -forward.x);
+    if (target.lengthSq() <= 0.0001) {
+      target.set(1, 0, 0);
+    }
+    return target.normalize();
+  }
+
+  syncBasketballShotBall(now = performance.now()) {
+    const shot = this.activeWorkout?.basketballShot;
+    if (!shot?.ball || !this.player || shot.released) {
+      return;
+    }
+
+    const forward = this.getBasketballShotForward(this.basketballShotForward);
+    const side = this.getBasketballShotSide(this.basketballShotSide);
+    const leftHand = this.player.sockets?.handLeft;
+    const rightHand = this.player.sockets?.handRight;
+    if (leftHand && rightHand) {
+      leftHand.getWorldPosition(this.workoutLeftHandPosition);
+      rightHand.getWorldPosition(this.workoutRightHandPosition);
+      this.basketballShotHandPosition
+        .copy(this.workoutLeftHandPosition)
+        .add(this.workoutRightHandPosition)
+        .multiplyScalar(0.5)
+        .addScaledVector(forward, 0.12);
+    } else if (rightHand) {
+      rightHand.getWorldPosition(this.basketballShotHandPosition);
+      this.basketballShotHandPosition.addScaledVector(forward, 0.12);
+    } else {
+      this.basketballShotHandPosition
+        .copy(this.player.position)
+        .addScaledVector(forward, 0.48)
+        .addScaledVector(side, 0.08);
+      this.basketballShotHandPosition.y += 1.58;
+    }
+
+    shot.ball.position.copy(this.basketballShotHandPosition);
+    shot.ball.rotation.set(now * 0.004, now * 0.0025, now * 0.0016);
+  }
+
+  getBasketballShotProgress(shot = this.activeWorkout?.basketballShot, now = performance.now()) {
+    if (!shot || shot.released) {
+      return Math.max(0, Math.min(1, Number(shot?.releaseProgress ?? shot?.progress ?? 0) || 0));
+    }
+
+    const elapsed = Math.max(0, now - Number(shot.startedAt ?? now));
+    const cycle = (elapsed % (BASKETBALL_SHOT_SWEEP_MS * 2)) / BASKETBALL_SHOT_SWEEP_MS;
+    return cycle <= 1 ? cycle : 2 - cycle;
+  }
+
+  evaluateBasketballShotRelease(progress = 0.5, { forced = false } = {}) {
+    const clamped = Math.max(0, Math.min(1, Number(progress) || 0));
+    const offset = clamped - 0.5;
+    const error = Math.abs(offset);
+    const clean = !forced && error <= BASKETBALL_SHOT_CLEAN_WINDOW;
+    const great = !clean && !forced && error <= BASKETBALL_SHOT_GREAT_WINDOW;
+    const score = Math.max(0, Math.min(100, Math.round(100 - (error * 190))));
+    return {
+      made: clean,
+      release: clean ? 'clean' : great ? 'great' : offset < 0 ? 'early' : 'late',
+      score,
+      offset
+    };
+  }
+
+  releaseBasketballShot({ forced = false } = {}) {
+    const shot = this.activeWorkout?.basketballShot;
+    if (!shot || shot.released) {
+      return false;
+    }
+
+    const now = performance.now();
+    const progress = forced ? 1 : this.getBasketballShotProgress(shot, now);
+    const result = this.evaluateBasketballShotRelease(progress, { forced });
+    const rimPosition = this.getBasketballShotRimPosition(
+      this.activeWorkout.interactable,
+      this.basketballShotRimPosition
+    );
+    shot.rimPosition.copy(rimPosition);
+    shot.released = true;
+    shot.phase = 'result';
+    shot.releaseAt = now;
+    shot.releaseProgress = progress;
+    shot.progress = progress;
+    shot.made = result.made;
+    shot.release = result.release;
+    shot.score = result.score;
+    shot.message = result.made ? 'Green release. Shot made.' : 'Rimmed out.';
+    shot.resolveAt = now + BASKETBALL_SHOT_FLIGHT_MS + BASKETBALL_SHOT_RESULT_HOLD_MS;
+    shot.shotStart.copy(shot.ball.position);
+    shot.shotEnd.copy(rimPosition);
+
+    const forward = this.getBasketballShotForward(this.basketballShotForward);
+    const side = this.getBasketballShotSide(this.basketballShotSide);
+    if (result.made) {
+      shot.shotEnd.y -= 0.18;
+    } else {
+      const missSide = result.offset < 0 ? -1 : 1;
+      shot.shotEnd
+        .addScaledVector(side, missSide * 0.88)
+        .addScaledVector(forward, -0.24);
+      shot.shotEnd.y += 0.18;
+    }
+
+    shot.shotControl
+      .copy(shot.shotStart)
+      .add(shot.shotEnd)
+      .multiplyScalar(0.5);
+    shot.shotControl.y = Math.max(shot.shotStart.y, shot.shotEnd.y) + (result.made ? 2.7 : 2.25);
+
+    this.player?.playEmote?.(PUNCH_EMOTE_ID);
+    this.updateBasketballShotHud();
+    return true;
+  }
+
+  updateBasketballShotBallFlight(now = performance.now()) {
+    const shot = this.activeWorkout?.basketballShot;
+    if (!shot?.ball || !shot.released) {
+      return;
+    }
+
+    const t = Math.max(0, Math.min(1, (now - shot.releaseAt) / BASKETBALL_SHOT_FLIGHT_MS));
+    const oneMinusT = 1 - t;
+    shot.ball.position.set(
+      (oneMinusT * oneMinusT * shot.shotStart.x) + (2 * oneMinusT * t * shot.shotControl.x) + (t * t * shot.shotEnd.x),
+      (oneMinusT * oneMinusT * shot.shotStart.y) + (2 * oneMinusT * t * shot.shotControl.y) + (t * t * shot.shotEnd.y),
+      (oneMinusT * oneMinusT * shot.shotStart.z) + (2 * oneMinusT * t * shot.shotControl.z) + (t * t * shot.shotEnd.z)
+    );
+
+    if (t >= 1) {
+      const settle = Math.max(0, Math.min(1, (now - shot.releaseAt - BASKETBALL_SHOT_FLIGHT_MS) / BASKETBALL_SHOT_RESULT_HOLD_MS));
+      shot.ball.position.y += shot.made ? -0.55 * settle : -1.4 * settle * settle;
+    }
+
+    shot.ball.rotation.x += 0.18;
+    shot.ball.rotation.y += shot.made ? 0.08 : 0.16;
+  }
+
+  updateBasketballShotHud() {
+    const shot = this.activeWorkout?.basketballShot;
+    if (!shot) {
+      this.hud.setBasketballShotState({ visible: false, game: null });
+      return;
+    }
+
+    this.hud.setBasketballShotState({
+      visible: true,
+      game: {
+        phase: shot.released ? 'result' : 'playing',
+        progress: shot.released ? shot.releaseProgress : shot.progress,
+        released: shot.released,
+        made: shot.released ? shot.made : null,
+        release: shot.release,
+        score: shot.score,
+        message: shot.message
+      }
+    });
+  }
+
+  handleBasketballShotAction(action = '') {
+    if (action === 'release') {
+      this.releaseBasketballShot();
+    }
+  }
+
+  updateBasketballShotCamera({ snap = false } = {}) {
+    if (!this.player) {
+      return;
+    }
+
+    const shot = this.activeWorkout?.basketballShot;
+    const rimPosition = shot?.rimPosition
+      ? this.basketballShotRimPosition.copy(shot.rimPosition)
+      : this.getBasketballShotRimPosition(this.activeWorkout?.interactable, this.basketballShotRimPosition);
+    const forward = this.getBasketballShotForward(this.basketballShotForward);
+    const side = this.getBasketballShotSide(this.basketballShotSide);
+    const targetPosition = this.cameraTargetPosition
+      .copy(this.player.position)
+      .addScaledVector(forward, -5.2)
+      .addScaledVector(side, 2.05);
+    targetPosition.y += 2.85;
+
+    const lookTarget = this.cameraLookTarget
+      .copy(this.player.position);
+    lookTarget.y += 1.42;
+    lookTarget.lerp(rimPosition, 0.46);
+
+    if (snap) {
+      this.camera.position.copy(targetPosition);
+    } else {
+      this.camera.position.lerp(targetPosition, BASKETBALL_SHOT_CAMERA_SMOOTHING);
+    }
+    this.camera.lookAt(lookTarget);
+  }
+
+  updateBasketballShotWorkout(deltaSeconds, { colliders, sceneBounds, groundHeight } = {}) {
+    const shot = this.activeWorkout?.basketballShot;
+    if (!shot || !this.player) {
+      return true;
+    }
+
+    const now = performance.now();
+    this.player.update(
+      deltaSeconds,
+      ZERO_INPUT,
+      this.camera,
+      colliders,
+      sceneBounds,
+      groundHeight,
+      { speedScale: 0 }
+    );
+
+    if (!shot.released) {
+      shot.progress = this.getBasketballShotProgress(shot, now);
+      this.syncBasketballShotBall(now);
+      if (
+        this.input.consumeAction('interact')
+        || this.input.consumeAction('fire')
+        || this.input.consume('Space')
+        || this.input.consume('Enter')
+      ) {
+        this.releaseBasketballShot();
+      } else if (now >= this.activeWorkout.endsAt) {
+        this.releaseBasketballShot({ forced: true });
+      }
+      this.updateBasketballShotHud();
+      return true;
+    }
+
+    this.updateBasketballShotBallFlight(now);
+    this.updateBasketballShotHud();
+    if (now >= shot.resolveAt) {
+      if (shot.made) {
+        this.finishWorkout();
+      } else {
+        this.hud.showToast('Shot missed. No XP awarded.');
+        this.finishWorkout({ cancelled: true });
+      }
+    }
     return true;
   }
 
@@ -10810,6 +11209,13 @@ export class Game {
       workout.carriedBarbell.parent?.remove(workout.carriedBarbell);
       disposeObjectResources(workout.carriedBarbell);
     }
+    if (workout.basketballShot?.ball) {
+      workout.basketballShot.ball.parent?.remove(workout.basketballShot.ball);
+      disposeObjectResources(workout.basketballShot.ball);
+    }
+    if (workout.activityConfig?.basketballShot) {
+      this.hud.setBasketballShotState({ visible: false, game: null });
+    }
     if (placementId) {
       if (cancelled) {
         this.releaseWorkoutPlacement(placementId);
@@ -10861,6 +11267,14 @@ export class Game {
 
     this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
     this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
+    if (activityConfig?.basketballShot) {
+      return this.updateBasketballShotWorkout(deltaSeconds, {
+        colliders,
+        sceneBounds,
+        groundHeight
+      });
+    }
+
     this.player.update(
       deltaSeconds,
       ZERO_INPUT,
@@ -14052,7 +14466,11 @@ export class Game {
         const facing = this.player.object.rotation.y;
         this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
         this.syncInlineShellState();
-        this.updateCamera(this.currentAimDirection, false);
+        if (this.activeWorkout?.activityConfig?.basketballShot) {
+          this.updateBasketballShotCamera();
+        } else {
+          this.updateCamera(this.currentAimDirection, false);
+        }
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {

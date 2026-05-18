@@ -80,6 +80,7 @@ body.is-admin-prompt-resizing * {
 .hud__blackjack,
 .hud__school-microgame,
 .hud__vibe-hero,
+.hud__basketball-shot,
 .hud__quick-chat {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -7955,6 +7956,219 @@ body.is-admin-prompt-resizing * {
   border-top-color: #ffd15c;
 }
 
+.hud__basketball-shot {
+  left: 50%;
+  bottom: 24px;
+  width: min(520px, calc(100vw - 28px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 154, 54, 0.18), transparent 44%),
+    linear-gradient(180deg, rgba(12, 17, 22, 0.94), rgba(5, 8, 11, 0.9));
+  color: #f7f0e2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 18px) scale(0.98);
+  transition: opacity 160ms ease, transform 160ms ease;
+  overflow: hidden;
+  z-index: 24;
+}
+
+.hud__basketball-shot[hidden] {
+  display: none;
+}
+
+.hud__basketball-shot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-top: 4px solid #f28a2e;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  pointer-events: none;
+}
+
+.hud__basketball-shot.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.hud__basketball-shot-header,
+.hud__basketball-shot-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__basketball-shot-title {
+  margin: 0 0 4px;
+  color: #fff6df;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.hud__basketball-shot-status,
+.hud__basketball-shot-footer p {
+  margin: 0;
+}
+
+.hud__basketball-shot-body {
+  position: relative;
+  min-height: 190px;
+}
+
+.hud__basketball-shot-play {
+  height: 100%;
+  min-height: 190px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(118px, 0.45fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.hud__basketball-shot-meter-wrap {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+}
+
+.hud__basketball-shot-meter {
+  position: relative;
+  width: min(330px, 100%);
+  height: 176px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.hud__basketball-shot-meter:disabled {
+  cursor: default;
+}
+
+.hud__basketball-shot-arc {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 18px;
+  height: 142px;
+  border: 18px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 0;
+  border-radius: 999px 999px 0 0;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(255, 255, 255, 0.08), transparent 58%),
+    linear-gradient(90deg, rgba(84, 215, 255, 0.1), rgba(242, 138, 46, 0.16), rgba(97, 239, 138, 0.12));
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.38), 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.hud__basketball-shot-clean {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  width: 62px;
+  height: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d8ff7a, #61ef8a);
+  box-shadow: 0 0 18px rgba(97, 239, 138, 0.6);
+  transform: translateX(-50%);
+}
+
+.hud__basketball-shot-needle {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  width: 4px;
+  height: 134px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fff6df, #f28a2e);
+  box-shadow: 0 0 15px rgba(242, 138, 46, 0.55);
+  transform: translateX(-50%) rotate(var(--shot-angle, 0deg));
+  transform-origin: 50% 100%;
+  transition: transform 50ms linear;
+  z-index: 3;
+}
+
+.hud__basketball-shot-needle span {
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  width: 24px;
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 246, 223, 0.9);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 44%, rgba(35, 18, 8, 0.55) 45% 55%, transparent 56%),
+    linear-gradient(0deg, transparent 44%, rgba(35, 18, 8, 0.55) 45% 55%, transparent 56%),
+    #c96722;
+  transform: translateX(-50%);
+}
+
+.hud__basketball-shot-rim {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 82px;
+  height: 20px;
+  border: 5px solid #f28a2e;
+  border-top: 0;
+  border-radius: 0 0 999px 999px;
+  box-shadow: 0 0 14px rgba(242, 138, 46, 0.44);
+  transform: translateX(-50%);
+}
+
+.hud__basketball-shot-readout {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hud__basketball-shot-readout strong {
+  overflow: hidden;
+  color: #fff6df;
+  font-size: 19px;
+  font-weight: 1000;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__basketball-shot-readout span {
+  color: rgba(247, 240, 226, 0.72);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hud__basketball-shot-readout.is-clean {
+  border-color: rgba(97, 239, 138, 0.5);
+  background: rgba(97, 239, 138, 0.14);
+}
+
+.hud__basketball-shot-readout.is-early,
+.hud__basketball-shot-readout.is-late {
+  border-color: rgba(242, 109, 120, 0.48);
+  background: rgba(242, 109, 120, 0.12);
+}
+
+.hud__basketball-shot.is-made::before {
+  border-top-color: #61ef8a;
+}
+
+.hud__basketball-shot.is-miss::before {
+  border-top-color: #f26d78;
+}
+
 .hud__admin-prompt-toggle {
   display: inline-flex;
   width: 52px;
@@ -14748,6 +14962,7 @@ canvas {
   .hud__blackjack,
   .hud__school-microgame,
   .hud__vibe-hero,
+  .hud__basketball-shot,
   .hud__aim-debug {
     width: calc(100vw - 32px);
     left: 16px;
@@ -14788,6 +15003,16 @@ canvas {
     min-height: 0;
     height: auto;
     grid-template-rows: auto 28px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+    transform: translateY(14px) scale(1);
+  }
+
+  .hud__basketball-shot {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
     gap: 8px;
     padding: 10px;
     transform: translateY(14px) scale(1);
@@ -14900,6 +15125,32 @@ canvas {
     height: 46px;
   }
 
+  .hud__basketball-shot-title {
+    font-size: 19px;
+  }
+
+  .hud__basketball-shot-play {
+    min-height: 164px;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .hud__basketball-shot-body {
+    min-height: 230px;
+  }
+
+  .hud__basketball-shot-meter {
+    height: 160px;
+  }
+
+  .hud__basketball-shot-arc {
+    height: 124px;
+  }
+
+  .hud__basketball-shot-needle {
+    height: 118px;
+  }
+
   .hud__school-quiz,
   .hud__school-notes,
   .hud__school-locker,
@@ -14924,6 +15175,10 @@ canvas {
   }
 
   .hud__vibe-hero.is-visible {
+    transform: translateY(0) scale(1);
+  }
+
+  .hud__basketball-shot.is-visible {
     transform: translateY(0) scale(1);
   }
 

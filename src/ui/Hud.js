@@ -1097,6 +1097,71 @@ function createVibeHeroBodyMarkup(game = null) {
   return createVibeHeroPlayMarkup(game);
 }
 
+function getBasketballShotStatusText(game = null) {
+  const phase = String(game?.phase ?? 'idle');
+  if (phase === 'result') {
+    return game?.made ? 'Clean Release' : 'Missed';
+  }
+  if (phase === 'playing') {
+    return 'Shot Meter';
+  }
+  return 'Ready';
+}
+
+function getBasketballShotReleaseText(game = null) {
+  const release = String(game?.release ?? '');
+  if (release === 'clean') {
+    return 'Clean';
+  }
+  if (release === 'great') {
+    return 'Slightly Off';
+  }
+  if (release === 'early') {
+    return 'Early';
+  }
+  if (release === 'late') {
+    return 'Late';
+  }
+  return 'Set';
+}
+
+function createBasketballShotMeterMarkup(game = null) {
+  const phase = String(game?.phase ?? 'playing');
+  const progress = Math.max(0, Math.min(1, Number(game?.progress ?? 0.5) || 0));
+  const angle = -82 + (progress * 164);
+  const releaseText = getBasketballShotReleaseText(game);
+  const releaseClass = String(game?.release ?? 'set');
+  const madeClass = game?.made === true ? ' is-made' : game?.made === false ? ' is-miss' : '';
+  const disabled = phase !== 'playing' || game?.released === true;
+  const score = Math.max(0, Math.min(100, Math.round(Number(game?.score ?? 0) || 0)));
+
+  return `
+    <div class="hud__basketball-shot-play${madeClass}">
+      <div class="hud__basketball-shot-meter-wrap">
+        <button
+          class="hud__basketball-shot-meter"
+          type="button"
+          data-basketball-shot-action="release"
+          aria-label="Release basketball shot"
+          style="--shot-angle:${angle.toFixed(2)}deg"
+          ${disabled ? 'disabled' : ''}
+        >
+          <span class="hud__basketball-shot-arc" aria-hidden="true"></span>
+          <span class="hud__basketball-shot-clean" aria-hidden="true"></span>
+          <span class="hud__basketball-shot-needle" aria-hidden="true">
+            <span></span>
+          </span>
+          <span class="hud__basketball-shot-rim" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="hud__basketball-shot-readout is-${escapeHtml(releaseClass)}">
+        <strong>${escapeHtml(releaseText)}</strong>
+        <span>${escapeHtml(phase === 'result' ? `${score}% release` : 'Clean Release')}</span>
+      </div>
+    </div>
+  `;
+}
+
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
   const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
@@ -3430,6 +3495,10 @@ export class Hud {
     this.vibeHeroTimer = this.overlay.querySelector('[data-vibe-hero-timer]');
     this.vibeHeroBody = this.overlay.querySelector('[data-vibe-hero-body]');
     this.vibeHeroMessage = this.overlay.querySelector('[data-vibe-hero-message]');
+    this.basketballShotRoot = this.overlay.querySelector('[data-basketball-shot]');
+    this.basketballShotStatus = this.overlay.querySelector('[data-basketball-shot-status]');
+    this.basketballShotBody = this.overlay.querySelector('[data-basketball-shot-body]');
+    this.basketballShotMessage = this.overlay.querySelector('[data-basketball-shot-message]');
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
     this.adminPromptDragHandle = this.overlay.querySelector('[data-admin-prompt-drag-handle]');
@@ -3525,6 +3594,10 @@ export class Hud {
     };
     this.vibeHeroVisible = false;
     this.vibeHeroState = {
+      game: null
+    };
+    this.basketballShotVisible = false;
+    this.basketballShotState = {
       game: null
     };
     this.adminPromptState = {
@@ -4481,6 +4554,19 @@ export class Hud {
         <div class="hud__vibe-hero-body" data-vibe-hero-body></div>
         <footer class="hud__vibe-hero-footer">
           <p data-vibe-hero-message>Pick a song and take the stage.</p>
+        </footer>
+      </section>
+      <section class="hud__basketball-shot" data-basketball-shot hidden>
+        <header class="hud__basketball-shot-header">
+          <div>
+            <p class="hud__eyebrow">Basketball</p>
+            <h2 class="hud__basketball-shot-title">The Basketball Shot</h2>
+            <p class="hud__body hud__basketball-shot-status" data-basketball-shot-status>Ready</p>
+          </div>
+        </header>
+        <div class="hud__basketball-shot-body" data-basketball-shot-body></div>
+        <footer class="hud__basketball-shot-footer">
+          <p data-basketball-shot-message>Line up the meter.</p>
         </footer>
       </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
@@ -6686,6 +6772,24 @@ export class Hud {
     });
   }
 
+  bindBasketballShotEvents({
+    onAction
+  }) {
+    this.basketballShotRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-basketball-shot-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(actionTarget.getAttribute('data-basketball-shot-action') ?? '');
+    });
+  }
+
   bindQuickChatEvents({ onSubmit, onCancel }) {
     this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -7756,6 +7860,20 @@ export class Hud {
     return Boolean(this.vibeHeroVisible && this.vibeHeroRoot && !this.vibeHeroRoot.hidden);
   }
 
+  setBasketballShotVisible(visible) {
+    this.basketballShotVisible = Boolean(visible);
+    if (!this.basketballShotRoot) {
+      return;
+    }
+
+    this.basketballShotRoot.hidden = !this.basketballShotVisible;
+    this.basketballShotRoot.classList.toggle('is-visible', this.basketballShotVisible);
+  }
+
+  isBasketballShotOpen() {
+    return Boolean(this.basketballShotVisible && this.basketballShotRoot && !this.basketballShotRoot.hidden);
+  }
+
   getSchoolTeacherPreviewMount() {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
@@ -7870,6 +7988,40 @@ export class Hud {
 
     if (this.vibeHeroMessage) {
       this.vibeHeroMessage.textContent = game?.message || game?.song?.title || 'Vibe Hero';
+    }
+  }
+
+  setBasketballShotState({
+    visible = this.basketballShotVisible,
+    game = this.basketballShotState.game
+  } = {}) {
+    this.basketballShotState = { game };
+    this.setBasketballShotVisible(visible);
+    this.renderBasketballShot();
+  }
+
+  renderBasketballShot() {
+    if (!this.basketballShotRoot) {
+      return;
+    }
+
+    const game = this.basketballShotState.game;
+    const phase = String(game?.phase ?? 'idle');
+    this.basketballShotRoot.classList.toggle('is-playing', phase === 'playing');
+    this.basketballShotRoot.classList.toggle('is-result', phase === 'result');
+    this.basketballShotRoot.classList.toggle('is-made', game?.made === true);
+    this.basketballShotRoot.classList.toggle('is-miss', game?.made === false);
+
+    if (this.basketballShotStatus) {
+      this.basketballShotStatus.textContent = getBasketballShotStatusText(game);
+    }
+
+    if (this.basketballShotBody) {
+      this.basketballShotBody.innerHTML = createBasketballShotMeterMarkup(game);
+    }
+
+    if (this.basketballShotMessage) {
+      this.basketballShotMessage.textContent = game?.message || 'Release at the top of the meter.';
     }
   }
 

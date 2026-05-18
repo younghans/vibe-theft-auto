@@ -9,6 +9,8 @@ import {
 import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
+  BASKETBALL_SHOT_AGILITY_XP,
+  BASKETBALL_SHOT_STRENGTH_XP,
   CHARISMA_BEER_XP,
   CHARISMA_NPC_CHAT_XP,
   CHARISMA_PLASTERED_XP,
@@ -48,6 +50,8 @@ assert.equal(getSkillLevelFromXp(getSkillXpForLevel(2)), 2, 'threshold XP reache
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99)), SKILL_MAX_LEVEL, 'level 99 threshold reaches level 99');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99) + 999999), SKILL_MAX_LEVEL, 'levels cap at 99');
 assert.equal(STRENGTH_SNATCH_XP, 10, 'barbell snatching awards 10 strength XP');
+assert.equal(BASKETBALL_SHOT_STRENGTH_XP, 20, 'basketball clean releases award a medium amount of strength XP');
+assert.equal(BASKETBALL_SHOT_AGILITY_XP, 20, 'basketball clean releases award a medium amount of agility XP');
 assert.equal(CHARISMA_NPC_CHAT_XP, 2, 'NPC chat awards a small amount of charisma XP');
 assert.equal(CHARISMA_BEER_XP, 2, 'beer awards a small amount of charisma XP');
 assert.equal(CHARISMA_PLASTERED_XP, 15, 'getting plastered awards a medium amount of charisma XP');
@@ -103,6 +107,11 @@ const agilityAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.agility, 
 assert.equal(serverPlayerShape.agilityXp, AGILITY_MAX_XP_PER_UPDATE, 'shared award mutates agility XP field');
 assert.equal(agilityAward.skillId, SKILL_IDS.agility, 'shared award payload reports agility skill');
 
+const basketballStrengthAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP);
+assert.equal(basketballStrengthAward.xpGained, BASKETBALL_SHOT_STRENGTH_XP, 'shared award payload reports basketball strength XP');
+const basketballAgilityAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP);
+assert.equal(basketballAgilityAward.xpGained, BASKETBALL_SHOT_AGILITY_XP, 'shared award payload reports basketball agility XP');
+
 const charismaAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.charisma, CHARISMA_VIBE_HERO_XP);
 assert.equal(serverPlayerShape.charismaXp, CHARISMA_VIBE_HERO_XP, 'shared award mutates charisma XP field');
 assert.equal(charismaAward.skillId, SKILL_IDS.charisma, 'shared award payload reports charisma skill');
@@ -128,6 +137,11 @@ assert.match(roomSource, /vibeHero:complete/, 'server exposes a Vibe Hero charis
 assert.match(mockServiceSource, /CHARISMA_NPC_CHAT_XP/, 'mock service awards charisma XP when NPC chat starts');
 assert.match(mockServiceSource, /getCharismaDrinkXp/, 'mock service awards charisma XP for beer and plastered drunkness');
 assert.match(mockServiceSource, /completeVibeHero/, 'mock service exposes a Vibe Hero charisma reward method');
+assert.match(gameSource, /presentSkillAwardsFromResult/, 'game can present multi-skill workout rewards');
+assert.match(roomSource, /BASKETBALL_SHOT_STRENGTH_XP/, 'server awards basketball strength XP');
+assert.match(roomSource, /BASKETBALL_SHOT_AGILITY_XP/, 'server awards basketball agility XP');
+assert.match(mockServiceSource, /BASKETBALL_SHOT_STRENGTH_XP/, 'mock service awards basketball strength XP');
+assert.match(mockServiceSource, /BASKETBALL_SHOT_AGILITY_XP/, 'mock service awards basketball agility XP');
 assert.match(gameSource, /phase:\s*countdown\s*\?\s*'countdown'/, 'school rounds start in countdown instead of a start-button ready state');
 assert.match(gameSource, /continueSchoolMicrogameSession/, 'school minigame sessions continue into another random round');
 assert.match(hudSource, /createSchoolCountdownMarkup/, 'HUD renders the school round countdown');

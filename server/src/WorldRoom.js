@@ -147,6 +147,8 @@ import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   AGILITY_MIN_DISTANCE,
+  BASKETBALL_SHOT_AGILITY_XP,
+  BASKETBALL_SHOT_STRENGTH_XP,
   CHARISMA_NPC_CHAT_XP,
   CHARISMA_VIBE_HERO_XP,
   SKILL_IDS,
@@ -2914,17 +2916,30 @@ export class WorldRoom extends Room {
       throw new Error('That workout is not active.');
     }
 
-    let skillAward = null;
+    const skillAwards = [];
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
-      skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
+      const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
+      if (skillAward) {
+        skillAwards.push(skillAward);
+      }
       this.normalizePlayerSelectedMission(player);
+    } else if (target.workoutType === 'basketball-shot') {
+      const strengthAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP);
+      if (strengthAward) {
+        skillAwards.push(strengthAward);
+      }
+      const agilityAward = this.awardPlayerSkillXp(player, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP);
+      if (agilityAward) {
+        skillAwards.push(agilityAward);
+      }
     }
     player.workoutPlacementId = '';
     return {
       placementId,
       gymPumpCompletedAt: player.gymPumpCompletedAt,
-      skillAward
+      skillAward: skillAwards[0] ?? null,
+      skillAwards
     };
   }
 

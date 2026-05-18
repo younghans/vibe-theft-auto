@@ -599,7 +599,18 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     movementCollisionRects: BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS,
     shotCollisionRects: BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS,
     padding: 0.16,
-    createVisual: createBasketballHoopVisual
+    createVisual: createBasketballHoopVisual,
+    interactable: {
+      label: 'Basketball Hoop',
+      prompt: 'Shoot basketball',
+      actionText: 'Line up a clean release.',
+      radius: 4.8,
+      localOffset: [0, 3.2],
+      workoutType: 'basketball-shot',
+      hideDuringWorkout: false,
+      approachLocalOffset: [0, 5.4],
+      approachRotationY: Math.PI
+    }
   },
   {
     id: 'olympic_barbell',

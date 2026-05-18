@@ -86,6 +86,10 @@ import {
 } from '../src/shared/deliveryQuest.js';
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 import {
+  BASKETBALL_SHOT_DURATION_MS,
+  BASKETBALL_SHOT_WORKOUT_KIND
+} from '../src/game/workoutActivities.js';
+import {
   CHARISMA_LEVEL_MISSION_DESCRIPTION,
   CHARISMA_LEVEL_MISSION_TARGET_LEVEL,
   JANITOR_TASKS_REQUIRED,
@@ -226,6 +230,8 @@ function validateCustomTileCatalogItems() {
 }
 
 function validateCustomPropCatalogItems() {
+  const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const pistolPickup = getBuilderItemById(COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
   assert(pistolPickup, 'Pistol pickup prop should exist');
   assert(pistolPickup.layer === 'prop', 'Pistol pickup should be a prop catalog item');
@@ -277,6 +283,11 @@ function validateCustomPropCatalogItems() {
   const hoopCollisionRect = basketballHoop.movementCollisionRects[0];
   assert(hoopCollisionRect.halfWidth <= 0.4 && hoopCollisionRect.halfDepth <= 0.4, 'Basketball hoop movement collision should stay tight to the base/pole');
   assert(hoopCollisionRect.centerZ < -1.2, 'Basketball hoop movement collision should be centered on the rear pole, not the backboard footprint');
+  assert(basketballHoop.interactable?.workoutType === 'basketball-shot', 'Basketball hoop should launch the basketball shot workout');
+  assert(basketballHoop.interactable?.prompt === 'Shoot basketball', 'Basketball hoop should prompt the player to shoot');
+  assert(basketballHoop.interactable?.hideDuringWorkout === false, 'Basketball hoop should stay visible during the shot game');
+  assert(Array.isArray(basketballHoop.interactable?.approachLocalOffset), 'Basketball hoop should define a shot approach point');
+  assert(basketballHoop.interactable.approachLocalOffset[1] > 4, 'Basketball hoop approach point should put the shooter in front of the rim');
   assert(typeof basketballHoop.createVisual === 'function', 'Basketball hoop should define a procedural visual');
   assert(
     Array.isArray(basketballHoop.size)
@@ -336,6 +347,12 @@ function validateCustomPropCatalogItems() {
     Math.abs(worldCollisionRect.z - (hoopTestPlacement.position[1] + hoopCollisionRect.centerZ)) < 0.001,
     'Basketball hoop prop collision should be relative to the pole position'
   );
+  assert(BASKETBALL_SHOT_WORKOUT_KIND === 'basketball-shot-workout', 'Basketball shot workout kind should match prop interactable naming');
+  assert(BASKETBALL_SHOT_DURATION_MS >= 5000, 'Basketball shot should leave enough time to read the NBA2K-style release meter');
+  assert(gameSource.includes('BASKETBALL_SHOT_CLEAN_WINDOW'), 'Game should define a clean-release timing window');
+  assert(gameSource.includes('updateBasketballShotCamera'), 'Game should use a zoomed 3D basketball shot camera');
+  assert(gameSource.includes('createBasketballShotBall'), 'Game should spawn a 3D basketball for shot attempts');
+  assert(hudSource.includes('hud__basketball-shot-meter'), 'HUD should render the basketball half-circle shot meter');
 
   const instrumentCluster = getBuilderItemById('instrument_cluster');
   assert(instrumentCluster, 'Instrument cluster prop should exist');
