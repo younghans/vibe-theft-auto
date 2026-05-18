@@ -17,6 +17,10 @@ import {
   clonePortalDefinition,
   resolvePlacementInteractableDefinition
 } from './interactableMetadata.js';
+import {
+  addInteractableIndicatorToObject,
+  formatInteractableIndicatorText
+} from './interactableIndicators.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
@@ -415,6 +419,24 @@ function createInlineShellEntry(rendered, placement, interactable) {
     doorPosition,
     interior: cloneInteriorDefinition(interactable.interior)
   };
+}
+
+function getPlacementInteractableIndicatorText(placement, item) {
+  if (!placement || placement.layer !== 'prop') {
+    return '';
+  }
+
+  const interactable = resolvePlacementInteractableDefinition(placement, item);
+  if (!interactable || interactable.portal) {
+    return '';
+  }
+
+  return formatInteractableIndicatorText(
+    interactable.indicatorText
+    ?? interactable.prompt
+    ?? interactable.label
+    ?? item?.label
+  );
 }
 
 function createColliderFromLocalRect(rect, placement, item = null, minY = 0, maxY = 4) {
@@ -1201,6 +1223,7 @@ export class WorldRenderer {
     renderedPlacement.colliders = createPlacementColliders(colliderObject, item, placement, actor);
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
+    this.syncPlacementInteractableIndicator(renderedPlacement);
     if (actor) {
       this.actorPlacementIds.add(placement.id);
     } else {
@@ -1218,6 +1241,54 @@ export class WorldRenderer {
     this.refreshWorkoutPlacementState();
 
     return renderedPlacement;
+  }
+
+  syncPlacementInteractableIndicator(rendered) {
+    if (!rendered || rendered.actor) {
+      return;
+    }
+
+    const indicatorText = getPlacementInteractableIndicatorText(rendered.placement, rendered.item);
+    const existingIndicator = rendered.interactableIndicator ?? null;
+    if (existingIndicator?.userData?.indicatorText === indicatorText) {
+      return;
+    }
+
+    if (existingIndicator) {
+      existingIndicator.parent?.remove(existingIndicator);
+      rendered.interactableIndicator = null;
+    }
+
+    if (!indicatorText) {
+      return;
+    }
+
+    rendered.interactableIndicator = addInteractableIndicatorToObject(
+      rendered.object,
+      indicatorText,
+      {
+        indicatorHeight: 0.07
+      }
+    );
+  }
+
+  updateInteractableIndicatorVisibility(resolver = null) {
+    const hasResolver = typeof resolver === 'function';
+    const worldPosition = this.indicatorVisibilityPosition ?? new THREE.Vector3();
+    this.indicatorVisibilityPosition = worldPosition;
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (!rendered?.interactableIndicator) {
+        continue;
+      }
+
+      let visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
+      if (visible && hasResolver) {
+        rendered.object.getWorldPosition(worldPosition);
+        visible = resolver(rendered, worldPosition) !== false;
+      }
+      rendered.interactableIndicator.visible = visible;
+    }
   }
 
   async createNpcActor(placement, item) {
@@ -1528,6 +1599,8 @@ export class WorldRenderer {
       rendered.colliders = createPlacementColliders(rendered.colliderObject, rendered.item, placement, null);
       this.refreshStaticColliderEntry(rendered);
     }
+
+    this.syncPlacementInteractableIndicator(rendered);
 
     if (placement.layer === 'tile') {
       this.markSurfaceHeightIndexDirty();

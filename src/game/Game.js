@@ -70,6 +70,7 @@ import {
 import { ModelLibrary } from '../world/ModelLibrary.js';
 import { buildCity } from '../world/buildCity.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
+import { INTERACTABLE_INDICATOR_LAYER } from '../world/interactableIndicators.js';
 import { createInteriorScene } from '../world/InteriorScene.js';
 import {
   BASKETBALL_HOOP_RIM_HEIGHT,
@@ -191,6 +192,7 @@ import {
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+const WORLD_RENDER_LAYER = 0;
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
 const STOCK_SNAPSHOT_TICK_GRACE_MS = 180;
@@ -945,6 +947,7 @@ export class Game {
     this.inlineShellEntries = [];
     this.inlineShellPlacementIds = new Set();
     this.inlineShellScenesToRemove = [];
+    this.worldInteractableIndicatorInlineScenes = [];
     this.builderInlineShellPreviewPlacementIds = new Set();
     this.builderInlineShellPreviewNextPlacementIds = new Set();
     this.builderInlineShellPreviewIdsToClear = [];
@@ -4299,12 +4302,44 @@ export class Game {
   }
 
   renderCurrentView() {
-    if (this.composer) {
-      this.composer.render();
+    this.renderSceneFrame();
+  }
+
+  renderSceneFrame() {
+    this.camera.layers.set(WORLD_RENDER_LAYER);
+
+    try {
+      if (this.composer) {
+        this.composer.render();
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+
+      this.renderInteractableIndicatorLayer();
+    } finally {
+      this.camera.layers.set(WORLD_RENDER_LAYER);
+    }
+  }
+
+  renderInteractableIndicatorLayer() {
+    if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
 
-    this.renderer.render(this.scene, this.camera);
+    const previousAutoClear = this.renderer.autoClear;
+    const previousBackground = this.scene.background;
+
+    try {
+      this.renderer.autoClear = false;
+      this.scene.background = null;
+      this.renderer.clearDepth();
+      this.camera.layers.set(INTERACTABLE_INDICATOR_LAYER);
+      this.renderer.render(this.scene, this.camera);
+    } finally {
+      this.scene.background = previousBackground;
+      this.camera.layers.set(WORLD_RENDER_LAYER);
+      this.renderer.autoClear = previousAutoClear;
+    }
   }
 
   getOrCreateInteriorScene(interiorId = '') {
@@ -4365,6 +4400,7 @@ export class Game {
       return;
     }
 
+    instance.scene?.setInteractableIndicatorsVisible?.(false);
     if (this.activeInlineShell?.placementId === placementId) {
       if (this.activeInlineShell.mode === 'inline-cutaway') {
         this.clearInlineCutawayPlacement(placementId);
@@ -4411,6 +4447,7 @@ export class Game {
       return null;
     }
 
+    shellScene.setInteractableIndicatorsVisible?.(false);
     const mode = this.getInlineInteriorMode(entry);
     const attached = mode === 'inline-shell' || shellScene.inlineOverlay === true;
     if (attached) {
@@ -4447,6 +4484,7 @@ export class Game {
     }
 
     const { placementId, scene, mode } = this.activeInlineShell;
+    scene?.setInteractableIndicatorsVisible?.(false);
     scene?.setVisible(false);
     if (mode === 'inline-cutaway') {
       this.clearInlineCutawayPlacement(placementId);
@@ -4464,6 +4502,7 @@ export class Game {
     }
 
     const { placementId, mode } = this.activeInlineShell;
+    this.activeInlineShell.scene?.setInteractableIndicatorsVisible?.(false);
     this.activeInlineShell.scene?.setVisible(false);
     if (mode === 'inline-cutaway') {
       this.clearInlineCutawayPlacement(placementId);
@@ -4488,6 +4527,7 @@ export class Game {
 
     for (const placementId of idsToClear) {
       const instance = this.inlineShellScenes.get(placementId);
+      instance?.scene?.setInteractableIndicatorsVisible?.(false);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
         this.clearInlineCutawayPlacement(placementId);
@@ -4518,6 +4558,7 @@ export class Game {
 
     for (const placementId of idsToClear) {
       const instance = this.inlineShellScenes.get(placementId);
+      instance?.scene?.setInteractableIndicatorsVisible?.(false);
       instance?.scene?.setVisible(false);
       if (instance?.mode === 'inline-cutaway') {
         this.clearInlineCutawayPlacement(placementId);
@@ -4534,6 +4575,7 @@ export class Game {
       }
 
       const mode = this.getInlineInteriorMode(entry);
+      shellScene.setInteractableIndicatorsVisible?.(false);
       shellScene.setVisible(mode !== 'inline-cutaway' || shellScene.inlineOverlay === true);
       if (mode === 'inline-cutaway') {
         this.applyInlineCutawayPlacement(entry);
@@ -4575,7 +4617,51 @@ export class Game {
       shellScene.setVisible(true);
       this.worldBuilder?.setPlacementVisualHidden(entry.placementId, true);
     }
+    this.updateActiveInlineShellIndicatorVisibility();
     return true;
+  }
+
+  updateActiveInlineShellIndicatorVisibility() {
+    const shellScene = this.activeInlineShell?.scene ?? null;
+    if (!shellScene) {
+      return;
+    }
+
+    shellScene.setInteractableIndicatorsVisible?.(
+      Boolean(this.player && shellScene.bounds?.containsPoint(this.player.position))
+    );
+  }
+
+  updateWorldInteractableIndicatorVisibility() {
+    const worldRenderer = this.worldBuilder?.worldRenderer;
+    if (!worldRenderer?.updateInteractableIndicatorVisibility) {
+      return;
+    }
+
+    const inlineScenes = this.worldInteractableIndicatorInlineScenes;
+    inlineScenes.length = 0;
+    for (const instance of this.inlineShellScenes.values()) {
+      if (instance?.scene?.bounds) {
+        inlineScenes.push(instance.scene);
+      }
+    }
+
+    const playerPosition = this.player?.position ?? null;
+    worldRenderer.updateInteractableIndicatorVisibility((rendered, worldPosition) => {
+      if (!rendered || !worldPosition || !inlineScenes.length) {
+        return true;
+      }
+
+      for (const scene of inlineScenes) {
+        if (!scene.bounds.containsPoint(worldPosition)) {
+          continue;
+        }
+
+        return Boolean(playerPosition && scene.bounds.containsPoint(playerPosition));
+      }
+
+      return true;
+    });
   }
 
   findInlineShellTarget(entries = []) {
@@ -4651,6 +4737,7 @@ export class Game {
 
     this.activateInlineShell(desiredEntry);
     this.activeInlineShell?.scene?.setActiveFloorForWorldPosition?.(this.player.position);
+    this.updateActiveInlineShellIndicatorVisibility();
   }
 
   setRemotePlayersVisible(visible) {
@@ -10684,6 +10771,7 @@ export class Game {
 
     this.finishWorkout({ cancelled: true });
     if (this.currentInterior?.scene) {
+      this.currentInterior.scene.setInteractableIndicatorsVisible?.(false);
       this.currentInterior.scene.setVisible(false);
     }
 
@@ -10699,6 +10787,7 @@ export class Game {
       scene: interiorScene,
       returnPosition: exteriorReturnPosition
     };
+    this.currentInterior.scene.setInteractableIndicatorsVisible?.(true);
     this.currentInterior.scene.setVisible(true);
     this.setOutdoorSceneVisible(false);
     this.player.position.copy(interiorScene.spawnPoint);
@@ -10717,6 +10806,7 @@ export class Game {
 
     this.finishWorkout({ cancelled: true });
     const { scene, returnPosition } = this.currentInterior;
+    scene.setInteractableIndicatorsVisible?.(false);
     scene.setVisible(false);
     this.currentInterior = null;
     this.setOutdoorSceneVisible(true);
@@ -14819,17 +14909,14 @@ export class Game {
     this.refreshAdminPositionHud();
     this.characterPreviewRenderer?.update(deltaSeconds);
     this.updateCameraOcclusion();
+    this.updateWorldInteractableIndicatorVisibility();
     this.updateDrunknessEffects(localPlayerState);
     this.updateAdaptiveRenderQuality(this.getMovementFrameSummary());
     if (this.vibeShaderPass?.uniforms?.uTime) {
       this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
     }
 
-    if (this.composer) {
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
+    this.renderSceneFrame();
     this.processDeferredSceneWork();
     this.input.endFrame();
   }

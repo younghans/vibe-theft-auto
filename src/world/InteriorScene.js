@@ -3,6 +3,10 @@ import {
   createOlympicBarbellVisual
 } from './proceduralProps.js';
 import {
+  addInteractableIndicatorToObject,
+  createInteractableIndicator
+} from './interactableIndicators.js';
+import {
   OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL,
   OFFICE_INTERIOR_CEO_GLASS_WALL,
   OFFICE_INTERIOR_CEO_MEETING_TABLE,
@@ -44,6 +48,7 @@ const OFFICE_STAIR_OPENING = Object.freeze({
   depth: 5.9
 });
 const OFFICE_DEFAULT_FLOOR_LAYOUT = getOfficeInteriorFloorLayout(OFFICE_INTERIOR_FLOOR_IDS.lobby);
+const DEFAULT_RAISED_INTERIOR_FLOOR_Y = getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby);
 
 function createDistrictInteriorTemplate(id, label, palette) {
   return {
@@ -53,6 +58,7 @@ function createDistrictInteriorTemplate(id, label, palette) {
     wallHeight: 12,
     wallThickness: 0.9,
     doorwayWidth: 5.8,
+    floorHeight: DEFAULT_RAISED_INTERIOR_FLOOR_Y,
     spawnOffset: [0, 5.9],
     exitOffset: [0, 8.2],
     boundsPadding: 1.25,
@@ -69,6 +75,7 @@ const INTERIOR_TEMPLATES = Object.freeze([
     wallHeight: 12,
     wallThickness: 0.9,
     doorwayWidth: 5.2,
+    floorHeight: DEFAULT_RAISED_INTERIOR_FLOOR_Y,
     spawnOffset: [0, 5.9],
     exitOffset: [0, 8.2],
     boundsPadding: 1.25,
@@ -294,9 +301,35 @@ function ensureUniqueOpacityMaterials(mesh) {
   mesh.userData.officeOpacityMaterialCloned = true;
 }
 
+function refreshInteractableIndicatorVisibility(indicator) {
+  if (!indicator?.userData?.customInteractableIndicatorRoot) {
+    return;
+  }
+
+  const floorVisible = indicator.userData.customInteractableIndicatorFloorVisible !== false;
+  const interiorVisible = indicator.userData.customInteractableIndicatorInteriorVisible !== false;
+  indicator.visible = floorVisible && interiorVisible;
+}
+
+function setInteractableIndicatorsInteriorVisible(root, visible = true) {
+  const nextVisible = Boolean(visible);
+  root?.traverse?.((node) => {
+    if (!node.userData?.customInteractableIndicatorRoot) {
+      return;
+    }
+
+    node.userData.customInteractableIndicatorInteriorVisible = nextVisible;
+    refreshInteractableIndicatorVisibility(node);
+  });
+}
+
 function setOfficeVisualTreeOpacity(root, opacity = 1) {
   const normalizedOpacity = THREE.MathUtils.clamp(Number(opacity) || 0, 0, 1);
   root?.traverse?.((node) => {
+    if (node.userData?.customInteractableIndicatorRoot) {
+      node.userData.customInteractableIndicatorFloorVisible = normalizedOpacity > 0;
+      refreshInteractableIndicatorVisibility(node);
+    }
     if (!node.isMesh || !node.material) {
       return;
     }
@@ -358,6 +391,57 @@ function setOfficeActiveFloor(officeVisuals = null, floorId = OFFICE_INTERIOR_FL
   }
   setOfficeVisualTreeOpacity(officeVisuals.stairsGroup, 1);
   officeVisuals.activeFloorId = activeFloorId;
+}
+
+function getOfficeStationIndicatorObject(floorGroup, stationId = '') {
+  switch (stationId) {
+    case 'janitor-closet':
+      return floorGroup.getObjectByName('office_janitor_closet_prop');
+    case 'ceo-meeting-table':
+      return floorGroup.getObjectByName('office_ceo_meeting_table');
+    default:
+      return null;
+  }
+}
+
+function addManualOfficeStationIndicator(floorGroup, station) {
+  const localPosition = station.localPosition ?? [0, 0];
+  const floorY = getOfficeInteriorFloorHeight(station.floorId);
+  const indicator = createInteractableIndicator(station.prompt, {
+    indicatorHeight: 0.07
+  });
+  indicator.position.set(
+    localPosition[0] ?? 0,
+    floorY + 1.55,
+    localPosition[1] ?? 0
+  );
+  floorGroup.add(indicator);
+}
+
+function addOfficeInteriorInteractableIndicators(officeVisuals = null) {
+  if (!officeVisuals?.floorGroups?.size) {
+    return;
+  }
+
+  for (const station of listOfficeInteriorStations()) {
+    if (station.type !== OFFICE_INTERIOR_STATION_TYPES.job || !station.prompt) {
+      continue;
+    }
+
+    const floorGroup = officeVisuals.floorGroups.get(station.floorId);
+    if (!floorGroup) {
+      continue;
+    }
+
+    const stationObject = getOfficeStationIndicatorObject(floorGroup, station.id);
+    if (stationObject) {
+      addInteractableIndicatorToObject(stationObject, station.prompt, {
+        indicatorHeight: 0.07
+      });
+    } else {
+      addManualOfficeStationIndicator(floorGroup, station);
+    }
+  }
 }
 
 function toCutoutRect(cutout) {
@@ -1023,6 +1107,7 @@ function addOfficeInteriorVisuals(group) {
     stairsGroup,
     activeFloorId: ''
   };
+  addOfficeInteriorInteractableIndicators(officeVisuals);
   setOfficeActiveFloor(officeVisuals, OFFICE_INTERIOR_FLOOR_IDS.lobby);
   return officeVisuals;
 }
@@ -1349,7 +1434,6 @@ export function createInteriorScene(interiorId, options = {}) {
   const halfWidth = floorWidth * 0.5;
   const halfDepth = floorDepth * 0.5;
   const halfDoorway = template.doorwayWidth * 0.5;
-  const wallY = template.wallHeight * 0.5;
   const wallThickness = template.wallThickness;
   const southWallZ = halfDepth - (wallThickness * 0.5);
   const northWallZ = -halfDepth + (wallThickness * 0.5);
@@ -1357,6 +1441,12 @@ export function createInteriorScene(interiorId, options = {}) {
   const eastWallX = halfWidth - (wallThickness * 0.5);
   const doorwaySegmentWidth = Math.max(0.8, halfWidth - halfDoorway);
   const isOfficeInterior = template.id === OFFICE_INTERIOR_ID;
+  const floorHeight = !isOfficeInterior && Number.isFinite(Number(template.floorHeight))
+    ? Number(template.floorHeight)
+    : 0;
+  const shellMinY = isOfficeInterior ? 0 : floorHeight;
+  const shellMaxY = shellMinY + template.wallHeight;
+  const wallY = shellMinY + (template.wallHeight * 0.5);
 
   const group = new THREE.Group();
   group.name = `InteriorScene_${template.id}`;
@@ -1371,7 +1461,7 @@ export function createInteriorScene(interiorId, options = {}) {
       roughness: 1
     })
   );
-  floor.position.set(0, -0.125, 0);
+  floor.position.set(0, floorHeight - 0.125, 0);
   floor.receiveShadow = true;
   if (!isOfficeInterior) {
     group.add(floor);
@@ -1407,7 +1497,7 @@ export function createInteriorScene(interiorId, options = {}) {
       roughness: 0.85
     })
   );
-  trim.position.set(0, template.wallHeight - 0.4, southWallZ);
+  trim.position.set(0, shellMaxY - 0.4, southWallZ);
 
   for (const wall of [northWall, westWall, eastWall, southWallLeft, southWallRight, trim]) {
     wall.castShadow = true;
@@ -1418,9 +1508,9 @@ export function createInteriorScene(interiorId, options = {}) {
   }
 
   const colliders = [
-    createColliderFromLocalRect(origin, normalizedRotation, 0, northWallZ, halfWidth, wallThickness * 0.5, 0, template.wallHeight),
-    createColliderFromLocalRect(origin, normalizedRotation, westWallX, 0, wallThickness * 0.5, halfDepth, 0, template.wallHeight),
-    createColliderFromLocalRect(origin, normalizedRotation, eastWallX, 0, wallThickness * 0.5, halfDepth, 0, template.wallHeight),
+    createColliderFromLocalRect(origin, normalizedRotation, 0, northWallZ, halfWidth, wallThickness * 0.5, shellMinY, shellMaxY),
+    createColliderFromLocalRect(origin, normalizedRotation, westWallX, 0, wallThickness * 0.5, halfDepth, shellMinY, shellMaxY),
+    createColliderFromLocalRect(origin, normalizedRotation, eastWallX, 0, wallThickness * 0.5, halfDepth, shellMinY, shellMaxY),
     createColliderFromLocalRect(
       origin,
       normalizedRotation,
@@ -1428,8 +1518,8 @@ export function createInteriorScene(interiorId, options = {}) {
       southWallZ,
       doorwaySegmentWidth * 0.5,
       wallThickness * 0.5,
-      0,
-      template.wallHeight
+      shellMinY,
+      shellMaxY
     ),
     createColliderFromLocalRect(
       origin,
@@ -1438,8 +1528,8 @@ export function createInteriorScene(interiorId, options = {}) {
       southWallZ,
       doorwaySegmentWidth * 0.5,
       wallThickness * 0.5,
-      0,
-      template.wallHeight
+      shellMinY,
+      shellMaxY
     )
   ];
 
@@ -1447,17 +1537,17 @@ export function createInteriorScene(interiorId, options = {}) {
     origin,
     normalizedRotation,
     template.spawnOffset[0] ?? 0,
-    0,
+    floorHeight,
     template.spawnOffset[1] ?? 0
   );
   const exitPosition = transformLocalPoint(
     origin,
     normalizedRotation,
     template.exitOffset[0] ?? 0,
-    0,
+    floorHeight,
     template.exitOffset[1] ?? 0
   );
-  const doorwayThresholdPosition = transformLocalPoint(origin, normalizedRotation, 0, 0, southWallZ);
+  const doorwayThresholdPosition = transformLocalPoint(origin, normalizedRotation, 0, floorHeight, southWallZ);
   const bounds = createBoundsFromLocalRect(
     origin,
     normalizedRotation,
@@ -1465,8 +1555,8 @@ export function createInteriorScene(interiorId, options = {}) {
     0,
     Math.max(0.2, halfWidth - template.boundsPadding),
     Math.max(0.2, halfDepth - template.boundsPadding),
-    -1,
-    template.wallHeight
+    shellMinY - 1,
+    shellMaxY
   );
   const doorwayTriggerBounds = createBoundsFromLocalRect(
     origin,
@@ -1475,8 +1565,8 @@ export function createInteriorScene(interiorId, options = {}) {
     southWallZ,
     halfDoorway + INLINE_SHELL_TRIGGER_WIDTH_PADDING,
     INLINE_SHELL_TRIGGER_DEPTH * 0.5,
-    -1,
-    template.wallHeight
+    shellMinY - 1,
+    shellMaxY
   );
   const upperFloorDoorwayBlocker = isOfficeInterior
     ? createColliderFromLocalRect(
@@ -1486,8 +1576,8 @@ export function createInteriorScene(interiorId, options = {}) {
         southWallZ,
         halfDoorway + INLINE_SHELL_TRIGGER_WIDTH_PADDING,
         wallThickness * 0.75,
-        0,
-        template.wallHeight
+        shellMinY,
+        shellMaxY
       )
     : null;
   const officeActiveFloorCollidersById = isOfficeInterior
@@ -1514,7 +1604,7 @@ export function createInteriorScene(interiorId, options = {}) {
     );
     platform.position.set(
       station.platformPosition?.[0] ?? 0,
-      0,
+      floorHeight,
       station.platformPosition?.[1] ?? 0
     );
     group.add(platform);
@@ -1522,10 +1612,15 @@ export function createInteriorScene(interiorId, options = {}) {
     const floorBarbell = createOlympicBarbellVisual();
     floorBarbell.position.set(
       station.barbellPosition?.[0] ?? 0,
-      0,
+      floorHeight,
       station.barbellPosition?.[1] ?? 0
     );
     group.add(floorBarbell);
+
+    const prompt = 'Snatch barbell';
+    addInteractableIndicatorToObject(floorBarbell, prompt, {
+      indicatorHeight: 0.07
+    });
 
     interiorInteractables.push({
       kind: `${station.type}-workout`,
@@ -1534,17 +1629,17 @@ export function createInteriorScene(interiorId, options = {}) {
         origin,
         normalizedRotation,
         station.barbellPosition?.[0] ?? 0,
-        0,
+        floorHeight,
         station.barbellPosition?.[1] ?? 0
       ),
       radius: 3.6,
-      prompt: 'Snatch barbell',
+      prompt,
       actionText: 'Step onto the platform and hit a snatch.',
       approachPosition: transformLocalPoint(
         origin,
         normalizedRotation,
         station.approachPosition?.[0] ?? 0,
-        0,
+        floorHeight,
         station.approachPosition?.[1] ?? 0
       ),
       approachRotationY: normalizedRotation * (Math.PI / 2) + (station.approachRotationY ?? 0),
@@ -1625,7 +1720,7 @@ export function createInteriorScene(interiorId, options = {}) {
         return getOfficeGroundHeightAtWorldPosition(origin, normalizedRotation, worldPosition);
       }
 
-      return origin[1] ?? 0;
+      return (origin[1] ?? 0) + floorHeight;
     },
     setActiveFloorId(floorId = OFFICE_INTERIOR_FLOOR_IDS.lobby) {
       if (isOfficeInterior) {
@@ -1663,6 +1758,9 @@ export function createInteriorScene(interiorId, options = {}) {
       }
     },
     inlineOverlay: isOfficeInterior,
+    setInteractableIndicatorsVisible(nextVisible) {
+      setInteractableIndicatorsInteriorVisible(group, nextVisible);
+    },
     setVisible(nextVisible) {
       group.visible = Boolean(nextVisible);
     }
