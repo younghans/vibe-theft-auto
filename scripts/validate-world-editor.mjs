@@ -63,6 +63,11 @@ import {
 } from '../src/shared/vibeHero.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import {
+  RENT_INTRO_LINE,
+  isRentIntroCollector,
+  resolveRentIntroPlan
+} from '../src/shared/rentIntro.js';
+import {
   applyMarthaNpcBaseStyle,
   createMarthaNpcAdornment,
   shouldApplyMarthaNpcAdornment
@@ -446,6 +451,16 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes('updateBasketballShotCamera'), 'Game should use a zoomed 3D basketball shot camera');
   assert(gameSource.includes('createBasketballShotBall'), 'Game should spawn a 3D basketball for shot attempts');
   assert(hudSource.includes('hud__basketball-shot-meter'), 'HUD should render the basketball half-circle shot meter');
+
+  const rentCollector = defaultWorldLayout.npcs.find((npc) => isRentIntroCollector(npc));
+  const rentIntroPlan = resolveRentIntroPlan(defaultWorldLayout);
+  assert(rentCollector?.id === 'npc_landlord', 'Default world should seed the landlord as the rent collector');
+  assert(rentIntroPlan?.collectorNpcId === 'npc_landlord', 'Rent intro should resolve to the landlord collector');
+  assert(rentIntroPlan?.spawn && Number.isFinite(rentIntroPlan.spawn.x) && Number.isFinite(rentIntroPlan.spawn.z), 'Rent intro should resolve a finite opening spawn');
+  assert(/rent/i.test(RENT_INTRO_LINE) && /money/i.test(RENT_INTRO_LINE), 'Rent intro line should ask for rent money');
+  assert(gameSource.includes('updateRentIntroCutsceneCamera'), 'Game should drive a 3D rent intro cutscene camera');
+  assert(gameSource.includes('getRentIntroBlinkClosure'), 'Game should animate full-screen blinking during the rent intro cutscene');
+  assert(hudSource.includes('hud__rent-cutscene'), 'HUD should include the rent intro blink layer');
 
   const instrumentCluster = getBuilderItemById('instrument_cluster');
   assert(instrumentCluster, 'Instrument cluster prop should exist');

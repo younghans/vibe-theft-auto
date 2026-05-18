@@ -237,6 +237,31 @@ function formatVibeHeroTimestamp(milliseconds = 0) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+function smoothstep01(value) {
+  const t = THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
+  return t * t * (3 - (2 * t));
+}
+
+function getTimedEnvelope(elapsedMs, startMs, endMs, fadeInMs = 120, fadeOutMs = 160) {
+  if (elapsedMs < startMs || elapsedMs > endMs) {
+    return 0;
+  }
+
+  const fadeIn = fadeInMs <= 0 ? 1 : smoothstep01((elapsedMs - startMs) / fadeInMs);
+  const fadeOut = fadeOutMs <= 0 ? 1 : smoothstep01((endMs - elapsedMs) / fadeOutMs);
+  return Math.min(fadeIn, fadeOut);
+}
+
+function getRentIntroBlinkClosure(elapsedMs = 0) {
+  return Math.max(
+    getTimedEnvelope(elapsedMs, -240, 1120, 1, 260),
+    getTimedEnvelope(elapsedMs, 1540, 1840, 90, 130),
+    getTimedEnvelope(elapsedMs, 2460, 2740, 80, 120),
+    getTimedEnvelope(elapsedMs, 3060, 3520, 110, 180),
+    getTimedEnvelope(elapsedMs, 5000, 6100, 180, 340)
+  );
+}
+
 const OFFICE_JOB_COUNTDOWN_MS = 1600;
 const OFFICE_JOB_COUNTDOWN_GO_MS = 250;
 const OFFICE_JANITOR_REQUIRED_THROWS = 3;
@@ -460,6 +485,13 @@ const RENT_INTRO_TYPE_MS_PER_CHAR = 42;
 const RENT_INTRO_MIN_TYPING_MS = 900;
 const RENT_INTRO_AFTER_LINE_DELAY_MS = 650;
 const RENT_INTRO_SPEECH_HOLD_MS = 1700;
+const RENT_INTRO_CUTSCENE_TOTAL_MS = 6200;
+const RENT_INTRO_CUTSCENE_FIRST_PERSON_MS = 3300;
+const RENT_INTRO_CUTSCENE_GET_UP_START_MS = 3150;
+const RENT_INTRO_CUTSCENE_CAMERA_BLEND_MS = 760;
+const RENT_INTRO_CUTSCENE_NPC_DISTANCE = 1.62;
+const RENT_INTRO_STAND_UP_EMOTE_ID = 'standUp';
+const RENT_INTRO_STAND_UP_CLIP_NAME = 'standUp';
 const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
@@ -1160,6 +1192,8 @@ export class Game {
     this.rentIntroLoadingClearedAt = 0;
     this.pendingRentIntro = null;
     this.activeRentIntro = null;
+    this.rentIntroCutscene = null;
+    this.rentIntroCutsceneRestoreSnapNpcId = '';
     this.lastAuthoritativeMoneyAmount = null;
     this.moneyDisplayAmount = 0;
     this.moneyAnimation = null;
@@ -1179,6 +1213,13 @@ export class Game {
     this.basketballShotRimPosition = new THREE.Vector3();
     this.basketballShotForward = new THREE.Vector3();
     this.basketballShotSide = new THREE.Vector3();
+    this.rentIntroCutsceneForward = new THREE.Vector3();
+    this.rentIntroCutsceneSide = new THREE.Vector3();
+    this.rentIntroCutsceneNpcPosition = new THREE.Vector3();
+    this.rentIntroCutsceneGroundCamera = new THREE.Vector3();
+    this.rentIntroCutsceneThirdCamera = new THREE.Vector3();
+    this.rentIntroCutsceneGroundLook = new THREE.Vector3();
+    this.rentIntroCutsceneThirdLook = new THREE.Vector3();
     this.cameraOffsetScratch = new THREE.Vector3();
     this.cameraTargetPosition = new THREE.Vector3();
     this.cameraLookTarget = new THREE.Vector3();
@@ -12035,6 +12076,14 @@ export class Game {
         respawnAt: npc.respawnAt ?? 0
       });
     }
+    if (this.rentIntroCutsceneRestoreSnapNpcId) {
+      const restoreState = runtime.get(this.rentIntroCutsceneRestoreSnapNpcId);
+      if (restoreState) {
+        restoreState.snap = true;
+      }
+      this.rentIntroCutsceneRestoreSnapNpcId = '';
+    }
+    this.applyRentIntroNpcRuntimeOverride(runtime);
     this.worldBuilder.setNpcRuntimeState(runtime);
     this.syncWorkoutState();
     this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? new Map());
@@ -12595,6 +12644,163 @@ export class Game {
     });
   }
 
+  isRentIntroCutsceneActive() {
+    return Boolean(this.rentIntroCutscene);
+  }
+
+  startRentIntroCutscene(intro = this.pendingRentIntro ?? this.activeRentIntro) {
+    if (!intro?.npcId || !this.player || this.rentIntroCutscene?.seq === intro.seq) {
+      return false;
+    }
+
+    const now = performance.now();
+    const facing = Number.isFinite(this.player.object?.rotation?.y)
+      ? this.player.object.rotation.y
+      : 0;
+    this.rentIntroCutscene = {
+      seq: intro.seq,
+      npcId: intro.npcId,
+      startedAt: now,
+      endsAt: now + RENT_INTRO_CUTSCENE_TOTAL_MS,
+      facing,
+      standUpPlayed: false,
+      playerVisibleBefore: this.player.object?.visible !== false
+    };
+    void preloadMixamoClips([RENT_INTRO_STAND_UP_CLIP_NAME]);
+    this.player.object.visible = false;
+    this.player.setAimingState(false);
+    this.clearPendingHipFireShot();
+    this.hud.setRentIntroCutsceneState({ visible: true, blink: 1 });
+    this.applyNpcRuntimeState();
+    return true;
+  }
+
+  endRentIntroCutscene() {
+    const cutscene = this.rentIntroCutscene;
+    if (!cutscene) {
+      return;
+    }
+
+    if (this.player?.object) {
+      this.player.object.visible = cutscene.playerVisibleBefore !== false;
+    }
+    this.rentIntroCutsceneRestoreSnapNpcId = cutscene.npcId;
+    this.rentIntroCutscene = null;
+    this.hud.setRentIntroCutsceneState({ visible: false, blink: 0 });
+    this.applyNpcRuntimeState();
+  }
+
+  getRentIntroCutsceneForward(target = this.rentIntroCutsceneForward) {
+    const facing = Number.isFinite(this.rentIntroCutscene?.facing)
+      ? this.rentIntroCutscene.facing
+      : (this.player?.object?.rotation?.y ?? 0);
+    target.set(Math.sin(facing), 0, Math.cos(facing));
+    if (target.lengthSq() <= 0.0001) {
+      target.set(0, 0, 1);
+    }
+    return target.normalize();
+  }
+
+  getRentIntroCutsceneNpcPosition(target = this.rentIntroCutsceneNpcPosition) {
+    if (!this.player) {
+      return target.set(0, 0, 0);
+    }
+
+    const forward = this.getRentIntroCutsceneForward(this.rentIntroCutsceneForward);
+    return target
+      .copy(this.player.position)
+      .addScaledVector(forward, RENT_INTRO_CUTSCENE_NPC_DISTANCE);
+  }
+
+  applyRentIntroNpcRuntimeOverride(runtime) {
+    const cutscene = this.rentIntroCutscene;
+    if (!cutscene?.npcId || !this.player) {
+      return;
+    }
+
+    const npcPosition = this.getRentIntroCutsceneNpcPosition(this.rentIntroCutsceneNpcPosition);
+    const previous = runtime.get(cutscene.npcId) ?? {};
+    runtime.set(cutscene.npcId, {
+      ...previous,
+      x: npcPosition.x,
+      z: npcPosition.z,
+      rotationY: Math.atan2(this.player.position.x - npcPosition.x, this.player.position.z - npcPosition.z),
+      mode: 'routine',
+      activity: '',
+      busy: false,
+      alive: true,
+      snap: true
+    });
+  }
+
+  updateRentIntroCutscene() {
+    const cutscene = this.rentIntroCutscene;
+    if (!cutscene || !this.player) {
+      return false;
+    }
+
+    const now = performance.now();
+    if (now >= cutscene.endsAt) {
+      this.endRentIntroCutscene();
+      return false;
+    }
+
+    const elapsedMs = Math.max(0, now - cutscene.startedAt);
+    const blink = getRentIntroBlinkClosure(elapsedMs);
+    const firstPerson = elapsedMs < RENT_INTRO_CUTSCENE_FIRST_PERSON_MS;
+    this.hud.setRentIntroCutsceneState({ visible: true, blink });
+    this.player.object.visible = !firstPerson && cutscene.playerVisibleBefore !== false;
+    this.player.setAimingState(false);
+    this.player.setSkateboardState?.({ skating: false });
+
+    if (!cutscene.standUpPlayed && elapsedMs >= RENT_INTRO_CUTSCENE_GET_UP_START_MS) {
+      cutscene.standUpPlayed = true;
+      this.player.object.visible = cutscene.playerVisibleBefore !== false;
+      this.player.playEmote?.(RENT_INTRO_STAND_UP_EMOTE_ID, {
+        startedAtMs: Date.now(),
+        trackSync: false
+      });
+    }
+
+    this.updateRentIntroCutsceneCamera(elapsedMs);
+    return true;
+  }
+
+  updateRentIntroCutsceneCamera(elapsedMs = 0) {
+    if (!this.player) {
+      return;
+    }
+
+    const forward = this.getRentIntroCutsceneForward(this.rentIntroCutsceneForward);
+    const side = this.rentIntroCutsceneSide.set(forward.z, 0, -forward.x).normalize();
+    const npcPosition = this.getRentIntroCutsceneNpcPosition(this.rentIntroCutsceneNpcPosition);
+    const sway = Math.sin(elapsedMs * 0.0032) * 0.045;
+    const groundCamera = this.rentIntroCutsceneGroundCamera
+      .copy(this.player.position)
+      .addScaledVector(forward, 0.2)
+      .addScaledVector(side, sway);
+    groundCamera.y += 0.46 + (Math.sin(elapsedMs * 0.0055) * 0.018);
+    const groundLook = this.rentIntroCutsceneGroundLook
+      .copy(npcPosition)
+      .addScaledVector(side, sway * 0.45);
+    groundLook.y = this.player.position.y + 3.35;
+
+    const thirdCamera = this.rentIntroCutsceneThirdCamera
+      .copy(this.player.position)
+      .addScaledVector(forward, -4.95)
+      .addScaledVector(side, 1.95);
+    thirdCamera.y += 2.7;
+    const thirdLook = this.rentIntroCutsceneThirdLook.copy(this.player.position);
+    thirdLook.y += 1.38;
+
+    const blend = smoothstep01(
+      (elapsedMs - RENT_INTRO_CUTSCENE_FIRST_PERSON_MS) / RENT_INTRO_CUTSCENE_CAMERA_BLEND_MS
+    );
+    this.camera.position.copy(groundCamera).lerp(thirdCamera, blend);
+    this.cameraLookTarget.copy(groundLook).lerp(thirdLook, blend);
+    this.camera.lookAt(this.cameraLookTarget);
+  }
+
   maybeStartRentIntro(localPlayerState) {
     const seq = Number(localPlayerState?.rentIntroSeq ?? 0);
     if (!Number.isFinite(seq) || seq <= 0 || seq === this.handledRentIntroSeq) {
@@ -12623,6 +12829,8 @@ export class Game {
       if (this.rentIntroLoadingClearedAt <= 0) {
         return;
       }
+
+      this.startRentIntroCutscene(this.pendingRentIntro);
 
       if (!this.pendingRentIntro.readyAt) {
         this.pendingRentIntro.readyAt = this.rentIntroLoadingClearedAt + RENT_INTRO_AFTER_LOADING_DELAY_MS;
@@ -14350,7 +14558,8 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     this.processPendingFrontendReload();
     this.syncMobileControlsHud(localPlayerState);
-    const emoteMenuActive = this.updateEmoteMenu();
+    const rentIntroCutsceneActiveAtFrameStart = this.isRentIntroCutsceneActive();
+    const emoteMenuActive = rentIntroCutsceneActiveAtFrameStart ? false : this.updateEmoteMenu();
     this.refreshHotbarHud();
     if (this.hud.isStockMarketOpen()) {
       void this.refreshStockMarket();
@@ -14366,11 +14575,11 @@ export class Game {
       this.updateVibeHero(deltaSeconds);
     }
 
-    if (this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
+    if (!rentIntroCutsceneActiveAtFrameStart && this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
       this.toggleAimPoseDebugPanel();
     }
 
-    if (this.input.consumeAction('escape')) {
+    if (!rentIntroCutsceneActiveAtFrameStart && this.input.consumeAction('escape')) {
       if (this.hud.isQuickChatOpen()) {
         this.closeQuickChat();
       } else if (this.hud.isAdminPromptOpen()) {
@@ -14396,6 +14605,7 @@ export class Game {
 
     if (
       !this.worldBuilder?.enabled
+      && !rentIntroCutsceneActiveAtFrameStart
       && !this.hud.isSchoolMicrogameOpen()
       && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
@@ -14404,13 +14614,16 @@ export class Game {
       this.togglePhoneMenu();
     }
 
-    this.handleCameraZoomInput(localPlayerState);
-    this.handlePhoneMapKeyboardInput(deltaSeconds);
-    this.handleHotbarKeyboardInput();
+    if (!rentIntroCutsceneActiveAtFrameStart) {
+      this.handleCameraZoomInput(localPlayerState);
+      this.handlePhoneMapKeyboardInput(deltaSeconds);
+      this.handleHotbarKeyboardInput();
+    }
     this.updateNpcFocusTargets();
 
     if (
       this.input.consumeAction('chat')
+      && !rentIntroCutsceneActiveAtFrameStart
       && this.canOpenQuickChatFromInput({ emoteMenuActive })
     ) {
       this.openQuickChat();
@@ -14436,6 +14649,7 @@ export class Game {
       this.currentInteractable = null;
       this.hud.setPrompt(null);
     } else {
+      const rentIntroCutsceneActive = this.isRentIntroCutsceneActive();
       const localAlive = localPlayerState?.alive !== false;
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
@@ -14448,7 +14662,7 @@ export class Game {
       const selectedConsumableItemId = this.getSelectedHotbarConsumableItemId();
       const consumableSelected = Boolean(selectedDrinkItemId || selectedConsumableItemId);
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !consumableSelected);
-      const canCursorAim = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
+      const canCursorAim = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -14459,11 +14673,11 @@ export class Game {
         : this.aimDirectionScratch.copy(this.currentAimDirection);
       this.currentAimDirection.copy(aimDirection);
       this.player.setAimRotation(Math.atan2(aimDirection.x, aimDirection.z));
-      if (localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
+      if (localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen && this.input.consume('KeyP')) {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
       const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
@@ -14510,7 +14724,7 @@ export class Game {
           }
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -14549,7 +14763,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
+        if (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -14564,7 +14778,11 @@ export class Game {
             this.player.setAimingState(aimingMode);
           }
         }
-        this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
+        if (rentIntroCutsceneActive) {
+          this.updateRentIntroCutscene();
+        } else {
+          this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
+        }
       }
       this.updateLocalPlayerKinematics();
       const animationSyncState = this.player.getAnimationSyncState(this.localAnimationSyncState);
@@ -14576,7 +14794,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
+      if (workoutActive || rentIntroCutsceneActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {

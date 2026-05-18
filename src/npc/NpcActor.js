@@ -510,6 +510,12 @@ export class NpcActor {
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
     this.syncInteractRadiusVisibility();
 
+    if (state.snap === true) {
+      this.anchor.position.x = this.runtimeState.x;
+      this.anchor.position.z = this.runtimeState.z;
+      this.anchor.rotation.y = this.runtimeState.rotationY;
+    }
+
     if (wasAlive && !nextAlive) {
       this.ragdoll?.activate({
         startedAtMs: Number.isFinite(state.lastDamagedAt) && state.lastDamagedAt > 0

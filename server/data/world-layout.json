@@ -1727,6 +1727,20 @@
       "active": true
     },
     {
+      "id": "npc_landlord",
+      "modelId": "leonard",
+      "position": [
+        -1.4,
+        -32.9
+      ],
+      "rotationQuarterTurns": 2,
+      "name": "Landlord",
+      "prompt": "You are the player's landlord in Vibe Theft Auto. You are impatient about rent, blunt, and short-spoken, but you stay grounded in the city.",
+      "interactRadius": 4.8,
+      "rentCollectorEnabled": true,
+      "active": true
+    },
+    {
       "id": "npc_martha",
       "modelId": "martha",
       "position": [

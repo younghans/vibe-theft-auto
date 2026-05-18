@@ -8,7 +8,7 @@ import {
 import { getBuilderItemById } from '../world/builderCatalog.js';
 
 export const RENT_INTRO_AMOUNT = 100;
-export const RENT_INTRO_LINE = "Hey, buddy, rent's due.";
+export const RENT_INTRO_LINE = "Hey, buddy, rent's due. You got my money?";
 
 export function normalizeRentCollectorEnabled(value = false) {
   return value === true;

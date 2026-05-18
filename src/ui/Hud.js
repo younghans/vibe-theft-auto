@@ -3511,6 +3511,7 @@ export class Hud {
     this.basketballShotStatus = this.overlay.querySelector('[data-basketball-shot-status]');
     this.basketballShotBody = this.overlay.querySelector('[data-basketball-shot-body]');
     this.basketballShotMessage = this.overlay.querySelector('[data-basketball-shot-message]');
+    this.rentIntroCutsceneRoot = this.overlay.querySelector('[data-rent-intro-cutscene]');
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
     this.adminPromptDragHandle = this.overlay.querySelector('[data-admin-prompt-drag-handle]');
@@ -4596,6 +4597,11 @@ export class Hud {
       </form>
       <section class="hud__overhead-health-layer" data-overhead-health-layer></section>
       <section class="hud__speech-layer" data-speech-layer></section>
+      <section class="hud__rent-cutscene" data-rent-intro-cutscene aria-hidden="true" hidden>
+        <div class="hud__rent-cutscene-vignette" aria-hidden="true"></div>
+        <div class="hud__rent-cutscene-lid hud__rent-cutscene-lid--top" aria-hidden="true"></div>
+        <div class="hud__rent-cutscene-lid hud__rent-cutscene-lid--bottom" aria-hidden="true"></div>
+      </section>
       <section class="hud__respawn" data-respawn aria-live="polite">
         <p class="hud__respawn-line" data-respawn-line></p>
         <p class="hud__respawn-detail" data-respawn-detail></p>
@@ -8069,6 +8075,21 @@ export class Hud {
     if (this.basketballShotMessage) {
       this.basketballShotMessage.textContent = game?.message || 'Release at the top of the meter.';
     }
+  }
+
+  setRentIntroCutsceneState({ visible = false, blink = 0 } = {}) {
+    if (!this.rentIntroCutsceneRoot) {
+      return;
+    }
+
+    const nextVisible = Boolean(visible);
+    this.rentIntroCutsceneRoot.hidden = !nextVisible;
+    this.rentIntroCutsceneRoot.classList.toggle('is-visible', nextVisible);
+    this.overlay.classList.toggle('is-rent-cutscene-active', nextVisible);
+    const closure = Math.max(0, Math.min(1, Number(blink) || 0));
+    this.rentIntroCutsceneRoot.style.setProperty('--rent-blink-closure', closure.toFixed(3));
+    this.rentIntroCutsceneRoot.style.setProperty('--rent-blink-top-y', `${(-100 + (closure * 104)).toFixed(2)}%`);
+    this.rentIntroCutsceneRoot.style.setProperty('--rent-blink-bottom-y', `${(100 - (closure * 104)).toFixed(2)}%`);
   }
 
   clearAdminPromptText() {

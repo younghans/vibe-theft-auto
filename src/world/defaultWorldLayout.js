@@ -150,6 +150,16 @@ const NPC_PLANS = [
     interactRadius: 4.4
   },
   {
+    id: 'npc_landlord',
+    modelId: 'leonard',
+    position: [-0.1 * BUILDER_TILE_SIZE, -2.35 * BUILDER_TILE_SIZE],
+    angle: Math.PI,
+    name: 'Landlord',
+    prompt: "You are the player's landlord in Vibe Theft Auto. You are impatient about rent, blunt, and short-spoken, but you stay grounded in the city.",
+    interactRadius: 4.8,
+    rentCollectorEnabled: true
+  },
+  {
     id: 'npc_martha',
     modelId: 'martha',
     position: [-2.05 * BUILDER_TILE_SIZE, -3.98 * BUILDER_TILE_SIZE],

@@ -13557,6 +13557,60 @@ body.is-admin-prompt-resizing * {
   pointer-events: none;
 }
 
+.hud__rent-cutscene {
+  position: absolute;
+  inset: 0;
+  z-index: 44;
+  overflow: hidden;
+  pointer-events: none;
+  --rent-blink-closure: 0;
+  --rent-blink-top-y: -100%;
+  --rent-blink-bottom-y: 100%;
+}
+
+.hud.is-rent-cutscene-active .hud__combat,
+.hud.is-rent-cutscene-active .hud__ammo,
+.hud.is-rent-cutscene-active .hud__hotbar,
+.hud.is-rent-cutscene-active .hud__bound-items,
+.hud.is-rent-cutscene-active .hud__drunkness,
+.hud.is-rent-cutscene-active .hud__phone-launcher,
+.hud.is-rent-cutscene-active .hud__task,
+.hud.is-rent-cutscene-active .hud__prompt,
+.hud.is-rent-cutscene-active .hud__admin-prompt-toggle,
+.hud.is-rent-cutscene-active .hud__mobile-controls {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.hud__rent-cutscene-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 44%, transparent 18%, rgba(0, 0, 0, 0.3) 58%, rgba(0, 0, 0, 0.58) 100%),
+    rgba(0, 0, 0, var(--rent-blink-closure));
+  opacity: 0.9;
+}
+
+.hud__rent-cutscene-lid {
+  position: absolute;
+  left: -5vw;
+  right: -5vw;
+  height: 56vh;
+  background: #010104;
+  box-shadow: 0 0 34px rgba(0, 0, 0, 0.9);
+  will-change: transform;
+}
+
+.hud__rent-cutscene-lid--top {
+  top: 0;
+  transform: translateY(var(--rent-blink-top-y));
+}
+
+.hud__rent-cutscene-lid--bottom {
+  bottom: 0;
+  transform: translateY(var(--rent-blink-bottom-y));
+}
+
 .hud__overhead-health-layer {
   position: absolute;
   inset: 0;
