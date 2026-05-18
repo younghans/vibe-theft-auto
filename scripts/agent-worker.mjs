@@ -59,6 +59,7 @@ const BACKEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('BACKEND_VERIFY_
 const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOUT_MS', 10 * 60 * 1000);
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
+const WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('AGENT_WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS', 15 * 1000);
 const CODEX_REASONING_EFFORT = String(process.env.CODEX_REASONING_EFFORT || 'xhigh').trim() || 'xhigh';
 const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim() || 'fast';
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
@@ -79,6 +80,12 @@ const RUN_SELF_TEST = process.argv.includes('--self-test');
 const DISABLE_INSTANCE_LOCK = ['1', 'true', 'yes'].includes(String(process.env.AGENT_DISABLE_INSTANCE_LOCK || '').toLowerCase());
 const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 const drainLoggedLaneLabels = new Set();
+const WORLD_LAYOUT_SEED_PATH = 'server/data/world-layout.json';
+const DEFAULT_WORLD_LAYOUT_PATH = 'src/world/defaultWorldLayout.js';
+const WORLD_LAYOUT_CHANGE_PATHS = new Set([
+  WORLD_LAYOUT_SEED_PATH,
+  DEFAULT_WORLD_LAYOUT_PATH
+]);
 
 const ALLOWED_EXACT_FILES = new Set([
   'index.html',
@@ -2235,6 +2242,318 @@ async function fetchJson(url, timeoutMs) {
   };
 }
 
+function getMatchingProtocol(sourceProtocol, secure) {
+  if (sourceProtocol === 'http:' || sourceProtocol === 'https:') {
+    return secure ? 'https:' : 'http:';
+  }
+
+  return secure ? 'wss:' : 'ws:';
+}
+
+function createColyseusUrlBuilder(endpoint = '') {
+  let endpointUrl = null;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch {
+    return undefined;
+  }
+
+  const endpointSecure = endpointUrl.protocol === 'https:' || endpointUrl.protocol === 'wss:';
+  const endpointHost = endpointUrl.host;
+
+  return (url) => {
+    if (!url.hostname.endsWith('.colyseus.cloud') || url.host === endpointHost) {
+      return url.href;
+    }
+
+    const rewrittenUrl = new URL(url.href);
+    rewrittenUrl.protocol = getMatchingProtocol(url.protocol, endpointSecure);
+    rewrittenUrl.host = endpointHost;
+    return rewrittenUrl.href;
+  };
+}
+
+function getBackendRoomEndpoint() {
+  const verifyUrl = normalizeHttpUrl(BACKEND_VERIFY_URL || API_BASE);
+  if (!verifyUrl) {
+    return '';
+  }
+
+  const url = new URL(verifyUrl);
+  url.pathname = '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/$/u, '');
+}
+
+function normalizeLayoutEntries(layout = {}) {
+  return [
+    ...(Array.isArray(layout.tiles) ? layout.tiles.map((entry) => ({ ...entry, layer: 'tile' })) : []),
+    ...(Array.isArray(layout.props) ? layout.props.map((entry) => ({ ...entry, layer: 'prop' })) : []),
+    ...(Array.isArray(layout.npcs) ? layout.npcs.map((entry) => ({ ...entry, layer: 'npc' })) : [])
+  ];
+}
+
+function getPlacementId(entry = {}) {
+  return String(entry?.id || '').trim();
+}
+
+function getPlacementItemId(entry = {}) {
+  return String(entry?.itemId || entry?.modelId || '').trim();
+}
+
+function getPlacementCell(entry = {}) {
+  if (Array.isArray(entry.cell)) {
+    return [Number(entry.cell[0]), Number(entry.cell[1])];
+  }
+
+  const cellX = Number(entry.cellX);
+  const cellZ = Number(entry.cellZ);
+  return Number.isFinite(cellX) && Number.isFinite(cellZ) ? [cellX, cellZ] : null;
+}
+
+function getPlacementPosition(entry = {}) {
+  if (Array.isArray(entry.position)) {
+    return [Number(entry.position[0]), Number(entry.position[1])];
+  }
+
+  const x = Number(entry.x);
+  const z = Number(entry.z);
+  return Number.isFinite(x) && Number.isFinite(z) ? [x, z] : null;
+}
+
+function numbersClose(left, right, epsilon = 0.05) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  return Number.isFinite(leftNumber)
+    && Number.isFinite(rightNumber)
+    && Math.abs(leftNumber - rightNumber) <= epsilon;
+}
+
+function pointsClose(left, right, epsilon = 0.05) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && numbersClose(left[0], right[0], epsilon)
+    && numbersClose(left[1], right[1], epsilon);
+}
+
+function rotationsClose(left, right) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (!Number.isFinite(leftNumber) || !Number.isFinite(rightNumber)) {
+    return false;
+  }
+
+  const fullTurn = Math.PI * 2;
+  const delta = Math.abs((((leftNumber - rightNumber) % fullTurn) + fullTurn) % fullTurn);
+  return Math.min(delta, fullTurn - delta) <= 0.01;
+}
+
+function placementMatchesExpected(expected = {}, live = {}) {
+  if (!live || expected.layer !== live.layer) {
+    return false;
+  }
+
+  if (getPlacementItemId(expected) !== getPlacementItemId(live)) {
+    return false;
+  }
+
+  if (expected.layer === 'tile') {
+    if (!pointsClose(getPlacementCell(expected), getPlacementCell(live), 0.01)) {
+      return false;
+    }
+  } else if (!pointsClose(getPlacementPosition(expected), getPlacementPosition(live), 0.08)) {
+    return false;
+  }
+
+  if (Object.hasOwn(expected, 'rotationQuarterTurns')
+    && Number(expected.rotationQuarterTurns) !== Number(live.rotationQuarterTurns)) {
+    return false;
+  }
+
+  if (Object.hasOwn(expected, 'rotationY') && !rotationsClose(expected.rotationY, live.rotationY)) {
+    return false;
+  }
+
+  if (Object.hasOwn(expected, 'scale') && !numbersClose(expected.scale, live.scale ?? 1, 0.01)) {
+    return false;
+  }
+
+  return true;
+}
+
+function formatPlacementSummary(entry = {}) {
+  const id = getPlacementId(entry) || '(no id)';
+  const itemId = getPlacementItemId(entry) || '(no item)';
+  const location = entry.layer === 'tile'
+    ? `cell ${JSON.stringify(getPlacementCell(entry))}`
+    : `position ${JSON.stringify(getPlacementPosition(entry))}`;
+  return `${entry.layer}:${id}:${itemId} at ${location}`;
+}
+
+async function readJsonFromGitRef(task, worktreePath, ref, filePath) {
+  const text = await git(['show', `${ref}:${filePath}`], {
+    cwd: worktreePath,
+    taskId: task.id,
+    label: `git read ${filePath}`
+  });
+  return JSON.parse(text);
+}
+
+async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha = '') {
+  const commitSha = String(expectedCommitSha || '').trim();
+  if (!commitSha) {
+    return { changedWorldFiles: [], placements: [] };
+  }
+
+  let changedWorldFiles = [];
+  try {
+    const diffOutput = await git(['diff', '--name-only', `${commitSha}^`, commitSha, '--', ...WORLD_LAYOUT_CHANGE_PATHS], {
+      cwd: worktreePath,
+      taskId: task.id,
+      label: 'git diff world layout seed changes'
+    });
+    changedWorldFiles = diffOutput
+      .split(/\r?\n/gu)
+      .map((line) => line.trim())
+      .filter((line) => WORLD_LAYOUT_CHANGE_PATHS.has(line));
+  } catch (error) {
+    await appendLog(task.id, 'World layout verification skipped; could not inspect the deploy commit diff.', {
+      level: 'warn',
+      data: { error: truncateText(error?.message || String(error), 1200) }
+    });
+    return { changedWorldFiles: [], placements: [] };
+  }
+
+  if (!changedWorldFiles.includes(WORLD_LAYOUT_SEED_PATH)) {
+    return { changedWorldFiles, placements: [] };
+  }
+
+  let previousLayout = null;
+  let nextLayout = null;
+  try {
+    previousLayout = await readJsonFromGitRef(task, worktreePath, `${commitSha}^`, WORLD_LAYOUT_SEED_PATH);
+  } catch {
+    previousLayout = { tiles: [], props: [], npcs: [] };
+  }
+  nextLayout = await readJsonFromGitRef(task, worktreePath, commitSha, WORLD_LAYOUT_SEED_PATH);
+
+  const previousById = new Map(normalizeLayoutEntries(previousLayout).map((entry) => [getPlacementId(entry), entry]));
+  const changedPlacements = normalizeLayoutEntries(nextLayout).filter((entry) => {
+    const id = getPlacementId(entry);
+    if (!id) {
+      return false;
+    }
+
+    const previous = previousById.get(id);
+    return !previous || JSON.stringify(previous) !== JSON.stringify(entry);
+  });
+
+  return {
+    changedWorldFiles,
+    placements: changedPlacements
+  };
+}
+
+async function readLiveWorldLayout() {
+  const endpoint = getBackendRoomEndpoint();
+  if (!endpoint) {
+    throw new Error('No BACKEND_VERIFY_URL or AGENT_API_BASE is configured for live world layout verification.');
+  }
+
+  const { Client } = await import('@colyseus/sdk');
+  const client = new Client(endpoint, { urlBuilder: createColyseusUrlBuilder(endpoint) });
+  const room = await client.joinOrCreate('world', {
+    playerId: `agent-worker-layout-verify-${Date.now()}`
+  });
+
+  try {
+    const requestId = `layout-verify-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const response = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Timed out waiting for world:getLayout.'));
+      }, WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS);
+
+      room.onMessage('rpc:response', (message) => {
+        if (message?.requestId !== requestId) {
+          return;
+        }
+
+        clearTimeout(timeout);
+        resolve(message);
+      });
+      room.send('world:getLayout', { requestId });
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Live world layout request was rejected.');
+    }
+
+    return response.layout ?? { tiles: [], props: [], npcs: [] };
+  } finally {
+    await room.leave().catch(() => {});
+  }
+}
+
+async function verifyLiveWorldLayoutChanges(task, worktreePath, {
+  expectedCommitSha = '',
+  actionLabel = 'Deployment'
+} = {}) {
+  const { changedWorldFiles, placements } = await getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha);
+  if (changedWorldFiles.length === 0) {
+    return null;
+  }
+
+  if (changedWorldFiles.includes(DEFAULT_WORLD_LAYOUT_PATH) && placements.length === 0) {
+    throw new Error(
+      `${actionLabel} changed ${DEFAULT_WORLD_LAYOUT_PATH}, but no ${WORLD_LAYOUT_SEED_PATH} placement delta was available to verify. `
+      + 'Production uses persisted world state, so default seed changes do not update the live map by themselves.'
+    );
+  }
+
+  if (placements.length === 0) {
+    return {
+      output: `World layout verification skipped; ${changedWorldFiles.join(', ')} changed, but no placement changes were detected.`
+    };
+  }
+
+  const liveLayout = await readLiveWorldLayout();
+  const liveEntries = normalizeLayoutEntries(liveLayout);
+  const liveById = new Map(liveEntries.map((entry) => [getPlacementId(entry), entry]));
+  const missing = [];
+
+  for (const expected of placements) {
+    const id = getPlacementId(expected);
+    const idMatch = id ? liveById.get(id) : null;
+    if (placementMatchesExpected(expected, idMatch)) {
+      continue;
+    }
+
+    const fallbackMatch = liveEntries.find((entry) => placementMatchesExpected(expected, entry));
+    if (!fallbackMatch) {
+      missing.push(expected);
+    }
+  }
+
+  if (missing.length > 0) {
+    const formatted = missing.slice(0, 8).map(formatPlacementSummary).join('; ');
+    throw new Error(
+      `${actionLabel} live world layout verification failed: ${missing.length} of ${placements.length} changed seed placements `
+      + `are not present in the persisted Colyseus world. Missing: ${formatted}. `
+      + 'Apply a world-data migration or admin edit before marking this task deployed.'
+    );
+  }
+
+  const message = `Live world layout verified ${placements.length} changed seed placement${placements.length === 1 ? '' : 's'} in Colyseus.`;
+  await appendLog(task.id, message, {
+    data: {
+      changedWorldFiles,
+      verifiedPlacementCount: placements.length
+    }
+  });
+  return { output: message };
+}
+
 function extractHtmlAssetUrls(html = '', baseUrl = '') {
   const assets = [];
   for (const match of String(html).matchAll(/(?:src|href)="([^"]+)"/gu)) {
@@ -2688,6 +3007,14 @@ async function runDeployTargets(task, worktreePath, targets = [], {
     if (verification.output) {
       outputs.push(`[backend verify]\n${verification.output}`);
     }
+  }
+
+  const worldLayoutVerification = await verifyLiveWorldLayoutChanges(task, worktreePath, {
+    expectedCommitSha,
+    actionLabel
+  });
+  if (worldLayoutVerification?.output) {
+    outputs.push(`[world layout verify]\n${worldLayoutVerification.output}`);
   }
 
   if (outputs.length === 0) {
