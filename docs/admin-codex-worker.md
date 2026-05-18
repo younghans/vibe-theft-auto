@@ -368,6 +368,31 @@ For a one-task smoke run with the same production defaults:
 npm run worker:prod:once
 ```
 
+To pause the worker safely for local edits, manual deploys, dependency updates,
+or a restart, request a drain:
+
+```powershell
+npm run worker:drain -- "maintenance restart"
+npm run worker:status
+```
+
+The control helper loads `.env.worker.production` and otherwise uses the same
+production work root as the start script (`D:\agent-work` on Windows), so the
+drain file is written where the active worker is watching.
+
+The drain request targets the active worker lock owner and clears itself after
+that worker exits. Each lane finishes any task it has already claimed, then
+exits before claiming more work. New in-game prompts and deploy approvals remain
+queued or ready in the task store; they are not lost. After the worker exits,
+make the maintenance change and restart:
+
+```powershell
+npm run worker:prod
+```
+
+Use `npm run worker:drain -- --all "maintenance"` only when the drain should
+also stop future worker starts until `npm run worker:resume` clears it.
+
 For a one-task smoke run:
 
 ```powershell

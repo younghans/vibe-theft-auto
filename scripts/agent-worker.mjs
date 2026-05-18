@@ -28,6 +28,7 @@ const REPO_PATH = path.join(WORK_ROOT, 'repo');
 const TASKS_ROOT = path.join(WORK_ROOT, 'tasks');
 const WORKER_LOG_ROOT = path.resolve(process.env.AGENT_WORKER_LOG_ROOT || path.join(WORK_ROOT, 'logs'));
 const WORKER_INSTANCE_LOCK_ROOT = path.join(WORK_ROOT, '.agent-worker.lock');
+const WORKER_CONTROL_FILE = path.join(WORK_ROOT, '.agent-worker-control.json');
 const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
 const GIT_COMMAND = String(process.env.GIT_COMMAND || 'git').trim() || 'git';
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
@@ -77,6 +78,7 @@ const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 const DISABLE_INSTANCE_LOCK = ['1', 'true', 'yes'].includes(String(process.env.AGENT_DISABLE_INSTANCE_LOCK || '').toLowerCase());
 const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+const drainLoggedLaneLabels = new Set();
 
 const ALLOWED_EXACT_FILES = new Set([
   'index.html',
@@ -342,6 +344,90 @@ async function acquireWorkerInstanceLock() {
   }
 
   throw new Error(`Could not acquire agent worker lock at ${WORKER_INSTANCE_LOCK_ROOT}.`);
+}
+
+function readWorkerControlFile() {
+  try {
+    return JSON.parse(readFileSync(WORKER_CONTROL_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function isWorkerControlTargetedHere(control) {
+  const targetWorkerId = String(control?.targetWorkerId || '').trim();
+  if (targetWorkerId && targetWorkerId !== WORKER_ID) {
+    return false;
+  }
+
+  const targetPid = Number(control?.targetPid);
+  if (Number.isInteger(targetPid) && targetPid > 0 && targetPid !== process.pid) {
+    return false;
+  }
+
+  return true;
+}
+
+function getActiveDrainControl() {
+  const control = readWorkerControlFile();
+  if (!control || control.mode !== 'drain') {
+    return null;
+  }
+
+  return isWorkerControlTargetedHere(control) ? control : null;
+}
+
+async function shouldStopLaneForDrain(laneLabel) {
+  const control = getActiveDrainControl();
+  if (!control) {
+    return false;
+  }
+
+  if (!drainLoggedLaneLabels.has(laneLabel)) {
+    drainLoggedLaneLabels.add(laneLabel);
+    await writeWorkerDiagnostic('info', 'worker_drain_lane_stopping', {
+      lane: laneLabel,
+      control: {
+        requestedAt: control.requestedAt || '',
+        requestedBy: control.requestedBy || '',
+        reason: control.reason || '',
+        targetWorkerId: control.targetWorkerId || '',
+        targetPid: control.targetPid || 0
+      }
+    });
+    console.log(`[agent-worker] ${laneLabel} drain requested; lane will stop without claiming new work.`);
+  }
+
+  return true;
+}
+
+async function clearCompletedTargetedDrainControl(control) {
+  if (!control || !isWorkerControlTargetedHere(control)) {
+    return;
+  }
+
+  const hasTarget = Boolean(String(control.targetWorkerId || '').trim())
+    || (Number.isInteger(Number(control.targetPid)) && Number(control.targetPid) > 0);
+  if (!hasTarget) {
+    return;
+  }
+
+  const latestControl = readWorkerControlFile();
+  if (
+    !latestControl
+    || latestControl.mode !== 'drain'
+    || latestControl.requestedAt !== control.requestedAt
+    || !isWorkerControlTargetedHere(latestControl)
+  ) {
+    return;
+  }
+
+  await fsp.rm(WORKER_CONTROL_FILE, { force: true });
+  await writeWorkerDiagnostic('info', 'worker_drain_control_cleared', {
+    requestedAt: control.requestedAt || '',
+    targetWorkerId: control.targetWorkerId || '',
+    targetPid: control.targetPid || 0
+  });
 }
 
 function normalizeRepoPath(value = '') {
@@ -3167,6 +3253,10 @@ async function runLane({
   const laneLabel = `${lane}-${slot}`;
   while (true) {
     try {
+      if (!RUN_ONCE && await shouldStopLaneForDrain(laneLabel)) {
+        return 'drained';
+      }
+
       const didWork = await runIteration({
         lane: laneLabel,
         deployEnabled,
@@ -3238,7 +3328,24 @@ async function runWorker() {
     throw new Error('No worker lanes are enabled. Set AGENT_CODE_CONCURRENCY above 0 or enable DEPLOY_ENABLED.');
   }
 
-  await Promise.all(lanes);
+  const laneResults = await Promise.all(lanes);
+  if (laneResults.some((result) => result === 'drained')) {
+    const control = getActiveDrainControl();
+    await writeWorkerDiagnostic('info', 'worker_drain_complete', {
+      control: control
+        ? {
+            requestedAt: control.requestedAt || '',
+            requestedBy: control.requestedBy || '',
+            reason: control.reason || '',
+            targetWorkerId: control.targetWorkerId || '',
+            targetPid: control.targetPid || 0
+          }
+        : null,
+      lanes: laneResults
+    });
+    await clearCompletedTargetedDrainControl(control);
+    console.log('[agent-worker] Drain complete; worker exiting.');
+  }
 }
 
 function validateConfig() {
@@ -3346,6 +3453,22 @@ function runSelfTest() {
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'COLYSEUS_DEPLOY_TOKEN'), false, 'codex env strips deploy token');
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'OPENAI_API_KEY'), false, 'codex env strips api key');
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'DATABASE_URL'), false, 'codex env strips database url');
+  assertSelfTestEqual(isWorkerControlTargetedHere({}), true, 'untargeted worker control applies');
+  assertSelfTestEqual(
+    isWorkerControlTargetedHere({ targetWorkerId: WORKER_ID, targetPid: process.pid }),
+    true,
+    'targeted worker control applies to this worker'
+  );
+  assertSelfTestEqual(
+    isWorkerControlTargetedHere({ targetWorkerId: `${WORKER_ID}-other` }),
+    false,
+    'targeted worker control ignores another worker id'
+  );
+  assertSelfTestEqual(
+    isWorkerControlTargetedHere({ targetPid: process.pid + 1000000 }),
+    false,
+    'targeted worker control ignores another pid'
+  );
 
   const scenarios = [
     {
@@ -3461,6 +3584,7 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
+  workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
   runOnce: RUN_ONCE,
   selfTest: RUN_SELF_TEST
@@ -3487,6 +3611,7 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   workerLogRoot: WORKER_LOG_ROOT,
+  workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
   runOnce: RUN_ONCE
 });
