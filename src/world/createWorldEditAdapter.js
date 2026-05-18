@@ -86,6 +86,10 @@ function toTransportPayload(edit) {
       return {
         missionSequence: edit.missionSequence
       };
+    case 'updateVibeRadioTracks':
+      return {
+        vibeRadioTracks: edit.vibeRadioTracks
+      };
     case 'updateNpcModelVoice':
       return {
         modelId: edit.modelId,
@@ -212,6 +216,9 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
     }
     case 'updateMissionSequence':
       worldState.updateMissionSequence(edit.missionSequence);
+      return successResult(null);
+    case 'updateVibeRadioTracks':
+      worldState.updateVibeRadioTracks(edit.vibeRadioTracks);
       return successResult(null);
     case 'updateNpcModelVoice': {
       const model = getNpcModelById(edit.modelId);

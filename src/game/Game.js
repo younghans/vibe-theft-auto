@@ -188,6 +188,9 @@ import {
   listVibeHeroSongs,
   normalizeVibeHeroSongId
 } from '../shared/vibeHero.js';
+import {
+  cloneVibeRadioTracks
+} from '../shared/vibeRadio.js';
 import { getNpcModelVoice } from '../shared/npcVoice.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
@@ -223,6 +226,8 @@ const VIBE_HERO_LANE_KEY_CODES = Object.freeze(Array.from({ length: VIBE_HERO_LA
   `Digit${index + 1}`,
   `Numpad${index + 1}`
 ])));
+const VIBE_RADIO_VOLUME_STORAGE_KEY = 'vta:vibeRadio:volume';
+const VIBE_RADIO_SEEK_SECONDS = 10;
 const BASKETBALL_SHOT_SWEEP_MS = 1320;
 const BASKETBALL_SHOT_CLEAN_WINDOW = 0.055;
 const BASKETBALL_SHOT_GREAT_WINDOW = 0.13;
@@ -643,6 +648,30 @@ function writeStoredGameSettings(settings = DEFAULT_GAME_SETTINGS) {
     }));
   } catch {
     // Local persistence is best-effort; gameplay should continue if storage is unavailable.
+  }
+}
+
+function readStoredVibeRadioVolume() {
+  try {
+    const raw = window.localStorage?.getItem(VIBE_RADIO_VOLUME_STORAGE_KEY);
+    if (raw == null || raw === '') {
+      return 0.75;
+    }
+    const stored = Number(raw);
+    return Number.isFinite(stored) ? THREE.MathUtils.clamp(stored, 0, 1) : 0.75;
+  } catch {
+    return 0.75;
+  }
+}
+
+function writeStoredVibeRadioVolume(volume = 0.75) {
+  try {
+    window.localStorage?.setItem(
+      VIBE_RADIO_VOLUME_STORAGE_KEY,
+      String(THREE.MathUtils.clamp(Number(volume) || 0, 0, 1))
+    );
+  } catch {
+    // Local persistence is best-effort; radio playback should continue if storage is unavailable.
   }
 }
 
@@ -1135,6 +1164,16 @@ export class Game {
     this.vibeHeroAudioNodes = [];
     this.vibeHeroAudioElement = null;
     this.vibeHeroAudioPreloads = new Map();
+    this.vibeRadioTracks = cloneVibeRadioTracks();
+    this.vibeRadioAudio = new Audio();
+    this.vibeRadioAudio.preload = 'metadata';
+    this.vibeRadioSelectedTrackId = '';
+    this.vibeRadioPlaying = false;
+    this.vibeRadioVolume = readStoredVibeRadioVolume();
+    this.vibeRadioError = '';
+    this.vibeRadioLoadedTrackId = '';
+    this.vibeRadioLoadedSourceUrl = '';
+    this.vibeRadioTimeUpdateFrame = 0;
     this.officeJobPlacementId = '';
     this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
@@ -1235,6 +1274,10 @@ export class Game {
     };
     this.playerCameraOcclusionRenderState = null;
 
+    this.bindVibeRadioAudioEvents();
+    this.applyVibeRadioVolume();
+    this.refreshVibeRadioHud();
+
     this.hud.bindInteractionEvents({
       onAction: (action) => this.handleInteractionMenuAction(action),
       onCloseInteraction: () => this.closeInteractionMenu()
@@ -1263,6 +1306,10 @@ export class Game {
     this.hud.bindVibeHeroEvents({
       onClose: () => this.closeVibeHero(),
       onAction: (action) => this.handleVibeHeroAction(action)
+    });
+    this.hud.bindVibeRadioEvents({
+      onAction: (action) => this.handleVibeRadioAction(action),
+      onVolumeChange: (value) => this.setVibeRadioVolume(value)
     });
     this.hud.bindBasketballShotEvents({
       onAction: (action) => this.handleBasketballShotAction(action)
@@ -1293,7 +1340,10 @@ export class Game {
       onPhoneStockTrade: (side) => void this.handlePhoneStockTrade(side),
       onMapZoom: (step) => this.stepPhoneMapZoom(step),
       onMapPan: (delta) => this.panPhoneMapByScreenDelta(delta),
-      onMasterVolumeChange: (value) => this.setMasterVolume(value)
+      onMasterVolumeChange: (value) => this.setMasterVolume(value),
+      onVibeRadioAction: (action) => this.handleVibeRadioAction(action),
+      onVibeRadioTrackSelect: (trackId) => this.selectVibeRadioTrack(trackId, { autoplay: true }),
+      onVibeRadioVolumeChange: (value) => this.setVibeRadioVolume(value)
     });
     this.hud.bindQuickChatEvents({
       onSubmit: (message) => void this.handleQuickChatSubmit(message),
@@ -1716,6 +1766,7 @@ export class Game {
     for (const audio of this.vibeHeroAudioPreloads?.values?.() ?? []) {
       audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
     }
+    this.applyVibeRadioVolume();
     this.hud.setSpeechAudioVolume?.(Number(this.gameSettings?.masterVolume ?? 1));
   }
 
@@ -3293,6 +3344,300 @@ export class Game {
     });
   }
 
+  bindVibeRadioAudioEvents() {
+    if (!this.vibeRadioAudio) {
+      return;
+    }
+
+    const refresh = () => this.scheduleVibeRadioHudRefresh();
+    this.vibeRadioAudio.addEventListener('timeupdate', refresh);
+    this.vibeRadioAudio.addEventListener('durationchange', refresh);
+    this.vibeRadioAudio.addEventListener('loadedmetadata', refresh);
+    this.vibeRadioAudio.addEventListener('play', () => {
+      this.vibeRadioPlaying = true;
+      this.vibeRadioError = '';
+      this.refreshVibeRadioHud();
+    });
+    this.vibeRadioAudio.addEventListener('pause', () => {
+      this.vibeRadioPlaying = false;
+      this.refreshVibeRadioHud();
+    });
+    this.vibeRadioAudio.addEventListener('ended', () => {
+      this.playNextVibeRadioTrack({ wrap: true });
+    });
+    this.vibeRadioAudio.addEventListener('error', () => {
+      this.vibeRadioPlaying = false;
+      this.vibeRadioError = 'Track unavailable';
+      this.refreshVibeRadioHud();
+    });
+  }
+
+  getVibeRadioSelectedTrack() {
+    return this.vibeRadioTracks.find((track) => track.id === this.vibeRadioSelectedTrackId)
+      ?? this.vibeRadioTracks[0]
+      ?? null;
+  }
+
+  getVibeRadioAudioDuration() {
+    const duration = Number(this.vibeRadioAudio?.duration ?? 0);
+    return Number.isFinite(duration) ? duration : 0;
+  }
+
+  getVibeRadioAudioCurrentTime() {
+    const currentTime = Number(this.vibeRadioAudio?.currentTime ?? 0);
+    return Number.isFinite(currentTime) ? currentTime : 0;
+  }
+
+  getEffectiveVibeRadioVolume() {
+    return THREE.MathUtils.clamp(
+      Number(this.vibeRadioVolume ?? 0.75) * Number(this.gameSettings?.masterVolume ?? 1),
+      0,
+      1
+    );
+  }
+
+  applyVibeRadioVolume() {
+    if (!this.vibeRadioAudio) {
+      return;
+    }
+
+    this.vibeRadioAudio.volume = this.getEffectiveVibeRadioVolume();
+  }
+
+  getVibeRadioHudState() {
+    return {
+      tracks: this.vibeRadioTracks,
+      selectedTrackId: this.vibeRadioSelectedTrackId,
+      playing: this.vibeRadioPlaying,
+      volume: this.vibeRadioVolume,
+      currentTime: this.getVibeRadioAudioCurrentTime(),
+      duration: this.getVibeRadioAudioDuration(),
+      error: this.vibeRadioError
+    };
+  }
+
+  refreshVibeRadioHud() {
+    this.hud.setVibeRadioState(this.getVibeRadioHudState());
+  }
+
+  scheduleVibeRadioHudRefresh() {
+    if (this.vibeRadioTimeUpdateFrame) {
+      return;
+    }
+
+    this.vibeRadioTimeUpdateFrame = window.requestAnimationFrame(() => {
+      this.vibeRadioTimeUpdateFrame = 0;
+      this.refreshVibeRadioHud();
+    });
+  }
+
+  syncVibeRadioTracksFromLayout(layout = this.currentLayout) {
+    const nextTracks = cloneVibeRadioTracks(layout?.vibeRadioTracks);
+    const previousSelectedTrackId = this.vibeRadioSelectedTrackId;
+    this.vibeRadioTracks = nextTracks;
+
+    const selectedStillExists = nextTracks.some((track) => track.id === previousSelectedTrackId);
+    this.vibeRadioSelectedTrackId = selectedStillExists
+      ? previousSelectedTrackId
+      : nextTracks[0]?.id ?? '';
+
+    const selectedTrack = this.getVibeRadioSelectedTrack();
+    const loadedSourceChanged = Boolean(
+      this.vibeRadioLoadedTrackId
+      && selectedTrack?.id === this.vibeRadioLoadedTrackId
+      && selectedTrack.sourceUrl !== this.vibeRadioLoadedSourceUrl
+    );
+
+    if (!this.vibeRadioSelectedTrackId) {
+      this.stopVibeRadioPlayback({ clearSource: true });
+    } else if (
+      loadedSourceChanged
+      || (this.vibeRadioLoadedTrackId && this.vibeRadioLoadedTrackId !== this.vibeRadioSelectedTrackId)
+    ) {
+      this.stopVibeRadioPlayback({ clearSource: true });
+    }
+
+    this.refreshVibeRadioHud();
+  }
+
+  stopVibeRadioPlayback({ clearSource = false } = {}) {
+    if (this.vibeRadioAudio) {
+      this.vibeRadioAudio.pause();
+      if (clearSource) {
+        this.vibeRadioAudio.removeAttribute('src');
+        this.vibeRadioAudio.load();
+        this.vibeRadioLoadedTrackId = '';
+        this.vibeRadioLoadedSourceUrl = '';
+      }
+    }
+    this.vibeRadioPlaying = false;
+    this.refreshVibeRadioHud();
+  }
+
+  loadVibeRadioTrack(track = this.getVibeRadioSelectedTrack()) {
+    if (!track?.id || !track.sourceUrl || !this.vibeRadioAudio) {
+      return false;
+    }
+
+    if (
+      this.vibeRadioLoadedTrackId === track.id
+      && this.vibeRadioLoadedSourceUrl === track.sourceUrl
+      && this.vibeRadioAudio.src
+    ) {
+      return true;
+    }
+
+    this.vibeRadioAudio.pause();
+    this.vibeRadioAudio.src = track.sourceUrl;
+    this.vibeRadioAudio.preload = 'metadata';
+    this.vibeRadioLoadedTrackId = track.id;
+    this.vibeRadioLoadedSourceUrl = track.sourceUrl;
+    this.vibeRadioError = '';
+    this.applyVibeRadioVolume();
+    this.vibeRadioAudio.load();
+    return true;
+  }
+
+  async playVibeRadioTrack(track = this.getVibeRadioSelectedTrack()) {
+    if (!track) {
+      this.hud.showToast('Vibe radio has no tracks yet.');
+      this.refreshVibeRadioHud();
+      return false;
+    }
+
+    if (!this.loadVibeRadioTrack(track)) {
+      this.vibeRadioError = 'Missing track source';
+      this.hud.showToast('This Vibe Radio track needs a source.');
+      this.refreshVibeRadioHud();
+      return false;
+    }
+
+    try {
+      await this.vibeRadioAudio.play();
+      this.vibeRadioPlaying = true;
+      this.vibeRadioError = '';
+      this.refreshVibeRadioHud();
+      return true;
+    } catch (error) {
+      console.warn('[VibeRadio] Playback failed.', error);
+      this.vibeRadioPlaying = false;
+      this.vibeRadioError = 'Playback blocked';
+      this.refreshVibeRadioHud();
+      this.hud.showToast('Could not play that Vibe Radio track.');
+      return false;
+    }
+  }
+
+  selectVibeRadioTrack(trackId = '', { autoplay = false } = {}) {
+    const normalizedTrackId = String(trackId ?? '').trim();
+    const track = this.vibeRadioTracks.find((entry) => entry.id === normalizedTrackId) ?? null;
+    if (!track) {
+      return false;
+    }
+
+    const changed = this.vibeRadioSelectedTrackId !== track.id;
+    this.vibeRadioSelectedTrackId = track.id;
+    this.vibeRadioError = '';
+    if (changed) {
+      this.vibeRadioLoadedTrackId = '';
+      this.vibeRadioLoadedSourceUrl = '';
+      if (this.vibeRadioAudio) {
+        this.vibeRadioAudio.pause();
+        this.vibeRadioAudio.removeAttribute('src');
+        this.vibeRadioAudio.load();
+      }
+      this.vibeRadioPlaying = false;
+    }
+
+    this.refreshVibeRadioHud();
+    if (autoplay) {
+      void this.playVibeRadioTrack(track);
+    }
+    return true;
+  }
+
+  toggleVibeRadioPlayback() {
+    if (this.vibeRadioPlaying && !this.vibeRadioAudio?.paused) {
+      this.vibeRadioAudio.pause();
+      this.vibeRadioPlaying = false;
+      this.refreshVibeRadioHud();
+      return;
+    }
+
+    void this.playVibeRadioTrack();
+  }
+
+  playNextVibeRadioTrack({ direction = 1, wrap = true, autoplay = true } = {}) {
+    if (!this.vibeRadioTracks.length) {
+      this.refreshVibeRadioHud();
+      return false;
+    }
+
+    const currentIndex = Math.max(
+      0,
+      this.vibeRadioTracks.findIndex((track) => track.id === this.vibeRadioSelectedTrackId)
+    );
+    const nextIndex = currentIndex + Math.sign(direction || 1);
+    const resolvedIndex = wrap
+      ? (nextIndex + this.vibeRadioTracks.length) % this.vibeRadioTracks.length
+      : THREE.MathUtils.clamp(nextIndex, 0, this.vibeRadioTracks.length - 1);
+    return this.selectVibeRadioTrack(this.vibeRadioTracks[resolvedIndex]?.id ?? '', { autoplay });
+  }
+
+  rewindVibeRadio() {
+    if (!this.vibeRadioTracks.length) {
+      return;
+    }
+
+    if (this.getVibeRadioAudioCurrentTime() > 3 && this.vibeRadioAudio) {
+      this.vibeRadioAudio.currentTime = 0;
+      this.refreshVibeRadioHud();
+      return;
+    }
+
+    this.playNextVibeRadioTrack({ direction: -1, wrap: true, autoplay: this.vibeRadioPlaying });
+  }
+
+  fastForwardVibeRadio() {
+    if (!this.vibeRadioTracks.length) {
+      return;
+    }
+
+    if (this.vibeRadioTracks.length === 1 && this.vibeRadioAudio) {
+      const duration = this.getVibeRadioAudioDuration();
+      this.vibeRadioAudio.currentTime = duration
+        ? Math.min(duration, this.getVibeRadioAudioCurrentTime() + VIBE_RADIO_SEEK_SECONDS)
+        : this.getVibeRadioAudioCurrentTime() + VIBE_RADIO_SEEK_SECONDS;
+      this.refreshVibeRadioHud();
+      return;
+    }
+
+    this.playNextVibeRadioTrack({ direction: 1, wrap: true, autoplay: this.vibeRadioPlaying });
+  }
+
+  setVibeRadioVolume(volume = this.vibeRadioVolume) {
+    this.vibeRadioVolume = THREE.MathUtils.clamp(Number(volume) || 0, 0, 1);
+    writeStoredVibeRadioVolume(this.vibeRadioVolume);
+    this.applyVibeRadioVolume();
+    this.refreshVibeRadioHud();
+  }
+
+  handleVibeRadioAction(action = '') {
+    switch (String(action ?? '').trim()) {
+      case 'rewind':
+        this.rewindVibeRadio();
+        break;
+      case 'forward':
+        this.fastForwardVibeRadio();
+        break;
+      case 'play':
+        this.toggleVibeRadioPlayback();
+        break;
+      default:
+        break;
+    }
+  }
+
   refreshActivePhoneAppHud(localPlayerState = this.getLocalPlayerState(), { forceMap = false } = {}) {
     if (this.phoneActiveAppId !== 'character') {
       this.cancelPhoneCharacterPreviewSync();
@@ -3304,6 +3649,9 @@ export class Game {
         break;
       case 'missions':
         this.refreshPhoneMissionsHud();
+        break;
+      case 'vibe-radio':
+        this.refreshVibeRadioHud();
         break;
       case 'skills':
         this.refreshPhoneSkillsHud(localPlayerState);
@@ -3380,6 +3728,7 @@ export class Game {
     this.cancelPhoneCharacterPreviewSync();
     this.refreshPhoneCharacterHud();
     this.refreshPhoneMissionsHud();
+    this.refreshVibeRadioHud();
     this.refreshPhoneSkillsHud(localPlayerState);
     this.refreshPhoneWalletHud();
     this.refreshPhoneStocksHud();
@@ -11496,6 +11845,7 @@ export class Game {
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
+          this.syncVibeRadioTracksFromLayout(layout);
           this.gymDoorBlockersDirty = true;
         }
       });
@@ -11531,6 +11881,7 @@ export class Game {
         npcs: sharedLayout.npcs?.length ?? 0
       });
       this.currentLayout = sharedLayout;
+      this.syncVibeRadioTracksFromLayout(sharedLayout);
       this.gymDoorBlockersDirty = true;
       this.markBoot('boot:avatar:start');
       const avatarPromise = this.buildAvatar(this.desiredLocalCharacterId)
@@ -12397,6 +12748,7 @@ export class Game {
 
     await this.worldBuilder.applyWorldPatch(patch);
     this.currentLayout = this.worldBuilder.getLayout();
+    this.syncVibeRadioTracksFromLayout(this.currentLayout);
     this.gymDoorBlockersDirty = true;
   }
 

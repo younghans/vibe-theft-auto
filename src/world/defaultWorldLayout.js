@@ -6,6 +6,7 @@ import {
 } from '../shared/numberMath.js';
 import { createDefaultMissionSequence } from '../shared/missions.js';
 import { createDefaultNpcModelVoiceMap } from '../shared/npcVoice.js';
+import { createDefaultVibeRadioTracks } from '../shared/vibeRadio.js';
 import {
   getTileCenterWorldPosition,
   getTileOccupiedCells,
@@ -475,5 +476,6 @@ export const defaultWorldLayout = Object.freeze({
   props: defaultProps,
   npcs: defaultNpcs,
   missionSequence: createDefaultMissionSequence(),
-  npcModelVoices: createDefaultNpcModelVoiceMap()
+  npcModelVoices: createDefaultNpcModelVoiceMap(),
+  vibeRadioTracks: createDefaultVibeRadioTracks()
 });

@@ -7,6 +7,7 @@ import pg from 'pg';
 import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
 import { cloneMissionSequence } from '../../src/shared/missions.js';
 import { cloneNpcModelVoiceMap } from '../../src/shared/npcVoice.js';
+import { cloneVibeRadioTracks } from '../../src/shared/vibeRadio.js';
 import { logServer } from './logger.js';
 
 const { Pool } = pg;
@@ -27,7 +28,8 @@ function cloneLayout(layout = defaultWorldLayout) {
     props: layout.props ?? [],
     npcs: layout.npcs ?? [],
     missionSequence: cloneMissionSequence(layout.missionSequence),
-    npcModelVoices: cloneNpcModelVoiceMap(layout.npcModelVoices)
+    npcModelVoices: cloneNpcModelVoiceMap(layout.npcModelVoices),
+    vibeRadioTracks: cloneVibeRadioTracks(layout.vibeRadioTracks)
   });
 }
 

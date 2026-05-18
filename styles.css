@@ -255,6 +255,192 @@ body.is-admin-prompt-resizing * {
   transform: translateX(-50%);
 }
 
+.hud__vibe-radio-widget {
+  position: absolute;
+  left: calc(88px + var(--safe-left));
+  bottom: calc(26px + var(--safe-bottom));
+  z-index: 17;
+  display: grid;
+  grid-template-columns: minmax(78px, 130px) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 54px;
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(12, 17, 24, 0.92), rgba(5, 7, 12, 0.84)),
+    linear-gradient(90deg, rgba(232, 93, 154, 0.12), rgba(120, 239, 189, 0.07));
+  box-shadow: 0 15px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #fff7ea;
+  pointer-events: auto;
+  backdrop-filter: blur(7px);
+}
+
+.hud__vibe-radio-widget.is-empty {
+  opacity: 0.78;
+}
+
+.hud__vibe-radio-widget.has-error [data-vibe-radio-status] {
+  color: #ff9b9b;
+}
+
+.hud__vibe-radio-widget-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hud__vibe-radio-widget-copy span {
+  overflow: hidden;
+  color: rgba(255, 217, 141, 0.78);
+  font-size: 8px;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud__vibe-radio-widget-copy strong {
+  overflow: hidden;
+  color: #fff7ea;
+  font-size: 11px;
+  font-weight: 1000;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__vibe-radio-controls {
+  display: inline-grid;
+  grid-template-columns: 28px 32px 28px 28px;
+  align-items: center;
+  gap: 5px;
+}
+
+.hud__vibe-radio-controls.is-phone {
+  grid-template-columns: 42px 52px 42px 48px;
+  justify-content: center;
+  gap: 9px;
+}
+
+.hud__vibe-radio-control {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 249, 235, 0.92);
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.hud__vibe-radio-controls.is-phone .hud__vibe-radio-control {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+}
+
+.hud__vibe-radio-control.is-play {
+  width: 32px;
+  height: 32px;
+  border-color: rgba(255, 217, 141, 0.32);
+  background: linear-gradient(135deg, #ffe08a, #f17472);
+  color: #1b1110;
+  box-shadow: 0 8px 18px rgba(241, 116, 114, 0.24);
+}
+
+.hud__vibe-radio-controls.is-phone .hud__vibe-radio-control.is-play {
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+}
+
+.hud__vibe-radio-control:hover:not(:disabled),
+.hud__vibe-radio-control:focus-visible:not(:disabled) {
+  background: rgba(232, 93, 154, 0.2);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.hud__vibe-radio-control.is-play:hover:not(:disabled),
+.hud__vibe-radio-control.is-play:focus-visible:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.hud__vibe-radio-control:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.hud__vibe-radio-control svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.hud__vibe-radio-controls.is-phone .hud__vibe-radio-control svg {
+  width: 22px;
+  height: 22px;
+}
+
+.hud__vibe-radio-volume {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.hud__vibe-radio-controls.is-phone .hud__vibe-radio-volume {
+  width: 48px;
+  height: 48px;
+}
+
+.hud__vibe-radio-volume input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.hud__vibe-radio-volume-knob {
+  position: relative;
+  width: 25px;
+  height: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background:
+    conic-gradient(from -135deg, #78efbd var(--radio-volume-angle, 202.5deg), rgba(255, 255, 255, 0.14) 0 270deg, transparent 0),
+    radial-gradient(circle, #222a32 0 47%, #080b10 48%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 14px rgba(0, 0, 0, 0.22);
+}
+
+.hud__vibe-radio-controls.is-phone .hud__vibe-radio-volume-knob {
+  width: 39px;
+  height: 39px;
+}
+
+.hud__vibe-radio-volume-knob::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 3px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ffe08a;
+  transform: translateX(-50%);
+}
+
 .hud__phone-stage {
   position: absolute;
   inset: 0;
@@ -897,6 +1083,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__phone-wallet-app,
+.hud__phone-vibe-radio-app,
 .hud__phone-stocks-app,
 .hud__phone-skills-app,
 .hud__phone-map-app,
@@ -907,6 +1094,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__phone-wallet-head h2,
+.hud__phone-vibe-radio-head h2,
 .hud__phone-stocks-head h2,
 .hud__phone-skills-head h2,
 .hud__phone-map-head h2,
@@ -917,6 +1105,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__phone-wallet-head p,
+.hud__phone-vibe-radio-head p,
 .hud__phone-stocks-head p,
 .hud__phone-skills-head p,
 .hud__phone-map-head p,
@@ -932,8 +1121,202 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__phone-wallet-head p.is-error,
+.hud__phone-vibe-radio-head p.is-error,
 .hud__phone-stocks-head p.is-error {
   color: #ff9b9b;
+}
+
+.hud__phone-vibe-radio-app {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 70px 13px 34px;
+}
+
+.hud__phone-vibe-radio-head {
+  align-items: center;
+}
+
+.hud__phone-vibe-radio-now {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(232, 93, 154, 0.18), rgba(74, 208, 192, 0.08)),
+    rgba(10, 16, 24, 0.54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 16px 28px rgba(0, 0, 0, 0.18);
+}
+
+.hud__phone-vibe-radio-cover {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  aspect-ratio: 1;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle, rgba(255, 247, 230, 0.18) 0 16%, transparent 17%),
+    conic-gradient(from 30deg, #ffe08a, #e85d9a, #4ad0c0, #ffe08a);
+  color: rgba(6, 9, 14, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 18px 25px rgba(0, 0, 0, 0.2);
+}
+
+.hud__phone-vibe-radio-cover svg {
+  width: 54px;
+  height: 54px;
+  fill: currentColor;
+}
+
+.hud__phone-vibe-radio-now-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hud__phone-vibe-radio-now-copy span,
+.hud__phone-vibe-radio-now-copy em {
+  color: rgba(255, 239, 208, 0.66);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 1000;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__phone-vibe-radio-now-copy strong {
+  overflow: hidden;
+  color: #fff9ed;
+  font-size: 18px;
+  font-weight: 1000;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.hud__phone-vibe-radio-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.32);
+}
+
+.hud__phone-vibe-radio-progress span {
+  display: block;
+  width: var(--radio-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #78efbd, #ffe08a, #e85d9a);
+  box-shadow: 0 0 12px rgba(232, 93, 154, 0.42);
+}
+
+.hud__phone-vibe-radio-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.hud__phone-vibe-radio-track {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 62px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(4, 9, 15, 0.42);
+  color: #fff9ed;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.hud__phone-vibe-radio-track.is-active,
+.hud__phone-vibe-radio-track:hover,
+.hud__phone-vibe-radio-track:focus-visible {
+  border-color: rgba(255, 224, 138, 0.62);
+  background: rgba(232, 93, 154, 0.15);
+  outline: none;
+}
+
+.hud__phone-vibe-radio-track:hover,
+.hud__phone-vibe-radio-track:focus-visible {
+  transform: translateY(-1px);
+}
+
+.hud__phone-vibe-radio-art {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(255, 224, 138, 0.28), rgba(74, 208, 192, 0.16));
+  color: #ffe08a;
+}
+
+.hud__phone-vibe-radio-art svg {
+  width: 23px;
+  height: 23px;
+  fill: currentColor;
+}
+
+.hud__phone-vibe-radio-track-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.hud__phone-vibe-radio-track-copy strong,
+.hud__phone-vibe-radio-track-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__phone-vibe-radio-track-copy strong {
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-vibe-radio-track-copy span {
+  color: rgba(255, 239, 208, 0.58);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__phone-vibe-radio-track-state {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 239, 208, 0.72);
+  font-size: 8px;
+  font-weight: 1000;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud__phone-vibe-radio-track.is-playing .hud__phone-vibe-radio-track-state {
+  background: rgba(120, 239, 189, 0.18);
+  color: #a8ffd7;
+}
+
+.hud__phone-vibe-radio-footer {
+  display: grid;
+  place-items: center;
+  min-height: 58px;
 }
 
 .hud__phone-wallet-app {
@@ -5833,6 +6216,75 @@ body.is-admin-prompt-resizing * {
   font-size: 12px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+.hud__vibe-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud__vibe-radio-add {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.9fr) minmax(180px, 1.3fr) minmax(104px, 0.7fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 9px;
+  border: 1px solid rgba(232, 93, 154, 0.22);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.62);
+}
+
+.hud__vibe-radio-add-button {
+  min-width: 102px;
+  min-height: 38px;
+  border-radius: 8px;
+}
+
+.hud__vibe-radio-row {
+  display: grid;
+  grid-template-columns: 26px 32px minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.78);
+  color: #f4eee2;
+}
+
+.hud__vibe-radio-row.is-dragging {
+  opacity: 0.58;
+}
+
+.hud__vibe-radio-row.is-drag-over {
+  border-color: rgba(232, 93, 154, 0.82);
+  background: rgba(232, 93, 154, 0.13);
+}
+
+.hud__vibe-radio-row-fields {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(104px, 0.9fr) minmax(160px, 1.3fr) minmax(96px, 0.66fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.hud__vibe-radio-remove {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(255, 120, 120, 0.28);
+  color: #ffc4c4;
+}
+
+.hud__vibe-radio-empty {
+  padding: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.48);
+  color: rgba(244, 238, 226, 0.64);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .hud__builder-key {
@@ -15055,6 +15507,78 @@ canvas {
     grid-template-columns: minmax(0, 1fr) 64px;
   }
 
+  .hud__vibe-radio-widget {
+    left: calc(74px + var(--safe-left));
+    bottom: calc(22px + var(--safe-bottom));
+    grid-template-columns: auto;
+    gap: 6px;
+    min-height: 0;
+    max-width: min(250px, calc(100vw - 92px - var(--safe-left) - var(--safe-right)));
+    padding: 7px;
+  }
+
+  .hud__vibe-radio-widget-copy {
+    display: none;
+  }
+
+  .hud__vibe-radio-add {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__vibe-radio-add-button {
+    width: 100%;
+  }
+
+  .hud__vibe-radio-row {
+    grid-template-columns: 24px 30px minmax(0, 1fr) 34px;
+    align-items: start;
+  }
+
+  .hud__vibe-radio-row-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__phone-vibe-radio-now {
+    grid-template-columns: 74px minmax(0, 1fr);
+    min-height: 94px;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .hud__phone-vibe-radio-cover {
+    width: 74px;
+    border-radius: 18px;
+  }
+
+  .hud__phone-vibe-radio-cover svg {
+    width: 45px;
+    height: 45px;
+  }
+
+  .hud__phone-vibe-radio-now-copy strong {
+    font-size: 16px;
+  }
+
+  .hud__vibe-radio-controls.is-phone {
+    grid-template-columns: 38px 48px 38px 44px;
+    gap: 7px;
+  }
+
+  .hud__vibe-radio-controls.is-phone .hud__vibe-radio-control {
+    width: 38px;
+    height: 38px;
+  }
+
+  .hud__vibe-radio-controls.is-phone .hud__vibe-radio-control.is-play {
+    width: 48px;
+    height: 48px;
+  }
+
+  .hud__vibe-radio-controls.is-phone .hud__vibe-radio-volume {
+    width: 44px;
+    height: 44px;
+  }
+
   .hud__interaction,
   .hud__quick-chat,
   .hud__character-selector,
@@ -15574,6 +16098,11 @@ canvas {
     bottom: calc(176px + var(--safe-bottom));
   }
 
+  .hud__vibe-radio-widget {
+    left: calc(70px + var(--safe-left));
+    bottom: calc(178px + var(--safe-bottom));
+  }
+
   .hud__hotbar {
     --hotbar-slot-size: var(--hud-hotbar-slot-size);
     --hotbar-slot-gap: 4px;
@@ -15698,6 +16227,11 @@ canvas {
   .hud__phone-launcher {
     bottom: calc(178px + var(--safe-bottom));
     left: calc(36px + var(--safe-left));
+  }
+
+  .hud__vibe-radio-widget {
+    left: calc(90px + var(--safe-left));
+    bottom: calc(180px + var(--safe-bottom));
   }
 
   .hud__bound-items {

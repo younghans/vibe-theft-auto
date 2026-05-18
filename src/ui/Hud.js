@@ -88,6 +88,7 @@ const PHONE_APPS = Object.freeze([
   ['messages', 'Messages', 'messages', '#30d66a', 'Story texts will appear here.'],
   ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
+  ['vibe-radio', 'Vibe Radio', 'radio', '#e85d9a', 'Player-specific music controls and the world playlist live here.'],
   ['wallet', 'Wallet', 'wallet', '#31c98d', 'Cash, cards, memberships, and future passes will be organized here.'],
   ['stocks', 'Stocks', 'stocks', '#55c7ff', 'Street exchange quotes and trades.'],
   ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
@@ -105,6 +106,7 @@ const PHONE_APP_ICON_PATHS = Object.freeze({
   messages: '<path d="M5.5 7.25h13a2.25 2.25 0 0 1 2.25 2.25v4.75a2.25 2.25 0 0 1-2.25 2.25h-6.3l-4.45 3.25v-3.25H5.5a2.25 2.25 0 0 1-2.25-2.25V9.5A2.25 2.25 0 0 1 5.5 7.25Z"/><path d="M7.75 10.5h8.5M7.75 13.25h5.8"/>',
   map: '<path d="m4 6.75 5-2 6 2 5-2v12.5l-5 2-6-2-5 2V6.75Z"/><path d="M9 4.75v12.5M15 6.75v12.5"/><path d="M17.4 9.6 15 12l-1.45-1.45"/>',
   missions: '<path d="M5.5 4.75h10.25L19 8v11.25H5.5V4.75Z"/><path d="M15.5 4.75V8.2H19"/><path d="m8.25 12.05 1.6 1.6 3.65-3.8"/><path d="M8.5 16.25h7"/>',
+  radio: '<path d="M6.5 9.75h11A2.5 2.5 0 0 1 20 12.25v4.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.75v-4.5a2.5 2.5 0 0 1 2.5-2.5Z"/><path d="M7.25 9.75 16.9 4.8"/><path d="M8 14.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z"/><path d="M15.25 13.15h2.1M15.25 15.85h2.1"/>',
   wallet: '<path d="M4 7.5h13.75A2.25 2.25 0 0 1 20 9.75v7A2.25 2.25 0 0 1 17.75 19H5.25A2.25 2.25 0 0 1 3 16.75v-8A1.25 1.25 0 0 1 4.25 7.5Z"/><path d="M4.75 7.5 15.5 4.85a1.7 1.7 0 0 1 2.1 1.65v1"/><path d="M16.5 12.25h3.5v3.5h-3.5a1.75 1.75 0 1 1 0-3.5Z"/>',
   stocks: '<path d="M4.5 19.25h15"/><path d="M5.75 16.5l4.1-4.1 3.25 2.7 5.6-7.35"/><path d="M16.25 7.75h2.45v2.45"/><path d="M6 7.75h2.2M6 10.8h2.2M6 13.85h1.1"/>',
   skills: '<path d="M5.5 18.75h13"/><path d="M7 17V9.8M12 17V5.25M17 17v-4.7"/><path d="M7 9.8l2.3 1.55L12 5.25l2.6 7.05L17 12.3"/><path d="M4.7 6.2 6 4.9l1.3 1.3M17.1 7.1l1.5-1.5 1.5 1.5"/>',
@@ -266,6 +268,71 @@ function getPhoneMissionsAppMarkup(app) {
       </div>
       <section class="hud__phone-missions-current" data-phone-missions-current aria-label="Current mission"></section>
       <section class="hud__phone-missions-list" data-phone-missions-list aria-label="Mission list"></section>
+    </div>
+  `;
+}
+
+function getVibeRadioControlsMarkup({
+  context = 'main',
+  playing = false,
+  volume = 0.75,
+  disabled = false
+} = {}) {
+  const dataPrefix = context === 'phone' ? 'data-phone-vibe-radio-action' : 'data-vibe-radio-action';
+  const volumeData = context === 'phone' ? 'data-phone-vibe-radio-volume' : 'data-vibe-radio-volume';
+  const disabledAttr = disabled ? ' disabled' : '';
+  const safeVolume = Math.max(0, Math.min(1, Number(volume) || 0));
+  const playLabel = playing ? 'Pause' : 'Play';
+  const playIcon = playing
+    ? '<path d="M8.25 6.5h2.5v11h-2.5zM13.25 6.5h2.5v11h-2.5z" />'
+    : '<path d="M8.25 5.75v12.5L17 12 8.25 5.75Z" />';
+
+  return `
+    <div class="hud__vibe-radio-controls${context === 'phone' ? ' is-phone' : ''}">
+      <button class="hud__vibe-radio-control" type="button" ${dataPrefix}="rewind" aria-label="Rewind vibe radio" title="Rewind"${disabledAttr}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M11 6.25 4.75 12 11 17.75V6.25Z" />
+          <path d="M19 6.25 12.75 12 19 17.75V6.25Z" />
+        </svg>
+      </button>
+      <button class="hud__vibe-radio-control is-play" type="button" ${dataPrefix}="play" aria-label="${playLabel} vibe radio" title="${playLabel}"${disabledAttr}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${playIcon}</svg>
+      </button>
+      <button class="hud__vibe-radio-control" type="button" ${dataPrefix}="forward" aria-label="Fast forward vibe radio" title="Fast forward"${disabledAttr}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M13 6.25 19.25 12 13 17.75V6.25Z" />
+          <path d="M5 6.25 11.25 12 5 17.75V6.25Z" />
+        </svg>
+      </button>
+      <label class="hud__vibe-radio-volume" title="Radio volume" aria-label="Radio volume">
+        <span class="hud__vibe-radio-volume-knob" aria-hidden="true" style="--radio-volume-angle:${(safeVolume * 270).toFixed(1)}deg"></span>
+        <input type="range" min="0" max="100" step="1" value="${Math.round(safeVolume * 100)}" ${volumeData} />
+      </label>
+    </div>
+  `;
+}
+
+function getPhoneVibeRadioAppMarkup(app) {
+  return `
+    <div
+      class="hud__phone-app-panel hud__phone-vibe-radio-app"
+      data-phone-vibe-radio-app
+      style="--phone-app-color:${escapeHtml(app.color)}"
+    >
+      <div class="hud__phone-app-panel-head hud__phone-vibe-radio-head">
+        <button class="hud__phone-nav-button" type="button" data-phone-home aria-label="Back to phone home">
+          <span aria-hidden="true">&lsaquo;</span>
+        </button>
+        <div>
+          <h2>Vibe Radio</h2>
+          <p data-phone-vibe-radio-status>Playlist syncing</p>
+        </div>
+      </div>
+      <section class="hud__phone-vibe-radio-now" data-phone-vibe-radio-now></section>
+      <section class="hud__phone-vibe-radio-list" data-phone-vibe-radio-list aria-label="Vibe Radio song list"></section>
+      <footer class="hud__phone-vibe-radio-footer" data-phone-vibe-radio-controls>
+        ${getVibeRadioControlsMarkup({ context: 'phone', disabled: true })}
+      </footer>
     </div>
   `;
 }
@@ -433,6 +500,10 @@ function getPhoneAppPanelMarkup(app) {
     return getPhoneMissionsAppMarkup(app);
   }
 
+  if (app.id === 'vibe-radio') {
+    return getPhoneVibeRadioAppMarkup(app);
+  }
+
   if (app.id === 'wallet') {
     return getPhoneWalletAppMarkup(app);
   }
@@ -479,6 +550,13 @@ function formatMoneyAmount(value) {
   const amount = Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
   const formattedAmount = Math.abs(amount).toLocaleString('en-US');
   return amount < 0 ? `-$${formattedAmount}` : `$${formattedAmount}`;
+}
+
+function formatMediaTime(seconds = 0) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
 function formatStockMoney(value) {
@@ -3545,6 +3623,9 @@ export class Hud {
     this.phoneStage = this.overlay.querySelector('[data-phone-stage]');
     this.phoneScreenContent = this.overlay.querySelector('[data-phone-screen-content]');
     this.phoneClose = this.overlay.querySelector('[data-phone-close]');
+    this.vibeRadioWidget = this.overlay.querySelector('[data-vibe-radio-widget]');
+    this.vibeRadioStatus = this.overlay.querySelector('[data-vibe-radio-status]');
+    this.vibeRadioTitle = this.overlay.querySelector('[data-vibe-radio-title]');
     this.emoteSliceNodes = [];
     this.overheadHealthBarNodes = new Map();
     this.overheadHealthBarFillNodes = new Map();
@@ -3608,6 +3689,15 @@ export class Hud {
     this.vibeHeroVisible = false;
     this.vibeHeroState = {
       game: null
+    };
+    this.vibeRadioState = {
+      tracks: [],
+      selectedTrackId: '',
+      playing: false,
+      volume: 0.75,
+      currentTime: 0,
+      duration: 0,
+      error: ''
     };
     this.basketballShotVisible = false;
     this.basketballShotState = {
@@ -3904,6 +3994,13 @@ export class Hud {
           <span class="hud__phone-launcher-screen"></span>
         </span>
       </button>
+      <section class="hud__vibe-radio-widget" data-vibe-radio-widget aria-label="Vibe Radio mini player">
+        <div class="hud__vibe-radio-widget-copy">
+          <span data-vibe-radio-status>Vibe Radio</span>
+          <strong data-vibe-radio-title>No track selected</strong>
+        </div>
+        ${getVibeRadioControlsMarkup({ disabled: true })}
+      </section>
       <section class="hud__phone-stage" data-phone-stage role="dialog" aria-modal="true" aria-label="Phone menu" hidden>
         <button class="hud__phone-backdrop" type="button" data-phone-backdrop aria-label="Close phone"></button>
         <div class="hud__phone-device">
@@ -5971,7 +6068,12 @@ export class Hud {
     onMissionSequenceReorder,
     onMissionSequenceRuleChange,
     onMissionSequencePromptInput,
-    onMissionSequencePromptSubmit
+    onMissionSequencePromptSubmit,
+    onVibeRadioTrackReorder,
+    onVibeRadioDraftInput,
+    onVibeRadioTrackSubmit,
+    onVibeRadioTrackUpdate,
+    onVibeRadioTrackRemove
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -6006,6 +6108,15 @@ export class Hud {
         return;
       }
 
+      const removeRadioButton = event.target.closest('[data-builder-radio-remove]');
+      if (removeRadioButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const row = removeRadioButton.closest('[data-builder-radio-id]');
+        onVibeRadioTrackRemove?.(row?.getAttribute('data-builder-radio-id') ?? '');
+        return;
+      }
+
       const button = event.target.closest('[data-builder-index]');
       if (!button) {
         return;
@@ -6027,20 +6138,22 @@ export class Hud {
         return;
       }
 
-      const row = target?.closest('[data-builder-mission-index]');
+      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
       if (!row) {
         return;
       }
 
-      const fromIndex = Number(row.dataset.builderMissionIndex);
+      const dragType = row.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
+      const fromIndex = Number(dragType === 'radio' ? row.dataset.builderRadioIndex : row.dataset.builderMissionIndex);
       if (!Number.isFinite(fromIndex)) {
         event.preventDefault();
         return;
       }
 
       this.builderMissionDragIndex = fromIndex;
+      this.builderMissionDragType = dragType;
       row.classList.add('is-dragging');
-      event.dataTransfer?.setData('text/plain', String(fromIndex));
+      event.dataTransfer?.setData('text/plain', `${dragType}:${fromIndex}`);
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
       }
@@ -6050,8 +6163,9 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index]');
-      if (!row) {
+      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
+      const dragType = row?.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
+      if (!row || (this.builderMissionDragType && dragType !== this.builderMissionDragType)) {
         return;
       }
 
@@ -6060,7 +6174,7 @@ export class Hud {
         event.dataTransfer.dropEffect = 'move';
       }
       this.builderTiles
-        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over')
+        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over, .hud__vibe-radio-row.is-drag-over')
         .forEach((entry) => {
           if (entry !== row) {
             entry.classList.remove('is-drag-over');
@@ -6073,7 +6187,7 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index]');
+      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
       const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
       if (row && !row.contains(related)) {
         row.classList.remove('is-drag-over');
@@ -6084,27 +6198,43 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index]');
+      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
       if (!row) {
         return;
       }
 
       event.preventDefault();
-      const transferIndex = Number(event.dataTransfer?.getData('text/plain'));
+      const dragType = row.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
+      const transfer = String(event.dataTransfer?.getData('text/plain') ?? '');
+      const [transferType, transferIndexText] = transfer.includes(':')
+        ? transfer.split(':', 2)
+        : [this.builderMissionDragType ?? dragType, transfer];
+      const transferIndex = Number(transferIndexText);
       const fromIndex = Number.isFinite(transferIndex) ? transferIndex : this.builderMissionDragIndex;
-      const toIndex = Number(row.dataset.builderMissionIndex);
+      const toIndex = Number(dragType === 'radio' ? row.dataset.builderRadioIndex : row.dataset.builderMissionIndex);
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
-      if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex) || fromIndex === toIndex) {
+      this.builderMissionDragType = '';
+      if (
+        transferType !== dragType
+        || !Number.isFinite(fromIndex)
+        || !Number.isFinite(toIndex)
+        || fromIndex === toIndex
+      ) {
         return;
       }
 
-      onMissionSequenceReorder?.(fromIndex, toIndex);
+      if (dragType === 'radio') {
+        onVibeRadioTrackReorder?.(fromIndex, toIndex);
+      } else {
+        onMissionSequenceReorder?.(fromIndex, toIndex);
+      }
     });
 
     this.builderTiles.addEventListener('dragend', () => {
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
+      this.builderMissionDragType = '';
     });
 
     const handleMissionSequenceRuleChange = (event) => {
@@ -6135,13 +6265,59 @@ export class Hud {
 
     this.builderTiles.addEventListener('change', handleMissionSequenceRuleChange);
 
-    this.builderTiles.addEventListener('input', (event) => {
+    const handleVibeRadioTrackChange = (event) => {
       const target = event.target;
-      if (!(target instanceof HTMLTextAreaElement) || !target.matches('[data-builder-mission-prompt]')) {
+      if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
         return;
       }
 
-      onMissionSequencePromptInput?.(target.value);
+      const row = target.closest('[data-builder-radio-id]');
+      const trackId = row?.getAttribute('data-builder-radio-id') ?? '';
+      if (!trackId) {
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-title]')) {
+        onVibeRadioTrackUpdate?.(trackId, { title: target.value });
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-source]')) {
+        onVibeRadioTrackUpdate?.(trackId, { sourceUrl: target.value });
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-type]')) {
+        onVibeRadioTrackUpdate?.(trackId, { sourceType: target.value });
+      }
+    };
+
+    this.builderTiles.addEventListener('change', handleVibeRadioTrackChange);
+
+    this.builderTiles.addEventListener('input', (event) => {
+      const target = event.target;
+      if (target instanceof HTMLTextAreaElement && target.matches('[data-builder-mission-prompt]')) {
+        onMissionSequencePromptInput?.(target.value);
+        return;
+      }
+
+      if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-draft-title]')) {
+        onVibeRadioDraftInput?.({ title: target.value });
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-draft-source]')) {
+        onVibeRadioDraftInput?.({ sourceUrl: target.value });
+        return;
+      }
+
+      if (target.matches('[data-builder-radio-draft-type]')) {
+        onVibeRadioDraftInput?.({ sourceType: target.value });
+      }
     });
 
     this.builderTiles.addEventListener('submit', (event) => {
@@ -6157,6 +6333,26 @@ export class Hud {
       const field = form.querySelector('[data-builder-mission-prompt]');
       const prompt = field instanceof HTMLTextAreaElement ? field.value : '';
       onMissionSequencePromptSubmit?.(prompt);
+    });
+
+    this.builderTiles.addEventListener('submit', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : null;
+      const form = target?.closest('[data-builder-radio-add-form]');
+      if (!form || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      const titleField = form.querySelector('[data-builder-radio-draft-title]');
+      const sourceField = form.querySelector('[data-builder-radio-draft-source]');
+      const typeField = form.querySelector('[data-builder-radio-draft-type]');
+      onVibeRadioTrackSubmit?.({
+        title: titleField instanceof HTMLInputElement ? titleField.value : '',
+        sourceUrl: sourceField instanceof HTMLInputElement ? sourceField.value : '',
+        sourceType: typeField instanceof HTMLSelectElement ? typeField.value : 'link'
+      });
     });
 
     this.builderPropSizeInput?.addEventListener('input', () => {
@@ -6420,7 +6616,10 @@ export class Hud {
     onPhoneStockTrade,
     onMapZoom,
     onMapPan,
-    onMasterVolumeChange
+    onMasterVolumeChange,
+    onVibeRadioAction,
+    onVibeRadioTrackSelect,
+    onVibeRadioVolumeChange
   }) {
     this.phoneLauncher?.addEventListener('click', () => {
       onToggle?.();
@@ -6503,6 +6702,26 @@ export class Hud {
         event.preventDefault();
         event.stopPropagation();
         onPhoneStockSelect?.(phoneStockButton.getAttribute('data-phone-stock-symbol') ?? '');
+        return;
+      }
+
+      const vibeRadioTrackButton = target?.closest('[data-phone-vibe-radio-track]');
+      if (vibeRadioTrackButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!vibeRadioTrackButton.disabled) {
+          onVibeRadioTrackSelect?.(vibeRadioTrackButton.getAttribute('data-phone-vibe-radio-track') ?? '');
+        }
+        return;
+      }
+
+      const vibeRadioActionButton = target?.closest('[data-phone-vibe-radio-action]');
+      if (vibeRadioActionButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!vibeRadioActionButton.disabled) {
+          onVibeRadioAction?.(vibeRadioActionButton.getAttribute('data-phone-vibe-radio-action') ?? '');
+        }
         return;
       }
 
@@ -6670,6 +6889,37 @@ export class Hud {
       }
       if (target?.matches('[data-phone-stock-quantity]')) {
         onPhoneStockQuantityChange?.(Number(target.value));
+      }
+      if (target?.matches('[data-phone-vibe-radio-volume]')) {
+        onVibeRadioVolumeChange?.(Number(target.value) / 100);
+      }
+    });
+  }
+
+  bindVibeRadioEvents({
+    onAction,
+    onVolumeChange
+  } = {}) {
+    this.vibeRadioWidget?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-vibe-radio-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (!actionTarget.disabled) {
+        onAction?.(actionTarget.getAttribute('data-vibe-radio-action') ?? '');
+      }
+    });
+
+    this.vibeRadioWidget?.addEventListener('input', (event) => {
+      const target = event.target instanceof HTMLInputElement ? event.target : null;
+      if (target?.matches('[data-vibe-radio-volume]')) {
+        onVolumeChange?.(Number(target.value) / 100);
       }
     });
   }
@@ -6891,7 +7141,7 @@ export class Hud {
 
   clearMissionSequencerDragClasses() {
     this.builderTiles
-      ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over')
+      ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over, .hud__vibe-radio-row.is-dragging, .hud__vibe-radio-row.is-drag-over')
       .forEach((entry) => {
         entry.classList.remove('is-dragging', 'is-drag-over');
       });
@@ -6984,6 +7234,110 @@ export class Hud {
     `;
   }
 
+  getBuilderVibeRadioRowMarkup(row = {}) {
+    const trackNumber = Math.max(1, Math.floor(Number(row.trackNumber) || 1));
+    const sourceType = row.sourceType === 'file' ? 'file' : 'link';
+    return `
+      <article
+        class="hud__vibe-radio-row"
+        draggable="true"
+        data-builder-radio-id="${escapeHtml(row.id ?? '')}"
+        data-builder-radio-index="${trackNumber - 1}"
+      >
+        <span class="hud__mission-sequencer-handle hud__vibe-radio-handle" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M9 6.5h.01M15 6.5h.01M9 12h.01M15 12h.01M9 17.5h.01M15 17.5h.01" />
+          </svg>
+        </span>
+        <span class="hud__mission-sequencer-number hud__vibe-radio-number">${trackNumber}</span>
+        <div class="hud__vibe-radio-row-fields">
+          <label class="hud__field">
+            <span class="hud__field-label">Song title</span>
+            <input
+              class="hud__field-control"
+              type="text"
+              maxlength="64"
+              value="${escapeHtml(row.title ?? '')}"
+              data-builder-radio-title
+            />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Source</span>
+            <input
+              class="hud__field-control"
+              type="text"
+              maxlength="640"
+              value="${escapeHtml(row.sourceUrl ?? '')}"
+              placeholder="https://... or assets/audio/song.mp3"
+              data-builder-radio-source
+            />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Input type</span>
+            <select class="hud__field-control" data-builder-radio-type>
+              <option value="link"${sourceType === 'link' ? ' selected' : ''}>Music link</option>
+              <option value="file"${sourceType === 'file' ? ' selected' : ''}>MP3 file</option>
+            </select>
+          </label>
+        </div>
+        <button class="hud__builder-icon-button hud__vibe-radio-remove" type="button" data-builder-radio-remove aria-label="Remove ${escapeHtml(row.title ?? 'track')}" title="Remove track">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </article>
+    `;
+  }
+
+  getBuilderVibeRadioMarkup(vibeRadio = {}) {
+    const rows = Array.isArray(vibeRadio.rows) ? vibeRadio.rows : [];
+    const draft = vibeRadio.draft && typeof vibeRadio.draft === 'object' ? vibeRadio.draft : {};
+    const sourceType = draft.sourceType === 'file' ? 'file' : 'link';
+    return `
+      <section class="hud__builder-section hud__vibe-radio-builder" data-builder-vibe-radio>
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Vibe Radio</p>
+          <span class="hud__builder-section-count">${rows.length}</span>
+        </div>
+        <form class="hud__vibe-radio-add" data-builder-radio-add-form>
+          <label class="hud__field">
+            <span class="hud__field-label">Song title</span>
+            <input
+              class="hud__field-control"
+              type="text"
+              maxlength="64"
+              placeholder="Song name"
+              value="${escapeHtml(draft.title ?? '')}"
+              data-builder-radio-draft-title
+            />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Music link or MP3 path</span>
+            <input
+              class="hud__field-control"
+              type="text"
+              maxlength="640"
+              placeholder="https://... or assets/audio/song.mp3"
+              value="${escapeHtml(draft.sourceUrl ?? '')}"
+              data-builder-radio-draft-source
+            />
+          </label>
+          <label class="hud__field">
+            <span class="hud__field-label">Input type</span>
+            <select class="hud__field-control" data-builder-radio-draft-type>
+              <option value="link"${sourceType === 'link' ? ' selected' : ''}>Music link</option>
+              <option value="file"${sourceType === 'file' ? ' selected' : ''}>MP3 file</option>
+            </select>
+          </label>
+          <button class="hud__builder-action hud__vibe-radio-add-button" type="submit">Add Track</button>
+        </form>
+        <div class="hud__vibe-radio-list">
+          ${rows.length
+            ? rows.map((row) => this.getBuilderVibeRadioRowMarkup(row)).join('')
+            : '<div class="hud__vibe-radio-empty">No Vibe Radio tracks yet.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
   setBuilderState({
     available = false,
     enabled,
@@ -6991,7 +7345,8 @@ export class Hud {
     groupTabs = [],
     sections = [],
     propSizeControl = null,
-    missionSequencer = null
+    missionSequencer = null,
+    vibeRadio = null
   }) {
     this.builderAvailable = available;
     this.builderEnabled = enabled;
@@ -7012,7 +7367,7 @@ export class Hud {
       </button>
     `).join('');
 
-    this.builderGroups.hidden = Boolean(missionSequencer) || groupTabs.length === 0;
+    this.builderGroups.hidden = Boolean(missionSequencer || vibeRadio) || groupTabs.length === 0;
     this.builderGroups.innerHTML = groupTabs.map((group) => `
         <button
           class="hud__builder-subchip${group.active ? ' is-active' : ''}"
@@ -7046,6 +7401,11 @@ export class Hud {
 
     if (missionSequencer) {
       this.builderTiles.innerHTML = this.getBuilderMissionSequencerMarkup(missionSequencer);
+      return;
+    }
+
+    if (vibeRadio) {
+      this.builderTiles.innerHTML = this.getBuilderVibeRadioMarkup(vibeRadio);
       return;
     }
 
@@ -9357,6 +9717,166 @@ export class Hud {
         </div>
       `;
     }
+  }
+
+  getVibeRadioSelectedTrack(state = this.vibeRadioState) {
+    const tracks = Array.isArray(state?.tracks) ? state.tracks : [];
+    return tracks.find((track) => track.id === state?.selectedTrackId) ?? tracks[0] ?? null;
+  }
+
+  getVibeRadioStatusText(state = this.vibeRadioState) {
+    if (state?.error) {
+      return state.error;
+    }
+
+    const tracks = Array.isArray(state?.tracks) ? state.tracks : [];
+    if (!tracks.length) {
+      return 'No tracks';
+    }
+
+    return state?.playing ? 'Playing' : 'Paused';
+  }
+
+  updateVibeRadioWidget() {
+    if (!this.vibeRadioWidget) {
+      return;
+    }
+
+    const state = this.vibeRadioState;
+    const tracks = Array.isArray(state.tracks) ? state.tracks : [];
+    const selected = this.getVibeRadioSelectedTrack(state);
+    const disabled = tracks.length === 0;
+    const title = selected?.title ?? 'No track selected';
+    const statusText = this.getVibeRadioStatusText(state);
+
+    this.vibeRadioWidget.classList.toggle('is-playing', Boolean(state.playing));
+    this.vibeRadioWidget.classList.toggle('is-empty', disabled);
+    this.vibeRadioWidget.classList.toggle('has-error', Boolean(state.error));
+    if (this.vibeRadioStatus) {
+      this.vibeRadioStatus.textContent = statusText;
+    }
+    if (this.vibeRadioTitle) {
+      this.vibeRadioTitle.textContent = title;
+    }
+
+    const controls = this.vibeRadioWidget.querySelector('.hud__vibe-radio-controls');
+    if (controls) {
+      controls.outerHTML = getVibeRadioControlsMarkup({
+        context: 'main',
+        playing: Boolean(state.playing),
+        volume: state.volume,
+        disabled
+      });
+    }
+  }
+
+  getPhoneVibeRadioTrackMarkup(track = {}, state = this.vibeRadioState) {
+    const selected = track.id === state.selectedTrackId;
+    const activeClass = selected ? ' is-active' : '';
+    const playingClass = selected && state.playing ? ' is-playing' : '';
+    const source = String(track.sourceUrl ?? '');
+    const detail = track.sourceType === 'file' ? 'MP3 file' : (source ? 'Music link' : 'No source');
+    return `
+      <button
+        class="hud__phone-vibe-radio-track${activeClass}${playingClass}"
+        type="button"
+        data-phone-vibe-radio-track="${escapeHtml(track.id ?? '')}"
+      >
+        <span class="hud__phone-vibe-radio-art" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M9 18.5a2.5 2.5 0 1 1-1.5-2.3V6.75L17 5v11a2.5 2.5 0 1 1-1.5-2.3V8.15l-6 1.1v9.25Z" />
+          </svg>
+        </span>
+        <span class="hud__phone-vibe-radio-track-copy">
+          <strong>${escapeHtml(track.title ?? 'Untitled track')}</strong>
+          <span>${escapeHtml(detail)}</span>
+        </span>
+        <span class="hud__phone-vibe-radio-track-state">${selected ? (state.playing ? 'On Air' : 'Selected') : 'Play'}</span>
+      </button>
+    `;
+  }
+
+  setPhoneVibeRadioState(state = this.vibeRadioState) {
+    const root = this.phoneScreenContent?.querySelector('[data-phone-vibe-radio-app]');
+    if (!root) {
+      return;
+    }
+
+    const tracks = Array.isArray(state.tracks) ? state.tracks : [];
+    const selected = this.getVibeRadioSelectedTrack(state);
+    const disabled = tracks.length === 0;
+    const status = root.querySelector('[data-phone-vibe-radio-status]');
+    const now = root.querySelector('[data-phone-vibe-radio-now]');
+    const list = root.querySelector('[data-phone-vibe-radio-list]');
+    const controls = root.querySelector('[data-phone-vibe-radio-controls]');
+    const safeCurrentTime = Math.max(0, Number(state.currentTime) || 0);
+    const safeDuration = Math.max(0, Number(state.duration) || 0);
+    const progress = safeDuration > 0 ? Math.min(1, safeCurrentTime / safeDuration) : 0;
+
+    if (status) {
+      status.textContent = this.getVibeRadioStatusText(state);
+      status.classList.toggle('is-error', Boolean(state.error));
+    }
+
+    if (now) {
+      now.innerHTML = selected
+        ? `
+          <div class="hud__phone-vibe-radio-cover" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 4.25a7.75 7.75 0 1 0 0 15.5 7.75 7.75 0 0 0 0-15.5Z" />
+              <path d="M12 9.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z" />
+            </svg>
+          </div>
+          <div class="hud__phone-vibe-radio-now-copy">
+            <span>${state.playing ? 'Now playing' : 'Selected'}</span>
+            <strong>${escapeHtml(selected.title ?? 'Untitled track')}</strong>
+            <div class="hud__phone-vibe-radio-progress" aria-label="${formatMediaTime(safeCurrentTime)} of ${safeDuration ? formatMediaTime(safeDuration) : 'unknown'}">
+              <span style="--radio-progress:${(progress * 100).toFixed(1)}%"></span>
+            </div>
+            <em>${formatMediaTime(safeCurrentTime)} / ${safeDuration ? formatMediaTime(safeDuration) : '--:--'}</em>
+          </div>
+        `
+        : `
+          <div class="hud__phone-empty-state">Add tracks in the world builder.</div>
+        `;
+    }
+
+    if (list) {
+      list.innerHTML = tracks.length
+        ? tracks.map((track) => this.getPhoneVibeRadioTrackMarkup(track, state)).join('')
+        : '<div class="hud__phone-empty-state">No songs in Vibe Radio.</div>';
+    }
+
+    if (controls) {
+      controls.innerHTML = getVibeRadioControlsMarkup({
+        context: 'phone',
+        playing: Boolean(state.playing),
+        volume: state.volume,
+        disabled
+      });
+    }
+  }
+
+  setVibeRadioState({
+    tracks = this.vibeRadioState.tracks,
+    selectedTrackId = this.vibeRadioState.selectedTrackId,
+    playing = this.vibeRadioState.playing,
+    volume = this.vibeRadioState.volume,
+    currentTime = this.vibeRadioState.currentTime,
+    duration = this.vibeRadioState.duration,
+    error = this.vibeRadioState.error
+  } = {}) {
+    this.vibeRadioState = {
+      tracks: Array.isArray(tracks) ? tracks : [],
+      selectedTrackId: String(selectedTrackId ?? ''),
+      playing: Boolean(playing),
+      volume: Math.max(0, Math.min(1, Number(volume) || 0)),
+      currentTime: Math.max(0, Number(currentTime) || 0),
+      duration: Math.max(0, Number(duration) || 0),
+      error: String(error ?? '')
+    };
+    this.updateVibeRadioWidget();
+    this.setPhoneVibeRadioState(this.vibeRadioState);
   }
 
   getPhoneSkillIconMarkup(icon = '') {

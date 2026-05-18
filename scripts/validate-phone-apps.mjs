@@ -9,11 +9,17 @@ import {
   normalizeStockTradeQuantity,
   serializeStockMarket
 } from '../src/shared/stockMarket.js';
+import {
+  appendVibeRadioTrack,
+  getVibeRadioViewModel,
+  normalizeVibeRadioTracks
+} from '../src/shared/vibeRadio.js';
 import { assets } from '../src/world/assetManifest.js';
 
 const root = process.cwd();
 const hudSource = fs.readFileSync(path.join(root, 'src/ui/Hud.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'src/game/Game.js'), 'utf8');
+const worldBuilderSource = fs.readFileSync(path.join(root, 'src/world/WorldBuilder.js'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
 const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
@@ -21,9 +27,16 @@ const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'),
 
 assert.match(hudSource, /\['skills', 'Skills'/, 'Skills app is registered on the phone home screen');
 assert.match(hudSource, /\['stocks', 'Stocks'/, 'Stocks app is registered on the phone home screen');
+assert.match(hudSource, /\['vibe-radio', 'Vibe Radio'/, 'Vibe Radio app is registered on the phone home screen');
 assert.doesNotMatch(hudSource, /\['casino', 'Casino'/, 'Casino app is removed from the phone home screen');
 assert.match(hudSource, /data-phone-wallet-app/, 'Wallet app has dedicated phone markup');
 assert.match(hudSource, /data-phone-wallet-stocks/, 'Wallet app exposes a Stocks action');
+assert.match(hudSource, /data-phone-vibe-radio-app/, 'Vibe Radio app has dedicated phone markup');
+assert.match(hudSource, /data-phone-vibe-radio-action/, 'Vibe Radio app exposes playback controls');
+assert.match(hudSource, /data-phone-vibe-radio-volume/, 'Vibe Radio app exposes a player-specific volume control');
+assert.match(hudSource, /data-vibe-radio-widget/, 'Main HUD has the Vibe Radio mini player');
+assert.match(worldBuilderSource, /BUILDER_VIBE_RADIO_CATEGORY/, 'World builder registers a Vibe Radio tab');
+assert.match(worldBuilderSource, /updateVibeRadioTracks/, 'World builder can persist Vibe Radio playlist edits');
 assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
 assert.match(hudSource, /data-phone-stock-trade/, 'Stocks app exposes buy and sell actions');
 assert.doesNotMatch(hudSource, /max="999"/, 'Stock share inputs do not cap trades at 999 shares');
@@ -67,6 +80,10 @@ assert.match(gameSource, /playSoundEffect\(this\.phoneUnlockSound\)/, 'Game play
 assert.match(gameSource, /captureAndSaveWorldMap/, 'Game can manually capture the world map');
 assert.match(gameSource, /WORLD_MAP_IMAGE_METADATA_URL/, 'Game loads cached map image metadata');
 assert.match(gameSource, /setMasterVolume/, 'Game owns persisted master volume setting');
+assert.match(gameSource, /syncVibeRadioTracksFromLayout/, 'Game syncs Vibe Radio tracks from world layout');
+assert.match(gameSource, /handleVibeRadioAction/, 'Game owns Vibe Radio playback actions');
+assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_KEY/, 'Game stores radio volume locally per player');
+assert.match(gameSource, /raw == null \|\| raw === ''/, 'Vibe Radio defaults volume when no player-specific volume is stored');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
 
 assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');
@@ -77,6 +94,7 @@ const phoneUnlockHasFrameSync = phoneUnlockAudio[0] === 0xff && (phoneUnlockAudi
 assert.ok(phoneUnlockHasId3Header || phoneUnlockHasFrameSync, 'Phone unlock audio should be an MP3 file.');
 
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
+assert.match(serverSource, /updateVibeRadioTracks/, 'Server accepts Vibe Radio world-builder updates');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
 assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade access path for phone trading');
 assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
@@ -90,6 +108,22 @@ assert.match(colyseusNpcSource, /source:\s*options\?\.source/, 'Colyseus stock t
 assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock trades support phone source metadata');
 assert.match(mockNpcSource, /MOCK_STOCK_PORTFOLIOS_STORAGE_KEY/, 'Mock transport persists stock portfolios locally');
 assert.match(mockNpcSource, /MOCK_STOCK_MARKET_STORAGE_KEY/, 'Mock transport persists stock market tape locally');
+assert.match(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit transport accepts Vibe Radio updates');
+
+const radioPlaylist = appendVibeRadioTrack([], {
+  title: 'Admin Test Song',
+  sourceType: 'file',
+  sourceUrl: 'assets/audio/admin-test.mp3'
+});
+assert.equal(radioPlaylist.length, 1, 'Vibe Radio can append a playlist track');
+assert.equal(radioPlaylist[0].sourceType, 'file', 'Vibe Radio preserves MP3 file source type');
+assert.equal(radioPlaylist[0].title, 'Admin Test Song', 'Vibe Radio preserves normalized song title');
+assert.equal(
+  normalizeVibeRadioTracks(radioPlaylist)[0].sourceUrl,
+  'assets/audio/admin-test.mp3',
+  'Vibe Radio preserves normalized MP3 paths'
+);
+assert.equal(getVibeRadioViewModel(radioPlaylist)[0].trackNumber, 1, 'Vibe Radio view model exposes track order');
 
 const market = createInitialStockMarketState(1000);
 const portfolio = {};
