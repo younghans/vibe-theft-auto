@@ -629,6 +629,14 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'trash_B', group: 'storage' },
   { id: 'car_hatchback', assetName: 'car_hatchback', group: 'vehicles' },
   { id: 'car_police', assetName: 'car_police', group: 'vehicles' },
+  {
+    id: 'car_original_low_poly_police_vehicle',
+    assetName: 'car_original_low_poly_police_vehicle',
+    aliases: ['low_poly_police_vehicle', 'original_police_vehicle', 'compact_police_vehicle'],
+    label: 'Original Low-Poly Police Vehicle',
+    asset: customCityAsset('models', 'original-low-poly-police-vehicle.glb'),
+    group: 'vehicles'
+  },
   { id: 'car_sedan', assetName: 'car_sedan', group: 'vehicles' },
   { id: 'car_stationwagon', assetName: 'car_stationwagon', group: 'vehicles' },
   { id: 'car_taxi', assetName: 'car_taxi', group: 'vehicles' },

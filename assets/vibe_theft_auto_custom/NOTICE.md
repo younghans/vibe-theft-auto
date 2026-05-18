@@ -6,6 +6,13 @@ project source-code license.
 
 ## Vehicle Models
 
+- `models/original-low-poly-police-vehicle.glb`
+  - Title: Original Low-Poly Police Vehicle
+  - Author: Vibe Theft Auto project
+  - Source: Generated from `scripts/generate-low-poly-police-vehicle.mjs`
+  - License: Same license as the project source code in `LICENSE`
+  - Notes: Original procedural mesh; no third-party mesh data used.
+
 - `models/illinois-90-police-cruiser-low-poly.glb`
   - Title: Illinois '90 Police cruiser - Low poly model
   - Author: Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky)
