@@ -444,6 +444,7 @@ const RENT_INTRO_MONEY_ANIMATION_MS = 1250;
 const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 const MONEY_REWARD_ANIMATION_MS = 900;
 const SKILL_XP_FLOATER_MS = 1550;
+const SKILL_LEVEL_UP_SOUND_SUPPRESS_MS = 500;
 const TASK_COMPLETE_SOUND_COOLDOWN_MS = 1800;
 const TASK_COMPLETE_CHA_CHING_DELAY_MS = 760;
 const TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS = 1750;
@@ -1045,6 +1046,7 @@ export class Game {
     this.lastConnectionToastStatus = '';
     this.lastSkillAwardSeq = 0;
     this.skillLevelSnapshot = new Map();
+    this.lastSkillLevelUpSoundAt = -Infinity;
     this.walletRequestInFlight = false;
     this.walletRefreshAt = 0;
     this.lastPhoneMapRefreshAt = 0;
@@ -5126,6 +5128,17 @@ export class Game {
       oldLevel,
       newLevel
     });
+    this.playSkillLevelUpSound();
+  }
+
+  playSkillLevelUpSound() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const lastPlayedAt = Number(this.lastSkillLevelUpSoundAt ?? -Infinity);
+    if (now - lastPlayedAt < SKILL_LEVEL_UP_SOUND_SUPPRESS_MS) {
+      return;
+    }
+
+    this.lastSkillLevelUpSoundAt = now;
     this.playSoundEffect(this.levelUpSound);
   }
 

@@ -50,8 +50,8 @@ assert.equal(getSkillLevelFromXp(getSkillXpForLevel(2)), 2, 'threshold XP reache
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99)), SKILL_MAX_LEVEL, 'level 99 threshold reaches level 99');
 assert.equal(getSkillLevelFromXp(getSkillXpForLevel(99) + 999999), SKILL_MAX_LEVEL, 'levels cap at 99');
 assert.equal(STRENGTH_SNATCH_XP, 10, 'barbell snatching awards 10 strength XP');
-assert.equal(BASKETBALL_SHOT_STRENGTH_XP, 20, 'basketball clean releases award a medium amount of strength XP');
-assert.equal(BASKETBALL_SHOT_AGILITY_XP, 20, 'basketball clean releases award a medium amount of agility XP');
+assert.equal(BASKETBALL_SHOT_STRENGTH_XP, 15, 'basketball clean releases award a slightly reduced medium amount of strength XP');
+assert.equal(BASKETBALL_SHOT_AGILITY_XP, 15, 'basketball clean releases award a slightly reduced medium amount of agility XP');
 assert.equal(CHARISMA_NPC_CHAT_XP, 2, 'NPC chat awards a small amount of charisma XP');
 assert.equal(CHARISMA_BEER_XP, 2, 'beer awards a small amount of charisma XP');
 assert.equal(CHARISMA_PLASTERED_XP, 15, 'getting plastered awards a medium amount of charisma XP');
@@ -127,6 +127,8 @@ assert.match(gameSource, /shouldPlaySkillXpGainSound/, 'game gates skill XP gain
 assert.match(gameSource, /skillId !== SKILL_IDS\.agility/, 'agility movement XP should keep feedback animation without playing the XP gain sound');
 assert.match(gameSource, /levelUpSound/, 'game registers the level-up sound');
 assert.match(gameSource, /showSkillLevelUpFeedback/, 'game centralizes level-up feedback');
+assert.match(gameSource, /playSkillLevelUpSound/, 'skill level-up audio goes through a shared overlap guard');
+assert.match(gameSource, /SKILL_LEVEL_UP_SOUND_SUPPRESS_MS/, 'simultaneous skill level-ups should not overlap level-up audio');
 assert.match(hudSource, /is-xp/, 'HUD styles XP floaters separately from money');
 assert.match(hudSource, /agility: '&#127939;'/, 'agility skill UI uses a running icon');
 assert.match(hudSource, /charisma: '&#128526;'/, 'charisma skill UI uses a charisma icon');
