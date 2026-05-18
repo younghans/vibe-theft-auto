@@ -7,6 +7,7 @@ import {
   createBlackjackTableVisual,
   createCarDealershipBuildingVisual,
   createCasinoSlotMachineVisual,
+  createDirtPathPropVisual,
   createInstrumentClusterVisual,
   createMarthasGrilleBuildingVisual,
   createOlympicBarbellVisual,
@@ -18,7 +19,9 @@ import {
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createRealEstateOfficeBuildingVisual,
-  createStandingDeskComputerVisual
+  createSidewalkPropVisual,
+  createStandingDeskComputerVisual,
+  createStonePathPropVisual
 } from './proceduralProps.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 
@@ -57,6 +60,12 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'basketball_hoop' || item?.assetName === 'basketball_hoop') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBasketballHoopVisual();
+  } else if (item?.id === 'sidewalk' || item?.assetName === 'sidewalk') {
+    primaryObject = createSidewalkPropVisual();
+  } else if (item?.id === 'stone_path' || item?.assetName === 'stone_path') {
+    primaryObject = createStonePathPropVisual();
+  } else if (item?.id === 'dirt_path' || item?.assetName === 'dirt_path') {
+    primaryObject = createDirtPathPropVisual();
   } else if (item?.id === 'olympic_barbell' || item?.assetName === 'olympic_barbell') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createOlympicBarbellVisual();

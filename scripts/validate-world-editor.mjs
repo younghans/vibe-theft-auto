@@ -69,9 +69,12 @@ import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
   CAR_DEALERSHIP_BUILDING_FOOTPRINT,
+  DIRT_PATH_PROP_FOOTPRINT,
   INSTRUMENT_CLUSTER_FOOTPRINT,
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
-  REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT
+  REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
+  SIDEWALK_PROP_FOOTPRINT,
+  STONE_PATH_PROP_FOOTPRINT
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -247,6 +250,68 @@ function validateCustomPropCatalogItems() {
   const pickupVisual = pistolPickup.createVisual();
   assert(pickupVisual.getObjectByName('pistolPickupSpawnRing'), 'Pistol pickup visual should include a placement ring');
   assert(pickupVisual.getObjectByName('pistolPickupSpawnBase'), 'Pistol pickup visual should include a small base');
+
+  const flatSurfaceProps = [
+    {
+      id: 'sidewalk',
+      label: 'Sidewalk',
+      size: SIDEWALK_PROP_FOOTPRINT,
+      surfaceName: 'sidewalkSurface'
+    },
+    {
+      id: 'stone_path',
+      label: 'Stone Path',
+      size: STONE_PATH_PROP_FOOTPRINT,
+      surfaceName: 'stonePathGroundUnderlay'
+    },
+    {
+      id: 'dirt_path',
+      label: 'Dirt Path',
+      size: DIRT_PATH_PROP_FOOTPRINT,
+      surfaceName: 'dirtPathSurface'
+    }
+  ];
+
+  for (const { id, label, size: expectedSize, surfaceName } of flatSurfaceProps) {
+    const item = getBuilderItemById(id);
+    assert(item, `${label} prop should exist`);
+    assert(getBuilderItemById(label) === item, `${label} should resolve from the label used in builder workflows`);
+    assert(item.layer === 'prop', `${label} should be a prop catalog item`);
+    assert(item.groupId === 'street', `${label} should be grouped under Street props`);
+    assert(item.asset === null, `${label} should use a procedural visual`);
+    assert(typeof item.createVisual === 'function', `${label} should define a procedural visual`);
+    assert(item.collision === false, `${label} should not block movement`);
+    assert(item.blocksMovement === false, `${label} should keep movement open`);
+    assert(item.blocksShots === false, `${label} should not block shots`);
+    assert(item.groundClearance > 0 && item.groundClearance <= 0.03, `${label} should render just above the ground to avoid z-fighting`);
+    assert(
+      item.size[0] === expectedSize[0] && item.size[1] === expectedSize[1],
+      `${label} should use its flat path footprint`
+    );
+
+    const movementRects = placementToCollisionRects(
+      { itemId: item.id, layer: 'prop', position: [4, -8], rotationQuarterTurns: 1 },
+      item,
+      { collisionKey: 'blocksMovement' }
+    );
+    const shotRects = placementToCollisionRects(
+      { itemId: item.id, layer: 'prop', position: [4, -8], rotationQuarterTurns: 1 },
+      item,
+      { collisionKey: 'blocksShots' }
+    );
+    assert(movementRects.length === 0, `${label} should not create movement colliders`);
+    assert(shotRects.length === 0, `${label} should not create shot colliders`);
+
+    const visual = item.createVisual();
+    assert(visual.userData.flatGroundProp === true, `${label} visual should mark itself as a flat ground prop`);
+    assert(visual.getObjectByName(surfaceName), `${label} visual should include a named flat surface`);
+    const bounds = new Box3().setFromObject(visual);
+    const visualSize = bounds.getSize(new Vector3());
+    assert(visualSize.y <= 0.03, `${label} visual should stay completely flat`);
+    assert(bounds.min.y >= -0.001, `${label} visual should sit on or just above local ground`);
+    assert(visualSize.x <= expectedSize[0] + 0.001, `${label} visual should stay inside its footprint width`);
+    assert(visualSize.z <= expectedSize[1] + 0.001, `${label} visual should stay inside its footprint depth`);
+  }
 
   const vibeJamExitPortal = getBuilderItemById('vibe_jam_exit_portal');
   const vibeJamStartPortal = getBuilderItemById('vibe_jam_start_portal');

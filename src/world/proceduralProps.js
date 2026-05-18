@@ -23,6 +23,9 @@ export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
 export const CASINO_SLOT_MACHINE_FOOTPRINT = Object.freeze([1.35, 1.05]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
+export const SIDEWALK_PROP_FOOTPRINT = Object.freeze([7.2, 3.0]);
+export const STONE_PATH_PROP_FOOTPRINT = Object.freeze([6.4, 3.2]);
+export const DIRT_PATH_PROP_FOOTPRINT = Object.freeze([6.4, 3.2]);
 export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 export const REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 export const CAR_DEALERSHIP_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
@@ -50,6 +53,7 @@ const PORTAL_SPAWN_LOCAL_OFFSET = Object.freeze([0, -PORTAL_SPAWN_CLEARANCE_DIST
 const BASKETBALL_HALF_COURT_LINE_RADIUS = 0.035;
 const BASKETBALL_HALF_COURT_LINE_HEIGHT = 0.035;
 const BASKETBALL_HALF_COURT_TOP_Y = BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT + 0.028;
+const FLAT_GROUND_PROP_Y = 0.018;
 const BASKETBALL_HOOP_BACKBOARD_CENTER_Y = BASKETBALL_HOOP_RIM_HEIGHT + 0.9;
 const BASKETBALL_HOOP_BACKBOARD_Z = -0.31;
 const BASKETBALL_HOOP_POLE_Z = -1.54;
@@ -137,6 +141,148 @@ function createFlatLine(name, width, depth, x, z, material) {
     material,
     { castShadow: false, receiveShadow: true }
   );
+}
+
+function createFlatGroundMaterial(color, roughness = 0.86, metalness = 0.02, polygonOffsetUnits = -1) {
+  const material = createMaterial(color, roughness, metalness);
+  material.side = THREE.DoubleSide;
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = -1;
+  material.polygonOffsetUnits = polygonOffsetUnits;
+  return material;
+}
+
+function createGroundPlane(name, width, depth, x, z, material, {
+  y = FLAT_GROUND_PROP_Y,
+  renderOrder = 1
+} = {}) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    material
+  );
+  mesh.name = name;
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, y, z);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.renderOrder = renderOrder;
+  return mesh;
+}
+
+function createGroundDisc(name, radius, x, z, material, {
+  y = FLAT_GROUND_PROP_Y + 0.004,
+  scale = [1, 1],
+  segments = 18,
+  renderOrder = 2
+} = {}) {
+  const mesh = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, segments),
+    material
+  );
+  mesh.name = name;
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, y, z);
+  mesh.scale.set(scale[0], scale[1], 1);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.renderOrder = renderOrder;
+  return mesh;
+}
+
+function createFlatPathRoot(name, footprint) {
+  const root = new THREE.Group();
+  root.name = name;
+  root.userData.footprint = [...footprint];
+  root.userData.flatGroundProp = true;
+  return root;
+}
+
+export function createSidewalkPropVisual() {
+  const root = createFlatPathRoot('SidewalkProp', SIDEWALK_PROP_FOOTPRINT);
+  const [width, depth] = SIDEWALK_PROP_FOOTPRINT;
+  const concreteMaterial = createFlatGroundMaterial(0xc7c3b8, 0.94, 0.01, -1);
+  const edgeMaterial = createFlatGroundMaterial(0x8e938d, 0.9, 0.01, -2);
+  const jointMaterial = createFlatGroundMaterial(0x777b77, 0.96, 0.01, -3);
+
+  root.add(createGroundPlane('sidewalkSurface', width, depth, 0, 0, concreteMaterial));
+  root.add(createGroundPlane('sidewalkNearEdgeLine', width, 0.08, 0, -((depth * 0.5) - 0.08), edgeMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
+  root.add(createGroundPlane('sidewalkFarEdgeLine', width, 0.08, 0, (depth * 0.5) - 0.08, edgeMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
+
+  for (const x of [-2.4, 0, 2.4]) {
+    root.add(createGroundPlane('sidewalkExpansionJoint', 0.06, depth - 0.34, x, 0, jointMaterial, { y: FLAT_GROUND_PROP_Y + 0.008, renderOrder: 3 }));
+  }
+
+  root.add(createGroundPlane('sidewalkCenterScuff', width - 0.78, 0.05, 0, 0, jointMaterial, { y: FLAT_GROUND_PROP_Y + 0.006, renderOrder: 3 }));
+  return root;
+}
+
+export function createStonePathPropVisual() {
+  const root = createFlatPathRoot('StonePathProp', STONE_PATH_PROP_FOOTPRINT);
+  const [width, depth] = STONE_PATH_PROP_FOOTPRINT;
+  const underlayMaterial = createFlatGroundMaterial(0x425044, 0.94, 0.01, -1);
+  const stoneMaterial = createFlatGroundMaterial(0x9da29a, 0.82, 0.02, -2);
+  const stoneAltMaterial = createFlatGroundMaterial(0xb4b0a4, 0.84, 0.02, -3);
+  const mossMaterial = createFlatGroundMaterial(0x55694c, 0.96, 0.01, -4);
+
+  root.add(createGroundPlane('stonePathGroundUnderlay', width, depth, 0, 0, underlayMaterial));
+  root.add(createGroundPlane('stonePathMossLeftEdge', width * 0.9, 0.18, 0, -((depth * 0.5) - 0.12), mossMaterial, { y: FLAT_GROUND_PROP_Y + 0.002, renderOrder: 2 }));
+  root.add(createGroundPlane('stonePathMossRightEdge', width * 0.86, 0.18, 0.1, (depth * 0.5) - 0.12, mossMaterial, { y: FLAT_GROUND_PROP_Y + 0.002, renderOrder: 2 }));
+
+  const stones = [
+    [-2.45, -0.58, 0.62, 0.48, stoneMaterial],
+    [-1.58, 0.42, 0.72, 0.54, stoneAltMaterial],
+    [-0.65, -0.38, 0.64, 0.5, stoneMaterial],
+    [0.18, 0.52, 0.74, 0.52, stoneAltMaterial],
+    [1.12, -0.46, 0.68, 0.5, stoneMaterial],
+    [2.04, 0.36, 0.78, 0.56, stoneAltMaterial],
+    [2.68, -0.58, 0.5, 0.42, stoneMaterial]
+  ];
+
+  stones.forEach(([x, z, scaleX, scaleZ, material], index) => {
+    root.add(createGroundDisc(`stonePathPaver${index + 1}`, 0.92, x, z, material, {
+      y: FLAT_GROUND_PROP_Y + 0.008,
+      scale: [scaleX, scaleZ],
+      segments: 16 + (index % 3),
+      renderOrder: 3
+    }));
+  });
+
+  return root;
+}
+
+export function createDirtPathPropVisual() {
+  const root = createFlatPathRoot('DirtPathProp', DIRT_PATH_PROP_FOOTPRINT);
+  const [width, depth] = DIRT_PATH_PROP_FOOTPRINT;
+  const dirtMaterial = createFlatGroundMaterial(0x8b623f, 0.98, 0.0, -1);
+  const dryDirtMaterial = createFlatGroundMaterial(0xb38354, 0.98, 0.0, -2);
+  const packedDirtMaterial = createFlatGroundMaterial(0x67452e, 0.99, 0.0, -3);
+  const pebbleMaterial = createFlatGroundMaterial(0x49372c, 0.96, 0.0, -4);
+
+  root.add(createGroundPlane('dirtPathSurface', width, depth, 0, 0, dirtMaterial));
+  root.add(createGroundPlane('dirtPathPackedTrackLeft', width - 0.5, 0.28, 0, -0.46, packedDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
+  root.add(createGroundPlane('dirtPathPackedTrackRight', width - 0.65, 0.24, 0.05, 0.58, packedDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
+  root.add(createGroundPlane('dirtPathDryCenter', width * 0.72, 0.18, -0.1, 0.04, dryDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.006, renderOrder: 3 }));
+
+  const patches = [
+    [-2.6, 0.92, 0.22, 0.12, dryDirtMaterial],
+    [-1.92, -1.04, 0.18, 0.1, pebbleMaterial],
+    [-1.1, 1.05, 0.24, 0.14, dryDirtMaterial],
+    [-0.35, -0.98, 0.16, 0.1, pebbleMaterial],
+    [0.72, 1.0, 0.2, 0.12, dryDirtMaterial],
+    [1.55, -0.96, 0.18, 0.1, pebbleMaterial],
+    [2.48, 0.86, 0.26, 0.14, dryDirtMaterial]
+  ];
+
+  patches.forEach(([x, z, scaleX, scaleZ, material], index) => {
+    root.add(createGroundDisc(`dirtPathFlatPatch${index + 1}`, 0.72, x, z, material, {
+      y: FLAT_GROUND_PROP_Y + 0.01,
+      scale: [scaleX, scaleZ],
+      segments: 12,
+      renderOrder: 4
+    }));
+  });
+
+  return root;
 }
 
 function createCourtArcLine(name, centerX, centerZ, radius, startAngle, endAngle, material, {
