@@ -326,6 +326,38 @@ function validateCustomPropCatalogItems() {
     assert(visualSize.z <= expectedSize[1] + 0.001, `${label} visual should stay inside its footprint depth`);
   }
 
+  const dirtPathVisual = getBuilderItemById('dirt_path').createVisual();
+  const dirtPathMeshes = [];
+  dirtPathVisual.traverse((node) => {
+    if (node.isMesh) {
+      dirtPathMeshes.push(node);
+    }
+  });
+  const dirtPathSurface = dirtPathVisual.getObjectByName('dirtPathSurface');
+  assert(dirtPathMeshes.length === 1, 'Dirt Path visual should be one simple flat surface without middle designs');
+  assert(
+    dirtPathSurface?.material?.color?.getHex() === 0xd9bd73,
+    'Dirt Path should use a light yellow park-path color'
+  );
+  assert(!dirtPathVisual.getObjectByName('dirtPathPackedTrackLeft'), 'Dirt Path should not include dark packed track strips');
+  assert(!dirtPathVisual.getObjectByName('dirtPathDryCenter'), 'Dirt Path should not include a center design strip');
+
+  const stonePathVisual = getBuilderItemById('stone_path').createVisual();
+  const stonePathPavers = [];
+  stonePathVisual.traverse((node) => {
+    if (node.isMesh && /^stonePathPaver\d+$/u.test(node.name)) {
+      stonePathPavers.push(node);
+    }
+  });
+  assert(stonePathPavers.length === 21, 'Stone Path visual should use a full uniform grid of pavers');
+  assert(!stonePathVisual.getObjectByName('stonePathMossLeftEdge'), 'Stone Path should not rely on moss edge decoration');
+  const stonePaverSizes = stonePathPavers.map((paver) => new Box3().setFromObject(paver).getSize(new Vector3()));
+  const paverWidthSpread = Math.max(...stonePaverSizes.map((size) => size.x))
+    - Math.min(...stonePaverSizes.map((size) => size.x));
+  const paverDepthSpread = Math.max(...stonePaverSizes.map((size) => size.z))
+    - Math.min(...stonePaverSizes.map((size) => size.z));
+  assert(paverWidthSpread < 0.001 && paverDepthSpread < 0.001, 'Stone Path pavers should be uniform in size');
+
   const vibeJamExitPortal = getBuilderItemById('vibe_jam_exit_portal');
   const vibeJamStartPortal = getBuilderItemById('vibe_jam_start_portal');
   const vibeJamPortals = [

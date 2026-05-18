@@ -176,26 +176,6 @@ function createGroundPlane(name, width, depth, x, z, material, {
   return mesh;
 }
 
-function createGroundDisc(name, radius, x, z, material, {
-  y = FLAT_GROUND_PROP_Y + 0.004,
-  scale = [1, 1],
-  segments = 18,
-  renderOrder = 2
-} = {}) {
-  const mesh = new THREE.Mesh(
-    new THREE.CircleGeometry(radius, segments),
-    material
-  );
-  mesh.name = name;
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, y, z);
-  mesh.scale.set(scale[0], scale[1], 1);
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
-  mesh.renderOrder = renderOrder;
-  return mesh;
-}
-
 function createFlatPathRoot(name, footprint) {
   const root = new THREE.Group();
   root.name = name;
@@ -226,33 +206,47 @@ export function createSidewalkPropVisual() {
 export function createStonePathPropVisual() {
   const root = createFlatPathRoot('StonePathProp', STONE_PATH_PROP_FOOTPRINT);
   const [width, depth] = STONE_PATH_PROP_FOOTPRINT;
-  const underlayMaterial = createFlatGroundMaterial(0x425044, 0.94, 0.01, -1);
-  const stoneMaterial = createFlatGroundMaterial(0x9da29a, 0.82, 0.02, -2);
-  const stoneAltMaterial = createFlatGroundMaterial(0xb4b0a4, 0.84, 0.02, -3);
-  const mossMaterial = createFlatGroundMaterial(0x55694c, 0.96, 0.01, -4);
+  const mortarMaterial = createFlatGroundMaterial(0x555a55, 0.96, 0.01, -1);
+  const stoneMaterial = createFlatGroundMaterial(0xa7aaa2, 0.88, 0.01, -2);
+  const stoneAltMaterial = createFlatGroundMaterial(0x949992, 0.9, 0.01, -3);
+  const stoneHighlightMaterial = createFlatGroundMaterial(0xb4b6ae, 0.86, 0.01, -4);
 
-  root.add(createGroundPlane('stonePathGroundUnderlay', width, depth, 0, 0, underlayMaterial));
-  root.add(createGroundPlane('stonePathMossLeftEdge', width * 0.9, 0.18, 0, -((depth * 0.5) - 0.12), mossMaterial, { y: FLAT_GROUND_PROP_Y + 0.002, renderOrder: 2 }));
-  root.add(createGroundPlane('stonePathMossRightEdge', width * 0.86, 0.18, 0.1, (depth * 0.5) - 0.12, mossMaterial, { y: FLAT_GROUND_PROP_Y + 0.002, renderOrder: 2 }));
+  root.add(createGroundPlane('stonePathGroundUnderlay', width, depth, 0, 0, mortarMaterial));
 
-  const stones = [
-    [-2.45, -0.58, 0.62, 0.48, stoneMaterial],
-    [-1.58, 0.42, 0.72, 0.54, stoneAltMaterial],
-    [-0.65, -0.38, 0.64, 0.5, stoneMaterial],
-    [0.18, 0.52, 0.74, 0.52, stoneAltMaterial],
-    [1.12, -0.46, 0.68, 0.5, stoneMaterial],
-    [2.04, 0.36, 0.78, 0.56, stoneAltMaterial],
-    [2.68, -0.58, 0.5, 0.42, stoneMaterial]
-  ];
+  const columns = 7;
+  const rows = 3;
+  const gap = 0.09;
+  const edgeInset = 0.18;
+  const paverWidth = (width - (edgeInset * 2) - (gap * (columns - 1))) / columns;
+  const paverDepth = (depth - (edgeInset * 2) - (gap * (rows - 1))) / rows;
+  const startX = -(width * 0.5) + edgeInset + (paverWidth * 0.5);
+  const startZ = -(depth * 0.5) + edgeInset + (paverDepth * 0.5);
+  const paverMaterials = [stoneMaterial, stoneAltMaterial, stoneHighlightMaterial];
 
-  stones.forEach(([x, z, scaleX, scaleZ, material], index) => {
-    root.add(createGroundDisc(`stonePathPaver${index + 1}`, 0.92, x, z, material, {
-      y: FLAT_GROUND_PROP_Y + 0.008,
-      scale: [scaleX, scaleZ],
-      segments: 16 + (index % 3),
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const material = paverMaterials[(row + column) % paverMaterials.length];
+      root.add(createGroundPlane(
+        `stonePathPaver${(row * columns) + column + 1}`,
+        paverWidth,
+        paverDepth,
+        startX + (column * (paverWidth + gap)),
+        startZ + (row * (paverDepth + gap)),
+        material,
+        {
+          y: FLAT_GROUND_PROP_Y + 0.006,
+          renderOrder: 3
+        }
+      ));
+    }
+  }
+
+  for (const z of [-((depth * 0.5) - 0.08), (depth * 0.5) - 0.08]) {
+    root.add(createGroundPlane('stonePathEdgeMortarLine', width - 0.36, 0.04, 0, z, mortarMaterial, {
+      y: FLAT_GROUND_PROP_Y + 0.009,
       renderOrder: 3
     }));
-  });
+  }
 
   return root;
 }
@@ -260,35 +254,9 @@ export function createStonePathPropVisual() {
 export function createDirtPathPropVisual() {
   const root = createFlatPathRoot('DirtPathProp', DIRT_PATH_PROP_FOOTPRINT);
   const [width, depth] = DIRT_PATH_PROP_FOOTPRINT;
-  const dirtMaterial = createFlatGroundMaterial(0x8b623f, 0.98, 0.0, -1);
-  const dryDirtMaterial = createFlatGroundMaterial(0xb38354, 0.98, 0.0, -2);
-  const packedDirtMaterial = createFlatGroundMaterial(0x67452e, 0.99, 0.0, -3);
-  const pebbleMaterial = createFlatGroundMaterial(0x49372c, 0.96, 0.0, -4);
+  const dirtMaterial = createFlatGroundMaterial(0xd9bd73, 0.98, 0.0, -1);
 
   root.add(createGroundPlane('dirtPathSurface', width, depth, 0, 0, dirtMaterial));
-  root.add(createGroundPlane('dirtPathPackedTrackLeft', width - 0.5, 0.28, 0, -0.46, packedDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
-  root.add(createGroundPlane('dirtPathPackedTrackRight', width - 0.65, 0.24, 0.05, 0.58, packedDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.004, renderOrder: 2 }));
-  root.add(createGroundPlane('dirtPathDryCenter', width * 0.72, 0.18, -0.1, 0.04, dryDirtMaterial, { y: FLAT_GROUND_PROP_Y + 0.006, renderOrder: 3 }));
-
-  const patches = [
-    [-2.6, 0.92, 0.22, 0.12, dryDirtMaterial],
-    [-1.92, -1.04, 0.18, 0.1, pebbleMaterial],
-    [-1.1, 1.05, 0.24, 0.14, dryDirtMaterial],
-    [-0.35, -0.98, 0.16, 0.1, pebbleMaterial],
-    [0.72, 1.0, 0.2, 0.12, dryDirtMaterial],
-    [1.55, -0.96, 0.18, 0.1, pebbleMaterial],
-    [2.48, 0.86, 0.26, 0.14, dryDirtMaterial]
-  ];
-
-  patches.forEach(([x, z, scaleX, scaleZ, material], index) => {
-    root.add(createGroundDisc(`dirtPathFlatPatch${index + 1}`, 0.72, x, z, material, {
-      y: FLAT_GROUND_PROP_Y + 0.01,
-      scale: [scaleX, scaleZ],
-      segments: 12,
-      renderOrder: 4
-    }));
-  });
-
   return root;
 }
 
