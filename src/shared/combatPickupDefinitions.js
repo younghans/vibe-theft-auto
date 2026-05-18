@@ -5,6 +5,7 @@ import {
   WEAPON_RESERVE_CAP
 } from './combatConstants.js';
 import { normalizeRotationQuarterTurns, quantizePosition } from './numberMath.js';
+import { getPlacementScale } from './placementScale.js';
 
 export const COMBAT_PICKUP_PROP_ITEM_IDS = Object.freeze({
   pistol: 'pickup_pistol'
@@ -67,9 +68,10 @@ export function createCombatPickupSpawnDefinition(placement, item) {
   const localOffset = Array.isArray(pickupDefinition.localOffset)
     ? pickupDefinition.localOffset
     : [0, 0];
+  const scale = getPlacementScale(placement);
   const rotatedOffset = rotateFootprintOffset(
-    Number(localOffset[0]) || 0,
-    Number(localOffset[1]) || 0,
+    (Number(localOffset[0]) || 0) * scale,
+    (Number(localOffset[1]) || 0) * scale,
     normalizeRotationQuarterTurns(placement.rotationQuarterTurns)
   );
 

@@ -3,6 +3,7 @@ import {
   getTileCenterWorldPosition,
   rotateFootprintOffset as rotateLocalOffset
 } from './tileFootprint.js';
+import { getPlacementScale } from './placementScale.js';
 
 export function distance2D(ax, az, bx, bz) {
   return Math.hypot(ax - bx, az - bz);
@@ -78,10 +79,15 @@ function getCustomCollisionRects(item, collisionKey = 'blocksShots') {
 
 function localRectToWorldRect(placement, item, rect) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
-  const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
+  const scale = getPlacementScale(placement);
+  const rotatedCenter = rotateLocalOffset(
+    (rect.centerX ?? 0) * scale,
+    (rect.centerZ ?? 0) * scale,
+    rotationQuarterTurns
+  );
   const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
-  const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
-  const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
+  const halfWidth = (swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0)) * scale;
+  const halfDepth = (swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0)) * scale;
   const tileCenter = placement.layer === 'tile'
     ? getTileCenterWorldPosition(
         item,
@@ -121,9 +127,10 @@ export function placementToCollisionRects(placement, item, { collisionKey = 'blo
   }
 
   const size = item.size ?? [BUILDER_TILE_SIZE, BUILDER_TILE_SIZE];
-  const padding = item.padding ?? 0;
-  const width = size[0] + padding * 2;
-  const depth = size[1] + padding * 2;
+  const scale = getPlacementScale(placement);
+  const padding = (item.padding ?? 0) * scale;
+  const width = (size[0] * scale) + padding * 2;
+  const depth = (size[1] * scale) + padding * 2;
   const tileCenter = placement.layer === 'tile'
     ? getTileCenterWorldPosition(
         item,

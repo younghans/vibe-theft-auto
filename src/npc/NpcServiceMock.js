@@ -171,6 +171,7 @@ import {
   rotationQuarterTurnsToRadians as toRotationY,
   rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
 } from '../shared/numberMath.js';
+import { normalizePropPlacementScale } from '../shared/placementScale.js';
 import { getNpcModelById } from './npcCatalog.js';
 import { buildNpcRouteGraph } from './npcRouteGraph.js';
 import { WorldState } from '../world/WorldState.js';
@@ -803,7 +804,9 @@ export class NpcServiceMock {
           item,
           Number(payload.x ?? 0),
           Number(payload.z ?? 0),
-          Number(payload.rotationQuarterTurns ?? 0)
+          Number(payload.rotationQuarterTurns ?? 0),
+          null,
+          normalizePropPlacementScale(payload.scale)
         );
         this.emitWorldPatch({
           type: 'upsertPlacement',
@@ -966,6 +969,23 @@ export class NpcServiceMock {
         });
         return { ok: true, placementId: payload.placementId };
       }
+      case 'updatePlacementScale': {
+        const placement = this.worldState.updatePlacementScale(payload.placementId, normalizePropPlacementScale(payload.scale));
+        if (!placement) {
+          return { ok: false, error: 'That prop is not available.' };
+        }
+
+        if (this.syncCombatPickupsFromWorld()) {
+          this.emit();
+        }
+
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(placement.id),
+          replacedPlacementId: null
+        });
+        return { ok: true, placementId: payload.placementId };
+      }
       case 'updateMissionSequence': {
         const missionSequence = this.worldState.updateMissionSequence(payload.missionSequence);
         for (const player of this.state.players.values()) {
@@ -1082,6 +1102,7 @@ export class NpcServiceMock {
       itemId: presence.itemId ?? '',
       layer: presence.layer ?? '',
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
+      scale: normalizePropPlacementScale(presence.scale),
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,
       x: quantizePosition(presence.x),

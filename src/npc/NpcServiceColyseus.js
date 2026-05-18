@@ -1,6 +1,7 @@
 import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
 import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
 import { quantizeNumber as quantize } from '../shared/numberMath.js';
+import { normalizePropPlacementScale } from '../shared/placementScale.js';
 
 const PLAYER_TRANSFORM_SEND_INTERVAL_MS = 50;
 const PLAYER_TRANSFORM_MOVE_EPSILON = 0.08;
@@ -872,6 +873,7 @@ export class NpcServiceColyseus {
       active: Boolean(presence.active),
       itemId: presence.itemId ?? '',
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
+      scale: normalizePropPlacementScale(presence.scale),
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,
       x: quantize(presence.x),

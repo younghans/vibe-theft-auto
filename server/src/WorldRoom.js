@@ -177,6 +177,7 @@ import {
   rotationQuarterTurnsToRadians as toRotationY,
   rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
 } from '../../src/shared/numberMath.js';
+import { normalizePropPlacementScale } from '../../src/shared/placementScale.js';
 import {
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
@@ -556,6 +557,7 @@ const BuilderPresenceState = schema({
   itemId: 'string',
   layer: 'string',
   rotationQuarterTurns: 'number',
+  scale: 'number',
   cellX: 'number',
   cellZ: 'number',
   x: 'number',
@@ -3753,7 +3755,8 @@ export class WorldRoom extends Room {
           next.x,
           next.z,
           next.rotationQuarterTurns,
-          next.interactable
+          next.interactable,
+          next.scale
         );
         return this.commitWorldPatch({
           type: 'upsertPlacement',
@@ -3862,6 +3865,21 @@ export class WorldRoom extends Room {
           replacedPlacementId: null
         }, previousLayout);
       }
+      case 'updatePlacementScale': {
+        const placement = this.assertEditablePlacement(payload.placementId, 'prop');
+        const scale = normalizePropPlacementScale(payload.scale);
+        const updatedPlacement = this.worldState.updatePlacementScale(placement.id, scale);
+        if (!updatedPlacement) {
+          throw new Error('That prop is not available.');
+        }
+
+        this.syncCombatPickupsFromWorld();
+        return this.commitWorldPatch({
+          type: 'upsertPlacement',
+          placement: this.worldState.serializePlacement(updatedPlacement.id),
+          replacedPlacementId: null
+        }, previousLayout);
+      }
       case 'updateMissionSequence': {
         const missionSequence = this.worldState.updateMissionSequence(payload.missionSequence);
         for (const player of this.state.players.values()) {
@@ -3891,6 +3909,7 @@ export class WorldRoom extends Room {
     presence.itemId = sanitized.itemId;
     presence.layer = sanitized.layer;
     presence.rotationQuarterTurns = sanitized.rotationQuarterTurns;
+    presence.scale = sanitized.scale;
     presence.cellX = sanitized.cellX;
     presence.cellZ = sanitized.cellZ;
     presence.x = sanitized.x;
@@ -3916,6 +3935,7 @@ export class WorldRoom extends Room {
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      scale: item.layer === 'prop' ? normalizePropPlacementScale(message.scale) : 1,
       cellX: Math.round(Number(message.cellX ?? 0)),
       cellZ: Math.round(Number(message.cellZ ?? 0)),
       x: quantizePosition(message.x),
@@ -3950,6 +3970,7 @@ export class WorldRoom extends Room {
       x: quantizePosition(message.x ?? message.position?.[0]),
       z: quantizePosition(message.z ?? message.position?.[1]),
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      scale: normalizePropPlacementScale(message.scale),
       interactable: this.sanitizePlacementInteractable(message.interactable ?? item.interactable ?? null)
     };
   }

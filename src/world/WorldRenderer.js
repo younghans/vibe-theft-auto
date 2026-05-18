@@ -8,6 +8,7 @@ import {
   getTileOccupiedCells,
   rotateFootprintOffset as rotateLocalOffset
 } from '../shared/tileFootprint.js';
+import { getPlacementScale } from '../shared/placementScale.js';
 import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
@@ -319,9 +320,10 @@ function getCachedInteractable(cache, key) {
 
 function getPlacementOffsetWorldPosition(rendered, placement, localOffset = null, target = new THREE.Vector3()) {
   if (Array.isArray(localOffset) && localOffset.length >= 2) {
+    const scale = getPlacementScale(placement);
     const rotatedOffset = rotateLocalOffset(
-      Number(localOffset[0]) || 0,
-      Number(localOffset[1]) || 0,
+      (Number(localOffset[0]) || 0) * scale,
+      (Number(localOffset[1]) || 0) * scale,
       placement.rotationQuarterTurns
     );
     const position = target.copy(rendered.object.position);
@@ -340,9 +342,10 @@ function getInteractableWorldPosition(rendered, placement, interactable, default
   }
 
   const rotationY = toRotationY(placement.rotationQuarterTurns);
+  const scale = getPlacementScale(placement);
   const position = target.copy(rendered.object.position);
-  position.x += Math.sin(rotationY) * defaultDistance;
-  position.z += Math.cos(rotationY) * defaultDistance;
+  position.x += Math.sin(rotationY) * defaultDistance * scale;
+  position.z += Math.cos(rotationY) * defaultDistance * scale;
   return position;
 }
 
@@ -416,10 +419,15 @@ function createInlineShellEntry(rendered, placement, interactable) {
 
 function createColliderFromLocalRect(rect, placement, item = null, minY = 0, maxY = 4) {
   const rotationQuarterTurns = placement?.rotationQuarterTurns ?? 0;
-  const rotatedCenter = rotateLocalOffset(rect.centerX ?? 0, rect.centerZ ?? 0, rotationQuarterTurns);
+  const scale = getPlacementScale(placement);
+  const rotatedCenter = rotateLocalOffset(
+    (rect.centerX ?? 0) * scale,
+    (rect.centerZ ?? 0) * scale,
+    rotationQuarterTurns
+  );
   const swapDimensions = Math.abs(rotationQuarterTurns % 2) === 1;
-  const halfWidth = swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0);
-  const halfDepth = swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0);
+  const halfWidth = (swapDimensions ? (rect.halfDepth ?? 0) : (rect.halfWidth ?? 0)) * scale;
+  const halfDepth = (swapDimensions ? (rect.halfWidth ?? 0) : (rect.halfDepth ?? 0)) * scale;
   const isTilePlacement = placement?.layer === 'tile';
   const tileCenter = isTilePlacement
     ? getTileCenterWorldPosition(
@@ -441,8 +449,8 @@ function createColliderFromLocalRect(rect, placement, item = null, minY = 0, max
     centerZ - halfDepth,
     centerX + halfWidth,
     centerZ + halfDepth,
-    rect.minY ?? minY,
-    rect.maxY ?? maxY
+    (rect.minY ?? minY) * scale,
+    (rect.maxY ?? maxY) * scale
   );
 }
 
@@ -896,10 +904,20 @@ function createPlacementColliders(object, item, placement, actor) {
   }
 
   if (itemBlocksMovement(item)) {
-    return [createBoxCollider(object, item.padding ?? 0.2)];
+    return [createBoxCollider(object, (item.padding ?? 0.2) * getPlacementScale(placement))];
   }
 
   return [];
+}
+
+function applyRenderedPlacementScale(rendered, placement) {
+  if (!rendered?.object || rendered.actor) {
+    return;
+  }
+
+  const baseScale = rendered.baseObjectScale ?? rendered.object.scale;
+  rendered.object.scale.copy(baseScale).multiplyScalar(getPlacementScale(placement));
+  rendered.object.updateWorldMatrix(true, true);
 }
 
 export class WorldRenderer {
@@ -1158,6 +1176,7 @@ export class WorldRenderer {
       id: placement.id,
       placement,
       object,
+      baseObjectScale: object.scale.clone(),
       cameraOcclusionObject: actor ? null : visual.colliderObject,
       cameraOcclusionMaterialState: null,
       actor,
@@ -1176,8 +1195,10 @@ export class WorldRenderer {
         ? (item.surfaceHeight ?? 0)
         : null,
       colliderObject,
-      colliders: createPlacementColliders(colliderObject, item, placement, actor)
+      colliders: []
     };
+    applyRenderedPlacementScale(renderedPlacement, placement);
+    renderedPlacement.colliders = createPlacementColliders(colliderObject, item, placement, actor);
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
     if (actor) {
@@ -1498,6 +1519,7 @@ export class WorldRenderer {
 
     if (!rendered.actor) {
       rendered.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+      applyRenderedPlacementScale(rendered, placement);
     }
 
     if (rendered.actor) {

@@ -3401,6 +3401,10 @@ export class Hud {
     this.builderTabs = this.overlay.querySelector('[data-builder-tabs]');
     this.builderGroups = this.overlay.querySelector('[data-builder-groups]');
     this.builderTiles = this.overlay.querySelector('[data-builder-tiles]');
+    this.builderPropSizePanel = this.overlay.querySelector('[data-builder-prop-size-panel]');
+    this.builderPropSizeInput = this.overlay.querySelector('[data-builder-prop-size]');
+    this.builderPropSizeValue = this.overlay.querySelector('[data-builder-prop-size-value]');
+    this.builderPropSizeTarget = this.overlay.querySelector('[data-builder-prop-size-target]');
     this.builderClose = this.overlay.querySelector('[data-builder-close]');
     this.builderResizeHandles = Array.from(this.overlay.querySelectorAll('[data-builder-resize-handle]'));
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
@@ -4199,6 +4203,14 @@ export class Hud {
         </div>
         <div class="hud__builder-tabs" data-builder-tabs></div>
         <div class="hud__builder-subtabs" data-builder-groups></div>
+        <div class="hud__builder-prop-size" data-builder-prop-size-panel hidden>
+          <div class="hud__builder-prop-size-header">
+            <span class="hud__field-label">Size</span>
+            <strong data-builder-prop-size-value>1.00x</strong>
+          </div>
+          <input class="hud__builder-range" type="range" min="0.25" max="3" step="0.05" value="1" data-builder-prop-size />
+          <span class="hud__builder-prop-size-target" data-builder-prop-size-target></span>
+        </div>
         <div class="hud__builder-scroll">
           <div class="hud__builder-grid" data-builder-tiles></div>
         </div>
@@ -5883,6 +5895,7 @@ export class Hud {
     onSelectCategory,
     onSelectGroup,
     onSelectTile,
+    onPropSizeChange,
     onRotateSelection,
     onMoveSelection,
     onDeleteSelection,
@@ -6103,6 +6116,10 @@ export class Hud {
       const field = form.querySelector('[data-builder-mission-prompt]');
       const prompt = field instanceof HTMLTextAreaElement ? field.value : '';
       onMissionSequencePromptSubmit?.(prompt);
+    });
+
+    this.builderPropSizeInput?.addEventListener('input', () => {
+      onPropSizeChange?.(Number(this.builderPropSizeInput.value));
     });
 
     this.builderClose.addEventListener('click', () => {
@@ -6915,6 +6932,7 @@ export class Hud {
     tabs = [],
     groupTabs = [],
     sections = [],
+    propSizeControl = null,
     missionSequencer = null
   }) {
     this.builderAvailable = available;
@@ -6947,6 +6965,26 @@ export class Hud {
           <span class="hud__builder-chip-count">${group.count ?? 0}</span>
         </button>
       `).join('');
+
+    const showPropSizeControl = Boolean(propSizeControl);
+    if (this.builderPropSizePanel) {
+      this.builderPropSizePanel.hidden = !showPropSizeControl;
+    }
+    if (showPropSizeControl && this.builderPropSizeInput) {
+      this.builderPropSizeInput.min = String(propSizeControl.min ?? 0.25);
+      this.builderPropSizeInput.max = String(propSizeControl.max ?? 3);
+      this.builderPropSizeInput.step = String(propSizeControl.step ?? 0.05);
+      this.builderPropSizeInput.value = String(propSizeControl.value ?? 1);
+    }
+    if (showPropSizeControl && this.builderPropSizeValue) {
+      this.builderPropSizeValue.textContent = `${Number(propSizeControl.value ?? 1).toFixed(2)}x`;
+    }
+    if (showPropSizeControl && this.builderPropSizeTarget) {
+      this.builderPropSizeTarget.textContent = [
+        propSizeControl.targetMode,
+        propSizeControl.targetLabel
+      ].filter(Boolean).join(' - ');
+    }
 
     if (missionSequencer) {
       this.builderTiles.innerHTML = this.getBuilderMissionSequencerMarkup(missionSequencer);

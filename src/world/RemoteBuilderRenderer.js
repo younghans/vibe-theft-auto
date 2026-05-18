@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
 import { prepareNpcRenderObject } from '../npc/npcRenderUtils.js';
 import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
+import { getPlacementScale } from '../shared/placementScale.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
@@ -173,6 +174,7 @@ export class RemoteBuilderRenderer {
 
     applyPreviewMaterial(preview);
     preview.position.y = 0.08;
+    preview.userData.builderBaseScale = preview.scale.clone();
 
     if (entry.previewObject) {
       entry.root.remove(entry.previewObject);
@@ -182,6 +184,12 @@ export class RemoteBuilderRenderer {
   }
 
   updateTransform(entry, item, presence) {
+    const scale = item.layer === 'prop' ? getPlacementScale({ layer: 'prop', scale: presence.scale }) : 1;
+    if (entry.previewObject) {
+      const baseScale = entry.previewObject.userData.builderBaseScale ?? entry.previewObject.scale;
+      entry.previewObject.scale.copy(baseScale).multiplyScalar(scale);
+    }
+
     if (item.layer === 'tile') {
       const center = getTileCenterWorldPosition(
         item,
@@ -202,7 +210,7 @@ export class RemoteBuilderRenderer {
       );
     } else {
       entry.root.position.set(presence.x ?? 0, 0, presence.z ?? 0);
-      entry.footprint.scale.set(item.size[0] + 0.25, item.size[1] + 0.25, 1);
+      entry.footprint.scale.set((item.size[0] * scale) + 0.25, (item.size[1] * scale) + 0.25, 1);
     }
 
     entry.root.rotation.y = toRotationY(presence.rotationQuarterTurns ?? 0);

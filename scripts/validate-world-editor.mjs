@@ -7,6 +7,11 @@ import {
   getCombatPickupSpawnDefinitions
 } from '../src/shared/combatPickupDefinitions.js';
 import { placementToCollisionRects } from '../src/shared/combatMath.js';
+import {
+  PROP_PLACEMENT_SCALE_MAX,
+  PROP_PLACEMENT_SCALE_MIN,
+  normalizePropPlacementScale
+} from '../src/shared/placementScale.js';
 import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
 import {
   DRINK_ITEM_IDS,
@@ -237,6 +242,8 @@ function validateCustomTileCatalogItems() {
 function validateCustomPropCatalogItems() {
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const worldBuilderSource = readFileSync(new URL('../src/world/WorldBuilder.js', import.meta.url), 'utf8');
+  const worldStateSource = readFileSync(new URL('../src/world/WorldState.js', import.meta.url), 'utf8');
   const pistolPickup = getBuilderItemById(COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
   assert(pistolPickup, 'Pistol pickup prop should exist');
   assert(pistolPickup.layer === 'prop', 'Pistol pickup should be a prop catalog item');
@@ -414,6 +421,25 @@ function validateCustomPropCatalogItems() {
     Math.abs(worldCollisionRect.z - (hoopTestPlacement.position[1] + hoopCollisionRect.centerZ)) < 0.001,
     'Basketball hoop prop collision should be relative to the pole position'
   );
+  const scaledHoopPlacement = {
+    ...hoopTestPlacement,
+    scale: 1.5
+  };
+  const [scaledWorldCollisionRect] = placementToCollisionRects(
+    scaledHoopPlacement,
+    basketballHoop,
+    { collisionKey: 'blocksMovement' }
+  );
+  assert(scaledWorldCollisionRect, 'Scaled basketball hoop movement collision should resolve');
+  assert(normalizePropPlacementScale(999) === PROP_PLACEMENT_SCALE_MAX, 'Prop placement scale should clamp oversized inputs');
+  assert(normalizePropPlacementScale(0) === PROP_PLACEMENT_SCALE_MIN, 'Prop placement scale should clamp undersized inputs');
+  assert(
+    Math.abs(scaledWorldCollisionRect.halfWidth - (worldCollisionRect.halfWidth * scaledHoopPlacement.scale)) < 0.001,
+    'Scaled prop movement collision should grow with the placement size'
+  );
+  assert(hudSource.includes('data-builder-prop-size'), 'World builder HUD should expose a prop size slider');
+  assert(worldBuilderSource.includes('onPropSizeChange'), 'World builder should bind prop size slider input');
+  assert(worldStateSource.includes('updatePlacementScale'), 'World state should support persisted prop scale updates');
   assert(BASKETBALL_SHOT_WORKOUT_KIND === 'basketball-shot-workout', 'Basketball shot workout kind should match prop interactable naming');
   assert(BASKETBALL_SHOT_DURATION_MS >= 5000, 'Basketball shot should leave enough time to read the NBA2K-style release meter');
   assert(gameSource.includes('BASKETBALL_SHOT_CLEAN_WINDOW'), 'Game should define a clean-release timing window');

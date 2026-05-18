@@ -9,6 +9,11 @@ import {
   quantizePosition as normalizePositionValue
 } from '../shared/numberMath.js';
 import {
+  PROP_PLACEMENT_SCALE_DEFAULT,
+  getPlacementScale,
+  normalizePropPlacementScale
+} from '../shared/placementScale.js';
+import {
   cloneMissionSequence
 } from '../shared/missions.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
@@ -25,6 +30,7 @@ function clonePlacement(placement) {
     itemId: placement.itemId,
     layer: placement.layer,
     rotationQuarterTurns: placement.rotationQuarterTurns,
+    scale: placement.layer === 'prop' ? getPlacementScale(placement) : undefined,
     cellX: placement.cellX,
     cellZ: placement.cellZ,
     position: placement.position ? [...placement.position] : null,
@@ -39,6 +45,9 @@ function toPlacementRecord(entry, item, id) {
     itemId: item.id,
     layer: item.layer,
     rotationQuarterTurns: normalizeRotationQuarterTurns(entry.rotationQuarterTurns),
+    scale: item.layer === 'prop'
+      ? normalizePropPlacementScale(entry.scale)
+      : undefined,
     cellX: item.layer === 'tile' ? entry.cell[0] : null,
     cellZ: item.layer === 'tile' ? entry.cell[1] : null,
     position: item.layer === 'tile'
@@ -147,6 +156,7 @@ function toSerializedPlacement(placement) {
       };
     }
 
+  const scale = getPlacementScale(placement);
   return {
     id: placement.id,
     layer: 'prop',
@@ -156,6 +166,7 @@ function toSerializedPlacement(placement) {
       normalizePositionValue(placement.position[1])
     ],
     rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
+    ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
     ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
   };
 }
@@ -300,6 +311,7 @@ export class WorldState {
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns,
+      scale: undefined,
       cellX,
       cellZ,
       position: null,
@@ -315,12 +327,13 @@ export class WorldState {
     };
   }
 
-  placeProp(item, x, z, rotationQuarterTurns, interactable = null) {
+  placeProp(item, x, z, rotationQuarterTurns, interactable = null, scale = PROP_PLACEMENT_SCALE_DEFAULT) {
     const placement = {
       id: this.createPlacementId(),
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns,
+      scale: normalizePropPlacementScale(scale),
       cellX: null,
       cellZ: null,
       position: [x, z],
@@ -338,6 +351,7 @@ export class WorldState {
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns,
+      scale: undefined,
       cellX: null,
       cellZ: null,
       position: [x, z],
@@ -405,6 +419,16 @@ export class WorldState {
     }
 
     placement.interactable = cloneInteractable(interactable);
+    return clonePlacement(placement);
+  }
+
+  updatePlacementScale(id, scale = PROP_PLACEMENT_SCALE_DEFAULT) {
+    const placement = this.getPlacement(id);
+    if (!placement || placement.layer !== 'prop') {
+      return null;
+    }
+
+    placement.scale = normalizePropPlacementScale(scale);
     return clonePlacement(placement);
   }
 
@@ -530,16 +554,20 @@ export class WorldState {
 
     const props = [...this.propPlacements.values()]
       .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))
-      .map((placement) => ({
-        id: placement.id,
-        itemId: placement.itemId,
-        position: [
-          normalizePositionValue(placement.position[0]),
-          normalizePositionValue(placement.position[1])
-        ],
-        rotationQuarterTurns: placement.rotationQuarterTurns,
-        ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
-      }));
+      .map((placement) => {
+        const scale = getPlacementScale(placement);
+        return {
+          id: placement.id,
+          itemId: placement.itemId,
+          position: [
+            normalizePositionValue(placement.position[0]),
+            normalizePositionValue(placement.position[1])
+          ],
+          rotationQuarterTurns: placement.rotationQuarterTurns,
+          ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
+          ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
+        };
+      });
 
     const npcs = [...this.npcPlacements.values()]
       .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))

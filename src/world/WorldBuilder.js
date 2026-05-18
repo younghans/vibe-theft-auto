@@ -12,6 +12,13 @@ import {
 import { collectNpcTargetOptions, resolveNpcTargetOption } from '../npc/npcTargeting.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
 import { quantizeNumber, rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
+import {
+  PROP_PLACEMENT_SCALE_MAX,
+  PROP_PLACEMENT_SCALE_MIN,
+  PROP_PLACEMENT_SCALE_STEP,
+  getPlacementScale,
+  normalizePropPlacementScale
+} from '../shared/placementScale.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
   appendMissionSequencePromptEntry,
@@ -94,6 +101,15 @@ async function createPreviewObject(library, item) {
   const visual = await instantiateItemVisual(library, item);
   prepareItemVisual(visual);
   return visual.root;
+}
+
+function applyPreviewObjectScale(object, scale = 1) {
+  if (!object) {
+    return;
+  }
+
+  const baseScale = object.userData.builderBaseScale ?? object.scale;
+  object.scale.copy(baseScale).multiplyScalar(scale);
 }
 
 function snapToCell(worldPosition, target = { x: 0, z: 0 }) {
@@ -205,6 +221,7 @@ function createDefaultEditorState() {
     activeItemIndex: 0,
     missionSequencerPrompt: '',
     rotationQuarterTurns: 0,
+    propScale: 1,
     hover: {
       point: null,
       cell: null,
@@ -247,6 +264,8 @@ export class WorldBuilder {
     this.pendingNpcUpdateTimeouts = new Map();
     this.pendingBuildingUpdateByPlacementId = new Map();
     this.pendingBuildingUpdateTimeouts = new Map();
+    this.pendingPropScaleByPlacementId = new Map();
+    this.pendingPropScaleTimeouts = new Map();
     this.npcTargetPickState = null;
     this.activeMovePlacementId = null;
     this.awaitingMovedPlacementIds = new Set();
@@ -378,6 +397,7 @@ export class WorldBuilder {
       onSelectCategory: (categoryId) => this.selectCategory(categoryId),
       onSelectGroup: (groupId) => this.selectGroup(groupId),
       onSelectTile: (index) => this.selectItem(index),
+      onPropSizeChange: (value) => void this.updatePropSize(value),
       onRotateSelection: () => this.rotateSelectedPlacement(),
       onMoveSelection: () => this.startMovingSelectedPlacement(),
       onDeleteSelection: () => this.deleteSelectedPlacement(),
@@ -466,6 +486,15 @@ export class WorldBuilder {
     return this.state.activeGroupIdByCategory[this.state.activeCategoryId] ?? 'all';
   }
 
+  getPropScaleDraft(placement = null) {
+    if (!placement || placement.layer !== 'prop') {
+      return this.state.propScale;
+    }
+
+    return this.pendingPropScaleByPlacementId.get(placement.id)
+      ?? getPlacementScale(placement);
+  }
+
   getVisibleCategoryEntries(categoryId = this.state.activeCategoryId) {
     const category = getBuilderTabCategoryById(categoryId) ?? BUILDER_CATEGORIES[0];
     const activeGroupId = this.state.activeGroupIdByCategory[category.id] ?? 'all';
@@ -512,6 +541,17 @@ export class WorldBuilder {
         selected: card.sourceIndex === this.state.activeItemIndex
       }))
     }));
+    const selectedPlacement = this.getSelectedPlacement();
+    const selectedPropItem = selectedPlacement?.layer === 'prop'
+      ? getBuilderItemById(selectedPlacement.itemId)
+      : null;
+    const activePropItem = this.activeItem?.layer === 'prop'
+      ? this.activeItem
+      : null;
+    const propSizeItem = selectedPropItem ?? activePropItem;
+    const propSizeValue = selectedPropItem
+      ? this.getPropScaleDraft(selectedPlacement)
+      : this.state.propScale;
 
     return {
       available: this.canEdit,
@@ -519,6 +559,16 @@ export class WorldBuilder {
       tabs,
       groupTabs,
       sections,
+      propSizeControl: propSizeItem
+        ? {
+            value: propSizeValue,
+            min: PROP_PLACEMENT_SCALE_MIN,
+            max: PROP_PLACEMENT_SCALE_MAX,
+            step: PROP_PLACEMENT_SCALE_STEP,
+            targetLabel: propSizeItem.label,
+            targetMode: selectedPropItem ? 'Selection' : 'Next Prop'
+          }
+        : null,
       missionSequencer: this.state.activeCategoryId === BUILDER_MISSION_SEQUENCER_CATEGORY.id
         ? {
             prompt: this.state.missionSequencerPrompt,
@@ -1302,6 +1352,7 @@ export class WorldBuilder {
 
     applyPreviewMaterial(preview, previewTarget.opacity);
     preview.position.y = 0.08;
+    preview.userData.builderBaseScale = preview.scale.clone();
 
     this.previewRoot.clear();
     this.previewRoot.add(this.previewFootprint);
@@ -1322,6 +1373,8 @@ export class WorldBuilder {
     }
 
     if (movingPlacement && movingItem) {
+      const movingScale = movingPlacement.layer === 'prop' ? this.getPropScaleDraft(movingPlacement) : 1;
+      applyPreviewObjectScale(this.state.preview.object, movingScale);
       if (movingPlacement.layer === 'tile') {
         if (!this.state.hover.cell) {
           this.previewRoot.visible = false;
@@ -1346,7 +1399,7 @@ export class WorldBuilder {
           this.getGroundHeightAt(toGroundProbe(this.state.hover.point.x, this.state.hover.point.z)),
           this.state.hover.point.z
         );
-        this.previewFootprint.scale.set(movingItem.size[0] + 0.35, movingItem.size[1] + 0.35, 1);
+        this.previewFootprint.scale.set((movingItem.size[0] * movingScale) + 0.35, (movingItem.size[1] * movingScale) + 0.35, 1);
       }
 
       this.previewRoot.rotation.y = toRotationY(movingPlacement.rotationQuarterTurns);
@@ -1357,6 +1410,8 @@ export class WorldBuilder {
     const hoveredPlacement = this.getHoveredPlacement();
 
     if (hoveredPlacement) {
+      const hoveredScale = hoveredPlacement.layer === 'prop' ? this.getPropScaleDraft(hoveredPlacement) : 1;
+      applyPreviewObjectScale(this.state.preview.object, hoveredScale);
       if (hoveredPlacement.layer === 'tile') {
         const item = getBuilderItemById(hoveredPlacement.itemId);
         if (!item) {
@@ -1391,12 +1446,15 @@ export class WorldBuilder {
           this.previewRoot.visible = false;
           return;
         }
-        this.previewFootprint.scale.set(item.size[0] + 0.35, item.size[1] + 0.35, 1);
+        this.previewFootprint.scale.set((item.size[0] * hoveredScale) + 0.35, (item.size[1] * hoveredScale) + 0.35, 1);
       }
       this.previewRoot.rotation.y = toRotationY(hoveredPlacement.rotationQuarterTurns);
       this.previewRoot.visible = true;
       return;
     }
+
+    const activeScale = this.activeItem.layer === 'prop' ? this.state.propScale : 1;
+    applyPreviewObjectScale(this.state.preview.object, activeScale);
 
     if (this.activeItem.layer === 'tile') {
       const center = getTileCenterWorldPosition(
@@ -1422,7 +1480,7 @@ export class WorldBuilder {
         this.getGroundHeightAt(toGroundProbe(this.state.hover.point.x, this.state.hover.point.z)),
         this.state.hover.point.z
       );
-      this.previewFootprint.scale.set(this.activeItem.size[0] + 0.35, this.activeItem.size[1] + 0.35, 1);
+      this.previewFootprint.scale.set((this.activeItem.size[0] * activeScale) + 0.35, (this.activeItem.size[1] * activeScale) + 0.35, 1);
     }
 
     this.previewRoot.rotation.y = toRotationY(this.state.rotationQuarterTurns);
@@ -1462,6 +1520,7 @@ export class WorldBuilder {
       itemId: this.activeItem.id,
       layer: this.activeItem.layer,
       rotationQuarterTurns: this.state.rotationQuarterTurns,
+      scale: this.activeItem.layer === 'prop' ? this.state.propScale : 1,
       cellX: hoverCell?.x ?? selectedPlacement?.cellX ?? 0,
       cellZ: hoverCell?.z ?? selectedPlacement?.cellZ ?? 0,
       x: hoverPoint?.x ?? fallbackPosition.x,
@@ -1524,7 +1583,8 @@ export class WorldBuilder {
       item,
       x: this.state.hover.point.x,
       z: this.state.hover.point.z,
-      rotationQuarterTurns: this.state.rotationQuarterTurns
+      rotationQuarterTurns: this.state.rotationQuarterTurns,
+      scale: this.state.propScale
     });
     if (!result?.ok) {
       this.hud.showToast(result?.error ?? 'Could not place prop.');
@@ -1678,6 +1738,9 @@ export class WorldBuilder {
     }
 
     if (this.state.selection.placementId === nextPlacement.id) {
+      if (nextPlacement.layer === 'prop') {
+        this.state.propScale = getPlacementScale(nextPlacement);
+      }
       this.selectPlacement(nextPlacement.id);
     }
   }
@@ -1694,6 +1757,7 @@ export class WorldBuilder {
     this.awaitingMovedPlacementIds.delete(placementId);
     this.clearPendingNpcUpdate(placementId);
     this.clearPendingBuildingUpdate(placementId);
+    this.clearPendingPropScaleUpdate(placementId);
     this.worldState.deletePlacement(placementId);
     this.worldRenderer.removePlacement(placementId);
     if (this.state.selection.placementId === placementId) {
@@ -1703,6 +1767,9 @@ export class WorldBuilder {
 
   clearPlacements() {
     this.clearInteriorPlacementPreview();
+    for (const placementId of [...this.pendingPropScaleByPlacementId.keys()]) {
+      this.clearPendingPropScaleUpdate(placementId);
+    }
     this.worldState.clear();
     this.worldRenderer.clear();
     this.remoteBuilderRenderer.clear();
@@ -1715,6 +1782,11 @@ export class WorldBuilder {
 
     this.state.selection.placementId = placementId;
     const placement = this.getSelectedPlacement();
+
+    if (placement?.layer === 'prop') {
+      this.state.propScale = getPlacementScale(placement);
+      this.updateBuilderHud();
+    }
 
     if (placement?.layer === 'npc') {
       const npcCategory = BUILDER_CATEGORIES.find((entry) => entry.id === 'npcs');
@@ -1746,6 +1818,7 @@ export class WorldBuilder {
       this.closeBuildingInstanceEditor();
     }
 
+    this.updateBuilderHud();
     this.updateSelectionVisual();
     this.updateBuilderNpcEditor();
     this.updateBuildingInstanceEditor();
@@ -1769,6 +1842,7 @@ export class WorldBuilder {
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
     this.hud.setBuilderBuildingEditor(null);
+    this.updateBuilderHud();
     this.syncNpcDebugTools();
     this.reportBuilderPresence(true);
   }
@@ -2463,6 +2537,68 @@ export class WorldBuilder {
     }
     this.updateSelectionVisual();
     this.reportBuilderPresence(true);
+  }
+
+  async updatePropSize(value) {
+    const scale = normalizePropPlacementScale(value);
+    this.state.propScale = scale;
+    const placement = this.getSelectedPlacement();
+
+    if (placement?.layer === 'prop') {
+      this.queuePropScaleUpdate(placement.id, scale);
+    }
+
+    this.updateBuilderHud();
+    this.updatePreviewTransform();
+    this.updateSelectionVisual();
+    this.reportBuilderPresence(true);
+  }
+
+  queuePropScaleUpdate(placementId, scale) {
+    this.pendingPropScaleByPlacementId.set(placementId, normalizePropPlacementScale(scale));
+    window.clearTimeout(this.pendingPropScaleTimeouts.get(placementId));
+    const timeoutId = window.setTimeout(() => {
+      void this.flushPropScaleUpdate(placementId);
+    }, 150);
+    this.pendingPropScaleTimeouts.set(placementId, timeoutId);
+  }
+
+  clearPendingPropScaleUpdate(placementId) {
+    this.pendingPropScaleByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingPropScaleTimeouts.get(placementId));
+    this.pendingPropScaleTimeouts.delete(placementId);
+  }
+
+  async flushPropScaleUpdate(placementId) {
+    const scale = this.pendingPropScaleByPlacementId.get(placementId);
+    this.pendingPropScaleByPlacementId.delete(placementId);
+    window.clearTimeout(this.pendingPropScaleTimeouts.get(placementId));
+    this.pendingPropScaleTimeouts.delete(placementId);
+
+    if (!Number.isFinite(scale)) {
+      return;
+    }
+
+    const placement = this.worldState.getPlacement(placementId);
+    if (!placement || placement.layer !== 'prop') {
+      return;
+    }
+
+    const result = await this.worldEditAdapter.edit({
+      op: 'updatePlacementScale',
+      placementId,
+      scale
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not resize prop.');
+      return;
+    }
+
+    if (result.appliedImmediately) {
+      this.updateSelectionVisual();
+      this.updateBuilderHud();
+      this.notifyLayoutChanged();
+    }
   }
 
   queueBuildingUpdate(placementId, changes = {}) {

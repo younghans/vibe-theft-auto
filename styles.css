@@ -5502,6 +5502,53 @@ body.is-admin-prompt-resizing * {
   color: #f6f0e1;
 }
 
+.hud__builder-prop-size {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid rgba(242, 200, 113, 0.18);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.68);
+}
+
+.hud__builder-prop-size[hidden] {
+  display: none;
+}
+
+.hud__builder-prop-size-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hud__builder-prop-size-header .hud__field-label {
+  margin-bottom: 0;
+}
+
+.hud__builder-prop-size-header strong {
+  color: #f7f0e5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hud__builder-range {
+  width: 100%;
+  accent-color: #f2c871;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hud__builder-prop-size-target {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(244, 238, 226, 0.68);
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hud__builder-scroll {
   overflow-y: auto;
   min-height: 0;

@@ -8,6 +8,7 @@ import {
   quantizeRotation,
   rotationQuarterTurnsToRadians as toRotationY
 } from '../shared/numberMath.js';
+import { getPlacementScale } from '../shared/placementScale.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from '../world/builderCatalog.js';
 import { resolvePlacementInteractableDefinition } from '../world/interactableMetadata.js';
 import { NPC_STEP_TYPES } from './npcBehavior.js';
@@ -65,9 +66,10 @@ export function getPlacementWorldPoint(placement, offset = [0, 0], item = getBui
     return null;
   }
 
+  const scale = getPlacementScale(placement);
   const rotated = rotateLocalOffset(
-    Number(offset?.[0] ?? 0),
-    Number(offset?.[1] ?? 0),
+    Number(offset?.[0] ?? 0) * scale,
+    Number(offset?.[1] ?? 0) * scale,
     placement.rotationQuarterTurns ?? 0
   );
 

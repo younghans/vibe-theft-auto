@@ -28,6 +28,7 @@ function toTransportPayload(edit) {
           x: edit.x,
           z: edit.z,
           rotationQuarterTurns: edit.rotationQuarterTurns,
+          scale: edit.scale,
           interactable: edit.item.interactable ?? null
         };
     case 'placeNpc':
@@ -75,6 +76,11 @@ function toTransportPayload(edit) {
       return {
         placementId: edit.placementId,
         interactable: edit.interactable
+      };
+    case 'updatePlacementScale':
+      return {
+        placementId: edit.placementId,
+        scale: edit.scale
       };
     case 'updateMissionSequence':
       return {
@@ -137,7 +143,8 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
         edit.x,
         edit.z,
         edit.rotationQuarterTurns,
-        edit.item.interactable ?? null
+        edit.item.interactable ?? null,
+        edit.scale
       );
       await worldRenderer.addPlacement(placement);
       return successResult(placement.id);
@@ -186,6 +193,14 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
       const updatedPlacement = worldState.updatePlacementInteractable(edit.placementId, edit.interactable);
       if (!updatedPlacement) {
         return errorResult('That placement is not available.');
+      }
+      worldRenderer.updatePlacement(updatedPlacement);
+      return successResult(updatedPlacement.id);
+    }
+    case 'updatePlacementScale': {
+      const updatedPlacement = worldState.updatePlacementScale(edit.placementId, edit.scale);
+      if (!updatedPlacement) {
+        return errorResult('That prop is not available.');
       }
       worldRenderer.updatePlacement(updatedPlacement);
       return successResult(updatedPlacement.id);
