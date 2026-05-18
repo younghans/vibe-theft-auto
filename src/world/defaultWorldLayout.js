@@ -1,6 +1,7 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import { rotationRadiansToQuarterTurns as toQuarterTurns } from '../shared/numberMath.js';
 import { createDefaultMissionSequence } from '../shared/missions.js';
+import { createDefaultNpcModelVoiceMap } from '../shared/npcVoice.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 import { getBuilderItemById } from './builderCatalog.js';
@@ -401,5 +402,6 @@ export const defaultWorldLayout = Object.freeze({
   tiles: defaultTiles,
   props: defaultProps,
   npcs: defaultNpcs,
-  missionSequence: createDefaultMissionSequence()
+  missionSequence: createDefaultMissionSequence(),
+  npcModelVoices: createDefaultNpcModelVoiceMap()
 });

@@ -86,6 +86,11 @@ function toTransportPayload(edit) {
       return {
         missionSequence: edit.missionSequence
       };
+    case 'updateNpcModelVoice':
+      return {
+        modelId: edit.modelId,
+        voice: edit.voice
+      };
     default:
       return {};
   }
@@ -208,6 +213,18 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
     case 'updateMissionSequence':
       worldState.updateMissionSequence(edit.missionSequence);
       return successResult(null);
+    case 'updateNpcModelVoice': {
+      const model = getNpcModelById(edit.modelId);
+      if (!model) {
+        return errorResult('That NPC model is not available.');
+      }
+      const voice = worldState.updateNpcModelVoice(model.id, edit.voice);
+      return {
+        ...successResult(null),
+        modelId: model.id,
+        voice
+      };
+    }
     default:
       return errorResult('That world edit is not supported.');
   }

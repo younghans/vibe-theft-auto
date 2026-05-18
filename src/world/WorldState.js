@@ -16,6 +16,11 @@ import {
 import {
   cloneMissionSequence
 } from '../shared/missions.js';
+import {
+  cloneNpcModelVoiceMap,
+  getNpcModelVoice,
+  updateNpcModelVoiceMap
+} from '../shared/npcVoice.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
@@ -180,6 +185,7 @@ export class WorldState {
     this.placementsById = new Map();
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
+    this.npcModelVoices = cloneNpcModelVoiceMap();
   }
 
   clear() {
@@ -190,6 +196,7 @@ export class WorldState {
     this.placementsById.clear();
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
+    this.npcModelVoices = cloneNpcModelVoiceMap();
   }
 
   getPlacement(id) {
@@ -210,9 +217,22 @@ export class WorldState {
     return cloneMissionSequence(this.missionSequence);
   }
 
+  getNpcModelVoices() {
+    return cloneNpcModelVoiceMap(this.npcModelVoices);
+  }
+
+  getNpcModelVoice(modelId = '') {
+    return getNpcModelVoice(this.npcModelVoices, modelId);
+  }
+
   updateMissionSequence(sequence = null) {
     this.missionSequence = cloneMissionSequence(sequence);
     return this.getMissionSequence();
+  }
+
+  updateNpcModelVoice(modelId = '', voice = {}) {
+    this.npcModelVoices = updateNpcModelVoiceMap(this.npcModelVoices, modelId, voice);
+    return this.getNpcModelVoice(modelId);
   }
 
   getPlacementAtCell(cellX, cellZ) {
@@ -223,6 +243,7 @@ export class WorldState {
   loadLayout(layout = { tiles: [], props: [], npcs: [] }) {
     this.clear();
     this.missionSequence = cloneMissionSequence(layout.missionSequence);
+    this.npcModelVoices = cloneNpcModelVoiceMap(layout.npcModelVoices);
 
     for (const entry of layout.tiles ?? []) {
       const item = getBuilderItemById(entry.itemId);
@@ -614,7 +635,8 @@ export class WorldState {
       tiles,
       props,
       npcs,
-      missionSequence: cloneMissionSequence(this.missionSequence)
+      missionSequence: cloneMissionSequence(this.missionSequence),
+      npcModelVoices: this.getNpcModelVoices()
     };
   }
 

@@ -130,6 +130,7 @@ import {
   normalizeMissionId,
   resolveSelectedMissionId
 } from '../shared/missions.js';
+import { normalizeNpcVoice } from '../shared/npcVoice.js';
 import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
@@ -997,6 +998,22 @@ export class NpcServiceMock {
         });
         this.emit();
         return { ok: true };
+      }
+      case 'updateNpcModelVoice': {
+        const model = getNpcModelById(payload.modelId);
+        if (!model) {
+          return { ok: false, error: 'That NPC model is not available.' };
+        }
+        const voice = this.worldState.updateNpcModelVoice(
+          model.id,
+          normalizeNpcVoice(payload.voice, model.voice)
+        );
+        this.emitWorldPatch({
+          type: 'updateNpcModelVoice',
+          modelId: model.id,
+          voice
+        });
+        return { ok: true, modelId: model.id, voice };
       }
       default:
         return { ok: false, error: 'That world edit is not supported.' };

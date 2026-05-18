@@ -117,6 +117,7 @@ import {
   normalizeMissionSequenceConfig,
   updateMissionSequenceEntry
 } from '../src/shared/missions.js';
+import { getNpcModelVoice } from '../src/shared/npcVoice.js';
 import { getSkillXpForLevel } from '../src/shared/skills.js';
 
 function assert(condition, message) {
@@ -924,6 +925,12 @@ function validateFootprintSupport() {
   assert(defaultMartha?.modelId === 'martha', 'Default world should create Martha using the Martha model');
   assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
   assert(defaultMartha?.marthaEnabled === true, 'Default world should enable the Martha NPC food function');
+  assert(defaultWorldLayout.npcModelVoices?.martha, 'Default world should include model-level NPC voice settings');
+  assert(
+    getNpcModelVoice(defaultWorldLayout.npcModelVoices, 'martha').basePitchHz
+      > getNpcModelVoice(defaultWorldLayout.npcModelVoices, 'brute').basePitchHz,
+    'Default model voices should give Martha a higher chirp than the large Brute model'
+  );
   assert(
     /fat old white lady/.test(defaultMartha?.prompt ?? '')
       && /fluffy white hair/.test(defaultMartha?.prompt ?? '')

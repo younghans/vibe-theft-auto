@@ -5,6 +5,10 @@ import {
   detectNpcChatIntent,
   getNpcDialogueProfileKey
 } from '../src/shared/npcDialogue.js';
+import {
+  getDefaultNpcVoiceForModelId,
+  normalizeNpcVoice
+} from '../src/shared/npcVoice.js';
 
 const shady = {
   id: 'npc_shady_figure',
@@ -53,6 +57,17 @@ assert.match(brunoTraining, /membership|barbell|gym|train|training|form|lift/i, 
 assert.match(rothPrice, /pistol|fifty|50|cash|cigarettes|skateboard/i, 'pawn response should answer item price requests in character');
 assert.match(sketchCards, /card|wager|blackjack|hit|stand|double|split/i, 'blackjack dealer response should answer card requests');
 assert.notEqual(shadyWork, brunoTraining, 'different NPC personas should not collapse to the same line');
+
+const bruteVoice = getDefaultNpcVoiceForModelId('brute');
+const marthaVoice = getDefaultNpcVoiceForModelId('martha');
+const botVoice = getDefaultNpcVoiceForModelId('xBot');
+assert(bruteVoice.basePitchHz < marthaVoice.basePitchHz, 'large NPC models should default to lower chirp voices than Martha');
+assert.equal(botVoice.waveform, 'square', 'robot models should default to a bright synthetic chirp tone');
+assert.equal(
+  normalizeNpcVoice({ basePitchHz: 9999, pitchVariance: -1, charactersPerSecond: 100 }).basePitchHz,
+  620,
+  'NPC voice settings should clamp unsafe editor input'
+);
 
 const repeatedShadyWork = buildNpcFallbackReply({
   npc: shady,

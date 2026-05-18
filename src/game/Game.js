@@ -188,6 +188,7 @@ import {
   listVibeHeroSongs,
   normalizeVibeHeroSongId
 } from '../shared/vibeHero.js';
+import { getNpcModelVoice } from '../shared/npcVoice.js';
 
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
@@ -1068,6 +1069,7 @@ export class Game {
     this.worldMapImageRequest = null;
     this.worldMapCaptureInFlight = false;
     this.gameSettings = readStoredGameSettings();
+    this.hud.setSpeechAudioVolume?.(this.gameSettings.masterVolume);
     this.currentBuildCommitSha = getClientBuildCommitSha();
     this.frontendUpdateAvailable = false;
     this.frontendUpdateCommitSha = '';
@@ -1714,6 +1716,7 @@ export class Game {
     for (const audio of this.vibeHeroAudioPreloads?.values?.() ?? []) {
       audio.volume = this.getVibeHeroMusicVolume(this.vibeHero);
     }
+    this.hud.setSpeechAudioVolume?.(Number(this.gameSettings?.masterVolume ?? 1));
   }
 
   fireLocalWeapon(aimDirection, origin = null) {
@@ -15353,6 +15356,10 @@ export class Game {
       label,
       variant,
       status: options.status ?? 'done',
+      chirp: options.chirp === true,
+      modelId: options.modelId ?? '',
+      voice: options.voice ?? null,
+      speakerKey: options.speakerKey ?? label ?? id,
       visible: true,
       screenX: projected.x,
       screenY: projected.y - (Number(options.screenYOffset) || 0)
@@ -15397,6 +15404,10 @@ export class Game {
         {
           status: npcState.chatStatus,
           busy: npcState.busy,
+          chirp: true,
+          modelId: npcState.modelId,
+          voice: getNpcModelVoice(this.currentLayout?.npcModelVoices, npcState.modelId),
+          speakerKey: `${npcState.modelId}:${npcState.name}`,
           screenYOffset: options.screenYOffset
         }
       )

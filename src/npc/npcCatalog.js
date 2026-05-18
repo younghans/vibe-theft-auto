@@ -1,5 +1,6 @@
 import { assets } from '../world/assetManifest.js';
 import { MIXAMO_CHARACTER_DEFINITIONS } from '../shared/mixamoCharacterCatalog.js';
+import { getDefaultNpcVoiceForModelId } from '../shared/npcVoice.js';
 
 function createNpcCollisionProfile({ height, colliderRadius }) {
   const colliderHeight = Math.max(1.6, height * 0.82);
@@ -34,7 +35,8 @@ export const NPC_MODEL_CATALOG = Object.freeze([
     footprint: [...definition.npcProfile.footprint],
     interactionOffset: definition.npcProfile.interactionOffset,
     interactionRadius: definition.npcProfile.interactionRadius,
-    colliderRadius: definition.npcProfile.colliderRadius
+    colliderRadius: definition.npcProfile.colliderRadius,
+    voice: getDefaultNpcVoiceForModelId(definition.id)
   }))
 ].map(createNpcModel));
 

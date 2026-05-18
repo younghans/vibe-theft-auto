@@ -60,6 +60,7 @@ import {
   normalizeMissionId,
   resolveSelectedMissionId
 } from '../../src/shared/missions.js';
+import { normalizeNpcVoice } from '../../src/shared/npcVoice.js';
 import {
   executeStockTrade,
   getStockMarketPromptRadius,
@@ -3891,6 +3892,16 @@ export class WorldRoom extends Room {
           missionSequence
         }, previousLayout);
       }
+      case 'updateNpcModelVoice': {
+        const { modelId, voice } = this.sanitizeNpcModelVoiceUpdate(payload);
+        const updatedVoice = this.worldState.updateNpcModelVoice(modelId, voice);
+
+        return this.commitWorldPatch({
+          type: 'updateNpcModelVoice',
+          modelId,
+          voice: updatedVoice
+        }, previousLayout);
+      }
       default:
         throw new Error('That world edit is not supported.');
     }
@@ -4102,6 +4113,18 @@ export class WorldRoom extends Room {
     }
 
     return updates;
+  }
+
+  sanitizeNpcModelVoiceUpdate(message = {}) {
+    const model = getNpcModelById(message.modelId);
+    if (!model) {
+      throw new Error('That NPC model is not available.');
+    }
+
+    return {
+      modelId: model.id,
+      voice: normalizeNpcVoice(message.voice, model.voice)
+    };
   }
 
   sanitizeMovedTilePlacement(message = {}) {

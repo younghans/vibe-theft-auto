@@ -23,6 +23,7 @@ import {
   VIBE_HERO_NOTE_TRAVEL_MS
 } from '../shared/vibeHero.js';
 import { getAgentTaskPromptTitle } from '../shared/agentTaskSummary.js';
+import { NpcSpeechPlayback } from './NpcSpeechPlayback.js';
 
 const TASK_CONFETTI_COLORS = Object.freeze([
   '#ff3d8f',
@@ -3415,6 +3416,11 @@ export class Hud {
     this.builderNpcDone = this.overlay.querySelector('[data-builder-npc-done]');
     this.builderNpcModel = this.overlay.querySelector('[data-builder-npc-model]');
     this.builderNpcModelOptions = this.overlay.querySelector('[data-builder-npc-model-options]');
+    this.builderNpcVoicePitch = this.overlay.querySelector('[data-builder-npc-voice-pitch]');
+    this.builderNpcVoiceSpeed = this.overlay.querySelector('[data-builder-npc-voice-speed]');
+    this.builderNpcVoiceRange = this.overlay.querySelector('[data-builder-npc-voice-range]');
+    this.builderNpcVoiceTone = this.overlay.querySelector('[data-builder-npc-voice-tone]');
+    this.builderNpcVoiceVolume = this.overlay.querySelector('[data-builder-npc-voice-volume]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
     this.builderNpcSpeed = this.overlay.querySelector('[data-builder-npc-speed]');
@@ -3547,6 +3553,7 @@ export class Hud {
     this.speechBubbleLabelNodes = new Map();
     this.speechBubbleTextNodes = new Map();
     this.speechBubbleActiveIds = new Set();
+    this.npcSpeechPlayback = new NpcSpeechPlayback();
     this.aimDebugInputs = new Map();
     this.poseDebugExtraInputs = new Map();
     this.joinTitleTimeout = 0;
@@ -4242,6 +4249,40 @@ export class Hud {
                 <select class="hud__field-control" data-builder-npc-model></select>
               </label>
               <div class="hud__npc-model-grid" data-builder-npc-model-options></div>
+              <div class="hud__builder-section-header">
+                <p class="hud__builder-section-title">Model Voice</p>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Pitch</span>
+                  <input class="hud__field-control" type="number" min="120" max="620" step="1" data-builder-npc-voice-pitch />
+                </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Speed</span>
+                  <input class="hud__field-control" type="number" min="12" max="52" step="1" data-builder-npc-voice-speed />
+                </label>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Range</span>
+                  <input class="hud__field-control" type="number" min="0" max="45" step="1" data-builder-npc-voice-range />
+                </label>
+                <label class="hud__field">
+                  <span class="hud__field-label">Tone</span>
+                  <select class="hud__field-control" data-builder-npc-voice-tone>
+                    <option value="triangle">Soft</option>
+                    <option value="square">Bright</option>
+                    <option value="sawtooth">Raspy</option>
+                    <option value="sine">Round</option>
+                  </select>
+                </label>
+              </div>
+              <div class="hud__builder-instance-metrics">
+                <label class="hud__field">
+                  <span class="hud__field-label">Volume</span>
+                  <input class="hud__field-control" type="number" min="0" max="100" step="1" data-builder-npc-voice-volume />
+                </label>
+              </div>
               <label class="hud__field">
                 <span class="hud__field-label">Name</span>
                 <input class="hud__field-control" type="text" maxlength="40" data-builder-npc-name />
@@ -5914,6 +5955,7 @@ export class Hud {
     onNpcBlackjackDealerChange,
     onNpcSchoolMicrogameChange,
     onNpcModelChange,
+    onNpcModelVoiceChange,
     onNpcRoutineAddStep,
     onNpcRoutineRemoveStep,
     onNpcRoutineStepChange,
@@ -6239,6 +6281,22 @@ export class Hud {
         onNpcModelChange(modelId);
       }
     });
+
+    const handleNpcModelVoiceChange = () => {
+      onNpcModelVoiceChange?.({
+        basePitchHz: Number(this.builderNpcVoicePitch?.value),
+        charactersPerSecond: Number(this.builderNpcVoiceSpeed?.value),
+        pitchVariance: Number(this.builderNpcVoiceRange?.value) / 100,
+        waveform: this.builderNpcVoiceTone?.value,
+        volume: Number(this.builderNpcVoiceVolume?.value) / 100
+      });
+    };
+
+    this.builderNpcVoicePitch?.addEventListener('input', handleNpcModelVoiceChange);
+    this.builderNpcVoiceSpeed?.addEventListener('input', handleNpcModelVoiceChange);
+    this.builderNpcVoiceRange?.addEventListener('input', handleNpcModelVoiceChange);
+    this.builderNpcVoiceTone?.addEventListener('change', handleNpcModelVoiceChange);
+    this.builderNpcVoiceVolume?.addEventListener('input', handleNpcModelVoiceChange);
 
     this.builderNpcStepAdd?.addEventListener('click', () => {
       onNpcRoutineAddStep(this.builderNpcStepAddType?.value ?? '');
@@ -6817,6 +6875,7 @@ export class Hud {
   bindQuickChatEvents({ onSubmit, onCancel }) {
     this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
+      this.npcSpeechPlayback.prime();
       onSubmit(this.quickChatInput.value);
     });
 
@@ -7151,6 +7210,14 @@ export class Hud {
           button.classList.toggle('is-active', active);
           button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
+    }
+    const modelVoice = editorState.modelVoice ?? {};
+    setFieldValue(this.builderNpcVoicePitch, String(Math.round(Number(modelVoice.basePitchHz ?? 285))));
+    setFieldValue(this.builderNpcVoiceSpeed, String(Math.round(Number(modelVoice.charactersPerSecond ?? 28))));
+    setFieldValue(this.builderNpcVoiceRange, String(Math.round(Number(modelVoice.pitchVariance ?? 0.16) * 100)));
+    setFieldValue(this.builderNpcVoiceVolume, String(Math.round(Number(modelVoice.volume ?? 0.6) * 100)));
+    if (this.builderNpcVoiceTone && document.activeElement !== this.builderNpcVoiceTone) {
+      this.builderNpcVoiceTone.value = modelVoice.waveform ?? 'triangle';
     }
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
@@ -8419,6 +8486,10 @@ export class Hud {
 
   isQuickChatOpen() {
     return this.quickChatRoot.classList.contains('is-visible');
+  }
+
+  setSpeechAudioVolume(volume = 1) {
+    this.npcSpeechPlayback?.setMasterVolume(volume);
   }
 
   syncCombatTrail(healthPercent) {
@@ -10013,7 +10084,16 @@ export class Hud {
         labelNode.hidden = !bubble.label;
       }
       if (textNode) {
-        textNode.textContent = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
+        const bubbleText = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
+        textNode.textContent = bubble.chirp === true
+          ? this.npcSpeechPlayback.updateBubble({
+              id: bubble.id,
+              text: bubbleText,
+              status: bubble.status,
+              voice: bubble.voice,
+              speakerKey: bubble.speakerKey ?? bubble.modelId ?? bubble.label ?? bubble.id
+            })
+          : bubbleText;
       }
     }
 
@@ -10027,6 +10107,7 @@ export class Hud {
       this.speechBubbleLabelNodes.delete(id);
       this.speechBubbleTextNodes.delete(id);
     }
+    this.npcSpeechPlayback.disposeMissing(activeIds);
   }
 
   setOverheadHealthBars(bars = []) {

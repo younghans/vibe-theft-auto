@@ -26,6 +26,7 @@ import {
   moveMissionSequenceEntry,
   updateMissionSequenceEntry
 } from '../shared/missions.js';
+import { normalizeNpcVoice } from '../shared/npcVoice.js';
 import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
@@ -439,6 +440,7 @@ export class WorldBuilder {
         schoolMicrogameEnabled: enabled === true
       }),
       onNpcModelChange: (modelId) => void this.changeSelectedNpcModel(modelId),
+      onNpcModelVoiceChange: (voice) => void this.updateSelectedNpcModelVoice(voice),
       onNpcRoutineAddStep: (stepType) => void this.addSelectedNpcRoutineStep(stepType),
       onNpcRoutineRemoveStep: (stepIndex) => void this.removeSelectedNpcRoutineStep(stepIndex),
       onNpcRoutineStepChange: (stepIndex, field, value) => void this.updateSelectedNpcRoutineStep(stepIndex, field, value),
@@ -1667,6 +1669,9 @@ export class WorldBuilder {
     } else if (patch.type === 'updateMissionSequence') {
       this.worldState.updateMissionSequence(patch.missionSequence);
       this.updateBuilderHud();
+    } else if (patch.type === 'updateNpcModelVoice') {
+      this.worldState.updateNpcModelVoice(patch.modelId, patch.voice);
+      this.updateBuilderHud();
     } else {
       return;
     }
@@ -2356,6 +2361,7 @@ export class WorldBuilder {
       blackjackDealerEnabled: (npcDraft?.blackjackDealerEnabled ?? placement.npc.blackjackDealerEnabled) === true,
       schoolMicrogameEnabled: (npcDraft?.schoolMicrogameEnabled ?? placement.npc.schoolMicrogameEnabled) === true,
       schoolMicrogameId: npcDraft?.schoolMicrogameId ?? placement.npc.schoolMicrogameId ?? 'all',
+      modelVoice: this.worldState.getNpcModelVoice(npcDraft?.modelId ?? placement.npc.modelId),
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },
@@ -2819,6 +2825,36 @@ export class WorldBuilder {
       [field]: value
     });
     await this.updateSelectedNpc({ combat: nextCombat });
+  }
+
+  async updateSelectedNpcModelVoice(voice = {}) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return;
+    }
+
+    const modelId = this.getNpcDraft(placement)?.modelId ?? placement.npc.modelId;
+    const model = getNpcModelById(modelId);
+    if (!model) {
+      return;
+    }
+
+    const nextVoice = normalizeNpcVoice(voice, this.worldState.getNpcModelVoice(model.id));
+    const result = await this.worldEditAdapter.edit({
+      op: 'updateNpcModelVoice',
+      modelId: model.id,
+      voice: nextVoice
+    });
+    if (!result?.ok) {
+      this.hud.showToast(result?.error ?? 'Could not update NPC model voice.');
+      return;
+    }
+
+    if (result.appliedImmediately) {
+      this.worldState.updateNpcModelVoice(model.id, nextVoice);
+      this.updateBuilderNpcEditor();
+      this.notifyLayoutChanged();
+    }
   }
 
   async changeSelectedNpcModel(modelId) {
