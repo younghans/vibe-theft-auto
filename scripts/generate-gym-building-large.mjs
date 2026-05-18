@@ -62,6 +62,11 @@ function createBox(size, position, material, rotation = [0, 0, 0]) {
   return createMesh(new THREE.BoxGeometry(...size), material, position, rotation);
 }
 
+const WINDOW_TRIM_DEPTH = 0.08;
+const WINDOW_TRIM_THICKNESS = 0.1;
+const WINDOW_FACE_GAP = 0.035;
+const WINDOW_LIP_DEPTH = 0.16;
+
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments),
@@ -281,9 +286,16 @@ function addWindowRow(group, {
   for (let index = 0; index < count; index += 1) {
     const x = startX + (index * spacing);
     const [width, height, depth] = size;
+    const trimZ = z + (depth * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5);
+    const lipZ = z + (depth * 0.5) + WINDOW_FACE_GAP + (WINDOW_LIP_DEPTH * 0.5);
+    const sideX = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+    const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
     group.add(createBox(size, [x, y, z], windowMaterial));
-    group.add(createBox([width + 0.22, height + 0.18, 0.08], [x, y, z - (0.08 + depthOffset)], frameMaterial));
-    group.add(createBox([width + 0.18, 0.06, 0.14], [x, y - (height * 0.58), z + 0.02], ledgeMaterial));
+    group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.18, WINDOW_TRIM_DEPTH], [x - sideX, y, trimZ], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.18, WINDOW_TRIM_DEPTH], [x + sideX, y, trimZ], frameMaterial));
+    group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y + topY, trimZ], frameMaterial));
+    group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y - topY, trimZ], frameMaterial));
+    group.add(createBox([width + 0.18, 0.06, WINDOW_LIP_DEPTH], [x, y - topY - 0.1, lipZ], ledgeMaterial));
   }
 }
 
@@ -306,20 +318,22 @@ function addDetailedFacadeWindow(group, {
   const topBottomFrameHeight = 0.1;
   const innerWidth = Math.max(0.4, width - 0.24);
   const innerHeight = Math.max(0.4, height - 0.22);
+  const trimZ = z + (glassDepth * 0.5) + WINDOW_FACE_GAP + (frameDepth * 0.5);
+  const lipZ = z + (glassDepth * 0.5) + WINDOW_FACE_GAP + (WINDOW_LIP_DEPTH * 0.5);
 
   group.add(createBox([width + 0.14, height + 0.14, 0.04], [x, y, z - 0.08], accentMaterial));
   group.add(createBox([innerWidth, innerHeight, glassDepth], [x, y, z], glassMaterial));
-  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x - (width * 0.5) + 0.05, y, z - 0.01], frameMaterial));
-  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x + (width * 0.5) - 0.05, y, z - 0.01], frameMaterial));
-  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y + (height * 0.5) - 0.05, z - 0.01], frameMaterial));
-  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y - (height * 0.5) + 0.05, z - 0.01], frameMaterial));
-  group.add(createBox([width + 0.12, 0.08, 0.16], [x, y - (height * 0.5) - 0.08, z + 0.03], sillMaterial));
-  group.add(createBox([width + 0.08, 0.06, 0.12], [x, y + (height * 0.5) + 0.08, z], accentMaterial));
+  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x - (width * 0.5) + 0.05, y, trimZ], frameMaterial));
+  group.add(createBox([sideFrameWidth, height + 0.02, frameDepth], [x + (width * 0.5) - 0.05, y, trimZ], frameMaterial));
+  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y + (height * 0.5) - 0.05, trimZ], frameMaterial));
+  group.add(createBox([width - 0.08, topBottomFrameHeight, frameDepth], [x, y - (height * 0.5) + 0.05, trimZ], frameMaterial));
+  group.add(createBox([width + 0.12, 0.08, WINDOW_LIP_DEPTH], [x, y - (height * 0.5) - 0.16, lipZ], sillMaterial));
+  group.add(createBox([width + 0.08, 0.06, WINDOW_LIP_DEPTH], [x, y + (height * 0.5) + 0.16, lipZ], accentMaterial));
 
   for (let index = 1; index <= mullionCount; index += 1) {
     const t = index / (mullionCount + 1);
     const mullionX = x - (innerWidth * 0.5) + (innerWidth * t);
-    group.add(createBox([mullionWidth, innerHeight + 0.04, 0.1], [mullionX, y, z + 0.01], frameMaterial));
+    group.add(createBox([mullionWidth, innerHeight + 0.04, frameDepth], [mullionX, y, trimZ], frameMaterial));
   }
 }
 
@@ -336,8 +350,15 @@ function addSideWindowColumn(group, {
   for (let index = 0; index < count; index += 1) {
     const y = startY + (index * spacing);
     const [, height, depth] = size;
+    const outward = x < 0 ? -1 : 1;
+    const trimX = x + (outward * ((size[0] * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)));
+    const sideZ = (depth * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+    const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
     group.add(createBox(size, [x, y, z], windowMaterial));
-    group.add(createBox([0.08, height + 0.18, depth + 0.18], [x - 0.08, y, z], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.18, WINDOW_TRIM_THICKNESS], [trimX, y, z - sideZ], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.18, WINDOW_TRIM_THICKNESS], [trimX, y, z + sideZ], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, depth], [trimX, y + topY, z], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, depth], [trimX, y - topY, z], frameMaterial));
   }
 }
 

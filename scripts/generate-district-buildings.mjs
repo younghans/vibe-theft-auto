@@ -196,6 +196,12 @@ function createBox(size, position, material, rotation = [0, 0, 0]) {
   return createMesh(new THREE.BoxGeometry(...size), material, position, rotation);
 }
 
+const WINDOW_GLASS_DEPTH = 0.08;
+const WINDOW_TRIM_DEPTH = 0.08;
+const WINDOW_TRIM_THICKNESS = 0.12;
+const WINDOW_FACE_GAP = 0.035;
+const WINDOW_LIP_DEPTH = 0.16;
+
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments),
@@ -432,15 +438,22 @@ function addDetailedFrontWindow(group, {
   sillMaterial,
   mullions = 1
 }) {
-  group.add(createBox([width + 0.28, height + 0.26, 0.08], [x, y, z - 0.08], frameMaterial));
-  group.add(createBox([width, height, 0.1], [x, y, z], glassMaterial));
-  group.add(createBox([width + 0.18, 0.08, 0.18], [x, y - (height * 0.5) - 0.08, z + 0.04], sillMaterial));
-  group.add(createBox([width + 0.14, 0.07, 0.14], [x, y + (height * 0.5) + 0.07, z + 0.02], frameMaterial));
+  const trimZ = z + (WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5);
+  const lipZ = z + (WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_LIP_DEPTH * 0.5);
+  const sideX = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  group.add(createBox([width, height, WINDOW_GLASS_DEPTH], [x, y, z], glassMaterial));
+  group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.26, WINDOW_TRIM_DEPTH], [x - sideX, y, trimZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.26, WINDOW_TRIM_DEPTH], [x + sideX, y, trimZ], frameMaterial));
+  group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y + topY, trimZ], frameMaterial));
+  group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y - topY, trimZ], frameMaterial));
+  group.add(createBox([width + 0.18, 0.08, WINDOW_LIP_DEPTH], [x, y - topY - 0.1, lipZ], sillMaterial));
+  group.add(createBox([width + 0.14, 0.07, WINDOW_LIP_DEPTH], [x, y + topY + 0.1, lipZ], frameMaterial));
 
   for (let index = 1; index <= mullions; index += 1) {
     const t = index / (mullions + 1);
     const mullionX = x - (width * 0.5) + (width * t);
-    group.add(createBox([0.08, height + 0.08, 0.13], [mullionX, y, z + 0.02], frameMaterial));
+    group.add(createBox([0.08, height + 0.08, WINDOW_TRIM_DEPTH], [mullionX, y, trimZ], frameMaterial));
   }
 }
 
@@ -455,15 +468,22 @@ function addDetailedBackWindow(group, {
   sillMaterial,
   mullions = 1
 }) {
-  group.add(createBox([width + 0.28, height + 0.26, 0.08], [x, y, z + 0.08], frameMaterial));
-  group.add(createBox([width, height, 0.1], [x, y, z], glassMaterial));
-  group.add(createBox([width + 0.18, 0.08, 0.18], [x, y - (height * 0.5) - 0.08, z - 0.04], sillMaterial));
-  group.add(createBox([width + 0.14, 0.07, 0.14], [x, y + (height * 0.5) + 0.07, z - 0.02], frameMaterial));
+  const trimZ = z - (WINDOW_GLASS_DEPTH * 0.5) - WINDOW_FACE_GAP - (WINDOW_TRIM_DEPTH * 0.5);
+  const lipZ = z - (WINDOW_GLASS_DEPTH * 0.5) - WINDOW_FACE_GAP - (WINDOW_LIP_DEPTH * 0.5);
+  const sideX = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  group.add(createBox([width, height, WINDOW_GLASS_DEPTH], [x, y, z], glassMaterial));
+  group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.26, WINDOW_TRIM_DEPTH], [x - sideX, y, trimZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.26, WINDOW_TRIM_DEPTH], [x + sideX, y, trimZ], frameMaterial));
+  group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y + topY, trimZ], frameMaterial));
+  group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y - topY, trimZ], frameMaterial));
+  group.add(createBox([width + 0.18, 0.08, WINDOW_LIP_DEPTH], [x, y - topY - 0.1, lipZ], sillMaterial));
+  group.add(createBox([width + 0.14, 0.07, WINDOW_LIP_DEPTH], [x, y + topY + 0.1, lipZ], frameMaterial));
 
   for (let index = 1; index <= mullions; index += 1) {
     const t = index / (mullions + 1);
     const mullionX = x - (width * 0.5) + (width * t);
-    group.add(createBox([0.08, height + 0.08, 0.13], [mullionX, y, z - 0.02], frameMaterial));
+    group.add(createBox([0.08, height + 0.08, WINDOW_TRIM_DEPTH], [mullionX, y, trimZ], frameMaterial));
   }
 }
 
@@ -479,15 +499,22 @@ function addDetailedSideWindow(group, {
   mullions = 1
 }) {
   const outward = x < 0 ? -1 : 1;
-  group.add(createBox([0.08, height + 0.26, width + 0.28], [x - (outward * 0.06), y, z], frameMaterial));
-  group.add(createBox([0.1, height, width], [x, y, z], glassMaterial));
-  group.add(createBox([0.18, 0.08, width + 0.18], [x + (outward * 0.04), y - (height * 0.5) - 0.08, z], sillMaterial));
-  group.add(createBox([0.14, 0.07, width + 0.14], [x + (outward * 0.02), y + (height * 0.5) + 0.07, z], frameMaterial));
+  const trimX = x + (outward * ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)));
+  const lipX = x + (outward * ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_LIP_DEPTH * 0.5)));
+  const sideZ = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  group.add(createBox([WINDOW_GLASS_DEPTH, height, width], [x, y, z], glassMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.26, WINDOW_TRIM_THICKNESS], [trimX, y, z - sideZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.26, WINDOW_TRIM_THICKNESS], [trimX, y, z + sideZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y + topY, z], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y - topY, z], frameMaterial));
+  group.add(createBox([WINDOW_LIP_DEPTH, 0.08, width + 0.18], [lipX, y - topY - 0.1, z], sillMaterial));
+  group.add(createBox([WINDOW_LIP_DEPTH, 0.07, width + 0.14], [lipX, y + topY + 0.1, z], frameMaterial));
 
   for (let index = 1; index <= mullions; index += 1) {
     const t = index / (mullions + 1);
     const mullionZ = z - (width * 0.5) + (width * t);
-    group.add(createBox([0.13, height + 0.08, 0.08], [x + (outward * 0.02), y, mullionZ], frameMaterial));
+    group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.08, 0.08], [trimX, y, mullionZ], frameMaterial));
   }
 }
 
@@ -500,9 +527,16 @@ function addSideWindow(group, {
   glassMaterial,
   frameMaterial
 }) {
-  group.add(createBox([0.08, height + 0.24, width + 0.26], [x, y, z], frameMaterial));
-  group.add(createBox([0.1, height, width], [x, y, z], glassMaterial));
-  group.add(createBox([0.14, 0.08, width + 0.18], [x, y - (height * 0.5) - 0.08, z], frameMaterial));
+  const outward = x < 0 ? -1 : 1;
+  const trimX = x + (outward * ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)));
+  const sideZ = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+  group.add(createBox([WINDOW_GLASS_DEPTH, height, width], [x, y, z], glassMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.24, WINDOW_TRIM_THICKNESS], [trimX, y, z - sideZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.24, WINDOW_TRIM_THICKNESS], [trimX, y, z + sideZ], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y + topY, z], frameMaterial));
+  group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y - topY, z], frameMaterial));
+  group.add(createBox([WINDOW_LIP_DEPTH, 0.08, width + 0.18], [trimX, y - topY - 0.1, z], frameMaterial));
 }
 
 function addDoorTrim(group, materials, { z = 10.92, accentMaterial = materials.trim } = {}) {
@@ -1237,18 +1271,18 @@ function addOfficeSideBackWindowGridSegment(group, materials, {
     }
 
     group.add(createBox(
-      [19.3, 0.045, 0.12],
-      [0, dividerY, OFFICE_MAIN_BACK_Z + 0.01],
+      [19.3, 0.045, WINDOW_TRIM_DEPTH],
+      [0, dividerY, OFFICE_MAIN_BACK_Z - ((0.1 * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5))],
       materials.trimDark
     ));
     group.add(createBox(
-      [0.12, 0.045, 17.4],
-      [-OFFICE_MAIN_SIDE_WINDOW_X + 0.01, dividerY, -0.35],
+      [WINDOW_TRIM_DEPTH, 0.045, 17.4],
+      [-OFFICE_MAIN_SIDE_WINDOW_X - ((0.1 * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)), dividerY, -0.35],
       materials.trimDark
     ));
     group.add(createBox(
-      [0.12, 0.045, 17.4],
-      [OFFICE_MAIN_SIDE_WINDOW_X - 0.01, dividerY, -0.35],
+      [WINDOW_TRIM_DEPTH, 0.045, 17.4],
+      [OFFICE_MAIN_SIDE_WINDOW_X + ((0.1 * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)), dividerY, -0.35],
       materials.trimDark
     ));
   }
@@ -1509,28 +1543,32 @@ function addOfficesDetails(groups, materials) {
 
   const towerDetailHeight = OFFICE_MAIN_TOWER_TOP_Y - OFFICE_MAIN_TOWER_START_Y - 0.5;
   const towerDetailCenterY = OFFICE_MAIN_TOWER_START_Y + (towerDetailHeight * 0.5);
+  const towerFrontTrimZ = OFFICE_MAIN_FRONT_Z + ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5));
+  const towerBackTrimZ = OFFICE_MAIN_BACK_Z - ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5));
+  const towerLeftTrimX = -OFFICE_MAIN_SIDE_WINDOW_X - ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5));
+  const towerRightTrimX = OFFICE_MAIN_SIDE_WINDOW_X + ((WINDOW_GLASS_DEPTH * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5));
   for (const x of [-9.62, -6.86, -4.1, -1.36, 1.36, 4.1, 6.86, 9.62]) {
     groups.tower.add(createBox(
-      [0.16, towerDetailHeight, 0.2],
-      [x, towerDetailCenterY, OFFICE_MAIN_FRONT_Z - 0.08],
+      [0.16, towerDetailHeight, WINDOW_TRIM_DEPTH],
+      [x, towerDetailCenterY, towerFrontTrimZ],
       materials.trimDark
     ));
     groups.tower.add(createBox(
-      [0.16, towerDetailHeight, 0.2],
-      [x, towerDetailCenterY, OFFICE_MAIN_BACK_Z + 0.08],
+      [0.16, towerDetailHeight, WINDOW_TRIM_DEPTH],
+      [x, towerDetailCenterY, towerBackTrimZ],
       materials.trimDark
     ));
   }
 
   for (const z of [-8.28, -5.52, -2.76, 0, 2.76, 5.52, 8.28]) {
     groups.tower.add(createBox(
-      [0.2, towerDetailHeight, 0.16],
-      [-OFFICE_MAIN_SIDE_WINDOW_X + 0.07, towerDetailCenterY, z],
+      [WINDOW_TRIM_DEPTH, towerDetailHeight, 0.16],
+      [towerLeftTrimX, towerDetailCenterY, z],
       materials.trimDark
     ));
     groups.tower.add(createBox(
-      [0.2, towerDetailHeight, 0.16],
-      [OFFICE_MAIN_SIDE_WINDOW_X - 0.07, towerDetailCenterY, z],
+      [WINDOW_TRIM_DEPTH, towerDetailHeight, 0.16],
+      [towerRightTrimX, towerDetailCenterY, z],
       materials.trimDark
     ));
   }
@@ -1538,23 +1576,23 @@ function addOfficesDetails(groups, materials) {
   for (let y = OFFICE_MAIN_TOWER_START_Y + 5.8; y < OFFICE_MAIN_TOWER_TOP_Y - 2.0; y += 6.88) {
     const bandY = Number(y.toFixed(2));
     groups.tower.add(createBox(
-      [20.2, 0.18, 0.24],
-      [0, bandY, OFFICE_MAIN_FRONT_Z - 0.05],
+      [20.2, 0.18, WINDOW_TRIM_DEPTH],
+      [0, bandY, towerFrontTrimZ],
       materials.trim
     ));
     groups.tower.add(createBox(
-      [20.2, 0.18, 0.24],
-      [0, bandY, OFFICE_MAIN_BACK_Z + 0.05],
+      [20.2, 0.18, WINDOW_TRIM_DEPTH],
+      [0, bandY, towerBackTrimZ],
       materials.trim
     ));
     groups.tower.add(createBox(
-      [0.22, 0.16, 18.6],
-      [-OFFICE_MAIN_SIDE_X + 0.05, bandY, 0.35],
+      [WINDOW_TRIM_DEPTH, 0.16, 18.6],
+      [towerLeftTrimX, bandY, 0.35],
       materials.trim
     ));
     groups.tower.add(createBox(
-      [0.22, 0.16, 18.6],
-      [OFFICE_MAIN_SIDE_X - 0.05, bandY, 0.35],
+      [WINDOW_TRIM_DEPTH, 0.16, 18.6],
+      [towerRightTrimX, bandY, 0.35],
       materials.trim
     ));
   }

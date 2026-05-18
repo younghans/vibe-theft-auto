@@ -126,6 +126,10 @@ function readGlbNodeNames(relativePath) {
   throw new Error(`${relativePath} should contain a JSON chunk`);
 }
 
+function readRepoText(relativePath) {
+  return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
+}
+
 function collectMeshMaterials(root) {
   const entries = [];
   root.traverse?.((node) => {
@@ -460,7 +464,7 @@ function validateFootprintSupport() {
     assert(item, `District 2x2 building ${index} should exist`);
   }
 
-  const savedWorldLayout = JSON.parse(readFileSync(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
+  const savedWorldLayout = JSON.parse(readRepoText('server/data/world-layout.json'));
 
   assert(baseLot.tileFootprint[0] === 1 && baseLot.tileFootprint[1] === 1, 'Base lot should remain 1x1');
   assert(bar.tileFootprint[0] === 2 && bar.tileFootprint[1] === 1, 'Wide bar should remain 2x1');
@@ -566,11 +570,35 @@ function validateFootprintSupport() {
     !marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthas_grille_hull_wall'),
     "Martha's Grille exterior hull should not stay opaque during camera occlusion"
   );
-  const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
+  const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
+  const mainGameSource = readRepoText('src/game/Game.js');
+  const stableWindowGeneratorSources = [
+    'scripts/generate-district-buildings.mjs',
+    'scripts/generate-gym-building.mjs',
+    'scripts/generate-gym-building-large.mjs',
+    'scripts/generate-bar-building.mjs'
+  ].map((relativePath) => ({
+    relativePath,
+    source: readRepoText(relativePath)
+  }));
   assert(
     /const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;/.test(worldRendererSource),
     'World renderer should make occluding building exteriors fully transparent'
   );
+  assert(
+    /PerspectiveCamera\(55,\s*window\.innerWidth \/ window\.innerHeight,\s*0\.5,\s*400\)/.test(mainGameSource),
+    'Main game camera should use a tighter near plane so shallow building detail remains depth-stable'
+  );
+  for (const { relativePath, source } of stableWindowGeneratorSources) {
+    assert(
+      source.includes('WINDOW_FACE_GAP'),
+      `${relativePath} should separate raised window/edge detail from glass and wall faces`
+    );
+    assert(
+      !/z\s*-\s*0\.08\]\s*,\s*frameMaterial/.test(source),
+      `${relativePath} should not place full window frame panels into the glass depth range`
+    );
+  }
   assert(
     /visibleNodeNames/.test(worldRendererSource),
     'World renderer should support interior-only cutaway visibility'

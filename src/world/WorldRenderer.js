@@ -21,6 +21,38 @@ import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+const SOLID_COLOR_BUILDING_ASSET_NAMES = new Set([
+  'bar_building',
+  'bar_building_wide',
+  'bank_building',
+  'casino_building',
+  'gym_building',
+  'gym_building_large',
+  'offices_building',
+  'school_building'
+]);
+const SOLID_COLOR_BUILDING_DETAIL_NAME_PARTS = Object.freeze([
+  'exterior_detail',
+  'cutaway_tower',
+  'cutaway_upper',
+  'cutaway_corner'
+]);
+const SOLID_COLOR_BUILDING_GLASS_COLORS = new Set([
+  0x586f73,
+  0x5d6e73,
+  0x6c6a8a,
+  0x6f9bb4,
+  0x6f9eb7,
+  0x789eb2,
+  0x84b5c9,
+  0xb7dce8,
+  0xbfdfe8,
+  0xbfe4ef,
+  0xd29f56,
+  0xd2aa44,
+  0xdcc76a,
+  0xe0c172
+]);
 const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
   assets.playerAnimationSet.idle,
   assets.playerAnimationSet.walking,
@@ -55,13 +87,60 @@ function collectItemAssetUrls(item, output = new Set()) {
   return output;
 }
 
-function setShadowFlags(root) {
+function shouldStabilizeSolidBuildingColors(item) {
+  return SOLID_COLOR_BUILDING_ASSET_NAMES.has(String(item?.assetName ?? item?.id ?? '').toLowerCase());
+}
+
+function nodeNameIncludesAny(node, root, fragments) {
+  let current = node;
+  while (current && current !== root.parent) {
+    const name = String(current.name ?? '').toLowerCase();
+    if (fragments.some((fragment) => name.includes(fragment))) {
+      return true;
+    }
+    if (current === root) {
+      break;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function getMaterialColorHex(material) {
+  return material?.color?.isColor ? material.color.getHex() : null;
+}
+
+function stabilizeSolidBuildingMaterials(root) {
+  root.traverse((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    const decorativeNode = nodeNameIncludesAny(node, root, SOLID_COLOR_BUILDING_DETAIL_NAME_PARTS);
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      const colorHex = getMaterialColorHex(material);
+      const glassLike = colorHex !== null && SOLID_COLOR_BUILDING_GLASS_COLORS.has(colorHex);
+      if (!decorativeNode && !glassLike) {
+        continue;
+      }
+
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -0.35;
+      material.polygonOffsetUnits = glassLike ? -8 : -3;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function setShadowFlags(root, options = {}) {
+  const receiveShadow = options.receiveShadow !== false;
   root.traverse((node) => {
     if (node.isMesh) {
       node.userData.defaultCastShadow = true;
-      node.userData.defaultReceiveShadow = true;
+      node.userData.defaultReceiveShadow = receiveShadow;
       node.castShadow = true;
-      node.receiveShadow = true;
+      node.receiveShadow = receiveShadow;
     }
   });
 }
@@ -82,8 +161,14 @@ function applyShadowOverridesToNode(node, rendered, visible) {
 
 async function createPlacementVisual(library, item) {
   const visual = await instantiateItemVisual(library, item);
-  prepareItemVisual(visual, (object) => {
-    setShadowFlags(object);
+  prepareItemVisual(visual, (object, part) => {
+    const stabilizeSolidColors = shouldStabilizeSolidBuildingColors(part?.item ?? item);
+    setShadowFlags(object, {
+      receiveShadow: !stabilizeSolidColors
+    });
+    if (stabilizeSolidColors) {
+      stabilizeSolidBuildingMaterials(object);
+    }
   });
   return visual;
 }

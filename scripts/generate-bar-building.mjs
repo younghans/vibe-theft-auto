@@ -62,6 +62,11 @@ function createBox(size, position, material, rotation = [0, 0, 0]) {
   return createMesh(new THREE.BoxGeometry(...size), material, position, rotation);
 }
 
+const WINDOW_TRIM_DEPTH = 0.08;
+const WINDOW_TRIM_THICKNESS = 0.12;
+const WINDOW_FACE_GAP = 0.035;
+const WINDOW_LIP_DEPTH = 0.16;
+
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
     new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments),
@@ -102,10 +107,18 @@ function addWindowRow(group, {
 }) {
   for (let index = 0; index < count; index += 1) {
     const x = startX + (index * spacing);
+    const [width, height, depth = 0.1] = size;
+    const trimZ = z + (depth * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5);
+    const lipZ = z + (depth * 0.5) + WINDOW_FACE_GAP + (WINDOW_LIP_DEPTH * 0.5);
+    const sideX = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+    const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
     group.add(createBox(size, [x, y, z], material));
     if (trimMaterial) {
-      group.add(createBox([size[0] + 0.28, size[1] + 0.22, 0.08], [x, y, z - 0.08], trimMaterial));
-      group.add(createBox([size[0] + 0.14, 0.08, 0.14], [x, y - (size[1] * 0.6), z + 0.02], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.22, WINDOW_TRIM_DEPTH], [x - sideX, y, trimZ], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_THICKNESS, height + 0.22, WINDOW_TRIM_DEPTH], [x + sideX, y, trimZ], trimMaterial));
+      group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y + topY, trimZ], trimMaterial));
+      group.add(createBox([width, WINDOW_TRIM_THICKNESS, WINDOW_TRIM_DEPTH], [x, y - topY, trimZ], trimMaterial));
+      group.add(createBox([width + 0.14, 0.08, WINDOW_LIP_DEPTH], [x, y - topY - 0.1, lipZ], trimMaterial));
     }
   }
 }
@@ -122,9 +135,17 @@ function addWindowColumn(group, {
 }) {
   for (let index = 0; index < count; index += 1) {
     const y = startY + (index * spacing);
+    const [depth = 0.1, height, width] = size;
+    const outward = x < 0 ? -1 : 1;
+    const trimX = x + (outward * ((depth * 0.5) + WINDOW_FACE_GAP + (WINDOW_TRIM_DEPTH * 0.5)));
+    const sideZ = (width * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
+    const topY = (height * 0.5) + (WINDOW_TRIM_THICKNESS * 0.5);
     group.add(createBox(size, [x, y, z], material));
     if (trimMaterial) {
-      group.add(createBox([0.08, size[1] + 0.24, size[2] + 0.18], [x - 0.08, y, z], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.24, WINDOW_TRIM_THICKNESS], [trimX, y, z - sideZ], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_DEPTH, height + 0.24, WINDOW_TRIM_THICKNESS], [trimX, y, z + sideZ], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y + topY, z], trimMaterial));
+      group.add(createBox([WINDOW_TRIM_DEPTH, WINDOW_TRIM_THICKNESS, width], [trimX, y - topY, z], trimMaterial));
     }
   }
 }

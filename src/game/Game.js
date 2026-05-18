@@ -762,7 +762,7 @@ export class Game {
     this.scene.background = new THREE.Color(0x7da6c8);
     this.scene.fog = new THREE.Fog(0x7da6c8, WORLD_FOG_NEAR, WORLD_FOG_FAR);
 
-    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 400);
+    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 400);
     this.camera.position.copy(CAMERA_OFFSET);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
