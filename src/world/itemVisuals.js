@@ -99,10 +99,11 @@ export async function instantiateItemVisual(library, item) {
     throw new Error(`Item "${item?.id ?? item?.assetName ?? 'unknown'}" does not define a usable visual source.`);
   }
   const needsTileRoot = item?.layer === 'tile';
-  const root = needsTileRoot ? new THREE.Group() : primaryObject;
+  const needsModelTransformRoot = !needsTileRoot && Number.isFinite(Number(item?.modelRotationY));
+  const root = needsTileRoot || needsModelTransformRoot ? new THREE.Group() : primaryObject;
   const tileCenterOffset = needsTileRoot ? getTileLocalCenterOffset(item) : { x: 0, z: 0 };
 
-  if (needsTileRoot) {
+  if (needsTileRoot || needsModelTransformRoot) {
     root.add(primaryObject);
   }
 
@@ -143,6 +144,11 @@ export async function instantiateItemVisual(library, item) {
 export function prepareItemVisual(visual, applyObjectSetup = null) {
   for (const part of visual.parts) {
     applyObjectSetup?.(part.object, part);
+    const modelRotationY = Number(part.item?.modelRotationY);
+    if (Number.isFinite(modelRotationY) && modelRotationY !== 0) {
+      part.object.rotation.y += modelRotationY;
+      part.object.updateWorldMatrix(true, true);
+    }
     fitObjectToFootprint(part.object, part.item.size[0], part.item.size[1]);
     snapObjectToGround(part.object, part.item.groundClearance);
   }

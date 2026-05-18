@@ -560,6 +560,28 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { id: 'car_sedan', assetName: 'car_sedan', group: 'vehicles' },
   { id: 'car_stationwagon', assetName: 'car_stationwagon', group: 'vehicles' },
   { id: 'car_taxi', assetName: 'car_taxi', group: 'vehicles' },
+  {
+    id: 'car_illinois_90_police_cruiser',
+    assetName: 'car_illinois_90_police_cruiser',
+    label: "Illinois '90 Police Cruiser",
+    asset: customCityAsset('models', 'illinois-90-police-cruiser-low-poly.glb'),
+    group: 'vehicles',
+    modelRotationY: Math.PI / 2
+  },
+  {
+    id: 'car_toyota_ae86',
+    assetName: 'car_toyota_ae86',
+    label: 'Toyota AE86',
+    asset: customCityAsset('models', 'toyota-ae86-low-poly.glb'),
+    group: 'vehicles'
+  },
+  {
+    id: 'car_fiat_duna',
+    assetName: 'car_fiat_duna',
+    label: 'Fiat Duna',
+    asset: customCityAsset('models', 'fiat-duna-low-poly.glb'),
+    group: 'vehicles'
+  },
   { id: 'dumpster', assetName: 'dumpster', group: 'storage' },
   { id: 'hydrant', assetName: 'firehydrant', label: 'Hydrant', group: 'utilities', collision: false },
   { id: 'streetlight', assetName: 'streetlight', group: 'utilities', collision: false },
@@ -975,6 +997,7 @@ function createCityProp(definition) {
     interactable: cloneInteractableDefinition(definition.interactable),
     combatPickup: cloneCombatPickupDefinition(definition.combatPickup),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
+    modelRotationY: Number.isFinite(definition.modelRotationY) ? definition.modelRotationY : undefined,
     aliases: [...(definition.aliases ?? [])],
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
