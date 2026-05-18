@@ -494,6 +494,10 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes('updateRentIntroCutsceneCamera'), 'Game should drive a 3D rent intro cutscene camera');
   assert(gameSource.includes('getRentIntroBlinkClosure'), 'Game should animate full-screen blinking during the rent intro cutscene');
   assert(hudSource.includes('hud__rent-cutscene'), 'HUD should include the rent intro blink layer');
+  const rentIntroNpcDistance = Number(
+    gameSource.match(/const\s+RENT_INTRO_CUTSCENE_NPC_DISTANCE\s*=\s*([0-9.]+);/)?.[1]
+  );
+  assert(rentIntroNpcDistance >= 2.4, 'Rent intro landlord staging should leave first-person breathing room');
 
   const instrumentCluster = getBuilderItemById('instrument_cluster');
   assert(instrumentCluster, 'Instrument cluster prop should exist');
