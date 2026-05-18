@@ -7,12 +7,11 @@ import {
 import { createDefaultMissionSequence } from '../shared/missions.js';
 import { createDefaultNpcModelVoiceMap } from '../shared/npcVoice.js';
 import {
-  getTileCenterWorldPosition,
-  getTileOccupiedCells,
-  rotateFootprintOffset
+  getTileOccupiedCells
 } from '../shared/tileFootprint.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 import { getBuilderItemById } from './builderCatalog.js';
+import { getCarDealershipShowroomCarPlacements } from './carDealershipShowroom.js';
 
 export const DEFAULT_WORLD_SPAWN = [0, 0, BUILDER_TILE_SIZE * 4.1];
 
@@ -58,24 +57,6 @@ const BUILDING_PLANS = [
   { cell: [2, 2], itemId: 'building_h', angle: Math.PI, label: 'Downtown apartments', action: 'Interiors will open up in a later milestone.' },
   { cell: [-2, -2], itemId: 'building_c', angle: 0, label: 'Quick cash loans', action: 'This slot is ready for shady finance interactions.' }
 ];
-
-const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
-const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
-const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
-const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
-const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
-const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
-  {
-    itemId: 'car_fiat_duna',
-    localX: -CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
-    doorTargetLocalX: -CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
-  },
-  {
-    itemId: 'car_toyota_ae86',
-    localX: CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
-    doorTargetLocalX: CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
-  }
-]);
 
 const DISTRICT_PROPS = [
   { itemId: 'crate_a', position: [-2.4 * BUILDER_TILE_SIZE, 1.8 * BUILDER_TILE_SIZE], angle: Math.PI / 4 },
@@ -320,41 +301,7 @@ function createTileLayout() {
   return [...tiles.values()];
 }
 
-function createCarDealershipShowroomCarPlans() {
-  const dealershipPlan = BUILDING_PLANS.find((plan) => plan.itemId === 'car_dealership_building');
-  const dealershipItem = getBuilderItemById('car_dealership_building');
-  if (!dealershipPlan || !dealershipItem) {
-    return [];
-  }
-
-  const rotationQuarterTurns = toQuarterTurns(dealershipPlan.angle);
-  const dealershipCenter = getTileCenterWorldPosition(
-    dealershipItem,
-    dealershipPlan.cell[0],
-    dealershipPlan.cell[1],
-    rotationQuarterTurns
-  );
-
-  return CAR_DEALERSHIP_SHOWROOM_CARS.map((car) => {
-    const localZ = CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z;
-    const rotatedOffset = rotateFootprintOffset(car.localX, localZ, rotationQuarterTurns);
-    const localRotationY = Math.atan2(car.doorTargetLocalX - car.localX, CAR_DEALERSHIP_DOOR_LOCAL_Z - localZ);
-    const rotationY = dealershipPlan.angle + localRotationY;
-
-    return {
-      itemId: car.itemId,
-      position: [
-        quantizePosition(dealershipCenter.x + rotatedOffset.x),
-        quantizePosition(dealershipCenter.z + rotatedOffset.z)
-      ],
-      angle: rotationY,
-      rotationY: quantizeRotation(rotationY),
-      scale: CAR_DEALERSHIP_SHOWROOM_CAR_SCALE
-    };
-  });
-}
-
-function createPropLayout() {
+function createPropLayout(tiles = []) {
   const props = [];
   let propSequence = 95;
 
@@ -400,8 +347,8 @@ function createPropLayout() {
     pushProp(plan.itemId, plan.position, plan.angle);
   }
 
-  for (const plan of createCarDealershipShowroomCarPlans()) {
-    pushProp(plan.itemId, plan.position, plan.angle, {
+  for (const plan of getCarDealershipShowroomCarPlacements({ tiles })) {
+    pushProp(plan.itemId, plan.position, plan.rotationY, {
       rotationY: plan.rotationY,
       scale: plan.scale
     });
@@ -467,7 +414,7 @@ function createNpcLayout(tiles, props) {
 }
 
 const defaultTiles = createTileLayout();
-const defaultProps = createPropLayout();
+const defaultProps = createPropLayout(defaultTiles);
 const defaultNpcs = createNpcLayout(defaultTiles, defaultProps);
 
 export const defaultWorldLayout = Object.freeze({

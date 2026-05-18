@@ -125,6 +125,13 @@ import {
 import { getNpcModelVoice } from '../src/shared/npcVoice.js';
 import { getSkillXpForLevel } from '../src/shared/skills.js';
 import { WorldState } from '../src/world/WorldState.js';
+import {
+  CAR_DEALERSHIP_DOOR_LOCAL_Z,
+  CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z,
+  CAR_DEALERSHIP_SHOWROOM_CAR_SCALE,
+  CAR_DEALERSHIP_SHOWROOM_CARS,
+  ensureCarDealershipShowroomCars
+} from '../src/world/carDealershipShowroom.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -174,26 +181,6 @@ function validateRotationQuarterTurns(value, context) {
   assert(Number.isInteger(value), `${context}: rotationQuarterTurns must be an integer`);
   assert(value >= 0 && value <= 3, `${context}: rotationQuarterTurns must be between 0 and 3`);
 }
-
-const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
-const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
-const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
-const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
-const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
-const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
-  {
-    itemId: 'car_fiat_duna',
-    label: 'Fiat Duna',
-    localX: -CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
-    doorTargetLocalX: -CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
-  },
-  {
-    itemId: 'car_toyota_ae86',
-    label: 'Toyota AE86',
-    localX: CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
-    doorTargetLocalX: CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
-  }
-]);
 
 function angleDelta(a, b) {
   return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
@@ -254,6 +241,39 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
       `${layoutLabel} ${spec.label} should leave a player-width center aisle through the showroom`
     );
   }
+}
+
+function assertDealershipShowroomRepair(carDealershipItem) {
+  const staleLayout = {
+    tiles: [{
+      id: 'legacy_dealership_tile',
+      itemId: 'car_dealership_building',
+      cell: [7, 5],
+      rotationQuarterTurns: 3
+    }],
+    props: [{
+      id: 'unrelated_ae86',
+      itemId: 'car_toyota_ae86',
+      position: [0, 0],
+      rotationQuarterTurns: 0
+    }],
+    npcs: []
+  };
+  const repair = ensureCarDealershipShowroomCars(staleLayout);
+  assert(repair.changed, 'Persisted worlds missing dealership display cars should be repaired at startup');
+  assert(
+    repair.layout.props.some((placement) => placement.id === 'unrelated_ae86'),
+    'Dealership showroom repair should preserve unrelated vehicle placements'
+  );
+  assertDealershipShowroomCars(repair.layout, 'Repaired persisted world layout', carDealershipItem);
+  const secondRepair = ensureCarDealershipShowroomCars(repair.layout);
+  assert(!secondRepair.changed, 'Dealership showroom repair should be idempotent after cars are in place');
+
+  const worldPersistenceSource = readRepoText('server/src/worldPersistence.js');
+  assert(
+    worldPersistenceSource.includes('ensureCarDealershipShowroomCars'),
+    'World persistence should repair saved layouts so production snapshots get dealership display cars'
+  );
 }
 
 function validateKenneyCatalogItems() {
@@ -853,6 +873,7 @@ function validateFootprintSupport() {
   );
   assertDealershipShowroomCars(defaultWorldLayout, 'Default world layout', carDealership);
   assertDealershipShowroomCars(savedWorldLayout, 'Fallback saved world layout', carDealership);
+  assertDealershipShowroomRepair(carDealership);
 
   const diagonalRotationState = new WorldState();
   diagonalRotationState.loadLayout({

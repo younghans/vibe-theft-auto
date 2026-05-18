@@ -5,9 +5,10 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
 import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
+import { ensureCarDealershipShowroomCars } from '../../src/world/carDealershipShowroom.js';
 import { cloneMissionSequence } from '../../src/shared/missions.js';
 import { cloneNpcModelVoiceMap } from '../../src/shared/npcVoice.js';
-import { logServer } from './logger.js';
+import { logServer, logServerError } from './logger.js';
 
 const { Pool } = pg;
 
@@ -778,7 +779,27 @@ export async function initializeWorldPersistence() {
     await store.initializeFromSeedIfEmpty(seedLayout);
   }
 
-  const initialLayout = await store.load() ?? seedLayout;
+  const loadedLayout = await store.load() ?? seedLayout;
+  const showroomRepair = ensureCarDealershipShowroomCars(loadedLayout);
+  const initialLayout = showroomRepair.layout;
+  if (showroomRepair.changed) {
+    try {
+      await store.save(initialLayout);
+    } catch (error) {
+      logServerError('world-persistence', 'Failed to persist repaired Car Dealership showroom display cars.', error, {
+        worldKey: store.getInfo?.().worldKey ?? getWorldKey()
+      });
+    }
+    logServer('world-persistence', 'Repaired Car Dealership showroom display cars.', {
+      worldKey: store.getInfo?.().worldKey ?? getWorldKey(),
+      placements: showroomRepair.placements.map((placement) => ({
+        itemId: placement.itemId,
+        position: placement.position,
+        rotationY: placement.rotationY,
+        scale: placement.scale
+      }))
+    });
+  }
   worldPersistenceManager = new WorldPersistenceManager(store, initialLayout);
 
   logServer('world-persistence', 'Initialized world persistence.', worldPersistenceManager.getInfo());
