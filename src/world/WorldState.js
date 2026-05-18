@@ -356,13 +356,14 @@ export class WorldState {
     };
   }
 
-  placeProp(item, x, z, rotationQuarterTurns, interactable = null, scale = PROP_PLACEMENT_SCALE_DEFAULT) {
+  placeProp(item, x, z, rotationQuarterTurns, interactable = null, scale = PROP_PLACEMENT_SCALE_DEFAULT, rotationY = null) {
+    const exactRotationY = Number(rotationY);
     const placement = {
       id: this.createPlacementId(),
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns,
-      rotationY: undefined,
+      rotationY: Number.isFinite(exactRotationY) ? quantizeRotation(exactRotationY) : undefined,
       scale: normalizePropPlacementScale(scale),
       cellX: null,
       cellZ: null,

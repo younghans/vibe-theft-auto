@@ -3757,7 +3757,8 @@ export class WorldRoom extends Room {
           next.z,
           next.rotationQuarterTurns,
           next.interactable,
-          next.scale
+          next.scale,
+          next.rotationY
         );
         return this.commitWorldPatch({
           type: 'upsertPlacement',
@@ -3981,6 +3982,7 @@ export class WorldRoom extends Room {
       x: quantizePosition(message.x ?? message.position?.[0]),
       z: quantizePosition(message.z ?? message.position?.[1]),
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      rotationY: Number.isFinite(Number(message.rotationY)) ? quantizeRotation(message.rotationY) : null,
       scale: normalizePropPlacementScale(message.scale),
       interactable: this.sanitizePlacementInteractable(message.interactable ?? item.interactable ?? null)
     };
