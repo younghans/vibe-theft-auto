@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { Box3, Group, Scene, Vector3 } from 'three';
+import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
 import {
@@ -58,6 +58,7 @@ import {
 } from '../src/shared/vibeHero.js';
 import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
 import {
+  applyMarthaNpcBaseStyle,
   createMarthaNpcAdornment,
   shouldApplyMarthaNpcAdornment
 } from '../src/npc/npcRenderUtils.js';
@@ -703,6 +704,10 @@ function validateFootprintSupport() {
   assert(grilleMarthaBillboard, "Martha's Grille should include a Martha portrait billboard above the sign");
   assert(grilleMarthaBillboardPanel, "Martha's Grille Martha billboard should include a framed panel");
   assert(grilleMarthaPortrait?.userData?.depiction === 'Martha wearing a chef hat', "Martha's Grille billboard portrait should depict Martha in a chef hat");
+  assert(
+    /fat old white lady/.test(grilleMarthaPortrait?.userData?.appearance ?? '') && /fluffy white hair/.test(grilleMarthaPortrait?.userData?.appearance ?? ''),
+    "Martha's Grille billboard portrait should match Martha's requested appearance"
+  );
   const grilleSignPanelBounds = new Box3().setFromObject(grilleSignPanel);
   const grilleMarthaPortraitBounds = new Box3().setFromObject(grilleMarthaPortrait);
   assert(grilleMarthaPortraitBounds.min.y > grilleSignPanelBounds.max.y, "Martha's Grille Martha billboard should sit above the main sign");
@@ -721,26 +726,83 @@ function validateFootprintSupport() {
   assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
   assert(defaultMartha?.marthaEnabled === true, 'Default world should enable the Martha NPC food function');
   assert(
-    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha' && npc.modelId === 'martha' && npc.name === 'Martha' && npc.marthaEnabled === true),
+    /fat old white lady/.test(defaultMartha?.prompt ?? '')
+      && /fluffy white hair/.test(defaultMartha?.prompt ?? '')
+      && /round glasses/.test(defaultMartha?.prompt ?? ''),
+    'Default Martha prompt should describe her requested in-game appearance'
+  );
+  assert(
+    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha'
+      && npc.modelId === 'martha'
+      && npc.name === 'Martha'
+      && npc.marthaEnabled === true
+      && /fat old white lady/.test(npc.prompt ?? '')
+      && /fluffy white hair/.test(npc.prompt ?? '')
+      && /round glasses/.test(npc.prompt ?? '')),
     'Saved world layout should include Martha near the grille'
   );
   const marthaAdornment = createMarthaNpcAdornment({ height: 4.8 });
+  assert(
+    /fat old white lady/.test(marthaAdornment.userData?.appearance ?? '') && /round glasses/.test(marthaAdornment.userData?.appearance ?? ''),
+    'Martha NPC adornment metadata should preserve the requested appearance'
+  );
+  const marthaRoundFace = marthaAdornment.getObjectByName('marthaRoundFace');
+  assert(marthaRoundFace?.material?.color?.getHex() === 0xf1c9ad, 'Martha NPC adornment should use pale white skin');
   assert(marthaAdornment.getObjectByName('marthaFluffyHairHalo'), 'Martha NPC adornment should include fluffy hair');
   assert(marthaAdornment.getObjectByName('marthaFluffyHairCrownLeft'), 'Martha NPC adornment should make the white hair extra fluffy');
+  assert(marthaAdornment.getObjectByName('marthaFluffyHairForeheadCenter'), 'Martha NPC adornment should add front hair puffs for extremely fluffy white hair');
+  assert(marthaAdornment.getObjectByName('marthaFluffyHairOuterLeft'), 'Martha NPC adornment should widen the fluffy white hair silhouette');
   assert(marthaAdornment.getObjectByName('marthaLeftGlassesLens'), 'Martha NPC adornment should include glasses');
+  assert(marthaAdornment.getObjectByName('marthaSoftDoubleChin'), 'Martha NPC adornment should read as an older heavyset face');
+  assert(marthaAdornment.getObjectByName('marthaWideTorso'), 'Martha NPC adornment should widen Martha into a fat old lady silhouette');
   assert(marthaAdornment.getObjectByName('marthaRoundBelly'), 'Martha NPC adornment should give Martha a heavier silhouette');
+  assert(marthaAdornment.getObjectByName('marthaApronBellyCurve'), 'Martha NPC apron should curve over the round belly');
   assert(marthaAdornment.getObjectByName('marthaBigSmile'), 'Martha NPC adornment should include a big smile');
   assert(marthaAdornment.getObjectByName('marthaApronPanel'), 'Martha NPC adornment should include a cook apron');
   assert(
     shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultMartha),
     'Martha NPC adornment should apply to the named Martha NPC'
   );
+  assert(
+    shouldApplyMarthaNpcAdornment({ id: 'martha' }, { name: 'Grille Owner', marthaEnabled: true }),
+    'Martha NPC adornment should apply to Martha food-function NPCs even if their display name changes'
+  );
   assert(isMarthaNpc(defaultMartha), 'Martha NPC food function should be detected from the default NPC definition');
   assert(
     !shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte')),
     'Martha NPC adornment should not affect the school teacher using the same base model'
   );
+  const marthaBaseMock = new Group();
+  const marthaBaseSkinMaterial = new MeshStandardMaterial({ color: 0x777777 });
+  const marthaBaseHairMaterial = new MeshStandardMaterial({ color: 0x202020 });
+  const marthaBaseBody = new Mesh(new BoxGeometry(1, 1, 1), marthaBaseSkinMaterial);
+  const marthaBaseHair = new Mesh(new BoxGeometry(1, 1, 1), marthaBaseHairMaterial);
+  marthaBaseBody.name = 'Ch27_Body';
+  marthaBaseHair.name = 'Ch27_Hair';
+  marthaBaseMock.add(marthaBaseBody, marthaBaseHair);
+  assert(applyMarthaNpcBaseStyle(marthaBaseMock, { id: 'martha' }, defaultMartha), 'Martha base GLB styling should apply to the in-game Martha NPC');
+  assert(marthaBaseBody.material !== marthaBaseSkinMaterial, 'Martha base skin styling should clone shared GLB materials before tinting');
+  assert(marthaBaseBody.material?.color?.getHex() === 0xf1c9ad, 'Martha base body mesh should be styled as a white lady');
+  assert(marthaBaseBody.material?.transparent !== true && marthaBaseBody.material?.opacity === 1, 'Martha base body style should remain opaque');
+  assert(marthaBaseBody.material?.userData?.marthaAppearanceStyle === 'paleSkin', 'Martha base body mesh should carry pale skin styling metadata');
+  assert(marthaBaseHair.material?.color?.getHex() === 0xf8f4e8, 'Martha base hair mesh should be styled white');
+  assert(marthaBaseHair.material?.transparent !== true && marthaBaseHair.material?.opacity === 1, 'Martha base white hair style should be visible and opaque');
+  assert(marthaBaseHair.material?.userData?.marthaAppearanceStyle === 'whiteHair', 'Martha base hair mesh should carry white hair styling metadata');
+  const professorBaseMock = new Group();
+  const professorBaseSkinMaterial = new MeshStandardMaterial({ color: 0x777777 });
+  const professorBaseBody = new Mesh(new BoxGeometry(1, 1, 1), professorBaseSkinMaterial);
+  professorBaseBody.name = 'Ch27_Body';
+  professorBaseMock.add(professorBaseBody);
+  assert(
+    !applyMarthaNpcBaseStyle(professorBaseMock, { id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte'))
+      && professorBaseBody.material === professorBaseSkinMaterial,
+    'Martha base styling should not affect Professor Byte even though he uses the same GLB'
+  );
   const npcActorSource = readFileSync(new URL('../src/npc/NpcActor.js', import.meta.url), 'utf8');
+  assert(
+    /applyMarthaNpcBaseStyle\(this\.character,\s*model,\s*definition\);[\s\S]*this\.materialFeedbackEntries = collectDamageTintMaterials\(this\.character\);/.test(npcActorSource),
+    'Martha base styling should run before NPC damage-feedback materials are captured'
+  );
   assert(
     /applyNpcCharacterAdornment\(this\.visual,\s*model,\s*definition\)/.test(npcActorSource),
     'Martha NPC adornment should be attached to the unscaled NPC visual parent'

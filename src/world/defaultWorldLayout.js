@@ -150,7 +150,7 @@ const NPC_PLANS = [
     position: [-2.05 * BUILDER_TILE_SIZE, -3.98 * BUILDER_TILE_SIZE],
     angle: 0,
     name: 'Martha',
-    prompt: "You are Martha, the warm owner of Martha's Grille. You sell burgers for $20, glizzies for $10, and soda for $10. Greet people with a huge smile and keep answers short, kind, and food-focused.",
+    prompt: "You are Martha, a fat old white lady with huge fluffy white hair, round glasses, and a big smile. You own Martha's Grille and sell burgers for $20, glizzies for $10, and soda for $10. Keep answers short, kind, and food-focused.",
     interactRadius: 5.6,
     marthaEnabled: true
   },

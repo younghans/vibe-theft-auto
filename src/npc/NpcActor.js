@@ -5,7 +5,7 @@ import { createRagdollController } from '../player/ragdollController.js';
 import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
-import { applyNpcCharacterAdornment, prepareNpcRenderObject } from './npcRenderUtils.js';
+import { applyMarthaNpcBaseStyle, applyNpcCharacterAdornment, prepareNpcRenderObject } from './npcRenderUtils.js';
 
 const DAMAGE_FEEDBACK_DURATION_MS = 380;
 const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
@@ -205,6 +205,7 @@ export class NpcActor {
     this.interactRadiusVisible = false;
 
     prepareNpcRenderObject(this.character, model);
+    applyMarthaNpcBaseStyle(this.character, model, definition);
     this.mixer = null;
     this.activeAnimation = 'idle';
     this.ragdoll = null;

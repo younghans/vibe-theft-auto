@@ -1070,12 +1070,12 @@ function createMarthasGrilleMarthaBillboardPortrait() {
 
       context.fillStyle = '#7b6295';
       context.beginPath();
-      context.ellipse(384, 500, 150, 105, 0, 0, Math.PI * 2);
+      context.ellipse(384, 500, 178, 112, 0, 0, Math.PI * 2);
       context.fill();
       context.fillStyle = '#fff4d2';
-      context.fillRect(320, 404, 128, 134);
+      context.fillRect(304, 404, 160, 134);
 
-      context.fillStyle = '#f4f0df';
+      context.fillStyle = '#f8f4e8';
       for (const [x, y, radiusX, radiusY] of [
         [244, 242, 86, 104],
         [286, 176, 90, 96],
@@ -1105,11 +1105,11 @@ function createMarthasGrilleMarthaBillboardPortrait() {
       context.lineWidth = 8;
       context.strokeRect(292, 144, 184, 38);
 
-      context.fillStyle = '#e7b885';
+      context.fillStyle = '#f1c9ad';
       context.beginPath();
       context.ellipse(384, 286, 126, 144, 0, 0, Math.PI * 2);
       context.fill();
-      context.fillStyle = '#d87673';
+      context.fillStyle = '#e08a81';
       for (const x of [318, 450]) {
         context.beginPath();
         context.ellipse(x, 322, 26, 18, 0, 0, Math.PI * 2);
@@ -1140,7 +1140,7 @@ function createMarthasGrilleMarthaBillboardPortrait() {
       context.moveTo(318, 340);
       context.quadraticCurveTo(384, 396, 450, 340);
       context.stroke();
-      context.strokeStyle = '#aa765d';
+      context.strokeStyle = '#b78470';
       context.lineWidth = 5;
       for (const y of [225, 240]) {
         context.beginPath();
@@ -1162,6 +1162,7 @@ function createMarthasGrilleMarthaBillboardPortrait() {
   const portrait = new THREE.Mesh(geometry, material);
   portrait.name = 'marthasGrilleMarthaBillboardPortrait';
   portrait.userData.depiction = 'Martha wearing a chef hat';
+  portrait.userData.appearance = 'fat old white lady with fluffy white hair and glasses';
   portrait.castShadow = false;
   portrait.receiveShadow = false;
   return portrait;
