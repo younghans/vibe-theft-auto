@@ -14,6 +14,8 @@ const clipSourceUrls = Object.freeze({
   drunkIdle: assets.mixamo.animations.drunkIdle,
   drinking: assets.mixamo.animations.drinking,
   drunkWalk: assets.mixamo.animations.drunkWalk,
+  standUp: assets.mixamo.animations.standUp,
+  smoking: assets.mixamo.animations.smoking,
   snakeHipHopDance: assets.mixamo.animations.snakeHipHopDance,
   waveHipHopDance: assets.mixamo.animations.waveHipHopDance,
   waving: assets.mixamo.animations.waving
