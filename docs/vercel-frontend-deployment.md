@@ -20,6 +20,7 @@ Import the GitHub repository into Vercel and use these settings:
 | Install command | `npm install` |
 | Build command | `npm run build:web` |
 | Output directory | `dist` |
+| Ignored build step | `node scripts/vercel-ignore-build.mjs` |
 
 Set this Vercel environment variable for Production and Preview:
 
@@ -58,6 +59,17 @@ npm start
 ```
 
 The package `build` script is backend-only so Colyseus Cloud can use its default `npm run build` hook without rebuilding frontend assets. Use `npm run build:web` for Vercel and `npm run build:all` when you want to validate both deploy targets locally.
+
+## Ignored frontend builds
+
+The Vercel Git integration sees every push to `main`, including backend-only
+and worker-only commits. The ignored build script compares the pending commit
+against Vercel's last successful deployment SHA and skips the build unless the
+diff includes frontend-affecting paths such as `src/`, `assets/`, `vendor/`,
+`index.html`, `styles.css`, `vercel.json`, `package.json`, `package-lock.json`,
+`scripts/build-web.mjs`, or `scripts/vercel-ignore-build.mjs`. If the diff
+cannot be read, the script lets Vercel build so a frontend deploy is never
+accidentally missed.
 
 ## Codex worker deployment
 
