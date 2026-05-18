@@ -313,6 +313,13 @@ function syncPlainObject(target, source = {}) {
   return target;
 }
 
+function getPlacementRotationY(placement) {
+  const rotationY = Number(placement?.rotationY);
+  return Number.isFinite(rotationY)
+    ? rotationY
+    : toRotationY(placement?.rotationQuarterTurns ?? 0);
+}
+
 function getCachedInteractable(cache, key) {
   let interactable = cache.get(key);
   if (!interactable) {
@@ -1189,7 +1196,7 @@ export class WorldRenderer {
           placement.position[1]
         );
       }
-      object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+      object.rotation.y = getPlacementRotationY(placement);
     }
 
     object.userData.editorPlacementId = placement.id;
@@ -1589,7 +1596,7 @@ export class WorldRenderer {
     }
 
     if (!rendered.actor) {
-      rendered.object.rotation.y = toRotationY(placement.rotationQuarterTurns);
+      rendered.object.rotation.y = getPlacementRotationY(placement);
       applyRenderedPlacementScale(rendered, placement);
     }
 

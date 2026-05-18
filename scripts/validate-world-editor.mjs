@@ -12,7 +12,12 @@ import {
   PROP_PLACEMENT_SCALE_MIN,
   normalizePropPlacementScale
 } from '../src/shared/placementScale.js';
-import { getTileFootprintWorldSize, getTileOccupiedCells } from '../src/shared/tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  getTileFootprintWorldSize,
+  getTileOccupiedCells,
+  rotateFootprintOffset
+} from '../src/shared/tileFootprint.js';
 import {
   DRINK_ITEM_IDS,
   DRUNKNESS_LEVEL_LABELS,
@@ -119,6 +124,7 @@ import {
 } from '../src/shared/missions.js';
 import { getNpcModelVoice } from '../src/shared/npcVoice.js';
 import { getSkillXpForLevel } from '../src/shared/skills.js';
+import { WorldState } from '../src/world/WorldState.js';
 
 function assert(condition, message) {
   if (!condition) {
@@ -167,6 +173,87 @@ function collectMeshMaterials(root) {
 function validateRotationQuarterTurns(value, context) {
   assert(Number.isInteger(value), `${context}: rotationQuarterTurns must be an integer`);
   assert(value >= 0 && value <= 3, `${context}: rotationQuarterTurns must be between 0 and 3`);
+}
+
+const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
+const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
+const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
+const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
+const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
+const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
+  {
+    itemId: 'car_fiat_duna',
+    label: 'Fiat Duna',
+    localX: -CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
+    doorTargetLocalX: -CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
+  },
+  {
+    itemId: 'car_toyota_ae86',
+    label: 'Toyota AE86',
+    localX: CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
+    doorTargetLocalX: CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
+  }
+]);
+
+function angleDelta(a, b) {
+  return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+}
+
+function normalizeQuarterTurnsFromRotationY(rotationY) {
+  return ((Math.round(rotationY / (Math.PI / 2)) % 4) + 4) % 4;
+}
+
+function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
+  const dealershipPlacement = layout.tiles?.find((placement) => placement.itemId === 'car_dealership_building');
+  assert(dealershipPlacement, `${layoutLabel} should include a Car Dealership tile for showroom cars`);
+  const rotationQuarterTurns = dealershipPlacement.rotationQuarterTurns ?? 0;
+  const dealershipCenter = getTileCenterWorldPosition(
+    carDealershipItem,
+    dealershipPlacement.cell?.[0] ?? 0,
+    dealershipPlacement.cell?.[1] ?? 0,
+    rotationQuarterTurns
+  );
+
+  for (const spec of CAR_DEALERSHIP_SHOWROOM_CARS) {
+    const carItem = getBuilderItemById(spec.itemId);
+    assert(carItem, `${spec.label} should exist in the vehicle catalog`);
+
+    const localZ = CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z;
+    const offset = rotateFootprintOffset(spec.localX, localZ, rotationQuarterTurns);
+    const expectedPosition = [
+      Number((dealershipCenter.x + offset.x).toFixed(2)),
+      Number((dealershipCenter.z + offset.z).toFixed(2))
+    ];
+    const localRotationY = Math.atan2(spec.doorTargetLocalX - spec.localX, CAR_DEALERSHIP_DOOR_LOCAL_Z - localZ);
+    const expectedRotationY = (rotationQuarterTurns * (Math.PI / 2)) + localRotationY;
+    const expectedRotationQuarterTurns = normalizeQuarterTurnsFromRotationY(expectedRotationY);
+    const matchingProps = (layout.props ?? []).filter((placement) => placement.itemId === spec.itemId);
+    const prop = matchingProps.find((placement) => (
+      Math.abs((placement.position?.[0] ?? Number.NaN) - expectedPosition[0]) <= 0.01
+      && Math.abs((placement.position?.[1] ?? Number.NaN) - expectedPosition[1]) <= 0.01
+    ));
+
+    assert(prop, `${layoutLabel} should place the ${spec.label} in the dealership showroom bay`);
+    assert(prop.scale === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE, `${layoutLabel} ${spec.label} should render at 0.75x standard size`);
+    assert(prop.rotationQuarterTurns === expectedRotationQuarterTurns, `${layoutLabel} ${spec.label} should preserve a compatible quarter-turn fallback`);
+    assert(Number.isFinite(Number(prop.rotationY)), `${layoutLabel} ${spec.label} should use exact rotationY for diagonal showroom staging`);
+    assert(angleDelta(Number(prop.rotationY), expectedRotationY) <= 0.002, `${layoutLabel} ${spec.label} should face diagonally toward the dealership door`);
+
+    const halfWidth = (carItem.size[0] * CAR_DEALERSHIP_SHOWROOM_CAR_SCALE) * 0.5;
+    const halfDepth = (carItem.size[1] * CAR_DEALERSHIP_SHOWROOM_CAR_SCALE) * 0.5;
+    const localHalfX = (Math.abs(Math.cos(localRotationY)) * halfWidth) + (Math.abs(Math.sin(localRotationY)) * halfDepth);
+    const localHalfZ = (Math.abs(Math.sin(localRotationY)) * halfWidth) + (Math.abs(Math.cos(localRotationY)) * halfDepth);
+    const localMinX = spec.localX - localHalfX;
+    const localMaxX = spec.localX + localHalfX;
+    const localMinZ = localZ - localHalfZ;
+    const localMaxZ = localZ + localHalfZ;
+    assert(localMinX >= -10.35 && localMaxX <= 10.35, `${layoutLabel} ${spec.label} should fit inside the dealership glass side walls`);
+    assert(localMinZ >= 0.2 && localMaxZ <= 10.55, `${layoutLabel} ${spec.label} should fit between the back showroom seam and front door`);
+    assert(
+      spec.localX < 0 ? localMaxX <= -PLAYER_RADIUS : localMinX >= PLAYER_RADIUS,
+      `${layoutLabel} ${spec.label} should leave a player-width center aisle through the showroom`
+    );
+  }
 }
 
 function validateKenneyCatalogItems() {
@@ -764,6 +851,27 @@ function validateFootprintSupport() {
     savedWorldLayout.tiles?.some((placement) => placement.itemId === 'car_dealership_building'),
     'Fallback saved world layout should place the Car Dealership'
   );
+  assertDealershipShowroomCars(defaultWorldLayout, 'Default world layout', carDealership);
+  assertDealershipShowroomCars(savedWorldLayout, 'Fallback saved world layout', carDealership);
+
+  const diagonalRotationState = new WorldState();
+  diagonalRotationState.loadLayout({
+    tiles: [],
+    props: [{
+      id: 'validation-diagonal-showroom-car',
+      itemId: 'car_fiat_duna',
+      position: [1, 2],
+      rotationQuarterTurns: 3,
+      rotationY: -0.815,
+      scale: CAR_DEALERSHIP_SHOWROOM_CAR_SCALE
+    }],
+    npcs: []
+  });
+  const diagonalRotationProp = diagonalRotationState.serializeLayout().props[0];
+  assert(
+    diagonalRotationProp?.rotationY === -0.815 && diagonalRotationProp.scale === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE,
+    'World state should preserve exact prop rotationY and 0.75x scale for diagonal showroom cars'
+  );
   assert(
     marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_kitchen_detail'),
     "Martha's Grille kitchen should stay visible when the exterior becomes transparent"
@@ -813,6 +921,10 @@ function validateFootprintSupport() {
   assert(
     /visibleNodeNames/.test(worldRendererSource),
     'World renderer should support interior-only cutaway visibility'
+  );
+  assert(
+    /getPlacementRotationY/.test(worldRendererSource),
+    'World renderer should support exact prop rotationY for diagonal showroom staging'
   );
   assert(
     /nodeWithinVisibleNameFilter/.test(worldRendererSource),

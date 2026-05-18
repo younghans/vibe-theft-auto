@@ -1,8 +1,16 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
-import { rotationRadiansToQuarterTurns as toQuarterTurns } from '../shared/numberMath.js';
+import {
+  quantizePosition,
+  quantizeRotation,
+  rotationRadiansToQuarterTurns as toQuarterTurns
+} from '../shared/numberMath.js';
 import { createDefaultMissionSequence } from '../shared/missions.js';
 import { createDefaultNpcModelVoiceMap } from '../shared/npcVoice.js';
-import { getTileOccupiedCells } from '../shared/tileFootprint.js';
+import {
+  getTileCenterWorldPosition,
+  getTileOccupiedCells,
+  rotateFootprintOffset
+} from '../shared/tileFootprint.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 import { getBuilderItemById } from './builderCatalog.js';
 
@@ -50,6 +58,24 @@ const BUILDING_PLANS = [
   { cell: [2, 2], itemId: 'building_h', angle: Math.PI, label: 'Downtown apartments', action: 'Interiors will open up in a later milestone.' },
   { cell: [-2, -2], itemId: 'building_c', angle: 0, label: 'Quick cash loans', action: 'This slot is ready for shady finance interactions.' }
 ];
+
+const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
+const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
+const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
+const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
+const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
+const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
+  {
+    itemId: 'car_fiat_duna',
+    localX: -CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
+    doorTargetLocalX: -CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
+  },
+  {
+    itemId: 'car_toyota_ae86',
+    localX: CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X,
+    doorTargetLocalX: CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
+  }
+]);
 
 const DISTRICT_PROPS = [
   { itemId: 'crate_a', position: [-2.4 * BUILDER_TILE_SIZE, 1.8 * BUILDER_TILE_SIZE], angle: Math.PI / 4 },
@@ -294,16 +320,55 @@ function createTileLayout() {
   return [...tiles.values()];
 }
 
+function createCarDealershipShowroomCarPlans() {
+  const dealershipPlan = BUILDING_PLANS.find((plan) => plan.itemId === 'car_dealership_building');
+  const dealershipItem = getBuilderItemById('car_dealership_building');
+  if (!dealershipPlan || !dealershipItem) {
+    return [];
+  }
+
+  const rotationQuarterTurns = toQuarterTurns(dealershipPlan.angle);
+  const dealershipCenter = getTileCenterWorldPosition(
+    dealershipItem,
+    dealershipPlan.cell[0],
+    dealershipPlan.cell[1],
+    rotationQuarterTurns
+  );
+
+  return CAR_DEALERSHIP_SHOWROOM_CARS.map((car) => {
+    const localZ = CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z;
+    const rotatedOffset = rotateFootprintOffset(car.localX, localZ, rotationQuarterTurns);
+    const localRotationY = Math.atan2(car.doorTargetLocalX - car.localX, CAR_DEALERSHIP_DOOR_LOCAL_Z - localZ);
+    const rotationY = dealershipPlan.angle + localRotationY;
+
+    return {
+      itemId: car.itemId,
+      position: [
+        quantizePosition(dealershipCenter.x + rotatedOffset.x),
+        quantizePosition(dealershipCenter.z + rotatedOffset.z)
+      ],
+      angle: rotationY,
+      rotationY: quantizeRotation(rotationY),
+      scale: CAR_DEALERSHIP_SHOWROOM_CAR_SCALE
+    };
+  });
+}
+
 function createPropLayout() {
   const props = [];
   let propSequence = 95;
 
-  const pushProp = (itemId, position, angle = 0) => {
+  const pushProp = (itemId, position, angle = 0, options = {}) => {
     props.push({
       id: `placement_${++propSequence}`,
       itemId,
-      position: [...position],
-      rotationQuarterTurns: toQuarterTurns(angle)
+      position: [
+        quantizePosition(position[0]),
+        quantizePosition(position[1])
+      ],
+      rotationQuarterTurns: toQuarterTurns(angle),
+      ...(Number.isFinite(Number(options.rotationY)) ? { rotationY: quantizeRotation(options.rotationY) } : {}),
+      ...(Number.isFinite(Number(options.scale)) && Number(options.scale) !== 1 ? { scale: Number(options.scale) } : {})
     });
   };
 
@@ -333,6 +398,13 @@ function createPropLayout() {
 
   for (const plan of PICKUP_PROPS) {
     pushProp(plan.itemId, plan.position, plan.angle);
+  }
+
+  for (const plan of createCarDealershipShowroomCarPlans()) {
+    pushProp(plan.itemId, plan.position, plan.angle, {
+      rotationY: plan.rotationY,
+      scale: plan.scale
+    });
   }
 
   return props;

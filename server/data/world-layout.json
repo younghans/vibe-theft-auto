@@ -1696,6 +1696,28 @@
         30.8
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_235",
+      "itemId": "car_fiat_duna",
+      "position": [
+        85.65,
+        71.1
+      ],
+      "rotationQuarterTurns": 3,
+      "rotationY": -1.077,
+      "scale": 0.75
+    },
+    {
+      "id": "placement_236",
+      "itemId": "car_toyota_ae86",
+      "position": [
+        85.65,
+        82.9
+      ],
+      "rotationQuarterTurns": 3,
+      "rotationY": -2.064,
+      "scale": 0.75
     }
   ],
   "npcs": [

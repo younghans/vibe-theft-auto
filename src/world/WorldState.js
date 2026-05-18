@@ -6,6 +6,7 @@ import {
 } from '../npc/npcBehavior.js';
 import {
   normalizeRotationQuarterTurns,
+  quantizeRotation,
   quantizePosition as normalizePositionValue
 } from '../shared/numberMath.js';
 import {
@@ -35,6 +36,9 @@ function clonePlacement(placement) {
     itemId: placement.itemId,
     layer: placement.layer,
     rotationQuarterTurns: placement.rotationQuarterTurns,
+    rotationY: placement.layer === 'prop' && Number.isFinite(Number(placement.rotationY))
+      ? quantizeRotation(placement.rotationY)
+      : undefined,
     scale: placement.layer === 'prop' ? getPlacementScale(placement) : undefined,
     cellX: placement.cellX,
     cellZ: placement.cellZ,
@@ -50,6 +54,9 @@ function toPlacementRecord(entry, item, id) {
     itemId: item.id,
     layer: item.layer,
     rotationQuarterTurns: normalizeRotationQuarterTurns(entry.rotationQuarterTurns),
+    rotationY: item.layer === 'prop' && Number.isFinite(Number(entry.rotationY))
+      ? quantizeRotation(entry.rotationY)
+      : undefined,
     scale: item.layer === 'prop'
       ? normalizePropPlacementScale(entry.scale)
       : undefined,
@@ -171,6 +178,7 @@ function toSerializedPlacement(placement) {
       normalizePositionValue(placement.position[1])
     ],
     rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
+    ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
     ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
     ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
   };
@@ -354,6 +362,7 @@ export class WorldState {
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns,
+      rotationY: undefined,
       scale: normalizePropPlacementScale(scale),
       cellX: null,
       cellZ: null,
@@ -544,6 +553,9 @@ export class WorldState {
       this.registerPlacement(placement);
     } else {
       placement.rotationQuarterTurns = nextRotationQuarterTurns;
+      if (placement.layer === 'prop') {
+        placement.rotationY = undefined;
+      }
       if (placement.layer === 'npc' && placement.npc) {
         placement.npc.spawnRotationQuarterTurns = nextRotationQuarterTurns;
       }
@@ -585,6 +597,7 @@ export class WorldState {
             normalizePositionValue(placement.position[1])
           ],
           rotationQuarterTurns: placement.rotationQuarterTurns,
+          ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
           ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
           ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
         };
