@@ -958,17 +958,42 @@ function validateFootprintSupport() {
   for (const nodeName of cutawayVisibleWallNames('car_dealership')) {
     assert(carDealershipVisual.getObjectByName(nodeName), `Car Dealership visual should expose ${nodeName} for cutaway visibility`);
   }
-  for (const nodeName of [
+  const carDealershipTransparentGlassNames = new Set([
+    'carDealershipBackCounterGlassFront',
+    'carDealershipBackFeatureWall',
     'carDealershipBackGlassWall',
     'carDealershipLeftGlassWall',
     'carDealershipRightGlassWall',
     'carDealershipFrontGlassWallLeft',
     'carDealershipFrontGlassWallRight',
-    'carDealershipGlassRoof'
-  ]) {
+    'carDealershipFrontGlassHeader',
+    'carDealershipGlassRoof',
+    'carDealershipFrontGlassCrown',
+    'carDealershipBackGlassCrown',
+    'carDealershipLeftGlassCrown',
+    'carDealershipRightGlassCrown',
+    'carDealershipGlassEntryCanopy'
+  ]);
+  for (const nodeName of carDealershipTransparentGlassNames) {
     const node = carDealershipVisual.getObjectByName(nodeName);
-    assert(node, `Car Dealership should include ${nodeName}`);
-    assert(node.material?.transparent !== true && (node.material?.opacity ?? 1) === 1, `${nodeName} should use opaque glass-tinted material to avoid transparency sorting bugs`);
+    assert(node, `Car Dealership should include transparent glass panel ${nodeName}`);
+    assert(node.material?.transparent === true, `${nodeName} should use a transparent panel material`);
+    assert(node.material?.depthWrite === false, `${nodeName} should avoid depth-writing while transparent`);
+    assert((node.material?.opacity ?? 1) >= 0.3 && (node.material?.opacity ?? 1) <= 0.45, `${nodeName} should stay visibly transparent instead of opaque blue`);
+    assert(node.castShadow !== true, `${nodeName} should not cast solid shadows as transparent glass`);
+  }
+  const counterBounds = new Box3().setFromObject(carDealershipVisual.getObjectByName('carDealershipBackCounter'));
+  const counterCenter = counterBounds.getCenter(new Vector3());
+  assert(counterCenter.z > -7.95 && counterCenter.z < -7.5, 'Car Dealership counter should sit slightly further down from the rear wall');
+  for (const nodeName of [
+    'carDealershipRegisterBase',
+    'carDealershipRegisterScreen',
+    'carDealershipBrochureStack1',
+    'carDealershipBrochureStack2',
+    'carDealershipBrochureStack3',
+    'carDealershipBrochureStack4'
+  ]) {
+    assert(!carDealershipVisual.getObjectByName(nodeName), `${nodeName} should be removed so no laptop-like props sit on the dealership floor or counter`);
   }
   for (const nodeName of [
     'carDealershipBackCounter',
@@ -987,7 +1012,12 @@ function validateFootprintSupport() {
   const carDealershipTransparentMeshes = collectMeshMaterials(carDealershipVisual)
     .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
     .map(({ node }) => node.name || '(unnamed mesh)');
-  assert(carDealershipTransparentMeshes.length === 0, `Car Dealership should not use transparent materials that can cause sorting bugs: ${carDealershipTransparentMeshes.join(', ')}`);
+  const unexpectedCarDealershipTransparentMeshes = carDealershipTransparentMeshes
+    .filter((name) => !carDealershipTransparentGlassNames.has(name));
+  assert(
+    unexpectedCarDealershipTransparentMeshes.length === 0,
+    `Only Car Dealership glass panels should use transparent materials: ${unexpectedCarDealershipTransparentMeshes.join(', ')}`
+  );
   const carDealershipBounds = new Box3().setFromObject(carDealershipVisual);
   const carDealershipSize = carDealershipBounds.getSize(new Vector3());
   assert(carDealershipSize.x <= CAR_DEALERSHIP_BUILDING_FOOTPRINT[0] + 0.02, 'Car Dealership visual should stay within the 2x2 tile width before fitting');

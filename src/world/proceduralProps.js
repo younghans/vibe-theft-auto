@@ -1724,25 +1724,32 @@ export function createRealEstateOfficeBuildingVisual() {
 }
 
 function createCarDealershipMaterials() {
+  const createGlassPanelMaterial = (color, opacity, roughness, metalness, emissive, emissiveIntensity) => {
+    const material = new THREE.MeshPhysicalMaterial({
+      color,
+      roughness,
+      metalness,
+      transmission: 0.54,
+      thickness: 0.22,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      emissive,
+      emissiveIntensity,
+      envMapIntensity: 0.72
+    });
+    material.userData.carDealershipTransparentGlass = true;
+    return material;
+  };
+
   return {
     slab: createMaterial(0x525b60, 0.88, 0.06),
     floor: createMaterial(0xdfe5e7, 0.72, 0.06),
     floorAlt: createMaterial(0xcfd8dc, 0.7, 0.08),
     floorLine: createMaterial(0x93a1a8, 0.62, 0.12),
-    glass: new THREE.MeshStandardMaterial({
-      color: 0x98d2df,
-      roughness: 0.22,
-      metalness: 0.18,
-      emissive: 0x0e2d36,
-      emissiveIntensity: 0.05
-    }),
-    glassDeep: new THREE.MeshStandardMaterial({
-      color: 0x5f9caf,
-      roughness: 0.2,
-      metalness: 0.22,
-      emissive: 0x071d24,
-      emissiveIntensity: 0.05
-    }),
+    glass: createGlassPanelMaterial(0xc7f3fb, 0.34, 0.16, 0.04, 0x12343b, 0.025),
+    glassDeep: createGlassPanelMaterial(0x9bd7e6, 0.42, 0.18, 0.06, 0x0b2730, 0.035),
     glassHighlight: createMaterial(0xd8f5fb, 0.34, 0.08),
     mullion: createMaterial(0x25343d, 0.46, 0.42),
     mullionLight: createMaterial(0xb8c3c8, 0.36, 0.34),
@@ -1753,15 +1760,18 @@ function createCarDealershipMaterials() {
     plant: createMaterial(0x2f7544, 0.82, 0.02),
     plantLight: createMaterial(0x55a05f, 0.78, 0.02),
     planter: createMaterial(0x36454b, 0.72, 0.08),
-    screen: createMaterial(0x14252b, 0.32, 0.12),
-    paper: createMaterial(0xf7f4e9, 0.84, 0.01),
     signPanel: createMaterial(0x1f3038, 0.46, 0.3),
     signLetter: createMaterial(0xeaf8ff, 0.34, 0.12)
   };
 }
 
 function addCarDealershipBox(group, name, size, position, material, options = {}) {
-  group.add(createBox(name, size, position, material, options));
+  const mesh = createBox(name, size, position, material, options);
+  if (material?.userData?.carDealershipTransparentGlass) {
+    mesh.castShadow = false;
+    mesh.renderOrder = 2;
+  }
+  group.add(mesh);
 }
 
 function addCarDealershipWallMullions(group, prefix, {
@@ -1901,29 +1911,16 @@ function addCarDealershipPlant(group, materials, name, x, z) {
 }
 
 function addCarDealershipCounter(group, materials) {
+  const counterZ = -7.72;
+  const counterGlassZ = counterZ + 0.62;
   const counter = new THREE.Group();
   counter.name = 'carDealershipBackCounter';
   group.add(counter);
 
-  addCarDealershipBox(counter, 'carDealershipBackCounterBase', [13.2, 1.05, 1.04], [0, 1.2, -8.42], materials.counter);
-  addCarDealershipBox(counter, 'carDealershipBackCounterTop', [13.55, 0.2, 1.32], [0, 1.82, -8.42], materials.counterTop);
-  addCarDealershipBox(counter, 'carDealershipBackCounterGlassFront', [12.7, 0.52, 0.12], [0, 2.18, -7.8], materials.glassDeep);
-  addCarDealershipBox(counter, 'carDealershipBackCounterGlassCap', [12.9, 0.08, 0.18], [0, 2.49, -7.8], materials.mullionLight);
-  addCarDealershipBox(counter, 'carDealershipRegisterBase', [0.58, 0.1, 0.38], [4.8, 2.0, -8.2], materials.mullion);
-  addCarDealershipBox(counter, 'carDealershipRegisterScreen', [0.66, 0.42, 0.08], [4.8, 2.28, -8.07], materials.screen, {
-    rotation: [-0.12, 0, 0]
-  });
-
-  for (const [index, x] of [-4.8, -3.7, -2.6, -1.5].entries()) {
-    addCarDealershipBox(
-      counter,
-      `carDealershipBrochureStack${index + 1}`,
-      [0.52, 0.045, 0.34],
-      [x, 2.0 + (index * 0.025), -8.08],
-      materials.paper,
-      { castShadow: false, receiveShadow: true }
-    );
-  }
+  addCarDealershipBox(counter, 'carDealershipBackCounterBase', [13.2, 1.05, 1.04], [0, 1.2, counterZ], materials.counter);
+  addCarDealershipBox(counter, 'carDealershipBackCounterTop', [13.55, 0.2, 1.32], [0, 1.82, counterZ], materials.counterTop);
+  addCarDealershipBox(counter, 'carDealershipBackCounterGlassFront', [12.7, 0.52, 0.12], [0, 2.18, counterGlassZ], materials.glassDeep);
+  addCarDealershipBox(counter, 'carDealershipBackCounterGlassCap', [12.9, 0.08, 0.18], [0, 2.49, counterGlassZ], materials.mullionLight);
 }
 
 export function createCarDealershipBuildingVisual() {

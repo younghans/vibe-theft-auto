@@ -110,7 +110,7 @@ const CAR_DEALERSHIP_COLLISION_RECTS = Object.freeze([
   { centerX: 10.85, centerZ: 0.35, halfWidth: 0.34, halfDepth: 10.45, minY: 0, maxY: 8.4 },
   { centerX: -7.65, centerZ: 10.8, halfWidth: 2.95, halfDepth: 0.34, minY: 0, maxY: 8.4 },
   { centerX: 7.65, centerZ: 10.8, halfWidth: 2.95, halfDepth: 0.34, minY: 0, maxY: 8.4 },
-  { centerX: 0, centerZ: -8.42, halfWidth: 6.9, halfDepth: 0.76, minY: 0, maxY: 2.7 }
+  { centerX: 0, centerZ: -7.72, halfWidth: 6.9, halfDepth: 0.76, minY: 0, maxY: 2.7 }
 ]);
 const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 7.2 },
