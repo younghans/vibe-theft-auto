@@ -390,6 +390,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       'marthasGrilleFlatTopGrill',
       'mgRangeHood',
       'marthas_grille_kitchen_detail',
+      'marthasGrilleBackWallMenu',
       'marthasGrilleOpenFrontThreshold',
       ...createCutawayInteriorWallNodeNames('marthas_grille')
     ],
@@ -403,6 +404,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
       'marthasGrilleFlatTopGrill',
       'mgRangeHood',
       'marthas_grille_kitchen_detail',
+      'marthasGrilleBackWallMenu',
       'marthasGrilleOpenFrontThreshold',
       ...createCutawayInteriorWallNodeNames('marthas_grille')
     ],

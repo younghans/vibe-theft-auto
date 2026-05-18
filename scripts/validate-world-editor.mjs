@@ -717,6 +717,11 @@ function validateFootprintSupport() {
     "Martha's Grille kitchen should stay visible when the exterior becomes transparent"
   );
   assert(
+    marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthasGrilleBackWallMenu')
+      && marthasGrille.cameraOcclusionAlwaysPreserveNodeNames?.includes('marthasGrilleBackWallMenu'),
+    "Martha's Grille back-wall menu should stay visible when the exterior becomes transparent"
+  );
+  assert(
     cutawayVisibleWallNames('marthas_grille').every((nodeName) => marthasGrille.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
     "Martha's Grille should keep its back and side walls visible during camera occlusion"
   );
@@ -845,6 +850,32 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrilleRightWindow1'), "Martha's Grille side wall should include windows");
   const grilleBackWall = grilleVisual.getObjectByName('mgBackWall');
   assert(grilleBackWall?.material?.color?.getHex() === 0xf2dc9d, "Martha's Grille should use a creamy yellow building facade");
+  const grilleBackWallMenu = grilleVisual.getObjectByName('marthasGrilleBackWallMenu');
+  const grilleBackWallMenuBoard = grilleVisual.getObjectByName('marthasGrilleBackWallMenuBoard');
+  const grilleBackWallMenuLabel = grilleVisual.getObjectByName('marthasGrilleBackWallMenuLabel');
+  assert(grilleBackWallMenu, "Martha's Grille should include a menu on the back wall");
+  assert(grilleBackWallMenuBoard, "Martha's Grille back-wall menu should include a physical board");
+  assert(grilleBackWallMenuLabel, "Martha's Grille back-wall menu should include readable item text");
+  assert(
+    grilleBackWallMenuLabel?.userData?.itemIds?.join('|') === [
+      MARTHA_ITEM_IDS.glizzy,
+      MARTHA_ITEM_IDS.burger,
+      MARTHA_ITEM_IDS.soda
+    ].join('|'),
+    "Martha's Grille back-wall menu should display glizzy, burger, and soda"
+  );
+  assert(
+    /Glizzy/.test(grilleBackWallMenuLabel?.userData?.menuText ?? '')
+      && /Burger/.test(grilleBackWallMenuLabel?.userData?.menuText ?? '')
+      && /Soda/.test(grilleBackWallMenuLabel?.userData?.menuText ?? ''),
+    "Martha's Grille back-wall menu label metadata should name all three items"
+  );
+  assert(grilleBackWallMenuLabel?.material?.transparent !== true, "Martha's Grille back-wall menu should stay opaque");
+  assert(grilleBackWallMenuLabel?.material?.depthWrite !== false, "Martha's Grille back-wall menu should write depth as an opaque sign");
+  const grilleBackWallBounds = new Box3().setFromObject(grilleBackWall);
+  const grilleBackWallMenuBounds = new Box3().setFromObject(grilleBackWallMenu);
+  assert(grilleBackWallMenuBounds.min.z > grilleBackWallBounds.max.z - 0.08, "Martha's Grille menu should sit on the inside face of the back wall");
+  assert(grilleBackWallMenuBounds.min.y > 4.25 && grilleBackWallMenuBounds.max.y < grilleBackWallBounds.max.y, "Martha's Grille menu should fit high on the back wall above the kitchen windows");
   const grilleSignLabel = grilleVisual.getObjectByName('marthasGrilleSignLabel');
   assert(grilleSignLabel, "Martha's Grille visual should include readable sign text");
   const grilleSignLabelSize = new Box3().setFromObject(grilleSignLabel).getSize(new Vector3());
