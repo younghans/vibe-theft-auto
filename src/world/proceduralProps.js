@@ -973,8 +973,25 @@ function addMarthasGrilleWindow(group, materials, name, {
   addMarthasGrilleBox(group, `${name}CrossbarHorizontal`, [width + 0.04, 0.06, zDepth + 0.05], [position[0], position[1], z], materials.windowMuntin);
 }
 
+function setFittedCanvasFont(context, text, {
+  maxWidth,
+  maxFontSize,
+  minFontSize,
+  weight = '900',
+  family = 'Arial Black, Impact, sans-serif'
+}) {
+  let fontSize = maxFontSize;
+  while (fontSize >= minFontSize) {
+    context.font = `${weight} ${fontSize}px ${family}`;
+    if (context.measureText(text).width <= maxWidth || fontSize === minFontSize) {
+      break;
+    }
+    fontSize -= 4;
+  }
+}
+
 function createMarthasGrilleSignLabel() {
-  const geometry = new THREE.PlaneGeometry(6.78, 1.28);
+  const geometry = new THREE.PlaneGeometry(9.52, 1.84);
   let material;
 
   if (typeof document === 'undefined') {
@@ -984,19 +1001,26 @@ function createMarthasGrilleSignLabel() {
     });
   } else {
     const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 256;
+    canvas.width = 2048;
+    canvas.height = 512;
     const context = canvas.getContext('2d');
     if (context) {
       context.fillStyle = '#2a1715';
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.lineWidth = 18;
+      context.lineWidth = 28;
       context.strokeStyle = '#f8e7bd';
-      context.strokeRect(34, 34, canvas.width - 68, canvas.height - 68);
-      context.font = '900 104px Arial Black, Impact, sans-serif';
+      context.strokeRect(44, 44, canvas.width - 88, canvas.height - 88);
+      context.lineWidth = 14;
+      context.strokeStyle = '#d65142';
+      context.strokeRect(78, 78, canvas.width - 156, canvas.height - 156);
+      setFittedCanvasFont(context, "MARTHA'S GRILLE", {
+        maxWidth: canvas.width - 190,
+        maxFontSize: 230,
+        minFontSize: 142
+      });
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.lineWidth = 12;
+      context.lineWidth = 22;
       context.strokeStyle = '#180d0b';
       context.fillStyle = '#ffe9a8';
       context.strokeText("MARTHA'S GRILLE", canvas.width * 0.5, canvas.height * 0.55);
@@ -1017,6 +1041,149 @@ function createMarthasGrilleSignLabel() {
   label.castShadow = false;
   label.receiveShadow = false;
   return label;
+}
+
+function createMarthasGrilleMarthaBillboardPortrait() {
+  const geometry = new THREE.PlaneGeometry(2.58, 1.86);
+  let material;
+
+  if (typeof document === 'undefined') {
+    material = new THREE.MeshBasicMaterial({
+      color: 0xf8e7bd,
+      side: THREE.DoubleSide
+    });
+  } else {
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 576;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = '#f8e7bd';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#d65142';
+      context.fillRect(0, 0, canvas.width, 76);
+      context.fillStyle = '#2a1715';
+      context.font = '900 44px Arial Black, Impact, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText('MARTHA', canvas.width * 0.5, 40);
+
+      context.fillStyle = '#7b6295';
+      context.beginPath();
+      context.ellipse(384, 500, 150, 105, 0, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = '#fff4d2';
+      context.fillRect(320, 404, 128, 134);
+
+      context.fillStyle = '#f4f0df';
+      for (const [x, y, radiusX, radiusY] of [
+        [244, 242, 86, 104],
+        [286, 176, 90, 96],
+        [384, 150, 118, 88],
+        [482, 176, 90, 96],
+        [524, 242, 86, 104],
+        [296, 304, 78, 76],
+        [472, 304, 78, 76]
+      ]) {
+        context.beginPath();
+        context.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.fillStyle = '#fffaf0';
+      for (const [x, y, radius] of [
+        [312, 114, 58],
+        [384, 92, 72],
+        [456, 114, 58]
+      ]) {
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillRect(284, 136, 200, 54);
+      context.strokeStyle = '#d4c7a8';
+      context.lineWidth = 8;
+      context.strokeRect(292, 144, 184, 38);
+
+      context.fillStyle = '#e7b885';
+      context.beginPath();
+      context.ellipse(384, 286, 126, 144, 0, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = '#d87673';
+      for (const x of [318, 450]) {
+        context.beginPath();
+        context.ellipse(x, 322, 26, 18, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.strokeStyle = '#251b16';
+      context.lineWidth = 10;
+      for (const x of [342, 426]) {
+        context.beginPath();
+        context.ellipse(x, 270, 36, 28, 0, 0, Math.PI * 2);
+        context.stroke();
+      }
+      context.beginPath();
+      context.moveTo(378, 270);
+      context.lineTo(390, 270);
+      context.stroke();
+      context.fillStyle = '#251b16';
+      for (const x of [342, 426]) {
+        context.beginPath();
+        context.arc(x, 270, 8, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.strokeStyle = '#7c2f2b';
+      context.lineWidth = 12;
+      context.beginPath();
+      context.moveTo(318, 340);
+      context.quadraticCurveTo(384, 396, 450, 340);
+      context.stroke();
+      context.strokeStyle = '#aa765d';
+      context.lineWidth = 5;
+      for (const y of [225, 240]) {
+        context.beginPath();
+        context.moveTo(332, y);
+        context.quadraticCurveTo(384, y - 16, 436, y);
+        context.stroke();
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    material = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.DoubleSide
+    });
+  }
+
+  const portrait = new THREE.Mesh(geometry, material);
+  portrait.name = 'marthasGrilleMarthaBillboardPortrait';
+  portrait.userData.depiction = 'Martha wearing a chef hat';
+  portrait.castShadow = false;
+  portrait.receiveShadow = false;
+  return portrait;
+}
+
+function createMarthasGrilleMarthaBillboard(materials) {
+  const billboard = new THREE.Group();
+  billboard.name = 'marthasGrilleMarthaBillboard';
+
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardPanel', [3.34, 2.24, 0.22], [0, 0, 0], materials.panel);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardFrameTop', [3.56, 0.14, 0.3], [0, 1.18, 0.03], materials.trim);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardFrameBottom', [3.56, 0.14, 0.3], [0, -1.18, 0.03], materials.trim);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardFrameLeft', [0.14, 2.32, 0.3], [-1.72, 0, 0.03], materials.trim);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardFrameRight', [0.14, 2.32, 0.3], [1.72, 0, 0.03], materials.trim);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardLeftPost', [0.16, 0.72, 0.16], [-1.12, -1.52, -0.02], materials.post);
+  addMarthasGrilleBox(billboard, 'marthasGrilleMarthaBillboardRightPost', [0.16, 0.72, 0.16], [1.12, -1.52, -0.02], materials.post);
+
+  const portrait = createMarthasGrilleMarthaBillboardPortrait();
+  portrait.position.set(0, 0.04, 0.15);
+  billboard.add(portrait);
+
+  return billboard;
 }
 
 function addMarthasGrillePlateStack(group, materials, x, z, stackIndex) {
@@ -1240,10 +1407,17 @@ export function createMarthasGrilleBuildingVisual() {
     roofTrim,
     post
   }));
-  addMarthasGrilleBox(root, 'marthasGrilleSignPanel', [7.34, 1.72, 0.28], [0, 5.28, 5.36], sign);
+  addMarthasGrilleBox(root, 'marthasGrilleSignPanel', [10.12, 2.24, 0.3], [0, 5.34, 5.36], sign);
   const signLabel = createMarthasGrilleSignLabel();
-  signLabel.position.set(0, 5.28, 5.53);
+  signLabel.position.set(0, 5.34, 5.54);
   root.add(signLabel);
+  const marthaBillboard = createMarthasGrilleMarthaBillboard({
+    panel: sign,
+    trim: wallTrim,
+    post: trimDark
+  });
+  marthaBillboard.position.set(0, 7.74, 5.42);
+  root.add(marthaBillboard);
   addMarthasGrilleBox(root, 'mgAwning', [6.4, 0.28, 1.0], [0, 4.08, 4.86], awning, { rotation: [0.16, 0, 0] });
   addMarthasGrilleBox(root, 'marthasGrilleAwningFaceStripe', [6.22, 0.1, 0.16], [0, 3.89, 5.31], wallTrim);
   addMarthasGrilleBox(root, 'marthasGrilleOpenFrontThreshold', [5.65, 0.12, 0.34], [0, 0.86, 5.1], trimDark);

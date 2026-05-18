@@ -634,6 +634,7 @@ function validateFootprintSupport() {
     'Real Estate Office movement collision should resolve all wall and desk blockers'
   );
   const grilleVisual = marthasGrille.createVisual();
+  grilleVisual.updateWorldMatrix(true, true);
   assert(grilleVisual.getObjectByName('marthasGrilleCounterBase'), "Martha's Grille visual should include a counter");
   assert(grilleVisual.getObjectByName('marthasGrilleRegisterScreen'), "Martha's Grille visual should include a register");
   assert(grilleVisual.getObjectByName('marthasGrilleFlatTopGrill'), "Martha's Grille visual should include kitchen equipment behind the counter");
@@ -645,7 +646,10 @@ function validateFootprintSupport() {
   assert(grilleVisual.getObjectByName('marthasGrillePrepCounter'), "Martha's Grille kitchen should include a prep counter");
   assert(grilleVisual.getObjectByName('marthasGrilleBurgerPatty1'), "Martha's Grille flat top should include visible grill food detail");
   assert(grilleVisual.getObjectByName('marthasGrilleTicketRail'), "Martha's Grille kitchen should include an order ticket rail");
-  assert(grilleVisual.getObjectByName('marthasGrilleSignPanel'), "Martha's Grille visual should include a front sign panel");
+  const grilleSignPanel = grilleVisual.getObjectByName('marthasGrilleSignPanel');
+  assert(grilleSignPanel, "Martha's Grille visual should include a front sign panel");
+  const grilleSignPanelSize = new Box3().setFromObject(grilleSignPanel).getSize(new Vector3());
+  assert(grilleSignPanelSize.x >= 10 && grilleSignPanelSize.y >= 2.2, "Martha's Grille sign panel should be much larger so the full text fits");
   assert(grilleVisual.getObjectByName('marthasGrillePavilionRoof'), "Martha's Grille visual should include a pavilion-style roof group");
   assert(grilleVisual.getObjectByName('marthasGrillePavilionRoofHip'), "Martha's Grille pavilion roof should include a hipped roof surface");
   assert(grilleVisual.getObjectByName('marthasGrillePavilionPostFrontLeft'), "Martha's Grille pavilion roof should read as post-supported");
@@ -656,8 +660,20 @@ function validateFootprintSupport() {
   const grilleBackWall = grilleVisual.getObjectByName('mgBackWall');
   assert(grilleBackWall?.material?.color?.getHex() === 0xf2dc9d, "Martha's Grille should use a creamy yellow building facade");
   const grilleSignLabel = grilleVisual.getObjectByName('marthasGrilleSignLabel');
+  assert(grilleSignLabel, "Martha's Grille visual should include readable sign text");
+  const grilleSignLabelSize = new Box3().setFromObject(grilleSignLabel).getSize(new Vector3());
+  assert(grilleSignLabelSize.x >= 9.4 && grilleSignLabelSize.y >= 1.8, "Martha's Grille sign label should be scaled up to fit the restaurant name");
   assert(grilleSignLabel?.material?.transparent !== true, "Martha's Grille sign label should avoid transparent material sorting");
   assert(grilleSignLabel?.material?.depthWrite !== false, "Martha's Grille sign label should write depth as an opaque sign");
+  const grilleMarthaBillboard = grilleVisual.getObjectByName('marthasGrilleMarthaBillboard');
+  const grilleMarthaBillboardPanel = grilleVisual.getObjectByName('marthasGrilleMarthaBillboardPanel');
+  const grilleMarthaPortrait = grilleVisual.getObjectByName('marthasGrilleMarthaBillboardPortrait');
+  assert(grilleMarthaBillboard, "Martha's Grille should include a Martha portrait billboard above the sign");
+  assert(grilleMarthaBillboardPanel, "Martha's Grille Martha billboard should include a framed panel");
+  assert(grilleMarthaPortrait?.userData?.depiction === 'Martha wearing a chef hat', "Martha's Grille billboard portrait should depict Martha in a chef hat");
+  const grilleSignPanelBounds = new Box3().setFromObject(grilleSignPanel);
+  const grilleMarthaPortraitBounds = new Box3().setFromObject(grilleMarthaPortrait);
+  assert(grilleMarthaPortraitBounds.min.y > grilleSignPanelBounds.max.y, "Martha's Grille Martha billboard should sit above the main sign");
   const grilleTransparentMeshes = collectMeshMaterials(grilleVisual)
     .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
     .map(({ node }) => node.name || '(unnamed mesh)');
