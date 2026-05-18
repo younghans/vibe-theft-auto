@@ -267,7 +267,7 @@ try {
   const retryDeployTask = await createAgentTask({
     scope: 'game',
     contextType: 'hud',
-    prompt: 'Retry a failed deploy from the prompt panel.',
+    prompt: 'Do not allow a failed deploy to be approved again.',
     mode: 'preview'
   }, {
     createdBy: 'validator',
@@ -297,18 +297,20 @@ try {
     status: 'failed',
     error: 'deploy rebase conflict'
   }, { filePath });
-  const retryApproved = await approveAgentTaskDeploy(retryDeployTask.id, {
-    approvedBy: 'validator',
+  await assert.rejects(
+    () => approveAgentTaskDeploy(retryDeployTask.id, {
+      approvedBy: 'validator',
+      filePath
+    }),
+    /Only ready-for-review tasks can be approved for deploy/
+  );
+  const retryRejected = await getAgentTask(retryDeployTask.id, {
     filePath
   });
-  assert.equal(retryApproved.status, 'ready_for_review');
-  assert.equal(retryApproved.deployStartedAt, 0);
-  assert.equal(retryApproved.error, '');
-  assert.ok(retryApproved.deployApprovedAt >= retryApprovedInitial.deployApprovedAt);
-  await cancelAgentTask(retryDeployTask.id, {
-    cancelledBy: 'validator',
-    filePath
-  });
+  assert.equal(retryRejected.status, 'failed');
+  assert.equal(retryRejected.error, 'deploy rebase conflict');
+  assert.ok(retryRejected.deployStartedAt > 0);
+  assert.equal(retryRejected.deployApprovedAt, retryApprovedInitial.deployApprovedAt);
 
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',

@@ -935,30 +935,15 @@ export async function approveAgentTaskDeploy(taskId, {
       return null;
     }
 
-    const canRetryFailedDeploy = (
-      task.status === 'failed'
-      && String(task.branch ?? '').trim()
-      && String(task.commitSha ?? '').trim()
-      && Number(task.deployStartedAt) > 0
-    );
-
-    if (task.status !== 'ready_for_review' && !canRetryFailedDeploy) {
-      throw new Error('Only ready-for-review tasks or failed deploy attempts can be approved for deploy.');
+    if (task.status !== 'ready_for_review') {
+      throw new Error('Only ready-for-review tasks can be approved for deploy.');
     }
 
     const now = Date.now();
-    if (canRetryFailedDeploy) {
-      task.status = 'ready_for_review';
-      task.deployStartedAt = 0;
-      task.error = '';
-      task.summary = 'Deploy retry approved. The worker will rebase and run deploy checks again.';
-      task.deployLog = '';
-    }
-
     task.deployApprovedAt = now;
     task.deployApprovedBy = String(approvedBy ?? '');
     task.updatedAt = now;
-    addTaskLog(task, canRetryFailedDeploy ? 'Admin retried production deploy.' : 'Admin approved production deploy.', {
+    addTaskLog(task, 'Admin approved production deploy.', {
       data: { approvedBy }
     });
     return task;
