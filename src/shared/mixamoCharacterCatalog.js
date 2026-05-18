@@ -32,6 +32,7 @@ const TALL_NPC_PROFILE = Object.freeze({
 
 function toSnakeCase(value) {
   return String(value ?? '')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/\s+/g, '_')
     .toLowerCase();
@@ -83,6 +84,17 @@ function createRosterCharacter(token, fileName) {
   });
 }
 
+function createImportedCharacter(id, label, fileName, options = {}) {
+  return createMixamoCharacterDefinition({
+    id,
+    label,
+    fileName,
+    subtitle: options.subtitle ?? 'Imported Local',
+    npcLabel: options.npcLabel ?? label,
+    npcProfile: options.npcProfile ?? DEFAULT_NPC_PROFILE
+  });
+}
+
 export const MIXAMO_CHARACTER_DEFINITIONS = Object.freeze([
   createMixamoCharacterDefinition({
     id: 'xBot',
@@ -124,5 +136,57 @@ export const MIXAMO_CHARACTER_DEFINITIONS = Object.freeze([
   }),
   createRosterCharacter('20', 'Ch20_nonPBR.fbx'),
   createRosterCharacter('11', 'Ch11_nonPBR.fbx'),
-  createNamedCharacter('remy', 'Remy.fbx')
+  createNamedCharacter('remy', 'Remy.fbx'),
+  createImportedCharacter('solider', 'Solider', 'Solider.fbx', {
+    subtitle: 'Armored Heavy',
+    npcProfile: TALL_NPC_PROFILE
+  }),
+  createImportedCharacter('lewis', 'Lewis', 'Lewis.fbx'),
+  createImportedCharacter('pete', 'Pete', 'Pete.fbx'),
+  createImportedCharacter('david', 'David', 'David.fbx'),
+  createImportedCharacter('draco', 'Draco', 'Draco.fbx', {
+    subtitle: 'Street Heavy',
+    npcProfile: TALL_NPC_PROFILE
+  }),
+  createImportedCharacter('jody', 'Jody', 'Jody.fbx'),
+  createImportedCharacter('shannon', 'Shannon', 'Shannon.fbx'),
+  createImportedCharacter('swat', 'SWAT', 'Swat.fbx', {
+    subtitle: 'Tactical Unit',
+    npcLabel: 'SWAT',
+    npcProfile: BOT_NPC_PROFILE
+  }),
+  createImportedCharacter('zombiegirlWKurniawan', 'Zombiegirl W Kurniawan', 'Zombiegirl W Kurniawan.fbx', {
+    subtitle: 'Undead Local'
+  }),
+  createImportedCharacter('elizabeth', 'Elizabeth', 'Elizabeth.fbx'),
+  createImportedCharacter('bryce', 'Bryce', 'Bryce.fbx'),
+  createImportedCharacter('brian', 'Brian', 'Brian.fbx'),
+  createImportedCharacter('kai', 'Kai', 'Kai.fbx', {
+    subtitle: 'Compact Fighter',
+    npcProfile: BOT_NPC_PROFILE
+  }),
+  createImportedCharacter('alienSoldier', 'Alien Soldier', 'Alien-Soldier.fbx', {
+    subtitle: 'Alien Soldier',
+    npcProfile: TALL_NPC_PROFILE
+  }),
+  createImportedCharacter('leonard', 'Leonard', 'Leonard.fbx'),
+  createImportedCharacter('pumpkinhulkLShaw', 'Pumpkinhulk L Shaw', 'Pumpkinhulk L Shaw.fbx', {
+    subtitle: 'Pumpkin Heavy',
+    npcProfile: LARGE_NPC_PROFILE
+  }),
+  createImportedCharacter('kate', 'Kate', 'Kate.fbx'),
+  createImportedCharacter('ninja', 'Ninja', 'Ninja.fbx', {
+    subtitle: 'Shadow Fighter'
+  }),
+  createImportedCharacter('megan', 'Megan', 'Megan.fbx'),
+  createImportedCharacter('james', 'James', 'James.fbx'),
+  createImportedCharacter('prisonerZombie', 'Prisoner Zombie', 'Prisoner-zombie.fbx', {
+    subtitle: 'Undead Prisoner',
+    npcProfile: BOT_NPC_PROFILE
+  }),
+  createImportedCharacter('louise', 'Louise', 'Louise.fbx'),
+  createImportedCharacter('theBoss', 'The Boss', 'The Boss.fbx', {
+    subtitle: 'Final Authority',
+    npcProfile: BOT_NPC_PROFILE
+  })
 ]);

@@ -44,6 +44,9 @@ body {
   pointer-events: none;
   --builder-panel-width: 620px;
   --builder-panel-min-width: 320px;
+  --hud-layer-top-controls: 7;
+  --hud-layer-admin-menu: 30;
+  --hud-layer-admin-modal: 40;
 }
 
 body.is-builder-resizing,
@@ -4126,15 +4129,17 @@ body.is-admin-prompt-resizing * {
   align-items: flex-start;
   gap: 10px;
   pointer-events: none;
-  z-index: 7;
+  z-index: auto;
 }
 
 .hud__top-actions-buttons {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   pointer-events: auto;
+  z-index: var(--hud-layer-top-controls);
 }
 
 .hud__top-actions-stack {
@@ -4150,6 +4155,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__connection {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -4170,6 +4176,7 @@ body.is-admin-prompt-resizing * {
   backdrop-filter: blur(8px);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
   pointer-events: none;
+  z-index: var(--hud-layer-top-controls);
   transition:
     border-color 160ms ease,
     background 160ms ease,
@@ -4306,7 +4313,7 @@ body.is-admin-prompt-resizing * {
   justify-items: end;
   gap: 12px;
   pointer-events: none;
-  z-index: 6;
+  z-index: auto;
 }
 
 .hud__character-selector {
@@ -4848,6 +4855,7 @@ body.is-admin-prompt-resizing * {
   opacity: 0;
   overflow: hidden;
   transform: translateX(12px);
+  z-index: var(--hud-layer-top-controls);
   transition:
     max-width 180ms ease,
     padding 180ms ease,
@@ -4899,13 +4907,13 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__admin-position {
-  position: static;
+  position: relative;
   min-width: 240px;
   max-width: min(360px, calc(100vw - 48px));
   padding: 12px 14px;
   border-radius: 14px;
   pointer-events: none;
-  z-index: 6;
+  z-index: var(--hud-layer-top-controls);
 }
 
 .hud__admin-position-value {
@@ -5066,7 +5074,7 @@ body.is-admin-prompt-resizing * {
   transform: translateY(-10px);
   transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: none;
-  z-index: 6;
+  z-index: var(--hud-layer-admin-menu);
 }
 
 .hud__shader-debug.is-visible {
@@ -5221,7 +5229,7 @@ body.is-admin-prompt-resizing * {
   transform: translateY(-10px);
   transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: none;
-  z-index: 6;
+  z-index: var(--hud-layer-admin-menu);
 }
 
 .hud__aim-debug.is-visible {
@@ -5321,7 +5329,7 @@ body.is-admin-prompt-resizing * {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 4;
+  z-index: var(--hud-layer-admin-menu);
 }
 
 .hud__builder.is-visible {
@@ -5345,7 +5353,7 @@ body.is-admin-prompt-resizing * {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 4;
+  z-index: var(--hud-layer-admin-menu);
 }
 
 .hud__builder-instance.is-visible {
@@ -7912,7 +7920,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__admin-prompt {
   position: fixed;
-  z-index: 30;
+  z-index: var(--hud-layer-admin-modal);
   left: var(--admin-prompt-x, max(6px, calc(100vw - min(980px, calc(100vw - 48px)) - 14px)));
   top: var(--admin-prompt-y, 6px);
   width: var(--admin-prompt-width, min(980px, calc(100vw - 48px)));
