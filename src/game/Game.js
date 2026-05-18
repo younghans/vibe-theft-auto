@@ -316,6 +316,8 @@ const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
 const CHAT_BUBBLE_MS_PER_WORD = 360;
+const NPC_VOICE_FULL_VOLUME_DISTANCE = 4.5;
+const NPC_VOICE_AUDIBLE_DISTANCE = 30;
 const ZERO_MOVEMENT_VECTOR = Object.freeze({ x: 0, z: 0 });
 const ZERO_INPUT = { getMovementVector: () => ZERO_MOVEMENT_VECTOR };
 const CHARACTER_STORAGE_KEY = 'vta.selectedCharacterId';
@@ -711,6 +713,35 @@ function getChatBubbleLifetimeMs(text) {
     CHAT_BUBBLE_MIN_LIFETIME_MS,
     CHAT_BUBBLE_MAX_LIFETIME_MS
   );
+}
+
+function getFirstFiniteNumber(...values) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+  return null;
+}
+
+function getNpcVoiceDistanceVolumeScale(distance) {
+  const numericDistance = Number(distance);
+  if (!Number.isFinite(numericDistance) || numericDistance <= NPC_VOICE_FULL_VOLUME_DISTANCE) {
+    return 1;
+  }
+  if (numericDistance >= NPC_VOICE_AUDIBLE_DISTANCE) {
+    return 0;
+  }
+
+  const fadeProgress = THREE.MathUtils.clamp(
+    (numericDistance - NPC_VOICE_FULL_VOLUME_DISTANCE)
+      / (NPC_VOICE_AUDIBLE_DISTANCE - NPC_VOICE_FULL_VOLUME_DISTANCE),
+    0,
+    1
+  );
+  const smoothFade = fadeProgress * fadeProgress * (3 - (2 * fadeProgress));
+  return THREE.MathUtils.clamp(1 - smoothFade, 0, 1);
 }
 
 function easeOutCubic(value) {
@@ -15711,6 +15742,7 @@ export class Game {
       chirp: options.chirp === true,
       modelId: options.modelId ?? '',
       voice: options.voice ?? null,
+      voiceVolumeScale: options.voiceVolumeScale ?? 1,
       speakerKey: options.speakerKey ?? label ?? id,
       visible: true,
       screenX: projected.x,
@@ -15739,6 +15771,20 @@ export class Game {
     );
   }
 
+  getNpcSpeechVoiceVolumeScale(npcState, anchor = null) {
+    const localPlayerState = this.getLocalPlayerState();
+    const playerX = getFirstFiniteNumber(this.player?.position?.x, localPlayerState?.x);
+    const playerZ = getFirstFiniteNumber(this.player?.position?.z, localPlayerState?.z);
+    const npcX = getFirstFiniteNumber(npcState?.x, npcState?.position?.[0], anchor?.x);
+    const npcZ = getFirstFiniteNumber(npcState?.z, npcState?.position?.[1], anchor?.z);
+
+    if (playerX === null || playerZ === null || npcX === null || npcZ === null) {
+      return 1;
+    }
+
+    return getNpcVoiceDistanceVolumeScale(Math.hypot(playerX - npcX, playerZ - npcZ));
+  }
+
   addNpcSpeechBubble(bubbles, npcId, npcState, anchor, options = {}) {
     if (this.isRentIntroReservedNpc(npcId)) {
       return;
@@ -15759,6 +15805,7 @@ export class Game {
           chirp: true,
           modelId: npcState.modelId,
           voice: getNpcModelVoice(this.currentLayout?.npcModelVoices, npcState.modelId),
+          voiceVolumeScale: this.getNpcSpeechVoiceVolumeScale(npcState, anchor),
           speakerKey: `${npcState.modelId}:${npcState.name}`,
           screenYOffset: options.screenYOffset
         }

@@ -274,10 +274,24 @@ export class NpcSpeechPlayback {
     gainParam.exponentialRampToValueAtTime(0.0001, now + end);
   }
 
-  playVoiceGrain({ voice, speakerKey, characterIndex, character, state, nowMs }) {
+  playVoiceGrain({
+    voice,
+    speakerKey,
+    characterIndex,
+    character,
+    state,
+    nowMs,
+    volumeScale = 1
+  }) {
+    const grainVolumeScale = clamp(
+      Number.isFinite(Number(volumeScale)) ? Number(volumeScale) : 1,
+      0,
+      1
+    );
     if (
       this.masterVolume <= 0
       || voice.volume <= 0
+      || grainVolumeScale <= 0
       || !LETTER_PATTERN.test(character)
       || nowMs - state.lastVoiceAt < VOICE_GRAIN_MIN_INTERVAL_MS
       || globalThis.document?.hidden
@@ -315,7 +329,7 @@ export class NpcSpeechPlayback {
     const waveformGain = WAVEFORM_GAIN[voice.waveform] ?? 1.4;
     const edgeWaveformGain = EDGE_WAVEFORM_GAIN[voice.waveform] ?? 0.1;
     const peakGain = clamp(
-      0.048 * voice.volume * waveformGain * voiceShape.brightness * (consonantLike ? 0.88 : 1),
+      0.048 * voice.volume * grainVolumeScale * waveformGain * voiceShape.brightness * (consonantLike ? 0.88 : 1),
       0.0001,
       0.13
     );
@@ -400,11 +414,17 @@ export class NpcSpeechPlayback {
     text = '',
     status = 'done',
     voice = null,
-    speakerKey = ''
+    speakerKey = '',
+    volumeScale = 1
   } = {}) {
     const normalizedId = String(id ?? '');
     const targetText = String(text ?? '');
     const normalizedVoice = normalizeNpcVoice(voice, DEFAULT_NPC_VOICE);
+    const normalizedVolumeScale = clamp(
+      Number.isFinite(Number(volumeScale)) ? Number(volumeScale) : 1,
+      0,
+      1
+    );
     const now = getNowMs();
 
     if (!normalizedId || status === 'thinking' || !targetText) {
@@ -441,7 +461,8 @@ export class NpcSpeechPlayback {
         characterIndex: state.visibleCount,
         character,
         state,
-        nowMs: now
+        nowMs: now,
+        volumeScale: normalizedVolumeScale
       });
       state.nextCharacterAt += getDelayForCharacter(character, normalizedVoice);
       steps += 1;

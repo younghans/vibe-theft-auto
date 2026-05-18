@@ -10611,7 +10611,8 @@ export class Hud {
               text: bubbleText,
               status: bubble.status,
               voice: bubble.voice,
-              speakerKey: bubble.speakerKey ?? bubble.modelId ?? bubble.label ?? bubble.id
+              speakerKey: bubble.speakerKey ?? bubble.modelId ?? bubble.label ?? bubble.id,
+              volumeScale: bubble.voiceVolumeScale
             })
           : bubbleText;
       }
