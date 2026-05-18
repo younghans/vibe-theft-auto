@@ -114,6 +114,11 @@ const INTERIOR_TEMPLATES = Object.freeze([
     wall: 0xb5b8ad,
     trim: 0xd2a542
   }),
+  createDistrictInteriorTemplate('car_dealership_interior', 'Car Dealership', {
+    floor: 0xdfe5e7,
+    wall: 0x98d2df,
+    trim: 0x25343d
+  }),
   {
     ...createDistrictInteriorTemplate(OFFICE_INTERIOR_ID, 'Offices', {
       floor: 0x5d666c,

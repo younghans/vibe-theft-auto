@@ -39,6 +39,7 @@ const BUILDING_PLANS = [
   { cell: [4, -4], itemId: 'pawn_building', angle: 0, label: 'Pawn Shop', action: 'The pawn shop owner buys and sells street gear.' },
   { cell: [-4, -2], itemId: 'building_a', angle: Math.PI / 2, label: 'Motel strip', action: 'Room rentals are on the roadmap.' },
   { cell: [4, -2], itemId: 'building_g', angle: -Math.PI / 2, label: 'Arcade block', action: 'The arcade is all atmosphere for now.' },
+  { cell: [5, 0], itemId: 'car_dealership_building', angle: -Math.PI / 2, label: 'Car Dealership', action: 'The glass showroom is ready for display cars.' },
   { cell: [-4, 2], itemId: 'building_e', angle: Math.PI / 2, label: 'Corner pharmacy', action: 'Health items can plug into this storefront later.' },
   { cell: [4, 2], itemId: 'gym_building', angle: -Math.PI / 2, label: 'Neighborhood gym', action: 'The weight room is finally open for NPC routines.' },
   { cell: [-4, 4], itemId: 'building_g', angle: Math.PI, label: 'Night club', action: 'The club is closed until nightlife systems exist.' },

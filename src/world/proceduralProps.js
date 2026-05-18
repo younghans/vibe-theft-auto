@@ -25,6 +25,7 @@ export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
 export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 export const REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+export const CAR_DEALERSHIP_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
 
 const PORTAL_RING_RADIUS = 2.45;
 const PORTAL_RING_TUBE_RADIUS = 0.36;
@@ -1718,6 +1719,345 @@ export function createRealEstateOfficeBuildingVisual() {
     rotation: [0.14, 0, 0]
   });
   addRealEstateOfficeBox(exterior, 'realEstateOfficeAwningFaceTrim', [6.7, 0.1, 0.14], [0, 3.35, 5.31], materials.trimLight);
+
+  return root;
+}
+
+function createCarDealershipMaterials() {
+  return {
+    slab: createMaterial(0x525b60, 0.88, 0.06),
+    floor: createMaterial(0xdfe5e7, 0.72, 0.06),
+    floorAlt: createMaterial(0xcfd8dc, 0.7, 0.08),
+    floorLine: createMaterial(0x93a1a8, 0.62, 0.12),
+    glass: new THREE.MeshStandardMaterial({
+      color: 0x98d2df,
+      roughness: 0.22,
+      metalness: 0.18,
+      emissive: 0x0e2d36,
+      emissiveIntensity: 0.05
+    }),
+    glassDeep: new THREE.MeshStandardMaterial({
+      color: 0x5f9caf,
+      roughness: 0.2,
+      metalness: 0.22,
+      emissive: 0x071d24,
+      emissiveIntensity: 0.05
+    }),
+    glassHighlight: createMaterial(0xd8f5fb, 0.34, 0.08),
+    mullion: createMaterial(0x25343d, 0.46, 0.42),
+    mullionLight: createMaterial(0xb8c3c8, 0.36, 0.34),
+    counter: createMaterial(0x293841, 0.54, 0.2),
+    counterTop: createMaterial(0xe6ecef, 0.38, 0.28),
+    chair: createMaterial(0x405058, 0.52, 0.18),
+    chairAccent: createMaterial(0x9db2bc, 0.44, 0.22),
+    plant: createMaterial(0x2f7544, 0.82, 0.02),
+    plantLight: createMaterial(0x55a05f, 0.78, 0.02),
+    planter: createMaterial(0x36454b, 0.72, 0.08),
+    screen: createMaterial(0x14252b, 0.32, 0.12),
+    paper: createMaterial(0xf7f4e9, 0.84, 0.01),
+    signPanel: createMaterial(0x1f3038, 0.46, 0.3),
+    signLetter: createMaterial(0xeaf8ff, 0.34, 0.12)
+  };
+}
+
+function addCarDealershipBox(group, name, size, position, material, options = {}) {
+  group.add(createBox(name, size, position, material, options));
+}
+
+function addCarDealershipWallMullions(group, prefix, {
+  orientation = 'front',
+  span = 21.2,
+  center = [0, 0, 0],
+  verticalPositions = [],
+  horizontalPositions = []
+}, materials) {
+  const isSide = orientation === 'left' || orientation === 'right';
+  const isLeft = orientation === 'left';
+  const isBack = orientation === 'back';
+  const depthCenter = isSide
+    ? [center[0] + (isLeft ? 0.22 : -0.22), center[1], center[2]]
+    : [center[0], center[1], center[2] + (isBack ? 0.22 : -0.22)];
+
+  for (const [index, offset] of verticalPositions.entries()) {
+    const position = isSide
+      ? [depthCenter[0], 4.08, center[2] + offset]
+      : [center[0] + offset, 4.08, depthCenter[2]];
+    addCarDealershipBox(
+      group,
+      `${prefix}VerticalMullion${index + 1}`,
+      isSide ? [0.44, 6.78, 0.14] : [0.14, 6.78, 0.44],
+      position,
+      materials.mullion
+    );
+  }
+
+  for (const [index, y] of horizontalPositions.entries()) {
+    addCarDealershipBox(
+      group,
+      `${prefix}HorizontalMullion${index + 1}`,
+      isSide ? [0.44, 0.14, span] : [span, 0.14, 0.44],
+      [depthCenter[0], y, depthCenter[2]],
+      materials.mullion
+    );
+  }
+}
+
+function createCarDealershipSignLabel() {
+  const geometry = new THREE.PlaneGeometry(8.8, 1.05);
+  let material = new THREE.MeshBasicMaterial({
+    color: 0xeaf8ff,
+    side: THREE.DoubleSide
+  });
+
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 160;
+    const context = canvas.getContext('2d');
+    if (context) {
+      context.fillStyle = '#1f3038';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.font = '900 94px Arial Black, Impact, sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.lineWidth = 10;
+      context.strokeStyle = '#081116';
+      context.fillStyle = '#eaf8ff';
+      context.strokeText('VTA AUTO', canvas.width * 0.5, canvas.height * 0.53);
+      context.fillText('VTA AUTO', canvas.width * 0.5, canvas.height * 0.53);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+      material = new THREE.MeshBasicMaterial({
+        map: texture,
+        side: THREE.DoubleSide
+      });
+    }
+  }
+
+  const label = new THREE.Mesh(geometry, material);
+  label.name = 'carDealershipSignLabel';
+  label.castShadow = false;
+  label.receiveShadow = false;
+  return label;
+}
+
+function addCarDealershipChair(group, materials, name, x, z, rotationY = 0) {
+  const chair = new THREE.Group();
+  chair.name = name;
+  chair.position.set(x, 0, z);
+  chair.rotation.y = rotationY;
+  group.add(chair);
+
+  addCarDealershipBox(chair, `${name}Seat`, [0.82, 0.16, 0.76], [0, 0.72, 0], materials.chair);
+  addCarDealershipBox(chair, `${name}Back`, [0.86, 0.78, 0.14], [0, 1.12, -0.34], materials.chair);
+  addCarDealershipBox(chair, `${name}Cushion`, [0.7, 0.05, 0.62], [0, 0.835, 0.03], materials.chairAccent, {
+    castShadow: false,
+    receiveShadow: true
+  });
+
+  for (const [index, [legX, legZ]] of [[-0.31, -0.26], [0.31, -0.26], [-0.31, 0.27], [0.31, 0.27]].entries()) {
+    addCarDealershipBox(
+      chair,
+      `${name}Leg${index + 1}`,
+      [0.08, 0.58, 0.08],
+      [legX, 0.38, legZ],
+      materials.mullion
+    );
+  }
+}
+
+function addCarDealershipPlant(group, materials, name, x, z) {
+  const plant = new THREE.Group();
+  plant.name = name;
+  plant.position.set(x, 0, z);
+  group.add(plant);
+
+  addCarDealershipBox(plant, `${name}Planter`, [0.76, 0.54, 0.76], [0, 0.96, 0], materials.planter);
+  const trunk = createCylinder(0.1, 0.16, 0.9, 8, materials.planter);
+  trunk.name = `${name}Trunk`;
+  trunk.position.set(0, 1.55, 0);
+  plant.add(trunk);
+
+  for (const [index, [leafX, leafY, leafZ, scaleX, scaleZ]] of [
+    [0, 2.12, 0, 1, 0.76],
+    [-0.28, 1.88, 0.08, 0.78, 0.62],
+    [0.28, 1.88, -0.08, 0.78, 0.62],
+    [0.02, 2.38, -0.02, 0.66, 0.54]
+  ].entries()) {
+    const leaf = createSphere(
+      `${name}LeafCluster${index + 1}`,
+      0.38,
+      [leafX, leafY, leafZ],
+      index % 2 === 0 ? materials.plant : materials.plantLight,
+      {
+        scale: [scaleX, 0.72, scaleZ],
+        widthSegments: 12,
+        heightSegments: 8
+      }
+    );
+    plant.add(leaf);
+  }
+}
+
+function addCarDealershipCounter(group, materials) {
+  const counter = new THREE.Group();
+  counter.name = 'carDealershipBackCounter';
+  group.add(counter);
+
+  addCarDealershipBox(counter, 'carDealershipBackCounterBase', [13.2, 1.05, 1.04], [0, 1.2, -8.42], materials.counter);
+  addCarDealershipBox(counter, 'carDealershipBackCounterTop', [13.55, 0.2, 1.32], [0, 1.82, -8.42], materials.counterTop);
+  addCarDealershipBox(counter, 'carDealershipBackCounterGlassFront', [12.7, 0.52, 0.12], [0, 2.18, -7.8], materials.glassDeep);
+  addCarDealershipBox(counter, 'carDealershipBackCounterGlassCap', [12.9, 0.08, 0.18], [0, 2.49, -7.8], materials.mullionLight);
+  addCarDealershipBox(counter, 'carDealershipRegisterBase', [0.58, 0.1, 0.38], [4.8, 2.0, -8.2], materials.mullion);
+  addCarDealershipBox(counter, 'carDealershipRegisterScreen', [0.66, 0.42, 0.08], [4.8, 2.28, -8.07], materials.screen, {
+    rotation: [-0.12, 0, 0]
+  });
+
+  for (const [index, x] of [-4.8, -3.7, -2.6, -1.5].entries()) {
+    addCarDealershipBox(
+      counter,
+      `carDealershipBrochureStack${index + 1}`,
+      [0.52, 0.045, 0.34],
+      [x, 2.0 + (index * 0.025), -8.08],
+      materials.paper,
+      { castShadow: false, receiveShadow: true }
+    );
+  }
+}
+
+export function createCarDealershipBuildingVisual() {
+  const root = new THREE.Group();
+  root.name = 'car_dealership_building';
+  root.userData.footprint = [...CAR_DEALERSHIP_BUILDING_FOOTPRINT];
+  const materials = createCarDealershipMaterials();
+
+  const foundation = new THREE.Group();
+  foundation.name = 'car_dealership_foundation';
+  root.add(foundation);
+  addCarDealershipBox(foundation, 'carDealershipSlab', [22.8, 0.62, 22.6], [0, 0.31, 0], materials.slab);
+  addCarDealershipBox(foundation, 'carDealershipShowroomFloor', [21.2, 0.14, 20.85], [0, 0.72, 0.18], materials.floor);
+  addCarDealershipBox(foundation, 'carDealershipFrontShowroomLeftTile', [10.05, 0.045, 9.65], [-5.18, 0.82, 5.24], materials.floorAlt, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addCarDealershipBox(foundation, 'carDealershipFrontShowroomRightTile', [10.05, 0.045, 9.65], [5.18, 0.82, 5.24], materials.floorAlt, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addCarDealershipBox(foundation, 'carDealershipShowroomCenterSeam', [0.08, 0.055, 9.65], [0, 0.86, 5.24], materials.floorLine, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addCarDealershipBox(foundation, 'carDealershipShowroomBackSeam', [20.4, 0.055, 0.08], [0, 0.865, 0.25], materials.floorLine, {
+    castShadow: false,
+    receiveShadow: true
+  });
+  addCarDealershipBox(foundation, 'carDealershipOpenFrontThreshold', [9.25, 0.12, 0.32], [0, 0.9, 10.75], materials.mullionLight);
+
+  const interior = new THREE.Group();
+  interior.name = 'car_dealership_interior';
+  root.add(interior);
+  addCarDealershipCounter(interior, materials);
+  addCarDealershipBox(interior, 'carDealershipBackFeatureWall', [15.4, 2.05, 0.14], [0, 3.12, -9.72], materials.glassDeep);
+  addCarDealershipBox(interior, 'carDealershipBackFeatureStripe', [14.2, 0.14, 0.18], [0, 3.88, -9.55], materials.mullionLight);
+  for (const [index, x] of [-5.6, -2.8, 0, 2.8, 5.6].entries()) {
+    addCarDealershipBox(
+      interior,
+      `carDealershipBackDisplayPanel${index + 1}`,
+      [1.36, 0.78, 0.12],
+      [x, 2.92, -9.48],
+      index === 2 ? materials.signLetter : materials.glassHighlight,
+      { castShadow: false, receiveShadow: true }
+    );
+  }
+
+  addCarDealershipChair(interior, materials, 'carDealershipChair1', -7.1, -5.35, Math.PI * 0.16);
+  addCarDealershipChair(interior, materials, 'carDealershipChair2', -5.85, -6.35, -Math.PI * 0.08);
+  addCarDealershipChair(interior, materials, 'carDealershipChair3', 5.85, -6.35, Math.PI * 0.08);
+  addCarDealershipChair(interior, materials, 'carDealershipChair4', 7.1, -5.35, -Math.PI * 0.16);
+  addCarDealershipPlant(interior, materials, 'carDealershipPlantBackLeft', -8.9, -8.05);
+  addCarDealershipPlant(interior, materials, 'carDealershipPlantBackRight', 8.9, -8.05);
+  addCarDealershipPlant(interior, materials, 'carDealershipPlantSideLeft', -8.9, -2.75);
+  addCarDealershipPlant(interior, materials, 'carDealershipPlantSideRight', 8.9, -2.75);
+
+  const shell = new THREE.Group();
+  shell.name = 'car_dealership_hull_wall';
+  root.add(shell);
+  const shellBack = new THREE.Group();
+  shellBack.name = 'car_dealership_hull_wall_back';
+  const shellLeft = new THREE.Group();
+  shellLeft.name = 'car_dealership_hull_wall_left';
+  const shellRight = new THREE.Group();
+  shellRight.name = 'car_dealership_hull_wall_right';
+  const shellFront = new THREE.Group();
+  shellFront.name = 'car_dealership_hull_wall_front';
+  shell.add(shellBack, shellLeft, shellRight, shellFront);
+
+  addCarDealershipBox(shellBack, 'carDealershipBackGlassWall', [21.2, 6.76, 0.32], [0, 4.08, -10.1], materials.glass);
+  addCarDealershipBox(shellLeft, 'carDealershipLeftGlassWall', [0.32, 6.76, 20.8], [-10.6, 4.08, 0.3], materials.glass);
+  addCarDealershipBox(shellRight, 'carDealershipRightGlassWall', [0.32, 6.76, 20.8], [10.6, 4.08, 0.3], materials.glass);
+  addCarDealershipBox(shellFront, 'carDealershipFrontGlassWallLeft', [5.9, 6.76, 0.32], [-7.64, 4.08, 10.74], materials.glass);
+  addCarDealershipBox(shellFront, 'carDealershipFrontGlassWallRight', [5.9, 6.76, 0.32], [7.64, 4.08, 10.74], materials.glass);
+  addCarDealershipBox(shellFront, 'carDealershipFrontGlassHeader', [21.2, 1.12, 0.32], [0, 7.0, 10.74], materials.glassDeep);
+
+  const wallHorizontalRows = [2.12, 4.28, 6.42];
+  addCarDealershipWallMullions(shellBack, 'carDealershipBackWall', {
+    orientation: 'back',
+    center: [0, 4.08, -10.1],
+    verticalPositions: [-8.4, -5.6, -2.8, 0, 2.8, 5.6, 8.4],
+    horizontalPositions: wallHorizontalRows
+  }, materials);
+  addCarDealershipWallMullions(shellLeft, 'carDealershipLeftWall', {
+    orientation: 'left',
+    center: [-10.6, 4.08, 0.3],
+    verticalPositions: [-7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8],
+    horizontalPositions: wallHorizontalRows
+  }, materials);
+  addCarDealershipWallMullions(shellRight, 'carDealershipRightWall', {
+    orientation: 'right',
+    center: [10.6, 4.08, 0.3],
+    verticalPositions: [-7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8],
+    horizontalPositions: wallHorizontalRows
+  }, materials);
+  addCarDealershipWallMullions(shellFront, 'carDealershipFrontWall', {
+    orientation: 'front',
+    center: [0, 4.08, 10.74],
+    verticalPositions: [-9.1, -6.35, 6.35, 9.1],
+    horizontalPositions: wallHorizontalRows
+  }, materials);
+
+  const roof = new THREE.Group();
+  roof.name = 'car_dealership_cutaway_roof';
+  root.add(roof);
+  addCarDealershipBox(roof, 'carDealershipGlassRoof', [21.35, 0.3, 20.95], [0, 7.7, 0.28], materials.glassDeep);
+  for (const [index, x] of [-7.1, -3.55, 0, 3.55, 7.1].entries()) {
+    addCarDealershipBox(roof, `carDealershipRoofLongMullion${index + 1}`, [0.14, 0.26, 20.95], [x, 7.94, 0.28], materials.mullion);
+  }
+  for (const [index, z] of [-7, -3.5, 0, 3.5, 7].entries()) {
+    addCarDealershipBox(roof, `carDealershipRoofCrossMullion${index + 1}`, [21.35, 0.26, 0.14], [0, 7.95, z], materials.mullion);
+  }
+
+  const upper = new THREE.Group();
+  upper.name = 'car_dealership_cutaway_upper';
+  root.add(upper);
+  addCarDealershipBox(upper, 'carDealershipFrontGlassCrown', [21.7, 0.74, 0.34], [0, 8.35, 10.55], materials.glassDeep);
+  addCarDealershipBox(upper, 'carDealershipBackGlassCrown', [21.7, 0.58, 0.34], [0, 8.22, -9.92], materials.glassDeep);
+  addCarDealershipBox(upper, 'carDealershipLeftGlassCrown', [0.34, 0.58, 20.6], [-10.52, 8.22, 0.32], materials.glassDeep);
+  addCarDealershipBox(upper, 'carDealershipRightGlassCrown', [0.34, 0.58, 20.6], [10.52, 8.22, 0.32], materials.glassDeep);
+
+  const exterior = new THREE.Group();
+  exterior.name = 'car_dealership_exterior_detail';
+  root.add(exterior);
+  addCarDealershipBox(exterior, 'carDealershipFrontSignPanel', [9.9, 1.36, 0.24], [0, 5.76, 11.02], materials.signPanel);
+  const signLabel = createCarDealershipSignLabel();
+  signLabel.position.set(0, 5.76, 11.16);
+  exterior.add(signLabel);
+  addCarDealershipBox(exterior, 'carDealershipGlassEntryCanopy', [10.3, 0.22, 2.15], [0, 4.18, 10.58], materials.glassDeep, {
+    rotation: [0.1, 0, 0]
+  });
+  addCarDealershipBox(exterior, 'carDealershipCanopyFrontEdge', [10.45, 0.16, 0.14], [0, 4.01, 11.46], materials.mullionLight);
+  addCarDealershipBox(exterior, 'carDealershipDoorTrack', [8.9, 0.16, 0.12], [0, 3.62, 10.58], materials.mullion);
 
   return root;
 }

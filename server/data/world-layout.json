@@ -1154,6 +1154,15 @@
         3
       ],
       "rotationQuarterTurns": 0
+    },
+    {
+      "id": "placement_234",
+      "itemId": "car_dealership_building",
+      "cell": [
+        7,
+        5
+      ],
+      "rotationQuarterTurns": 3
     }
   ],
   "props": [

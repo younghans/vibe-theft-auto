@@ -68,6 +68,7 @@ import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
 import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
+  CAR_DEALERSHIP_BUILDING_FOOTPRINT,
   INSTRUMENT_CLUSTER_FOOTPRINT,
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT
@@ -161,6 +162,7 @@ function validateKenneyCatalogItems() {
     'bar_building',
     'bank_building',
     'casino_building',
+    'car_dealership_building',
     'pawn_building',
     'offices_building',
     'marthas_grille_building',
@@ -490,7 +492,8 @@ function validateFootprintSupport() {
     { key: 'bank', item: getBuilderItemById('bank_building') },
     { key: 'casino', item: getBuilderItemById('casino_building') },
     { key: 'pawn', item: getBuilderItemById('pawn_building') },
-    { key: 'offices', item: getBuilderItemById('offices_building') }
+    { key: 'offices', item: getBuilderItemById('offices_building') },
+    { key: 'car_dealership', item: getBuilderItemById('car_dealership_building') }
   ];
   const cutawayVisibleWallNames = (key) => [
     `${key}_hull_wall_back`,
@@ -532,6 +535,8 @@ function validateFootprintSupport() {
   assert(realEstateOffice.tileFootprint[0] === 1 && realEstateOffice.tileFootprint[1] === 1, 'Real Estate Office should be a 1x1 building');
   assert(realEstateOffice.size[0] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0], 'Real Estate Office should use the standard compact building width');
   assert(realEstateOffice.size[1] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1], 'Real Estate Office should use the standard compact building depth');
+  assert(getBuilderItemById('Car Dealership')?.id === 'car_dealership_building', 'Car Dealership should resolve from its display label');
+  assert(getBuilderItemById('auto showroom')?.id === 'car_dealership_building', 'Car Dealership should resolve from its showroom alias');
   for (const { key, item } of districtBuildings) {
     assert(item.tileFootprint[0] === 2 && item.tileFootprint[1] === 2, `${item.id} should use a 2x2 footprint`);
     assert(item.interior?.mode === 'inline-cutaway', `${item.id} should expose an inline cutaway interior`);
@@ -591,6 +596,11 @@ function validateFootprintSupport() {
   assert(realEstateOffice.asset === null, 'Real Estate Office should use a procedural building visual');
   assert(typeof realEstateOffice.createVisual === 'function', 'Real Estate Office should define a procedural building visual');
   assert(getBuilderItemById('Real Estate Office') === realEstateOffice, 'Real Estate Office should resolve from its display label');
+  const carDealership = getBuilderItemById('car_dealership_building');
+  assert(carDealership.asset === null, 'Car Dealership should use a procedural building visual');
+  assert(typeof carDealership.createVisual === 'function', 'Car Dealership should define a procedural building visual');
+  assert(carDealership.size[0] === CAR_DEALERSHIP_BUILDING_FOOTPRINT[0], 'Car Dealership should use a 2x2 building width');
+  assert(carDealership.size[1] === CAR_DEALERSHIP_BUILDING_FOOTPRINT[1], 'Car Dealership should use a 2x2 building depth');
   assert(
     defaultWorldLayout.tiles.some((placement) => placement.itemId === 'marthas_grille_building'),
     "Default world should place Martha's Grille"
@@ -602,6 +612,14 @@ function validateFootprintSupport() {
   assert(
     savedWorldLayout.tiles?.some((placement) => placement.itemId === 'real_estate_office_building'),
     'Fallback saved world layout should place the Real Estate Office'
+  );
+  assert(
+    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'car_dealership_building'),
+    'Default world should place the Car Dealership'
+  );
+  assert(
+    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'car_dealership_building'),
+    'Fallback saved world layout should place the Car Dealership'
   );
   assert(
     marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_kitchen_detail'),
@@ -931,6 +949,49 @@ function validateFootprintSupport() {
   assert(realEstateSize.x <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0] + 0.02, 'Real Estate Office visual should stay within one tile width before fitting');
   assert(realEstateSize.z <= REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1] + 0.02, 'Real Estate Office visual should stay within one tile depth before fitting');
   assert(realEstateSize.y >= 26.8, 'Real Estate Office upper floors should be about 1.5x taller and better proportioned');
+  const carDealershipVisual = carDealership.createVisual();
+  carDealershipVisual.updateWorldMatrix(true, true);
+  assert(carDealershipVisual.getObjectByName('carDealershipBackCounter'), 'Car Dealership should include a back counter');
+  assert(carDealershipVisual.getObjectByName('carDealershipFrontShowroomLeftTile'), 'Car Dealership should leave the left front tile as showroom floor');
+  assert(carDealershipVisual.getObjectByName('carDealershipFrontShowroomRightTile'), 'Car Dealership should leave the right front tile as showroom floor');
+  assert(carDealershipVisual.getObjectByName('carDealershipOpenFrontThreshold'), 'Car Dealership should include a broad open showroom threshold');
+  for (const nodeName of cutawayVisibleWallNames('car_dealership')) {
+    assert(carDealershipVisual.getObjectByName(nodeName), `Car Dealership visual should expose ${nodeName} for cutaway visibility`);
+  }
+  for (const nodeName of [
+    'carDealershipBackGlassWall',
+    'carDealershipLeftGlassWall',
+    'carDealershipRightGlassWall',
+    'carDealershipFrontGlassWallLeft',
+    'carDealershipFrontGlassWallRight',
+    'carDealershipGlassRoof'
+  ]) {
+    const node = carDealershipVisual.getObjectByName(nodeName);
+    assert(node, `Car Dealership should include ${nodeName}`);
+    assert(node.material?.transparent !== true && (node.material?.opacity ?? 1) === 1, `${nodeName} should use opaque glass-tinted material to avoid transparency sorting bugs`);
+  }
+  for (const nodeName of [
+    'carDealershipBackCounter',
+    'carDealershipChair1',
+    'carDealershipChair2',
+    'carDealershipChair3',
+    'carDealershipChair4',
+    'carDealershipPlantBackLeft',
+    'carDealershipPlantBackRight',
+    'carDealershipPlantSideLeft',
+    'carDealershipPlantSideRight'
+  ]) {
+    const bounds = new Box3().setFromObject(carDealershipVisual.getObjectByName(nodeName));
+    assert(bounds.max.z <= -1.4, `${nodeName} should stay in the back half so the bottom two showroom tiles remain empty`);
+  }
+  const carDealershipTransparentMeshes = collectMeshMaterials(carDealershipVisual)
+    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
+    .map(({ node }) => node.name || '(unnamed mesh)');
+  assert(carDealershipTransparentMeshes.length === 0, `Car Dealership should not use transparent materials that can cause sorting bugs: ${carDealershipTransparentMeshes.join(', ')}`);
+  const carDealershipBounds = new Box3().setFromObject(carDealershipVisual);
+  const carDealershipSize = carDealershipBounds.getSize(new Vector3());
+  assert(carDealershipSize.x <= CAR_DEALERSHIP_BUILDING_FOOTPRINT[0] + 0.02, 'Car Dealership visual should stay within the 2x2 tile width before fitting');
+  assert(carDealershipSize.z <= CAR_DEALERSHIP_BUILDING_FOOTPRINT[1] + 0.02, 'Car Dealership visual should stay within the 2x2 tile depth before fitting');
   assert(
     !pawnShop.cameraOcclusionPreserveNodeNames?.includes('pawn_hull_wall'),
     'Pawn shop exterior hull walls should become transparent during active cutaway camera occlusion'

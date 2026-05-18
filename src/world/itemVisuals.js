@@ -5,6 +5,7 @@ import {
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createCarDealershipBuildingVisual,
   createCasinoSlotMachineVisual,
   createInstrumentClusterVisual,
   createMarthasGrilleBuildingVisual,
@@ -90,6 +91,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'real_estate_office_building' || item?.assetName === 'real_estate_office_building') {
     // Procedural tiles can lose function fields when copied through plain-object workflows.
     primaryObject = createRealEstateOfficeBuildingVisual();
+  } else if (item?.id === 'car_dealership_building' || item?.assetName === 'car_dealership_building') {
+    // Procedural tiles can lose function fields when copied through plain-object workflows.
+    primaryObject = createCarDealershipBuildingVisual();
   } else if (item?.id === COMBAT_PICKUP_PROP_ITEM_IDS.pistol || item?.assetName === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createPistolPickupSpawnVisual();

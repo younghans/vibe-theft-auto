@@ -25,6 +25,7 @@ import {
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createCarDealershipBuildingVisual,
   createCasinoSlotMachineVisual,
   createInstrumentClusterVisual,
   createMarthasGrilleBuildingVisual,
@@ -102,6 +103,14 @@ const PAWN_SHOP_COUNTER_COLLISION_RECTS = Object.freeze([
 const PAWN_SHOP_COLLISION_RECTS = Object.freeze([
   ...STANDARD_2X2_HULL_COLLISION_RECTS,
   ...PAWN_SHOP_COUNTER_COLLISION_RECTS
+]);
+const CAR_DEALERSHIP_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -10.1, halfWidth: 10.85, halfDepth: 0.34, minY: 0, maxY: 8.4 },
+  { centerX: -10.85, centerZ: 0.35, halfWidth: 0.34, halfDepth: 10.45, minY: 0, maxY: 8.4 },
+  { centerX: 10.85, centerZ: 0.35, halfWidth: 0.34, halfDepth: 10.45, minY: 0, maxY: 8.4 },
+  { centerX: -7.65, centerZ: 10.8, halfWidth: 2.95, halfDepth: 0.34, minY: 0, maxY: 8.4 },
+  { centerX: 7.65, centerZ: 10.8, halfWidth: 2.95, halfDepth: 0.34, minY: 0, maxY: 8.4 },
+  { centerX: 0, centerZ: -8.42, halfWidth: 6.9, halfDepth: 0.76, minY: 0, maxY: 2.7 }
 ]);
 const MARTHAS_GRILLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -5.14, halfWidth: 5.32, halfDepth: 0.24, minY: 0, maxY: 7.2 },
@@ -201,6 +210,7 @@ function createCustom2x2BuildingDefinition({
   fileName,
   asset = customCityAsset('models', fileName),
   createVisual,
+  aliases = [],
   prompt,
   movementCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
   shotCollisionRects = STANDARD_2X2_HULL_COLLISION_RECTS,
@@ -229,6 +239,7 @@ function createCustom2x2BuildingDefinition({
     underlayTileId: BUILDING_UNDERLAY_TILE_ID,
     cameraOcclusionPreserveNodeNames,
     createVisual,
+    aliases,
     interior: {
       id: `${key}_interior`,
       mode: 'inline-cutaway',
@@ -310,6 +321,17 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
       cutawayNodeNames: [...createCutawayHiddenNodeNames('offices'), 'offices_interior'],
       cutawayVisibleNodeNames: createCutawayVisibleNodeNames('offices', { includeInterior: false })
     }
+  }),
+  createCustom2x2BuildingDefinition({
+    key: 'car_dealership',
+    label: 'Car Dealership',
+    fileName: 'car-dealership-building.glb',
+    asset: null,
+    createVisual: createCarDealershipBuildingVisual,
+    aliases: ['car dealership', 'dealership', 'auto showroom'],
+    prompt: 'Enter car dealership',
+    movementCollisionRects: CAR_DEALERSHIP_COLLISION_RECTS,
+    shotCollisionRects: CAR_DEALERSHIP_COLLISION_RECTS
   })
 ]);
 
