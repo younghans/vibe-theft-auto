@@ -1,5 +1,11 @@
 import { spawn } from 'node:child_process';
-import { promises as fsp } from 'node:fs';
+import {
+  existsSync,
+  promises as fsp,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -21,6 +27,7 @@ const WORK_ROOT = path.resolve(process.env.AGENT_WORK_ROOT || path.join(os.homed
 const REPO_PATH = path.join(WORK_ROOT, 'repo');
 const TASKS_ROOT = path.join(WORK_ROOT, 'tasks');
 const WORKER_LOG_ROOT = path.resolve(process.env.AGENT_WORKER_LOG_ROOT || path.join(WORK_ROOT, 'logs'));
+const WORKER_INSTANCE_LOCK_ROOT = path.join(WORK_ROOT, '.agent-worker.lock');
 const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
 const GIT_COMMAND = String(process.env.GIT_COMMAND || 'git').trim() || 'git';
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
@@ -56,13 +63,20 @@ const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
 const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 10 * 60 * 1000);
 const TASK_HEARTBEAT_MS = getPositiveIntegerEnv('AGENT_TASK_HEARTBEAT_MS', 60 * 1000);
-const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
+const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 1);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
 const DEPLOY_REBASE_REPAIR_ATTEMPTS = getNonNegativeIntegerEnv('AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS', 2);
 const WORKER_LOG_RETENTION_DAYS = getNonNegativeIntegerEnv('AGENT_WORKER_LOG_RETENTION_DAYS', 21);
+const API_REQUEST_RETRY_ATTEMPTS = getPositiveIntegerEnv('AGENT_API_RETRY_ATTEMPTS', 6);
+const API_REQUEST_RETRY_DELAY_MS = getPositiveIntegerEnv('AGENT_API_RETRY_DELAY_MS', 3000);
+const API_REQUEST_RETRY_MAX_DELAY_MS = getPositiveIntegerEnv('AGENT_API_RETRY_MAX_DELAY_MS', 45000);
+const API_STORM_PAUSE_MS = getPositiveIntegerEnv('AGENT_API_STORM_PAUSE_MS', 60000);
+const PENDING_TASK_UPDATES_ROOT = path.join(WORKER_LOG_ROOT, 'pending-task-updates');
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
+const DISABLE_INSTANCE_LOCK = ['1', 'true', 'yes'].includes(String(process.env.AGENT_DISABLE_INSTANCE_LOCK || '').toLowerCase());
+const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 
 const ALLOWED_EXACT_FILES = new Set([
   'index.html',
@@ -93,6 +107,26 @@ function getPositiveIntegerEnv(name, fallback) {
 function getNonNegativeIntegerEnv(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function getApiRetryDelayMs(attempt) {
+  const exponentialDelay = API_REQUEST_RETRY_DELAY_MS * (2 ** Math.max(0, attempt - 1));
+  return Math.min(API_REQUEST_RETRY_MAX_DELAY_MS, exponentialDelay);
+}
+
+function isRetryableApiError(error) {
+  const status = Number(error?.status);
+  if (status === 408 || status === 409 || status === 425 || status === 429 || status >= 500) {
+    return true;
+  }
+
+  const text = String([
+    error?.code,
+    error?.message,
+    error?.responseError,
+    error?.stack
+  ].filter(Boolean).join('\n'));
+  return /bad gateway|cloudflare|connection reset|database|eai_again|econnreset|enotfound|etimedout|fetch failed|gateway|network|origin|postgres|render\.com|socket|timeout|timed out/i.test(text);
 }
 
 function truncateText(value = '', maxLength = 6000) {
@@ -210,6 +244,104 @@ async function pruneWorkerDiagnosticLogs() {
       error: getErrorDiagnostic(error)
     });
   }
+}
+
+function isProcessAlive(pid) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) {
+    return false;
+  }
+  if (numericPid === process.pid) {
+    return true;
+  }
+
+  try {
+    process.kill(numericPid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function readWorkerInstanceLockOwner() {
+  const ownerPath = path.join(WORKER_INSTANCE_LOCK_ROOT, 'owner.json');
+  try {
+    return JSON.parse(readFileSync(ownerPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function releaseWorkerInstanceLockSync() {
+  if (!existsSync(WORKER_INSTANCE_LOCK_ROOT)) {
+    return;
+  }
+
+  const owner = readWorkerInstanceLockOwner();
+  if (owner?.token && owner.token !== WORKER_INSTANCE_LOCK_TOKEN) {
+    return;
+  }
+
+  rmSync(WORKER_INSTANCE_LOCK_ROOT, { recursive: true, force: true });
+}
+
+function installWorkerInstanceLockCleanupHandlers() {
+  process.once('exit', () => {
+    releaseWorkerInstanceLockSync();
+  });
+
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.once(signal, () => {
+      releaseWorkerInstanceLockSync();
+      process.exit(signal === 'SIGINT' ? 130 : 143);
+    });
+  }
+}
+
+async function acquireWorkerInstanceLock() {
+  if (RUN_ONCE || DISABLE_INSTANCE_LOCK) {
+    return;
+  }
+
+  await fsp.mkdir(WORK_ROOT, { recursive: true });
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await fsp.mkdir(WORKER_INSTANCE_LOCK_ROOT);
+      writeFileSync(path.join(WORKER_INSTANCE_LOCK_ROOT, 'owner.json'), `${JSON.stringify({
+        pid: process.pid,
+        workerId: WORKER_ID,
+        token: WORKER_INSTANCE_LOCK_TOKEN,
+        startedAt: new Date().toISOString(),
+        workRoot: WORK_ROOT
+      }, null, 2)}\n`, 'utf8');
+      installWorkerInstanceLockCleanupHandlers();
+      await writeWorkerDiagnostic('info', 'worker_instance_lock_acquired', {
+        lockRoot: WORKER_INSTANCE_LOCK_ROOT
+      });
+      return;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        throw error;
+      }
+
+      const owner = readWorkerInstanceLockOwner();
+      if (owner?.pid && isProcessAlive(owner.pid)) {
+        await writeWorkerDiagnostic('error', 'worker_instance_lock_conflict', {
+          lockRoot: WORKER_INSTANCE_LOCK_ROOT,
+          owner
+        });
+        throw new Error(`Another agent worker is already active for ${WORK_ROOT} (pid ${owner.pid}).`);
+      }
+
+      await writeWorkerDiagnostic('warn', 'worker_instance_lock_stale_removed', {
+        lockRoot: WORKER_INSTANCE_LOCK_ROOT,
+        owner
+      });
+      await fsp.rm(WORKER_INSTANCE_LOCK_ROOT, { recursive: true, force: true });
+    }
+  }
+
+  throw new Error(`Could not acquire agent worker lock at ${WORKER_INSTANCE_LOCK_ROOT}.`);
 }
 
 function normalizeRepoPath(value = '') {
@@ -727,31 +859,67 @@ async function apiRequest(endpoint, {
     }
   }
 
-  const response = await fetch(url.toString(), {
-    method,
-    headers: {
-      authorization: `Bearer ${WORKER_TOKEN}`,
-      'content-type': 'application/json',
-      'x-agent-worker-id': WORKER_ID,
-      'x-agent-worker-heartbeat': '1'
-    },
-    body: body == null ? undefined : JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.ok) {
-    await writeWorkerDiagnostic('error', 'api_request_failed', {
-      endpoint,
-      method,
-      responseStatus: response.status,
-      responseError: payload?.error || '',
-      responsePayload: payload
-    });
-    const error = new Error(payload?.error || `API request failed: ${response.status}`);
-    error.status = response.status;
-    throw error;
+  let lastError = null;
+  for (let attempt = 1; attempt <= API_REQUEST_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url.toString(), {
+        method,
+        headers: {
+          authorization: `Bearer ${WORKER_TOKEN}`,
+          'content-type': 'application/json',
+          'x-agent-worker-id': WORKER_ID,
+          'x-agent-worker-heartbeat': '1'
+        },
+        body: body == null ? undefined : JSON.stringify(body)
+      });
+      const responseText = await response.text().catch(() => '');
+      let payload = null;
+      try {
+        payload = responseText ? JSON.parse(responseText) : null;
+      } catch {}
+
+      if (!response.ok || !payload?.ok) {
+        const error = new Error(payload?.error || `API request failed: ${response.status}`);
+        error.status = response.status;
+        error.endpoint = endpoint;
+        error.method = method;
+        error.responseError = payload?.error || truncateText(responseText, 1000);
+        error.responsePayload = payload;
+        throw error;
+      }
+
+      return payload;
+    } catch (error) {
+      lastError = error;
+      const retryable = isRetryableApiError(error);
+      if (!retryable || attempt >= API_REQUEST_RETRY_ATTEMPTS) {
+        await writeWorkerDiagnostic('error', 'api_request_failed', {
+          endpoint,
+          method,
+          attempt,
+          attempts: API_REQUEST_RETRY_ATTEMPTS,
+          responseStatus: error?.status ?? '',
+          responseError: error?.responseError || error?.message || '',
+          responsePayload: error?.responsePayload ?? null
+        });
+        throw error;
+      }
+
+      const delayMs = getApiRetryDelayMs(attempt);
+      await writeWorkerDiagnostic('warn', 'api_request_retry', {
+        endpoint,
+        method,
+        attempt,
+        attempts: API_REQUEST_RETRY_ATTEMPTS,
+        delayMs,
+        responseStatus: error?.status ?? '',
+        responseError: error?.responseError || error?.message || ''
+      });
+      await sleep(delayMs);
+    }
   }
 
-  return payload;
+  throw lastError;
 }
 
 async function updateTask(taskId, updates = {}) {
@@ -761,11 +929,107 @@ async function updateTask(taskId, updates = {}) {
   });
 }
 
+async function updateTaskBestEffort(taskId, updates = {}, {
+  phase = 'task update'
+} = {}) {
+  try {
+    return await updateTask(taskId, updates);
+  } catch (error) {
+    if (!isRetryableApiError(error)) {
+      throw error;
+    }
+
+    await writeWorkerDiagnostic('warn', 'task_update_deferred_by_api_outage', {
+      taskId,
+      phase,
+      updates,
+      error: getErrorDiagnostic(error)
+    });
+    return null;
+  }
+}
+
 async function updateTaskHeartbeat(taskId, status = 'active') {
   return updateTask(taskId, {
     workerHeartbeatAt: Date.now(),
     workerHeartbeatStatus: String(status || 'active').slice(0, 120)
   });
+}
+
+function getPendingTaskUpdatePath(taskId) {
+  const safeTaskId = String(taskId ?? '').replace(/[^a-z0-9_-]/giu, '_');
+  return path.join(PENDING_TASK_UPDATES_ROOT, `${safeTaskId}.json`);
+}
+
+async function savePendingTaskUpdate(taskId, updates = {}, {
+  reason = ''
+} = {}) {
+  const safeTaskId = String(taskId ?? '').trim();
+  if (!safeTaskId) {
+    return;
+  }
+
+  await fsp.mkdir(PENDING_TASK_UPDATES_ROOT, { recursive: true });
+  const payload = {
+    version: 1,
+    taskId: safeTaskId,
+    workerId: WORKER_ID,
+    savedAt: Date.now(),
+    reason,
+    updates: JSON.parse(JSON.stringify(updates ?? {}))
+  };
+  await fsp.writeFile(getPendingTaskUpdatePath(safeTaskId), `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+async function flushPendingTaskUpdates() {
+  let entries = [];
+  try {
+    entries = await fsp.readdir(PENDING_TASK_UPDATES_ROOT, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) {
+      continue;
+    }
+
+    const filePath = path.join(PENDING_TASK_UPDATES_ROOT, entry.name);
+    try {
+      const pending = JSON.parse(await fsp.readFile(filePath, 'utf8'));
+      const taskId = String(pending?.taskId ?? '').trim();
+      const updates = pending?.updates && typeof pending.updates === 'object' ? pending.updates : null;
+      if (!taskId || !updates) {
+        await fsp.rm(filePath, { force: true });
+        continue;
+      }
+
+      await updateTask(taskId, updates);
+      await fsp.rm(filePath, { force: true });
+      await writeWorkerDiagnostic('info', 'pending_task_update_applied', {
+        taskId,
+        reason: pending?.reason ?? '',
+        updates
+      });
+      await appendLog(taskId, 'Deferred worker status update applied.', {
+        data: {
+          reason: pending?.reason ?? '',
+          workerId: WORKER_ID
+        }
+      });
+    } catch (error) {
+      await writeWorkerDiagnostic(isRetryableApiError(error) ? 'warn' : 'error', 'pending_task_update_failed', {
+        filePath,
+        error: getErrorDiagnostic(error)
+      });
+      if (isRetryableApiError(error)) {
+        return;
+      }
+    }
+  }
 }
 
 function startTaskHeartbeat(taskId, {
@@ -2647,32 +2911,38 @@ async function handleCodeTask(task) {
     getStatus: () => heartbeatStatus
   });
   try {
-    await updateTask(task.id, {
+    await updateTaskBestEffort(task.id, {
       status: 'preparing',
       workerHeartbeatAt: Date.now(),
       workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'preparing'
     });
     const worktree = await createCodeWorktree(task);
     worktreePath = worktree.worktreePath;
     const promptPath = await writePromptFile(task, worktreePath);
 
     heartbeatStatus = 'coding';
-    await updateTask(task.id, {
+    await updateTaskBestEffort(task.id, {
       status: 'coding',
       branch: worktree.branch,
       workerHeartbeatAt: Date.now(),
       workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'coding'
     });
     const codexResult = await runCodex(task, worktreePath, promptPath);
 
     heartbeatStatus = 'testing';
-    await updateTask(task.id, {
+    await updateTaskBestEffort(task.id, {
       status: 'testing',
       summary: truncateText(codexResult.output, 10000),
       agentMessage: codexResult.lastMessage || truncateText(codexResult.output, 4000),
       codexSessionId: codexResult.sessionId,
       workerHeartbeatAt: Date.now(),
       workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'testing'
     });
     const changedFiles = await enforceAllowlist(task, worktreePath);
     const deployTargets = inferDeployTargets(changedFiles);
@@ -2700,7 +2970,7 @@ async function handleCodeTask(task) {
       const autoDeployNote = task.mode === 'auto' && !AUTO_DEPLOY
         ? ' Auto deploy was requested, but AUTO_DEPLOY is disabled on this worker.'
         : '';
-      await updateTask(task.id, {
+      const readyForReviewUpdate = {
         status: 'ready_for_review',
         branch: commit.branch,
         commitSha: commit.commitSha,
@@ -2709,7 +2979,25 @@ async function handleCodeTask(task) {
         workerHeartbeatAt: Date.now(),
         workerHeartbeatStatus: 'completed',
         summary: `Branch pushed and checks passed. Deploy targets: ${formatDeployTargets(deployTargets)}.${autoDeployNote}`
-      });
+      };
+      try {
+        await updateTask(task.id, readyForReviewUpdate);
+      } catch (error) {
+        if (!isRetryableApiError(error)) {
+          throw error;
+        }
+        await savePendingTaskUpdate(task.id, readyForReviewUpdate, {
+          reason: 'ready_for_review update failed after branch push'
+        });
+        await writeWorkerDiagnostic('warn', 'task_ready_update_deferred', {
+          taskId: task.id,
+          branch: commit.branch,
+          commitSha: commit.commitSha,
+          changedFiles,
+          deployTargets,
+          error: getErrorDiagnostic(error)
+        });
+      }
       await appendLog(task.id, 'Task branch is ready for review.', {
         data: {
           branch: commit.branch,
@@ -2831,6 +3119,7 @@ async function runIteration({
   deployEnabled = DEPLOY_ENABLED,
   codeEnabled = true
 } = {}) {
+  await flushPendingTaskUpdates();
   const result = await claimNextTask({
     deployEnabled,
     codeEnabled
@@ -2901,7 +3190,16 @@ async function runLane({
         process.exitCode = 1;
         return false;
       }
-      await sleep(errorPollMs);
+      if (isRetryableApiError(error)) {
+        await writeWorkerDiagnostic('warn', 'api_storm_pause', {
+          lane: laneLabel,
+          pauseMs: API_STORM_PAUSE_MS,
+          error: getErrorDiagnostic(error)
+        });
+        await sleep(API_STORM_PAUSE_MS);
+      } else {
+        await sleep(errorPollMs);
+      }
     }
   }
 }
@@ -3137,6 +3435,9 @@ if (RUN_SELF_TEST) {
 }
 
 validateConfig();
+await pruneWorkerDiagnosticLogs();
+await acquireWorkerInstanceLock();
+
 console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   workerId: WORKER_ID,
   apiBase: API_BASE,
@@ -3165,7 +3466,6 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   selfTest: RUN_SELF_TEST
 });
 
-await pruneWorkerDiagnosticLogs();
 await writeWorkerDiagnostic('info', 'worker_started', {
   apiBase: API_BASE,
   workRoot: WORK_ROOT,
@@ -3191,4 +3491,8 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   runOnce: RUN_ONCE
 });
 
-await runWorker();
+try {
+  await runWorker();
+} finally {
+  releaseWorkerInstanceLockSync();
+}
