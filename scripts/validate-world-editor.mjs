@@ -808,6 +808,7 @@ function validateFootprintSupport() {
     'Martha NPC adornment should be attached to the unscaled NPC visual parent'
   );
   const realEstateVisual = realEstateOffice.createVisual();
+  realEstateVisual.updateWorldMatrix(true, true);
   assert(realEstateVisual.getObjectByName('real_estate_office_tall_facade'), 'Real Estate Office visual should include a tall Kenney Building L-style facade');
   assert(realEstateVisual.getObjectByName('realEstateOfficeOpenFrontThreshold'), 'Real Estate Office visual should mark the open front threshold');
   assert(realEstateVisual.getObjectByName('realEstateOfficeSignPanel'), 'Real Estate Office visual should include a front sign panel');
@@ -818,7 +819,63 @@ function validateFootprintSupport() {
     assert(realEstateVisual.getObjectByName(nodeName), `Real Estate Office visual should expose ${nodeName} for transparent exterior views`);
   }
   assert(realEstateVisual.getObjectByName('realEstateOfficeTallWindow1_1'), 'Real Estate Office facade should include named upper window panels');
+  const assertRealEstateColor = (nodeName, expectedColor, message) => {
+    const node = realEstateVisual.getObjectByName(nodeName);
+    assert(node?.material?.color?.getHex() === expectedColor, message);
+  };
+  assertRealEstateColor('realEstateOfficeBackWall', 0xf4f5f5, 'Real Estate Office walls should use the new white exterior palette');
+  assertRealEstateColor('realEstateOfficeTowerLowerBlock', 0xbcc2c7, 'Real Estate Office tower tiers should use the new gray exterior palette');
+  assertRealEstateColor('realEstateOfficeSignPanel', 0x4c535a, 'Real Estate Office sign panel should be gray instead of green');
+  assertRealEstateColor('realEstateOfficeGoldAwning', 0xcfd5d9, 'Real Estate Office awning should be silver/white instead of yellow');
+  const getRealEstateBounds = (nodeName) => {
+    const node = realEstateVisual.getObjectByName(nodeName);
+    assert(node, `Real Estate Office visual should include ${nodeName}`);
+    return new Box3().setFromObject(node);
+  };
+  const assertRealEstateFrontWindowAttached = (windowName, blockName) => {
+    const windowBounds = getRealEstateBounds(windowName);
+    const blockBounds = getRealEstateBounds(blockName);
+    const frontGap = windowBounds.min.z - blockBounds.max.z;
+    assert(
+      frontGap >= -0.03 && frontGap <= 0.08,
+      `${windowName} should sit on ${blockName}'s front face instead of floating off the building`
+    );
+  };
+  const assertRealEstateSideWindowAttached = (windowName, blockName, side) => {
+    const windowBounds = getRealEstateBounds(windowName);
+    const blockBounds = getRealEstateBounds(blockName);
+    const sideGap = side === 'left'
+      ? blockBounds.min.x - windowBounds.max.x
+      : windowBounds.min.x - blockBounds.max.x;
+    assert(
+      sideGap >= -0.03 && sideGap <= 0.08,
+      `${windowName} should sit on ${blockName}'s ${side} face instead of floating off the building`
+    );
+  };
+  for (const { blockName, frontRows, sideRows } of [
+    { blockName: 'realEstateOfficeTowerLowerBlock', frontRows: [1, 2], sideRows: [1, 2] },
+    { blockName: 'realEstateOfficeTowerMidBlock', frontRows: [3, 4], sideRows: [3, 4] },
+    { blockName: 'realEstateOfficeTowerTopBlock', frontRows: [5, 6], sideRows: [5, 6] }
+  ]) {
+    for (const rowNumber of frontRows) {
+      const frontWindowNames = [];
+      realEstateVisual.traverse((node) => {
+        if (node.isMesh && new RegExp(`^realEstateOfficeTallWindow${rowNumber}_\\d+$`).test(node.name)) {
+          frontWindowNames.push(node.name);
+        }
+      });
+      assert(frontWindowNames.length >= 4, `Real Estate Office facade row ${rowNumber} should include window panels`);
+      for (const windowName of frontWindowNames) {
+        assertRealEstateFrontWindowAttached(windowName, blockName);
+      }
+    }
+    for (const rowNumber of sideRows) {
+      assertRealEstateSideWindowAttached(`realEstateOfficeSideWindowLeft${rowNumber}`, blockName, 'left');
+      assertRealEstateSideWindowAttached(`realEstateOfficeSideWindowRight${rowNumber}`, blockName, 'right');
+    }
+  }
   const realEstateSignLabel = realEstateVisual.getObjectByName('realEstateOfficeSignLabel');
+  assert(realEstateSignLabel?.material?.color?.getHex() === 0x4c535a, 'Real Estate Office fallback sign label should be gray instead of green');
   assert(realEstateSignLabel?.material?.transparent !== true, 'Real Estate Office sign label should avoid transparent material sorting');
   assert(realEstateSignLabel?.material?.depthWrite !== false, 'Real Estate Office sign label should write depth as an opaque sign');
   const realEstateTransparentMeshes = collectMeshMaterials(realEstateVisual)
