@@ -7669,6 +7669,73 @@ body.is-admin-prompt-resizing * {
   z-index: 3;
 }
 
+.hud__vibe-hero-fret {
+  position: absolute;
+  left: 50%;
+  top: var(--hit-y, 82%);
+  width: clamp(24px, 60%, 54px);
+  height: 18px;
+  border: 2px solid color-mix(in srgb, var(--lane-color) 72%, #fff6df 28%);
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(255, 246, 223, 0.24), transparent 56%),
+    color-mix(in srgb, var(--lane-color) 22%, rgba(255, 255, 255, 0.05));
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--lane-color) 44%, transparent),
+    inset 0 0 10px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+}
+
+.hud__vibe-hero-hit-fire {
+  position: absolute;
+  left: 50%;
+  top: var(--hit-y, 82%);
+  width: 46px;
+  height: 42px;
+  pointer-events: none;
+  transform-origin: 50% 88%;
+  z-index: 5;
+  animation: hud-vibe-hero-fire-burst 420ms cubic-bezier(0.2, 0.88, 0.24, 1) both;
+  animation-delay: var(--fire-delay, 0ms);
+  filter: drop-shadow(0 0 10px rgba(255, 101, 31, 0.72));
+}
+
+.hud__vibe-hero-hit-fire::before,
+.hud__vibe-hero-hit-fire::after,
+.hud__vibe-hero-hit-fire span {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  border-radius: 60% 60% 48% 48%;
+  clip-path: polygon(50% 0, 67% 26%, 86% 43%, 73% 100%, 27% 100%, 14% 43%, 33% 26%);
+  transform: translateX(-50%);
+}
+
+.hud__vibe-hero-hit-fire::before {
+  width: 30px;
+  height: 36px;
+  background:
+    radial-gradient(circle at 50% 76%, #fff6a9 0 16%, transparent 17%),
+    linear-gradient(180deg, #ffef63 0%, #ff8f2a 48%, #f02b23 100%);
+}
+
+.hud__vibe-hero-hit-fire::after {
+  width: 18px;
+  height: 27px;
+  background: linear-gradient(180deg, #fffad1 0%, #ffd85c 56%, #ff7028 100%);
+  transform: translateX(-50%) translateY(3px) rotate(-8deg);
+}
+
+.hud__vibe-hero-hit-fire span {
+  width: 11px;
+  height: 18px;
+  background: linear-gradient(180deg, #fffef0, #ffd65a);
+  transform: translateX(-50%) translateY(8px) rotate(10deg);
+}
+
 .hud__vibe-hero-note {
   position: absolute;
   top: var(--note-y, 0%);
@@ -7681,6 +7748,28 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 7px 18px rgba(0, 0, 0, 0.32);
   transform: translateY(-50%);
   z-index: 2;
+}
+
+@keyframes hud-vibe-hero-fire-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -54%) scale(0.46) rotate(-4deg);
+  }
+
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -82%) scale(1.03) rotate(3deg);
+  }
+
+  58% {
+    opacity: 0.92;
+    transform: translate(-50%, -98%) scale(0.86) rotate(-2deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -122%) scale(0.5) rotate(5deg);
+  }
 }
 
 .hud__vibe-hero-note.is-lane-0 {

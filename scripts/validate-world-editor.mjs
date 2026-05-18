@@ -343,9 +343,11 @@ function validateVibeHero() {
   const licenseNotice = readFileSync(new URL('../assets/audio/vibe-hero/License.txt', import.meta.url), 'utf8');
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const styleSource = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
   const songs = listVibeHeroSongs();
   assert(VIBE_HERO_LANE_COUNT === 5, 'Vibe Hero should expose five lanes for keys 1-5');
   assert(VIBE_HERO_NOTE_TRAVEL_MS <= 950, 'Vibe Hero notes should use hyperspeed travel timing');
+  assert(gameSource.includes('VIBE_HERO_LANE_FLASH_MS'), 'Vibe Hero hit flashes should last long enough for the hit animation to play');
   assert(gameSource.includes('openVibeHeroChartEditor'), 'Vibe Hero should expose a dedicated chart editor opener');
   assert(gameSource.includes('this.canUseVibeHeroChartEditor()') && gameSource.includes("this.input.consume('KeyF')"), 'Instrument cluster chart editor should be gated to admins on F');
   assert(gameSource.includes("this.input.consume('KeyR')"), 'Vibe Hero chart editor should toggle recording with R');
@@ -358,6 +360,8 @@ function validateVibeHero() {
   assert(gameSource.includes('recordedKeys') && gameSource.includes('mergedChart'), 'Vibe Hero chart editor should avoid preserving exact duplicates when merging recorded notes');
   assert(gameSource.includes('VIBE_HERO_EDITOR_STORAGE_PREFIX'), 'Vibe Hero chart editor should persist edited charts locally for admins');
   assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
+  assert(hudSource.includes('hud__vibe-hero-fret') && styleSource.includes('.hud__vibe-hero-fret'), 'Vibe Hero HUD should render oval timing frets above the lane number buttons');
+  assert(hudSource.includes('hud__vibe-hero-hit-fire') && styleSource.includes('@keyframes hud-vibe-hero-fire-burst'), 'Vibe Hero HUD should animate a small fire burst when a note is hit correctly');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
   for (const song of songs) {
     assert(song.id && song.title, 'Vibe Hero songs should have stable ids and titles');

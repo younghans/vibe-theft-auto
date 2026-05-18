@@ -204,6 +204,7 @@ const VIBE_HERO_HIT_WINDOW_MS = 185;
 const VIBE_HERO_PERFECT_WINDOW_MS = 58;
 const VIBE_HERO_GREAT_WINDOW_MS = 112;
 const VIBE_HERO_POST_SONG_MS = 900;
+const VIBE_HERO_LANE_FLASH_MS = 420;
 const VIBE_HERO_EDITOR_SEEK_MS = 5000;
 const VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS = 120;
 const VIBE_HERO_EDITOR_RECORD_STEP_MS = 95;
@@ -7364,7 +7365,7 @@ export class Game {
     }
 
     if (Number(deltaSeconds) >= 0) {
-      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < 180);
+      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS);
     }
     this.syncVibeHeroHud();
   }
@@ -7416,7 +7417,7 @@ export class Game {
     this.updateVibeHeroAudioFade(game);
     this.handleVibeHeroKeyboardInput();
     if (Number(deltaSeconds) >= 0) {
-      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < 180);
+      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS);
     }
     this.syncVibeHeroHud();
     return true;
@@ -7630,7 +7631,7 @@ export class Game {
     if (activeLanes.length > 0) {
       const now = performance.now();
       game.laneFlashes = [
-        ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+        ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
         ...activeLanes.map((lane) => ({
           lane,
           at: now,
@@ -7724,7 +7725,7 @@ export class Game {
     const now = performance.now();
     const frequency = VIBE_HERO_EDITOR_LANE_FREQUENCIES[lane] ?? 440;
     game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
       {
         lane,
         at: now,
@@ -7775,7 +7776,7 @@ export class Game {
     game.editorLaneLastRecordMs = lastRecordMs;
     const now = performance.now();
     game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
       ...lanes.map((lane) => ({
         lane,
         at: now,
@@ -7891,7 +7892,7 @@ export class Game {
     const now = performance.now();
 
     game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < 180),
+      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
       {
         lane: normalizedLane,
         at: now,

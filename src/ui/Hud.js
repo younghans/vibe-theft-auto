@@ -966,10 +966,12 @@ function createVibeHeroStatsMarkup(game = null) {
 function createVibeHeroTrackMarkup(game = null) {
   const notes = Array.isArray(game?.notes) ? game.notes : [];
   const laneCount = Math.max(1, Math.min(8, Math.trunc(Number(game?.laneCount ?? VIBE_HERO_LANE_COUNT) || VIBE_HERO_LANE_COUNT)));
+  const phase = String(game?.phase ?? 'select');
   const currentTimeMs = Math.max(0, Number(game?.currentTimeMs ?? 0) || 0);
   const travelMs = Math.max(1, Number(game?.noteTravelMs ?? VIBE_HERO_NOTE_TRAVEL_MS) || VIBE_HERO_NOTE_TRAVEL_MS);
   const hitWindowMs = Math.max(1, Number(game?.hitWindowMs ?? 185) || 185);
   const laneFlashes = Array.isArray(game?.laneFlashes) ? game.laneFlashes : [];
+  const renderNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const visibleNotes = notes.filter((note) => {
     if (note.status !== 'pending') {
       return false;
@@ -982,6 +984,8 @@ function createVibeHeroTrackMarkup(game = null) {
     <div class="hud__vibe-hero-track" aria-label="Vibe Hero track" style="--lane-count:${laneCount}">
       ${Array.from({ length: laneCount }, (_, laneIndex) => {
         const flash = laneFlashes.find((entry) => entry.lane === laneIndex);
+        const flashAgeMs = flash ? Math.max(0, renderNow - (Number(flash.at) || 0)) : 0;
+        const showFire = phase === 'playing' && flash && flash.quality !== 'empty';
         const laneNotes = visibleNotes.filter((note) => {
           const lane = Math.max(0, Math.min(laneCount - 1, Math.trunc(Number(note.lane ?? 0) || 0)));
           return lane === laneIndex;
@@ -989,6 +993,16 @@ function createVibeHeroTrackMarkup(game = null) {
         return `
           <div class="hud__vibe-hero-lane${flash ? ` is-${escapeHtml(flash.quality)}` : ''}">
             <span class="hud__vibe-hero-lane-rail"></span>
+            <span class="hud__vibe-hero-fret" style="--hit-y:${hitLineY}%" aria-hidden="true"></span>
+            ${showFire ? `
+              <span
+                class="hud__vibe-hero-hit-fire"
+                style="--hit-y:${hitLineY}%; --fire-delay:-${flashAgeMs.toFixed(0)}ms"
+                aria-hidden="true"
+              >
+                <span></span>
+              </span>
+            ` : ''}
             ${laneNotes.map((note) => {
               const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
               const progress = 1 - (distanceMs / travelMs);
