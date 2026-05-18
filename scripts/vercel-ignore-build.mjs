@@ -108,7 +108,7 @@ function shouldInspectDeployment() {
 
 function main() {
   if (!shouldInspectDeployment()) {
-    log(`Skipping non-production branch ${process.env.VERCEL_GIT_COMMIT_REF || '(unknown)'}.`);
+    log(`Skipping non-production branch ${process.env.VERCEL_GIT_COMMIT_REF || '(unknown)'} in ${process.env.VERCEL_ENV || '(unknown)'} environment.`);
     process.exit(0);
   }
 

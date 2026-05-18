@@ -2882,9 +2882,6 @@ async function deployTask(task, worktreePath) {
   }
   await validateDeployPrerequisites(task, deployTargets);
   await installAndCheck(task, worktreePath, { targets: deployTargets });
-  if (deployRefs.rebased) {
-    await pushRebasedTaskBranch(task, worktreePath);
-  }
   if (deployRefs.rebased || deployRefs.taskBranchCommitChanged) {
     await updateTask(task.id, {
       branch: String(task.branch || '').trim(),
@@ -2897,6 +2894,10 @@ async function deployTask(task, worktreePath) {
     });
   }
   await pushWorktreeToMain(task, worktreePath);
+  if (deployRefs.rebased) {
+    await appendLog(task.id, `Pushed ${GIT_BASE_BRANCH} before refreshing the task branch so production deploy hooks see the deploy commit first.`);
+    await pushRebasedTaskBranch(task, worktreePath);
+  }
   const deployResult = await runDeployTargets(task, worktreePath, deployTargets, {
     expectedCommitSha: deployRefs.newDeployCommitSha,
     actionLabel: 'Deployment'
