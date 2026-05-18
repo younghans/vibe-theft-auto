@@ -44,6 +44,11 @@ globalThis.FileReader = globalThis.FileReader ?? NodeFileReader;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const outputDirectory = path.join(projectRoot, 'assets', 'vibe_theft_auto_custom', 'models');
+const CASINO_GREEN_TABLE_POSITIONS = Object.freeze([
+  [-5.8, 0, -2.5],
+  [0, 0, -0.6],
+  [5.8, 0, -2.5]
+]);
 
 const FONT = Object.freeze({
   A: [
@@ -1170,16 +1175,11 @@ function addCasinoDetails(groups, materials) {
   dice.position.set(6.2, 9.15, 10.78);
   groups.exterior.add(dice);
 
-  for (const position of [[-5.8, 0, -4.5], [0, 0, -2.6], [5.8, 0, -4.5]]) {
+  for (const position of CASINO_GREEN_TABLE_POSITIONS) {
     groups.interior.add(createCylinder(1.68, 1.68, 0.2, 24, [position[0], 1.02, position[2]], materials.green));
     groups.interior.add(createCylinder(1.72, 1.72, 0.12, 24, [position[0], 0.88, position[2]], materials.gold));
     for (const angle of [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5]) {
       groups.interior.add(createCylinder(0.28, 0.34, 0.68, 10, [position[0] + Math.sin(angle) * 2.15, 0.45, position[2] + Math.cos(angle) * 2.15], materials.chair));
-    }
-  }
-  for (let row = 0; row < 2; row += 1) {
-    for (let col = 0; col < 5; col += 1) {
-      addSlotMachine(groups.interior, [-7.6 + (col * 1.85), 0, 4.2 + (row * 2.2)], materials, row === 0 ? 0 : Math.PI);
     }
   }
   for (const [x, z] of [[7.0, 4.2], [8.8, 4.2], [7.0, 6.4], [8.8, 6.4]]) {

@@ -20,6 +20,7 @@ export const OFFICE_CEO_MEETING_TABLE_FOOTPRINT = Object.freeze([
 ]);
 export const INSTRUMENT_CLUSTER_FOOTPRINT = Object.freeze([4.2, 2.75]);
 export const BLACKJACK_TABLE_FOOTPRINT = Object.freeze([5.8, 4.3]);
+export const CASINO_SLOT_MACHINE_FOOTPRINT = Object.freeze([1.35, 1.05]);
 export const VIBE_JAM_PORTAL_FOOTPRINT = Object.freeze([8.4, 5.2]);
 export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
 export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
@@ -2625,6 +2626,48 @@ export function createBlackjackTableVisual() {
   root.add(createBox('blackjackTableFeltCenterStripe', [3.7, 0.016, 0.035], [0, 1.512, -0.18], feltLineMaterial, {
     castShadow: false,
     receiveShadow: false
+  }));
+
+  return root;
+}
+
+export function createCasinoSlotMachineVisual() {
+  const root = new THREE.Group();
+  root.name = 'CasinoSlotMachine';
+  root.userData.footprint = [...CASINO_SLOT_MACHINE_FOOTPRINT];
+  root.userData.casinoSlotMachineProp = true;
+
+  const bodyMaterial = createMaterial(0x9a2638, 0.58, 0.16);
+  const baseMaterial = createMaterial(0x231d2f, 0.62, 0.18);
+  const glassMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffdf6b,
+    emissive: new THREE.Color(0xb16b18),
+    emissiveIntensity: 0.55,
+    roughness: 0.24,
+    metalness: 0.08
+  });
+  const signMaterial = createMaterial(0xf7f2df, 0.42, 0.04);
+  const accentMaterial = createMaterial(0xc23c48, 0.34, 0.3);
+  const metalMaterial = createMaterial(0x59636b, 0.38, 0.54);
+
+  root.add(createBox('casinoSlotMachineFloorBase', [1.18, 0.12, 0.82], [0, 0.06, 0], baseMaterial));
+  root.add(createBox('casinoSlotMachineBody', [1.05, 2.25, 0.72], [0, 1.24, 0], bodyMaterial));
+  root.add(createBox('casinoSlotMachineScreen', [0.76, 0.48, 0.08], [0, 1.7, 0.4], glassMaterial));
+  root.add(createBox('casinoSlotMachinePrizePanel', [0.78, 0.34, 0.08], [0, 0.98, 0.41], signMaterial));
+  for (const [index, x] of [-0.28, 0, 0.28].entries()) {
+    root.add(createBox(`casinoSlotMachineReel${index + 1}`, [0.18, 0.2, 0.1], [x, 1.7, 0.47], accentMaterial));
+  }
+
+  const handle = createCylinder(0.08, 0.08, 0.68, 8, metalMaterial);
+  handle.name = 'casinoSlotMachinePullHandle';
+  handle.position.set(0.64, 1.48, 0.12);
+  handle.rotation.z = 0.42;
+  handle.castShadow = true;
+  handle.receiveShadow = true;
+  root.add(handle);
+  root.add(createSphere('casinoSlotMachineHandleKnob', 0.18, [0.76, 1.84, -0.08], accentMaterial, {
+    widthSegments: 10,
+    heightSegments: 8
   }));
 
   return root;

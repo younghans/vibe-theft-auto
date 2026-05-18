@@ -61,6 +61,10 @@ const DISTRICT_PROPS = [
   { itemId: 'hydrant', position: [0.55 * BUILDER_TILE_SIZE, -1.2 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'standing_desk_computer', position: [-2.3 * BUILDER_TILE_SIZE, -1.15 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'blackjack_table', position: [2.05 * BUILDER_TILE_SIZE, 1.18 * BUILDER_TILE_SIZE], angle: Math.PI },
+  { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 0.82 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
+  { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 0.99 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
+  { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.16 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
+  { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.33 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
   { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 

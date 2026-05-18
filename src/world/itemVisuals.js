@@ -5,6 +5,7 @@ import {
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createCasinoSlotMachineVisual,
   createInstrumentClusterVisual,
   createMarthasGrilleBuildingVisual,
   createOlympicBarbellVisual,
@@ -77,6 +78,9 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === 'blackjack_table' || item?.assetName === 'blackjack_table') {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createBlackjackTableVisual();
+  } else if (item?.id === 'slot_machine' || item?.assetName === 'slot_machine') {
+    // Procedural props can lose function fields when copied through plain-object workflows.
+    primaryObject = createCasinoSlotMachineVisual();
   } else if (item?.id === 'pawn_building' || item?.assetName === 'pawn_building') {
     // Procedural tiles can lose function fields when copied through plain-object workflows.
     primaryObject = createPawnShopBuildingVisual();

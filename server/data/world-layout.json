@@ -1617,6 +1617,42 @@
       "rotationQuarterTurns": 2
     },
     {
+      "id": "placement_230",
+      "itemId": "slot_machine",
+      "position": [
+        14.2,
+        7.4
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_231",
+      "itemId": "slot_machine",
+      "position": [
+        14.2,
+        9.8
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_232",
+      "itemId": "slot_machine",
+      "position": [
+        14.2,
+        12.2
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
+      "id": "placement_233",
+      "itemId": "slot_machine",
+      "position": [
+        14.2,
+        14.6
+      ],
+      "rotationQuarterTurns": 1
+    },
+    {
       "id": "placement_226",
       "itemId": "pickup_pistol",
       "position": [

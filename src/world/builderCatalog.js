@@ -21,9 +21,11 @@ import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_FOOTPRINT,
   BLACKJACK_TABLE_FOOTPRINT,
+  CASINO_SLOT_MACHINE_FOOTPRINT,
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
+  createCasinoSlotMachineVisual,
   createInstrumentClusterVisual,
   createMarthasGrilleBuildingVisual,
   createOlympicBarbellVisual,
@@ -736,6 +738,18 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     collision: true,
     padding: 0.2,
     createVisual: createBlackjackTableVisual
+  },
+  {
+    id: 'slot_machine',
+    assetName: 'slot_machine',
+    aliases: ['casino_slot_machine', 'casino slot machine', 'slot machine', 'slots', 'Slot Machine'],
+    label: 'Slot Machine',
+    asset: null,
+    group: 'casino',
+    size: CASINO_SLOT_MACHINE_FOOTPRINT,
+    collision: true,
+    padding: 0.1,
+    createVisual: createCasinoSlotMachineVisual
   },
   {
     id: 'vibe_jam_exit_portal',

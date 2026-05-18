@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import {
   BLACKJACK_TABLE_FOOTPRINT,
-  createBlackjackTableVisual
+  CASINO_SLOT_MACHINE_FOOTPRINT,
+  createBlackjackTableVisual,
+  createCasinoSlotMachineVisual
 } from '../src/world/proceduralProps.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -29,9 +31,9 @@ function assert(condition, message) {
   }
 }
 
-function getObjectBounds(root, name) {
+function getObjectBounds(root, name, label = 'visual') {
   const object = root.getObjectByName(name);
-  assert(object, `Blackjack table missing node "${name}".`);
+  assert(object, `${label} missing node "${name}".`);
   object.updateMatrixWorld(true);
   return new THREE.Box3().setFromObject(object);
 }
@@ -117,6 +119,14 @@ function validateBuilderDefinition() {
   assert(typeof item.createVisual === 'function', 'Blackjack table should use a procedural visual.');
   assert(item.size[0] === BLACKJACK_TABLE_FOOTPRINT[0], 'Blackjack table footprint width should match the procedural constant.');
   assert(item.size[1] === BLACKJACK_TABLE_FOOTPRINT[1], 'Blackjack table footprint depth should match the procedural constant.');
+
+  const slotMachine = getBuilderItemById('slot_machine');
+  assert(slotMachine, 'Slot machine builder item is missing.');
+  assert(slotMachine.layer === 'prop', 'Slot machine should be a moveable prop.');
+  assert(slotMachine.groupId === 'casino', 'Slot machine should live in the casino prop group.');
+  assert(typeof slotMachine.createVisual === 'function', 'Slot machine should use a procedural visual.');
+  assert(slotMachine.size[0] === CASINO_SLOT_MACHINE_FOOTPRINT[0], 'Slot machine footprint width should match the procedural constant.');
+  assert(slotMachine.size[1] === CASINO_SLOT_MACHINE_FOOTPRINT[1], 'Slot machine footprint depth should match the procedural constant.');
 }
 
 function validateTableModel() {
@@ -129,11 +139,11 @@ function validateTableModel() {
   assert(size.z >= 3.7 && size.z <= BLACKJACK_TABLE_FOOTPRINT[1] + 0.25, 'Blackjack table depth should fill its footprint.');
   assert(size.y >= 1.55 && size.y <= 1.9, 'Blackjack table height should match player scale.');
 
-  const railBounds = getObjectBounds(visual, 'blackjackTablePaddedRail');
-  const feltBounds = getObjectBounds(visual, 'blackjackTableFelt');
-  const chipTrayBounds = getObjectBounds(visual, 'blackjackTableChipTray');
-  const shoeBounds = getObjectBounds(visual, 'blackjackTableCardShoe');
-  const dealerArcBounds = getObjectBounds(visual, 'blackjackTableDealerArc');
+  const railBounds = getObjectBounds(visual, 'blackjackTablePaddedRail', 'Blackjack table');
+  const feltBounds = getObjectBounds(visual, 'blackjackTableFelt', 'Blackjack table');
+  const chipTrayBounds = getObjectBounds(visual, 'blackjackTableChipTray', 'Blackjack table');
+  const shoeBounds = getObjectBounds(visual, 'blackjackTableCardShoe', 'Blackjack table');
+  const dealerArcBounds = getObjectBounds(visual, 'blackjackTableDealerArc', 'Blackjack table');
 
   assert(feltBounds.max.y > railBounds.max.y, 'Felt should sit above the padded rail.');
   assert(chipTrayBounds.min.y > feltBounds.min.y, 'Chip tray should sit on top of the table.');
@@ -141,6 +151,41 @@ function validateTableModel() {
   assert(dealerArcBounds.min.y >= feltBounds.min.y, 'Dealer markings should sit on the felt.');
   assert(visual.getObjectByName('blackjackTableCard1'), 'Blackjack table should include visible cards.');
   assert(visual.getObjectByName('blackjackTableChipStack1_1'), 'Blackjack table should include chip stacks.');
+}
+
+function validateSlotMachineModel() {
+  const visual = createCasinoSlotMachineVisual();
+  visual.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(visual);
+  const size = bounds.getSize(new THREE.Vector3());
+
+  assert(size.x >= 1.0 && size.x <= CASINO_SLOT_MACHINE_FOOTPRINT[0] + 0.35, 'Slot machine width should fill its footprint.');
+  assert(size.z >= 0.75 && size.z <= CASINO_SLOT_MACHINE_FOOTPRINT[1] + 0.25, 'Slot machine depth should fill its footprint.');
+  assert(size.y >= 2.2 && size.y <= 2.6, 'Slot machine height should match player scale.');
+
+  const bodyBounds = getObjectBounds(visual, 'casinoSlotMachineBody', 'Slot machine');
+  const screenBounds = getObjectBounds(visual, 'casinoSlotMachineScreen', 'Slot machine');
+  const handleBounds = getObjectBounds(visual, 'casinoSlotMachinePullHandle', 'Slot machine');
+
+  assert(screenBounds.min.z > bodyBounds.max.z - 0.12, 'Slot machine screen should sit on the front face.');
+  assert(handleBounds.min.x > bodyBounds.max.x - 0.12, 'Slot machine handle should sit on the side.');
+  assert(visual.userData.casinoSlotMachineProp === true, 'Slot machine should identify itself as a casino prop visual.');
+}
+
+function assertSlotMachinesLeftOfBlackjack(layout, label) {
+  const blackjackTable = layout.props?.find((placement) => placement.itemId === 'blackjack_table');
+  const slotMachines = layout.props?.filter((placement) => placement.itemId === 'slot_machine') ?? [];
+
+  assert(blackjackTable, `${label} should include a blackjack table placement.`);
+  assert(slotMachines.length >= 4, `${label} should include moveable slot machine placements.`);
+  assert(
+    slotMachines.every((placement) => Number(placement.position?.[0]) < Number(blackjackTable.position?.[0])),
+    `${label} slot machines should be positioned to the left of the blackjack table.`
+  );
+  assert(
+    slotMachines.every((placement) => placement.rotationQuarterTurns === 1),
+    `${label} slot machines should face right from the left side.`
+  );
 }
 
 async function validateCheckedInPlacements() {
@@ -152,6 +197,7 @@ async function validateCheckedInPlacements() {
     defaultWorldLayout.npcs.some((npc) => npc.blackjackDealerEnabled === true),
     'Default world should include a blackjack dealer NPC.'
   );
+  assertSlotMachinesLeftOfBlackjack(defaultWorldLayout, 'Default world');
 
   const savedLayout = JSON.parse(await readFile(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
   assert(
@@ -161,6 +207,19 @@ async function validateCheckedInPlacements() {
   assert(
     savedLayout.npcs?.some((npc) => npc.blackjackDealerEnabled === true),
     'Fallback saved world layout should include a blackjack dealer NPC.'
+  );
+  assertSlotMachinesLeftOfBlackjack(savedLayout, 'Fallback saved world');
+}
+
+async function validateCasinoBuildingGenerator() {
+  const source = await readFile(new URL('./generate-district-buildings.mjs', import.meta.url), 'utf8');
+  assert(
+    /const CASINO_GREEN_TABLE_POSITIONS = Object\.freeze\(\[\s*\[\s*-5\.8,\s*0,\s*-2\.5\s*\],\s*\[\s*0,\s*0,\s*-0\.6\s*\],\s*\[\s*5\.8,\s*0,\s*-2\.5\s*\]\s*\]\);/m.test(source),
+    'Casino green tables should be moved downward in the generated casino interior.'
+  );
+  assert(
+    !/addSlotMachine\(groups\.interior/.test(source),
+    'Casino slot machines should not be baked into the generated building; they should stay moveable props.'
   );
 }
 
@@ -178,6 +237,8 @@ async function main() {
   validateNpcFlag();
   validateBuilderDefinition();
   validateTableModel();
+  validateSlotMachineModel();
+  await validateCasinoBuildingGenerator();
   await validateBlackjackAudio();
   await validateCheckedInPlacements();
   console.log('Blackjack validation passed.');
