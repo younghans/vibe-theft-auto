@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
-import { WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
+import { PLAYER_RADIUS, WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
 import {
   COMBAT_PICKUP_PROP_ITEM_IDS,
   getCombatPickupSpawnDefinitions
@@ -239,6 +239,33 @@ function validateCustomPropCatalogItems() {
   const pickupVisual = pistolPickup.createVisual();
   assert(pickupVisual.getObjectByName('pistolPickupSpawnRing'), 'Pistol pickup visual should include a placement ring');
   assert(pickupVisual.getObjectByName('pistolPickupSpawnBase'), 'Pistol pickup visual should include a small base');
+
+  const vibeJamExitPortal = getBuilderItemById('vibe_jam_exit_portal');
+  const vibeJamStartPortal = getBuilderItemById('vibe_jam_start_portal');
+  const vibeJamPortals = [
+    { item: vibeJamExitPortal, role: 'exit' },
+    { item: vibeJamStartPortal, role: 'start' }
+  ];
+  for (const { item, role } of vibeJamPortals) {
+    assert(item, `Vibe Jam ${role} portal prop should exist`);
+    assert(item.layer === 'prop', `Vibe Jam ${role} portal should be a prop catalog item`);
+    assert(item.groupId === 'portals', `Vibe Jam ${role} portal should be grouped under Portals`);
+    assert(item.interactable?.portal?.role === role, `Vibe Jam ${role} portal should preserve its portal role`);
+    const spawnOffset = item.interactable?.portal?.spawnLocalOffset;
+    const triggerRadius = Number(item.interactable?.portal?.triggerRadius);
+    const promptRadius = Number(item.interactable?.radius);
+    const spawnDistance = Array.isArray(spawnOffset)
+      ? Math.hypot(Number(spawnOffset[0]), Number(spawnOffset[1]))
+      : 0;
+    assert(
+      spawnDistance >= triggerRadius + PLAYER_RADIUS + 4,
+      `Vibe Jam ${role} portal spawn should place arrivals far enough outside the redirect trigger`
+    );
+    assert(
+      spawnDistance > promptRadius,
+      `Vibe Jam ${role} portal spawn should place arrivals beyond the portal prompt halo`
+    );
+  }
 
   const basketballHoop = getBuilderItemById('basketball_hoop');
   assert(basketballHoop, 'Basketball hoop prop should exist');
