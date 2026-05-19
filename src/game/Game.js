@@ -494,6 +494,7 @@ const WORLD_MAP_CAPTURE_HEIGHT = 1536;
 const WORLD_MAP_CAPTURE_QUALITY = 0.84;
 const ADMIN_AGENT_TASKS_ENDPOINT = '/admin/agent-tasks';
 const ADMIN_PROMPT_TASK_SCOPE = 'game';
+const ADMIN_PROMPT_TASK_THREAD_LIMIT = 10;
 const ADMIN_PROMPT_TASK_REFRESH_MS = 5000;
 const RELEASE_VERSION_ENDPOINT = '/version.json';
 const RELEASE_VERSION_CHECK_MS = 45000;
@@ -1278,6 +1279,8 @@ export class Game {
     this.adminPromptError = '';
     this.adminPromptRefreshAt = 0;
     this.adminPromptRequest = null;
+    this.adminPromptThreadTasks = new Map();
+    this.adminPromptThreadRequests = new Map();
     this.debugMinigameRequestHandled = false;
     this.debugMinigameRequestRetryTimeout = 0;
     this.aimPoseDebugVisible = false;
@@ -2563,15 +2566,116 @@ export class Game {
     return Boolean(this.isLocalAdmin() && this.getAdminKey());
   }
 
+  getAdminPromptThreadIdForTask(taskId = '') {
+    const id = String(taskId ?? '').trim();
+    if (!id) {
+      return '';
+    }
+
+    const summaryTask = this.adminPromptTasks.find((task) => task.id === id);
+    if (summaryTask) {
+      return String(summaryTask.threadId || summaryTask.id || '').trim();
+    }
+
+    for (const threadTasks of this.adminPromptThreadTasks.values()) {
+      const task = Array.isArray(threadTasks)
+        ? threadTasks.find((candidate) => candidate.id === id)
+        : null;
+      if (task) {
+        return String(task.threadId || task.id || '').trim();
+      }
+    }
+
+    return id;
+  }
+
+  getAdminPromptHudTasks() {
+    const selectedThreadId = this.getAdminPromptThreadIdForTask(this.adminPromptSelectedTaskId);
+    const mergedTasks = new Map();
+    for (const task of this.adminPromptTasks) {
+      if (task?.id) {
+        mergedTasks.set(task.id, task);
+      }
+    }
+
+    const cachedThreadTasks = selectedThreadId
+      ? this.adminPromptThreadTasks.get(selectedThreadId)
+      : null;
+    if (Array.isArray(cachedThreadTasks)) {
+      for (const task of cachedThreadTasks) {
+        if (!task?.id) {
+          continue;
+        }
+        const summaryTask = mergedTasks.get(task.id);
+        mergedTasks.set(task.id, summaryTask ? { ...task, ...summaryTask } : task);
+      }
+    }
+
+    return [...mergedTasks.values()];
+  }
+
+  async loadAdminPromptThread(taskId = '', { force = false } = {}) {
+    const id = String(taskId ?? '').trim();
+    if (!id || !this.canUseAdminPrompt()) {
+      return;
+    }
+
+    const initialThreadId = this.getAdminPromptThreadIdForTask(id);
+    const requestKey = initialThreadId || id;
+    if (!force && initialThreadId && this.adminPromptThreadTasks.has(initialThreadId)) {
+      return;
+    }
+    if (this.adminPromptThreadRequests.has(requestKey)) {
+      return this.adminPromptThreadRequests.get(requestKey);
+    }
+
+    const request = (async () => {
+      try {
+        const url = new URL(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/thread`));
+        url.searchParams.set('adminKey', this.getAdminKey());
+        url.searchParams.set('compact', '1');
+        url.searchParams.set('readOnly', '1');
+        const response = await fetch(url.toString(), { cache: 'no-store' });
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.ok) {
+          throw new Error(result?.error || 'Could not load prompt thread.');
+        }
+
+        const threadTasks = Array.isArray(result.threadTasks)
+          ? result.threadTasks
+          : Array.isArray(result.tasks)
+            ? result.tasks
+            : [];
+        const threadId = String(threadTasks[0]?.threadId || threadTasks[0]?.id || initialThreadId || id).trim();
+        if (threadId) {
+          this.adminPromptThreadTasks.set(threadId, threadTasks);
+          this.refreshAdminPromptHud();
+        }
+      } catch (error) {
+        console.warn('[AgentTasks] Thread detail refresh failed.', error);
+        this.adminPromptError = error?.message ?? 'Prompt thread refresh failed.';
+        this.refreshAdminPromptHud();
+      }
+    })();
+
+    this.adminPromptThreadRequests.set(requestKey, request);
+    try {
+      await request;
+    } finally {
+      this.adminPromptThreadRequests.delete(requestKey);
+    }
+  }
+
   refreshAdminPromptHud() {
     const available = this.canUseAdminPrompt();
     const context = this.getAdminPromptContext();
+    const hudTasks = this.getAdminPromptHudTasks();
     if (!available) {
       this.hud.setAdminPromptState({
         available: false,
         open: false,
         activeTab: this.adminPromptActiveTab,
-        tasks: this.adminPromptTasks,
+        tasks: hudTasks,
         selectedTaskId: this.adminPromptSelectedTaskId,
         loading: false,
         submitting: false,
@@ -2585,7 +2689,7 @@ export class Game {
       available: true,
       open: this.adminPromptOpen,
       activeTab: this.adminPromptActiveTab,
-      tasks: this.adminPromptTasks,
+      tasks: hudTasks,
       selectedTaskId: this.adminPromptSelectedTaskId,
       loading: this.adminPromptLoadingVisible,
       submitting: this.adminPromptSubmitting,
@@ -2870,7 +2974,11 @@ export class Game {
     try {
       const url = new URL(this.getAdminAgentTasksEndpoint());
       url.searchParams.set('adminKey', adminKey);
-      url.searchParams.set('limit', '80');
+      url.searchParams.set('scope', ADMIN_PROMPT_TASK_SCOPE);
+      url.searchParams.set('limit', String(ADMIN_PROMPT_TASK_THREAD_LIMIT));
+      url.searchParams.set('view', 'threads');
+      url.searchParams.set('compact', '1');
+      url.searchParams.set('readOnly', '1');
       const response = await fetch(url.toString(), { cache: 'no-store' });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
@@ -2886,6 +2994,9 @@ export class Game {
       }
       if (this.adminPromptActiveTab !== 'new' && !this.adminPromptSelectedTaskId && this.adminPromptTasks.length > 0) {
         this.adminPromptSelectedTaskId = this.adminPromptTasks[0].id;
+      }
+      if (this.adminPromptSelectedTaskId && this.adminPromptOpen) {
+        void this.loadAdminPromptThread(this.adminPromptSelectedTaskId, { force: true });
       }
       this.adminPromptRefreshAt = performance.now() + ADMIN_PROMPT_TASK_REFRESH_MS;
     } catch (error) {
@@ -2906,7 +3017,14 @@ export class Game {
     this.adminPromptOpen = nextOpen;
     this.refreshAdminPromptHud();
     if (nextOpen) {
-      void this.refreshAdminPromptTasks({ force: true });
+      const hasFreshTasks = this.adminPromptTasks.length > 0 && performance.now() < this.adminPromptRefreshAt;
+      void this.refreshAdminPromptTasks({
+        force: !hasFreshTasks,
+        showLoading: !hasFreshTasks
+      });
+      if (this.adminPromptSelectedTaskId) {
+        void this.loadAdminPromptThread(this.adminPromptSelectedTaskId, { force: !hasFreshTasks });
+      }
     }
   }
 
@@ -2930,6 +3048,7 @@ export class Game {
     this.adminPromptSelectedTaskId = id;
     this.adminPromptActiveTab = 'threads';
     this.refreshAdminPromptHud();
+    void this.loadAdminPromptThread(id, { force: true });
   }
 
   async submitAdminPromptTask({ prompt = '', mode = 'preview' } = {}) {

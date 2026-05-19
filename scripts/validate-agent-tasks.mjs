@@ -10,6 +10,8 @@ import {
   claimNextAgentTask,
   createAgentTask,
   getAgentTask,
+  getAgentTaskThread,
+  listAgentTaskThreads,
   listAgentTasks,
   updateAgentTask
 } from '../server/src/agentTasks.js';
@@ -137,6 +139,26 @@ try {
     cancelledBy: 'validator',
     filePath
   });
+  const compactThreadSummaries = await listAgentTaskThreads({
+    scope: 'game',
+    limit: 5,
+    compact: true,
+    filePath
+  });
+  const compactPromptThread = compactThreadSummaries.find((task) => task.threadId === readyWithoutDeployApproval.threadId);
+  assert.ok(compactPromptThread, 'Prompt thread summaries should include latest tasks per thread.');
+  assert.equal(compactPromptThread.logs, undefined);
+  assert.equal(compactPromptThread.snapshot, undefined);
+  assert.equal(compactPromptThread.threadHistory, undefined);
+  assert.equal(compactPromptThread.agentMessage, undefined);
+  const compactPromptThreadTasks = await getAgentTaskThread(readyWithoutDeployApproval.id, {
+    compact: true,
+    filePath
+  });
+  assert.equal(compactPromptThreadTasks.length, 2);
+  assert.equal(compactPromptThreadTasks[0].agentMessage, 'Thread row polish is ready for review.');
+  assert.equal(compactPromptThreadTasks[0].logs, undefined);
+  assert.equal(compactPromptThreadTasks[0].snapshot, undefined);
 
   const deployedThreadUpdate = await createAgentTask({
     parentTaskId: readyWithoutDeployApproval.id,

@@ -13,6 +13,8 @@ import {
   claimNextAgentTask,
   createAgentTask,
   getAgentTask,
+  getAgentTaskThread,
+  listAgentTaskThreads,
   listAgentTasks,
   updateAgentTask
 } from './src/agentTasks.js';
@@ -582,6 +584,7 @@ const server = defineServer({
       '/admin/agent-tasks',
       '/admin/agent-tasks/next',
       '/admin/agent-tasks/:id',
+      '/admin/agent-tasks/:id/thread',
       '/admin/agent-tasks/:id/followups',
       '/admin/agent-tasks/:id/logs',
       '/admin/agent-tasks/:id/cancel',
@@ -631,13 +634,24 @@ const server = defineServer({
           return;
         }
 
-        const tasks = await listAgentTasks({
+        const listThreads = String(req.query?.view ?? '').trim().toLowerCase() === 'threads'
+          || isTruthyRequestValue(req.query?.threads);
+        const compact = isTruthyRequestValue(req.query?.compact);
+        const readOnly = isTruthyRequestValue(req.query?.readOnly) || compact || listThreads;
+        const taskListOptions = {
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
           gameId: typeof req.query?.gameId === 'string' ? req.query.gameId : '',
           limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25,
-          staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
-        });
-        sendJson(res, 200, { ok: true, tasks });
+          staleActiveAfterMs: readOnly ? 0 : AGENT_ACTIVE_TASK_STALE_AFTER_MS
+        };
+        const tasks = listThreads
+          ? await listAgentTaskThreads({
+            ...taskListOptions,
+            limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 10,
+            compact
+          })
+          : await listAgentTasks(taskListOptions);
+        sendJson(res, 200, { ok: true, tasks, view: listThreads ? 'threads' : 'tasks' });
       } catch (error) {
         await recordAdminAgentRouteFailure(req, 'List agent tasks', error);
         sendJson(res, 500, {
@@ -713,6 +727,40 @@ const server = defineServer({
         sendJson(res, 500, {
           ok: false,
           error: error?.message || 'Could not claim agent task.'
+        });
+      }
+    });
+
+    app.get('/admin/agent-tasks/:id/thread', async (req, res) => {
+      setAdminAgentTaskCorsHeaders(req, res);
+
+      try {
+        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
+          || isValidAgentWorkerToken(getBearerToken(req));
+        if (!isAuthorized) {
+          sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
+          return;
+        }
+
+        const compact = isTruthyRequestValue(req.query?.compact);
+        const readOnly = isTruthyRequestValue(req.query?.readOnly) || compact;
+        const tasks = await getAgentTaskThread(req.params.id, {
+          compact,
+          staleActiveAfterMs: readOnly ? 0 : AGENT_ACTIVE_TASK_STALE_AFTER_MS
+        });
+        if (!tasks.length) {
+          sendJson(res, 404, { ok: false, error: 'Task thread not found.' });
+          return;
+        }
+
+        sendJson(res, 200, { ok: true, tasks, threadTasks: tasks });
+      } catch (error) {
+        await recordAdminAgentRouteFailure(req, 'Read agent task thread', error, {
+          taskId: req.params.id
+        });
+        sendJson(res, 500, {
+          ok: false,
+          error: error?.message || 'Could not read agent task thread.'
         });
       }
     });

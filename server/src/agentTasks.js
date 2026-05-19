@@ -262,6 +262,100 @@ function normalizeTask(raw = {}) {
   };
 }
 
+function getTaskActivityTimestamp(task = {}) {
+  return Math.max(
+    normalizeTimestamp(task.updatedAt, 0),
+    normalizeTimestamp(task.workCompletedAt, 0),
+    normalizeTimestamp(task.workStartedAt, 0),
+    normalizeTimestamp(task.deployStartedAt, 0),
+    normalizeTimestamp(task.deployedAt, 0),
+    normalizeTimestamp(task.rollbackStartedAt, 0),
+    normalizeTimestamp(task.rolledBackAt, 0),
+    normalizeTimestamp(task.deployApprovedAt, 0),
+    normalizeTimestamp(task.rollbackApprovedAt, 0),
+    normalizeTimestamp(task.claimedAt, 0),
+    normalizeTimestamp(task.createdAt, 0)
+  );
+}
+
+function projectAgentTaskForPrompt(task = {}, {
+  includeMessages = false
+} = {}) {
+  const projected = {
+    id: task.id,
+    type: task.type,
+    threadId: task.threadId,
+    parentTaskId: task.parentTaskId,
+    threadTitle: task.threadTitle,
+    scope: task.scope,
+    gameId: task.gameId,
+    contextType: task.contextType,
+    contextLabel: task.contextLabel,
+    prompt: includeMessages ? task.prompt : truncateText(task.prompt, 1200),
+    mode: task.mode,
+    status: task.status,
+    createdBy: task.createdBy,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    claimedBy: task.claimedBy,
+    claimedAt: task.claimedAt,
+    workerHeartbeatAt: task.workerHeartbeatAt,
+    workerHeartbeatStatus: task.workerHeartbeatStatus,
+    workStartedAt: task.workStartedAt,
+    workCompletedAt: task.workCompletedAt,
+    branch: task.branch,
+    commitSha: task.commitSha,
+    previewUrl: task.previewUrl,
+    deployUrl: task.deployUrl,
+    changedFiles: task.changedFiles,
+    deployTargets: task.deployTargets,
+    deployApprovedAt: task.deployApprovedAt,
+    deployApprovedBy: task.deployApprovedBy,
+    deployStartedAt: task.deployStartedAt,
+    deployedAt: task.deployedAt,
+    previousDeployCommitSha: task.previousDeployCommitSha,
+    newDeployCommitSha: task.newDeployCommitSha,
+    rollbackApprovedAt: task.rollbackApprovedAt,
+    rollbackApprovedBy: task.rollbackApprovedBy,
+    rollbackStartedAt: task.rollbackStartedAt,
+    rolledBackAt: task.rolledBackAt,
+    rollbackCommitSha: task.rollbackCommitSha
+  };
+
+  if (includeMessages) {
+    projected.error = task.error;
+    projected.summary = task.summary;
+    projected.agentMessage = task.agentMessage;
+  } else if (task.error) {
+    projected.error = truncateText(task.error, 1200);
+  }
+
+  return projected;
+}
+
+function getLatestTaskByThread(tasks = []) {
+  const groups = new Map();
+  for (const task of tasks) {
+    const threadId = getTaskThreadId(task);
+    if (!threadId) {
+      continue;
+    }
+    if (!groups.has(threadId)) {
+      groups.set(threadId, []);
+    }
+    groups.get(threadId).push(task);
+  }
+
+  return [...groups.values()]
+    .map((threadTasks) => ({
+      latestTask: sortTasks(threadTasks)[0] ?? null,
+      activityAt: threadTasks.reduce((latest, task) => Math.max(latest, getTaskActivityTimestamp(task)), 0)
+    }))
+    .filter((thread) => thread.latestTask)
+    .sort((a, b) => b.activityAt - a.activityAt)
+    .map((thread) => thread.latestTask);
+}
+
 function sortTasks(tasks = []) {
   return [...tasks].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
 }
@@ -534,6 +628,36 @@ export async function listAgentTasks({
   }, { filePath, write: staleActiveMs > 0 });
 }
 
+export async function listAgentTaskThreads({
+  scope = '',
+  gameId = '',
+  limit = 10,
+  compact = false,
+  staleActiveAfterMs = 0,
+  filePath = AGENT_TASKS_FILE_PATH
+} = {}) {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  return withTaskStore((state) => {
+    const normalizedScope = normalizeScope(scope);
+    const shouldFilterScope = String(scope ?? '').trim() !== '';
+    failStaleActiveTasks(state, {
+      now: Date.now(),
+      staleActiveAfterMs: staleActiveMs,
+      scope: normalizedScope,
+      shouldFilterScope
+    });
+    const normalizedGameId = String(gameId ?? '').trim();
+    const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 10)));
+    const filteredTasks = state.tasks
+      .filter((task) => !shouldFilterScope || task.scope === normalizedScope)
+      .filter((task) => !normalizedGameId || task.gameId === normalizedGameId);
+    const latestTasks = getLatestTaskByThread(filteredTasks).slice(0, safeLimit);
+    return compact
+      ? latestTasks.map((task) => projectAgentTaskForPrompt(task))
+      : latestTasks;
+  }, { filePath, write: staleActiveMs > 0 });
+}
+
 export async function getAgentTask(taskId, {
   staleActiveAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
@@ -550,6 +674,39 @@ export async function getAgentTask(taskId, {
       staleActiveAfterMs: staleActiveMs
     });
     return state.tasks.find((task) => task.id === id) ?? null;
+  }, {
+    filePath,
+    write: staleActiveMs > 0
+  });
+}
+
+export async function getAgentTaskThread(taskId, {
+  compact = false,
+  staleActiveAfterMs = 0,
+  filePath = AGENT_TASKS_FILE_PATH
+} = {}) {
+  const id = normalizeTaskId(taskId);
+  if (!id) {
+    return [];
+  }
+
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  return withTaskStore((state) => {
+    failStaleActiveTasks(state, {
+      now: Date.now(),
+      staleActiveAfterMs: staleActiveMs
+    });
+    const selectedTask = state.tasks.find((task) => task.id === id);
+    if (!selectedTask) {
+      return [];
+    }
+    const threadId = getTaskThreadId(selectedTask);
+    const threadTasks = sortTasksAscending(
+      state.tasks.filter((task) => getTaskThreadId(task) === threadId)
+    );
+    return compact
+      ? threadTasks.map((task) => projectAgentTaskForPrompt(task, { includeMessages: true }))
+      : threadTasks;
   }, {
     filePath,
     write: staleActiveMs > 0
