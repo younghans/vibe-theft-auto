@@ -6,6 +6,9 @@ import {
 
 export const OFFICE_JOB_TERMINAL_ITEM_ID = 'standing_desk_computer';
 export const OFFICE_CEO_MEETING_TABLE_ITEM_ID = 'office_ceo_meeting_table';
+export const OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID = 'office_janitor_shift_closet';
+export const OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID = 'office_manager_shift_coffee_station';
+export const OFFICE_CEO_SHIFT_TABLE_ITEM_ID = 'office_ceo_shift_table';
 export const OFFICE_JOB_TERMINAL_RADIUS = 5.25;
 
 export const OFFICE_JOB_IDS = Object.freeze({

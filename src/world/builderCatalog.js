@@ -1,8 +1,11 @@
 import { assetUrl, cityAsset } from './assetManifest.js';
 import { NPC_MODEL_CATALOG } from '../npc/npcCatalog.js';
 import {
+  OFFICE_CEO_SHIFT_TABLE_ITEM_ID,
   OFFICE_CEO_MEETING_TABLE_ITEM_ID,
-  OFFICE_JOB_IDS
+  OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID,
+  OFFICE_JOB_IDS,
+  OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID
 } from '../shared/officeJobs.js';
 import { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 import { VIBE_HERO_GAME_ID } from '../shared/vibeHero.js';
@@ -33,9 +36,11 @@ import {
   createOlympicBarbellVisual,
   createOfficeCeoMeetingTableVisual,
   createOfficeCubicleWorkstationVisual,
+  createOfficeJanitorShiftClosetVisual,
   createOfficeLobbyChairVisual,
   createOfficeLobbySideTableVisual,
   createOfficeLobbyTableVisual,
+  createOfficeManagerShiftCoffeeStationVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
   createRealEstateOfficeBuildingVisual,
@@ -49,9 +54,11 @@ import {
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
   OFFICE_CEO_MEETING_TABLE_FOOTPRINT,
   OFFICE_CUBICLE_WORKSTATION_FOOTPRINT,
+  OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT,
   OFFICE_LOBBY_CHAIR_FOOTPRINT,
   OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT,
   OFFICE_LOBBY_TABLE_FOOTPRINT,
+  OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
   PISTOL_PICKUP_SPAWN_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
@@ -756,6 +763,50 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     }
   },
   {
+    id: OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID,
+    assetName: OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID,
+    aliases: ['janitor closet', 'janitor shift closet', 'start janitor shift', 'office janitor closet', 'Janitor Shift Closet'],
+    label: 'Janitor Shift Closet',
+    asset: null,
+    group: 'office',
+    size: OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT,
+    collision: true,
+    padding: 0.16,
+    createVisual: createOfficeJanitorShiftClosetVisual,
+    interactable: {
+      label: 'Janitor Closet',
+      prompt: 'Start janitor shift',
+      actionText: 'Started janitor work from the closet prop.',
+      radius: 4.0,
+      localOffset: [0, 2.05],
+      approachLocalOffset: [0, 3.1],
+      approachRotationY: Math.PI,
+      officeJobId: OFFICE_JOB_IDS.janitor
+    }
+  },
+  {
+    id: OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID,
+    assetName: OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID,
+    aliases: ['manager shift', 'office manager shift', 'start manager shift', 'break room coffee', 'coffee station', 'Office Manager Coffee Station'],
+    label: 'Office Manager Coffee Station',
+    asset: null,
+    group: 'office',
+    size: OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT,
+    collision: true,
+    padding: 0.14,
+    createVisual: createOfficeManagerShiftCoffeeStationVisual,
+    interactable: {
+      label: 'Break Room Coffee',
+      prompt: 'Start manager shift',
+      actionText: 'Brew coffee from the second-floor break room.',
+      radius: 4.1,
+      localOffset: [0.25, 1.45],
+      approachLocalOffset: [0.25, 2.35],
+      approachRotationY: Math.PI,
+      officeJobId: OFFICE_JOB_IDS.officeManager
+    }
+  },
+  {
     id: 'office_lobby_chair',
     assetName: 'office_lobby_chair',
     aliases: ['office chair', 'lobby chair', 'Office Lobby Chair'],
@@ -807,6 +858,26 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     assetName: OFFICE_CEO_MEETING_TABLE_ITEM_ID,
     aliases: ['ceo table', 'ceo meeting table', 'meeting table', 'ceo game', 'CEO Meeting Table'],
     label: 'CEO Meeting Table',
+    asset: null,
+    group: 'office',
+    size: OFFICE_CEO_MEETING_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.18,
+    createVisual: createOfficeCeoMeetingTableVisual,
+    interactable: {
+      label: 'CEO Meeting Table',
+      prompt: 'Start CEO shift',
+      actionText: 'Stamp memos from the executive meeting table.',
+      radius: 4.1,
+      localOffset: [0, 0],
+      officeJobId: OFFICE_JOB_IDS.ceo
+    }
+  },
+  {
+    id: OFFICE_CEO_SHIFT_TABLE_ITEM_ID,
+    assetName: OFFICE_CEO_MEETING_TABLE_ITEM_ID,
+    aliases: ['ceo shift table', 'start ceo shift table', 'executive shift table', 'CEO Shift Table'],
+    label: 'CEO Shift Table',
     asset: null,
     group: 'office',
     size: OFFICE_CEO_MEETING_TABLE_FOOTPRINT,

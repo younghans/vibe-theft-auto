@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { OFFICE_INTERIOR_CEO_MEETING_TABLE } from '../shared/officeInteriorLayout.js';
+import {
+  OFFICE_INTERIOR_CEO_MEETING_TABLE,
+  OFFICE_INTERIOR_JANITOR_CLOSET_SIZE
+} from '../shared/officeInteriorLayout.js';
 import { MARTHA_ITEM_IDS, getMarthaMenuItem } from '../shared/martha.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
@@ -15,6 +18,11 @@ export const OFFICE_LOBBY_CHAIR_FOOTPRINT = Object.freeze([1.05, 1.05]);
 export const OFFICE_LOBBY_TABLE_FOOTPRINT = Object.freeze([3.15, 1.35]);
 export const OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT = Object.freeze([1.35, 1.15]);
 export const OFFICE_CUBICLE_WORKSTATION_FOOTPRINT = Object.freeze([3.15, 2.35]);
+export const OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT = Object.freeze([
+  OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.width + 1.2,
+  OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.depth + 0.5
+]);
+export const OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT = Object.freeze([4.9, 2.15]);
 export const OFFICE_CEO_MEETING_TABLE_FOOTPRINT = Object.freeze([
   OFFICE_INTERIOR_CEO_MEETING_TABLE.rugWidth,
   OFFICE_INTERIOR_CEO_MEETING_TABLE.rugDepth
@@ -2553,6 +2561,9 @@ function createOfficeFurnitureMaterials() {
     screen: createMaterial(0x253542, 0.42, 0.1),
     green: createMaterial(0x5e8d58, 0.62, 0.02),
     accentDark: createMaterial(0x355a78, 0.66, 0.05),
+    closet: createMaterial(0x7f8a8f, 0.7, 0.04),
+    door: createMaterial(0x27313a, 0.76, 0.08),
+    floorPad: createMaterial(0x2b3035, 0.9, 0.02),
     gold: createMaterial(0xd2aa44, 0.44, 0.18)
   };
 }
@@ -2627,6 +2638,104 @@ export function createOfficeLobbySideTableVisual() {
     width: 1.15,
     depth: 0.95
   });
+}
+
+export function createOfficeJanitorShiftClosetVisual() {
+  const root = new THREE.Group();
+  root.name = 'OfficeJanitorShiftCloset';
+  root.userData.footprint = [...OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT];
+  root.userData.officeJanitorClosetProp = true;
+  root.userData.officeJanitorClosetSize = { ...OFFICE_INTERIOR_JANITOR_CLOSET_SIZE };
+
+  const materials = createOfficeFurnitureMaterials();
+  const { width, depth, height } = OFFICE_INTERIOR_JANITOR_CLOSET_SIZE;
+  const frontZ = depth * 0.5;
+  const sideX = (width * 0.5) + 0.24;
+
+  root.add(createBox('officeJanitorShiftClosetBody', [width, height, depth], [0, height * 0.5, 0], materials.closet));
+  root.add(createBox('officeJanitorShiftClosetTopTrim', [width + 0.1, 0.16, depth + 0.1], [0, height + 0.08, 0], materials.trimDark));
+  root.add(createBox('officeJanitorShiftClosetKickPlate', [width + 0.1, 0.12, depth + 0.1], [0, 0.06, 0], materials.metalDark));
+
+  const door = createBox('officeJanitorShiftClosetDoor', [1.34, 2.22, 0.12], [0, 1.2, frontZ + 0.07], materials.door);
+  door.userData.officeJanitorClosetDoor = true;
+  root.add(door);
+  root.add(createBox('officeJanitorShiftClosetDoorHeader', [1.52, 0.12, 0.16], [0, 2.36, frontZ + 0.08], materials.metalDark));
+  root.add(createBox('officeJanitorShiftClosetDoorLeftJamb', [0.12, 2.28, 0.16], [-0.75, 1.23, frontZ + 0.08], materials.metalDark));
+  root.add(createBox('officeJanitorShiftClosetDoorRightJamb', [0.12, 2.28, 0.16], [0.75, 1.23, frontZ + 0.08], materials.metalDark));
+  root.add(createBox('officeJanitorShiftClosetDoorKnob', [0.13, 0.13, 0.08], [0.47, 1.34, frontZ + 0.15], materials.gold));
+
+  const mop = createCylinder(0.045, 0.045, 2.35, 8, materials.wood);
+  mop.name = 'officeJanitorShiftClosetSideMop';
+  mop.userData.officeJanitorClosetMop = true;
+  mop.position.set(sideX, 1.34, -0.32);
+  mop.rotation.z = -0.18;
+  mop.castShadow = true;
+  mop.receiveShadow = true;
+  root.add(mop);
+  root.add(createBox('officeJanitorShiftClosetMopHead', [0.58, 0.18, 0.18], [sideX + 0.18, 0.24, -0.08], materials.trimDark, {
+    rotation: [0, 0, -0.18]
+  }));
+
+  const bucket = createCylinder(0.34, 0.42, 0.5, 14, materials.green);
+  bucket.name = 'officeJanitorShiftClosetSideBucket';
+  bucket.userData.officeJanitorClosetBucket = true;
+  bucket.position.set(sideX + 0.22, 0.34, 0.68);
+  bucket.castShadow = true;
+  bucket.receiveShadow = true;
+  root.add(bucket);
+  root.add(createBox('officeJanitorShiftClosetBucketHandle', [0.72, 0.06, 0.08], [sideX + 0.22, 0.68, 0.68], materials.metal));
+
+  return root;
+}
+
+export function createOfficeManagerShiftCoffeeStationVisual() {
+  const root = new THREE.Group();
+  root.name = 'OfficeManagerShiftCoffeeStation';
+  root.userData.footprint = [...OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT];
+  root.userData.officeManagerCoffeeStationProp = true;
+
+  const materials = createOfficeFurnitureMaterials();
+  root.add(createBox('officeManagerCoffeeStationFloorPad', [4.7, 0.05, 1.95], [0.05, 0.025, 0.08], materials.floorPad, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+  root.add(createBox('officeManagerCoffeeStationCounterBase', [3.15, 0.86, 0.74], [0, 0.43, 0], materials.woodDark));
+  root.add(createBox('officeManagerCoffeeStationCounterTop', [3.4, 0.22, 0.92], [0, 0.96, 0], materials.wood));
+  root.add(createBox('officeManagerCoffeeStationFridge', [1.1, 2.45, 0.88], [-1.55, 1.225, 0.04], materials.metal));
+  root.add(createBox('officeManagerCoffeeStationFridgeHandle', [0.1, 1.2, 0.08], [-1.16, 1.42, 0.52], materials.trimDark));
+  root.add(createBox('officeManagerCoffeeStationMachineBody', [0.82, 1.1, 0.64], [0.99, 1.42, 0.24], materials.screen));
+  root.add(createBox('officeManagerCoffeeStationMachineBase', [0.56, 0.42, 0.5], [0.99, 1.03, 0.48], materials.metalDark));
+  root.add(createBox('officeManagerCoffeeStationBrewPanel', [0.52, 0.38, 0.05], [0.99, 1.58, 0.58], materials.gold, {
+    castShadow: false,
+    receiveShadow: false
+  }));
+
+  const mug = createCylinder(0.24, 0.28, 0.46, 14, materials.gold);
+  mug.name = 'officeManagerCoffeeStationMug';
+  mug.position.set(1.65, 1.325, 0.4);
+  mug.castShadow = true;
+  mug.receiveShadow = true;
+  root.add(mug);
+
+  const mugHandle = new THREE.Mesh(
+    new THREE.TorusGeometry(0.16, 0.025, 8, 14, Math.PI * 1.35),
+    materials.gold
+  );
+  mugHandle.name = 'officeManagerCoffeeStationMugHandle';
+  mugHandle.position.set(1.88, 1.36, 0.4);
+  mugHandle.rotation.y = Math.PI * 0.5;
+  mugHandle.castShadow = true;
+  mugHandle.receiveShadow = true;
+  root.add(mugHandle);
+
+  const coffeeStream = createCylinder(0.025, 0.018, 0.42, 8, materials.woodDark);
+  coffeeStream.name = 'officeManagerCoffeeStationCoffeeStream';
+  coffeeStream.position.set(1.48, 1.63, 0.4);
+  coffeeStream.castShadow = true;
+  coffeeStream.receiveShadow = false;
+  root.add(coffeeStream);
+
+  return root;
 }
 
 export function createOfficeCubicleWorkstationVisual() {

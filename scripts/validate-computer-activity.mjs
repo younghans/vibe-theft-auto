@@ -18,10 +18,13 @@ import {
   getWorkoutActivityConfig
 } from '../src/game/workoutActivities.js';
 import {
+  OFFICE_CEO_SHIFT_TABLE_ITEM_ID,
   OFFICE_CEO_MEETING_TABLE_ITEM_ID,
+  OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID,
   OFFICE_JOB_GAME_IDS,
   OFFICE_JOB_IDS,
   OFFICE_JOB_TERMINAL_ITEM_ID,
+  OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID,
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
   getOfficeJobDefinitionByGameId,
@@ -87,7 +90,10 @@ function validateOfficeFurniturePropList() {
     ['office_lobby_table', 'Office Lobby Table'],
     ['office_lobby_side_table', 'Office Lobby Side Table'],
     ['office_cubicle_workstation', 'Office Cubicle Workstation'],
-    [OFFICE_CEO_MEETING_TABLE_ITEM_ID, 'CEO Meeting Table']
+    [OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID, 'Janitor Shift Closet'],
+    [OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID, 'Office Manager Coffee Station'],
+    [OFFICE_CEO_MEETING_TABLE_ITEM_ID, 'CEO Meeting Table'],
+    [OFFICE_CEO_SHIFT_TABLE_ITEM_ID, 'CEO Shift Table']
   ];
 
   for (const [itemId, label] of expectedProps) {
@@ -110,6 +116,23 @@ function validateOfficeFurniturePropList() {
   const ceoTable = getBuilderItemById(OFFICE_CEO_MEETING_TABLE_ITEM_ID);
   assert(ceoTable.interactable?.officeJobId === OFFICE_JOB_IDS.ceo, 'CEO meeting table prop should start the CEO job.');
   assert(ceoTable.interactable?.prompt === 'Start CEO shift', 'CEO meeting table prop should expose the CEO game prompt.');
+
+  const jobPropSpecs = [
+    [OFFICE_JANITOR_SHIFT_CLOSET_ITEM_ID, OFFICE_JOB_IDS.janitor, 'Start janitor shift', 'officeJanitorClosetProp'],
+    [OFFICE_MANAGER_SHIFT_COFFEE_STATION_ITEM_ID, OFFICE_JOB_IDS.officeManager, 'Start manager shift', 'officeManagerCoffeeStationProp'],
+    [OFFICE_CEO_SHIFT_TABLE_ITEM_ID, OFFICE_JOB_IDS.ceo, 'Start CEO shift', 'officeCeoMeetingTableProp']
+  ];
+  for (const [itemId, jobId, prompt, visualUserDataKey] of jobPropSpecs) {
+    const item = getBuilderItemById(itemId);
+    assert(item?.layer === 'prop', `${itemId} should be a placeable prop.`);
+    assert(item?.groupId === 'office', `${itemId} should be in the office prop group.`);
+    assert(item?.interactable?.officeJobId === jobId, `${itemId} should start the ${jobId} office job.`);
+    assert(item?.interactable?.prompt === prompt, `${itemId} should expose the expected prompt.`);
+    assert(Array.isArray(item?.interactable?.localOffset), `${itemId} needs an interaction offset from the prop origin.`);
+    assert(Array.isArray(item?.interactable?.approachLocalOffset) || itemId === OFFICE_CEO_SHIFT_TABLE_ITEM_ID, `${itemId} needs an approach offset when it has a front side.`);
+    const visual = item.createVisual();
+    assert(visual?.userData?.[visualUserDataKey], `${itemId} should render the requested office shift model.`);
+  }
 }
 
 async function validateOfficeJobTerminalFlow() {
