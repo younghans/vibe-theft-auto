@@ -47,13 +47,12 @@ import {
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
+  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../src/shared/pawnShop.js';
 import {
   CAR_DEALER_ITEM_IDS,
-  PLAYER_VEHICLE_SCALE,
-  PLAYER_VEHICLE_SPEED_MULTIPLIER,
   getCarDealerMenuItem,
   getPlayerOwnedVehicleItemIds,
   getPlayerOwnedVehicleMenuItems,
@@ -74,7 +73,7 @@ import {
   isMarthaNpc,
   listMarthaMenuItems
 } from '../src/shared/martha.js';
-import { SKATEBOARD_SPEED_MULTIPLIER } from '../src/shared/skateboard.js';
+import { SKATEBOARD_SPEED_MULTIPLIER, isPlayerSkateboardOwner } from '../src/shared/skateboard.js';
 import {
   createHotbarSlots,
   getHotbarConsumableItemId,
@@ -110,7 +109,8 @@ import {
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   SIDEWALK_PROP_FOOTPRINT,
-  STONE_PATH_PROP_FOOTPRINT
+  STONE_PATH_PROP_FOOTPRINT,
+  VIBE_JAM_PORTAL_INTERACTABLE
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
@@ -405,6 +405,16 @@ function validateCustomPropCatalogItems() {
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const worldBuilderSource = readFileSync(new URL('../src/world/WorldBuilder.js', import.meta.url), 'utf8');
   const worldStateSource = readFileSync(new URL('../src/world/WorldState.js', import.meta.url), 'utf8');
+
+  const portal = VIBE_JAM_PORTAL_INTERACTABLE.portal;
+  const portalSpawnOffset = portal.spawnLocalOffset ?? [0, 0];
+  const portalSpawnDistance = Math.hypot(portalSpawnOffset[0] ?? 0, portalSpawnOffset[1] ?? 0);
+  const portalSafeRearmDistance = (portal.triggerRadius ?? 0) + PLAYER_RADIUS + 0.75;
+  assert(
+    portalSpawnDistance > portalSafeRearmDistance,
+    'Vibe Jam portal spawn point should be outside the trigger re-arm radius to prevent return loops'
+  );
+
   const pistolPickup = getBuilderItemById(COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
   assert(pistolPickup, 'Pistol pickup prop should exist');
   assert(pistolPickup.layer === 'prop', 'Pistol pickup should be a prop catalog item');
@@ -1619,7 +1629,7 @@ function validateTaskSequence() {
         blackjackHandPlayedAt: 3000
       }
     }).id === TASK_IDS.transportationUpgrade,
-    'Task sequence should route to buying a car after blackjack.'
+    'Task sequence should route to buying a skateboard after blackjack.'
   );
   assert(
     resolvePlayerTask({
@@ -1631,7 +1641,7 @@ function validateTaskSequence() {
         skateboardOwned: true
       }
     }).id === TASK_IDS.officeManagerPromotion,
-    'Task sequence should route to office manager after buying a car.'
+    'Task sequence should route to office manager after buying a skateboard.'
   );
   const officeManagerCompletePlayer = {
     ...janitorCompletePlayer,
@@ -1730,8 +1740,8 @@ function validateTaskSequence() {
     'Task tracker should complete the blackjack task when a hand is played.'
   );
 
-  const carTracker = new TaskTracker();
-  carTracker.update({
+  const skateboardTracker = new TaskTracker();
+  skateboardTracker.update({
     localPlayerState: {
       ...janitorCompletePlayer,
       gymPumpCompletedAt: 1000,
@@ -1740,7 +1750,7 @@ function validateTaskSequence() {
     }
   });
   assert(
-    carTracker.update({
+    skateboardTracker.update({
       localPlayerState: {
         ...janitorCompletePlayer,
         gymPumpCompletedAt: 1000,
@@ -1749,7 +1759,7 @@ function validateTaskSequence() {
         skateboardOwned: true
       }
     }).completedTask,
-    'Task tracker should complete the transportation mission when a car is bought.'
+    'Task tracker should complete the transportation mission when a skateboard is bought.'
   );
 
   const managerTracker = new TaskTracker();
@@ -1990,9 +2000,9 @@ function validateMissionSequencer() {
     janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
   }, '', sequence);
   const gymSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
-  const carSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
+  const transportationSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
   assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after janitor work');
-  assert(carSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the car mission after janitor work');
+  assert(transportationSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the skateboard mission after janitor work');
 
   const postOfficeSnapshots = getMissionSnapshots({
     ...noProgressPlayer,
@@ -2220,13 +2230,19 @@ function validateBartenderFunction() {
   assert(cigarettes?.kind === 'consumable', 'Pawn shop cigarettes should be a consumable item');
   assert(pawnPistol?.price === 50, 'Pawn shop pistol should cost $50');
   assert(pawnPistol?.weaponId === WEAPON_IDS.pistol, 'Pawn shop pistol should sell the standard pistol');
-  assert(listPawnShopMenuItems().length === 2, 'Pawn shop menu should include cigarettes and pistol only');
+  const pawnSkateboard = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.skateboard);
+  assert(pawnSkateboard?.price === 200, 'Pawn shop skateboard should cost $200');
+  assert(pawnSkateboard?.kind === 'permanent', 'Pawn shop skateboard should be a permanent item');
+  assert(listPawnShopMenuItems().length === 3, 'Pawn shop menu should include cigarettes, pistol, and skateboard');
 
-  const cigarettePlayer = { cigaretteCount: 0 };
+  const cigarettePlayer = { cigaretteCount: 0, skateboardOwned: false };
   addPlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes, 2);
   assert(cigarettePlayer.cigaretteCount === 2, 'Pawn shop cigarettes should add to player inventory');
   const smokeResult = consumePlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes);
   assert(smokeResult.ok && cigarettePlayer.cigaretteCount === 1, 'Smoking should consume one cigarette');
+  addPlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.skateboard, 1);
+  assert(isPlayerSkateboardOwner(cigarettePlayer), 'Pawn shop skateboard purchase should set skateboard ownership');
+  assert(isPlayerPawnShopItemOwned(cigarettePlayer, PAWN_SHOP_ITEM_IDS.skateboard), 'Pawn shop ownership checks should recognize the skateboard');
   const cigaretteSlots = createHotbarSlots({ cigaretteCount: 3 });
   assert(
     getHotbarConsumableItemId(cigaretteSlots[3]) === PAWN_SHOP_ITEM_IDS.cigarettes,
@@ -2237,10 +2253,9 @@ function validateBartenderFunction() {
   assert(toyota?.price === 10000, 'Car dealer Toyota AE86 should cost $10000');
   assert(fiat?.price === 5000, 'Car dealer Fiat Duna should cost $5000');
   assert(listCarDealerMenuItems().length === 2, 'Car dealer menu should include Toyota AE86 and Fiat Duna');
-  assert(PLAYER_VEHICLE_SCALE === 0.75, 'Player-owned cars should render at 0.75x standard size');
   const vehiclePlayer = { skateboardOwned: false, vehicleItemId: '' };
   setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna);
-  assert(vehiclePlayer.skateboardOwned === true, 'Car purchase should set the permanent vehicle owned flag');
+  assert(vehiclePlayer.skateboardOwned === false, 'Car purchase should not overwrite skateboard ownership');
   assert(getPlayerVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.fiatDuna, 'Car ownership should preserve the purchased vehicle id');
   assert(playerOwnsVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna), 'Purchased cars should be tracked in the owned car list');
   setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.toyotaAe86);
@@ -2288,8 +2303,7 @@ function validateBartenderFunction() {
   assert(getHotbarConsumableItemId(marthaFoodSlots[5]) === MARTHA_ITEM_IDS.glizzy, 'Martha glizzies should appear as a hotbar consumable');
   assert(getHotbarConsumableItemId(marthaFoodSlots[6]) === MARTHA_ITEM_IDS.soda, 'Martha soda should appear as a hotbar consumable');
 
-  assert(PLAYER_VEHICLE_SPEED_MULTIPLIER === 2, 'Car driving speed multiplier should be 2x');
-  assert(SKATEBOARD_SPEED_MULTIPLIER === PLAYER_VEHICLE_SPEED_MULTIPLIER, 'Legacy skating transport should use the car driving speed multiplier');
+  assert(SKATEBOARD_SPEED_MULTIPLIER === 1.6, 'Skateboard transport should keep the original speed multiplier');
 
   const pawnOwner = normalizeNpcBehavior({
     modelId: 'maynard',
@@ -2373,7 +2387,7 @@ function validateBartenderFunction() {
   );
   assert(
     /setPlayerBoundItemsState/.test(hudSource) && /\.hud__bound-items/.test(styles),
-    'HUD should display permanent car ownership outside the hotbar'
+    'HUD should display permanent skateboard and car ownership outside the hotbar'
   );
   assert(
     /data-bound-item-vehicle[\s\S]*aria-haspopup="dialog"/.test(hudSource)
@@ -2387,10 +2401,11 @@ function validateBartenderFunction() {
     'Vibe Radio mini player should sit to the right of the permanent car badge'
   );
   assert(
-    /PlayerVehicleRoot/.test(playerSource)
-      && /PLAYER_VEHICLE_SCALE/.test(playerSource)
-      && /character\.visible\s*=\s*!active/.test(playerSource),
-    'Player avatar should render the owned car and hide the character while driving'
+    /PlayerSkateboard/.test(playerSource)
+      && /PlayerSkateboardDeck/.test(playerSource)
+      && /PlayerSkateboardWheel_/.test(playerSource)
+      && !/character\.visible\s*=\s*!active/.test(playerSource),
+    'Player avatar should render the legacy skateboard and keep the character visible while skating'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
@@ -2402,7 +2417,7 @@ function validateBartenderFunction() {
       && /\[MIXAMO_BONES\.spine\]:\s*Object\.freeze\(\[0,\s*-SKATEBOARD_LOWER_BODY_TURN_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigLeftFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigRightFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource),
-    'Vehicle driving should keep the legacy static body pose available for transport animation compatibility'
+    'Skateboarding should keep the legacy static body pose available for transport animation compatibility'
   );
   assert(
     /function applySkateboardStaticBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
@@ -2413,7 +2428,7 @@ function validateBartenderFunction() {
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
       && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
-    'Game client should use Shift vehicle input and the shared speed multiplier'
+    'Game client should use Shift skateboard input and the shared speed multiplier'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
@@ -2423,7 +2438,7 @@ function validateBartenderFunction() {
       && /carDealer:buyVehicle/.test(serverSource)
       && /vehicle:select/.test(serverSource)
       && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
-    'Server player state should persist vehicle ownership, selection, and authorize driving speed'
+    'Server player state should persist skateboard and car ownership while authorizing skateboard speed'
   );
 }
 

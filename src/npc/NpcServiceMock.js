@@ -66,6 +66,7 @@ import {
   refreshPlayerDrunkness
 } from '../shared/bartender.js';
 import {
+  PAWN_SHOP_ITEM_IDS,
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
@@ -79,11 +80,11 @@ import {
   getCarDealerPromptRadius,
   getPlayerVehicleInventorySnapshot,
   isCarDealerNpc,
-  isPlayerVehicleOwner,
   playerOwnsVehicleItem,
   selectPlayerVehicleItem,
   setPlayerVehicleItem
 } from '../shared/carDealer.js';
+import { isPlayerSkateboardOwner } from '../shared/skateboard.js';
 import {
   addPlayerMarthaItem,
   consumePlayerMarthaItem,
@@ -225,7 +226,7 @@ function buildMockNpcReply(definition = {}) {
   const name = String(definition.name ?? '').toLowerCase();
 
   if (definition.pawnShopOwnerEnabled) {
-    return 'Pistol $50, smokes $20. Cash first.';
+    return 'Pistol $50, smokes $20, board $200. Cash first.';
   }
   if (definition.carDealerEnabled) {
     return 'Toyota AE86 $10000, Fiat Duna $5000. Cash first.';
@@ -1074,7 +1075,7 @@ export class NpcServiceMock {
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
-    player.skating = Boolean(nextAnimation.skating && isPlayerVehicleOwner(player));
+    player.skating = Boolean(nextAnimation.skating && isPlayerSkateboardOwner(player));
     player.transformSeq = transformSeq;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
@@ -1821,6 +1822,9 @@ export class NpcServiceMock {
     }
 
     access.player.money = money - item.price;
+    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
+      this.normalizePlayerSelectedMission(access.player);
+    }
     this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
     this.emit();
     return {
@@ -1916,7 +1920,6 @@ export class NpcServiceMock {
 
     setPlayerVehicleItem(access.player, item.id);
     access.player.money = money - item.price;
-    this.normalizePlayerSelectedMission(access.player);
     this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
     this.emit();
     return {

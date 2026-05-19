@@ -12,8 +12,8 @@ const CAPABILITIES = Object.freeze([
 ]);
 
 const PROFILES = Object.freeze({
-  pawn: ['pawnShopOwnerEnabled', 'roth|pawn|cigarette|pistol', 'pawn shop prices', 'Cash first.'],
-  carDealer: ['carDealerEnabled', 'car dealer|dealership|toyota|ae86|fiat|duna|car', 'car prices', 'Pick your keys, then hold Shift.'],
+  pawn: ['pawnShopOwnerEnabled', 'roth|pawn|cigarette|pistol|skateboard|board', 'pawn shop prices', 'Cash first.'],
+  carDealer: ['carDealerEnabled', 'car dealer|dealership|toyota|ae86|fiat|duna|car', 'car prices', 'Pick your keys, then check the HUD.'],
   martha: ['marthaEnabled', 'martha|grille|burger|glizzy|soda', "Martha's Grille menu", 'Eat up, sugar.'],
   bartender: ['bartenderEnabled', 'bartender|bar|beer|shot|drink', 'bar orders', 'Sip slower than you talk.'],
   teacher: ['schoolMicrogameEnabled', 'professor|teacher|school|quiz', 'school challenge', 'Show your work.'],
@@ -79,10 +79,10 @@ function chooseFreshLine(lines, transcript = []) {
 
 function getServiceReply(profileKey, profile) {
   if (profileKey === 'pawn') {
-    return 'Cigarettes $20, pistol $50. Cash first.';
+    return 'Cigarettes $20, pistol $50, skateboard $200. Cash first.';
   }
   if (profileKey === 'carDealer') {
-    return 'Toyota AE86 $10000, Fiat Duna $5000. Hold Shift to drive.';
+    return 'Toyota AE86 $10000, Fiat Duna $5000. Keys go on your HUD.';
   }
   if (profileKey === 'martha') {
     return 'Burger $20, glizzy $10, soda $10. They patch you right up.';

@@ -3,10 +3,16 @@ import {
   WEAPON_IDS,
   WEAPON_RESERVE_CAP
 } from './combatConstants.js';
+import {
+  SKATEBOARD_ITEM_ID,
+  isPlayerSkateboardOwner,
+  normalizeSkateboardOwned
+} from './skateboard.js';
 
 export const PAWN_SHOP_ITEM_IDS = Object.freeze({
   cigarettes: 'cigarettes',
-  pistol: WEAPON_IDS.pistol
+  pistol: WEAPON_IDS.pistol,
+  skateboard: SKATEBOARD_ITEM_ID
 });
 
 export const PAWN_SHOP_MENU_ITEMS = Object.freeze([
@@ -28,6 +34,14 @@ export const PAWN_SHOP_MENU_ITEMS = Object.freeze([
     ammoInClip: WEAPON_CLIP_SIZE,
     reserveAmmo: WEAPON_RESERVE_CAP,
     kind: 'weapon'
+  }),
+  Object.freeze({
+    id: PAWN_SHOP_ITEM_IDS.skateboard,
+    label: 'Skateboard',
+    price: 200,
+    orderLine: 'Skateboard sold. Two hundred bucks.',
+    ownedField: 'skateboardOwned',
+    kind: 'permanent'
   })
 ]);
 
@@ -106,12 +120,17 @@ export function isPlayerPawnShopItemOwned(player = null, itemId = '') {
     return false;
   }
 
+  if (normalizedItemId === PAWN_SHOP_ITEM_IDS.skateboard) {
+    return isPlayerSkateboardOwner(player);
+  }
+
   return player?.[field] === true;
 }
 
 export function getPlayerPawnShopInventorySnapshot(player = null) {
   return {
-    cigaretteCount: getPlayerPawnShopItemCount(player, PAWN_SHOP_ITEM_IDS.cigarettes)
+    cigaretteCount: getPlayerPawnShopItemCount(player, PAWN_SHOP_ITEM_IDS.cigarettes),
+    skateboardOwned: isPlayerSkateboardOwner(player)
   };
 }
 
@@ -147,7 +166,7 @@ export function addPlayerPawnShopItem(player = null, itemId = '', quantity = 1) 
 
 export function normalizePawnShopPlayerBoundItems(player = null) {
   return {
-    skateboardOwned: player?.skateboardOwned === true
+    skateboardOwned: normalizeSkateboardOwned(player?.skateboardOwned)
   };
 }
 

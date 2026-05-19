@@ -102,6 +102,7 @@ import {
 } from '../../src/shared/martha.js';
 import {
   SKATEBOARD_SPEED_MULTIPLIER,
+  isPlayerSkateboardOwner,
   normalizeSkateboardOwned
 } from '../../src/shared/skateboard.js';
 import {
@@ -110,7 +111,6 @@ import {
   getPlayerVehicleInventorySnapshot,
   getPlayerVehicleItemId,
   isCarDealerNpc,
-  isPlayerVehicleOwner,
   normalizePlayerVehicleItemId,
   playerOwnsVehicleItem,
   selectPlayerVehicleItem,
@@ -894,16 +894,13 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.burgerCount = normalizeMarthaInventoryCount(saved.burgerCount);
   player.glizzyCount = normalizeMarthaInventoryCount(saved.glizzyCount);
   player.sodaCount = normalizeMarthaInventoryCount(saved.sodaCount);
+  player.skateboardOwned = normalizeSkateboardOwned(saved.skateboardOwned);
   player.ownedVehicleItemIds = serializePlayerOwnedVehicleItemIds(saved.ownedVehicleItemIds);
   player.vehicleItemId = normalizePlayerVehicleItemId(saved.vehicleItemId);
   if (player.vehicleItemId) {
     setPlayerVehicleItem(player, player.vehicleItemId);
   } else if (player.ownedVehicleItemIds) {
-    setPlayerVehicleItem(player, getPlayerVehicleItemId(player));
-  } else if (normalizeSkateboardOwned(saved.skateboardOwned)) {
-    setPlayerVehicleItem(player, getPlayerVehicleItemId({ skateboardOwned: true }));
-  } else {
-    player.skateboardOwned = isPlayerVehicleOwner(player);
+    player.vehicleItemId = getPlayerVehicleItemId(player);
   }
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
@@ -1695,7 +1692,7 @@ export class WorldRoom extends Room {
       return;
     }
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
-    const requestedSkating = isPlayerVehicleOwner(player) && message?.skating === true;
+    const requestedSkating = isPlayerSkateboardOwner(player) && message?.skating === true;
     const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? SKATEBOARD_SPEED_MULTIPLIER : 1);
     const maxDistance = PLAYER_POSITION_FORGIVENESS + (maxAcceptedSpeed * elapsedSeconds);
     let nextPosition = requestedPosition;
@@ -1749,7 +1746,7 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
-    player.skating = Boolean(animationState.skating && isPlayerVehicleOwner(player));
+    player.skating = Boolean(animationState.skating && isPlayerSkateboardOwner(player));
     this.queuePlayerSnapshotSave(client.sessionId);
   }
 
@@ -2248,6 +2245,9 @@ export class WorldRoom extends Room {
     }
 
     player.money = money - item.price;
+    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
+      this.normalizePlayerSelectedMission(player);
+    }
     this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
     this.queuePlayerSnapshotSave(client.sessionId);
     return {
@@ -2337,7 +2337,6 @@ export class WorldRoom extends Room {
 
     setPlayerVehicleItem(player, item.id);
     player.money = money - item.price;
-    this.normalizePlayerSelectedMission(player);
     this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
     this.queuePlayerSnapshotSave(client.sessionId);
     return {

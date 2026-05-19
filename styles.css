@@ -3706,6 +3706,74 @@ body.is-admin-prompt-resizing * {
   letter-spacing: 0;
 }
 
+.hud__bound-skateboard-icon {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 24px;
+  transform: rotate(-6deg);
+}
+
+.hud__bound-skateboard-deck,
+.hud__bound-skateboard-truck,
+.hud__bound-skateboard-wheel {
+  position: absolute;
+  pointer-events: none;
+}
+
+.hud__bound-skateboard-deck {
+  left: 2px;
+  right: 2px;
+  top: 7px;
+  height: 8px;
+  border: 1px solid rgba(255, 248, 218, 0.82);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.28), transparent 28%, rgba(0, 0, 0, 0.22) 76%),
+    linear-gradient(180deg, #74d6a5 0%, #2f8c75 100%);
+}
+
+.hud__bound-skateboard-truck {
+  top: 15px;
+  width: 10px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(210, 221, 228, 0.9);
+}
+
+.hud__bound-skateboard-truck--front {
+  left: 9px;
+}
+
+.hud__bound-skateboard-truck--back {
+  right: 9px;
+}
+
+.hud__bound-skateboard-wheel {
+  top: 17px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1c2228;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.hud__bound-skateboard-wheel--front-left {
+  left: 7px;
+}
+
+.hud__bound-skateboard-wheel--front-right {
+  left: 17px;
+}
+
+.hud__bound-skateboard-wheel--back-left {
+  right: 17px;
+}
+
+.hud__bound-skateboard-wheel--back-right {
+  right: 7px;
+}
+
 .hud__bound-vehicle-icon {
   position: relative;
   display: block;
@@ -3761,6 +3829,7 @@ body.is-admin-prompt-resizing * {
   right: 8px;
 }
 
+.hud__bound-item.is-active .hud__bound-skateboard-icon,
 .hud__bound-item.is-active .hud__bound-vehicle-icon {
   animation: hud-bound-vehicle-cruise 540ms ease-in-out infinite;
 }
@@ -17187,6 +17256,7 @@ canvas {
   .hud__drunkness-label,
   .hud__bound-items,
   .hud__bound-item,
+  .hud__bound-skateboard-icon,
   .hud__bound-vehicle-icon,
   .hud__hotbar,
   .hud__hotbar-slot,

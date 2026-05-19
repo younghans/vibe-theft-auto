@@ -3,24 +3,20 @@ export const CAR_DEALER_ITEM_IDS = Object.freeze({
   fiatDuna: 'car_fiat_duna'
 });
 
-export const DEFAULT_PLAYER_VEHICLE_ITEM_ID = CAR_DEALER_ITEM_IDS.fiatDuna;
-export const PLAYER_VEHICLE_SCALE = 0.75;
-export const PLAYER_VEHICLE_SPEED_MULTIPLIER = 2;
-
 export const CAR_DEALER_MENU_ITEMS = Object.freeze([
   Object.freeze({
     id: CAR_DEALER_ITEM_IDS.toyotaAe86,
     label: 'Toyota AE86',
     price: 10000,
     accent: '#f2cf75',
-    orderLine: 'Toyota AE86 keys are yours. Hold Shift to drive.'
+    orderLine: 'Toyota AE86 keys are yours. It is on your HUD.'
   }),
   Object.freeze({
     id: CAR_DEALER_ITEM_IDS.fiatDuna,
     label: 'Fiat Duna',
     price: 5000,
     accent: '#d85b4d',
-    orderLine: 'Fiat Duna keys are yours. Hold Shift to drive.'
+    orderLine: 'Fiat Duna keys are yours. It is on your HUD.'
   })
 ]);
 
@@ -95,7 +91,7 @@ export function getPlayerVehicleItemId(player = null) {
     return ownedItemId;
   }
 
-  return player?.skateboardOwned === true ? DEFAULT_PLAYER_VEHICLE_ITEM_ID : '';
+  return '';
 }
 
 export function getPlayerVehicleMenuItem(player = null) {
@@ -107,10 +103,6 @@ export function getPlayerOwnedVehicleItemIds(player = null) {
   const activeItemId = normalizePlayerVehicleItemId(player?.vehicleItemId);
   if (activeItemId) {
     ids.push(activeItemId);
-  }
-
-  if (ids.length === 0 && player?.skateboardOwned === true) {
-    ids.push(DEFAULT_PLAYER_VEHICLE_ITEM_ID);
   }
 
   return normalizePlayerOwnedVehicleItemIds(ids);
@@ -142,7 +134,6 @@ export function setPlayerVehicleItem(player = null, itemId = '') {
     ...getPlayerOwnedVehicleItemIds(player),
     normalizedItemId
   ]);
-  player.skateboardOwned = true;
   return normalizedItemId;
 }
 
@@ -154,7 +145,6 @@ export function selectPlayerVehicleItem(player = null, itemId = '') {
 
   player.vehicleItemId = normalizedItemId;
   player.ownedVehicleItemIds = serializePlayerOwnedVehicleItemIds(getPlayerOwnedVehicleItemIds(player));
-  player.skateboardOwned = true;
   return normalizedItemId;
 }
 
@@ -165,14 +155,13 @@ export function clearPlayerVehicleItem(player = null) {
 
   player.vehicleItemId = '';
   player.ownedVehicleItemIds = '';
-  player.skateboardOwned = false;
 }
 
 export function getPlayerVehicleInventorySnapshot(player = null) {
   const vehicleItemId = getPlayerVehicleItemId(player);
   const ownedVehicleItemIds = getPlayerOwnedVehicleItemIds(player);
   return {
-    skateboardOwned: Boolean(vehicleItemId),
+    skateboardOwned: player?.skateboardOwned === true,
     vehicleItemId,
     vehicleLabel: getCarDealerMenuItem(vehicleItemId)?.label ?? '',
     ownedVehicleItemIds: serializePlayerOwnedVehicleItemIds(ownedVehicleItemIds),

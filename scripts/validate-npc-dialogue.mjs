@@ -26,7 +26,7 @@ const bruno = {
 const roth = {
   id: 'npc_roth',
   name: 'Roth',
-  prompt: 'You are Roth, the pawn shop owner in Vibe Theft Auto. Keep answers short, guarded, and transactional. You sell cigarettes for twenty bucks and pistols for fifty.',
+  prompt: 'You are Roth, the pawn shop owner in Vibe Theft Auto. Keep answers short, guarded, and transactional. You sell cigarettes for twenty bucks, pistols for fifty, and skateboards for two hundred.',
   pawnShopOwnerEnabled: true
 };
 
@@ -64,8 +64,8 @@ const sketchCards = buildNpcFallbackReply({ npc: sketch, playerMessage: 'can I p
 assert(!shadyWork.toLowerCase().startsWith(`${workMessage.toLowerCase()}?`), 'fallback should not echo the player message');
 assert.match(shadyWork, /package|payout|drop|route|cash|delivery/i, 'fixer response should answer work requests in character');
 assert.match(brunoTraining, /membership|barbell|gym|train|training|form|lift/i, 'gym response should answer training requests in character');
-assert.match(rothPrice, /pistol|fifty|50|cash|cigarettes/i, 'pawn response should answer item price requests in character');
-assert.match(carDealerPrice, /toyota|ae86|10000|fiat|duna|5000|shift|drive/i, 'car dealer response should answer car price requests in character');
+assert.match(rothPrice, /pistol|fifty|50|cash|cigarettes|skateboard|board|200/i, 'pawn response should answer item price requests in character');
+assert.match(carDealerPrice, /toyota|ae86|10000|fiat|duna|5000|key|hud/i, 'car dealer response should answer car price requests in character');
 assert.match(sketchCards, /card|wager|blackjack|hit|stand|double|split/i, 'blackjack dealer response should answer card requests');
 assert.notEqual(shadyWork, brunoTraining, 'different NPC personas should not collapse to the same line');
 

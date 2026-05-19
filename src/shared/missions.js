@@ -5,12 +5,11 @@ import {
   getSkillLevelFromXp,
   getSkillXpForLevel
 } from './skills.js';
-
-import { isPlayerVehicleOwner } from './carDealer.js';
 import {
   OFFICE_JOB_IDS,
   getOfficeJobDefinition
 } from './officeJobs.js';
+import { isPlayerSkateboardOwner } from './skateboard.js';
 
 export const MISSION_IDS = Object.freeze({
   delivery: 'delivery',
@@ -111,10 +110,10 @@ export const MISSION_CATALOG = Object.freeze([
   },
   {
     id: MISSION_IDS.transportationUpgrade,
-    title: 'Transportation upgrade: Buy a car',
+    title: 'Transportation upgrade: Buy a skateboard',
     label: 'Transportation Upgrade',
-    icon: 'car',
-    description: 'Buy a Fiat Duna or Toyota AE86 from the car dealer.',
+    icon: 'skateboard',
+    description: 'Buy a skateboard from the pawn shop.',
     requirement: 'Complete the janitor work first.'
   },
   {
@@ -195,10 +194,10 @@ const DEFAULT_MISSION_SEQUENCE = Object.freeze([
   Object.freeze({
     missionId: MISSION_IDS.transportationUpgrade,
     custom: true,
-    title: 'Transportation upgrade : Buy a car,',
-    label: 'Transportation upgrade : Buy a car,',
-    description: 'Transportation upgrade : Buy a car from the dealer,',
-    prompt: 'Transportation upgrade : Buy a car from the dealer,',
+    title: 'Transportation upgrade : Buy a skateboard,',
+    label: 'Transportation upgrade : Buy a skateboard,',
+    description: 'Transportation upgrade : Buy a skateboard,',
+    prompt: 'Transportation upgrade : Buy a skateboard,',
     icon: 'custom',
     makeAvailableAfterMission: true,
     availableAfterMissionNumber: 4
@@ -605,7 +604,7 @@ export function getMissionProgressSnapshot(player = null) {
     janitorTasksCompletedCount: Number.isFinite(janitorTasksCompletedCount)
       ? Math.max(0, Math.floor(janitorTasksCompletedCount))
       : 0,
-    skateboardOwned: isPlayerVehicleOwner(player),
+    skateboardOwned: isPlayerSkateboardOwner(player),
     officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0,
     ceoCompletedAt: Number.isFinite(ceoCompletedAt) ? Math.max(0, ceoCompletedAt) : 0,
     strengthXp,

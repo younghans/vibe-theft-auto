@@ -141,6 +141,7 @@ const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   muscle: '&#128170;',
   chart: '&#128200;',
   'playing-card': '&#127183;',
+  skateboard: '&#128761;',
   car: '&#128663;',
   office: '&#128188;',
   charisma: '&#128526;',
@@ -3325,6 +3326,20 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
   `;
 }
 
+function getSkateboardBadgeMarkup() {
+  return `
+    <span class="hud__bound-skateboard-icon" aria-hidden="true">
+      <span class="hud__bound-skateboard-deck"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--front"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--back"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-right"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-right"></span>
+    </span>
+  `;
+}
+
 function getVehicleBadgeMarkup() {
   return `
     <span class="hud__bound-vehicle-icon" aria-hidden="true">
@@ -3499,6 +3514,8 @@ export class Hud {
     this.boundItemsRoot = this.overlay.querySelector('[data-bound-items]');
     this.boundVehicleRoot = this.overlay.querySelector('[data-bound-item-vehicle]');
     this.boundVehicleLabel = this.overlay.querySelector('[data-bound-item-vehicle-label]');
+    this.boundVehicleSkateboardIcon = this.overlay.querySelector('[data-bound-item-skateboard-icon]');
+    this.boundVehicleCarIcon = this.overlay.querySelector('[data-bound-item-car-icon]');
     this.carSelectorRoot = this.overlay.querySelector('[data-car-selector]');
     this.carSelectorClose = this.overlay.querySelector('[data-car-selector-close]');
     this.carSelectorName = this.overlay.querySelector('[data-car-selector-name]');
@@ -4024,8 +4041,9 @@ export class Hud {
           aria-expanded="false"
           title="Choose car"
         >
-          ${getVehicleBadgeMarkup()}
-          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Car</span>
+          <span data-bound-item-skateboard-icon>${getSkateboardBadgeMarkup()}</span>
+          <span data-bound-item-car-icon hidden>${getVehicleBadgeMarkup()}</span>
+          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Skateboard</span>
         </button>
       </section>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
@@ -9293,20 +9311,31 @@ export class Hud {
       return;
     }
 
-    const hasVehicle = skateboardOwned === true;
-    const label = String(vehicleLabel || 'Car').trim() || 'Car';
-    this.boundItemsRoot.hidden = !hasVehicle;
-    this.boundVehicleRoot.hidden = !hasVehicle;
-    this.boundVehicleRoot.classList.toggle('is-active', hasVehicle && skating === true);
+    const hasSkateboard = skateboardOwned === true;
+    const hasVehicle = String(vehicleItemId ?? '').trim() !== '';
+    const visible = hasSkateboard || hasVehicle;
+    const label = hasVehicle
+      ? (String(vehicleLabel || 'Car').trim() || 'Car')
+      : 'Skateboard';
+    this.boundItemsRoot.hidden = !visible;
+    this.boundVehicleRoot.hidden = !visible;
+    this.boundVehicleRoot.classList.toggle('is-active', hasSkateboard && skating === true);
     this.boundVehicleRoot.dataset.vehicleItemId = hasVehicle ? String(vehicleItemId ?? '') : '';
+    if (this.boundVehicleSkateboardIcon) {
+      this.boundVehicleSkateboardIcon.hidden = hasVehicle;
+    }
+    if (this.boundVehicleCarIcon) {
+      this.boundVehicleCarIcon.hidden = !hasVehicle;
+    }
     if (this.boundVehicleLabel) {
       this.boundVehicleLabel.textContent = label;
     }
     this.boundVehicleRoot.setAttribute(
       'aria-label',
-      hasVehicle && skating === true ? `${label} active` : `${label} owned`
+      visible && hasSkateboard && skating === true ? `${label} active` : `${label} owned`
     );
-    this.boundVehicleRoot.setAttribute('title', hasVehicle ? 'Choose car' : 'No car owned');
+    this.boundVehicleRoot.setAttribute('aria-haspopup', hasVehicle ? 'dialog' : 'false');
+    this.boundVehicleRoot.setAttribute('title', hasVehicle ? 'Choose car' : 'Skateboard owned');
   }
 
   setDrunknessState({ level = 0 } = {}) {
@@ -9805,7 +9834,9 @@ export class Hud {
     if (this.boundVehicleRoot) {
       this.boundVehicleRoot.classList.toggle('is-selector-open', panelVisible);
       this.boundVehicleRoot.setAttribute('aria-expanded', panelVisible ? 'true' : 'false');
-      this.boundVehicleRoot.title = panelVisible ? 'Hide car selector' : 'Choose car';
+      if (available) {
+        this.boundVehicleRoot.title = panelVisible ? 'Hide car selector' : 'Choose car';
+      }
     }
 
     this.carSelectorRoot.hidden = !panelVisible;
