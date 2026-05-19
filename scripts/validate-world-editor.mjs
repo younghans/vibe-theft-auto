@@ -120,6 +120,15 @@ import {
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
 import {
+  PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_CAR_SCALE,
+  PASSIVE_TRAFFIC_LANE_OFFSET,
+  PASSIVE_TRAFFIC_SPEED,
+  buildPassiveTrafficRoadGraph,
+  findPassiveTrafficPath,
+  getPassiveTrafficLanePosition
+} from '../src/world/passiveTraffic.js';
+import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_IDS,
   applyAttachmentTransform,
@@ -337,6 +346,57 @@ function assertVehicleModelGrounding() {
   const fullBounds = new Box3().setFromObject(root);
   assert(Math.abs(wheelBounds.min.y) <= 0.000001, 'Fiat Duna wheel/tire grounding should put the wheel bottom on the ground');
   assert(fullBounds.min.y < -1, 'Fiat Duna wheel/tire grounding should ignore the known bad low license-plate-style bound');
+}
+
+function validatePassiveTraffic() {
+  assert(
+    PASSIVE_TRAFFIC_CAR_ITEM_IDS.length === 3
+      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] === 'car_sedan'
+      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[1] === 'car_stationwagon'
+      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[2] === 'car_taxi',
+    'Passive traffic should create exactly the Sedan, Station wagon, and Taxi cars'
+  );
+  for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
+    const item = getBuilderItemById(itemId);
+    assert(item?.layer === 'prop' && item.groupId === 'vehicles', `Passive traffic car ${itemId} should resolve to a vehicle prop`);
+  }
+  assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.7, 'Passive traffic cars should render at 0.7x default size');
+  assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
+
+  const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
+  assert(trafficGraph.activeNodeIndices.length >= 30, 'Default world should expose a broad road-tile network for passive traffic');
+  assert(
+    trafficGraph.activeNodes.every((node) => String(node.itemId).startsWith('road_')),
+    'Passive traffic graph should be built specifically from road tiles'
+  );
+
+  const startIndex = trafficGraph.activeNodeIndices[0];
+  const endIndex = trafficGraph.activeNodeIndices[trafficGraph.activeNodeIndices.length - 1];
+  const path = findPassiveTrafficPath(trafficGraph, startIndex, endIndex);
+  assert(path.length >= 2, 'Passive traffic should be able to route across the default road network');
+  assert(
+    path.every((nodeIndex) => trafficGraph.activeNodeSet.has(nodeIndex)),
+    'Passive traffic paths should stay on road graph nodes'
+  );
+
+  const fromNode = trafficGraph.nodes[path[0]];
+  const toNode = trafficGraph.nodes[path[1]];
+  const lanePosition = getPassiveTrafficLanePosition(fromNode, toNode, new Vector3());
+  const deltaX = toNode.x - fromNode.x;
+  const deltaZ = toNode.z - fromNode.z;
+  const length = Math.hypot(deltaX, deltaZ);
+  const rightX = deltaZ / length;
+  const rightZ = -deltaX / length;
+  const laneDot = ((lanePosition.x - toNode.x) * rightX) + ((lanePosition.z - toNode.z) * rightZ);
+  assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
+
+  const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
+  assert(
+    /PassiveTrafficRoot/.test(worldRendererSource)
+      && /updatePassiveTraffic/.test(worldRendererSource)
+      && /PASSIVE_TRAFFIC_CAR_SCALE/.test(worldRendererSource),
+    'World renderer should mount and update passive traffic cars'
+  );
 }
 
 function assertCarDealerNpc(layout, layoutLabel, carDealershipItem) {
@@ -2690,6 +2750,7 @@ async function main() {
   validateVibeHero();
   validateTiles();
   validateProps();
+  validatePassiveTraffic();
   validateTaskSequence();
   validateDeliveryQuestCarry();
   validateMissionSequencer();

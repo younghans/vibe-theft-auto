@@ -22,6 +22,16 @@ import {
   formatInteractableIndicatorText
 } from './interactableIndicators.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
+import {
+  PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_CAR_SCALE,
+  PASSIVE_TRAFFIC_MIN_ROAD_NODES,
+  PASSIVE_TRAFFIC_SPEED,
+  buildPassiveTrafficRoadGraph,
+  findPassiveTrafficPath,
+  getPassiveTrafficLanePosition,
+  getPassiveTrafficLanePositionAtNode
+} from './passiveTraffic.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
@@ -69,9 +79,27 @@ const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
   assets.playerAnimationSet.punching,
   assets.playerAnimationSet.snatch
 ]);
+const PASSIVE_TRAFFIC_TURN_RESPONSE = 8;
+const PASSIVE_TRAFFIC_SPEED_FACTORS = Object.freeze([0.94, 1, 1.06]);
+const PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT = 7;
+const PASSIVE_TRAFFIC_POSITION_EPSILON = 0.08;
 
 function getCellKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
+}
+
+function normalizeAngleRadians(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+function dampAngleRadians(current, target, lambda, deltaSeconds) {
+  const lerp = 1 - Math.exp(-Math.max(0, lambda) * Math.max(0, deltaSeconds));
+  return normalizeAngleRadians(current + (normalizeAngleRadians(target - current) * lerp));
+}
+
+function passiveTrafficTieBreak(nodeIndex, carIndex) {
+  const x = Math.sin(((nodeIndex + 1) * 12.9898) + ((carIndex + 1) * 78.233)) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 function worldToCellCoord(value) {
@@ -1019,8 +1047,11 @@ export class WorldRenderer {
 
     this.tileRoot = new THREE.Group();
     this.propRoot = new THREE.Group();
+    this.passiveTrafficRoot = new THREE.Group();
+    this.passiveTrafficRoot.name = 'PassiveTrafficRoot';
     this.scene.add(this.tileRoot);
     this.scene.add(this.propRoot);
+    this.scene.add(this.passiveTrafficRoot);
 
     this.npcDebugRoot = new THREE.Group();
     this.npcDebugRoot.visible = false;
@@ -1052,6 +1083,16 @@ export class WorldRenderer {
       activePlacementId: ''
     };
     this.npcRoutinePreview = [];
+    this.passiveTrafficCars = [];
+    this.passiveTrafficGraph = null;
+    this.passiveTrafficSignature = '';
+    this.passiveTrafficVisitCounter = 0;
+    this.passiveTrafficNodeVisits = new Map();
+    this.passiveTrafficNodeVisitOrder = new Map();
+    this.passiveTrafficScratch = new THREE.Vector3();
+    this.passiveTrafficTargetScratch = new THREE.Vector3();
+    this.passiveTrafficRefreshSuspended = false;
+    this.passiveTrafficLoadRequestId = 0;
     this.npcInteractRadiusVisible = false;
     this.npcDebugVisible = false;
     this.npcRoutineVisible = false;
@@ -1084,13 +1125,20 @@ export class WorldRenderer {
     const placements = [...worldState.getPlacements()];
     await this.preloadPlacementAssets(placements);
 
-    for (const placement of placements) {
-      await this.addPlacement(placement);
+    this.passiveTrafficRefreshSuspended = true;
+    try {
+      for (const placement of placements) {
+        await this.addPlacement(placement);
+      }
+    } finally {
+      this.passiveTrafficRefreshSuspended = false;
     }
+    this.refreshPassiveTraffic();
   }
 
   clear() {
     this.clearCameraOcclusion();
+    this.clearPassiveTraffic();
     for (const rendered of this.renderedPlacements.values()) {
       rendered.object.parent?.remove(rendered.object);
     }
@@ -1105,6 +1153,7 @@ export class WorldRenderer {
     this.surfaceHeightIndexDirty = true;
     this.tileRoot.clear();
     this.propRoot.clear();
+    this.passiveTrafficRoot.clear();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
   }
@@ -1293,6 +1342,9 @@ export class WorldRenderer {
     }
 
     this.refreshWorkoutPlacementState();
+    if (placement.layer === 'tile') {
+      this.refreshPassiveTraffic();
+    }
 
     return renderedPlacement;
   }
@@ -1390,12 +1442,322 @@ export class WorldRenderer {
     return actor;
   }
 
+  removePassiveTrafficCars() {
+    for (const car of this.passiveTrafficCars) {
+      car.object?.parent?.remove(car.object);
+    }
+    this.passiveTrafficCars = [];
+    this.passiveTrafficRoot.clear();
+  }
+
+  clearPassiveTraffic() {
+    this.passiveTrafficLoadRequestId += 1;
+    this.removePassiveTrafficCars();
+    this.passiveTrafficGraph = null;
+    this.passiveTrafficSignature = '';
+    this.passiveTrafficVisitCounter = 0;
+    this.passiveTrafficNodeVisits.clear();
+    this.passiveTrafficNodeVisitOrder.clear();
+  }
+
+  refreshPassiveTraffic() {
+    if (this.passiveTrafficRefreshSuspended) {
+      return;
+    }
+
+    const graph = buildPassiveTrafficRoadGraph(this.renderedPlacements);
+    const hasTrafficRoads = graph.activeNodeIndices.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES;
+    const nextSignature = hasTrafficRoads ? graph.signature : '';
+    if (
+      nextSignature === this.passiveTrafficSignature
+      && this.passiveTrafficCars.length === PASSIVE_TRAFFIC_CAR_ITEM_IDS.length
+    ) {
+      return;
+    }
+
+    const requestId = ++this.passiveTrafficLoadRequestId;
+    this.removePassiveTrafficCars();
+    this.passiveTrafficGraph = hasTrafficRoads ? graph : null;
+    this.passiveTrafficSignature = nextSignature;
+    this.passiveTrafficVisitCounter = 0;
+    this.passiveTrafficNodeVisits.clear();
+    this.passiveTrafficNodeVisitOrder.clear();
+
+    if (!hasTrafficRoads) {
+      return;
+    }
+
+    void this.createPassiveTrafficCars(requestId, graph);
+  }
+
+  async createPassiveTrafficObject(itemId, carIndex) {
+    const item = getBuilderItemById(itemId);
+    if (!item) {
+      return null;
+    }
+
+    const visual = await createPlacementVisual(this.library, item);
+    const object = visual.root;
+    object.name = `PassiveTraffic:${itemId}`;
+    object.userData.passiveTraffic = true;
+    object.userData.passiveTrafficItemId = itemId;
+    object.userData.passiveTrafficIndex = carIndex;
+    object.scale.multiplyScalar(PASSIVE_TRAFFIC_CAR_SCALE);
+    object.traverse((node) => {
+      if (node.isMesh) {
+        node.frustumCulled = false;
+      }
+    });
+    return object;
+  }
+
+  async createPassiveTrafficCars(requestId, graph) {
+    const cars = await Promise.all(PASSIVE_TRAFFIC_CAR_ITEM_IDS.map(async (itemId, carIndex) => {
+      try {
+        const object = await this.createPassiveTrafficObject(itemId, carIndex);
+        return object ? this.createPassiveTrafficCarState(object, itemId, carIndex, graph) : null;
+      } catch (error) {
+        console.warn('[WorldRenderer] Failed to create passive traffic car.', {
+          itemId,
+          error
+        });
+        return null;
+      }
+    }));
+
+    if (requestId !== this.passiveTrafficLoadRequestId || graph.signature !== this.passiveTrafficSignature) {
+      for (const car of cars) {
+        car?.object?.parent?.remove(car.object);
+      }
+      return;
+    }
+
+    this.passiveTrafficCars = cars.filter(Boolean);
+    for (const car of this.passiveTrafficCars) {
+      this.passiveTrafficRoot.add(car.object);
+    }
+  }
+
+  createPassiveTrafficCarState(object, itemId, carIndex, graph) {
+    const activeNodeIndices = graph?.activeNodeIndices ?? [];
+    if (activeNodeIndices.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      return null;
+    }
+
+    const startOffset = (carIndex + 0.18) / Math.max(1, PASSIVE_TRAFFIC_CAR_ITEM_IDS.length);
+    const startIndex = activeNodeIndices[Math.floor(startOffset * activeNodeIndices.length) % activeNodeIndices.length];
+    const car = {
+      itemId,
+      carIndex,
+      object,
+      currentNodeIndex: startIndex,
+      previousNodeIndex: null,
+      targetNodeIndex: null,
+      route: [],
+      routeCursor: 0,
+      targetPosition: new THREE.Vector3(),
+      speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
+      yaw: object.rotation.y
+    };
+
+    this.markPassiveTrafficNodeVisited(startIndex);
+    this.assignPassiveTrafficRoute(car);
+    if (car.targetNodeIndex === null) {
+      return null;
+    }
+
+    const currentNode = graph.nodes[car.currentNodeIndex];
+    const targetNode = graph.nodes[car.targetNodeIndex];
+    getPassiveTrafficLanePositionAtNode(currentNode, targetNode, object.position);
+    object.position.y = this.getSurfaceHeightAtPosition(object.position.x, object.position.z);
+    car.yaw = Math.atan2(
+      (targetNode?.x ?? currentNode.x) - currentNode.x,
+      (targetNode?.z ?? currentNode.z) - currentNode.z
+    );
+    object.rotation.y = car.yaw;
+    return car;
+  }
+
+  markPassiveTrafficNodeVisited(nodeIndex) {
+    this.passiveTrafficVisitCounter += 1;
+    this.passiveTrafficNodeVisits.set(
+      nodeIndex,
+      (this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0) + 1
+    );
+    this.passiveTrafficNodeVisitOrder.set(nodeIndex, this.passiveTrafficVisitCounter);
+  }
+
+  getPassiveTrafficActiveNeighbors(nodeIndex) {
+    const graph = this.passiveTrafficGraph;
+    const node = graph?.nodes?.[nodeIndex];
+    if (!node) {
+      return [];
+    }
+
+    return node.neighbors.filter((neighborIndex) => graph.activeNodeSet.has(neighborIndex));
+  }
+
+  choosePassiveTrafficDestination(car) {
+    const graph = this.passiveTrafficGraph;
+    const currentNode = graph?.nodes?.[car.currentNodeIndex];
+    if (!graph || !currentNode) {
+      return null;
+    }
+
+    const candidates = graph.activeNodeIndices
+      .filter((nodeIndex) => nodeIndex !== car.currentNodeIndex)
+      .map((nodeIndex) => {
+        const node = graph.nodes[nodeIndex];
+        const visitCount = this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0;
+        const lastVisitOrder = this.passiveTrafficNodeVisitOrder.get(nodeIndex) ?? -100000;
+        const distance = Math.abs(node.cellX - currentNode.cellX) + Math.abs(node.cellZ - currentNode.cellZ);
+        return {
+          nodeIndex,
+          visitCount,
+          lastVisitOrder,
+          distance,
+          tieBreak: passiveTrafficTieBreak(nodeIndex, car.carIndex)
+        };
+      })
+      .sort((a, b) => (
+        (a.visitCount - b.visitCount)
+        || (a.lastVisitOrder - b.lastVisitOrder)
+        || (b.distance - a.distance)
+        || (a.tieBreak - b.tieBreak)
+      ));
+
+    const candidatePool = candidates.slice(0, PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT);
+    if (!candidatePool.length) {
+      return null;
+    }
+
+    candidatePool.sort((a, b) => (
+      (b.distance - a.distance)
+      || (a.visitCount - b.visitCount)
+      || (a.lastVisitOrder - b.lastVisitOrder)
+      || (a.tieBreak - b.tieBreak)
+    ));
+    return candidatePool[0].nodeIndex;
+  }
+
+  assignPassiveTrafficRoute(car) {
+    const graph = this.passiveTrafficGraph;
+    if (!graph || !car) {
+      return false;
+    }
+
+    const destinationIndex = this.choosePassiveTrafficDestination(car);
+    const route = destinationIndex !== null
+      ? findPassiveTrafficPath(graph, car.currentNodeIndex, destinationIndex)
+      : [];
+    if (route.length >= 2) {
+      car.route = route;
+      car.routeCursor = 1;
+      return this.advancePassiveTrafficTarget(car);
+    }
+
+    const neighbors = this.getPassiveTrafficActiveNeighbors(car.currentNodeIndex);
+    const fallback = neighbors.find((nodeIndex) => nodeIndex !== car.previousNodeIndex) ?? neighbors[0] ?? null;
+    if (fallback === null) {
+      car.targetNodeIndex = null;
+      return false;
+    }
+
+    car.route = [car.currentNodeIndex, fallback];
+    car.routeCursor = 1;
+    return this.advancePassiveTrafficTarget(car);
+  }
+
+  advancePassiveTrafficTarget(car) {
+    const graph = this.passiveTrafficGraph;
+    if (!graph || !car) {
+      return false;
+    }
+
+    while (car.routeCursor < car.route.length && car.route[car.routeCursor] === car.currentNodeIndex) {
+      car.routeCursor += 1;
+    }
+
+    if (car.routeCursor >= car.route.length) {
+      return this.assignPassiveTrafficRoute(car);
+    }
+
+    const targetNodeIndex = car.route[car.routeCursor];
+    if (!graph.activeNodeSet.has(targetNodeIndex)) {
+      return this.assignPassiveTrafficRoute(car);
+    }
+
+    const currentNode = graph.nodes[car.currentNodeIndex];
+    const targetNode = graph.nodes[targetNodeIndex];
+    if (!currentNode || !targetNode) {
+      car.targetNodeIndex = null;
+      return false;
+    }
+
+    car.targetNodeIndex = targetNodeIndex;
+    getPassiveTrafficLanePosition(currentNode, targetNode, car.targetPosition);
+    car.targetPosition.y = this.getSurfaceHeightAtPosition(car.targetPosition.x, car.targetPosition.z);
+    return true;
+  }
+
+  updatePassiveTraffic(deltaSeconds) {
+    if (!this.passiveTrafficCars.length || !this.passiveTrafficGraph) {
+      return;
+    }
+
+    const dt = Math.max(0, Math.min(0.08, Number(deltaSeconds) || 0));
+    if (dt <= 0) {
+      return;
+    }
+
+    for (const car of this.passiveTrafficCars) {
+      let remainingDistance = car.speed * dt;
+      let guard = 0;
+
+      while (remainingDistance > 0.0001 && guard < 6) {
+        guard += 1;
+        if (car.targetNodeIndex === null && !this.advancePassiveTrafficTarget(car)) {
+          break;
+        }
+
+        const toTarget = this.passiveTrafficScratch.subVectors(car.targetPosition, car.object.position);
+        toTarget.y = 0;
+        const distance = toTarget.length();
+        if (distance <= PASSIVE_TRAFFIC_POSITION_EPSILON) {
+          car.object.position.copy(car.targetPosition);
+          car.previousNodeIndex = car.currentNodeIndex;
+          car.currentNodeIndex = car.targetNodeIndex;
+          car.routeCursor += 1;
+          car.targetNodeIndex = null;
+          this.markPassiveTrafficNodeVisited(car.currentNodeIndex);
+          continue;
+        }
+
+        const step = Math.min(remainingDistance, distance);
+        toTarget.multiplyScalar(1 / distance);
+        this.passiveTrafficTargetScratch.copy(toTarget).multiplyScalar(step);
+        car.object.position.add(this.passiveTrafficTargetScratch);
+        car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
+        remainingDistance -= step;
+
+        const targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        car.yaw = dampAngleRadians(car.yaw, targetYaw, PASSIVE_TRAFFIC_TURN_RESPONSE, dt);
+        car.object.rotation.y = car.yaw;
+
+        if (step < distance) {
+          break;
+        }
+      }
+    }
+  }
+
   update(deltaSeconds) {
     const timeSeconds = performance.now() * 0.001;
     for (const rendered of this.renderedPlacements.values()) {
       rendered.actor?.update(deltaSeconds);
       rendered.object?.userData?.onWorldUpdate?.(deltaSeconds, timeSeconds);
     }
+    this.updatePassiveTraffic(deltaSeconds);
 
     this.refreshNpcDebugGizmos();
   }
@@ -1676,6 +2038,9 @@ export class WorldRenderer {
     }
 
     this.refreshWorkoutPlacementState();
+    if (placement.layer === 'tile') {
+      this.refreshPassiveTraffic();
+    }
   }
 
   setPlacementHidden(id, hidden) {
@@ -1804,6 +2169,7 @@ export class WorldRenderer {
     this.markStaticCollidersDirty();
     if (rendered.layer === 'tile') {
       this.markSurfaceHeightIndexDirty();
+      this.refreshPassiveTraffic();
     }
     this.refreshWorkoutPlacementState();
     this.refreshNpcRoutinePreview();
