@@ -30,6 +30,13 @@ const roth = {
   pawnShopOwnerEnabled: true
 };
 
+const carDealer = {
+  id: 'npc_car_dealer',
+  name: 'Car Dealer',
+  prompt: 'You are the Car Dealer in Vibe Theft Auto. You sell the Toyota AE86 for $10000 and the Fiat Duna for $5000.',
+  carDealerEnabled: true
+};
+
 const sketch = {
   id: 'npc_sketch',
   name: 'Sketch',
@@ -42,19 +49,23 @@ assert.equal(detectNpcChatIntent('got any work for me?'), 'work', 'work requests
 assert.equal(getNpcDialogueProfileKey(shady), 'fixer', 'Shady Figure should use the fixer voice');
 assert.equal(getNpcDialogueProfileKey(bruno), 'gym', 'Bruno should use the gym voice');
 assert.equal(getNpcDialogueProfileKey(roth), 'pawn', 'Roth should use the pawn shop voice');
+assert.equal(getNpcDialogueProfileKey(carDealer), 'carDealer', 'Car Dealer should use the car dealer voice');
 assert.equal(getNpcDialogueProfileKey(sketch), 'android', 'Sketch should keep the android voice even when he deals blackjack');
 assert.match(describeNpcCapabilities(roth), /pawn shop sales/, 'capabilities should expose pawn shop service context');
+assert.match(describeNpcCapabilities(carDealer), /car sales/, 'capabilities should expose car dealer service context');
 
 const workMessage = 'got any work for me?';
 const shadyWork = buildNpcFallbackReply({ npc: shady, playerMessage: workMessage });
 const brunoTraining = buildNpcFallbackReply({ npc: bruno, playerMessage: 'can you train me?' });
 const rothPrice = buildNpcFallbackReply({ npc: roth, playerMessage: 'how much is a pistol?' });
+const carDealerPrice = buildNpcFallbackReply({ npc: carDealer, playerMessage: 'how much is the toyota?' });
 const sketchCards = buildNpcFallbackReply({ npc: sketch, playerMessage: 'can I play blackjack?' });
 
 assert(!shadyWork.toLowerCase().startsWith(`${workMessage.toLowerCase()}?`), 'fallback should not echo the player message');
 assert.match(shadyWork, /package|payout|drop|route|cash|delivery/i, 'fixer response should answer work requests in character');
 assert.match(brunoTraining, /membership|barbell|gym|train|training|form|lift/i, 'gym response should answer training requests in character');
-assert.match(rothPrice, /pistol|fifty|50|cash|cigarettes|skateboard/i, 'pawn response should answer item price requests in character');
+assert.match(rothPrice, /pistol|fifty|50|cash|cigarettes/i, 'pawn response should answer item price requests in character');
+assert.match(carDealerPrice, /toyota|ae86|10000|fiat|duna|5000|shift|drive/i, 'car dealer response should answer car price requests in character');
 assert.match(sketchCards, /card|wager|blackjack|hit|stand|double|split/i, 'blackjack dealer response should answer card requests');
 assert.notEqual(shadyWork, brunoTraining, 'different NPC personas should not collapse to the same line');
 

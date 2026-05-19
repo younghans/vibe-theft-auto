@@ -103,5 +103,9 @@ export const assets = {
     streetlight: cityAsset('streetlight'),
     trafficLight: cityAsset('trafficlight_A'),
     watertower: cityAsset('watertower')
+  },
+  vehicles: {
+    fiatDuna: assetUrl('vibe_theft_auto_custom', 'models', 'fiat-duna-low-poly.glb'),
+    toyotaAe86: assetUrl('vibe_theft_auto_custom', 'models', 'toyota-ae86-low-poly.glb')
   }
 };

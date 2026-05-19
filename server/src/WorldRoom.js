@@ -82,7 +82,6 @@ import {
   refreshPlayerDrunkness
 } from '../../src/shared/bartender.js';
 import {
-  PAWN_SHOP_ITEM_IDS,
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
@@ -105,6 +104,16 @@ import {
   SKATEBOARD_SPEED_MULTIPLIER,
   normalizeSkateboardOwned
 } from '../../src/shared/skateboard.js';
+import {
+  getCarDealerMenuItem,
+  getCarDealerPromptRadius,
+  getPlayerVehicleInventorySnapshot,
+  getPlayerVehicleItemId,
+  isCarDealerNpc,
+  isPlayerVehicleOwner,
+  normalizePlayerVehicleItemId,
+  setPlayerVehicleItem
+} from '../../src/shared/carDealer.js';
 import {
   BLACKJACK_MAX_WAGER,
   canDoubleBlackjackSession,
@@ -336,6 +345,7 @@ const PlayerInventoryState = schema({
   glizzyCount: 'number',
   sodaCount: 'number',
   skateboardOwned: 'boolean',
+  vehicleItemId: 'string',
   drunknessDose: 'number',
   drunknessLevel: 'number',
   drunknessEndsAt: 'number',
@@ -453,6 +463,7 @@ const PLAYER_STATE_SECTIONS = [
       'glizzyCount',
       'sodaCount',
       'skateboardOwned',
+      'vehicleItemId',
       'drunknessDose',
       'drunknessLevel',
       'drunknessEndsAt',
@@ -581,6 +592,7 @@ const NpcState = schema({
   stockMarketEnabled: 'boolean',
   bartenderEnabled: 'boolean',
   pawnShopOwnerEnabled: 'boolean',
+  carDealerEnabled: 'boolean',
   marthaEnabled: 'boolean',
   blackjackDealerEnabled: 'boolean',
   schoolMicrogameEnabled: 'boolean',
@@ -784,7 +796,8 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       burgerCount: player.burgerCount,
       glizzyCount: player.glizzyCount,
       sodaCount: player.sodaCount,
-      skateboardOwned: normalizeSkateboardOwned(player.skateboardOwned),
+      skateboardOwned: isPlayerVehicleOwner(player),
+      vehicleItemId: getPlayerVehicleItemId(player),
       drunknessDose: player.drunknessDose,
       drunknessLevel: player.drunknessLevel,
       drunknessEndsAt: player.drunknessEndsAt,
@@ -867,7 +880,12 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.burgerCount = normalizeMarthaInventoryCount(saved.burgerCount);
   player.glizzyCount = normalizeMarthaInventoryCount(saved.glizzyCount);
   player.sodaCount = normalizeMarthaInventoryCount(saved.sodaCount);
-  player.skateboardOwned = normalizeSkateboardOwned(saved.skateboardOwned);
+  player.vehicleItemId = normalizePlayerVehicleItemId(saved.vehicleItemId);
+  if (!player.vehicleItemId && normalizeSkateboardOwned(saved.skateboardOwned)) {
+    setPlayerVehicleItem(player, getPlayerVehicleItemId({ skateboardOwned: true }));
+  } else {
+    player.skateboardOwned = isPlayerVehicleOwner(player);
+  }
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
   player.drunknessEndsAt = sanitizeSnapshotNumber(saved.drunknessEndsAt, 0, { integer: true, min: 0 });
@@ -1054,6 +1072,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handlePawnShopPurchase(client, message));
     });
 
+    this.onMessage('carDealer:buyVehicle', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handleCarDealerPurchase(client, message));
+    });
+
     this.onMessage('martha:buyItem', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleMarthaPurchase(client, message));
     });
@@ -1235,6 +1257,7 @@ export class WorldRoom extends Room {
     player.glizzyCount = 0;
     player.sodaCount = 0;
     player.skateboardOwned = false;
+    player.vehicleItemId = '';
     player.drunknessDose = 0;
     player.drunknessLevel = 0;
     player.drunknessEndsAt = 0;
@@ -1646,7 +1669,7 @@ export class WorldRoom extends Room {
       return;
     }
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
-    const requestedSkating = player.skateboardOwned === true && message?.skating === true;
+    const requestedSkating = isPlayerVehicleOwner(player) && message?.skating === true;
     const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? SKATEBOARD_SPEED_MULTIPLIER : 1);
     const maxDistance = PLAYER_POSITION_FORGIVENESS + (maxAcceptedSpeed * elapsedSeconds);
     let nextPosition = requestedPosition;
@@ -1700,7 +1723,7 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
-    player.skating = Boolean(animationState.skating && player.skateboardOwned);
+    player.skating = Boolean(animationState.skating && isPlayerVehicleOwner(player));
     this.queuePlayerSnapshotSave(client.sessionId);
   }
 
@@ -2199,9 +2222,6 @@ export class WorldRoom extends Room {
     }
 
     player.money = money - item.price;
-    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
-      this.normalizePlayerSelectedMission(player);
-    }
     this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
     this.queuePlayerSnapshotSave(client.sessionId);
     return {
@@ -2221,6 +2241,87 @@ export class WorldRoom extends Room {
             reserveAmmo: player.reserveAmmo
           }
         : null,
+      money: player.money
+    };
+  }
+
+  getCarDealerNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isCarDealerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const radius = getCarDealerPromptRadius(npc);
+      if (distance <= radius && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  assertCarDealerAccess(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot buy that right now.');
+    }
+
+    const npc = this.getCarDealerNpcForPlayer(player, message?.npcId);
+    if (!npc) {
+      throw new Error('Move closer to the car dealer.');
+    }
+
+    return { player, npc };
+  }
+
+  handleCarDealerPurchase(client, message = {}) {
+    const { player, npc } = this.assertCarDealerAccess(client, message);
+    const item = getCarDealerMenuItem(message?.itemId);
+    if (!item) {
+      throw new Error('That car is not for sale.');
+    }
+
+    if (getPlayerVehicleItemId(player) === item.id) {
+      const error = `You already own the ${item.label}.`;
+      this.setNpcChatPhase(npc, 'done', error, { bumpSeq: true });
+      throw new Error(error);
+    }
+
+    const money = Math.trunc(Number(player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      throw new Error(`You need $${item.price} for the ${item.label}.`);
+    }
+
+    setPlayerVehicleItem(player, item.id);
+    player.money = money - item.price;
+    this.normalizePlayerSelectedMission(player);
+    this.setNpcChatPhase(npc, 'done', item.orderLine, { bumpSeq: true });
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return {
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: 1
+      },
+      inventory: getPlayerVehicleInventorySnapshot(player),
       money: player.money
     };
   }
@@ -4028,6 +4129,7 @@ export class WorldRoom extends Room {
         stockMarketEnabled: message.stockMarketEnabled === true,
         bartenderEnabled: message.bartenderEnabled === true,
         pawnShopOwnerEnabled: message.pawnShopOwnerEnabled === true,
+        carDealerEnabled: message.carDealerEnabled === true,
         marthaEnabled: message.marthaEnabled === true,
         blackjackDealerEnabled: message.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: message.schoolMicrogameEnabled === true,
@@ -4084,6 +4186,9 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'pawnShopOwnerEnabled')) {
       updates.pawnShopOwnerEnabled = message.pawnShopOwnerEnabled === true;
+    }
+    if (Object.hasOwn(message, 'carDealerEnabled')) {
+      updates.carDealerEnabled = message.carDealerEnabled === true;
     }
     if (Object.hasOwn(message, 'marthaEnabled')) {
       updates.marthaEnabled = message.marthaEnabled === true;
@@ -4252,6 +4357,7 @@ export class WorldRoom extends Room {
       existing.stockMarketEnabled = normalizedDefinition.stockMarketEnabled === true;
       existing.bartenderEnabled = normalizedDefinition.bartenderEnabled === true;
       existing.pawnShopOwnerEnabled = normalizedDefinition.pawnShopOwnerEnabled === true;
+      existing.carDealerEnabled = normalizedDefinition.carDealerEnabled === true;
       existing.marthaEnabled = normalizedDefinition.marthaEnabled === true;
       existing.blackjackDealerEnabled = normalizedDefinition.blackjackDealerEnabled === true;
       existing.schoolMicrogameEnabled = normalizedDefinition.schoolMicrogameEnabled === true;

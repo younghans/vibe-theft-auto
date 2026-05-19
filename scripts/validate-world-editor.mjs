@@ -39,11 +39,20 @@ import {
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
-  getPlayerPawnShopInventorySnapshot,
-  isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
   listPawnShopMenuItems
 } from '../src/shared/pawnShop.js';
+import {
+  CAR_DEALER_ITEM_IDS,
+  PLAYER_VEHICLE_SCALE,
+  PLAYER_VEHICLE_SPEED_MULTIPLIER,
+  getCarDealerMenuItem,
+  getPlayerVehicleInventorySnapshot,
+  getPlayerVehicleItemId,
+  isCarDealerNpc,
+  listCarDealerMenuItems,
+  setPlayerVehicleItem
+} from '../src/shared/carDealer.js';
 import {
   MARTHA_ITEM_IDS,
   addPlayerMarthaItem,
@@ -180,6 +189,8 @@ const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
 const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
 const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
+const CAR_DEALERSHIP_DEALER_LOCAL_X = 0;
+const CAR_DEALERSHIP_DEALER_LOCAL_Z = -5.75;
 const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
   {
     itemId: 'car_fiat_duna',
@@ -254,6 +265,33 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
       `${layoutLabel} ${spec.label} should leave a player-width center aisle through the showroom`
     );
   }
+}
+
+function assertCarDealerNpc(layout, layoutLabel, carDealershipItem) {
+  const dealershipPlacement = layout.tiles?.find((placement) => placement.itemId === 'car_dealership_building');
+  assert(dealershipPlacement, `${layoutLabel} should include a Car Dealership tile for the car dealer NPC`);
+  const rotationQuarterTurns = dealershipPlacement.rotationQuarterTurns ?? 0;
+  const dealershipCenter = getTileCenterWorldPosition(
+    carDealershipItem,
+    dealershipPlacement.cell?.[0] ?? 0,
+    dealershipPlacement.cell?.[1] ?? 0,
+    rotationQuarterTurns
+  );
+  const offset = rotateFootprintOffset(
+    CAR_DEALERSHIP_DEALER_LOCAL_X,
+    CAR_DEALERSHIP_DEALER_LOCAL_Z,
+    rotationQuarterTurns
+  );
+  const expectedPosition = [
+    Number((dealershipCenter.x + offset.x).toFixed(2)),
+    Number((dealershipCenter.z + offset.z).toFixed(2))
+  ];
+  const carDealerNpc = (layout.npcs ?? []).find((npc) => npc.id === 'npc_car_dealer');
+  assert(carDealerNpc, `${layoutLabel} should seed the Car Dealer NPC`);
+  assert(carDealerNpc.carDealerEnabled === true, `${layoutLabel} Car Dealer NPC should enable carDealerEnabled`);
+  assert(carDealerNpc.name === 'Car Dealer', `${layoutLabel} Car Dealer NPC should be named Car Dealer`);
+  assert(carDealerNpc.position?.[0] === expectedPosition[0] && carDealerNpc.position?.[1] === expectedPosition[1], `${layoutLabel} Car Dealer NPC should stand by the dealership counter`);
+  assert(carDealerNpc.rotationQuarterTurns === rotationQuarterTurns, `${layoutLabel} Car Dealer NPC should face the showroom door`);
 }
 
 function validateKenneyCatalogItems() {
@@ -853,6 +891,8 @@ function validateFootprintSupport() {
   );
   assertDealershipShowroomCars(defaultWorldLayout, 'Default world layout', carDealership);
   assertDealershipShowroomCars(savedWorldLayout, 'Fallback saved world layout', carDealership);
+  assertCarDealerNpc(defaultWorldLayout, 'Default world layout', carDealership);
+  assertCarDealerNpc(savedWorldLayout, 'Fallback saved world layout', carDealership);
 
   const diagonalRotationState = new WorldState();
   diagonalRotationState.loadLayout({
@@ -1498,7 +1538,7 @@ function validateTaskSequence() {
         blackjackHandPlayedAt: 3000
       }
     }).id === TASK_IDS.transportationUpgrade,
-    'Task sequence should route to buying a skateboard after blackjack.'
+    'Task sequence should route to buying a car after blackjack.'
   );
   assert(
     resolvePlayerTask({
@@ -1510,7 +1550,7 @@ function validateTaskSequence() {
         skateboardOwned: true
       }
     }).id === TASK_IDS.officeManagerPromotion,
-    'Task sequence should route to office manager after buying a skateboard.'
+    'Task sequence should route to office manager after buying a car.'
   );
   const officeManagerCompletePlayer = {
     ...janitorCompletePlayer,
@@ -1601,8 +1641,8 @@ function validateTaskSequence() {
     'Task tracker should complete the blackjack task when a hand is played.'
   );
 
-  const skateboardTracker = new TaskTracker();
-  skateboardTracker.update({
+  const carTracker = new TaskTracker();
+  carTracker.update({
     localPlayerState: {
       ...janitorCompletePlayer,
       gymPumpCompletedAt: 1000,
@@ -1611,7 +1651,7 @@ function validateTaskSequence() {
     }
   });
   assert(
-    skateboardTracker.update({
+    carTracker.update({
       localPlayerState: {
         ...janitorCompletePlayer,
         gymPumpCompletedAt: 1000,
@@ -1620,7 +1660,7 @@ function validateTaskSequence() {
         skateboardOwned: true
       }
     }).completedTask,
-    'Task tracker should complete the transportation mission when a skateboard is bought.'
+    'Task tracker should complete the transportation mission when a car is bought.'
   );
 
   const managerTracker = new TaskTracker();
@@ -1828,9 +1868,9 @@ function validateMissionSequencer() {
     janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
   }, '', sequence);
   const gymSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
-  const skateboardSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
+  const carSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
   assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after janitor work');
-  assert(skateboardSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the skateboard mission after janitor work');
+  assert(carSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the car mission after janitor work');
 
   const postOfficeSnapshots = getMissionSnapshots({
     ...noProgressPlayer,
@@ -2035,14 +2075,11 @@ function validateBartenderFunction() {
 
   const cigarettes = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes);
   const pawnPistol = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.pistol);
-  const skateboard = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.skateboard);
   assert(cigarettes?.price === 20, 'Pawn shop cigarettes should cost $20');
   assert(cigarettes?.kind === 'consumable', 'Pawn shop cigarettes should be a consumable item');
   assert(pawnPistol?.price === 50, 'Pawn shop pistol should cost $50');
   assert(pawnPistol?.weaponId === WEAPON_IDS.pistol, 'Pawn shop pistol should sell the standard pistol');
-  assert(skateboard?.price === 200, 'Pawn shop skateboard should cost $200');
-  assert(skateboard?.kind === 'permanent', 'Pawn shop skateboard should be a permanent item');
-  assert(listPawnShopMenuItems().length === 3, 'Pawn shop menu should include cigarettes, pistol, and skateboard');
+  assert(listPawnShopMenuItems().length === 2, 'Pawn shop menu should include cigarettes and pistol only');
 
   const cigarettePlayer = { cigaretteCount: 0 };
   addPlayerPawnShopItem(cigarettePlayer, PAWN_SHOP_ITEM_IDS.cigarettes, 2);
@@ -2054,17 +2091,23 @@ function validateBartenderFunction() {
     getHotbarConsumableItemId(cigaretteSlots[3]) === PAWN_SHOP_ITEM_IDS.cigarettes,
     'Cigarettes should appear as a hotbar consumable'
   );
-  const skateboardPlayer = { skateboardOwned: false };
-  addPlayerPawnShopItem(skateboardPlayer, PAWN_SHOP_ITEM_IDS.skateboard, 1);
-  assert(skateboardPlayer.skateboardOwned === true, 'Pawn shop skateboard should set a permanent owned flag');
-  assert(isPlayerPawnShopItemOwned(skateboardPlayer, PAWN_SHOP_ITEM_IDS.skateboard), 'Pawn shop skateboard ownership should be readable');
+  const toyota = getCarDealerMenuItem(CAR_DEALER_ITEM_IDS.toyotaAe86);
+  const fiat = getCarDealerMenuItem(CAR_DEALER_ITEM_IDS.fiatDuna);
+  assert(toyota?.price === 10000, 'Car dealer Toyota AE86 should cost $10000');
+  assert(fiat?.price === 5000, 'Car dealer Fiat Duna should cost $5000');
+  assert(listCarDealerMenuItems().length === 2, 'Car dealer menu should include Toyota AE86 and Fiat Duna');
+  assert(PLAYER_VEHICLE_SCALE === 0.75, 'Player-owned cars should render at 0.75x standard size');
+  const vehiclePlayer = { skateboardOwned: false, vehicleItemId: '' };
+  setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna);
+  assert(vehiclePlayer.skateboardOwned === true, 'Car purchase should set the permanent vehicle owned flag');
+  assert(getPlayerVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.fiatDuna, 'Car ownership should preserve the purchased vehicle id');
   assert(
-    getPlayerPawnShopInventorySnapshot(skateboardPlayer).skateboardOwned === true,
-    'Pawn shop inventory snapshot should include skateboard ownership'
+    getPlayerVehicleInventorySnapshot(vehiclePlayer).vehicleItemId === CAR_DEALER_ITEM_IDS.fiatDuna,
+    'Vehicle inventory snapshot should include the owned car id'
   );
   assert(
-    createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== PAWN_SHOP_ITEM_IDS.skateboard),
-    'Skateboard should not occupy a hotbar slot'
+    createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== CAR_DEALER_ITEM_IDS.fiatDuna),
+    'Owned cars should not occupy a hotbar slot'
   );
   const burger = getMarthaMenuItem(MARTHA_ITEM_IDS.burger);
   const glizzy = getMarthaMenuItem(MARTHA_ITEM_IDS.glizzy);
@@ -2094,7 +2137,8 @@ function validateBartenderFunction() {
   assert(getHotbarConsumableItemId(marthaFoodSlots[5]) === MARTHA_ITEM_IDS.glizzy, 'Martha glizzies should appear as a hotbar consumable');
   assert(getHotbarConsumableItemId(marthaFoodSlots[6]) === MARTHA_ITEM_IDS.soda, 'Martha soda should appear as a hotbar consumable');
 
-  assert(SKATEBOARD_SPEED_MULTIPLIER === 1.6, 'Skateboard skating speed multiplier should be 1.6x');
+  assert(PLAYER_VEHICLE_SPEED_MULTIPLIER === 2, 'Car driving speed multiplier should be 2x');
+  assert(SKATEBOARD_SPEED_MULTIPLIER === PLAYER_VEHICLE_SPEED_MULTIPLIER, 'Legacy skating transport should use the car driving speed multiplier');
 
   const pawnOwner = normalizeNpcBehavior({
     modelId: 'maynard',
@@ -2113,6 +2157,24 @@ function validateBartenderFunction() {
   assert(
     defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'pawnShopOwnerEnabled')),
     'Default NPC layout should serialize pawnShopOwnerEnabled for world-builder compatibility'
+  );
+  const carDealer = normalizeNpcBehavior({
+    modelId: 'ch18NonPbr',
+    name: 'Car Dealer',
+    carDealerEnabled: true,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  assert(isCarDealerNpc(carDealer), 'Normalized NPC should preserve carDealerEnabled');
+  assert(
+    defaultWorldLayout.npcs.some((npc) => npc.id === 'npc_car_dealer' && npc.carDealerEnabled === true),
+    'Default NPC layout should seed a Car Dealer NPC'
+  );
+  assert(
+    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'carDealerEnabled')),
+    'Default NPC layout should serialize carDealerEnabled for world-builder compatibility'
   );
   const marthaNpc = normalizeNpcBehavior({
     modelId: 'martha',
@@ -2133,6 +2195,11 @@ function validateBartenderFunction() {
     'Pawn shop owner menu should resync and close during interaction updates'
   );
   assert(
+    /this\.syncActiveCarDealerMenu\(carDealerInteraction\);/.test(gameSource)
+      && /buyCarDealerVehicle/.test(gameSource),
+    'Car dealer menu should resync and route car purchases'
+  );
+  assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
     'Game client should route Martha food menu actions to a purchase handler'
   );
@@ -2149,11 +2216,13 @@ function validateBartenderFunction() {
   );
   assert(
     /setPlayerBoundItemsState/.test(hudSource) && /\.hud__bound-items/.test(styles),
-    'HUD should display permanent skateboard ownership outside the hotbar'
+    'HUD should display permanent car ownership outside the hotbar'
   );
   assert(
-    /PlayerSkateboardDeck/.test(playerSource) && /setSkateboardState/.test(playerSource),
-    'Player avatar should include a simple skateboard visual below the feet'
+    /PlayerVehicleRoot/.test(playerSource)
+      && /PLAYER_VEHICLE_SCALE/.test(playerSource)
+      && /character\.visible\s*=\s*!active/.test(playerSource),
+    'Player avatar should render the owned car and hide the character while driving'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
@@ -2165,7 +2234,7 @@ function validateBartenderFunction() {
       && /\[MIXAMO_BONES\.spine\]:\s*Object\.freeze\(\[0,\s*-SKATEBOARD_LOWER_BODY_TURN_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigLeftFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource)
       && /mixamorigRightFoot:\s*Object\.freeze\(\[0,\s*SKATEBOARD_SIDEWAYS_FOOT_YAW,\s*0\]\)/.test(playerSource),
-    'Skating should hold the full player body still with the lower body rotated 90 degrees and both feet perpendicular to the skateboard'
+    'Vehicle driving should keep the legacy static body pose available for transport animation compatibility'
   );
   assert(
     /function applySkateboardStaticBodyPose\(deltaSeconds,\s*active\)/.test(playerSource)
@@ -2176,13 +2245,15 @@ function validateBartenderFunction() {
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
       && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
-    'Game client should use Shift skating input and the shared speed multiplier'
+    'Game client should use Shift vehicle input and the shared speed multiplier'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
+      && /vehicleItemId:\s*'string'/.test(serverSource)
       && /skating:\s*'boolean'/.test(serverSource)
+      && /carDealer:buyVehicle/.test(serverSource)
       && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
-    'Server player state should persist skateboard ownership and authorize skating speed'
+    'Server player state should persist vehicle ownership and authorize driving speed'
   );
 }
 

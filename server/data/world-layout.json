@@ -1883,6 +1883,20 @@
       "schoolMicrogameId": "all"
     },
     {
+      "id": "npc_car_dealer",
+      "modelId": "ch18NonPbr",
+      "position": [
+        96.75,
+        77
+      ],
+      "rotationQuarterTurns": 3,
+      "name": "Car Dealer",
+      "prompt": "You are the Car Dealer in Vibe Theft Auto. Keep answers short and transactional. You sell the Toyota AE86 for $10000 and the Fiat Duna for $5000.",
+      "interactRadius": 5.6,
+      "active": true,
+      "carDealerEnabled": true
+    },
+    {
       "id": "npc_roth",
       "modelId": "maynard",
       "position": [

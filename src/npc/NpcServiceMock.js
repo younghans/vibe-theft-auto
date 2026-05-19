@@ -66,7 +66,6 @@ import {
   refreshPlayerDrunkness
 } from '../shared/bartender.js';
 import {
-  PAWN_SHOP_ITEM_IDS,
   addPlayerPawnShopItem,
   consumePlayerPawnShopItem,
   getPawnShopMenuItem,
@@ -75,6 +74,15 @@ import {
   isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc
 } from '../shared/pawnShop.js';
+import {
+  getCarDealerMenuItem,
+  getCarDealerPromptRadius,
+  getPlayerVehicleInventorySnapshot,
+  getPlayerVehicleItemId,
+  isCarDealerNpc,
+  isPlayerVehicleOwner,
+  setPlayerVehicleItem
+} from '../shared/carDealer.js';
 import {
   addPlayerMarthaItem,
   consumePlayerMarthaItem,
@@ -213,7 +221,10 @@ function buildMockNpcReply(definition = {}) {
   const name = String(definition.name ?? '').toLowerCase();
 
   if (definition.pawnShopOwnerEnabled) {
-    return 'Pistol $50, smokes $20, board $200. Cash first.';
+    return 'Pistol $50, smokes $20. Cash first.';
+  }
+  if (definition.carDealerEnabled) {
+    return 'Toyota AE86 $10000, Fiat Duna $5000. Cash first.';
   }
   if (definition.marthaEnabled) {
     return 'Burger $20, glizzy $10, soda $10. Eat up.';
@@ -354,6 +365,7 @@ function createDefaultPlayerState(overrides = {}) {
     glizzyCount: 0,
     sodaCount: 0,
     skateboardOwned: false,
+    vehicleItemId: '',
     drunknessDose: 0,
     drunknessLevel: 0,
     drunknessEndsAt: 0,
@@ -712,6 +724,7 @@ export class NpcServiceMock {
         stockMarketEnabled: definition.stockMarketEnabled === true,
         bartenderEnabled: definition.bartenderEnabled === true,
         pawnShopOwnerEnabled: definition.pawnShopOwnerEnabled === true,
+        carDealerEnabled: definition.carDealerEnabled === true,
         marthaEnabled: definition.marthaEnabled === true,
         blackjackDealerEnabled: definition.blackjackDealerEnabled === true,
         schoolMicrogameEnabled: definition.schoolMicrogameEnabled === true,
@@ -846,6 +859,7 @@ export class NpcServiceMock {
             stockMarketEnabled: payload.stockMarketEnabled,
             bartenderEnabled: payload.bartenderEnabled,
             pawnShopOwnerEnabled: payload.pawnShopOwnerEnabled,
+            carDealerEnabled: payload.carDealerEnabled,
             marthaEnabled: payload.marthaEnabled,
             blackjackDealerEnabled: payload.blackjackDealerEnabled,
             schoolMicrogameEnabled: payload.schoolMicrogameEnabled,
@@ -1049,7 +1063,7 @@ export class NpcServiceMock {
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
-    player.skating = Boolean(nextAnimation.skating && player.skateboardOwned);
+    player.skating = Boolean(nextAnimation.skating && isPlayerVehicleOwner(player));
     player.transformSeq = transformSeq;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;
@@ -1795,9 +1809,6 @@ export class NpcServiceMock {
     }
 
     access.player.money = money - item.price;
-    if (item.id === PAWN_SHOP_ITEM_IDS.skateboard) {
-      this.normalizePlayerSelectedMission(access.player);
-    }
     this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
     this.emit();
     return {
@@ -1818,6 +1829,93 @@ export class NpcServiceMock {
             reserveAmmo: access.player.reserveAmmo
           }
         : null,
+      money: access.player.money
+    };
+  }
+
+  getCarDealerNpcForPlayer(player, requestedNpcId = '') {
+    const normalizedNpcId = typeof requestedNpcId === 'string'
+      ? requestedNpcId.trim()
+      : '';
+    const candidates = normalizedNpcId
+      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
+      : [...this.state.npcs.values()];
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const npc of candidates) {
+      if (
+        !isCarDealerNpc(npc)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      if (distance <= getCarDealerPromptRadius(npc) && distance < nearestDistance) {
+        nearest = npc;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  getCarDealerAccess(npcId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot buy that right now.' };
+    }
+
+    const npc = this.getCarDealerNpcForPlayer(player, npcId);
+    if (!npc) {
+      return { ok: false, error: 'Move closer to the car dealer.' };
+    }
+
+    return { ok: true, player, npc };
+  }
+
+  async buyCarDealerVehicle(npcId = '', itemId = '') {
+    const access = this.getCarDealerAccess(npcId);
+    if (!access.ok) {
+      return { ok: false, error: access.error };
+    }
+
+    const item = getCarDealerMenuItem(itemId);
+    if (!item) {
+      return { ok: false, error: 'That car is not for sale.' };
+    }
+
+    if (getPlayerVehicleItemId(access.player) === item.id) {
+      const error = `You already own the ${item.label}.`;
+      this.setNpcChatPhase(access.npc, 'done', error, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error };
+    }
+
+    const money = Math.trunc(Number(access.player.money ?? 0) || 0);
+    if (money < item.price) {
+      this.setNpcChatPhase(access.npc, 'done', `${item.label} costs $${item.price}. Come back with cash.`, { bumpSeq: true });
+      this.emit();
+      return { ok: false, error: `You need $${item.price} for the ${item.label}.` };
+    }
+
+    setPlayerVehicleItem(access.player, item.id);
+    access.player.money = money - item.price;
+    this.normalizePlayerSelectedMission(access.player);
+    this.setNpcChatPhase(access.npc, 'done', item.orderLine, { bumpSeq: true });
+    this.emit();
+    return {
+      ok: true,
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: 1
+      },
+      inventory: getPlayerVehicleInventorySnapshot(access.player),
       money: access.player.money
     };
   }

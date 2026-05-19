@@ -5,13 +5,15 @@ const CAPABILITIES = Object.freeze([
   ['stockMarketEnabled', 'stock trading'],
   ['bartenderEnabled', 'bar orders'],
   ['pawnShopOwnerEnabled', 'pawn shop sales'],
+  ['carDealerEnabled', 'car sales'],
   ['marthaEnabled', "Martha's Grille food"],
   ['blackjackDealerEnabled', 'blackjack'],
   ['schoolMicrogameEnabled', 'school challenges']
 ]);
 
 const PROFILES = Object.freeze({
-  pawn: ['pawnShopOwnerEnabled', 'roth|pawn|cigarette|pistol|skateboard', 'pawn shop prices', 'Cash first.'],
+  pawn: ['pawnShopOwnerEnabled', 'roth|pawn|cigarette|pistol', 'pawn shop prices', 'Cash first.'],
+  carDealer: ['carDealerEnabled', 'car dealer|dealership|toyota|ae86|fiat|duna|car', 'car prices', 'Pick your keys, then hold Shift.'],
   martha: ['marthaEnabled', 'martha|grille|burger|glizzy|soda', "Martha's Grille menu", 'Eat up, sugar.'],
   bartender: ['bartenderEnabled', 'bartender|bar|beer|shot|drink', 'bar orders', 'Sip slower than you talk.'],
   teacher: ['schoolMicrogameEnabled', 'professor|teacher|school|quiz', 'school challenge', 'Show your work.'],
@@ -33,6 +35,7 @@ const SERVICE_INTENTS = Object.freeze({
   stock: ['stockMarketEnabled', 'broker'],
   drink: ['bartenderEnabled', 'bartender'],
   shop: ['pawnShopOwnerEnabled', 'pawn'],
+  car: ['carDealerEnabled', 'carDealer'],
   food: ['marthaEnabled', 'martha']
 });
 
@@ -44,7 +47,8 @@ const INTENTS = Object.freeze([
   ['stock', 'stock|market|share|shares|portfolio|invest|trade|trading'],
   ['drink', 'bar|beer|shot|drink|drunk|bartender'],
   ['food', 'martha|grille|burger|glizzy|soda|food|eat|hungry'],
-  ['shop', 'price|buy|sell|shop|cost|weapon|gun|pistol|cigarette|skateboard'],
+  ['car', 'car|vehicle|drive|toyota|ae86|fiat|duna|dealership'],
+  ['shop', 'price|buy|sell|shop|cost|weapon|gun|pistol|cigarette'],
   ['work', 'job|work|mission|task|quest|hustle'],
   ['money', 'money|cash|paid|payout|rich|earn'],
   ['trouble', 'fight|punch|shoot|kill|trouble|danger|heat|police|cop'],
@@ -75,7 +79,10 @@ function chooseFreshLine(lines, transcript = []) {
 
 function getServiceReply(profileKey, profile) {
   if (profileKey === 'pawn') {
-    return 'Cigarettes $20, pistol $50, skateboard $200. Cash first.';
+    return 'Cigarettes $20, pistol $50. Cash first.';
+  }
+  if (profileKey === 'carDealer') {
+    return 'Toyota AE86 $10000, Fiat Duna $5000. Hold Shift to drive.';
   }
   if (profileKey === 'martha') {
     return 'Burger $20, glizzy $10, soda $10. They patch you right up.';

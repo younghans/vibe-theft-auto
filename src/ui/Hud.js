@@ -141,7 +141,7 @@ const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   muscle: '&#128170;',
   chart: '&#128200;',
   'playing-card': '&#127183;',
-  skateboard: '&#128761;',
+  car: '&#128663;',
   office: '&#128188;',
   charisma: '&#128526;',
   custom: '&#10022;'
@@ -3293,16 +3293,13 @@ function getHotbarSlotMarkup(slot = {}, selectedSlotIndex = 0) {
   `;
 }
 
-function getSkateboardBadgeMarkup() {
+function getVehicleBadgeMarkup() {
   return `
-    <span class="hud__bound-skateboard-icon" aria-hidden="true">
-      <span class="hud__bound-skateboard-deck"></span>
-      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--front"></span>
-      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--back"></span>
-      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-left"></span>
-      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-right"></span>
-      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-left"></span>
-      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-right"></span>
+    <span class="hud__bound-vehicle-icon" aria-hidden="true">
+      <span class="hud__bound-vehicle-body"></span>
+      <span class="hud__bound-vehicle-cabin"></span>
+      <span class="hud__bound-vehicle-wheel hud__bound-vehicle-wheel--front"></span>
+      <span class="hud__bound-vehicle-wheel hud__bound-vehicle-wheel--back"></span>
     </span>
   `;
 }
@@ -3435,7 +3432,8 @@ export class Hud {
     this.hotbarRoot = this.overlay.querySelector('[data-hotbar-root]');
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
     this.boundItemsRoot = this.overlay.querySelector('[data-bound-items]');
-    this.boundSkateboardRoot = this.overlay.querySelector('[data-bound-item-skateboard]');
+    this.boundVehicleRoot = this.overlay.querySelector('[data-bound-item-vehicle]');
+    this.boundVehicleLabel = this.overlay.querySelector('[data-bound-item-vehicle-label]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
     this.drunknessLabels = Array.from(this.overlay.querySelectorAll('[data-drunkness-label-level]'));
@@ -3509,6 +3507,7 @@ export class Hud {
     this.builderNpcStockMarket = this.overlay.querySelector('[data-builder-npc-stock-market]');
     this.builderNpcBartender = this.overlay.querySelector('[data-builder-npc-bartender]');
     this.builderNpcPawnShopOwner = this.overlay.querySelector('[data-builder-npc-pawn-shop-owner]');
+    this.builderNpcCarDealer = this.overlay.querySelector('[data-builder-npc-car-dealer]');
     this.builderNpcMartha = this.overlay.querySelector('[data-builder-npc-martha]');
     this.builderNpcBlackjackDealer = this.overlay.querySelector('[data-builder-npc-blackjack-dealer]');
     this.builderNpcSchoolMicrogame = this.overlay.querySelector('[data-builder-npc-school-microgame]');
@@ -3941,9 +3940,9 @@ export class Hud {
         <div class="hud__hotbar-slots" data-hotbar-slots></div>
       </nav>
       <section class="hud__bound-items" data-bound-items aria-label="Permanent items" hidden>
-        <div class="hud__bound-item hud__bound-item--skateboard" data-bound-item-skateboard>
-          ${getSkateboardBadgeMarkup()}
-          <span class="hud__bound-item-label">Skateboard</span>
+        <div class="hud__bound-item hud__bound-item--vehicle" data-bound-item-vehicle>
+          ${getVehicleBadgeMarkup()}
+          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Car</span>
         </div>
       </section>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
@@ -4437,6 +4436,12 @@ export class Hud {
                 <input class="hud__checkbox-control" type="checkbox" data-builder-npc-pawn-shop-owner />
                 <span class="hud__checkbox-copy">
                   <span class="hud__field-label hud__checkbox-title">Pawn Shop Owner</span>
+                </span>
+              </label>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-car-dealer />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Car Dealer</span>
                 </span>
               </label>
               <label class="hud__field hud__checkbox-field">
@@ -6048,6 +6053,7 @@ export class Hud {
     onNpcStockMarketChange,
     onNpcBartenderChange,
     onNpcPawnShopOwnerChange,
+    onNpcCarDealerChange,
     onNpcMarthaChange,
     onNpcBlackjackDealerChange,
     onNpcSchoolMicrogameChange,
@@ -6445,6 +6451,10 @@ export class Hud {
 
     this.builderNpcPawnShopOwner?.addEventListener('change', () => {
       onNpcPawnShopOwnerChange?.(this.builderNpcPawnShopOwner.checked === true);
+    });
+
+    this.builderNpcCarDealer?.addEventListener('change', () => {
+      onNpcCarDealerChange?.(this.builderNpcCarDealer.checked === true);
     });
 
     this.builderNpcMartha?.addEventListener('change', () => {
@@ -7602,6 +7612,9 @@ export class Hud {
     }
     if (this.builderNpcPawnShopOwner && document.activeElement !== this.builderNpcPawnShopOwner) {
       this.builderNpcPawnShopOwner.checked = editorState.pawnShopOwnerEnabled === true;
+    }
+    if (this.builderNpcCarDealer && document.activeElement !== this.builderNpcCarDealer) {
+      this.builderNpcCarDealer.checked = editorState.carDealerEnabled === true;
     }
     if (this.builderNpcMartha && document.activeElement !== this.builderNpcMartha) {
       this.builderNpcMartha.checked = editorState.marthaEnabled === true;
@@ -9099,19 +9112,24 @@ export class Hud {
 
   setPlayerBoundItemsState({
     skateboardOwned = false,
-    skating = false
+    skating = false,
+    vehicleLabel = ''
   } = {}) {
-    if (!this.boundItemsRoot || !this.boundSkateboardRoot) {
+    if (!this.boundItemsRoot || !this.boundVehicleRoot) {
       return;
     }
 
-    const hasSkateboard = skateboardOwned === true;
-    this.boundItemsRoot.hidden = !hasSkateboard;
-    this.boundSkateboardRoot.hidden = !hasSkateboard;
-    this.boundSkateboardRoot.classList.toggle('is-active', hasSkateboard && skating === true);
-    this.boundSkateboardRoot.setAttribute(
+    const hasVehicle = skateboardOwned === true;
+    const label = String(vehicleLabel || 'Car').trim() || 'Car';
+    this.boundItemsRoot.hidden = !hasVehicle;
+    this.boundVehicleRoot.hidden = !hasVehicle;
+    this.boundVehicleRoot.classList.toggle('is-active', hasVehicle && skating === true);
+    if (this.boundVehicleLabel) {
+      this.boundVehicleLabel.textContent = label;
+    }
+    this.boundVehicleRoot.setAttribute(
       'aria-label',
-      hasSkateboard && skating === true ? 'Skateboard active' : 'Skateboard owned'
+      hasVehicle && skating === true ? `${label} active` : `${label} owned`
     );
   }
 

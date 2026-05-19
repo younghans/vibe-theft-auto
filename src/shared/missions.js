@@ -6,6 +6,8 @@ import {
   getSkillXpForLevel
 } from './skills.js';
 
+import { isPlayerVehicleOwner } from './carDealer.js';
+
 export const MISSION_IDS = Object.freeze({
   delivery: 'delivery',
   schoolTeacherTasks: 'custom-mission-go-to-school-complete-3-tasks-for-th-fqyqp8',
@@ -90,10 +92,10 @@ export const MISSION_CATALOG = Object.freeze([
   },
   {
     id: MISSION_IDS.transportationUpgrade,
-    title: 'Transportation upgrade: Buy a skateboard',
+    title: 'Transportation upgrade: Buy a car',
     label: 'Transportation Upgrade',
-    icon: 'skateboard',
-    description: 'Buy a skateboard from the pawn shop.',
+    icon: 'car',
+    description: 'Buy a Fiat Duna or Toyota AE86 from the car dealer.',
     requirement: 'Complete the janitor work first.'
   },
   {
@@ -166,10 +168,10 @@ const DEFAULT_MISSION_SEQUENCE = Object.freeze([
   Object.freeze({
     missionId: MISSION_IDS.transportationUpgrade,
     custom: true,
-    title: 'Transportation upgrade : Buy a skateboard,',
-    label: 'Transportation upgrade : Buy a skateboard,',
-    description: 'Transportation upgrade : Buy a skateboard,',
-    prompt: 'Transportation upgrade : Buy a skateboard,',
+    title: 'Transportation upgrade : Buy a car,',
+    label: 'Transportation upgrade : Buy a car,',
+    description: 'Transportation upgrade : Buy a car from the dealer,',
+    prompt: 'Transportation upgrade : Buy a car from the dealer,',
     icon: 'custom',
     makeAvailableAfterMission: true,
     availableAfterMissionNumber: 4
@@ -562,7 +564,7 @@ export function getMissionProgressSnapshot(player = null) {
     janitorTasksCompletedCount: Number.isFinite(janitorTasksCompletedCount)
       ? Math.max(0, Math.floor(janitorTasksCompletedCount))
       : 0,
-    skateboardOwned: player?.skateboardOwned === true,
+    skateboardOwned: isPlayerVehicleOwner(player),
     officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0,
     charismaXp,
     charismaLevel: getSkillLevelFromXp(charismaXp)

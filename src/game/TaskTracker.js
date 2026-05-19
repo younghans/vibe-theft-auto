@@ -19,7 +19,7 @@ import {
   resolveSelectedMissionId
 } from '../shared/missions.js';
 import { OFFICE_JOB_IDS } from '../shared/officeJobs.js';
-import { isPawnShopOwnerNpc } from '../shared/pawnShop.js';
+import { isCarDealerNpc } from '../shared/carDealer.js';
 import { isSchoolMicrogameNpc } from '../shared/schoolMicrogames.js';
 import { isStockMarketNpc } from '../shared/stockMarket.js';
 import { getTileCenterWorldPosition } from '../shared/tileFootprint.js';
@@ -283,9 +283,9 @@ function getOfficeJobTaskTarget(context = {}, jobId = '') {
   return getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'offices'));
 }
 
-function getPawnShopTaskTarget(context = {}) {
-  return getNpcTaskTargetByPredicate(isPawnShopOwnerNpc, context)
-    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'pawn'));
+function getCarDealerTaskTarget(context = {}) {
+  return getNpcTaskTargetByPredicate(isCarDealerNpc, context)
+    ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'dealership'));
 }
 
 function getMissionTarget(missionId = '', context = {}) {
@@ -314,7 +314,7 @@ function getMissionTarget(missionId = '', context = {}) {
   }
 
   if (missionId === TASK_IDS.transportationUpgrade) {
-    return getPawnShopTaskTarget(context);
+    return getCarDealerTaskTarget(context);
   }
 
   if (missionId === TASK_IDS.officeManagerPromotion) {
@@ -361,7 +361,7 @@ function getMissionDescription(mission = null, context = {}) {
   }
 
   if (mission?.id === TASK_IDS.transportationUpgrade && progress.skateboardOwned) {
-    return 'Skateboard owned.';
+    return 'Car owned.';
   }
 
   if (mission?.id === TASK_IDS.officeManagerPromotion && progress.officeManagerCompletedAt > 0) {

@@ -122,6 +122,14 @@ import {
   listPawnShopMenuItems
 } from '../shared/pawnShop.js';
 import {
+  getCarDealerMenuItem,
+  getCarDealerPromptRadius,
+  getPlayerVehicleItemId,
+  getPlayerVehicleMenuItem,
+  isCarDealerNpc,
+  listCarDealerMenuItems
+} from '../shared/carDealer.js';
+import {
   getMarthaMenuItem,
   getMarthaPromptRadius,
   getPlayerMarthaItemCount,
@@ -1164,6 +1172,7 @@ export class Game {
     this.activeInteractionMenu = null;
     this.bartenderRequestInFlight = false;
     this.pawnShopRequestInFlight = false;
+    this.carDealerRequestInFlight = false;
     this.marthaRequestInFlight = false;
     this.inventoryRequestInFlight = false;
     this.blackjackNpcId = '';
@@ -6616,6 +6625,8 @@ export class Game {
       void this.buyBartenderDrink(action.slice('bartender:'.length));
     } else if (action.startsWith('pawnShop:')) {
       void this.buyPawnShopItem(action.slice('pawnShop:'.length));
+    } else if (action.startsWith('carDealer:')) {
+      void this.buyCarDealerVehicle(action.slice('carDealer:'.length));
     } else if (action.startsWith('martha:')) {
       void this.buyMarthaItem(action.slice('martha:'.length));
     }
@@ -6850,7 +6861,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Pawn Shop',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}. Skateboard: ${isPlayerSkateboardOwner(localPlayerState) ? 'Owned' : 'Not owned'}.`,
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
       actions,
       anchor: menu.anchor
     });
@@ -6911,6 +6922,190 @@ export class Game {
       this.pawnShopRequestInFlight = false;
       if (this.activeInteractionMenu?.kind === 'pawn-shop') {
         this.renderPawnShopMenu();
+      }
+    }
+  }
+
+  getCarDealerNpcDetails(interactable = null) {
+    const npcId = interactable?.npcId || interactable?.placementId || '';
+    const npcState = npcId ? this.npcServiceState.npcs.get(npcId) : null;
+    return {
+      ...(interactable?.npc ?? {}),
+      ...(npcState ?? {}),
+      carDealerEnabled: npcState?.carDealerEnabled === true
+        || interactable?.npc?.carDealerEnabled === true,
+      interactRadius: npcState?.interactRadius ?? interactable?.npc?.interactRadius ?? interactable?.radius
+    };
+  }
+
+  getNearestCarDealerInteractable({
+    npcId = '',
+    worldBuilderInteractables = this.getWorldBuilderInteractables()
+  } = {}) {
+    if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
+      return null;
+    }
+
+    const targetNpcId = String(npcId ?? '').trim();
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const interactable of worldBuilderInteractables) {
+      if (interactable.kind !== 'npc') {
+        continue;
+      }
+
+      const resolvedNpcId = String(interactable.npcId || interactable.placementId || '').trim();
+      if (targetNpcId && resolvedNpcId !== targetNpcId) {
+        continue;
+      }
+
+      const npcDetails = this.getCarDealerNpcDetails(interactable);
+      if (
+        !isCarDealerNpc(npcDetails)
+        || npcDetails.alive === false
+        || npcDetails.mode === 'hidden'
+        || npcDetails.mode === 'dead'
+      ) {
+        continue;
+      }
+
+      const position = this.getPawnShopOwnerNpcPosition(interactable, npcDetails);
+      if (!position) {
+        continue;
+      }
+
+      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const promptRadius = getCarDealerPromptRadius(npcDetails, interactable.radius);
+      if (distance > promptRadius || distance >= nearestDistance) {
+        continue;
+      }
+
+      nearest = {
+        ...interactable,
+        kind: 'car-dealer',
+        npcId: resolvedNpcId,
+        npc: npcDetails,
+        position,
+        radius: promptRadius,
+        prompt: 'Browse cars',
+        actionText: 'Car dealer menu opened.'
+      };
+      nearestDistance = distance;
+    }
+
+    return nearest;
+  }
+
+  syncActiveCarDealerMenu(carDealerInteraction = null) {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'car-dealer') {
+      return;
+    }
+
+    const npcId = String(menu.npcId ?? '').trim();
+    const activeInteraction = String(carDealerInteraction?.npcId ?? '').trim() === npcId
+      ? carDealerInteraction
+      : this.getNearestCarDealerInteractable({ npcId });
+    if (!activeInteraction) {
+      this.closeInteractionMenu();
+      return;
+    }
+
+    menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Car Dealer');
+    menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    this.hud.setInteractionMenuAnchor(menu.anchor);
+  }
+
+  renderCarDealerMenu() {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'car-dealer') {
+      return;
+    }
+
+    const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
+    const localPlayerState = this.getLocalPlayerState();
+    const currentVehicleItemId = getPlayerVehicleItemId(localPlayerState);
+    const currentVehicle = getPlayerVehicleMenuItem(localPlayerState);
+    const items = listCarDealerMenuItems();
+    const actions = items.map((item) => {
+      const owned = currentVehicleItemId === item.id;
+      return {
+        id: `carDealer:${item.id}`,
+        label: owned ? `${item.label} - Owned` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
+        primary: item.id === 'car_fiat_duna',
+        disabled: this.carDealerRequestInFlight || owned || cash < item.price
+      };
+    });
+
+    actions.push({
+      id: 'close',
+      label: 'Maybe later',
+      disabled: this.carDealerRequestInFlight
+    });
+
+    this.hud.showInteractionMenu({
+      title: menu.npcName || 'Car Dealer',
+      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Current car: ${currentVehicle?.label ?? 'None'}.`,
+      actions,
+      anchor: menu.anchor
+    });
+  }
+
+  openCarDealerMenu(interaction = null) {
+    const npcId = String(interaction?.npcId ?? '').trim();
+    if (!npcId) {
+      return;
+    }
+
+    this.closePhoneMenu();
+    this.activeInteractionMenu = {
+      kind: 'car-dealer',
+      npcId,
+      npcName: String(interaction?.npc?.name ?? 'Car Dealer'),
+      anchor: this.getBartenderMenuAnchor(interaction)
+    };
+    this.renderCarDealerMenu();
+  }
+
+  async buyCarDealerVehicle(itemId = '') {
+    const menu = this.activeInteractionMenu;
+    if (menu?.kind !== 'car-dealer' || !menu.npcId || this.carDealerRequestInFlight) {
+      return;
+    }
+
+    const item = getCarDealerMenuItem(itemId);
+    if (!item) {
+      return;
+    }
+
+    this.carDealerRequestInFlight = true;
+    this.renderCarDealerMenu();
+    try {
+      const result = await this.npcService?.buyCarDealerVehicle?.(menu.npcId, item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'That car could not be purchased.');
+        return;
+      }
+
+      this.phoneWalletState = {
+        ...this.phoneWalletState,
+        cash: normalizeMoneyAmount(result.money ?? this.phoneWalletState.cash ?? 0),
+        loading: false,
+        error: ''
+      };
+      this.refreshPhoneWalletHud();
+      this.playSoundEffect(this.rentChaChingSound);
+      this.syncPlayerBoundItemsHud();
+      this.hud.showToast(`Bought ${item.label} for ${formatMoneyAmount(item.price)}.`);
+      this.renderCarDealerMenu();
+    } catch (error) {
+      console.warn('[CarDealer] Purchase failed.', error);
+      this.hud.showToast('Car dealer purchase request failed.');
+    } finally {
+      this.carDealerRequestInFlight = false;
+      if (this.activeInteractionMenu?.kind === 'car-dealer') {
+        this.renderCarDealerMenu();
       }
     }
   }
@@ -12541,6 +12736,7 @@ export class Game {
         stockMarketEnabled: npc.stockMarketEnabled === true,
         bartenderEnabled: npc.bartenderEnabled === true,
         pawnShopOwnerEnabled: npc.pawnShopOwnerEnabled === true,
+        carDealerEnabled: npc.carDealerEnabled === true,
         blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
         busy: npc.busy,
         mode: npc.mode,
@@ -14777,7 +14973,9 @@ export class Game {
   syncPlayerBoundItemsHud(localPlayerState = this.getLocalPlayerState()) {
     this.hud.setPlayerBoundItemsState({
       skateboardOwned: isPlayerSkateboardOwner(localPlayerState),
-      skating: Boolean(localPlayerState?.skating)
+      skating: Boolean(localPlayerState?.skating),
+      vehicleItemId: getPlayerVehicleItemId(localPlayerState),
+      vehicleLabel: getPlayerVehicleMenuItem(localPlayerState)?.label ?? ''
     });
   }
 
@@ -15155,6 +15353,8 @@ export class Game {
       }
       const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
+      const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
+      const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
       const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
         skateboardOwned
@@ -15162,7 +15362,7 @@ export class Game {
         && this.input.isActionPressed('skate')
         && (skateboardMovementInput.x !== 0 || skateboardMovementInput.z !== 0)
       );
-      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: skatingInputHeld });
+      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: skatingInputHeld, vehicleItemId, vehicleLabel });
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -15174,7 +15374,7 @@ export class Game {
       if (workoutActive) {
         this.clearPendingHipFireShot();
         this.currentAimMode = false;
-        this.player.setSkateboardState?.({ owned: skateboardOwned, skating: false });
+        this.player.setSkateboardState?.({ owned: skateboardOwned, skating: false, vehicleItemId });
         const facing = this.player.object.rotation.y;
         this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
         this.syncInlineShellState();
@@ -15195,6 +15395,7 @@ export class Game {
           groundHeight,
           {
             skateboardOwned,
+            vehicleItemId,
             skating: skatingInputHeld,
             speedScale: SKATEBOARD_SPEED_MULTIPLIER
           }
@@ -15510,11 +15711,15 @@ export class Game {
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
       : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
-    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+    const carDealerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+      ? null
+      : this.getNearestCarDealerInteractable({ worldBuilderInteractables });
+    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction || carDealerInteraction
       ? null
       : this.getNearestMarthaInteractable({ worldBuilderInteractables });
     this.syncActiveBartenderMenu(bartenderInteraction);
     this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
+    this.syncActiveCarDealerMenu(carDealerInteraction);
     this.syncActiveMarthaMenu(marthaInteraction);
     const interactPressed = this.input.consumeAction('interact');
 
@@ -15567,6 +15772,14 @@ export class Game {
       this.hud.setPrompt(pawnShopOwnerInteraction);
       if (interactPressed) {
         this.openPawnShopMenu(pawnShopOwnerInteraction);
+      }
+      return;
+    }
+
+    if (carDealerInteraction) {
+      this.hud.setPrompt(carDealerInteraction);
+      if (interactPressed) {
+        this.openCarDealerMenu(carDealerInteraction);
       }
       return;
     }
@@ -15872,12 +16085,15 @@ export class Game {
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
       : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
-    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+    const carDealerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
+      ? null
+      : this.getNearestCarDealerInteractable({ worldBuilderInteractables });
+    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction || carDealerInteraction
       ? null
       : this.getNearestMarthaInteractable({ worldBuilderInteractables });
     const interactable = deliveryInteraction
       ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? marthaInteraction ?? npcInteractable);
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? carDealerInteraction ?? marthaInteraction ?? npcInteractable);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -15896,7 +16112,7 @@ export class Game {
     }
 
     const npcState = this.npcServiceState.npcs.get(npcId);
-    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && !pawnShopOwnerInteraction && !marthaInteraction && npcState?.busy) {
+    if (!deliveryInteraction && !gymCheckInInteraction && !stockMarketInteraction && !blackjackInteraction && !schoolMicrogameInteraction && !bartenderInteraction && !pawnShopOwnerInteraction && !carDealerInteraction && !marthaInteraction && npcState?.busy) {
       return;
     }
 
@@ -16019,6 +16235,20 @@ export class Game {
       bubbles.push({
         id: `npc-pawn-shop:${npcId}`,
         text: 'E to browse pawn shop',
+        label: '',
+        variant: 'interaction',
+        status: 'done',
+        visible: true,
+        screenX: projected.x,
+        screenY: projected.y - screenYOffset
+      });
+      return;
+    }
+
+    if (carDealerInteraction) {
+      bubbles.push({
+        id: `npc-car-dealer:${npcId}`,
+        text: 'E to browse cars',
         label: '',
         variant: 'interaction',
         status: 'done',

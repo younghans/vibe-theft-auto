@@ -45,6 +45,7 @@ function cloneNpcState(npc) {
     stockMarketEnabled: npc.stockMarketEnabled === true,
     bartenderEnabled: npc.bartenderEnabled === true,
     pawnShopOwnerEnabled: npc.pawnShopOwnerEnabled === true,
+    carDealerEnabled: npc.carDealerEnabled === true,
     marthaEnabled: npc.marthaEnabled === true,
     blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: npc.schoolMicrogameEnabled === true,
@@ -118,6 +119,7 @@ function clonePlayerState(player) {
     glizzyCount: inventory.glizzyCount ?? player?.glizzyCount ?? 0,
     sodaCount: inventory.sodaCount ?? player?.sodaCount ?? 0,
     skateboardOwned: (inventory.skateboardOwned ?? player?.skateboardOwned) === true,
+    vehicleItemId: inventory.vehicleItemId || player?.vehicleItemId || '',
     drunknessDose: inventory.drunknessDose ?? player?.drunknessDose ?? 0,
     drunknessLevel: inventory.drunknessLevel ?? player?.drunknessLevel ?? 0,
     drunknessEndsAt: inventory.drunknessEndsAt ?? player?.drunknessEndsAt ?? 0,
@@ -943,6 +945,13 @@ export class NpcServiceColyseus {
 
   async buyPawnShopItem(npcId = '', itemId = '') {
     return this.rpc('pawnShop:buyItem', {
+      npcId: String(npcId ?? '').trim(),
+      itemId: String(itemId ?? '').trim()
+    });
+  }
+
+  async buyCarDealerVehicle(npcId = '', itemId = '') {
+    return this.rpc('carDealer:buyVehicle', {
       npcId: String(npcId ?? '').trim(),
       itemId: String(itemId ?? '').trim()
     });

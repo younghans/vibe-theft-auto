@@ -65,6 +65,8 @@ const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
 const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
 const CAR_DEALERSHIP_DOOR_LOCAL_Z = 10.74;
+const CAR_DEALERSHIP_DEALER_LOCAL_X = 0;
+const CAR_DEALERSHIP_DEALER_LOCAL_Z = -5.75;
 const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
   {
     itemId: 'car_fiat_duna',
@@ -77,6 +79,41 @@ const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
     doorTargetLocalX: CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X
   }
 ]);
+
+function createCarDealershipDealerPlan() {
+  const dealershipPlan = BUILDING_PLANS.find((plan) => plan.itemId === 'car_dealership_building');
+  const dealershipItem = getBuilderItemById('car_dealership_building');
+  if (!dealershipPlan || !dealershipItem) {
+    return null;
+  }
+
+  const rotationQuarterTurns = toQuarterTurns(dealershipPlan.angle);
+  const dealershipCenter = getTileCenterWorldPosition(
+    dealershipItem,
+    dealershipPlan.cell[0],
+    dealershipPlan.cell[1],
+    rotationQuarterTurns
+  );
+  const offset = rotateFootprintOffset(
+    CAR_DEALERSHIP_DEALER_LOCAL_X,
+    CAR_DEALERSHIP_DEALER_LOCAL_Z,
+    rotationQuarterTurns
+  );
+
+  return {
+    id: 'npc_car_dealer',
+    modelId: 'ch18NonPbr',
+    position: [
+      quantizePosition(dealershipCenter.x + offset.x),
+      quantizePosition(dealershipCenter.z + offset.z)
+    ],
+    angle: dealershipPlan.angle,
+    name: 'Car Dealer',
+    prompt: 'You are the Car Dealer in Vibe Theft Auto. Keep answers short and transactional. You sell the Toyota AE86 for $10000 and the Fiat Duna for $5000.',
+    interactRadius: 5.6,
+    carDealerEnabled: true
+  };
+}
 
 const DISTRICT_PROPS = [
   { itemId: 'crate_a', position: [-2.4 * BUILDER_TILE_SIZE, 1.8 * BUILDER_TILE_SIZE], angle: Math.PI / 4 },
@@ -444,7 +481,12 @@ function createNpcLayout(tiles, props) {
     barbellId: findPropPlacementId(props, 'olympic_barbell')
   };
 
-  return NPC_PLANS.map((plan) => ({
+  const plans = [
+    ...NPC_PLANS,
+    createCarDealershipDealerPlan()
+  ].filter(Boolean);
+
+  return plans.map((plan) => ({
     id: plan.id,
     modelId: plan.modelId,
     position: [...plan.position],
@@ -458,6 +500,7 @@ function createNpcLayout(tiles, props) {
     stockMarketEnabled: plan.stockMarketEnabled === true,
     bartenderEnabled: plan.bartenderEnabled === true,
     pawnShopOwnerEnabled: plan.pawnShopOwnerEnabled === true,
+    carDealerEnabled: plan.carDealerEnabled === true,
     marthaEnabled: plan.marthaEnabled === true,
     blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
     schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,

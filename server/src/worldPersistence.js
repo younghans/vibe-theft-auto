@@ -8,6 +8,8 @@ import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
 import { cloneMissionSequence } from '../../src/shared/missions.js';
 import { cloneNpcModelVoiceMap } from '../../src/shared/npcVoice.js';
 import { cloneVibeRadioTracks } from '../../src/shared/vibeRadio.js';
+import { BUILDER_TILE_SIZE } from '../../src/shared/worldConstants.js';
+import { rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import { logServer } from './logger.js';
 
 const { Pool } = pg;
@@ -31,6 +33,48 @@ function cloneLayout(layout = defaultWorldLayout) {
     npcModelVoices: cloneNpcModelVoiceMap(layout.npcModelVoices),
     vibeRadioTracks: cloneVibeRadioTracks(layout.vibeRadioTracks)
   });
+}
+
+function createCarDealerNpcForDealership(dealershipPlacement) {
+  const rotationQuarterTurns = ((Math.round(Number(dealershipPlacement?.rotationQuarterTurns ?? 0)) % 4) + 4) % 4;
+  const localCenter = rotateFootprintOffset(BUILDER_TILE_SIZE * 0.5, BUILDER_TILE_SIZE * 0.5, rotationQuarterTurns);
+  const dealerOffset = rotateFootprintOffset(0, -5.75, rotationQuarterTurns);
+  const anchorX = Number(dealershipPlacement?.cell?.[0] ?? 0) * BUILDER_TILE_SIZE;
+  const anchorZ = Number(dealershipPlacement?.cell?.[1] ?? 0) * BUILDER_TILE_SIZE;
+
+  return {
+    id: 'npc_car_dealer',
+    modelId: 'ch18NonPbr',
+    position: [
+      Number((anchorX + localCenter.x + dealerOffset.x).toFixed(2)),
+      Number((anchorZ + localCenter.z + dealerOffset.z).toFixed(2))
+    ],
+    rotationQuarterTurns,
+    name: 'Car Dealer',
+    prompt: 'You are the Car Dealer in Vibe Theft Auto. Keep answers short and transactional. You sell the Toyota AE86 for $10000 and the Fiat Duna for $5000.',
+    interactRadius: 5.6,
+    active: true,
+    carDealerEnabled: true
+  };
+}
+
+function ensureCarDealerNpc(layout = defaultWorldLayout) {
+  const nextLayout = cloneLayout(layout);
+  const dealershipPlacement = nextLayout.tiles.find((placement) => placement?.itemId === 'car_dealership_building');
+  if (!dealershipPlacement) {
+    return { layout: nextLayout, changed: false };
+  }
+
+  const existing = nextLayout.npcs.find((npc) => npc?.id === 'npc_car_dealer' || npc?.carDealerEnabled === true);
+  const carDealerNpc = createCarDealerNpcForDealership(dealershipPlacement);
+  if (existing) {
+    const wasEnabled = existing.carDealerEnabled === true;
+    existing.carDealerEnabled = true;
+    return { layout: nextLayout, changed: !wasEnabled };
+  }
+
+  nextLayout.npcs.push(carDealerNpc);
+  return { layout: nextLayout, changed: true };
 }
 
 function parseBooleanEnv(value, fallback) {
@@ -780,7 +824,15 @@ export async function initializeWorldPersistence() {
     await store.initializeFromSeedIfEmpty(seedLayout);
   }
 
-  const initialLayout = await store.load() ?? seedLayout;
+  const loadedLayout = await store.load() ?? seedLayout;
+  const carDealerRepair = ensureCarDealerNpc(loadedLayout);
+  if (carDealerRepair.changed) {
+    await store.save(carDealerRepair.layout);
+    logServer('world-persistence', 'Ensured Car Dealer NPC in persisted world layout.', {
+      worldKey: getWorldKey()
+    });
+  }
+  const initialLayout = carDealerRepair.layout;
   worldPersistenceManager = new WorldPersistenceManager(store, initialLayout);
 
   logServer('world-persistence', 'Initialized world persistence.', worldPersistenceManager.getInfo());
