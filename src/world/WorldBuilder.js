@@ -16,6 +16,7 @@ import {
   PROP_PLACEMENT_SCALE_MAX,
   PROP_PLACEMENT_SCALE_MIN,
   PROP_PLACEMENT_SCALE_STEP,
+  getDefaultPropPlacementScale,
   getPlacementScale,
   normalizePropPlacementScale
 } from '../shared/placementScale.js';
@@ -1087,6 +1088,7 @@ export class WorldBuilder {
 
     this.state.activeCategoryId = categoryId;
     this.state.activeItemIndex = this.getVisibleCategoryEntries(categoryId)[0]?.index ?? 0;
+    this.syncActivePropScaleDefault();
     this.updateBuilderHud({ syncPreviews: true });
     void this.syncPreviewToState(true);
   }
@@ -1098,6 +1100,7 @@ export class WorldBuilder {
 
     this.state.activeGroupIdByCategory[this.state.activeCategoryId] = groupId;
     this.ensureActiveItemVisible();
+    this.syncActivePropScaleDefault();
     this.updateBuilderHud({ syncPreviews: true });
     void this.syncPreviewToState(true);
   }
@@ -1109,8 +1112,19 @@ export class WorldBuilder {
 
     const maxIndex = this.activeCategory.items.length - 1;
     this.state.activeItemIndex = THREE.MathUtils.clamp(index, 0, maxIndex);
+    this.syncActivePropScaleDefault();
     this.updateBuilderHud();
     void this.syncPreviewToState(true);
+  }
+
+  syncActivePropScaleDefault() {
+    if (this.getSelectedPlacement()?.layer === 'prop') {
+      return;
+    }
+
+    if (this.activeItem?.layer === 'prop') {
+      this.state.propScale = getDefaultPropPlacementScale(this.activeItem);
+    }
   }
 
   async reorderMissionSequence(fromIndex, toIndex) {
@@ -1953,6 +1967,7 @@ export class WorldBuilder {
     }
     this.state.selection.placementId = null;
     this.selectionRing.visible = false;
+    this.syncActivePropScaleDefault();
     this.hud.setBuilderSelection(null);
     this.hud.setBuilderNpcEditor(null);
     this.hud.setBuilderBuildingEditor(null);

@@ -8,8 +8,12 @@ import {
 } from '../src/shared/combatPickupDefinitions.js';
 import { placementToCollisionRects } from '../src/shared/combatMath.js';
 import {
+  getDefaultPropPlacementScale,
+  getPlacementScale,
+  isVehiclePropItemId,
   PROP_PLACEMENT_SCALE_MAX,
   PROP_PLACEMENT_SCALE_MIN,
+  VEHICLE_PROP_PLACEMENT_SCALE,
   normalizePropPlacementScale
 } from '../src/shared/placementScale.js';
 import {
@@ -184,7 +188,7 @@ function validateRotationQuarterTurns(value, context) {
   assert(value >= 0 && value <= 3, `${context}: rotationQuarterTurns must be between 0 and 3`);
 }
 
-const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
+const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = VEHICLE_PROP_PLACEMENT_SCALE;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
 const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
@@ -245,7 +249,10 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
     ));
 
     assert(prop, `${layoutLabel} should place the ${spec.label} in the dealership showroom bay`);
-    assert(prop.scale === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE, `${layoutLabel} ${spec.label} should render at 0.75x standard size`);
+    assert(
+      getPlacementScale({ layer: 'prop', ...prop }) === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE,
+      `${layoutLabel} ${spec.label} should render at 0.75x standard size`
+    );
     assert(prop.rotationQuarterTurns === expectedRotationQuarterTurns, `${layoutLabel} ${spec.label} should preserve a compatible quarter-turn fallback`);
     assert(Number.isFinite(Number(prop.rotationY)), `${layoutLabel} ${spec.label} should use exact rotationY for diagonal showroom staging`);
     assert(angleDelta(Number(prop.rotationY), expectedRotationY) <= 0.002, `${layoutLabel} ${spec.label} should face diagonally toward the dealership door`);
@@ -263,6 +270,21 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
     assert(
       spec.localX < 0 ? localMaxX <= -PLAYER_RADIUS : localMinX >= PLAYER_RADIUS,
       `${layoutLabel} ${spec.label} should leave a player-width center aisle through the showroom`
+    );
+  }
+}
+
+function assertVehiclePropScales(layout, layoutLabel) {
+  const vehicleProps = (layout.props ?? []).filter((placement) => isVehiclePropItemId(placement.itemId));
+  assert(vehicleProps.length >= 2, `${layoutLabel} should include vehicle props to validate car scale`);
+  for (const prop of vehicleProps) {
+    assert(
+      getDefaultPropPlacementScale(prop) === VEHICLE_PROP_PLACEMENT_SCALE,
+      `${layoutLabel} ${prop.itemId} should resolve a 0.75x default vehicle scale`
+    );
+    assert(
+      getPlacementScale({ layer: 'prop', ...prop }) === VEHICLE_PROP_PLACEMENT_SCALE,
+      `${layoutLabel} ${prop.itemId} should render at 0.75x standard size`
     );
   }
 }
@@ -891,6 +913,8 @@ function validateFootprintSupport() {
   );
   assertDealershipShowroomCars(defaultWorldLayout, 'Default world layout', carDealership);
   assertDealershipShowroomCars(savedWorldLayout, 'Fallback saved world layout', carDealership);
+  assertVehiclePropScales(defaultWorldLayout, 'Default world layout');
+  assertVehiclePropScales(savedWorldLayout, 'Fallback saved world layout');
   assertCarDealerNpc(defaultWorldLayout, 'Default world layout', carDealership);
   assertCarDealerNpc(savedWorldLayout, 'Fallback saved world layout', carDealership);
 
@@ -909,8 +933,30 @@ function validateFootprintSupport() {
   });
   const diagonalRotationProp = diagonalRotationState.serializeLayout().props[0];
   assert(
-    diagonalRotationProp?.rotationY === -0.815 && diagonalRotationProp.scale === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE,
+    diagonalRotationProp?.rotationY === -0.815
+      && getPlacementScale({ layer: 'prop', ...diagonalRotationProp }) === CAR_DEALERSHIP_SHOWROOM_CAR_SCALE,
     'World state should preserve exact prop rotationY and 0.75x scale for diagonal showroom cars'
+  );
+  const implicitVehicleScaleState = new WorldState();
+  implicitVehicleScaleState.loadLayout({
+    tiles: [],
+    props: [{
+      id: 'validation-implicit-vehicle-scale',
+      itemId: 'car_taxi',
+      position: [0, 0],
+      rotationQuarterTurns: 0
+    }],
+    npcs: []
+  });
+  assert(
+    getPlacementScale(implicitVehicleScaleState.getPlacement('validation-implicit-vehicle-scale')) === VEHICLE_PROP_PLACEMENT_SCALE,
+    'World state should load persisted vehicle props without explicit scale at 0.75x'
+  );
+  const placedVehicleScaleState = new WorldState();
+  const placedVehicle = placedVehicleScaleState.placeProp(getBuilderItemById('car_sedan'), 0, 0, 0);
+  assert(
+    getPlacementScale(placedVehicle) === VEHICLE_PROP_PLACEMENT_SCALE,
+    'Newly placed vehicle props should default to 0.75x'
   );
   assert(
     marthasGrille.cameraOcclusionPreserveNodeNames?.includes('marthas_grille_kitchen_detail'),

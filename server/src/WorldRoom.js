@@ -187,7 +187,10 @@ import {
   rotationQuarterTurnsToRadians as toRotationY,
   rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
 } from '../../src/shared/numberMath.js';
-import { normalizePropPlacementScale } from '../../src/shared/placementScale.js';
+import {
+  getDefaultPropPlacementScale,
+  normalizePropPlacementScale
+} from '../../src/shared/placementScale.js';
 import {
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
@@ -3970,7 +3973,7 @@ export class WorldRoom extends Room {
       }
       case 'updatePlacementScale': {
         const placement = this.assertEditablePlacement(payload.placementId, 'prop');
-        const scale = normalizePropPlacementScale(payload.scale);
+        const scale = normalizePropPlacementScale(payload.scale, getDefaultPropPlacementScale(placement));
         const updatedPlacement = this.worldState.updatePlacementScale(placement.id, scale);
         if (!updatedPlacement) {
           throw new Error('That prop is not available.');
@@ -4056,7 +4059,9 @@ export class WorldRoom extends Room {
       itemId: item.id,
       layer: item.layer,
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
-      scale: item.layer === 'prop' ? normalizePropPlacementScale(message.scale) : 1,
+      scale: item.layer === 'prop'
+        ? normalizePropPlacementScale(message.scale, getDefaultPropPlacementScale(item))
+        : 1,
       cellX: Math.round(Number(message.cellX ?? 0)),
       cellZ: Math.round(Number(message.cellZ ?? 0)),
       x: quantizePosition(message.x),
@@ -4092,7 +4097,7 @@ export class WorldRoom extends Room {
       z: quantizePosition(message.z ?? message.position?.[1]),
       rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
       rotationY: Number.isFinite(Number(message.rotationY)) ? quantizeRotation(message.rotationY) : null,
-      scale: normalizePropPlacementScale(message.scale),
+      scale: normalizePropPlacementScale(message.scale, getDefaultPropPlacementScale(item)),
       interactable: this.sanitizePlacementInteractable(message.interactable ?? item.interactable ?? null)
     };
   }

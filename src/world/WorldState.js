@@ -10,7 +10,7 @@ import {
   quantizePosition as normalizePositionValue
 } from '../shared/numberMath.js';
 import {
-  PROP_PLACEMENT_SCALE_DEFAULT,
+  getDefaultPropPlacementScale,
   getPlacementScale,
   normalizePropPlacementScale
 } from '../shared/placementScale.js';
@@ -61,7 +61,7 @@ function toPlacementRecord(entry, item, id) {
       ? quantizeRotation(entry.rotationY)
       : undefined,
     scale: item.layer === 'prop'
-      ? normalizePropPlacementScale(entry.scale)
+      ? normalizePropPlacementScale(entry.scale, getDefaultPropPlacementScale(item))
       : undefined,
     cellX: item.layer === 'tile' ? entry.cell[0] : null,
     cellZ: item.layer === 'tile' ? entry.cell[1] : null,
@@ -174,6 +174,7 @@ function toSerializedPlacement(placement) {
     }
 
   const scale = getPlacementScale(placement);
+  const defaultScale = getDefaultPropPlacementScale(placement);
   return {
     id: placement.id,
     layer: 'prop',
@@ -184,7 +185,7 @@ function toSerializedPlacement(placement) {
     ],
     rotationQuarterTurns: normalizeRotationQuarterTurns(placement.rotationQuarterTurns),
     ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
-    ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
+    ...(scale !== defaultScale ? { scale } : {}),
     ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
   };
 }
@@ -373,7 +374,7 @@ export class WorldState {
     };
   }
 
-  placeProp(item, x, z, rotationQuarterTurns, interactable = null, scale = PROP_PLACEMENT_SCALE_DEFAULT, rotationY = null) {
+  placeProp(item, x, z, rotationQuarterTurns, interactable = null, scale = undefined, rotationY = null) {
     const exactRotationY = Number(rotationY);
     const placement = {
       id: this.createPlacementId(),
@@ -381,7 +382,7 @@ export class WorldState {
       layer: item.layer,
       rotationQuarterTurns,
       rotationY: Number.isFinite(exactRotationY) ? quantizeRotation(exactRotationY) : undefined,
-      scale: normalizePropPlacementScale(scale),
+      scale: normalizePropPlacementScale(scale, getDefaultPropPlacementScale(item)),
       cellX: null,
       cellZ: null,
       position: [x, z],
@@ -471,13 +472,13 @@ export class WorldState {
     return clonePlacement(placement);
   }
 
-  updatePlacementScale(id, scale = PROP_PLACEMENT_SCALE_DEFAULT) {
+  updatePlacementScale(id, scale = undefined) {
     const placement = this.getPlacement(id);
     if (!placement || placement.layer !== 'prop') {
       return null;
     }
 
-    placement.scale = normalizePropPlacementScale(scale);
+    placement.scale = normalizePropPlacementScale(scale, getDefaultPropPlacementScale(placement));
     return clonePlacement(placement);
   }
 
@@ -608,6 +609,7 @@ export class WorldState {
       .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))
       .map((placement) => {
         const scale = getPlacementScale(placement);
+        const defaultScale = getDefaultPropPlacementScale(placement);
         return {
           id: placement.id,
           itemId: placement.itemId,
@@ -617,7 +619,7 @@ export class WorldState {
           ],
           rotationQuarterTurns: placement.rotationQuarterTurns,
           ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
-          ...(scale !== PROP_PLACEMENT_SCALE_DEFAULT ? { scale } : {}),
+          ...(scale !== defaultScale ? { scale } : {}),
           ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
         };
       });

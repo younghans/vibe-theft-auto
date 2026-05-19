@@ -184,7 +184,9 @@ export class RemoteBuilderRenderer {
   }
 
   updateTransform(entry, item, presence) {
-    const scale = item.layer === 'prop' ? getPlacementScale({ layer: 'prop', scale: presence.scale }) : 1;
+    const scale = item.layer === 'prop'
+      ? getPlacementScale({ layer: 'prop', itemId: item.id, scale: presence.scale })
+      : 1;
     if (entry.previewObject) {
       const baseScale = entry.previewObject.userData.builderBaseScale ?? entry.previewObject.scale;
       entry.previewObject.scale.copy(baseScale).multiplyScalar(scale);

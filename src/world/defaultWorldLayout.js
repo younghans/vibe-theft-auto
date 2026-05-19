@@ -1,5 +1,10 @@
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 import {
+  getDefaultPropPlacementScale,
+  PROP_PLACEMENT_SCALE_DEFAULT,
+  VEHICLE_PROP_PLACEMENT_SCALE
+} from '../shared/placementScale.js';
+import {
   quantizePosition,
   quantizeRotation,
   rotationRadiansToQuarterTurns as toQuarterTurns
@@ -60,7 +65,7 @@ const BUILDING_PLANS = [
   { cell: [-2, -2], itemId: 'building_c', angle: 0, label: 'Quick cash loans', action: 'This slot is ready for shady finance interactions.' }
 ];
 
-const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = 0.75;
+const CAR_DEALERSHIP_SHOWROOM_CAR_SCALE = VEHICLE_PROP_PLACEMENT_SCALE;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z = 5.35;
 const CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_X = 5.9;
 const CAR_DEALERSHIP_SHOWROOM_CAR_DOOR_TARGET_LOCAL_X = 3.0;
@@ -397,6 +402,11 @@ function createPropLayout() {
   let propSequence = 95;
 
   const pushProp = (itemId, position, angle = 0, options = {}) => {
+    const defaultScale = getDefaultPropPlacementScale(itemId);
+    const hasExplicitScale = Number.isFinite(Number(options.scale));
+    const scale = hasExplicitScale ? Number(options.scale) : defaultScale;
+    const shouldSerializeScale = scale !== PROP_PLACEMENT_SCALE_DEFAULT
+      || (hasExplicitScale && scale !== defaultScale);
     props.push({
       id: `placement_${++propSequence}`,
       itemId,
@@ -406,7 +416,7 @@ function createPropLayout() {
       ],
       rotationQuarterTurns: toQuarterTurns(angle),
       ...(Number.isFinite(Number(options.rotationY)) ? { rotationY: quantizeRotation(options.rotationY) } : {}),
-      ...(Number.isFinite(Number(options.scale)) && Number(options.scale) !== 1 ? { scale: Number(options.scale) } : {})
+      ...(shouldSerializeScale ? { scale } : {})
     });
   };
 

@@ -180,7 +180,10 @@ import {
   rotationQuarterTurnsToRadians as toRotationY,
   rotationRadiansToQuarterTurns as quantizeRotationQuarterTurnsFromRotationY
 } from '../shared/numberMath.js';
-import { normalizePropPlacementScale } from '../shared/placementScale.js';
+import {
+  getDefaultPropPlacementScale,
+  normalizePropPlacementScale
+} from '../shared/placementScale.js';
 import { getNpcModelById } from './npcCatalog.js';
 import { buildNpcRouteGraph } from './npcRouteGraph.js';
 import { WorldState } from '../world/WorldState.js';
@@ -820,7 +823,7 @@ export class NpcServiceMock {
           Number(payload.z ?? 0),
           Number(payload.rotationQuarterTurns ?? 0),
           null,
-          normalizePropPlacementScale(payload.scale)
+          normalizePropPlacementScale(payload.scale, getDefaultPropPlacementScale(item))
         );
         this.emitWorldPatch({
           type: 'upsertPlacement',
@@ -985,7 +988,11 @@ export class NpcServiceMock {
         return { ok: true, placementId: payload.placementId };
       }
       case 'updatePlacementScale': {
-        const placement = this.worldState.updatePlacementScale(payload.placementId, normalizePropPlacementScale(payload.scale));
+        const existingPlacement = this.worldState.getPlacement(payload.placementId);
+        const placement = this.worldState.updatePlacementScale(
+          payload.placementId,
+          normalizePropPlacementScale(payload.scale, getDefaultPropPlacementScale(existingPlacement))
+        );
         if (!placement) {
           return { ok: false, error: 'That prop is not available.' };
         }
@@ -1141,7 +1148,7 @@ export class NpcServiceMock {
       itemId: presence.itemId ?? '',
       layer: presence.layer ?? '',
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
-      scale: normalizePropPlacementScale(presence.scale),
+      scale: normalizePropPlacementScale(presence.scale, getDefaultPropPlacementScale(presence.itemId)),
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,
       x: quantizePosition(presence.x),
