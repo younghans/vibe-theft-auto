@@ -75,7 +75,11 @@ export const assets = {
     clockTick: assetUrl('audio', 'clock-tick.mp3'),
     phoneUnlock: assetUrl('audio', 'phone_unlock.mp3'),
     playingCard: assetUrl('audio', 'playing_card.mp3'),
-    typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.mp3')
+    typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.mp3'),
+    vibeHero: {
+      debussyArabesqueNo1: assetUrl('audio', 'vibe-hero', 'debussy-arabesque-no-1.mp3'),
+      vivaldiWinterMvt1: assetUrl('audio', 'vibe-hero', 'vivaldi-winter.mp3')
+    }
   },
   city: {
     base: cityAsset('base'),

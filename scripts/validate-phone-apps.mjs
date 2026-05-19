@@ -11,6 +11,7 @@ import {
 } from '../src/shared/stockMarket.js';
 import {
   appendVibeRadioTrack,
+  createDefaultVibeRadioTracks,
   getVibeRadioViewModel,
   normalizeVibeRadioTracks
 } from '../src/shared/vibeRadio.js';
@@ -35,6 +36,11 @@ assert.match(hudSource, /data-phone-vibe-radio-app/, 'Vibe Radio app has dedicat
 assert.match(hudSource, /data-phone-vibe-radio-action/, 'Vibe Radio app exposes playback controls');
 assert.match(hudSource, /data-phone-vibe-radio-volume/, 'Vibe Radio app exposes a player-specific volume control');
 assert.match(hudSource, /data-vibe-radio-widget/, 'Main HUD has the Vibe Radio mini player');
+assert.match(hudSource, /hud__vibe-radio-volume-slider/, 'Vibe Radio uses a normal range slider for volume');
+assert.doesNotMatch(hudSource, /hud__vibe-radio-volume-knob/, 'Vibe Radio should not render the old volume knob');
+assert.doesNotMatch(gameSource, /Playback blocked/, 'Vibe Radio should not surface playback blocked as a player-facing error');
+assert.match(hudSource, /getVibeRadioControlsSignature/, 'Vibe Radio controls should avoid unnecessary re-renders');
+assert.match(hudSource, /lastPhoneVibeRadioTrackListSignature/, 'Vibe Radio phone list should avoid refresh flicker while playing');
 assert.match(worldBuilderSource, /BUILDER_VIBE_RADIO_CATEGORY/, 'World builder registers a Vibe Radio tab');
 assert.match(worldBuilderSource, /updateVibeRadioTracks/, 'World builder can persist Vibe Radio playlist edits');
 assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
@@ -93,6 +99,14 @@ const phoneUnlockHasId3Header = phoneUnlockAudio.subarray(0, 3).toString('ascii'
 const phoneUnlockHasFrameSync = phoneUnlockAudio[0] === 0xff && (phoneUnlockAudio[1] & 0xe0) === 0xe0;
 assert.ok(phoneUnlockHasId3Header || phoneUnlockHasFrameSync, 'Phone unlock audio should be an MP3 file.');
 
+for (const [label, url] of Object.entries(assets.audio.vibeHero ?? {})) {
+  const audio = fs.readFileSync(new URL(url));
+  assert.ok(audio.length > 1024, `${label} Vibe Hero audio should not be empty.`);
+  const hasId3Header = audio.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasFrameSync = audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
+  assert.ok(hasId3Header || hasFrameSync, `${label} Vibe Hero audio should be an MP3 file.`);
+}
+
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
 assert.match(serverSource, /updateVibeRadioTracks/, 'Server accepts Vibe Radio world-builder updates');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
@@ -109,6 +123,21 @@ assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock t
 assert.match(mockNpcSource, /MOCK_STOCK_PORTFOLIOS_STORAGE_KEY/, 'Mock transport persists stock portfolios locally');
 assert.match(mockNpcSource, /MOCK_STOCK_MARKET_STORAGE_KEY/, 'Mock transport persists stock market tape locally');
 assert.match(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit transport accepts Vibe Radio updates');
+
+const defaultRadioPlaylist = createDefaultVibeRadioTracks();
+assert.deepEqual(
+  defaultRadioPlaylist.map((track) => track.title),
+  ['Debussy - Arabesque No. 1', 'Vivaldi - Winter'],
+  'Vibe Radio starts with the current Vibe Hero songs'
+);
+assert.deepEqual(
+  defaultRadioPlaylist.map((track) => track.sourceUrl),
+  [
+    'assets/audio/vibe-hero/debussy-arabesque-no-1.mp3',
+    'assets/audio/vibe-hero/vivaldi-winter.mp3'
+  ],
+  'Vibe Radio starter songs use local MP3 files'
+);
 
 const radioPlaylist = appendVibeRadioTrack([], {
   title: 'Admin Test Song',

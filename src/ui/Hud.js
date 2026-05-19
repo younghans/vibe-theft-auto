@@ -278,6 +278,7 @@ function getVibeRadioControlsMarkup({
   volume = 0.75,
   disabled = false
 } = {}) {
+  const signature = getVibeRadioControlsSignature({ context, playing, volume, disabled });
   const dataPrefix = context === 'phone' ? 'data-phone-vibe-radio-action' : 'data-vibe-radio-action';
   const volumeData = context === 'phone' ? 'data-phone-vibe-radio-volume' : 'data-vibe-radio-volume';
   const disabledAttr = disabled ? ' disabled' : '';
@@ -288,7 +289,7 @@ function getVibeRadioControlsMarkup({
     : '<path d="M8.25 5.75v12.5L17 12 8.25 5.75Z" />';
 
   return `
-    <div class="hud__vibe-radio-controls${context === 'phone' ? ' is-phone' : ''}">
+    <div class="hud__vibe-radio-controls${context === 'phone' ? ' is-phone' : ''}" data-vibe-radio-controls-signature="${escapeHtml(signature)}">
       <button class="hud__vibe-radio-control" type="button" ${dataPrefix}="rewind" aria-label="Rewind vibe radio" title="Rewind"${disabledAttr}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M11 6.25 4.75 12 11 17.75V6.25Z" />
@@ -305,11 +306,42 @@ function getVibeRadioControlsMarkup({
         </svg>
       </button>
       <label class="hud__vibe-radio-volume" title="Radio volume" aria-label="Radio volume">
-        <span class="hud__vibe-radio-volume-knob" aria-hidden="true" style="--radio-volume-angle:${(safeVolume * 270).toFixed(1)}deg"></span>
-        <input type="range" min="0" max="100" step="1" value="${Math.round(safeVolume * 100)}" ${volumeData} />
+        <span class="hud__vibe-radio-volume-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M4.5 9.25h3.4l4.6-3.7v12.9l-4.6-3.7H4.5v-5.5Z" />
+            <path d="M15.5 8.35a5 5 0 0 1 0 7.3" />
+          </svg>
+        </span>
+        <input class="hud__vibe-radio-volume-slider" type="range" min="0" max="100" step="1" value="${Math.round(safeVolume * 100)}" style="--radio-volume:${(safeVolume * 100).toFixed(1)}%" aria-label="Radio volume" ${volumeData}${disabledAttr} />
       </label>
     </div>
   `;
+}
+
+function getVibeRadioControlsSignature({
+  context = 'main',
+  playing = false,
+  disabled = false
+} = {}) {
+  return [
+    context,
+    playing ? 'playing' : 'paused',
+    disabled ? 'disabled' : 'enabled'
+  ].join(':');
+}
+
+function syncVibeRadioControlsElement(root, { volume = 0.75 } = {}) {
+  const input = root?.querySelector?.('.hud__vibe-radio-volume-slider');
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const safeVolume = Math.max(0, Math.min(1, Number(volume) || 0));
+  const value = String(Math.round(safeVolume * 100));
+  if (input.value !== value) {
+    input.value = value;
+  }
+  input.style.setProperty('--radio-volume', `${(safeVolume * 100).toFixed(1)}%`);
 }
 
 function getPhoneVibeRadioAppMarkup(app) {
@@ -3698,6 +3730,7 @@ export class Hud {
       duration: 0,
       error: ''
     };
+    this.lastPhoneVibeRadioTrackListSignature = '';
     this.basketballShotVisible = false;
     this.basketballShotState = {
       game: null
@@ -5290,6 +5323,7 @@ export class Hud {
     this.lastPhoneWalletSignature = '';
     this.lastPhoneStocksSignature = '';
     this.lastPhoneMapSignature = '';
+    this.lastPhoneVibeRadioTrackListSignature = '';
     this.phoneScreenContent.innerHTML = getPhoneScreenMarkup(this.phoneActiveAppId);
   }
 
@@ -9779,12 +9813,18 @@ export class Hud {
 
     const controls = this.vibeRadioWidget.querySelector('.hud__vibe-radio-controls');
     if (controls) {
-      controls.outerHTML = getVibeRadioControlsMarkup({
+      const controlOptions = {
         context: 'main',
         playing: Boolean(state.playing),
         volume: state.volume,
         disabled
-      });
+      };
+      const controlsSignature = getVibeRadioControlsSignature(controlOptions);
+      if (controls.dataset.vibeRadioControlsSignature !== controlsSignature) {
+        controls.outerHTML = getVibeRadioControlsMarkup(controlOptions);
+      } else {
+        syncVibeRadioControlsElement(controls, controlOptions);
+      }
     }
   }
 
@@ -9860,18 +9900,38 @@ export class Hud {
     }
 
     if (list) {
-      list.innerHTML = tracks.length
-        ? tracks.map((track) => this.getPhoneVibeRadioTrackMarkup(track, state)).join('')
-        : '<div class="hud__phone-empty-state">No songs in Vibe Radio.</div>';
+      const listSignature = JSON.stringify({
+        tracks: tracks.map((track) => [
+          track.id,
+          track.title,
+          track.sourceType,
+          track.sourceUrl
+        ]),
+        selectedTrackId: state.selectedTrackId,
+        playing: Boolean(state.playing)
+      });
+      if (listSignature !== this.lastPhoneVibeRadioTrackListSignature) {
+        this.lastPhoneVibeRadioTrackListSignature = listSignature;
+        list.innerHTML = tracks.length
+          ? tracks.map((track) => this.getPhoneVibeRadioTrackMarkup(track, state)).join('')
+          : '<div class="hud__phone-empty-state">No songs in Vibe Radio.</div>';
+      }
     }
 
     if (controls) {
-      controls.innerHTML = getVibeRadioControlsMarkup({
+      const controlOptions = {
         context: 'phone',
         playing: Boolean(state.playing),
         volume: state.volume,
         disabled
-      });
+      };
+      const controlsSignature = getVibeRadioControlsSignature(controlOptions);
+      if (controls.dataset.vibeRadioControlsSignature !== controlsSignature) {
+        controls.dataset.vibeRadioControlsSignature = controlsSignature;
+        controls.innerHTML = getVibeRadioControlsMarkup(controlOptions);
+      } else {
+        syncVibeRadioControlsElement(controls, controlOptions);
+      }
     }
   }
 

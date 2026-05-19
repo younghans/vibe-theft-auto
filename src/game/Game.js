@@ -1206,7 +1206,7 @@ export class Game {
     this.vibeHeroAudioPreloads = new Map();
     this.vibeRadioTracks = cloneVibeRadioTracks();
     this.vibeRadioAudio = new Audio();
-    this.vibeRadioAudio.preload = 'metadata';
+    this.vibeRadioAudio.preload = 'auto';
     this.vibeRadioSelectedTrackId = '';
     this.vibeRadioPlaying = false;
     this.vibeRadioVolume = readStoredVibeRadioVolume();
@@ -3529,7 +3529,7 @@ export class Game {
 
     this.vibeRadioAudio.pause();
     this.vibeRadioAudio.src = track.sourceUrl;
-    this.vibeRadioAudio.preload = 'metadata';
+    this.vibeRadioAudio.preload = 'auto';
     this.vibeRadioLoadedTrackId = track.id;
     this.vibeRadioLoadedSourceUrl = track.sourceUrl;
     this.vibeRadioError = '';
@@ -3561,9 +3561,11 @@ export class Game {
     } catch (error) {
       console.warn('[VibeRadio] Playback failed.', error);
       this.vibeRadioPlaying = false;
-      this.vibeRadioError = 'Playback blocked';
+      this.vibeRadioError = error?.name === 'NotAllowedError' ? '' : 'Track unavailable';
       this.refreshVibeRadioHud();
-      this.hud.showToast('Could not play that Vibe Radio track.');
+      if (this.vibeRadioError) {
+        this.hud.showToast('Could not play that Vibe Radio track.');
+      }
       return false;
     }
   }

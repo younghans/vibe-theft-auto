@@ -1911,5 +1911,18 @@
       "pawnShopOwnerEnabled": true
     }
   ],
-  "vibeRadioTracks": []
+  "vibeRadioTracks": [
+    {
+      "id": "vibe-radio-track-debussy-arabesque-no-1",
+      "title": "Debussy - Arabesque No. 1",
+      "sourceType": "file",
+      "sourceUrl": "assets/audio/vibe-hero/debussy-arabesque-no-1.mp3"
+    },
+    {
+      "id": "vibe-radio-track-vivaldi-winter",
+      "title": "Vivaldi - Winter",
+      "sourceType": "file",
+      "sourceUrl": "assets/audio/vibe-hero/vivaldi-winter.mp3"
+    }
+  ]
 }

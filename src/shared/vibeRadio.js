@@ -1,8 +1,14 @@
+import { listVibeHeroSongs } from './vibeHero.js';
+
 const VIBE_RADIO_TRACK_ID_PREFIX = 'vibe-radio-track-';
 const VIBE_RADIO_TRACK_ID_MAX_LENGTH = 96;
 const VIBE_RADIO_TRACK_TITLE_MAX_LENGTH = 64;
 const VIBE_RADIO_TRACK_SOURCE_MAX_LENGTH = 640;
 const VIBE_RADIO_TRACK_SOURCE_TYPES = Object.freeze(['link', 'file']);
+const VIBE_RADIO_DEFAULT_AUDIO_SOURCES = Object.freeze({
+  debussyArabesqueNo1: 'assets/audio/vibe-hero/debussy-arabesque-no-1.mp3',
+  vivaldiWinterMvt1: 'assets/audio/vibe-hero/vivaldi-winter.mp3'
+});
 
 function normalizeVibeRadioText(value = '', maxLength = VIBE_RADIO_TRACK_TITLE_MAX_LENGTH) {
   return String(value ?? '')
@@ -93,7 +99,12 @@ export function getVibeRadioSourceTypeLabel(sourceType = 'link') {
 }
 
 export function createDefaultVibeRadioTracks() {
-  return [];
+  return normalizeVibeRadioTracks(listVibeHeroSongs().map((song) => ({
+    id: `${VIBE_RADIO_TRACK_ID_PREFIX}${slugifyVibeRadioTrack(song.id)}`,
+    title: song.title,
+    sourceType: 'file',
+    sourceUrl: VIBE_RADIO_DEFAULT_AUDIO_SOURCES[song.audioAssetKey] ?? song.sourceDownloadUrl
+  })));
 }
 
 export function normalizeVibeRadioTrack(entry = {}, tracks = []) {
