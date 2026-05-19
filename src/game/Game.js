@@ -16012,12 +16012,10 @@ export class Game {
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
       const activeCarOwned = isPlayerVehicleOwner(localPlayerState);
       const transportOwned = skateboardOwned || activeCarOwned;
-      const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
         transportOwned
         && playerInput !== ZERO_INPUT
         && this.input.isActionPressed('skate')
-        && (skateboardMovementInput.x !== 0 || skateboardMovementInput.z !== 0)
       );
       const vehicleSpeedScale = activeCarOwned ? CAR_VEHICLE_SPEED_MULTIPLIER : SKATEBOARD_SPEED_MULTIPLIER;
       const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')

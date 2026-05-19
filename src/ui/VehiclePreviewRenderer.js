@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import {
   CAR_DEALER_ITEM_IDS,
   getCarDealerMenuItem,
+  getVehicleModelGroundNodeNameParts,
   normalizePlayerVehicleItemId
 } from '../shared/carDealer.js';
 import { SKATEBOARD_ITEM_ID } from '../shared/skateboard.js';
+import { centerObjectOnXZAndSnapToGround } from '../shared/threeModelBounds.js';
 import { assets } from '../world/assetManifest.js';
 
 const LIVE_PREVIEW_SIZE = Object.freeze({ width: 640, height: 360 });
@@ -77,12 +79,10 @@ function prepareVehicleModel(root) {
   });
 }
 
-function centerAndGroundVehicle(root) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const center = bounds.getCenter(new THREE.Vector3());
-  root.position.x -= center.x;
-  root.position.z -= center.z;
-  root.position.y -= bounds.min.y;
+function centerAndGroundVehicle(root, itemId = '') {
+  centerObjectOnXZAndSnapToGround(root, {
+    groundNodeNameParts: getVehicleModelGroundNodeNameParts(itemId)
+  });
 }
 
 function createSkateboardPreviewModel() {
@@ -156,7 +156,7 @@ async function instantiateVehicle(library, itemId = '', yaw = BASE_VEHICLE_YAW) 
     object.scale.multiplyScalar(CAR_PREVIEW_MODEL_SCALE);
   }
   prepareVehicleModel(object);
-  centerAndGroundVehicle(object);
+  centerAndGroundVehicle(object, definition.id);
   object.rotation.y = yaw;
 
   return {

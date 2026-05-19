@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
+import { snapObjectToGround } from '../shared/threeModelBounds.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import {
   createBasketballHalfCourtTileVisual,
@@ -35,11 +36,7 @@ export function fitObjectToFootprint(root, targetWidth, targetDepth) {
   root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
 }
 
-export function snapObjectToGround(root, clearance = 0) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  root.position.y -= bounds.min.y;
-  root.position.y += Number(clearance) || 0;
-}
+export { snapObjectToGround };
 
 function getUnderlayItem(item) {
   if (item?.layer !== 'tile' || !item.underlayTileId) {
@@ -120,7 +117,8 @@ export async function instantiateItemVisual(library, item) {
     throw new Error(`Item "${item?.id ?? item?.assetName ?? 'unknown'}" does not define a usable visual source.`);
   }
   const needsTileRoot = item?.layer === 'tile';
-  const needsModelTransformRoot = !needsTileRoot && Number.isFinite(Number(item?.modelRotationY));
+  const needsModelTransformRoot = !needsTileRoot
+    && (item?.modelTransformRoot === true || Number.isFinite(Number(item?.modelRotationY)));
   const root = needsTileRoot || needsModelTransformRoot ? new THREE.Group() : primaryObject;
   const tileCenterOffset = needsTileRoot ? getTileLocalCenterOffset(item) : { x: 0, z: 0 };
 
@@ -171,7 +169,10 @@ export function prepareItemVisual(visual, applyObjectSetup = null) {
       part.object.updateWorldMatrix(true, true);
     }
     fitObjectToFootprint(part.object, part.item.size[0], part.item.size[1]);
-    snapObjectToGround(part.object, part.item.groundClearance);
+    snapObjectToGround(part.object, {
+      clearance: part.item.groundClearance,
+      groundNodeNameParts: part.item.groundSnapNodeNameParts
+    });
   }
 
   return visual.root;

@@ -60,12 +60,14 @@ import {
   getPlayerOwnedVehicleMenuItems,
   getPlayerVehicleInventorySnapshot,
   getPlayerVehicleItemId,
+  getVehicleModelGroundNodeNameParts,
   isCarDealerNpc,
   listCarDealerMenuItems,
   playerOwnsVehicleItem,
   selectPlayerVehicleItem,
   setPlayerVehicleItem
 } from '../src/shared/carDealer.js';
+import { snapObjectToGround } from '../src/shared/threeModelBounds.js';
 import {
   MARTHA_ITEM_IDS,
   addPlayerMarthaItem,
@@ -298,6 +300,39 @@ function assertVehiclePropScales(layout, layoutLabel) {
       `${layoutLabel} ${prop.itemId} should render at 0.75x standard size`
     );
   }
+}
+
+function assertVehicleModelGrounding() {
+  const fiatGroundParts = getVehicleModelGroundNodeNameParts(CAR_DEALER_ITEM_IDS.fiatDuna);
+  assert(
+    fiatGroundParts.includes('tire') && fiatGroundParts.includes('wheel'),
+    'Fiat Duna model grounding should snap to wheel/tire mesh bounds instead of the bad low license-plate bounds'
+  );
+
+  const fiatItem = getBuilderItemById(CAR_DEALER_ITEM_IDS.fiatDuna);
+  const toyotaItem = getBuilderItemById(CAR_DEALER_ITEM_IDS.toyotaAe86);
+  assert(fiatItem?.modelTransformRoot === true, 'Fiat Duna prop should keep model-prep transforms under a placement root');
+  assert(toyotaItem?.modelTransformRoot === true, 'Toyota AE86 prop should keep model-prep transforms under a placement root');
+  assert(
+    fiatItem.groundSnapNodeNameParts?.includes('tire') && fiatItem.groundSnapNodeNameParts?.includes('wheel'),
+    'Fiat Duna prop should carry wheel/tire grounding metadata into world rendering'
+  );
+
+  const root = new Group();
+  const material = new MeshStandardMaterial();
+  const badLowBounds = new Mesh(new BoxGeometry(0.4, 0.4, 0.4), material);
+  badLowBounds.name = 'front_license_plate_bad_bounds';
+  badLowBounds.position.y = -2;
+  const wheel = new Mesh(new BoxGeometry(1, 1, 1), material);
+  wheel.name = 'fiat_duna_test_wheel';
+  wheel.position.y = 1.25;
+  root.add(badLowBounds, wheel);
+
+  snapObjectToGround(root, { groundNodeNameParts: fiatGroundParts });
+  const wheelBounds = new Box3().setFromObject(wheel);
+  const fullBounds = new Box3().setFromObject(root);
+  assert(Math.abs(wheelBounds.min.y) <= 0.000001, 'Fiat Duna wheel/tire grounding should put the wheel bottom on the ground');
+  assert(fullBounds.min.y < -1, 'Fiat Duna wheel/tire grounding should ignore the known bad low license-plate-style bound');
 }
 
 function assertCarDealerNpc(layout, layoutLabel, carDealershipItem) {
@@ -971,6 +1006,7 @@ function validateFootprintSupport() {
   assertDealershipShowroomCars(savedWorldLayout, 'Fallback saved world layout', carDealership);
   assertVehiclePropScales(defaultWorldLayout, 'Default world layout');
   assertVehiclePropScales(savedWorldLayout, 'Fallback saved world layout');
+  assertVehicleModelGrounding();
   assertCarDealerNpc(defaultWorldLayout, 'Default world layout', carDealership);
   assertCarDealerNpc(savedWorldLayout, 'Fallback saved world layout', carDealership);
 
@@ -2432,9 +2468,10 @@ function validateBartenderFunction() {
       && /CAR_PREVIEW_MODEL_SCALE\s*=\s*0\.75/.test(vehiclePreviewSource)
       && /BASE_VEHICLE_YAW\s*=\s*Math\.PI\s*\*\s*0\.23/.test(vehiclePreviewSource)
       && /LIVE_VEHICLE_ROTATION_SPEED\s*=\s*1\.65/.test(vehiclePreviewSource)
+      && /getVehicleModelGroundNodeNameParts/.test(vehiclePreviewSource)
       && /createSkateboardPreviewModel/.test(vehiclePreviewSource)
       && /library\.instantiate\(definition\.assetUrl\)/.test(vehiclePreviewSource),
-    'Vehicle preview renderer should load real forward-facing rotating car GLB models and procedurally render the skateboard'
+    'Vehicle preview renderer should load real grounded forward-facing rotating car GLB models and procedurally render the skateboard'
   );
   assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
@@ -2489,8 +2526,10 @@ function validateBartenderFunction() {
       && /PlayerSkateboardWheel_/.test(playerSource)
       && /PlayerVehicleRoot/.test(playerSource)
       && /PLAYER_CAR_MODEL_SCALE\s*=\s*0\.75/.test(playerSource)
+      && /getVehicleModelGroundNodeNameParts/.test(playerSource)
+      && /centerAndGroundVehicleModel\(object,\s*normalizedItemId\)/.test(playerSource)
       && /character\.visible\s*=\s*false/.test(playerSource),
-    'Player avatar should render the legacy skateboard and replace the character with a 0.75x selected car while car-driving'
+    'Player avatar should render the legacy skateboard and replace the character with a grounded 0.75x selected car while car-driving'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
@@ -2513,8 +2552,11 @@ function validateBartenderFunction() {
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
       && /CAR_VEHICLE_SPEED_MULTIPLIER/.test(gameSource)
-      && /vehicleSpeedScale/.test(gameSource),
-    'Game client should use Shift transport input with the skateboard or selected car speed multiplier'
+      && /vehicleSpeedScale/.test(gameSource)
+      && !/skateboardMovementInput/.test(gameSource)
+      && /wantsTransportVisible/.test(playerSource)
+      && /const active = Boolean\(\(skateboardOwned \|\| activeVehicleItemId\) && skateboardSkating && aliveState/.test(playerSource),
+    'Game client should use Shift transport input to show the skateboard or selected car even while stationary, with the correct speed multiplier when moving'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)

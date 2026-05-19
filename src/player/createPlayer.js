@@ -42,7 +42,12 @@ import {
   normalizeDrunknessLevel
 } from '../shared/bartender.js';
 import { isDeliveryQuestActive } from '../shared/deliveryQuest.js';
-import { CAR_DEALER_ITEM_IDS, normalizePlayerVehicleItemId } from '../shared/carDealer.js';
+import {
+  CAR_DEALER_ITEM_IDS,
+  getVehicleModelGroundNodeNameParts,
+  normalizePlayerVehicleItemId
+} from '../shared/carDealer.js';
+import { centerObjectOnXZAndSnapToGround } from '../shared/threeModelBounds.js';
 import { assets } from '../world/assetManifest.js';
 
 const PLAYER_HEIGHT = 4.5;
@@ -460,12 +465,10 @@ function preparePlayerVehicleModel(root) {
   });
 }
 
-function centerAndGroundVehicleModel(root) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const center = bounds.getCenter(new THREE.Vector3());
-  root.position.x -= center.x;
-  root.position.z -= center.z;
-  root.position.y -= bounds.min.y;
+function centerAndGroundVehicleModel(root, itemId = '') {
+  centerObjectOnXZAndSnapToGround(root, {
+    groundNodeNameParts: getVehicleModelGroundNodeNameParts(itemId)
+  });
 }
 
 function createSkateboardStaticBodyPose(root) {
@@ -1803,7 +1806,7 @@ export async function createPlayer(library, {
           object.visible = false;
           object.scale.multiplyScalar(PLAYER_CAR_MODEL_SCALE);
           preparePlayerVehicleModel(object);
-          centerAndGroundVehicleModel(object);
+          centerAndGroundVehicleModel(object, normalizedItemId);
           vehicleRoot.add(object);
           playerVehicleModels.set(normalizedItemId, object);
           return object;
@@ -1845,8 +1848,8 @@ export async function createPlayer(library, {
     return skateboardSkating;
   }
 
-  function updateSkateboardVisual(deltaSeconds, moving) {
-    const active = Boolean((skateboardOwned || activeVehicleItemId) && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+  function updateSkateboardVisual(deltaSeconds) {
+    const active = Boolean((skateboardOwned || activeVehicleItemId) && skateboardSkating && aliveState && !ragdoll.isActive());
     const activeCar = Boolean(active && activeVehicleItemId);
     if (activeCar) {
       skateboard.visible = false;
@@ -1904,7 +1907,7 @@ export async function createPlayer(library, {
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
-    const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
     const wantsGuardPose = Boolean(
       punchGuardAction
       && aimingState
@@ -1966,7 +1969,7 @@ export async function createPlayer(library, {
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
-    updateSkateboardVisual(deltaSeconds, moving);
+    updateSkateboardVisual(deltaSeconds);
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;
@@ -2614,8 +2617,8 @@ export async function createPlayer(library, {
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
       const selectedVehicleItemId = normalizePlayerVehicleItemId(options.vehicleItemId);
       const transportOwned = Boolean(options.skateboardOwned || selectedVehicleItemId);
-      const wantsToSkate = Boolean(transportOwned && options.skating && wantsToMove && !ragdoll.isActive());
-      const movementSpeedScale = wantsToSkate && Number.isFinite(options.speedScale)
+      const wantsTransportVisible = Boolean(transportOwned && options.skating && !ragdoll.isActive());
+      const movementSpeedScale = wantsTransportVisible && wantsToMove && Number.isFinite(options.speedScale)
         ? options.speedScale
         : 1;
 
@@ -2633,7 +2636,7 @@ export async function createPlayer(library, {
         : moveDirection.set(0, 0, 0);
       setSkateboardState({
         owned: transportOwned,
-        skating: wantsToSkate && moving,
+        skating: wantsTransportVisible,
         vehicleItemId: selectedVehicleItemId
       });
 

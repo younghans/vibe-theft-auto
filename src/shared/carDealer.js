@@ -5,6 +5,10 @@ export const CAR_DEALER_ITEM_IDS = Object.freeze({
 
 export const CAR_VEHICLE_SPEED_MULTIPLIER = 2;
 
+const VEHICLE_MODEL_GROUND_NODE_NAME_PARTS = Object.freeze({
+  [CAR_DEALER_ITEM_IDS.fiatDuna]: Object.freeze(['tire', 'wheel'])
+});
+
 export const CAR_DEALER_MENU_ITEMS = Object.freeze([
   Object.freeze({
     id: CAR_DEALER_ITEM_IDS.toyotaAe86,
@@ -54,6 +58,10 @@ export function getCarDealerMenuItem(itemId = '') {
 
 export function normalizePlayerVehicleItemId(value = '') {
   return normalizeCarDealerItemId(value);
+}
+
+export function getVehicleModelGroundNodeNameParts(itemId = '') {
+  return VEHICLE_MODEL_GROUND_NODE_NAME_PARTS[normalizePlayerVehicleItemId(itemId)] ?? [];
 }
 
 export function normalizePlayerOwnedVehicleItemIds(value = '') {

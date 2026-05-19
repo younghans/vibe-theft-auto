@@ -16,6 +16,10 @@ import {
   cloneCombatPickupDefinition
 } from '../shared/combatPickupDefinitions.js';
 import {
+  CAR_DEALER_ITEM_IDS,
+  getVehicleModelGroundNodeNameParts
+} from '../shared/carDealer.js';
+import {
   cloneInteractableDefinition,
   cloneInteriorDefinition
 } from './interactableMetadata.js';
@@ -656,18 +660,21 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     modelRotationY: Math.PI / 2
   },
   {
-    id: 'car_toyota_ae86',
+    id: CAR_DEALER_ITEM_IDS.toyotaAe86,
     assetName: 'car_toyota_ae86',
     label: 'Toyota AE86',
     asset: customCityAsset('models', 'toyota-ae86-low-poly.glb'),
-    group: 'vehicles'
+    group: 'vehicles',
+    modelTransformRoot: true
   },
   {
-    id: 'car_fiat_duna',
+    id: CAR_DEALER_ITEM_IDS.fiatDuna,
     assetName: 'car_fiat_duna',
     label: 'Fiat Duna',
     asset: customCityAsset('models', 'fiat-duna-low-poly.glb'),
-    group: 'vehicles'
+    group: 'vehicles',
+    modelTransformRoot: true,
+    groundSnapNodeNameParts: getVehicleModelGroundNodeNameParts(CAR_DEALER_ITEM_IDS.fiatDuna)
   },
   { id: 'dumpster', assetName: 'dumpster', group: 'storage' },
   { id: 'hydrant', assetName: 'firehydrant', label: 'Hydrant', group: 'utilities', collision: false },
@@ -1146,10 +1153,12 @@ function createCityProp(definition) {
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
     groundClearance: Number.isFinite(definition.groundClearance) ? definition.groundClearance : undefined,
+    groundSnapNodeNameParts: [...(definition.groundSnapNodeNameParts ?? [])],
     interactable: cloneInteractableDefinition(definition.interactable),
     combatPickup: cloneCombatPickupDefinition(definition.combatPickup),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     modelRotationY: Number.isFinite(definition.modelRotationY) ? definition.modelRotationY : undefined,
+    modelTransformRoot: definition.modelTransformRoot === true,
     aliases: [...(definition.aliases ?? [])],
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
