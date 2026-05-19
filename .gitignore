@@ -11,6 +11,7 @@ dist/
 .public-export/
 .tmp-gltf-estimate/
 test-results/
+supabase/.temp/
 tmp-*.spec.cjs
 tools/mixamo-optimizer/node_modules/
 assets/mixamo/characters/*.fbx

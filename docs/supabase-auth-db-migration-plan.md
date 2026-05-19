@@ -1,0 +1,285 @@
+# Supabase Auth + Database Migration Plan
+
+This plan centralizes identity, admin roles, and durable game persistence in Supabase while keeping the Colyseus server authoritative for gameplay state changes.
+
+## Target Architecture
+
+```text
+Browser
+  -> Supabase Auth for login/session
+  -> Colyseus for realtime gameplay
+
+Colyseus Cloud
+  -> verifies Supabase access tokens
+  -> checks game admin roles in Supabase Postgres
+  -> reads/writes all authoritative game state
+
+Supabase
+  -> Auth users
+  -> game_users/admin roles
+  -> permanent player saves
+  -> migrated world, stock, and backup tables
+```
+
+## Core Principles
+
+- The browser may use the Supabase project URL and publishable key.
+- The browser must not receive the Supabase database URL, database password, secret key, or service-role key.
+- Colyseus remains the only writer for gameplay-critical state: money, inventory, skills, missions, world edits, admin actions, stock state, and saves.
+- Guest mode can keep using the existing local `vta.playerId` and TTL `player_snapshots` during rollout.
+- Signed-in players should use a permanent Supabase Auth user id for durable saves.
+- Database migration should happen before auth migration so we can prove Supabase Postgres is a drop-in replacement for the current Render Postgres setup.
+
+## Current Repo Touchpoints
+
+- Frontend runtime config is injected by `scripts/build-web.mjs`.
+- The client creates a local guest player id in `src/npc/createNpcService.js`.
+- The Colyseus client passes `playerId` and `adminKey` join options through `src/npc/NpcServiceColyseus.js`.
+- The server loads and saves temporary player snapshots in `server/src/playerSnapshots.js`.
+- The server currently grants admin access from `ADMIN_KEYS` / `adminKey` in `server/src/WorldRoom.js`.
+- The admin HTTP endpoints currently accept `adminKey` in `server/app.config.js`.
+- Existing Postgres-backed game tables are created by:
+  - `server/src/worldPersistence.js`
+  - `server/src/playerSnapshots.js`
+  - `server/src/stockMarketPersistence.js`
+
+## Phase 1: Supabase Foundation
+
+Goal: finish Supabase project setup and collect the environment values we need before changing code.
+
+Status: completed locally on 2026-05-19.
+
+Decisions and notes:
+
+- Supabase CLI is linked to project `abulktuxhtwtcjsmengk`.
+- Local `DATABASE_URL` is stored in ignored `.env.local`.
+- The Supabase session pooler connection was selected for the Colyseus runtime.
+- The local stored connection string uses a URL-encoded password component.
+- The local stored connection string uses `sslmode=no-verify` because Node `pg` hit certificate-chain verification errors with the shared pooler when using `sslmode=require`.
+- A read-only local Node `pg` probe connected successfully to Supabase Postgres.
+
+### Values We Already Have
+
+- `SUPABASE_URL`: public browser-safe project URL.
+- `SUPABASE_PUBLISHABLE_KEY`: public browser-safe key, usually `sb_publishable_...`.
+
+### Values To Collect
+
+Public frontend values:
+
+- `VTA_SUPABASE_URL`: same as `SUPABASE_URL`, injected into the frontend build.
+- `VTA_SUPABASE_PUBLISHABLE_KEY`: same as `SUPABASE_PUBLISHABLE_KEY`, injected into the frontend build.
+
+Server-only values:
+
+- `DATABASE_URL`: Supabase Postgres connection string for Colyseus.
+- Database password used inside the connection string.
+- Optional `SUPABASE_SECRET_KEY`: `sb_secret_...`, server-only, only if we need Supabase Admin API operations.
+
+Do not paste server-only values into chat, issue trackers, URLs, or frontend code.
+
+### Supabase Dashboard Setup
+
+1. Confirm the project region. Prefer the closest region to the Colyseus Cloud backend.
+2. In Auth settings, set the production site URL to `https://www.vibetheftauto.xyz`.
+3. Add redirect URLs for local and deployed environments:
+   - `http://localhost:4173`
+   - `http://localhost:4173/*`
+   - `https://www.vibetheftauto.xyz`
+   - `https://www.vibetheftauto.xyz/*`
+   - Any Vercel preview domains we want to support.
+4. Choose the first login providers. Start simple:
+   - Email magic link or email/password.
+   - Google OAuth if we want a lower-friction login button.
+5. Decide whether to configure custom SMTP before production. Supabase's default email is fine for development, but production games usually want branded email delivery.
+6. Open the Database connection panel and copy the Postgres connection string:
+   - Use direct connection if the Colyseus environment supports IPv6.
+   - Use session pooler if Colyseus needs IPv4 support.
+   - Avoid transaction pooler for the long-lived Colyseus server unless we explicitly tune the `pg` client for it.
+7. Store `DATABASE_URL` in the Colyseus Cloud production environment, not in the browser or Vercel frontend environment.
+8. Store frontend-safe `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` in the Vercel frontend environment.
+
+### Phase 1 Exit Criteria
+
+- Supabase project has Auth enabled and a chosen initial login provider.
+- Production and local redirect URLs are configured.
+- We have the browser-safe URL and publishable key ready for frontend config.
+- We have the server-only Postgres connection string ready for Colyseus.
+- We know whether Colyseus should use direct connection or session pooler.
+- Supabase CLI is linked to project `abulktuxhtwtcjsmengk`.
+
+### Optional CLI Workflow
+
+The Supabase CLI is useful for local migrations, schema diffs, database dumps, generating types, and linking this repo to the hosted Supabase project. It does not replace all dashboard setup; Auth URL configuration and OAuth provider setup are usually fastest to confirm in the dashboard.
+
+Install or run the CLI:
+
+```sh
+npx supabase --help
+```
+
+Initialize this repo for Supabase migrations:
+
+```sh
+npx supabase init
+```
+
+Log in with a Supabase personal access token. Do not paste this token into chat.
+
+```sh
+npx supabase login
+```
+
+Link the local repo to the hosted project:
+
+```sh
+npx supabase link --project-ref <project-ref>
+```
+
+Useful commands after linking:
+
+```sh
+npx supabase db pull initial_remote_schema
+npx supabase migration new create_game_users
+npx supabase db push --dry-run
+npx supabase db push
+npx supabase db dump --linked -f supabase/schema.sql
+```
+
+For the Render-to-Supabase database migration, use `pg_dump`/`psql` or a Supabase-supported dump/restore workflow for the actual data transfer, then use the CLI for ongoing migrations.
+
+## Phase 2: Move Render Postgres To Supabase
+
+Goal: prove Supabase Postgres can run the current game persistence unchanged.
+
+Status: migrated and verified locally on 2026-05-19.
+
+Notes:
+
+- Render external database URL is stored in ignored `.env.migration.local` as `RENDER_DATABASE_URL`.
+- Supabase target database URL is stored in ignored `.env.local` as `DATABASE_URL`.
+- The baseline game persistence schema lives in `supabase/migrations/20260519225000_baseline_game_persistence.sql`.
+- The reusable sync command is `npm run db:sync:render-to-supabase`.
+- The source Render database is still live, so run the sync command again immediately before switching Colyseus production to Supabase.
+- The migrated tables are:
+  - `agent_json_state`
+  - `world_snapshots`
+  - `world_snapshot_backups`
+  - `stock_market_snapshots`
+  - `player_snapshots`
+
+1. Export the current Render Postgres database.
+2. Restore the export into Supabase Postgres.
+3. Verify these tables and row counts:
+   - `world_snapshots`
+   - `world_snapshot_backups`
+   - `player_snapshots`
+   - `stock_market_snapshots`
+4. Point a staging Colyseus deployment at Supabase `DATABASE_URL`.
+5. Verify:
+   - world loads
+   - world edits persist
+   - stock market state persists
+   - player snapshots persist
+   - world backups still rotate
+
+## Phase 3: Add Account Tables
+
+Goal: add app-owned tables that connect Supabase Auth users to game roles and permanent saves.
+
+```sql
+create table public.game_users (
+  id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  is_admin boolean not null default false,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz
+);
+
+create table public.player_saves (
+  world_key text not null,
+  user_id uuid not null references public.game_users(id) on delete cascade,
+  snapshot jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (world_key, user_id)
+);
+```
+
+Optional later additions:
+
+- `admin_audit_logs`
+- `player_save_backups`
+- `player_public_profiles`
+- `linked_guest_saves`
+
+## Phase 4: Client Auth
+
+Goal: let players sign in from the static frontend and pass the current access token to Colyseus.
+
+1. Add `@supabase/supabase-js`.
+2. Add a small frontend auth module.
+3. Inject `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` during build.
+4. Add sign in, sign out, and auth state UI.
+5. Update `createNpcService()`:
+   - signed-in mode passes `accessToken`
+   - guest mode keeps passing local `playerId`
+6. Refresh/rejoin behavior must handle token refresh.
+
+## Phase 5: Colyseus Auth
+
+Goal: authenticate room joins and map Supabase users to saves/admin roles.
+
+1. Add token verification in the server before `onJoin`.
+2. For signed-in users:
+   - verify token
+   - read Supabase user id from `sub`
+   - upsert `game_users`
+   - load from `player_saves`
+   - set `player.isAdmin` from `game_users.is_admin`
+3. For guests:
+   - keep current local `playerId` behavior
+   - keep TTL snapshot persistence
+4. Save authenticated players to `player_saves` instead of expiring `player_snapshots`.
+
+## Phase 6: Replace Admin Key Flow
+
+Goal: remove URL-key based admin access.
+
+1. Stop granting admin from `?adminKey=`.
+2. Admin UI visibility comes from server-owned `player.isAdmin`.
+3. Admin HTTP endpoints require `Authorization: Bearer <supabase access token>`.
+4. Backend checks:
+   - token is valid
+   - `game_users.is_admin = true`
+5. Keep `ADMIN_KEYS` only as a temporary emergency fallback during rollout.
+6. Remove the fallback after production auth is stable.
+
+## Phase 7: Rollout
+
+1. Deploy Supabase DB migration.
+2. Deploy backend with dual support: guest snapshots and authenticated saves.
+3. Deploy frontend auth UI.
+4. Mark the first admin in Supabase:
+
+```sql
+update public.game_users
+set is_admin = true
+where id = '<your-auth-user-id>';
+```
+
+5. Test:
+   - guest can play
+   - user can log in
+   - progress survives browser/device switch
+   - non-admin cannot access builder/admin actions
+   - admin can access builder/admin actions
+   - `/admin/*` rejects missing or invalid tokens
+
+## Useful Official Docs
+
+- Supabase Auth: https://supabase.com/docs/guides/auth
+- Supabase API keys: https://supabase.com/docs/guides/getting-started/api-keys
+- Supabase JWTs: https://supabase.com/docs/guides/auth/jwts
+- Supabase user data tables: https://supabase.com/docs/guides/auth/managing-user-data
+- Supabase Postgres connection strings: https://supabase.com/docs/reference/postgres/connection-strings
+- Supabase Postgres migration: https://supabase.com/docs/guides/platform/migrating-to-supabase/postgres
