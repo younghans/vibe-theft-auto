@@ -991,6 +991,11 @@ function validateVibeHero() {
   assert(gameSource.includes("this.input.consume('Space')") && gameSource.includes('toggleVibeHeroEditorPlayback'), 'Vibe Hero chart editor should pause/play with Space');
   assert(gameSource.includes('overwriteVibeHeroEditorRange') && gameSource.includes('recordVibeHeroEditorLanes'), 'Vibe Hero chart editor should overwrite chart ranges from keyboard lane recording');
   assert(gameSource.includes('recordVibeHeroEditorPlaybackRange') && gameSource.includes('getVibeHeroEditorPressedLaneIndexes'), 'Vibe Hero chart editor should continuously record held 1-5 keys across the elapsed playback range');
+  assert(gameSource.includes('pauseVibeRadioForVibeHero') && gameSource.includes('resumeVibeRadioAfterVibeHero'), 'Vibe Hero should pause Vibe Radio while active and resume it afterward');
+  assert(/startVibeHeroCountdown\(\)\s*\{[\s\S]*?this\.pauseVibeRadioForVibeHero\(\)/.test(gameSource), 'Starting Vibe Hero play should pause Vibe Radio');
+  assert(/startVibeHeroChartEditor\(\)\s*\{[\s\S]*?this\.pauseVibeRadioForVibeHero\(\)/.test(gameSource), 'Starting the Vibe Hero chart editor should pause Vibe Radio');
+  assert(/finishVibeHero\(\)\s*\{[\s\S]*?this\.resumeVibeRadioAfterVibeHero\(\)/.test(gameSource), 'Finishing Vibe Hero should resume Vibe Radio when it was paused by Vibe Hero');
+  assert(/closeVibeHero\(\)\s*\{[\s\S]*?this\.resumeVibeRadioAfterVibeHero\(\)/.test(gameSource), 'Closing Vibe Hero should resume Vibe Radio when it was paused by Vibe Hero');
   assert(gameSource.includes('VIBE_HERO_EDITOR_RECORD_STEP_MS') && gameSource.includes('this.input.isPressed(code)'), 'Vibe Hero chart editor should sample held note keys instead of only single keydown events');
   assert(gameSource.includes('VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS') && gameSource.includes('editorLaneHeld'), 'Vibe Hero chart editor should debounce fresh taps before held-key repeat notes are recorded');
   assert(gameSource.includes('recordedKeys') && gameSource.includes('mergedChart'), 'Vibe Hero chart editor should avoid preserving exact duplicates when merging recorded notes');

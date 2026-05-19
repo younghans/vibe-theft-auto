@@ -129,6 +129,9 @@ assert.match(gameSource, /radioVolume \* 0\.5/, 'Vibe Radio halves the effective
 assert.match(gameSource, /rangedRadioVolume \* rangedRadioVolume/, 'Vibe Radio makes 50 percent play like the current 25 percent');
 assert.match(gameSource, /startDefaultVibeRadioPlayback/, 'Game auto-starts the default Vibe Radio track on join');
 assert.match(gameSource, /queueVibeRadioAutoplayUnlock/, 'Game retries Vibe Radio autoplay after browser gesture unlocks audio');
+assert.match(gameSource, /vibeRadioPausedForVibeHero/, 'Vibe Radio remembers when Vibe Hero paused it');
+assert.match(gameSource, /isVibeHeroHoldingVibeRadio/, 'Vibe Radio playback is gated while Vibe Hero is playing or editing');
+assert.match(gameSource, /playVibeRadioTrack[\s\S]*?isVibeHeroHoldingVibeRadio/, 'Vibe Radio should not restart while Vibe Hero is active');
 assert.match(inputSource, /target instanceof Element && Boolean\(target\.closest\('\.hud'\)\)/, 'HUD SVG icon clicks should not fall through to game input');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
 

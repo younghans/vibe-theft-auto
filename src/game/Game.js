@@ -1265,6 +1265,7 @@ export class Game {
     this.vibeRadioTimeUpdateFrame = 0;
     this.vibeRadioAutoplayPending = true;
     this.vibeRadioAutoplayUnlockHandler = null;
+    this.vibeRadioPausedForVibeHero = false;
     this.officeJobPlacementId = '';
     this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
@@ -3521,6 +3522,52 @@ export class Game {
     this.hud.setVibeRadioState(this.getVibeRadioHudState());
   }
 
+  isVibeHeroHoldingVibeRadio(game = this.vibeHero) {
+    if (!game || !this.hud?.isVibeHeroOpen?.()) {
+      return false;
+    }
+
+    return game.editorMode === true
+      || game.phase === 'countdown'
+      || game.phase === 'playing';
+  }
+
+  pauseVibeRadioForVibeHero() {
+    const shouldResume = Boolean(
+      this.vibeRadioPausedForVibeHero
+      || this.vibeRadioPlaying
+      || this.vibeRadioAutoplayPending
+      || (this.vibeRadioAudio && !this.vibeRadioAudio.paused)
+    );
+
+    if (shouldResume) {
+      this.vibeRadioPausedForVibeHero = true;
+    }
+
+    if (this.vibeRadioAudio && !this.vibeRadioAudio.paused) {
+      this.vibeRadioAudio.pause();
+    }
+    this.vibeRadioPlaying = false;
+    this.clearVibeRadioAutoplayUnlock();
+    this.refreshVibeRadioHud();
+    return shouldResume;
+  }
+
+  resumeVibeRadioAfterVibeHero() {
+    if (!this.vibeRadioPausedForVibeHero || this.isVibeHeroHoldingVibeRadio()) {
+      return false;
+    }
+
+    this.vibeRadioPausedForVibeHero = false;
+    if (this.vibeRadioAutoplayPending) {
+      void this.startDefaultVibeRadioPlayback();
+      return true;
+    }
+
+    void this.playVibeRadioTrack();
+    return true;
+  }
+
   clearVibeRadioAutoplayUnlock() {
     if (!this.vibeRadioAutoplayUnlockHandler) {
       return;
@@ -3550,6 +3597,10 @@ export class Game {
 
   async startDefaultVibeRadioPlayback() {
     if (!this.vibeRadioAutoplayPending || this.vibeRadioPlaying || !this.vibeRadioTracks.length) {
+      return false;
+    }
+    if (this.isVibeHeroHoldingVibeRadio()) {
+      this.pauseVibeRadioForVibeHero();
       return false;
     }
 
@@ -3659,6 +3710,12 @@ export class Game {
   }
 
   async playVibeRadioTrack(track = this.getVibeRadioSelectedTrack()) {
+    if (this.isVibeHeroHoldingVibeRadio()) {
+      this.vibeRadioPausedForVibeHero = true;
+      this.pauseVibeRadioForVibeHero();
+      return false;
+    }
+
     if (!track) {
       this.hud.showToast('Vibe radio has no tracks yet.');
       this.refreshVibeRadioHud();
@@ -3674,6 +3731,11 @@ export class Game {
 
     try {
       await this.vibeRadioAudio.play();
+      if (this.isVibeHeroHoldingVibeRadio()) {
+        this.vibeRadioPausedForVibeHero = true;
+        this.pauseVibeRadioForVibeHero();
+        return false;
+      }
       this.vibeRadioPlaying = true;
       this.vibeRadioAutoplayPending = false;
       this.clearVibeRadioAutoplayUnlock();
@@ -8499,6 +8561,9 @@ export class Game {
     this.closePhoneMenu();
     this.stopVibeHeroAudio();
     this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId, { editorMode: editing });
+    if (editing) {
+      this.pauseVibeRadioForVibeHero();
+    }
     this.preloadVibeHeroSongAudio(this.vibeHero.song);
     this.hud.hideLoading();
     this.hud.setVibeHeroState({
@@ -8529,6 +8594,7 @@ export class Game {
       visible: false,
       game: this.vibeHero
     });
+    this.resumeVibeRadioAfterVibeHero();
     this.adminPromptError = '';
     this.refreshAdminPromptHud();
   }
@@ -8570,6 +8636,7 @@ export class Game {
     this.stopVibeHeroAudio();
     const songId = this.vibeHero.selectedSongId ?? this.vibeHeroSelectedSongId;
     this.vibeHero = this.createVibeHeroState(songId);
+    this.pauseVibeRadioForVibeHero();
     this.preloadVibeHeroSongAudio(this.vibeHero.song);
     const now = performance.now();
     this.vibeHero.phase = 'countdown';
@@ -8592,6 +8659,7 @@ export class Game {
 
     const now = performance.now();
     this.vibeHero.phase = 'playing';
+    this.pauseVibeRadioForVibeHero();
     this.vibeHero.startedAt = now;
     this.vibeHero.currentTimeMs = 0;
     this.vibeHero.remainingMs = this.vibeHero.durationMs;
@@ -8704,6 +8772,7 @@ export class Game {
     this.stopVibeHeroAudio();
     const songId = this.vibeHero.selectedSongId ?? this.vibeHeroSelectedSongId;
     this.vibeHero = this.createVibeHeroState(songId, { editorMode: true });
+    this.pauseVibeRadioForVibeHero();
     const now = performance.now();
     this.vibeHero.phase = 'editor';
     this.vibeHero.editorPaused = false;
@@ -9357,6 +9426,7 @@ export class Game {
     }
     void this.claimVibeHeroCharismaReward(game, accuracy);
     this.syncVibeHeroHud();
+    this.resumeVibeRadioAfterVibeHero();
     return true;
   }
 
