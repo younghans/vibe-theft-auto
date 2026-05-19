@@ -82,6 +82,7 @@ import {
   getHotbarDrinkItemId,
   moveHotbarItemOrderSlot
 } from '../src/shared/hotbarInventory.js';
+import { SMOKING_EMOTE_ID } from '../src/player/emotes.js';
 import {
   VIBE_HERO_GAME_ID,
   VIBE_HERO_LANE_COUNT,
@@ -2259,6 +2260,17 @@ function validateBartenderFunction() {
   assert(
     getHotbarConsumableItemId(cigaretteSlots[3]) === PAWN_SHOP_ITEM_IDS.cigarettes,
     'Cigarettes should appear as a hotbar consumable'
+  );
+  assert(
+    SMOKING_EMOTE_ID === 'smoking'
+      && /item\.id\s*===\s*PAWN_SHOP_ITEM_IDS\.cigarettes[\s\S]*\?\s*SMOKING_EMOTE_ID[\s\S]*:\s*DRINKING_EMOTE_ID/.test(gameSource),
+    'Smoking cigarettes should play the smoking emote instead of the drinking emote'
+  );
+  assert(
+    /hud__hotbar-cigarette-ember/.test(hudSource)
+      && !/hud__hotbar-cigarette-pack/.test(hudSource)
+      && !/\.hud__hotbar-cigarette-pack/.test(styles),
+    'Cigarette hotbar icon should render as a single cigarette instead of a pack'
   );
   const toyota = getCarDealerMenuItem(CAR_DEALER_ITEM_IDS.toyotaAe86);
   const fiat = getCarDealerMenuItem(CAR_DEALER_ITEM_IDS.fiatDuna);

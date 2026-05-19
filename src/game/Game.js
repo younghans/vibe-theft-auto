@@ -80,7 +80,7 @@ import {
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -121,7 +121,8 @@ import {
   getPlayerPawnShopItemCount,
   isPlayerPawnShopItemOwned,
   isPawnShopOwnerNpc,
-  listPawnShopMenuItems
+  listPawnShopMenuItems,
+  PAWN_SHOP_ITEM_IDS
 } from '../shared/pawnShop.js';
 import {
   CAR_VEHICLE_SPEED_MULTIPLIER,
@@ -7831,7 +7832,10 @@ export class Game {
         return false;
       }
 
-      this.player?.playEmote(DRINKING_EMOTE_ID);
+      const emoteId = item.id === PAWN_SHOP_ITEM_IDS.cigarettes
+        ? SMOKING_EMOTE_ID
+        : DRINKING_EMOTE_ID;
+      this.player?.playEmote(emoteId);
       const healed = Math.max(0, Math.floor(Number(result.health?.healed) || 0));
       this.hud.showToast(result.message
         ? `${result.message}${healed > 0 ? ` +${healed} health.` : ''}`

@@ -3298,7 +3298,7 @@ function getHotbarItemIconMarkup(slot = {}) {
   }
 
   if (slot.hotbarIconId === 'consumableCigarettes') {
-    return '<span class="hud__hotbar-cigarette-icon" aria-hidden="true"><span class="hud__hotbar-cigarette-pack"></span><span class="hud__hotbar-cigarette-stick"></span><span class="hud__hotbar-cigarette-filter"></span></span>';
+    return '<span class="hud__hotbar-cigarette-icon" aria-hidden="true"><span class="hud__hotbar-cigarette-filter"></span><span class="hud__hotbar-cigarette-stick"></span><span class="hud__hotbar-cigarette-ember"></span></span>';
   }
 
   if (slot.hotbarIconId === 'foodBurger') {

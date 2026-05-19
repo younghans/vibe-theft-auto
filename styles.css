@@ -3400,55 +3400,82 @@ body.is-admin-prompt-resizing * {
 .hud__hotbar-cigarette-icon {
   position: relative;
   display: block;
-  width: 64%;
-  height: 64%;
+  width: 74%;
+  height: 48%;
   filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.28));
-  transform: translateY(2%) rotate(-7deg);
+  transform: translateY(4%) rotate(-23deg);
   transition:
     filter 150ms ease,
     transform 150ms ease;
 }
 
-.hud__hotbar-cigarette-pack,
 .hud__hotbar-cigarette-stick,
-.hud__hotbar-cigarette-filter {
+.hud__hotbar-cigarette-filter,
+.hud__hotbar-cigarette-ember {
   position: absolute;
   pointer-events: none;
 }
 
-.hud__hotbar-cigarette-pack {
-  left: 10%;
-  bottom: 4%;
-  width: 58%;
-  height: 76%;
-  border: 2px solid rgba(252, 247, 229, 0.82);
-  border-radius: 5px;
-  background:
-    linear-gradient(180deg, #f8f4e7 0 38%, #c93434 39% 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(20, 20, 24, 0.14),
-    inset 0 -8px 0 rgba(92, 16, 16, 0.18);
+.hud__hotbar-cigarette-icon::before,
+.hud__hotbar-cigarette-icon::after {
+  content: "";
+  position: absolute;
+  right: -2%;
+  border: 2px solid rgba(225, 235, 232, 0.72);
+  border-left: 0;
+  border-bottom: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  transform: rotate(24deg);
+}
+
+.hud__hotbar-cigarette-icon::before {
+  top: -18%;
+  width: 18%;
+  height: 36%;
+  opacity: 0.7;
+}
+
+.hud__hotbar-cigarette-icon::after {
+  top: -40%;
+  right: 10%;
+  width: 14%;
+  height: 28%;
+  opacity: 0.45;
 }
 
 .hud__hotbar-cigarette-stick {
-  right: 4%;
-  top: 18%;
-  width: 48%;
-  height: 12%;
+  left: 22%;
+  right: 10%;
+  top: 42%;
+  height: 20%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f7f1de 0 70%, #ef8f38 71% 100%);
-  transform: rotate(-18deg);
-  box-shadow: inset 0 0 0 1px rgba(30, 20, 12, 0.12);
+  background: linear-gradient(90deg, #fff9e8 0 63%, #e9dfc9 64% 86%, #b9b1a2 87% 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(30, 20, 12, 0.14),
+    inset 0 -2px 0 rgba(58, 42, 24, 0.08);
 }
 
 .hud__hotbar-cigarette-filter {
-  right: 2%;
-  top: 16%;
+  left: 2%;
+  top: 40%;
+  width: 26%;
+  height: 24%;
+  border-radius: 999px 0 0 999px;
+  background: repeating-linear-gradient(90deg, #f0a13c 0 5px, #db762a 5px 8px);
+  box-shadow: inset 0 0 0 1px rgba(60, 29, 9, 0.18);
+}
+
+.hud__hotbar-cigarette-ember {
+  right: 4%;
+  top: 39%;
   width: 12%;
-  height: 15%;
+  height: 26%;
   border-radius: 999px;
-  background: #f28a33;
-  transform: rotate(-18deg);
+  background: radial-gradient(circle at 55% 50%, #fff1b8 0 18%, #ff6938 42%, #6e3024 76%);
+  box-shadow:
+    0 0 6px rgba(255, 91, 42, 0.7),
+    inset 0 0 0 1px rgba(64, 21, 14, 0.22);
 }
 
 .hud__hotbar-food-icon {

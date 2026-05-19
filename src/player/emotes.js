@@ -14,6 +14,7 @@ export const PUNCH_ALT_EMOTE_ID = 'punchingMirrored';
 export const TYPING_EMOTE_ID = 'typing';
 export const TEXTING_EMOTE_ID = 'texting';
 export const DRINKING_EMOTE_ID = 'drinking';
+export const SMOKING_EMOTE_ID = 'smoking';
 
 export const EMOTES_BY_ID = Object.freeze({
   [PUNCH_EMOTE_ID]: {
@@ -72,7 +73,7 @@ export const EMOTES_BY_ID = Object.freeze({
     playbackRate: 1,
     groundFeet: true
   },
-  smoking: {
+  [SMOKING_EMOTE_ID]: {
     label: 'Smoking',
     clipName: 'smoking',
     loop: true,
