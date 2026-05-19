@@ -107,11 +107,13 @@ import {
   normalizeSkateboardOwned
 } from '../../src/shared/skateboard.js';
 import {
+  CAR_VEHICLE_SPEED_MULTIPLIER,
   getCarDealerMenuItem,
   getCarDealerPromptRadius,
+  getPlayerDefaultVehicleItemId,
   getPlayerVehicleInventorySnapshot,
-  getPlayerVehicleItemId,
   isCarDealerNpc,
+  isPlayerVehicleOwner,
   normalizePlayerVehicleItemId,
   playerOwnsVehicleItem,
   selectPlayerVehicleItem,
@@ -900,8 +902,8 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.vehicleItemId = normalizePlayerVehicleItemId(saved.vehicleItemId);
   if (player.vehicleItemId) {
     setPlayerVehicleItem(player, player.vehicleItemId);
-  } else if (player.ownedVehicleItemIds) {
-    player.vehicleItemId = getPlayerVehicleItemId(player);
+  } else if (!Object.hasOwn(saved, 'vehicleItemId') && player.ownedVehicleItemIds) {
+    player.vehicleItemId = getPlayerDefaultVehicleItemId(player);
   }
   player.drunknessDose = normalizeDrunknessDose(saved.drunknessDose);
   player.drunknessLevel = getDrunknessLevelForDose(player.drunknessDose);
@@ -1693,8 +1695,10 @@ export class WorldRoom extends Room {
       return;
     }
     const elapsedSeconds = Math.max((now - meta.acceptedAt) / 1000, 0.016);
-    const requestedSkating = isPlayerSkateboardOwner(player) && message?.skating === true;
-    const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? SKATEBOARD_SPEED_MULTIPLIER : 1);
+    const activeVehicleOwned = isPlayerVehicleOwner(player);
+    const requestedSkating = (isPlayerSkateboardOwner(player) || activeVehicleOwned) && message?.skating === true;
+    const transportSpeedMultiplier = activeVehicleOwned ? CAR_VEHICLE_SPEED_MULTIPLIER : SKATEBOARD_SPEED_MULTIPLIER;
+    const maxAcceptedSpeed = PLAYER_MAX_ACCEPTED_SPEED * (requestedSkating ? transportSpeedMultiplier : 1);
     const maxDistance = PLAYER_POSITION_FORGIVENESS + (maxAcceptedSpeed * elapsedSeconds);
     let nextPosition = requestedPosition;
     let travelled = distance2D(meta.x, meta.z, nextPosition.x, nextPosition.z);
@@ -1747,7 +1751,7 @@ export class WorldRoom extends Room {
     player.emoteSeq = animationState.emoteSeq;
     player.aimRotationY = animationState.aimRotationY;
     player.aiming = animationState.aiming;
-    player.skating = Boolean(animationState.skating && isPlayerSkateboardOwner(player));
+    player.skating = Boolean(animationState.skating && (isPlayerSkateboardOwner(player) || isPlayerVehicleOwner(player)));
     this.queuePlayerSnapshotSave(client.sessionId);
   }
 

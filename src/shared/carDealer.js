@@ -3,6 +3,8 @@ export const CAR_DEALER_ITEM_IDS = Object.freeze({
   fiatDuna: 'car_fiat_duna'
 });
 
+export const CAR_VEHICLE_SPEED_MULTIPLIER = 2;
+
 export const CAR_DEALER_MENU_ITEMS = Object.freeze([
   Object.freeze({
     id: CAR_DEALER_ITEM_IDS.toyotaAe86,
@@ -81,17 +83,11 @@ export function serializePlayerOwnedVehicleItemIds(value = '') {
 }
 
 export function getPlayerVehicleItemId(player = null) {
-  const itemId = normalizePlayerVehicleItemId(player?.vehicleItemId);
-  if (itemId) {
-    return itemId;
-  }
+  return normalizePlayerVehicleItemId(player?.vehicleItemId);
+}
 
-  const ownedItemId = normalizePlayerOwnedVehicleItemIds(player?.ownedVehicleItemIds)[0] ?? '';
-  if (ownedItemId) {
-    return ownedItemId;
-  }
-
-  return '';
+export function getPlayerDefaultVehicleItemId(player = null) {
+  return normalizePlayerOwnedVehicleItemIds(player?.ownedVehicleItemIds)[0] ?? '';
 }
 
 export function getPlayerVehicleMenuItem(player = null) {

@@ -52,8 +52,10 @@ import {
   listPawnShopMenuItems
 } from '../src/shared/pawnShop.js';
 import {
+  CAR_VEHICLE_SPEED_MULTIPLIER,
   CAR_DEALER_ITEM_IDS,
   getCarDealerMenuItem,
+  getPlayerDefaultVehicleItemId,
   getPlayerOwnedVehicleItemIds,
   getPlayerOwnedVehicleMenuItems,
   getPlayerVehicleInventorySnapshot,
@@ -2271,6 +2273,9 @@ function validateBartenderFunction() {
   setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.toyotaAe86);
   assert(getPlayerOwnedVehicleItemIds(vehiclePlayer).length === 2, 'Player vehicle inventory should retain multiple owned cars');
   assert(getPlayerOwnedVehicleMenuItems(vehiclePlayer).some((item) => item.id === CAR_DEALER_ITEM_IDS.fiatDuna), 'Owned car selector entries should include the Fiat Duna');
+  vehiclePlayer.vehicleItemId = '';
+  assert(getPlayerVehicleItemId(vehiclePlayer) === '', 'Clearing the active car should preserve a skateboard selection even when cars are owned');
+  assert(getPlayerDefaultVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.toyotaAe86, 'Persisted owned cars should still expose a default active car for migration');
   selectPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna);
   assert(getPlayerVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.fiatDuna, 'Selecting an owned car should switch the active vehicle id');
   assert(
@@ -2377,8 +2382,9 @@ function validateBartenderFunction() {
   assert(
     /bindCarSelectorEvents/.test(gameSource)
       && /selectPlayerVehicle/.test(gameSource)
+      && /focusCarSelectorVehicle/.test(gameSource)
       && /getPlayerOwnedVehicleMenuItems/.test(gameSource),
-    'Game client should expose a clickable owned-car selector'
+    'Game client should expose a preview-then-select owned-car selector'
   );
   assert(
     /SKATEBOARD_ITEM_ID/.test(gameSource)
@@ -2398,9 +2404,11 @@ function validateBartenderFunction() {
     /assets\.vehicles\.fiatDuna/.test(vehiclePreviewSource)
       && /assets\.vehicles\.toyotaAe86/.test(vehiclePreviewSource)
       && /CAR_PREVIEW_MODEL_SCALE\s*=\s*0\.75/.test(vehiclePreviewSource)
+      && /BASE_VEHICLE_YAW\s*=\s*Math\.PI\s*\*\s*0\.23/.test(vehiclePreviewSource)
+      && /LIVE_VEHICLE_ROTATION_SPEED\s*=\s*1\.65/.test(vehiclePreviewSource)
       && /createSkateboardPreviewModel/.test(vehiclePreviewSource)
       && /library\.instantiate\(definition\.assetUrl\)/.test(vehiclePreviewSource),
-    'Vehicle preview renderer should load real car GLB models and procedurally render the skateboard'
+    'Vehicle preview renderer should load real forward-facing rotating car GLB models and procedurally render the skateboard'
   );
   assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
@@ -2424,8 +2432,9 @@ function validateBartenderFunction() {
   assert(
     /data-bound-item-vehicle[\s\S]*aria-haspopup="dialog"/.test(hudSource)
       && /data-car-selector/.test(hudSource)
+      && /data-car-selector-select/.test(hudSource)
       && /\.hud__car-selector/.test(styles),
-    'HUD car badge should open an owned-car selector menu'
+    'HUD car badge should open an owned-car selector menu with an explicit Select button'
   );
   assert(
     /data-bound-item-vehicle[\s\S]*\$\{getVehicleBadgeMarkup\(\)\}/.test(hudSource)
@@ -2438,9 +2447,10 @@ function validateBartenderFunction() {
     /data-car-preview-card/.test(hudSource)
       && /data-car-dealer-preview/.test(hudSource)
       && /hud__dialog-button--vehicle/.test(hudSource)
+      && /vehicleSelect:/.test(gameSource)
       && !/getCarSelectorVehicleMarkup/.test(hudSource)
       && !/hud__car-selector-vehicle/.test(styles),
-    'Vehicle selector and dealer shop should expose 3D model preview mounts instead of CSS car drawings'
+    'Vehicle selector and dealer shop should expose 3D model preview mounts and explicit owned-car selection actions'
   );
   assert(
     /\.hud__vibe-radio-widget\s*\{[\s\S]*left:\s*calc\(230px \+ var\(--safe-left\)\)/.test(styles)
@@ -2451,8 +2461,10 @@ function validateBartenderFunction() {
     /PlayerSkateboard/.test(playerSource)
       && /PlayerSkateboardDeck/.test(playerSource)
       && /PlayerSkateboardWheel_/.test(playerSource)
-      && !/character\.visible\s*=\s*!active/.test(playerSource),
-    'Player avatar should render the legacy skateboard and keep the character visible while skating'
+      && /PlayerVehicleRoot/.test(playerSource)
+      && /PLAYER_CAR_MODEL_SCALE\s*=\s*0\.75/.test(playerSource)
+      && /character\.visible\s*=\s*false/.test(playerSource),
+    'Player avatar should render the legacy skateboard and replace the character with a 0.75x selected car while car-driving'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
@@ -2474,8 +2486,9 @@ function validateBartenderFunction() {
   );
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
-      && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
-    'Game client should use Shift skateboard input and the shared speed multiplier'
+      && /CAR_VEHICLE_SPEED_MULTIPLIER/.test(gameSource)
+      && /vehicleSpeedScale/.test(gameSource),
+    'Game client should use Shift transport input with the skateboard or selected car speed multiplier'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
@@ -2484,9 +2497,12 @@ function validateBartenderFunction() {
       && /skating:\s*'boolean'/.test(serverSource)
       && /carDealer:buyVehicle/.test(serverSource)
       && /vehicle:select/.test(serverSource)
-      && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
-    'Server player state should persist skateboard and car ownership while authorizing skateboard speed'
+      && /CAR_VEHICLE_SPEED_MULTIPLIER/.test(serverSource)
+      && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource)
+      && /!Object\.hasOwn\(saved,\s*'vehicleItemId'\)/.test(serverSource),
+    'Server player state should persist skateboard and car ownership while authorizing skateboard and car speed'
   );
+  assert(CAR_VEHICLE_SPEED_MULTIPLIER === 2, 'Selected cars should move at 2x speed');
 }
 
 function validatePlayerSchemaFieldBudget() {

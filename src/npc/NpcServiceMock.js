@@ -80,6 +80,7 @@ import {
   getCarDealerPromptRadius,
   getPlayerVehicleInventorySnapshot,
   isCarDealerNpc,
+  isPlayerVehicleOwner,
   playerOwnsVehicleItem,
   selectPlayerVehicleItem,
   setPlayerVehicleItem
@@ -1067,7 +1068,7 @@ export class NpcServiceMock {
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
-    player.skating = Boolean(nextAnimation.skating && isPlayerSkateboardOwner(player));
+    player.skating = Boolean(nextAnimation.skating && (isPlayerSkateboardOwner(player) || isPlayerVehicleOwner(player)));
     player.transformSeq = transformSeq;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;

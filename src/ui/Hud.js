@@ -3373,11 +3373,12 @@ function getVehicleBadgeMarkup() {
 function getCarSelectorCardMarkup(entry = {}) {
   return `
     <button
-      class="hud__character-card hud__car-card${entry.selected ? ' is-selected' : ''}"
+      class="hud__character-card hud__car-card${entry.selected ? ' is-selected' : ''}${entry.active ? ' is-active-vehicle' : ''}"
       type="button"
       data-car-item-id="${escapeHtml(entry.id ?? '')}"
       style="--car-accent:${escapeHtml(entry.accent ?? '#d85b4d')}"
       aria-pressed="${entry.selected ? 'true' : 'false'}"
+      aria-label="Preview ${escapeHtml(entry.label ?? 'vehicle')}"
     >
       <span class="hud__character-card-frame hud__car-card-frame">
         <span class="hud__car-card-preview" data-car-preview-card="${escapeHtml(entry.id ?? '')}">
@@ -3385,6 +3386,7 @@ function getCarSelectorCardMarkup(entry = {}) {
         </span>
       </span>
       <span class="hud__character-card-label">${escapeHtml(entry.label ?? 'Vehicle')}</span>
+      ${entry.active ? '<span class="hud__car-card-state">Active</span>' : ''}
     </button>
   `;
 }
@@ -3563,6 +3565,7 @@ export class Hud {
     this.carSelectorPreview = this.overlay.querySelector('[data-car-selector-preview]');
     this.carSelectorPrev = this.overlay.querySelector('[data-car-selector-prev]');
     this.carSelectorNext = this.overlay.querySelector('[data-car-selector-next]');
+    this.carSelectorSelect = this.overlay.querySelector('[data-car-selector-select]');
     this.carSelectorGrid = this.overlay.querySelector('[data-car-selector-grid]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
@@ -4425,6 +4428,7 @@ export class Hud {
           </button>
         </div>
         <div class="hud__character-selection-status" data-car-selector-status>Currently selected</div>
+        <button class="hud__car-selector-select" type="button" data-car-selector-select disabled>Select</button>
         <div class="hud__character-grid hud__car-grid" data-car-selector-grid></div>
       </section>
       <section class="hud__shader-debug" data-shader-debug hidden>
@@ -6182,6 +6186,7 @@ export class Hud {
   bindCarSelectorEvents({
     onTogglePanel,
     onCycleCar,
+    onFocusCar,
     onSelectCar
   } = {}) {
     this.boundVehicleRoot?.addEventListener('click', (event) => {
@@ -6220,6 +6225,16 @@ export class Hud {
       onCycleCar?.(1);
     });
 
+    this.carSelectorSelect?.addEventListener('click', (event) => {
+      if (!this.isElementInteractive(this.carSelectorRoot)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onSelectCar?.(this.carSelectorRoot?.dataset.selectedCarItemId ?? '');
+    });
+
     this.carSelectorGrid?.addEventListener('click', (event) => {
       if (!this.isElementInteractive(this.carSelectorRoot)) {
         return;
@@ -6235,7 +6250,7 @@ export class Hud {
 
       event.preventDefault();
       event.stopPropagation();
-      onSelectCar?.(button.dataset.carItemId ?? '');
+      onFocusCar?.(button.dataset.carItemId ?? '');
     });
   }
 
@@ -9717,6 +9732,7 @@ export class Hud {
     available = false,
     visible = false,
     selectedId = '',
+    activeId = '',
     statusText = 'Currently selected',
     entries = [],
     loading = false
@@ -9727,6 +9743,7 @@ export class Hud {
 
     const safeEntries = Array.isArray(entries) ? entries : [];
     const selectedEntry = safeEntries.find((entry) => entry.id === selectedId) ?? safeEntries[0] ?? null;
+    const activeEntry = safeEntries.find((entry) => entry.id === activeId) ?? null;
     const panelVisible = Boolean(available && visible);
 
     if (this.boundVehicleRoot) {
@@ -9740,6 +9757,7 @@ export class Hud {
     this.carSelectorRoot.hidden = !panelVisible;
     this.carSelectorRoot.classList.toggle('is-visible', panelVisible);
     this.carSelectorRoot.classList.toggle('is-loading', Boolean(loading));
+    this.carSelectorRoot.dataset.selectedCarItemId = selectedEntry?.id ?? '';
 
     if (this.carSelectorName) {
       this.carSelectorName.textContent = selectedEntry?.label ?? 'No Vehicle';
@@ -9754,6 +9772,12 @@ export class Hud {
       this.carSelectorStatus.textContent = statusText;
     }
 
+    if (this.carSelectorSelect) {
+      const selectedIsActive = Boolean(selectedEntry && activeEntry && selectedEntry.id === activeEntry.id);
+      this.carSelectorSelect.textContent = selectedIsActive ? 'Selected' : `Select ${selectedEntry?.label ?? 'Vehicle'}`;
+      this.carSelectorSelect.disabled = Boolean(loading || !selectedEntry || selectedIsActive);
+    }
+
     if (this.carSelectorPreview && !selectedEntry) {
       this.carSelectorPreview.replaceChildren();
       this.carSelectorPreview.innerHTML = '<span class="hud__car-selector-empty">No vehicle</span>';
@@ -9763,21 +9787,25 @@ export class Hud {
       id: entry.id,
       label: entry.label,
       accent: entry.accent ?? '',
-      selected: entry.id === selectedId
+      selected: entry.id === selectedId,
+      active: entry.id === activeId
     })));
     if (this.carSelectorGrid && signature !== this.lastCarSelectorSignature) {
       this.lastCarSelectorSignature = signature;
       this.carSelectorGrid.innerHTML = safeEntries.length
         ? safeEntries.map((entry) => getCarSelectorCardMarkup({
             ...entry,
-            selected: entry.id === selectedId
+            selected: entry.id === selectedId,
+            active: entry.id === activeId
           })).join('')
         : '<p class="hud__body">No owned vehicles yet.</p>';
     }
 
     for (const button of this.carSelectorGrid?.querySelectorAll('[data-car-item-id]') ?? []) {
       const selected = button.dataset.carItemId === selectedId;
+      const active = button.dataset.carItemId === activeId;
       button.classList.toggle('is-selected', selected);
+      button.classList.toggle('is-active-vehicle', active);
       button.setAttribute('aria-pressed', selected ? 'true' : 'false');
       button.disabled = Boolean(loading);
     }

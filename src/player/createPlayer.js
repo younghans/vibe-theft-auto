@@ -42,12 +42,19 @@ import {
   normalizeDrunknessLevel
 } from '../shared/bartender.js';
 import { isDeliveryQuestActive } from '../shared/deliveryQuest.js';
+import { CAR_DEALER_ITEM_IDS, normalizePlayerVehicleItemId } from '../shared/carDealer.js';
+import { assets } from '../world/assetManifest.js';
 
 const PLAYER_HEIGHT = 4.5;
 const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
 const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
+const PLAYER_CAR_MODEL_SCALE = 0.75;
+const PLAYER_CAR_ASSET_URLS = Object.freeze({
+  [CAR_DEALER_ITEM_IDS.fiatDuna]: assets.vehicles.fiatDuna,
+  [CAR_DEALER_ITEM_IDS.toyotaAe86]: assets.vehicles.toyotaAe86
+});
 const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
@@ -433,6 +440,34 @@ function createPlayerSkateboardVisual() {
   return group;
 }
 
+function preparePlayerVehicleModel(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    node.castShadow = true;
+    node.receiveShadow = true;
+    node.frustumCulled = false;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!material) {
+        continue;
+      }
+      material.side = THREE.FrontSide;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function centerAndGroundVehicleModel(root) {
+  const bounds = new THREE.Box3().setFromObject(root);
+  const center = bounds.getCenter(new THREE.Vector3());
+  root.position.x -= center.x;
+  root.position.z -= center.z;
+  root.position.y -= bounds.min.y;
+}
+
 function createSkateboardStaticBodyPose(root) {
   const offsetEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const offsetQuaternion = new THREE.Quaternion();
@@ -660,7 +695,11 @@ export async function createPlayer(library, {
   damageBurst.visible = false;
   visual.add(damageBurst);
   const skateboard = createPlayerSkateboardVisual();
+  const vehicleRoot = new THREE.Group();
+  vehicleRoot.name = 'PlayerVehicleRoot';
+  vehicleRoot.visible = false;
   visual.add(skateboard);
+  visual.add(vehicleRoot);
   anchor.add(visual);
 
   let idleWeight = 1;
@@ -758,8 +797,11 @@ export async function createPlayer(library, {
   let aimRotationY = 0;
   let skateboardOwned = false;
   let skateboardSkating = false;
+  let activeVehicleItemId = '';
   let skateboardMotion = 0;
   let skateboardStaticBodyPoseWeight = 0;
+  const playerVehicleModels = new Map();
+  const playerVehicleModelLoads = new Map();
   let reloadPoseWeight = 0;
   let reloadPoseAmount = 0;
   let reloadSlideAmount = 0;
@@ -1739,20 +1781,92 @@ export async function createPlayer(library, {
     return phoneTextingActive;
   }
 
+  async function ensurePlayerVehicleModel(itemId = '') {
+    const normalizedItemId = normalizePlayerVehicleItemId(itemId);
+    if (!normalizedItemId) {
+      return null;
+    }
+
+    if (playerVehicleModels.has(normalizedItemId)) {
+      return playerVehicleModels.get(normalizedItemId);
+    }
+
+    if (!playerVehicleModelLoads.has(normalizedItemId)) {
+      const assetUrl = PLAYER_CAR_ASSET_URLS[normalizedItemId];
+      if (!assetUrl) {
+        return null;
+      }
+
+      const load = library.instantiate(assetUrl)
+        .then((object) => {
+          object.name = `PlayerVehicle:${normalizedItemId}`;
+          object.visible = false;
+          object.scale.multiplyScalar(PLAYER_CAR_MODEL_SCALE);
+          preparePlayerVehicleModel(object);
+          centerAndGroundVehicleModel(object);
+          vehicleRoot.add(object);
+          playerVehicleModels.set(normalizedItemId, object);
+          return object;
+        })
+        .catch((error) => {
+          playerVehicleModelLoads.delete(normalizedItemId);
+          console.warn('[Player] Failed to load selected vehicle model.', {
+            itemId: normalizedItemId,
+            error
+          });
+          return null;
+        });
+      playerVehicleModelLoads.set(normalizedItemId, load);
+    }
+
+    return playerVehicleModelLoads.get(normalizedItemId);
+  }
+
+  function hidePlayerVehicleModels() {
+    for (const model of playerVehicleModels.values()) {
+      model.visible = false;
+    }
+    vehicleRoot.visible = false;
+  }
+
   function setSkateboardState({
     owned = skateboardOwned,
-    skating = skateboardSkating
+    skating = skateboardSkating,
+    vehicleItemId = activeVehicleItemId
   } = {}) {
+    activeVehicleItemId = normalizePlayerVehicleItemId(vehicleItemId);
     skateboardOwned = owned === true;
-    skateboardSkating = Boolean(skateboardOwned && skating && aliveState && !ragdoll.isActive());
-    if (!skateboardOwned || !skateboardSkating) {
+    skateboardSkating = Boolean((skateboardOwned || activeVehicleItemId) && skating && aliveState && !ragdoll.isActive());
+    if (!skateboardSkating) {
       skateboard.visible = false;
+      hidePlayerVehicleModels();
+      character.visible = true;
     }
     return skateboardSkating;
   }
 
   function updateSkateboardVisual(deltaSeconds, moving) {
-    const active = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    const active = Boolean((skateboardOwned || activeVehicleItemId) && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    const activeCar = Boolean(active && activeVehicleItemId);
+    if (activeCar) {
+      skateboard.visible = false;
+      const vehicleModel = playerVehicleModels.get(activeVehicleItemId);
+      if (!vehicleModel) {
+        void ensurePlayerVehicleModel(activeVehicleItemId);
+        hidePlayerVehicleModels();
+        character.visible = true;
+        return;
+      }
+
+      hidePlayerVehicleModels();
+      vehicleRoot.visible = true;
+      vehicleModel.visible = true;
+      character.visible = false;
+      return;
+    }
+
+    hidePlayerVehicleModels();
+    character.visible = true;
     skateboard.visible = active;
     if (!active) {
       return;
@@ -1790,7 +1904,7 @@ export async function createPlayer(library, {
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
-    const skateboardPoseActive = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && moving && aliveState && !ragdoll.isActive());
     const wantsGuardPose = Boolean(
       punchGuardAction
       && aimingState
@@ -2498,7 +2612,9 @@ export async function createPlayer(library, {
 
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
-      const wantsToSkate = Boolean(options.skateboardOwned && options.skating && wantsToMove && !ragdoll.isActive());
+      const selectedVehicleItemId = normalizePlayerVehicleItemId(options.vehicleItemId);
+      const transportOwned = Boolean(options.skateboardOwned || selectedVehicleItemId);
+      const wantsToSkate = Boolean(transportOwned && options.skating && wantsToMove && !ragdoll.isActive());
       const movementSpeedScale = wantsToSkate && Number.isFinite(options.speedScale)
         ? options.speedScale
         : 1;
@@ -2516,8 +2632,9 @@ export async function createPlayer(library, {
         ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight, options.movementCameraForward)
         : moveDirection.set(0, 0, 0);
       setSkateboardState({
-        owned: options.skateboardOwned === true,
-        skating: wantsToSkate && moving
+        owned: transportOwned,
+        skating: wantsToSkate && moving,
+        vehicleItemId: selectedVehicleItemId
       });
 
       if (moving) {
@@ -2586,9 +2703,11 @@ export async function createPlayer(library, {
           ? state.lastDamagedAt
           : Date.now()
       });
+      const remoteVehicleItemId = normalizePlayerVehicleItemId(state?.vehicleItemId);
       setSkateboardState({
-        owned: remoteAlive && state?.skateboardOwned === true,
-        skating: remoteAlive && state?.skating === true
+        owned: remoteAlive && (state?.skateboardOwned === true || Boolean(remoteVehicleItemId)),
+        skating: remoteAlive && state?.skating === true,
+        vehicleItemId: remoteVehicleItemId
       });
       const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
       const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);

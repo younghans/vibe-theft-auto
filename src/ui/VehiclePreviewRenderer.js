@@ -14,8 +14,9 @@ const VEHICLE_ASSET_URLS = Object.freeze({
   [CAR_DEALER_ITEM_IDS.fiatDuna]: assets.vehicles.fiatDuna,
   [CAR_DEALER_ITEM_IDS.toyotaAe86]: assets.vehicles.toyotaAe86
 });
-const BASE_VEHICLE_YAW = -Math.PI * 0.64;
-const SNAPSHOT_VEHICLE_YAW = -Math.PI * 0.68;
+const BASE_VEHICLE_YAW = Math.PI * 0.23;
+const SNAPSHOT_VEHICLE_YAW = Math.PI * 0.23;
+const LIVE_VEHICLE_ROTATION_SPEED = 1.65;
 
 function normalizeVehiclePreviewItemId(itemId = '') {
   const rawItemId = String(itemId ?? '').trim();
@@ -525,8 +526,7 @@ export class VehiclePreviewRenderer {
       return;
     }
 
-    const time = performance.now() * 0.001;
-    this.liveVehicle.object.rotation.y = this.liveVehicle.yaw + Math.sin(time * 0.85) * 0.08;
+    this.liveVehicle.object.rotation.y += Math.max(0, Number(deltaSeconds) || 0) * LIVE_VEHICLE_ROTATION_SPEED;
     this.frameLivePreview();
     this.renderLivePreview();
   }

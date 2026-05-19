@@ -124,12 +124,14 @@ import {
   listPawnShopMenuItems
 } from '../shared/pawnShop.js';
 import {
+  CAR_VEHICLE_SPEED_MULTIPLIER,
   getCarDealerMenuItem,
   getCarDealerPromptRadius,
   getPlayerOwnedVehicleMenuItems,
   getPlayerVehicleItemId,
   getPlayerVehicleMenuItem,
   isCarDealerNpc,
+  isPlayerVehicleOwner,
   playerOwnsVehicleItem,
   listCarDealerMenuItems
 } from '../shared/carDealer.js';
@@ -997,6 +999,7 @@ export class Game {
     this.pendingCharacterRequestId = '';
     this.characterSelectorVisible = false;
     this.carSelectorVisible = false;
+    this.carSelectorFocusedItemId = '';
     this.carSelectorRequestInFlight = false;
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
@@ -1464,6 +1467,7 @@ export class Game {
     this.hud.bindCarSelectorEvents({
       onTogglePanel: (visible) => this.toggleCarSelector(visible),
       onCycleCar: (step) => this.cycleCarSelection(step),
+      onFocusCar: (itemId) => this.focusCarSelectorVehicle(itemId),
       onSelectCar: (itemId) => void this.selectPlayerVehicle(itemId)
     });
     this.hud.bindCharacterSelectorEvents({
@@ -3998,8 +4002,9 @@ export class Game {
     return isPlayerSkateboardOwner(localPlayerState) ? SKATEBOARD_ITEM_ID : '';
   }
 
-  getCarSelectorEntries(localPlayerState = this.getLocalPlayerState()) {
-    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+  getCarSelectorEntries(localPlayerState = this.getLocalPlayerState(), focusedItemId = this.getSelectedVehicleSelectorItemId(localPlayerState)) {
+    const activeId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    const selectedId = String(focusedItemId ?? '').trim() || activeId;
     const entries = [];
     if (isPlayerSkateboardOwner(localPlayerState)) {
       entries.push({
@@ -4007,17 +4012,30 @@ export class Game {
         label: 'Skateboard',
         kind: 'skateboard',
         accent: '#3aa686',
-        selected: selectedId === SKATEBOARD_ITEM_ID
+        selected: selectedId === SKATEBOARD_ITEM_ID,
+        active: activeId === SKATEBOARD_ITEM_ID
       });
     }
 
     entries.push(...getPlayerOwnedVehicleMenuItems(localPlayerState).map((entry) => ({
       ...entry,
       kind: 'car',
-      selected: entry.id === selectedId
+      selected: entry.id === selectedId,
+      active: entry.id === activeId
     })));
 
     return entries;
+  }
+
+  getCarSelectorFocusedItemId(localPlayerState = this.getLocalPlayerState()) {
+    const activeId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    const entries = this.getCarSelectorEntries(localPlayerState, activeId);
+    const focusedId = String(this.carSelectorFocusedItemId ?? '').trim();
+    if (focusedId && entries.some((entry) => entry.id === focusedId)) {
+      return focusedId;
+    }
+
+    return activeId || entries[0]?.id || '';
   }
 
   getCarSelectorStatusText(localPlayerState = this.getLocalPlayerState()) {
@@ -4037,17 +4055,21 @@ export class Game {
   }
 
   refreshCarSelectorHud(localPlayerState = this.getLocalPlayerState()) {
-    const entries = this.getCarSelectorEntries(localPlayerState);
+    const activeId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    const focusedId = this.getCarSelectorFocusedItemId(localPlayerState);
+    const entries = this.getCarSelectorEntries(localPlayerState, focusedId);
     const available = this.canUseCarSelector(localPlayerState);
     const visible = available && this.carSelectorVisible;
     if (!available && this.carSelectorVisible) {
       this.carSelectorVisible = false;
     }
+    this.carSelectorFocusedItemId = focusedId;
 
     this.hud.setCarSelectorState({
       available,
       visible,
-      selectedId: this.getSelectedVehicleSelectorItemId(localPlayerState),
+      selectedId: focusedId,
+      activeId,
       statusText: this.getCarSelectorStatusText(localPlayerState),
       entries,
       loading: this.carSelectorRequestInFlight
@@ -4060,14 +4082,13 @@ export class Game {
       return;
     }
 
-    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
     const previewSignature = JSON.stringify({
-      selectedId,
+      selectedId: focusedId,
       entries: entries.map((entry) => entry.id)
     });
     if (previewSignature !== this.lastCarSelectorPreviewSignature) {
       this.lastCarSelectorPreviewSignature = previewSignature;
-      void this.syncCarSelectorVehiclePreviews(entries, selectedId);
+      void this.syncCarSelectorVehiclePreviews(entries, focusedId);
     }
   }
 
@@ -4079,6 +4100,9 @@ export class Game {
       this.refreshCharacterSelectorHud();
     }
 
+    if (visible) {
+      this.carSelectorFocusedItemId = this.getSelectedVehicleSelectorItemId() || this.carSelectorFocusedItemId;
+    }
     this.carSelectorVisible = Boolean(visible) && this.canUseCarSelector();
     this.refreshCarSelectorHud();
     return this.carSelectorVisible;
@@ -4501,17 +4525,30 @@ export class Game {
 
   cycleCarSelection(step = 1) {
     const localPlayerState = this.getLocalPlayerState();
-    const entries = this.getCarSelectorEntries(localPlayerState);
+    const focusedId = this.getCarSelectorFocusedItemId(localPlayerState);
+    const entries = this.getCarSelectorEntries(localPlayerState, focusedId);
     if (!entries.length) {
       this.hud.showToast('Own a skateboard or car first.');
       return;
     }
 
-    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
-    const currentIndex = entries.findIndex((entry) => entry.id === selectedId);
+    const currentIndex = entries.findIndex((entry) => entry.id === focusedId);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = (safeIndex + step + entries.length) % entries.length;
-    void this.selectPlayerVehicle(entries[nextIndex]?.id ?? selectedId);
+    this.focusCarSelectorVehicle(entries[nextIndex]?.id ?? focusedId);
+  }
+
+  focusCarSelectorVehicle(itemId = '') {
+    const localPlayerState = this.getLocalPlayerState();
+    const entries = this.getCarSelectorEntries(localPlayerState, this.getCarSelectorFocusedItemId(localPlayerState));
+    const normalizedItemId = String(itemId ?? '').trim();
+    if (!entries.some((entry) => entry.id === normalizedItemId)) {
+      return false;
+    }
+
+    this.carSelectorFocusedItemId = normalizedItemId;
+    this.refreshCarSelectorHud(localPlayerState);
+    return true;
   }
 
   applyVehicleInventorySnapshot(inventory = null) {
@@ -4534,7 +4571,7 @@ export class Game {
     };
     this.npcServiceState.players.set(sessionId, nextPlayerState);
     this.player?.setSkateboardState?.({
-      owned: nextPlayerState.skateboardOwned,
+      owned: nextPlayerState.skateboardOwned || isPlayerVehicleOwner(nextPlayerState),
       skating: false,
       vehicleItemId: nextPlayerState.vehicleItemId
     });
@@ -4574,6 +4611,7 @@ export class Game {
       }
 
       this.applyVehicleInventorySnapshot(result.inventory);
+      this.carSelectorFocusedItemId = item.id;
       this.syncPlayerBoundItemsHud();
       this.hud.showToast(`${item.label} selected.`);
     } catch (error) {
@@ -7048,6 +7086,9 @@ export class Game {
       void this.buyPawnShopItem(action.slice('pawnShop:'.length));
     } else if (action.startsWith('carDealer:')) {
       void this.buyCarDealerVehicle(action.slice('carDealer:'.length));
+    } else if (action.startsWith('vehicleSelect:')) {
+      void this.selectPlayerVehicle(action.slice('vehicleSelect:'.length))
+        .then(() => this.renderCarDealerMenu());
     } else if (action.startsWith('martha:')) {
       void this.buyMarthaItem(action.slice('martha:'.length));
     }
@@ -7458,14 +7499,14 @@ export class Game {
           ? `${formatMoneyAmount(item.price - cash)} short`
           : 'Available now';
       return {
-        id: `carDealer:${item.id}`,
-        label: owned ? `${item.label} - ${selected ? 'Selected' : 'Owned'}` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
-        title: owned ? item.label : `Buy ${item.label}`,
+        id: owned ? `vehicleSelect:${item.id}` : `carDealer:${item.id}`,
+        label: owned ? `${selected ? 'Selected' : 'Select'} ${item.label}` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
+        title: owned ? `${selected ? 'Selected' : 'Select'} ${item.label}` : `Buy ${item.label}`,
         meta: `${formatMoneyAmount(item.price)} - ${item.label}`,
         state,
         previewItemId: item.id,
         primary: item.id === 'car_fiat_duna',
-        disabled: this.carDealerRequestInFlight || owned || cash < item.price
+        disabled: this.carDealerRequestInFlight || this.carSelectorRequestInFlight || selected || (!owned && cash < item.price)
       };
     });
 
@@ -15938,13 +15979,16 @@ export class Game {
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
       const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
+      const activeCarOwned = isPlayerVehicleOwner(localPlayerState);
+      const transportOwned = skateboardOwned || activeCarOwned;
       const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
-        skateboardOwned
+        transportOwned
         && playerInput !== ZERO_INPUT
         && this.input.isActionPressed('skate')
         && (skateboardMovementInput.x !== 0 || skateboardMovementInput.z !== 0)
       );
+      const vehicleSpeedScale = activeCarOwned ? CAR_VEHICLE_SPEED_MULTIPLIER : SKATEBOARD_SPEED_MULTIPLIER;
       const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
         ? AIM_CAMERA_MOVEMENT_FORWARD
         : CAMERA_MOVEMENT_FORWARD;
@@ -15960,7 +16004,7 @@ export class Game {
       if (workoutActive) {
         this.clearPendingHipFireShot();
         this.currentAimMode = false;
-        this.player.setSkateboardState?.({ owned: skateboardOwned, skating: false, vehicleItemId });
+        this.player.setSkateboardState?.({ owned: transportOwned, skating: false, vehicleItemId });
         const facing = this.player.object.rotation.y;
         this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
         this.syncInlineShellState();
@@ -15980,10 +16024,10 @@ export class Game {
           activeSceneBounds,
           groundHeight,
           {
-            skateboardOwned,
+            skateboardOwned: transportOwned,
             vehicleItemId,
             skating: skatingInputHeld,
-            speedScale: SKATEBOARD_SPEED_MULTIPLIER,
+            speedScale: vehicleSpeedScale,
             movementCameraForward
           }
         );
