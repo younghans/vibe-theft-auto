@@ -1963,7 +1963,7 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const charismaLevelRequirement = Math.max(0, Math.floor(Number(round.charismaLevelRequired ?? 0) || 0));
   const strengthLevelRequirement = Math.max(0, Math.floor(Number(round.strengthLevelRequired ?? 0) || 0));
   const requirementText = [
-    intelligenceRequirement > 0 ? `${intelligenceRequirement} Intelligence` : '',
+    intelligenceRequirement > 0 ? `Level ${intelligenceRequirement} Intelligence` : '',
     strengthLevelRequirement > 0 ? `Level ${strengthLevelRequirement} Strength` : '',
     charismaLevelRequirement > 0 ? `Level ${charismaLevelRequirement} Charisma` : ''
   ].filter(Boolean).join(' / ');
@@ -2169,7 +2169,7 @@ function createOfficeJobMenuMarkup(game = null) {
     <div class="hud__office-menu">
       <section class="hud__office-menu-summary">
         <span>Current Skills</span>
-        <strong>Int ${escapeHtml(String(intelligence))} / Str Lv ${escapeHtml(String(strengthLevel))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
+        <strong>Int Lv ${escapeHtml(String(intelligence))} / Str Lv ${escapeHtml(String(strengthLevel))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
       </section>
       <div class="hud__office-job-grid">
         ${jobs.map((job) => {

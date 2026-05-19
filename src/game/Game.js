@@ -190,6 +190,7 @@ import {
   getOfficeJobDefinition,
   getOfficeJobDefinitionByGameId,
   getOfficeJobLockedMessage,
+  getPlayerOfficeJobIntelligenceLevel,
   listOfficeJobDefinitions
 } from '../shared/officeJobs.js';
 import {
@@ -9671,7 +9672,7 @@ export class Game {
   }
 
   getOfficeJobIntelligence() {
-    return getPlayerSkillXp(this.getLocalPlayerState(), SKILL_IDS.intelligence);
+    return getPlayerOfficeJobIntelligenceLevel(this.getLocalPlayerState());
   }
 
   getOfficeJobCharismaLevel() {
@@ -9978,7 +9979,6 @@ export class Game {
       const message = getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel });
       const alertMessage = message
         .replace(`${job.roleLabel} requires `, 'You need ')
-        .replace(/(\d+) Intelligence/g, 'Level $1 Intelligence')
         .replace(/\.$/, ` to do ${job.roleLabel} job.`);
       if (this.schoolMicrogame?.context === 'office-job') {
         this.schoolMicrogame.data = {

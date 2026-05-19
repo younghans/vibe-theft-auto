@@ -119,17 +119,21 @@ async function validateOfficeJobTerminalFlow() {
   const janitor = getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
   const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
   const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
-  assert(janitor?.rewardMoney === 25 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $25 and require 5 Intelligence.');
-  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 50 && manager?.charismaLevelRequired === 5, 'Office Manager job should pay $100 and require 50 Intelligence plus level 5 Charisma.');
-  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 200 && ceo?.charismaLevelRequired === 10 && ceo?.strengthLevelRequired === 10, 'CEO job should pay $500 and require 200 Intelligence plus level 10 Charisma and level 10 Strength.');
-  assert(canPlayerWorkOfficeJob(50, manager, 5), 'Office Manager should unlock at level 5 Charisma.');
-  assert(!canPlayerWorkOfficeJob(50, manager, 4), 'Office Manager should stay locked below level 5 Charisma.');
-  assert(canPlayerWorkOfficeJob(200, ceo, 10, 10), 'CEO should unlock at level 10 Charisma and level 10 Strength.');
-  assert(!canPlayerWorkOfficeJob(200, ceo, 10, 9), 'CEO should stay locked below level 10 Strength.');
-  assert(!canPlayerWorkOfficeJob(200, ceo, 9, 10), 'CEO should stay locked below level 10 Charisma.');
-  assert(getOfficeJobRequirementSummary(manager, { intelligence: 50, charismaLevel: 4 }).includes('Charisma Lv 4/5'), 'Office Manager requirement text should show current and required Charisma level.');
-  assert(getOfficeJobRequirementSummary(ceo, { intelligence: 200, charismaLevel: 10, strengthLevel: 9 }).includes('Strength Lv 9/10'), 'CEO requirement text should show current and required Strength level.');
-  assert(getOfficeJobLockedMessage(ceo, { intelligence: 200, charismaLevel: 10, strengthLevel: 9 }).includes('Level 10 Strength'), 'CEO locked message should mention the Strength level prerequisite.');
+  assert(janitor?.rewardMoney === 25 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $25 and require level 5 Intelligence.');
+  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 10 && manager?.charismaLevelRequired === 5, 'Office Manager job should pay $100 and require level 10 Intelligence plus level 5 Charisma.');
+  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 20 && ceo?.charismaLevelRequired === 10 && ceo?.strengthLevelRequired === 10, 'CEO job should pay $500 and require level 20 Intelligence plus level 10 Charisma and level 10 Strength.');
+  assert(canPlayerWorkOfficeJob(10, manager, 5), 'Office Manager should unlock at level 10 Intelligence and level 5 Charisma.');
+  assert(!canPlayerWorkOfficeJob(9, manager, 5), 'Office Manager should stay locked below level 10 Intelligence.');
+  assert(!canPlayerWorkOfficeJob(10, manager, 4), 'Office Manager should stay locked below level 5 Charisma.');
+  assert(canPlayerWorkOfficeJob(20, ceo, 10, 10), 'CEO should unlock at level 20 Intelligence, level 10 Charisma, and level 10 Strength.');
+  assert(!canPlayerWorkOfficeJob(19, ceo, 10, 10), 'CEO should stay locked below level 20 Intelligence.');
+  assert(!canPlayerWorkOfficeJob(20, ceo, 10, 9), 'CEO should stay locked below level 10 Strength.');
+  assert(!canPlayerWorkOfficeJob(20, ceo, 9, 10), 'CEO should stay locked below level 10 Charisma.');
+  assert(getOfficeJobRequirementSummary(manager, { intelligence: 9, charismaLevel: 4 }).includes('Intelligence Lv 9/10'), 'Office Manager requirement text should show current and required Intelligence level.');
+  assert(getOfficeJobRequirementSummary(manager, { intelligence: 10, charismaLevel: 4 }).includes('Charisma Lv 4/5'), 'Office Manager requirement text should show current and required Charisma level.');
+  assert(getOfficeJobRequirementSummary(ceo, { intelligence: 20, charismaLevel: 10, strengthLevel: 9 }).includes('Strength Lv 9/10'), 'CEO requirement text should show current and required Strength level.');
+  assert(getOfficeJobLockedMessage(ceo, { intelligence: 19, charismaLevel: 10, strengthLevel: 10 }).includes('Level 20 Intelligence'), 'CEO locked message should mention the Intelligence level prerequisite.');
+  assert(getOfficeJobLockedMessage(ceo, { intelligence: 20, charismaLevel: 10, strengthLevel: 9 }).includes('Level 10 Strength'), 'CEO locked message should mention the Strength level prerequisite.');
 
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
@@ -149,8 +153,10 @@ async function validateOfficeJobTerminalFlow() {
   assert(hudSource.includes('data-office-prereq-alert') && hudSource.includes('aria-disabled='), 'HUD should expose a centered prerequisite alert and keep locked job cards actionable.');
   assert(stylesSource.includes('.hud__job-lock-alert') && stylesSource.includes('font-size: clamp(30px, 5.4vw, 66px)'), 'Prerequisite alert should be large and centered on screen.');
   assert(serverSource.includes("officeJob:complete"), 'Server should expose an office job completion RPC.');
+  assert(serverSource.includes('getPlayerOfficeJobIntelligenceLevel(player)'), 'Server should derive office job Intelligence level from player XP before enforcing job locks.');
   assert(colyseusSource.includes('completeOfficeJob'), 'Colyseus service should call the office job completion RPC.');
   assert(mockSource.includes('completeOfficeJob'), 'Mock service should support office job completion.');
+  assert(mockSource.includes('getPlayerOfficeJobIntelligenceLevel(access.player)'), 'Mock service should derive office job Intelligence level from player XP before enforcing job locks.');
 }
 
 async function validateOfficeBuildingInteriorFlow() {

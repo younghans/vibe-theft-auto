@@ -401,10 +401,10 @@ function getMissionDescription(mission = null, context = {}) {
       return 'CEO shift complete.';
     }
 
-    const intelligence = Math.max(0, Math.floor(Number(progress.intelligenceXp ?? 0) || 0));
+    const intelligenceLevel = Math.max(1, Math.floor(Number(progress.intelligenceLevel ?? 1) || 1));
     const charismaLevel = Math.max(1, Math.floor(Number(progress.charismaLevel ?? 1) || 1));
     const strengthLevel = Math.max(1, Math.floor(Number(progress.strengthLevel ?? 1) || 1));
-    const requirementsMet = intelligence >= BECOME_CEO_INTELLIGENCE_REQUIRED
+    const requirementsMet = intelligenceLevel >= BECOME_CEO_INTELLIGENCE_REQUIRED
       && charismaLevel >= BECOME_CEO_CHARISMA_LEVEL_REQUIRED
       && strengthLevel >= BECOME_CEO_STRENGTH_LEVEL_REQUIRED;
     if (requirementsMet) {
@@ -412,7 +412,7 @@ function getMissionDescription(mission = null, context = {}) {
     }
 
     return [
-      `Intelligence ${Math.min(intelligence, BECOME_CEO_INTELLIGENCE_REQUIRED)}/${BECOME_CEO_INTELLIGENCE_REQUIRED}`,
+      `Intelligence Lv ${Math.min(intelligenceLevel, BECOME_CEO_INTELLIGENCE_REQUIRED)}/${BECOME_CEO_INTELLIGENCE_REQUIRED}`,
       `Charisma Lv ${Math.min(charismaLevel, BECOME_CEO_CHARISMA_LEVEL_REQUIRED)}/${BECOME_CEO_CHARISMA_LEVEL_REQUIRED}`,
       `Strength Lv ${Math.min(strengthLevel, BECOME_CEO_STRENGTH_LEVEL_REQUIRED)}/${BECOME_CEO_STRENGTH_LEVEL_REQUIRED}`
     ].join('. ');

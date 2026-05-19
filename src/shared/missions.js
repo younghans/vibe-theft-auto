@@ -610,6 +610,7 @@ export function getMissionProgressSnapshot(player = null) {
     strengthXp,
     strengthLevel: getSkillLevelFromXp(strengthXp),
     intelligenceXp,
+    intelligenceLevel: getSkillLevelFromXp(intelligenceXp),
     charismaXp,
     charismaLevel: getSkillLevelFromXp(charismaXp)
   };

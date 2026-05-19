@@ -124,6 +124,7 @@ import {
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
   getOfficeJobLockedMessage,
+  getPlayerOfficeJobIntelligenceLevel,
   getOfficeJobReward
 } from '../shared/officeJobs.js';
 import {
@@ -2524,11 +2525,11 @@ export class NpcServiceMock {
       return { ok: false, error: 'That office job is not available.' };
     }
 
-    const intelligence = getPlayerSkillXp(access.player, SKILL_IDS.intelligence);
+    const intelligenceLevel = getPlayerOfficeJobIntelligenceLevel(access.player);
     const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(access.player, SKILL_IDS.charisma));
     const strengthLevel = getSkillLevelFromXp(getPlayerSkillXp(access.player, SKILL_IDS.strength));
-    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)) {
-      return { ok: false, error: getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel }) };
+    if (!canPlayerWorkOfficeJob(intelligenceLevel, job, charismaLevel, strengthLevel)) {
+      return { ok: false, error: getOfficeJobLockedMessage(job, { intelligenceLevel, charismaLevel, strengthLevel }) };
     }
 
     const reward = getOfficeJobReward(job.id);

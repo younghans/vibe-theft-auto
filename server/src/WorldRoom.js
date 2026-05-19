@@ -150,6 +150,7 @@ import {
   canPlayerWorkOfficeJob,
   getOfficeJobDefinition,
   getOfficeJobLockedMessage,
+  getPlayerOfficeJobIntelligenceLevel,
   getOfficeJobReward
 } from '../../src/shared/officeJobs.js';
 import {
@@ -2900,11 +2901,11 @@ export class WorldRoom extends Room {
     }
     const { player, terminal } = this.assertOfficeJobAccess(client, message, job.id);
 
-    const intelligence = getPlayerSkillXp(player, SKILL_IDS.intelligence);
+    const intelligenceLevel = getPlayerOfficeJobIntelligenceLevel(player);
     const charismaLevel = getSkillLevelFromXp(getPlayerSkillXp(player, SKILL_IDS.charisma));
     const strengthLevel = getSkillLevelFromXp(getPlayerSkillXp(player, SKILL_IDS.strength));
-    if (!canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)) {
-      throw new Error(getOfficeJobLockedMessage(job, { intelligence, charismaLevel, strengthLevel }));
+    if (!canPlayerWorkOfficeJob(intelligenceLevel, job, charismaLevel, strengthLevel)) {
+      throw new Error(getOfficeJobLockedMessage(job, { intelligenceLevel, charismaLevel, strengthLevel }));
     }
 
     const reward = getOfficeJobReward(job.id);
