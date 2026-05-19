@@ -57,12 +57,7 @@ export function normalizePlayerVehicleItemId(value = '') {
 }
 
 export function getPlayerVehicleItemId(player = null) {
-  const itemId = normalizePlayerVehicleItemId(player?.vehicleItemId);
-  if (itemId) {
-    return itemId;
-  }
-
-  return player?.skateboardOwned === true ? DEFAULT_PLAYER_VEHICLE_ITEM_ID : '';
+  return normalizePlayerVehicleItemId(player?.vehicleItemId);
 }
 
 export function getPlayerVehicleMenuItem(player = null) {
@@ -90,14 +85,15 @@ export function clearPlayerVehicleItem(player = null) {
   }
 
   player.vehicleItemId = '';
-  player.skateboardOwned = false;
+  player.skateboardOwned = true;
 }
 
 export function getPlayerVehicleInventorySnapshot(player = null) {
   const vehicleItemId = getPlayerVehicleItemId(player);
+  const skateboardOwned = Boolean(player && player.skateboardOwned !== false);
   return {
-    skateboardOwned: Boolean(vehicleItemId),
+    skateboardOwned,
     vehicleItemId,
-    vehicleLabel: getCarDealerMenuItem(vehicleItemId)?.label ?? ''
+    vehicleLabel: getCarDealerMenuItem(vehicleItemId)?.label ?? (skateboardOwned ? 'Skateboard' : '')
   };
 }

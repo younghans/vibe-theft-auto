@@ -43,7 +43,6 @@ import {
 import { isDeliveryQuestActive } from '../shared/deliveryQuest.js';
 import {
   CAR_DEALER_ITEM_IDS,
-  DEFAULT_PLAYER_VEHICLE_ITEM_ID,
   PLAYER_VEHICLE_SCALE,
   getPlayerVehicleItemId,
   normalizePlayerVehicleItemId
@@ -382,6 +381,68 @@ function createPlayerTaskArrow(material) {
   return group;
 }
 
+function createPlayerSkateboardVisual() {
+  const group = new THREE.Group();
+  group.name = 'PlayerSkateboard';
+  group.visible = false;
+
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(1.18, 0.12, 2.28),
+    new THREE.MeshStandardMaterial({
+      color: 0x3aa686,
+      roughness: 0.62,
+      metalness: 0.05
+    })
+  );
+  deck.name = 'PlayerSkateboardDeck';
+  deck.position.y = 0.12;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  const grip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.92, 0.028, 1.86),
+    new THREE.MeshStandardMaterial({
+      color: 0x14191f,
+      roughness: 0.84,
+      metalness: 0.02
+    })
+  );
+  grip.name = 'PlayerSkateboardGrip';
+  grip.position.y = 0.198;
+  group.add(grip);
+
+  const truckMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb9c3c8,
+    roughness: 0.4,
+    metalness: 0.55
+  });
+  const wheelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x171b20,
+    roughness: 0.68,
+    metalness: 0.06
+  });
+  for (const z of [-0.76, 0.76]) {
+    const truck = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.08, 0.12), truckMaterial);
+    truck.name = z < 0 ? 'PlayerSkateboardTruckBack' : 'PlayerSkateboardTruckFront';
+    truck.position.set(0, 0.035, z);
+    truck.castShadow = true;
+    group.add(truck);
+
+    for (const x of [-0.58, 0.58]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.24, 14), wheelMaterial);
+      wheel.name = `PlayerSkateboardWheel_${x < 0 ? 'L' : 'R'}_${z < 0 ? 'B' : 'F'}`;
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, -0.04, z);
+      wheel.castShadow = true;
+      group.add(wheel);
+    }
+  }
+
+  group.position.y = 0.1;
+  return group;
+}
+
 function createPlayerVehicleFallbackVisual() {
   const group = new THREE.Group();
   group.name = 'PlayerVehicleFallback';
@@ -678,6 +739,8 @@ export async function createPlayer(library, {
   damageBurst.position.set(0, PLAYER_HEIGHT * 0.58, 0);
   damageBurst.visible = false;
   visual.add(damageBurst);
+  const skateboard = createPlayerSkateboardVisual();
+  visual.add(skateboard);
   const vehicleRoot = new THREE.Group();
   vehicleRoot.name = 'PlayerVehicleRoot';
   vehicleRoot.visible = false;
@@ -781,6 +844,7 @@ export async function createPlayer(library, {
   let skateboardOwned = false;
   let skateboardSkating = false;
   let playerVehicleItemId = '';
+  let skateboardMotion = 0;
   let vehicleMotion = 0;
   let skateboardStaticBodyPoseWeight = 0;
   let reloadPoseWeight = 0;
@@ -1695,8 +1759,7 @@ export async function createPlayer(library, {
     }
 
     return normalizePlayerVehicleItemId(requestedItemId)
-      || normalizePlayerVehicleItemId(playerVehicleItemId)
-      || DEFAULT_PLAYER_VEHICLE_ITEM_ID;
+      || normalizePlayerVehicleItemId(playerVehicleItemId);
   }
 
   function getLoadedPlayerVehicleEntry(itemId = playerVehicleItemId) {
@@ -1765,12 +1828,13 @@ export async function createPlayer(library, {
     vehicleItemId = playerVehicleItemId
   } = {}) {
     playerVehicleItemId = getResolvedPlayerVehicleItemId(owned === true, vehicleItemId);
-    skateboardOwned = Boolean(playerVehicleItemId);
+    skateboardOwned = owned === true;
     skateboardSkating = Boolean(skateboardOwned && skating && aliveState && !ragdoll.isActive());
     if (playerVehicleItemId) {
       void ensurePlayerVehicleModel(playerVehicleItemId);
     }
     if (!skateboardOwned || !skateboardSkating) {
+      skateboard.visible = false;
       vehicleRoot.visible = false;
       vehicleFallback.visible = false;
       setPlayerVehicleModelVisibility(playerVehicleItemId, false);
@@ -1781,20 +1845,38 @@ export async function createPlayer(library, {
 
   function updateSkateboardVisual(deltaSeconds, moving) {
     const active = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
-    vehicleRoot.visible = active;
-    character.visible = !active;
-    setPlayerVehicleModelVisibility(playerVehicleItemId, active);
+    const carActive = Boolean(active && playerVehicleItemId);
+    const skateboardActive = Boolean(active && !playerVehicleItemId);
+    skateboard.visible = skateboardActive;
+    vehicleRoot.visible = carActive;
+    character.visible = !carActive;
+    setPlayerVehicleModelVisibility(playerVehicleItemId, carActive);
     if (!active) {
       return;
     }
 
-    vehicleMotion += deltaSeconds * 10;
-    vehicleRoot.position.y = 0.06 + (Math.sin(vehicleMotion * 2.1) * 0.012);
-    vehicleRoot.rotation.x = Math.sin(vehicleMotion * 1.4) * 0.012;
-    vehicleRoot.rotation.z = Math.sin(vehicleMotion * 1.8) * 0.018;
-    for (const child of vehicleFallback.children) {
-      if (child.name === 'PlayerVehicleFallbackWheel') {
-        child.rotation.x -= deltaSeconds * 14;
+    if (skateboardActive) {
+      skateboardMotion += deltaSeconds * 12;
+      skateboard.position.y = 0.1 + (Math.sin(skateboardMotion * 2.4) * 0.018);
+      skateboard.rotation.x = Math.sin(skateboardMotion * 1.6) * 0.035;
+      skateboard.rotation.z = Math.sin(skateboardMotion * 1.9) * 0.045;
+      for (const child of skateboard.children) {
+        if (child.name?.startsWith('PlayerSkateboardWheel_')) {
+          child.rotation.x -= deltaSeconds * 11;
+        }
+      }
+      return;
+    }
+
+    if (carActive) {
+      vehicleMotion += deltaSeconds * 10;
+      vehicleRoot.position.y = 0.06 + (Math.sin(vehicleMotion * 2.1) * 0.012);
+      vehicleRoot.rotation.x = Math.sin(vehicleMotion * 1.4) * 0.012;
+      vehicleRoot.rotation.z = Math.sin(vehicleMotion * 1.8) * 0.018;
+      for (const child of vehicleFallback.children) {
+        if (child.name === 'PlayerVehicleFallbackWheel') {
+          child.rotation.x -= deltaSeconds * 14;
+        }
       }
     }
   }
@@ -1820,7 +1902,7 @@ export async function createPlayer(library, {
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
-    const skateboardPoseActive = Boolean(skateboardOwned && skateboardSkating && moving && aliveState && !ragdoll.isActive());
+    const skateboardPoseActive = Boolean(skateboardOwned && skateboardSkating && !playerVehicleItemId && moving && aliveState && !ragdoll.isActive());
     const wantsGuardPose = Boolean(
       punchGuardAction
       && aimingState
@@ -2600,7 +2682,7 @@ export async function createPlayer(library, {
           : Date.now()
       });
       setSkateboardState({
-        owned: remoteAlive && state?.skateboardOwned === true,
+        owned: remoteAlive && (state?.skateboardOwned === true || Boolean(getPlayerVehicleItemId(state))),
         vehicleItemId: getPlayerVehicleItemId(state),
         skating: remoteAlive && state?.skating === true
       });

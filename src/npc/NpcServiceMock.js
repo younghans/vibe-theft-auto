@@ -80,9 +80,9 @@ import {
   getPlayerVehicleInventorySnapshot,
   getPlayerVehicleItemId,
   isCarDealerNpc,
-  isPlayerVehicleOwner,
   setPlayerVehicleItem
 } from '../shared/carDealer.js';
+import { isPlayerRideableTransportOwner } from '../shared/skateboard.js';
 import {
   addPlayerMarthaItem,
   consumePlayerMarthaItem,
@@ -367,7 +367,7 @@ function createDefaultPlayerState(overrides = {}) {
     burgerCount: 0,
     glizzyCount: 0,
     sodaCount: 0,
-    skateboardOwned: false,
+    skateboardOwned: true,
     vehicleItemId: '',
     drunknessDose: 0,
     drunknessLevel: 0,
@@ -1071,7 +1071,7 @@ export class NpcServiceMock {
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
     player.aiming = nextAnimation.aiming;
-    player.skating = Boolean(nextAnimation.skating && isPlayerVehicleOwner(player));
+    player.skating = Boolean(nextAnimation.skating && isPlayerRideableTransportOwner(player));
     player.transformSeq = transformSeq;
     player.emoteId = nextAnimation.emoteId;
     player.emoteActive = nextAnimation.emoteActive;

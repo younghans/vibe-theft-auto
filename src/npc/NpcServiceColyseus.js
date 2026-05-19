@@ -121,7 +121,11 @@ function clonePlayerState(player) {
     burgerCount: inventory.burgerCount ?? player?.burgerCount ?? 0,
     glizzyCount: inventory.glizzyCount ?? player?.glizzyCount ?? 0,
     sodaCount: inventory.sodaCount ?? player?.sodaCount ?? 0,
-    skateboardOwned: (inventory.skateboardOwned ?? player?.skateboardOwned) === true,
+    skateboardOwned: (
+      inventory.skateboardOwned
+      ?? player?.skateboardOwned
+      ?? !(inventory.vehicleItemId || player?.vehicleItemId)
+    ) === true,
     vehicleItemId: inventory.vehicleItemId || player?.vehicleItemId || '',
     drunknessDose: inventory.drunknessDose ?? player?.drunknessDose ?? 0,
     drunknessLevel: inventory.drunknessLevel ?? player?.drunknessLevel ?? 0,

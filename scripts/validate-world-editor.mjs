@@ -70,7 +70,11 @@ import {
   isMarthaNpc,
   listMarthaMenuItems
 } from '../src/shared/martha.js';
-import { SKATEBOARD_SPEED_MULTIPLIER } from '../src/shared/skateboard.js';
+import {
+  SKATEBOARD_SPEED_MULTIPLIER,
+  getPlayerRideableSpeedMultiplier,
+  isPlayerRideableTransportOwner
+} from '../src/shared/skateboard.js';
 import {
   createHotbarSlots,
   getHotbarConsumableItemId,
@@ -1623,7 +1627,8 @@ function validateTaskSequence() {
         gymPumpCompletedAt: 1000,
         stockBoughtAt: 2000,
         blackjackHandPlayedAt: 3000,
-        skateboardOwned: true
+        skateboardOwned: true,
+        vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna
       }
     }).id === TASK_IDS.officeManagerPromotion,
     'Task sequence should route to office manager after buying a car.'
@@ -1634,6 +1639,7 @@ function validateTaskSequence() {
     stockBoughtAt: 2000,
     blackjackHandPlayedAt: 3000,
     skateboardOwned: true,
+    vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna,
     officeManagerCompletedAt: 4000
   };
   assert(
@@ -1733,7 +1739,8 @@ function validateTaskSequence() {
         gymPumpCompletedAt: 1000,
         stockBoughtAt: 2000,
         blackjackHandPlayedAt: 3000,
-        skateboardOwned: true
+        skateboardOwned: true,
+        vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna
       }
     }).completedTask,
     'Task tracker should complete the transportation mission when a car is bought.'
@@ -1746,7 +1753,8 @@ function validateTaskSequence() {
       gymPumpCompletedAt: 1000,
       stockBoughtAt: 2000,
       blackjackHandPlayedAt: 3000,
-      skateboardOwned: true
+      skateboardOwned: true,
+      vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna
     }
   });
   assert(
@@ -1757,6 +1765,7 @@ function validateTaskSequence() {
         stockBoughtAt: 2000,
         blackjackHandPlayedAt: 3000,
         skateboardOwned: true,
+        vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna,
         officeManagerCompletedAt: 4000
       }
     }).completedTask,
@@ -1957,6 +1966,7 @@ function validateMissionSequencer() {
     stockBoughtAt: 1,
     blackjackHandPlayedAt: 1,
     skateboardOwned: true,
+    vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna,
     officeManagerCompletedAt: 1
   }, '', sequence);
   const charismaSnapshot = postOfficeSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
@@ -1972,6 +1982,7 @@ function validateMissionSequencer() {
     stockBoughtAt: 1,
     blackjackHandPlayedAt: 1,
     skateboardOwned: true,
+    vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna,
     officeManagerCompletedAt: 1,
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   }, '', sequence);
@@ -2003,6 +2014,7 @@ function validateMissionSequencer() {
     stockBoughtAt: 1,
     blackjackHandPlayedAt: 1,
     skateboardOwned: true,
+    vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna,
     officeManagerCompletedAt: 1,
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   };
@@ -2214,7 +2226,10 @@ function validateBartenderFunction() {
   assert(getHotbarConsumableItemId(marthaFoodSlots[6]) === MARTHA_ITEM_IDS.soda, 'Martha soda should appear as a hotbar consumable');
 
   assert(PLAYER_VEHICLE_SPEED_MULTIPLIER === 2, 'Car driving speed multiplier should be 2x');
-  assert(SKATEBOARD_SPEED_MULTIPLIER === PLAYER_VEHICLE_SPEED_MULTIPLIER, 'Legacy skating transport should use the car driving speed multiplier');
+  assert(SKATEBOARD_SPEED_MULTIPLIER === 1.6, 'Skateboard riding speed multiplier should keep the legacy 1.6x pace');
+  assert(getPlayerRideableSpeedMultiplier({ skateboardOwned: true, vehicleItemId: '' }) === SKATEBOARD_SPEED_MULTIPLIER, 'Skateboard riding should use the skateboard speed multiplier');
+  assert(getPlayerRideableSpeedMultiplier({ skateboardOwned: true, vehicleItemId: CAR_DEALER_ITEM_IDS.fiatDuna }) === PLAYER_VEHICLE_SPEED_MULTIPLIER, 'Purchased cars should replace the skateboard speed multiplier');
+  assert(isPlayerRideableTransportOwner({ skateboardOwned: true, vehicleItemId: '' }), 'Players with the default skateboard should have rideable transport');
 
   const pawnOwner = normalizeNpcBehavior({
     modelId: 'maynard',
@@ -2296,9 +2311,10 @@ function validateBartenderFunction() {
   );
   assert(
     /PlayerVehicleRoot/.test(playerSource)
+      && /PlayerSkateboard/.test(playerSource)
       && /PLAYER_VEHICLE_SCALE/.test(playerSource)
-      && /character\.visible\s*=\s*!active/.test(playerSource),
-    'Player avatar should render the owned car and hide the character while driving'
+      && /character\.visible\s*=\s*!carActive/.test(playerSource),
+    'Player avatar should render skateboard and car transport, hiding the character only while driving a car'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
@@ -2320,16 +2336,16 @@ function validateBartenderFunction() {
   );
   assert(
     /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
-      && /speedScale:\s*SKATEBOARD_SPEED_MULTIPLIER/.test(gameSource),
-    'Game client should use Shift vehicle input and the shared speed multiplier'
+      && /speedScale:\s*getPlayerRideableSpeedMultiplier\(localPlayerState\)/.test(gameSource),
+    'Game client should use Shift transport input and the active rideable speed multiplier'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
       && /vehicleItemId:\s*'string'/.test(serverSource)
       && /skating:\s*'boolean'/.test(serverSource)
       && /carDealer:buyVehicle/.test(serverSource)
-      && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
-    'Server player state should persist vehicle ownership and authorize driving speed'
+      && /getPlayerRideableSpeedMultiplier/.test(serverSource),
+    'Server player state should persist transport ownership and authorize active rideable speed'
   );
 }
 

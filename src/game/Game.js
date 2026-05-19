@@ -137,8 +137,9 @@ import {
   listMarthaMenuItems
 } from '../shared/martha.js';
 import {
-  SKATEBOARD_SPEED_MULTIPLIER,
-  isPlayerSkateboardOwner
+  getPlayerRideableSpeedMultiplier,
+  getPlayerRideableTransportLabel,
+  isPlayerRideableTransportOwner
 } from '../shared/skateboard.js';
 import {
   BLACKJACK_DEFAULT_WAGER,
@@ -14983,11 +14984,12 @@ export class Game {
   }
 
   syncPlayerBoundItemsHud(localPlayerState = this.getLocalPlayerState()) {
+    const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
     this.hud.setPlayerBoundItemsState({
-      skateboardOwned: isPlayerSkateboardOwner(localPlayerState),
+      skateboardOwned: isPlayerRideableTransportOwner(localPlayerState),
       skating: Boolean(localPlayerState?.skating),
-      vehicleItemId: getPlayerVehicleItemId(localPlayerState),
-      vehicleLabel: getPlayerVehicleMenuItem(localPlayerState)?.label ?? ''
+      vehicleItemId,
+      vehicleLabel: getPlayerRideableTransportLabel(localPlayerState)
     });
   }
 
@@ -15364,9 +15366,9 @@ export class Game {
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
       const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
-      const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
+      const skateboardOwned = isPlayerRideableTransportOwner(localPlayerState);
       const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
-      const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
+      const vehicleLabel = getPlayerRideableTransportLabel(localPlayerState);
       const skateboardMovementInput = playerInput !== ZERO_INPUT ? this.input.getMovementVector() : ZERO_MOVEMENT_VECTOR;
       const skatingInputHeld = Boolean(
         skateboardOwned
@@ -15412,7 +15414,7 @@ export class Game {
             skateboardOwned,
             vehicleItemId,
             skating: skatingInputHeld,
-            speedScale: SKATEBOARD_SPEED_MULTIPLIER,
+            speedScale: getPlayerRideableSpeedMultiplier(localPlayerState),
             movementCameraForward
           }
         );

@@ -3336,6 +3336,20 @@ function getVehicleBadgeMarkup() {
   `;
 }
 
+function getSkateboardBadgeMarkup() {
+  return `
+    <span class="hud__bound-skateboard-icon" aria-hidden="true">
+      <span class="hud__bound-skateboard-deck"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--front"></span>
+      <span class="hud__bound-skateboard-truck hud__bound-skateboard-truck--back"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--front-right"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-left"></span>
+      <span class="hud__bound-skateboard-wheel hud__bound-skateboard-wheel--back-right"></span>
+    </span>
+  `;
+}
+
 function normalizeHudDrunknessLevel(level = 0) {
   const numeric = Number(level);
   return Number.isFinite(numeric)
@@ -3465,6 +3479,7 @@ export class Hud {
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
     this.boundItemsRoot = this.overlay.querySelector('[data-bound-items]');
     this.boundVehicleRoot = this.overlay.querySelector('[data-bound-item-vehicle]');
+    this.boundVehicleIcon = this.overlay.querySelector('[data-bound-item-vehicle-icon]');
     this.boundVehicleLabel = this.overlay.querySelector('[data-bound-item-vehicle-label]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
@@ -3686,6 +3701,7 @@ export class Hud {
     this.lastAmmoClipSize = 0;
     this.lastAmmoSignature = '';
     this.lastHotbarSignature = '';
+    this.boundVehicleIconMode = '';
     this.hotbarDragState = null;
     this.hotbarSuppressClickUntil = 0;
     this.lastInteractionState = null;
@@ -3974,8 +3990,8 @@ export class Hud {
       </nav>
       <section class="hud__bound-items" data-bound-items aria-label="Permanent items" hidden>
         <div class="hud__bound-item hud__bound-item--vehicle" data-bound-item-vehicle>
-          ${getVehicleBadgeMarkup()}
-          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Car</span>
+          <span data-bound-item-vehicle-icon>${getSkateboardBadgeMarkup()}</span>
+          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Skateboard</span>
         </div>
       </section>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
@@ -9147,6 +9163,7 @@ export class Hud {
   setPlayerBoundItemsState({
     skateboardOwned = false,
     skating = false,
+    vehicleItemId = '',
     vehicleLabel = ''
   } = {}) {
     if (!this.boundItemsRoot || !this.boundVehicleRoot) {
@@ -9154,10 +9171,18 @@ export class Hud {
     }
 
     const hasVehicle = skateboardOwned === true;
-    const label = String(vehicleLabel || 'Car').trim() || 'Car';
+    const hasCar = Boolean(String(vehicleItemId ?? '').trim());
+    const iconMode = hasCar ? 'car' : 'skateboard';
+    const label = String(vehicleLabel || (hasCar ? 'Car' : 'Skateboard')).trim() || (hasCar ? 'Car' : 'Skateboard');
     this.boundItemsRoot.hidden = !hasVehicle;
     this.boundVehicleRoot.hidden = !hasVehicle;
+    this.boundVehicleRoot.classList.toggle('is-car', hasCar);
+    this.boundVehicleRoot.classList.toggle('is-skateboard', !hasCar);
     this.boundVehicleRoot.classList.toggle('is-active', hasVehicle && skating === true);
+    if (this.boundVehicleIcon && this.boundVehicleIconMode !== iconMode) {
+      this.boundVehicleIcon.innerHTML = hasCar ? getVehicleBadgeMarkup() : getSkateboardBadgeMarkup();
+      this.boundVehicleIconMode = iconMode;
+    }
     if (this.boundVehicleLabel) {
       this.boundVehicleLabel.textContent = label;
     }
