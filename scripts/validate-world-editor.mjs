@@ -197,6 +197,23 @@ function readRepoText(relativePath) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 }
 
+function getGlbNodeLocalScale(node) {
+  if (Array.isArray(node?.scale)) {
+    return node.scale;
+  }
+
+  if (Array.isArray(node?.matrix) && node.matrix.length === 16) {
+    const matrix = node.matrix;
+    return [
+      Math.hypot(matrix[0], matrix[1], matrix[2]),
+      Math.hypot(matrix[4], matrix[5], matrix[6]),
+      Math.hypot(matrix[8], matrix[9], matrix[10])
+    ];
+  }
+
+  return [1, 1, 1];
+}
+
 function collectMeshMaterials(root) {
   const entries = [];
   root.traverse?.((node) => {
@@ -463,14 +480,43 @@ function validateKenneyCatalogItems() {
 function validateCustomTileCatalogItems() {
   const hospital = getBuilderItemById('hospital_building');
   const wideHospital = getBuilderItemById('hospital_building_wide');
+  const assertClose = (actual, expected, message) => {
+    assert(Math.abs(Number(actual) - expected) < 0.001, message);
+  };
+  const assertHospitalGlbProfile = (relativePath, profileNodeName, label) => {
+    const glbJson = readGlbJson(relativePath);
+    const nodes = glbJson.nodes ?? [];
+    const profileNode = nodes.find((node) => node.name === profileNodeName);
+    const crossNodes = nodes.filter((node) => node.name === 'hospital_cross_symbol');
+    assert(profileNode, `${label} GLB should expose the form-fitting profile node`);
+    assertClose(getGlbNodeLocalScale(profileNode)[1], 1.7, `${label} profile should stretch vertically by 1.7x`);
+    assert(crossNodes.length >= 2, `${label} GLB should keep separate hospital cross symbol nodes`);
+    for (const crossNode of crossNodes) {
+      const crossScale = getGlbNodeLocalScale(crossNode);
+      assertClose(crossScale[0], 1 / 0.9, `${label} cross symbol should compensate the profile width scale`);
+      assertClose(crossScale[1], 1 / 1.7, `${label} cross symbol should compensate the profile height stretch`);
+      assertClose(crossScale[2], 1 / 0.93, `${label} cross symbol should compensate the profile depth scale`);
+    }
+  };
+
   assert(hospital, 'Hospital tile should exist');
   assert(wideHospital, 'Wide hospital tile should exist');
   assert(hospital.movementCollisionRects?.length === 3, 'Hospital should use form-fitting movement colliders instead of the full lot footprint');
   assert(wideHospital.movementCollisionRects?.length === 5, 'Wide hospital should use form-fitting movement colliders instead of a full 2x1 box');
   assert(hospital.shotCollisionRects?.length === hospital.movementCollisionRects.length, 'Hospital shot collision should match its rebuilt silhouette');
   assert(wideHospital.shotCollisionRects?.length === wideHospital.movementCollisionRects.length, 'Wide hospital shot collision should match its rebuilt silhouette');
-  assert(Math.max(...hospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 23, 'Hospital collision height should cover the taller rebuilt profile');
-  assert(Math.max(...wideHospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 23, 'Wide hospital collision height should cover the taller rebuilt profile');
+  assert(Math.max(...hospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 29, 'Hospital collision height should cover the 1.7x rebuilt profile');
+  assert(Math.max(...wideHospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 29, 'Wide hospital collision height should cover the 1.7x rebuilt profile');
+  assertHospitalGlbProfile(
+    'assets/vibe_theft_auto_custom/models/hospital-building.glb',
+    'hospital_building_form_fit',
+    'Hospital'
+  );
+  assertHospitalGlbProfile(
+    'assets/vibe_theft_auto_custom/models/hospital-building-wide.glb',
+    'hospital_building_wide_form_fit',
+    'Wide hospital'
+  );
 
   const getRectSpan = (rects, axis) => {
     const centerKey = axis === 'x' ? 'x' : 'z';

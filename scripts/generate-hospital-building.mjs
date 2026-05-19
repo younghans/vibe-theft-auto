@@ -40,6 +40,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const outputPath = path.join(projectRoot, 'assets', 'vibe_theft_auto_custom', 'models', 'hospital-building.glb');
 const wideOutputPath = path.join(projectRoot, 'assets', 'vibe_theft_auto_custom', 'models', 'hospital-building-wide.glb');
+const HOSPITAL_PROFILE_SCALE = Object.freeze({ x: 0.9, y: 1.7, z: 0.93 });
+const HOSPITAL_PROFILE_ANCHOR_Y = 0.58;
+const HOSPITAL_CROSS_NODE_NAME = 'hospital_cross_symbol';
 
 function createMaterial(color) {
   return new THREE.MeshStandardMaterial({
@@ -102,13 +105,22 @@ function addWindowColumn(group, {
 
 function addCross(group, position, material, backingMaterial = null) {
   const [x, y, z] = position;
+  const cross = new THREE.Group();
+  cross.name = HOSPITAL_CROSS_NODE_NAME;
+  cross.position.set(x, y, z);
+  cross.scale.set(
+    1 / HOSPITAL_PROFILE_SCALE.x,
+    1 / HOSPITAL_PROFILE_SCALE.y,
+    1 / HOSPITAL_PROFILE_SCALE.z
+  );
 
   if (backingMaterial) {
-    group.add(createBox([1.9, 1.9, 0.24], [x, y, z - 0.08], backingMaterial));
+    cross.add(createBox([1.9, 1.9, 0.24], [0, 0, -0.08], backingMaterial));
   }
 
-  group.add(createBox([0.46, 1.44, 0.18], [x, y, z + 0.1], material));
-  group.add(createBox([1.28, 0.46, 0.18], [x, y, z + 0.1], material));
+  cross.add(createBox([0.46, 1.44, 0.18], [0, 0, 0.1], material));
+  cross.add(createBox([1.28, 0.46, 0.18], [0, 0, 0.1], material));
+  group.add(cross);
 }
 
 function addFrontWindowDetailRow(group, {
@@ -190,10 +202,10 @@ function addParapetRect(group, {
 function applyFormFittingHospitalProfile(group, {
   structureName,
   groundChildCount = 3,
-  scaleX = 0.9,
-  scaleY = 1.28,
-  scaleZ = 0.93,
-  anchorY = 0.58
+  scaleX = HOSPITAL_PROFILE_SCALE.x,
+  scaleY = HOSPITAL_PROFILE_SCALE.y,
+  scaleZ = HOSPITAL_PROFILE_SCALE.z,
+  anchorY = HOSPITAL_PROFILE_ANCHOR_Y
 } = {}) {
   const structure = new THREE.Group();
   structure.name = structureName;
