@@ -204,6 +204,16 @@ import { getNpcModelVoice } from '../shared/npcVoice.js';
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+function createCameraMovementForward(cameraOffset) {
+  const forward = new THREE.Vector3(
+    cameraOffset.x - CAMERA_LOOK_OFFSET.x,
+    0,
+    cameraOffset.z - CAMERA_LOOK_OFFSET.z
+  );
+  return forward.lengthSq() > 0.000001 ? forward.normalize() : forward.set(0, 0, 1);
+}
+const CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(CAMERA_OFFSET);
+const AIM_CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(AIM_CAMERA_OFFSET);
 const WORLD_RENDER_LAYER = 0;
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
@@ -15364,6 +15374,9 @@ export class Game {
         && this.input.isActionPressed('skate')
         && (skateboardMovementInput.x !== 0 || skateboardMovementInput.z !== 0)
       );
+      const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
+        ? AIM_CAMERA_MOVEMENT_FORWARD
+        : CAMERA_MOVEMENT_FORWARD;
       this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: skatingInputHeld, vehicleItemId, vehicleLabel });
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
@@ -15399,7 +15412,8 @@ export class Game {
             skateboardOwned,
             vehicleItemId,
             skating: skatingInputHeld,
-            speedScale: SKATEBOARD_SPEED_MULTIPLIER
+            speedScale: SKATEBOARD_SPEED_MULTIPLIER,
+            movementCameraForward
           }
         );
         this.syncInlineShellState();

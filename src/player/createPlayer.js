@@ -244,18 +244,37 @@ function hideUnusedMeshes(root) {
   });
 }
 
-function projectMoveOnCamera(
+function copyHorizontalDirection(source, target) {
+  const x = Number(source?.x);
+  const z = Number(source?.z);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    return false;
+  }
+
+  target.set(x, 0, z);
+  return target.lengthSq() > 0.000001;
+}
+
+export function projectMoveOnCamera(
   camera,
   inputVector,
   target = new THREE.Vector3(),
   forward = new THREE.Vector3(),
-  right = new THREE.Vector3()
+  right = new THREE.Vector3(),
+  stableForward = null
 ) {
-  camera.getWorldDirection(forward);
-  forward.y = 0;
-  forward.normalize();
+  if (!copyHorizontalDirection(stableForward, forward)) {
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.multiplyScalar(-1);
+  }
 
-  forward.multiplyScalar(-1);
+  if (forward.lengthSq() <= 0.000001) {
+    forward.set(0, 0, 1);
+  } else {
+    forward.normalize();
+  }
+
   right.set(forward.z, 0, -forward.x).normalize();
   target.set(0, 0, 0);
   target.addScaledVector(right, inputVector.x);
@@ -2506,7 +2525,7 @@ export async function createPlayer(library, {
 
       const moving = wantsToMove && !ragdoll.isActive();
       const movement = moving
-        ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight)
+        ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight, options.movementCameraForward)
         : moveDirection.set(0, 0, 0);
       setSkateboardState({
         owned: options.skateboardOwned === true,

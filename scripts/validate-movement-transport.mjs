@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import * as THREE from 'three';
+import { projectMoveOnCamera } from '../src/player/createPlayer.js';
 
 const root = process.cwd();
 const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
@@ -9,6 +11,39 @@ const mockSource = fs.readFileSync(`${root}/src/npc/NpcServiceMock.js`, 'utf8');
 const playerSource = fs.readFileSync(`${root}/src/player/createPlayer.js`, 'utf8');
 const rendererSource = fs.readFileSync(`${root}/src/world/WorldRenderer.js`, 'utf8');
 const worldRoomSource = fs.readFileSync(`${root}/server/src/WorldRoom.js`, 'utf8');
+
+function assertNearlyEqual(actual, expected, message) {
+  assert.ok(Math.abs(actual - expected) <= 0.000001, `${message}: expected ${expected}, got ${actual}`);
+}
+
+const shiftedCamera = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
+shiftedCamera.position.set(8, 26, 18);
+shiftedCamera.lookAt(new THREE.Vector3(0, 3, 0));
+shiftedCamera.updateMatrixWorld(true);
+
+const stableCameraForward = new THREE.Vector3(0, 0, 1);
+const projectedRight = projectMoveOnCamera(
+  shiftedCamera,
+  { x: 1, z: 0 },
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  stableCameraForward
+);
+assertNearlyEqual(projectedRight.x, 1, 'horizontal movement should stay on the world X axis with a shifted camera');
+assertNearlyEqual(projectedRight.z, 0, 'horizontal movement should not drift down the world Z axis with a shifted camera');
+
+const projectedForwardRight = projectMoveOnCamera(
+  shiftedCamera,
+  { x: 1, z: -1 },
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  stableCameraForward
+);
+const diagonalComponent = 1 / Math.sqrt(2);
+assertNearlyEqual(projectedForwardRight.x, diagonalComponent, 'diagonal movement should preserve normalized X travel');
+assertNearlyEqual(projectedForwardRight.z, -diagonalComponent, 'diagonal movement should preserve normalized Z travel');
 
 assert.match(worldRoomSource, /transformSeq:\s*'number'/, 'server player transform schema should sync transform sequence numbers');
 assert.match(worldRoomSource, /fields:\s*\[[^\]]*'transformSeq'/, 'transform state section should include transformSeq');
