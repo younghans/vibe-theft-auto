@@ -146,6 +146,8 @@ import {
 import {
   CHARISMA_LEVEL_MISSION_DESCRIPTION,
   CHARISMA_LEVEL_MISSION_TARGET_LEVEL,
+  FOUR_MORE_WHEELS_LEGACY_MISSION_ID,
+  FOUR_MORE_WHEELS_MISSION_TITLE,
   JANITOR_TASKS_REQUIRED,
   MISSION_CATALOG,
   MISSION_STATUS,
@@ -2275,6 +2277,46 @@ function validateMissionSequencer() {
     ceoCompletedAt: 1,
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   };
+
+  const legacyTwoMoreWheelsPrompt = 'Two more wheels : Purchase a car from the car dealer.';
+  const retitledFourMoreWheelsSequence = normalizeMissionSequenceConfig([
+    ...sequence,
+    {
+      missionId: FOUR_MORE_WHEELS_LEGACY_MISSION_ID,
+      custom: true,
+      title: legacyTwoMoreWheelsPrompt,
+      label: legacyTwoMoreWheelsPrompt,
+      description: legacyTwoMoreWheelsPrompt,
+      prompt: legacyTwoMoreWheelsPrompt,
+      makeAvailableAfterMission: true,
+      availableAfterMissionNumber: sequence.length
+    }
+  ]);
+  const fourMoreWheelsMission = retitledFourMoreWheelsSequence.at(-1);
+  assert(
+    fourMoreWheelsMission?.missionId === FOUR_MORE_WHEELS_LEGACY_MISSION_ID,
+    'Legacy Two more wheels custom mission id should stay selectable after retitling'
+  );
+  assert(
+    [
+      fourMoreWheelsMission?.title,
+      fourMoreWheelsMission?.label,
+      fourMoreWheelsMission?.description,
+      fourMoreWheelsMission?.prompt
+    ].every((value) => String(value ?? '').startsWith(FOUR_MORE_WHEELS_MISSION_TITLE)),
+    'Legacy Two more wheels custom mission should display as Four more wheels everywhere'
+  );
+  const fourMoreWheelsSnapshot = getMissionSnapshots(
+    completePlayer,
+    FOUR_MORE_WHEELS_LEGACY_MISSION_ID,
+    retitledFourMoreWheelsSequence
+  ).find((mission) => mission.id === FOUR_MORE_WHEELS_LEGACY_MISSION_ID);
+  assert(
+    fourMoreWheelsSnapshot?.title.startsWith(FOUR_MORE_WHEELS_MISSION_TITLE),
+    'Mission snapshots should expose the Four more wheels retitle'
+  );
+  assert(fourMoreWheelsSnapshot?.selectable === true, 'Four more wheels should remain selectable under the legacy custom mission id');
+
   const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)
     .find((mission) => mission.id === customMission.missionId);
   assert(customSnapshot?.status === MISSION_STATUS.available, 'Custom missions should become available when their sequence gate is satisfied');

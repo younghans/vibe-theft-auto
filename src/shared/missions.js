@@ -50,6 +50,8 @@ export const BECOME_CEO_STRENGTH_LEVEL_REQUIRED = Math.max(
   0,
   Math.floor(Number(CEO_JOB_DEFINITION.strengthLevelRequired ?? 0) || 0)
 );
+export const FOUR_MORE_WHEELS_LEGACY_MISSION_ID = 'custom-mission-two-more-wheels-purchase-a-car-from--1uv50rm';
+export const FOUR_MORE_WHEELS_MISSION_TITLE = 'Four more wheels';
 
 export const MISSION_CATALOG = Object.freeze([
   {
@@ -250,6 +252,11 @@ function normalizeMissionText(value = '', maxLength = CUSTOM_MISSION_PROMPT_MAX_
     .trim();
 }
 
+function retitleFourMoreWheelsMissionText(value = '', maxLength = CUSTOM_MISSION_PROMPT_MAX_LENGTH) {
+  const text = normalizeMissionText(value, maxLength);
+  return text.replace(/^\s*two\s+more\s+wheels\b/iu, FOUR_MORE_WHEELS_MISSION_TITLE);
+}
+
 function truncateMissionText(value = '', maxLength = CUSTOM_MISSION_LABEL_MAX_LENGTH) {
   const normalized = normalizeMissionText(value, maxLength + 1);
   if (normalized.length <= maxLength) {
@@ -334,17 +341,29 @@ function getCustomMissionDefinition(entry = {}) {
   const title = normalizeMissionText(entry.title, CUSTOM_MISSION_PROMPT_MAX_LENGTH) || prompt || label;
   const description = normalizeMissionText(entry.description, CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH)
     || (prompt && prompt !== title ? prompt : 'Admin-authored mission.');
+  const shouldRetitleFourMoreWheels = missionId === FOUR_MORE_WHEELS_LEGACY_MISSION_ID
+    || [entry.title, entry.label, entry.description, entry.prompt].some((value) => (
+      /^\s*two\s+more\s+wheels\b/iu.test(String(value ?? ''))
+    ));
 
   return Object.freeze({
     id: missionId,
-    title,
-    label,
+    title: shouldRetitleFourMoreWheels
+      ? retitleFourMoreWheelsMissionText(title, CUSTOM_MISSION_PROMPT_MAX_LENGTH)
+      : title,
+    label: shouldRetitleFourMoreWheels
+      ? retitleFourMoreWheelsMissionText(label, CUSTOM_MISSION_LABEL_MAX_LENGTH)
+      : label,
     icon: 'custom',
-    description,
+    description: shouldRetitleFourMoreWheels
+      ? retitleFourMoreWheelsMissionText(description, CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH)
+      : description,
     requirement: '',
     repeatable: false,
     custom: true,
-    prompt: prompt || title || label
+    prompt: shouldRetitleFourMoreWheels
+      ? retitleFourMoreWheelsMissionText(prompt || title || label, CUSTOM_MISSION_PROMPT_MAX_LENGTH)
+      : prompt || title || label
   });
 }
 
