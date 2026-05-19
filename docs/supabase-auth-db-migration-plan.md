@@ -187,6 +187,19 @@ Notes:
 
 Goal: add app-owned tables that connect Supabase Auth users to game roles and permanent saves.
 
+Status: completed on 2026-05-19.
+
+Notes:
+
+- `game_users` and `player_saves` were created fresh with zero starting rows.
+- Existing guest `player_snapshots` were not migrated.
+- RLS is enabled on both account tables.
+- Authenticated browser clients can only select their own `game_users` row.
+- Browser clients have no direct access policy for `player_saves`; Colyseus remains the authoritative writer.
+- A trigger on `auth.users` creates a matching `game_users` row after signup.
+- A trigger on `player_saves` keeps `updated_at` current on updates.
+- Remote Supabase migration history includes `20260519232500_add_auth_account_tables.sql`.
+
 ```sql
 create table public.game_users (
   id uuid primary key references auth.users(id) on delete cascade,
