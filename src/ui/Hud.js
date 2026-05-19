@@ -48,6 +48,9 @@ const AMMO_BULLET_STAGGER_MS = 18;
 const AMMO_BULLET_MAX_STAGGER_MS = 180;
 const AMMO_LOW_CLIP_RATIO = 0.28;
 const PHONE_CLOSE_ANIMATION_MS = 260;
+const SKILL_LEVEL_UP_POPUP_MS = 3000;
+const SKILL_LEVEL_UP_STACK_GAP_PX = 98;
+const SKILL_LEVEL_UP_MAX_VISIBLE = 3;
 const BLACKJACK_CARD_STAGGER_MS = 78;
 const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
   'deal-flip': 350,
@@ -3577,9 +3580,6 @@ export class Hud {
     this.taskTitle = this.overlay.querySelector('[data-task-title]');
     this.taskConfetti = this.overlay.querySelector('[data-task-confetti]');
     this.skillLevelUpRoot = this.overlay.querySelector('[data-skill-level-up]');
-    this.skillLevelUpIcon = this.overlay.querySelector('[data-skill-level-up-icon]');
-    this.skillLevelUpTitle = this.overlay.querySelector('[data-skill-level-up-title]');
-    this.skillLevelUpSubtitle = this.overlay.querySelector('[data-skill-level-up-subtitle]');
     this.respawnText = this.overlay.querySelector('[data-respawn]');
     this.respawnLine = this.overlay.querySelector('[data-respawn-line]');
     this.respawnDetail = this.overlay.querySelector('[data-respawn-detail]');
@@ -3869,7 +3869,8 @@ export class Hud {
     this.lastPhoneWalletSignature = '';
     this.lastPhoneStocksSignature = '';
     this.lastPhoneMapSignature = '';
-    this.skillLevelUpTimeout = 0;
+    this.skillLevelUpPopups = [];
+    this.skillLevelUpSequence = 0;
     this.lastNpcEditorState = null;
     this.lastBuildingEditorState = null;
     this.lastCharacterSelectorSignature = '';
@@ -10631,27 +10632,48 @@ export class Hud {
     oldLevel = 1,
     newLevel = 1
   } = {}) {
-    if (!this.skillLevelUpRoot) {
+    if (!this.skillLevelUpRoot?.parentElement) {
       return;
     }
 
-    window.clearTimeout(this.skillLevelUpTimeout);
-    this.skillLevelUpRoot.hidden = false;
-    this.skillLevelUpRoot.style.setProperty('--skill-accent', skill.accent ?? '#68e08f');
-    if (this.skillLevelUpIcon) {
-      this.skillLevelUpIcon.innerHTML = this.getPhoneSkillIconMarkup(skill.icon);
+    const popup = this.skillLevelUpRoot.cloneNode(true);
+    popup.removeAttribute('data-skill-level-up');
+    popup.setAttribute('data-skill-level-up-instance', String(++this.skillLevelUpSequence));
+    popup.hidden = false;
+    popup.classList.remove('is-active');
+    popup.style.setProperty('--skill-accent', skill.accent ?? '#68e08f');
+
+    const icon = popup.querySelector('[data-skill-level-up-icon]');
+    const title = popup.querySelector('[data-skill-level-up-title]');
+    const subtitle = popup.querySelector('[data-skill-level-up-subtitle]');
+    if (icon) {
+      icon.innerHTML = this.getPhoneSkillIconMarkup(skill.icon);
     }
-    if (this.skillLevelUpTitle) {
-      this.skillLevelUpTitle.textContent = `${skill.label ?? 'Skill'} Level ${newLevel}`;
+    if (title) {
+      title.textContent = `${skill.label ?? 'Skill'} Level ${newLevel}`;
     }
-    if (this.skillLevelUpSubtitle) {
-      this.skillLevelUpSubtitle.textContent = `Level ${oldLevel} -> ${newLevel}`;
+    if (subtitle) {
+      subtitle.textContent = `Level ${oldLevel} -> ${newLevel}`;
     }
-    this.skillLevelUpRoot.classList.remove('is-active');
-    void this.skillLevelUpRoot.offsetWidth;
-    this.skillLevelUpRoot.classList.add('is-active');
+
+    this.skillLevelUpRoot.parentElement.append(popup);
+    const entry = {
+      id: this.skillLevelUpSequence,
+      node: popup,
+      timeout: 0
+    };
+    this.skillLevelUpPopups.push(entry);
+    while (this.skillLevelUpPopups.length > SKILL_LEVEL_UP_MAX_VISIBLE) {
+      const oldest = this.skillLevelUpPopups.shift();
+      window.clearTimeout(oldest?.timeout);
+      oldest?.node?.remove();
+    }
+    this.syncSkillLevelUpPopupStack();
+
+    void popup.offsetWidth;
+    popup.classList.add('is-active');
     this.spawnTaskConfetti({
-      originElement: this.skillLevelUpRoot,
+      originElement: popup,
       originYRatio: 0.42,
       originSpread: 320,
       particleCount: 240,
@@ -10663,12 +10685,18 @@ export class Hud {
         '#f7d86a'
       ]
     });
-    this.skillLevelUpTimeout = window.setTimeout(() => {
-      this.skillLevelUpRoot?.classList.remove('is-active');
-      if (this.skillLevelUpRoot) {
-        this.skillLevelUpRoot.hidden = true;
-      }
-    }, 3000);
+    entry.timeout = window.setTimeout(() => {
+      popup.classList.remove('is-active');
+      popup.remove();
+      this.skillLevelUpPopups = this.skillLevelUpPopups.filter((candidate) => candidate !== entry);
+      this.syncSkillLevelUpPopupStack();
+    }, SKILL_LEVEL_UP_POPUP_MS);
+  }
+
+  syncSkillLevelUpPopupStack() {
+    for (const [index, entry] of this.skillLevelUpPopups.entries()) {
+      entry.node?.style?.setProperty('--skill-level-up-offset', `${index * SKILL_LEVEL_UP_STACK_GAP_PX}px`);
+    }
   }
 
   getCharacterSelectorCardPreviewMount(characterId) {
