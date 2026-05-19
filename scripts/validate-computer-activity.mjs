@@ -703,10 +703,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(gameSource.includes('playTaskCompleteChaChing') && gameSource.includes('TASK_COMPLETE_CHA_CHING_DELAY_MS'), 'Money-paying completions should append a delayed cha-ching.');
   assert(gameSource.includes('moneyChangeChaChingSuppressedUntil'), 'Completion cha-ching should suppress duplicate positive money-change sounds.');
   assert(gameSource.includes('OFFICE_CEO_TARGET_WIDTH_VARIANCE'), 'CEO approval windows should have wider timing variance.');
-  assert(gameSource.includes('OFFICE_CEO_MEMO_RIGHT_EXIT'), 'CEO memo paper should travel off the right edge before returning.');
-  assert(gameSource.includes('memoDirection'), 'CEO memo should track a return-pass direction for two chances.');
-  assert(gameSource.includes('playCeoStampThudSound'), 'CEO stamping should play a quiet thud sound.');
-  assert(gameSource.includes('playCeoGolfClapSound') && gameSource.includes('completingCeoJob'), 'CEO completion should add CEO-only golf claps.');
+  assert(gameSource.includes('OFFICE_CEO_STAMP_RIGHT_EXIT'), 'CEO stamp should travel off the right edge before returning.');
+  assert(gameSource.includes('memoDirection'), 'CEO stamp should track a return-pass direction for two chances.');
   assert(hudSource.includes('hud__office-paper-ball'), 'Janitor HUD should render a crumpled paper toss ball.');
   assert(hudSource.includes('createOfficeMopHeroMarkup'), 'Janitor HUD should render the Mop Hero game.');
   assert(hudSource.includes('data-office-mop-stage'), 'Mop Hero HUD should expose a mouse tracking stage.');
@@ -738,9 +736,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(hudSource.includes('hud__office-brew-button'), 'Office Manager hold brew button should have stable button-specific styling.');
   assert(hudSource.includes('hud__office-boardroom-backdrop'), 'CEO ready screen should render a boardroom background.');
   assert(hudSource.includes('hud__office-ceo-stamp'), 'CEO HUD should render the new stamp minigame.');
-  assert(hudSource.includes('--memo-left'), 'CEO HUD should expose the sliding memo position.');
-  assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose the approval-zone stamp position.');
-  assert(hudSource.includes('updateOfficeCeoLiveMarkup'), 'CEO memo motion should update in place for smoother paper sliding.');
+  assert(hudSource.includes('--stamp-left'), 'CEO stamp should expose a dynamic horizontal marker position.');
   assert(hudSource.includes('is-returning'), 'CEO HUD should show the returning stamp pass.');
   assert(hudSource.includes('hud__office-board-face is-center'), 'CEO boardroom should include animated board members.');
   assert(hudSource.includes('createOfficeBoardMembersMarkup'), 'CEO board members should use shared markup in ready and active scenes.');
@@ -771,8 +767,8 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('hud__office-breakroom-backdrop'), 'Office Manager start screen should include the break room backdrop.');
   assert(cssSource.includes('.hud__office-brew-button:hover') && cssSource.includes('.hud__office-brew-button:active') && cssSource.includes('transform: none'), 'Office Manager hold brew button should not shift on hover or active press.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
-  assert(cssSource.includes('top: -2px'), 'CEO stamp should rest low enough to align with the bigger table memo.');
-  assert(cssSource.includes('translateY(54px)'), 'CEO stamp slam should land on the lower memo position.');
+  assert(cssSource.includes('top: -38px'), 'CEO stamp should rest higher above the memo so prompt text stays readable.');
+  assert(cssSource.includes('translateY(72px)'), 'CEO stamp slam should still travel down from the raised rest position.');
   assert(cssSource.includes('@keyframes hud-office-stamp-mark'), 'CEO stamp should leave an approved mark animation.');
   assert(cssSource.includes('hud__office-ceo-stamp-handle'), 'CEO stamp should have a symmetrical handle.');
   assert(cssSource.includes('hud__office-ceo-stamp-pad'), 'CEO stamp should have a polished stamp pad.');
@@ -786,8 +782,7 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('.hud__office-board-cash-fan'), 'CEO board members should style cash fans.');
   assert(cssSource.includes('.hud__office-board-pocket-watch'), 'CEO board members should style pocket watches.');
   assert(cssSource.includes('hud__office-boardroom-backdrop'), 'CEO start screen should include the boardroom backdrop.');
-  assert(cssSource.includes('left: var(--memo-left'), 'CEO memo paper should slide with the timing marker.');
-  assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should align with the approval window.');
+  assert(cssSource.includes('left: var(--stamp-left'), 'CEO stamp visual should move with the timing marker.');
 }
 
 async function validateCheckedInPlacements() {

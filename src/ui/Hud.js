@@ -1877,28 +1877,6 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       ].join('|');
     }
 
-    if (gameId === OFFICE_JOB_GAME_IDS.ceo) {
-      return [
-        game?.id ?? '',
-        gameId,
-        phase,
-        String(error ?? ''),
-        String(game?.resultTitle ?? ''),
-        String(game?.resultDetail ?? ''),
-        String(game?.message ?? ''),
-        String(round.officeJobId ?? round.jobId ?? ''),
-        String(Math.round(Number(round.targetStart ?? 0) * 100)),
-        String(Math.round(Number(round.targetEnd ?? 0) * 100)),
-        String(data.memoLabel ?? ''),
-        String(data.stampMissSide ?? ''),
-        String(Boolean(data.stampSuccess)),
-        String(Number(data.stampSeq ?? 0) || 0),
-        String(Number(data.approved ?? 0) || 0),
-        String(Number(data.requiredApprovals ?? round.requiredApprovals ?? 0) || 0),
-        String(Boolean(data.stamped))
-      ].join('|');
-    }
-
     base.push(
       String(round.officeJobId ?? round.jobId ?? ''),
       String(Math.round(Number(round.targetStart ?? 0) * 100)),
@@ -2777,8 +2755,7 @@ function createOfficeCeoMarkup(game = null) {
   const stampSuccess = data.stampSuccess === true;
   const returning = data.memoTurned === true || Number(data.memoDirection ?? 1) < 0;
   const stampState = `${returning ? ' is-returning' : ''}${stamped ? stampSuccess ? ' is-stamping is-approved' : ' is-stamping is-rejected' : ''}`;
-  const stampPosition = (targetStart + targetEnd) / 2;
-  const stampLeft = Math.max(0, Math.min(1, stampPosition)) * 100;
+  const stampLeft = memoPosition * 100;
   return `
     <div class="hud__office-task hud__office-ceo hud__office-ceo-stamp${stampState}" style="--memo-left:${(memoPosition * 100).toFixed(2)}%; --target-left:${(targetStart * 100).toFixed(2)}%; --target-width:${((targetEnd - targetStart) * 100).toFixed(2)}%; --stamp-left:${stampLeft.toFixed(2)}%">
       <div class="hud__office-boardroom-scene" aria-hidden="true">
@@ -2800,7 +2777,7 @@ function createOfficeCeoMarkup(game = null) {
       </div>
       <div class="hud__school-score-strip">
         <span>${escapeHtml(approved)}/${escapeHtml(required)} memos approved</span>
-        <span data-office-ceo-pass-label>${returning ? 'Return pass' : 'Forward pass'}</span>
+        <span>${returning ? 'Return pass' : 'Forward pass'}</span>
       </div>
       ${createSchoolProgressMarkup(progress, 'Approval progress')}
       ${createSchoolGameButton('office:stamp', 'Stamp', 'is-primary')}
@@ -2961,45 +2938,8 @@ function updateOfficeCoffeeFillLiveMarkup(root = null, game = null) {
   }
 }
 
-function updateOfficeCeoLiveMarkup(root = null, game = null) {
-  const task = root?.querySelector?.('.hud__office-ceo-stamp');
-  if (!task || game?.phase !== 'playing') {
-    return;
-  }
-
-  const round = game.round ?? {};
-  const data = game.data ?? {};
-  const rawMemoPosition = Number(data.memoPosition);
-  const memoPosition = Number.isFinite(rawMemoPosition) ? Math.max(-0.24, Math.min(1.24, rawMemoPosition)) : -0.22;
-  const targetStart = Math.max(0, Math.min(1, Number(round.targetStart ?? 0.44) || 0.44));
-  const targetEnd = Math.max(targetStart, Math.min(1, Number(round.targetEnd ?? 0.6) || 0.6));
-  const stampPosition = (targetStart + targetEnd) / 2;
-  const returning = data.memoTurned === true || Number(data.memoDirection ?? 1) < 0;
-  const stamped = data.stamped === true;
-  const stampSuccess = data.stampSuccess === true;
-
-  task.style.setProperty('--memo-left', `${(memoPosition * 100).toFixed(3)}%`);
-  task.style.setProperty('--target-left', `${(targetStart * 100).toFixed(2)}%`);
-  task.style.setProperty('--target-width', `${((targetEnd - targetStart) * 100).toFixed(2)}%`);
-  task.style.setProperty('--stamp-left', `${(Math.max(0, Math.min(1, stampPosition)) * 100).toFixed(2)}%`);
-  task.classList.toggle('is-returning', returning);
-  task.classList.toggle('is-stamping', stamped);
-  task.classList.toggle('is-approved', stamped && stampSuccess);
-  task.classList.toggle('is-rejected', stamped && !stampSuccess);
-
-  const passLabel = task.querySelector('[data-office-ceo-pass-label]');
-  if (passLabel) {
-    passLabel.textContent = returning ? 'Return pass' : 'Forward pass';
-  }
-}
-
 function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
   if (!root || game?.context !== 'office-job' || game?.phase !== 'playing') {
-    return;
-  }
-
-  if (String(game.round?.gameId ?? '') === OFFICE_JOB_GAME_IDS.ceo) {
-    updateOfficeCeoLiveMarkup(root, game);
     return;
   }
 
