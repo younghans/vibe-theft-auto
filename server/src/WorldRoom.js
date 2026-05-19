@@ -112,6 +112,9 @@ import {
   isCarDealerNpc,
   isPlayerVehicleOwner,
   normalizePlayerVehicleItemId,
+  playerOwnsVehicleItem,
+  selectPlayerVehicleItem,
+  serializePlayerOwnedVehicleItemIds,
   setPlayerVehicleItem
 } from '../../src/shared/carDealer.js';
 import {
@@ -349,6 +352,7 @@ const PlayerInventoryState = schema({
   sodaCount: 'number',
   skateboardOwned: 'boolean',
   vehicleItemId: 'string',
+  ownedVehicleItemIds: 'string',
   drunknessDose: 'number',
   drunknessLevel: 'number',
   drunknessEndsAt: 'number',
@@ -467,6 +471,7 @@ const PLAYER_STATE_SECTIONS = [
       'sodaCount',
       'skateboardOwned',
       'vehicleItemId',
+      'ownedVehicleItemIds',
       'drunknessDose',
       'drunknessLevel',
       'drunknessEndsAt',
@@ -774,6 +779,7 @@ function restoreCharacterStockPortfoliosSnapshot(snapshot = {}, fallbackCharacte
 function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
   const characterId = sanitizeCharacterId(player?.characterId);
   const normalizedStockPortfolios = sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios);
+  const vehicleInventory = getPlayerVehicleInventorySnapshot(player);
   return {
     player: {
       x: player.x,
@@ -800,8 +806,9 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       burgerCount: player.burgerCount,
       glizzyCount: player.glizzyCount,
       sodaCount: player.sodaCount,
-      skateboardOwned: isPlayerVehicleOwner(player),
-      vehicleItemId: getPlayerVehicleItemId(player),
+      skateboardOwned: vehicleInventory.skateboardOwned,
+      vehicleItemId: vehicleInventory.vehicleItemId,
+      ownedVehicleItemIds: vehicleInventory.ownedVehicleItemIds,
       drunknessDose: player.drunknessDose,
       drunknessLevel: player.drunknessLevel,
       drunknessEndsAt: player.drunknessEndsAt,
@@ -884,8 +891,13 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.burgerCount = normalizeMarthaInventoryCount(saved.burgerCount);
   player.glizzyCount = normalizeMarthaInventoryCount(saved.glizzyCount);
   player.sodaCount = normalizeMarthaInventoryCount(saved.sodaCount);
+  player.ownedVehicleItemIds = serializePlayerOwnedVehicleItemIds(saved.ownedVehicleItemIds);
   player.vehicleItemId = normalizePlayerVehicleItemId(saved.vehicleItemId);
-  if (!player.vehicleItemId && normalizeSkateboardOwned(saved.skateboardOwned)) {
+  if (player.vehicleItemId) {
+    setPlayerVehicleItem(player, player.vehicleItemId);
+  } else if (player.ownedVehicleItemIds) {
+    setPlayerVehicleItem(player, getPlayerVehicleItemId(player));
+  } else if (normalizeSkateboardOwned(saved.skateboardOwned)) {
     setPlayerVehicleItem(player, getPlayerVehicleItemId({ skateboardOwned: true }));
   } else {
     player.skateboardOwned = isPlayerVehicleOwner(player);
@@ -1080,6 +1092,10 @@ export class WorldRoom extends Room {
       void this.handleRpc(client, message.requestId, () => this.handleCarDealerPurchase(client, message));
     });
 
+    this.onMessage('vehicle:select', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handlePlayerVehicleSelect(client, message));
+    });
+
     this.onMessage('martha:buyItem', (client, message) => {
       void this.handleRpc(client, message.requestId, () => this.handleMarthaPurchase(client, message));
     });
@@ -1262,6 +1278,7 @@ export class WorldRoom extends Room {
     player.sodaCount = 0;
     player.skateboardOwned = false;
     player.vehicleItemId = '';
+    player.ownedVehicleItemIds = '';
     player.drunknessDose = 0;
     player.drunknessLevel = 0;
     player.drunknessEndsAt = 0;
@@ -2301,7 +2318,7 @@ export class WorldRoom extends Room {
       throw new Error('That car is not for sale.');
     }
 
-    if (getPlayerVehicleItemId(player) === item.id) {
+    if (playerOwnsVehicleItem(player, item.id)) {
       const error = `You already own the ${item.label}.`;
       this.setNpcChatPhase(npc, 'done', error, { bumpSeq: true });
       throw new Error(error);
@@ -2327,6 +2344,35 @@ export class WorldRoom extends Room {
       },
       inventory: getPlayerVehicleInventorySnapshot(player),
       money: player.money
+    };
+  }
+
+  handlePlayerVehicleSelect(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      throw new Error('You cannot switch cars right now.');
+    }
+
+    const item = getCarDealerMenuItem(message?.itemId);
+    if (!item) {
+      throw new Error('That car is not available.');
+    }
+
+    if (!playerOwnsVehicleItem(player, item.id)) {
+      throw new Error(`You do not own the ${item.label}.`);
+    }
+
+    selectPlayerVehicleItem(player, item.id);
+    player.skating = false;
+    this.queuePlayerSnapshotSave(client.sessionId);
+    return {
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: 1
+      },
+      inventory: getPlayerVehicleInventorySnapshot(player)
     };
   }
 

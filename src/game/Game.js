@@ -124,9 +124,11 @@ import {
 import {
   getCarDealerMenuItem,
   getCarDealerPromptRadius,
+  getPlayerOwnedVehicleMenuItems,
   getPlayerVehicleItemId,
   getPlayerVehicleMenuItem,
   isCarDealerNpc,
+  playerOwnsVehicleItem,
   listCarDealerMenuItems
 } from '../shared/carDealer.js';
 import {
@@ -971,6 +973,8 @@ export class Game {
     this.desiredLocalCharacterId = readStoredCharacterId();
     this.pendingCharacterRequestId = '';
     this.characterSelectorVisible = false;
+    this.carSelectorVisible = false;
+    this.carSelectorRequestInFlight = false;
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
     this.characterPreviewWarmupQueued = false;
@@ -1425,6 +1429,11 @@ export class Game {
       onSelectSlot: (slotIndex) => this.selectHotbarSlot(slotIndex, { source: 'pointer' }),
       onMoveSlot: (fromSlotIndex, toSlotIndex) => this.moveHotbarSlot(fromSlotIndex, toSlotIndex)
     });
+    this.hud.bindCarSelectorEvents({
+      onTogglePanel: (visible) => this.toggleCarSelector(visible),
+      onCycleCar: (step) => this.cycleCarSelection(step),
+      onSelectCar: (itemId) => void this.selectPlayerVehicle(itemId)
+    });
     this.hud.bindCharacterSelectorEvents({
       onTogglePanel: (visible) => this.toggleCharacterSelector(visible),
       onCycleCharacter: (step) => this.cycleCharacterSelection(step),
@@ -1433,6 +1442,7 @@ export class Game {
     });
     this.refreshHotbarHud();
     this.refreshZoomHud();
+    this.refreshCarSelectorHud();
     this.refreshCharacterSelectorHud();
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
     this.hud.setLoadingProgress(0);
@@ -3816,9 +3826,69 @@ export class Game {
     void this.syncCharacterSelectorPreview(entries, selectedId);
   }
 
+  getCarSelectorEntries(localPlayerState = this.getLocalPlayerState()) {
+    const selectedId = getPlayerVehicleItemId(localPlayerState);
+    return getPlayerOwnedVehicleMenuItems(localPlayerState).map((entry) => ({
+      ...entry,
+      selected: entry.id === selectedId
+    }));
+  }
+
+  getCarSelectorStatusText(localPlayerState = this.getLocalPlayerState()) {
+    if (this.carSelectorRequestInFlight) {
+      return 'Switching car';
+    }
+
+    return getPlayerVehicleMenuItem(localPlayerState)
+      ? 'Currently selected'
+      : 'No car selected';
+  }
+
+  refreshCarSelectorHud(localPlayerState = this.getLocalPlayerState()) {
+    const entries = this.getCarSelectorEntries(localPlayerState);
+    const available = this.canUseCarSelector(localPlayerState);
+    const visible = available && this.carSelectorVisible;
+    if (!available && this.carSelectorVisible) {
+      this.carSelectorVisible = false;
+    }
+
+    this.hud.setCarSelectorState({
+      available,
+      visible,
+      selectedId: getPlayerVehicleItemId(localPlayerState),
+      statusText: this.getCarSelectorStatusText(localPlayerState),
+      entries,
+      loading: this.carSelectorRequestInFlight
+    });
+  }
+
+  setCarSelectorVisible(visible) {
+    if (visible) {
+      this.closePhoneMenu();
+      this.closeInteractionMenu();
+      this.characterSelectorVisible = false;
+      this.refreshCharacterSelectorHud();
+    }
+
+    this.carSelectorVisible = Boolean(visible) && this.canUseCarSelector();
+    this.refreshCarSelectorHud();
+    return this.carSelectorVisible;
+  }
+
+  toggleCarSelector(visible = !this.carSelectorVisible) {
+    if (visible && !this.canUseCarSelector()) {
+      this.hud.showToast('Buy a car first.');
+      return this.setCarSelectorVisible(false);
+    }
+
+    return this.setCarSelectorVisible(visible);
+  }
+
   setCharacterSelectorVisible(visible) {
     if (visible) {
       this.closePhoneMenu();
+      this.carSelectorVisible = false;
+      this.refreshCarSelectorHud();
     }
 
     this.characterSelectorVisible = Boolean(visible) && this.canUseCharacterSelector();
@@ -3849,6 +3919,7 @@ export class Game {
       && !this.hud.isInteractionMenuOpen()
       && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
+      && !this.carSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );
@@ -4182,6 +4253,86 @@ export class Game {
     this.openPhoneApp('stocks');
   }
 
+  cycleCarSelection(step = 1) {
+    const localPlayerState = this.getLocalPlayerState();
+    const entries = this.getCarSelectorEntries(localPlayerState);
+    if (!entries.length) {
+      this.hud.showToast('Buy a car first.');
+      return;
+    }
+
+    const selectedId = getPlayerVehicleItemId(localPlayerState);
+    const currentIndex = entries.findIndex((entry) => entry.id === selectedId);
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (safeIndex + step + entries.length) % entries.length;
+    void this.selectPlayerVehicle(entries[nextIndex]?.id ?? selectedId);
+  }
+
+  applyVehicleInventorySnapshot(inventory = null) {
+    if (!inventory || typeof inventory !== 'object') {
+      return;
+    }
+
+    const sessionId = this.npcServiceState?.sessionId;
+    const localPlayerState = this.getLocalPlayerState();
+    if (!sessionId || !localPlayerState) {
+      return;
+    }
+
+    const nextPlayerState = {
+      ...localPlayerState,
+      skateboardOwned: inventory.skateboardOwned === true,
+      vehicleItemId: String(inventory.vehicleItemId ?? localPlayerState.vehicleItemId ?? ''),
+      ownedVehicleItemIds: String(inventory.ownedVehicleItemIds ?? localPlayerState.ownedVehicleItemIds ?? ''),
+      skating: false
+    };
+    this.npcServiceState.players.set(sessionId, nextPlayerState);
+    this.player?.setSkateboardState?.({
+      owned: nextPlayerState.skateboardOwned,
+      skating: false,
+      vehicleItemId: nextPlayerState.vehicleItemId
+    });
+  }
+
+  async selectPlayerVehicle(itemId = '') {
+    const localPlayerState = this.getLocalPlayerState();
+    const item = getCarDealerMenuItem(itemId);
+    if (!item || !playerOwnsVehicleItem(localPlayerState, item.id)) {
+      this.hud.showToast('That car is not in your garage.');
+      this.refreshCarSelectorHud(localPlayerState);
+      return;
+    }
+
+    if (this.carSelectorRequestInFlight) {
+      return;
+    }
+
+    if (getPlayerVehicleItemId(localPlayerState) === item.id) {
+      this.refreshCarSelectorHud(localPlayerState);
+      return;
+    }
+
+    this.carSelectorRequestInFlight = true;
+    this.refreshCarSelectorHud(localPlayerState);
+    try {
+      const result = await this.npcService?.selectPlayerVehicle?.(item.id);
+      if (!result?.ok) {
+        this.hud.showToast(result?.error ?? 'Could not switch cars.');
+        return;
+      }
+
+      this.applyVehicleInventorySnapshot(result.inventory);
+      this.syncPlayerBoundItemsHud();
+      this.hud.showToast(`${item.label} selected.`);
+    } catch (error) {
+      console.warn('[CarSelector] Vehicle selection failed.', error);
+      this.hud.showToast('Vehicle selection request failed.');
+    } finally {
+      this.carSelectorRequestInFlight = false;
+      this.refreshCarSelectorHud();
+    }
+  }
+
   setMasterVolume(value = DEFAULT_GAME_SETTINGS.masterVolume) {
     const masterVolume = THREE.MathUtils.clamp(Number(value), 0, 1);
     this.gameSettings = {
@@ -4267,6 +4418,7 @@ export class Game {
     if (nextEnabled) {
       this.closePhoneMenu();
       this.closeQuickChat();
+      this.setCarSelectorVisible(false);
       this.setCharacterSelectorVisible(false);
       this.setShaderDebugMenuVisible(false);
       this.setAimPoseDebugVisible(false);
@@ -4286,6 +4438,10 @@ export class Game {
 
   canUseCharacterSelector() {
     return this.isLocalAdmin();
+  }
+
+  canUseCarSelector(localPlayerState = this.getLocalPlayerState()) {
+    return Boolean(this.player && getPlayerOwnedVehicleMenuItems(localPlayerState).length > 0);
   }
 
   canChangeCharacter() {
@@ -7041,10 +7197,11 @@ export class Game {
     const currentVehicle = getPlayerVehicleMenuItem(localPlayerState);
     const items = listCarDealerMenuItems();
     const actions = items.map((item) => {
-      const owned = currentVehicleItemId === item.id;
+      const owned = playerOwnsVehicleItem(localPlayerState, item.id);
+      const selected = currentVehicleItemId === item.id;
       return {
         id: `carDealer:${item.id}`,
-        label: owned ? `${item.label} - Owned` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
+        label: owned ? `${item.label} - ${selected ? 'Selected' : 'Owned'}` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
         primary: item.id === 'car_fiat_duna',
         disabled: this.carDealerRequestInFlight || owned || cash < item.price
       };
@@ -7106,9 +7263,11 @@ export class Game {
         loading: false,
         error: ''
       };
+      this.applyVehicleInventorySnapshot(result.inventory);
       this.refreshPhoneWalletHud();
       this.playSoundEffect(this.rentChaChingSound);
       this.syncPlayerBoundItemsHud();
+      this.refreshCarSelectorHud();
       this.hud.showToast(`Bought ${item.label} for ${formatMoneyAmount(item.price)}.`);
       this.renderCarDealerMenu();
     } catch (error) {
@@ -12104,6 +12263,7 @@ export class Game {
             remotePlayers: true
           });
         }
+        this.refreshCarSelectorHud(this.getLocalPlayerState());
         this.refreshCharacterSelectorHud();
         this.refreshPhoneAppHud(this.getLocalPlayerState());
       });
@@ -13927,6 +14087,7 @@ export class Game {
     this.maybeAnimateMoneyChange(localPlayerState.money ?? 0);
     this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0));
     this.syncPlayerBoundItemsHud(localPlayerState);
+    this.refreshCarSelectorHud(localPlayerState);
 
     this.hud.setCombatState({
       visible: true,
@@ -14845,6 +15006,7 @@ export class Game {
       && !this.hud.isInteractionMenuOpen()
       && !this.hud.isAdminPromptOpen()
       && !this.characterSelectorVisible
+      && !this.carSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );
@@ -15194,6 +15356,7 @@ export class Game {
       && !this.hud.isVibeHeroOpen()
       && !this.hud.isInteractionMenuOpen()
       && !this.characterSelectorVisible
+      && !this.carSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );
@@ -15282,6 +15445,8 @@ export class Game {
         this.closeSchoolMicrogame();
       } else if (this.hud.isInteractionMenuOpen()) {
         this.closeInteractionMenu();
+      } else if (this.carSelectorVisible) {
+        this.setCarSelectorVisible(false);
       } else if (this.characterSelectorVisible) {
         this.setCharacterSelectorVisible(false);
       } else if (this.shaderDebugMenuVisible) {
@@ -15348,7 +15513,7 @@ export class Game {
       const selectedConsumableItemId = this.getSelectedHotbarConsumableItemId();
       const consumableSelected = Boolean(selectedDrinkItemId || selectedConsumableItemId);
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !consumableSelected);
-      const canCursorAim = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
+      const canCursorAim = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen && !this.carSelectorVisible;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -15363,7 +15528,7 @@ export class Game {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen || this.carSelectorVisible) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
       const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
@@ -15906,6 +16071,7 @@ export class Game {
       && !this.hud.isSchoolMicrogameOpen()
       && !this.hud.isVibeHeroOpen()
       && !this.characterSelectorVisible
+      && !this.carSelectorVisible
       && !this.shaderDebugMenuVisible
       && !this.aimPoseDebugVisible
     );

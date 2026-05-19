@@ -257,13 +257,14 @@ body.is-admin-prompt-resizing * {
 
 .hud__vibe-radio-widget {
   position: absolute;
-  left: calc(88px + var(--safe-left));
+  left: calc(230px + var(--safe-left));
   bottom: calc(26px + var(--safe-bottom));
   z-index: 17;
   display: grid;
   grid-template-columns: minmax(78px, 130px) auto;
   align-items: center;
   gap: 9px;
+  max-width: min(480px, calc(100vw - 254px - var(--safe-left) - var(--safe-right)));
   min-height: 54px;
   padding: 8px 9px;
   border: 1px solid rgba(255, 255, 255, 0.13);
@@ -3667,10 +3668,21 @@ body.is-admin-prompt-resizing * {
   border: 1px solid rgba(238, 244, 248, 0.16);
   border-radius: 8px;
   color: rgba(241, 245, 248, 0.9);
+  font: inherit;
   background: rgba(7, 11, 16, 0.66);
   box-shadow:
     0 8px 22px rgba(0, 0, 0, 0.18),
     inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hud__bound-item:hover,
+.hud__bound-item:focus-visible,
+.hud__bound-item.is-selector-open {
+  border-color: rgba(242, 200, 113, 0.72);
+  background: rgba(21, 27, 32, 0.86);
+  outline: none;
 }
 
 .hud__bound-item.is-active {
@@ -3688,6 +3700,10 @@ body.is-admin-prompt-resizing * {
   color: rgba(248, 246, 239, 0.94);
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.hud__bound-item--vehicle .hud__bound-item-label {
+  letter-spacing: 0;
 }
 
 .hud__bound-vehicle-icon {
@@ -5211,6 +5227,142 @@ body.is-admin-prompt-resizing * {
   text-shadow:
     0 1px 0 rgba(19, 13, 6, 0.95),
     1px 0 0 rgba(19, 13, 6, 0.72);
+}
+
+.hud__car-selector .hud__character-selector-name,
+.hud__car-selector .hud__character-card-label,
+.hud__car-selector .hud__eyebrow,
+.hud__car-selector .hud__character-selection-status {
+  letter-spacing: 0;
+}
+
+.hud__car-selector {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.hud__car-stage {
+  min-height: clamp(260px, 34vh, 380px);
+}
+
+.hud__car-stage-preview {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.hud__car-selector-vehicle {
+  --car-accent: #d85b4d;
+  position: relative;
+  display: block;
+  width: min(310px, 72%);
+  aspect-ratio: 2.8;
+  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.34));
+}
+
+.hud__car-card .hud__car-selector-vehicle {
+  width: 84%;
+}
+
+.hud__car-selector-shadow,
+.hud__car-selector-body,
+.hud__car-selector-cabin,
+.hud__car-selector-light,
+.hud__car-selector-wheel {
+  position: absolute;
+  pointer-events: none;
+}
+
+.hud__car-selector-shadow {
+  left: 10%;
+  right: 10%;
+  bottom: 4%;
+  height: 14%;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.38);
+  filter: blur(8px);
+}
+
+.hud__car-selector-body {
+  left: 4%;
+  right: 4%;
+  bottom: 19%;
+  height: 33%;
+  border: 2px solid rgba(255, 245, 216, 0.82);
+  border-radius: 18% 24% 11% 12%;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.28), transparent 32%, rgba(0, 0, 0, 0.22) 78%),
+    linear-gradient(180deg, color-mix(in srgb, var(--car-accent), #fff 30%), var(--car-accent));
+}
+
+.hud__car-selector-cabin {
+  left: 34%;
+  bottom: 47%;
+  width: 34%;
+  height: 30%;
+  border: 2px solid rgba(218, 242, 255, 0.72);
+  border-radius: 30% 34% 8% 8%;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.38), transparent 56%),
+    linear-gradient(180deg, #8ccedf, #2d4c63);
+}
+
+.hud__car-selector-light {
+  bottom: 34%;
+  width: 5%;
+  height: 12%;
+  border-radius: 999px;
+}
+
+.hud__car-selector-light--front {
+  right: 3%;
+  background: #fff3a8;
+}
+
+.hud__car-selector-light--back {
+  left: 3%;
+  background: #ff6b66;
+}
+
+.hud__car-selector-wheel {
+  bottom: 12%;
+  width: 16%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 3px solid rgba(230, 236, 240, 0.82);
+  background:
+    radial-gradient(circle, #d8e0e6 0 18%, #151a20 20% 100%);
+  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.34);
+}
+
+.hud__car-selector-wheel--front {
+  right: 13%;
+}
+
+.hud__car-selector-wheel--back {
+  left: 13%;
+}
+
+.hud__car-card-frame {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1.35;
+  background:
+    radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--car-accent), transparent 68%), transparent 44%),
+    linear-gradient(180deg, rgba(11, 14, 19, 0.98), rgba(3, 4, 7, 0.98));
+}
+
+.hud__car-card-preview {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}
+
+.hud__car-selector-empty {
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(244, 238, 226, 0.76);
 }
 
 .hud__eyebrow {
@@ -15547,17 +15699,40 @@ canvas {
   }
 
   .hud__vibe-radio-widget {
-    left: calc(74px + var(--safe-left));
+    left: calc(184px + var(--safe-left));
     bottom: calc(22px + var(--safe-bottom));
     grid-template-columns: auto;
     gap: 6px;
     min-height: 0;
-    max-width: min(250px, calc(100vw - 92px - var(--safe-left) - var(--safe-right)));
+    max-width: min(250px, calc(100vw - 202px - var(--safe-left) - var(--safe-right)));
     padding: 7px;
   }
 
   .hud__vibe-radio-widget-copy {
     display: none;
+  }
+
+  .hud__vibe-radio-widget .hud__vibe-radio-controls {
+    grid-template-columns: 26px 30px 26px 76px;
+    gap: 4px;
+  }
+
+  .hud__vibe-radio-widget .hud__vibe-radio-control {
+    width: 26px;
+    height: 26px;
+  }
+
+  .hud__vibe-radio-widget .hud__vibe-radio-control.is-play {
+    width: 30px;
+    height: 30px;
+  }
+
+  .hud__vibe-radio-widget .hud__vibe-radio-volume {
+    width: 76px;
+  }
+
+  .hud__vibe-radio-widget .hud__vibe-radio-volume input {
+    width: 52px;
   }
 
   .hud__vibe-radio-add {
@@ -16142,8 +16317,9 @@ canvas {
   }
 
   .hud__vibe-radio-widget {
-    left: calc(70px + var(--safe-left));
+    left: calc(154px + var(--safe-left));
     bottom: calc(178px + var(--safe-bottom));
+    max-width: min(200px, calc(100vw - 166px - var(--safe-left) - var(--safe-right)));
   }
 
   .hud__hotbar {
@@ -16273,8 +16449,9 @@ canvas {
   }
 
   .hud__vibe-radio-widget {
-    left: calc(90px + var(--safe-left));
+    left: calc(156px + var(--safe-left));
     bottom: calc(180px + var(--safe-bottom));
+    max-width: min(200px, calc(100vw - 168px - var(--safe-left) - var(--safe-right)));
   }
 
   .hud__bound-items {

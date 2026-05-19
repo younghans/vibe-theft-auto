@@ -123,6 +123,7 @@ function clonePlayerState(player) {
     sodaCount: inventory.sodaCount ?? player?.sodaCount ?? 0,
     skateboardOwned: (inventory.skateboardOwned ?? player?.skateboardOwned) === true,
     vehicleItemId: inventory.vehicleItemId || player?.vehicleItemId || '',
+    ownedVehicleItemIds: inventory.ownedVehicleItemIds || player?.ownedVehicleItemIds || '',
     drunknessDose: inventory.drunknessDose ?? player?.drunknessDose ?? 0,
     drunknessLevel: inventory.drunknessLevel ?? player?.drunknessLevel ?? 0,
     drunknessEndsAt: inventory.drunknessEndsAt ?? player?.drunknessEndsAt ?? 0,
@@ -958,6 +959,12 @@ export class NpcServiceColyseus {
   async buyCarDealerVehicle(npcId = '', itemId = '') {
     return this.rpc('carDealer:buyVehicle', {
       npcId: String(npcId ?? '').trim(),
+      itemId: String(itemId ?? '').trim()
+    });
+  }
+
+  async selectPlayerVehicle(itemId = '') {
+    return this.rpc('vehicle:select', {
       itemId: String(itemId ?? '').trim()
     });
   }

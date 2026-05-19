@@ -78,9 +78,10 @@ import {
   getCarDealerMenuItem,
   getCarDealerPromptRadius,
   getPlayerVehicleInventorySnapshot,
-  getPlayerVehicleItemId,
   isCarDealerNpc,
   isPlayerVehicleOwner,
+  playerOwnsVehicleItem,
+  selectPlayerVehicleItem,
   setPlayerVehicleItem
 } from '../shared/carDealer.js';
 import {
@@ -369,6 +370,7 @@ function createDefaultPlayerState(overrides = {}) {
     sodaCount: 0,
     skateboardOwned: false,
     vehicleItemId: '',
+    ownedVehicleItemIds: '',
     drunknessDose: 0,
     drunknessLevel: 0,
     drunknessEndsAt: 0,
@@ -1897,7 +1899,7 @@ export class NpcServiceMock {
       return { ok: false, error: 'That car is not for sale.' };
     }
 
-    if (getPlayerVehicleItemId(access.player) === item.id) {
+    if (playerOwnsVehicleItem(access.player, item.id)) {
       const error = `You already own the ${item.label}.`;
       this.setNpcChatPhase(access.npc, 'done', error, { bumpSeq: true });
       this.emit();
@@ -1926,6 +1928,36 @@ export class NpcServiceMock {
       },
       inventory: getPlayerVehicleInventorySnapshot(access.player),
       money: access.player.money
+    };
+  }
+
+  async selectPlayerVehicle(itemId = '') {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'You cannot switch cars right now.' };
+    }
+
+    const item = getCarDealerMenuItem(itemId);
+    if (!item) {
+      return { ok: false, error: 'That car is not available.' };
+    }
+
+    if (!playerOwnsVehicleItem(player, item.id)) {
+      return { ok: false, error: `You do not own the ${item.label}.` };
+    }
+
+    selectPlayerVehicleItem(player, item.id);
+    player.skating = false;
+    this.emit();
+    return {
+      ok: true,
+      item: {
+        id: item.id,
+        label: item.label,
+        price: item.price,
+        count: 1
+      },
+      inventory: getPlayerVehicleInventorySnapshot(player)
     };
   }
 

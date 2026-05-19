@@ -55,10 +55,14 @@ import {
   PLAYER_VEHICLE_SCALE,
   PLAYER_VEHICLE_SPEED_MULTIPLIER,
   getCarDealerMenuItem,
+  getPlayerOwnedVehicleItemIds,
+  getPlayerOwnedVehicleMenuItems,
   getPlayerVehicleInventorySnapshot,
   getPlayerVehicleItemId,
   isCarDealerNpc,
   listCarDealerMenuItems,
+  playerOwnsVehicleItem,
+  selectPlayerVehicleItem,
   setPlayerVehicleItem
 } from '../src/shared/carDealer.js';
 import {
@@ -2177,9 +2181,19 @@ function validateBartenderFunction() {
   setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna);
   assert(vehiclePlayer.skateboardOwned === true, 'Car purchase should set the permanent vehicle owned flag');
   assert(getPlayerVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.fiatDuna, 'Car ownership should preserve the purchased vehicle id');
+  assert(playerOwnsVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna), 'Purchased cars should be tracked in the owned car list');
+  setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.toyotaAe86);
+  assert(getPlayerOwnedVehicleItemIds(vehiclePlayer).length === 2, 'Player vehicle inventory should retain multiple owned cars');
+  assert(getPlayerOwnedVehicleMenuItems(vehiclePlayer).some((item) => item.id === CAR_DEALER_ITEM_IDS.fiatDuna), 'Owned car selector entries should include the Fiat Duna');
+  selectPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna);
+  assert(getPlayerVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.fiatDuna, 'Selecting an owned car should switch the active vehicle id');
   assert(
     getPlayerVehicleInventorySnapshot(vehiclePlayer).vehicleItemId === CAR_DEALER_ITEM_IDS.fiatDuna,
     'Vehicle inventory snapshot should include the owned car id'
+  );
+  assert(
+    getPlayerVehicleInventorySnapshot(vehiclePlayer).ownedVehicleItemIds.includes(CAR_DEALER_ITEM_IDS.toyotaAe86),
+    'Vehicle inventory snapshot should include every owned car id'
   );
   assert(
     createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== CAR_DEALER_ITEM_IDS.fiatDuna),
@@ -2276,6 +2290,12 @@ function validateBartenderFunction() {
     'Car dealer menu should resync and route car purchases'
   );
   assert(
+    /bindCarSelectorEvents/.test(gameSource)
+      && /selectPlayerVehicle/.test(gameSource)
+      && /getPlayerOwnedVehicleMenuItems/.test(gameSource),
+    'Game client should expose a clickable owned-car selector'
+  );
+  assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
     'Game client should route Martha food menu actions to a purchase handler'
   );
@@ -2293,6 +2313,17 @@ function validateBartenderFunction() {
   assert(
     /setPlayerBoundItemsState/.test(hudSource) && /\.hud__bound-items/.test(styles),
     'HUD should display permanent car ownership outside the hotbar'
+  );
+  assert(
+    /data-bound-item-vehicle[\s\S]*aria-haspopup="dialog"/.test(hudSource)
+      && /data-car-selector/.test(hudSource)
+      && /\.hud__car-selector/.test(styles),
+    'HUD car badge should open an owned-car selector menu'
+  );
+  assert(
+    /\.hud__vibe-radio-widget\s*\{[\s\S]*left:\s*calc\(230px \+ var\(--safe-left\)\)/.test(styles)
+      && /left:\s*calc\(184px \+ var\(--safe-left\)\)/.test(styles),
+    'Vibe Radio mini player should sit to the right of the permanent car badge'
   );
   assert(
     /PlayerVehicleRoot/.test(playerSource)
@@ -2326,10 +2357,12 @@ function validateBartenderFunction() {
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
       && /vehicleItemId:\s*'string'/.test(serverSource)
+      && /ownedVehicleItemIds:\s*'string'/.test(serverSource)
       && /skating:\s*'boolean'/.test(serverSource)
       && /carDealer:buyVehicle/.test(serverSource)
+      && /vehicle:select/.test(serverSource)
       && /SKATEBOARD_SPEED_MULTIPLIER/.test(serverSource),
-    'Server player state should persist vehicle ownership and authorize driving speed'
+    'Server player state should persist vehicle ownership, selection, and authorize driving speed'
   );
 }
 
