@@ -62,8 +62,8 @@ const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIF
 const WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('AGENT_WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS', 15 * 1000);
 const CODEX_REASONING_EFFORT = String(process.env.CODEX_REASONING_EFFORT || 'xhigh').trim() || 'xhigh';
 const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim() || 'fast';
-const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
-const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 10 * 60 * 1000);
+const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 6 * 60 * 1000);
+const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 4 * 60 * 1000);
 const TASK_HEARTBEAT_MS = getPositiveIntegerEnv('AGENT_TASK_HEARTBEAT_MS', 60 * 1000);
 const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
@@ -3532,8 +3532,19 @@ async function handleCodeTask(task) {
 
 async function handleDeployTask(task) {
   let worktreePath = '';
+  const heartbeatStatus = 'deploying';
   const taskStartedAtMs = Date.now();
+  const stopHeartbeat = startTaskHeartbeat(task.id, {
+    getStatus: () => heartbeatStatus
+  });
   try {
+    await updateTaskBestEffort(task.id, {
+      status: 'deploying',
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'deploying'
+    });
     const worktree = await createDeployWorktree(task);
     worktreePath = worktree.worktreePath;
     await deployTask(task, worktreePath);
@@ -3547,6 +3558,7 @@ async function handleDeployTask(task) {
     }).catch(() => {});
     throw error;
   } finally {
+    stopHeartbeat();
     if (worktreePath) {
       await cleanTaskWorktree(worktreePath, task.id, {
         sinceMs: taskStartedAtMs
@@ -3558,7 +3570,18 @@ async function handleDeployTask(task) {
 }
 
 async function handleReconcileDeployTask(task) {
+  const heartbeatStatus = 'reconciling_deploy';
+  const stopHeartbeat = startTaskHeartbeat(task.id, {
+    getStatus: () => heartbeatStatus
+  });
   try {
+    await updateTaskBestEffort(task.id, {
+      status: 'deploying',
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'deploy reconciliation'
+    });
     await reconcileStaleDeployTask(task);
   } catch (error) {
     await recordTaskFailure(task, 'deploy reconciliation', error);
@@ -3567,13 +3590,26 @@ async function handleReconcileDeployTask(task) {
       error: String(error?.stack ?? error)
     }).catch(() => {});
     throw error;
+  } finally {
+    stopHeartbeat();
   }
 }
 
 async function handleRollbackTask(task) {
   let worktreePath = '';
+  const heartbeatStatus = 'rolling_back';
   const taskStartedAtMs = Date.now();
+  const stopHeartbeat = startTaskHeartbeat(task.id, {
+    getStatus: () => heartbeatStatus
+  });
   try {
+    await updateTaskBestEffort(task.id, {
+      status: 'rolling_back',
+      workerHeartbeatAt: Date.now(),
+      workerHeartbeatStatus: heartbeatStatus
+    }, {
+      phase: 'rolling back'
+    });
     const worktree = await createRollbackWorktree(task);
     worktreePath = worktree.worktreePath;
     await rollbackTask(task, worktreePath);
@@ -3587,6 +3623,7 @@ async function handleRollbackTask(task) {
     }).catch(() => {});
     throw error;
   } finally {
+    stopHeartbeat();
     if (worktreePath) {
       await cleanTaskWorktree(worktreePath, task.id, {
         sinceMs: taskStartedAtMs

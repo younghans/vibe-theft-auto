@@ -209,7 +209,7 @@ function getNonNegativeIntegerEnv(name, fallback) {
 
 const AGENT_ACTIVE_TASK_STALE_AFTER_MS = getNonNegativeIntegerEnv(
   'AGENT_ACTIVE_TASK_STALE_AFTER_MS',
-  10 * 60 * 1000
+  4 * 60 * 1000
 );
 
 function isValidAdminKey(value = '') {

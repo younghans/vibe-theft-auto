@@ -1310,9 +1310,11 @@ const AGENT_TASK_STATUS_LABELS = Object.freeze({
   ready_for_review: 'Ready',
   deploy_queued: 'Deploy Queued',
   deploying: 'Deploying',
+  reconciling_deploy: 'Reconciling',
   deployed: 'Deployed',
   rolling_back: 'Rolling Back',
   rolled_back: 'Rolled Back',
+  worker_offline: 'Worker Offline',
   failed: 'Failed',
   cancelled: 'Cancelled'
 });
@@ -1323,6 +1325,7 @@ const AGENT_TASK_BUSY_STATUSES = new Set([
   'coding',
   'testing',
   'deploying',
+  'reconciling_deploy',
   'rolling_back'
 ]);
 
@@ -1334,6 +1337,7 @@ const AGENT_TASK_CODE_WORK_STATUSES = new Set([
 ]);
 
 const ADMIN_PROMPT_THREAD_LIST_LIMIT = 10;
+const AGENT_TASK_WORKER_OFFLINE_AFTER_MS = 150 * 1000;
 
 function isAgentTaskDeployQueued(task = {}) {
   return String(task?.status ?? '') === 'ready_for_review'
@@ -1341,9 +1345,39 @@ function isAgentTaskDeployQueued(task = {}) {
     && Number(task?.deployStartedAt ?? 0) <= 0;
 }
 
+function isAgentTaskWorkerOffline(task = {}, now = Date.now()) {
+  const status = String(task?.status ?? '');
+  if (!AGENT_TASK_BUSY_STATUSES.has(status)) {
+    return false;
+  }
+  if (String(task?.workerHeartbeatStatus ?? '') === 'expired') {
+    return true;
+  }
+
+  const heartbeatAt = getAgentTaskTimestamp(task.workerHeartbeatAt);
+  if (heartbeatAt > 0) {
+    return now - heartbeatAt >= AGENT_TASK_WORKER_OFFLINE_AFTER_MS;
+  }
+
+  const startedAt = getAgentTaskActiveStartedAt(task);
+  return startedAt > 0 && now - startedAt >= AGENT_TASK_WORKER_OFFLINE_AFTER_MS * 2;
+}
+
 function getAgentTaskDisplayStatus(taskOrStatus = '') {
   if (taskOrStatus && typeof taskOrStatus === 'object' && isAgentTaskDeployQueued(taskOrStatus)) {
     return 'deploy_queued';
+  }
+
+  if (taskOrStatus && typeof taskOrStatus === 'object') {
+    if (isAgentTaskWorkerOffline(taskOrStatus)) {
+      return 'worker_offline';
+    }
+    if (
+      String(taskOrStatus.status ?? '') === 'deploying'
+      && String(taskOrStatus.workerHeartbeatStatus ?? '') === 'reconciling_deploy'
+    ) {
+      return 'reconciling_deploy';
+    }
   }
 
   return String(
@@ -1362,7 +1396,7 @@ function getAgentTaskStatusTone(status = '') {
   if (['ready_for_review', 'deployed'].includes(normalized)) {
     return 'is-good';
   }
-  if (['failed', 'test_failed', 'cancelled', 'rolled_back'].includes(normalized)) {
+  if (['failed', 'test_failed', 'cancelled', 'rolled_back', 'worker_offline'].includes(normalized)) {
     return 'is-bad';
   }
   if (normalized === 'deploy_queued' || AGENT_TASK_BUSY_STATUSES.has(normalized)) {
@@ -1705,6 +1739,24 @@ function isAgentThreadBusy(threadTasks = []) {
   });
 }
 
+function getAgentTaskWaitingMessage(task = {}) {
+  const displayStatus = getAgentTaskDisplayStatus(task);
+  const rawStatus = String(task?.status ?? '');
+  if (displayStatus === 'worker_offline') {
+    if (rawStatus === 'deploying') {
+      return 'Worker heartbeat stopped during deploy. A worker will reconcile production state before this is marked complete or failed.';
+    }
+    if (rawStatus === 'rolling_back') {
+      return 'Worker heartbeat stopped during rollback. Check worker status before approving more deploy actions.';
+    }
+    return 'Worker heartbeat stopped. This task should be marked failed if no worker resumes it soon.';
+  }
+  if (displayStatus === 'reconciling_deploy') {
+    return 'Checking production state after an interrupted deploy.';
+  }
+  return 'Waiting for worker updates.';
+}
+
 function createAgentTaskThreadMessageMarkup(threadTasks = []) {
   if (!threadTasks.length) {
     return '<div class="hud__admin-prompt-empty">No thread messages yet.</div>';
@@ -1748,7 +1800,7 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
               <strong>${getAgentTaskStatusLabel(displayStatus)}</strong>
               ${createAgentTaskStatusBadge(task)}
             </header>
-            <p>Waiting for worker updates.</p>
+            <p>${formatAgentTaskMessage(getAgentTaskWaitingMessage(task))}</p>
           </div>
         ` : ''}
       </section>
@@ -8876,6 +8928,8 @@ export class Hud {
         task.workStartedAt,
         task.workCompletedAt,
         task.claimedAt,
+        task.workerHeartbeatAt,
+        task.workerHeartbeatStatus,
         task.deployStartedAt,
         task.deployedAt,
         task.rollbackStartedAt,
@@ -8919,7 +8973,9 @@ export class Hud {
           task.branch,
           task.commitSha,
           task.deployApprovedAt ?? 0,
-          task.rollbackApprovedAt ?? 0
+          task.rollbackApprovedAt ?? 0,
+          task.workerHeartbeatAt ?? 0,
+          task.workerHeartbeatStatus ?? ''
         ]),
         status: selectedTask?.status ?? '',
         durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
@@ -8929,6 +8985,8 @@ export class Hud {
         workStartedAt: selectedTask?.workStartedAt ?? 0,
         workCompletedAt: selectedTask?.workCompletedAt ?? 0,
         claimedAt: selectedTask?.claimedAt ?? 0,
+        workerHeartbeatAt: selectedTask?.workerHeartbeatAt ?? 0,
+        workerHeartbeatStatus: selectedTask?.workerHeartbeatStatus ?? '',
         deployStartedAt: selectedTask?.deployStartedAt ?? 0,
         deployedAt: selectedTask?.deployedAt ?? 0,
         rollbackStartedAt: selectedTask?.rollbackStartedAt ?? 0,

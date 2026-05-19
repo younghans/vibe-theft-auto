@@ -29,7 +29,10 @@ const hudSource = await fsp.readFile(new URL('../src/ui/Hud.js', import.meta.url
 
 try {
   assert.match(hudSource, /deploy_queued:\s*'Deploy Queued'/, 'HUD should label approved pending deploys as deploy queued.');
+  assert.match(hudSource, /worker_offline:\s*'Worker Offline'/, 'HUD should label stale worker heartbeats as offline.');
+  assert.match(hudSource, /reconciling_deploy:\s*'Reconciling'/, 'HUD should label interrupted deploy reconciliation.');
   assert.match(hudSource, /isAgentTaskDeployQueued/, 'HUD should derive deploy queued from task metadata.');
+  assert.match(hudSource, /isAgentTaskWorkerOffline/, 'HUD should derive worker offline state from task heartbeats.');
   assert.match(hudSource, /deployApprovedAt[\s\S]*deployStartedAt/, 'HUD deploy queued detection should require approval before deploy start.');
 
   const created = await createAgentTask({
@@ -360,11 +363,14 @@ try {
   const deployClaim = await claimNextAgentTask({
     workerId: 'deploy-worker',
     scope: 'game',
+    workerHeartbeatEnabled: true,
     filePath
   });
   assert.equal(deployClaim.action, 'deploy');
   assert.equal(deployClaim.task.status, 'deploying');
   assert.equal(deployClaim.task.claimedBy, 'deploy-worker');
+  assert.ok(deployClaim.task.workerHeartbeatAt >= deployClaim.task.claimedAt);
+  assert.equal(deployClaim.task.workerHeartbeatStatus, 'deploying');
   const blockedParallelDeployTask = await createAgentTask({
     scope: 'game',
     contextType: 'hud',
@@ -427,17 +433,37 @@ try {
   });
 
   await updateAgentTask(created.id, {
-    deployStartedAt: Date.now() - 60000
+    deployStartedAt: Date.now() - 60000,
+    workerHeartbeatAt: Date.now(),
+    workerHeartbeatStatus: 'deploying'
+  }, { filePath });
+  const recentDeployHeartbeatClaim = await claimNextAgentTask({
+    workerId: 'recent-deploy-heartbeat-worker',
+    scope: 'game',
+    staleDeployingAfterMs: 30000,
+    codeEnabled: false,
+    workerHeartbeatEnabled: true,
+    filePath
+  });
+  assert.equal(recentDeployHeartbeatClaim.action, '');
+  assert.equal(recentDeployHeartbeatClaim.task, null);
+
+  await updateAgentTask(created.id, {
+    workerHeartbeatAt: Date.now() - 60000,
+    workerHeartbeatStatus: 'deploying'
   }, { filePath });
   const reconcileClaim = await claimNextAgentTask({
     workerId: 'reconcile-worker',
     scope: 'game',
-    staleDeployingAfterMs: 1,
+    staleDeployingAfterMs: 30000,
+    codeEnabled: false,
+    workerHeartbeatEnabled: true,
     filePath
   });
   assert.equal(reconcileClaim.action, 'reconcile_deploy');
   assert.equal(reconcileClaim.task.status, 'deploying');
   assert.equal(reconcileClaim.task.claimedBy, 'reconcile-worker');
+  assert.equal(reconcileClaim.task.workerHeartbeatStatus, 'reconciling_deploy');
 
   const deployed = await updateAgentTask(created.id, {
     status: 'deployed',

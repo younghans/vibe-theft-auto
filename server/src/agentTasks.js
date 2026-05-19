@@ -445,6 +445,16 @@ function getStaleActiveMs(value) {
   return Math.max(0, Number(value) || 0);
 }
 
+function getStaleDeployReferenceAt(task = {}) {
+  return Number(task.workerHeartbeatAt || 0)
+    || Number(task.deployStartedAt || task.claimedAt || task.updatedAt || 0);
+}
+
+function isDeployTaskStale(task = {}, now = Date.now(), staleDeployingMs = 0) {
+  const referenceAt = getStaleDeployReferenceAt(task);
+  return referenceAt > 0 && now - referenceAt >= staleDeployingMs;
+}
+
 function failStaleActiveTasks(state, {
   now = Date.now(),
   staleActiveAfterMs = 0,
@@ -675,19 +685,24 @@ export async function claimNextAgentTask({
               return false;
             }
 
-            const startedAt = Number(task.deployStartedAt || task.claimedAt || task.updatedAt || 0);
-            return startedAt > 0 && now - startedAt >= staleDeployingMs;
+            return isDeployTaskStale(task, now, staleDeployingMs);
           });
 
         if (staleDeployingTask) {
+          const staleReferenceAt = getStaleDeployReferenceAt(staleDeployingTask);
           staleDeployingTask.claimedBy = normalizedWorkerId;
           staleDeployingTask.claimedAt = now;
+          if (shouldRecordHeartbeat) {
+            staleDeployingTask.workerHeartbeatAt = now;
+            staleDeployingTask.workerHeartbeatStatus = 'reconciling_deploy';
+          }
           staleDeployingTask.updatedAt = now;
           addTaskLog(staleDeployingTask, 'Worker claimed stale deploy reconciliation.', {
             level: 'warn',
             data: {
               workerId: normalizedWorkerId,
-              staleDeployingAfterMs: staleDeployingMs
+              staleDeployingAfterMs: staleDeployingMs,
+              staleReferenceAt
             }
           });
           return {
@@ -709,8 +724,7 @@ export async function claimNextAgentTask({
           }
 
           if (task.status === 'deploying' && staleDeployingMs > 0) {
-            const startedAt = Number(task.deployStartedAt || task.claimedAt || task.updatedAt || 0);
-            return !(startedAt > 0 && now - startedAt >= staleDeployingMs);
+            return !isDeployTaskStale(task, now, staleDeployingMs);
           }
 
           return true;
