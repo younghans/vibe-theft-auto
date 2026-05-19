@@ -956,6 +956,11 @@ body.is-admin-prompt-resizing * {
   text-transform: uppercase;
 }
 
+.hud__phone-missions-section-label.is-bonus {
+  margin-top: 6px;
+  color: rgba(150, 243, 204, 0.86);
+}
+
 .hud__phone-missions-scroll {
   display: grid;
   align-content: start;
@@ -1026,6 +1031,18 @@ body.is-admin-prompt-resizing * {
   background: rgba(3, 6, 11, 0.34);
 }
 
+.hud__phone-mission-row.is-bonus {
+  border-color: rgba(98, 224, 174, 0.34);
+  background: linear-gradient(135deg, rgba(21, 58, 47, 0.48), rgba(5, 9, 16, 0.42));
+}
+
+.hud__phone-mission-row.is-bonus:hover:not(:disabled),
+.hud__phone-mission-row.is-bonus:focus-visible:not(:disabled),
+.hud__phone-mission-row.is-bonus.is-current {
+  border-color: rgba(117, 239, 190, 0.72);
+  background: linear-gradient(135deg, rgba(29, 76, 61, 0.66), rgba(5, 9, 16, 0.52));
+}
+
 .hud__phone-mission-icon {
   display: grid;
   place-items: center;
@@ -1045,6 +1062,10 @@ body.is-admin-prompt-resizing * {
 .hud__phone-mission-row.is-locked .hud__phone-mission-icon {
   filter: grayscale(0.75);
   opacity: 0.65;
+}
+
+.hud__phone-mission-row.is-bonus .hud__phone-mission-icon {
+  background: rgba(98, 224, 174, 0.18);
 }
 
 .hud__phone-mission-copy {
@@ -6358,7 +6379,64 @@ body.is-admin-prompt-resizing * {
 .hud__mission-sequencer-list {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+.hud__mission-sequencer-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hud__mission-sequencer-tab {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.58);
+  color: rgba(244, 238, 226, 0.72);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hud__mission-sequencer-tab.is-active {
+  border-color: rgba(242, 200, 113, 0.54);
+  background: rgba(242, 200, 113, 0.16);
+  color: #ffe7aa;
+}
+
+.hud__mission-sequencer-tab[data-builder-mission-tab="bonus"].is-active {
+  border-color: rgba(98, 224, 174, 0.56);
+  background: rgba(98, 224, 174, 0.15);
+  color: #b9f8df;
+}
+
+.hud__mission-sequencer-section {
+  display: grid;
   gap: 8px;
+}
+
+.hud__mission-sequencer-section-label {
+  color: rgba(255, 232, 180, 0.74);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__mission-sequencer-section.is-bonus .hud__mission-sequencer-section-label {
+  color: rgba(150, 243, 204, 0.86);
+}
+
+.hud__mission-sequencer-empty {
+  padding: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: rgba(244, 238, 226, 0.58);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .hud__mission-sequencer-add {
@@ -6389,7 +6467,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__mission-sequencer-row {
   display: grid;
-  grid-template-columns: 26px 32px minmax(0, 1fr);
+  grid-template-columns: 26px 32px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 9px;
@@ -6397,6 +6475,11 @@ body.is-admin-prompt-resizing * {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(9, 15, 24, 0.78);
   color: #f4eee2;
+}
+
+.hud__mission-sequencer-row.is-bonus {
+  border-color: rgba(98, 224, 174, 0.32);
+  background: linear-gradient(135deg, rgba(20, 58, 47, 0.6), rgba(9, 15, 24, 0.78));
 }
 
 .hud__mission-sequencer-row.is-dragging {
@@ -6444,6 +6527,11 @@ body.is-admin-prompt-resizing * {
   font-variant-numeric: tabular-nums;
 }
 
+.hud__mission-sequencer-row.is-bonus .hud__mission-sequencer-number {
+  background: rgba(98, 224, 174, 0.16);
+  color: #a8f3d5;
+}
+
 .hud__mission-sequencer-copy {
   display: flex;
   flex-direction: column;
@@ -6466,8 +6554,81 @@ body.is-admin-prompt-resizing * {
   white-space: nowrap;
 }
 
-.hud__mission-sequencer-rule {
+.hud__mission-sequencer-edit {
+  justify-self: end;
+  color: rgba(244, 238, 226, 0.7);
+}
+
+.hud__mission-sequencer-edit[open] {
   grid-column: 2 / -1;
+  justify-self: stretch;
+}
+
+.hud__mission-sequencer-edit summary {
+  list-style: none;
+}
+
+.hud__mission-sequencer-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.hud__mission-sequencer-edit-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.hud__mission-sequencer-edit-toggle svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hud__mission-sequencer-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hud__mission-sequencer-edit-field {
+  margin: 0;
+}
+
+.hud__mission-sequencer-edit-input {
+  min-height: 66px;
+  resize: vertical;
+}
+
+.hud__mission-sequencer-save-button {
+  min-width: 92px;
+  min-height: 34px;
+  border-radius: 8px;
+}
+
+.hud__mission-sequencer-controls {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
+  gap: 8px;
+}
+
+.hud__mission-sequencer-rule,
+.hud__mission-sequencer-hidden {
   margin: 0;
   padding: 7px 8px;
   border-radius: 7px;
@@ -15767,7 +15928,7 @@ canvas {
   }
 
   .hud__mission-sequencer-row {
-    grid-template-columns: 24px 30px minmax(0, 1fr);
+    grid-template-columns: 24px 30px minmax(0, 1fr) auto;
   }
 
   .hud__mission-sequencer-add {
@@ -15780,6 +15941,15 @@ canvas {
 
   .hud__mission-sequencer-rule-copy {
     grid-template-columns: minmax(0, 1fr) 64px;
+  }
+
+  .hud__mission-sequencer-controls,
+  .hud__mission-sequencer-edit-form {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__mission-sequencer-save-button {
+    width: 100%;
   }
 
   .hud__vibe-radio-widget {

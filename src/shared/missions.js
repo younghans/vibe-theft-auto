@@ -32,6 +32,11 @@ export const MISSION_STATUS = Object.freeze({
   locked: 'locked'
 });
 
+export const MISSION_SEQUENCE_SECTIONS = Object.freeze({
+  main: 'main',
+  bonus: 'bonus'
+});
+
 export const SCHOOL_TEACHER_TASKS_REQUIRED = 3;
 export const JANITOR_TASKS_REQUIRED = 4;
 export const CHARISMA_LEVEL_MISSION_TARGET_LEVEL = 5;
@@ -367,12 +372,71 @@ function getCustomMissionDefinition(entry = {}) {
   });
 }
 
+function getMissionSequenceSection(entry = {}) {
+  const rawSection = String(entry?.section ?? entry?.questType ?? '').trim().toLowerCase();
+  return entry?.bonusQuest === true
+    || rawSection === MISSION_SEQUENCE_SECTIONS.bonus
+    || rawSection === 'bonus-quest'
+    || rawSection === 'bonusquest'
+      ? MISSION_SEQUENCE_SECTIONS.bonus
+      : MISSION_SEQUENCE_SECTIONS.main;
+}
+
+function isMissionSequenceBonusQuest(entry = {}) {
+  return getMissionSequenceSection(entry) === MISSION_SEQUENCE_SECTIONS.bonus;
+}
+
+function isMissionSequenceHiddenForPlayers(entry = {}) {
+  return entry?.hiddenForPlayers === true
+    || entry?.makeHidden === true
+    || entry?.hidden === true;
+}
+
+function getMissionTextOverrideDefinition(entry = {}) {
+  const hasTextOverride = entry?.textOverride === true || Object.hasOwn(entry ?? {}, 'text');
+  if (!hasTextOverride) {
+    return null;
+  }
+
+  const text = normalizeMissionText(
+    entry.text
+    ?? entry.prompt
+    ?? entry.description
+    ?? entry.title
+    ?? entry.label
+    ?? '',
+    CUSTOM_MISSION_PROMPT_MAX_LENGTH
+  );
+  if (!text) {
+    return null;
+  }
+
+  return Object.freeze({
+    title: text,
+    label: truncateMissionText(text, CUSTOM_MISSION_LABEL_MAX_LENGTH),
+    description: normalizeMissionText(text, CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH),
+    prompt: text,
+    textOverride: true
+  });
+}
+
 function cloneMissionSequenceEntry(entry) {
   const base = {
     missionId: entry.missionId,
     makeAvailableAfterMission: entry.makeAvailableAfterMission === true,
     availableAfterMissionNumber: Math.max(0, Math.floor(Number(entry.availableAfterMissionNumber) || 0))
   };
+  if (isMissionSequenceBonusQuest(entry)) {
+    base.bonusQuest = true;
+  }
+  if (isMissionSequenceHiddenForPlayers(entry)) {
+    base.hiddenForPlayers = true;
+  }
+
+  const textOverrideDefinition = getMissionTextOverrideDefinition(entry);
+  if (textOverrideDefinition) {
+    Object.assign(base, textOverrideDefinition);
+  }
 
   const customDefinition = getCustomMissionDefinition(entry);
   if (!customDefinition) {
@@ -382,10 +446,10 @@ function cloneMissionSequenceEntry(entry) {
   return {
     ...base,
     custom: true,
-    title: customDefinition.title,
-    label: customDefinition.label,
-    description: customDefinition.description,
-    prompt: customDefinition.prompt,
+    title: textOverrideDefinition?.title ?? customDefinition.title,
+    label: textOverrideDefinition?.label ?? customDefinition.label,
+    description: textOverrideDefinition?.description ?? customDefinition.description,
+    prompt: textOverrideDefinition?.prompt ?? customDefinition.prompt,
     icon: customDefinition.icon
   };
 }
@@ -409,7 +473,7 @@ function getRawMissionSequenceEntryMissionId(entry = {}) {
 function getRawMissionSequenceEntryGateNumber(entry = {}, fallback = 0) {
   const raw = entry?.availableAfterMissionNumber ?? entry?.unlockAfterMissionNumber ?? entry?.afterMissionNumber;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 export function createDefaultMissionSequence() {
@@ -419,7 +483,8 @@ export function createDefaultMissionSequence() {
 export function normalizeMissionSequenceConfig(sequence = null) {
   const rawEntries = Array.isArray(sequence) ? sequence : [];
   const rawEntryByMissionId = new Map();
-  const orderedMissionIds = [];
+  const orderedMainMissionIds = [];
+  const orderedBonusMissionIds = [];
 
   for (const entry of rawEntries) {
     const missionId = getRawMissionSequenceEntryMissionId(entry);
@@ -428,14 +493,23 @@ export function normalizeMissionSequenceConfig(sequence = null) {
     }
 
     rawEntryByMissionId.set(missionId, entry);
-    orderedMissionIds.push(missionId);
+    if (isMissionSequenceBonusQuest(entry)) {
+      orderedBonusMissionIds.push(missionId);
+    } else {
+      orderedMainMissionIds.push(missionId);
+    }
   }
 
   for (const mission of MISSION_CATALOG) {
     if (!rawEntryByMissionId.has(mission.id)) {
-      orderedMissionIds.push(mission.id);
+      orderedMainMissionIds.push(mission.id);
     }
   }
+
+  const orderedMissionIds = [
+    ...orderedMainMissionIds,
+    ...orderedBonusMissionIds
+  ];
 
   return orderedMissionIds.map((missionId, index) => {
     const rawEntry = rawEntryByMissionId.get(missionId) ?? {};
@@ -445,7 +519,7 @@ export function normalizeMissionSequenceConfig(sequence = null) {
       : rawEntry.unlockAfterMissionNumber ?? rawEntry.afterMissionNumber;
     const makeAvailableAfterMission = index > 0 && Boolean(rawGateEnabled ?? true);
     const maxGateNumber = index;
-    const availableAfterMissionNumber = index > 0
+    const availableAfterMissionNumber = index > 0 && makeAvailableAfterMission
       ? Math.min(Math.max(1, getRawMissionSequenceEntryGateNumber(rawEntry, defaultGateNumber)), maxGateNumber)
       : 0;
 
@@ -454,23 +528,35 @@ export function normalizeMissionSequenceConfig(sequence = null) {
       makeAvailableAfterMission,
       availableAfterMissionNumber
     };
+    if (isMissionSequenceBonusQuest(rawEntry)) {
+      baseEntry.bonusQuest = true;
+    }
+    if (isMissionSequenceHiddenForPlayers(rawEntry)) {
+      baseEntry.hiddenForPlayers = true;
+    }
     const customDefinition = getCustomMissionDefinition({
       ...rawEntry,
       missionId
     });
+    const textOverrideDefinition = getMissionTextOverrideDefinition(rawEntry);
 
-    if (!customDefinition) {
+    if (!customDefinition && !textOverrideDefinition) {
       return Object.freeze(baseEntry);
     }
 
     return Object.freeze({
       ...baseEntry,
-      custom: true,
-      title: customDefinition.title,
-      label: customDefinition.label,
-      description: customDefinition.description,
-      prompt: customDefinition.prompt,
-      icon: customDefinition.icon
+      ...(customDefinition
+        ? {
+            custom: true,
+            title: customDefinition.title,
+            label: customDefinition.label,
+            description: customDefinition.description,
+            prompt: customDefinition.prompt,
+            icon: customDefinition.icon
+          }
+        : {}),
+      ...(textOverrideDefinition ?? {})
     });
   });
 }
@@ -479,14 +565,19 @@ export function cloneMissionSequence(sequence = null) {
   return normalizeMissionSequenceConfig(sequence).map(cloneMissionSequenceEntry);
 }
 
-export function appendMissionSequencePromptEntry(sequence = null, prompt = '') {
+export function appendMissionSequencePromptEntry(sequence = null, prompt = '', options = {}) {
   const missionPrompt = normalizeMissionText(prompt, CUSTOM_MISSION_PROMPT_MAX_LENGTH);
   if (!missionPrompt) {
     return normalizeMissionSequenceConfig(sequence);
   }
 
   const entries = cloneMissionSequence(sequence);
-  entries.push({
+  const bonusQuest = options?.bonusQuest === true;
+  const insertIndex = bonusQuest
+    ? entries.length
+    : entries.findIndex((entry) => entry.bonusQuest === true);
+  const safeInsertIndex = insertIndex >= 0 ? insertIndex : entries.length;
+  const nextEntry = {
     missionId: createCustomMissionId(missionPrompt, entries),
     custom: true,
     title: missionPrompt,
@@ -494,9 +585,16 @@ export function appendMissionSequencePromptEntry(sequence = null, prompt = '') {
     description: missionPrompt,
     prompt: missionPrompt,
     icon: 'custom',
-    makeAvailableAfterMission: entries.length > 0,
-    availableAfterMissionNumber: entries.length
-  });
+    makeAvailableAfterMission: !bonusQuest && safeInsertIndex > 0,
+    availableAfterMissionNumber: !bonusQuest ? safeInsertIndex : 0
+  };
+  if (bonusQuest) {
+    nextEntry.bonusQuest = true;
+  }
+  if (options?.hiddenForPlayers === true) {
+    nextEntry.hiddenForPlayers = true;
+  }
+  entries.splice(safeInsertIndex, 0, nextEntry);
 
   return normalizeMissionSequenceConfig(entries);
 }
@@ -533,6 +631,9 @@ export function updateMissionSequenceEntry(sequence = null, missionId = '', upda
       return entry;
     }
 
+    const textOverride = Object.hasOwn(updates, 'text')
+      ? getMissionTextOverrideDefinition({ text: updates.text, textOverride: true })
+      : null;
     return {
       ...entry,
       ...(Object.hasOwn(updates, 'makeAvailableAfterMission')
@@ -540,7 +641,14 @@ export function updateMissionSequenceEntry(sequence = null, missionId = '', upda
         : {}),
       ...(Object.hasOwn(updates, 'availableAfterMissionNumber')
         ? { availableAfterMissionNumber: Math.floor(Number(updates.availableAfterMissionNumber) || 0) }
-        : {})
+        : {}),
+      ...(Object.hasOwn(updates, 'hiddenForPlayers')
+        ? { hiddenForPlayers: updates.hiddenForPlayers === true }
+        : {}),
+      ...(Object.hasOwn(updates, 'bonusQuest')
+        ? { bonusQuest: updates.bonusQuest === true }
+        : {}),
+      ...(textOverride ?? {})
     };
   });
 
@@ -557,28 +665,49 @@ export function getMissionSequenceViewModel(sequence = null) {
       missionNumber,
       canRequireMission: index > 0,
       maxAvailableAfterMissionNumber: index,
-      label: definition?.label ?? entry.missionId,
-      title: definition?.title ?? definition?.label ?? entry.missionId,
-      description: definition?.description ?? ''
+      bonusQuest: entry.bonusQuest === true,
+      hiddenForPlayers: entry.hiddenForPlayers === true,
+      label: entry.label ?? definition?.label ?? entry.missionId,
+      title: entry.title ?? definition?.title ?? definition?.label ?? entry.missionId,
+      description: entry.description ?? definition?.description ?? '',
+      prompt: entry.prompt ?? definition?.title ?? definition?.label ?? entry.missionId
     });
   });
 }
 
 function getMissionDefinitionFromSequence(missionId = '', sequence = null) {
   const normalizedMissionId = normalizeMissionId(missionId);
-  if (!normalizedMissionId || !normalizeCustomMissionId(normalizedMissionId)) {
+  if (!normalizedMissionId) {
     return null;
   }
 
   const entry = normalizeMissionSequenceConfig(sequence)
     .find((sequenceEntry) => sequenceEntry.missionId === normalizedMissionId);
-  return entry ? getCustomMissionDefinition(entry) : null;
+  if (!entry) {
+    return null;
+  }
+
+  const textOverrideDefinition = getMissionTextOverrideDefinition(entry);
+  const catalogDefinition = MISSION_BY_ID.get(normalizedMissionId);
+  if (catalogDefinition) {
+    return textOverrideDefinition
+      ? Object.freeze({
+          ...catalogDefinition,
+          title: textOverrideDefinition.title,
+          label: textOverrideDefinition.label,
+          description: textOverrideDefinition.description,
+          prompt: textOverrideDefinition.prompt
+        })
+      : null;
+  }
+
+  return getCustomMissionDefinition(entry);
 }
 
 export function getMissionDefinition(missionId = '', sequence = null) {
   const normalized = String(missionId ?? '').trim();
-  return MISSION_BY_ID.get(normalized)
-    ?? getMissionDefinitionFromSequence(normalized, sequence)
+  return getMissionDefinitionFromSequence(normalized, sequence)
+    ?? MISSION_BY_ID.get(normalized)
     ?? getCustomMissionDefinition({ missionId: normalized });
 }
 
@@ -897,16 +1026,21 @@ export function getMissionSnapshots(player = null, selectedMissionId = player?.s
     const definition = getMissionDefinition(entry.missionId, normalizedSequence);
     const status = getMissionStatus(entry.missionId, player, normalizedSequence);
     const selectable = isMissionSelectable(entry.missionId, player, normalizedSequence);
+    const hiddenForPlayers = entry.hiddenForPlayers === true;
     return {
       id: definition.id,
       missionNumber: index + 1,
-      title: definition.title,
-      label: definition.label,
-      icon: definition.icon,
-      description: definition.description,
-      requirement: status === MISSION_STATUS.locked ? getMissionRequirement(definition.id, player, normalizedSequence) : '',
+      title: hiddenForPlayers ? 'Hidden' : definition.title,
+      label: hiddenForPlayers ? 'Hidden' : definition.label,
+      icon: hiddenForPlayers ? 'hidden' : definition.icon,
+      description: hiddenForPlayers ? 'Hidden' : definition.description,
+      requirement: hiddenForPlayers
+        ? 'Hidden'
+        : (status === MISSION_STATUS.locked ? getMissionRequirement(definition.id, player, normalizedSequence) : ''),
       makeAvailableAfterMission: entry.makeAvailableAfterMission,
       availableAfterMissionNumber: entry.availableAfterMissionNumber,
+      bonusQuest: entry.bonusQuest === true,
+      hiddenForPlayers,
       status,
       selected: definition.id === resolvedSelectedMissionId,
       selectable,

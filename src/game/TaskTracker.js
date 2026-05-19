@@ -350,6 +350,10 @@ function getMissionTarget(missionId = '', context = {}) {
 }
 
 function getMissionTitle(mission = null, context = {}) {
+  if (mission?.hiddenForPlayers === true) {
+    return 'Hidden';
+  }
+
   if (mission?.id === TASK_IDS.delivery && isDeliveryQuestActive(context.localPlayerState)) {
     const targetNpcId = context.localPlayerState.deliveryQuestTargetNpcId;
     const targetName = getDeliveryQuestTargetName(context.npcStates?.get?.(targetNpcId));
@@ -360,6 +364,10 @@ function getMissionTitle(mission = null, context = {}) {
 }
 
 function getMissionDescription(mission = null, context = {}) {
+  if (mission?.hiddenForPlayers === true) {
+    return 'Hidden';
+  }
+
   if (mission?.id === TASK_IDS.delivery && isDeliveryQuestActive(context.localPlayerState)) {
     const targetNpcId = context.localPlayerState.deliveryQuestTargetNpcId;
     const targetName = getDeliveryQuestTargetName(context.npcStates?.get?.(targetNpcId));

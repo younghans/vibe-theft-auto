@@ -150,6 +150,7 @@ import {
   FOUR_MORE_WHEELS_MISSION_TITLE,
   JANITOR_TASKS_REQUIRED,
   MISSION_CATALOG,
+  MISSION_SEQUENCE_SECTIONS,
   MISSION_STATUS,
   SCHOOL_TEACHER_TASKS_REQUIRED,
   appendMissionSequencePromptEntry,
@@ -2221,6 +2222,14 @@ function validateMissionSequencer() {
     .find((mission) => mission.id === TASK_IDS.stockBuy);
   assert(stockSnapshot?.status === MISSION_STATUS.available, 'Unchecked mission gates should make that mission available when its own task is unfinished');
 
+  const editedStockText = 'Buy one share from any bank terminal.';
+  const editedStockSequence = updateMissionSequenceEntry(sequence, TASK_IDS.stockBuy, {
+    text: editedStockText
+  });
+  const editedStockSnapshot = getMissionSnapshots(noProgressPlayer, '', editedStockSequence)
+    .find((mission) => mission.id === TASK_IDS.stockBuy);
+  assert(editedStockSnapshot?.title === editedStockText, 'Mission text edits should override player-facing catalog mission titles');
+
   const defaultSnapshots = getMissionSnapshots({
     ...noProgressPlayer,
     deliveryQuestCompletionCount: 1
@@ -2310,6 +2319,27 @@ function validateMissionSequencer() {
   const customRows = getMissionSequenceViewModel(sequenceWithCustomMission);
   assert(customRows.at(-1)?.label, 'Custom mission rows should expose a display label');
 
+  const bonusPrompt = 'Find the rooftop stash behind the gym.';
+  const sequenceWithBonusMission = appendMissionSequencePromptEntry(sequenceWithCustomMission, bonusPrompt, {
+    bonusQuest: true
+  });
+  assert(sequenceWithBonusMission.length === sequenceWithCustomMission.length + 1, 'Bonus quest prompts should append a mission entry');
+  const bonusMission = sequenceWithBonusMission.at(-1);
+  assert(bonusMission?.bonusQuest === true, 'Bonus quest prompts should mark the entry as a bonus quest');
+  assert(bonusMission?.makeAvailableAfterMission === false, 'Bonus quests should default to always available');
+  assert(bonusMission?.availableAfterMissionNumber === 0, 'Bonus quests should not default to a sequence gate');
+  const mainAfterBonusPrompt = 'Open the mainline finale.';
+  const mainAfterBonusSequence = appendMissionSequencePromptEntry(sequenceWithBonusMission, mainAfterBonusPrompt);
+  assert(
+    mainAfterBonusSequence.at(-2)?.prompt === mainAfterBonusPrompt
+    && mainAfterBonusSequence.at(-1)?.missionId === bonusMission.missionId,
+    'Main sequence prompts added after bonus quests should stay above the bonus quest section'
+  );
+  assert(
+    mainAfterBonusSequence.at(-1)?.bonusQuest === true,
+    `Bonus quest rows should stay in the ${MISSION_SEQUENCE_SECTIONS.bonus} section`
+  );
+
   const completePlayer = {
     ...noProgressPlayer,
     deliveryQuestCompletionCount: 1,
@@ -2367,6 +2397,25 @@ function validateMissionSequencer() {
     .find((mission) => mission.id === customMission.missionId);
   assert(customSnapshot?.status === MISSION_STATUS.available, 'Custom missions should become available when their sequence gate is satisfied');
   assert(customSnapshot?.selectable === true, 'Available custom missions should be selectable from the mission app');
+
+  const hiddenBonusText = 'Steal the velvet briefcase from the club office.';
+  const hiddenBonusSequence = updateMissionSequenceEntry(sequenceWithBonusMission, bonusMission.missionId, {
+    hiddenForPlayers: true,
+    text: hiddenBonusText
+  });
+  const hiddenBonusEntry = hiddenBonusSequence.find((mission) => mission.missionId === bonusMission.missionId);
+  assert(hiddenBonusEntry?.textOverride === true, 'Edited bonus quests should persist an explicit text override');
+  assert(hiddenBonusEntry?.prompt === hiddenBonusText, 'Edited bonus quests should preserve the admin-authored text');
+  const hiddenBonusRows = getMissionSequenceViewModel(hiddenBonusSequence);
+  const hiddenBonusRow = hiddenBonusRows.find((mission) => mission.missionId === bonusMission.missionId);
+  assert(hiddenBonusRow?.bonusQuest === true, 'Bonus quest rows should expose their bonus section to the sequencer view model');
+  assert(hiddenBonusRow?.hiddenForPlayers === true, 'Sequencer rows should expose the hidden-for-players flag');
+  const hiddenBonusSnapshot = getMissionSnapshots(completePlayer, bonusMission.missionId, hiddenBonusSequence)
+    .find((mission) => mission.id === bonusMission.missionId);
+  assert(hiddenBonusSnapshot?.bonusQuest === true, 'Bonus quest snapshots should remain marked for the player mission section');
+  assert(hiddenBonusSnapshot?.hiddenForPlayers === true, 'Hidden bonus quest snapshots should preserve the hidden flag');
+  assert(hiddenBonusSnapshot?.title === 'Hidden', 'Hidden bonus quests should display a hidden title to players');
+  assert(hiddenBonusSnapshot?.description === 'Hidden', 'Hidden bonus quests should display hidden details to players');
 
   const chainedCustomSequence = appendMissionSequencePromptEntry(sequenceWithCustomMission, 'Check off the crew board.');
   const chainedCustomMission = chainedCustomSequence.at(-1);

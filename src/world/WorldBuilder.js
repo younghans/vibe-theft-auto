@@ -29,6 +29,7 @@ import {
 } from '../shared/placementScale.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
+  MISSION_SEQUENCE_SECTIONS,
   appendMissionSequencePromptEntry,
   getMissionSequenceViewModel,
   moveMissionSequenceEntry,
@@ -235,6 +236,7 @@ function createDefaultEditorState() {
     activeCategoryId: BUILDER_CATEGORIES[0].id,
     activeGroupIdByCategory: Object.fromEntries(BUILDER_CATEGORIES.map((category) => [category.id, 'all'])),
     activeItemIndex: 0,
+    missionSequencerActiveTab: MISSION_SEQUENCE_SECTIONS.main,
     missionSequencerPrompt: '',
     rotationQuarterTurns: 0,
     propRotationEighthTurns: 0,
@@ -478,6 +480,8 @@ export class WorldBuilder {
       }),
       onMissionSequenceReorder: (fromIndex, toIndex) => void this.reorderMissionSequence(fromIndex, toIndex),
       onMissionSequenceRuleChange: (missionId, updates) => void this.updateMissionSequenceRule(missionId, updates),
+      onMissionSequenceTextChange: (missionId, text) => void this.updateMissionSequenceText(missionId, text),
+      onMissionSequencerTabChange: (tab) => this.setMissionSequencerActiveTab(tab),
       onMissionSequencePromptInput: (value) => this.setMissionSequencerPrompt(value),
       onMissionSequencePromptSubmit: (value) => void this.addMissionSequencePrompt(value)
     });
@@ -600,6 +604,7 @@ export class WorldBuilder {
         : null,
       missionSequencer: this.state.activeCategoryId === BUILDER_MISSION_SEQUENCER_CATEGORY.id
         ? {
+            activeTab: this.state.missionSequencerActiveTab,
             prompt: this.state.missionSequencerPrompt,
             rows: missionSequenceRows
           }
@@ -1131,7 +1136,37 @@ export class WorldBuilder {
 
   async updateMissionSequenceRule(missionId, updates = {}) {
     const nextMissionSequence = updateMissionSequenceEntry(this.worldState.getMissionSequence(), missionId, updates);
-    await this.updateMissionSequence(nextMissionSequence, 'Mission availability updated.');
+    await this.updateMissionSequence(
+      nextMissionSequence,
+      Object.hasOwn(updates, 'hiddenForPlayers')
+        ? 'Mission visibility updated.'
+        : 'Mission availability updated.'
+    );
+  }
+
+  async updateMissionSequenceText(missionId, text = '') {
+    const missionText = String(text ?? '').trim();
+    if (!missionText) {
+      this.hud.showToast('Enter mission text first.');
+      return;
+    }
+
+    const nextMissionSequence = updateMissionSequenceEntry(this.worldState.getMissionSequence(), missionId, {
+      text: missionText
+    });
+    await this.updateMissionSequence(nextMissionSequence, 'Mission text updated.');
+  }
+
+  setMissionSequencerActiveTab(tab = MISSION_SEQUENCE_SECTIONS.main) {
+    const nextTab = tab === MISSION_SEQUENCE_SECTIONS.bonus
+      ? MISSION_SEQUENCE_SECTIONS.bonus
+      : MISSION_SEQUENCE_SECTIONS.main;
+    if (this.state.missionSequencerActiveTab === nextTab) {
+      return;
+    }
+
+    this.state.missionSequencerActiveTab = nextTab;
+    this.updateBuilderHud();
   }
 
   setMissionSequencerPrompt(value = '') {
@@ -1147,9 +1182,17 @@ export class WorldBuilder {
 
     const nextMissionSequence = appendMissionSequencePromptEntry(
       this.worldState.getMissionSequence(),
-      missionPrompt
+      missionPrompt,
+      {
+        bonusQuest: this.state.missionSequencerActiveTab === MISSION_SEQUENCE_SECTIONS.bonus
+      }
     );
-    const updated = await this.updateMissionSequence(nextMissionSequence, 'Mission added to sequencer.');
+    const updated = await this.updateMissionSequence(
+      nextMissionSequence,
+      this.state.missionSequencerActiveTab === MISSION_SEQUENCE_SECTIONS.bonus
+        ? 'Bonus quest added.'
+        : 'Mission added to sequencer.'
+    );
     if (updated) {
       this.state.missionSequencerPrompt = '';
       this.updateBuilderHud();

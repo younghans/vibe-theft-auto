@@ -148,7 +148,8 @@ const PHONE_MISSION_ICON_ENTITIES = Object.freeze({
   car: '&#128663;',
   office: '&#128188;',
   charisma: '&#128526;',
-  custom: '&#10022;'
+  custom: '&#10022;',
+  hidden: '&#10068;'
 });
 
 const PHONE_MISSION_STATUS_LABELS = Object.freeze({
@@ -6421,6 +6422,8 @@ export class Hud {
     onBuildingDistanceChange,
     onMissionSequenceReorder,
     onMissionSequenceRuleChange,
+    onMissionSequenceTextChange,
+    onMissionSequencerTabChange,
     onMissionSequencePromptInput,
     onMissionSequencePromptSubmit
   }) {
@@ -6473,7 +6476,7 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      if (target?.closest('input, select, textarea, button')) {
+      if (target?.closest('input, select, textarea, button, summary, details')) {
         event.preventDefault();
         return;
       }
@@ -6586,10 +6589,29 @@ export class Hud {
         onMissionSequenceRuleChange?.(missionId, {
           availableAfterMissionNumber: Number(target.value)
         });
+        return;
+      }
+
+      if (target.matches('[data-builder-mission-hidden]')) {
+        onMissionSequenceRuleChange?.(missionId, {
+          hiddenForPlayers: target.checked === true
+        });
       }
     };
 
     this.builderTiles.addEventListener('change', handleMissionSequenceRuleChange);
+
+    this.builderTiles.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const tab = target?.closest('[data-builder-mission-tab]');
+      if (!tab || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      onMissionSequencerTabChange?.(tab.getAttribute('data-builder-mission-tab') ?? '');
+    });
 
     this.builderTiles.addEventListener('input', (event) => {
       const target = event.target;
@@ -6602,6 +6624,17 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : null;
+      const editForm = target?.closest('[data-builder-mission-edit-form]');
+      if (editForm) {
+        event.preventDefault();
+        const row = editForm.closest('[data-builder-mission-id]');
+        const missionId = row?.getAttribute('data-builder-mission-id') ?? '';
+        const field = editForm.querySelector('[data-builder-mission-text]');
+        const text = field instanceof HTMLTextAreaElement ? field.value : '';
+        onMissionSequenceTextChange?.(missionId, text);
+        return;
+      }
+
       const form = target?.closest('[data-builder-mission-add-form]');
       if (!form || !this.isElementInteractive(this.builderRoot)) {
         return;
@@ -7435,10 +7468,13 @@ export class Hud {
     const checkboxDisabled = canRequireMission ? '' : ' disabled';
     const numberDisabled = canRequireMission && gateEnabled ? '' : ' disabled';
     const checked = gateEnabled ? ' checked' : '';
+    const rowClass = row.bonusQuest === true ? ' is-bonus' : '';
+    const hiddenChecked = row.hiddenForPlayers === true ? ' checked' : '';
+    const missionText = String(row.prompt ?? row.title ?? row.label ?? '');
 
     return `
       <article
-        class="hud__mission-sequencer-row"
+        class="hud__mission-sequencer-row${rowClass}"
         draggable="true"
         data-builder-mission-id="${escapeHtml(row.missionId ?? '')}"
         data-builder-mission-index="${missionNumber - 1}"
@@ -7453,56 +7489,133 @@ export class Hud {
           <span class="hud__mission-sequencer-title">${escapeHtml(row.label ?? row.title ?? 'Mission')}</span>
           <span class="hud__mission-sequencer-detail">${escapeHtml(row.description ?? '')}</span>
         </span>
-        <label class="hud__field hud__checkbox-field hud__mission-sequencer-rule">
-          <input
-            class="hud__checkbox-control"
-            type="checkbox"
-            data-builder-mission-rule-enabled
-            ${checked}${checkboxDisabled}
-          />
-          <span class="hud__checkbox-copy hud__mission-sequencer-rule-copy">
-            <span class="hud__field-label hud__checkbox-title">Make available after mission</span>
+        <details class="hud__mission-sequencer-edit">
+          <summary
+            class="hud__mission-sequencer-edit-toggle"
+            aria-label="Edit text for ${escapeHtml(row.label ?? row.title ?? 'mission')}"
+            title="Edit mission text"
+          >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M5 18.75 6.2 14l8.95-8.95a2.15 2.15 0 0 1 3.05 0l.75.75a2.15 2.15 0 0 1 0 3.05L10 17.8 5 18.75Z" />
+              <path d="m13.8 6.4 3.8 3.8" />
+            </svg>
+          </summary>
+          <form class="hud__mission-sequencer-edit-form" data-builder-mission-edit-form>
+            <label class="hud__field hud__mission-sequencer-edit-field">
+              <span class="hud__field-label">Mission text</span>
+              <textarea
+                class="hud__field-control hud__field-control--textarea hud__mission-sequencer-edit-input"
+                rows="3"
+                maxlength="220"
+                data-builder-mission-text
+              >${escapeHtml(missionText)}</textarea>
+            </label>
+            <button class="hud__builder-action hud__mission-sequencer-save-button" type="submit">Save Text</button>
+          </form>
+        </details>
+        <div class="hud__mission-sequencer-controls">
+          <label class="hud__field hud__checkbox-field hud__mission-sequencer-rule">
             <input
-              class="hud__field-control hud__mission-sequencer-number-input"
-              type="number"
-              min="${canRequireMission ? 1 : 0}"
-              max="${maxGateNumber}"
-              step="1"
-              value="${gateNumber}"
-              data-builder-mission-rule-number
-              aria-label="Required mission number for ${escapeHtml(row.label ?? 'mission')}"
-              ${numberDisabled}
+              class="hud__checkbox-control"
+              type="checkbox"
+              data-builder-mission-rule-enabled
+              ${checked}${checkboxDisabled}
             />
-          </span>
-        </label>
+            <span class="hud__checkbox-copy hud__mission-sequencer-rule-copy">
+              <span class="hud__field-label hud__checkbox-title">Make available after mission</span>
+              <input
+                class="hud__field-control hud__mission-sequencer-number-input"
+                type="number"
+                min="${canRequireMission ? 1 : 0}"
+                max="${maxGateNumber}"
+                step="1"
+                value="${gateNumber}"
+                data-builder-mission-rule-number
+                aria-label="Required mission number for ${escapeHtml(row.label ?? 'mission')}"
+                ${numberDisabled}
+              />
+            </span>
+          </label>
+          <label class="hud__field hud__checkbox-field hud__mission-sequencer-hidden">
+            <input
+              class="hud__checkbox-control"
+              type="checkbox"
+              data-builder-mission-hidden
+              ${hiddenChecked}
+            />
+            <span class="hud__checkbox-copy">
+              <span class="hud__field-label hud__checkbox-title">Make hidden</span>
+            </span>
+          </label>
+        </div>
       </article>
+    `;
+  }
+
+  getBuilderMissionSequencerSectionMarkup(label, rows = [], { bonus = false, empty = '' } = {}) {
+    const bonusClass = bonus ? ' is-bonus' : '';
+    return `
+      <section class="hud__mission-sequencer-section${bonusClass}">
+        <div class="hud__mission-sequencer-section-label">${escapeHtml(label)}</div>
+        ${rows.length
+          ? rows.map((row) => this.getBuilderMissionSequencerRowMarkup(row)).join('')
+          : `<div class="hud__mission-sequencer-empty">${escapeHtml(empty || 'No missions yet.')}</div>`}
+      </section>
     `;
   }
 
   getBuilderMissionSequencerMarkup(missionSequencer = {}) {
     const rows = Array.isArray(missionSequencer.rows) ? missionSequencer.rows : [];
     const prompt = String(missionSequencer.prompt ?? '');
+    const activeTab = missionSequencer.activeTab === 'bonus' ? 'bonus' : 'main';
+    const mainRows = rows.filter((row) => row.bonusQuest !== true);
+    const bonusRows = rows.filter((row) => row.bonusQuest === true);
+    const addLabel = activeTab === 'bonus' ? 'New bonus quest prompt' : 'New mission prompt';
+    const addPlaceholder = activeTab === 'bonus'
+      ? 'Add a bonus quest for the player mission app'
+      : 'Add a mission for the sequence';
+    const addButtonLabel = activeTab === 'bonus' ? 'Add Bonus Quest' : 'Add Mission';
     return `
       <section class="hud__builder-section hud__mission-sequencer" data-builder-mission-sequencer>
         <div class="hud__builder-section-header">
           <p class="hud__builder-section-title">Mission Sequencer</p>
           <span class="hud__builder-section-count">${rows.length}</span>
         </div>
+        <div class="hud__mission-sequencer-tabs" role="tablist" aria-label="Mission sequencer type">
+          <button
+            class="hud__mission-sequencer-tab${activeTab === 'main' ? ' is-active' : ''}"
+            type="button"
+            role="tab"
+            aria-selected="${activeTab === 'main' ? 'true' : 'false'}"
+            data-builder-mission-tab="main"
+          >Mission Sequence</button>
+          <button
+            class="hud__mission-sequencer-tab${activeTab === 'bonus' ? ' is-active' : ''}"
+            type="button"
+            role="tab"
+            aria-selected="${activeTab === 'bonus' ? 'true' : 'false'}"
+            data-builder-mission-tab="bonus"
+          >Bonus Quest</button>
+        </div>
         <form class="hud__mission-sequencer-add" data-builder-mission-add-form>
           <label class="hud__field hud__mission-sequencer-prompt">
-            <span class="hud__field-label">New mission prompt</span>
+            <span class="hud__field-label">${addLabel}</span>
             <textarea
               class="hud__field-control hud__field-control--textarea hud__mission-sequencer-prompt-input"
               rows="3"
               maxlength="220"
-              placeholder="Add a mission for the sequence"
+              placeholder="${escapeHtml(addPlaceholder)}"
               data-builder-mission-prompt
             >${escapeHtml(prompt)}</textarea>
           </label>
-          <button class="hud__builder-action hud__mission-sequencer-add-button" type="submit">Add Mission</button>
+          <button class="hud__builder-action hud__mission-sequencer-add-button" type="submit">${addButtonLabel}</button>
         </form>
         <div class="hud__mission-sequencer-list">
-          ${rows.map((row) => this.getBuilderMissionSequencerRowMarkup(row)).join('')}
+          ${this.getBuilderMissionSequencerSectionMarkup('Mission Sequence', mainRows)}
+          ${this.getBuilderMissionSequencerSectionMarkup('Bonus Quests', bonusRows, {
+            bonus: true,
+            empty: 'No bonus quests yet.'
+          })}
         </div>
       </section>
     `;
@@ -9920,6 +10033,7 @@ export class Hud {
     const status = String(mission.status ?? 'locked');
     const selectedClass = mission.selected ? ' is-selected' : '';
     const currentClass = current ? ' is-current' : '';
+    const bonusClass = mission.bonusQuest === true ? ' is-bonus' : '';
     const disabled = mission.selectable && !mission.selected ? '' : ' disabled';
     const title = mission.label || mission.title || 'Mission';
     const detail = mission.status === 'locked'
@@ -9928,7 +10042,7 @@ export class Hud {
 
     return `
       <button
-        class="hud__phone-mission-row is-${escapeHtml(status)}${selectedClass}${currentClass}"
+        class="hud__phone-mission-row is-${escapeHtml(status)}${selectedClass}${currentClass}${bonusClass}"
         type="button"
         data-phone-mission-id="${escapeHtml(mission.id ?? '')}"
         ${disabled}
@@ -9961,7 +10075,9 @@ export class Hud {
       status: mission.status,
       selected: mission.selected,
       selectable: mission.selectable,
-      icon: mission.icon
+      icon: mission.icon,
+      bonusQuest: mission.bonusQuest,
+      hiddenForPlayers: mission.hiddenForPlayers
     })).concat([{ selectedMissionId }]));
     if (signature === this.lastPhoneMissionsSignature) {
       return;
@@ -9997,10 +10113,18 @@ export class Hud {
     }
 
     if (list) {
+      const mainMissions = safeMissions.filter((mission) => mission.bonusQuest !== true);
+      const bonusMissions = safeMissions.filter((mission) => mission.bonusQuest === true);
       list.innerHTML = `
         <div class="hud__phone-missions-section-label">All Missions</div>
         <div class="hud__phone-missions-scroll">
-          ${safeMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+          ${mainMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+          ${bonusMissions.length
+            ? `
+              <div class="hud__phone-missions-section-label is-bonus">Bonus Quests</div>
+              ${bonusMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+            `
+            : ''}
         </div>
       `;
     }
