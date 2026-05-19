@@ -9937,16 +9937,21 @@ body.is-admin-prompt-resizing * {
   bottom: 154px;
 }
 
+.hud__office-boardroom-backdrop .hud__office-boardroom-table {
+  height: 34%;
+}
+
 .hud__office-boardroom-backdrop .hud__office-ceo-stamp-arm {
-  top: 80px;
+  top: 220px;
 }
 
 .hud__office-boardroom-backdrop .hud__office-approval-window {
-  bottom: 88px;
+  bottom: 78px;
+  height: 164px;
 }
 
 .hud__office-boardroom-backdrop .hud__office-ceo-memo {
-  bottom: 98px;
+  bottom: 88px;
 }
 
 .hud__office-mop-room {
@@ -13277,7 +13282,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__office-boardroom-scene {
-  height: 236px;
+  height: 260px;
   background:
     linear-gradient(180deg, rgba(250, 204, 21, 0.12), transparent 34%),
     linear-gradient(135deg, #32323c, #12151b);
@@ -13315,20 +13320,22 @@ body.is-admin-prompt-resizing * {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 74px;
+  height: 100px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
-    radial-gradient(ellipse at 50% 0%, rgba(255, 214, 120, 0.22), transparent 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 38%),
+    radial-gradient(ellipse at 50% 2%, rgba(255, 214, 120, 0.3), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0 18%, transparent 18%),
     linear-gradient(90deg, #805231, #2c1b11);
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.24), inset 0 18px 20px rgba(255, 211, 122, 0.08);
   z-index: 3;
 }
 
 .hud__office-approval-window {
   position: absolute;
   left: var(--target-left, 42%);
-  bottom: 66px;
+  bottom: 42px;
   width: var(--target-width, 16%);
-  height: 112px;
+  height: 134px;
   border: 2px solid rgba(250, 204, 21, 0.86);
   border-bottom: 0;
   background: linear-gradient(180deg, rgba(250, 204, 21, 0.2), rgba(250, 204, 21, 0.04));
@@ -13340,21 +13347,21 @@ body.is-admin-prompt-resizing * {
 .hud__office-ceo-memo {
   position: absolute;
   left: var(--memo-left, 0%);
-  bottom: 76px;
+  bottom: 46px;
   display: grid;
   place-items: center;
   gap: 3px;
-  width: 126px;
-  height: 82px;
+  width: 136px;
+  height: 86px;
   padding: 10px;
   border: 1px solid rgba(30, 32, 36, 0.22);
   border-radius: 4px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(238, 231, 208, 0.96));
   color: #1d252d;
   text-align: center;
-  box-shadow: 0 16px 20px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 18px 24px rgba(0, 0, 0, 0.28);
   transform: translateX(-50%) rotate(-2deg);
-  transition: left 70ms linear;
+  transition: left 85ms linear, transform 160ms ease;
   will-change: left;
   z-index: 5;
 }
@@ -13375,13 +13382,13 @@ body.is-admin-prompt-resizing * {
 .hud__office-ceo-stamp-arm {
   position: absolute;
   left: var(--stamp-left, 50%);
-  top: -38px;
-  width: 118px;
-  height: 126px;
+  top: -2px;
+  width: 122px;
+  height: 128px;
   transform: translateX(-50%);
   transform-origin: center top;
-  transition: left 70ms linear, filter 140ms ease;
-  will-change: left;
+  transition: left 120ms ease, filter 140ms ease;
+  will-change: transform;
   z-index: 6;
 }
 
@@ -13477,7 +13484,7 @@ body.is-admin-prompt-resizing * {
 .hud__office-ceo-stamp-mark {
   position: absolute;
   left: var(--stamp-left, 50%);
-  bottom: 102px;
+  bottom: 86px;
   display: grid;
   place-items: center;
   width: 118px;
@@ -14057,7 +14064,7 @@ body.is-admin-prompt-resizing * {
     transform: translateX(-50%) translateY(-14px) rotate(-3deg);
   }
   58% {
-    transform: translateX(-50%) translateY(72px) rotate(1deg) scaleY(0.94);
+    transform: translateX(-50%) translateY(54px) rotate(1deg) scaleY(0.94);
   }
   100% {
     transform: translateX(-50%) translateY(0) rotate(0deg);
@@ -15257,7 +15264,7 @@ canvas {
 
   .hud__office-trash-scene,
   .hud__office-boardroom-scene {
-    height: 140px;
+    height: 156px;
   }
 
   .hud__office-mop-stage {
@@ -15354,18 +15361,18 @@ canvas {
   }
 
   .hud__office-approval-window {
-    bottom: 48px;
-    height: 76px;
+    bottom: 34px;
+    height: 92px;
   }
 
   .hud__office-ceo-memo {
-    bottom: 55px;
+    bottom: 30px;
     width: 108px;
     height: 62px;
   }
 
   .hud__office-ceo-stamp-arm {
-    top: -64px;
+    top: -48px;
     width: 88px;
     height: 88px;
   }
@@ -15388,7 +15395,7 @@ canvas {
   }
 
   .hud__office-ceo-stamp-mark {
-    bottom: 74px;
+    bottom: 44px;
   }
 
   .loading__content {

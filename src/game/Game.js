@@ -332,8 +332,8 @@ const OFFICE_JANITOR_MOP_DIRT_PATCHES = Object.freeze([
   Object.freeze({ x: 0.88, y: 0.79, size: 0.12, rotation: 15 })
 ]);
 const OFFICE_CEO_STAMP_RESOLVE_MS = 680;
-const OFFICE_CEO_STAMP_LEFT_EXIT = -0.14;
-const OFFICE_CEO_STAMP_RIGHT_EXIT = 1.14;
+const OFFICE_CEO_MEMO_LEFT_EXIT = -0.22;
+const OFFICE_CEO_MEMO_RIGHT_EXIT = 1.22;
 const OFFICE_CEO_TARGET_MIN_WIDTH = 0.1;
 const OFFICE_CEO_TARGET_WIDTH_VARIANCE = 0.14;
 const PROJECTILE_MAX_LIFETIME_MS = 260;
@@ -1796,6 +1796,137 @@ export class Game {
     gain.connect(context.destination);
     oscillator.start(now);
     oscillator.stop(now + 0.38);
+  }
+
+  getCeoAudioNoiseBuffer(context, durationSeconds = 0.16) {
+    if (!context) {
+      return null;
+    }
+
+    const safeDuration = THREE.MathUtils.clamp(Number(durationSeconds) || 0.16, 0.04, 0.9);
+    const key = `${context.sampleRate}:${safeDuration.toFixed(3)}`;
+    if (!this.ceoAudioNoiseBuffers) {
+      this.ceoAudioNoiseBuffers = new Map();
+    }
+    if (this.ceoAudioNoiseBuffers.has(key)) {
+      return this.ceoAudioNoiseBuffers.get(key);
+    }
+
+    const sampleCount = Math.max(1, Math.ceil(context.sampleRate * safeDuration));
+    const buffer = context.createBuffer(1, sampleCount, context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < sampleCount; index += 1) {
+      channel[index] = (Math.random() * 2) - 1;
+    }
+
+    this.ceoAudioNoiseBuffers.set(key, buffer);
+    return buffer;
+  }
+
+  playCeoStampThudSound({ delayMs = 0 } = {}) {
+    const play = () => {
+      const context = this.getVibeHeroAudioContext();
+      if (!context) {
+        this.playSoundEffect(this.playingCardSound, {
+          playbackRate: 0.62,
+          preservePitch: false,
+          volumeScale: 0.22
+        });
+        return;
+      }
+
+      void context.resume?.().catch(() => {});
+      const now = context.currentTime;
+      const master = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+      const tone = context.createOscillator();
+      const toneGain = context.createGain();
+      const noise = context.createBufferSource();
+      const noiseFilter = context.createBiquadFilter();
+      const noiseGain = context.createGain();
+
+      tone.type = 'sine';
+      tone.frequency.setValueAtTime(92, now);
+      tone.frequency.exponentialRampToValueAtTime(44, now + 0.2);
+      toneGain.gain.setValueAtTime(0.0001, now);
+      toneGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.07 * master), now + 0.012);
+      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+
+      noise.buffer = this.getCeoAudioNoiseBuffer(context, 0.15);
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(210, now);
+      noiseFilter.Q.setValueAtTime(0.7, now);
+      noiseGain.gain.setValueAtTime(0.0001, now);
+      noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.028 * master), now + 0.008);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+
+      tone.connect(toneGain);
+      toneGain.connect(context.destination);
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(context.destination);
+      tone.start(now);
+      tone.stop(now + 0.26);
+      noise.start(now);
+      noise.stop(now + 0.16);
+    };
+
+    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (safeDelayMs > 0 && typeof window !== 'undefined') {
+      window.setTimeout(play, safeDelayMs);
+      return;
+    }
+
+    play();
+  }
+
+  playCeoGolfClapSound({ delayMs = 0 } = {}) {
+    const play = () => {
+      const context = this.getVibeHeroAudioContext();
+      if (!context) {
+        return;
+      }
+
+      void context.resume?.().catch(() => {});
+      const master = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+      const startedAt = context.currentTime;
+      const claps = [
+        [0, 0.024, 980],
+        [0.11, 0.018, 1260],
+        [0.2, 0.021, 1110],
+        [0.34, 0.016, 1450],
+        [0.48, 0.02, 1180],
+        [0.62, 0.015, 1560]
+      ];
+
+      for (const [offset, volume, frequency] of claps) {
+        const clapAt = startedAt + offset;
+        const source = context.createBufferSource();
+        const filter = context.createBiquadFilter();
+        const gain = context.createGain();
+
+        source.buffer = this.getCeoAudioNoiseBuffer(context, 0.09);
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(frequency, clapAt);
+        filter.Q.setValueAtTime(0.82, clapAt);
+        gain.gain.setValueAtTime(0.0001, clapAt);
+        gain.gain.linearRampToValueAtTime(Math.max(0.0001, volume * master), clapAt + 0.006);
+        gain.gain.exponentialRampToValueAtTime(0.0001, clapAt + 0.075);
+
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(context.destination);
+        source.start(clapAt);
+        source.stop(clapAt + 0.095);
+      }
+    };
+
+    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (safeDelayMs > 0 && typeof window !== 'undefined') {
+      window.setTimeout(play, safeDelayMs);
+      return;
+    }
+
+    play();
   }
 
   playTaskCompleteChaChing(delayMs = TASK_COMPLETE_CHA_CHING_DELAY_MS) {
@@ -9891,10 +10022,11 @@ export class Game {
 
   configureCeoMemoStamp(round = {}, data = {}, approvedCount = 0) {
     const targetWidth = OFFICE_CEO_TARGET_MIN_WIDTH + this.schoolRandom() * OFFICE_CEO_TARGET_WIDTH_VARIANCE;
-    const maxTargetStart = 0.92 - targetWidth;
-    round.targetStart = 0.08 + this.schoolRandom() * Math.max(0.01, maxTargetStart - 0.08);
+    const minTargetStart = 0.14;
+    const maxTargetStart = Math.max(minTargetStart, 0.86 - targetWidth);
+    round.targetStart = minTargetStart + this.schoolRandom() * Math.max(0.01, maxTargetStart - minTargetStart);
     round.targetEnd = round.targetStart + targetWidth;
-    data.memoPosition = OFFICE_CEO_STAMP_LEFT_EXIT;
+    data.memoPosition = OFFICE_CEO_MEMO_LEFT_EXIT;
     data.memoDirection = 1;
     data.memoTurned = false;
     data.memoSpeed = 0.66 + this.schoolRandom() * 0.22 + Math.max(0, Number(approvedCount ?? 0) || 0) * 0.04;
@@ -10521,6 +10653,8 @@ export class Game {
     const completedGameId = completedGame.round?.gameId ?? '';
     const isSchoolSession = completedGame.context === 'school-minigame';
     const completingOfficeJob = completedGame.context === 'office-job';
+    const completingCeoJob = completingOfficeJob
+      && String(completedGame.round?.officeJobId ?? completedGame.round?.jobId ?? '') === OFFICE_JOB_IDS.ceo;
     const officeJobRewardMoney = completingOfficeJob
       ? Math.max(0, Math.floor(Number(completedGame.round?.rewardMoney ?? 0) || 0))
       : 0;
@@ -10555,6 +10689,9 @@ export class Game {
 
     const completionSoundStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.playTaskCompleteSound();
+    if (completingCeoJob) {
+      this.playCeoGolfClapSound({ delayMs: 260 });
+    }
     this.hud.playTaskConfetti();
     this.syncSchoolMicrogameHud();
 
@@ -10988,6 +11125,7 @@ export class Game {
       game.data.stampMissSide = made ? '' : marker < targetMid ? 'early' : 'late';
       game.data.stampResolveAt = now + OFFICE_CEO_STAMP_RESOLVE_MS;
       game.endsAt = Math.max(Number(game.endsAt ?? now) || now, game.data.stampResolveAt + 120);
+      this.playCeoStampThudSound();
 
       if (made) {
         game.data.approved = Math.min(
@@ -10995,12 +11133,12 @@ export class Game {
           Math.max(0, Math.floor(Number(game.data.approved ?? 0) || 0)) + 1
         );
         game.message = 'Approved. Shareholders are pretending to understand.';
-        this.playSoundEffect(this.levelUpSound);
+        this.playSoundEffect(this.levelUpSound, { delayMs: 90, volumeScale: 0.52 });
       } else {
         game.message = game.data.stampMissSide === 'early'
           ? 'Too early. Legal saw that.'
           : 'Too late. The quarter has moved on.';
-        this.playSoundEffect(this.playingCardSound);
+        this.playSoundEffect(this.playingCardSound, { delayMs: 80, volumeScale: 0.42 });
       }
       this.syncSchoolMicrogameHud();
       return;
@@ -11654,7 +11792,7 @@ export class Game {
     game.data.stampSuccess = false;
     game.data.stampResolveAt = 0;
     game.data.stampMissSide = '';
-    game.message = 'Next memo. Stamp the approval window.';
+    game.message = 'Next memo. Let it slide into the approval window.';
   }
 
   updateCeoStampState(game = this.schoolMicrogame, dt = 0, now = performance.now()) {
@@ -11681,22 +11819,22 @@ export class Game {
 
     const speed = Math.max(0.1, Number(game.data.memoSpeed ?? 0.7) || 0.7);
     const rawPosition = Number(game.data.memoPosition);
-    const currentPosition = Number.isFinite(rawPosition) ? rawPosition : OFFICE_CEO_STAMP_LEFT_EXIT;
+    const currentPosition = Number.isFinite(rawPosition) ? rawPosition : OFFICE_CEO_MEMO_LEFT_EXIT;
     const direction = Number(game.data.memoDirection ?? 1) >= 0 ? 1 : -1;
     let nextPosition = currentPosition + speed * direction * dt;
 
-    if (direction > 0 && nextPosition >= OFFICE_CEO_STAMP_RIGHT_EXIT) {
-      nextPosition = OFFICE_CEO_STAMP_RIGHT_EXIT;
+    if (direction > 0 && nextPosition >= OFFICE_CEO_MEMO_RIGHT_EXIT) {
+      nextPosition = OFFICE_CEO_MEMO_RIGHT_EXIT;
       game.data.memoDirection = -1;
       game.data.memoTurned = true;
       game.message = 'Return pass. Last chance to stamp this memo.';
-    } else if (direction < 0 && nextPosition <= OFFICE_CEO_STAMP_LEFT_EXIT) {
-      game.data.memoPosition = OFFICE_CEO_STAMP_LEFT_EXIT;
-      void this.finishOfficeJob(false, 'Missed Quarter', 'The stamp left the boardroom unstamped.');
+    } else if (direction < 0 && nextPosition <= OFFICE_CEO_MEMO_LEFT_EXIT) {
+      game.data.memoPosition = OFFICE_CEO_MEMO_LEFT_EXIT;
+      void this.finishOfficeJob(false, 'Missed Quarter', 'The memo slid out of the boardroom unstamped.');
       return;
     } else {
       game.message = direction > 0
-        ? 'Stamp the memo when the moving stamp reaches the approval window.'
+        ? 'Stamp when the sliding memo reaches the approval window.'
         : 'Return pass. Last chance to stamp this memo.';
     }
 
