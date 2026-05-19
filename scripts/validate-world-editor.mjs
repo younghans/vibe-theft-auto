@@ -451,6 +451,15 @@ function validateCustomPropCatalogItems() {
     'World builder should place props with exact 45-degree rotationY values'
   );
   assert(
+    /if\s*\(this\.shouldPlaceActiveItemOverHoveredPlacement\(hoveredPlacement\)\)\s*\{[\s\S]*?void this\.placeCurrentItem\(\);[\s\S]*?\}\s*if\s*\(hoveredPlacement\)/.test(worldBuilderSource),
+    'World builder should let active prop placement win over hovered object selection'
+  );
+  const propOverlapPreviewUsages = worldBuilderSource.match(/shouldPreviewHoveredPlacement\(hoveredPlacement\)/g)?.length ?? 0;
+  assert(
+    propOverlapPreviewUsages >= 2,
+    'World builder should keep the active prop preview when placing over hovered objects'
+  );
+  assert(
     /PROP_ROTATION_STEP_RADIANS\s*=\s*Math\.PI\s*\/\s*4/.test(worldStateSource),
     'World state selected prop rotation should use a 45-degree step'
   );

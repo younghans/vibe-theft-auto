@@ -539,6 +539,14 @@ export class WorldBuilder {
       ?? getPlacementScale(placement);
   }
 
+  shouldPlaceActiveItemOverHoveredPlacement(hoveredPlacement = null) {
+    return Boolean(hoveredPlacement && this.activeItem?.layer === 'prop');
+  }
+
+  shouldPreviewHoveredPlacement(hoveredPlacement = null) {
+    return Boolean(hoveredPlacement && !this.shouldPlaceActiveItemOverHoveredPlacement(hoveredPlacement));
+  }
+
   getVisibleCategoryEntries(categoryId = this.state.activeCategoryId) {
     const category = getBuilderTabCategoryById(categoryId) ?? BUILDER_CATEGORIES[0];
     const activeGroupId = this.state.activeGroupIdByCategory[category.id] ?? 'all';
@@ -998,6 +1006,12 @@ export class WorldBuilder {
 
     if (this.isMovingSelection()) {
       void this.commitSelectedPlacementMove();
+      return;
+    }
+
+    if (this.shouldPlaceActiveItemOverHoveredPlacement(hoveredPlacement)) {
+      this.clearSelection();
+      void this.placeCurrentItem();
       return;
     }
 
@@ -1464,7 +1478,7 @@ export class WorldBuilder {
     }
 
     const hoveredPlacement = this.getHoveredPlacement();
-    if (hoveredPlacement) {
+    if (this.shouldPreviewHoveredPlacement(hoveredPlacement)) {
       const item = getBuilderItemById(hoveredPlacement.itemId);
       if (!item) {
         return null;
@@ -1570,7 +1584,7 @@ export class WorldBuilder {
 
     const hoveredPlacement = this.getHoveredPlacement();
 
-    if (hoveredPlacement) {
+    if (this.shouldPreviewHoveredPlacement(hoveredPlacement)) {
       const hoveredScale = hoveredPlacement.layer === 'prop' ? this.getPropScaleDraft(hoveredPlacement) : 1;
       applyPreviewObjectScale(this.state.preview.object, hoveredScale);
       if (hoveredPlacement.layer === 'tile') {
