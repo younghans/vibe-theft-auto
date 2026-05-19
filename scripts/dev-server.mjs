@@ -218,6 +218,10 @@ function resolveWritableAssetPath(relativePath = '') {
 }
 
 function isFingerprinted(filePath) {
+  if (['.mp3', '.wav'].includes(path.extname(filePath).toLowerCase())) {
+    return false;
+  }
+
   return /-[a-z0-9]{8,}\./iu.test(path.basename(filePath));
 }
 
@@ -270,6 +274,80 @@ async function pickEncodingVariant(filePath, acceptEncoding = '', injectHtml = f
   }
 
   return { path: filePath, encoding: null };
+}
+
+function parseRangeHeader(rangeHeader = '', fileSize = 0) {
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(String(rangeHeader).trim());
+  if (!match) {
+    return null;
+  }
+
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) {
+    return null;
+  }
+
+  let start = rawStart ? Number(rawStart) : 0;
+  let end = rawEnd ? Number(rawEnd) : fileSize - 1;
+
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+      return null;
+    }
+    start = Math.max(0, fileSize - suffixLength);
+    end = fileSize - 1;
+  }
+
+  if (
+    !Number.isInteger(start)
+    || !Number.isInteger(end)
+    || start < 0
+    || end < start
+    || start >= fileSize
+  ) {
+    return null;
+  }
+
+  return {
+    start,
+    end: Math.min(end, fileSize - 1)
+  };
+}
+
+function sendFileStream({
+  request,
+  response,
+  filePath,
+  headers,
+  fileSize,
+  statusCode = 200,
+  range = null
+}) {
+  const responseHeaders = {
+    ...headers,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': range ? range.end - range.start + 1 : fileSize
+  };
+
+  if (range) {
+    responseHeaders['Content-Range'] = `bytes ${range.start}-${range.end}/${fileSize}`;
+  }
+
+  response.writeHead(statusCode, responseHeaders);
+  if (request.method === 'HEAD') {
+    response.end();
+    return;
+  }
+
+  fs.createReadStream(filePath, range ?? {})
+    .on('error', () => {
+      if (!response.headersSent) {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      }
+      response.end();
+    })
+    .pipe(response);
 }
 
 const server = http.createServer(async (request, response) => {
@@ -352,12 +430,6 @@ const server = http.createServer(async (request, response) => {
       request.headers['accept-encoding'] ?? '',
       injectHtmlDocument
     );
-    let body = await fsp.readFile(variant.path);
-
-    if (injectHtmlDocument) {
-      body = Buffer.from(injectHtml(body.toString('utf8')), 'utf8');
-    }
-
     const headers = {
       'Cache-Control': getCacheControl(filePath),
       'Content-Type': mimeTypes[extension] ?? 'application/octet-stream',
@@ -368,8 +440,48 @@ const server = http.createServer(async (request, response) => {
       headers['Content-Encoding'] = variant.encoding;
     }
 
+    if (!injectHtmlDocument) {
+      const variantStats = await fsp.stat(variant.path);
+      const rangeHeader = request.headers.range;
+      if (rangeHeader && !variant.encoding) {
+        const range = parseRangeHeader(rangeHeader, variantStats.size);
+        if (!range) {
+          response.writeHead(416, {
+            ...headers,
+            'Accept-Ranges': 'bytes',
+            'Content-Range': `bytes */${variantStats.size}`
+          });
+          response.end();
+          return;
+        }
+
+        sendFileStream({
+          request,
+          response,
+          filePath: variant.path,
+          headers,
+          fileSize: variantStats.size,
+          statusCode: 206,
+          range
+        });
+        return;
+      }
+
+      sendFileStream({
+        request,
+        response,
+        filePath: variant.path,
+        headers,
+        fileSize: variantStats.size
+      });
+      return;
+    }
+
+    let body = await fsp.readFile(variant.path);
+    body = Buffer.from(injectHtml(body.toString('utf8')), 'utf8');
+    headers['Content-Length'] = body.length;
     response.writeHead(200, headers);
-    response.end(body);
+    response.end(request.method === 'HEAD' ? undefined : body);
   } catch {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     response.end('Not found');

@@ -13,8 +13,8 @@ const assetsRoot = path.join(root, 'assets');
 const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.json');
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
-const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], 60 * 1024 * 1024);
-const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 5 * 1024 * 1024);
+const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], 80 * 1024 * 1024);
+const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 8 * 1024 * 1024);
 const DIST_BUDGET_DETAIL_LIMIT = 10;
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',
@@ -665,6 +665,7 @@ const bundleOutputs = await bundleClient();
 await copyStaticShell(bundleOutputs);
 await writeVersionManifest();
 await copyRuntimeAssets();
+await copyOptionalDirectory(path.join('assets', 'audio', 'vibe-radio'));
 await copyOptionalDirectory(path.join('assets', 'generated'));
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();

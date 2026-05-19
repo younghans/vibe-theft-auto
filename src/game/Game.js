@@ -1226,7 +1226,7 @@ export class Game {
     this.vibeHeroAudioPreloads = new Map();
     this.vibeRadioTracks = cloneVibeRadioTracks();
     this.vibeRadioAudio = new Audio();
-    this.vibeRadioAudio.preload = 'auto';
+    this.vibeRadioAudio.preload = 'metadata';
     this.vibeRadioSelectedTrackId = '';
     this.vibeRadioPlaying = false;
     this.vibeRadioVolume = readStoredVibeRadioVolume();
@@ -3555,7 +3555,7 @@ export class Game {
 
     this.vibeRadioAudio.pause();
     this.vibeRadioAudio.src = track.sourceUrl;
-    this.vibeRadioAudio.preload = 'auto';
+    this.vibeRadioAudio.preload = 'metadata';
     this.vibeRadioLoadedTrackId = track.id;
     this.vibeRadioLoadedSourceUrl = track.sourceUrl;
     this.vibeRadioError = '';

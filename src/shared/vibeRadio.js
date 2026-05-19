@@ -1,14 +1,21 @@
-import { listVibeHeroSongs } from './vibeHero.js';
-
 const VIBE_RADIO_TRACK_ID_PREFIX = 'vibe-radio-track-';
 const VIBE_RADIO_TRACK_ID_MAX_LENGTH = 96;
 const VIBE_RADIO_TRACK_TITLE_MAX_LENGTH = 64;
 const VIBE_RADIO_TRACK_SOURCE_MAX_LENGTH = 640;
-const VIBE_RADIO_TRACK_SOURCE_TYPES = Object.freeze(['link', 'file']);
-const VIBE_RADIO_DEFAULT_AUDIO_SOURCES = Object.freeze({
-  debussyArabesqueNo1: 'assets/audio/vibe-hero/debussy-arabesque-no-1.mp3',
-  vivaldiWinterMvt1: 'assets/audio/vibe-hero/vivaldi-winter.mp3'
-});
+const VIBE_RADIO_AUDIO_PATH_PREFIX = 'assets/audio/';
+
+const VIBE_RADIO_DEFAULT_TRACKS = Object.freeze([
+  Object.freeze({
+    id: 'vibe-radio-track-bright-light-and-spacious',
+    title: 'Bright Light and Spacious',
+    sourceUrl: 'assets/audio/vibe-radio/bright-light-and-spacious.mp3'
+  }),
+  Object.freeze({
+    id: 'vibe-radio-track-kiss-of-life',
+    title: 'Kiss of Life',
+    sourceUrl: 'assets/audio/vibe-radio/kiss-of-life.mp3'
+  })
+]);
 
 function normalizeVibeRadioText(value = '', maxLength = VIBE_RADIO_TRACK_TITLE_MAX_LENGTH) {
   return String(value ?? '')
@@ -19,11 +26,33 @@ function normalizeVibeRadioText(value = '', maxLength = VIBE_RADIO_TRACK_TITLE_M
 }
 
 function normalizeVibeRadioSource(value = '') {
-  return String(value ?? '')
+  const trimmed = String(value ?? '')
     .replace(/[\u0000-\u001f\u007f]/gu, '')
+    .replace(/\\/gu, '/')
     .trim()
     .slice(0, VIBE_RADIO_TRACK_SOURCE_MAX_LENGTH)
     .trim();
+
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(trimmed) || trimmed.startsWith('//')) {
+    return '';
+  }
+
+  const normalized = trimmed
+    .replace(/^\/+/u, '')
+    .replace(/^\.\//u, '');
+  const sourcePath = normalized.split(/[?#]/u)[0] ?? normalized;
+  const lowerPath = sourcePath.toLowerCase();
+
+  if (
+    !sourcePath
+    || !lowerPath.startsWith(VIBE_RADIO_AUDIO_PATH_PREFIX)
+    || !lowerPath.endsWith('.mp3')
+    || sourcePath.split('/').includes('..')
+  ) {
+    return '';
+  }
+
+  return normalized;
 }
 
 function slugifyVibeRadioTrack(value = '') {
@@ -89,26 +118,20 @@ function getTrackTitleFromSource(sourceUrl = '') {
   return normalizeVibeRadioText(baseName, VIBE_RADIO_TRACK_TITLE_MAX_LENGTH);
 }
 
-export function normalizeVibeRadioSourceType(sourceType = 'link') {
-  const normalized = String(sourceType ?? '').trim().toLowerCase();
-  return VIBE_RADIO_TRACK_SOURCE_TYPES.includes(normalized) ? normalized : 'link';
-}
-
-export function getVibeRadioSourceTypeLabel(sourceType = 'link') {
-  return normalizeVibeRadioSourceType(sourceType) === 'file' ? 'MP3 file' : 'Link';
+export function isVibeRadioMp3Source(sourceUrl = '') {
+  return Boolean(normalizeVibeRadioSource(sourceUrl));
 }
 
 export function createDefaultVibeRadioTracks() {
-  return normalizeVibeRadioTracks(listVibeHeroSongs().map((song) => ({
-    id: `${VIBE_RADIO_TRACK_ID_PREFIX}${slugifyVibeRadioTrack(song.id)}`,
-    title: song.title,
-    sourceType: 'file',
-    sourceUrl: VIBE_RADIO_DEFAULT_AUDIO_SOURCES[song.audioAssetKey] ?? song.sourceDownloadUrl
-  })));
+  return cloneVibeRadioTracks(VIBE_RADIO_DEFAULT_TRACKS);
 }
 
 export function normalizeVibeRadioTrack(entry = {}, tracks = []) {
   const sourceUrl = normalizeVibeRadioSource(entry.sourceUrl ?? entry.url ?? entry.src ?? entry.fileName);
+  if (!sourceUrl) {
+    return null;
+  }
+
   const title = normalizeVibeRadioText(
     entry.title
     ?? entry.label
@@ -123,7 +146,6 @@ export function normalizeVibeRadioTrack(entry = {}, tracks = []) {
       sourceUrl
     }, tracks),
     title: normalizedTitle,
-    sourceType: normalizeVibeRadioSourceType(entry.sourceType ?? entry.type),
     sourceUrl
   };
 
@@ -141,7 +163,7 @@ export function normalizeVibeRadioTracks(tracks = null) {
     }
 
     const track = normalizeVibeRadioTrack(entry, output);
-    if (seenIds.has(track.id)) {
+    if (!track || seenIds.has(track.id)) {
       continue;
     }
 
@@ -166,7 +188,6 @@ export function appendVibeRadioTrack(tracks = null, draft = {}) {
   entries.push({
     id: createVibeRadioTrackId({ ...draft, sourceUrl }, entries),
     title: normalizeVibeRadioText(draft.title ?? draft.label ?? getTrackTitleFromSource(sourceUrl)),
-    sourceType: normalizeVibeRadioSourceType(draft.sourceType ?? draft.type),
     sourceUrl
   });
 
@@ -184,12 +205,20 @@ export function updateVibeRadioTrack(tracks = null, trackId = '', updates = {}) 
       return track;
     }
 
-    return normalizeVibeRadioTrack({
+    const nextTrack = {
       ...track,
-      ...(Object.hasOwn(updates, 'title') ? { title: updates.title } : {}),
-      ...(Object.hasOwn(updates, 'sourceType') ? { sourceType: updates.sourceType } : {}),
-      ...(Object.hasOwn(updates, 'sourceUrl') ? { sourceUrl: updates.sourceUrl } : {})
-    });
+      ...(Object.hasOwn(updates, 'title') ? { title: updates.title } : {})
+    };
+
+    if (Object.hasOwn(updates, 'sourceUrl')) {
+      const sourceUrl = normalizeVibeRadioSource(updates.sourceUrl);
+      if (!sourceUrl) {
+        return track;
+      }
+      nextTrack.sourceUrl = sourceUrl;
+    }
+
+    return normalizeVibeRadioTrack(nextTrack) ?? track;
   });
 }
 
@@ -226,7 +255,6 @@ export function moveVibeRadioTrack(tracks = null, fromIndex = 0, toIndex = 0) {
 export function getVibeRadioViewModel(tracks = null) {
   return cloneVibeRadioTracks(tracks).map((track, index) => ({
     ...track,
-    trackNumber: index + 1,
-    sourceLabel: getVibeRadioSourceTypeLabel(track.sourceType)
+    trackNumber: index + 1
   }));
 }

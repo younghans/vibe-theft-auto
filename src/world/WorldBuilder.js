@@ -38,6 +38,7 @@ import { normalizeNpcVoice } from '../shared/npcVoice.js';
 import {
   appendVibeRadioTrack,
   getVibeRadioViewModel,
+  isVibeRadioMp3Source,
   moveVibeRadioTrack,
   removeVibeRadioTrack,
   updateVibeRadioTrack
@@ -251,7 +252,6 @@ function createDefaultEditorState() {
     missionSequencerPrompt: '',
     vibeRadioDraft: {
       title: '',
-      sourceType: 'link',
       sourceUrl: ''
     },
     rotationQuarterTurns: 0,
@@ -1203,7 +1203,6 @@ export class WorldBuilder {
     this.state.vibeRadioDraft = {
       ...this.state.vibeRadioDraft,
       ...(Object.hasOwn(updates, 'title') ? { title: String(updates.title ?? '').slice(0, 64) } : {}),
-      ...(Object.hasOwn(updates, 'sourceType') ? { sourceType: String(updates.sourceType ?? 'link') } : {}),
       ...(Object.hasOwn(updates, 'sourceUrl') ? { sourceUrl: String(updates.sourceUrl ?? '').slice(0, 640) } : {})
     };
   }
@@ -1214,7 +1213,12 @@ export class WorldBuilder {
       ...(track ?? {})
     };
     if (!String(draft.sourceUrl ?? '').trim()) {
-      this.hud.showToast('Enter a music link or MP3 path first.');
+      this.hud.showToast('Enter an MP3 path first.');
+      return;
+    }
+
+    if (!isVibeRadioMp3Source(draft.sourceUrl)) {
+      this.hud.showToast('Use a local assets/audio MP3 path.');
       return;
     }
 
@@ -1223,7 +1227,6 @@ export class WorldBuilder {
     if (updated) {
       this.state.vibeRadioDraft = {
         title: '',
-        sourceType: 'link',
         sourceUrl: ''
       };
       this.updateBuilderHud();

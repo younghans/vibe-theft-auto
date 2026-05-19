@@ -107,6 +107,14 @@ for (const [label, url] of Object.entries(assets.audio.vibeHero ?? {})) {
   assert.ok(hasId3Header || hasFrameSync, `${label} Vibe Hero audio should be an MP3 file.`);
 }
 
+for (const [label, url] of Object.entries(assets.audio.vibeRadio ?? {})) {
+  const audio = fs.readFileSync(new URL(url));
+  assert.ok(audio.length > 1024, `${label} Vibe Radio audio should not be empty.`);
+  const hasId3Header = audio.subarray(0, 3).toString('ascii') === 'ID3';
+  const hasFrameSync = audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
+  assert.ok(hasId3Header || hasFrameSync, `${label} Vibe Radio audio should be an MP3 file.`);
+}
+
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
 assert.match(serverSource, /updateVibeRadioTracks/, 'Server accepts Vibe Radio world-builder updates');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
@@ -127,30 +135,33 @@ assert.match(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit transport 
 const defaultRadioPlaylist = createDefaultVibeRadioTracks();
 assert.deepEqual(
   defaultRadioPlaylist.map((track) => track.title),
-  ['Debussy - Arabesque No. 1', 'Vivaldi - Winter'],
-  'Vibe Radio starts with the current Vibe Hero songs'
+  ['Bright Light and Spacious', 'Kiss of Life'],
+  'Vibe Radio starts with the bundled MP3 playlist'
 );
 assert.deepEqual(
   defaultRadioPlaylist.map((track) => track.sourceUrl),
   [
-    'assets/audio/vibe-hero/debussy-arabesque-no-1.mp3',
-    'assets/audio/vibe-hero/vivaldi-winter.mp3'
+    'assets/audio/vibe-radio/bright-light-and-spacious.mp3',
+    'assets/audio/vibe-radio/kiss-of-life.mp3'
   ],
   'Vibe Radio starter songs use local MP3 files'
 );
 
 const radioPlaylist = appendVibeRadioTrack([], {
   title: 'Admin Test Song',
-  sourceType: 'file',
-  sourceUrl: 'assets/audio/admin-test.mp3'
+  sourceUrl: 'assets/audio/vibe-radio/admin-test.mp3'
 });
 assert.equal(radioPlaylist.length, 1, 'Vibe Radio can append a playlist track');
-assert.equal(radioPlaylist[0].sourceType, 'file', 'Vibe Radio preserves MP3 file source type');
 assert.equal(radioPlaylist[0].title, 'Admin Test Song', 'Vibe Radio preserves normalized song title');
 assert.equal(
   normalizeVibeRadioTracks(radioPlaylist)[0].sourceUrl,
-  'assets/audio/admin-test.mp3',
+  'assets/audio/vibe-radio/admin-test.mp3',
   'Vibe Radio preserves normalized MP3 paths'
+);
+assert.equal(
+  normalizeVibeRadioTracks([{ title: 'Remote Stream', sourceUrl: 'https://example.com/song.mp3' }]).length,
+  0,
+  'Vibe Radio rejects remote music links'
 );
 assert.equal(getVibeRadioViewModel(radioPlaylist)[0].trackNumber, 1, 'Vibe Radio view model exposes track order');
 

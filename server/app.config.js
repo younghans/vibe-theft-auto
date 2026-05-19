@@ -165,6 +165,10 @@ async function resolveSourceAssetPath(requestPath) {
 }
 
 function isFingerprinted(filePath) {
+  if (['.mp3', '.wav'].includes(path.extname(filePath).toLowerCase())) {
+    return false;
+  }
+
   return /-[a-z0-9]{8,}\./iu.test(path.basename(filePath));
 }
 

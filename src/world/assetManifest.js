@@ -79,6 +79,10 @@ export const assets = {
     vibeHero: {
       debussyArabesqueNo1: assetUrl('audio', 'vibe-hero', 'debussy-arabesque-no-1.mp3'),
       vivaldiWinterMvt1: assetUrl('audio', 'vibe-hero', 'vivaldi-winter.mp3')
+    },
+    vibeRadio: {
+      brightLightAndSpacious: assetUrl('audio', 'vibe-radio', 'bright-light-and-spacious.mp3'),
+      kissOfLife: assetUrl('audio', 'vibe-radio', 'kiss-of-life.mp3')
     }
   },
   city: {

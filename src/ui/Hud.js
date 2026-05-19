@@ -6500,11 +6500,6 @@ export class Hud {
 
       if (target.matches('[data-builder-radio-source]')) {
         onVibeRadioTrackUpdate?.(trackId, { sourceUrl: target.value });
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-type]')) {
-        onVibeRadioTrackUpdate?.(trackId, { sourceType: target.value });
       }
     };
 
@@ -6528,11 +6523,6 @@ export class Hud {
 
       if (target.matches('[data-builder-radio-draft-source]')) {
         onVibeRadioDraftInput?.({ sourceUrl: target.value });
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-draft-type]')) {
-        onVibeRadioDraftInput?.({ sourceType: target.value });
       }
     });
 
@@ -6563,11 +6553,9 @@ export class Hud {
       event.preventDefault();
       const titleField = form.querySelector('[data-builder-radio-draft-title]');
       const sourceField = form.querySelector('[data-builder-radio-draft-source]');
-      const typeField = form.querySelector('[data-builder-radio-draft-type]');
       onVibeRadioTrackSubmit?.({
         title: titleField instanceof HTMLInputElement ? titleField.value : '',
-        sourceUrl: sourceField instanceof HTMLInputElement ? sourceField.value : '',
-        sourceType: typeField instanceof HTMLSelectElement ? typeField.value : 'link'
+        sourceUrl: sourceField instanceof HTMLInputElement ? sourceField.value : ''
       });
     });
 
@@ -7456,7 +7444,6 @@ export class Hud {
 
   getBuilderVibeRadioRowMarkup(row = {}) {
     const trackNumber = Math.max(1, Math.floor(Number(row.trackNumber) || 1));
-    const sourceType = row.sourceType === 'file' ? 'file' : 'link';
     return `
       <article
         class="hud__vibe-radio-row"
@@ -7482,22 +7469,15 @@ export class Hud {
             />
           </label>
           <label class="hud__field">
-            <span class="hud__field-label">Source</span>
+            <span class="hud__field-label">MP3 path</span>
             <input
               class="hud__field-control"
               type="text"
               maxlength="640"
               value="${escapeHtml(row.sourceUrl ?? '')}"
-              placeholder="https://... or assets/audio/song.mp3"
+              placeholder="assets/audio/vibe-radio/song.mp3"
               data-builder-radio-source
             />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">Input type</span>
-            <select class="hud__field-control" data-builder-radio-type>
-              <option value="link"${sourceType === 'link' ? ' selected' : ''}>Music link</option>
-              <option value="file"${sourceType === 'file' ? ' selected' : ''}>MP3 file</option>
-            </select>
           </label>
         </div>
         <button class="hud__builder-icon-button hud__vibe-radio-remove" type="button" data-builder-radio-remove aria-label="Remove ${escapeHtml(row.title ?? 'track')}" title="Remove track">
@@ -7510,7 +7490,6 @@ export class Hud {
   getBuilderVibeRadioMarkup(vibeRadio = {}) {
     const rows = Array.isArray(vibeRadio.rows) ? vibeRadio.rows : [];
     const draft = vibeRadio.draft && typeof vibeRadio.draft === 'object' ? vibeRadio.draft : {};
-    const sourceType = draft.sourceType === 'file' ? 'file' : 'link';
     return `
       <section class="hud__builder-section hud__vibe-radio-builder" data-builder-vibe-radio>
         <div class="hud__builder-section-header">
@@ -7530,22 +7509,15 @@ export class Hud {
             />
           </label>
           <label class="hud__field">
-            <span class="hud__field-label">Music link or MP3 path</span>
+            <span class="hud__field-label">MP3 path</span>
             <input
               class="hud__field-control"
               type="text"
               maxlength="640"
-              placeholder="https://... or assets/audio/song.mp3"
+              placeholder="assets/audio/vibe-radio/song.mp3"
               value="${escapeHtml(draft.sourceUrl ?? '')}"
               data-builder-radio-draft-source
             />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">Input type</span>
-            <select class="hud__field-control" data-builder-radio-draft-type>
-              <option value="link"${sourceType === 'link' ? ' selected' : ''}>Music link</option>
-              <option value="file"${sourceType === 'file' ? ' selected' : ''}>MP3 file</option>
-            </select>
           </label>
           <button class="hud__builder-action hud__vibe-radio-add-button" type="submit">Add Track</button>
         </form>
@@ -10111,7 +10083,7 @@ export class Hud {
     const activeClass = selected ? ' is-active' : '';
     const playingClass = selected && state.playing ? ' is-playing' : '';
     const source = String(track.sourceUrl ?? '');
-    const detail = track.sourceType === 'file' ? 'MP3 file' : (source ? 'Music link' : 'No source');
+    const detail = source ? 'MP3 file' : 'No source';
     return `
       <button
         class="hud__phone-vibe-radio-track${activeClass}${playingClass}"
@@ -10182,7 +10154,6 @@ export class Hud {
         tracks: tracks.map((track) => [
           track.id,
           track.title,
-          track.sourceType,
           track.sourceUrl
         ]),
         selectedTrackId: state.selectedTrackId,

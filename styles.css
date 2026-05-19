@@ -6462,7 +6462,7 @@ body.is-admin-prompt-resizing * {
 .hud__vibe-radio-row-fields {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(104px, 0.9fr) minmax(160px, 1.3fr) minmax(96px, 0.66fr);
+  grid-template-columns: minmax(104px, 0.8fr) minmax(180px, 1.4fr);
   gap: 8px;
   align-items: end;
 }
