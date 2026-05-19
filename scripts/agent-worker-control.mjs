@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -63,9 +63,9 @@ function usage(exitCode = 0) {
   node scripts/agent-worker-control.mjs resume
 
 Commands:
-  status   Show the active worker lock and drain request.
-  drain    Ask the active worker to finish current lanes, then exit before claiming more work.
-  resume   Clear any drain request.
+  status   Show the active worker lock and control mode.
+  drain    Switch control to drain: finish current lanes, then exit before claiming more work.
+  resume   Switch control to accepting mode.
 
 By default, drain targets the active worker lock owner. Use --all only when you
 intentionally want a global drain request that also affects future workers until
@@ -152,8 +152,19 @@ function requestDrain() {
 }
 
 function resumeWorker() {
-  rmSync(CONTROL_FILE, { force: true });
-  console.log(`Drain request cleared at ${CONTROL_FILE}.`);
+  const owner = getOwner();
+  const control = {
+    mode: 'accepting',
+    requestedAt: new Date().toISOString(),
+    requestedBy: `${os.hostname()}-${process.pid}`,
+    targetWorkerId: owner?.active ? String(owner.workerId || '') : '',
+    targetPid: owner?.active ? Number(owner.pid || 0) : 0,
+    reason: args.join(' ').trim() || 'worker accepting tasks'
+  };
+
+  mkdirSync(WORK_ROOT, { recursive: true });
+  writeFileSync(CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
+  console.log(`Accepting control set at ${CONTROL_FILE}.`);
 }
 
 if (command === 'help' || command === '--help' || command === '-h') {

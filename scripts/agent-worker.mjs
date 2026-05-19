@@ -447,16 +447,52 @@ async function clearCompletedTargetedDrainControl(control) {
     return;
   }
 
-  await fsp.rm(WORKER_CONTROL_FILE, { force: true });
-  await writeWorkerDiagnostic('info', 'worker_drain_control_cleared', {
+  await writeWorkerAcceptingControl({
+    reason: 'targeted drain completed'
+  });
+  await writeWorkerDiagnostic('info', 'worker_drain_control_returned_to_accepting', {
     requestedAt: control.requestedAt || '',
     targetWorkerId: control.targetWorkerId || '',
     targetPid: control.targetPid || 0
   });
 }
 
-async function ensureStartupDrainControl() {
-  if (!START_DRAINED || RUN_ONCE) {
+async function writeWorkerAcceptingControl({
+  reason = 'worker accepting tasks'
+} = {}) {
+  const control = {
+    mode: 'accepting',
+    requestedAt: new Date().toISOString(),
+    requestedBy: `${WORKER_ID}:control`,
+    targetWorkerId: WORKER_ID,
+    targetPid: process.pid,
+    reason
+  };
+
+  await fsp.mkdir(WORK_ROOT, { recursive: true });
+  await fsp.writeFile(WORKER_CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
+  return control;
+}
+
+async function writeWorkerDrainControl({
+  reason = 'worker startup drain'
+} = {}) {
+  const control = {
+    mode: 'drain',
+    requestedAt: new Date().toISOString(),
+    requestedBy: `${WORKER_ID}:control`,
+    targetWorkerId: WORKER_ID,
+    targetPid: process.pid,
+    reason
+  };
+
+  await fsp.mkdir(WORK_ROOT, { recursive: true });
+  await fsp.writeFile(WORKER_CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
+  return control;
+}
+
+async function ensureStartupWorkerControl() {
+  if (RUN_ONCE) {
     return null;
   }
 
@@ -465,21 +501,23 @@ async function ensureStartupDrainControl() {
     return existingControl;
   }
 
-  const control = {
-    mode: 'drain',
-    requestedAt: new Date().toISOString(),
-    requestedBy: `${WORKER_ID}:startup`,
-    targetWorkerId: WORKER_ID,
-    targetPid: process.pid,
-    reason: 'worker startup default drain'
-  };
+  if (START_DRAINED) {
+    const control = await writeWorkerDrainControl({
+      reason: 'worker startup default drain'
+    });
+    await writeWorkerDiagnostic('info', 'worker_startup_drain_requested', {
+      control
+    });
+    console.log('[agent-worker] Startup drain is enabled; worker will exit before claiming new work unless AGENT_START_DRAINED=false.');
+    return control;
+  }
 
-  await fsp.mkdir(WORK_ROOT, { recursive: true });
-  await fsp.writeFile(WORKER_CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
-  await writeWorkerDiagnostic('info', 'worker_startup_drain_requested', {
+  const control = await writeWorkerAcceptingControl({
+    reason: 'worker startup accepting'
+  });
+  await writeWorkerDiagnostic('info', 'worker_startup_accepting_control_ready', {
     control
   });
-  console.log('[agent-worker] Startup drain is enabled; worker will exit before claiming new work unless AGENT_START_DRAINED=false.');
   return control;
 }
 
@@ -3940,7 +3978,7 @@ if (RUN_SELF_TEST) {
 validateConfig();
 await pruneWorkerDiagnosticLogs();
 await acquireWorkerInstanceLock();
-await ensureStartupDrainControl();
+await ensureStartupWorkerControl();
 
 console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   workerId: WORKER_ID,
