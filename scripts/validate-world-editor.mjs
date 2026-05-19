@@ -126,7 +126,8 @@ import {
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   findPassiveTrafficPath,
-  getPassiveTrafficLanePosition
+  getPassiveTrafficLanePosition,
+  getPassiveTrafficLanePositionAtNode
 } from '../src/world/passiveTraffic.js';
 import {
   ATTACHMENT_SLOTS,
@@ -399,7 +400,7 @@ function validatePassiveTraffic() {
     const item = getBuilderItemById(itemId);
     assert(item?.layer === 'prop' && item.groupId === 'vehicles', `Passive traffic car ${itemId} should resolve to a vehicle prop`);
   }
-  assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.7, 'Passive traffic cars should render at 0.7x default size');
+  assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.8, 'Passive traffic cars should render at 0.8x default size');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
 
   const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
@@ -429,12 +430,50 @@ function validatePassiveTraffic() {
   const laneDot = ((lanePosition.x - toNode.x) * rightX) + ((lanePosition.z - toNode.z) * rightZ);
   assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
 
+  const turnCandidate = trafficGraph.activeNodes
+    .map((node) => {
+      for (const incomingIndex of node.neighbors) {
+        for (const outgoingIndex of node.neighbors) {
+          if (
+            incomingIndex === outgoingIndex
+            || !trafficGraph.activeNodeSet.has(incomingIndex)
+            || !trafficGraph.activeNodeSet.has(outgoingIndex)
+          ) {
+            continue;
+          }
+
+          const incomingNode = trafficGraph.nodes[incomingIndex];
+          const outgoingNode = trafficGraph.nodes[outgoingIndex];
+          const incomingX = Math.sign(node.cellX - incomingNode.cellX);
+          const incomingZ = Math.sign(node.cellZ - incomingNode.cellZ);
+          const outgoingX = Math.sign(outgoingNode.cellX - node.cellX);
+          const outgoingZ = Math.sign(outgoingNode.cellZ - node.cellZ);
+          if (((incomingX * outgoingX) + (incomingZ * outgoingZ)) === 0) {
+            return { incomingNode, node, outgoingNode };
+          }
+        }
+      }
+      return null;
+    })
+    .find(Boolean);
+  assert(turnCandidate, 'Default road graph should include a passive-traffic turn candidate');
+  const incomingTurnLane = getPassiveTrafficLanePosition(turnCandidate.incomingNode, turnCandidate.node, new Vector3());
+  const outgoingTurnLane = getPassiveTrafficLanePositionAtNode(turnCandidate.node, turnCandidate.outgoingNode, new Vector3());
+  const turnLaneShift = incomingTurnLane.distanceTo(outgoingTurnLane);
+  assert(
+    turnLaneShift > PASSIVE_TRAFFIC_LANE_OFFSET * 0.5 && turnLaneShift < BUILDER_TILE_SIZE,
+    'Passive traffic turns should transition between incoming and outgoing right-lane points inside the intersection'
+  );
+
   const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
   assert(
     /PassiveTrafficRoot/.test(worldRendererSource)
       && /updatePassiveTraffic/.test(worldRendererSource)
-      && /PASSIVE_TRAFFIC_CAR_SCALE/.test(worldRendererSource),
-    'World renderer should mount and update passive traffic cars'
+      && /PASSIVE_TRAFFIC_CAR_SCALE/.test(worldRendererSource)
+      && /turnStopSeconds/.test(worldRendererSource)
+      && /turnWaypointActive/.test(worldRendererSource)
+      && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
+    'World renderer should mount and update passive traffic cars with intersection stop-and-turn handling'
   );
 }
 

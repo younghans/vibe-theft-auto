@@ -9,7 +9,7 @@ export const PASSIVE_TRAFFIC_CAR_ITEM_IDS = Object.freeze([
   'car_taxi'
 ]);
 
-export const PASSIVE_TRAFFIC_CAR_SCALE = 0.7;
+export const PASSIVE_TRAFFIC_CAR_SCALE = 0.8;
 export const PASSIVE_TRAFFIC_SPEED = BUILDER_TILE_SIZE;
 export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.22;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
