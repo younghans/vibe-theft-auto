@@ -4,6 +4,7 @@ import {
   createInPlaceClip,
   createMirroredClip,
   createPoseClip,
+  createTargetFilteredClip,
   ensureMixamoSockets,
   MIXAMO_BONES,
   validateMixamoHumanoid
@@ -31,7 +32,7 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import { WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
@@ -534,11 +535,12 @@ export async function createPlayer(library, {
     throw new Error(`Mixamo player character is invalid. Missing bones: ${humanoid.missingBones.join(', ')}`);
   }
 
+  const createRigSafeClip = (clip, clipName) => createTargetFilteredClip(clip, character, clipName);
   const sockets = ensureMixamoSockets(character);
-  const idleClip = createInPlaceClip(getMixamoClip(characterDefinition.idleClip), MIXAMO_BONES.hips);
-  const walkClip = createInPlaceClip(getMixamoClip(characterDefinition.walkClip), MIXAMO_BONES.hips);
-  const drunkIdleClip = createInPlaceClip(getMixamoClip(characterDefinition.drunkIdleClip ?? characterDefinition.idleClip), MIXAMO_BONES.hips);
-  const drunkWalkClip = createInPlaceClip(getMixamoClip(characterDefinition.drunkWalkClip ?? characterDefinition.walkClip), MIXAMO_BONES.hips);
+  const idleClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.idleClip), `${characterDefinition.idleClip}_RigSafe`), MIXAMO_BONES.hips);
+  const walkClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.walkClip), `${characterDefinition.walkClip}_RigSafe`), MIXAMO_BONES.hips);
+  const drunkIdleClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.drunkIdleClip ?? characterDefinition.idleClip), `${characterDefinition.drunkIdleClip ?? characterDefinition.idleClip}_RigSafe`), MIXAMO_BONES.hips);
+  const drunkWalkClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.drunkWalkClip ?? characterDefinition.walkClip), `${characterDefinition.drunkWalkClip ?? characterDefinition.walkClip}_RigSafe`), MIXAMO_BONES.hips);
   const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
   const drunkIdleLowerBodyClip = createBoneFilteredClip(drunkIdleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkIdleClip}_LowerBody`);
@@ -547,8 +549,11 @@ export async function createPlayer(library, {
     [leftBone, rightBone],
     [rightBone, leftBone]
   ])));
-  const punchUpperBodyClip = punchClipName
-    ? createBoneFilteredClip(getMixamoClip(punchClipName), UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
+  const punchSourceClip = punchClipName
+    ? createRigSafeClip(getMixamoClip(punchClipName), `${punchClipName}_RigSafe`)
+    : null;
+  const punchUpperBodyClip = punchSourceClip
+    ? createBoneFilteredClip(punchSourceClip, UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
     : null;
   const punchMirroredUpperBodyClip = punchUpperBodyClip
     ? createMirroredClip(punchUpperBodyClip, upperBodyMirrorMap, `${punchClipName}_UpperBodyMirrored`)
@@ -557,7 +562,7 @@ export async function createPlayer(library, {
     ? createPoseClip(punchUpperBodyClip, 0, `${punchClipName}_UpperBodyGuard`)
     : null;
   const deliveryCarryUpperBodyClip = createBoneFilteredClip(
-    getMixamoClip(DELIVERY_CARRY_CLIP_NAME),
+    createRigSafeClip(getMixamoClip(DELIVERY_CARRY_CLIP_NAME), `${DELIVERY_CARRY_CLIP_NAME}_RigSafe`),
     UPPER_BODY_EMOTE_BONES,
     `${DELIVERY_CARRY_CLIP_NAME}_UpperBody`
   );
@@ -738,7 +743,10 @@ export async function createPlayer(library, {
   const reloadIkLocalTargetQuaternion = new THREE.Quaternion();
   let desiredWeaponId = '';
   let deliveryPackageActive = false;
-  let deliveryPackageRequestId = 0;
+  let phoneTextingActive = false;
+  let leftHandEquipmentRequestId = 0;
+  let phoneEquipmentRequestId = 0;
+  const managedLeftHandItemIds = new Set([HELD_ITEM_IDS.deliveryBox]);
   let deliveryCarryWeight = 0;
   let aliveState = true;
   let recoilAmount = 0;
@@ -831,7 +839,7 @@ export async function createPlayer(library, {
         emoteId,
         preloadMixamoClips([clipName])
           .then(() => {
-            const sourceClip = getMixamoClip(clipName);
+            const sourceClip = createRigSafeClip(getMixamoClip(clipName), `${clipName}_RigSafe`);
             let clip = null;
             if (emoteConfig?.upperBodyOnly) {
               if (emoteId === PUNCH_EMOTE_ID && punchUpperBodyClip) {
@@ -1591,7 +1599,7 @@ export async function createPlayer(library, {
     const itemId = getActiveHeldItemId(slot);
     activeItemsBySlot.delete(slot);
     slotVisibility.set(slot, false);
-    if (slot === ATTACHMENT_SLOTS.handRight) {
+    if (slot === ATTACHMENT_SLOTS.handRight && itemId !== HELD_ITEM_IDS.phone) {
       desiredWeaponId = '';
     }
     if (itemId) {
@@ -1619,43 +1627,116 @@ export async function createPlayer(library, {
     return entry;
   }
 
+  function getDesiredLeftHandItemId() {
+    if (deliveryPackageActive) {
+      return HELD_ITEM_IDS.deliveryBox;
+    }
+
+    return '';
+  }
+
+  function isLeftHandEquipmentSynced() {
+    const desiredItemId = getDesiredLeftHandItemId();
+    const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft);
+    return desiredItemId
+      ? activeItemId === desiredItemId
+      : !managedLeftHandItemIds.has(activeItemId);
+  }
+
+  async function syncLeftHandEquipment() {
+    const requestId = ++leftHandEquipmentRequestId;
+    const desiredItemId = getDesiredLeftHandItemId();
+    const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft);
+
+    if (!desiredItemId) {
+      if (managedLeftHandItemIds.has(activeItemId)) {
+        detachHeldItem(ATTACHMENT_SLOTS.handLeft);
+      } else {
+        updateHeldItemVisibility();
+      }
+      return getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft);
+    }
+
+    if (activeItemId === desiredItemId) {
+      slotVisibility.set(ATTACHMENT_SLOTS.handLeft, aliveState);
+      applyHeldItemProfile(desiredItemId);
+      updateHeldItemVisibility();
+      return activeItemId;
+    }
+
+    await attachHeldItem(desiredItemId, { visible: aliveState });
+    if (requestId !== leftHandEquipmentRequestId || getDesiredLeftHandItemId() !== desiredItemId) {
+      void syncLeftHandEquipment();
+      return getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft);
+    }
+
+    updateHeldItemVisibility();
+    return getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft);
+  }
+
+  function isPhoneEquipmentSynced() {
+    const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+    return phoneTextingActive
+      ? activeItemId === HELD_ITEM_IDS.phone
+      : activeItemId !== HELD_ITEM_IDS.phone;
+  }
+
+  async function syncPhoneEquipment() {
+    const requestId = ++phoneEquipmentRequestId;
+    const activeItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+
+    if (!phoneTextingActive) {
+      if (activeItemId === HELD_ITEM_IDS.phone) {
+        activeItemsBySlot.delete(ATTACHMENT_SLOTS.handRight);
+        slotVisibility.set(ATTACHMENT_SLOTS.handRight, false);
+        resetHeldItemReloadMotion(HELD_ITEM_IDS.phone);
+      }
+      updateHeldItemVisibility();
+      if (desiredWeaponId && aliveState) {
+        void setWeaponState(desiredWeaponId, { visible: true });
+      }
+      return getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+    }
+
+    if (activeItemId === HELD_ITEM_IDS.phone) {
+      slotVisibility.set(ATTACHMENT_SLOTS.handRight, aliveState);
+      applyHeldItemProfile(HELD_ITEM_IDS.phone);
+      updateHeldItemVisibility();
+      return activeItemId;
+    }
+
+    await attachHeldItem(HELD_ITEM_IDS.phone, { visible: aliveState });
+    if (requestId !== phoneEquipmentRequestId || !phoneTextingActive) {
+      void syncPhoneEquipment();
+      return getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+    }
+
+    updateHeldItemVisibility();
+    return getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+  }
+
   async function setDeliveryPackageActive(active) {
     const nextActive = Boolean(active);
-    if (deliveryPackageActive === nextActive) {
-      if (nextActive && getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) !== HELD_ITEM_IDS.deliveryBox) {
-        const requestId = deliveryPackageRequestId;
-        await attachHeldItem(HELD_ITEM_IDS.deliveryBox, { visible: aliveState });
-        if (requestId !== deliveryPackageRequestId || !deliveryPackageActive) {
-          if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
-            detachHeldItem(ATTACHMENT_SLOTS.handLeft);
-          } else {
-            updateHeldItemVisibility();
-          }
-          return deliveryPackageActive;
-        }
-      }
+    if (deliveryPackageActive === nextActive && isLeftHandEquipmentSynced()) {
       updateHeldItemVisibility();
-      return nextActive;
+      return deliveryPackageActive;
     }
 
-    const requestId = ++deliveryPackageRequestId;
     deliveryPackageActive = nextActive;
-    if (deliveryPackageActive) {
-      await attachHeldItem(HELD_ITEM_IDS.deliveryBox, { visible: aliveState });
-      if (requestId !== deliveryPackageRequestId || !deliveryPackageActive) {
-        if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
-          detachHeldItem(ATTACHMENT_SLOTS.handLeft);
-        } else {
-          updateHeldItemVisibility();
-        }
-      }
-    } else if (getActiveHeldItemId(ATTACHMENT_SLOTS.handLeft) === HELD_ITEM_IDS.deliveryBox) {
-      detachHeldItem(ATTACHMENT_SLOTS.handLeft);
-    } else {
+    await syncLeftHandEquipment();
+    return deliveryPackageActive;
+  }
+
+  async function setPhoneTextingActive(active) {
+    const nextActive = Boolean(active);
+    if (phoneTextingActive === nextActive && isPhoneEquipmentSynced()) {
       updateHeldItemVisibility();
+      return phoneTextingActive;
     }
 
-    return deliveryPackageActive;
+    phoneTextingActive = nextActive;
+    await syncPhoneEquipment();
+    return phoneTextingActive;
   }
 
   function setSkateboardState({
@@ -1883,12 +1964,27 @@ export async function createPlayer(library, {
   async function setWeaponState(weaponId = '', { visible = true } = {}) {
     const nextWeaponId = weaponId || '';
     const nextVisible = Boolean(visible && nextWeaponId);
-    if (desiredWeaponId === nextWeaponId && slotVisibility.get(ATTACHMENT_SLOTS.handRight) === nextVisible) {
+    const activeRightItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
+    if (
+      !phoneTextingActive
+      && desiredWeaponId === nextWeaponId
+      && activeRightItemId === nextWeaponId
+      && slotVisibility.get(ATTACHMENT_SLOTS.handRight) === nextVisible
+    ) {
       updateHeldItemVisibility();
       return;
     }
 
     desiredWeaponId = nextWeaponId;
+    if (phoneTextingActive) {
+      if (!desiredWeaponId) {
+        setReloadPreviewState(false);
+        setReloadState(false);
+      }
+      await syncPhoneEquipment();
+      return;
+    }
+
     if (!desiredWeaponId) {
       setReloadPreviewState(false);
       setReloadState(false);
@@ -2259,6 +2355,9 @@ export async function createPlayer(library, {
     setDeliveryPackageActive(active) {
       return setDeliveryPackageActive(active);
     },
+    setPhoneTextingActive(active) {
+      return setPhoneTextingActive(active);
+    },
     setSkateboardState(options = {}) {
       return setSkateboardState(options);
     },
@@ -2491,10 +2590,14 @@ export async function createPlayer(library, {
         owned: remoteAlive && state?.skateboardOwned === true,
         skating: remoteAlive && state?.skating === true
       });
+      const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
+      const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
+      const remoteTextingActive = remoteAlive && remoteEmoteActive && remoteEmoteId === TEXTING_EMOTE_ID;
       void setDeliveryPackageActive(remoteAlive && isDeliveryQuestActive(state));
+      void setPhoneTextingActive(remoteTextingActive);
       void setWeaponState(
         remoteAlive ? (typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '') : '',
-        { visible: remoteAlive && Boolean(state?.equippedWeaponId) }
+        { visible: remoteAlive && Boolean(state?.equippedWeaponId) && !remoteTextingActive }
       );
 
       if (!remoteAlive) {
@@ -2505,8 +2608,6 @@ export async function createPlayer(library, {
         return;
       }
 
-      const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
-      const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
       const remoteEmoteSeq = Number.isFinite(state?.emoteSeq) ? Math.max(0, Math.floor(state.emoteSeq)) : 0;
       const remoteEmoteSignature = `${Number(remoteEmoteActive)}:${remoteEmoteId}:${remoteEmoteSeq}`;
       const remoteIsLimp = remoteEmoteActive && remoteEmoteId === LIMP_EMOTE_ID;

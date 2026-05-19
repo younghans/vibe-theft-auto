@@ -11,7 +11,8 @@ export const ATTACHMENT_SLOTS = Object.freeze({
 export const HELD_ITEM_IDS = Object.freeze({
   pistol: WEAPON_IDS.pistol,
   crateA: 'crate_a',
-  deliveryBox: 'delivery_box'
+  deliveryBox: 'delivery_box',
+  phone: 'phone'
 });
 
 export const HELD_ITEM_AIM_POSE_FIELDS = Object.freeze([
@@ -38,11 +39,27 @@ export const HELD_ITEM_AIM_POSE_FIELDS = Object.freeze([
   Object.freeze({ key: 'leftForeArmZ', label: 'L Forearm Roll', bone: 'leftForeArm', mode: 'rotation', axis: 'z', min: -1.4, max: 1.4, step: 0.01 })
 ]);
 
+export const PHONE_GRIP_DEBUG_FIELDS = Object.freeze([
+  Object.freeze({ key: 'phonePositionX', label: 'Phone X', group: 'position', axis: 0, min: -0.8, max: 1.2, step: 0.005, precision: 3 }),
+  Object.freeze({ key: 'phonePositionY', label: 'Phone Y', group: 'position', axis: 1, min: -0.8, max: 0.8, step: 0.005, precision: 3 }),
+  Object.freeze({ key: 'phonePositionZ', label: 'Phone Z', group: 'position', axis: 2, min: -0.8, max: 0.8, step: 0.005, precision: 3 }),
+  Object.freeze({ key: 'phoneRotationX', label: 'Phone Pitch', group: 'rotation', axis: 0, min: -3.142, max: 3.142, step: 0.005, precision: 3 }),
+  Object.freeze({ key: 'phoneRotationY', label: 'Phone Yaw', group: 'rotation', axis: 1, min: -3.142, max: 3.142, step: 0.005, precision: 3 }),
+  Object.freeze({ key: 'phoneRotationZ', label: 'Phone Roll', group: 'rotation', axis: 2, min: -3.142, max: 3.142, step: 0.005, precision: 3 })
+]);
+
 const DEFAULT_SCALE = Object.freeze([1, 1, 1]);
 const CARDBOARD_FACE_COLOR = 0xb9793f;
 const CARDBOARD_SIDE_COLOR = 0x96602f;
 const CARDBOARD_EDGE_COLOR = 0x6f4724;
 const CARDBOARD_TAPE_COLOR = 0xd6b56f;
+const PHONE_FRAME_COLOR = 0x1f2328;
+const PHONE_BACK_COLOR = 0xe8e5df;
+const PHONE_SCREEN_COLOR = 0x05070a;
+const PHONE_SCREEN_GLOW_COLOR = 0x7de4ff;
+const PHONE_BUTTON_COLOR = 0xb8bec7;
+const PHONE_CAMERA_COLOR = 0x10131a;
+const PHONE_LENS_COLOR = 0x1a2330;
 const EMPTY_TRANSFORM = Object.freeze({
   position: Object.freeze([0, 0, 0]),
   rotation: Object.freeze([0, 0, 0]),
@@ -54,6 +71,126 @@ function createBoxMesh(size, position, material, name) {
   mesh.name = name;
   mesh.position.set(position[0], position[1], position[2]);
   return mesh;
+}
+
+function createRoundedRectGeometry(width, height, depth, radius) {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const cornerRadius = Math.min(radius, halfWidth, halfHeight);
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfWidth + cornerRadius, -halfHeight);
+  shape.lineTo(halfWidth - cornerRadius, -halfHeight);
+  shape.quadraticCurveTo(halfWidth, -halfHeight, halfWidth, -halfHeight + cornerRadius);
+  shape.lineTo(halfWidth, halfHeight - cornerRadius);
+  shape.quadraticCurveTo(halfWidth, halfHeight, halfWidth - cornerRadius, halfHeight);
+  shape.lineTo(-halfWidth + cornerRadius, halfHeight);
+  shape.quadraticCurveTo(-halfWidth, halfHeight, -halfWidth, halfHeight - cornerRadius);
+  shape.lineTo(-halfWidth, -halfHeight + cornerRadius);
+  shape.quadraticCurveTo(-halfWidth, -halfHeight, -halfWidth + cornerRadius, -halfHeight);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: false,
+    curveSegments: 8
+  });
+  geometry.center();
+  return geometry;
+}
+
+function createRoundedRectMesh(size, position, radius, material, name) {
+  const mesh = new THREE.Mesh(
+    createRoundedRectGeometry(size[0], size[1], size[2], radius),
+    material
+  );
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  return mesh;
+}
+
+function createCameraLens(position, material, name) {
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.012, 24), material);
+  lens.name = name;
+  lens.rotation.x = Math.PI / 2;
+  lens.position.set(position[0], position[1], position[2]);
+  return lens;
+}
+
+function createPhoneModel() {
+  const root = new THREE.Group();
+  root.name = 'TextingPhone';
+
+  const frameMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_FRAME_COLOR,
+    roughness: 0.34,
+    metalness: 0.72
+  });
+  const backMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_BACK_COLOR,
+    roughness: 0.36,
+    metalness: 0.18
+  });
+  const screenMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_SCREEN_COLOR,
+    emissive: 0x061018,
+    emissiveIntensity: 0.32,
+    roughness: 0.18,
+    metalness: 0.02
+  });
+  const glowMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_SCREEN_GLOW_COLOR,
+    emissive: PHONE_SCREEN_GLOW_COLOR,
+    emissiveIntensity: 0.9,
+    roughness: 0.4,
+    metalness: 0
+  });
+  const buttonMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_BUTTON_COLOR,
+    roughness: 0.28,
+    metalness: 0.74
+  });
+  const cameraBumpMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_BACK_COLOR,
+    roughness: 0.42,
+    metalness: 0.18
+  });
+  const cameraRingMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_CAMERA_COLOR,
+    roughness: 0.2,
+    metalness: 0.76
+  });
+  const lensMaterial = new THREE.MeshStandardMaterial({
+    color: PHONE_LENS_COLOR,
+    emissive: 0x07111d,
+    emissiveIntensity: 0.22,
+    roughness: 0.16,
+    metalness: 0.3
+  });
+
+  const body = createRoundedRectMesh([0.42, 0.82, 0.058], [0, 0, 0], 0.07, frameMaterial, 'TextingPhone_Frame');
+  const back = createRoundedRectMesh([0.37, 0.76, 0.014], [0, 0, -0.031], 0.055, backMaterial, 'TextingPhone_BackGlass');
+  const screen = createRoundedRectMesh([0.35, 0.72, 0.012], [0, 0, 0.034], 0.045, screenMaterial, 'TextingPhone_Screen');
+  root.add(body, back, screen);
+
+  const island = createRoundedRectMesh([0.11, 0.028, 0.008], [0, 0.305, 0.044], 0.014, frameMaterial, 'TextingPhone_DynamicIsland');
+  root.add(island);
+
+  const messageLineA = createBoxMesh([0.17, 0.012, 0.007], [-0.03, 0.13, 0.047], glowMaterial, 'TextingPhone_MessageLineA');
+  const messageLineB = createBoxMesh([0.22, 0.012, 0.007], [0.015, 0.08, 0.047], glowMaterial, 'TextingPhone_MessageLineB');
+  const messageBubble = createRoundedRectMesh([0.19, 0.055, 0.007], [-0.025, -0.005, 0.047], 0.018, glowMaterial, 'TextingPhone_MessageBubble');
+  root.add(messageLineA, messageLineB, messageBubble);
+
+  const cameraBump = createRoundedRectMesh([0.15, 0.15, 0.018], [-0.085, 0.285, -0.048], 0.032, cameraBumpMaterial, 'TextingPhone_CameraBump');
+  const lensA = createCameraLens([-0.118, 0.315, -0.062], cameraRingMaterial, 'TextingPhone_CameraRingA');
+  const lensB = createCameraLens([-0.055, 0.262, -0.062], cameraRingMaterial, 'TextingPhone_CameraRingB');
+  const lensGlassA = createCameraLens([-0.118, 0.315, -0.071], lensMaterial, 'TextingPhone_CameraLensA');
+  const lensGlassB = createCameraLens([-0.055, 0.262, -0.071], lensMaterial, 'TextingPhone_CameraLensB');
+  root.add(cameraBump, lensA, lensB, lensGlassA, lensGlassB);
+
+  const volumeButton = createBoxMesh([0.012, 0.16, 0.026], [-0.222, 0.12, 0], buttonMaterial, 'TextingPhone_VolumeButton');
+  const powerButton = createBoxMesh([0.012, 0.18, 0.026], [0.222, 0.08, 0], buttonMaterial, 'TextingPhone_PowerButton');
+  root.add(volumeButton, powerButton);
+
+  return root;
 }
 
 function createCardboardBoxModel() {
@@ -234,6 +371,31 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
       transform: Object.freeze({
         position: Object.freeze([0, 0.54, 0]),
         rotation: Object.freeze([0, Math.PI / 4, 0]),
+        scale: DEFAULT_SCALE
+      })
+    }),
+    aimPose: null
+  }),
+  [HELD_ITEM_IDS.phone]: Object.freeze({
+    id: HELD_ITEM_IDS.phone,
+    assetUrl: null,
+    createModel: createPhoneModel,
+    attachmentSlot: ATTACHMENT_SLOTS.handRight,
+    normalize: Object.freeze({
+      maxDimension: 0.62,
+      center: true
+    }),
+    gripOffset: Object.freeze({
+      position: Object.freeze([0.205, 0.2, 0.22]),
+      rotation: Object.freeze([0.321, 0.214, -1.145]),
+      scale: DEFAULT_SCALE
+    }),
+    points: Object.freeze({}),
+    pickupDisplay: Object.freeze({
+      maxDimension: 0.72,
+      transform: Object.freeze({
+        position: Object.freeze([0, 0.48, 0]),
+        rotation: Object.freeze([0, Math.PI / 8, 0]),
         scale: DEFAULT_SCALE
       })
     }),

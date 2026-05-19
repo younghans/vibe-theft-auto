@@ -153,6 +153,28 @@ export function createBoneFilteredClip(clip, boneNames = [], clipName = `${clip?
   return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
 }
 
+export function createTargetFilteredClip(clip, root, clipName = `${clip?.name ?? 'Clip'}_TargetFiltered`) {
+  if (!clip || !Array.isArray(clip.tracks)) {
+    throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
+  }
+
+  const targetNames = new Set();
+  root?.traverse?.((node) => {
+    if (node?.name) {
+      targetNames.add(node.name);
+    }
+  });
+
+  const filteredTracks = clip.tracks
+    .filter((track) => {
+      const trackTarget = String(track.name ?? '').split('.')[0];
+      return !trackTarget || targetNames.has(trackTarget);
+    })
+    .map((track) => track.clone());
+
+  return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
+}
+
 export function createPoseClip(clip, sampleTimeSeconds = 0, clipName = `${clip?.name ?? 'Clip'}_Pose`) {
   if (!clip || !Array.isArray(clip.tracks)) {
     throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);

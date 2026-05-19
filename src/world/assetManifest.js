@@ -75,6 +75,7 @@ export const assets = {
     levelUpCelebration: assetUrl('audio', 'level_up_celebration.mp3'),
     clockTick: assetUrl('audio', 'clock-tick.mp3'),
     phoneUnlock: assetUrl('audio', 'phone_unlock.mp3'),
+    phoneVibrate: assetUrl('audio', 'phone_vibrate.mp3'),
     playingCard: assetUrl('audio', 'playing_card.mp3'),
     typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.mp3'),
     vibeHero: {

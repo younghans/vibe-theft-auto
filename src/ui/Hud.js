@@ -1,7 +1,7 @@
 import { EMOTE_SLOTS } from '../player/emotes.js';
 import { WEAPON_CLIP_SIZE } from '../shared/combatConstants.js';
 import { PLAYER_RESPAWN_COST } from '../shared/respawnRules.js';
-import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS } from '../shared/heldItemDefinitions.js';
+import { HELD_ITEM_AIM_POSE_FIELDS, HELD_ITEM_IDS, PHONE_GRIP_DEBUG_FIELDS } from '../shared/heldItemDefinitions.js';
 import { DRINK_ITEM_IDS, DRUNKNESS_MAX_LEVEL, getDrunknessLevelLabel } from '../shared/bartender.js';
 import { assets } from '../world/assetManifest.js';
 import {
@@ -3747,6 +3747,7 @@ export class Hud {
     this.npcSpeechPlayback = new NpcSpeechPlayback();
     this.aimDebugInputs = new Map();
     this.poseDebugExtraInputs = new Map();
+    this.phoneGripDebugInputs = new Map();
     this.joinTitleTimeout = 0;
     this.loadingHideTimeout = 0;
     this.toastTimeout = 0;
@@ -3994,10 +3995,39 @@ export class Hud {
       </label>
     `).join('');
 
+    const phoneGripMarkup = PHONE_GRIP_DEBUG_FIELDS.map((field) => `
+      <label class="hud__aim-debug-field">
+        <span class="hud__aim-debug-label">${field.label}</span>
+        <div class="hud__aim-debug-inputs">
+          <input
+            class="hud__aim-debug-range"
+            type="range"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="range"
+          />
+          <input
+            class="hud__field-control hud__aim-debug-number"
+            type="number"
+            min="${field.min}"
+            max="${field.max}"
+            step="${field.step}"
+            value="0"
+            data-aim-debug-input="${field.key}"
+            data-aim-debug-kind="number"
+          />
+        </div>
+      </label>
+    `).join('');
+
     this.aimDebugFields.innerHTML = `
       <div class="hud__builder-tabs hud__aim-debug-sections" data-aim-debug-sections>
         <button class="hud__builder-chip" type="button" data-aim-debug-section="unarmed">Unarmed Pose</button>
         <button class="hud__builder-chip" type="button" data-aim-debug-section="weaponAim">Weapon Aim Pose</button>
+        <button class="hud__builder-chip" type="button" data-aim-debug-section="phoneGrip">Phone Grip</button>
       </div>
       <section class="hud__builder-section" data-aim-debug-section-panel="unarmed">
         <div class="hud__builder-section-header">
@@ -4011,10 +4041,17 @@ export class Hud {
         </div>
         <div class="hud__aim-debug-group">${aimPoseMarkup}</div>
       </section>
+      <section class="hud__builder-section" data-aim-debug-section-panel="phoneGrip">
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Phone Grip</p>
+        </div>
+        <div class="hud__aim-debug-group">${phoneGripMarkup}</div>
+      </section>
     `;
 
     this.aimDebugInputs.clear();
     this.poseDebugExtraInputs.clear();
+    this.phoneGripDebugInputs.clear();
     for (const field of POSE_DEBUG_EXTRA_FIELDS) {
       this.poseDebugExtraInputs.set(field.key, {
         range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
@@ -4023,6 +4060,12 @@ export class Hud {
     }
     for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
       this.aimDebugInputs.set(field.key, {
+        range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
+        number: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="number"]`)
+      });
+    }
+    for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+      this.phoneGripDebugInputs.set(field.key, {
         range: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="range"]`),
         number: this.aimDebugFields.querySelector(`[data-aim-debug-input="${field.key}"][data-aim-debug-kind="number"]`)
       });
@@ -10782,6 +10825,7 @@ export class Hud {
     showSkeleton = false,
     values = {},
     extraValues = {},
+    phoneGripValues = {},
     selectedSection = 'unarmed'
   } = {}) {
     if (!this.aimDebugRoot) {
@@ -10822,6 +10866,16 @@ export class Hud {
       const value = Number(values?.[field.key] ?? 0);
       const formattedValue = Number.isFinite(value) ? value.toFixed(2) : '0.00';
       const inputs = this.aimDebugInputs.get(field.key);
+      setFieldValue(inputs?.range, formattedValue);
+      setFieldValue(inputs?.number, formattedValue);
+    }
+
+    for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+      const value = Number(phoneGripValues?.[field.key] ?? 0);
+      const precision = Number.isInteger(field.precision) ? field.precision : 3;
+      const fallbackValue = (0).toFixed(precision);
+      const formattedValue = Number.isFinite(value) ? value.toFixed(precision) : fallbackValue;
+      const inputs = this.phoneGripDebugInputs.get(field.key);
       setFieldValue(inputs?.range, formattedValue);
       setFieldValue(inputs?.number, formattedValue);
     }

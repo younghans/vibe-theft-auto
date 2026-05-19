@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import {
+  createInPlaceClip,
+  createTargetFilteredClip,
+  MIXAMO_BONES,
+  validateMixamoHumanoid
+} from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import { assets } from '../world/assetManifest.js';
 import { getNpcModelById } from '../npc/npcCatalog.js';
@@ -348,7 +353,10 @@ export class SchoolTeacherPreviewRenderer {
         const humanoid = validateMixamoHumanoid(object);
         const mixer = humanoid.isHumanoid ? new THREE.AnimationMixer(object) : null;
         if (mixer) {
-          const idleClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.idle), MIXAMO_BONES.hips);
+          const idleClip = createInPlaceClip(
+            createTargetFilteredClip(getMixamoClip(assets.playerAnimationSet.idle), object, `${assets.playerAnimationSet.idle}_TeacherPreviewRigSafe`),
+            MIXAMO_BONES.hips
+          );
           const idleAction = mixer.clipAction(idleClip);
           idleAction.enabled = true;
           idleAction.setLoop(THREE.LoopRepeat, Infinity);

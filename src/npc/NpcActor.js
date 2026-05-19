@@ -1,5 +1,11 @@
 import * as THREE from 'three';
-import { createInPlaceClip, ensureMixamoSockets, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import {
+  createInPlaceClip,
+  createTargetFilteredClip,
+  ensureMixamoSockets,
+  MIXAMO_BONES,
+  validateMixamoHumanoid
+} from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
 import { createRagdollController } from '../player/ragdollController.js';
 import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
@@ -21,68 +27,11 @@ const FOOT_PLANT_BONE_NAMES = Object.freeze([
 ]);
 const NPC_GROUNDED_ANIMATIONS = new Set(['snatch']);
 
-let sharedIdleClip = null;
-let sharedWalkClip = null;
-let sharedSlowRunClip = null;
-let sharedFastRunClip = null;
-let sharedFightIdleClip = null;
-let sharedPunchClip = null;
-let sharedSnatchClip = null;
-
-function getSharedIdleClip() {
-  if (!sharedIdleClip) {
-    sharedIdleClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.idle), MIXAMO_BONES.hips);
-  }
-
-  return sharedIdleClip;
-}
-
-function getSharedWalkClip() {
-  if (!sharedWalkClip) {
-    sharedWalkClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.walking), MIXAMO_BONES.hips);
-  }
-
-  return sharedWalkClip;
-}
-
-function getSharedSlowRunClip() {
-  if (!sharedSlowRunClip) {
-    sharedSlowRunClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.slowRun), MIXAMO_BONES.hips);
-  }
-
-  return sharedSlowRunClip;
-}
-
-function getSharedFastRunClip() {
-  if (!sharedFastRunClip) {
-    sharedFastRunClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.fastRun), MIXAMO_BONES.hips);
-  }
-
-  return sharedFastRunClip;
-}
-
-function getSharedFightIdleClip() {
-  if (!sharedFightIdleClip) {
-    sharedFightIdleClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.fightingIdle), MIXAMO_BONES.hips);
-  }
-
-  return sharedFightIdleClip;
-}
-
-function getSharedPunchClip() {
-  if (!sharedPunchClip) {
-    sharedPunchClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.punching), MIXAMO_BONES.hips);
-  }
-
-  return sharedPunchClip;
-}
-
-function getSharedSnatchClip() {
-  if (!sharedSnatchClip) {
-    sharedSnatchClip = createInPlaceClip(getMixamoClip(assets.playerAnimationSet.snatch), MIXAMO_BONES.hips);
-  }
-
-  return sharedSnatchClip;
+function createNpcAnimationClip(root, clipName) {
+  return createInPlaceClip(
+    createTargetFilteredClip(getMixamoClip(clipName), root, `${clipName}_NpcRigSafe`),
+    MIXAMO_BONES.hips
+  );
 }
 
 function createIndicator(color) {
@@ -276,13 +225,13 @@ export class NpcActor {
       this.mixer = new THREE.AnimationMixer(this.character);
       this.ragdoll = createRagdollController(this.character);
       this.animationActions = new Map([
-        ['idle', this.mixer.clipAction(getSharedIdleClip())],
-        ['walk', this.mixer.clipAction(getSharedWalkClip())],
-        ['slowRun', this.mixer.clipAction(getSharedSlowRunClip())],
-        ['fastRun', this.mixer.clipAction(getSharedFastRunClip())],
-        ['fightIdle', this.mixer.clipAction(getSharedFightIdleClip())],
-        ['punch', this.mixer.clipAction(getSharedPunchClip())],
-        ['snatch', this.mixer.clipAction(getSharedSnatchClip())]
+        ['idle', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.idle))],
+        ['walk', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.walking))],
+        ['slowRun', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.slowRun))],
+        ['fastRun', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.fastRun))],
+        ['fightIdle', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.fightingIdle))],
+        ['punch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.punching))],
+        ['snatch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.snatch))]
       ]);
       for (const [key, action] of this.animationActions.entries()) {
         action.enabled = true;

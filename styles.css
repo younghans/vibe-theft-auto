@@ -5857,11 +5857,17 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__aim-debug-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.hud__aim-debug-group {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 10px;
-  overflow-y: auto;
-  padding-right: 2px;
 }
 
 .hud__aim-debug-field {
@@ -16302,6 +16308,10 @@ canvas {
   }
 
   .hud__aim-debug-fields {
+    gap: 8px;
+  }
+
+  .hud__aim-debug-group {
     grid-template-columns: minmax(0, 1fr);
   }
 

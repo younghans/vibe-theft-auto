@@ -3,7 +3,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { createInPlaceClip, MIXAMO_BONES, validateMixamoHumanoid } from '../animation/humanoid.js';
+import {
+  createInPlaceClip,
+  createTargetFilteredClip,
+  MIXAMO_BONES,
+  validateMixamoHumanoid
+} from '../animation/humanoid.js';
 import { getMixamoClip, preloadMixamoClips } from '../animation/mixamoClips.js';
 import {
   DEFAULT_VIBE_SHADER_INTENSITY,
@@ -353,7 +358,10 @@ async function instantiatePreviewCharacter(library, characterId, clipName) {
   character.rotation.y = THREE.MathUtils.degToRad(10);
 
   const mixer = new THREE.AnimationMixer(character);
-  const clip = createInPlaceClip(getMixamoClip(clipName), MIXAMO_BONES.hips);
+  const clip = createInPlaceClip(
+    createTargetFilteredClip(getMixamoClip(clipName), character, `${clipName}_PreviewRigSafe`),
+    MIXAMO_BONES.hips
+  );
   const action = mixer.clipAction(clip);
   action.enabled = true;
   action.play();

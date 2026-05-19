@@ -32,7 +32,9 @@ import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_AIM_POSE_FIELDS,
   HELD_ITEM_IDS,
+  PHONE_GRIP_DEBUG_FIELDS,
   getHeldItemAssetUrl,
+  getHeldItemGripProfile,
   listHeldItemDefinitions,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
@@ -78,7 +80,7 @@ import {
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -217,6 +219,9 @@ function createCameraMovementForward(cameraOffset) {
 }
 const CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(CAMERA_OFFSET);
 const AIM_CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(AIM_CAMERA_OFFSET);
+const PHONE_GRIP_DEBUG_ITEM_ID = HELD_ITEM_IDS.phone;
+const PHONE_GRIP_DEBUG_FIELD_BY_KEY = new Map(PHONE_GRIP_DEBUG_FIELDS.map((field) => [field.key, field]));
+const POSE_DEBUG_SECTIONS = new Set(['unarmed', 'weaponAim', 'phoneGrip']);
 const WORLD_RENDER_LAYER = 0;
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
 const DEFAULT_CAMERA_ZOOM_INDEX = 4;
@@ -988,6 +993,8 @@ export class Game {
     this.characterSelectorViewportSyncFrame = 0;
     this.phoneCharacterSyncRequestId = 0;
     this.phoneMenuVisible = false;
+    this.phoneTextingModeActive = false;
+    this.phoneTextingAnimationFrame = 0;
     this.phoneActiveAppId = '';
     this.phoneAppRefreshFrame = 0;
     this.phoneAppRefreshTimeout = 0;
@@ -4042,6 +4049,41 @@ export class Game {
     );
   }
 
+  setPhoneTextingMode(active, { force = false } = {}) {
+    const nextActive = Boolean(active && this.player);
+    if (!force && this.phoneTextingModeActive === nextActive) {
+      return nextActive;
+    }
+
+    const wasActive = this.phoneTextingModeActive;
+    this.phoneTextingModeActive = nextActive;
+    void this.player?.setPhoneTextingActive?.(nextActive);
+
+    if (this.phoneTextingAnimationFrame) {
+      window.cancelAnimationFrame(this.phoneTextingAnimationFrame);
+      this.phoneTextingAnimationFrame = 0;
+    }
+
+    if (nextActive) {
+      this.phoneTextingAnimationFrame = window.requestAnimationFrame(() => {
+        this.phoneTextingAnimationFrame = 0;
+        if (this.phoneTextingModeActive && this.phoneMenuVisible) {
+          this.player?.playEmote(TEXTING_EMOTE_ID);
+        }
+      });
+      return true;
+    }
+
+    if (wasActive || force) {
+      const animationState = this.player?.getAnimationSyncState?.({});
+      if (animationState?.emoteId === TEXTING_EMOTE_ID) {
+        this.player?.stopEmote?.();
+      }
+    }
+
+    return false;
+  }
+
   openPhoneMenu() {
     if (!this.canOpenPhoneMenu()) {
       return false;
@@ -4050,6 +4092,7 @@ export class Game {
     this.phoneMenuVisible = true;
     this.phoneActiveAppId = '';
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    this.setPhoneTextingMode(true);
     this.playSoundEffect(this.phoneUnlockSound);
     return true;
   }
@@ -4057,6 +4100,7 @@ export class Game {
   closePhoneMenu() {
     this.phoneMenuVisible = false;
     this.phoneActiveAppId = '';
+    this.setPhoneTextingMode(false);
     if (this.phoneAppRefreshFrame) {
       window.cancelAnimationFrame(this.phoneAppRefreshFrame);
       this.phoneAppRefreshFrame = 0;
@@ -12766,6 +12810,19 @@ export class Game {
           this.player.clearHeldItemReloadProfileOverride?.(itemId);
           return printReload(itemId);
         },
+        previewPhoneTexting: () => {
+          void this.player.setPhoneTextingActive?.(true);
+          this.player.playEmote(TEXTING_EMOTE_ID);
+          return printGrip(HELD_ITEM_IDS.phone);
+        },
+        stopPhoneTexting: () => {
+          void this.player.setPhoneTextingActive?.(false);
+          const animationState = this.player.getAnimationSyncState?.({});
+          if (animationState?.emoteId === TEXTING_EMOTE_ID) {
+            this.player.stopEmote?.();
+          }
+          return true;
+        },
         previewCrateLeftHand: () => this.player.attachHeldItem(HELD_ITEM_IDS.crateA, { visible: true }),
         clearLeftHand: () => this.player.detachHeldItem(ATTACHMENT_SLOTS.handLeft)
       };
@@ -12785,6 +12842,8 @@ export class Game {
       globalThis.nudgeRotation = (...args) => globalThis.__stickRpgHeldItemDebug.nudgeRotation(...args);
       globalThis.scaleBy = (...args) => globalThis.__stickRpgHeldItemDebug.scaleBy(...args);
       globalThis.resetGrip = (...args) => globalThis.__stickRpgHeldItemDebug.reset(...args);
+      globalThis.previewPhoneTexting = (...args) => globalThis.__stickRpgHeldItemDebug.previewPhoneTexting(...args);
+      globalThis.stopPhoneTexting = (...args) => globalThis.__stickRpgHeldItemDebug.stopPhoneTexting(...args);
       globalThis.__stickRpgShaderDebug = {
         presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
         getActivePreset: () => this.getActiveVibeShaderPreset().id,
@@ -12822,7 +12881,7 @@ export class Game {
 
     if (adminAimPoseDebug) {
       globalThis.__stickRpgAimPoseDebug = {
-        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)],
+        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key), ...PHONE_GRIP_DEBUG_FIELDS.map((field) => field.key)],
         setSection: (section = 'unarmed') => this.setPoseDebugSection(section),
         print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
         setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
@@ -12835,13 +12894,50 @@ export class Game {
       globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
 
       console.info('[PoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
-        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key)]
+        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key), ...PHONE_GRIP_DEBUG_FIELDS.map((field) => field.key)]
       });
     }
   }
 
   getActiveAimPoseDebugItemId() {
     return this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
+  }
+
+  getPhoneGripDebugProfile() {
+    return this.player?.getHeldItemGripProfile?.(PHONE_GRIP_DEBUG_ITEM_ID)
+      ?? getHeldItemGripProfile(PHONE_GRIP_DEBUG_ITEM_ID);
+  }
+
+  getPhoneGripDebugValues(profile = this.getPhoneGripDebugProfile()) {
+    return Object.fromEntries(
+      PHONE_GRIP_DEBUG_FIELDS.map((field) => [
+        field.key,
+        Number(profile?.[field.group]?.[field.axis] ?? 0)
+      ])
+    );
+  }
+
+  startPhoneGripDebugPreview() {
+    if (!this.player || !this.canUseAimPoseDebug()) {
+      return false;
+    }
+
+    void this.player.setPhoneTextingActive?.(true);
+    this.player.playEmote?.(TEXTING_EMOTE_ID);
+    return true;
+  }
+
+  stopPhoneGripDebugPreview() {
+    if (!this.player) {
+      return false;
+    }
+
+    void this.player.setPhoneTextingActive?.(false);
+    const animationState = this.player.getAnimationSyncState?.({});
+    if (animationState?.emoteId === TEXTING_EMOTE_ID) {
+      this.player.stopEmote?.();
+    }
+    return true;
   }
 
   setAimPoseDebugVisible(visible) {
@@ -12854,7 +12950,13 @@ export class Game {
       }
     }
 
+    const wasVisible = this.aimPoseDebugVisible;
     this.aimPoseDebugVisible = nextVisible;
+    if (nextVisible && this.poseDebugSection === 'phoneGrip') {
+      this.startPhoneGripDebugPreview();
+    } else if (wasVisible && !nextVisible && this.poseDebugSection === 'phoneGrip') {
+      this.stopPhoneGripDebugPreview();
+    }
     this.refreshAimPoseDebugHud();
     return this.aimPoseDebugVisible;
   }
@@ -12866,12 +12968,18 @@ export class Game {
   }
 
   setPoseDebugSection(section = 'unarmed') {
-    const nextSection = section === 'weaponAim' ? 'weaponAim' : 'unarmed';
+    const nextSection = POSE_DEBUG_SECTIONS.has(section) ? section : 'unarmed';
     if (this.poseDebugSection === nextSection) {
       return this.poseDebugSection;
     }
 
+    const previousSection = this.poseDebugSection;
     this.poseDebugSection = nextSection;
+    if (this.aimPoseDebugVisible && nextSection === 'phoneGrip') {
+      this.startPhoneGripDebugPreview();
+    } else if (this.aimPoseDebugVisible && previousSection === 'phoneGrip') {
+      this.stopPhoneGripDebugPreview();
+    }
     this.refreshAimPoseDebugHud();
     return this.poseDebugSection;
   }
@@ -12894,6 +13002,10 @@ export class Game {
       return null;
     }
 
+    if (PHONE_GRIP_DEBUG_FIELD_BY_KEY.has(fieldKey)) {
+      return this.setPhoneGripDebugField(fieldKey, value);
+    }
+
     if (fieldKey === 'punchAimYawOffset') {
       const nextConfig = this.player.setEmoteDebugConfigField?.(PUNCH_EMOTE_ID, 'aimYawOffset', value) ?? null;
       this.refreshAimPoseDebugHud();
@@ -12909,9 +13021,54 @@ export class Game {
     return nextPose;
   }
 
+  setPhoneGripDebugField(fieldKey, value) {
+    if (!this.player || !this.canUseAimPoseDebug()) {
+      return null;
+    }
+
+    const field = PHONE_GRIP_DEBUG_FIELD_BY_KEY.get(fieldKey);
+    if (!field) {
+      return null;
+    }
+
+    const current = this.getPhoneGripDebugProfile();
+    const nextProfile = {
+      position: [...(current.position ?? [0, 0, 0])],
+      rotation: [...(current.rotation ?? [0, 0, 0])],
+      scale: [...(current.scale ?? [1, 1, 1])]
+    };
+    const numericValue = Number(value);
+    nextProfile[field.group][field.axis] = Number.isFinite(numericValue)
+      ? THREE.MathUtils.clamp(numericValue, field.min, field.max)
+      : nextProfile[field.group][field.axis];
+
+    const baseProfile = getHeldItemGripProfile(PHONE_GRIP_DEBUG_ITEM_ID);
+    const override = {
+      position: [0, 1, 2].map((index) => nextProfile.position[index] - baseProfile.position[index]),
+      rotation: [0, 1, 2].map((index) => nextProfile.rotation[index] - baseProfile.rotation[index]),
+      scale: [0, 1, 2].map((index) => {
+        const baseScale = baseProfile.scale[index] || 1;
+        return nextProfile.scale[index] / baseScale;
+      })
+    };
+    const updatedProfile = this.player.setHeldItemGripOverride?.(PHONE_GRIP_DEBUG_ITEM_ID, override) ?? null;
+    this.startPhoneGripDebugPreview();
+    this.refreshAimPoseDebugHud();
+    return updatedProfile;
+  }
+
   resetAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
     if (!this.player || !this.canUseAimPoseDebug()) {
       return null;
+    }
+
+    if (this.poseDebugSection === 'phoneGrip') {
+      this.player.clearHeldItemGripOverride?.(PHONE_GRIP_DEBUG_ITEM_ID);
+      this.startPhoneGripDebugPreview();
+      const nextProfile = this.getPhoneGripDebugProfile();
+      this.refreshAimPoseDebugHud();
+      this.hud.showToast('Phone grip debug reset.');
+      return nextProfile;
     }
 
     if (this.poseDebugSection === 'unarmed') {
@@ -12933,7 +13090,26 @@ export class Game {
   }
 
   printAimPoseDebug(itemId = this.getActiveAimPoseDebugItemId()) {
-    if (!this.player || !itemId || !this.canUseAimPoseDebug()) {
+    if (!this.player || !this.canUseAimPoseDebug()) {
+      return null;
+    }
+
+    if (this.poseDebugSection === 'phoneGrip') {
+      const grip = this.getPhoneGripDebugProfile();
+      const printable = {
+        section: 'phoneGrip',
+        id: PHONE_GRIP_DEBUG_ITEM_ID,
+        gripOffset: {
+          position: grip.position.map((entry) => Number(entry.toFixed(4))),
+          rotation: grip.rotation.map((entry) => Number(entry.toFixed(4))),
+          scale: grip.scale.map((entry) => Number(entry.toFixed(4)))
+        }
+      };
+      console.info('[PoseDebug] Current phone grip settings.', printable);
+      return printable;
+    }
+
+    if (!itemId) {
       return null;
     }
 
@@ -12961,10 +13137,15 @@ export class Game {
     const debugAvailable = Boolean(this.player && this.canUseAimPoseDebug());
     const itemId = this.getActiveAimPoseDebugItemId();
     const pose = this.player?.getHeldItemAimPoseProfile(itemId) ?? {};
+    const phoneGripProfile = this.getPhoneGripDebugProfile();
+    const phoneGripValues = this.getPhoneGripDebugValues(phoneGripProfile);
     const punchFacingOffset = Number(this.player?.getEmoteDebugConfig?.(PUNCH_EMOTE_ID)?.aimYawOffset ?? 0);
     const statusParts = [];
-    statusParts.push(`Weapon: ${itemId || 'none'}`);
+    statusParts.push(this.poseDebugSection === 'phoneGrip' ? `Item: ${PHONE_GRIP_DEBUG_ITEM_ID}` : `Weapon: ${itemId || 'none'}`);
     statusParts.push(`Punch offset: ${punchFacingOffset.toFixed(2)}`);
+    if (this.poseDebugSection === 'phoneGrip') {
+      statusParts.push(`Phone pos: ${phoneGripProfile.position.map((entry) => Number(entry).toFixed(3)).join(', ')}`);
+    }
     statusParts.push(this.currentAimMode ? 'Previewing right-click aim.' : 'Press O to open pose debug. Left click punch to test facing.');
     const nextState = {
       available: debugAvailable,
@@ -12975,16 +13156,19 @@ export class Game {
       extraValues: {
         punchAimYawOffset: punchFacingOffset
       },
+      phoneGripValues,
       selectedSection: this.poseDebugSection
     };
     const valueSignature = [
       punchFacingOffset.toFixed(3),
-      ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3))
+      ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3)),
+      ...PHONE_GRIP_DEBUG_FIELDS.map((field) => Number(phoneGripValues?.[field.key] ?? 0).toFixed(3))
     ].join('|');
     const signature = [
       Number(nextState.available),
       Number(nextState.visible),
       Number(nextState.showSkeleton),
+      nextState.selectedSection,
       nextState.statusText,
       valueSignature
     ].join('::');
@@ -13217,6 +13401,7 @@ export class Game {
 
     this.player = nextAvatar;
     this.applyAvatarSnapshot(nextAvatar, snapshot, localPlayerState);
+    this.setPhoneTextingMode(this.phoneMenuVisible, { force: true });
     this.scene.add(nextAvatar.object);
 
     const nextDebugHelper = nextAvatar.getAimPoseDebugHelper?.();
@@ -14210,7 +14395,7 @@ export class Game {
     const displayedWeaponId = introWeaponId && !localWeaponId ? introWeaponId : localWeaponId;
     this.player.setWeaponState(
       displayedWeaponId,
-      { visible: isAlive && Boolean(displayedWeaponId) }
+      { visible: isAlive && Boolean(displayedWeaponId) && !this.phoneMenuVisible }
     );
     this.player.setReloadState(Boolean(isAlive && localPlayerState.isReloading), {
       weaponId: localWeaponId,

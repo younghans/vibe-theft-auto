@@ -15,11 +15,22 @@ import {
   getVibeRadioViewModel,
   normalizeVibeRadioTracks
 } from '../src/shared/vibeRadio.js';
+import {
+  ATTACHMENT_SLOTS,
+  HELD_ITEM_IDS,
+  getHeldItemDefinition
+} from '../src/shared/heldItemDefinitions.js';
+import { EMOTES_BY_ID, TEXTING_EMOTE_ID } from '../src/player/emotes.js';
 import { assets } from '../src/world/assetManifest.js';
 
 const root = process.cwd();
 const hudSource = fs.readFileSync(path.join(root, 'src/ui/Hud.js'), 'utf8');
 const gameSource = fs.readFileSync(path.join(root, 'src/game/Game.js'), 'utf8');
+const playerSource = fs.readFileSync(path.join(root, 'src/player/createPlayer.js'), 'utf8');
+const humanoidSource = fs.readFileSync(path.join(root, 'src/animation/humanoid.js'), 'utf8');
+const npcActorSource = fs.readFileSync(path.join(root, 'src/npc/NpcActor.js'), 'utf8');
+const characterPreviewSource = fs.readFileSync(path.join(root, 'src/ui/CharacterPreviewRenderer.js'), 'utf8');
+const schoolTeacherPreviewSource = fs.readFileSync(path.join(root, 'src/ui/SchoolTeacherPreviewRenderer.js'), 'utf8');
 const worldBuilderSource = fs.readFileSync(path.join(root, 'src/world/WorldBuilder.js'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
@@ -83,6 +94,25 @@ assert.match(gameSource, /panPhoneMapByScreenDelta/, 'Game owns phone map pan st
 assert.match(gameSource, /handlePhoneMapKeyboardInput/, 'Game maps WASD input to phone map panning');
 assert.match(gameSource, /phoneUnlockSound/, 'Game registers the phone unlock sound');
 assert.match(gameSource, /playSoundEffect\(this\.phoneUnlockSound\)/, 'Game plays the unlock sound when opening the phone');
+assert.match(gameSource, /TEXTING_EMOTE_ID/, 'Game references the texting emote for phone mode');
+assert.match(gameSource, /setPhoneTextingMode/, 'Game owns phone texting mode state');
+assert.match(gameSource, /openPhoneMenu\(\)[\s\S]*setPhoneTextingMode\(true\)/, 'Opening the phone enables texting mode');
+assert.match(gameSource, /closePhoneMenu\(\)[\s\S]*setPhoneTextingMode\(false\)/, 'Closing the phone disables texting mode');
+assert.match(gameSource, /phoneTextingAnimationFrame[\s\S]*requestAnimationFrame/, 'Phone texting animation starts outside the Tab key handler');
+assert.match(hudSource, /data-aim-debug-section="phoneGrip"/, 'Pose debug exposes a phone grip tuning section');
+assert.match(hudSource, /PHONE_GRIP_DEBUG_FIELDS/, 'Phone grip debug fields are rendered in the pose debug menu');
+assert.match(gameSource, /setPhoneGripDebugField/, 'Game can apply live phone grip debug changes');
+assert.match(gameSource, /startPhoneGripDebugPreview/, 'Phone grip debug previews the texting pose while tuning');
+assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/main.js'), 'utf8'), /phoneVisualQa/, 'Temporary phone visual QA boot hook is not shipped');
+assert.match(playerSource, /setPhoneTextingActive/, 'Player can attach or detach the phone held item');
+assert.match(playerSource, /remoteTextingActive/, 'Remote players show phone texting state from synced emotes');
+assert.match(playerSource, /syncPhoneEquipment/, 'Phone texting owns the right-hand phone equipment state');
+assert.match(playerSource, /phoneTextingActive[\s\S]*setWeaponState/, 'Weapon equip yields to phone texting while preserving selected weapons');
+assert.doesNotMatch(playerSource, /clipNamesToPreload\.add\(getEmoteConfig\(TEXTING_EMOTE_ID\)/, 'Texting clip is not on the critical avatar boot preload path');
+assert.match(humanoidSource, /createTargetFilteredClip/, 'Animation clips can be filtered to bindable rig targets');
+assert.match(npcActorSource, /createTargetFilteredClip/, 'NPC animations are filtered before binding to actor rigs');
+assert.match(characterPreviewSource, /createTargetFilteredClip/, 'Character preview animations are filtered before binding');
+assert.match(schoolTeacherPreviewSource, /createTargetFilteredClip/, 'Teacher preview animations are filtered before binding');
 assert.match(gameSource, /captureAndSaveWorldMap/, 'Game can manually capture the world map');
 assert.match(gameSource, /WORLD_MAP_IMAGE_METADATA_URL/, 'Game loads cached map image metadata');
 assert.match(gameSource, /setMasterVolume/, 'Game owns persisted master volume setting');
@@ -93,6 +123,13 @@ assert.match(gameSource, /raw == null \|\| raw === ''/, 'Vibe Radio defaults vol
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
 
 assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');
+assert.equal(TEXTING_EMOTE_ID, 'texting', 'Texting emote id remains stable for multiplayer sync.');
+assert.equal(EMOTES_BY_ID[TEXTING_EMOTE_ID]?.clipName, 'texting', 'Texting emote uses the Mixamo texting clip.');
+assert.equal(EMOTES_BY_ID[TEXTING_EMOTE_ID]?.upperBodyOnly, true, 'Texting emote stays upper-body only.');
+const phoneHeldItem = getHeldItemDefinition(HELD_ITEM_IDS.phone);
+assert.ok(phoneHeldItem, 'Phone held item should be registered.');
+assert.equal(phoneHeldItem.attachmentSlot, ATTACHMENT_SLOTS.handRight, 'Phone is held in the animation-facing hand for texting.');
+assert.equal(typeof phoneHeldItem.createModel, 'function', 'Phone held item uses a procedural 3D model.');
 const phoneUnlockAudio = fs.readFileSync(new URL(assets.audio.phoneUnlock));
 assert.ok(phoneUnlockAudio.length > 12, 'Phone unlock audio should not be empty.');
 const phoneUnlockHasId3Header = phoneUnlockAudio.subarray(0, 3).toString('ascii') === 'ID3';
