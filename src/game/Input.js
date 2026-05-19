@@ -498,7 +498,7 @@ export class Input {
   }
 
   isHudTarget(target) {
-    return target instanceof HTMLElement && Boolean(target.closest('.hud'));
+    return target instanceof Element && Boolean(target.closest('.hud'));
   }
 
   getMovementVector() {

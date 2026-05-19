@@ -276,7 +276,7 @@ function getPhoneMissionsAppMarkup(app) {
 function getVibeRadioControlsMarkup({
   context = 'main',
   playing = false,
-  volume = 0.75,
+  volume = 0.5,
   disabled = false
 } = {}) {
   const signature = getVibeRadioControlsSignature({ context, playing, volume, disabled });
@@ -331,7 +331,7 @@ function getVibeRadioControlsSignature({
   ].join(':');
 }
 
-function syncVibeRadioControlsElement(root, { volume = 0.75 } = {}) {
+function syncVibeRadioControlsElement(root, { volume = 0.5 } = {}) {
   const input = root?.querySelector?.('.hud__vibe-radio-volume-slider');
   if (!(input instanceof HTMLInputElement)) {
     return;
@@ -3805,7 +3805,7 @@ export class Hud {
       tracks: [],
       selectedTrackId: '',
       playing: false,
-      volume: 0.75,
+      volume: 0.5,
       currentTime: 0,
       duration: 0,
       error: ''
@@ -7067,6 +7067,18 @@ export class Hud {
     onAction,
     onVolumeChange
   } = {}) {
+    const containRadioPointerEvent = (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (target?.closest('[data-vibe-radio-action], [data-vibe-radio-volume]')) {
+        event.stopPropagation();
+      }
+    };
+    this.vibeRadioWidget?.addEventListener('pointerdown', containRadioPointerEvent);
+    this.vibeRadioWidget?.addEventListener('mousedown', containRadioPointerEvent);
+    this.vibeRadioWidget?.addEventListener('touchstart', containRadioPointerEvent);
+
     this.vibeRadioWidget?.addEventListener('click', (event) => {
       const target = event.target instanceof Element
         ? event.target

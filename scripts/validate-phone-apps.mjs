@@ -30,6 +30,7 @@ const npcActorSource = fs.readFileSync(path.join(root, 'src/npc/NpcActor.js'), '
 const characterPreviewSource = fs.readFileSync(path.join(root, 'src/ui/CharacterPreviewRenderer.js'), 'utf8');
 const schoolTeacherPreviewSource = fs.readFileSync(path.join(root, 'src/ui/SchoolTeacherPreviewRenderer.js'), 'utf8');
 const worldBuilderSource = fs.readFileSync(path.join(root, 'src/world/WorldBuilder.js'), 'utf8');
+const inputSource = fs.readFileSync(path.join(root, 'src/game/Input.js'), 'utf8');
 const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
 const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
@@ -120,7 +121,15 @@ assert.doesNotMatch(gameSource, /syncVibeRadioTracksFromLayout/, 'Game should no
 assert.doesNotMatch(gameSource, /layout\?\.vibeRadioTracks/, 'Game should not read Vibe Radio tracks from world layout');
 assert.match(gameSource, /handleVibeRadioAction/, 'Game owns Vibe Radio playback actions');
 assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_KEY/, 'Game stores radio volume locally per player');
+assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_VERSION = '3'/, 'Vibe Radio can migrate old stored volume values');
+assert.match(gameSource, /VIBE_RADIO_DEFAULT_VOLUME = 0\.5/, 'Vibe Radio defaults the slider to 50 percent');
 assert.match(gameSource, /raw == null \|\| raw === ''/, 'Vibe Radio defaults volume when no player-specific volume is stored');
+assert.match(gameSource, /clamped \* 2/, 'Vibe Radio migrates the current 25 percent saved volume to the new 50 percent slider position');
+assert.match(gameSource, /radioVolume \* 0\.5/, 'Vibe Radio halves the effective slider range');
+assert.match(gameSource, /rangedRadioVolume \* rangedRadioVolume/, 'Vibe Radio makes 50 percent play like the current 25 percent');
+assert.match(gameSource, /startDefaultVibeRadioPlayback/, 'Game auto-starts the default Vibe Radio track on join');
+assert.match(gameSource, /queueVibeRadioAutoplayUnlock/, 'Game retries Vibe Radio autoplay after browser gesture unlocks audio');
+assert.match(inputSource, /target instanceof Element && Boolean\(target\.closest\('\.hud'\)\)/, 'HUD SVG icon clicks should not fall through to game input');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
 
 assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');

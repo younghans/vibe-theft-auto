@@ -253,6 +253,9 @@ const VIBE_HERO_LANE_KEY_CODES = Object.freeze(Array.from({ length: VIBE_HERO_LA
   `Numpad${index + 1}`
 ])));
 const VIBE_RADIO_VOLUME_STORAGE_KEY = 'vta:vibeRadio:volume';
+const VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY = 'vta:vibeRadio:volumeVersion';
+const VIBE_RADIO_VOLUME_STORAGE_VERSION = '3';
+const VIBE_RADIO_DEFAULT_VOLUME = 0.5;
 const VIBE_RADIO_SEEK_SECONDS = 10;
 const BASKETBALL_SHOT_SWEEP_MS = 1320;
 const BASKETBALL_SHOT_CLEAN_WINDOW = 0.055;
@@ -681,23 +684,37 @@ function writeStoredGameSettings(settings = DEFAULT_GAME_SETTINGS) {
 
 function readStoredVibeRadioVolume() {
   try {
-    const raw = window.localStorage?.getItem(VIBE_RADIO_VOLUME_STORAGE_KEY);
+    const storage = window.localStorage;
+    const raw = storage?.getItem(VIBE_RADIO_VOLUME_STORAGE_KEY);
     if (raw == null || raw === '') {
-      return 0.75;
+      return VIBE_RADIO_DEFAULT_VOLUME;
     }
     const stored = Number(raw);
-    return Number.isFinite(stored) ? THREE.MathUtils.clamp(stored, 0, 1) : 0.75;
+    if (!Number.isFinite(stored)) {
+      return VIBE_RADIO_DEFAULT_VOLUME;
+    }
+
+    const clamped = THREE.MathUtils.clamp(stored, 0, 1);
+    if (storage?.getItem(VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY) !== VIBE_RADIO_VOLUME_STORAGE_VERSION) {
+      const migrated = THREE.MathUtils.clamp(clamped * 2, 0, 1);
+      storage?.setItem(VIBE_RADIO_VOLUME_STORAGE_KEY, String(migrated));
+      storage?.setItem(VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY, VIBE_RADIO_VOLUME_STORAGE_VERSION);
+      return migrated;
+    }
+
+    return clamped;
   } catch {
-    return 0.75;
+    return VIBE_RADIO_DEFAULT_VOLUME;
   }
 }
 
-function writeStoredVibeRadioVolume(volume = 0.75) {
+function writeStoredVibeRadioVolume(volume = VIBE_RADIO_DEFAULT_VOLUME) {
   try {
     window.localStorage?.setItem(
       VIBE_RADIO_VOLUME_STORAGE_KEY,
       String(THREE.MathUtils.clamp(Number(volume) || 0, 0, 1))
     );
+    window.localStorage?.setItem(VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY, VIBE_RADIO_VOLUME_STORAGE_VERSION);
   } catch {
     // Local persistence is best-effort; radio playback should continue if storage is unavailable.
   }
@@ -1241,6 +1258,8 @@ export class Game {
     this.vibeRadioLoadedTrackId = '';
     this.vibeRadioLoadedSourceUrl = '';
     this.vibeRadioTimeUpdateFrame = 0;
+    this.vibeRadioAutoplayPending = true;
+    this.vibeRadioAutoplayUnlockHandler = null;
     this.officeJobPlacementId = '';
     this.officeJanitorGameCycleIndex = 0;
     this.adminPromptOpen = false;
@@ -3462,8 +3481,11 @@ export class Game {
   }
 
   getEffectiveVibeRadioVolume() {
+    const radioVolume = THREE.MathUtils.clamp(Number(this.vibeRadioVolume ?? VIBE_RADIO_DEFAULT_VOLUME), 0, 1);
+    const rangedRadioVolume = radioVolume * 0.5;
+    const curvedRadioVolume = rangedRadioVolume * rangedRadioVolume;
     return THREE.MathUtils.clamp(
-      Number(this.vibeRadioVolume ?? 0.75) * Number(this.gameSettings?.masterVolume ?? 1),
+      curvedRadioVolume * Number(this.gameSettings?.masterVolume ?? 1),
       0,
       1
     );
@@ -3493,6 +3515,62 @@ export class Game {
     this.hud.setVibeRadioState(this.getVibeRadioHudState());
   }
 
+  clearVibeRadioAutoplayUnlock() {
+    if (!this.vibeRadioAutoplayUnlockHandler) {
+      return;
+    }
+
+    window.removeEventListener('pointerdown', this.vibeRadioAutoplayUnlockHandler, true);
+    window.removeEventListener('keydown', this.vibeRadioAutoplayUnlockHandler, true);
+    window.removeEventListener('touchstart', this.vibeRadioAutoplayUnlockHandler, true);
+    this.vibeRadioAutoplayUnlockHandler = null;
+  }
+
+  queueVibeRadioAutoplayUnlock() {
+    if (this.vibeRadioAutoplayUnlockHandler) {
+      return;
+    }
+
+    this.vibeRadioAutoplayUnlockHandler = () => {
+      this.clearVibeRadioAutoplayUnlock();
+      if (this.vibeRadioAutoplayPending && !this.vibeRadioPlaying) {
+        void this.startDefaultVibeRadioPlayback();
+      }
+    };
+    window.addEventListener('pointerdown', this.vibeRadioAutoplayUnlockHandler, true);
+    window.addEventListener('keydown', this.vibeRadioAutoplayUnlockHandler, true);
+    window.addEventListener('touchstart', this.vibeRadioAutoplayUnlockHandler, true);
+  }
+
+  async startDefaultVibeRadioPlayback() {
+    if (!this.vibeRadioAutoplayPending || this.vibeRadioPlaying || !this.vibeRadioTracks.length) {
+      return false;
+    }
+
+    const defaultTrack = this.vibeRadioTracks[0];
+    if (!defaultTrack) {
+      return false;
+    }
+
+    if (this.vibeRadioSelectedTrackId !== defaultTrack.id) {
+      this.selectVibeRadioTrack(defaultTrack.id, { autoplay: false });
+    }
+
+    const played = await this.playVibeRadioTrack(defaultTrack);
+    if (played) {
+      return true;
+    }
+
+    if (!this.vibeRadioError) {
+      this.queueVibeRadioAutoplayUnlock();
+    } else {
+      this.vibeRadioAutoplayPending = false;
+      this.clearVibeRadioAutoplayUnlock();
+    }
+
+    return false;
+  }
+
   scheduleVibeRadioHudRefresh() {
     if (this.vibeRadioTimeUpdateFrame) {
       return;
@@ -3513,6 +3591,9 @@ export class Game {
     this.vibeRadioSelectedTrackId = selectedStillExists
       ? previousSelectedTrackId
       : nextTracks[0]?.id ?? '';
+    if (this.vibeRadioAutoplayPending && nextTracks[0]) {
+      this.vibeRadioSelectedTrackId = nextTracks[0].id;
+    }
 
     const selectedTrack = this.getVibeRadioSelectedTrack();
     const loadedSourceChanged = Boolean(
@@ -3588,6 +3669,8 @@ export class Game {
     try {
       await this.vibeRadioAudio.play();
       this.vibeRadioPlaying = true;
+      this.vibeRadioAutoplayPending = false;
+      this.clearVibeRadioAutoplayUnlock();
       this.vibeRadioError = '';
       this.refreshVibeRadioHud();
       return true;
@@ -3635,6 +3718,8 @@ export class Game {
     if (this.vibeRadioPlaying && !this.vibeRadioAudio?.paused) {
       this.vibeRadioAudio.pause();
       this.vibeRadioPlaying = false;
+      this.vibeRadioAutoplayPending = false;
+      this.clearVibeRadioAutoplayUnlock();
       this.refreshVibeRadioHud();
       return;
     }
@@ -12523,6 +12608,7 @@ export class Game {
         render: true
       });
       this.bootCriticalReady = true;
+      void this.startDefaultVibeRadioPlayback();
 
       if (this.npcServiceState.transport === 'colyseus') {
         this.hud.showToast('Connected to the multiplayer room. Shared building, world chat, NPC replies, and player presence are live.');
