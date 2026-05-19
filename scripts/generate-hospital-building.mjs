@@ -187,6 +187,27 @@ function addParapetRect(group, {
   group.add(createBox([thickness, parapetHeight, depth], [centerX + ((width - thickness) * 0.5), centerY, centerZ], material));
 }
 
+function applyFormFittingHospitalProfile(group, {
+  structureName,
+  groundChildCount = 3,
+  scaleX = 0.9,
+  scaleY = 1.28,
+  scaleZ = 0.93,
+  anchorY = 0.58
+} = {}) {
+  const structure = new THREE.Group();
+  structure.name = structureName;
+  structure.scale.set(scaleX, scaleY, scaleZ);
+  structure.position.y = anchorY * (1 - scaleY);
+
+  const structureChildren = group.children.slice(groundChildCount);
+  for (const child of structureChildren) {
+    structure.add(child);
+  }
+
+  group.add(structure);
+}
+
 function createHospitalMaterials() {
   return {
     concrete: createMaterial(0xd9d6d2),
@@ -542,6 +563,10 @@ function buildHospital() {
   hospital.add(createCylinder(1.46, 1.46, 0.05, 22, [-1.72, 16.35, -1.7], materials.glassDark));
   hospital.add(createCylinder(1.32, 1.32, 0.03, 22, [-1.72, 16.41, -1.7], materials.pad));
 
+  applyFormFittingHospitalProfile(hospital, {
+    structureName: 'hospital_building_form_fit'
+  });
+
   scene.add(hospital);
   return scene;
 }
@@ -776,6 +801,10 @@ function buildWideHospital() {
   hospital.add(createCylinder(1.82, 1.82, 0.12, 24, [-7.45, 16.38, -1.26], materials.pad));
   hospital.add(createCylinder(1.56, 1.56, 0.05, 24, [-7.45, 16.46, -1.26], materials.glassDark));
   hospital.add(createCylinder(1.38, 1.38, 0.03, 24, [-7.45, 16.52, -1.26], materials.pad));
+
+  applyFormFittingHospitalProfile(hospital, {
+    structureName: 'hospital_building_wide_form_fit'
+  });
 
   scene.add(hospital);
   return scene;

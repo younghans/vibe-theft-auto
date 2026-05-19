@@ -147,6 +147,18 @@ const REAL_ESTATE_OFFICE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -3.35, halfWidth: 0.86, halfDepth: 0.54, minY: 0, maxY: 1.65 },
   { centerX: 3.05, centerZ: -3.25, halfWidth: 0.86, halfDepth: 0.54, minY: 0, maxY: 1.65 }
 ]);
+const HOSPITAL_COLLISION_RECTS = Object.freeze([
+  { centerX: 0.09, centerZ: -0.33, halfWidth: 4.05, halfDepth: 3.3, minY: 0, maxY: 23 },
+  { centerX: 3.53, centerZ: 0.23, halfWidth: 1.29, halfDepth: 1.66, minY: 0, maxY: 23 },
+  { centerX: 1.08, centerZ: 3.58, halfWidth: 3.42, halfDepth: 1.44, minY: 0, maxY: 23 }
+]);
+const HOSPITAL_WIDE_COLLISION_RECTS = Object.freeze([
+  { centerX: 1.04, centerZ: -0.39, halfWidth: 7.61, halfDepth: 3.33, minY: 0, maxY: 23 },
+  { centerX: -6.66, centerZ: -1.12, halfWidth: 2.75, halfDepth: 2.26, minY: 0, maxY: 23 },
+  { centerX: 7.79, centerZ: -0.51, halfWidth: 2.16, halfDepth: 2.07, minY: 0, maxY: 23 },
+  { centerX: 1.31, centerZ: 3.74, halfWidth: 3.51, halfDepth: 1.28, minY: 0, maxY: 23 },
+  { centerX: -7.47, centerZ: 3.65, halfWidth: 2.32, halfDepth: 1.35, minY: 0, maxY: 23 }
+]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
 ]);
@@ -466,16 +478,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     tileFootprint: [1, 1],
     collision: true,
     blocksShots: true,
-    movementCollisionRects: [
-      { centerX: 0.1, centerZ: -0.35, halfWidth: 4.5, halfDepth: 3.55, minY: 0, maxY: 18 },
-      { centerX: 3.92, centerZ: 0.25, halfWidth: 1.43, halfDepth: 1.78, minY: 0, maxY: 18 },
-      { centerX: 1.2, centerZ: 3.85, halfWidth: 3.8, halfDepth: 1.55, minY: 0, maxY: 18 }
-    ],
-    shotCollisionRects: [
-      { centerX: 0.1, centerZ: -0.35, halfWidth: 4.5, halfDepth: 3.55 },
-      { centerX: 3.92, centerZ: 0.25, halfWidth: 1.43, halfDepth: 1.78 },
-      { centerX: 1.2, centerZ: 3.85, halfWidth: 3.8, halfDepth: 1.55 }
-    ],
+    movementCollisionRects: HOSPITAL_COLLISION_RECTS,
+    shotCollisionRects: HOSPITAL_COLLISION_RECTS,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },
@@ -536,6 +540,8 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     tileFootprint: [2, 1],
     collision: true,
     blocksShots: true,
+    movementCollisionRects: HOSPITAL_WIDE_COLLISION_RECTS,
+    shotCollisionRects: HOSPITAL_WIDE_COLLISION_RECTS,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
   },

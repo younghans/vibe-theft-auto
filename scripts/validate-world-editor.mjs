@@ -395,6 +395,39 @@ function validateKenneyCatalogItems() {
 }
 
 function validateCustomTileCatalogItems() {
+  const hospital = getBuilderItemById('hospital_building');
+  const wideHospital = getBuilderItemById('hospital_building_wide');
+  assert(hospital, 'Hospital tile should exist');
+  assert(wideHospital, 'Wide hospital tile should exist');
+  assert(hospital.movementCollisionRects?.length === 3, 'Hospital should use form-fitting movement colliders instead of the full lot footprint');
+  assert(wideHospital.movementCollisionRects?.length === 5, 'Wide hospital should use form-fitting movement colliders instead of a full 2x1 box');
+  assert(hospital.shotCollisionRects?.length === hospital.movementCollisionRects.length, 'Hospital shot collision should match its rebuilt silhouette');
+  assert(wideHospital.shotCollisionRects?.length === wideHospital.movementCollisionRects.length, 'Wide hospital shot collision should match its rebuilt silhouette');
+  assert(Math.max(...hospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 23, 'Hospital collision height should cover the taller rebuilt profile');
+  assert(Math.max(...wideHospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 23, 'Wide hospital collision height should cover the taller rebuilt profile');
+
+  const getRectSpan = (rects, axis) => {
+    const centerKey = axis === 'x' ? 'x' : 'z';
+    const halfKey = axis === 'x' ? 'halfWidth' : 'halfDepth';
+    const min = Math.min(...rects.map((rect) => rect[centerKey] - rect[halfKey]));
+    const max = Math.max(...rects.map((rect) => rect[centerKey] + rect[halfKey]));
+    return max - min;
+  };
+  const hospitalCollisionRects = placementToCollisionRects(
+    { itemId: hospital.id, layer: 'tile', cellX: 0, cellZ: 0, rotationQuarterTurns: 0 },
+    hospital,
+    { collisionKey: 'blocksMovement' }
+  );
+  const wideHospitalCollisionRects = placementToCollisionRects(
+    { itemId: wideHospital.id, layer: 'tile', cellX: 0, cellZ: 0, rotationQuarterTurns: 0 },
+    wideHospital,
+    { collisionKey: 'blocksMovement' }
+  );
+  assert(getRectSpan(hospitalCollisionRects, 'x') < hospital.size[0] * 0.82, 'Hospital collision width should leave lot margin around the rebuilt structure');
+  assert(getRectSpan(hospitalCollisionRects, 'z') < hospital.size[1] * 0.82, 'Hospital collision depth should leave lot margin around the rebuilt structure');
+  assert(getRectSpan(wideHospitalCollisionRects, 'x') < wideHospital.size[0] * 0.9, 'Wide hospital collision width should leave lot margin around the rebuilt structure');
+  assert(getRectSpan(wideHospitalCollisionRects, 'z') < wideHospital.size[1] * 0.82, 'Wide hospital collision depth should leave lot margin around the rebuilt structure');
+
   const basketballCourt = getBuilderItemById('basketball_court_half');
   assert(basketballCourt, 'Basketball half-court tile should exist');
   assert(getBuilderItemById('basketball_half_court') === basketballCourt, 'Basketball half court should resolve from the natural slug alias');
