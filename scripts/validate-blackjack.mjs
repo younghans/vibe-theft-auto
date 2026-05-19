@@ -43,9 +43,9 @@ function validateSharedRules() {
   assert(isSoftBlackjackHand([{ rank: 'A' }, { rank: '9' }]), 'A+9 should be a soft hand.');
   assert(isSoftBlackjackHand([{ rank: 'A' }, { rank: 'A' }]), 'A+A should be a soft hand.');
   assert(isNaturalBlackjack([{ rank: 'A' }, { rank: 'K' }]), 'A+K should be a natural blackjack.');
-  assert(BLACKJACK_MAX_WAGER === 5000, 'Blackjack max wager should be $5000.');
-  assert(normalizeBlackjackWager(5000) === 5000, 'A $5000 blackjack wager should be allowed.');
-  assert(normalizeBlackjackWager(5001) === 5000, 'Blackjack wagers above $5000 should clamp to the max.');
+  assert(BLACKJACK_MAX_WAGER === 1000000, 'Blackjack max wager should be $1,000,000.');
+  assert(normalizeBlackjackWager(1000000) === 1000000, 'A $1,000,000 blackjack wager should be allowed.');
+  assert(normalizeBlackjackWager(1000001) === 1000000, 'Blackjack wagers above $1,000,000 should clamp to the max.');
 
   const session = createBlackjackSession({ npcId: 'npc_table', wager: 25, rng: () => 0.42, now: 1234 });
   const publicState = serializeBlackjackSession(session, { money: 75 });

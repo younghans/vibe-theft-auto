@@ -142,9 +142,9 @@ async function validateOfficeJobTerminalFlow() {
   const janitor = getOfficeJobDefinition(OFFICE_JOB_IDS.janitor);
   const manager = getOfficeJobDefinition(OFFICE_JOB_IDS.officeManager);
   const ceo = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo);
-  assert(janitor?.rewardMoney === 25 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $25 and require level 5 Intelligence.');
-  assert(manager?.rewardMoney === 100 && manager?.intelligenceRequired === 10 && manager?.charismaLevelRequired === 5, 'Office Manager job should pay $100 and require level 10 Intelligence plus level 5 Charisma.');
-  assert(ceo?.rewardMoney === 500 && ceo?.intelligenceRequired === 20 && ceo?.charismaLevelRequired === 10 && ceo?.strengthLevelRequired === 10, 'CEO job should pay $500 and require level 20 Intelligence plus level 10 Charisma and level 10 Strength.');
+  assert(janitor?.rewardMoney === 50 && janitor?.intelligenceRequired === 5, 'Janitor job should pay $50 and require level 5 Intelligence.');
+  assert(manager?.rewardMoney === 150 && manager?.intelligenceRequired === 10 && manager?.charismaLevelRequired === 5, 'Office Manager job should pay $150 and require level 10 Intelligence plus level 5 Charisma.');
+  assert(ceo?.rewardMoney === 1000 && ceo?.intelligenceRequired === 20 && ceo?.charismaLevelRequired === 10 && ceo?.strengthLevelRequired === 10, 'CEO job should pay $1000 and require level 20 Intelligence plus level 10 Charisma and level 10 Strength.');
   assert(canPlayerWorkOfficeJob(10, manager, 5), 'Office Manager should unlock at level 10 Intelligence and level 5 Charisma.');
   assert(!canPlayerWorkOfficeJob(9, manager, 5), 'Office Manager should stay locked below level 10 Intelligence.');
   assert(!canPlayerWorkOfficeJob(10, manager, 4), 'Office Manager should stay locked below level 5 Charisma.');

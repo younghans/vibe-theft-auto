@@ -1,6 +1,6 @@
 export const BLACKJACK_MIN_WAGER = 0;
 export const BLACKJACK_DEFAULT_WAGER = 10;
-export const BLACKJACK_MAX_WAGER = 5000;
+export const BLACKJACK_MAX_WAGER = 1000000;
 export const BLACKJACK_DEALER_STAND_VALUE = 17;
 export const BLACKJACK_PROMPT_RADIUS = 5.2;
 
