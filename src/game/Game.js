@@ -11593,7 +11593,7 @@ export class Game {
     void this.npcService.releaseWorkoutPlacement(normalizedPlacementId).catch(() => {});
   }
 
-  completeWorkoutPlacement(placementId = '') {
+  completeWorkoutPlacement(placementId = '', result = {}) {
     const normalizedPlacementId = typeof placementId === 'string' ? placementId.trim() : '';
     if (!normalizedPlacementId) {
       return;
@@ -11604,7 +11604,7 @@ export class Game {
       return;
     }
 
-    void this.npcService.completeWorkoutPlacement(normalizedPlacementId)
+    void this.npcService.completeWorkoutPlacement(normalizedPlacementId, result)
       .then((result) => {
         if (!result?.ok) {
           this.releaseWorkoutPlacement(normalizedPlacementId);
@@ -12038,7 +12038,7 @@ export class Game {
         this.finishWorkout();
       } else {
         this.hud.showToast('Shot missed. No XP awarded.');
-        this.finishWorkout({ cancelled: true });
+        this.finishWorkout({ awardXp: false, showCompleteToast: false });
       }
     }
     return true;
@@ -12087,7 +12087,7 @@ export class Game {
     this.activeWorkout.carriedBarbell.quaternion.copy(this.workoutBarbellQuaternion);
   }
 
-  finishWorkout({ cancelled = false } = {}) {
+  finishWorkout({ cancelled = false, awardXp = true, showCompleteToast = true } = {}) {
     if (!this.activeWorkout) {
       return false;
     }
@@ -12122,10 +12122,10 @@ export class Game {
       if (cancelled) {
         this.releaseWorkoutPlacement(placementId);
       } else {
-        this.completeWorkoutPlacement(placementId);
+        this.completeWorkoutPlacement(placementId, { awardXp });
       }
     }
-    if (!cancelled) {
+    if (!cancelled && showCompleteToast) {
       this.hud.showToast(workout.activityConfig?.completeToast ?? 'Workout complete.');
     }
     return true;

@@ -396,6 +396,7 @@ function createDefaultPlayerState(overrides = {}) {
     schoolTasksCompletedCount: 0,
     janitorTasksCompletedCount: 0,
     officeManagerCompletedAt: 0,
+    ceoCompletedAt: 0,
     strengthXp: 0,
     agilityXp: 0,
     intelligenceXp: 0,
@@ -2529,6 +2530,9 @@ export class NpcServiceMock {
     } else if (job.id === OFFICE_JOB_IDS.officeManager) {
       access.player.officeManagerCompletedAt = Date.now();
       this.normalizePlayerSelectedMission(access.player);
+    } else if (job.id === OFFICE_JOB_IDS.ceo) {
+      access.player.ceoCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(access.player);
     }
     const rewardText = [
       moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
@@ -2543,6 +2547,7 @@ export class NpcServiceMock {
       money: access.player.money,
       moneyAwarded,
       xp: reward.xp,
+      ceoCompletedAt: access.player.ceoCompletedAt,
       message: rewardText,
       skillAward
     };
@@ -2814,7 +2819,7 @@ export class NpcServiceMock {
     return { ok: true, placementId: normalizedPlacementId };
   }
 
-  async completeWorkoutPlacement(placementId = '') {
+  async completeWorkoutPlacement(placementId = '', result = {}) {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false) {
       return { ok: false, error: 'You cannot complete that workout right now.' };
@@ -2832,23 +2837,32 @@ export class NpcServiceMock {
       return { ok: false, error: 'That workout is not active.' };
     }
 
+    const awardXp = result?.awardXp !== false;
     const skillAwards = [];
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
-      const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
+      const skillAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP)
+        : null;
       if (skillAward) {
         skillAwards.push(skillAward);
       }
       this.normalizePlayerSelectedMission(player);
     } else if (target.workoutType === 'basketball-shot') {
-      const strengthAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP);
+      player.gymPumpCompletedAt = Date.now();
+      const strengthAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP)
+        : null;
       if (strengthAward) {
         skillAwards.push(strengthAward);
       }
-      const agilityAward = this.awardPlayerSkillXp(player, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP);
+      const agilityAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP)
+        : null;
       if (agilityAward) {
         skillAwards.push(agilityAward);
       }
+      this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
     this.emit();

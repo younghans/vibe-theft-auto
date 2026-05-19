@@ -20,7 +20,7 @@ Available missions should be clickable. Clicking one selects it as the player's 
 
 Completed missions should show a green checkmark and strikethrough text. They should not be selectable unless we later decide a mission is repeatable.
 
-Locked missions should show a lock state and a short requirement such as "Help the Shady Figure first" or "Complete: Go get a pump in the gym." Locked missions should not be selectable.
+Locked missions should show a lock state and a short requirement such as "Help the Shady Figure first" or "Complete: Lift at the gym or take a shot at the basketball hoop." Locked missions should not be selectable.
 
 ## Initial Mission Progression
 
@@ -30,13 +30,13 @@ The first version can use the existing progression already tracked on the player
 | --- | --- | --- | --- | --- |
 | `make-money` | Make some money. Maybe the Shady Figure can help? | `money` | Always available at start | Player accepts/completes the first delivery path |
 | `delivery` | Deliver the package | `package` | Shady Figure delivery accepted | `deliveryQuestCompletionCount > 0` for first completion |
-| `gym-pump` | Go get a pump in the gym. | `muscle` | First delivery complete | `gymPumpCompletedAt > 0` |
+| `gym-pump` | Lift at the gym or take a shot at the basketball hoop. | `muscle` | First delivery complete | `gymPumpCompletedAt > 0` |
 | `stock-buy` | Buy a stock at the bank. | `chart` | First delivery complete | `stockBoughtAt > 0` |
 | `blackjack-hand` | Play a hand of blackjack at the casino. | `playing-card` | First delivery complete | `blackjackHandPlayedAt > 0` |
 
 Important rule: future progression missions stay locked until the player has helped the Shady Figure. In practice, that means missions after the intro cash/delivery step should require `deliveryQuestCompletionCount > 0`.
 
-After the first delivery is complete, `gym-pump`, `stock-buy`, and `blackjack-hand` should all be available. The default fallback order should still guide players through Gym Pump, then First Stock, then Blackjack Hand, but players can manually switch to any unlocked incomplete mission.
+After the first delivery is complete, `gym-pump`, `stock-buy`, and `blackjack-hand` should all be available. The default fallback order should still guide players through Lift or Shoot, then First Stock, then Blackjack Hand, but players can manually switch to any unlocked incomplete mission.
 
 ## Mission States
 
@@ -94,7 +94,7 @@ If the selected mission becomes invalid, use a deterministic fallback:
 3. A repeatable/evergreen mission, such as making money through the Shady Figure.
 4. No visible mission if nothing is available.
 
-This fallback order should be explicit in shared mission rules rather than inferred from UI order. Multiple missions can be available at once, but automatic guidance should prefer Delivery if active, then Gym Pump, then First Stock, then Blackjack Hand, then Make Money.
+This fallback order should be explicit in shared mission rules rather than inferred from UI order. Multiple missions can be available at once, but automatic guidance should prefer Delivery if active, then Lift or Shoot, then First Stock, then Blackjack Hand, then Make Money.
 
 ## Active Delivery Behavior
 

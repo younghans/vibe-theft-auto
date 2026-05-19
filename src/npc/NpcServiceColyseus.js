@@ -149,6 +149,7 @@ function clonePlayerState(player) {
     schoolTasksCompletedCount: activity.schoolTasksCompletedCount ?? player?.schoolTasksCompletedCount ?? 0,
     janitorTasksCompletedCount: activity.janitorTasksCompletedCount ?? player?.janitorTasksCompletedCount ?? 0,
     officeManagerCompletedAt: activity.officeManagerCompletedAt ?? player?.officeManagerCompletedAt ?? 0,
+    ceoCompletedAt: activity.ceoCompletedAt ?? player?.ceoCompletedAt ?? 0,
     strengthXp: skills.strengthXp ?? player?.strengthXp ?? 0,
     agilityXp: skills.agilityXp ?? player?.agilityXp ?? 0,
     intelligenceXp: skills.intelligenceXp ?? player?.intelligenceXp ?? 0,
@@ -1130,13 +1131,16 @@ export class NpcServiceColyseus {
     return this.rpc('workout:claim', { placementId: normalized });
   }
 
-  async completeWorkoutPlacement(placementId = '') {
+  async completeWorkoutPlacement(placementId = '', result = {}) {
     const normalized = typeof placementId === 'string' ? placementId.trim() : '';
     if (!normalized) {
       return { ok: false, error: 'That workout station is not available.' };
     }
 
-    return this.rpc('workout:complete', { placementId: normalized });
+    return this.rpc('workout:complete', {
+      placementId: normalized,
+      awardXp: result?.awardXp !== false
+    });
   }
 
   async releaseWorkoutPlacement(placementId = '') {

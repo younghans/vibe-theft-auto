@@ -1554,6 +1554,7 @@ function validateTaskSequence() {
     janitorTasksCompletedCount: 0,
     skateboardOwned: false,
     officeManagerCompletedAt: 0,
+    ceoCompletedAt: 0,
     charismaXp: 0
   };
   const schoolCompletePlayer = {
@@ -1603,7 +1604,7 @@ function validateTaskSequence() {
   );
   assert(
     resolvePlayerTask({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000 } }).id === TASK_IDS.stockBuy,
-    'Task sequence should route to buying a stock after gym pump.'
+    'Task sequence should route to buying a stock after the lift-or-shoot mission.'
   );
   assert(
     resolvePlayerTask({ localPlayerState: { ...janitorCompletePlayer, gymPumpCompletedAt: 1000, stockBoughtAt: 2000 } }).id === TASK_IDS.blackjackHand,
@@ -1644,9 +1645,17 @@ function validateTaskSequence() {
     resolvePlayerTask({ localPlayerState: officeManagerCompletePlayer }).id === TASK_IDS.charismaLevel5,
     'Task sequence should route to the Charisma level mission after office manager.'
   );
-  const allSequencedMissionsCompletePlayer = {
+  const charismaCompletePlayer = {
     ...officeManagerCompletePlayer,
     charismaXp: charismaLevel5Xp
+  };
+  assert(
+    resolvePlayerTask({ localPlayerState: charismaCompletePlayer }).id === TASK_IDS.becomeCeo,
+    'Task sequence should route to the CEO mission after Charisma level 5.'
+  );
+  const allSequencedMissionsCompletePlayer = {
+    ...charismaCompletePlayer,
+    ceoCompletedAt: 5000
   };
   assert(
     resolvePlayerTask({ localPlayerState: allSequencedMissionsCompletePlayer }).id === '',
@@ -1783,6 +1792,18 @@ function validateTaskSequence() {
     }).completedTask,
     'Task tracker should complete the Charisma mission when Charisma reaches level 5.'
   );
+
+  const ceoTracker = new TaskTracker();
+  ceoTracker.update({ localPlayerState: charismaCompletePlayer });
+  assert(
+    ceoTracker.update({
+      localPlayerState: {
+        ...charismaCompletePlayer,
+        ceoCompletedAt: 5000
+      }
+    }).completedTask,
+    'Task tracker should complete the CEO mission when CEO work is completed.'
+  );
 }
 
 function validateDeliveryQuestCarry() {
@@ -1877,9 +1898,10 @@ function validateMissionSequencer() {
     TASK_IDS.blackjackHand,
     TASK_IDS.transportationUpgrade,
     TASK_IDS.officeManagerPromotion,
-    TASK_IDS.charismaLevel5
+    TASK_IDS.charismaLevel5,
+    TASK_IDS.becomeCeo
   ];
-  const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7, 9];
+  const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7, 9, 10];
   assert(sequence.length === MISSION_CATALOG.length, 'Mission sequencer should include every catalog mission');
   assert(
     JSON.stringify(sequence.map((entry) => entry.missionId)) === JSON.stringify(expectedOrder),
@@ -1895,6 +1917,26 @@ function validateMissionSequencer() {
     charismaMission?.description === CHARISMA_LEVEL_MISSION_DESCRIPTION,
     'Sequenced Charisma mission should preserve the admin description'
   );
+  const gymMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.gymPump);
+  assert(gymMission?.title === 'Lift at the gym or take a shot at the basketball hoop', 'Gym mission should mention lifting or shooting hoops');
+  assert(/basketball/i.test(gymMission?.description ?? ''), 'Gym mission description should include the basketball completion path');
+  const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
+  const mockServiceSource = readFileSync(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
+  assert(
+    /Shot missed\. No XP awarded\.[\s\S]*finishWorkout\(\{ awardXp: false, showCompleteToast: false \}\)/.test(gameSource),
+    'Missed basketball shots should still report the shot attempt without XP'
+  );
+  assert(
+    /target\.workoutType === 'basketball-shot'[\s\S]*player\.gymPumpCompletedAt = Date\.now\(\)/.test(serverSource),
+    'Server basketball shots should complete the lift-or-shoot mission'
+  );
+  assert(
+    /target\.workoutType === 'basketball-shot'[\s\S]*player\.gymPumpCompletedAt = Date\.now\(\)/.test(mockServiceSource),
+    'Mock basketball shots should complete the lift-or-shoot mission'
+  );
+  const ceoMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.becomeCeo);
+  assert(ceoMission?.label === 'Become CEO', 'Sequenced CEO mission should be promoted into the playable mission catalog');
   assert(sequence[0].makeAvailableAfterMission === false, 'The first mission should be available without a prior mission');
   for (let index = 1; index < sequence.length; index += 1) {
     assert(sequence[index].makeAvailableAfterMission === true, `Mission ${index + 1} should default to a sequence gate`);
@@ -1980,7 +2022,25 @@ function validateMissionSequencer() {
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   }, '', sequence);
   const completedCharismaSnapshot = postCharismaSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  const availableCeoSnapshot = postCharismaSnapshots.find((mission) => mission.id === TASK_IDS.becomeCeo);
   assert(completedCharismaSnapshot?.status === MISSION_STATUS.completed, 'Charisma mission should complete at level 5');
+  assert(availableCeoSnapshot?.status === MISSION_STATUS.available, 'CEO mission should unlock after the Charisma mission');
+
+  const postCeoSnapshots = getMissionSnapshots({
+    ...noProgressPlayer,
+    deliveryQuestCompletionCount: 1,
+    schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
+    janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED,
+    gymPumpCompletedAt: 1,
+    stockBoughtAt: 1,
+    blackjackHandPlayedAt: 1,
+    skateboardOwned: true,
+    officeManagerCompletedAt: 1,
+    charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL),
+    ceoCompletedAt: 1
+  }, '', sequence);
+  const completedCeoSnapshot = postCeoSnapshots.find((mission) => mission.id === TASK_IDS.becomeCeo);
+  assert(completedCeoSnapshot?.status === MISSION_STATUS.completed, 'CEO mission should complete after a CEO shift');
 
   const rows = getMissionSequenceViewModel(sequence);
   assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
@@ -2008,6 +2068,7 @@ function validateMissionSequencer() {
     blackjackHandPlayedAt: 1,
     skateboardOwned: true,
     officeManagerCompletedAt: 1,
+    ceoCompletedAt: 1,
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   };
   const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)

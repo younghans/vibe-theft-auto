@@ -9,6 +9,9 @@ import { isBlackjackDealerNpc } from '../shared/blackjack.js';
 import {
   JANITOR_TASKS_REQUIRED,
   CHARISMA_LEVEL_MISSION_TARGET_LEVEL,
+  BECOME_CEO_CHARISMA_LEVEL_REQUIRED,
+  BECOME_CEO_INTELLIGENCE_REQUIRED,
+  BECOME_CEO_STRENGTH_LEVEL_REQUIRED,
   MISSION_CATALOG,
   MISSION_IDS,
   MISSION_STATUS,
@@ -234,11 +237,25 @@ function getGymTaskTarget(context = {}) {
     return activeSnatchTarget;
   }
 
+  const activeBasketballHoop = (context.activeInteractables ?? [])
+    .find((interactable) => interactable.kind === 'basketball-shot-workout');
+  const activeBasketballHoopTarget = getTaskPositionForInteractable(activeBasketballHoop, context);
+  if (activeBasketballHoopTarget) {
+    return activeBasketballHoopTarget;
+  }
+
   const worldSnatch = getWorldBuilderInteractables(context)
     .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
   const worldSnatchTarget = getTaskPositionForInteractable(worldSnatch, context);
   if (worldSnatchTarget) {
     return worldSnatchTarget;
+  }
+
+  const worldBasketballHoop = getWorldBuilderInteractables(context)
+    .find((interactable) => interactable.kind === 'basketball-shot-workout' || interactable.itemId === 'basketball_hoop');
+  const worldBasketballHoopTarget = getTaskPositionForInteractable(worldBasketballHoop, context);
+  if (worldBasketballHoopTarget) {
+    return worldBasketballHoopTarget;
   }
 
   return getGymBuildingTaskTarget(context);
@@ -321,6 +338,10 @@ function getMissionTarget(missionId = '', context = {}) {
     return getOfficeJobTaskTarget(context, OFFICE_JOB_IDS.officeManager);
   }
 
+  if (missionId === TASK_IDS.becomeCeo) {
+    return getOfficeJobTaskTarget(context, OFFICE_JOB_IDS.ceo);
+  }
+
   if (missionId === TASK_IDS.makeMoney) {
     return getDeliveryQuestGiverTaskTarget(context);
   }
@@ -373,6 +394,28 @@ function getMissionDescription(mission = null, context = {}) {
     return currentLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
       ? `Charisma level ${CHARISMA_LEVEL_MISSION_TARGET_LEVEL} reached.`
       : `Reach Charisma level ${CHARISMA_LEVEL_MISSION_TARGET_LEVEL}. Current: ${currentLevel}/${CHARISMA_LEVEL_MISSION_TARGET_LEVEL}.`;
+  }
+
+  if (mission?.id === TASK_IDS.becomeCeo) {
+    if (progress.ceoCompletedAt > 0) {
+      return 'CEO shift complete.';
+    }
+
+    const intelligence = Math.max(0, Math.floor(Number(progress.intelligenceXp ?? 0) || 0));
+    const charismaLevel = Math.max(1, Math.floor(Number(progress.charismaLevel ?? 1) || 1));
+    const strengthLevel = Math.max(1, Math.floor(Number(progress.strengthLevel ?? 1) || 1));
+    const requirementsMet = intelligence >= BECOME_CEO_INTELLIGENCE_REQUIRED
+      && charismaLevel >= BECOME_CEO_CHARISMA_LEVEL_REQUIRED
+      && strengthLevel >= BECOME_CEO_STRENGTH_LEVEL_REQUIRED;
+    if (requirementsMet) {
+      return 'Complete a CEO shift at the meeting table.';
+    }
+
+    return [
+      `Intelligence ${Math.min(intelligence, BECOME_CEO_INTELLIGENCE_REQUIRED)}/${BECOME_CEO_INTELLIGENCE_REQUIRED}`,
+      `Charisma Lv ${Math.min(charismaLevel, BECOME_CEO_CHARISMA_LEVEL_REQUIRED)}/${BECOME_CEO_CHARISMA_LEVEL_REQUIRED}`,
+      `Strength Lv ${Math.min(strengthLevel, BECOME_CEO_STRENGTH_LEVEL_REQUIRED)}/${BECOME_CEO_STRENGTH_LEVEL_REQUIRED}`
+    ].join('. ');
   }
 
   return mission?.description ?? '';
@@ -499,6 +542,13 @@ function didTaskComplete(previousTaskId = '', progress = {}, previousProgress = 
     return (
       previousProgress.charismaLevel < CHARISMA_LEVEL_MISSION_TARGET_LEVEL
       && progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
+    );
+  }
+
+  if (previousTaskId === TASK_IDS.becomeCeo) {
+    return (
+      progress.ceoCompletedAt > 0
+      && progress.ceoCompletedAt !== previousProgress.ceoCompletedAt
     );
   }
 

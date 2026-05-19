@@ -385,7 +385,8 @@ const PlayerActivityState = schema({
   blackjackHandPlayedAt: 'number',
   schoolTasksCompletedCount: 'number',
   janitorTasksCompletedCount: 'number',
-  officeManagerCompletedAt: 'number'
+  officeManagerCompletedAt: 'number',
+  ceoCompletedAt: 'number'
 });
 
 const PlayerSkillState = schema({
@@ -507,7 +508,8 @@ const PLAYER_STATE_SECTIONS = [
       'blackjackHandPlayedAt',
       'schoolTasksCompletedCount',
       'janitorTasksCompletedCount',
-      'officeManagerCompletedAt'
+      'officeManagerCompletedAt',
+      'ceoCompletedAt'
     ]
   },
   {
@@ -833,6 +835,7 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
       schoolTasksCompletedCount: player.schoolTasksCompletedCount,
       janitorTasksCompletedCount: player.janitorTasksCompletedCount,
       officeManagerCompletedAt: player.officeManagerCompletedAt,
+      ceoCompletedAt: player.ceoCompletedAt,
       strengthXp: player.strengthXp,
       agilityXp: player.agilityXp,
       intelligenceXp: player.intelligenceXp,
@@ -928,6 +931,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
   player.schoolTasksCompletedCount = sanitizeSnapshotNumber(saved.schoolTasksCompletedCount, 0, { integer: true, min: 0 });
   player.janitorTasksCompletedCount = sanitizeSnapshotNumber(saved.janitorTasksCompletedCount, 0, { integer: true, min: 0 });
   player.officeManagerCompletedAt = sanitizeSnapshotNumber(saved.officeManagerCompletedAt, 0, { integer: true, min: 0 });
+  player.ceoCompletedAt = sanitizeSnapshotNumber(saved.ceoCompletedAt, 0, { integer: true, min: 0 });
   player.strengthXp = sanitizeSnapshotNumber(saved.strengthXp, 0, { integer: true, min: 0 });
   player.agilityXp = sanitizeSnapshotNumber(saved.agilityXp, 0, { integer: true, min: 0 });
   player.intelligenceXp = sanitizeSnapshotNumber(saved.intelligenceXp, 0, { integer: true, min: 0 });
@@ -1304,6 +1308,7 @@ export class WorldRoom extends Room {
     player.schoolTasksCompletedCount = 0;
     player.janitorTasksCompletedCount = 0;
     player.officeManagerCompletedAt = 0;
+    player.ceoCompletedAt = 0;
     player.strengthXp = 0;
     player.agilityXp = 0;
     player.intelligenceXp = 0;
@@ -2894,6 +2899,9 @@ export class WorldRoom extends Room {
     } else if (job.id === OFFICE_JOB_IDS.officeManager) {
       player.officeManagerCompletedAt = Date.now();
       this.normalizePlayerSelectedMission(player);
+    } else if (job.id === OFFICE_JOB_IDS.ceo) {
+      player.ceoCompletedAt = Date.now();
+      this.normalizePlayerSelectedMission(player);
     }
     const rewardText = [
       moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
@@ -2907,6 +2915,7 @@ export class WorldRoom extends Room {
       money: player.money,
       moneyAwarded,
       xp: reward.xp,
+      ceoCompletedAt: player.ceoCompletedAt,
       message: rewardText,
       skillAward
     };
@@ -3071,23 +3080,32 @@ export class WorldRoom extends Room {
       throw new Error('That workout is not active.');
     }
 
+    const awardXp = message?.awardXp !== false;
     const skillAwards = [];
     if (target.workoutType === 'snatch') {
       player.gymPumpCompletedAt = Date.now();
-      const skillAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
+      const skillAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.strength, STRENGTH_SNATCH_XP)
+        : null;
       if (skillAward) {
         skillAwards.push(skillAward);
       }
       this.normalizePlayerSelectedMission(player);
     } else if (target.workoutType === 'basketball-shot') {
-      const strengthAward = this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP);
+      player.gymPumpCompletedAt = Date.now();
+      const strengthAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP)
+        : null;
       if (strengthAward) {
         skillAwards.push(strengthAward);
       }
-      const agilityAward = this.awardPlayerSkillXp(player, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP);
+      const agilityAward = awardXp
+        ? this.awardPlayerSkillXp(player, SKILL_IDS.agility, BASKETBALL_SHOT_AGILITY_XP)
+        : null;
       if (agilityAward) {
         skillAwards.push(agilityAward);
       }
+      this.normalizePlayerSelectedMission(player);
     }
     player.workoutPlacementId = '';
     return {

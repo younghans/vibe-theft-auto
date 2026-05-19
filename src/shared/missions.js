@@ -7,6 +7,10 @@ import {
 } from './skills.js';
 
 import { isPlayerVehicleOwner } from './carDealer.js';
+import {
+  OFFICE_JOB_IDS,
+  getOfficeJobDefinition
+} from './officeJobs.js';
 
 export const MISSION_IDS = Object.freeze({
   delivery: 'delivery',
@@ -18,6 +22,7 @@ export const MISSION_IDS = Object.freeze({
   transportationUpgrade: 'custom-mission-transportation-upgrade-buy-a-skatebo-1mk4jok',
   officeManagerPromotion: 'custom-mission-your-first-promotion-get-a-job-as-th-kehj25',
   charismaLevel5: 'custom-mission-up-your-social-skills-grind-for-char-1knt645',
+  becomeCeo: 'custom-mission-become-the-ceo-boost-your-charisma-s-s76oh',
   makeMoney: 'make-money'
 });
 
@@ -32,6 +37,20 @@ export const SCHOOL_TEACHER_TASKS_REQUIRED = 3;
 export const JANITOR_TASKS_REQUIRED = 4;
 export const CHARISMA_LEVEL_MISSION_TARGET_LEVEL = 5;
 export const CHARISMA_LEVEL_MISSION_DESCRIPTION = 'Up your social skills. Grind for Charisma level 5.';
+const CEO_JOB_DEFINITION = getOfficeJobDefinition(OFFICE_JOB_IDS.ceo) ?? {};
+export const BECOME_CEO_MISSION_DESCRIPTION = 'Boost your charisma, strength, and intelligence, then complete a CEO shift.';
+export const BECOME_CEO_INTELLIGENCE_REQUIRED = Math.max(
+  0,
+  Math.floor(Number(CEO_JOB_DEFINITION.intelligenceRequired ?? 0) || 0)
+);
+export const BECOME_CEO_CHARISMA_LEVEL_REQUIRED = Math.max(
+  0,
+  Math.floor(Number(CEO_JOB_DEFINITION.charismaLevelRequired ?? 0) || 0)
+);
+export const BECOME_CEO_STRENGTH_LEVEL_REQUIRED = Math.max(
+  0,
+  Math.floor(Number(CEO_JOB_DEFINITION.strengthLevelRequired ?? 0) || 0)
+);
 
 export const MISSION_CATALOG = Object.freeze([
   {
@@ -68,10 +87,10 @@ export const MISSION_CATALOG = Object.freeze([
   },
   {
     id: MISSION_IDS.gymPump,
-    title: '\u{1F4AA} Go get a pump in the gym.',
-    label: 'Gym Pump',
+    title: 'Lift at the gym or take a shot at the basketball hoop',
+    label: 'Lift or Shoot',
     icon: 'muscle',
-    description: 'Use the snatch station and finish a workout.',
+    description: 'Use the snatch station or take a shot at the basketball hoop.',
     requirement: 'Help the Shady Figure first.'
   },
   {
@@ -113,6 +132,14 @@ export const MISSION_CATALOG = Object.freeze([
     icon: 'charisma',
     description: CHARISMA_LEVEL_MISSION_DESCRIPTION,
     requirement: 'Complete the office manager promotion first.'
+  },
+  {
+    id: MISSION_IDS.becomeCeo,
+    title: 'Become the CEO: Boost your charisma, strength, and intelligence.',
+    label: 'Become CEO',
+    icon: 'office',
+    description: BECOME_CEO_MISSION_DESCRIPTION,
+    requirement: 'Complete the Charisma mission first.'
   }
 ].map(Object.freeze));
 
@@ -197,6 +224,17 @@ const DEFAULT_MISSION_SEQUENCE = Object.freeze([
     icon: 'custom',
     makeAvailableAfterMission: true,
     availableAfterMissionNumber: 9
+  }),
+  Object.freeze({
+    missionId: MISSION_IDS.becomeCeo,
+    custom: true,
+    title: 'Become the CEO : Boost your charisma, strength, and intelligence.',
+    label: 'Become the CEO : Boost your charisma, strength...',
+    description: BECOME_CEO_MISSION_DESCRIPTION,
+    prompt: BECOME_CEO_MISSION_DESCRIPTION,
+    icon: 'custom',
+    makeAvailableAfterMission: true,
+    availableAfterMissionNumber: 10
   })
 ]);
 const CUSTOM_MISSION_ID_PREFIX = 'custom-mission-';
@@ -551,6 +589,9 @@ export function getMissionProgressSnapshot(player = null) {
   const schoolTasksCompletedCount = Number(player?.schoolTasksCompletedCount ?? 0);
   const janitorTasksCompletedCount = Number(player?.janitorTasksCompletedCount ?? 0);
   const officeManagerCompletedAt = Number(player?.officeManagerCompletedAt ?? 0);
+  const ceoCompletedAt = Number(player?.ceoCompletedAt ?? 0);
+  const strengthXp = getPlayerSkillXp(player, SKILL_IDS.strength);
+  const intelligenceXp = getPlayerSkillXp(player, SKILL_IDS.intelligence);
   const charismaXp = getPlayerSkillXp(player, SKILL_IDS.charisma);
   return {
     deliveryCompletionCount: getDeliveryCompletionCount(player),
@@ -566,6 +607,10 @@ export function getMissionProgressSnapshot(player = null) {
       : 0,
     skateboardOwned: isPlayerVehicleOwner(player),
     officeManagerCompletedAt: Number.isFinite(officeManagerCompletedAt) ? Math.max(0, officeManagerCompletedAt) : 0,
+    ceoCompletedAt: Number.isFinite(ceoCompletedAt) ? Math.max(0, ceoCompletedAt) : 0,
+    strengthXp,
+    strengthLevel: getSkillLevelFromXp(strengthXp),
+    intelligenceXp,
     charismaXp,
     charismaLevel: getSkillLevelFromXp(charismaXp)
   };
@@ -597,6 +642,10 @@ export function isMissionCompleteForSequence(missionId = '', player = null, sequ
 
   if (id === MISSION_IDS.charismaLevel5) {
     return progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL;
+  }
+
+  if (id === MISSION_IDS.becomeCeo) {
+    return progress.ceoCompletedAt > 0;
   }
 
   if (isCustomMissionId(id)) {
@@ -714,6 +763,10 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
     return progress.charismaLevel >= CHARISMA_LEVEL_MISSION_TARGET_LEVEL
       ? MISSION_STATUS.completed
       : MISSION_STATUS.available;
+  }
+
+  if (id === MISSION_IDS.becomeCeo) {
+    return progress.ceoCompletedAt > 0 ? MISSION_STATUS.completed : MISSION_STATUS.available;
   }
 
   if (isCustomMissionId(id)) {
