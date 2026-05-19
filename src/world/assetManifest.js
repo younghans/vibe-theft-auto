@@ -54,6 +54,7 @@ export const assets = {
       drunkWalk: assetUrl('mixamo', 'animations', 'drunk-walk.json'),
       standUp: assetUrl('mixamo', 'animations', 'stand-up.json'),
       smoking: assetUrl('mixamo', 'animations', 'smoking.json'),
+      texting: assetUrl('mixamo', 'animations', 'texting.json'),
       snakeHipHopDance: assetUrl('mixamo', 'animations', 'snake-hip-hop-dance.json'),
       waveHipHopDance: assetUrl('mixamo', 'animations', 'wave-hip-hop-dance.json'),
       waving: assetUrl('mixamo', 'animations', 'waving.json')

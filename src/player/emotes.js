@@ -4,7 +4,7 @@ export const EMOTE_SLOTS = Object.freeze([
   { id: 'snakeHipHopDance', label: 'Snake Dance' },
   { id: 'standUp', label: 'Stand Up' },
   { id: 'smoking', label: 'Smoking' },
-  null,
+  { id: 'texting', label: 'Texting' },
   null,
   null
 ]);
@@ -74,6 +74,15 @@ export const EMOTES_BY_ID = Object.freeze({
   smoking: {
     label: 'Smoking',
     clipName: 'smoking',
+    loop: true,
+    fadeIn: 0.12,
+    fadeOut: 0.18,
+    playbackRate: 1,
+    upperBodyOnly: true
+  },
+  texting: {
+    label: 'Texting',
+    clipName: 'texting',
     loop: true,
     fadeIn: 0.12,
     fadeOut: 0.18,
