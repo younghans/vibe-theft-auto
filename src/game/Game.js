@@ -202,7 +202,7 @@ import {
   normalizeVibeHeroSongId
 } from '../shared/vibeHero.js';
 import {
-  cloneVibeRadioTracks
+  createDefaultVibeRadioTracks
 } from '../shared/vibeRadio.js';
 import { getNpcModelVoice } from '../shared/npcVoice.js';
 
@@ -1231,7 +1231,7 @@ export class Game {
     this.vibeHeroAudioNodes = [];
     this.vibeHeroAudioElement = null;
     this.vibeHeroAudioPreloads = new Map();
-    this.vibeRadioTracks = cloneVibeRadioTracks();
+    this.vibeRadioTracks = createDefaultVibeRadioTracks();
     this.vibeRadioAudio = new Audio();
     this.vibeRadioAudio.preload = 'metadata';
     this.vibeRadioSelectedTrackId = '';
@@ -3504,8 +3504,8 @@ export class Game {
     });
   }
 
-  syncVibeRadioTracksFromLayout(layout = this.currentLayout) {
-    const nextTracks = cloneVibeRadioTracks(layout?.vibeRadioTracks);
+  syncVibeRadioPlaylist() {
+    const nextTracks = createDefaultVibeRadioTracks();
     const previousSelectedTrackId = this.vibeRadioSelectedTrackId;
     this.vibeRadioTracks = nextTracks;
 
@@ -12421,7 +12421,7 @@ export class Game {
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
-          this.syncVibeRadioTracksFromLayout(layout);
+          this.syncVibeRadioPlaylist();
           this.gymDoorBlockersDirty = true;
         }
       });
@@ -12458,7 +12458,7 @@ export class Game {
         npcs: sharedLayout.npcs?.length ?? 0
       });
       this.currentLayout = sharedLayout;
-      this.syncVibeRadioTracksFromLayout(sharedLayout);
+      this.syncVibeRadioPlaylist();
       this.gymDoorBlockersDirty = true;
       this.markBoot('boot:avatar:start');
       const avatarPromise = this.buildAvatar(this.desiredLocalCharacterId)
@@ -13467,7 +13467,7 @@ export class Game {
 
     await this.worldBuilder.applyWorldPatch(patch);
     this.currentLayout = this.worldBuilder.getLayout();
-    this.syncVibeRadioTracksFromLayout(this.currentLayout);
+    this.syncVibeRadioPlaylist();
     this.gymDoorBlockersDirty = true;
   }
 

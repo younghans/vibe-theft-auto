@@ -118,10 +118,6 @@ function getTrackTitleFromSource(sourceUrl = '') {
   return normalizeVibeRadioText(baseName, VIBE_RADIO_TRACK_TITLE_MAX_LENGTH);
 }
 
-export function isVibeRadioMp3Source(sourceUrl = '') {
-  return Boolean(normalizeVibeRadioSource(sourceUrl));
-}
-
 export function createDefaultVibeRadioTracks() {
   return cloneVibeRadioTracks(VIBE_RADIO_DEFAULT_TRACKS);
 }
@@ -174,87 +170,6 @@ export function normalizeVibeRadioTracks(tracks = null) {
   return output;
 }
 
-export function cloneVibeRadioTracks(tracks = null) {
+function cloneVibeRadioTracks(tracks = null) {
   return normalizeVibeRadioTracks(tracks).map((track) => ({ ...track }));
-}
-
-export function appendVibeRadioTrack(tracks = null, draft = {}) {
-  const sourceUrl = normalizeVibeRadioSource(draft.sourceUrl ?? draft.url ?? draft.src ?? draft.fileName);
-  if (!sourceUrl) {
-    return cloneVibeRadioTracks(tracks);
-  }
-
-  const entries = cloneVibeRadioTracks(tracks);
-  entries.push({
-    id: createVibeRadioTrackId({ ...draft, sourceUrl }, entries),
-    title: normalizeVibeRadioText(draft.title ?? draft.label ?? getTrackTitleFromSource(sourceUrl)),
-    sourceUrl
-  });
-
-  return cloneVibeRadioTracks(entries);
-}
-
-export function updateVibeRadioTrack(tracks = null, trackId = '', updates = {}) {
-  const normalizedTrackId = normalizeVibeRadioTrackId(trackId);
-  if (!normalizedTrackId) {
-    return cloneVibeRadioTracks(tracks);
-  }
-
-  return cloneVibeRadioTracks(tracks).map((track) => {
-    if (track.id !== normalizedTrackId) {
-      return track;
-    }
-
-    const nextTrack = {
-      ...track,
-      ...(Object.hasOwn(updates, 'title') ? { title: updates.title } : {})
-    };
-
-    if (Object.hasOwn(updates, 'sourceUrl')) {
-      const sourceUrl = normalizeVibeRadioSource(updates.sourceUrl);
-      if (!sourceUrl) {
-        return track;
-      }
-      nextTrack.sourceUrl = sourceUrl;
-    }
-
-    return normalizeVibeRadioTrack(nextTrack) ?? track;
-  });
-}
-
-export function removeVibeRadioTrack(tracks = null, trackId = '') {
-  const normalizedTrackId = normalizeVibeRadioTrackId(trackId);
-  if (!normalizedTrackId) {
-    return cloneVibeRadioTracks(tracks);
-  }
-
-  return cloneVibeRadioTracks(tracks).filter((track) => track.id !== normalizedTrackId);
-}
-
-export function moveVibeRadioTrack(tracks = null, fromIndex = 0, toIndex = 0) {
-  const entries = cloneVibeRadioTracks(tracks);
-  const from = Math.floor(Number(fromIndex));
-  const to = Math.floor(Number(toIndex));
-  if (
-    !Number.isFinite(from)
-    || !Number.isFinite(to)
-    || from < 0
-    || to < 0
-    || from >= entries.length
-    || to >= entries.length
-    || from === to
-  ) {
-    return entries;
-  }
-
-  const [entry] = entries.splice(from, 1);
-  entries.splice(to, 0, entry);
-  return cloneVibeRadioTracks(entries);
-}
-
-export function getVibeRadioViewModel(tracks = null) {
-  return cloneVibeRadioTracks(tracks).map((track, index) => ({
-    ...track,
-    trackNumber: index + 1
-  }));
 }

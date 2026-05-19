@@ -7,7 +7,6 @@ import pg from 'pg';
 import { defaultWorldLayout } from '../../src/world/defaultWorldLayout.js';
 import { cloneMissionSequence } from '../../src/shared/missions.js';
 import { cloneNpcModelVoiceMap } from '../../src/shared/npcVoice.js';
-import { cloneVibeRadioTracks } from '../../src/shared/vibeRadio.js';
 import { BUILDER_TILE_SIZE } from '../../src/shared/worldConstants.js';
 import { rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import { logServer } from './logger.js';
@@ -30,8 +29,7 @@ function cloneLayout(layout = defaultWorldLayout) {
     props: layout.props ?? [],
     npcs: layout.npcs ?? [],
     missionSequence: cloneMissionSequence(layout.missionSequence),
-    npcModelVoices: cloneNpcModelVoiceMap(layout.npcModelVoices),
-    vibeRadioTracks: cloneVibeRadioTracks(layout.vibeRadioTracks)
+    npcModelVoices: cloneNpcModelVoiceMap(layout.npcModelVoices)
   });
 }
 

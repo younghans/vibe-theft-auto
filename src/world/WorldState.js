@@ -25,9 +25,6 @@ import {
   getNpcModelVoice,
   updateNpcModelVoiceMap
 } from '../shared/npcVoice.js';
-import {
-  cloneVibeRadioTracks
-} from '../shared/vibeRadio.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
@@ -205,7 +202,6 @@ export class WorldState {
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
-    this.vibeRadioTracks = cloneVibeRadioTracks();
   }
 
   clear() {
@@ -217,7 +213,6 @@ export class WorldState {
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
-    this.vibeRadioTracks = cloneVibeRadioTracks();
   }
 
   getPlacement(id) {
@@ -238,10 +233,6 @@ export class WorldState {
     return cloneMissionSequence(this.missionSequence);
   }
 
-  getVibeRadioTracks() {
-    return cloneVibeRadioTracks(this.vibeRadioTracks);
-  }
-
   getNpcModelVoices() {
     return cloneNpcModelVoiceMap(this.npcModelVoices);
   }
@@ -253,11 +244,6 @@ export class WorldState {
   updateMissionSequence(sequence = null) {
     this.missionSequence = cloneMissionSequence(sequence);
     return this.getMissionSequence();
-  }
-
-  updateVibeRadioTracks(tracks = null) {
-    this.vibeRadioTracks = cloneVibeRadioTracks(tracks);
-    return this.getVibeRadioTracks();
   }
 
   updateNpcModelVoice(modelId = '', voice = {}) {
@@ -274,7 +260,6 @@ export class WorldState {
     this.clear();
     this.missionSequence = cloneMissionSequence(layout.missionSequence);
     this.npcModelVoices = cloneNpcModelVoiceMap(layout.npcModelVoices);
-    this.vibeRadioTracks = cloneVibeRadioTracks(layout.vibeRadioTracks);
 
     for (const entry of layout.tiles ?? []) {
       const item = getBuilderItemById(entry.itemId);
@@ -686,8 +671,7 @@ export class WorldState {
       props,
       npcs,
       missionSequence: cloneMissionSequence(this.missionSequence),
-      npcModelVoices: this.getNpcModelVoices(),
-      vibeRadioTracks: this.getVibeRadioTracks()
+      npcModelVoices: this.getNpcModelVoices()
     };
   }
 

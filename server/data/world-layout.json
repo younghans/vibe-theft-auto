@@ -1915,17 +1915,5 @@
       "active": true,
       "pawnShopOwnerEnabled": true
     }
-  ],
-  "vibeRadioTracks": [
-    {
-      "id": "vibe-radio-track-bright-light-and-spacious",
-      "title": "Bright Light and Spacious",
-      "sourceUrl": "assets/audio/vibe-radio/bright-light-and-spacious.mp3"
-    },
-    {
-      "id": "vibe-radio-track-kiss-of-life",
-      "title": "Kiss of Life",
-      "sourceUrl": "assets/audio/vibe-radio/kiss-of-life.mp3"
-    }
   ]
 }

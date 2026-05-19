@@ -6421,75 +6421,6 @@ body.is-admin-prompt-resizing * {
   font-variant-numeric: tabular-nums;
 }
 
-.hud__vibe-radio-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.hud__vibe-radio-add {
-  display: grid;
-  grid-template-columns: minmax(112px, 0.9fr) minmax(180px, 1.3fr) minmax(104px, 0.7fr) auto;
-  gap: 8px;
-  align-items: end;
-  padding: 9px;
-  border: 1px solid rgba(232, 93, 154, 0.22);
-  border-radius: 8px;
-  background: rgba(9, 15, 24, 0.62);
-}
-
-.hud__vibe-radio-add-button {
-  min-width: 102px;
-  min-height: 38px;
-  border-radius: 8px;
-}
-
-.hud__vibe-radio-row {
-  display: grid;
-  grid-template-columns: 26px 32px minmax(0, 1fr) 34px;
-  gap: 8px;
-  align-items: center;
-  padding: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(9, 15, 24, 0.78);
-  color: #f4eee2;
-}
-
-.hud__vibe-radio-row.is-dragging {
-  opacity: 0.58;
-}
-
-.hud__vibe-radio-row.is-drag-over {
-  border-color: rgba(232, 93, 154, 0.82);
-  background: rgba(232, 93, 154, 0.13);
-}
-
-.hud__vibe-radio-row-fields {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(104px, 0.8fr) minmax(180px, 1.4fr);
-  gap: 8px;
-  align-items: end;
-}
-
-.hud__vibe-radio-remove {
-  width: 34px;
-  height: 34px;
-  border-color: rgba(255, 120, 120, 0.28);
-  color: #ffc4c4;
-}
-
-.hud__vibe-radio-empty {
-  padding: 14px;
-  border: 1px dashed rgba(255, 255, 255, 0.16);
-  border-radius: 8px;
-  background: rgba(9, 15, 24, 0.48);
-  color: rgba(244, 238, 226, 0.64);
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .hud__builder-key {
   display: inline-flex;
   min-width: 20px;
@@ -15811,23 +15742,6 @@ canvas {
 
   .hud__vibe-radio-widget .hud__vibe-radio-volume input {
     width: 52px;
-  }
-
-  .hud__vibe-radio-add {
-    grid-template-columns: 1fr;
-  }
-
-  .hud__vibe-radio-add-button {
-    width: 100%;
-  }
-
-  .hud__vibe-radio-row {
-    grid-template-columns: 24px 30px minmax(0, 1fr) 34px;
-    align-items: start;
-  }
-
-  .hud__vibe-radio-row-fields {
-    grid-template-columns: 1fr;
   }
 
   .hud__phone-vibe-radio-now {

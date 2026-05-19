@@ -36,14 +36,6 @@ import {
 } from '../shared/missions.js';
 import { normalizeNpcVoice } from '../shared/npcVoice.js';
 import {
-  appendVibeRadioTrack,
-  getVibeRadioViewModel,
-  isVibeRadioMp3Source,
-  moveVibeRadioTrack,
-  removeVibeRadioTrack,
-  updateVibeRadioTrack
-} from '../shared/vibeRadio.js';
-import {
   WORLD_GRID_DIVISIONS,
   WORLD_GRID_SIZE
 } from '../shared/worldConstants.js';
@@ -69,15 +61,9 @@ const BUILDER_MISSION_SEQUENCER_CATEGORY = Object.freeze({
   label: 'Mission Sequencer',
   items: []
 });
-const BUILDER_VIBE_RADIO_CATEGORY = Object.freeze({
-  id: 'vibe-radio',
-  label: 'Vibe Radio',
-  items: []
-});
 const BUILDER_TAB_CATEGORIES = Object.freeze([
   ...BUILDER_CATEGORIES,
-  BUILDER_MISSION_SEQUENCER_CATEGORY,
-  BUILDER_VIBE_RADIO_CATEGORY
+  BUILDER_MISSION_SEQUENCER_CATEGORY
 ]);
 
 function clonePreviewMaterial(material, opacity = 0.86) {
@@ -250,10 +236,6 @@ function createDefaultEditorState() {
     activeGroupIdByCategory: Object.fromEntries(BUILDER_CATEGORIES.map((category) => [category.id, 'all'])),
     activeItemIndex: 0,
     missionSequencerPrompt: '',
-    vibeRadioDraft: {
-      title: '',
-      sourceUrl: ''
-    },
     rotationQuarterTurns: 0,
     propRotationEighthTurns: 0,
     propScale: 1,
@@ -497,12 +479,7 @@ export class WorldBuilder {
       onMissionSequenceReorder: (fromIndex, toIndex) => void this.reorderMissionSequence(fromIndex, toIndex),
       onMissionSequenceRuleChange: (missionId, updates) => void this.updateMissionSequenceRule(missionId, updates),
       onMissionSequencePromptInput: (value) => this.setMissionSequencerPrompt(value),
-      onMissionSequencePromptSubmit: (value) => void this.addMissionSequencePrompt(value),
-      onVibeRadioTrackReorder: (fromIndex, toIndex) => void this.reorderVibeRadioTrack(fromIndex, toIndex),
-      onVibeRadioDraftInput: (updates) => this.setVibeRadioDraft(updates),
-      onVibeRadioTrackSubmit: (track) => void this.addVibeRadioTrack(track),
-      onVibeRadioTrackUpdate: (trackId, updates) => void this.updateVibeRadioTrack(trackId, updates),
-      onVibeRadioTrackRemove: (trackId) => void this.removeVibeRadioTrack(trackId)
+      onMissionSequencePromptSubmit: (value) => void this.addMissionSequencePrompt(value)
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
@@ -564,15 +541,12 @@ export class WorldBuilder {
     const visibleEntries = this.getVisibleCategoryEntries()
       .map((entry, visibleIndex) => ({ ...entry, visibleIndex }));
     const missionSequenceRows = getMissionSequenceViewModel(this.worldState.getMissionSequence());
-    const vibeRadioRows = getVibeRadioViewModel(this.worldState.getVibeRadioTracks());
     const tabs = BUILDER_TAB_CATEGORIES.map((category) => ({
       id: category.id,
       label: category.label,
       count: category.id === BUILDER_MISSION_SEQUENCER_CATEGORY.id
         ? missionSequenceRows.length
-        : category.id === BUILDER_VIBE_RADIO_CATEGORY.id
-          ? vibeRadioRows.length
-          : category.items.length,
+        : category.items.length,
       active: category.id === this.state.activeCategoryId
     }));
     const groupTabs = activeCategory.items.length
@@ -628,12 +602,6 @@ export class WorldBuilder {
         ? {
             prompt: this.state.missionSequencerPrompt,
             rows: missionSequenceRows
-          }
-        : null,
-      vibeRadio: this.state.activeCategoryId === BUILDER_VIBE_RADIO_CATEGORY.id
-        ? {
-            draft: this.state.vibeRadioDraft,
-            rows: vibeRadioRows
           }
         : null
     };
@@ -1200,75 +1168,6 @@ export class WorldBuilder {
 
     if (result.appliedImmediately) {
       this.worldState.updateMissionSequence(missionSequence);
-      this.updateBuilderHud();
-      this.notifyLayoutChanged();
-    }
-
-    this.hud.showToast(successMessage);
-    return true;
-  }
-
-  async reorderVibeRadioTrack(fromIndex, toIndex) {
-    const nextTracks = moveVibeRadioTrack(this.worldState.getVibeRadioTracks(), fromIndex, toIndex);
-    await this.updateVibeRadioTracks(nextTracks, 'Vibe radio order updated.');
-  }
-
-  setVibeRadioDraft(updates = {}) {
-    this.state.vibeRadioDraft = {
-      ...this.state.vibeRadioDraft,
-      ...(Object.hasOwn(updates, 'title') ? { title: String(updates.title ?? '').slice(0, 64) } : {}),
-      ...(Object.hasOwn(updates, 'sourceUrl') ? { sourceUrl: String(updates.sourceUrl ?? '').slice(0, 640) } : {})
-    };
-  }
-
-  async addVibeRadioTrack(track = {}) {
-    const draft = {
-      ...this.state.vibeRadioDraft,
-      ...(track ?? {})
-    };
-    if (!String(draft.sourceUrl ?? '').trim()) {
-      this.hud.showToast('Enter an MP3 path first.');
-      return;
-    }
-
-    if (!isVibeRadioMp3Source(draft.sourceUrl)) {
-      this.hud.showToast('Use a local assets/audio MP3 path.');
-      return;
-    }
-
-    const nextTracks = appendVibeRadioTrack(this.worldState.getVibeRadioTracks(), draft);
-    const updated = await this.updateVibeRadioTracks(nextTracks, 'Vibe radio track added.');
-    if (updated) {
-      this.state.vibeRadioDraft = {
-        title: '',
-        sourceUrl: ''
-      };
-      this.updateBuilderHud();
-    }
-  }
-
-  async updateVibeRadioTrack(trackId, updates = {}) {
-    const nextTracks = updateVibeRadioTrack(this.worldState.getVibeRadioTracks(), trackId, updates);
-    await this.updateVibeRadioTracks(nextTracks, 'Vibe radio track updated.');
-  }
-
-  async removeVibeRadioTrack(trackId) {
-    const nextTracks = removeVibeRadioTrack(this.worldState.getVibeRadioTracks(), trackId);
-    await this.updateVibeRadioTracks(nextTracks, 'Vibe radio track removed.');
-  }
-
-  async updateVibeRadioTracks(vibeRadioTracks, successMessage = 'Vibe radio updated.') {
-    const result = await this.worldEditAdapter.edit({
-      op: 'updateVibeRadioTracks',
-      vibeRadioTracks
-    });
-    if (!result?.ok) {
-      this.hud.showToast(result?.error ?? 'Could not update vibe radio.');
-      return false;
-    }
-
-    if (result.appliedImmediately) {
-      this.worldState.updateVibeRadioTracks(vibeRadioTracks);
       this.updateBuilderHud();
       this.notifyLayoutChanged();
     }
@@ -1847,9 +1746,6 @@ export class WorldBuilder {
     } else if (patch.type === 'updateMissionSequence') {
       this.worldState.updateMissionSequence(patch.missionSequence);
       this.updateBuilderHud();
-    } else if (patch.type === 'updateVibeRadioTracks') {
-      this.worldState.updateVibeRadioTracks(patch.vibeRadioTracks);
-      this.updateBuilderHud();
     } else if (patch.type === 'updateNpcModelVoice') {
       this.worldState.updateNpcModelVoice(patch.modelId, patch.voice);
       this.updateBuilderHud();
@@ -1868,10 +1764,6 @@ export class WorldBuilder {
 
   getMissionSequence() {
     return this.worldState.getMissionSequence();
-  }
-
-  getVibeRadioTracks() {
-    return this.worldState.getVibeRadioTracks();
   }
 
   async applyUpsertPlacementPatch(patch) {

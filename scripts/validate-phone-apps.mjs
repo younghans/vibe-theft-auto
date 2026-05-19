@@ -10,9 +10,7 @@ import {
   serializeStockMarket
 } from '../src/shared/stockMarket.js';
 import {
-  appendVibeRadioTrack,
   createDefaultVibeRadioTracks,
-  getVibeRadioViewModel,
   normalizeVibeRadioTracks
 } from '../src/shared/vibeRadio.js';
 import {
@@ -52,8 +50,8 @@ assert.doesNotMatch(hudSource, /hud__vibe-radio-volume-knob/, 'Vibe Radio should
 assert.doesNotMatch(gameSource, /Playback blocked/, 'Vibe Radio should not surface playback blocked as a player-facing error');
 assert.match(hudSource, /getVibeRadioControlsSignature/, 'Vibe Radio controls should avoid unnecessary re-renders');
 assert.match(hudSource, /lastPhoneVibeRadioTrackListSignature/, 'Vibe Radio phone list should avoid refresh flicker while playing');
-assert.match(worldBuilderSource, /BUILDER_VIBE_RADIO_CATEGORY/, 'World builder registers a Vibe Radio tab');
-assert.match(worldBuilderSource, /updateVibeRadioTracks/, 'World builder can persist Vibe Radio playlist edits');
+assert.doesNotMatch(worldBuilderSource, /BUILDER_VIBE_RADIO_CATEGORY/, 'World builder no longer exposes a Vibe Radio playlist tab');
+assert.doesNotMatch(worldBuilderSource, /updateVibeRadioTracks/, 'World builder no longer persists Vibe Radio playlist edits');
 assert.match(hudSource, /data-phone-stocks-app/, 'Stocks app has dedicated phone markup');
 assert.match(hudSource, /data-phone-stock-trade/, 'Stocks app exposes buy and sell actions');
 assert.doesNotMatch(hudSource, /max="999"/, 'Stock share inputs do not cap trades at 999 shares');
@@ -116,7 +114,10 @@ assert.match(schoolTeacherPreviewSource, /createTargetFilteredClip/, 'Teacher pr
 assert.match(gameSource, /captureAndSaveWorldMap/, 'Game can manually capture the world map');
 assert.match(gameSource, /WORLD_MAP_IMAGE_METADATA_URL/, 'Game loads cached map image metadata');
 assert.match(gameSource, /setMasterVolume/, 'Game owns persisted master volume setting');
-assert.match(gameSource, /syncVibeRadioTracksFromLayout/, 'Game syncs Vibe Radio tracks from world layout');
+assert.match(gameSource, /createDefaultVibeRadioTracks/, 'Game owns the static bundled Vibe Radio playlist');
+assert.match(gameSource, /syncVibeRadioPlaylist/, 'Game syncs Vibe Radio from the static playlist');
+assert.doesNotMatch(gameSource, /syncVibeRadioTracksFromLayout/, 'Game should not expose layout-based Vibe Radio sync');
+assert.doesNotMatch(gameSource, /layout\?\.vibeRadioTracks/, 'Game should not read Vibe Radio tracks from world layout');
 assert.match(gameSource, /handleVibeRadioAction/, 'Game owns Vibe Radio playback actions');
 assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_KEY/, 'Game stores radio volume locally per player');
 assert.match(gameSource, /raw == null \|\| raw === ''/, 'Vibe Radio defaults volume when no player-specific volume is stored');
@@ -153,7 +154,7 @@ for (const [label, url] of Object.entries(assets.audio.vibeRadio ?? {})) {
 }
 
 assert.match(serverSource, /wallet:getSnapshot/, 'Server exposes wallet snapshot RPC');
-assert.match(serverSource, /updateVibeRadioTracks/, 'Server accepts Vibe Radio world-builder updates');
+assert.doesNotMatch(serverSource, /updateVibeRadioTracks/, 'Server no longer accepts Vibe Radio world-builder updates');
 assert.match(serverSource, /handleWalletSnapshotRequest/, 'Server handles wallet snapshot request');
 assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade access path for phone trading');
 assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
@@ -167,7 +168,7 @@ assert.match(colyseusNpcSource, /source:\s*options\?\.source/, 'Colyseus stock t
 assert.match(mockNpcSource, /phoneTrade[\s\S]*source[\s\S]*phone/, 'Mock stock trades support phone source metadata');
 assert.match(mockNpcSource, /MOCK_STOCK_PORTFOLIOS_STORAGE_KEY/, 'Mock transport persists stock portfolios locally');
 assert.match(mockNpcSource, /MOCK_STOCK_MARKET_STORAGE_KEY/, 'Mock transport persists stock market tape locally');
-assert.match(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit transport accepts Vibe Radio updates');
+assert.doesNotMatch(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit transport no longer accepts Vibe Radio updates');
 
 const defaultRadioPlaylist = createDefaultVibeRadioTracks();
 assert.deepEqual(
@@ -184,14 +185,8 @@ assert.deepEqual(
   'Vibe Radio starter songs use local MP3 files'
 );
 
-const radioPlaylist = appendVibeRadioTrack([], {
-  title: 'Admin Test Song',
-  sourceUrl: 'assets/audio/vibe-radio/admin-test.mp3'
-});
-assert.equal(radioPlaylist.length, 1, 'Vibe Radio can append a playlist track');
-assert.equal(radioPlaylist[0].title, 'Admin Test Song', 'Vibe Radio preserves normalized song title');
 assert.equal(
-  normalizeVibeRadioTracks(radioPlaylist)[0].sourceUrl,
+  normalizeVibeRadioTracks([{ title: 'Admin Test Song', sourceUrl: 'assets/audio/vibe-radio/admin-test.mp3' }])[0].sourceUrl,
   'assets/audio/vibe-radio/admin-test.mp3',
   'Vibe Radio preserves normalized MP3 paths'
 );
@@ -200,7 +195,6 @@ assert.equal(
   0,
   'Vibe Radio rejects remote music links'
 );
-assert.equal(getVibeRadioViewModel(radioPlaylist)[0].trackNumber, 1, 'Vibe Radio view model exposes track order');
 
 const market = createInitialStockMarketState(1000);
 const portfolio = {};

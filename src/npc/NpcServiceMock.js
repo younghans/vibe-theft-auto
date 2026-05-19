@@ -1025,14 +1025,6 @@ export class NpcServiceMock {
         this.emit();
         return { ok: true };
       }
-      case 'updateVibeRadioTracks': {
-        const vibeRadioTracks = this.worldState.updateVibeRadioTracks(payload.vibeRadioTracks);
-        this.emitWorldPatch({
-          type: 'updateVibeRadioTracks',
-          vibeRadioTracks
-        });
-        return { ok: true };
-      }
       case 'updateNpcModelVoice': {
         const model = getNpcModelById(payload.modelId);
         if (!model) {

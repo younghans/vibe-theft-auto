@@ -4081,14 +4081,6 @@ export class WorldRoom extends Room {
           missionSequence
         }, previousLayout);
       }
-      case 'updateVibeRadioTracks': {
-        const vibeRadioTracks = this.worldState.updateVibeRadioTracks(payload.vibeRadioTracks);
-
-        return this.commitWorldPatch({
-          type: 'updateVibeRadioTracks',
-          vibeRadioTracks
-        }, previousLayout);
-      }
       case 'updateNpcModelVoice': {
         const { modelId, voice } = this.sanitizeNpcModelVoiceUpdate(payload);
         const updatedVoice = this.worldState.updateNpcModelVoice(modelId, voice);

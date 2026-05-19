@@ -6327,12 +6327,7 @@ export class Hud {
     onMissionSequenceReorder,
     onMissionSequenceRuleChange,
     onMissionSequencePromptInput,
-    onMissionSequencePromptSubmit,
-    onVibeRadioTrackReorder,
-    onVibeRadioDraftInput,
-    onVibeRadioTrackSubmit,
-    onVibeRadioTrackUpdate,
-    onVibeRadioTrackRemove
+    onMissionSequencePromptSubmit
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -6367,15 +6362,6 @@ export class Hud {
         return;
       }
 
-      const removeRadioButton = event.target.closest('[data-builder-radio-remove]');
-      if (removeRadioButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        const row = removeRadioButton.closest('[data-builder-radio-id]');
-        onVibeRadioTrackRemove?.(row?.getAttribute('data-builder-radio-id') ?? '');
-        return;
-      }
-
       const button = event.target.closest('[data-builder-index]');
       if (!button) {
         return;
@@ -6397,22 +6383,20 @@ export class Hud {
         return;
       }
 
-      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
+      const row = target?.closest('[data-builder-mission-index]');
       if (!row) {
         return;
       }
 
-      const dragType = row.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
-      const fromIndex = Number(dragType === 'radio' ? row.dataset.builderRadioIndex : row.dataset.builderMissionIndex);
+      const fromIndex = Number(row.dataset.builderMissionIndex);
       if (!Number.isFinite(fromIndex)) {
         event.preventDefault();
         return;
       }
 
       this.builderMissionDragIndex = fromIndex;
-      this.builderMissionDragType = dragType;
       row.classList.add('is-dragging');
-      event.dataTransfer?.setData('text/plain', `${dragType}:${fromIndex}`);
+      event.dataTransfer?.setData('text/plain', String(fromIndex));
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move';
       }
@@ -6422,9 +6406,8 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
-      const dragType = row?.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
-      if (!row || (this.builderMissionDragType && dragType !== this.builderMissionDragType)) {
+      const row = target?.closest('[data-builder-mission-index]');
+      if (!row) {
         return;
       }
 
@@ -6433,7 +6416,7 @@ export class Hud {
         event.dataTransfer.dropEffect = 'move';
       }
       this.builderTiles
-        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over, .hud__vibe-radio-row.is-drag-over')
+        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over')
         .forEach((entry) => {
           if (entry !== row) {
             entry.classList.remove('is-drag-over');
@@ -6446,7 +6429,7 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
+      const row = target?.closest('[data-builder-mission-index]');
       const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
       if (row && !row.contains(related)) {
         row.classList.remove('is-drag-over');
@@ -6457,43 +6440,32 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const row = target?.closest('[data-builder-mission-index], [data-builder-radio-index]');
+      const row = target?.closest('[data-builder-mission-index]');
       if (!row) {
         return;
       }
 
       event.preventDefault();
-      const dragType = row.hasAttribute('data-builder-radio-index') ? 'radio' : 'mission';
       const transfer = String(event.dataTransfer?.getData('text/plain') ?? '');
-      const [transferType, transferIndexText] = transfer.includes(':')
-        ? transfer.split(':', 2)
-        : [this.builderMissionDragType ?? dragType, transfer];
-      const transferIndex = Number(transferIndexText);
+      const transferIndex = Number(transfer);
       const fromIndex = Number.isFinite(transferIndex) ? transferIndex : this.builderMissionDragIndex;
-      const toIndex = Number(dragType === 'radio' ? row.dataset.builderRadioIndex : row.dataset.builderMissionIndex);
+      const toIndex = Number(row.dataset.builderMissionIndex);
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
-      this.builderMissionDragType = '';
       if (
-        transferType !== dragType
-        || !Number.isFinite(fromIndex)
+        !Number.isFinite(fromIndex)
         || !Number.isFinite(toIndex)
         || fromIndex === toIndex
       ) {
         return;
       }
 
-      if (dragType === 'radio') {
-        onVibeRadioTrackReorder?.(fromIndex, toIndex);
-      } else {
-        onMissionSequenceReorder?.(fromIndex, toIndex);
-      }
+      onMissionSequenceReorder?.(fromIndex, toIndex);
     });
 
     this.builderTiles.addEventListener('dragend', () => {
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
-      this.builderMissionDragType = '';
     });
 
     const handleMissionSequenceRuleChange = (event) => {
@@ -6524,48 +6496,10 @@ export class Hud {
 
     this.builderTiles.addEventListener('change', handleMissionSequenceRuleChange);
 
-    const handleVibeRadioTrackChange = (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
-        return;
-      }
-
-      const row = target.closest('[data-builder-radio-id]');
-      const trackId = row?.getAttribute('data-builder-radio-id') ?? '';
-      if (!trackId) {
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-title]')) {
-        onVibeRadioTrackUpdate?.(trackId, { title: target.value });
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-source]')) {
-        onVibeRadioTrackUpdate?.(trackId, { sourceUrl: target.value });
-      }
-    };
-
-    this.builderTiles.addEventListener('change', handleVibeRadioTrackChange);
-
     this.builderTiles.addEventListener('input', (event) => {
       const target = event.target;
       if (target instanceof HTMLTextAreaElement && target.matches('[data-builder-mission-prompt]')) {
         onMissionSequencePromptInput?.(target.value);
-        return;
-      }
-
-      if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-draft-title]')) {
-        onVibeRadioDraftInput?.({ title: target.value });
-        return;
-      }
-
-      if (target.matches('[data-builder-radio-draft-source]')) {
-        onVibeRadioDraftInput?.({ sourceUrl: target.value });
       }
     });
 
@@ -6582,24 +6516,6 @@ export class Hud {
       const field = form.querySelector('[data-builder-mission-prompt]');
       const prompt = field instanceof HTMLTextAreaElement ? field.value : '';
       onMissionSequencePromptSubmit?.(prompt);
-    });
-
-    this.builderTiles.addEventListener('submit', (event) => {
-      const target = event.target instanceof Element
-        ? event.target
-        : null;
-      const form = target?.closest('[data-builder-radio-add-form]');
-      if (!form || !this.isElementInteractive(this.builderRoot)) {
-        return;
-      }
-
-      event.preventDefault();
-      const titleField = form.querySelector('[data-builder-radio-draft-title]');
-      const sourceField = form.querySelector('[data-builder-radio-draft-source]');
-      onVibeRadioTrackSubmit?.({
-        title: titleField instanceof HTMLInputElement ? titleField.value : '',
-        sourceUrl: sourceField instanceof HTMLInputElement ? sourceField.value : ''
-      });
     });
 
     this.builderPropSizeInput?.addEventListener('input', () => {
@@ -7392,7 +7308,7 @@ export class Hud {
 
   clearMissionSequencerDragClasses() {
     this.builderTiles
-      ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over, .hud__vibe-radio-row.is-dragging, .hud__vibe-radio-row.is-drag-over')
+      ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over')
       .forEach((entry) => {
         entry.classList.remove('is-dragging', 'is-drag-over');
       });
@@ -7485,94 +7401,6 @@ export class Hud {
     `;
   }
 
-  getBuilderVibeRadioRowMarkup(row = {}) {
-    const trackNumber = Math.max(1, Math.floor(Number(row.trackNumber) || 1));
-    return `
-      <article
-        class="hud__vibe-radio-row"
-        draggable="true"
-        data-builder-radio-id="${escapeHtml(row.id ?? '')}"
-        data-builder-radio-index="${trackNumber - 1}"
-      >
-        <span class="hud__mission-sequencer-handle hud__vibe-radio-handle" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <path d="M9 6.5h.01M15 6.5h.01M9 12h.01M15 12h.01M9 17.5h.01M15 17.5h.01" />
-          </svg>
-        </span>
-        <span class="hud__mission-sequencer-number hud__vibe-radio-number">${trackNumber}</span>
-        <div class="hud__vibe-radio-row-fields">
-          <label class="hud__field">
-            <span class="hud__field-label">Song title</span>
-            <input
-              class="hud__field-control"
-              type="text"
-              maxlength="64"
-              value="${escapeHtml(row.title ?? '')}"
-              data-builder-radio-title
-            />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">MP3 path</span>
-            <input
-              class="hud__field-control"
-              type="text"
-              maxlength="640"
-              value="${escapeHtml(row.sourceUrl ?? '')}"
-              placeholder="assets/audio/vibe-radio/song.mp3"
-              data-builder-radio-source
-            />
-          </label>
-        </div>
-        <button class="hud__builder-icon-button hud__vibe-radio-remove" type="button" data-builder-radio-remove aria-label="Remove ${escapeHtml(row.title ?? 'track')}" title="Remove track">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </article>
-    `;
-  }
-
-  getBuilderVibeRadioMarkup(vibeRadio = {}) {
-    const rows = Array.isArray(vibeRadio.rows) ? vibeRadio.rows : [];
-    const draft = vibeRadio.draft && typeof vibeRadio.draft === 'object' ? vibeRadio.draft : {};
-    return `
-      <section class="hud__builder-section hud__vibe-radio-builder" data-builder-vibe-radio>
-        <div class="hud__builder-section-header">
-          <p class="hud__builder-section-title">Vibe Radio</p>
-          <span class="hud__builder-section-count">${rows.length}</span>
-        </div>
-        <form class="hud__vibe-radio-add" data-builder-radio-add-form>
-          <label class="hud__field">
-            <span class="hud__field-label">Song title</span>
-            <input
-              class="hud__field-control"
-              type="text"
-              maxlength="64"
-              placeholder="Song name"
-              value="${escapeHtml(draft.title ?? '')}"
-              data-builder-radio-draft-title
-            />
-          </label>
-          <label class="hud__field">
-            <span class="hud__field-label">MP3 path</span>
-            <input
-              class="hud__field-control"
-              type="text"
-              maxlength="640"
-              placeholder="assets/audio/vibe-radio/song.mp3"
-              value="${escapeHtml(draft.sourceUrl ?? '')}"
-              data-builder-radio-draft-source
-            />
-          </label>
-          <button class="hud__builder-action hud__vibe-radio-add-button" type="submit">Add Track</button>
-        </form>
-        <div class="hud__vibe-radio-list">
-          ${rows.length
-            ? rows.map((row) => this.getBuilderVibeRadioRowMarkup(row)).join('')
-            : '<div class="hud__vibe-radio-empty">No Vibe Radio tracks yet.</div>'}
-        </div>
-      </section>
-    `;
-  }
-
   setBuilderState({
     available = false,
     enabled,
@@ -7580,8 +7408,7 @@ export class Hud {
     groupTabs = [],
     sections = [],
     propSizeControl = null,
-    missionSequencer = null,
-    vibeRadio = null
+    missionSequencer = null
   }) {
     this.builderAvailable = available;
     this.builderEnabled = enabled;
@@ -7602,7 +7429,7 @@ export class Hud {
       </button>
     `).join('');
 
-    this.builderGroups.hidden = Boolean(missionSequencer || vibeRadio) || groupTabs.length === 0;
+    this.builderGroups.hidden = Boolean(missionSequencer) || groupTabs.length === 0;
     this.builderGroups.innerHTML = groupTabs.map((group) => `
         <button
           class="hud__builder-subchip${group.active ? ' is-active' : ''}"
@@ -7636,11 +7463,6 @@ export class Hud {
 
     if (missionSequencer) {
       this.builderTiles.innerHTML = this.getBuilderMissionSequencerMarkup(missionSequencer);
-      return;
-    }
-
-    if (vibeRadio) {
-      this.builderTiles.innerHTML = this.getBuilderVibeRadioMarkup(vibeRadio);
       return;
     }
 
