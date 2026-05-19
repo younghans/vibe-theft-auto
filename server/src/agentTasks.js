@@ -3,6 +3,8 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  readPostgresAgentTaskThread,
+  readPostgresAgentTaskThreadSummaries,
   readPostgresAgentState,
   shouldUsePostgresAgentState,
   withPostgresAgentState
@@ -632,11 +634,24 @@ export async function listAgentTaskThreads({
   scope = '',
   gameId = '',
   limit = 10,
+  offset = 0,
   compact = false,
   staleActiveAfterMs = 0,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
   const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  const safeLimit = Math.max(1, Math.min(101, Math.trunc(Number(limit) || 10)));
+  const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
+  if (compact && staleActiveMs <= 0 && shouldUseTaskPostgresState(filePath)) {
+    return readPostgresAgentTaskThreadSummaries(AGENT_TASKS_STATE_KEY, {
+      fallbackState: await readTaskFileState(filePath),
+      scope,
+      gameId,
+      limit: safeLimit,
+      offset: safeOffset
+    });
+  }
+
   return withTaskStore((state) => {
     const normalizedScope = normalizeScope(scope);
     const shouldFilterScope = String(scope ?? '').trim() !== '';
@@ -647,11 +662,10 @@ export async function listAgentTaskThreads({
       shouldFilterScope
     });
     const normalizedGameId = String(gameId ?? '').trim();
-    const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 10)));
     const filteredTasks = state.tasks
       .filter((task) => !shouldFilterScope || task.scope === normalizedScope)
       .filter((task) => !normalizedGameId || task.gameId === normalizedGameId);
-    const latestTasks = getLatestTaskByThread(filteredTasks).slice(0, safeLimit);
+    const latestTasks = getLatestTaskByThread(filteredTasks).slice(safeOffset, safeOffset + safeLimit);
     return compact
       ? latestTasks.map((task) => projectAgentTaskForPrompt(task))
       : latestTasks;
@@ -691,6 +705,13 @@ export async function getAgentTaskThread(taskId, {
   }
 
   const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  if (compact && staleActiveMs <= 0 && shouldUseTaskPostgresState(filePath)) {
+    return readPostgresAgentTaskThread(AGENT_TASKS_STATE_KEY, {
+      fallbackState: await readTaskFileState(filePath),
+      taskId: id
+    });
+  }
+
   return withTaskStore((state) => {
     failStaleActiveTasks(state, {
       now: Date.now(),

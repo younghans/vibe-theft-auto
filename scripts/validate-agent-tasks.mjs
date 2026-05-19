@@ -36,6 +36,8 @@ try {
   assert.match(hudSource, /isAgentTaskDeployQueued/, 'HUD should derive deploy queued from task metadata.');
   assert.match(hudSource, /isAgentTaskWorkerOffline/, 'HUD should derive worker offline state from task heartbeats.');
   assert.match(hudSource, /deployApprovedAt[\s\S]*deployStartedAt/, 'HUD deploy queued detection should require approval before deploy start.');
+  assert.match(hudSource, /hasMoreThreads/, 'HUD should use server pagination metadata for prompt thread load-more.');
+  assert.match(hudSource, /onLoadMore/, 'HUD should notify the game when prompt threads request more rows.');
 
   const created = await createAgentTask({
     scope: 'game',
@@ -151,6 +153,23 @@ try {
   assert.equal(compactPromptThread.snapshot, undefined);
   assert.equal(compactPromptThread.threadHistory, undefined);
   assert.equal(compactPromptThread.agentMessage, undefined);
+  const firstPromptThreadPage = await listAgentTaskThreads({
+    scope: 'game',
+    limit: 1,
+    offset: 0,
+    compact: true,
+    filePath
+  });
+  const secondPromptThreadPage = await listAgentTaskThreads({
+    scope: 'game',
+    limit: 1,
+    offset: 1,
+    compact: true,
+    filePath
+  });
+  assert.equal(firstPromptThreadPage.length, 1);
+  assert.equal(secondPromptThreadPage.length, 1);
+  assert.notEqual(firstPromptThreadPage[0].threadId, secondPromptThreadPage[0].threadId);
   const compactPromptThreadTasks = await getAgentTaskThread(readyWithoutDeployApproval.id, {
     compact: true,
     filePath

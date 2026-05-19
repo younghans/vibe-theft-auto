@@ -1632,7 +1632,8 @@ function createAgentTaskListMarkup(
   tasks = [],
   selectedTaskId = '',
   activeTab = 'threads',
-  threadLimit = ADMIN_PROMPT_THREAD_LIST_LIMIT
+  threadLimit = ADMIN_PROMPT_THREAD_LIST_LIMIT,
+  hasMoreThreads = false
 ) {
   const threadRows = filterAdminPromptTasksForTab(tasks);
   const safeLimit = Math.max(ADMIN_PROMPT_THREAD_LIST_LIMIT, Math.floor(Number(threadLimit) || 0));
@@ -1663,7 +1664,7 @@ function createAgentTaskListMarkup(
     `;
   }).join('');
   const hiddenCount = Math.max(0, threadRows.length - visibleTasks.length);
-  const loadMoreMarkup = hiddenCount > 0
+  const loadMoreMarkup = hiddenCount > 0 || hasMoreThreads
     ? `
       <button class="hud__admin-prompt-load-more" type="button" data-admin-prompt-action="load-more">
         Load more
@@ -3900,6 +3901,7 @@ export class Hud {
       submitting: false,
       error: '',
       autoDeployAvailable: false,
+      hasMoreThreads: false,
       contextLabel: 'Game'
     };
     this.adminPromptLayout = null;
@@ -5880,7 +5882,8 @@ export class Hud {
     onCancel,
     onApproveDeploy,
     onRollback,
-    onTab
+    onTab,
+    onLoadMore
   } = {}) {
     this.adminPromptToggle?.addEventListener('click', (event) => {
       event.preventDefault();
@@ -5937,6 +5940,7 @@ export class Hud {
         this.adminPromptThreadLimit += ADMIN_PROMPT_THREAD_LIST_LIMIT;
         this.lastAdminPromptTaskListSignature = '';
         this.renderAdminPromptPanel();
+        onLoadMore?.(this.adminPromptThreadLimit);
       } else if (action.startsWith('tab:')) {
         onTab?.(action.slice('tab:'.length));
       } else if (action.startsWith('select:')) {
@@ -8650,6 +8654,7 @@ export class Hud {
     submitting = this.adminPromptState.submitting,
     error = this.adminPromptState.error,
     autoDeployAvailable = this.adminPromptState.autoDeployAvailable,
+    hasMoreThreads = this.adminPromptState.hasMoreThreads,
     contextLabel = this.adminPromptState.contextLabel
   } = {}) {
     const safeTasks = Array.isArray(tasks) ? tasks : [];
@@ -8665,9 +8670,6 @@ export class Hud {
     if (safeActiveTab !== 'new' && safeSelectedTaskId && !visibleTasks.some((task) => task.id === safeSelectedTaskId)) {
       safeSelectedTaskId = '';
     }
-    if (safeActiveTab !== 'new' && !safeSelectedTaskId && visibleTasks.length > 0) {
-      safeSelectedTaskId = visibleTasks[0].id;
-    }
 
     this.adminPromptState = {
       available: Boolean(available),
@@ -8679,6 +8681,7 @@ export class Hud {
       submitting: Boolean(submitting),
       error: String(error ?? ''),
       autoDeployAvailable: Boolean(autoDeployAvailable),
+      hasMoreThreads: Boolean(hasMoreThreads),
       contextLabel: String(contextLabel ?? 'Game')
     };
     this.renderAdminPromptPanel();
@@ -8843,6 +8846,7 @@ export class Hud {
       submitting,
       error,
       autoDeployAvailable,
+      hasMoreThreads,
       contextLabel
     } = this.adminPromptState;
     this.adminPromptRoot.hidden = !available || !open;
@@ -8921,6 +8925,7 @@ export class Hud {
       selectedTaskId,
       durationTick,
       threadLimit: this.adminPromptThreadLimit,
+      hasMoreThreads,
       tasks: visibleTasks.map((task) => [
         task.id,
         task.status,
@@ -8949,13 +8954,16 @@ export class Hud {
         tasks,
         selectedTaskId,
         activeTab,
-        this.adminPromptThreadLimit
+        this.adminPromptThreadLimit,
+        hasMoreThreads
       );
     }
     if (this.adminPromptDetail) {
       const selectedTask = activeTab === 'new'
         ? null
-        : visibleTasks.find((task) => task.id === selectedTaskId) ?? visibleTasks[0] ?? null;
+        : selectedTaskId
+          ? visibleTasks.find((task) => task.id === selectedTaskId) ?? null
+          : null;
       const selectedThreadTasks = selectedTask ? getAgentThreadTasks(tasks, selectedTask) : [];
       const selectedThreadId = selectedTask ? getAgentTaskThreadId(selectedTask) : '';
       const detailSignature = JSON.stringify({

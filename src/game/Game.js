@@ -1279,6 +1279,8 @@ export class Game {
     this.adminPromptError = '';
     this.adminPromptRefreshAt = 0;
     this.adminPromptRequest = null;
+    this.adminPromptThreadLimit = ADMIN_PROMPT_TASK_THREAD_LIMIT;
+    this.adminPromptHasMoreThreads = false;
     this.adminPromptThreadTasks = new Map();
     this.adminPromptThreadRequests = new Map();
     this.debugMinigameRequestHandled = false;
@@ -1413,6 +1415,7 @@ export class Game {
       onToggle: () => this.toggleAdminPromptPanel(),
       onClose: () => this.setAdminPromptOpen(false),
       onRefresh: () => void this.refreshAdminPromptTasks({ force: true }),
+      onLoadMore: (limit) => void this.loadMoreAdminPromptTasks(limit),
       onSubmit: (payload) => void this.submitAdminPromptTask(payload),
       onFollowup: (taskId, payload) => void this.submitAdminPromptFollowup(taskId, payload),
       onSelect: (taskId) => this.selectAdminPromptTask(taskId),
@@ -2680,6 +2683,7 @@ export class Game {
         loading: false,
         submitting: false,
         error: '',
+        hasMoreThreads: false,
         contextLabel: context.contextLabel
       });
       return;
@@ -2695,6 +2699,7 @@ export class Game {
       submitting: this.adminPromptSubmitting,
       error: this.adminPromptError,
       autoDeployAvailable: this.isAdminPromptAutoDeployAvailable(),
+      hasMoreThreads: this.adminPromptHasMoreThreads,
       contextLabel: context.contextLabel
     });
   }
@@ -2954,6 +2959,7 @@ export class Game {
   async refreshAdminPromptTasks({ force = false, showLoading = true } = {}) {
     if (!this.canUseAdminPrompt()) {
       this.adminPromptTasks = [];
+      this.adminPromptHasMoreThreads = false;
       this.adminPromptError = '';
       this.adminPromptLoading = false;
       this.adminPromptLoadingVisible = false;
@@ -2975,7 +2981,7 @@ export class Game {
       const url = new URL(this.getAdminAgentTasksEndpoint());
       url.searchParams.set('adminKey', adminKey);
       url.searchParams.set('scope', ADMIN_PROMPT_TASK_SCOPE);
-      url.searchParams.set('limit', String(ADMIN_PROMPT_TASK_THREAD_LIMIT));
+      url.searchParams.set('limit', String(this.adminPromptThreadLimit));
       url.searchParams.set('view', 'threads');
       url.searchParams.set('compact', '1');
       url.searchParams.set('readOnly', '1');
@@ -2986,17 +2992,12 @@ export class Game {
       }
 
       this.adminPromptTasks = Array.isArray(result.tasks) ? result.tasks : [];
+      this.adminPromptHasMoreThreads = Boolean(result.hasMore);
       if (
         this.adminPromptSelectedTaskId
         && !this.adminPromptTasks.some((task) => task.id === this.adminPromptSelectedTaskId)
       ) {
         this.adminPromptSelectedTaskId = '';
-      }
-      if (this.adminPromptActiveTab !== 'new' && !this.adminPromptSelectedTaskId && this.adminPromptTasks.length > 0) {
-        this.adminPromptSelectedTaskId = this.adminPromptTasks[0].id;
-      }
-      if (this.adminPromptSelectedTaskId && this.adminPromptOpen) {
-        void this.loadAdminPromptThread(this.adminPromptSelectedTaskId, { force: true });
       }
       this.adminPromptRefreshAt = performance.now() + ADMIN_PROMPT_TASK_REFRESH_MS;
     } catch (error) {
@@ -3022,14 +3023,27 @@ export class Game {
         force: !hasFreshTasks,
         showLoading: !hasFreshTasks
       });
-      if (this.adminPromptSelectedTaskId) {
-        void this.loadAdminPromptThread(this.adminPromptSelectedTaskId, { force: !hasFreshTasks });
-      }
     }
   }
 
   toggleAdminPromptPanel() {
     this.setAdminPromptOpen(!this.adminPromptOpen);
+  }
+
+  async loadMoreAdminPromptTasks(requestedLimit = 0) {
+    if (!this.canUseAdminPrompt() || this.adminPromptLoading) {
+      return;
+    }
+
+    const numericLimit = Math.trunc(Number(requestedLimit) || 0);
+    const nextLimit = numericLimit > this.adminPromptThreadLimit
+      ? numericLimit
+      : this.adminPromptThreadLimit + ADMIN_PROMPT_TASK_THREAD_LIMIT;
+    this.adminPromptThreadLimit = Math.max(
+      ADMIN_PROMPT_TASK_THREAD_LIMIT,
+      Math.min(100, nextLimit)
+    );
+    await this.refreshAdminPromptTasks({ force: true, showLoading: true });
   }
 
   setAdminPromptTab(tabId = '') {

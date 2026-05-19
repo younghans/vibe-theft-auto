@@ -638,20 +638,39 @@ const server = defineServer({
           || isTruthyRequestValue(req.query?.threads);
         const compact = isTruthyRequestValue(req.query?.compact);
         const readOnly = isTruthyRequestValue(req.query?.readOnly) || compact || listThreads;
+        const requestedLimit = typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25;
+        const requestedOffset = typeof req.query?.offset === 'string' ? Number(req.query.offset) : 0;
         const taskListOptions = {
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
           gameId: typeof req.query?.gameId === 'string' ? req.query.gameId : '',
-          limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 25,
+          limit: requestedLimit,
           staleActiveAfterMs: readOnly ? 0 : AGENT_ACTIVE_TASK_STALE_AFTER_MS
         };
-        const tasks = listThreads
-          ? await listAgentTaskThreads({
+        if (listThreads) {
+          const threadLimit = Math.max(1, Math.min(100, Math.trunc(Number(requestedLimit) || 10)));
+          const offset = Math.max(0, Math.trunc(Number(requestedOffset) || 0));
+          const threadTasks = await listAgentTaskThreads({
             ...taskListOptions,
-            limit: typeof req.query?.limit === 'string' ? Number(req.query.limit) : 10,
+            limit: threadLimit + 1,
+            offset,
             compact
-          })
-          : await listAgentTasks(taskListOptions);
-        sendJson(res, 200, { ok: true, tasks, view: listThreads ? 'threads' : 'tasks' });
+          });
+          const hasMore = threadTasks.length > threadLimit;
+          const tasks = threadTasks.slice(0, threadLimit);
+          sendJson(res, 200, {
+            ok: true,
+            tasks,
+            view: 'threads',
+            limit: threadLimit,
+            offset,
+            hasMore,
+            nextOffset: hasMore ? offset + tasks.length : null
+          });
+          return;
+        }
+
+        const tasks = await listAgentTasks(taskListOptions);
+        sendJson(res, 200, { ok: true, tasks, view: 'tasks' });
       } catch (error) {
         await recordAdminAgentRouteFailure(req, 'List agent tasks', error);
         sendJson(res, 500, {
