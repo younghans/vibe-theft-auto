@@ -1060,6 +1060,15 @@ function addBarDetails(groups, materials) {
   }
 }
 
+const BANK_WALL_HEIGHT = 15.6;
+const BANK_UPPER_HEIGHT = 8.8;
+const BANK_UPPER_CENTER_Y = 20.24;
+const BANK_UPPER_TOP_Y = BANK_UPPER_CENTER_Y + (BANK_UPPER_HEIGHT * 0.5);
+const BANK_ROOF_UNIT_Y = BANK_UPPER_TOP_Y + 0.26;
+const BANK_FRONT_DOOR_CLEAR_HALF_WIDTH = 3.74;
+const BANK_FRONT_DOOR_GLASS_CLEAR_TOP_Y = 4.42;
+const BANK_FRONT_GLASS_Z = 11.12;
+
 function addBankDetails(groups, materials) {
   addModernBankGlassFacade(groups, materials);
 
@@ -1084,6 +1093,27 @@ function addBankDetails(groups, materials) {
   }
 }
 
+function addBankFrontGlassPanel(group, material, {
+  x,
+  y,
+  width,
+  height,
+  depth = 0.1,
+  z = BANK_FRONT_GLASS_Z
+}) {
+  const minX = x - (width * 0.5);
+  const maxX = x + (width * 0.5);
+  const minY = y - (height * 0.5);
+  const overlapsDoorX = minX < BANK_FRONT_DOOR_CLEAR_HALF_WIDTH && maxX > -BANK_FRONT_DOOR_CLEAR_HALF_WIDTH;
+  const overlapsDoorY = minY < BANK_FRONT_DOOR_GLASS_CLEAR_TOP_Y;
+
+  if (overlapsDoorX && overlapsDoorY) {
+    throw new Error('Bank front glass panel overlaps the entrance door clearance.');
+  }
+
+  group.add(createBox([width, height, depth], [x, y, z], material));
+}
+
 function addModernBankGlassFacade(groups, materials) {
   const bankMaterials = {
     glass: createGlassMaterial(0xc7f3fb, 0.38),
@@ -1095,20 +1125,24 @@ function addModernBankGlassFacade(groups, materials) {
     signLetter: createMaterial(0xf4fbff, 0.36, 0.1)
   };
 
+  const lowerFrontRows = [5.18, 7.14, 9.1, 11.06, 13.02, 14.98];
+  const sideWindowRows = [2.62, 4.74, 6.86, 8.98, 11.1, 13.22, 17.86, 19.78, 21.7, 23.42];
+  const backWindowRows = [3.02, 5.14, 7.26, 9.38, 11.5, 13.62, 17.86, 19.78, 21.7, 23.42];
+
   addBoxes(groups.exterior, [
-    { size: [21.6, 0.34, 0.36], position: [0, 8.08, 10.98], material: bankMaterials.mullion },
-    { size: [21.25, 0.18, 0.26], position: [0, 6.14, 11.06], material: bankMaterials.mullionLight },
-    { size: [21.25, 0.18, 0.26], position: [0, 4.18, 11.06], material: bankMaterials.mullionLight },
-    { size: [21.25, 0.18, 0.26], position: [0, 2.02, 11.06], material: bankMaterials.mullionLight },
-    { size: [9.7, 0.96, 0.28], position: [0, 6.72, 11.2], material: bankMaterials.signPanel },
-    { size: [8.6, 0.2, 2.24], position: [0, 4.22, 10.82], material: bankMaterials.glassDeep, rotation: [0.1, 0, 0] },
-    { size: [8.85, 0.16, 0.16], position: [0, 4.05, 11.74], material: bankMaterials.mullionLight },
-    { size: [8.95, 0.14, 0.16], position: [0, 4.34, 9.86], material: bankMaterials.mullion }
+    { size: [21.6, 0.34, 0.36], position: [0, 16.04, 10.98], material: bankMaterials.mullion },
+    { size: [9.7, 0.96, 0.28], position: [0, 7.42, 11.2], material: bankMaterials.signPanel },
+    { size: [8.6, 0.2, 2.24], position: [0, 4.68, 10.82], material: bankMaterials.glassDeep, rotation: [0.1, 0, 0] },
+    { size: [8.85, 0.16, 0.16], position: [0, 4.52, 11.74], material: bankMaterials.mullionLight },
+    { size: [8.95, 0.14, 0.16], position: [0, 4.82, 9.86], material: bankMaterials.mullion }
   ]);
+  for (const y of [2.02, 4.18, 6.14, 8.1, 10.06, 12.02, 13.98]) {
+    groups.exterior.add(createBox([21.25, 0.18, 0.26], [0, y, 11.06], bankMaterials.mullionLight));
+  }
 
   addSignText(groups.exterior, 'BANK', {
     centerX: 0,
-    y: 6.72,
+    y: 7.42,
     z: 11.38,
     pixelSize: 0.29,
     depth: 0.18,
@@ -1116,33 +1150,55 @@ function addModernBankGlassFacade(groups, materials) {
     shadowMaterial: materials.signShadow
   });
 
-  for (const x of [-8.9, -6.35, -3.8, 3.8, 6.35, 8.9]) {
-    groups.exterior.add(createBox([2.05, 3.18, 0.12], [x, 2.92, 11.08], bankMaterials.glassDeep));
+  for (const { x, width } of [
+    { x: -8.9, width: 2.05 },
+    { x: -6.35, width: 2.05 },
+    { x: -4.65, width: 1.18 },
+    { x: 4.65, width: 1.18 },
+    { x: 6.35, width: 2.05 },
+    { x: 8.9, width: 2.05 }
+  ]) {
+    addBankFrontGlassPanel(groups.exterior, bankMaterials.glassDeep, {
+      x,
+      y: 2.92,
+      width,
+      height: 3.18,
+      depth: 0.12,
+      z: 11.08
+    });
   }
-  for (const x of [-1.85, -0.62, 0.62, 1.85]) {
-    groups.exterior.add(createBox([0.9, 2.78, 0.1], [x, 2.66, 11.18], bankMaterials.glass));
+  for (const x of [-9.98, -7.62, -5.08, -3.86, 3.86, 5.08, 7.62, 9.98]) {
+    groups.exterior.add(createBox([0.12, 14.16, 0.18], [x, 8.96, 11.18], bankMaterials.mullion));
   }
-  for (const x of [-9.98, -7.62, -5.08, -2.54, -1.22, 0, 1.22, 2.54, 5.08, 7.62, 9.98]) {
-    groups.exterior.add(createBox([0.12, 6.34, 0.18], [x, 4.88, 11.18], bankMaterials.mullion));
+  for (const x of [-2.54, -1.22, 0, 1.22, 2.54]) {
+    groups.exterior.add(createBox([0.12, 11.24, 0.18], [x, 10.42, 11.18], bankMaterials.mullion));
   }
-  for (const y of [5.04, 7.0]) {
+  for (const y of lowerFrontRows) {
     for (const x of [-8.9, -6.35, -3.8, -1.25, 1.25, 3.8, 6.35, 8.9]) {
-      groups.exterior.add(createBox([2.05, 1.38, 0.1], [x, y, 11.12], bankMaterials.glass));
+      addBankFrontGlassPanel(groups.exterior, bankMaterials.glass, {
+        x,
+        y,
+        width: 2.05,
+        height: 1.38
+      });
       groups.exterior.add(createBox([1.52, 0.08, 0.12], [x, y + 0.5, 11.22], bankMaterials.glassHighlight));
     }
   }
 
   addBoxes(groups.exterior, [
-    { size: [14.6, 2.16, 0.12], position: [0, 9.0, 10.82], material: bankMaterials.glassDeep },
-    { size: [14.95, 0.16, 0.2], position: [0, 7.95, 10.92], material: bankMaterials.mullion },
-    { size: [14.95, 0.16, 0.2], position: [0, 10.05, 10.92], material: bankMaterials.mullionLight }
+    { size: [21.1, 6.95, 0.12], position: [0, BANK_UPPER_CENTER_Y, 10.84], material: bankMaterials.glassDeep },
+    { size: [21.35, 0.16, 0.2], position: [0, 16.82, 10.92], material: bankMaterials.mullion },
+    { size: [21.35, 0.16, 0.2], position: [0, 18.55, 10.92], material: bankMaterials.mullionLight },
+    { size: [21.35, 0.16, 0.2], position: [0, 20.28, 10.92], material: bankMaterials.mullion },
+    { size: [21.35, 0.16, 0.2], position: [0, 22.01, 10.92], material: bankMaterials.mullionLight },
+    { size: [21.35, 0.16, 0.2], position: [0, 23.74, 10.92], material: bankMaterials.mullion }
   ]);
-  for (const x of [-6.1, -3.65, -1.2, 1.2, 3.65, 6.1]) {
-    groups.exterior.add(createBox([0.11, 2.22, 0.18], [x, 9.0, 10.94], bankMaterials.mullion));
+  for (const x of [-9.98, -7.62, -5.08, -2.54, 0, 2.54, 5.08, 7.62, 9.98]) {
+    groups.exterior.add(createBox([0.11, 6.95, 0.18], [x, BANK_UPPER_CENTER_Y, 10.94], bankMaterials.mullion));
   }
 
   for (const sideX of [-10.98, 10.98]) {
-    for (const y of [2.62, 4.74, 6.86]) {
+    for (const y of sideWindowRows) {
       for (const z of [-7.3, -4.55, -1.8, 0.95, 3.7, 6.45]) {
         addDetailedSideWindow(groups.exterior, {
           x: sideX,
@@ -1159,7 +1215,7 @@ function addModernBankGlassFacade(groups, materials) {
     }
   }
 
-  for (const y of [3.02, 5.14, 7.26]) {
+  for (const y of backWindowRows) {
     for (const x of [-8.45, -5.65, -2.85, 0, 2.85, 5.65, 8.45]) {
       addDetailedBackWindow(groups.exterior, {
         x,
@@ -1797,8 +1853,12 @@ const BUILDINGS = Object.freeze([
       chair: 0x52606d
     },
     shell: {
-      wallHeight: 7.8,
-      upper: { centerY: 10.12, centerZ: -3.0, width: 13.6, height: 4.4, depth: 7.8 }
+      wallHeight: BANK_WALL_HEIGHT,
+      roofUnits: [
+        { position: [-5.4, BANK_ROOF_UNIT_Y, -4.1], rotationY: 0.24 },
+        { position: [5.2, BANK_ROOF_UNIT_Y, -2.3], rotationY: -0.18 }
+      ],
+      upper: { centerY: BANK_UPPER_CENTER_Y, centerZ: 0.35, width: 21.7, height: BANK_UPPER_HEIGHT, depth: 20.9 }
     },
     decorate: addBankDetails
   },

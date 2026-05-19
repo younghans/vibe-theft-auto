@@ -194,6 +194,25 @@ function readGlbNodeNames(relativePath) {
   return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
 }
 
+function getGlbMaxPositionY(json) {
+  let maxY = -Infinity;
+
+  for (const mesh of json.meshes ?? []) {
+    for (const primitive of mesh.primitives ?? []) {
+      const positionAccessorIndex = primitive.attributes?.POSITION;
+      const positionAccessor = Number.isInteger(positionAccessorIndex)
+        ? json.accessors?.[positionAccessorIndex]
+        : null;
+      const primitiveMaxY = Number(positionAccessor?.max?.[1]);
+      if (Number.isFinite(primitiveMaxY)) {
+        maxY = Math.max(maxY, primitiveMaxY);
+      }
+    }
+  }
+
+  return maxY;
+}
+
 function readRepoText(relativePath) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 }
@@ -1267,9 +1286,24 @@ function validateFootprintSupport() {
   assert(
     /createGlassMaterial\(0xc7f3fb,\s*0\.38\)/.test(bankFacadeSource)
       && /createGlassMaterial\(0x9bd7e6,\s*0\.44\)/.test(bankFacadeSource)
-      && /for \(const y of \[2\.62,\s*4\.74,\s*6\.86\]\)/.test(bankFacadeSource)
-      && /for \(const y of \[3\.02,\s*5\.14,\s*7\.26\]\)/.test(bankFacadeSource),
+      && /const lowerFrontRows = \[5\.18,\s*7\.14,\s*9\.1,\s*11\.06,\s*13\.02,\s*14\.98\]/.test(bankFacadeSource)
+      && /17\.86,\s*19\.78,\s*21\.7,\s*23\.42/.test(bankFacadeSource),
     'Bank exterior generator should use multi-floor transparent glass on the front, sides, and back'
+  );
+  assert(
+    /const BANK_WALL_HEIGHT = 15\.6;/.test(districtBuildingSource)
+      && /const BANK_UPPER_HEIGHT = 8\.8;/.test(districtBuildingSource)
+      && /wallHeight:\s*BANK_WALL_HEIGHT/.test(districtBuildingSource)
+      && /height:\s*BANK_UPPER_HEIGHT/.test(districtBuildingSource),
+    'Bank generator should keep the exterior tower roughly twice as tall as the previous modern bank'
+  );
+  assert(
+    /BANK_FRONT_DOOR_CLEAR_HALF_WIDTH = 3\.74/.test(districtBuildingSource)
+      && /BANK_FRONT_DOOR_GLASS_CLEAR_TOP_Y = 4\.42/.test(districtBuildingSource)
+      && /function addBankFrontGlassPanel/.test(districtBuildingSource)
+      && /Bank front glass panel overlaps the entrance door clearance/.test(districtBuildingSource)
+      && !/\[-1\.85,\s*-0\.62,\s*0\.62,\s*1\.85\]/.test(bankFacadeSource),
+    'Bank front glass should leave the entrance doorway clear'
   );
   assert(
     !/addStandardSideWindows\(groups,\s*materials\)/.test(bankDetailsSource)
@@ -1281,6 +1315,10 @@ function validateFootprintSupport() {
   assert(
     bankNodeNames.has('bank_interior') && bankNodeNames.has('bank_exterior_detail'),
     'Bank GLB should keep separate interior and exterior-detail nodes for cutaway rendering'
+  );
+  assert(
+    getGlbMaxPositionY(bankGlbJson) >= 24.5,
+    'Bank GLB should be regenerated with the taller exterior tower'
   );
   const bankTransparentGlassMaterials = (bankGlbJson.materials ?? []).filter((material) => {
     const colorFactor = material.pbrMetallicRoughness?.baseColorFactor ?? [];
