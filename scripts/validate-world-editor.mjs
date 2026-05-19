@@ -128,7 +128,9 @@ import {
   buildPassiveTrafficRoadGraph,
   findPassiveTrafficPath,
   getPassiveTrafficLanePosition,
-  getPassiveTrafficLanePositionAtNode
+  getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficRoadExits,
+  getPassiveTrafficTurnLaneWaypoints
 } from '../src/world/passiveTraffic.js';
 import {
   ATTACHMENT_SLOTS,
@@ -404,10 +406,57 @@ function validatePassiveTraffic() {
   assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.8, 'Passive traffic cars should render at 0.8x default size');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
 
+  const directionKey = (direction) => `${direction.x}:${direction.z}`;
+  const assertRoadExits = (itemId, rotationQuarterTurns, expectedDirections) => {
+    const item = getBuilderItemById(itemId);
+    assert(item?.layer === 'tile', `Passive traffic road type ${itemId} should resolve to a tile`);
+    const exits = new Set(getPassiveTrafficRoadExits(item, rotationQuarterTurns).map(directionKey));
+    for (const expectedDirection of expectedDirections) {
+      assert(
+        exits.has(directionKey(expectedDirection)),
+        `Passive traffic should understand ${itemId} rotation ${rotationQuarterTurns} road exits`
+      );
+    }
+    assert(exits.size === expectedDirections.length, `Passive traffic should not add extra exits for ${itemId} rotation ${rotationQuarterTurns}`);
+  };
+  assertRoadExits('road_straight', 0, [{ x: 0, z: -1 }, { x: 0, z: 1 }]);
+  assertRoadExits('road_straight', 1, [{ x: 1, z: 0 }, { x: -1, z: 0 }]);
+  assertRoadExits('road_corner', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }]);
+  assertRoadExits('road_corner', 2, [{ x: 0, z: 1 }, { x: -1, z: 0 }]);
+  assertRoadExits('road_corner_curved', 3, [{ x: -1, z: 0 }, { x: 0, z: -1 }]);
+  assertRoadExits('road_tsplit', 1, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }]);
+  assertRoadExits('road_cross', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
+  assertRoadExits('road_junction', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
+  assertRoadExits('park_road_straight', 1, [{ x: 1, z: 0 }, { x: -1, z: 0 }]);
+  assertRoadExits('park_road_corner_decorated', 1, [{ x: 1, z: 0 }, { x: 0, z: 1 }]);
+  assertRoadExits('park_road_tsplit_decorated', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: -1, z: 0 }]);
+  assertRoadExits('park_road_junction_decorated_C', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
+
+  const mixedRoadTypeTiles = [
+    { id: 'traffic_road_type_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_road_type_2', itemId: 'road_corner', cell: [1, 0], rotationQuarterTurns: 2 },
+    { id: 'traffic_road_type_3', itemId: 'road_tsplit', cell: [1, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_road_type_4', itemId: 'road_cross', cell: [2, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_road_type_5', itemId: 'road_junction', cell: [3, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_road_type_6', itemId: 'road_corner_curved', cell: [4, 1], rotationQuarterTurns: 3 },
+    { id: 'traffic_road_type_7', itemId: 'park_road_straight', cell: [4, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_road_type_8', itemId: 'park_road_corner_decorated', cell: [4, -1], rotationQuarterTurns: 2 },
+    { id: 'traffic_road_type_9', itemId: 'park_road_tsplit_decorated', cell: [3, -1], rotationQuarterTurns: 0 },
+    { id: 'traffic_road_type_10', itemId: 'park_road_junction_decorated_C', cell: [2, -1], rotationQuarterTurns: 0 }
+  ];
+  const mixedRoadTypeGraph = buildPassiveTrafficRoadGraph(mixedRoadTypeTiles);
+  const mixedRoadStart = mixedRoadTypeGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0)?.index;
+  const mixedRoadEnd = mixedRoadTypeGraph.nodes.find((node) => node.cellX === 2 && node.cellZ === -1)?.index;
+  const mixedRoadPath = findPassiveTrafficPath(mixedRoadTypeGraph, mixedRoadStart, mixedRoadEnd);
+  assert(
+    mixedRoadPath.length === mixedRoadTypeTiles.length,
+    'Passive traffic should route continuously through straight, corner, curved, T, cross, junction, and park road tiles'
+  );
+
   const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
   assert(trafficGraph.activeNodeIndices.length >= 30, 'Default world should expose a broad road-tile network for passive traffic');
   assert(
-    trafficGraph.activeNodes.every((node) => String(node.itemId).startsWith('road_')),
+    trafficGraph.activeNodes.every((node) => String(node.itemId).startsWith('road_') || String(node.assetName).startsWith('park_road_')),
     'Passive traffic graph should be built specifically from road tiles'
   );
 
@@ -426,10 +475,26 @@ function validatePassiveTraffic() {
   const deltaX = toNode.x - fromNode.x;
   const deltaZ = toNode.z - fromNode.z;
   const length = Math.hypot(deltaX, deltaZ);
-  const rightX = deltaZ / length;
-  const rightZ = -deltaX / length;
+  const rightX = -deltaZ / length;
+  const rightZ = deltaX / length;
   const laneDot = ((lanePosition.x - toNode.x) * rightX) + ((lanePosition.z - toNode.z) * rightZ);
   assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
+  const leftDot = ((lanePosition.x - toNode.x) * (deltaZ / length)) + ((lanePosition.z - toNode.z) * (-deltaX / length));
+  assert(leftDot < 0, 'Passive traffic should not use the driver-left lane normal');
+
+  const straightTrafficGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_straight_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_straight_2', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_straight_3', itemId: 'road_straight', cell: [0, 2], rotationQuarterTurns: 0 }
+  ]);
+  const straightNodes = [0, 1, 2].map((z) => straightTrafficGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === z));
+  const firstStraightLane = getPassiveTrafficLanePosition(straightNodes[0], straightNodes[1], new Vector3());
+  const secondStraightLane = getPassiveTrafficLanePosition(straightNodes[1], straightNodes[2], new Vector3());
+  assert(
+    Math.abs(firstStraightLane.x - secondStraightLane.x) < 0.001
+      && Math.abs((secondStraightLane.z - firstStraightLane.z) - BUILDER_TILE_SIZE) < 0.001,
+    'Passive traffic should hold a straight center-of-lane line across consecutive straight road tiles'
+  );
 
   const turnCandidate = trafficGraph.activeNodes
     .map((node) => {
@@ -465,6 +530,23 @@ function validatePassiveTraffic() {
     turnLaneShift > PASSIVE_TRAFFIC_LANE_OFFSET * 0.5 && turnLaneShift < BUILDER_TILE_SIZE,
     'Passive traffic turns should transition between incoming and outgoing right-lane points inside the intersection'
   );
+  const turnWaypoints = getPassiveTrafficTurnLaneWaypoints(
+    turnCandidate.incomingNode,
+    turnCandidate.node,
+    turnCandidate.outgoingNode
+  );
+  assert(turnWaypoints.length >= 3, 'Passive traffic should sample curved 90-degree turn waypoints instead of hard-pivoting once');
+  assert(
+    turnWaypoints[turnWaypoints.length - 1].distanceTo(outgoingTurnLane) < 0.001,
+    'Passive traffic turn waypoints should finish on the outgoing right-hand lane'
+  );
+  assert(
+    turnWaypoints.every((waypoint) => (
+      Math.abs(waypoint.x - turnCandidate.node.x) <= (PASSIVE_TRAFFIC_LANE_OFFSET * 2) + 0.001
+      && Math.abs(waypoint.z - turnCandidate.node.z) <= (PASSIVE_TRAFFIC_LANE_OFFSET * 2) + 0.001
+    )),
+    'Passive traffic 90-degree turn waypoints should stay inside the intersection lane area'
+  );
 
   const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
   assert(
@@ -473,6 +555,7 @@ function validatePassiveTraffic() {
       && /PASSIVE_TRAFFIC_CAR_SCALE/.test(worldRendererSource)
       && /turnStopSeconds/.test(worldRendererSource)
       && /turnWaypointActive/.test(worldRendererSource)
+      && /turnWaypointQueue/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with intersection stop-and-turn handling'
   );

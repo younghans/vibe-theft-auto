@@ -30,7 +30,8 @@ import {
   buildPassiveTrafficRoadGraph,
   findPassiveTrafficPath,
   getPassiveTrafficLanePosition,
-  getPassiveTrafficLanePositionAtNode
+  getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficTurnLaneWaypoints
 } from './passiveTraffic.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
@@ -1614,7 +1615,8 @@ export class WorldRenderer {
       currentSpeed: 0,
       yaw: object.rotation.y,
       turnStopSeconds: 0,
-      turnWaypointActive: false
+      turnWaypointActive: false,
+      turnWaypointQueue: []
     };
 
     this.markPassiveTrafficNodeVisited(startIndex);
@@ -1802,13 +1804,28 @@ export class WorldRenderer {
 
     car.targetNodeIndex = targetNodeIndex;
     car.turnWaypointActive = false;
+    car.turnWaypointQueue.length = 0;
     getPassiveTrafficLanePosition(currentNode, targetNode, car.finalTargetPosition);
     car.finalTargetPosition.y = this.getSurfaceHeightAtPosition(car.finalTargetPosition.x, car.finalTargetPosition.z);
 
     if (this.isPassiveTrafficTurn(car.previousNodeIndex, car.currentNodeIndex, car.targetNodeIndex)) {
-      getPassiveTrafficLanePositionAtNode(currentNode, targetNode, car.targetPosition);
-      car.targetPosition.y = this.getSurfaceHeightAtPosition(car.targetPosition.x, car.targetPosition.z);
-      car.turnWaypointActive = true;
+      car.turnWaypointQueue = getPassiveTrafficTurnLaneWaypoints(
+        graph.nodes[car.previousNodeIndex],
+        currentNode,
+        targetNode
+      ).map((waypoint) => {
+        waypoint.y = this.getSurfaceHeightAtPosition(waypoint.x, waypoint.z);
+        return waypoint;
+      });
+      const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
+      if (nextTurnWaypoint) {
+        car.targetPosition.copy(nextTurnWaypoint);
+        car.turnWaypointActive = true;
+      } else {
+        getPassiveTrafficLanePositionAtNode(currentNode, targetNode, car.targetPosition);
+        car.targetPosition.y = this.getSurfaceHeightAtPosition(car.targetPosition.x, car.targetPosition.z);
+        car.turnWaypointActive = true;
+      }
       if (this.shouldPassiveTrafficStopForTurn(car.previousNodeIndex, car.currentNodeIndex, car.targetNodeIndex)) {
         car.turnStopSeconds = Math.max(car.turnStopSeconds, this.getPassiveTrafficTurnStopSeconds(car));
         car.currentSpeed = 0;
@@ -1857,6 +1874,12 @@ export class WorldRenderer {
         if (distance <= PASSIVE_TRAFFIC_POSITION_EPSILON) {
           car.object.position.copy(car.targetPosition);
           if (car.turnWaypointActive) {
+            const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
+            if (nextTurnWaypoint) {
+              car.targetPosition.copy(nextTurnWaypoint);
+              continue;
+            }
+
             car.turnWaypointActive = false;
             car.targetPosition.copy(car.finalTargetPosition);
             continue;
