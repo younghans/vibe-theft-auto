@@ -6382,6 +6382,33 @@ export class Game {
     };
   }
 
+  createDeliveryQuestPromptInteractable(interaction = null, interactable = null) {
+    if (!interaction?.action || !interactable || interactable.kind !== 'npc') {
+      return null;
+    }
+
+    const npcId = String(interaction.npcId || interactable.npcId || interactable.placementId || '').trim();
+    if (!npcId) {
+      return null;
+    }
+
+    const npcState = this.npcServiceState.npcs.get(npcId);
+    const completingDelivery = interaction.kind === 'completeDelivery';
+    return {
+      ...interactable,
+      kind: completingDelivery ? 'delivery-complete' : 'delivery-quest',
+      npcId,
+      npc: {
+        ...(interactable.npc ?? {}),
+        ...(npcState ?? {})
+      },
+      label: interaction.label || npcState?.name || interactable.npc?.name || '',
+      prompt: completingDelivery ? 'Deliver package' : 'Accept delivery job',
+      actionText: completingDelivery ? 'Package delivered.' : 'Delivery job accepted.',
+      deliveryKind: interaction.kind
+    };
+  }
+
   async handleDeliveryQuestInteraction(interaction = null) {
     if (!interaction?.action || this.deliveryQuestRequestInFlight) {
       return;
@@ -16329,6 +16356,7 @@ export class Game {
 
     const npcInteractable = this.getNearestNpcInteractable(worldBuilderInteractables);
     const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable, worldBuilderInteractables);
+    const deliveryPromptInteraction = this.createDeliveryQuestPromptInteractable(deliveryInteraction, npcInteractable);
     const gymCheckInInteraction = deliveryInteraction
       ? null
       : this.getNearestGymCheckInInteractable(worldBuilderInteractables);
@@ -16357,10 +16385,23 @@ export class Game {
     this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
     this.syncActiveCarDealerMenu(carDealerInteraction);
     this.syncActiveMarthaMenu(marthaInteraction);
+    this.currentInteractable = deliveryPromptInteraction
+      ?? gymCheckInInteraction
+      ?? stockMarketInteraction
+      ?? blackjackInteraction
+      ?? schoolMicrogameInteraction
+      ?? bartenderInteraction
+      ?? pawnShopOwnerInteraction
+      ?? carDealerInteraction
+      ?? marthaInteraction
+      ?? nearest;
     const interactPressed = this.input.consumeAction('interact');
 
-    if (deliveryInteraction?.action && interactPressed) {
-      void this.handleDeliveryQuestInteraction(deliveryInteraction);
+    if (deliveryPromptInteraction) {
+      this.hud.setPrompt(deliveryPromptInteraction);
+      if (interactPressed) {
+        void this.handleDeliveryQuestInteraction(deliveryInteraction);
+      }
       return;
     }
 

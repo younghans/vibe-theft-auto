@@ -2130,9 +2130,23 @@ function validateBartenderFunction() {
   const vehiclePreviewSource = readFileSync(new URL('../src/ui/VehiclePreviewRenderer.js', import.meta.url), 'utf8');
   const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
+  const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
   assert(
     /\.hud__interaction\.is-world-anchored\s*\{[^}]*bottom:\s*auto/s.test(styles),
     'Bartender interaction menu should support anchored in-world placement'
+  );
+  assert(
+    /getNpcInteractableIndicatorText/.test(worldRendererSource)
+      && /npc\.pawnShopOwnerEnabled === true[\s\S]*Browse pawn shop/.test(worldRendererSource)
+      && /npc\.carDealerEnabled === true[\s\S]*Browse cars/.test(worldRendererSource)
+      && /rendered\.actor\.runtimeState/.test(worldRendererSource),
+    'NPC service providers should expose prop-style interactable indicators while alive'
+  );
+  assert(
+    /createDeliveryQuestPromptInteractable/.test(gameSource)
+      && /Accept delivery job/.test(gameSource)
+      && /this\.currentInteractable = deliveryPromptInteraction[\s\S]*\?\? carDealerInteraction[\s\S]*\?\? marthaInteraction[\s\S]*\?\? nearest/.test(gameSource),
+    'NPC service interactions should feed the active HUD/admin interactable context'
   );
   assert(
     /setInteractionMenuAnchor\(anchor = null\)/.test(hudSource),

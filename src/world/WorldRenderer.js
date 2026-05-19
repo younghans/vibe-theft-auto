@@ -428,8 +428,53 @@ function createInlineShellEntry(rendered, placement, interactable) {
   };
 }
 
+function getNpcInteractableIndicatorText(placement) {
+  const npc = placement?.npc ?? null;
+  if (!npc) {
+    return '';
+  }
+
+  if (npc.deliveryQuestEnabled === true) {
+    return 'Delivery job';
+  }
+  if (npc.gymCheckInEnabled === true) {
+    return 'Buy gym membership';
+  }
+  if (npc.stockMarketEnabled === true) {
+    return 'Trade stocks';
+  }
+  if (npc.blackjackDealerEnabled === true) {
+    return 'Play blackjack';
+  }
+  if (npc.schoolMicrogameEnabled === true) {
+    return 'Play school challenge';
+  }
+  if (npc.bartenderEnabled === true) {
+    return 'Order drinks';
+  }
+  if (npc.pawnShopOwnerEnabled === true) {
+    return 'Browse pawn shop';
+  }
+  if (npc.carDealerEnabled === true) {
+    return 'Browse cars';
+  }
+  if (npc.marthaEnabled === true) {
+    return 'Order food';
+  }
+
+  return '';
+}
+
 function getPlacementInteractableIndicatorText(placement, item) {
-  if (!placement || placement.layer !== 'prop') {
+  if (!placement) {
+    return '';
+  }
+
+  if (placement.layer === 'npc') {
+    return formatInteractableIndicatorText(getNpcInteractableIndicatorText(placement));
+  }
+
+  if (placement.layer !== 'prop') {
     return '';
   }
 
@@ -1251,7 +1296,7 @@ export class WorldRenderer {
   }
 
   syncPlacementInteractableIndicator(rendered) {
-    if (!rendered || rendered.actor) {
+    if (!rendered) {
       return;
     }
 
@@ -1270,12 +1315,22 @@ export class WorldRenderer {
       return;
     }
 
+    const indicatorOptions = {
+      indicatorHeight: 0.07
+    };
+    if (rendered.actor) {
+      indicatorOptions.localPosition = [
+        0,
+        Math.max(2.6, Number(rendered.actor.model?.height ?? 1.8) + 1.25),
+        0
+      ];
+      indicatorOptions.preserveWorldScale = false;
+    }
+
     rendered.interactableIndicator = addInteractableIndicatorToObject(
       rendered.object,
       indicatorText,
-      {
-        indicatorHeight: 0.07
-      }
+      indicatorOptions
     );
   }
 
@@ -1290,6 +1345,11 @@ export class WorldRenderer {
       }
 
       let visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
+      if (visible && rendered.actor) {
+        visible = rendered.actor.runtimeState?.mode !== NPC_RUNTIME_MODES.hidden
+          && rendered.actor.runtimeState?.mode !== NPC_RUNTIME_MODES.dead
+          && rendered.actor.runtimeState?.alive !== false;
+      }
       if (visible && hasResolver) {
         rendered.object.getWorldPosition(worldPosition);
         visible = resolver(rendered, worldPosition) !== false;
