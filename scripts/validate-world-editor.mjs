@@ -2831,12 +2831,14 @@ function validateBartenderFunction() {
     /assets\.vehicles\.fiatDuna/.test(vehiclePreviewSource)
       && /assets\.vehicles\.toyotaAe86/.test(vehiclePreviewSource)
       && /CAR_PREVIEW_MODEL_SCALE\s*=\s*0\.75/.test(vehiclePreviewSource)
+      && /CAR_PREVIEW_MODEL_FOOTPRINT\s*=\s*Object\.freeze\(\[6\.5,\s*12\]\)/.test(vehiclePreviewSource)
+      && /fitVehiclePreviewModelToFootprint\(object\)/.test(vehiclePreviewSource)
       && /BASE_VEHICLE_YAW\s*=\s*Math\.PI\s*\*\s*0\.23/.test(vehiclePreviewSource)
       && /LIVE_VEHICLE_ROTATION_SPEED\s*=\s*1\.65/.test(vehiclePreviewSource)
       && /getVehicleModelGroundNodeNameParts/.test(vehiclePreviewSource)
       && /createSkateboardPreviewModel/.test(vehiclePreviewSource)
       && /library\.instantiate\(definition\.assetUrl\)/.test(vehiclePreviewSource),
-    'Vehicle preview renderer should load real grounded forward-facing rotating car GLB models and procedurally render the skateboard'
+    'Vehicle preview renderer should load real footprint-normalized grounded forward-facing rotating car GLB models and procedurally render the skateboard'
   );
   assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
@@ -2891,10 +2893,12 @@ function validateBartenderFunction() {
       && /PlayerSkateboardWheel_/.test(playerSource)
       && /PlayerVehicleRoot/.test(playerSource)
       && /PLAYER_CAR_MODEL_SCALE\s*=\s*0\.75/.test(playerSource)
+      && /PLAYER_CAR_MODEL_FOOTPRINT\s*=\s*Object\.freeze\(\[6\.5,\s*12\]\)/.test(playerSource)
+      && /fitPlayerVehicleModelToFootprint\(object\)/.test(playerSource)
       && /getVehicleModelGroundNodeNameParts/.test(playerSource)
       && /centerAndGroundVehicleModel\(object,\s*normalizedItemId\)/.test(playerSource)
       && /character\.visible\s*=\s*false/.test(playerSource),
-    'Player avatar should render the legacy skateboard and replace the character with a grounded 0.75x selected car while car-driving'
+    'Player avatar should render the legacy skateboard and replace the character with a footprint-normalized grounded 0.75x selected car while car-driving'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)

@@ -47,7 +47,7 @@ import {
   getVehicleModelGroundNodeNameParts,
   normalizePlayerVehicleItemId
 } from '../shared/carDealer.js';
-import { centerObjectOnXZAndSnapToGround } from '../shared/threeModelBounds.js';
+import { centerObjectOnXZAndSnapToGround, fitObjectToFootprint } from '../shared/threeModelBounds.js';
 import { assets } from '../world/assetManifest.js';
 
 const PLAYER_HEIGHT = 4.5;
@@ -56,6 +56,7 @@ const PLAYER_RADIUS = 1.4;
 const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
 const PLAYER_CAR_MODEL_SCALE = 0.75;
+const PLAYER_CAR_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
 const PLAYER_CAR_ASSET_URLS = Object.freeze({
   [CAR_DEALER_ITEM_IDS.fiatDuna]: assets.vehicles.fiatDuna,
   [CAR_DEALER_ITEM_IDS.toyotaAe86]: assets.vehicles.toyotaAe86
@@ -463,6 +464,11 @@ function preparePlayerVehicleModel(root) {
       material.needsUpdate = true;
     }
   });
+}
+
+function fitPlayerVehicleModelToFootprint(root) {
+  fitObjectToFootprint(root, PLAYER_CAR_MODEL_FOOTPRINT[0], PLAYER_CAR_MODEL_FOOTPRINT[1]);
+  root.scale.multiplyScalar(PLAYER_CAR_MODEL_SCALE);
 }
 
 function centerAndGroundVehicleModel(root, itemId = '') {
@@ -1804,8 +1810,8 @@ export async function createPlayer(library, {
         .then((object) => {
           object.name = `PlayerVehicle:${normalizedItemId}`;
           object.visible = false;
-          object.scale.multiplyScalar(PLAYER_CAR_MODEL_SCALE);
           preparePlayerVehicleModel(object);
+          fitPlayerVehicleModelToFootprint(object);
           centerAndGroundVehicleModel(object, normalizedItemId);
           vehicleRoot.add(object);
           playerVehicleModels.set(normalizedItemId, object);

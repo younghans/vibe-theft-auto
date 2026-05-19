@@ -6,12 +6,13 @@ import {
   normalizePlayerVehicleItemId
 } from '../shared/carDealer.js';
 import { SKATEBOARD_ITEM_ID } from '../shared/skateboard.js';
-import { centerObjectOnXZAndSnapToGround } from '../shared/threeModelBounds.js';
+import { centerObjectOnXZAndSnapToGround, fitObjectToFootprint } from '../shared/threeModelBounds.js';
 import { assets } from '../world/assetManifest.js';
 
 const LIVE_PREVIEW_SIZE = Object.freeze({ width: 640, height: 360 });
 const SNAPSHOT_SIZE = Object.freeze({ width: 260, height: 180 });
 const CAR_PREVIEW_MODEL_SCALE = 0.75;
+const CAR_PREVIEW_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
 const VEHICLE_ASSET_URLS = Object.freeze({
   [CAR_DEALER_ITEM_IDS.fiatDuna]: assets.vehicles.fiatDuna,
   [CAR_DEALER_ITEM_IDS.toyotaAe86]: assets.vehicles.toyotaAe86
@@ -77,6 +78,11 @@ function prepareVehicleModel(root) {
       material.needsUpdate = true;
     }
   });
+}
+
+function fitVehiclePreviewModelToFootprint(root) {
+  fitObjectToFootprint(root, CAR_PREVIEW_MODEL_FOOTPRINT[0], CAR_PREVIEW_MODEL_FOOTPRINT[1]);
+  root.scale.multiplyScalar(CAR_PREVIEW_MODEL_SCALE);
 }
 
 function centerAndGroundVehicle(root, itemId = '') {
@@ -153,7 +159,7 @@ async function instantiateVehicle(library, itemId = '', yaw = BASE_VEHICLE_YAW) 
     : await library.instantiate(definition.assetUrl);
   object.name = `VehiclePreview:${definition.id}`;
   if (definition.kind !== 'skateboard') {
-    object.scale.multiplyScalar(CAR_PREVIEW_MODEL_SCALE);
+    fitVehiclePreviewModelToFootprint(object);
   }
   prepareVehicleModel(object);
   centerAndGroundVehicle(object, definition.id);

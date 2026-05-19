@@ -82,6 +82,31 @@ export function snapObjectToGround(root, {
   return root;
 }
 
+export function fitObjectToFootprint(root, targetWidth, targetDepth) {
+  const width = Number(targetWidth);
+  const depth = Number(targetDepth);
+  if (!root || !Number.isFinite(width) || !Number.isFinite(depth) || width <= 0 || depth <= 0) {
+    return 1;
+  }
+
+  const bounds = getObjectBounds(root);
+  if (!boxHasFiniteExtents(bounds)) {
+    return 1;
+  }
+
+  const size = bounds.getSize(sharedCenter);
+  const scaleX = size.x > 0 ? width / size.x : 1;
+  const scaleZ = size.z > 0 ? depth / size.z : 1;
+  const scale = Math.min(scaleX, scaleZ);
+  if (Number.isFinite(scale) && scale > 0) {
+    root.scale.multiplyScalar(scale);
+    root.updateWorldMatrix?.(true, true);
+    return scale;
+  }
+
+  return 1;
+}
+
 export function centerObjectOnXZAndSnapToGround(root, {
   clearance = 0,
   groundNodeNameParts = []

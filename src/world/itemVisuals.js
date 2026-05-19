@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getTileLocalCellOffsets, getTileLocalCenterOffset } from '../shared/tileFootprint.js';
-import { snapObjectToGround } from '../shared/threeModelBounds.js';
+import { fitObjectToFootprint, snapObjectToGround } from '../shared/threeModelBounds.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import {
   createBasketballHalfCourtTileVisual,
@@ -28,15 +28,7 @@ import {
 } from './proceduralProps.js';
 import { COMBAT_PICKUP_PROP_ITEM_IDS } from '../shared/combatPickupDefinitions.js';
 
-export function fitObjectToFootprint(root, targetWidth, targetDepth) {
-  const bounds = new THREE.Box3().setFromObject(root);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scaleX = size.x > 0 ? targetWidth / size.x : 1;
-  const scaleZ = size.z > 0 ? targetDepth / size.z : 1;
-  root.scale.multiplyScalar(Math.min(scaleX, scaleZ));
-}
-
-export { snapObjectToGround };
+export { fitObjectToFootprint, snapObjectToGround };
 
 function getUnderlayItem(item) {
   if (item?.layer !== 'tile' || !item.underlayTileId) {
