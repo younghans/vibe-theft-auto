@@ -32,8 +32,8 @@ const WORKER_CONTROL_FILE = path.join(WORK_ROOT, '.agent-worker-control.json');
 const GIT_REMOTE = String(process.env.GIT_REMOTE || '');
 const GIT_COMMAND = String(process.env.GIT_COMMAND || 'git').trim() || 'git';
 const GIT_BASE_BRANCH = String(process.env.GIT_BASE_BRANCH || 'main');
-const AUTO_DEPLOY = ['1', 'true', 'yes'].includes(String(process.env.AUTO_DEPLOY || '').toLowerCase());
-const DEPLOY_ENABLED = AUTO_DEPLOY || ['1', 'true', 'yes'].includes(String(process.env.DEPLOY_ENABLED || '').toLowerCase());
+const AUTO_DEPLOY = getBooleanEnv('AUTO_DEPLOY', false);
+const DEPLOY_ENABLED = AUTO_DEPLOY || getBooleanEnv('DEPLOY_ENABLED', false);
 const BACKEND_DEPLOY_COMMAND = process.env.BACKEND_DEPLOY_COMMAND
   || process.env.COLYSEUS_DEPLOY_COMMAND
   || process.env.DEPLOY_COMMAND
@@ -65,7 +65,7 @@ const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 15 * 60 * 1000);
 const STALE_ACTIVE_TASK_AFTER_MS = getNonNegativeIntegerEnv('AGENT_ACTIVE_TASK_STALE_AFTER_MS', 10 * 60 * 1000);
 const TASK_HEARTBEAT_MS = getPositiveIntegerEnv('AGENT_TASK_HEARTBEAT_MS', 60 * 1000);
-const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 1);
+const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
 const DEPLOY_REBASE_REPAIR_ATTEMPTS = getNonNegativeIntegerEnv('AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS', 2);
@@ -77,7 +77,8 @@ const API_STORM_PAUSE_MS = getPositiveIntegerEnv('AGENT_API_STORM_PAUSE_MS', 600
 const PENDING_TASK_UPDATES_ROOT = path.join(WORKER_LOG_ROOT, 'pending-task-updates');
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
-const DISABLE_INSTANCE_LOCK = ['1', 'true', 'yes'].includes(String(process.env.AGENT_DISABLE_INSTANCE_LOCK || '').toLowerCase());
+const START_DRAINED = getBooleanEnv('AGENT_START_DRAINED', true);
+const DISABLE_INSTANCE_LOCK = getBooleanEnv('AGENT_DISABLE_INSTANCE_LOCK', false);
 const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 const drainLoggedLaneLabels = new Set();
 const WORLD_LAYOUT_SEED_PATH = 'server/data/world-layout.json';
@@ -116,6 +117,23 @@ function getPositiveIntegerEnv(name, fallback) {
 function getNonNegativeIntegerEnv(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function getBooleanEnv(name, fallback = false) {
+  const rawValue = process.env[name];
+  if (rawValue == null || rawValue === '') {
+    return fallback;
+  }
+
+  const value = String(rawValue).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(value)) {
+    return false;
+  }
+
+  return fallback;
 }
 
 function getApiRetryDelayMs(attempt) {
@@ -435,6 +453,34 @@ async function clearCompletedTargetedDrainControl(control) {
     targetWorkerId: control.targetWorkerId || '',
     targetPid: control.targetPid || 0
   });
+}
+
+async function ensureStartupDrainControl() {
+  if (!START_DRAINED || RUN_ONCE) {
+    return null;
+  }
+
+  const existingControl = readWorkerControlFile();
+  if (existingControl?.mode === 'drain' && isWorkerControlTargetedHere(existingControl)) {
+    return existingControl;
+  }
+
+  const control = {
+    mode: 'drain',
+    requestedAt: new Date().toISOString(),
+    requestedBy: `${WORKER_ID}:startup`,
+    targetWorkerId: WORKER_ID,
+    targetPid: process.pid,
+    reason: 'worker startup default drain'
+  };
+
+  await fsp.mkdir(WORK_ROOT, { recursive: true });
+  await fsp.writeFile(WORKER_CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
+  await writeWorkerDiagnostic('info', 'worker_startup_drain_requested', {
+    control
+  });
+  console.log('[agent-worker] Startup drain is enabled; worker will exit before claiming new work unless AGENT_START_DRAINED=false.');
+  return control;
 }
 
 function normalizeRepoPath(value = '') {
@@ -3781,6 +3827,12 @@ function runSelfTest() {
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'COLYSEUS_DEPLOY_TOKEN'), false, 'codex env strips deploy token');
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'OPENAI_API_KEY'), false, 'codex env strips api key');
   assertSelfTestEqual(Object.hasOwn(codexEnv, 'DATABASE_URL'), false, 'codex env strips database url');
+  if (process.env.AGENT_CODE_CONCURRENCY == null) {
+    assertSelfTestEqual(CODE_CONCURRENCY, 2, 'default code concurrency is two lanes');
+  }
+  if (process.env.AGENT_START_DRAINED == null) {
+    assertSelfTestEqual(START_DRAINED, true, 'startup drain is enabled by default');
+  }
   assertSelfTestEqual(isWorkerControlTargetedHere({}), true, 'untargeted worker control applies');
   assertSelfTestEqual(
     isWorkerControlTargetedHere({ targetWorkerId: WORKER_ID, targetPid: process.pid }),
@@ -3888,6 +3940,7 @@ if (RUN_SELF_TEST) {
 validateConfig();
 await pruneWorkerDiagnosticLogs();
 await acquireWorkerInstanceLock();
+await ensureStartupDrainControl();
 
 console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   workerId: WORKER_ID,
@@ -3911,6 +3964,7 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   codexServiceTier: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_SERVICE_TIER,
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
+  startDrained: START_DRAINED,
   workerLogRoot: WORKER_LOG_ROOT,
   workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
@@ -3938,6 +3992,7 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   codexServiceTier: process.env.CODEX_EXEC_ARGS ? 'custom' : CODEX_SERVICE_TIER,
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
+  startDrained: START_DRAINED,
   workerLogRoot: WORKER_LOG_ROOT,
   workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
