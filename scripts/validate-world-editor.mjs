@@ -103,6 +103,7 @@ import {
   shouldApplyMarthaNpcAdornment
 } from '../src/npc/npcRenderUtils.js';
 import { buildCity } from '../src/world/buildCity.js';
+import { findNearestAdjacentPropSnapPoint } from '../src/world/builderPropSnap.js';
 import { getBuilderItemById } from '../src/world/builderCatalog.js';
 import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
 import {
@@ -705,6 +706,79 @@ function validateCustomPropCatalogItems() {
     /PROP_ROTATION_STEP_RADIANS\s*=\s*Math\.PI\s*\/\s*4/.test(worldStateSource),
     'World state selected prop rotation should use a 45-degree step'
   );
+  assert(
+    worldBuilderSource.includes("input?.isPressed?.('ShiftLeft')")
+      && worldBuilderSource.includes("input?.isPressed?.('ShiftRight')")
+      && worldBuilderSource.includes('findNearestAdjacentPropSnapPoint'),
+    'World builder should support holding Shift to snap active props to adjacent identical props'
+  );
+  assert(
+    worldBuilderSource.includes("input?.isPressed?.('CapsLock')")
+      && /if\s*\(this\.isIdentifyModifierActive\(\)\)\s*\{[\s\S]*?this\.selectPlacement\(hoveredPlacement\.id\)[\s\S]*?return;[\s\S]*?\}/.test(worldBuilderSource),
+    'World builder should support holding Caps Lock to identify hovered placements instead of placing the active prop'
+  );
+
+  const sidewalkItem = getBuilderItemById('sidewalk');
+  const sidewalkSnap = findNearestAdjacentPropSnapPoint({
+    point: { x: SIDEWALK_PROP_FOOTPRINT[0] - 0.2, z: 0.15 },
+    placements: [
+      {
+        id: 'snap-sidewalk-a',
+        itemId: sidewalkItem.id,
+        layer: 'prop',
+        position: [0, 0],
+        rotationY: 0,
+        scale: 1
+      }
+    ],
+    activeItem: sidewalkItem,
+    activeScale: 1,
+    activeRotationY: 0,
+    getItemById: getBuilderItemById
+  });
+  assert(
+    Math.abs(sidewalkSnap?.x - SIDEWALK_PROP_FOOTPRINT[0]) <= 0.001 && Math.abs(sidewalkSnap?.z) <= 0.001,
+    'Shift snapping should connect a new sidewalk directly to the nearest sidewalk edge'
+  );
+  const sidewalkCrossSnap = findNearestAdjacentPropSnapPoint({
+    point: { x: 0.1, z: -SIDEWALK_PROP_FOOTPRINT[1] + 0.2 },
+    placements: [
+      {
+        id: 'snap-sidewalk-a',
+        itemId: sidewalkItem.id,
+        layer: 'prop',
+        position: [0, 0],
+        rotationY: 0,
+        scale: 1
+      }
+    ],
+    activeItem: sidewalkItem,
+    activeScale: 1,
+    activeRotationY: 0,
+    getItemById: getBuilderItemById
+  });
+  assert(
+    Math.abs(sidewalkCrossSnap?.x) <= 0.001 && Math.abs(sidewalkCrossSnap?.z + SIDEWALK_PROP_FOOTPRINT[1]) <= 0.001,
+    'Shift snapping should also connect matching props across their depth edge'
+  );
+  const farSidewalkSnap = findNearestAdjacentPropSnapPoint({
+    point: { x: 80, z: 80 },
+    placements: [
+      {
+        id: 'snap-sidewalk-a',
+        itemId: sidewalkItem.id,
+        layer: 'prop',
+        position: [0, 0],
+        rotationY: 0,
+        scale: 1
+      }
+    ],
+    activeItem: sidewalkItem,
+    activeScale: 1,
+    activeRotationY: 0,
+    getItemById: getBuilderItemById
+  });
+  assert(farSidewalkSnap === null, 'Shift snapping should leave distant prop placement under the cursor');
 
   const flatSurfaceProps = [
     {

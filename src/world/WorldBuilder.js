@@ -42,6 +42,7 @@ import {
 } from '../shared/worldConstants.js';
 import { BuilderPreviewRenderer } from '../ui/BuilderPreviewRenderer.js';
 import { BUILDER_CATEGORIES, BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
+import { findNearestAdjacentPropSnapPoint } from './builderPropSnap.js';
 import { createWorldEditAdapter } from './createWorldEditAdapter.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import { RemoteBuilderRenderer } from './RemoteBuilderRenderer.js';
@@ -246,6 +247,10 @@ function createDefaultEditorState() {
       cell: null,
       placementId: null
     },
+    modifiers: {
+      snap: false,
+      identify: false
+    },
     selection: {
       placementId: null
     },
@@ -274,6 +279,7 @@ export class WorldBuilder {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.hoverHit = new THREE.Vector3();
+    this.snapHoverHit = new THREE.Vector3();
     this.hoverCell = { x: 0, z: 0 };
     this.previewLoadToken = 0;
     this.builderPreviewCategoryId = null;
@@ -520,8 +526,25 @@ export class WorldBuilder {
       ?? getPlacementScale(placement);
   }
 
+  isIdentifyModifierActive() {
+    return this.state.modifiers.identify === true;
+  }
+
+  isSnapModifierActive() {
+    return this.state.modifiers.snap === true && !this.isIdentifyModifierActive();
+  }
+
+  syncModifierState(input) {
+    this.state.modifiers.snap = Boolean(input?.isPressed?.('ShiftLeft') || input?.isPressed?.('ShiftRight'));
+    this.state.modifiers.identify = Boolean(input?.isPressed?.('CapsLock'));
+  }
+
+  syncPointerModifierState(event) {
+    this.state.modifiers.snap = Boolean(event?.shiftKey);
+  }
+
   shouldPlaceActiveItemOverHoveredPlacement(hoveredPlacement = null) {
-    return Boolean(hoveredPlacement && this.activeItem?.layer === 'prop');
+    return Boolean(hoveredPlacement && this.activeItem?.layer === 'prop' && !this.isIdentifyModifierActive());
   }
 
   shouldPreviewHoveredPlacement(hoveredPlacement = null) {
@@ -918,6 +941,7 @@ export class WorldBuilder {
   }
 
   onPointerMove(event) {
+    this.syncPointerModifierState(event);
     const bounds = this.domElement.getBoundingClientRect();
     this.state.pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     this.state.pointer.y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
@@ -932,6 +956,7 @@ export class WorldBuilder {
       return;
     }
 
+    this.syncPointerModifierState(event);
     const bounds = this.domElement.getBoundingClientRect();
     this.state.pointer.x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
     this.state.pointer.y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1);
@@ -979,6 +1004,16 @@ export class WorldBuilder {
 
     if (this.isMovingSelection()) {
       void this.commitSelectedPlacementMove();
+      return;
+    }
+
+    if (this.isIdentifyModifierActive()) {
+      event.preventDefault();
+      if (hoveredPlacement) {
+        this.selectPlacement(hoveredPlacement.id);
+      } else {
+        this.clearSelection();
+      }
       return;
     }
 
@@ -1275,6 +1310,7 @@ export class WorldBuilder {
 
   update(deltaSeconds, input) {
     this.worldRenderer.update(deltaSeconds);
+    this.syncModifierState(input);
 
     if (!this.state.enabled) {
       this.syncNpcDebugTools();
@@ -1353,6 +1389,61 @@ export class WorldBuilder {
     }
   }
 
+  getActivePropSnapTarget() {
+    const movingPlacement = this.getMovingPlacement();
+    if (movingPlacement?.layer === 'prop') {
+      const item = getBuilderItemById(movingPlacement.itemId);
+      if (!item) {
+        return null;
+      }
+      return {
+        item,
+        scale: this.getPropScaleDraft(movingPlacement),
+        rotationY: getPlacementRotationY(movingPlacement),
+        ignorePlacementId: movingPlacement.id
+      };
+    }
+
+    if (this.activeItem?.layer !== 'prop') {
+      return null;
+    }
+
+    return {
+      item: this.activeItem,
+      scale: this.state.propScale,
+      rotationY: this.getActivePropRotationY(),
+      ignorePlacementId: null
+    };
+  }
+
+  getSnappedPropHoverPoint(point) {
+    if (!this.isSnapModifierActive()) {
+      return null;
+    }
+
+    const target = this.getActivePropSnapTarget();
+    if (!target) {
+      return null;
+    }
+
+    const snapped = findNearestAdjacentPropSnapPoint({
+      point,
+      placements: this.worldState.getPlacements(),
+      activeItem: target.item,
+      activeScale: target.scale,
+      activeRotationY: target.rotationY,
+      ignorePlacementId: target.ignorePlacementId,
+      getItemById: getBuilderItemById
+    });
+
+    if (!snapped) {
+      return null;
+    }
+
+    this.snapHoverHit.set(snapped.x, point.y, snapped.z);
+    return this.snapHoverHit;
+  }
+
   resolveHoverState() {
     this.raycaster.setFromCamera(this.state.pointer, this.camera);
     const hit = this.hoverHit;
@@ -1368,7 +1459,7 @@ export class WorldBuilder {
     const hoverCell = snapToCell(hit, this.hoverCell);
     const hoveredPropId = this.worldRenderer.pickPlacementId(this.state.pointer, this.camera);
     const hoveredProp = hoveredPropId ? this.worldState.getPlacement(hoveredPropId) : null;
-    const hoveredTile = (this.canEditHoveredTiles || this.npcTargetPickState)
+    const hoveredTile = (this.canEditHoveredTiles || this.npcTargetPickState || this.isIdentifyModifierActive())
       ? this.worldState.getPlacementAtCell(hoverCell.x, hoverCell.z)
       : null;
     const hoveredTargetableProp = hoveredProp && resolveNpcTargetOption(hoveredProp)
@@ -1387,7 +1478,7 @@ export class WorldBuilder {
         )
       : (hoveredPropId ?? hoveredTile?.id ?? null);
 
-    this.state.hover.point = hit;
+    this.state.hover.point = this.getSnappedPropHoverPoint(hit) ?? hit;
     this.state.hover.cell = hoverCell;
     this.state.hover.placementId = hoveredPlacementId;
   }
@@ -1431,6 +1522,10 @@ export class WorldBuilder {
         opacity: 0.5,
         key: `placement:${hoveredPlacement.itemId}:0.5`
       };
+    }
+
+    if (this.isIdentifyModifierActive()) {
+      return null;
     }
 
     if (!this.activeItem) {
