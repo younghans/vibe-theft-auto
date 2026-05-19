@@ -572,6 +572,7 @@ const BuilderPresenceState = schema({
   itemId: 'string',
   layer: 'string',
   rotationQuarterTurns: 'number',
+  rotationY: 'number',
   scale: 'number',
   cellX: 'number',
   cellZ: 'number',
@@ -4033,6 +4034,7 @@ export class WorldRoom extends Room {
     presence.itemId = sanitized.itemId;
     presence.layer = sanitized.layer;
     presence.rotationQuarterTurns = sanitized.rotationQuarterTurns;
+    presence.rotationY = sanitized.rotationY;
     presence.scale = sanitized.scale;
     presence.cellX = sanitized.cellX;
     presence.cellZ = sanitized.cellZ;
@@ -4054,11 +4056,17 @@ export class WorldRoom extends Room {
       throw new Error('That builder item is not available.');
     }
 
+    const rotationQuarterTurns = normalizeRotationQuarterTurns(message.rotationQuarterTurns);
+    const exactRotationY = Number(message.rotationY);
+
     return {
       active: true,
       itemId: item.id,
       layer: item.layer,
-      rotationQuarterTurns: normalizeRotationQuarterTurns(message.rotationQuarterTurns),
+      rotationQuarterTurns,
+      rotationY: item.layer === 'prop' && Number.isFinite(exactRotationY)
+        ? quantizeRotation(exactRotationY)
+        : quantizeRotation(toRotationY(rotationQuarterTurns)),
       scale: item.layer === 'prop'
         ? normalizePropPlacementScale(message.scale, getDefaultPropPlacementScale(item))
         : 1,

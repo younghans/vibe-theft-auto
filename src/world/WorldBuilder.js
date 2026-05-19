@@ -11,7 +11,14 @@ import {
 } from '../npc/npcBehavior.js';
 import { collectNpcTargetOptions, resolveNpcTargetOption } from '../npc/npcTargeting.js';
 import { getTileCenterWorldPosition, getTileFootprintWorldSize } from '../shared/tileFootprint.js';
-import { quantizeNumber, rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
+import {
+  normalizeRotationEighthTurns,
+  quantizeNumber,
+  quantizeRotation,
+  rotationEighthTurnsToRadians as toPropRotationY,
+  rotationQuarterTurnsToRadians as toRotationY,
+  rotationRadiansToQuarterTurns as toQuarterTurns
+} from '../shared/numberMath.js';
 import {
   PROP_PLACEMENT_SCALE_MAX,
   PROP_PLACEMENT_SCALE_MIN,
@@ -225,6 +232,13 @@ function isFiniteNumber(value) {
   return Number.isFinite(value);
 }
 
+function getPlacementRotationY(placement) {
+  const rotationY = Number(placement?.rotationY);
+  return Number.isFinite(rotationY)
+    ? rotationY
+    : toRotationY(placement?.rotationQuarterTurns ?? 0);
+}
+
 function createDefaultEditorState() {
   return {
     enabled: false,
@@ -241,6 +255,7 @@ function createDefaultEditorState() {
       sourceUrl: ''
     },
     rotationQuarterTurns: 0,
+    propRotationEighthTurns: 0,
     propScale: 1,
     hover: {
       point: null,
@@ -1268,8 +1283,34 @@ export class WorldBuilder {
     this.selectItem(entry.index);
   }
 
+  getActivePropRotationY() {
+    return toPropRotationY(this.state.propRotationEighthTurns);
+  }
+
+  getActiveItemRotationQuarterTurns() {
+    if (this.activeItem?.layer === 'prop') {
+      return toQuarterTurns(this.getActivePropRotationY());
+    }
+
+    return this.state.rotationQuarterTurns;
+  }
+
+  getActiveItemRotationY() {
+    if (this.activeItem?.layer === 'prop') {
+      return this.getActivePropRotationY();
+    }
+
+    return toRotationY(this.state.rotationQuarterTurns);
+  }
+
   rotate(delta) {
-    this.state.rotationQuarterTurns = (this.state.rotationQuarterTurns + delta + 4) % 4;
+    if (this.activeItem?.layer === 'prop') {
+      this.state.propRotationEighthTurns = normalizeRotationEighthTurns(
+        this.state.propRotationEighthTurns + delta
+      );
+    } else {
+      this.state.rotationQuarterTurns = (this.state.rotationQuarterTurns + delta + 4) % 4;
+    }
     this.updateBuilderHud();
   }
 
@@ -1519,7 +1560,7 @@ export class WorldBuilder {
         this.previewFootprint.scale.set((movingItem.size[0] * movingScale) + 0.35, (movingItem.size[1] * movingScale) + 0.35, 1);
       }
 
-      this.previewRoot.rotation.y = toRotationY(movingPlacement.rotationQuarterTurns);
+      this.previewRoot.rotation.y = getPlacementRotationY(movingPlacement);
       this.previewRoot.visible = true;
       return;
     }
@@ -1565,7 +1606,7 @@ export class WorldBuilder {
         }
         this.previewFootprint.scale.set((item.size[0] * hoveredScale) + 0.35, (item.size[1] * hoveredScale) + 0.35, 1);
       }
-      this.previewRoot.rotation.y = toRotationY(hoveredPlacement.rotationQuarterTurns);
+      this.previewRoot.rotation.y = getPlacementRotationY(hoveredPlacement);
       this.previewRoot.visible = true;
       return;
     }
@@ -1600,7 +1641,7 @@ export class WorldBuilder {
       this.previewFootprint.scale.set((this.activeItem.size[0] * activeScale) + 0.35, (this.activeItem.size[1] * activeScale) + 0.35, 1);
     }
 
-    this.previewRoot.rotation.y = toRotationY(this.state.rotationQuarterTurns);
+    this.previewRoot.rotation.y = this.getActiveItemRotationY();
     this.previewRoot.visible = true;
   }
 
@@ -1632,11 +1673,13 @@ export class WorldBuilder {
       ? { x: selectedPlacement.position[0], z: selectedPlacement.position[1] }
       : { x: this.state.focus.x, z: this.state.focus.z };
 
+    const rotationY = this.getActiveItemRotationY();
     this.worldTransport.setBuilderPresence({
       active: true,
       itemId: this.activeItem.id,
       layer: this.activeItem.layer,
-      rotationQuarterTurns: this.state.rotationQuarterTurns,
+      rotationQuarterTurns: this.getActiveItemRotationQuarterTurns(),
+      rotationY: quantizeRotation(rotationY),
       scale: this.activeItem.layer === 'prop' ? this.state.propScale : 1,
       cellX: hoverCell?.x ?? selectedPlacement?.cellX ?? 0,
       cellZ: hoverCell?.z ?? selectedPlacement?.cellZ ?? 0,
@@ -1695,12 +1738,14 @@ export class WorldBuilder {
   }
 
   async placeProp(item) {
+    const rotationY = this.getActivePropRotationY();
     const result = await this.worldEditAdapter.edit({
       op: 'placeProp',
       item,
       x: this.state.hover.point.x,
       z: this.state.hover.point.z,
-      rotationQuarterTurns: this.state.rotationQuarterTurns,
+      rotationQuarterTurns: toQuarterTurns(rotationY),
+      rotationY: quantizeRotation(rotationY),
       scale: this.state.propScale
     });
     if (!result?.ok) {

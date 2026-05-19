@@ -823,7 +823,8 @@ export class NpcServiceMock {
           Number(payload.z ?? 0),
           Number(payload.rotationQuarterTurns ?? 0),
           null,
-          normalizePropPlacementScale(payload.scale, getDefaultPropPlacementScale(item))
+          normalizePropPlacementScale(payload.scale, getDefaultPropPlacementScale(item)),
+          Number.isFinite(Number(payload.rotationY)) ? quantizeRotation(payload.rotationY) : null
         );
         this.emitWorldPatch({
           type: 'upsertPlacement',
@@ -1148,6 +1149,7 @@ export class NpcServiceMock {
       itemId: presence.itemId ?? '',
       layer: presence.layer ?? '',
       rotationQuarterTurns: presence.rotationQuarterTurns ?? 0,
+      rotationY: quantizeRotation(presence.rotationY),
       scale: normalizePropPlacementScale(presence.scale, getDefaultPropPlacementScale(presence.itemId)),
       cellX: presence.cellX ?? 0,
       cellZ: presence.cellZ ?? 0,

@@ -23,6 +23,10 @@ import {
   rotateFootprintOffset
 } from '../src/shared/tileFootprint.js';
 import {
+  rotationEighthTurnsToRadians,
+  rotationRadiansToQuarterTurns
+} from '../src/shared/numberMath.js';
+import {
   DRINK_ITEM_IDS,
   DRUNKNESS_LEVEL_LABELS,
   DRUNKNESS_MAX_DURATION_MS,
@@ -410,6 +414,32 @@ function validateCustomPropCatalogItems() {
   const pickupVisual = pistolPickup.createVisual();
   assert(pickupVisual.getObjectByName('pistolPickupSpawnRing'), 'Pistol pickup visual should include a placement ring');
   assert(pickupVisual.getObjectByName('pistolPickupSpawnBase'), 'Pistol pickup visual should include a small base');
+  const propRotationState = new WorldState();
+  const propPlacement = propRotationState.placeProp(pistolPickup, 0, 0, 0);
+  const firstRotatedProp = propRotationState.rotatePlacement(propPlacement.id).placement;
+  const expectedFirstPropRotationY = rotationEighthTurnsToRadians(1);
+  assert(
+    angleDelta(firstRotatedProp.rotationY, expectedFirstPropRotationY) <= 0.002,
+    'World state should rotate selected props in 45-degree increments'
+  );
+  assert(
+    firstRotatedProp.rotationQuarterTurns === rotationRadiansToQuarterTurns(expectedFirstPropRotationY),
+    'World state should keep a compatible quarter-turn fallback when selected props rotate diagonally'
+  );
+  const secondRotatedProp = propRotationState.rotatePlacement(propPlacement.id).placement;
+  assert(
+    angleDelta(secondRotatedProp.rotationY, Math.PI / 2) <= 0.002,
+    'Two selected prop rotations should equal a 90-degree turn'
+  );
+  assert(
+    /propRotationEighthTurns/.test(worldBuilderSource)
+      && /rotationY:\s*quantizeRotation\(rotationY\)/.test(worldBuilderSource),
+    'World builder should place props with exact 45-degree rotationY values'
+  );
+  assert(
+    /PROP_ROTATION_STEP_RADIANS\s*=\s*Math\.PI\s*\/\s*4/.test(worldStateSource),
+    'World state selected prop rotation should use a 45-degree step'
+  );
 
   const flatSurfaceProps = [
     {

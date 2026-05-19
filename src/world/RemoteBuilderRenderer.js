@@ -215,7 +215,10 @@ export class RemoteBuilderRenderer {
       entry.footprint.scale.set((item.size[0] * scale) + 0.25, (item.size[1] * scale) + 0.25, 1);
     }
 
-    entry.root.rotation.y = toRotationY(presence.rotationQuarterTurns ?? 0);
+    const exactRotationY = Number(presence.rotationY);
+    entry.root.rotation.y = item.layer === 'prop' && Number.isFinite(exactRotationY)
+      ? exactRotationY
+      : toRotationY(presence.rotationQuarterTurns ?? 0);
     entry.root.visible = true;
 
     if (!presence.selectionPlacementId) {

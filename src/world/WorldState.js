@@ -6,8 +6,11 @@ import {
 } from '../npc/npcBehavior.js';
 import {
   normalizeRotationQuarterTurns,
+  normalizeRotationRadians,
   quantizeRotation,
-  quantizePosition as normalizePositionValue
+  quantizePosition as normalizePositionValue,
+  rotationQuarterTurnsToRadians,
+  rotationRadiansToQuarterTurns
 } from '../shared/numberMath.js';
 import {
   getDefaultPropPlacementScale,
@@ -28,6 +31,8 @@ import {
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
+
+const PROP_ROTATION_STEP_RADIANS = Math.PI / 4;
 
 function cloneInteractable(interactable) {
   return cloneInteractableDefinition(interactable);
@@ -380,7 +385,7 @@ export class WorldState {
       id: this.createPlacementId(),
       itemId: item.id,
       layer: item.layer,
-      rotationQuarterTurns,
+      rotationQuarterTurns: normalizeRotationQuarterTurns(rotationQuarterTurns),
       rotationY: Number.isFinite(exactRotationY) ? quantizeRotation(exactRotationY) : undefined,
       scale: normalizePropPlacementScale(scale, getDefaultPropPlacementScale(item)),
       cellX: null,
@@ -548,6 +553,19 @@ export class WorldState {
       return { placement: null, error: 'That placement is not available.' };
     }
 
+    if (placement.layer === 'prop') {
+      const currentRotationY = Number.isFinite(Number(placement.rotationY))
+        ? Number(placement.rotationY)
+        : rotationQuarterTurnsToRadians(placement.rotationQuarterTurns);
+      const rawNextRotationY = normalizeRotationRadians(
+        currentRotationY + (delta * PROP_ROTATION_STEP_RADIANS)
+      );
+      const nextRotationY = quantizeRotation(rawNextRotationY);
+      placement.rotationY = nextRotationY;
+      placement.rotationQuarterTurns = rotationRadiansToQuarterTurns(rawNextRotationY);
+      return { placement: clonePlacement(placement), error: null };
+    }
+
     const nextRotationQuarterTurns = (placement.rotationQuarterTurns + delta + 4) % 4;
     if (placement.layer === 'tile') {
       const item = getBuilderItemById(placement.itemId);
@@ -573,9 +591,6 @@ export class WorldState {
       this.registerPlacement(placement);
     } else {
       placement.rotationQuarterTurns = nextRotationQuarterTurns;
-      if (placement.layer === 'prop') {
-        placement.rotationY = undefined;
-      }
       if (placement.layer === 'npc' && placement.npc) {
         placement.npc.spawnRotationQuarterTurns = nextRotationQuarterTurns;
       }

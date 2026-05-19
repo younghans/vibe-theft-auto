@@ -28,6 +28,7 @@ function toTransportPayload(edit) {
           x: edit.x,
           z: edit.z,
           rotationQuarterTurns: edit.rotationQuarterTurns,
+          rotationY: edit.rotationY,
           scale: edit.scale,
           interactable: edit.item.interactable ?? null
         };
@@ -154,7 +155,8 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
         edit.z,
         edit.rotationQuarterTurns,
         edit.item.interactable ?? null,
-        edit.scale
+        edit.scale,
+        edit.rotationY
       );
       await worldRenderer.addPlacement(placement);
       return successResult(placement.id);
