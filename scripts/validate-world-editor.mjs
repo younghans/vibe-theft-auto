@@ -158,7 +158,7 @@ function assert(condition, message) {
   }
 }
 
-function readGlbNodeNames(relativePath) {
+function readGlbJson(relativePath) {
   const buffer = readFileSync(new URL(`../${relativePath}`, import.meta.url));
   assert(buffer.toString('ascii', 0, 4) === 'glTF', `${relativePath} should be a GLB file`);
 
@@ -169,13 +169,17 @@ function readGlbNodeNames(relativePath) {
     const chunkType = buffer.toString('ascii', offset, offset + 4);
     offset += 4;
     if (chunkType === 'JSON') {
-      const json = JSON.parse(buffer.toString('utf8', offset, offset + chunkLength).trim());
-      return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
+      return JSON.parse(buffer.toString('utf8', offset, offset + chunkLength).trim());
     }
     offset += chunkLength;
   }
 
   throw new Error(`${relativePath} should contain a JSON chunk`);
+}
+
+function readGlbNodeNames(relativePath) {
+  const json = readGlbJson(relativePath);
+  return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
 }
 
 function readRepoText(relativePath) {
@@ -1129,6 +1133,55 @@ function validateFootprintSupport() {
       `${relativePath} should not place full window frame panels into the glass depth range`
     );
   }
+  const districtBuildingSource = stableWindowGeneratorSources
+    .find((entry) => entry.relativePath === 'scripts/generate-district-buildings.mjs')?.source ?? '';
+  const getSourceSection = (source, startNeedle, endNeedle) => {
+    const startIndex = source.indexOf(startNeedle);
+    const endIndex = startIndex >= 0 ? source.indexOf(endNeedle, startIndex) : -1;
+    return startIndex >= 0 && endIndex > startIndex ? source.slice(startIndex, endIndex) : '';
+  };
+  const bankDetailsSource = getSourceSection(
+    districtBuildingSource,
+    'function addBankDetails(groups, materials)',
+    'function addModernBankGlassFacade(groups, materials)'
+  );
+  const bankFacadeSource = getSourceSection(
+    districtBuildingSource,
+    'function addModernBankGlassFacade(groups, materials)',
+    'function addCasinoDetails(groups, materials)'
+  );
+  assert(
+    /addModernBankGlassFacade\(groups,\s*materials\);/.test(bankDetailsSource)
+      && /addBoxes\(groups\.interior/.test(bankDetailsSource),
+    'Bank generator should replace only the exterior facade before preserving the existing interior detail block'
+  );
+  assert(
+    /createGlassMaterial\(0xc7f3fb,\s*0\.38\)/.test(bankFacadeSource)
+      && /createGlassMaterial\(0x9bd7e6,\s*0\.44\)/.test(bankFacadeSource)
+      && /for \(const y of \[2\.62,\s*4\.74,\s*6\.86\]\)/.test(bankFacadeSource)
+      && /for \(const y of \[3\.02,\s*5\.14,\s*7\.26\]\)/.test(bankFacadeSource),
+    'Bank exterior generator should use multi-floor transparent glass on the front, sides, and back'
+  );
+  assert(
+    !/addStandardSideWindows\(groups,\s*materials\)/.test(bankDetailsSource)
+      && !/createCylinder\(0\.34,\s*0\.42,\s*4\.0/.test(bankDetailsSource),
+    'Bank exterior generator should not restore the old classical columns or sparse side-window pass'
+  );
+  const bankGlbJson = readGlbJson('assets/vibe_theft_auto_custom/models/bank-building.glb');
+  const bankNodeNames = new Set((bankGlbJson.nodes ?? []).map((node) => node.name).filter(Boolean));
+  assert(
+    bankNodeNames.has('bank_interior') && bankNodeNames.has('bank_exterior_detail'),
+    'Bank GLB should keep separate interior and exterior-detail nodes for cutaway rendering'
+  );
+  const bankTransparentGlassMaterials = (bankGlbJson.materials ?? []).filter((material) => {
+    const colorFactor = material.pbrMetallicRoughness?.baseColorFactor ?? [];
+    const alpha = Number(colorFactor[3] ?? 1);
+    return material.alphaMode === 'BLEND' && alpha >= 0.35 && alpha <= 0.45;
+  });
+  assert(
+    bankTransparentGlassMaterials.length >= 2,
+    'Bank GLB should include transparent modern glass materials in the generated exterior asset'
+  );
   assert(
     /visibleNodeNames/.test(worldRendererSource),
     'World renderer should support interior-only cutaway visibility'

@@ -188,6 +188,21 @@ function createMaterial(color, roughness = 0.96, metalness = 0.04) {
   });
 }
 
+function createGlassMaterial(color, opacity = 0.42) {
+  return new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.18,
+    metalness: 0.05,
+    transmission: 0.38,
+    thickness: 0.18,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    envMapIntensity: 0.72
+  });
+}
+
 function createMesh(geometry, material, position = [0, 0, 0], rotation = [0, 0, 0]) {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...position);
@@ -1046,59 +1061,7 @@ function addBarDetails(groups, materials) {
 }
 
 function addBankDetails(groups, materials) {
-  addBoxes(groups.exterior, [
-    { size: [21.4, 0.28, 0.22], position: [0, 7.92, 10.84], material: materials.trim },
-    { size: [12.4, 1.85, 0.42], position: [0, 6.52, 11.04], material: materials.sign },
-    { size: [16.8, 0.44, 1.9], position: [0, 4.68, 10.7], material: materials.trim, rotation: [0.18, 0, 0] }
-  ]);
-  for (const x of [-8.2, -5.2, 5.2, 8.2]) {
-    groups.exterior.add(createCylinder(0.34, 0.42, 4.0, 16, [x, 2.65, 10.68], materials.trim));
-    groups.exterior.add(createCylinder(0.52, 0.52, 0.22, 16, [x, 0.92, 10.68], materials.trimDark));
-    groups.exterior.add(createCylinder(0.48, 0.48, 0.22, 16, [x, 4.54, 10.68], materials.trimDark));
-  }
-  addSignText(groups.exterior, 'BANK', {
-    centerX: 0,
-    y: 6.5,
-    z: 11.28,
-    pixelSize: 0.36,
-    depth: 0.22,
-    material: materials.signFace,
-    shadowMaterial: materials.signShadow
-  });
-
-  for (const x of [-7.0, -4.6, 4.6, 7.0]) {
-    addDetailedFrontWindow(groups.exterior, {
-      x,
-      y: 2.2,
-      z: 11.02,
-      width: 1.25,
-      height: 1.7,
-      glassMaterial: materials.glassLite,
-      frameMaterial: materials.trim,
-      sillMaterial: materials.trimDark,
-      mullions: 1
-    });
-    addDetailedFrontWindow(groups.exterior, {
-      x,
-      y: 5.6,
-      z: 11.0,
-      width: 1.15,
-      height: 1.08,
-      glassMaterial: materials.glass,
-      frameMaterial: materials.trim,
-      sillMaterial: materials.trimDark,
-      mullions: 0
-    });
-  }
-  addStandardSideWindows(groups, materials);
-
-  const coin = new THREE.Group();
-  coin.add(createCylinder(0.78, 0.78, 0.18, 24, [0, 0, 0], materials.gold, [Math.PI * 0.5, 0, 0]));
-  coin.add(createBox([0.18, 1.0, 0.1], [0, 0, 0.12], materials.signFace));
-  coin.add(createBox([0.7, 0.14, 0.1], [0, 0.3, 0.13], materials.signFace));
-  coin.add(createBox([0.7, 0.14, 0.1], [0, -0.3, 0.13], materials.signFace));
-  coin.position.set(0, 8.82, 10.96);
-  groups.exterior.add(coin);
+  addModernBankGlassFacade(groups, materials);
 
   addBoxes(groups.interior, [
     { size: [15.4, 1.25, 1.2], position: [0, 1.18, -5.4], material: materials.trimDark },
@@ -1118,6 +1081,98 @@ function addBankDetails(groups, materials) {
   }
   for (const x of [-6.2, -2.0, 2.0]) {
     addDesk(groups.interior, [x, 0, -7.8], materials, 0);
+  }
+}
+
+function addModernBankGlassFacade(groups, materials) {
+  const bankMaterials = {
+    glass: createGlassMaterial(0xc7f3fb, 0.38),
+    glassDeep: createGlassMaterial(0x9bd7e6, 0.44),
+    glassHighlight: createMaterial(0xe7fbff, 0.34, 0.08),
+    mullion: createMaterial(0x26343c, 0.48, 0.36),
+    mullionLight: createMaterial(0xb9c5ca, 0.38, 0.26),
+    signPanel: createMaterial(0x22313b, 0.52, 0.26),
+    signLetter: createMaterial(0xf4fbff, 0.36, 0.1)
+  };
+
+  addBoxes(groups.exterior, [
+    { size: [21.6, 0.34, 0.36], position: [0, 8.08, 10.98], material: bankMaterials.mullion },
+    { size: [21.25, 0.18, 0.26], position: [0, 6.14, 11.06], material: bankMaterials.mullionLight },
+    { size: [21.25, 0.18, 0.26], position: [0, 4.18, 11.06], material: bankMaterials.mullionLight },
+    { size: [21.25, 0.18, 0.26], position: [0, 2.02, 11.06], material: bankMaterials.mullionLight },
+    { size: [9.7, 0.96, 0.28], position: [0, 6.72, 11.2], material: bankMaterials.signPanel },
+    { size: [8.6, 0.2, 2.24], position: [0, 4.22, 10.82], material: bankMaterials.glassDeep, rotation: [0.1, 0, 0] },
+    { size: [8.85, 0.16, 0.16], position: [0, 4.05, 11.74], material: bankMaterials.mullionLight },
+    { size: [8.95, 0.14, 0.16], position: [0, 4.34, 9.86], material: bankMaterials.mullion }
+  ]);
+
+  addSignText(groups.exterior, 'BANK', {
+    centerX: 0,
+    y: 6.72,
+    z: 11.38,
+    pixelSize: 0.29,
+    depth: 0.18,
+    material: bankMaterials.signLetter,
+    shadowMaterial: materials.signShadow
+  });
+
+  for (const x of [-8.9, -6.35, -3.8, 3.8, 6.35, 8.9]) {
+    groups.exterior.add(createBox([2.05, 3.18, 0.12], [x, 2.92, 11.08], bankMaterials.glassDeep));
+  }
+  for (const x of [-1.85, -0.62, 0.62, 1.85]) {
+    groups.exterior.add(createBox([0.9, 2.78, 0.1], [x, 2.66, 11.18], bankMaterials.glass));
+  }
+  for (const x of [-9.98, -7.62, -5.08, -2.54, -1.22, 0, 1.22, 2.54, 5.08, 7.62, 9.98]) {
+    groups.exterior.add(createBox([0.12, 6.34, 0.18], [x, 4.88, 11.18], bankMaterials.mullion));
+  }
+  for (const y of [5.04, 7.0]) {
+    for (const x of [-8.9, -6.35, -3.8, -1.25, 1.25, 3.8, 6.35, 8.9]) {
+      groups.exterior.add(createBox([2.05, 1.38, 0.1], [x, y, 11.12], bankMaterials.glass));
+      groups.exterior.add(createBox([1.52, 0.08, 0.12], [x, y + 0.5, 11.22], bankMaterials.glassHighlight));
+    }
+  }
+
+  addBoxes(groups.exterior, [
+    { size: [14.6, 2.16, 0.12], position: [0, 9.0, 10.82], material: bankMaterials.glassDeep },
+    { size: [14.95, 0.16, 0.2], position: [0, 7.95, 10.92], material: bankMaterials.mullion },
+    { size: [14.95, 0.16, 0.2], position: [0, 10.05, 10.92], material: bankMaterials.mullionLight }
+  ]);
+  for (const x of [-6.1, -3.65, -1.2, 1.2, 3.65, 6.1]) {
+    groups.exterior.add(createBox([0.11, 2.22, 0.18], [x, 9.0, 10.94], bankMaterials.mullion));
+  }
+
+  for (const sideX of [-10.98, 10.98]) {
+    for (const y of [2.62, 4.74, 6.86]) {
+      for (const z of [-7.3, -4.55, -1.8, 0.95, 3.7, 6.45]) {
+        addDetailedSideWindow(groups.exterior, {
+          x: sideX,
+          y,
+          z,
+          width: 1.46,
+          height: 1.2,
+          glassMaterial: bankMaterials.glass,
+          frameMaterial: bankMaterials.mullion,
+          sillMaterial: bankMaterials.mullionLight,
+          mullions: 0
+        });
+      }
+    }
+  }
+
+  for (const y of [3.02, 5.14, 7.26]) {
+    for (const x of [-8.45, -5.65, -2.85, 0, 2.85, 5.65, 8.45]) {
+      addDetailedBackWindow(groups.exterior, {
+        x,
+        y,
+        z: -10.58,
+        width: 1.42,
+        height: 1.22,
+        glassMaterial: bankMaterials.glass,
+        frameMaterial: bankMaterials.mullion,
+        sillMaterial: bankMaterials.mullionLight,
+        mullions: 0
+      });
+    }
   }
 }
 
@@ -1822,7 +1877,17 @@ async function exportBuilding(definition, exporter) {
 async function main() {
   const exporter = new GLTFExporter();
   await fs.mkdir(outputDirectory, { recursive: true });
-  for (const definition of BUILDINGS) {
+  const requestedKeys = new Set(process.argv.slice(2).map((key) => key.trim()).filter(Boolean));
+  const definitions = requestedKeys.size > 0
+    ? BUILDINGS.filter((definition) => requestedKeys.has(definition.key))
+    : BUILDINGS;
+  const knownKeys = new Set(BUILDINGS.map((definition) => definition.key));
+  for (const key of requestedKeys) {
+    if (!knownKeys.has(key)) {
+      throw new Error(`Unknown district building key "${key}". Known keys: ${[...knownKeys].join(', ')}`);
+    }
+  }
+  for (const definition of definitions) {
     await exportBuilding(definition, exporter);
   }
 }
