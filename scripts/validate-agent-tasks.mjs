@@ -38,6 +38,8 @@ try {
   assert.match(hudSource, /deployApprovedAt[\s\S]*deployStartedAt/, 'HUD deploy queued detection should require approval before deploy start.');
   assert.match(hudSource, /hasMoreThreads/, 'HUD should use server pagination metadata for prompt thread load-more.');
   assert.match(hudSource, /onLoadMore/, 'HUD should notify the game when prompt threads request more rows.');
+  assert.match(hudSource, /lastAdminPromptBottomScrollSignature/, 'HUD should track prompt thread bottom scroll state.');
+  assert.match(hudSource, /isAdminPromptDetailNearBottom/, 'HUD should only follow same-thread updates when the reader is near the bottom.');
 
   const created = await createAgentTask({
     scope: 'game',

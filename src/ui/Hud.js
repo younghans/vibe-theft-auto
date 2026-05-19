@@ -3912,6 +3912,7 @@ export class Hud {
     this.lastAdminPromptTaskListSignature = '';
     this.lastAdminPromptDetailSignature = '';
     this.lastAdminPromptSelectedThreadId = '';
+    this.lastAdminPromptBottomScrollSignature = '';
     this.adminPromptThreadLimit = ADMIN_PROMPT_THREAD_LIST_LIMIT;
     this.adminPromptDurationTimer = 0;
     this.adminPromptDurationTick = 0;
@@ -8822,13 +8823,27 @@ export class Hud {
       return;
     }
 
-    requestAnimationFrame(() => {
+    const scrollToBottom = () => {
       detailSlot.scrollTop = detailSlot.scrollHeight;
       const thread = this.adminPromptDetail?.querySelector('[data-admin-prompt-thread]');
       const latestTurn = thread?.lastElementChild ?? null;
       latestTurn?.scrollIntoView?.({ block: 'end' });
       detailSlot.scrollTop = detailSlot.scrollHeight;
+    };
+
+    requestAnimationFrame(() => {
+      scrollToBottom();
+      requestAnimationFrame(scrollToBottom);
     });
+  }
+
+  isAdminPromptDetailNearBottom(threshold = 80) {
+    const detailSlot = this.adminPromptDetail?.parentElement ?? null;
+    if (!(detailSlot instanceof HTMLElement)) {
+      return true;
+    }
+
+    return detailSlot.scrollHeight - detailSlot.scrollTop - detailSlot.clientHeight <= threshold;
   }
 
   renderAdminPromptPanel() {
@@ -8854,6 +8869,7 @@ export class Hud {
     this.adminPromptRoot.classList.toggle('is-loading', loading || submitting);
     if (!open || activeTab === 'new') {
       this.lastAdminPromptSelectedThreadId = '';
+      this.lastAdminPromptBottomScrollSignature = '';
     }
     if (available && open) {
       this.ensureAdminPromptLayout();
@@ -9008,14 +9024,35 @@ export class Hud {
         error: selectedTask?.error ?? '',
         prompt: selectedTask?.prompt ?? ''
       });
+      const bottomScrollSignature = JSON.stringify({
+        threadId: selectedThreadId,
+        threadTasks: selectedThreadTasks.map((task) => [
+          task.id,
+          task.status,
+          task.updatedAt,
+          task.prompt,
+          task.summary,
+          task.agentMessage,
+          task.error
+        ])
+      });
+      const wasNearBottom = this.isAdminPromptDetailNearBottom();
       const shouldScrollSelectedThread = Boolean(
         selectedThreadId
         && selectedThreadId !== this.lastAdminPromptSelectedThreadId
       );
+      const shouldFollowThreadBottom = Boolean(
+        selectedThreadId
+        && selectedThreadId === this.lastAdminPromptSelectedThreadId
+        && bottomScrollSignature !== this.lastAdminPromptBottomScrollSignature
+        && wasNearBottom
+      );
+      const shouldScrollToBottom = shouldScrollSelectedThread || shouldFollowThreadBottom;
       if (detailSignature === this.lastAdminPromptDetailSignature) {
-        if (shouldScrollSelectedThread) {
+        if (shouldScrollToBottom) {
           this.scrollAdminPromptThreadToBottom();
           this.lastAdminPromptSelectedThreadId = selectedThreadId;
+          this.lastAdminPromptBottomScrollSignature = bottomScrollSignature;
         }
         return;
       }
@@ -9024,10 +9061,11 @@ export class Hud {
         selectedTask,
         selectedThreadTasks
       );
-      if (shouldScrollSelectedThread) {
+      if (shouldScrollToBottom) {
         this.scrollAdminPromptThreadToBottom();
       }
       this.lastAdminPromptSelectedThreadId = selectedThreadId;
+      this.lastAdminPromptBottomScrollSignature = bottomScrollSignature;
     }
   }
 
