@@ -25,8 +25,13 @@ import {
 const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'vta-agent-tasks-'));
 const filePath = path.join(tempRoot, 'agent-tasks.json');
 const deploymentFilePath = path.join(tempRoot, 'agent-deployments.json');
+const hudSource = await fsp.readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
 
 try {
+  assert.match(hudSource, /deploy_queued:\s*'Deploy Queued'/, 'HUD should label approved pending deploys as deploy queued.');
+  assert.match(hudSource, /isAgentTaskDeployQueued/, 'HUD should derive deploy queued from task metadata.');
+  assert.match(hudSource, /deployApprovedAt[\s\S]*deployStartedAt/, 'HUD deploy queued detection should require approval before deploy start.');
+
   const created = await createAgentTask({
     scope: 'game',
     contextType: 'school_minigame',

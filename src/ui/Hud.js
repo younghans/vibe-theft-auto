@@ -1304,6 +1304,7 @@ const AGENT_TASK_STATUS_LABELS = Object.freeze({
   testing: 'Testing',
   test_failed: 'Tests Failed',
   ready_for_review: 'Ready',
+  deploy_queued: 'Deploy Queued',
   deploying: 'Deploying',
   deployed: 'Deployed',
   rolling_back: 'Rolling Back',
@@ -1330,19 +1331,37 @@ const AGENT_TASK_CODE_WORK_STATUSES = new Set([
 
 const ADMIN_PROMPT_THREAD_LIST_LIMIT = 10;
 
+function isAgentTaskDeployQueued(task = {}) {
+  return String(task?.status ?? '') === 'ready_for_review'
+    && Number(task?.deployApprovedAt ?? 0) > 0
+    && Number(task?.deployStartedAt ?? 0) <= 0;
+}
+
+function getAgentTaskDisplayStatus(taskOrStatus = '') {
+  if (taskOrStatus && typeof taskOrStatus === 'object' && isAgentTaskDeployQueued(taskOrStatus)) {
+    return 'deploy_queued';
+  }
+
+  return String(
+    taskOrStatus && typeof taskOrStatus === 'object'
+      ? taskOrStatus.status
+      : taskOrStatus
+  );
+}
+
 function getAgentTaskStatusLabel(status = '') {
-  return AGENT_TASK_STATUS_LABELS[String(status ?? '')] ?? 'Unknown';
+  return AGENT_TASK_STATUS_LABELS[getAgentTaskDisplayStatus(status)] ?? 'Unknown';
 }
 
 function getAgentTaskStatusTone(status = '') {
-  const normalized = String(status ?? '');
+  const normalized = getAgentTaskDisplayStatus(status);
   if (['ready_for_review', 'deployed'].includes(normalized)) {
     return 'is-good';
   }
   if (['failed', 'test_failed', 'cancelled', 'rolled_back'].includes(normalized)) {
     return 'is-bad';
   }
-  if (AGENT_TASK_BUSY_STATUSES.has(normalized)) {
+  if (normalized === 'deploy_queued' || AGENT_TASK_BUSY_STATUSES.has(normalized)) {
     return 'is-busy';
   }
   return 'is-muted';
@@ -1416,7 +1435,7 @@ function getAgentTaskWorkedDurationText(task = {}) {
 
 function createAgentTaskStatusBadge(taskOrStatus = '', tagName = 'span') {
   const task = taskOrStatus && typeof taskOrStatus === 'object' ? taskOrStatus : null;
-  const normalized = String(task?.status ?? taskOrStatus ?? 'queued');
+  const normalized = getAgentTaskDisplayStatus(task ?? taskOrStatus ?? 'queued');
   const elementName = tagName === 'em' ? 'em' : 'span';
   const isBusy = isAgentTaskBusy(normalized);
   const busyClass = isBusy ? ' is-working' : '';
@@ -1688,7 +1707,7 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
   }
 
   return threadTasks.map((task, index) => {
-    const status = String(task.status ?? 'queued');
+    const displayStatus = getAgentTaskDisplayStatus(task);
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
     const agentMessage = getAgentTaskCompletionMessage(task);
     const statusMessage = String(task.error || (!agentMessage ? task.summary : '') || '').trim();
@@ -1714,7 +1733,7 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
         ${showStatusMessage ? `
           <div class="hud__admin-prompt-bubble is-system${task.error ? ' is-error' : ''}">
             <header>
-              <strong>${task.error ? 'Issue' : getAgentTaskStatusLabel(status)}</strong>
+              <strong>${task.error ? 'Issue' : getAgentTaskStatusLabel(displayStatus)}</strong>
             </header>
             <p>${formatAgentTaskMessage(statusMessage)}</p>
           </div>
@@ -1722,7 +1741,7 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
         ${!agentMessage && !showStatusMessage ? `
           <div class="hud__admin-prompt-bubble is-system">
             <header>
-              <strong>${getAgentTaskStatusLabel(status)}</strong>
+              <strong>${getAgentTaskStatusLabel(displayStatus)}</strong>
               ${createAgentTaskStatusBadge(task)}
             </header>
             <p>Waiting for worker updates.</p>
