@@ -3662,9 +3662,11 @@ body.is-admin-prompt-resizing * {
 .hud__bound-item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 7px 10px 7px 8px;
+  justify-content: center;
+  width: 64px;
+  height: 44px;
+  min-height: 44px;
+  padding: 7px;
   border: 1px solid rgba(238, 244, 248, 0.16);
   border-radius: 8px;
   color: rgba(241, 245, 248, 0.9);
@@ -3777,8 +3779,8 @@ body.is-admin-prompt-resizing * {
 .hud__bound-vehicle-icon {
   position: relative;
   display: block;
-  width: 46px;
-  height: 24px;
+  width: 50px;
+  height: 28px;
 }
 
 .hud__bound-vehicle-body,
@@ -3791,21 +3793,21 @@ body.is-admin-prompt-resizing * {
 .hud__bound-vehicle-body {
   left: 2px;
   right: 2px;
-  top: 9px;
-  height: 10px;
-  border: 1px solid rgba(255, 248, 218, 0.82);
-  border-radius: 6px 8px 5px 5px;
+  top: 11px;
+  height: 12px;
+  border: 1px solid rgba(255, 229, 214, 0.9);
+  border-radius: 7px 9px 5px 5px;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 34%, rgba(0, 0, 0, 0.18) 78%),
-    linear-gradient(180deg, #f5e6ba 0%, #d25847 100%);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.24), transparent 34%, rgba(0, 0, 0, 0.2) 78%),
+    linear-gradient(180deg, #ff594d 0%, #c91f1f 100%);
 }
 
 .hud__bound-vehicle-cabin {
-  left: 15px;
-  top: 3px;
-  width: 18px;
-  height: 10px;
-  border: 1px solid rgba(223, 243, 255, 0.72);
+  left: 16px;
+  top: 4px;
+  width: 19px;
+  height: 11px;
+  border: 1px solid rgba(223, 243, 255, 0.76);
   border-radius: 7px 7px 3px 3px;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 54%),
@@ -3813,20 +3815,20 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__bound-vehicle-wheel {
-  top: 16px;
-  width: 9px;
-  height: 9px;
+  top: 19px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #171b20;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .hud__bound-vehicle-wheel--front {
-  left: 8px;
+  left: 9px;
 }
 
 .hud__bound-vehicle-wheel--back {
-  right: 8px;
+  right: 9px;
 }
 
 .hud__bound-item.is-active .hud__bound-skateboard-icon,
@@ -5320,96 +5322,31 @@ body.is-admin-prompt-resizing * {
   place-items: center;
 }
 
-.hud__car-selector-vehicle {
-  --car-accent: #d85b4d;
-  position: relative;
+.hud__vehicle-stage-canvas,
+.hud__car-stage-preview canvas {
   display: block;
-  width: min(310px, 72%);
-  aspect-ratio: 2.8;
-  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.34));
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.hud__car-card .hud__car-selector-vehicle {
-  width: 84%;
+.hud__car-card-preview .hud__car-model-art,
+.hud__dialog-button-preview .hud__car-model-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.hud__car-selector-shadow,
-.hud__car-selector-body,
-.hud__car-selector-cabin,
-.hud__car-selector-light,
-.hud__car-selector-wheel {
-  position: absolute;
-  pointer-events: none;
-}
-
-.hud__car-selector-shadow {
-  left: 10%;
-  right: 10%;
-  bottom: 4%;
-  height: 14%;
+.hud__car-model-placeholder {
+  display: block;
+  width: 62%;
+  aspect-ratio: 1.7;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.38);
-  filter: blur(8px);
-}
-
-.hud__car-selector-body {
-  left: 4%;
-  right: 4%;
-  bottom: 19%;
-  height: 33%;
-  border: 2px solid rgba(255, 245, 216, 0.82);
-  border-radius: 18% 24% 11% 12%;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.28), transparent 32%, rgba(0, 0, 0, 0.22) 78%),
-    linear-gradient(180deg, color-mix(in srgb, var(--car-accent), #fff 30%), var(--car-accent));
-}
-
-.hud__car-selector-cabin {
-  left: 34%;
-  bottom: 47%;
-  width: 34%;
-  height: 30%;
-  border: 2px solid rgba(218, 242, 255, 0.72);
-  border-radius: 30% 34% 8% 8%;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.38), transparent 56%),
-    linear-gradient(180deg, #8ccedf, #2d4c63);
-}
-
-.hud__car-selector-light {
-  bottom: 34%;
-  width: 5%;
-  height: 12%;
-  border-radius: 999px;
-}
-
-.hud__car-selector-light--front {
-  right: 3%;
-  background: #fff3a8;
-}
-
-.hud__car-selector-light--back {
-  left: 3%;
-  background: #ff6b66;
-}
-
-.hud__car-selector-wheel {
-  bottom: 12%;
-  width: 16%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 3px solid rgba(230, 236, 240, 0.82);
-  background:
-    radial-gradient(circle, #d8e0e6 0 18%, #151a20 20% 100%);
-  box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.34);
-}
-
-.hud__car-selector-wheel--front {
-  right: 13%;
-}
-
-.hud__car-selector-wheel--back {
-  left: 13%;
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 166, 0.22), transparent 58%),
+    rgba(255, 255, 255, 0.04);
+  filter: blur(0.2px);
 }
 
 .hud__car-card-frame {
@@ -14750,6 +14687,72 @@ body.is-admin-prompt-resizing * {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #fff2c8;
+}
+
+.hud__interaction[data-interaction-variant="car-dealer"] {
+  width: min(440px, calc(100vw - 48px));
+}
+
+.hud__interaction[data-interaction-variant="car-dealer"] .hud__dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.hud__dialog-button--vehicle {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  justify-content: stretch;
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px 12px 8px 8px;
+  text-align: left;
+}
+
+.hud__dialog-button-preview {
+  display: grid;
+  width: 112px;
+  aspect-ratio: 1.5;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(242, 200, 113, 0.18), transparent 46%),
+    linear-gradient(180deg, rgba(11, 15, 22, 0.96), rgba(4, 7, 11, 0.96));
+}
+
+.hud__dialog-button-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.hud__dialog-button-copy strong,
+.hud__dialog-button-copy span,
+.hud__dialog-button-copy em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hud__dialog-button-copy strong {
+  color: #fff2c8;
+  font-size: 14px;
+  line-height: 1.12;
+}
+
+.hud__dialog-button-copy span {
+  color: rgba(244, 238, 226, 0.78);
+  font-size: 12px;
+  line-height: 1.18;
+}
+
+.hud__dialog-button-copy em {
+  color: rgba(143, 218, 255, 0.86);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.16;
 }
 
 .hud__dialog-button:disabled,

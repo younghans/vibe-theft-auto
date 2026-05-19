@@ -101,6 +101,7 @@ import {
   normalizeMarthaInventoryCount
 } from '../../src/shared/martha.js';
 import {
+  SKATEBOARD_ITEM_ID,
   SKATEBOARD_SPEED_MULTIPLIER,
   isPlayerSkateboardOwner,
   normalizeSkateboardOwned
@@ -2354,7 +2355,26 @@ export class WorldRoom extends Room {
   handlePlayerVehicleSelect(client, message = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.alive === false) {
-      throw new Error('You cannot switch cars right now.');
+      throw new Error('You cannot switch vehicles right now.');
+    }
+
+    if (String(message?.itemId ?? '').trim() === SKATEBOARD_ITEM_ID) {
+      if (!isPlayerSkateboardOwner(player)) {
+        throw new Error('You do not own the skateboard.');
+      }
+
+      player.vehicleItemId = '';
+      player.skating = false;
+      this.queuePlayerSnapshotSave(client.sessionId);
+      return {
+        item: {
+          id: SKATEBOARD_ITEM_ID,
+          label: 'Skateboard',
+          price: 0,
+          count: 1
+        },
+        inventory: getPlayerVehicleInventorySnapshot(player)
+      };
     }
 
     const item = getCarDealerMenuItem(message?.itemId);

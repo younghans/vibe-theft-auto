@@ -139,6 +139,7 @@ import {
   listMarthaMenuItems
 } from '../shared/martha.js';
 import {
+  SKATEBOARD_ITEM_ID,
   SKATEBOARD_SPEED_MULTIPLIER,
   isPlayerSkateboardOwner
 } from '../shared/skateboard.js';
@@ -977,6 +978,11 @@ export class Game {
     this.carSelectorRequestInFlight = false;
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
+    this.vehiclePreviewRenderer = null;
+    this.vehiclePreviewRendererPromise = null;
+    this.carSelectorPreviewSyncRequestId = 0;
+    this.carDealerPreviewSyncRequestId = 0;
+    this.lastCarSelectorPreviewSignature = '';
     this.characterPreviewWarmupQueued = false;
     this.characterSelectorSyncRequestId = 0;
     this.characterSelectorViewportSyncFrame = 0;
@@ -3826,22 +3832,116 @@ export class Game {
     void this.syncCharacterSelectorPreview(entries, selectedId);
   }
 
+  async ensureVehiclePreviewRenderer() {
+    if (this.vehiclePreviewRenderer) {
+      return this.vehiclePreviewRenderer;
+    }
+
+    if (!this.vehiclePreviewRendererPromise) {
+      this.vehiclePreviewRendererPromise = import('../ui/VehiclePreviewRenderer.js')
+        .then(({ VehiclePreviewRenderer }) => {
+          this.vehiclePreviewRenderer = new VehiclePreviewRenderer({ library: this.library });
+          return this.vehiclePreviewRenderer;
+        })
+        .finally(() => {
+          this.vehiclePreviewRendererPromise = null;
+        });
+    }
+
+    return this.vehiclePreviewRendererPromise;
+  }
+
+  async syncCarSelectorVehiclePreviews(entries = [], selectedId = '') {
+    const requestId = ++this.carSelectorPreviewSyncRequestId;
+    let renderer = null;
+    try {
+      renderer = await this.ensureVehiclePreviewRenderer();
+    } catch (error) {
+      console.warn('[VehicleSelector] Vehicle preview renderer failed to initialize.', error);
+      return;
+    }
+    if (requestId !== this.carSelectorPreviewSyncRequestId || !this.carSelectorVisible) {
+      return;
+    }
+
+    const resolvedSelectedId = selectedId || entries[0]?.id || '';
+    renderer.mount(this.hud.getCarSelectorPreviewMount());
+    renderer.setActive(true);
+    await renderer.setVehicle(resolvedSelectedId);
+    if (requestId !== this.carSelectorPreviewSyncRequestId || !this.carSelectorVisible) {
+      return;
+    }
+
+    for (const entry of entries) {
+      const mount = this.hud.getCarSelectorCardPreviewMount(entry.id);
+      void renderer.mountSnapshot(entry.id, mount);
+    }
+  }
+
+  async syncCarDealerVehiclePreviews(items = listCarDealerMenuItems()) {
+    const requestId = ++this.carDealerPreviewSyncRequestId;
+    let renderer = null;
+    try {
+      renderer = await this.ensureVehiclePreviewRenderer();
+    } catch (error) {
+      console.warn('[CarDealer] Vehicle preview renderer failed to initialize.', error);
+      return;
+    }
+    if (requestId !== this.carDealerPreviewSyncRequestId || this.activeInteractionMenu?.kind !== 'car-dealer') {
+      return;
+    }
+
+    for (const item of items) {
+      const mount = this.hud.getCarDealerPreviewMount(item.id);
+      void renderer.mountSnapshot(item.id, mount);
+    }
+  }
+
+  getSelectedVehicleSelectorItemId(localPlayerState = this.getLocalPlayerState()) {
+    const selectedCarId = getPlayerVehicleItemId(localPlayerState);
+    if (selectedCarId) {
+      return selectedCarId;
+    }
+
+    return isPlayerSkateboardOwner(localPlayerState) ? SKATEBOARD_ITEM_ID : '';
+  }
+
   getCarSelectorEntries(localPlayerState = this.getLocalPlayerState()) {
-    const selectedId = getPlayerVehicleItemId(localPlayerState);
-    return getPlayerOwnedVehicleMenuItems(localPlayerState).map((entry) => ({
+    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    const entries = [];
+    if (isPlayerSkateboardOwner(localPlayerState)) {
+      entries.push({
+        id: SKATEBOARD_ITEM_ID,
+        label: 'Skateboard',
+        kind: 'skateboard',
+        accent: '#3aa686',
+        selected: selectedId === SKATEBOARD_ITEM_ID
+      });
+    }
+
+    entries.push(...getPlayerOwnedVehicleMenuItems(localPlayerState).map((entry) => ({
       ...entry,
+      kind: 'car',
       selected: entry.id === selectedId
-    }));
+    })));
+
+    return entries;
   }
 
   getCarSelectorStatusText(localPlayerState = this.getLocalPlayerState()) {
     if (this.carSelectorRequestInFlight) {
-      return 'Switching car';
+      return 'Switching vehicle';
     }
 
-    return getPlayerVehicleMenuItem(localPlayerState)
-      ? 'Currently selected'
-      : 'No car selected';
+    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    if (selectedId === SKATEBOARD_ITEM_ID) {
+      return 'Skateboard selected';
+    }
+
+    const selectedCar = getPlayerVehicleMenuItem(localPlayerState);
+    return selectedCar
+      ? `${selectedCar.label} selected`
+      : 'No vehicle selected';
   }
 
   refreshCarSelectorHud(localPlayerState = this.getLocalPlayerState()) {
@@ -3855,11 +3955,28 @@ export class Game {
     this.hud.setCarSelectorState({
       available,
       visible,
-      selectedId: getPlayerVehicleItemId(localPlayerState),
+      selectedId: this.getSelectedVehicleSelectorItemId(localPlayerState),
       statusText: this.getCarSelectorStatusText(localPlayerState),
       entries,
       loading: this.carSelectorRequestInFlight
     });
+
+    if (!visible) {
+      this.carSelectorPreviewSyncRequestId += 1;
+      this.lastCarSelectorPreviewSignature = '';
+      this.vehiclePreviewRenderer?.setActive(false);
+      return;
+    }
+
+    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
+    const previewSignature = JSON.stringify({
+      selectedId,
+      entries: entries.map((entry) => entry.id)
+    });
+    if (previewSignature !== this.lastCarSelectorPreviewSignature) {
+      this.lastCarSelectorPreviewSignature = previewSignature;
+      void this.syncCarSelectorVehiclePreviews(entries, selectedId);
+    }
   }
 
   setCarSelectorVisible(visible) {
@@ -3877,7 +3994,7 @@ export class Game {
 
   toggleCarSelector(visible = !this.carSelectorVisible) {
     if (visible && !this.canUseCarSelector()) {
-      this.hud.showToast('Buy a car first.');
+      this.hud.showToast('Own a skateboard or car first.');
       return this.setCarSelectorVisible(false);
     }
 
@@ -4257,11 +4374,11 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     const entries = this.getCarSelectorEntries(localPlayerState);
     if (!entries.length) {
-      this.hud.showToast('Buy a car first.');
+      this.hud.showToast('Own a skateboard or car first.');
       return;
     }
 
-    const selectedId = getPlayerVehicleItemId(localPlayerState);
+    const selectedId = this.getSelectedVehicleSelectorItemId(localPlayerState);
     const currentIndex = entries.findIndex((entry) => entry.id === selectedId);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = (safeIndex + step + entries.length) % entries.length;
@@ -4296,9 +4413,15 @@ export class Game {
 
   async selectPlayerVehicle(itemId = '') {
     const localPlayerState = this.getLocalPlayerState();
-    const item = getCarDealerMenuItem(itemId);
-    if (!item || !playerOwnsVehicleItem(localPlayerState, item.id)) {
-      this.hud.showToast('That car is not in your garage.');
+    const normalizedItemId = String(itemId ?? '').trim();
+    const item = normalizedItemId === SKATEBOARD_ITEM_ID
+      ? { id: SKATEBOARD_ITEM_ID, label: 'Skateboard' }
+      : getCarDealerMenuItem(normalizedItemId);
+    const ownsItem = normalizedItemId === SKATEBOARD_ITEM_ID
+      ? isPlayerSkateboardOwner(localPlayerState)
+      : playerOwnsVehicleItem(localPlayerState, item?.id);
+    if (!item || !ownsItem) {
+      this.hud.showToast('That vehicle is not in your garage.');
       this.refreshCarSelectorHud(localPlayerState);
       return;
     }
@@ -4307,7 +4430,7 @@ export class Game {
       return;
     }
 
-    if (getPlayerVehicleItemId(localPlayerState) === item.id) {
+    if (this.getSelectedVehicleSelectorItemId(localPlayerState) === item.id) {
       this.refreshCarSelectorHud(localPlayerState);
       return;
     }
@@ -4317,7 +4440,7 @@ export class Game {
     try {
       const result = await this.npcService?.selectPlayerVehicle?.(item.id);
       if (!result?.ok) {
-        this.hud.showToast(result?.error ?? 'Could not switch cars.');
+        this.hud.showToast(result?.error ?? 'Could not switch vehicles.');
         return;
       }
 
@@ -4325,7 +4448,7 @@ export class Game {
       this.syncPlayerBoundItemsHud();
       this.hud.showToast(`${item.label} selected.`);
     } catch (error) {
-      console.warn('[CarSelector] Vehicle selection failed.', error);
+      console.warn('[VehicleSelector] Vehicle selection failed.', error);
       this.hud.showToast('Vehicle selection request failed.');
     } finally {
       this.carSelectorRequestInFlight = false;
@@ -4441,7 +4564,7 @@ export class Game {
   }
 
   canUseCarSelector(localPlayerState = this.getLocalPlayerState()) {
-    return Boolean(this.player && getPlayerOwnedVehicleMenuItems(localPlayerState).length > 0);
+    return Boolean(this.player && this.getCarSelectorEntries(localPlayerState).length > 0);
   }
 
   canChangeCharacter() {
@@ -6780,6 +6903,7 @@ export class Game {
 
   closeInteractionMenu() {
     this.activeInteractionMenu = null;
+    this.carDealerPreviewSyncRequestId += 1;
     this.hud.hideInteractionMenu();
   }
 
@@ -7199,9 +7323,18 @@ export class Game {
     const actions = items.map((item) => {
       const owned = playerOwnsVehicleItem(localPlayerState, item.id);
       const selected = currentVehicleItemId === item.id;
+      const state = owned
+        ? (selected ? 'Selected' : 'Owned')
+        : cash < item.price
+          ? `${formatMoneyAmount(item.price - cash)} short`
+          : 'Available now';
       return {
         id: `carDealer:${item.id}`,
         label: owned ? `${item.label} - ${selected ? 'Selected' : 'Owned'}` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
+        title: owned ? item.label : `Buy ${item.label}`,
+        meta: `${formatMoneyAmount(item.price)} - ${item.label}`,
+        state,
+        previewItemId: item.id,
         primary: item.id === 'car_fiat_duna',
         disabled: this.carDealerRequestInFlight || owned || cash < item.price
       };
@@ -7217,8 +7350,10 @@ export class Game {
       title: menu.npcName || 'Car Dealer',
       subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Current car: ${currentVehicle?.label ?? 'None'}.`,
       actions,
-      anchor: menu.anchor
+      anchor: menu.anchor,
+      variant: 'car-dealer'
     });
+    void this.syncCarDealerVehiclePreviews(items);
   }
 
   openCarDealerMenu(interaction = null) {
@@ -15676,6 +15811,7 @@ export class Game {
     }
     this.refreshAdminPositionHud();
     this.characterPreviewRenderer?.update(deltaSeconds);
+    this.vehiclePreviewRenderer?.update(deltaSeconds);
     this.updateCameraOcclusion();
     this.updateWorldInteractableIndicatorVisibility();
     this.updateDrunknessEffects(localPlayerState);

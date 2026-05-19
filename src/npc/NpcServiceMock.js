@@ -84,7 +84,7 @@ import {
   selectPlayerVehicleItem,
   setPlayerVehicleItem
 } from '../shared/carDealer.js';
-import { isPlayerSkateboardOwner } from '../shared/skateboard.js';
+import { SKATEBOARD_ITEM_ID, isPlayerSkateboardOwner } from '../shared/skateboard.js';
 import {
   addPlayerMarthaItem,
   consumePlayerMarthaItem,
@@ -1938,7 +1938,27 @@ export class NpcServiceMock {
   async selectPlayerVehicle(itemId = '') {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false) {
-      return { ok: false, error: 'You cannot switch cars right now.' };
+      return { ok: false, error: 'You cannot switch vehicles right now.' };
+    }
+
+    if (String(itemId ?? '').trim() === SKATEBOARD_ITEM_ID) {
+      if (!isPlayerSkateboardOwner(player)) {
+        return { ok: false, error: 'You do not own the skateboard.' };
+      }
+
+      player.vehicleItemId = '';
+      player.skating = false;
+      this.emit();
+      return {
+        ok: true,
+        item: {
+          id: SKATEBOARD_ITEM_ID,
+          label: 'Skateboard',
+          price: 0,
+          count: 1
+        },
+        inventory: getPlayerVehicleInventorySnapshot(player)
+      };
     }
 
     const item = getCarDealerMenuItem(itemId);

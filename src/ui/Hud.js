@@ -3351,20 +3351,6 @@ function getVehicleBadgeMarkup() {
   `;
 }
 
-function getCarSelectorVehicleMarkup(entry = {}) {
-  return `
-    <span class="hud__car-selector-vehicle" aria-hidden="true" style="--car-accent:${escapeHtml(entry.accent ?? '#d85b4d')}">
-      <span class="hud__car-selector-shadow"></span>
-      <span class="hud__car-selector-body"></span>
-      <span class="hud__car-selector-cabin"></span>
-      <span class="hud__car-selector-light hud__car-selector-light--front"></span>
-      <span class="hud__car-selector-light hud__car-selector-light--back"></span>
-      <span class="hud__car-selector-wheel hud__car-selector-wheel--front"></span>
-      <span class="hud__car-selector-wheel hud__car-selector-wheel--back"></span>
-    </span>
-  `;
-}
-
 function getCarSelectorCardMarkup(entry = {}) {
   return `
     <button
@@ -3375,11 +3361,45 @@ function getCarSelectorCardMarkup(entry = {}) {
       aria-pressed="${entry.selected ? 'true' : 'false'}"
     >
       <span class="hud__character-card-frame hud__car-card-frame">
-        <span class="hud__car-card-preview">
-          ${getCarSelectorVehicleMarkup(entry)}
+        <span class="hud__car-card-preview" data-car-preview-card="${escapeHtml(entry.id ?? '')}">
+          <span class="hud__car-model-placeholder" aria-hidden="true"></span>
         </span>
       </span>
-      <span class="hud__character-card-label">${escapeHtml(entry.label ?? 'Car')}</span>
+      <span class="hud__character-card-label">${escapeHtml(entry.label ?? 'Vehicle')}</span>
+    </button>
+  `;
+}
+
+function getInteractionActionMarkup(action = {}) {
+  const hasVehiclePreview = Boolean(action.previewItemId);
+  const className = [
+    'hud__dialog-button',
+    action.primary ? 'is-primary' : '',
+    hasVehiclePreview ? 'hud__dialog-button--vehicle' : ''
+  ].filter(Boolean).join(' ');
+  const label = String(action.label ?? action.title ?? 'Action');
+  const content = hasVehiclePreview
+    ? `
+      <span class="hud__dialog-button-preview" data-car-dealer-preview="${escapeHtml(action.previewItemId)}">
+        <span class="hud__car-model-placeholder" aria-hidden="true"></span>
+      </span>
+      <span class="hud__dialog-button-copy">
+        <strong>${escapeHtml(action.title ?? label)}</strong>
+        ${action.meta ? `<span>${escapeHtml(action.meta)}</span>` : ''}
+        ${action.state ? `<em>${escapeHtml(action.state)}</em>` : ''}
+      </span>
+    `
+    : escapeHtml(label);
+
+  return `
+    <button
+      class="${className}"
+      type="button"
+      data-interaction-action="${escapeHtml(action.id ?? '')}"
+      aria-label="${escapeHtml(action.ariaLabel ?? label)}"
+      ${action.disabled ? 'disabled' : ''}
+    >
+      ${content}
     </button>
   `;
 }
@@ -3513,7 +3533,7 @@ export class Hud {
     this.hotbarSlotsRoot = this.overlay.querySelector('[data-hotbar-slots]');
     this.boundItemsRoot = this.overlay.querySelector('[data-bound-items]');
     this.boundVehicleRoot = this.overlay.querySelector('[data-bound-item-vehicle]');
-    this.boundVehicleLabel = this.overlay.querySelector('[data-bound-item-vehicle-label]');
+    this.boundVehicleLabel = null;
     this.boundVehicleSkateboardIcon = this.overlay.querySelector('[data-bound-item-skateboard-icon]');
     this.boundVehicleCarIcon = this.overlay.querySelector('[data-bound-item-car-icon]');
     this.carSelectorRoot = this.overlay.querySelector('[data-car-selector]');
@@ -4039,11 +4059,10 @@ export class Hud {
           data-bound-item-vehicle
           aria-haspopup="dialog"
           aria-expanded="false"
-          title="Choose car"
+          title="Choose vehicle"
         >
           <span data-bound-item-skateboard-icon>${getSkateboardBadgeMarkup()}</span>
           <span data-bound-item-car-icon hidden>${getVehicleBadgeMarkup()}</span>
-          <span class="hud__bound-item-label" data-bound-item-vehicle-label>Skateboard</span>
         </button>
       </section>
       <section class="hud__drunkness" data-drunkness-root role="meter" aria-label="Drunkness" aria-valuemin="0" aria-valuemax="${DRUNKNESS_MAX_LEVEL}" aria-valuenow="0" hidden>
@@ -4320,11 +4339,11 @@ export class Hud {
       <section class="hud__character-selector hud__car-selector" data-car-selector hidden>
         <div class="hud__character-selector-header">
           <div>
-            <p class="hud__eyebrow">Car Select</p>
-            <h2 class="hud__character-selector-name" data-car-selector-name>Car</h2>
+            <p class="hud__eyebrow">Vehicle Select</p>
+            <h2 class="hud__character-selector-name" data-car-selector-name>Vehicle</h2>
             <p class="hud__body hud__character-selector-subtitle" data-car-selector-subtitle>Garage</p>
           </div>
-          <button class="hud__builder-icon-button" type="button" data-car-selector-close aria-label="Close car selector" title="Close car selector">
+          <button class="hud__builder-icon-button" type="button" data-car-selector-close aria-label="Close vehicle selector" title="Close vehicle selector">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 6l12 12" />
               <path d="M18 6L6 18" />
@@ -4332,14 +4351,14 @@ export class Hud {
           </button>
         </div>
         <div class="hud__character-stage-shell hud__car-stage-shell">
-          <button class="hud__character-nav" type="button" data-car-selector-prev aria-label="Previous car" title="Previous car">
+          <button class="hud__character-nav" type="button" data-car-selector-prev aria-label="Previous vehicle" title="Previous vehicle">
             <span aria-hidden="true">&#8249;</span>
           </button>
           <div class="hud__character-stage hud__car-stage">
             <div class="hud__character-stage-glow"></div>
             <div class="hud__car-stage-preview" data-car-selector-preview></div>
           </div>
-          <button class="hud__character-nav" type="button" data-car-selector-next aria-label="Next car" title="Next car">
+          <button class="hud__character-nav" type="button" data-car-selector-next aria-label="Next vehicle" title="Next vehicle">
             <span aria-hidden="true">&#8250;</span>
           </button>
         </div>
@@ -8133,20 +8152,12 @@ export class Hud {
     this.interactionRoot.style.top = `${Math.round(clampPanelPosition(top, minTop, maxTop))}px`;
   }
 
-  showInteractionMenu({ title, subtitle, actions, anchor = null }) {
-    this.lastInteractionState = { title, subtitle, actions };
+  showInteractionMenu({ title, subtitle, actions, anchor = null, variant = '' }) {
+    this.lastInteractionState = { title, subtitle, actions, variant };
     this.interactionTitle.textContent = title;
     this.interactionSubtitle.textContent = subtitle;
-    this.interactionActions.innerHTML = actions.map((action) => `
-      <button
-        class="hud__dialog-button${action.primary ? ' is-primary' : ''}"
-        type="button"
-        data-interaction-action="${action.id}"
-        ${action.disabled ? 'disabled' : ''}
-      >
-        ${action.label}
-      </button>
-    `).join('');
+    this.interactionRoot.dataset.interactionVariant = String(variant ?? '');
+    this.interactionActions.innerHTML = actions.map((action) => getInteractionActionMarkup(action)).join('');
     this.interactionRoot.classList.add('is-visible');
     this.setInteractionMenuAnchor(anchor);
   }
@@ -8154,6 +8165,7 @@ export class Hud {
   hideInteractionMenu() {
     this.lastInteractionState = null;
     this.interactionRoot.classList.remove('is-visible');
+    this.interactionRoot.dataset.interactionVariant = '';
     this.setInteractionMenuAnchor(null);
   }
 
@@ -9334,8 +9346,8 @@ export class Hud {
       'aria-label',
       visible && hasSkateboard && skating === true ? `${label} active` : `${label} owned`
     );
-    this.boundVehicleRoot.setAttribute('aria-haspopup', hasVehicle ? 'dialog' : 'false');
-    this.boundVehicleRoot.setAttribute('title', hasVehicle ? 'Choose car' : 'Skateboard owned');
+    this.boundVehicleRoot.setAttribute('aria-haspopup', visible ? 'dialog' : 'false');
+    this.boundVehicleRoot.setAttribute('title', 'Choose vehicle');
   }
 
   setDrunknessState({ level = 0 } = {}) {
@@ -9745,6 +9757,24 @@ export class Hud {
     return this.characterSelectorPreview ?? null;
   }
 
+  getCarSelectorPreviewMount() {
+    return this.carSelectorPreview ?? null;
+  }
+
+  getCarSelectorCardPreviewMount(itemId = '') {
+    const selectorId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(String(itemId ?? ''))
+      : String(itemId ?? '').replace(/["\\]/gu, '\\$&');
+    return this.carSelectorGrid?.querySelector(`[data-car-preview-card="${selectorId}"]`) ?? null;
+  }
+
+  getCarDealerPreviewMount(itemId = '') {
+    const selectorId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? CSS.escape(String(itemId ?? ''))
+      : String(itemId ?? '').replace(/["\\]/gu, '\\$&');
+    return this.interactionActions?.querySelector(`[data-car-dealer-preview="${selectorId}"]`) ?? null;
+  }
+
   getPhoneCharacterPreviewMount() {
     return this.phoneScreenContent?.querySelector('[data-phone-character-preview]') ?? null;
   }
@@ -9835,7 +9865,7 @@ export class Hud {
       this.boundVehicleRoot.classList.toggle('is-selector-open', panelVisible);
       this.boundVehicleRoot.setAttribute('aria-expanded', panelVisible ? 'true' : 'false');
       if (available) {
-        this.boundVehicleRoot.title = panelVisible ? 'Hide car selector' : 'Choose car';
+        this.boundVehicleRoot.title = panelVisible ? 'Hide vehicle selector' : 'Choose vehicle';
       }
     }
 
@@ -9844,28 +9874,21 @@ export class Hud {
     this.carSelectorRoot.classList.toggle('is-loading', Boolean(loading));
 
     if (this.carSelectorName) {
-      this.carSelectorName.textContent = selectedEntry?.label ?? 'No Car';
+      this.carSelectorName.textContent = selectedEntry?.label ?? 'No Vehicle';
     }
 
     if (this.carSelectorSubtitle) {
       const count = safeEntries.length;
-      this.carSelectorSubtitle.textContent = count === 1 ? '1 owned car' : `${count} owned cars`;
+      this.carSelectorSubtitle.textContent = count === 1 ? '1 owned vehicle' : `${count} owned vehicles`;
     }
 
     if (this.carSelectorStatus) {
       this.carSelectorStatus.textContent = statusText;
     }
 
-    if (this.carSelectorPreview) {
-      const previewSignature = selectedEntry
-        ? `${selectedEntry.id}:${selectedEntry.accent ?? ''}`
-        : '';
-      if (this.carSelectorPreview.dataset.carSelectorPreviewSignature !== previewSignature) {
-        this.carSelectorPreview.dataset.carSelectorPreviewSignature = previewSignature;
-        this.carSelectorPreview.innerHTML = selectedEntry
-          ? getCarSelectorVehicleMarkup(selectedEntry)
-          : '<span class="hud__car-selector-empty">No car</span>';
-      }
+    if (this.carSelectorPreview && !selectedEntry) {
+      this.carSelectorPreview.replaceChildren();
+      this.carSelectorPreview.innerHTML = '<span class="hud__car-selector-empty">No vehicle</span>';
     }
 
     const signature = JSON.stringify(safeEntries.map((entry) => ({
@@ -9881,7 +9904,7 @@ export class Hud {
             ...entry,
             selected: entry.id === selectedId
           })).join('')
-        : '<p class="hud__body">No owned cars yet.</p>';
+        : '<p class="hud__body">No owned vehicles yet.</p>';
     }
 
     for (const button of this.carSelectorGrid?.querySelectorAll('[data-car-item-id]') ?? []) {

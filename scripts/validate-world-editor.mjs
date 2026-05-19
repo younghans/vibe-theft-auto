@@ -2115,6 +2115,7 @@ function validateBartenderFunction() {
   const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+  const vehiclePreviewSource = readFileSync(new URL('../src/ui/VehiclePreviewRenderer.js', import.meta.url), 'utf8');
   const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   assert(
@@ -2126,7 +2127,7 @@ function validateBartenderFunction() {
     'HUD interaction menu should expose an anchor updater'
   );
   assert(
-    /showInteractionMenu\(\{\s*title,\s*subtitle,\s*actions,\s*anchor = null\s*\}\)/.test(hudSource),
+    /showInteractionMenu\(\{\s*title,\s*subtitle,\s*actions,\s*anchor = null,\s*variant = ''\s*\}\)/.test(hudSource),
     'HUD interaction menu should accept a world anchor'
   );
   assert(
@@ -2371,6 +2372,28 @@ function validateBartenderFunction() {
     'Game client should expose a clickable owned-car selector'
   );
   assert(
+    /SKATEBOARD_ITEM_ID/.test(gameSource)
+      && /getSelectedVehicleSelectorItemId/.test(gameSource)
+      && /id:\s*SKATEBOARD_ITEM_ID/.test(gameSource)
+      && /player\.vehicleItemId\s*=\s*''/.test(serverSource),
+    'Vehicle selector should include the owned skateboard and select it by clearing the active car'
+  );
+  assert(
+    /VehiclePreviewRenderer/.test(gameSource)
+      && /syncCarSelectorVehiclePreviews/.test(gameSource)
+      && /syncCarDealerVehiclePreviews/.test(gameSource)
+      && /this\.vehiclePreviewRenderer\?\.update\(deltaSeconds\)/.test(gameSource),
+    'Game client should mount real 3D vehicle previews in the selector and dealer shop'
+  );
+  assert(
+    /assets\.vehicles\.fiatDuna/.test(vehiclePreviewSource)
+      && /assets\.vehicles\.toyotaAe86/.test(vehiclePreviewSource)
+      && /CAR_PREVIEW_MODEL_SCALE\s*=\s*0\.75/.test(vehiclePreviewSource)
+      && /createSkateboardPreviewModel/.test(vehiclePreviewSource)
+      && /library\.instantiate\(definition\.assetUrl\)/.test(vehiclePreviewSource),
+    'Vehicle preview renderer should load real car GLB models and procedurally render the skateboard'
+  );
+  assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
     'Game client should route Martha food menu actions to a purchase handler'
   );
@@ -2394,6 +2417,21 @@ function validateBartenderFunction() {
       && /data-car-selector/.test(hudSource)
       && /\.hud__car-selector/.test(styles),
     'HUD car badge should open an owned-car selector menu'
+  );
+  assert(
+    /data-bound-item-vehicle[\s\S]*\$\{getVehicleBadgeMarkup\(\)\}/.test(hudSource)
+      && !/data-bound-item-vehicle-label/.test(hudSource)
+      && /#ff594d/.test(styles)
+      && /#c91f1f/.test(styles),
+    'HUD vehicle badge should be a simple red car icon with no visible text when a car is active'
+  );
+  assert(
+    /data-car-preview-card/.test(hudSource)
+      && /data-car-dealer-preview/.test(hudSource)
+      && /hud__dialog-button--vehicle/.test(hudSource)
+      && !/getCarSelectorVehicleMarkup/.test(hudSource)
+      && !/hud__car-selector-vehicle/.test(styles),
+    'Vehicle selector and dealer shop should expose 3D model preview mounts instead of CSS car drawings'
   );
   assert(
     /\.hud__vibe-radio-widget\s*\{[\s\S]*left:\s*calc\(230px \+ var\(--safe-left\)\)/.test(styles)
