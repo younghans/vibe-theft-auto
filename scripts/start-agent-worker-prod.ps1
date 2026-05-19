@@ -393,7 +393,7 @@ Set-DefaultEnv -Name 'AGENT_API_BASE' -Value 'https://us-atl-06d422c8.vibethefta
 Set-DefaultEnv -Name 'AGENT_WORK_ROOT' -Value 'D:\agent-work'
 Set-DefaultEnv -Name 'GIT_REMOTE' -Value 'https://github.com/younghans/vibe-theft-auto.git'
 Set-DefaultEnv -Name 'GIT_BASE_BRANCH' -Value 'main'
-Set-DefaultEnv -Name 'AGENT_START_DRAINED' -Value 'true'
+Set-DefaultEnv -Name 'AGENT_START_DRAINED' -Value 'false'
 Set-DefaultEnv -Name 'AGENT_CODE_CONCURRENCY' -Value '2'
 Set-DefaultEnv -Name 'DEPLOY_ENABLED' -Value 'true'
 Set-DefaultEnv -Name 'BACKEND_DEPLOY_COMMAND' -Value 'npm run deploy:colyseus'

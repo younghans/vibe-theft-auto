@@ -77,7 +77,7 @@ const API_STORM_PAUSE_MS = getPositiveIntegerEnv('AGENT_API_STORM_PAUSE_MS', 600
 const PENDING_TASK_UPDATES_ROOT = path.join(WORKER_LOG_ROOT, 'pending-task-updates');
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
-const START_DRAINED = getBooleanEnv('AGENT_START_DRAINED', true);
+const START_DRAINED = getBooleanEnv('AGENT_START_DRAINED', false);
 const DISABLE_INSTANCE_LOCK = getBooleanEnv('AGENT_DISABLE_INSTANCE_LOCK', false);
 const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 const drainLoggedLaneLabels = new Set();
@@ -3831,7 +3831,7 @@ function runSelfTest() {
     assertSelfTestEqual(CODE_CONCURRENCY, 2, 'default code concurrency is two lanes');
   }
   if (process.env.AGENT_START_DRAINED == null) {
-    assertSelfTestEqual(START_DRAINED, true, 'startup drain is enabled by default');
+    assertSelfTestEqual(START_DRAINED, false, 'startup drain is disabled by default');
   }
   assertSelfTestEqual(isWorkerControlTargetedHere({}), true, 'untargeted worker control applies');
   assertSelfTestEqual(
