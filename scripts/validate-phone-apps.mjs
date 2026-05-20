@@ -228,7 +228,8 @@ assert.match(serverSource, /getStockTradeAccess/, 'Server has a stock trade acce
 assert.match(serverSource, /message\?\.source[\s\S]*phone/, 'Server permits stock trades from the phone source');
 assert.match(serverSource, /stockPortfolios:/, 'Server snapshots persist character-specific stock portfolios');
 assert.match(serverSource, /getStockMarketPersistence/, 'Server loads persistent stock market state');
-assert.match(serverSource, /persistStockMarket\('wallet-snapshot'\)/, 'Server persists market tape after wallet/phone refreshes');
+assert.match(serverSource, /handleWalletSnapshotRequest\(client\)[\s\S]*serializeStockMarketForPlayer\([\s\S]*'wallet-snapshot'\)/, 'Wallet snapshots request market serialization with the wallet-snapshot persistence reason');
+assert.match(serverSource, /serializeStockMarketForPlayer\(sessionId, player, now = Date\.now\(\), persistReason = 'market-refresh'\)[\s\S]*persistStockMarket\((?:persistReason|'wallet-snapshot')\)/, 'Server persists advanced market tape from stock market serialization');
 assert.match(serverSource, /persistStockMarket\('stock-trade'\)/, 'Server persists market tape after stock trades');
 assert.match(serverSource, /async handleStockTradeRequest[\s\S]*queuePlayerSnapshotSave\(client\.sessionId\)/, 'Server queues a snapshot save after stock trades');
 assert.match(serverSource, /async handleStockTradeRequest[\s\S]*await this\.savePlayerSnapshot\(client\.sessionId\)/, 'Server persists stock trades before confirming them');
