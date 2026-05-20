@@ -13490,6 +13490,8 @@ export class Game {
         this.syncInitialCameraState(localPlayerState);
       }
       this.resetLocalPlayerKinematics(this.player.position);
+      this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
+      this.primeOpeningRentIntroCutscene();
       this.enableDetailedRendering();
       this.setBootLoadingProgress(0.96, {
         render: true
@@ -13517,7 +13519,6 @@ export class Game {
       this.hud.hideLoading();
       this.startReleaseVersionPolling();
       this.queueCharacterPreviewWarmup();
-      this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
       this.measureBoot('loadingOverlayHidden', 'boot:start', 'boot:loading-hide');
     } catch (error) {
       console.error('[Game] Failed during bootstrap.', error);
@@ -14807,6 +14808,7 @@ export class Game {
     this.player.object.visible = false;
     this.player.setAimingState(false);
     this.clearPendingHipFireShot();
+    this.updateRentIntroCutsceneCamera(0);
     this.hud.setRentIntroCutsceneState({ visible: true, blink: 1 });
     this.applyNpcRuntimeState();
     return true;
@@ -14958,6 +14960,27 @@ export class Game {
     this.activeRentIntro = null;
     this.moneyAnimation = null;
     this.moneyDisplayAmount = 0;
+  }
+
+  primeOpeningRentIntroCutscene() {
+    if (this.rentIntroCutscene) {
+      return true;
+    }
+
+    const localPlayerState = this.getLocalPlayerState();
+    if (localPlayerState) {
+      this.maybeStartRentIntro(localPlayerState);
+    }
+
+    if (!this.pendingRentIntro || !this.player) {
+      return false;
+    }
+
+    if (this.rentIntroLoadingClearedAt <= 0) {
+      this.rentIntroLoadingClearedAt = performance.now() + RENT_INTRO_LOADING_CLEAR_MS;
+    }
+
+    return this.startRentIntroCutscene(this.pendingRentIntro);
   }
 
   updateRentIntroPresentation() {

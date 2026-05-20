@@ -1123,6 +1123,18 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes('updateRentIntroCutsceneCamera'), 'Game should drive a 3D rent intro cutscene camera');
   assert(gameSource.includes('getRentIntroBlinkClosure'), 'Game should animate full-screen blinking during the rent intro cutscene');
   assert(hudSource.includes('hud__rent-cutscene'), 'HUD should include the rent intro blink layer');
+  const openingRentIntroPrimeIndex = gameSource.indexOf('this.primeOpeningRentIntroCutscene();');
+  const loadingHideAfterPrimeIndex = gameSource.indexOf('this.hud.hideLoading();', openingRentIntroPrimeIndex);
+  assert(
+    openingRentIntroPrimeIndex >= 0 && loadingHideAfterPrimeIndex > openingRentIntroPrimeIndex,
+    'Opening rent intro cutscene should prime before the loading screen hides'
+  );
+  const rentIntroCameraSnapIndex = gameSource.indexOf('this.updateRentIntroCutsceneCamera(0);');
+  const rentIntroVisibleIndex = gameSource.indexOf('this.hud.setRentIntroCutsceneState({ visible: true, blink: 1 });');
+  assert(
+    rentIntroCameraSnapIndex >= 0 && rentIntroVisibleIndex > rentIntroCameraSnapIndex,
+    'Rent intro cutscene should snap to its opening camera before revealing the blink layer'
+  );
   const rentIntroNpcDistance = Number(
     gameSource.match(/const\s+RENT_INTRO_CUTSCENE_NPC_DISTANCE\s*=\s*([0-9.]+);/)?.[1]
   );
