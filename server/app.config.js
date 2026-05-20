@@ -24,7 +24,8 @@ import {
 } from './src/agentDeployments.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 import { getPlayerSnapshotsInfo } from './src/playerSnapshots.js';
-import { getPlayerAccountsInfo } from './src/playerAccounts.js';
+import { getPlayerAccounts, getPlayerAccountsInfo } from './src/playerAccounts.js';
+import { verifySupabaseAccessToken } from './src/supabaseAuth.js';
 import { getStockMarketPersistenceInfo } from './src/stockMarketPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -215,12 +216,6 @@ const AGENT_ACTIVE_TASK_STALE_AFTER_MS = getNonNegativeIntegerEnv(
   4 * 60 * 1000
 );
 
-function isValidAdminKey(value = '') {
-  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
-  const normalized = typeof value === 'string' ? value.trim() : '';
-  return Boolean(normalized && adminKeys.size > 0 && adminKeys.has(normalized));
-}
-
 function isValidAgentWorkerToken(value = '') {
   const workerTokens = parseAdminKeys(process.env.AGENT_WORKER_TOKENS ?? process.env.AGENT_WORKER_TOKEN ?? '');
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -228,16 +223,11 @@ function isValidAgentWorkerToken(value = '') {
 }
 
 function getAccessRuntimeDiagnostics() {
-  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
   const workerTokens = parseAdminKeys(process.env.AGENT_WORKER_TOKENS ?? process.env.AGENT_WORKER_TOKEN ?? '');
 
   return {
-    adminKeysConfigured: adminKeys.size > 0,
-    adminKeyCount: adminKeys.size,
-    adminKeyEnvNames: [
-      'ADMIN_KEYS',
-      'ADMIN_KEY'
-    ].filter((key) => process.env[key] !== undefined),
+    browserAdminAuth: 'supabase',
+    legacyAdminKeysAccepted: false,
     workerTokensConfigured: workerTokens.size > 0,
     workerTokenCount: workerTokens.size,
     workerTokenEnvNames: [
@@ -271,21 +261,71 @@ function getBearerToken(req) {
   return match?.[1]?.trim() ?? '';
 }
 
-function getAdminKeyFromRequest(req, payload = null) {
-  const payloadKey = typeof payload?.adminKey === 'string' ? payload.adminKey.trim() : '';
-  if (payloadKey) {
-    return payloadKey;
+async function getSupabaseAdminFromRequest(req) {
+  const token = getBearerToken(req);
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Admin authorization is required.'
+    };
   }
 
-  const queryKey = typeof req.query?.adminKey === 'string' ? req.query.adminKey.trim() : '';
-  if (queryKey) {
-    return queryKey;
+  let authUser = null;
+  try {
+    authUser = await verifySupabaseAccessToken(token);
+  } catch {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Invalid admin authorization.'
+    };
   }
 
-  const headerKey = typeof req.headers['x-admin-key'] === 'string'
-    ? req.headers['x-admin-key'].trim()
-    : '';
-  return headerKey;
+  let account = null;
+  try {
+    account = await getPlayerAccounts().ensureUser(authUser);
+  } catch {
+    return {
+      ok: false,
+      status: 500,
+      error: 'Could not verify admin account.'
+    };
+  }
+
+  if (account?.isAdmin !== true) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Admin access required.'
+    };
+  }
+
+  return {
+    account,
+    authUser,
+    ok: true,
+    status: 200
+  };
+}
+
+async function assertSupabaseAdminRequest(req, res) {
+  const result = await getSupabaseAdminFromRequest(req);
+  if (!result.ok) {
+    sendJson(res, result.status, { ok: false, error: result.error });
+    return null;
+  }
+
+  return result;
+}
+
+async function hasSupabaseAdminOrWorkerAccess(req) {
+  if (isValidAgentWorkerToken(getBearerToken(req))) {
+    return true;
+  }
+
+  const admin = await getSupabaseAdminFromRequest(req);
+  return admin.ok === true;
 }
 
 function isTruthyRequestValue(value = '') {
@@ -297,7 +337,7 @@ function setAdminWorldMapCorsHeaders(req, res) {
     ? req.headers.origin
     : '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Headers', 'content-type');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
 }
 
@@ -306,7 +346,7 @@ function setAdminAgentTaskCorsHeaders(req, res) {
     ? req.headers.origin
     : '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type,x-admin-key,x-agent-worker-id,x-agent-worker-heartbeat');
+  res.setHeader('Access-Control-Allow-Headers', 'authorization,content-type,x-agent-worker-id,x-agent-worker-heartbeat');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
 }
 
@@ -377,14 +417,13 @@ async function recordAdminAgentRouteFailure(req, routeLabel, error, {
     path: req.path,
     taskId: String(taskId || req.params?.id || ''),
     workerId: typeof req.headers['x-agent-worker-id'] === 'string' ? req.headers['x-agent-worker-id'] : '',
-    hasAdminKey: Boolean(getAdminKeyFromRequest(req, payload)),
-    hasWorkerToken: Boolean(getBearerToken(req)),
+    hasBearerToken: Boolean(getBearerToken(req)),
+    hasWorkerToken: isValidAgentWorkerToken(getBearerToken(req)),
     payload: getSafePromptPayloadDiagnostic(payload),
     error: getErrorDiagnostic(error)
   };
   console.warn(`[admin-agent] ${routeLabel} failed.`, diagnostic);
-  const canWriteTaskLog = isValidAdminKey(getAdminKeyFromRequest(req, payload))
-    || isValidAgentWorkerToken(getBearerToken(req));
+  const canWriteTaskLog = await hasSupabaseAdminOrWorkerAccess(req);
   if (!diagnostic.taskId || !canWriteTaskLog) {
     return;
   }
@@ -531,12 +570,12 @@ const server = defineServer({
       setAdminWorldMapCorsHeaders(req, res);
 
       try {
-        const payload = await readJsonRequest(req);
-        if (!isValidAdminKey(payload?.adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        const payload = await readJsonRequest(req);
         const dataUrl = String(payload?.dataUrl ?? '');
         const imageMatch = dataUrl.match(/^data:image\/webp;base64,([a-z0-9+/=]+)$/iu);
         if (!imageMatch?.[1]) {
@@ -607,15 +646,14 @@ const server = defineServer({
 
       let payload = null;
       try {
-        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
-        const adminKey = getAdminKeyFromRequest(req, payload);
-        if (!isValidAdminKey(adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const task = await createAgentTask(payload, {
-          createdBy: String(payload?.createdBy ?? 'in-game-admin'),
+          createdBy: String(payload?.createdBy ?? admin.account?.userId ?? 'in-game-admin'),
           staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
         });
         sendJson(res, 201, { ok: true, task });
@@ -632,8 +670,8 @@ const server = defineServer({
       setAdminAgentTaskCorsHeaders(req, res);
 
       try {
-        if (!isValidAdminKey(getAdminKeyFromRequest(req))) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
@@ -688,18 +726,17 @@ const server = defineServer({
 
       let payload = null;
       try {
-        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
-        const adminKey = getAdminKeyFromRequest(req, payload);
-        if (!isValidAdminKey(adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
         const task = await createAgentTask({
           ...payload,
           parentTaskId: req.params.id
         }, {
-          createdBy: String(payload?.createdBy ?? 'in-game-admin'),
+          createdBy: String(payload?.createdBy ?? admin.account?.userId ?? 'in-game-admin'),
           staleActiveAfterMs: AGENT_ACTIVE_TASK_STALE_AFTER_MS
         });
         sendJson(res, 201, { ok: true, task });
@@ -757,9 +794,7 @@ const server = defineServer({
       setAdminAgentTaskCorsHeaders(req, res);
 
       try {
-        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
-          || isValidAgentWorkerToken(getBearerToken(req));
-        if (!isAuthorized) {
+        if (!await hasSupabaseAdminOrWorkerAccess(req)) {
           sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
           return;
         }
@@ -791,9 +826,7 @@ const server = defineServer({
       setAdminAgentTaskCorsHeaders(req, res);
 
       try {
-        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
-          || isValidAgentWorkerToken(getBearerToken(req));
-        if (!isAuthorized) {
+        if (!await hasSupabaseAdminOrWorkerAccess(req)) {
           sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
           return;
         }
@@ -883,15 +916,14 @@ const server = defineServer({
 
       let payload = null;
       try {
-        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
-        const adminKey = getAdminKeyFromRequest(req, payload);
-        if (!isValidAdminKey(adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const task = await cancelAgentTask(req.params.id, {
-          cancelledBy: String(payload?.createdBy ?? 'in-game-admin')
+          cancelledBy: String(payload?.createdBy ?? admin.account?.userId ?? 'in-game-admin')
         });
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
@@ -916,15 +948,14 @@ const server = defineServer({
 
       let payload = null;
       try {
-        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
-        const adminKey = getAdminKeyFromRequest(req, payload);
-        if (!isValidAdminKey(adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const task = await approveAgentTaskDeploy(req.params.id, {
-          approvedBy: String(payload?.createdBy ?? 'in-game-admin')
+          approvedBy: String(payload?.createdBy ?? admin.account?.userId ?? 'in-game-admin')
         });
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
@@ -949,15 +980,14 @@ const server = defineServer({
 
       let payload = null;
       try {
-        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
-        const adminKey = getAdminKeyFromRequest(req, payload);
-        if (!isValidAdminKey(adminKey)) {
-          sendJson(res, 403, { ok: false, error: 'Invalid admin key.' });
+        const admin = await assertSupabaseAdminRequest(req, res);
+        if (!admin) {
           return;
         }
 
+        payload = await readJsonRequest(req, { maxBytes: 16 * 1024 });
         const task = await approveAgentTaskRollback(req.params.id, {
-          approvedBy: String(payload?.createdBy ?? 'in-game-admin')
+          approvedBy: String(payload?.createdBy ?? admin.account?.userId ?? 'in-game-admin')
         });
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
@@ -1005,9 +1035,7 @@ const server = defineServer({
       setAdminAgentTaskCorsHeaders(req, res);
 
       try {
-        const isAuthorized = isValidAdminKey(getAdminKeyFromRequest(req))
-          || isValidAgentWorkerToken(getBearerToken(req));
-        if (!isAuthorized) {
+        if (!await hasSupabaseAdminOrWorkerAccess(req)) {
           sendJson(res, 403, { ok: false, error: 'Invalid credentials.' });
           return;
         }

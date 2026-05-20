@@ -464,7 +464,7 @@ function cloneNpcDebugState(debug = {}) {
 }
 
 export class NpcServiceMock {
-  constructor({ adminKey = '', playerId = '' } = {}) {
+  constructor({ playerId = '' } = {}) {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
@@ -500,7 +500,6 @@ export class NpcServiceMock {
     this.playerAliasSequence = 0;
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
-    this.adminKey = typeof adminKey === 'string' ? adminKey.trim() : '';
     this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
     this.stockPortfolios.set(this.state.sessionId, readMockStockPortfolios(this.playerId));
     this.playerRuntimeMeta = new Map();
@@ -511,7 +510,7 @@ export class NpcServiceMock {
     const introStartedAt = rentIntro ? Date.now() : 0;
     const introSpawn = rentIntro?.spawn ?? null;
     this.state.players.set(this.state.sessionId, createDefaultPlayerState({
-      isAdmin: Boolean(this.adminKey),
+      isAdmin: false,
       x: introSpawn?.x ?? spawnX,
       z: introSpawn?.z ?? spawnZ,
       rotationY: introSpawn?.rotationY ?? 0,

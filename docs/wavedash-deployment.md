@@ -71,5 +71,5 @@ the `dist/` folder from the Developer Portal instead.
 - If `VTA_SERVER_URL` is omitted, the client will try to connect to the current
   page host. That is wrong for Wavedash because the Colyseus server is hosted
   separately.
-- Keep backend secrets such as `DATABASE_URL`, `ADMIN_KEYS`, and
+- Keep backend secrets such as `DATABASE_URL`, `AGENT_WORKER_TOKENS`, and
   `OPENAI_API_KEY` out of Wavedash frontend builds.

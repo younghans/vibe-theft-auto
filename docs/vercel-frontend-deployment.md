@@ -34,7 +34,7 @@ Use a backend-only hostname, not the public frontend hostname. The current backe
 VTA_SERVER_URL=wss://us-atl-06d422c8.vibetheftauto.xyz
 ```
 
-Do not copy backend secrets such as `DATABASE_URL`, `OPENAI_API_KEY`, or `ADMIN_KEYS` into Vercel unless a future frontend-only feature explicitly needs a public value. Those remain on Colyseus Cloud.
+Do not copy backend secrets such as `DATABASE_URL`, `OPENAI_API_KEY`, or `AGENT_WORKER_TOKENS` into Vercel unless a future frontend-only feature explicitly needs a public value. Those remain on Colyseus Cloud.
 
 ## DNS cutover
 

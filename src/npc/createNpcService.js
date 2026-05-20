@@ -46,11 +46,6 @@ function readConfiguredEndpoint(url) {
   return `${transport}//${url.host}`;
 }
 
-function readAdminKey(url) {
-  const value = url.searchParams.get('adminKey');
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function createPlayerId() {
   if (globalThis.crypto?.randomUUID) {
     return `player:${globalThis.crypto.randomUUID()}`;
@@ -86,13 +81,12 @@ export async function createNpcService({
 } = {}) {
   const url = new URL(window.location.href);
   const resolvedEndpoint = endpoint ?? readConfiguredEndpoint(url);
-  const adminKey = readAdminKey(url);
   const playerId = readPersistentPlayerId();
   const allowMockFallback = url.searchParams.get('allowMockFallback') === '1' || isLocalEnvironment(url);
 
   if (url.searchParams.get('npcTransport') === 'mock') {
     console.info('[NPC] Using local mock transport because ?npcTransport=mock is set.');
-    return new NpcServiceMock({ adminKey, playerId });
+    return new NpcServiceMock({ playerId });
   }
 
   const deadline = performance.now() + retryWindowMs;
@@ -104,7 +98,6 @@ export async function createNpcService({
     const service = new NpcServiceColyseus({
       accessToken,
       endpoint: resolvedEndpoint,
-      adminKey,
       playerId
     });
     try {
@@ -140,5 +133,5 @@ export async function createNpcService({
     endpoint: resolvedEndpoint,
     reason
   });
-  return new NpcServiceMock({ adminKey, playerId });
+  return new NpcServiceMock({ playerId });
 }

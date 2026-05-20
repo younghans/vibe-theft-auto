@@ -29,7 +29,7 @@ Admin in game
   -> POST /admin/agent-tasks
 
 Production server
-  -> validates adminKey
+  -> validates Supabase admin token
   -> stores task
   -> exposes task status
 
@@ -166,7 +166,7 @@ Set `AGENT_STATE_STORE=file`, `AGENT_TASKS_FILE_PATH`, or `AGENT_DEPLOYMENTS_FIL
 
 ## Server Endpoints
 
-Add admin endpoints. These should use the existing admin key validation pattern already used by `/admin/world-map`.
+Admin browser endpoints require `Authorization: Bearer <supabase access token>` and check `game_users.is_admin = true`. Worker endpoints use a separate worker bearer token.
 
 ```text
 POST  /admin/agent-tasks
@@ -179,14 +179,14 @@ POST  /admin/agent-tasks/:id/cancel
 POST  /admin/agent-tasks/:id/approve-deploy
 ```
 
-Two credentials should exist:
+Two authorization paths should exist:
 
 ```text
-ADMIN_KEYS              Used by in-game admins.
+Supabase admin auth     Used by in-game admins.
 AGENT_WORKER_TOKENS     Used by worker machines.
 ```
 
-Do not reuse player/admin keys as worker credentials.
+Do not reuse player auth tokens as worker credentials.
 
 ## Claiming Work
 
@@ -284,11 +284,10 @@ This repo now includes the first vertical slice:
 On the game server, configure:
 
 ```bash
-ADMIN_KEYS=<existing-admin-key-list>
 AGENT_WORKER_TOKENS=<long-random-worker-token>
 ```
 
-The admin browser URL still needs `?adminKey=<admin-key>`. Add `&agentAutoDeploy=1` only for admins who should see the `Auto deploy` mode. The worker still refuses production deploys unless its own deploy environment enables them. Do not commit, screenshot, paste, or link URLs containing a real admin key; rotate the key if one is accidentally shared.
+Admins must sign in through Supabase and have `game_users.is_admin = true`. Add `?agentAutoDeploy=1` only for admins who should see the `Auto deploy` mode. The worker still refuses production deploys unless its own deploy environment enables them.
 
 On the extra PC, install prerequisites:
 

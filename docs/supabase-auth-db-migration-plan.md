@@ -34,10 +34,10 @@ Supabase
 
 - Frontend runtime config is injected by `scripts/build-web.mjs`.
 - The client creates a local guest player id in `src/npc/createNpcService.js`.
-- The Colyseus client passes `playerId` and `adminKey` join options through `src/npc/NpcServiceColyseus.js`.
+- The Colyseus client passes `playerId` and signed-in `accessToken` join options through `src/npc/NpcServiceColyseus.js`.
 - The server loads and saves temporary player snapshots in `server/src/playerSnapshots.js`.
-- The server currently grants admin access from `ADMIN_KEYS` / `adminKey` in `server/src/WorldRoom.js`.
-- The admin HTTP endpoints currently accept `adminKey` in `server/app.config.js`.
+- The server grants admin access from `game_users.is_admin` in `server/src/WorldRoom.js`.
+- The browser admin HTTP endpoints require Supabase Bearer-token auth in `server/app.config.js`.
 - Existing Postgres-backed game tables are created by:
   - `server/src/worldPersistence.js`
   - `server/src/playerSnapshots.js`
@@ -280,14 +280,23 @@ Notes:
 
 Goal: remove URL-key based admin access.
 
+Status: completed locally on 2026-05-19.
+
+Notes:
+
+- `?adminKey=` no longer grants in-game admin access.
+- Colyseus join options no longer include `adminKey`.
+- Browser admin HTTP routes require `Authorization: Bearer <supabase access token>`.
+- Admin HTTP routes verify the Supabase token and require `game_users.is_admin = true`.
+- Agent worker routes still use separate `AGENT_WORKER_TOKEN` / `AGENT_WORKER_TOKENS`.
+
 1. Stop granting admin from `?adminKey=`.
 2. Admin UI visibility comes from server-owned `player.isAdmin`.
 3. Admin HTTP endpoints require `Authorization: Bearer <supabase access token>`.
 4. Backend checks:
    - token is valid
    - `game_users.is_admin = true`
-5. Keep `ADMIN_KEYS` only as a temporary emergency fallback during rollout.
-6. Remove the fallback after production auth is stable.
+5. Keep worker-only auth separate from browser admin auth.
 
 ## Phase 7: Rollout
 

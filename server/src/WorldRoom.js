@@ -254,34 +254,8 @@ const NPC_DEBUG_BROADCAST_INTERVAL_MS = 120;
 const PLAYER_RECONNECTION_GRACE_SECONDS = 30;
 const PLAYER_SNAPSHOT_AUTOSAVE_MS = 5000;
 
-function parseAdminKeys(value = '') {
-  return new Set(
-    String(value)
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-  );
-}
-
 const ADMIN_JOIN_DIAGNOSTIC_LIMIT = 20;
 const adminJoinDiagnostics = [];
-
-function getAdminKeyEnvNames() {
-  return [
-    'ADMIN_KEYS',
-    'ADMIN_KEY'
-  ].filter((key) => process.env[key] !== undefined);
-}
-
-function getAdminJoinRuntimeAccess() {
-  const adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
-  return {
-    adminKeys,
-    adminKeysConfigured: adminKeys.size > 0,
-    adminKeyCount: adminKeys.size,
-    adminKeyEnvNames: getAdminKeyEnvNames()
-  };
-}
 
 function recordAdminJoinDiagnostic(diagnostic = {}) {
   adminJoinDiagnostics.push({
@@ -299,11 +273,9 @@ function normalizeTransformSeq(value) {
 }
 
 export function getWorldRoomAdminDiagnostics() {
-  const runtime = getAdminJoinRuntimeAccess();
   return {
-    adminKeysConfigured: runtime.adminKeysConfigured,
-    adminKeyCount: runtime.adminKeyCount,
-    adminKeyEnvNames: runtime.adminKeyEnvNames,
+    adminSource: 'supabase',
+    urlAdminKeysAccepted: false,
     recentJoins: adminJoinDiagnostics.slice(-ADMIN_JOIN_DIAGNOSTIC_LIMIT)
   };
 }
@@ -964,7 +936,6 @@ export class WorldRoom extends Room {
     this.maxClients = 16;
     this.setState(new WorldRoomState());
     this.syncConnectedPlayerCount();
-    this.adminKeys = parseAdminKeys(process.env.ADMIN_KEYS ?? process.env.ADMIN_KEY ?? '');
     this.chatEngine = new NpcChatEngine();
     this.worldState = new WorldState();
     this.worldPersistence = getWorldPersistence();
@@ -1338,7 +1309,7 @@ export class WorldRoom extends Room {
     const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
     const introSpawn = rentIntro?.spawn ?? null;
     const introStartedAt = rentIntro ? Date.now() : 0;
-    const isAdmin = Boolean(authenticatedAccount?.isAdmin || this.isAdminJoin(options));
+    const isAdmin = authenticatedAccount?.isAdmin === true;
     player.x = quantizePosition(introSpawn?.x ?? spawnX);
     player.z = quantizePosition(introSpawn?.z ?? spawnZ);
     player.rotationY = Number.isFinite(introSpawn?.rotationY) ? quantizeRotation(introSpawn.rotationY) : 0;
@@ -1442,16 +1413,12 @@ export class WorldRoom extends Room {
       this.playerAliasSequence += 1;
       this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
     }
-    const adminRuntime = getAdminJoinRuntimeAccess();
     recordAdminJoinDiagnostic({
       roomId: this.roomId,
       sessionId: client.sessionId,
-      providedAdminKey: typeof options.adminKey === 'string' && options.adminKey.trim().length > 0,
+      authenticated: Boolean(authenticatedAccount),
       isAdmin,
-      adminKeysConfigured: adminRuntime.adminKeysConfigured,
-      adminKeyCount: adminRuntime.adminKeyCount,
-      adminKeyEnvNames: adminRuntime.adminKeyEnvNames,
-      configuredAdminKeyCountAtCreate: this.adminKeys.size
+      userId: authenticatedAccount?.userId ?? ''
     });
     logServer('room', 'Client joined world room.', {
       roomId: this.roomId,
@@ -1635,15 +1602,6 @@ export class WorldRoom extends Room {
       });
       return null;
     }
-  }
-
-  isAdminJoin(options = {}) {
-    const providedKey = typeof options.adminKey === 'string'
-      ? options.adminKey.trim()
-      : '';
-    const runtime = getAdminJoinRuntimeAccess();
-
-    return Boolean(providedKey && runtime.adminKeys.size > 0 && runtime.adminKeys.has(providedKey));
   }
 
   isAdminClient(client) {

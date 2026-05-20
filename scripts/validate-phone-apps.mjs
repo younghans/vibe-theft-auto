@@ -34,6 +34,8 @@ const inputSource = fs.readFileSync(path.join(root, 'src/game/Input.js'), 'utf8'
 const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
 const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
+const createNpcServiceSource = fs.readFileSync(path.join(root, 'src/npc/createNpcService.js'), 'utf8');
+const appConfigSource = fs.readFileSync(path.join(root, 'server/app.config.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'), 'utf8');
 
 assert.match(hudSource, /\['skills', 'Skills'/, 'Skills app is registered on the phone home screen');
@@ -78,6 +80,16 @@ assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio s
 assert.match(hudSource, /data-phone-auth-google/, 'Settings account panel exposes Google sign-in');
 assert.doesNotMatch(hudSource, /data-phone-auth-email/, 'Settings account panel does not expose email magic-link sign-in');
 assert.match(gameSource, /handleAuthGoogleSignIn/, 'Game wires Google sign-in from the phone account panel');
+assert.match(gameSource, /getAdminAuthHeaders/, 'Game sends Supabase bearer auth to admin HTTP routes');
+assert.doesNotMatch(gameSource, /adminKey/, 'Game does not read or submit URL admin keys');
+assert.doesNotMatch(createNpcServiceSource, /adminKey/, 'NPC service creation does not read URL admin keys');
+assert.doesNotMatch(colyseusNpcSource, /adminKey/, 'Colyseus joins do not send URL admin keys');
+assert.doesNotMatch(mockNpcSource, /adminKey/, 'Mock transport does not grant local admin from URL keys');
+assert.match(serverSource, /urlAdminKeysAccepted:\s*false/, 'World room diagnostics report URL admin keys disabled');
+assert.doesNotMatch(serverSource, /isAdminJoin|ADMIN_KEYS|adminKey/, 'World room does not grant admin from URL keys');
+assert.match(appConfigSource, /verifySupabaseAccessToken/, 'Admin HTTP routes verify Supabase access tokens');
+assert.match(appConfigSource, /getSupabaseAdminFromRequest/, 'Admin HTTP routes centralize Supabase admin checks');
+assert.doesNotMatch(appConfigSource, /getAdminKeyFromRequest|isValidAdminKey|x-admin-key/, 'Admin HTTP routes do not accept admin key credentials');
 assert.match(hudSource, /WASD \/ left touch stick/, 'Settings controls list includes movement binding');
 assert.match(hudSource, /Tab \/ phone button/, 'Settings controls list includes phone binding');
 

@@ -2591,13 +2591,16 @@ export class Game {
     });
   }
 
-  getAdminKey() {
-    try {
-      const url = new URL(window.location.href);
-      return url.searchParams.get('adminKey')?.trim() ?? '';
-    } catch {
-      return '';
-    }
+  getAdminAccessToken() {
+    return this.authService?.getAccessToken?.() ?? '';
+  }
+
+  getAdminAuthHeaders(headers = {}) {
+    const token = this.getAdminAccessToken();
+    return {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...headers
+    };
   }
 
   getWorldMapCaptureEndpoint() {
@@ -2631,7 +2634,7 @@ export class Game {
   }
 
   canUseAdminPrompt() {
-    return Boolean(this.isLocalAdmin() && this.getAdminKey());
+    return Boolean(this.isLocalAdmin() && this.getAdminAccessToken());
   }
 
   getAdminPromptThreadIdForTask(taskId = '') {
@@ -2700,10 +2703,12 @@ export class Game {
     const request = (async () => {
       try {
         const url = new URL(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/thread`));
-        url.searchParams.set('adminKey', this.getAdminKey());
         url.searchParams.set('compact', '1');
         url.searchParams.set('readOnly', '1');
-        const response = await fetch(url.toString(), { cache: 'no-store' });
+        const response = await fetch(url.toString(), {
+          cache: 'no-store',
+          headers: this.getAdminAuthHeaders()
+        });
         const result = await response.json().catch(() => null);
         if (!response.ok || !result?.ok) {
           throw new Error(result?.error || 'Could not load prompt thread.');
@@ -3045,7 +3050,6 @@ export class Game {
       return;
     }
 
-    const adminKey = this.getAdminKey();
     this.adminPromptLoading = true;
     this.adminPromptLoadingVisible = Boolean(showLoading);
     this.adminPromptError = '';
@@ -3054,13 +3058,15 @@ export class Game {
     }
     try {
       const url = new URL(this.getAdminAgentTasksEndpoint());
-      url.searchParams.set('adminKey', adminKey);
       url.searchParams.set('scope', ADMIN_PROMPT_TASK_SCOPE);
       url.searchParams.set('limit', String(this.adminPromptThreadLimit));
       url.searchParams.set('view', 'threads');
       url.searchParams.set('compact', '1');
       url.searchParams.set('readOnly', '1');
-      const response = await fetch(url.toString(), { cache: 'no-store' });
+      const response = await fetch(url.toString(), {
+        cache: 'no-store',
+        headers: this.getAdminAuthHeaders()
+      });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not refresh Codex tasks.');
@@ -3166,9 +3172,8 @@ export class Game {
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey: this.getAdminKey(),
           createdBy: this.getAdminPromptCreatedBy(),
           scope: ADMIN_PROMPT_TASK_SCOPE,
           contextType: context.contextType,
@@ -3225,9 +3230,8 @@ export class Game {
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/followups`), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey: this.getAdminKey(),
           createdBy: this.getAdminPromptCreatedBy(),
           scope: ADMIN_PROMPT_TASK_SCOPE,
           contextType: context.contextType,
@@ -3265,9 +3269,8 @@ export class Game {
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/cancel`), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey: this.getAdminKey(),
           createdBy: this.getAdminPromptCreatedBy()
         })
       });
@@ -3292,9 +3295,8 @@ export class Game {
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/approve-deploy`), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey: this.getAdminKey(),
           createdBy: this.getAdminPromptCreatedBy()
         })
       });
@@ -3320,9 +3322,8 @@ export class Game {
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/rollback`), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey: this.getAdminKey(),
           createdBy: this.getAdminPromptCreatedBy()
         })
       });
@@ -3597,8 +3598,7 @@ export class Game {
       return;
     }
 
-    const adminKey = this.getAdminKey();
-    if (!this.isLocalAdmin() || !adminKey) {
+    if (!this.isLocalAdmin() || !this.getAdminAccessToken()) {
       this.hud.showToast('Map capture is admin only.');
       return;
     }
@@ -3618,9 +3618,8 @@ export class Game {
       const dataUrl = await this.captureWorldMapDataUrl({ width, height, bounds });
       const response = await fetch(this.getWorldMapCaptureEndpoint(), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: this.getAdminAuthHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({
-          adminKey,
           dataUrl,
           bounds: normalizeWorldMapBounds(bounds),
           width,
