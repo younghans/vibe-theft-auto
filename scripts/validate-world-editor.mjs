@@ -133,6 +133,7 @@ import {
   PASSIVE_TRAFFIC_LANE_OFFSET,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
+  buildPassiveTrafficRouteLookahead,
   clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
   getPassiveTrafficDriveCommand,
@@ -1261,9 +1262,32 @@ function validatePassiveTraffic() {
       && serializedRoutes[0].points.length === 4,
     'World state should persist closed passive traffic routes by passive car item id'
   );
+  const rightCornerRouteNodeIndices = getPassiveTrafficRouteNodeIndices(rightCornerGraph, serializedRoutes[0]);
   assert(
-    getPassiveTrafficRouteNodeIndices(rightCornerGraph, serializedRoutes[0]).length === 3,
+    rightCornerRouteNodeIndices.length === 3,
     'Passive traffic should resolve saved route points onto road graph nodes for route-following cars'
+  );
+  const rightCornerLookahead = buildPassiveTrafficRouteLookahead(
+    rightCornerGraph,
+    rightCornerRouteNodeIndices,
+    rightCornerSouth.index,
+    0
+  );
+  assert(
+    rightCornerLookahead.route[0] === rightCornerSouth.index
+      && rightCornerLookahead.route[1] === rightCornerNode.index
+      && rightCornerLookahead.route[2] === rightCornerEast.index,
+    'Custom passive traffic routes should provide enough route lookahead for cars to script through corners'
+  );
+  const rightCornerLookaheadScript = getPassiveTrafficDriveScript(
+    rightCornerGraph.nodes[rightCornerLookahead.route[0]],
+    rightCornerGraph.nodes[rightCornerLookahead.route[1]],
+    rightCornerGraph.nodes[rightCornerLookahead.route[2]]
+  );
+  assert(
+    rightCornerLookaheadScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+      && rightCornerLookaheadScript.waypoints.length >= 10,
+    'Custom passive traffic route lookahead should preserve curved right-turn navigation'
   );
 
   const leftCurvedCornerGraph = buildPassiveTrafficRoadGraph([
@@ -1343,6 +1367,7 @@ function validatePassiveTraffic() {
       && /routeAdvanceCount/.test(worldRendererSource)
       && /setPassiveTrafficRoutes/.test(worldRendererSource)
       && /customRouteNodeIndices/.test(worldRendererSource)
+      && /buildPassiveTrafficRouteLookahead/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling'
   );
@@ -1384,15 +1409,18 @@ function validatePassiveTraffic() {
   assert(
     hudSource.includes('--traffic-route-map-aspect')
       && hudSource.includes('hud__traffic-route-end')
+      && hudSource.includes('hud__traffic-route-path--preview')
       && styleSource.includes('aspect-ratio: var(--traffic-route-map-aspect')
       && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end'),
     'Traffic route editor should render the captured phone map without squashing it and mark unfinished route endpoints'
   );
   assert(
     /draftItemId[\s\S]*activeItemId = draftItemId/.test(worldBuilderSource)
+      && /trafficRoutePreview/.test(worldBuilderSource)
+      && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected and resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected, preview drag routes, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')

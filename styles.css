@@ -6561,6 +6561,17 @@ body.is-admin-prompt-resizing * {
   opacity: 0.98;
 }
 
+.hud__traffic-route-path--preview polyline {
+  stroke-width: 4;
+  stroke-dasharray: 5 8;
+  opacity: 0.74;
+}
+
+.hud__traffic-route-path--preview.is-closing polyline {
+  stroke-dasharray: 0;
+  opacity: 0.9;
+}
+
 .hud__traffic-route-actions {
   display: flex;
   flex-wrap: wrap;

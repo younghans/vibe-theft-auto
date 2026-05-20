@@ -8658,6 +8658,7 @@ export class Hud {
     const routes = Array.isArray(trafficRoutes.routes) ? trafficRoutes.routes : [];
     const cars = Array.isArray(trafficRoutes.cars) ? trafficRoutes.cars : [];
     const draft = trafficRoutes.draft ?? null;
+    const preview = trafficRoutes.preview ?? null;
     const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
     const makePointList = (points = []) => points
       .map((point) => {
@@ -8692,6 +8693,16 @@ export class Hud {
           <polyline points="${draftPoints}" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></polyline>
           ${draftFirst ? `<circle class="hud__traffic-route-start" cx="${toX(draftFirst.x).toFixed(1)}" cy="${toY(draftFirst.z).toFixed(1)}" r="5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
           ${draftLast && !draft.closed ? `<circle class="hud__traffic-route-end" cx="${toX(draftLast.x).toFixed(1)}" cy="${toY(draftLast.z).toFixed(1)}" r="6.5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
+        </g>
+      `
+      : '';
+    const previewPoints = preview ? makePointList(preview.points) : '';
+    const previewLast = preview?.points?.[preview.points.length - 1] ?? null;
+    const previewMarkup = previewPoints
+      ? `
+        <g class="hud__traffic-route-path hud__traffic-route-path--preview${preview.closed ? ' is-closing' : ''}">
+          <polyline points="${previewPoints}" style="--traffic-route-color:${escapeHtml(preview.color ?? '#ffffff')}"></polyline>
+          ${previewLast ? `<circle class="hud__traffic-route-end" cx="${toX(previewLast.x).toFixed(1)}" cy="${toY(previewLast.z).toFixed(1)}" r="${preview.closed ? '7.5' : '5.5'}" style="--traffic-route-color:${escapeHtml(preview.color ?? '#ffffff')}"></circle>` : ''}
         </g>
       `
       : '';
@@ -8748,7 +8759,7 @@ export class Hud {
             <rect class="hud__traffic-route-map-bg" width="${width}" height="${height}" rx="8"></rect>
             ${imageMarkup}
             <g class="hud__traffic-route-roads">${roadMarkup}</g>
-            <g class="hud__traffic-route-lines">${routeMarkup}${draftMarkup}</g>
+            <g class="hud__traffic-route-lines">${routeMarkup}${draftMarkup}${previewMarkup}</g>
           </svg>
         </div>
         <div class="hud__traffic-route-actions">

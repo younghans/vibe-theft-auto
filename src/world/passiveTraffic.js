@@ -741,6 +741,70 @@ export function findPassiveTrafficPath(graph, startIndex, goalIndex) {
   return [];
 }
 
+export function buildPassiveTrafficRouteLookahead(graph, routeNodeIndices = [], currentNodeIndex = null, cursor = 0) {
+  if (!graph?.activeNodeSet?.has(currentNodeIndex)) {
+    return {
+      route: [],
+      cursor: 0
+    };
+  }
+
+  const routeNodes = [];
+  for (const nodeIndex of Array.isArray(routeNodeIndices) ? routeNodeIndices : []) {
+    if (!graph.activeNodeSet.has(nodeIndex)) {
+      continue;
+    }
+    if (routeNodes[routeNodes.length - 1] !== nodeIndex) {
+      routeNodes.push(nodeIndex);
+    }
+  }
+
+  if (routeNodes.length > 1 && routeNodes[0] === routeNodes[routeNodes.length - 1]) {
+    routeNodes.pop();
+  }
+
+  if (routeNodes.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+    return {
+      route: [],
+      cursor: 0
+    };
+  }
+
+  const normalizedCursor = ((Math.round(Number(cursor) || 0) % routeNodes.length) + routeNodes.length) % routeNodes.length;
+  const currentCursor = routeNodes.findIndex((nodeIndex) => nodeIndex === currentNodeIndex);
+  let nextCursor = currentCursor >= 0
+    ? (currentCursor + 1) % routeNodes.length
+    : normalizedCursor;
+  let currentIndex = currentNodeIndex;
+  const output = [currentNodeIndex];
+  const maxDestinations = Math.max(routeNodes.length + 1, 3);
+
+  for (let offset = 0; offset < maxDestinations; offset += 1) {
+    const destinationIndex = routeNodes[nextCursor];
+    nextCursor = (nextCursor + 1) % routeNodes.length;
+    if (destinationIndex === currentIndex) {
+      continue;
+    }
+
+    const path = findPassiveTrafficPath(graph, currentIndex, destinationIndex);
+    if (path.length < 2) {
+      break;
+    }
+
+    for (const pathNodeIndex of path.slice(1)) {
+      if (output[output.length - 1] !== pathNodeIndex) {
+        output.push(pathNodeIndex);
+      }
+    }
+    currentIndex = destinationIndex;
+  }
+
+  return {
+    route: output.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES ? output : [],
+    cursor: nextCursor
+  };
+}
+
 function getPassiveTrafficRoutePointNodeIndex(graph, point = null) {
   if (!graph?.activeNodeSet || !point) {
     return null;

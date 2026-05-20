@@ -346,6 +346,7 @@ function createDefaultEditorState() {
     missionSequencerPrompt: '',
     activeTrafficRouteCarItemId: PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] ?? '',
     trafficRouteDraft: null,
+    trafficRoutePreview: null,
     trafficRouteDrawing: false,
     rotationQuarterTurns: 0,
     propRotationEighthTurns: 0,
@@ -795,6 +796,13 @@ export class WorldBuilder {
         ? {
             ...this.state.trafficRouteDraft,
             color: getTrafficRouteCarColor(this.state.trafficRouteDraft.itemId),
+            drawing: this.state.trafficRouteDrawing
+          }
+        : null,
+      preview: this.state.trafficRoutePreview
+        ? {
+            ...this.state.trafficRoutePreview,
+            color: getTrafficRouteCarColor(this.state.trafficRouteDraft?.itemId ?? activeItemId),
             drawing: this.state.trafficRouteDrawing
           }
         : null,
@@ -1632,6 +1640,63 @@ export class WorldBuilder {
     return bestNode;
   }
 
+  createTrafficRouteDraftPreview(nodeIndex, graph = this.getTrafficRouteGraph()) {
+    const draft = this.state.trafficRouteDraft;
+    const node = graph?.nodes?.[nodeIndex];
+    const nodeIndices = draft?.nodeIndices ?? [];
+    if (!draft || !node || !graph.activeNodeSet.has(nodeIndex) || !nodeIndices.length || draft.closed) {
+      return null;
+    }
+
+    const firstNodeIndex = nodeIndices[0];
+    const lastNodeIndex = nodeIndices[nodeIndices.length - 1];
+    let targetNodeIndex = nodeIndex;
+    if (nodeIndex === lastNodeIndex) {
+      if (nodeIndices.length < 3) {
+        return null;
+      }
+      targetNodeIndex = firstNodeIndex;
+    }
+
+    if (targetNodeIndex === firstNodeIndex && nodeIndices.length < 3) {
+      return null;
+    }
+
+    const path = findPassiveTrafficPath(graph, lastNodeIndex, targetNodeIndex);
+    if (path.length < 2) {
+      return null;
+    }
+
+    const points = [];
+    for (const pathNodeIndex of path) {
+      const pathNode = graph.nodes[pathNodeIndex];
+      const point = createTrafficRoutePointFromNode(pathNode);
+      if (point) {
+        points.push(point);
+      }
+    }
+
+    return {
+      points,
+      nodeIndices: path,
+      closed: targetNodeIndex === firstNodeIndex
+    };
+  }
+
+  setTrafficRouteDraftPreview(nodeIndex, graph = this.getTrafficRouteGraph()) {
+    const preview = this.createTrafficRouteDraftPreview(nodeIndex, graph);
+    const previousKey = (this.state.trafficRoutePreview?.nodeIndices ?? []).join(',');
+    const nextKey = (preview?.nodeIndices ?? []).join(',');
+    const previousClosed = this.state.trafficRoutePreview?.closed === true;
+    const nextClosed = preview?.closed === true;
+    if (previousKey === nextKey && previousClosed === nextClosed) {
+      return false;
+    }
+
+    this.state.trafficRoutePreview = preview;
+    return true;
+  }
+
   appendTrafficRouteDraftNode(nodeIndex, graph = this.getTrafficRouteGraph()) {
     const draft = this.state.trafficRouteDraft;
     const node = graph?.nodes?.[nodeIndex];
@@ -1639,33 +1704,37 @@ export class WorldBuilder {
       return false;
     }
 
-    const points = draft.points ?? [];
-    const nodeIndices = draft.nodeIndices ?? [];
+    draft.points = Array.isArray(draft.points) ? draft.points : [];
+    draft.nodeIndices = Array.isArray(draft.nodeIndices) ? draft.nodeIndices : [];
+    const nodeIndices = draft.nodeIndices;
     if (!nodeIndices.length) {
       draft.points = [createTrafficRoutePointFromNode(node)];
       draft.nodeIndices = [nodeIndex];
       draft.closed = false;
+      this.state.trafficRoutePreview = null;
       return true;
     }
 
     const firstNodeIndex = nodeIndices[0];
     const lastNodeIndex = nodeIndices[nodeIndices.length - 1];
+    let targetNodeIndex = nodeIndex;
     if (nodeIndex === lastNodeIndex) {
+      if (nodeIndices.length < 3) {
+        return false;
+      }
+      targetNodeIndex = firstNodeIndex;
+    }
+
+    if (targetNodeIndex === firstNodeIndex && nodeIndices.length < 3) {
       return false;
     }
 
-    if (nodeIndex === firstNodeIndex && nodeIndices.length >= 3) {
-      draft.points.push({ ...draft.points[0] });
-      draft.nodeIndices.push(firstNodeIndex);
-      draft.closed = true;
-      return true;
-    }
-
-    const path = findPassiveTrafficPath(graph, lastNodeIndex, nodeIndex);
+    const path = findPassiveTrafficPath(graph, lastNodeIndex, targetNodeIndex);
     if (path.length < 2) {
       return false;
     }
 
+    let changed = false;
     for (const pathNodeIndex of path.slice(1)) {
       if (pathNodeIndex === nodeIndices[nodeIndices.length - 1]) {
         continue;
@@ -1675,15 +1744,20 @@ export class WorldBuilder {
         draft.points.push({ ...draft.points[0] });
         draft.nodeIndices.push(firstNodeIndex);
         draft.closed = true;
+        this.state.trafficRoutePreview = null;
         return true;
       }
 
       const pathNode = graph.nodes[pathNodeIndex];
       draft.points.push(createTrafficRoutePointFromNode(pathNode));
       draft.nodeIndices.push(pathNodeIndex);
+      changed = true;
     }
 
-    return true;
+    if (changed) {
+      this.state.trafficRoutePreview = null;
+    }
+    return changed;
   }
 
   beginTrafficRouteFromCar(itemId = '', point = null) {
@@ -1711,6 +1785,7 @@ export class WorldBuilder {
       nodeIndices: [],
       closed: false
     };
+    this.state.trafficRoutePreview = null;
     this.appendTrafficRouteDraftNode(node.index, graph);
     this.updateBuilderHud();
   }
@@ -1739,7 +1814,7 @@ export class WorldBuilder {
       return;
     }
 
-    if (this.appendTrafficRouteDraftNode(node.index, graph)) {
+    if (this.setTrafficRouteDraftPreview(node.index, graph)) {
       this.updateBuilderHud();
     }
   }
@@ -1749,17 +1824,23 @@ export class WorldBuilder {
       return;
     }
 
-    this.continueTrafficRouteDrawing(point);
+    const graph = this.getTrafficRouteGraph();
+    const node = this.getNearestTrafficRouteNode(point, graph);
+    const changed = node ? this.appendTrafficRouteDraftNode(node.index, graph) : false;
     this.state.trafficRouteDrawing = false;
+    this.state.trafficRoutePreview = null;
     if (this.state.trafficRouteDraft?.closed) {
       await this.saveTrafficRouteDraft();
       return;
     }
-    this.updateBuilderHud();
+    if (changed || this.state.trafficRouteDraft) {
+      this.updateBuilderHud();
+    }
   }
 
   clearTrafficRouteDraft() {
     this.state.trafficRouteDraft = null;
+    this.state.trafficRoutePreview = null;
     this.state.trafficRouteDrawing = false;
     this.updateBuilderHud();
   }
@@ -1803,6 +1884,7 @@ export class WorldBuilder {
     const updated = await this.updatePassiveTrafficRoutes(nextRoutes, 'Traffic route cleared.');
     if (updated && this.state.trafficRouteDraft?.itemId === itemId) {
       this.state.trafficRouteDraft = null;
+      this.state.trafficRoutePreview = null;
       this.state.trafficRouteDrawing = false;
       this.updateBuilderHud();
     }

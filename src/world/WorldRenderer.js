@@ -31,6 +31,7 @@ import {
   PASSIVE_TRAFFIC_MIN_ROAD_NODES,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
+  buildPassiveTrafficRouteLookahead,
   clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
   getPassiveTrafficDriveCommand,
@@ -1862,7 +1863,7 @@ export class WorldRenderer {
     }
 
     const currentNode = graph.nodes[car.currentNodeIndex];
-    const targetNode = graph.nodes[car.targetNodeIndex];
+    const targetNode = graph.nodes[car.turnThroughNodeIndex ?? car.targetNodeIndex];
     getPassiveTrafficLanePositionAtNode(currentNode, targetNode, object.position);
     object.position.y = this.getSurfaceHeightAtPosition(object.position.x, object.position.z);
     car.yaw = Math.atan2(
@@ -2081,34 +2082,21 @@ export class WorldRenderer {
       return false;
     }
 
-    let cursor = Number.isInteger(car.customRouteCursor) ? car.customRouteCursor : 0;
-    if (routeNodes[cursor] !== car.currentNodeIndex) {
-      cursor = routeNodes.findIndex((nodeIndex) => nodeIndex === car.currentNodeIndex);
-      if (cursor < 0) {
-        cursor = 0;
-      }
+    const lookahead = buildPassiveTrafficRouteLookahead(
+      graph,
+      routeNodes,
+      car.currentNodeIndex,
+      car.customRouteCursor
+    );
+    if (lookahead.route.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      return false;
     }
 
-    for (let offset = 1; offset <= routeNodes.length; offset += 1) {
-      const destinationCursor = (cursor + offset) % routeNodes.length;
-      const destinationIndex = routeNodes[destinationCursor];
-      if (destinationIndex === car.currentNodeIndex || !graph.activeNodeSet.has(destinationIndex)) {
-        continue;
-      }
-
-      const route = findPassiveTrafficPath(graph, car.currentNodeIndex, destinationIndex);
-      if (route.length < 2) {
-        continue;
-      }
-
-      car.route = route;
-      car.routeCursor = 1;
-      car.routeDestinationIndex = destinationIndex;
-      car.customRouteCursor = destinationCursor;
-      return this.advancePassiveTrafficTarget(car);
-    }
-
-    return false;
+    car.route = lookahead.route;
+    car.routeCursor = 1;
+    car.routeDestinationIndex = car.route[car.route.length - 1] ?? null;
+    car.customRouteCursor = lookahead.cursor;
+    return this.advancePassiveTrafficTarget(car);
   }
 
   assignPassiveTrafficRoute(car) {
