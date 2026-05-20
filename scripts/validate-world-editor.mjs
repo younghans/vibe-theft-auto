@@ -1734,6 +1734,26 @@ function validateFootprintSupport() {
       && /openSchoolMicrogame\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'school-microgame' \}/.test(mainGameSource),
     'NPC and prop function interactions should route through the cutscene-style interaction camera'
   );
+  const getMainGameNumericConst = (name) => {
+    const match = mainGameSource.match(new RegExp(`const\\s+${name}\\s*=\\s*([0-9.]+);`));
+    return match ? Number(match[1]) : NaN;
+  };
+  const interactionCameraShoulderDistance = getMainGameNumericConst('INTERACTION_CAMERA_SHOULDER_DISTANCE');
+  const interactionCameraShoulderOffset = getMainGameNumericConst('INTERACTION_CAMERA_SHOULDER_OFFSET');
+  const interactionCameraHeight = getMainGameNumericConst('INTERACTION_CAMERA_HEIGHT');
+  const interactionCameraNpcLookHeight = getMainGameNumericConst('INTERACTION_CAMERA_NPC_LOOK_HEIGHT');
+  assert(
+    interactionCameraShoulderDistance >= 1.8
+      && interactionCameraShoulderDistance <= 2.4
+      && interactionCameraShoulderOffset >= 1
+      && interactionCameraShoulderOffset <= 1.4
+      && interactionCameraHeight >= 3.2
+      && interactionCameraHeight <= 3.8
+      && interactionCameraNpcLookHeight >= 3.1
+      && /INTERACTION_CAMERA_LOOK_SIDE_OFFSET/.test(mainGameSource)
+      && /cameraLookTarget\.copy\(lookTarget\)[\s\S]*addScaledVector\(right,\s*INTERACTION_CAMERA_LOOK_SIDE_OFFSET\)[\s\S]*camera\.lookAt\(framedLookTarget\)/.test(mainGameSource),
+    'Interaction camera should frame over the player shoulder with the player near the edge of the view'
+  );
   assert(
     /cloneGarageDoorDefinition/.test(worldRendererSource),
     'World renderer should preserve garage-door interaction metadata'

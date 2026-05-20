@@ -226,12 +226,14 @@ const INTERACTION_CAMERA_FOV = 42;
 const INTERACTION_CAMERA_SMOOTHING = 0.12;
 const INTERACTION_CAMERA_FOV_SMOOTHING = 0.18;
 const INTERACTION_CAMERA_RETURN_FOV_SMOOTHING = 0.12;
-const INTERACTION_CAMERA_SHOULDER_DISTANCE = 2.75;
-const INTERACTION_CAMERA_SHOULDER_OFFSET = 0.7;
-const INTERACTION_CAMERA_HEIGHT = 2.65;
-const INTERACTION_CAMERA_PLAYER_LOOK_HEIGHT = 2.15;
-const INTERACTION_CAMERA_NPC_LOOK_HEIGHT = 2.5;
-const INTERACTION_CAMERA_OBJECT_LOOK_HEIGHT = 1.45;
+const INTERACTION_CAMERA_SHOULDER_DISTANCE = 2.35;
+const INTERACTION_CAMERA_SHOULDER_OFFSET = 1.18;
+const INTERACTION_CAMERA_HEIGHT = 3.45;
+const INTERACTION_CAMERA_PLAYER_LOOK_HEIGHT = 3.3;
+const INTERACTION_CAMERA_NPC_LOOK_HEIGHT = 3.35;
+const INTERACTION_CAMERA_OBJECT_LOOK_HEIGHT = 1.55;
+const INTERACTION_CAMERA_LOOK_OVER_LIFT = 0.18;
+const INTERACTION_CAMERA_LOOK_SIDE_OFFSET = 0.28;
 const INTERACTION_CAMERA_MIN_MS = 900;
 const INTERACTION_CAMERA_TRANSIENT_MS = 1250;
 function createCameraMovementForward(cameraOffset) {
@@ -18051,16 +18053,21 @@ export class Game {
     const targetPosition = this.cameraTargetPosition.copy(playerLookTarget)
       .addScaledVector(forward, -INTERACTION_CAMERA_SHOULDER_DISTANCE)
       .addScaledVector(right, INTERACTION_CAMERA_SHOULDER_OFFSET);
-    targetPosition.y = this.player.position.y + INTERACTION_CAMERA_HEIGHT;
-    const minimumCameraY = Math.min(lookTarget.y + 0.35, this.player.position.y + INTERACTION_CAMERA_HEIGHT + 0.5);
-    targetPosition.y = Math.max(targetPosition.y, minimumCameraY);
+    const shoulderCameraY = this.player.position.y + INTERACTION_CAMERA_HEIGHT;
+    const maximumCameraY = shoulderCameraY + 0.35;
+    targetPosition.y = Math.max(
+      shoulderCameraY,
+      Math.min(lookTarget.y + INTERACTION_CAMERA_LOOK_OVER_LIFT, maximumCameraY)
+    );
 
     if (snap) {
       this.camera.position.copy(targetPosition);
     } else {
       this.camera.position.lerp(targetPosition, INTERACTION_CAMERA_SMOOTHING);
     }
-    this.camera.lookAt(lookTarget);
+    const framedLookTarget = this.cameraLookTarget.copy(lookTarget)
+      .addScaledVector(right, INTERACTION_CAMERA_LOOK_SIDE_OFFSET);
+    this.camera.lookAt(framedLookTarget);
     this.updateCameraFov(INTERACTION_CAMERA_FOV, {
       snap,
       smoothing: INTERACTION_CAMERA_FOV_SMOOTHING
