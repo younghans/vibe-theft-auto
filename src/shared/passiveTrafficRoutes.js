@@ -16,6 +16,16 @@ function normalizeRouteLabel(value = '') {
   return String(value ?? '').trim().slice(0, 48);
 }
 
+function normalizeRouteIdBase(value = '') {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64);
+  return normalized || 'car';
+}
+
 export function normalizePassiveTrafficRoutePoint(point = null) {
   const x = Number(point?.x ?? point?.position?.[0]);
   const z = Number(point?.z ?? point?.position?.[1]);
@@ -98,18 +108,44 @@ export function normalizePassiveTrafficRoute(route = null) {
 
 export function normalizePassiveTrafficRoutes(routes = []) {
   const normalized = [];
-  const seenItemIds = new Set();
+  const seenRouteIds = new Set();
   for (const route of Array.isArray(routes) ? routes : []) {
     const nextRoute = normalizePassiveTrafficRoute(route);
-    if (!nextRoute || seenItemIds.has(nextRoute.itemId)) {
+    if (!nextRoute) {
       continue;
     }
+
+    const baseRouteId = nextRoute.id;
+    let routeId = baseRouteId;
+    for (let suffix = 2; seenRouteIds.has(routeId); suffix += 1) {
+      const suffixText = `_${suffix}`;
+      routeId = `${baseRouteId.slice(0, Math.max(1, 80 - suffixText.length))}${suffixText}`;
+    }
+    nextRoute.id = routeId;
     normalized.push(nextRoute);
-    seenItemIds.add(nextRoute.itemId);
+    seenRouteIds.add(routeId);
   }
   return normalized;
 }
 
 export function clonePassiveTrafficRoutes(routes = []) {
   return normalizePassiveTrafficRoutes(routes);
+}
+
+export function createPassiveTrafficRouteId(itemId = '', routes = []) {
+  const baseRouteId = `traffic_route_${normalizeRouteIdBase(itemId)}`.slice(0, 80);
+  const seenRouteIds = new Set(clonePassiveTrafficRoutes(routes).map((route) => route.id));
+  if (!seenRouteIds.has(baseRouteId)) {
+    return baseRouteId;
+  }
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const suffixText = `_${suffix}`;
+    const routeId = `${baseRouteId.slice(0, Math.max(1, 80 - suffixText.length))}${suffixText}`;
+    if (!seenRouteIds.has(routeId)) {
+      return routeId;
+    }
+  }
+
+  return `${baseRouteId}_${Math.round(Date.now())}`.slice(0, 80);
 }

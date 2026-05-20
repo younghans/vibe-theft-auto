@@ -1073,15 +1073,17 @@ function assertVehicleModelGrounding() {
 
 function validatePassiveTraffic() {
   assert(
-    PASSIVE_TRAFFIC_CAR_ITEM_IDS.length >= 3
+    PASSIVE_TRAFFIC_CAR_ITEM_IDS.length >= 4
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] === 'car_sedan'
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[1] === 'car_stationwagon'
-      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[2] === 'car_taxi',
-    'Passive traffic should expose the current Sedan, Station wagon, and Taxi cars first while allowing future passive cars'
+      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[2] === 'car_taxi'
+      && PASSIVE_TRAFFIC_CAR_ITEM_IDS[3] === 'car_police',
+    'Passive traffic should expose Sedan, Station wagon, Taxi, and Car Police as routeable passive cars'
   );
   for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
     const item = getBuilderItemById(itemId);
     assert(item?.layer === 'prop' && item.groupId === 'vehicles', `Passive traffic car ${itemId} should resolve to a vehicle prop`);
+    assert(item.size?.[0] === 6.5 && item.size?.[1] === 12, `Passive traffic car ${itemId} should use the standard vehicle prop footprint`);
   }
   assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.68, 'Passive traffic cars should render at 0.85x their previous passive size');
   assert(PASSIVE_TRAFFIC_CAR_SCALE < VEHICLE_PROP_PLACEMENT_SCALE, 'Passive traffic cars should no longer render larger than player-owned vehicle props');
@@ -1374,6 +1376,22 @@ function validatePassiveTraffic() {
       && serializedRoutes[0].points.length === 4,
     'World state should persist closed passive traffic routes by passive car item id'
   );
+  const duplicateRouteState = new WorldState();
+  duplicateRouteState.loadLayout({
+    tiles: routeState.serializeLayout().tiles,
+    passiveTrafficRoutes: [
+      { ...serializedRoutes[0], id: 'traffic_route_car_sedan_a' },
+      { ...serializedRoutes[0], id: 'traffic_route_car_sedan_b' }
+    ]
+  });
+  const duplicateSerializedRoutes = duplicateRouteState.serializeLayout().passiveTrafficRoutes;
+  assert(
+    duplicateSerializedRoutes.length === 2
+      && duplicateSerializedRoutes[0].itemId === 'car_sedan'
+      && duplicateSerializedRoutes[1].itemId === 'car_sedan'
+      && duplicateSerializedRoutes[0].id !== duplicateSerializedRoutes[1].id,
+    'Passive traffic route persistence should allow multiple route cars of the same vehicle type'
+  );
   const rightCornerRouteNodeIndices = getPassiveTrafficRouteNodeIndices(rightCornerGraph, serializedRoutes[0]);
   assert(
     rightCornerRouteNodeIndices.length === 3,
@@ -1478,10 +1496,13 @@ function validatePassiveTraffic() {
       && /clampPassiveTrafficPositionToRoadNodes/.test(worldRendererSource)
       && /routeAdvanceCount/.test(worldRendererSource)
       && /setPassiveTrafficRoutes/.test(worldRendererSource)
+      && /passiveTrafficRoutesById/.test(worldRendererSource)
+      && /createPassiveTrafficCarSpecs/.test(worldRendererSource)
+      && /routeId/.test(worldRendererSource)
       && /customRouteNodeIndices/.test(worldRendererSource)
       && /buildPassiveTrafficRouteLookahead/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource)
-      && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature\)/.test(worldRendererSource)
+      && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling and keep route-aware async car loads alive'
@@ -1497,10 +1518,14 @@ function validatePassiveTraffic() {
   assert(
     worldBuilderSource.includes("id: 'traffic-routes'")
       && worldBuilderSource.includes('beginTrafficRouteFromCar')
+      && worldBuilderSource.includes('addTrafficRouteCar')
+      && worldBuilderSource.includes('selectTrafficRoute')
       && worldBuilderSource.includes('findPassiveTrafficPath')
       && hudSource.includes('data-builder-traffic-map')
+      && hudSource.includes('data-builder-traffic-add-car')
+      && hudSource.includes('data-builder-traffic-route')
       && hudSource.includes('application/x-vta-traffic-car'),
-    'World builder should expose a Traffic Routes tab with map drawing and draggable passive car icons'
+    'World builder should expose a Traffic Routes tab with map drawing, a route list, and draggable add-new passive car icons'
   );
   assert(
     worldBuilderSource.includes('getTrafficRouteMapDimensions')
@@ -1528,15 +1553,21 @@ function validatePassiveTraffic() {
       && hudSource.includes('hud__traffic-route-path--preview')
       && hudSource.includes('data-builder-traffic-map-content')
       && hudSource.includes('data-builder-traffic-zoom')
+      && hudSource.includes('Add New Car')
+      && hudSource.includes('Route List')
       && styleSource.includes('aspect-ratio: var(--traffic-route-map-aspect')
       && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end')
       && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-waypoint')
+      && styleSource.includes('.hud__traffic-route-list-item')
+      && styleSource.includes('.hud__traffic-route-car-count')
       && styleSource.includes('overflow: auto;')
       && styleSource.includes('.hud__traffic-route-zoom'),
-    'Traffic route editor should render the captured phone map without squashing it, support map zoom/scroll, and mark unfinished route endpoints'
+    'Traffic route editor should render the captured phone map without squashing it, support map zoom/scroll, list saved route cars, add new cars, and mark unfinished route endpoints'
   );
   assert(
     /draftItemId[\s\S]*activeItemId = draftItemId/.test(worldBuilderSource)
+      && /activeTrafficRouteId/.test(worldBuilderSource)
+      && /createPassiveTrafficRouteId/.test(worldBuilderSource)
       && /trafficRoutePreview/.test(worldBuilderSource)
       && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
       && /waypointNodeIndices/.test(worldBuilderSource)
@@ -1554,7 +1585,7 @@ function validatePassiveTraffic() {
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*shouldRemoveWaypoint[\s\S]*removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, remove previous waypoints on click release, and leave clicks resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected per route car, prefer reachable road components, preview drag routes, close only at the start node, remove previous waypoints on click release, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')

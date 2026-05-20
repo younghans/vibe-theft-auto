@@ -6629,6 +6629,103 @@ body.is-admin-prompt-resizing * {
   display: none;
 }
 
+.hud__traffic-route-list,
+.hud__traffic-route-add {
+  display: grid;
+  gap: 8px;
+}
+
+.hud__traffic-route-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(247, 240, 229, 0.78);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__traffic-route-subhead strong {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(247, 240, 229, 0.88);
+  text-align: center;
+}
+
+.hud__traffic-route-list-item {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 3px solid var(--traffic-car-accent, #f2c871);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.76);
+  color: #f7f0e5;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud__traffic-route-list-item:hover,
+.hud__traffic-route-list-item:focus-visible,
+.hud__traffic-route-list-item.is-active {
+  border-color: color-mix(in srgb, var(--traffic-car-accent, #f2c871) 72%, white 0%);
+  background: rgba(15, 24, 36, 0.96);
+}
+
+.hud__traffic-route-list-thumb {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hud__traffic-route-list-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hud__traffic-route-list-copy strong,
+.hud__traffic-route-list-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__traffic-route-list-copy strong {
+  color: rgba(247, 240, 229, 0.94);
+  font-size: 12px;
+  line-height: 1.12;
+}
+
+.hud__traffic-route-list-copy em,
+.hud__traffic-route-empty {
+  color: rgba(247, 240, 229, 0.58);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+.hud__traffic-route-empty {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(9, 15, 24, 0.5);
+}
+
 .hud__traffic-route-cars {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
@@ -6636,6 +6733,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__traffic-route-car {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(54px, 1fr) auto;
   gap: 6px;
@@ -6695,6 +6793,22 @@ body.is-admin-prompt-resizing * {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hud__traffic-route-car-count {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(6, 12, 19, 0.88);
+  color: rgba(247, 240, 229, 0.86);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
 }
 
 .hud__mission-sequencer-list {

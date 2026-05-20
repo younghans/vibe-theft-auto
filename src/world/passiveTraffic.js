@@ -6,7 +6,8 @@ import { getBuilderItemById } from './builderCatalog.js';
 export const PASSIVE_TRAFFIC_CAR_ITEM_IDS = Object.freeze([
   'car_sedan',
   'car_stationwagon',
-  'car_taxi'
+  'car_taxi',
+  'car_police'
 ]);
 
 export const PASSIVE_TRAFFIC_CAR_SCALE = 0.68;

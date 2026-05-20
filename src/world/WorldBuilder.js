@@ -27,6 +27,7 @@ import {
   getPlacementScale,
   normalizePropPlacementScale
 } from '../shared/placementScale.js';
+import { createPassiveTrafficRouteId } from '../shared/passiveTrafficRoutes.js';
 import { WEAPON_IDS } from '../shared/combatConstants.js';
 import {
   MISSION_SEQUENCE_SECTIONS,
@@ -345,6 +346,7 @@ function createDefaultEditorState() {
     missionSequencerActiveTab: MISSION_SEQUENCE_SECTIONS.main,
     missionSequencerPrompt: '',
     activeTrafficRouteCarItemId: PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] ?? '',
+    activeTrafficRouteId: '',
     trafficRouteDraft: null,
     trafficRoutePreview: null,
     trafficRouteDrawing: false,
@@ -631,8 +633,10 @@ export class WorldBuilder {
       onTrafficRouteDrawMove: (point) => this.continueTrafficRouteDrawing(point),
       onTrafficRouteDrawEnd: (point) => void this.finishTrafficRouteDrawing(point),
       onTrafficRouteClearDraft: () => this.clearTrafficRouteDraft(),
-      onTrafficRouteDelete: (itemId) => void this.deletePassiveTrafficRoute(itemId),
-      onTrafficRouteSelectCar: (itemId) => this.selectTrafficRouteCar(itemId)
+      onTrafficRouteDelete: (routeId) => void this.deletePassiveTrafficRoute(routeId),
+      onTrafficRouteSelectCar: (itemId) => this.selectTrafficRouteCar(itemId),
+      onTrafficRouteAddCar: (itemId) => this.addTrafficRouteCar(itemId),
+      onTrafficRouteSelectRoute: (routeId) => this.selectTrafficRoute(routeId)
     });
     this.updateBuilderHud();
     this.hud.setBuilderSelection(null);
@@ -754,14 +758,28 @@ export class WorldBuilder {
     const image = currentImage && this.isWorldMapImageFresh(currentImage) ? currentImage : null;
     const dimensions = getTrafficRouteMapDimensions(image);
     const routes = this.worldState.getPassiveTrafficRoutes();
-    const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
+    const routeById = new Map(routes.map((route) => [route.id, route]));
     const draftItemId = PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.trafficRouteDraft?.itemId)
       ? this.state.trafficRouteDraft.itemId
       : '';
-    const activeItemId = draftItemId || (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.activeTrafficRouteCarItemId)
+    const draftRouteId = String(this.state.trafficRouteDraft?.id ?? '');
+    const currentActiveRouteId = String(this.state.activeTrafficRouteId ?? '');
+    let selectedRoute = routeById.get(currentActiveRouteId) ?? null;
+    if (!draftRouteId && !currentActiveRouteId && routes.length) {
+      selectedRoute = routes.find((route) => route.itemId === this.state.activeTrafficRouteCarItemId) ?? routes[0] ?? null;
+    }
+    const activeRouteId = draftRouteId || selectedRoute?.id || currentActiveRouteId;
+    const activeItemId = draftItemId || selectedRoute?.itemId || (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.activeTrafficRouteCarItemId)
       ? this.state.activeTrafficRouteCarItemId
       : (PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] ?? ''));
     this.state.activeTrafficRouteCarItemId = activeItemId;
+    this.state.activeTrafficRouteId = activeRouteId;
+
+    const routeTypeCounts = new Map();
+    const routeTypeSeen = new Map();
+    for (const route of routes) {
+      routeTypeCounts.set(route.itemId, (routeTypeCounts.get(route.itemId) ?? 0) + 1);
+    }
 
     return {
       width: dimensions.width,
@@ -777,22 +795,32 @@ export class WorldBuilder {
       })),
       cars: PASSIVE_TRAFFIC_CAR_ITEM_IDS.map((itemId, index) => {
         const item = getBuilderItemById(itemId);
-        const route = routeByItemId.get(itemId) ?? null;
+        const routeCount = routeTypeCounts.get(itemId) ?? 0;
         return {
           itemId,
           label: item?.label ?? titleCaseLabel(itemId),
           previewId: itemId,
           color: getTrafficRouteCarColor(itemId, index),
-          active: itemId === activeItemId,
-          hasRoute: Boolean(route),
-          pointCount: route?.points?.length ?? 0
+          active: itemId === activeItemId && !routeById.has(activeRouteId),
+          routeCount
         };
       }),
-      routes: routes.map((route, index) => ({
-        ...route,
-        color: getTrafficRouteCarColor(route.itemId, index),
-        active: route.itemId === activeItemId
-      })),
+      routes: routes.map((route, index) => {
+        const item = getBuilderItemById(route.itemId);
+        const baseLabel = route.label || item?.label || titleCaseLabel(route.itemId);
+        const instanceNumber = (routeTypeSeen.get(route.itemId) ?? 0) + 1;
+        routeTypeSeen.set(route.itemId, instanceNumber);
+        return {
+          ...route,
+          routeId: route.id,
+          label: routeTypeCounts.get(route.itemId) > 1 ? `${baseLabel} ${instanceNumber}` : baseLabel,
+          baseLabel,
+          previewId: route.itemId,
+          color: getTrafficRouteCarColor(route.itemId, index),
+          active: route.id === activeRouteId,
+          pointCount: route.points?.length ?? 0
+        };
+      }),
       draft: this.state.trafficRouteDraft
         ? {
             ...this.state.trafficRouteDraft,
@@ -809,6 +837,7 @@ export class WorldBuilder {
           }
         : null,
       activeItemId,
+      activeRouteId,
       roadCount: graph.activeNodeIndices.length
     };
   }
@@ -1614,8 +1643,55 @@ export class WorldBuilder {
       return;
     }
 
+    const route = this.worldState.getPassiveTrafficRoutes().find((entry) => entry.itemId === itemId) ?? null;
     this.state.activeTrafficRouteCarItemId = itemId;
-    if (this.state.trafficRouteDraft?.itemId && this.state.trafficRouteDraft.itemId !== itemId) {
+    this.state.activeTrafficRouteId = route?.id ?? '';
+    if (
+      this.state.trafficRouteDraft?.itemId
+      && (
+        this.state.trafficRouteDraft.itemId !== itemId
+        || (route?.id && this.state.trafficRouteDraft.id !== route.id)
+      )
+    ) {
+      this.state.trafficRouteDraft = null;
+      this.state.trafficRoutePreview = null;
+      this.state.trafficRouteDrawing = false;
+      this.state.trafficRoutePendingRemoveNodeIndex = null;
+    }
+    this.updateBuilderHud();
+  }
+
+  addTrafficRouteCar(itemId = '') {
+    if (!PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(itemId)) {
+      return;
+    }
+
+    this.state.activeTrafficRouteCarItemId = itemId;
+    this.state.activeTrafficRouteId = createPassiveTrafficRouteId(itemId, this.worldState.getPassiveTrafficRoutes());
+    if (
+      this.state.trafficRouteDraft
+      && (
+        this.state.trafficRouteDraft.itemId !== itemId
+        || this.state.trafficRouteDraft.id !== this.state.activeTrafficRouteId
+      )
+    ) {
+      this.state.trafficRouteDraft = null;
+      this.state.trafficRoutePreview = null;
+      this.state.trafficRouteDrawing = false;
+      this.state.trafficRoutePendingRemoveNodeIndex = null;
+    }
+    this.updateBuilderHud();
+  }
+
+  selectTrafficRoute(routeId = '') {
+    const route = this.worldState.getPassiveTrafficRoutes().find((entry) => entry.id === routeId);
+    if (!route || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(route.itemId)) {
+      return;
+    }
+
+    this.state.activeTrafficRouteCarItemId = route.itemId;
+    this.state.activeTrafficRouteId = route.id;
+    if (this.state.trafficRouteDraft?.id && this.state.trafficRouteDraft.id !== route.id) {
       this.state.trafficRouteDraft = null;
       this.state.trafficRoutePreview = null;
       this.state.trafficRouteDrawing = false;
@@ -1952,7 +2028,7 @@ export class WorldBuilder {
     return true;
   }
 
-  beginTrafficRouteFromCar(itemId = '', point = null) {
+  beginTrafficRouteFromCar(itemId = '', point = null, routeId = this.state.activeTrafficRouteId) {
     if (!PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(itemId)) {
       return;
     }
@@ -1970,8 +2046,16 @@ export class WorldBuilder {
     }
 
     this.state.activeTrafficRouteCarItemId = itemId;
+    const routes = this.worldState.getPassiveTrafficRoutes();
+    const requestedRouteId = String(routeId ?? '');
+    const routeIdTakenByOtherType = routes.some((route) => route.id === requestedRouteId && route.itemId !== itemId);
+    const resolvedRouteId = requestedRouteId && !routeIdTakenByOtherType
+      ? requestedRouteId
+      : createPassiveTrafficRouteId(itemId, routes);
+    this.state.activeTrafficRouteId = resolvedRouteId;
     this.state.trafficRoutePendingRemoveNodeIndex = null;
     this.state.trafficRouteDraft = {
+      id: resolvedRouteId,
       itemId,
       label: getBuilderItemById(itemId)?.label ?? titleCaseLabel(itemId),
       points: [],
@@ -2068,11 +2152,19 @@ export class WorldBuilder {
     }
   }
 
-  clearTrafficRouteDraft() {
+  clearTrafficRouteDraft({ preserveActiveRouteId = false } = {}) {
+    const draftRouteId = this.state.trafficRouteDraft?.id ?? '';
     this.state.trafficRouteDraft = null;
     this.state.trafficRoutePreview = null;
     this.state.trafficRouteDrawing = false;
     this.state.trafficRoutePendingRemoveNodeIndex = null;
+    if (
+      !preserveActiveRouteId
+      && draftRouteId
+      && !this.worldState.getPassiveTrafficRoutes().some((route) => route.id === draftRouteId)
+    ) {
+      this.state.activeTrafficRouteId = '';
+    }
     this.updateBuilderHud();
   }
 
@@ -2084,7 +2176,7 @@ export class WorldBuilder {
 
     const item = getBuilderItemById(draft.itemId);
     const route = {
-      id: `traffic_route_${draft.itemId}`,
+      id: draft.id || createPassiveTrafficRouteId(draft.itemId, this.worldState.getPassiveTrafficRoutes()),
       itemId: draft.itemId,
       label: item?.label ?? draft.label ?? titleCaseLabel(draft.itemId),
       closed: true,
@@ -2096,28 +2188,35 @@ export class WorldBuilder {
       }))
     };
     const nextRoutes = [
-      ...this.worldState.getPassiveTrafficRoutes().filter((entry) => entry.itemId !== draft.itemId),
+      ...this.worldState.getPassiveTrafficRoutes().filter((entry) => entry.id !== route.id),
       route
     ];
     const updated = await this.updatePassiveTrafficRoutes(nextRoutes, `${item?.label ?? 'Car'} route saved.`);
     if (updated) {
-      this.clearTrafficRouteDraft();
+      this.state.activeTrafficRouteCarItemId = route.itemId;
+      this.state.activeTrafficRouteId = route.id;
+      this.clearTrafficRouteDraft({ preserveActiveRouteId: true });
     }
     return updated;
   }
 
-  async deletePassiveTrafficRoute(itemId = '') {
-    if (!PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(itemId)) {
+  async deletePassiveTrafficRoute(routeId = '') {
+    const normalizedRouteId = String(routeId ?? '');
+    const route = this.worldState.getPassiveTrafficRoutes().find((entry) => entry.id === normalizedRouteId)
+      ?? this.worldState.getPassiveTrafficRoutes().find((entry) => entry.itemId === normalizedRouteId);
+    if (!route || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(route.itemId)) {
       return false;
     }
 
-    const nextRoutes = this.worldState.getPassiveTrafficRoutes().filter((entry) => entry.itemId !== itemId);
+    const nextRoutes = this.worldState.getPassiveTrafficRoutes().filter((entry) => entry.id !== route.id);
     const updated = await this.updatePassiveTrafficRoutes(nextRoutes, 'Traffic route cleared.');
-    if (updated && this.state.trafficRouteDraft?.itemId === itemId) {
+    if (updated && (this.state.trafficRouteDraft?.id === route.id || this.state.activeTrafficRouteId === route.id)) {
       this.state.trafficRouteDraft = null;
       this.state.trafficRoutePreview = null;
       this.state.trafficRouteDrawing = false;
       this.state.trafficRoutePendingRemoveNodeIndex = null;
+      this.state.activeTrafficRouteId = '';
+      this.state.activeTrafficRouteCarItemId = route.itemId;
       this.updateBuilderHud();
     }
     return updated;

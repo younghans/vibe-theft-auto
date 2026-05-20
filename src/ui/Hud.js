@@ -7386,7 +7386,9 @@ export class Hud {
     onTrafficRouteDrawEnd,
     onTrafficRouteClearDraft,
     onTrafficRouteDelete,
-    onTrafficRouteSelectCar
+    onTrafficRouteSelectCar,
+    onTrafficRouteAddCar,
+    onTrafficRouteSelectRoute
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -7459,9 +7461,25 @@ export class Hud {
           return;
         }
         if (actionId === 'delete-route') {
-          onTrafficRouteDelete?.(action.getAttribute('data-builder-traffic-car') ?? '');
+          onTrafficRouteDelete?.(
+            action.getAttribute('data-builder-traffic-route')
+              ?? action.getAttribute('data-builder-traffic-car')
+              ?? ''
+          );
           return;
         }
+      }
+
+      const route = target.closest('[data-builder-traffic-route]');
+      if (route) {
+        onTrafficRouteSelectRoute?.(route.getAttribute('data-builder-traffic-route') ?? '');
+        return;
+      }
+
+      const addCar = target.closest('[data-builder-traffic-add-car]');
+      if (addCar) {
+        onTrafficRouteAddCar?.(addCar.getAttribute('data-builder-traffic-add-car') ?? '');
+        return;
       }
 
       const car = target.closest('[data-builder-traffic-car]');
@@ -7479,15 +7497,15 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
-      const trafficCar = target?.closest('[data-builder-traffic-car]');
+      const trafficCar = target?.closest('[data-builder-traffic-add-car]');
       if (trafficCar) {
-        const itemId = trafficCar.getAttribute('data-builder-traffic-car') ?? '';
+        const itemId = trafficCar.getAttribute('data-builder-traffic-add-car') ?? '';
         event.dataTransfer?.setData('application/x-vta-traffic-car', itemId);
         event.dataTransfer?.setData('text/plain', itemId);
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'copy';
         }
-        onTrafficRouteSelectCar?.(itemId);
+        onTrafficRouteAddCar?.(itemId);
         return;
       }
 
@@ -8815,7 +8833,8 @@ export class Hud {
     const contentWidth = Math.max(1, Math.round(width * zoom));
     const contentHeight = Math.max(1, Math.round(height * zoom));
     const zoomPercent = Math.round(zoom * 100);
-    const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
+    const activeRouteId = String(trafficRoutes.activeRouteId ?? '');
+    const routeById = new Map(routes.map((route) => [route.id ?? route.routeId, route]));
     const makePointList = (points = []) => points
       .map((point) => {
         const x = Number(point?.x);
@@ -8883,15 +8902,41 @@ export class Hud {
     const imageMarkup = image?.src
       ? `<image class="hud__traffic-route-map-image" href="${escapeHtml(image.src)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>`
       : '';
-    const activeRoute = routeByItemId.get(activeItemId);
+    const activeRoute = routeById.get(activeRouteId);
+    const routeListMarkup = routes.map((route) => {
+      const preview = this.builderPreviewImages.get(route.previewId) ?? '';
+      const imageSrc = preview || (route.previewMode === 'static' ? route.previewImageSrc : '');
+      return `
+        <button
+          class="hud__traffic-route-list-item${route.active ? ' is-active' : ''}"
+          type="button"
+          data-builder-traffic-route="${escapeHtml(route.id ?? route.routeId ?? '')}"
+          data-builder-traffic-car="${escapeHtml(route.itemId ?? '')}"
+          style="--traffic-car-accent:${escapeHtml(route.color ?? '#f2c871')}"
+          title="${escapeHtml(route.label ?? 'Traffic route')}"
+        >
+          <span class="hud__traffic-route-list-thumb" data-builder-preview="${escapeHtml(route.previewId ?? route.itemId ?? '')}">
+            ${imageSrc
+              ? `<img class="hud__builder-thumb-image" src="${imageSrc}" alt="${escapeHtml(route.baseLabel ?? route.label ?? '')}" loading="lazy" />`
+              : `<span class="hud__builder-thumb-placeholder">${escapeHtml(getBuilderPlaceholder(route.baseLabel ?? route.label ?? ''))}</span>`}
+          </span>
+          <span class="hud__traffic-route-list-copy">
+            <strong>${escapeHtml(route.label ?? '')}</strong>
+            <em>${Math.max(0, Number(route.pointCount ?? route.points?.length ?? 0))} points</em>
+          </span>
+        </button>
+      `;
+    }).join('');
     const carMarkup = cars.map((car) => {
       const preview = this.builderPreviewImages.get(car.previewId) ?? '';
       const imageSrc = preview || (car.previewMode === 'static' ? car.previewImageSrc : '');
+      const routeCount = Math.max(0, Number(car.routeCount ?? 0));
       return `
         <button
-          class="hud__traffic-route-car${car.active ? ' is-active' : ''}${car.hasRoute ? ' has-route' : ''}"
+          class="hud__traffic-route-car${car.active ? ' is-active' : ''}${routeCount > 0 ? ' has-route' : ''}"
           type="button"
           draggable="true"
+          data-builder-traffic-add-car="${escapeHtml(car.itemId)}"
           data-builder-traffic-car="${escapeHtml(car.itemId)}"
           style="--traffic-car-accent:${escapeHtml(car.color ?? '#f2c871')}"
           title="${escapeHtml(car.label ?? 'Passive car')}"
@@ -8902,6 +8947,7 @@ export class Hud {
               : `<span class="hud__builder-thumb-placeholder">${escapeHtml(getBuilderPlaceholder(car.label ?? ''))}</span>`}
           </span>
           <span class="hud__traffic-route-car-label">${escapeHtml(car.label ?? '')}</span>
+          <span class="hud__traffic-route-car-count">${routeCount}</span>
         </button>
       `;
     }).join('');
@@ -8963,9 +9009,22 @@ export class Hud {
         </div>
         <div class="hud__traffic-route-actions">
           ${draft ? '<button class="hud__builder-action" type="button" data-builder-traffic-action="clear-draft">Clear Draft</button>' : ''}
-          ${activeRoute ? `<button class="hud__builder-action hud__builder-action--danger" type="button" data-builder-traffic-action="delete-route" data-builder-traffic-car="${escapeHtml(activeItemId)}">Clear Route</button>` : ''}
+          ${activeRoute ? `<button class="hud__builder-action hud__builder-action--danger" type="button" data-builder-traffic-action="delete-route" data-builder-traffic-route="${escapeHtml(activeRoute.id ?? activeRoute.routeId ?? '')}" data-builder-traffic-car="${escapeHtml(activeRoute.itemId ?? activeItemId)}">Clear Route</button>` : ''}
         </div>
-        <div class="hud__traffic-route-cars">${carMarkup}</div>
+        <div class="hud__traffic-route-list">
+          <div class="hud__traffic-route-subhead">
+            <span>Route List</span>
+            <strong>${routes.length}</strong>
+          </div>
+          ${routeListMarkup || '<p class="hud__traffic-route-empty">No routes</p>'}
+        </div>
+        <div class="hud__traffic-route-add">
+          <div class="hud__traffic-route-subhead">
+            <span>Add New Car</span>
+            <strong>${cars.length}</strong>
+          </div>
+          <div class="hud__traffic-route-cars">${carMarkup}</div>
+        </div>
       </section>
     `;
   }
