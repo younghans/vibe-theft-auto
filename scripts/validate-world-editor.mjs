@@ -131,7 +131,8 @@ import {
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRoadExits,
-  getPassiveTrafficTurnLaneWaypoints
+  getPassiveTrafficTurnLaneWaypoints,
+  isPassiveTrafficPositionInsideRoadNode
 } from '../src/world/passiveTraffic.js';
 import {
   ATTACHMENT_SLOTS,
@@ -499,7 +500,8 @@ function validatePassiveTraffic() {
     const item = getBuilderItemById(itemId);
     assert(item?.layer === 'prop' && item.groupId === 'vehicles', `Passive traffic car ${itemId} should resolve to a vehicle prop`);
   }
-  assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.8, 'Passive traffic cars should render at 0.8x default size');
+  assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.68, 'Passive traffic cars should render at 0.85x their previous passive size');
+  assert(PASSIVE_TRAFFIC_CAR_SCALE < VEHICLE_PROP_PLACEMENT_SCALE, 'Passive traffic cars should no longer render larger than player-owned vehicle props');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
 
   const directionKey = (direction) => `${direction.x}:${direction.z}`;
@@ -551,6 +553,7 @@ function validatePassiveTraffic() {
 
   const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
   assert(trafficGraph.activeNodeIndices.length >= 30, 'Default world should expose a broad road-tile network for passive traffic');
+  assert(trafficGraph.activeComponents?.length >= 1, 'Passive traffic should expose active road components for broad map coverage');
   assert(
     trafficGraph.activeNodes.every((node) => String(node.itemId).startsWith('road_') || String(node.assetName).startsWith('park_road_')),
     'Passive traffic graph should be built specifically from road tiles'
@@ -565,6 +568,20 @@ function validatePassiveTraffic() {
     'Passive traffic paths should stay on road graph nodes'
   );
 
+  const multiComponentTrafficGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_component_a_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_component_a_2', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_component_b_1', itemId: 'road_straight', cell: [10, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_component_b_2', itemId: 'road_straight', cell: [11, 0], rotationQuarterTurns: 1 }
+  ]);
+  assert(multiComponentTrafficGraph.activeComponents.length === 2, 'Passive traffic should keep every drivable road component active for map coverage');
+  assert(multiComponentTrafficGraph.activeNodeIndices.length === 4, 'Passive traffic should not drop smaller connected street groups from the active graph');
+  const componentAStart = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0)?.index;
+  const componentAEnd = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 1 && node.cellZ === 0)?.index;
+  const componentBEnd = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 11 && node.cellZ === 0)?.index;
+  assert(findPassiveTrafficPath(multiComponentTrafficGraph, componentAStart, componentAEnd).length === 2, 'Passive traffic should route inside each active road component');
+  assert(findPassiveTrafficPath(multiComponentTrafficGraph, componentAStart, componentBEnd).length === 0, 'Passive traffic should not path through non-road gaps between disconnected street components');
+
   const fromNode = trafficGraph.nodes[path[0]];
   const toNode = trafficGraph.nodes[path[1]];
   const lanePosition = getPassiveTrafficLanePosition(fromNode, toNode, new Vector3());
@@ -577,6 +594,10 @@ function validatePassiveTraffic() {
   assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
   const leftDot = ((lanePosition.x - toNode.x) * (deltaZ / length)) + ((lanePosition.z - toNode.z) * (-deltaX / length));
   assert(leftDot < 0, 'Passive traffic should not use the driver-left lane normal');
+  assert(
+    isPassiveTrafficPositionInsideRoadNode(toNode, lanePosition),
+    'Passive traffic lane targets should be bounded inside the destination street tile'
+  );
 
   const straightTrafficGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_straight_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 0 },
@@ -620,8 +641,9 @@ function validatePassiveTraffic() {
     .find(Boolean);
   assert(turnCandidate, 'Default road graph should include a passive-traffic turn candidate');
   const incomingTurnLane = getPassiveTrafficLanePosition(turnCandidate.incomingNode, turnCandidate.node, new Vector3());
-  const outgoingTurnLane = getPassiveTrafficLanePositionAtNode(turnCandidate.node, turnCandidate.outgoingNode, new Vector3());
-  const turnLaneShift = incomingTurnLane.distanceTo(outgoingTurnLane);
+  const outgoingIntersectionLane = getPassiveTrafficLanePositionAtNode(turnCandidate.node, turnCandidate.outgoingNode, new Vector3());
+  const outgoingTurnLane = getPassiveTrafficLanePosition(turnCandidate.node, turnCandidate.outgoingNode, new Vector3());
+  const turnLaneShift = incomingTurnLane.distanceTo(outgoingIntersectionLane);
   assert(
     turnLaneShift > PASSIVE_TRAFFIC_LANE_OFFSET * 0.5 && turnLaneShift < BUILDER_TILE_SIZE,
     'Passive traffic turns should transition between incoming and outgoing right-lane points inside the intersection'
@@ -631,17 +653,22 @@ function validatePassiveTraffic() {
     turnCandidate.node,
     turnCandidate.outgoingNode
   );
-  assert(turnWaypoints.length >= 3, 'Passive traffic should sample curved 90-degree turn waypoints instead of hard-pivoting once');
+  assert(turnWaypoints.length >= 8, 'Passive traffic should sample enough curved 90-degree turn waypoints instead of hard-pivoting once');
   assert(
     turnWaypoints[turnWaypoints.length - 1].distanceTo(outgoingTurnLane) < 0.001,
     'Passive traffic turn waypoints should finish on the outgoing right-hand lane'
   );
   assert(
     turnWaypoints.every((waypoint) => (
-      Math.abs(waypoint.x - turnCandidate.node.x) <= (PASSIVE_TRAFFIC_LANE_OFFSET * 2) + 0.001
-      && Math.abs(waypoint.z - turnCandidate.node.z) <= (PASSIVE_TRAFFIC_LANE_OFFSET * 2) + 0.001
+      isPassiveTrafficPositionInsideRoadNode(turnCandidate.incomingNode, waypoint)
+      || isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint)
+      || isPassiveTrafficPositionInsideRoadNode(turnCandidate.outgoingNode, waypoint)
     )),
-    'Passive traffic 90-degree turn waypoints should stay inside the intersection lane area'
+    'Passive traffic 90-degree turn waypoints should stay inside the connected street tiles'
+  );
+  assert(
+    turnWaypoints.some((waypoint) => isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint, BUILDER_TILE_SIZE * 0.12)),
+    'Passive traffic 90-degree turns should arc through the intersection street tile before exiting'
   );
 
   const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
@@ -652,8 +679,9 @@ function validatePassiveTraffic() {
       && /turnStopSeconds/.test(worldRendererSource)
       && /turnWaypointActive/.test(worldRendererSource)
       && /turnWaypointQueue/.test(worldRendererSource)
+      && /routeAdvanceCount/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
-    'World renderer should mount and update passive traffic cars with intersection stop-and-turn handling'
+    'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling'
   );
 }
 
