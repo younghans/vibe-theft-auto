@@ -99,6 +99,7 @@ const PASSIVE_TRAFFIC_TURN_RESPONSE = 8.5;
 const PASSIVE_TRAFFIC_ACCEL_RESPONSE = 5.5;
 const PASSIVE_TRAFFIC_BRAKE_RESPONSE = 14;
 const PASSIVE_TRAFFIC_TURN_SPEED_FACTOR = 0.58;
+const PASSIVE_TRAFFIC_SEDAN_TURN_SPEED_FACTOR = 0.46;
 const PASSIVE_TRAFFIC_TURN_APPROACH_DISTANCE = BUILDER_TILE_SIZE * 0.55;
 const PASSIVE_TRAFFIC_TURN_STOP_SECONDS = 0.38;
 const PASSIVE_TRAFFIC_TURN_STOP_STEP_SECONDS = 0.06;
@@ -173,6 +174,12 @@ function createPassiveTrafficCarSpecs(routes = []) {
   }
 
   return specs;
+}
+
+function getPassiveTrafficTurnSpeedFactor(car) {
+  return car?.itemId === 'car_sedan'
+    ? PASSIVE_TRAFFIC_SEDAN_TURN_SPEED_FACTOR
+    : PASSIVE_TRAFFIC_TURN_SPEED_FACTOR;
 }
 
 function isPassiveTrafficIntersectionNode(node) {
@@ -1995,7 +2002,7 @@ export class WorldRenderer {
     let desiredSpeed = car.speed;
 
     if (car.turnWaypointActive) {
-      desiredSpeed *= PASSIVE_TRAFFIC_TURN_SPEED_FACTOR;
+      desiredSpeed *= getPassiveTrafficTurnSpeedFactor(car);
     } else if (this.isPassiveTrafficApproachingTurn(car)) {
       const approachRatio = Math.max(0.28, Math.min(1, distanceToTarget / PASSIVE_TRAFFIC_TURN_APPROACH_DISTANCE));
       desiredSpeed *= approachRatio;

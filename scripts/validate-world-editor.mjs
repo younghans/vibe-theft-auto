@@ -1289,7 +1289,7 @@ function validatePassiveTraffic() {
   assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
   assert(
     PASSIVE_TRAFFIC_LANE_OFFSET > 0
-      && PASSIVE_TRAFFIC_LANE_OFFSET < BUILDER_TILE_SIZE * 0.2,
+      && PASSIVE_TRAFFIC_LANE_OFFSET < BUILDER_TILE_SIZE * 0.18,
     'Passive traffic default lane offset should sit slightly left of the outer road line while staying in the right lane'
   );
   const leftDot = ((lanePosition.x - toNode.x) * (deltaZ / length)) + ((lanePosition.z - toNode.z) * (-deltaX / length));
@@ -1552,6 +1552,8 @@ function validatePassiveTraffic() {
       && /customRouteNodeIndices/.test(worldRendererSource)
       && /buildPassiveTrafficRouteLookahead/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource)
+      && /PASSIVE_TRAFFIC_SEDAN_TURN_SPEED_FACTOR/.test(worldRendererSource)
+      && /getPassiveTrafficTurnSpeedFactor\(car\)/.test(worldRendererSource)
       && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),
