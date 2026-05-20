@@ -11,13 +11,16 @@ export const SKATEBOARD_MODEL_DIMENSIONS = Object.freeze({
   wheelThickness: 0.16
 });
 
-const DECK_COLOR = 0x2f9f88;
-const DECK_STRIPE_COLOR = 0xf2c65c;
-const GRIP_COLOR = 0x11161c;
-const TRUCK_COLOR = 0xb9c3c8;
-const WHEEL_COLOR = 0xeee3ca;
-const WHEEL_HUB_COLOR = 0x8aa1ad;
-const BOLT_COLOR = 0xd7dce0;
+export const SKATEBOARD_MODEL_COLORS = Object.freeze({
+  deck: 0x141312,
+  backside: 0xc99a5f,
+  stripe: 0xb88a55,
+  grip: 0x07080a,
+  truck: 0xb8b5ad,
+  wheel: 0xf1ead8,
+  hub: 0x8e8780,
+  bolt: 0xd1c6b5
+});
 
 function createSkateboardPlanShape(width, length, noseDepth = 0.34) {
   const halfWidth = width * 0.5;
@@ -175,42 +178,49 @@ export function createSkateboardModel({ namePrefix = 'Player', visible = true, s
   group.visible = visible;
 
   const deckMaterial = new THREE.MeshStandardMaterial({
-    color: DECK_COLOR,
-    roughness: 0.58,
+    color: SKATEBOARD_MODEL_COLORS.deck,
+    roughness: 0.68,
     metalness: 0.03
   });
+  const backsideMaterial = new THREE.MeshStandardMaterial({
+    color: SKATEBOARD_MODEL_COLORS.backside,
+    roughness: 0.72,
+    metalness: 0.01,
+    side: THREE.DoubleSide
+  });
   const stripeMaterial = new THREE.MeshStandardMaterial({
-    color: DECK_STRIPE_COLOR,
-    roughness: 0.5,
+    color: SKATEBOARD_MODEL_COLORS.stripe,
+    roughness: 0.64,
     metalness: 0.02
   });
   const gripMaterial = new THREE.MeshStandardMaterial({
-    color: GRIP_COLOR,
+    color: SKATEBOARD_MODEL_COLORS.grip,
     roughness: 0.92,
     metalness: 0.01
   });
   const truckMaterial = new THREE.MeshStandardMaterial({
-    color: TRUCK_COLOR,
+    color: SKATEBOARD_MODEL_COLORS.truck,
     roughness: 0.38,
     metalness: 0.58
   });
   const wheelMaterial = new THREE.MeshStandardMaterial({
-    color: WHEEL_COLOR,
+    color: SKATEBOARD_MODEL_COLORS.wheel,
     roughness: 0.72,
     metalness: 0.02
   });
   const hubMaterial = new THREE.MeshStandardMaterial({
-    color: WHEEL_HUB_COLOR,
+    color: SKATEBOARD_MODEL_COLORS.hub,
     roughness: 0.36,
     metalness: 0.45
   });
   const boltMaterial = new THREE.MeshStandardMaterial({
-    color: BOLT_COLOR,
+    color: SKATEBOARD_MODEL_COLORS.bolt,
     roughness: 0.32,
     metalness: 0.66
   });
 
   const deckTopY = 0.12 + SKATEBOARD_MODEL_DIMENSIONS.deckThickness * 0.5;
+  const deckBottomY = 0.12 - SKATEBOARD_MODEL_DIMENSIONS.deckThickness * 0.5;
   const deck = createNamedMesh(
     `${namePrefix}SkateboardDeck`,
     createDeckGeometry(
@@ -222,6 +232,14 @@ export function createSkateboardModel({ namePrefix = 'Player', visible = true, s
     { position: [0, 0.12, 0] }
   );
   group.add(deck);
+
+  const backside = createNamedMesh(
+    `${namePrefix}SkateboardBackside`,
+    createTopShapeGeometry(0.66, 2.26),
+    backsideMaterial,
+    { position: [0, deckBottomY - 0.006, 0], castShadow: false, receiveShadow: true }
+  );
+  group.add(backside);
 
   const grip = createNamedMesh(
     `${namePrefix}SkateboardGrip`,

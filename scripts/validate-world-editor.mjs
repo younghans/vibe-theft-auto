@@ -69,6 +69,7 @@ import {
 } from '../src/shared/carDealer.js';
 import { snapObjectToGround } from '../src/shared/threeModelBounds.js';
 import {
+  SKATEBOARD_MODEL_COLORS,
   SKATEBOARD_MODEL_DIMENSIONS,
   createSkateboardModel
 } from '../src/shared/skateboardModel.js';
@@ -3952,7 +3953,10 @@ function validateBartenderFunction() {
   const skateboardModel = createSkateboardModel({ namePrefix: 'Validation' });
   skateboardModel.updateWorldMatrix(true, true);
   const skateboardDeck = skateboardModel.getObjectByName('ValidationSkateboardDeck');
+  const skateboardBackside = skateboardModel.getObjectByName('ValidationSkateboardBackside');
   const skateboardGrip = skateboardModel.getObjectByName('ValidationSkateboardGrip');
+  const skateboardNoseStripe = skateboardModel.getObjectByName('ValidationSkateboardNoseStripe');
+  const skateboardTailStripe = skateboardModel.getObjectByName('ValidationSkateboardTailStripe');
   const skateboardDeckSize = new Box3().setFromObject(skateboardDeck).getSize(new Vector3());
   const skateboardModelSize = new Box3().setFromObject(skateboardModel).getSize(new Vector3());
   const skateboardWheels = skateboardModel.children.filter((child) => /^ValidationSkateboardWheel_[LR]_[BF]$/.test(child.name));
@@ -3968,10 +3972,19 @@ function validateBartenderFunction() {
     'Skateboard model should use a skinny rounded deck with inset grip tape instead of a wide box deck'
   );
   assert(
-    skateboardModel.getObjectByName('ValidationSkateboardNoseStripe')
-      && skateboardModel.getObjectByName('ValidationSkateboardTailStripe')
+    skateboardNoseStripe
+      && skateboardTailStripe
       && skateboardBolts.length === 8,
     'Skateboard model should include top-side stripe and bolt details'
+  );
+  assert(
+    skateboardDeck?.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.deck
+      && skateboardBackside?.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.backside
+      && skateboardGrip?.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.grip
+      && skateboardNoseStripe?.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.stripe
+      && skateboardWheels.every((wheel) => wheel.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.wheel)
+      && skateboardHubs.every((hub) => hub.material?.color?.getHex() === SKATEBOARD_MODEL_COLORS.hub),
+    'Skateboard model should use a classic black-and-tan palette with a tan backside and cream wheels'
   );
   assert(
     skateboardModel.getObjectByName('ValidationSkateboardTruckFront')
