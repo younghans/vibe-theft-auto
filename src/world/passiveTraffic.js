@@ -541,6 +541,11 @@ export function isPassiveTrafficJunctionNode(node) {
   );
 }
 
+export function isPassiveTrafficTSplitNode(node) {
+  const roadName = `${node?.itemId ?? ''} ${node?.assetName ?? ''}`.toLowerCase();
+  return roadName.includes('road_tsplit');
+}
+
 export function getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode) {
   if (!previousNode || !currentNode || !nextNode) {
     return PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT;
@@ -702,6 +707,7 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
 export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode) {
   const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
   const shouldStopAtEntry = isPassiveTrafficJunctionNode(currentNode)
+    && (!isPassiveTrafficTSplitNode(currentNode) || command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT)
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
   const waypoints = command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT

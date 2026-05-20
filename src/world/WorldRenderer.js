@@ -40,6 +40,7 @@ import {
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
   isPassiveTrafficJunctionNode,
+  isPassiveTrafficTSplitNode,
   isPassiveTrafficPositionInsideRoadNode
 } from './passiveTraffic.js';
 
@@ -152,6 +153,7 @@ function isPassiveTrafficTurningThroughNode(previousNode, currentNode, nextNode)
 function shouldPassiveTrafficStopForTurn(previousNode, currentNode, nextNode) {
   const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
   return isPassiveTrafficIntersectionNode(currentNode)
+    && (!isPassiveTrafficTSplitNode(currentNode) || command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT)
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
 }

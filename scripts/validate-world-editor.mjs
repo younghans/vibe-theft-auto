@@ -1299,6 +1299,38 @@ function validatePassiveTraffic() {
     'Passive traffic junction stop waypoint should be at the road tile edge, not the tile center'
   );
 
+  const straightTSplitGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_tsplit_west', itemId: 'road_straight', cell: [-1, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_tsplit_center', itemId: 'road_tsplit', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_tsplit_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const straightTSplitWest = findTrafficNode(straightTSplitGraph, -1, 0);
+  const straightTSplitCenter = findTrafficNode(straightTSplitGraph, 0, 0);
+  const straightTSplitEast = findTrafficNode(straightTSplitGraph, 1, 0);
+  const straightTSplitScript = getPassiveTrafficDriveScript(straightTSplitWest, straightTSplitCenter, straightTSplitEast);
+  assert(
+    straightTSplitScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT
+      && !straightTSplitScript.shouldStopAtEntry
+      && straightTSplitScript.stopWaypointIndex === -1,
+    'Passive traffic should not stop at a Road T Split tile when driving straight through'
+  );
+
+  const turningTSplitGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_tsplit_north', itemId: 'road_straight', cell: [0, -1], rotationQuarterTurns: 0 },
+    { id: 'traffic_tsplit_turn_center', itemId: 'road_tsplit', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_tsplit_turn_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const turningTSplitNorth = findTrafficNode(turningTSplitGraph, 0, -1);
+  const turningTSplitCenter = findTrafficNode(turningTSplitGraph, 0, 0);
+  const turningTSplitEast = findTrafficNode(turningTSplitGraph, 1, 0);
+  const turningTSplitScript = getPassiveTrafficDriveScript(turningTSplitNorth, turningTSplitCenter, turningTSplitEast);
+  assert(
+    turningTSplitScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+      && turningTSplitScript.shouldStopAtEntry
+      && turningTSplitScript.stopWaypointIndex === 0,
+    'Passive traffic should still stop at a Road T Split tile before turning'
+  );
+
   const rightCornerGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_right_turn_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
     { id: 'traffic_right_turn_corner', itemId: 'road_corner', cell: [0, 0], rotationQuarterTurns: 1 },
