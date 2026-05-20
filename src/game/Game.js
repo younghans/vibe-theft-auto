@@ -516,6 +516,7 @@ const RENT_INTRO_MONEY_FLOATER_MS = 1500;
 const MONEY_REWARD_ANIMATION_MS = 900;
 const SKILL_XP_FLOATER_MS = 1550;
 const SKILL_LEVEL_UP_SOUND_SUPPRESS_MS = 500;
+const SKILL_LEVEL_UP_FEEDBACK_DEDUPE_MS = 8000;
 const TASK_COMPLETE_SOUND_COOLDOWN_MS = 1800;
 const TASK_COMPLETE_CHA_CHING_DELAY_MS = 760;
 const TASK_COMPLETE_MONEY_SOUND_SUPPRESS_MS = 1750;
@@ -1204,6 +1205,7 @@ export class Game {
     this.lastConnectionToastStatus = '';
     this.lastSkillAwardSeq = 0;
     this.skillLevelSnapshot = new Map();
+    this.recentSkillLevelUpFeedback = new Map();
     this.lastSkillLevelUpSoundAt = -Infinity;
     this.walletRequestInFlight = false;
     this.walletRefreshAt = 0;
@@ -6300,13 +6302,50 @@ export class Game {
     });
   }
 
-  showSkillLevelUpFeedback({ skill = {}, oldLevel = 1, newLevel = 1 } = {}) {
+  getSkillLevelUpFeedbackKey({ skill = {}, newLevel = 1 } = {}) {
+    const localPlayer = this.getLocalPlayerState?.();
+    const sessionId = String(this.npcServiceState?.sessionId ?? 'local');
+    const characterId = String(localPlayer?.characterId ?? this.desiredLocalCharacterId ?? '');
+    const skillId = String(skill?.id ?? skill?.label ?? 'skill');
+    const safeNewLevel = Math.max(1, Math.floor(Number(newLevel) || 1));
+    return `${sessionId}:${characterId}:${skillId}:${safeNewLevel}`;
+  }
+
+  markSkillLevelUpFeedbackPresented({ skill = {}, newLevel = 1 } = {}) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const cutoff = now - SKILL_LEVEL_UP_FEEDBACK_DEDUPE_MS;
+    for (const [key, presentedAt] of this.recentSkillLevelUpFeedback.entries()) {
+      if (Number(presentedAt) <= cutoff) {
+        this.recentSkillLevelUpFeedback.delete(key);
+      }
+    }
+
+    const key = this.getSkillLevelUpFeedbackKey({ skill, newLevel });
+    if (this.recentSkillLevelUpFeedback.has(key)) {
+      return false;
+    }
+
+    this.recentSkillLevelUpFeedback.set(key, now);
+    return true;
+  }
+
+  showSkillLevelUpFeedback({
+    skill = {},
+    oldLevel = 1,
+    newLevel = 1,
+    dedupe = true
+  } = {}) {
+    if (dedupe && !this.markSkillLevelUpFeedbackPresented({ skill, newLevel })) {
+      return false;
+    }
+
     this.hud.showSkillLevelUp({
       skill,
       oldLevel,
       newLevel
     });
     this.playSkillLevelUpSound();
+    return true;
   }
 
   playSkillLevelUpSound() {
@@ -6331,19 +6370,28 @@ export class Game {
     }
 
     const xpGained = Math.max(0, Math.floor(Number(award.xpGained) || 0));
+    const leveledUp = award.newLevel > award.oldLevel;
+    if (leveledUp && !this.markSkillLevelUpFeedbackPresented({
+      skill,
+      newLevel: award.newLevel
+    })) {
+      return;
+    }
+
     this.spawnSkillXpFloater({
       skill,
       xpGained
     });
-    if (xpGained > 0 && this.shouldPlaySkillXpGainSound(award, skill)) {
+    if (!leveledUp && xpGained > 0 && this.shouldPlaySkillXpGainSound(award, skill)) {
       this.playSoundEffect(this.skillXpGainSound);
     }
 
-    if (award.newLevel > award.oldLevel) {
+    if (leveledUp) {
       this.showSkillLevelUpFeedback({
         skill,
         oldLevel: award.oldLevel,
-        newLevel: award.newLevel
+        newLevel: award.newLevel,
+        dedupe: false
       });
     }
   }
