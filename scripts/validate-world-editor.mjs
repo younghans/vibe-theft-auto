@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { PLAYER_RADIUS, WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
@@ -2100,6 +2100,96 @@ function validateCustomPropCatalogItems() {
   assert(instrumentSize.y <= 2.4, 'Instrument cluster visual should stay below normal room height');
 }
 
+const MP3_BITRATES_KBPS = Object.freeze({
+  1: Object.freeze({
+    1: Object.freeze([null, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448]),
+    2: Object.freeze([null, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384]),
+    3: Object.freeze([null, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320])
+  }),
+  2: Object.freeze({
+    1: Object.freeze([null, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256]),
+    2: Object.freeze([null, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]),
+    3: Object.freeze([null, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160])
+  })
+});
+const MP3_SAMPLE_RATES = Object.freeze({
+  1: Object.freeze([44100, 48000, 32000]),
+  2: Object.freeze([22050, 24000, 16000]),
+  2.5: Object.freeze([11025, 12000, 8000])
+});
+
+function readSynchsafeUInt32(buffer, offset) {
+  return ((buffer[offset] & 0x7f) << 21)
+    | ((buffer[offset + 1] & 0x7f) << 14)
+    | ((buffer[offset + 2] & 0x7f) << 7)
+    | (buffer[offset + 3] & 0x7f);
+}
+
+function getId3v2Length(buffer) {
+  if (buffer.length < 10 || buffer.toString('latin1', 0, 3) !== 'ID3') {
+    return 0;
+  }
+  const footerLength = (buffer[5] & 0x10) ? 10 : 0;
+  return 10 + readSynchsafeUInt32(buffer, 6) + footerLength;
+}
+
+function parseMp3Frame(buffer, offset) {
+  if (offset + 4 > buffer.length) {
+    return null;
+  }
+
+  const header = buffer.readUInt32BE(offset);
+  if (((header & 0xffe00000) >>> 0) !== 0xffe00000) {
+    return null;
+  }
+
+  const versionBits = (header >>> 19) & 0x3;
+  const layerBits = (header >>> 17) & 0x3;
+  const bitrateIndex = (header >>> 12) & 0xf;
+  const sampleRateIndex = (header >>> 10) & 0x3;
+  const padding = (header >>> 9) & 0x1;
+  if (versionBits === 1 || layerBits === 0 || bitrateIndex === 0 || bitrateIndex === 0xf || sampleRateIndex === 3) {
+    return null;
+  }
+
+  const version = versionBits === 3 ? 1 : versionBits === 2 ? 2 : 2.5;
+  const layer = 4 - layerBits;
+  const bitrateKbps = MP3_BITRATES_KBPS[version === 1 ? 1 : 2]?.[layer]?.[bitrateIndex];
+  const sampleRate = MP3_SAMPLE_RATES[version]?.[sampleRateIndex];
+  if (!bitrateKbps || !sampleRate) {
+    return null;
+  }
+
+  const bitrate = bitrateKbps * 1000;
+  const samples = layer === 1 ? 384 : (layer === 3 && version !== 1 ? 576 : 1152);
+  const frameLength = layer === 1
+    ? Math.floor(((12 * bitrate) / sampleRate + padding) * 4)
+    : Math.floor((((layer === 3 && version !== 1 ? 72 : 144) * bitrate) / sampleRate) + padding);
+  if (frameLength <= 4 || offset + frameLength > buffer.length) {
+    return null;
+  }
+  return {
+    durationMs: (samples / sampleRate) * 1000,
+    frameLength
+  };
+}
+
+function getMp3DurationMs(fileUrl) {
+  const buffer = readFileSync(fileUrl);
+  let offset = getId3v2Length(buffer);
+  let durationMs = 0;
+  while (offset + 4 <= buffer.length) {
+    const frame = parseMp3Frame(buffer, offset);
+    if (!frame) {
+      offset += 1;
+      continue;
+    }
+    durationMs += frame.durationMs;
+    offset += frame.frameLength;
+  }
+  return durationMs;
+}
+
 function validateVibeHero() {
   const licenseNotice = readFileSync(new URL('../assets/audio/vibe-hero/License.txt', import.meta.url), 'utf8');
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
@@ -2138,6 +2228,18 @@ function validateVibeHero() {
     assert(String(song.sourceLicense ?? '').length > 20, `${song.title}: should document the recording license/source terms`);
     assert(String(song.chartSource ?? '').toLowerCase().includes('source-mp3 onset'), `${song.title}: should document source-MP3 onset charting`);
     assert(licenseNotice.includes(song.sourceDownloadUrl), `${song.title}: source MP3 should be listed in the Vibe Hero audio notice`);
+    const localAudioFile = new URL(`../assets/audio/vibe-hero/${song.id}.mp3`, import.meta.url);
+    const localAudioSize = statSync(localAudioFile).size;
+    assert(localAudioSize >= 1000000, `${song.title}: local MP3 should use a high-quality source excerpt, not a tiny compressed placeholder`);
+    const localAudioDurationMs = getMp3DurationMs(localAudioFile);
+    const expectedLocalAudioDurationMs = Number(song.snippetStartMs ?? 0) + song.durationMs;
+    assert(
+      Math.abs(localAudioDurationMs - expectedLocalAudioDurationMs) <= 80,
+      `${song.title}: local MP3 duration should preserve the charted source window`
+    );
+    if (song.id === 'debussy-arabesque-no-1') {
+      assert(song.chart.length === 326, 'Debussy - Arabesque No. 1 should ship the 326-note editor-polished chart');
+    }
     if (song.id === 'vivaldi-winter') {
       assert(song.snippetStartMs === 30000, 'Vivaldi - Winter should skip the first 30 seconds of the MP3');
       assert(song.durationMs === 95000, 'Vivaldi - Winter should chart a 95 second snippet after the 30 second skip');

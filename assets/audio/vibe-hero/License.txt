@@ -1,8 +1,7 @@
 Vibe Hero classical MP3 sources
 
-Vibe Hero uses small local MP3 excerpts of the charted source songs when
-available. Vibe Radio also uses the same local MP3 excerpts as its starter
-playlist so playback does not depend on remote cross-origin music URLs.
+Vibe Hero uses source-quality local MP3 excerpts of the charted source songs
+when available, so playback does not depend on remote cross-origin music URLs.
 
 Debussy - Arabesque No. 1
 - Work: Claude Debussy, Arabesque No. 1, L. 66
@@ -11,6 +10,8 @@ Debussy - Arabesque No. 1
 - Original MP3 source: https://library.classicalmusicarchive.org/music/GQ%20Collection/Classicals.de%20-%20Debussy%20-%20Arabesque%20No.%201%20-%20L.%2066.mp3
 - Local excerpt asset: assets/audio/vibe-hero/debussy-arabesque-no-1.mp3
 - Snippet window: 0:00-1:15, charted from substantial source-MP3 piano onsets.
+- Local asset notes: Frame-copied from the original MP3 through 1:15 to avoid
+  an additional lossy encode.
 - Notes: The composition is public domain in the United States. Classicals.de
   publishes the recording with attribution requirements; Gregor Quendel also
   publishes this recording on Pixabay as "Debussy - Arabesque No. 1 - L 66" for
@@ -24,6 +25,8 @@ Vivaldi - Winter
 - Original MP3 source: https://www.classicals.de/s/Classicalsde-Vivaldi-The-Four-Seasons-10-John-Harrison-with-the-Wichita-State-University-Chamber-Pla.mp3
 - Local excerpt asset: assets/audio/vibe-hero/vivaldi-winter.mp3
 - Snippet window: 0:30-2:05, charted from substantial source-MP3 violin onsets.
+- Local asset notes: Frame-copied from the original MP3 through 2:05; the game
+  keeps its 0:30 start offset so the charted 95 second window is unchanged.
 - Notes: The composition is public domain. Classicals.de lists the John Harrison
   movement recordings under CC BY-SA 4.0, and Wikimedia Commons/Musopen also
   identify the same movement recording as public-domain material.

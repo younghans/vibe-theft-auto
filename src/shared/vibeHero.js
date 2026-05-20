@@ -50,6 +50,14 @@ const DEBUSSY_SOURCE_ONSET_TIMES = Object.freeze([
   68526, 68746, 68967, 69211, 69664, 70128, 70360, 70592, 71068, 71521, 71835, 72020, 72171, 72311,
   72462, 72624, 72775, 72926, 73077, 73239, 73390, 73855, 74400, 74935
 ]);
+const DEBUSSY_EDITOR_EXTRA_NOTE_TIMES = Object.freeze([
+  1763, 2837, 4880, 5392, 5971, 12100, 12710, 13240, 13483, 13757, 13958, 17033, 17295, 17616, 17878, 18199,
+  18560, 18825, 21105, 21466, 21670, 21874, 22173, 23227, 23472, 23748, 23951, 24594, 25006, 26625, 26855, 27728,
+  27958, 30418, 36598, 37011, 37423, 37919, 38671, 39625, 40416, 40704, 41746, 42005, 42788, 42986, 45082, 45361,
+  47403, 47629, 49108, 49355, 49634, 49839, 51880, 52104, 52378, 52602, 52876, 53185, 53411, 55580, 57336, 57534,
+  58428, 58644, 58907, 59123, 59386, 59683, 59901, 60712, 60916, 62868, 63146, 63460, 63690, 63972, 64286, 64516,
+  64798, 65028, 65310, 65628, 65861, 69415, 69873, 70806, 71272, 73599, 74100, 74641
+]);
 const VIVALDI_SOURCE_ONSET_TIMES = Object.freeze([
   8328, 8700, 8885, 8978, 9176, 9268, 9477, 9652, 9733, 9814, 9965, 10162, 10313, 10395,
   10476, 10894, 11056, 11138, 11753, 11846, 11927, 12090, 12171, 12252, 12403, 12484, 12612, 12717,
@@ -89,6 +97,9 @@ const DEBUSSY_SOURCE_ONSET_LANES =
   '330122023123011240212120324221430323441003411340333441123402302002340122423411211122401142234221' +
   '120403103224112301134333323333332234003332323442334303234342343222233340122341310022321011134101' +
   '230011340120101034022122232233041203012224';
+const DEBUSSY_EDITOR_EXTRA_NOTE_LANES =
+  '2334430200202403440122202032222433110412102032104100440313434023' +
+  '1423413043143343044120131002';
 const VIVALDI_SOURCE_ONSET_LANES =
   '420112001220012240212040320004401234412340123441234210340113341233412234023340234302234004244234' +
   '412334012340122442123201231012300224202211012040124321244002340120101230222403234012340123401244' +
@@ -179,6 +190,42 @@ function createSourceOnsetChart({
   return finalizeChart(chart);
 }
 
+function getNearestChartNoteForLane(chart, lane, timeMs) {
+  let bestNote = null;
+  let bestDistance = Infinity;
+  for (const note of chart) {
+    const lanePenalty = note.lane === lane ? 0 : 1000000;
+    const distance = Math.abs((Number(note.timeMs) || 0) - timeMs) + lanePenalty;
+    if (distance < bestDistance) {
+      bestNote = note;
+      bestDistance = distance;
+    }
+  }
+  return bestNote;
+}
+
+function createEditorExtraChart({
+  times,
+  lanes,
+  sourceChart,
+  idPrefix
+}) {
+  const chart = [];
+  for (let index = 0; index < times.length; index += 1) {
+    const timeMs = times[index];
+    const lane = Number(lanes[index] ?? 0);
+    const referenceNote = getNearestChartNoteForLane(sourceChart, lane, timeMs);
+    chart.push(createChartNote({
+      id: `${idPrefix}-${index + 1}`,
+      timeMs,
+      lane,
+      pitch: referenceNote?.pitch ?? 'A4',
+      durationMs: referenceNote?.durationMs ?? 150
+    }));
+  }
+  return chart;
+}
+
 function finalizeChart(chart) {
   const filtered = [];
   for (const note of chart) {
@@ -199,12 +246,21 @@ function finalizeChart(chart) {
 }
 
 function createDebussyArabesqueChart() {
-  return createSourceOnsetChart({
+  const sourceChart = createSourceOnsetChart({
     times: DEBUSSY_SOURCE_ONSET_TIMES,
     lanes: DEBUSSY_SOURCE_ONSET_LANES,
     pitches: DEBUSSY_SOURCE_ONSET_PITCHES,
     idPrefix: 'debussy-onset'
   });
+  return finalizeChart([
+    ...sourceChart,
+    ...createEditorExtraChart({
+      times: DEBUSSY_EDITOR_EXTRA_NOTE_TIMES,
+      lanes: DEBUSSY_EDITOR_EXTRA_NOTE_LANES,
+      sourceChart,
+      idPrefix: 'debussy-editor-extra'
+    })
+  ]);
 }
 
 function createVivaldiWinterChart() {
@@ -227,7 +283,7 @@ const VIBE_HERO_SONGS = Object.freeze([
     sourceDownloadUrl: 'https://library.classicalmusicarchive.org/music/GQ%20Collection/Classicals.de%20-%20Debussy%20-%20Arabesque%20No.%201%20-%20L.%2066.mp3',
     sourceLicense: 'Classicals.de / Pixabay-published recording attribution; snippet is from the start of the supplied MP3.',
     publicDomainBasis: 'Composition by Claude Debussy is public domain in the United States; recording source and attribution are documented in assets/audio/vibe-hero/License.txt.',
-    chartSource: 'Source-MP3 onset chart for substantial piano key attacks in the opening 75 seconds.',
+    chartSource: 'Editor-polished source-MP3 onset chart for substantial piano key attacks in the opening 75 seconds.',
     audioAssetKey: 'debussyArabesqueNo1',
     snippetStartMs: 0,
     durationMs: DEBUSSY_DURATION_MS,
