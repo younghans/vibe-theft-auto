@@ -1728,7 +1728,7 @@ export class WorldRenderer {
       return;
     }
 
-    void this.createPassiveTrafficCars(requestId, graph);
+    void this.createPassiveTrafficCars(requestId, graph, nextSignature);
   }
 
   async createPassiveTrafficObject(itemId, carIndex) {
@@ -1752,7 +1752,7 @@ export class WorldRenderer {
     return object;
   }
 
-  async createPassiveTrafficCars(requestId, graph) {
+  async createPassiveTrafficCars(requestId, graph, expectedSignature = graph?.signature ?? '') {
     const carPromises = [];
     for (let carIndex = 0; carIndex < PASSIVE_TRAFFIC_CAR_ITEM_IDS.length; carIndex += 1) {
       const itemId = PASSIVE_TRAFFIC_CAR_ITEM_IDS[carIndex];
@@ -1771,7 +1771,7 @@ export class WorldRenderer {
     }
     const cars = await Promise.all(carPromises);
 
-    if (requestId !== this.passiveTrafficLoadRequestId || graph.signature !== this.passiveTrafficSignature) {
+    if (requestId !== this.passiveTrafficLoadRequestId || expectedSignature !== this.passiveTrafficSignature) {
       for (const car of cars) {
         car?.object?.parent?.remove(car.object);
       }

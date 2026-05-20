@@ -1447,8 +1447,11 @@ function validatePassiveTraffic() {
       && /setPassiveTrafficRoutes/.test(worldRendererSource)
       && /customRouteNodeIndices/.test(worldRendererSource)
       && /buildPassiveTrafficRouteLookahead/.test(worldRendererSource)
-      && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
-    'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling'
+      && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource)
+      && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature\)/.test(worldRendererSource)
+      && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
+      && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),
+    'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling and keep route-aware async car loads alive'
   );
 
   const hudSource = readRepoText('src/ui/Hud.js');
