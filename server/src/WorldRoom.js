@@ -225,6 +225,8 @@ import { NpcChatEngine } from './NpcChatEngine.js';
 import { isNpcDebugEnabled, logNpcDebug, logServer, logServerError } from './logger.js';
 import { getWorldPersistence } from './worldPersistence.js';
 import { getPlayerSnapshots, normalizePlayerSnapshotId } from './playerSnapshots.js';
+import { getPlayerAccounts } from './playerAccounts.js';
+import { getSupabaseAuthInfo, verifySupabaseAccessToken } from './supabaseAuth.js';
 import { getStockMarketPersistence } from './stockMarketPersistence.js';
 
 const MAX_MESSAGE_LENGTH = 280;
@@ -979,8 +981,11 @@ export class WorldRoom extends Room {
     this.stockMarket = this.stockMarketPersistence.getInitialMarket(Date.now());
     this.stockPortfolios = new Map();
     this.playerSnapshots = getPlayerSnapshots();
+    this.playerAccounts = getPlayerAccounts();
     this.playerSnapshotIds = new Map();
     this.playerSnapshotSessions = new Map();
+    this.playerAccountSessions = new Map();
+    this.playerSaveTargets = new Map();
     this.dirtyPlayerSnapshots = new Set();
     this.playerSnapshotSavePromises = new Map();
     this.playerTransformCorrectionLogAt = new Map();
@@ -1213,10 +1218,92 @@ export class WorldRoom extends Room {
     });
   }
 
+  async resolveAuthenticatedAccount(client, options = {}) {
+    const accessToken = typeof options?.accessToken === 'string' ? options.accessToken.trim() : '';
+    if (!accessToken) {
+      return null;
+    }
+
+    let authUser = null;
+    try {
+      authUser = await verifySupabaseAccessToken(accessToken);
+    } catch (error) {
+      logServerError('room', 'Supabase auth token verification failed.', error, {
+        roomId: this.roomId,
+        sessionId: client.sessionId,
+        authConfigured: getSupabaseAuthInfo().configured
+      });
+      throw new Error('Authentication failed.');
+    }
+
+    let account = null;
+    try {
+      account = await this.playerAccounts.ensureUser(authUser);
+    } catch (error) {
+      logServerError('room', 'Failed to ensure authenticated game user.', error, {
+        roomId: this.roomId,
+        sessionId: client.sessionId,
+        userId: authUser.id
+      });
+      throw new Error('Could not prepare player account.');
+    }
+
+    if (!account?.userId) {
+      throw new Error('Could not prepare player account.');
+    }
+
+    return {
+      displayName: account.displayName,
+      email: authUser.email,
+      isAdmin: account.isAdmin === true,
+      userId: account.userId
+    };
+  }
+
   async onJoin(client, options = {}) {
-    const playerSnapshotId = normalizePlayerSnapshotId(options?.playerId);
+    const authenticatedAccount = await this.resolveAuthenticatedAccount(client, options);
+    let playerSnapshotId = '';
     let playerSnapshot = null;
-    if (playerSnapshotId) {
+    let saveTarget = null;
+
+    if (authenticatedAccount?.userId) {
+      playerSnapshotId = `auth:${authenticatedAccount.userId}`;
+      const previousSessionId = this.playerAccountSessions.get(authenticatedAccount.userId);
+      if (previousSessionId && previousSessionId !== client.sessionId) {
+        if (this.state.players.has(previousSessionId) && this.isClientSessionConnected(previousSessionId)) {
+          throw new Error('This account is already connected.');
+        }
+
+        if (this.state.players.has(previousSessionId)) {
+          await this.savePlayerSnapshot(previousSessionId);
+          this.removePlayerSession(previousSessionId);
+        }
+      }
+
+      saveTarget = {
+        displayName: authenticatedAccount.displayName,
+        email: authenticatedAccount.email,
+        id: playerSnapshotId,
+        isAdmin: authenticatedAccount.isAdmin,
+        kind: 'account',
+        userId: authenticatedAccount.userId
+      };
+      this.playerSaveTargets.set(client.sessionId, saveTarget);
+      this.playerAccountSessions.set(authenticatedAccount.userId, client.sessionId);
+      try {
+        playerSnapshot = await this.playerAccounts.loadSave(authenticatedAccount.userId);
+      } catch (error) {
+        logServerError('room', 'Failed to load authenticated player save.', error, {
+          roomId: this.roomId,
+          sessionId: client.sessionId,
+          userId: authenticatedAccount.userId
+        });
+      }
+    } else {
+      playerSnapshotId = normalizePlayerSnapshotId(options?.playerId);
+    }
+
+    if (!authenticatedAccount && playerSnapshotId) {
       const previousSessionId = this.playerSnapshotSessions.get(playerSnapshotId);
       if (
         previousSessionId
@@ -1230,6 +1317,11 @@ export class WorldRoom extends Room {
 
       this.playerSnapshotIds.set(client.sessionId, playerSnapshotId);
       this.playerSnapshotSessions.set(playerSnapshotId, client.sessionId);
+      saveTarget = {
+        id: playerSnapshotId,
+        kind: 'guest'
+      };
+      this.playerSaveTargets.set(client.sessionId, saveTarget);
       try {
         playerSnapshot = await this.playerSnapshots.load(playerSnapshotId);
       } catch (error) {
@@ -1246,7 +1338,7 @@ export class WorldRoom extends Room {
     const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
     const introSpawn = rentIntro?.spawn ?? null;
     const introStartedAt = rentIntro ? Date.now() : 0;
-    const isAdmin = this.isAdminJoin(options);
+    const isAdmin = Boolean(authenticatedAccount?.isAdmin || this.isAdminJoin(options));
     player.x = quantizePosition(introSpawn?.x ?? spawnX);
     player.z = quantizePosition(introSpawn?.z ?? spawnZ);
     player.rotationY = Number.isFinite(introSpawn?.rotationY) ? quantizeRotation(introSpawn.rotationY) : 0;
@@ -1344,8 +1436,12 @@ export class WorldRoom extends Room {
       agilityDistanceCarry: 0
     });
     void this.savePlayerSnapshot(client.sessionId);
-    this.playerAliasSequence += 1;
-    this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
+    if (authenticatedAccount?.displayName) {
+      this.playerAliases.set(client.sessionId, authenticatedAccount.displayName);
+    } else {
+      this.playerAliasSequence += 1;
+      this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);
+    }
     const adminRuntime = getAdminJoinRuntimeAccess();
     recordAdminJoinDiagnostic({
       roomId: this.roomId,
@@ -1361,7 +1457,9 @@ export class WorldRoom extends Room {
       roomId: this.roomId,
       sessionId: client.sessionId,
       isAdmin,
+      authenticated: Boolean(authenticatedAccount),
       playerSnapshotId,
+      saveKind: saveTarget?.kind ?? 'none',
       restoredPlayerSnapshot,
       connectedClients: this.clients.length
     });
@@ -1435,6 +1533,7 @@ export class WorldRoom extends Room {
 
   removePlayerSession(sessionId = '') {
     const playerSnapshotId = this.getPlayerSnapshotId(sessionId);
+    const saveTarget = this.getPlayerSaveTarget(sessionId);
     this.state.players.delete(sessionId);
     this.state.builders.delete(sessionId);
     this.playerAliases.delete(sessionId);
@@ -1449,13 +1548,21 @@ export class WorldRoom extends Room {
     if (playerSnapshotId && this.playerSnapshotSessions.get(playerSnapshotId) === sessionId) {
       this.playerSnapshotSessions.delete(playerSnapshotId);
     }
+    if (saveTarget?.kind === 'account' && this.playerAccountSessions.get(saveTarget.userId) === sessionId) {
+      this.playerAccountSessions.delete(saveTarget.userId);
+    }
     this.playerSnapshotIds.delete(sessionId);
+    this.playerSaveTargets.delete(sessionId);
     this.dirtyPlayerSnapshots.delete(sessionId);
     this.playerSnapshotSavePromises.delete(sessionId);
   }
 
+  getPlayerSaveTarget(sessionId = '') {
+    return this.playerSaveTargets.get(sessionId) ?? null;
+  }
+
   getPlayerSnapshotId(sessionId = '') {
-    return this.playerSnapshotIds.get(sessionId) ?? '';
+    return this.getPlayerSaveTarget(sessionId)?.id ?? this.playerSnapshotIds.get(sessionId) ?? '';
   }
 
   queuePlayerSnapshotSave(sessionId = '') {
@@ -1467,7 +1574,8 @@ export class WorldRoom extends Room {
   }
 
   async savePlayerSnapshot(sessionId = '') {
-    const playerSnapshotId = this.getPlayerSnapshotId(sessionId);
+    const saveTarget = this.getPlayerSaveTarget(sessionId);
+    const playerSnapshotId = saveTarget?.id ?? this.getPlayerSnapshotId(sessionId);
     const player = this.state.players.get(sessionId);
     if (!playerSnapshotId || !player) {
       return null;
@@ -1487,17 +1595,17 @@ export class WorldRoom extends Room {
           this.stockPortfolios.get(sessionId) ?? {}
         );
         this.dirtyPlayerSnapshots.delete(sessionId);
-        const snapshot = await this.playerSnapshots.save(
-          playerSnapshotId,
-          snapshotPayload
-        );
+        const snapshot = saveTarget?.kind === 'account'
+          ? await this.playerAccounts.saveSave(saveTarget.userId, snapshotPayload)
+          : await this.playerSnapshots.save(playerSnapshotId, snapshotPayload);
         return snapshot;
       } catch (error) {
         this.dirtyPlayerSnapshots.add(sessionId);
         logServerError('room', 'Failed to save player snapshot.', error, {
           roomId: this.roomId,
           sessionId,
-          playerSnapshotId
+          playerSnapshotId,
+          saveKind: saveTarget?.kind ?? 'guest'
         });
         return null;
       } finally {

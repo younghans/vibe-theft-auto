@@ -2256,6 +2256,119 @@ body.is-admin-prompt-resizing * {
   accent-color: #dce5ef;
 }
 
+.hud__phone-account {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hud__phone-account-message {
+  margin: 0;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.hud__phone-account-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hud__phone-account-field span {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud__phone-account-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.hud__phone-account-input:focus {
+  border-color: color-mix(in srgb, var(--phone-app-color) 68%, #fff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--phone-app-color) 24%, transparent);
+}
+
+.hud__phone-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hud__phone-account-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--phone-app-color) 46%, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--phone-app-color) 18%, rgba(255, 255, 255, 0.08));
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 1000;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hud__phone-account-button--primary {
+  width: 100%;
+  min-height: 40px;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(12, 16, 24, 0.94);
+}
+
+.hud__phone-account-provider-mark {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #4285f4;
+  font-size: 14px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__phone-account-button:hover,
+.hud__phone-account-button:focus-visible {
+  border-color: color-mix(in srgb, var(--phone-app-color) 72%, #fff);
+  background: color-mix(in srgb, var(--phone-app-color) 28%, rgba(255, 255, 255, 0.1));
+}
+
+.hud__phone-account-button--primary:hover,
+.hud__phone-account-button--primary:focus-visible {
+  background: #fff;
+  color: rgba(12, 16, 24, 0.94);
+}
+
+.hud__phone-account-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .hud__phone-settings-controls {
   min-height: 0;
 }

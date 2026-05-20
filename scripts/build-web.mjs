@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import { build } from 'esbuild';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { config as loadDotenv } from 'dotenv';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -27,6 +28,10 @@ const COMPRESSIBLE_EXTENSIONS = new Set([
   '.txt'
 ]);
 
+for (const envFile of ['.env.local', '.env']) {
+  loadDotenv({ path: path.join(root, envFile), override: false, quiet: true });
+}
+
 function getByteBudget(names, fallback) {
   const envNames = Array.isArray(names) ? names : [names];
   for (const name of envNames) {
@@ -36,6 +41,17 @@ function getByteBudget(names, fallback) {
     }
   }
   return fallback;
+}
+
+function readEnvString(names) {
+  const envNames = Array.isArray(names) ? names : [names];
+  for (const name of envNames) {
+    const value = String(process.env[name] ?? '').trim();
+    if (value) {
+      return value;
+    }
+  }
+  return '';
 }
 
 function formatKiB(bytes) {
@@ -347,28 +363,50 @@ async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagin
 }
 
 function readFrontendServerUrl() {
-  return String(
-    process.env.VTA_SERVER_URL
-    ?? process.env.VITE_VTA_SERVER_URL
-    ?? process.env.STICKRPG_SERVER_URL
-    ?? process.env.VITE_STICKRPG_SERVER_URL
-    ?? ''
-  ).trim();
+  return readEnvString([
+    'VTA_SERVER_URL',
+    'VITE_VTA_SERVER_URL',
+    'STICKRPG_SERVER_URL',
+    'VITE_STICKRPG_SERVER_URL'
+  ]);
 }
 
 function readFrontendBuildCommitSha() {
-  return String(
-    process.env.VTA_BUILD_COMMIT_SHA
-    ?? process.env.STICKRPG_BUILD_COMMIT_SHA
-    ?? process.env.VERCEL_GIT_COMMIT_SHA
-    ?? process.env.GITHUB_SHA
-    ?? ''
-  ).trim();
+  return readEnvString([
+    'VTA_BUILD_COMMIT_SHA',
+    'STICKRPG_BUILD_COMMIT_SHA',
+    'VERCEL_GIT_COMMIT_SHA',
+    'GITHUB_SHA'
+  ]);
+}
+
+function readFrontendSupabaseConfig() {
+  const url = readEnvString([
+    'VTA_SUPABASE_URL',
+    'VITE_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'STICKRPG_SUPABASE_URL',
+    'SUPABASE_URL'
+  ]);
+  const publishableKey = readEnvString([
+    'VTA_SUPABASE_PUBLISHABLE_KEY',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'STICKRPG_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'VTA_SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'STICKRPG_SUPABASE_ANON_KEY',
+    'SUPABASE_ANON_KEY'
+  ]);
+  return { publishableKey, url };
 }
 
 function getRuntimeConfigScript() {
   const serverUrl = readFrontendServerUrl();
   const buildCommitSha = readFrontendBuildCommitSha();
+  const supabaseConfig = readFrontendSupabaseConfig();
   const assignments = [];
   if (serverUrl) {
     assignments.push(`globalThis.VTA_SERVER_URL = ${JSON.stringify(serverUrl)};`);
@@ -377,6 +415,12 @@ function getRuntimeConfigScript() {
   if (buildCommitSha) {
     assignments.push(`globalThis.VTA_BUILD_COMMIT_SHA = ${JSON.stringify(buildCommitSha)};`);
     assignments.push(`globalThis.STICKRPG_BUILD_COMMIT_SHA = ${JSON.stringify(buildCommitSha)};`);
+  }
+  if (supabaseConfig.url && supabaseConfig.publishableKey) {
+    assignments.push(`globalThis.VTA_SUPABASE_URL = ${JSON.stringify(supabaseConfig.url)};`);
+    assignments.push(`globalThis.STICKRPG_SUPABASE_URL = ${JSON.stringify(supabaseConfig.url)};`);
+    assignments.push(`globalThis.VTA_SUPABASE_PUBLISHABLE_KEY = ${JSON.stringify(supabaseConfig.publishableKey)};`);
+    assignments.push(`globalThis.STICKRPG_SUPABASE_PUBLISHABLE_KEY = ${JSON.stringify(supabaseConfig.publishableKey)};`);
   }
   if (assignments.length === 0) {
     return '';

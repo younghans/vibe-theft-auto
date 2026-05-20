@@ -3,12 +3,17 @@ import fsp from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
+import { config as loadDotenv } from 'dotenv';
 
 const cliArgs = process.argv.slice(2);
 const positionalArgs = cliArgs.filter((arg) => !arg.startsWith('--'));
 const flags = new Set(cliArgs.filter((arg) => arg.startsWith('--')));
 
 const root = path.resolve(positionalArgs[0] ?? '.');
+for (const envFile of ['.env.local', '.env']) {
+  loadDotenv({ path: path.join(root, envFile), override: false, quiet: true });
+}
+
 const port = Number(process.env.PORT || positionalArgs[1] || 4173);
 const configuredServerUrl = (
   process.env.VTA_SERVER_URL
@@ -16,6 +21,27 @@ const configuredServerUrl = (
   || process.env.STICKRPG_SERVER_URL
   || process.env.VITE_STICKRPG_SERVER_URL
   || positionalArgs[2]
+  || ''
+).trim();
+const configuredSupabaseUrl = (
+  process.env.VTA_SUPABASE_URL
+  || process.env.VITE_SUPABASE_URL
+  || process.env.NEXT_PUBLIC_SUPABASE_URL
+  || process.env.STICKRPG_SUPABASE_URL
+  || process.env.SUPABASE_URL
+  || ''
+).trim();
+const configuredSupabasePublishableKey = (
+  process.env.VTA_SUPABASE_PUBLISHABLE_KEY
+  || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  || process.env.STICKRPG_SUPABASE_PUBLISHABLE_KEY
+  || process.env.SUPABASE_PUBLISHABLE_KEY
+  || process.env.VTA_SUPABASE_ANON_KEY
+  || process.env.VITE_SUPABASE_ANON_KEY
+  || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  || process.env.STICKRPG_SUPABASE_ANON_KEY
+  || process.env.SUPABASE_ANON_KEY
   || ''
 ).trim();
 const liveReloadEnabled = flags.has('--live-reload')
@@ -108,12 +134,22 @@ function scheduleLiveReload(changedPath = '', { force = false } = {}) {
 
 function injectHtml(html) {
   let nextHtml = html;
+  const assignments = [];
 
   if (configuredServerUrl) {
-    nextHtml = nextHtml.replace(
-      '</head>',
-      `    <script>globalThis.VTA_SERVER_URL = ${JSON.stringify(configuredServerUrl)};globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(configuredServerUrl)};</script>\n  </head>`
-    );
+    assignments.push(`globalThis.VTA_SERVER_URL = ${JSON.stringify(configuredServerUrl)};`);
+    assignments.push(`globalThis.STICKRPG_SERVER_URL = ${JSON.stringify(configuredServerUrl)};`);
+  }
+
+  if (configuredSupabaseUrl && configuredSupabasePublishableKey) {
+    assignments.push(`globalThis.VTA_SUPABASE_URL = ${JSON.stringify(configuredSupabaseUrl)};`);
+    assignments.push(`globalThis.STICKRPG_SUPABASE_URL = ${JSON.stringify(configuredSupabaseUrl)};`);
+    assignments.push(`globalThis.VTA_SUPABASE_PUBLISHABLE_KEY = ${JSON.stringify(configuredSupabasePublishableKey)};`);
+    assignments.push(`globalThis.STICKRPG_SUPABASE_PUBLISHABLE_KEY = ${JSON.stringify(configuredSupabasePublishableKey)};`);
+  }
+
+  if (assignments.length > 0) {
+    nextHtml = nextHtml.replace('</head>', `    <script>${assignments.join('')}</script>\n  </head>`);
   }
 
   if (liveReloadEnabled) {

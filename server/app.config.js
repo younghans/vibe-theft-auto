@@ -24,6 +24,7 @@ import {
 } from './src/agentDeployments.js';
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 import { getPlayerSnapshotsInfo } from './src/playerSnapshots.js';
+import { getPlayerAccountsInfo } from './src/playerAccounts.js';
 import { getStockMarketPersistenceInfo } from './src/stockMarketPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -494,6 +495,7 @@ const server = defineServer({
       res.setHeader('Cache-Control', 'no-store, max-age=0');
       const persistence = getWorldPersistenceInfo();
       const playerSnapshots = getPlayerSnapshotsInfo();
+      const playerAccounts = getPlayerAccountsInfo();
       const stockMarketPersistence = getStockMarketPersistenceInfo();
       res.json({
         ok: true,
@@ -507,6 +509,7 @@ const server = defineServer({
         stockMarketPersistenceMode: stockMarketPersistence.mode,
         playerSnapshotPersistenceMode: playerSnapshots.mode,
         playerSnapshotTtlMs: playerSnapshots.ttlMs,
+        playerAccountPersistenceMode: playerAccounts.mode,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),
         worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,
         worldBackupRecentDays: persistence.backups?.recentDays ?? null,

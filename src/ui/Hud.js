@@ -511,6 +511,22 @@ function getPhoneSettingsAppMarkup(app) {
         </div>
         <input class="hud__phone-settings-slider" type="range" min="0" max="100" step="1" value="82" data-phone-setting-audio />
       </section>
+      <section class="hud__phone-settings-section hud__phone-account-section">
+        <div class="hud__phone-settings-section-head">
+          <span>Account</span>
+          <strong data-phone-auth-status>Signed out</strong>
+        </div>
+        <div class="hud__phone-account" data-phone-auth-panel>
+          <p class="hud__phone-account-message" data-phone-auth-message>Sign in with Google.</p>
+          <div class="hud__phone-account-actions">
+            <button class="hud__phone-account-button hud__phone-account-button--primary" type="button" data-phone-auth-google>
+              <span class="hud__phone-account-provider-mark" aria-hidden="true">G</span>
+              <span>Continue with Google</span>
+            </button>
+            <button class="hud__phone-account-button" type="button" data-phone-auth-sign-out hidden>Sign out</button>
+          </div>
+        </div>
+      </section>
       <section class="hud__phone-settings-section hud__phone-settings-controls">
         <div class="hud__phone-settings-section-head">
           <span>Controls</span>
@@ -6998,6 +7014,8 @@ export class Hud {
     onMapZoom,
     onMapPan,
     onMasterVolumeChange,
+    onAuthGoogleSignIn,
+    onAuthSignOut,
     onVibeRadioAction,
     onVibeRadioTrackSelect,
     onVibeRadioVolumeChange
@@ -7112,6 +7130,26 @@ export class Hud {
         event.stopPropagation();
         if (!mapZoomButton.disabled) {
           onMapZoom?.(Number(mapZoomButton.getAttribute('data-phone-map-zoom') ?? 0));
+        }
+        return;
+      }
+
+      const authGoogleButton = target?.closest('[data-phone-auth-google]');
+      if (authGoogleButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!authGoogleButton.disabled) {
+          onAuthGoogleSignIn?.();
+        }
+        return;
+      }
+
+      const authSignOutButton = target?.closest('[data-phone-auth-sign-out]');
+      if (authSignOutButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!authSignOutButton.disabled) {
+          onAuthSignOut?.();
         }
         return;
       }
@@ -10836,7 +10874,8 @@ export class Hud {
   }
 
   setPhoneSettingsState({
-    masterVolume = 0.82
+    masterVolume = 0.82,
+    auth = null
   } = {}) {
     const root = this.phoneScreenContent?.querySelector('[data-phone-settings-app]');
     if (!root) {
@@ -10851,6 +10890,70 @@ export class Hud {
     }
     if (value) {
       value.textContent = `${Math.round(volume * 100)}%`;
+    }
+
+    const authState = auth ?? {};
+    const authConfigured = Boolean(authState.configured);
+    const authStatus = String(authState.status ?? (authConfigured ? 'signedOut' : 'disabled'));
+    const signedIn = authConfigured && authStatus === 'signedIn' && authState.user;
+    const busy = authStatus === 'loading'
+      || authStatus === 'redirecting'
+      || authStatus === 'signingOut';
+    const email = typeof authState.user?.email === 'string' && authState.user.email
+      ? authState.user.email
+      : '';
+    const statusText = (() => {
+      if (!authConfigured) {
+        return 'Offline';
+      }
+      if (signedIn) {
+        return 'Signed in';
+      }
+      if (authStatus === 'redirecting') {
+        return 'Opening';
+      }
+      if (busy) {
+        return 'Syncing';
+      }
+      if (authStatus === 'error') {
+        return 'Check';
+      }
+      return 'Signed out';
+    })();
+    const messageText = (() => {
+      if (!authConfigured) {
+        return 'Account sync unavailable.';
+      }
+      if (signedIn) {
+        return `Signed in as ${email || 'player'}.`;
+      }
+      return String(authState.message ?? '').trim() || 'Sign in with Google.';
+    })();
+
+    const authStatusElement = root.querySelector('[data-phone-auth-status]');
+    const authMessage = root.querySelector('[data-phone-auth-message]');
+    const authGoogleButton = root.querySelector('[data-phone-auth-google]');
+    const authSignOutButton = root.querySelector('[data-phone-auth-sign-out]');
+    if (authStatusElement) {
+      authStatusElement.textContent = statusText;
+    }
+    if (authMessage) {
+      authMessage.textContent = messageText;
+    }
+    if (authGoogleButton) {
+      authGoogleButton.hidden = signedIn || !authConfigured;
+      authGoogleButton.disabled = busy;
+      const label = authGoogleButton.querySelector('span:last-child');
+      if (label) {
+        label.textContent = authStatus === 'redirecting'
+          ? 'Opening Google'
+          : 'Continue with Google';
+      }
+    }
+    if (authSignOutButton) {
+      authSignOutButton.hidden = !signedIn || !authConfigured;
+      authSignOutButton.disabled = busy;
+      authSignOutButton.textContent = authStatus === 'signingOut' ? 'Signing out' : 'Sign out';
     }
   }
 

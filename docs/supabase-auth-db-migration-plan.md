@@ -167,6 +167,7 @@ Notes:
   - `world_snapshot_backups`
   - `stock_market_snapshots`
   - `player_snapshots`
+- The baseline persistence tables are server-owned; migration `20260519233500_lock_down_baseline_persistence_rls.sql` enables RLS and revokes `anon`/`authenticated` access so they are not readable or writable through the browser-facing Data API.
 
 1. Export the current Render Postgres database.
 2. Restore the export into Supabase Postgres.
@@ -229,6 +230,15 @@ Optional later additions:
 
 Goal: let players sign in from the static frontend and pass the current access token to Colyseus.
 
+Status: completed locally on 2026-05-19.
+
+Notes:
+
+- Google is the primary sign-in method in the phone Settings account panel.
+- Local browser auth was verified with `oldfeet@gmail.com`.
+- The frontend passes the current Supabase access token to Colyseus join options when signed in.
+- Guest mode still passes the existing local `playerId`.
+
 1. Add `@supabase/supabase-js`.
 2. Add a small frontend auth module.
 3. Inject `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` during build.
@@ -241,6 +251,18 @@ Goal: let players sign in from the static frontend and pass the current access t
 ## Phase 5: Colyseus Auth
 
 Goal: authenticate room joins and map Supabase users to saves/admin roles.
+
+Status: completed locally on 2026-05-19.
+
+Notes:
+
+- Colyseus verifies Supabase access tokens before accepting signed-in account joins.
+- Signed-in users are upserted into `game_users`.
+- Authenticated player saves load from and write to `player_saves`.
+- Guest players continue using TTL `player_snapshots`.
+- The local backend `/health` endpoint reports `playerAccountPersistenceMode: "postgres"`.
+- A rollback-only DB smoke test verified that `player_saves` can be written without leaving test data behind.
+- `oldfeet@gmail.com` has a matching `game_users` row and is not marked admin yet.
 
 1. Add token verification in the server before `onJoin`.
 2. For signed-in users:

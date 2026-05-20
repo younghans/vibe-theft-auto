@@ -10,6 +10,11 @@ import {
   shutdownPlayerSnapshots
 } from './src/playerSnapshots.js';
 import {
+  getPlayerAccountsInfo,
+  initializePlayerAccounts,
+  shutdownPlayerAccounts
+} from './src/playerAccounts.js';
+import {
   getStockMarketPersistenceInfo,
   initializeStockMarketPersistence,
   shutdownStockMarketPersistence
@@ -23,8 +28,10 @@ const resolvedPort = Number(process.env.PORT || port);
 await initializeWorldPersistence();
 await initializeStockMarketPersistence();
 await initializePlayerSnapshots();
+await initializePlayerAccounts();
 const persistence = getWorldPersistenceInfo();
 const stockMarketPersistence = getStockMarketPersistenceInfo();
+const playerAccounts = getPlayerAccountsInfo();
 
 let shutdownPromise = null;
 
@@ -38,6 +45,7 @@ async function shutdown(signal, { exitCode = 0 } = {}) {
       .then(() => shutdownWorldPersistence())
       .then(() => shutdownStockMarketPersistence())
       .then(() => shutdownPlayerSnapshots())
+      .then(() => shutdownPlayerAccounts())
       .catch((error) => {
         console.error('[server] Graceful shutdown failed.', error);
         process.exitCode = 1;
@@ -69,6 +77,7 @@ logServer('server', 'Colyseus NPC server listening.', {
   persistenceMode: persistence.mode,
   worldKey: persistence.worldKey,
   stockMarketPersistenceMode: stockMarketPersistence.mode,
+  playerAccountPersistenceMode: playerAccounts.mode,
   worldBackupsEnabled: Boolean(persistence.backups?.enabled),
   worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,
   worldLayoutPath: persistence.runtimePath,

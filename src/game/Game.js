@@ -28,6 +28,7 @@ import {
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
 import { SchoolTeacherPreviewRenderer } from '../ui/SchoolTeacherPreviewRenderer.js';
+import { createSupabaseAuthService } from '../auth/supabaseAuth.js';
 import { assets } from '../world/assetManifest.js';
 import {
   ATTACHMENT_SLOTS,
@@ -1031,6 +1032,9 @@ export class Game {
     });
 
     this.hud = new Hud(this.root);
+    this.authService = createSupabaseAuthService();
+    this.authState = this.authService.getState();
+    this.authUnsubscribe = null;
     this.input = new Input();
     this.input.attachMobileControls(this.hud.getMobileControlsRoot());
     this.input.bindActionPress('chat', () => this.maybeOpenQuickChatFromInput());
@@ -1498,6 +1502,8 @@ export class Game {
       onMapZoom: (step) => this.stepPhoneMapZoom(step),
       onMapPan: (delta) => this.panPhoneMapByScreenDelta(delta),
       onMasterVolumeChange: (value) => this.setMasterVolume(value),
+      onAuthGoogleSignIn: () => void this.handleAuthGoogleSignIn(),
+      onAuthSignOut: () => void this.handleAuthSignOut(),
       onVibeRadioAction: (action) => this.handleVibeRadioAction(action),
       onVibeRadioTrackSelect: (trackId) => this.selectVibeRadioTrack(trackId, { autoplay: true }),
       onVibeRadioVolumeChange: (value) => this.setVibeRadioVolume(value)
@@ -3639,8 +3645,45 @@ export class Game {
     }
   }
 
+  async initializeAuth() {
+    if (this.authUnsubscribe) {
+      return;
+    }
+
+    this.authUnsubscribe = this.authService.subscribe((state) => {
+      this.authState = state;
+      this.refreshPhoneSettingsHud();
+    });
+
+    try {
+      this.authState = await this.authService.initialize();
+    } catch (error) {
+      console.warn('[Auth] Supabase auth initialization failed.', error);
+    }
+    this.refreshPhoneSettingsHud();
+  }
+
+  async handleAuthGoogleSignIn() {
+    this.authState = await this.authService.signInWithGoogle();
+    this.refreshPhoneSettingsHud();
+    if (this.authState.status === 'error' && this.authState.message) {
+      this.hud.showToast(this.authState.message);
+    }
+  }
+
+  async handleAuthSignOut() {
+    this.authState = await this.authService.signOut();
+    this.refreshPhoneSettingsHud();
+    if (this.authState.status === 'signedOut') {
+      this.hud.showToast('Signed out.');
+    } else if (this.authState.status === 'error' && this.authState.message) {
+      this.hud.showToast(this.authState.message);
+    }
+  }
+
   refreshPhoneSettingsHud() {
     this.hud.setPhoneSettingsState({
+      auth: this.authState,
       masterVolume: this.gameSettings.masterVolume
     });
   }
@@ -13353,8 +13396,11 @@ export class Game {
       this.setupLights();
       this.setupAtmosphere();
       this.setBootLoadingProgress(0.12);
+      await this.initializeAuth();
       this.markBoot('boot:npc-service:start');
-      const npcServicePromise = createNpcService();
+      const npcServicePromise = createNpcService({
+        accessToken: this.authService.getAccessToken()
+      });
 
       const cityState = await buildCity(this.scene);
       this.setBootLoadingProgress(0.24);

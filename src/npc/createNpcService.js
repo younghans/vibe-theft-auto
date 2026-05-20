@@ -78,6 +78,7 @@ function readPersistentPlayerId() {
 }
 
 export async function createNpcService({
+  accessToken = '',
   endpoint = null,
   connectTimeoutMs = 1200,
   retryWindowMs = 2500,
@@ -101,6 +102,7 @@ export async function createNpcService({
   while (performance.now() < deadline) {
     attempt += 1;
     const service = new NpcServiceColyseus({
+      accessToken,
       endpoint: resolvedEndpoint,
       adminKey,
       playerId

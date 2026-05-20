@@ -75,6 +75,9 @@ assert.match(stylesSource, /\.hud__money-net-worth\.is-up/, 'Main HUD net worth 
 assert.match(stylesSource, /\.hud__money-net-worth\.is-down/, 'Main HUD net worth turns red when stocks are down');
 assert.match(hudSource, /data-phone-settings-app/, 'Settings app has dedicated phone markup');
 assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio slider');
+assert.match(hudSource, /data-phone-auth-google/, 'Settings account panel exposes Google sign-in');
+assert.doesNotMatch(hudSource, /data-phone-auth-email/, 'Settings account panel does not expose email magic-link sign-in');
+assert.match(gameSource, /handleAuthGoogleSignIn/, 'Game wires Google sign-in from the phone account panel');
 assert.match(hudSource, /WASD \/ left touch stick/, 'Settings controls list includes movement binding');
 assert.match(hudSource, /Tab \/ phone button/, 'Settings controls list includes phone binding');
 
