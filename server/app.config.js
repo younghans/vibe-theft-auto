@@ -550,6 +550,8 @@ const server = defineServer({
         playerSnapshotPersistenceMode: playerSnapshots.mode,
         playerSnapshotTtlMs: playerSnapshots.ttlMs,
         playerAccountPersistenceMode: playerAccounts.mode,
+        playerAccountSaveSchemaVersion: playerAccounts.schemaVersion ?? null,
+        playerAccountSaveMaxBytes: playerAccounts.maxSaveBytes ?? null,
         supabaseAuthConfigured: supabaseAuth.configured,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),
         worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,

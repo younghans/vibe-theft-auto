@@ -4,13 +4,41 @@ import { logServer, logServerError } from './logger.js';
 
 const { Pool } = pg;
 const DEFAULT_WORLD_KEY = 'primary';
+const ACCOUNT_SAVE_SCHEMA_VERSION = 1;
+const DEFAULT_ACCOUNT_SAVE_MAX_BYTES = 128 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const ACCOUNT_SAVE_TOP_LEVEL_KEYS = new Set([
+  'version',
+  'worldKey',
+  'playerId',
+  'userId',
+  'updatedAt',
+  'player',
+  'stockPortfolio',
+  'stockPortfolios'
+]);
+const ACCOUNT_SAVE_REQUIRED_PLAYER_KEYS = [
+  'x',
+  'z',
+  'rotationY',
+  'health',
+  'money',
+  'characterId'
+];
+const SENSITIVE_SNAPSHOT_KEY_PATTERN = /token|secret|password|authorization|cookie|credential/iu;
 
 let playerAccountManager = null;
 
 function getWorldKey() {
   const configuredKey = String(process.env.WORLD_KEY ?? DEFAULT_WORLD_KEY).trim();
   return configuredKey || DEFAULT_WORLD_KEY;
+}
+
+function getAccountSaveMaxBytes() {
+  const value = Number(process.env.PLAYER_ACCOUNT_SAVE_MAX_BYTES);
+  return Number.isFinite(value) && value >= 4096
+    ? Math.floor(value)
+    : DEFAULT_ACCOUNT_SAVE_MAX_BYTES;
 }
 
 function getDatabaseSslConfig(connectionString) {
@@ -34,9 +62,60 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function normalizeUserId(value = '') {
   const normalized = String(value ?? '').trim().toLowerCase();
   return UUID_PATTERN.test(normalized) ? normalized : '';
+}
+
+function normalizeTimestamp(value, fallback = Date.now()) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp >= 0 ? Math.floor(timestamp) : fallback;
+}
+
+function normalizeWorldKey(value = '', fallback = getWorldKey()) {
+  const normalized = String(value ?? '').trim().slice(0, 120);
+  return normalized || fallback;
+}
+
+function clonePlainObject(value) {
+  return isPlainObject(value) ? cloneJson(value) : {};
+}
+
+function collectSensitiveSnapshotKeyPaths(value, path = '$', output = []) {
+  if (output.length >= 10 || !value || typeof value !== 'object') {
+    return output;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}.${key}`;
+    if (SENSITIVE_SNAPSHOT_KEY_PATTERN.test(key)) {
+      output.push(childPath);
+      if (output.length >= 10) {
+        return output;
+      }
+    }
+
+    if (child && typeof child === 'object') {
+      collectSensitiveSnapshotKeyPaths(child, childPath, output);
+      if (output.length >= 10) {
+        return output;
+      }
+    }
+  }
+
+  return output;
+}
+
+export class AccountSaveValidationError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'AccountSaveValidationError';
+    this.details = details;
+  }
 }
 
 function normalizeDisplayName(authUser = {}) {
@@ -60,16 +139,133 @@ function normalizeDisplayName(authUser = {}) {
   return null;
 }
 
-function normalizeSnapshot(raw = {}, { worldKey = getWorldKey(), userId = '' } = {}) {
+export function normalizeAccountSaveSnapshot(raw = {}, {
+  worldKey = getWorldKey(),
+  userId = '',
+  now = Date.now()
+} = {}) {
+  const normalizedWorldKey = normalizeWorldKey(worldKey, DEFAULT_WORLD_KEY);
+  const expectedUserId = normalizeUserId(userId);
+  const snapshotUserId = raw?.userId == null ? expectedUserId : normalizeUserId(raw.userId);
+  const expectedPlayerId = expectedUserId ? `auth:${expectedUserId}` : '';
+  const snapshotPlayerId = raw?.playerId == null ? expectedPlayerId : String(raw.playerId ?? '').trim();
+  const snapshotWorldKey = raw?.worldKey == null ? normalizedWorldKey : normalizeWorldKey(raw.worldKey, normalizedWorldKey);
+
+  if (!expectedUserId) {
+    throw new AccountSaveValidationError('Account save requires a valid Supabase user id.');
+  }
+
+  if (snapshotUserId !== expectedUserId) {
+    throw new AccountSaveValidationError('Account save user id does not match the storage key.', {
+      expectedUserId,
+      snapshotUserId: snapshotUserId || null
+    });
+  }
+
+  if (snapshotPlayerId !== expectedPlayerId) {
+    throw new AccountSaveValidationError('Account save player id does not match the authenticated user.', {
+      expectedPlayerId,
+      snapshotPlayerId: snapshotPlayerId || null
+    });
+  }
+
+  if (snapshotWorldKey !== normalizedWorldKey) {
+    throw new AccountSaveValidationError('Account save world key does not match the storage key.', {
+      expectedWorldKey: normalizedWorldKey,
+      snapshotWorldKey
+    });
+  }
+
   return {
-    version: 1,
-    worldKey: String(raw?.worldKey ?? worldKey),
-    playerId: `auth:${normalizeUserId(raw?.userId ?? userId)}`,
-    userId: normalizeUserId(raw?.userId ?? userId),
-    updatedAt: Number(raw?.updatedAt) || Date.now(),
-    player: raw?.player && typeof raw.player === 'object' ? cloneJson(raw.player) : {},
-    stockPortfolio: raw?.stockPortfolio && typeof raw.stockPortfolio === 'object' ? cloneJson(raw.stockPortfolio) : {},
-    stockPortfolios: raw?.stockPortfolios && typeof raw.stockPortfolios === 'object' ? cloneJson(raw.stockPortfolios) : {}
+    version: ACCOUNT_SAVE_SCHEMA_VERSION,
+    worldKey: normalizedWorldKey,
+    playerId: expectedPlayerId,
+    userId: expectedUserId,
+    updatedAt: normalizeTimestamp(raw?.updatedAt, now),
+    player: clonePlainObject(raw?.player),
+    stockPortfolio: clonePlainObject(raw?.stockPortfolio),
+    stockPortfolios: clonePlainObject(raw?.stockPortfolios)
+  };
+}
+
+export function validateAccountSaveSnapshot(snapshot = {}, {
+  worldKey = getWorldKey(),
+  userId = '',
+  maxBytes = getAccountSaveMaxBytes()
+} = {}) {
+  if (!isPlainObject(snapshot)) {
+    throw new AccountSaveValidationError('Account save snapshot must be a JSON object.');
+  }
+
+  const expectedWorldKey = normalizeWorldKey(worldKey, DEFAULT_WORLD_KEY);
+  const expectedUserId = normalizeUserId(userId);
+  const unexpectedTopLevelKeys = Object.keys(snapshot).filter((key) => !ACCOUNT_SAVE_TOP_LEVEL_KEYS.has(key));
+  if (unexpectedTopLevelKeys.length > 0) {
+    throw new AccountSaveValidationError('Account save snapshot contains unsupported top-level keys.', {
+      unexpectedTopLevelKeys
+    });
+  }
+
+  if (snapshot.version !== ACCOUNT_SAVE_SCHEMA_VERSION) {
+    throw new AccountSaveValidationError('Account save snapshot has an unsupported schema version.', {
+      expectedVersion: ACCOUNT_SAVE_SCHEMA_VERSION,
+      snapshotVersion: snapshot.version
+    });
+  }
+
+  if (!expectedUserId || snapshot.userId !== expectedUserId || snapshot.playerId !== `auth:${expectedUserId}`) {
+    throw new AccountSaveValidationError('Account save snapshot identity does not match the authenticated user.', {
+      expectedUserId,
+      snapshotUserId: snapshot.userId || null,
+      snapshotPlayerId: snapshot.playerId || null
+    });
+  }
+
+  if (snapshot.worldKey !== expectedWorldKey) {
+    throw new AccountSaveValidationError('Account save snapshot world key does not match the current world.', {
+      expectedWorldKey,
+      snapshotWorldKey: snapshot.worldKey || null
+    });
+  }
+
+  if (!Number.isFinite(Number(snapshot.updatedAt)) || Number(snapshot.updatedAt) < 0) {
+    throw new AccountSaveValidationError('Account save snapshot updatedAt must be a positive timestamp.');
+  }
+
+  if (!isPlainObject(snapshot.player)) {
+    throw new AccountSaveValidationError('Account save snapshot player payload must be a JSON object.');
+  }
+
+  const missingPlayerKeys = ACCOUNT_SAVE_REQUIRED_PLAYER_KEYS.filter((key) => !Object.hasOwn(snapshot.player, key));
+  if (missingPlayerKeys.length > 0) {
+    throw new AccountSaveValidationError('Account save snapshot is missing required player fields.', {
+      missingPlayerKeys
+    });
+  }
+
+  if (!isPlainObject(snapshot.stockPortfolio) || !isPlainObject(snapshot.stockPortfolios)) {
+    throw new AccountSaveValidationError('Account save stock payloads must be JSON objects.');
+  }
+
+  const sensitiveKeyPaths = collectSensitiveSnapshotKeyPaths(snapshot);
+  if (sensitiveKeyPaths.length > 0) {
+    throw new AccountSaveValidationError('Account save snapshot contains secret-like keys.', {
+      sensitiveKeyPaths
+    });
+  }
+
+  const json = JSON.stringify(snapshot);
+  const byteLength = Buffer.byteLength(json, 'utf8');
+  if (byteLength > maxBytes) {
+    throw new AccountSaveValidationError('Account save snapshot exceeds the configured size limit.', {
+      byteLength,
+      maxBytes
+    });
+  }
+
+  return {
+    byteLength,
+    json
   };
 }
 
@@ -77,7 +273,9 @@ class DisabledPlayerAccountStore {
   getInfo() {
     return {
       mode: 'disabled',
-      worldKey: getWorldKey()
+      worldKey: getWorldKey(),
+      schemaVersion: ACCOUNT_SAVE_SCHEMA_VERSION,
+      maxSaveBytes: getAccountSaveMaxBytes()
     };
   }
 
@@ -114,7 +312,9 @@ class PostgresPlayerAccountStore {
   getInfo() {
     return {
       mode: 'postgres',
-      worldKey: this.worldKey
+      worldKey: this.worldKey,
+      schemaVersion: ACCOUNT_SAVE_SCHEMA_VERSION,
+      maxSaveBytes: getAccountSaveMaxBytes()
     };
   }
 
@@ -190,14 +390,26 @@ class PostgresPlayerAccountStore {
       return null;
     }
 
-    return normalizeSnapshot({
-      ...row.snapshot,
-      updatedAt: Number(row.updatedAt),
-      userId: normalizedUserId
-    }, {
-      worldKey: this.worldKey,
-      userId: normalizedUserId
-    });
+    try {
+      const normalized = normalizeAccountSaveSnapshot({
+        ...row.snapshot,
+        updatedAt: Number(row.updatedAt)
+      }, {
+        worldKey: this.worldKey,
+        userId: normalizedUserId
+      });
+      validateAccountSaveSnapshot(normalized, {
+        worldKey: this.worldKey,
+        userId: normalizedUserId
+      });
+      return normalized;
+    } catch (error) {
+      logServerError('player-accounts', 'Ignoring invalid authenticated player save.', error, {
+        worldKey: this.worldKey,
+        userId: normalizedUserId
+      });
+      return null;
+    }
   }
 
   async saveSave(userId = '', snapshot = {}) {
@@ -207,12 +419,16 @@ class PostgresPlayerAccountStore {
     }
 
     await this.initialize();
-    const normalized = normalizeSnapshot({
+    const normalized = normalizeAccountSaveSnapshot({
       ...snapshot,
       worldKey: this.worldKey,
       userId: normalizedUserId,
       updatedAt: Date.now()
     }, {
+      worldKey: this.worldKey,
+      userId: normalizedUserId
+    });
+    const validation = validateAccountSaveSnapshot(normalized, {
       worldKey: this.worldKey,
       userId: normalizedUserId
     });
@@ -228,7 +444,7 @@ class PostgresPlayerAccountStore {
       [
         this.worldKey,
         normalizedUserId,
-        JSON.stringify(normalized),
+        validation.json,
         normalized.updatedAt
       ]
     );

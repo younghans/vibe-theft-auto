@@ -302,7 +302,7 @@ Notes:
 
 Goal: prove production auth, saves, and admin authorization work end to end.
 
-Status: in progress on 2026-05-19.
+Status: completed on 2026-05-20.
 
 Notes:
 
@@ -329,6 +329,54 @@ where id = '<your-auth-user-id>';
    - non-admin cannot access builder/admin actions
    - admin can access builder/admin actions
    - `/admin/*` rejects missing or invalid tokens
+
+## Phase 8: Save Hardening And Operations
+
+Goal: make account saves safer to operate before adding more account-facing UX.
+
+Status: completed locally on 2026-05-20.
+
+Notes:
+
+- Account saves are still server-owned. The browser never writes `player_saves` directly.
+- Account save JSON should remain a narrow schema: identity metadata, player payload, and stock portfolio payloads.
+- Runtime health should expose enough non-secret account-save metadata to tell whether the backend is ready.
+
+1. Validate authenticated save blobs before writing them:
+   - valid Supabase user id
+   - matching `auth:<user-id>` player id
+   - matching world key
+   - supported schema version
+   - required core player fields
+   - JSON object stock payloads
+   - configured max size
+   - no secret-like keys
+2. Ignore malformed stored account saves and let the player join with a fresh server-created state instead of crashing room join.
+3. Add a local validation command for the account-save boundary.
+4. Add safe `/health` metadata for account-save schema version and configured max save size.
+5. Keep production rollout validation separate from this local hardening until the backend is deployed.
+
+## Phase 9: Main Menu And Player Identity
+
+Goal: introduce a first-screen flow before world join where players choose a display name and decide whether to play as guest or sign in with Google.
+
+Status: planned.
+
+Proposed flow:
+
+1. Show a main menu before connecting to Colyseus.
+2. Require or strongly prompt for a player name.
+3. Offer two clear actions:
+   - `Play as guest`
+   - `Sign in with Google`
+4. For guests, store the chosen name locally and pass it as a sanitized join option.
+5. For signed-in players, use Google as the primary auth action and let the chosen name override or confirm the game display name.
+6. Server remains authoritative:
+   - sanitize guest display names
+   - upsert signed-in display names into `game_users`
+   - keep `is_admin` server-owned
+   - never trust browser-supplied admin state
+7. Later, decide whether signing in after guest play should offer to move the current guest progress into the account save.
 
 ## Useful Official Docs
 
