@@ -310,7 +310,7 @@ const SNATCH_WORKOUT_CAMERA_LOOK_HEIGHT = 1.42;
 const SNATCH_WORKOUT_CAMERA_BAR_PADDING = 0.85;
 const TREADMILL_RUN_RESULT_HOLD_MS = 980;
 const TREADMILL_RUN_COUNTDOWN_MS = 3000;
-const TREADMILL_RUN_REWARD_SCORE = 90;
+const TREADMILL_RUN_REWARD_SCORE = 70;
 const TREADMILL_RUN_FIRST_BEAT_MS = 260;
 const TREADMILL_RUN_BEAT_WINDOW_MS = 150;
 const TREADMILL_RUN_EXTRA_TAP_PENALTY = 4;
@@ -14000,11 +14000,11 @@ export class Game {
     });
     run.phase = 'result';
     run.score = calculateTreadmillRunScore(run);
-    run.awardXp = run.score >= TREADMILL_RUN_REWARD_SCORE;
+    run.awardXp = run.score > TREADMILL_RUN_REWARD_SCORE;
     run.resultAt = now;
     run.lastGrade = run.awardXp ? 'perfect' : 'miss';
     run.message = run.awardXp
-      ? `${run.score}% rhythm. XP earned.`
+      ? 'Nice Run!'
       : `${run.score}% rhythm. No XP.`;
     this.syncTreadmillRunObjectSpeed(run, now);
     this.stopTreadmillLoopSound();
@@ -14144,7 +14144,7 @@ export class Game {
     this.updateTreadmillRunHud();
     if (now >= run.resultAt + TREADMILL_RUN_RESULT_HOLD_MS) {
       if (run.awardXp) {
-        this.hud.showToast(`Treadmill score ${run.score}%. XP awarded.`);
+        this.hud.showToast(`Nice Run! Treadmill score ${run.score}%. XP awarded.`);
         this.finishWorkout({ showCompleteToast: false });
       } else {
         this.hud.showToast(`Treadmill score ${run.score}%. No XP awarded.`);

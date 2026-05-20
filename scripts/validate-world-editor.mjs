@@ -1395,6 +1395,11 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes('TREADMILL_RUN_COUNTDOWN_MS = 3000'), 'Treadmill run should include a three second countdown before scoring starts');
   assert(gameSource.includes('TREADMILL_RUN_MIN_BPM = 100'), 'Treadmill rhythm run should choose BPM no lower than 100');
   assert(gameSource.includes('TREADMILL_RUN_MAX_BPM = 140'), 'Treadmill rhythm run should choose BPM no higher than 140');
+  assert(gameSource.includes('TREADMILL_RUN_REWARD_SCORE = 70'), 'Treadmill rhythm run should complete on scores over 70%');
+  assert(gameSource.includes('run.awardXp = run.score > TREADMILL_RUN_REWARD_SCORE'), 'Treadmill rhythm run should require scores over the completion threshold');
+  assert(gameSource.includes("'Nice Run!'"), 'Successful treadmill rhythm runs should say Nice Run');
+  assert(gameSource.includes('Nice Run! Treadmill score'), 'Successful treadmill rhythm completion toasts should say Nice Run');
+  assert(hudSource.includes("'Nice Run!'"), 'HUD should label successful treadmill rhythm completions as Nice Run');
   assert(!gameSource.includes('TREADMILL_RUN_BPM_PATTERN'), 'Treadmill rhythm run should not change BPM through an elapsed-time pattern');
   assert(/const bpm = createRandomTreadmillRunBpm\(\)[\s\S]*createTreadmillRunBeatSchedule\(\{[\s\S]*bpm[\s\S]*createTreadmillRunCountdownBeatSchedule\(\{[\s\S]*bpm[\s\S]*this\.activeWorkout\.treadmillRun = \{[\s\S]*bpm,/.test(gameSource), 'Treadmill rhythm run should store one randomly chosen BPM for countdown and scoring');
   assert(/getTreadmillRunBpm\(run = this\.activeWorkout\?\.treadmillRun[\s\S]*return normalizeTreadmillRunBpm\(run\?\.bpm/.test(gameSource), 'Treadmill rhythm run should report the stored BPM instead of recalculating a new speed');

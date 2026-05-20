@@ -1305,7 +1305,7 @@ function createBasketballShotMeterMarkup(game = null) {
 function getTreadmillRunStatusText(game = null) {
   const phase = String(game?.phase ?? 'idle');
   if (phase === 'result') {
-    return game?.awardXp ? 'Rhythm Locked' : 'Run Complete';
+    return game?.awardXp ? 'Nice Run!' : 'Run Complete';
   }
   if (phase === 'countdown') {
     return `Listen: ${Math.round(Number(game?.bpm ?? 0) || 0)} BPM`;
