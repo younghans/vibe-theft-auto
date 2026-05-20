@@ -47,6 +47,8 @@ try {
   assert.match(agentWorkerSource, /\$includeDetachedLocalHelpers -and \$isNew -and \$isTaskRelated/, 'Worker cleanup should only kill detached helpers related to the current task.');
   assert.match(agentWorkerSource, /removedPlacementCount/, 'Worker live world verification should distinguish removed placements from non-placement metadata.');
   assert.match(agentWorkerSource, /only non-placement seed metadata changed/, 'Worker should not fail deploys for non-placement world-layout metadata changes.');
+  assert.match(agentWorkerSource, /retryTransientCommand\(task\.id, 'git fetch pushed main'/, 'Worker should retry transient post-push main fetch failures.');
+  assert.match(agentWorkerSource, /continuing deploy from the pushed worktree commit/, 'Worker should not stop backend deploy after a transient post-push fetch failure.');
   assert.equal(
     packageJson.scripts['worker:prod:bg'],
     'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod-detached.ps1',

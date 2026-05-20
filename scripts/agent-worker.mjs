@@ -3508,11 +3508,27 @@ async function pushWorktreeToMain(task, worktreePath) {
     timeoutMs: 10 * 60 * 1000,
     label: 'git push main'
   }));
-  await git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
-    cwd: REPO_PATH,
-    taskId: task.id,
-    label: 'git fetch pushed main'
-  });
+  try {
+    await retryTransientCommand(task.id, 'git fetch pushed main', () => git(['fetch', 'origin', GIT_BASE_BRANCH, '--prune'], {
+      cwd: REPO_PATH,
+      taskId: task.id,
+      label: 'git fetch pushed main'
+    }), {
+      attempts: 4,
+      delayMs: 5000
+    });
+  } catch (error) {
+    if (!isRetryableNetworkError(error)) {
+      throw error;
+    }
+
+    await appendLog(task.id, 'Could not refresh the base repository after pushing main; continuing deploy from the pushed worktree commit.', {
+      level: 'warn',
+      data: {
+        error: truncateText(error?.message || String(error), 1200)
+      }
+    });
+  }
 }
 
 async function deployTask(task, worktreePath) {
