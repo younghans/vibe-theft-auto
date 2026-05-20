@@ -311,7 +311,8 @@ const TREADMILL_RUN_FIRST_BEAT_MS = 260;
 const TREADMILL_RUN_BEAT_WINDOW_MS = 150;
 const TREADMILL_RUN_EXTRA_TAP_PENALTY = 4;
 const TREADMILL_RUN_CAMERA_SMOOTHING = 0.2;
-const TREADMILL_RUN_BPM_PATTERN = Object.freeze([132, 168, 150, 186]);
+const TREADMILL_RUN_MIN_BPM = 100;
+const TREADMILL_RUN_MAX_BPM = 140;
 
 function formatVibeHeroTimestamp(milliseconds = 0) {
   const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
@@ -1068,25 +1069,28 @@ function createBasketballShotBall() {
   return group;
 }
 
-function getTreadmillRunBpmAtElapsed(elapsedMs = 0, durationMs = TREADMILL_DURATION_MS) {
-  const safeDuration = Math.max(1, Number(durationMs) || TREADMILL_DURATION_MS);
-  const patternIndex = Math.min(
-    TREADMILL_RUN_BPM_PATTERN.length - 1,
-    Math.max(0, Math.floor((Math.max(0, Number(elapsedMs) || 0) / safeDuration) * TREADMILL_RUN_BPM_PATTERN.length))
-  );
-  return TREADMILL_RUN_BPM_PATTERN[patternIndex] ?? TREADMILL_RUN_BPM_PATTERN[0];
+function normalizeTreadmillRunBpm(bpm = TREADMILL_RUN_MIN_BPM) {
+  const parsedBpm = Math.round(Number(bpm) || TREADMILL_RUN_MIN_BPM);
+  return THREE.MathUtils.clamp(parsedBpm, TREADMILL_RUN_MIN_BPM, TREADMILL_RUN_MAX_BPM);
 }
 
-function createTreadmillRunBeatSchedule(durationMs = TREADMILL_DURATION_MS) {
+function createRandomTreadmillRunBpm() {
+  return TREADMILL_RUN_MIN_BPM + Math.floor(Math.random() * ((TREADMILL_RUN_MAX_BPM - TREADMILL_RUN_MIN_BPM) + 1));
+}
+
+function createTreadmillRunBeatSchedule({
+  durationMs = TREADMILL_DURATION_MS,
+  bpm = TREADMILL_RUN_MIN_BPM
+} = {}) {
   const safeDuration = Math.max(800, Number(durationMs) || TREADMILL_DURATION_MS);
+  const runBpm = normalizeTreadmillRunBpm(bpm);
   const beats = [];
   let elapsedMs = TREADMILL_RUN_FIRST_BEAT_MS;
   while (elapsedMs < safeDuration - 90) {
-    const bpm = getTreadmillRunBpmAtElapsed(elapsedMs, safeDuration);
-    const intervalMs = 60000 / Math.max(1, bpm);
+    const intervalMs = 60000 / Math.max(1, runBpm);
     beats.push({
       timeMs: elapsedMs,
-      bpm,
+      bpm: runBpm,
       intervalMs,
       hitAtMs: null,
       hitOffsetMs: null,
@@ -1101,17 +1105,17 @@ function createTreadmillRunBeatSchedule(durationMs = TREADMILL_DURATION_MS) {
 function createTreadmillRunCountdownBeatSchedule({
   countdownMs = TREADMILL_RUN_COUNTDOWN_MS,
   beats = [],
-  durationMs = TREADMILL_DURATION_MS
+  bpm = null
 } = {}) {
   const safeCountdownMs = Math.max(1000, Number(countdownMs) || TREADMILL_RUN_COUNTDOWN_MS);
   const firstRunBeatMs = Math.max(0, Number(beats?.[0]?.timeMs ?? TREADMILL_RUN_FIRST_BEAT_MS) || TREADMILL_RUN_FIRST_BEAT_MS);
-  const startBpm = getTreadmillRunBpmAtElapsed(0, durationMs);
-  const intervalMs = 60000 / Math.max(1, startBpm);
+  const runBpm = normalizeTreadmillRunBpm(bpm ?? beats?.[0]?.bpm);
+  const intervalMs = 60000 / Math.max(1, runBpm);
   const countdownBeats = [];
   for (let timeMs = safeCountdownMs + firstRunBeatMs - intervalMs; timeMs > 0; timeMs -= intervalMs) {
     countdownBeats.push({
       timeMs,
-      bpm: startBpm,
+      bpm: runBpm,
       intervalMs
     });
   }
@@ -13440,17 +13444,22 @@ export class Game {
     const durationMs = Math.max(1000, Number(this.activeWorkout.activityConfig?.durationMs ?? TREADMILL_DURATION_MS) || TREADMILL_DURATION_MS);
     const countdownMs = TREADMILL_RUN_COUNTDOWN_MS;
     const treadmillObject = this.activeWorkout.interactable?.barbellObject ?? null;
-    const beats = createTreadmillRunBeatSchedule(durationMs);
+    const bpm = createRandomTreadmillRunBpm();
+    const beats = createTreadmillRunBeatSchedule({
+      durationMs,
+      bpm
+    });
     const countdownBeats = createTreadmillRunCountdownBeatSchedule({
       countdownMs,
       beats,
-      durationMs
+      bpm
     });
     this.activeWorkout.treadmillRun = {
       countdownStartedAt: now,
       countdownMs,
       startedAt: now + countdownMs,
       durationMs,
+      bpm,
       phase: 'countdown',
       beats,
       countdownBeats,
@@ -13466,7 +13475,7 @@ export class Game {
       treadmillObject
     };
     if (treadmillObject?.userData) {
-      treadmillObject.userData.treadmillBeltSpeed = 1.15;
+      treadmillObject.userData.treadmillBeltSpeed = THREE.MathUtils.clamp(bpm / 120, 0.7, 1.7);
     }
     this.input.clearKeyPressQueue?.();
     this.startTreadmillLoopSound();
@@ -13503,11 +13512,8 @@ export class Game {
     return Math.max(0, now - Number(run?.countdownStartedAt ?? now));
   }
 
-  getTreadmillRunBpm(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
-    return getTreadmillRunBpmAtElapsed(
-      this.getTreadmillRunElapsed(run, now),
-      run?.durationMs ?? TREADMILL_DURATION_MS
-    );
+  getTreadmillRunBpm(run = this.activeWorkout?.treadmillRun) {
+    return normalizeTreadmillRunBpm(run?.bpm ?? run?.beats?.[0]?.bpm);
   }
 
   syncTreadmillRunObjectSpeed(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
@@ -13538,7 +13544,7 @@ export class Game {
     const motor = context.createOscillator();
     const belt = context.createOscillator();
     const now = context.currentTime;
-    master.gain.setValueAtTime(THREE.MathUtils.clamp(0.006 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.018), now);
+    master.gain.setValueAtTime(THREE.MathUtils.clamp(0.0035 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.011), now);
     motor.type = 'sawtooth';
     motor.frequency.setValueAtTime(54, now);
     belt.type = 'triangle';
@@ -13575,7 +13581,7 @@ export class Game {
       this.playSoundEffect(this.playingCardSound, {
         playbackRate: THREE.MathUtils.clamp(safeBpm / 150, 0.75, 1.45),
         preservePitch: false,
-        volumeScale: countdown ? 0.72 : 0.92
+        volumeScale: countdown ? 0.82 : 1.04
       });
       return;
     }
@@ -13608,7 +13614,7 @@ export class Game {
       master.connect(context.destination);
     }
 
-    const outputGain = THREE.MathUtils.clamp((countdown ? 0.19 : 0.27) * volume * Math.max(0.35, Number(accent) || 1), 0.0001, 0.38);
+    const outputGain = THREE.MathUtils.clamp((countdown ? 0.22 : 0.31) * volume * Math.max(0.35, Number(accent) || 1), 0.0001, 0.44);
     master.gain.setValueAtTime(0.0001, now);
     master.gain.exponentialRampToValueAtTime(outputGain, now + 0.006);
     master.gain.exponentialRampToValueAtTime(0.0001, now + durationSeconds);

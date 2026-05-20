@@ -1340,6 +1340,11 @@ function validateCustomPropCatalogItems() {
   assert(TREADMILL_WORKOUT_KIND === 'treadmill-workout', 'Treadmill workout kind should match prop interactable naming');
   assert(TREADMILL_DURATION_MS === 3000, 'Treadmill rhythm run should last exactly three seconds');
   assert(gameSource.includes('TREADMILL_RUN_COUNTDOWN_MS = 3000'), 'Treadmill run should include a three second countdown before scoring starts');
+  assert(gameSource.includes('TREADMILL_RUN_MIN_BPM = 100'), 'Treadmill rhythm run should choose BPM no lower than 100');
+  assert(gameSource.includes('TREADMILL_RUN_MAX_BPM = 140'), 'Treadmill rhythm run should choose BPM no higher than 140');
+  assert(!gameSource.includes('TREADMILL_RUN_BPM_PATTERN'), 'Treadmill rhythm run should not change BPM through an elapsed-time pattern');
+  assert(/const bpm = createRandomTreadmillRunBpm\(\)[\s\S]*createTreadmillRunBeatSchedule\(\{[\s\S]*bpm[\s\S]*createTreadmillRunCountdownBeatSchedule\(\{[\s\S]*bpm[\s\S]*this\.activeWorkout\.treadmillRun = \{[\s\S]*bpm,/.test(gameSource), 'Treadmill rhythm run should store one randomly chosen BPM for countdown and scoring');
+  assert(/getTreadmillRunBpm\(run = this\.activeWorkout\?\.treadmillRun[\s\S]*return normalizeTreadmillRunBpm\(run\?\.bpm/.test(gameSource), 'Treadmill rhythm run should report the stored BPM instead of recalculating a new speed');
   assert(gameSource.includes("phase: 'countdown'"), 'Treadmill run should begin in a countdown phase before the scored run');
   assert(gameSource.includes('createTreadmillRunCountdownBeatSchedule'), 'Treadmill countdown should use a BPM-matched footstep guide schedule');
   assert(gameSource.includes('Press Spacebar to the beat of the player running'), 'Treadmill countdown should instruct players to match Spacebar to the running beat');
