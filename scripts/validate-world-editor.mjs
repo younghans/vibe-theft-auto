@@ -113,6 +113,7 @@ import {
   DIRT_PATH_PROP_FOOTPRINT,
   INSTRUMENT_CLUSTER_FOOTPRINT,
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
+  OLYMPIC_BARBELL_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   SIDEWALK_PROP_FOOTPRINT,
   STONE_PATH_PROP_FOOTPRINT,
@@ -148,6 +149,7 @@ import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracke
 import {
   BASKETBALL_SHOT_DURATION_MS,
   BASKETBALL_SHOT_WORKOUT_KIND,
+  SNATCH_WORKOUT_KIND,
   TREADMILL_DURATION_MS,
   TREADMILL_WORKOUT_KIND
 } from '../src/game/workoutActivities.js';
@@ -1107,6 +1109,19 @@ function validateCustomPropCatalogItems() {
       `Vibe Jam ${role} portal spawn should place arrivals beyond the portal prompt halo`
     );
   }
+
+  const olympicBarbell = getBuilderItemById('olympic_barbell');
+  assert(olympicBarbell, 'Olympic barbell prop should exist');
+  assert(olympicBarbell.layer === 'prop', 'Olympic barbell should be a prop catalog item');
+  assert(olympicBarbell.groupId === 'fitness', 'Olympic barbell should be grouped under Fitness');
+  assert(olympicBarbell.interactable?.workoutType === 'snatch', 'Olympic barbell should launch the snatch workout');
+  assert(olympicBarbell.interactable?.prompt === 'Snatch barbell', 'Olympic barbell should prompt the player to snatch');
+  assert(Array.isArray(olympicBarbell.interactable?.approachLocalOffset), 'Olympic barbell should define a lift approach point');
+  assert(Math.abs(olympicBarbell.size[0] - OLYMPIC_BARBELL_FOOTPRINT[0]) < 0.001, 'Olympic barbell catalog size should match the procedural footprint width');
+  assert(Math.abs(olympicBarbell.size[1] - OLYMPIC_BARBELL_FOOTPRINT[1]) < 0.001, 'Olympic barbell catalog size should match the procedural footprint depth');
+  assert(SNATCH_WORKOUT_KIND === 'snatch-workout', 'Snatch workout kind should match prop interactable naming');
+  assert(gameSource.includes('updateSnatchWorkoutCamera'), 'Game should use a zoomed horizontal snatch workout camera');
+  assert(gameSource.includes('getSnatchWorkoutCameraDistance'), 'Snatch camera should fit the full barbell across the frame');
 
   const basketballHoop = getBuilderItemById('basketball_hoop');
   assert(basketballHoop, 'Basketball hoop prop should exist');

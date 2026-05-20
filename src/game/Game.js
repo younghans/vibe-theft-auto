@@ -78,6 +78,7 @@ import { INTERACTABLE_INDICATOR_LAYER } from '../world/interactableIndicators.js
 import { createInteriorScene } from '../world/InteriorScene.js';
 import {
   BASKETBALL_HOOP_RIM_HEIGHT,
+  OLYMPIC_BARBELL_LENGTH,
   createOlympicBarbellVisual
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
@@ -274,6 +275,12 @@ const BASKETBALL_SHOT_RIM_LOCAL_Z = 0.44;
 const BASKETBALL_SHOT_RIM_WORLD_HEIGHT = BASKETBALL_HOOP_RIM_HEIGHT * 1.045;
 const BASKETBALL_SHOT_BALL_RADIUS = 0.23;
 const BASKETBALL_SHOT_CAMERA_SMOOTHING = 0.18;
+const SNATCH_WORKOUT_CAMERA_SMOOTHING = 0.18;
+const SNATCH_WORKOUT_CAMERA_BASE_DISTANCE = 5.15;
+const SNATCH_WORKOUT_CAMERA_SIDE_OFFSET = 0.82;
+const SNATCH_WORKOUT_CAMERA_HEIGHT = 1.85;
+const SNATCH_WORKOUT_CAMERA_LOOK_HEIGHT = 1.42;
+const SNATCH_WORKOUT_CAMERA_BAR_PADDING = 0.85;
 const TREADMILL_RUN_RESULT_HOLD_MS = 980;
 const TREADMILL_RUN_REWARD_SCORE = 90;
 const TREADMILL_RUN_FIRST_BEAT_MS = 260;
@@ -1508,6 +1515,8 @@ export class Game {
     this.workoutBarbellAxis = new THREE.Vector3();
     this.workoutForward = new THREE.Vector3();
     this.workoutBarbellQuaternion = new THREE.Quaternion();
+    this.snatchWorkoutForward = new THREE.Vector3();
+    this.snatchWorkoutSide = new THREE.Vector3();
     this.basketballShotHandPosition = new THREE.Vector3();
     this.basketballShotRimPosition = new THREE.Vector3();
     this.basketballShotForward = new THREE.Vector3();
@@ -12672,6 +12681,9 @@ export class Game {
       this.hud.playTaskConfetti();
     }
     this.syncWorkoutBarbell();
+    if (activityConfig.kind === SNATCH_WORKOUT_KIND) {
+      this.updateSnatchWorkoutCamera({ snap: true });
+    }
     if (activityConfig.basketballShot) {
       this.beginBasketballShotActivity();
     }
@@ -12679,6 +12691,61 @@ export class Game {
       this.beginTreadmillRunActivity();
     }
     return true;
+  }
+
+  getSnatchWorkoutForward(target = this.snatchWorkoutForward) {
+    const facing = this.activeWorkout?.interactable?.approachRotationY
+      ?? this.player?.object?.rotation?.y
+      ?? 0;
+    target.set(Math.sin(facing), 0, Math.cos(facing));
+    if (target.lengthSq() <= 0.0001) {
+      target.set(0, 0, -1);
+    }
+    return target.normalize();
+  }
+
+  getSnatchWorkoutSide(target = this.snatchWorkoutSide) {
+    const forward = this.getSnatchWorkoutForward(this.snatchWorkoutForward);
+    target.set(forward.z, 0, -forward.x);
+    if (target.lengthSq() <= 0.0001) {
+      target.set(1, 0, 0);
+    }
+    return target.normalize();
+  }
+
+  getSnatchWorkoutCameraDistance() {
+    const aspect = Math.max(0.35, Number(this.camera?.aspect ?? 1) || 1);
+    const verticalFov = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(Number(this.camera?.fov ?? 55) || 55, 20, 95));
+    const horizontalHalfTan = Math.tan(verticalFov * 0.5) * aspect;
+    const barHalfWidth = (OLYMPIC_BARBELL_LENGTH * 0.5) + SNATCH_WORKOUT_CAMERA_BAR_PADDING;
+    const fitDistance = barHalfWidth / Math.max(0.18, horizontalHalfTan);
+    return Math.max(SNATCH_WORKOUT_CAMERA_BASE_DISTANCE, fitDistance);
+  }
+
+  updateSnatchWorkoutCamera({ snap = false } = {}) {
+    if (!this.player) {
+      return;
+    }
+
+    const forward = this.getSnatchWorkoutForward(this.snatchWorkoutForward);
+    const side = this.getSnatchWorkoutSide(this.snatchWorkoutSide);
+    const targetPosition = this.cameraTargetPosition
+      .copy(this.player.position)
+      .addScaledVector(forward, -this.getSnatchWorkoutCameraDistance())
+      .addScaledVector(side, SNATCH_WORKOUT_CAMERA_SIDE_OFFSET);
+    targetPosition.y += SNATCH_WORKOUT_CAMERA_HEIGHT;
+
+    const lookTarget = this.cameraLookTarget
+      .copy(this.player.position)
+      .addScaledVector(forward, 0.2);
+    lookTarget.y += SNATCH_WORKOUT_CAMERA_LOOK_HEIGHT;
+
+    if (snap) {
+      this.camera.position.copy(targetPosition);
+    } else {
+      this.camera.position.lerp(targetPosition, SNATCH_WORKOUT_CAMERA_SMOOTHING);
+    }
+    this.camera.lookAt(lookTarget);
   }
 
   beginBasketballShotActivity() {
@@ -17114,6 +17181,8 @@ export class Game {
           this.updateBasketballShotCamera();
         } else if (this.activeWorkout?.activityConfig?.treadmillRun) {
           this.updateTreadmillRunCamera();
+        } else if (this.activeWorkout?.activityConfig?.kind === SNATCH_WORKOUT_KIND) {
+          this.updateSnatchWorkoutCamera();
         } else {
           this.updateCamera(this.currentAimDirection, false);
         }
