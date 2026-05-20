@@ -148,13 +148,17 @@ function hasRoadExit(node, deltaX, deltaZ) {
   return false;
 }
 
-function isFlexiblePassiveTrafficCornerNode(node) {
-  const roadName = String(node?.itemId ?? node?.assetName ?? '').toLowerCase();
-  return roadName.startsWith('road_') && roadName.includes('corner');
+function isFlexiblePassiveTrafficConnectorNode(node) {
+  const roadName = `${node?.itemId ?? ''} ${node?.assetName ?? ''}`.toLowerCase();
+  return roadName.includes('road_corner')
+    || roadName.includes('road_tsplit')
+    || roadName.includes('road_junction')
+    || roadName.includes('road_cross')
+    || roadName.includes('road_straight_crossing');
 }
 
 function canUseRoadExitToward(node, deltaX, deltaZ) {
-  return hasRoadExit(node, deltaX, deltaZ) || isFlexiblePassiveTrafficCornerNode(node);
+  return hasRoadExit(node, deltaX, deltaZ) || isFlexiblePassiveTrafficConnectorNode(node);
 }
 
 function canConnectRoadNodes(a, b) {

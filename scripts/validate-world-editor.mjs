@@ -1160,6 +1160,31 @@ function validatePassiveTraffic() {
     getPassiveTrafficDriveScript(tolerantCornerSouth, tolerantCornerNode, tolerantCornerEast).waypoints.length >= 10,
     'Passive traffic cars should still receive a curved turn script when a custom route passes through a tolerant corner'
   );
+  const tolerantTSplitGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_tolerant_tsplit_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_tolerant_tsplit_node', itemId: 'road_tsplit', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_tolerant_tsplit_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const tolerantTSplitSouth = findTrafficNode(tolerantTSplitGraph, 0, 1);
+  const tolerantTSplitNode = findTrafficNode(tolerantTSplitGraph, 0, 0);
+  const tolerantTSplitEast = findTrafficNode(tolerantTSplitGraph, 1, 0);
+  assert(
+    tolerantTSplitGraph.activeNodeIndices.length === 3
+      && tolerantTSplitSouth
+      && tolerantTSplitNode
+      && tolerantTSplitEast,
+    'Passive traffic T-split fixtures should keep visually adjacent street road tiles clickable'
+  );
+  const tolerantTSplitPath = findPassiveTrafficPath(
+    tolerantTSplitGraph,
+    tolerantTSplitSouth.index,
+    tolerantTSplitEast.index
+  );
+  assert(
+    tolerantTSplitPath.length === 3
+      && tolerantTSplitPath[1] === tolerantTSplitNode.index,
+    'Passive traffic route lines should path through finicky T intersections when adjacent road tiles are selectable'
+  );
   const parkOnlyTrafficGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_park_road_type_1', itemId: 'park_road_straight', cell: [0, 0], rotationQuarterTurns: 0 },
     { id: 'traffic_park_road_type_2', itemId: 'park_road_corner_decorated', cell: [0, -1], rotationQuarterTurns: 1 },
@@ -1480,6 +1505,7 @@ function validatePassiveTraffic() {
       && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
       && /waypointNodeIndices/.test(worldBuilderSource)
       && /removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
+      && /trafficRoutePendingRemoveNodeIndex/.test(worldBuilderSource)
       && /rebuildTrafficRouteDraftFromWaypoints/.test(worldBuilderSource)
       && /getTrafficRouteDraftWaypointPoints/.test(worldBuilderSource)
       && /preferredComponentIndex/.test(worldBuilderSource)
@@ -1487,10 +1513,12 @@ function validatePassiveTraffic() {
       && /createTrafficRouteDraftPreview\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return null;/.test(worldBuilderSource)
       && /appendTrafficRouteDraftNode\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return false;/.test(worldBuilderSource)
       && /const closingRoute = nodeIndex === firstNodeIndex/.test(worldBuilderSource)
-      && /beginTrafficRouteDrawing\(point = null\)[\s\S]*hadOpenDraft[\s\S]*removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
+      && /beginTrafficRouteDrawing\(point = null\)[\s\S]*hadOpenDraft[\s\S]*trafficRoutePendingRemoveNodeIndex/.test(worldBuilderSource)
+      && /continueTrafficRouteDrawing\(point = null\)[\s\S]*trafficRoutePendingRemoveNodeIndex/.test(worldBuilderSource)
+      && /finishTrafficRouteDrawing\(point = null\)[\s\S]*shouldRemoveWaypoint[\s\S]*removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, remove previous waypoints, and leave clicks resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, remove previous waypoints on click release, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')

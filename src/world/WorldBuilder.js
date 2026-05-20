@@ -348,6 +348,7 @@ function createDefaultEditorState() {
     trafficRouteDraft: null,
     trafficRoutePreview: null,
     trafficRouteDrawing: false,
+    trafficRoutePendingRemoveNodeIndex: null,
     rotationQuarterTurns: 0,
     propRotationEighthTurns: 0,
     propScale: 1,
@@ -1618,6 +1619,7 @@ export class WorldBuilder {
       this.state.trafficRouteDraft = null;
       this.state.trafficRoutePreview = null;
       this.state.trafficRouteDrawing = false;
+      this.state.trafficRoutePendingRemoveNodeIndex = null;
     }
     this.updateBuilderHud();
   }
@@ -1823,6 +1825,25 @@ export class WorldBuilder {
     return true;
   }
 
+  isTrafficRouteDraftWaypointRemovalCandidate(nodeIndex) {
+    const draft = this.state.trafficRouteDraft;
+    if (!draft || draft.closed) {
+      return false;
+    }
+
+    const waypointNodeIndices = this.getTrafficRouteDraftWaypointNodeIndices(draft);
+    if (!waypointNodeIndices.length) {
+      return false;
+    }
+
+    const removeIndex = waypointNodeIndices.indexOf(nodeIndex);
+    if (removeIndex < 0) {
+      return false;
+    }
+
+    return nodeIndex !== waypointNodeIndices[0] || waypointNodeIndices.length < 3;
+  }
+
   createTrafficRouteDraftPreview(nodeIndex, graph = this.getTrafficRouteGraph()) {
     const draft = this.state.trafficRouteDraft;
     const node = graph?.nodes?.[nodeIndex];
@@ -1949,6 +1970,7 @@ export class WorldBuilder {
     }
 
     this.state.activeTrafficRouteCarItemId = itemId;
+    this.state.trafficRoutePendingRemoveNodeIndex = null;
     this.state.trafficRouteDraft = {
       itemId,
       label: getBuilderItemById(itemId)?.label ?? titleCaseLabel(itemId),
@@ -1967,6 +1989,7 @@ export class WorldBuilder {
       ?? this.state.activeTrafficRouteCarItemId
       ?? PASSIVE_TRAFFIC_CAR_ITEM_IDS[0];
     const hadOpenDraft = Boolean(this.state.trafficRouteDraft && !this.state.trafficRouteDraft.closed);
+    this.state.trafficRoutePendingRemoveNodeIndex = null;
     if (!this.state.trafficRouteDraft) {
       this.beginTrafficRouteFromCar(itemId, point);
     } else if (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.trafficRouteDraft.itemId)) {
@@ -1977,9 +2000,9 @@ export class WorldBuilder {
       const graph = this.getTrafficRouteGraph();
       const lastNodeIndex = this.state.trafficRouteDraft?.nodeIndices?.[this.state.trafficRouteDraft.nodeIndices.length - 1] ?? null;
       const node = this.getNearestTrafficRouteNode(point, graph, { fromNodeIndex: lastNodeIndex });
-      if (node && this.removeTrafficRouteDraftWaypoint(node.index, graph)) {
-        this.updateBuilderHud();
-        return;
+      if (node && this.isTrafficRouteDraftWaypointRemovalCandidate(node.index)) {
+        this.state.trafficRoutePendingRemoveNodeIndex = node.index;
+        this.state.trafficRoutePreview = null;
       }
     }
 
@@ -1999,6 +2022,18 @@ export class WorldBuilder {
       return;
     }
 
+    const pendingRemoveNodeIndex = this.state.trafficRoutePendingRemoveNodeIndex;
+    if (pendingRemoveNodeIndex !== null && pendingRemoveNodeIndex !== undefined) {
+      if (node.index === pendingRemoveNodeIndex) {
+        if (this.state.trafficRoutePreview) {
+          this.state.trafficRoutePreview = null;
+          this.updateBuilderHud();
+        }
+        return;
+      }
+      this.state.trafficRoutePendingRemoveNodeIndex = null;
+    }
+
     if (this.setTrafficRouteDraftPreview(node.index, graph)) {
       this.updateBuilderHud();
     }
@@ -2012,9 +2047,18 @@ export class WorldBuilder {
     const graph = this.getTrafficRouteGraph();
     const lastNodeIndex = this.state.trafficRouteDraft?.nodeIndices?.[this.state.trafficRouteDraft.nodeIndices.length - 1] ?? null;
     const node = this.getNearestTrafficRouteNode(point, graph, { fromNodeIndex: lastNodeIndex });
-    const changed = node ? this.appendTrafficRouteDraftNode(node.index, graph) : false;
+    const pendingRemoveNodeIndex = this.state.trafficRoutePendingRemoveNodeIndex;
+    const shouldRemoveWaypoint = node
+      && pendingRemoveNodeIndex !== null
+      && pendingRemoveNodeIndex !== undefined
+      && node.index === pendingRemoveNodeIndex
+      && this.isTrafficRouteDraftWaypointRemovalCandidate(node.index);
+    const changed = shouldRemoveWaypoint
+      ? this.removeTrafficRouteDraftWaypoint(node.index, graph)
+      : (node ? this.appendTrafficRouteDraftNode(node.index, graph) : false);
     this.state.trafficRouteDrawing = false;
     this.state.trafficRoutePreview = null;
+    this.state.trafficRoutePendingRemoveNodeIndex = null;
     if (this.state.trafficRouteDraft?.closed) {
       await this.saveTrafficRouteDraft();
       return;
@@ -2028,6 +2072,7 @@ export class WorldBuilder {
     this.state.trafficRouteDraft = null;
     this.state.trafficRoutePreview = null;
     this.state.trafficRouteDrawing = false;
+    this.state.trafficRoutePendingRemoveNodeIndex = null;
     this.updateBuilderHud();
   }
 
@@ -2072,6 +2117,7 @@ export class WorldBuilder {
       this.state.trafficRouteDraft = null;
       this.state.trafficRoutePreview = null;
       this.state.trafficRouteDrawing = false;
+      this.state.trafficRoutePendingRemoveNodeIndex = null;
       this.updateBuilderHud();
     }
     return updated;
