@@ -348,6 +348,7 @@ function writeMockStockMarket(stockMarket = null) {
 function createDefaultPlayerState(overrides = {}) {
   return {
     x: 0,
+    y: 0,
     z: 0,
     rotationY: 0,
     aimRotationY: 0,
@@ -1143,6 +1144,7 @@ export class NpcServiceMock {
     const travelled = distance2D(player.x, player.z, clamped.x, clamped.z);
     this.awardAgilityXpFromDistance(player, meta, travelled);
     player.x = clamped.x;
+    player.y = quantizePosition(position.y);
     player.z = clamped.z;
     player.rotationY = Number.isFinite(rotationY) ? rotationY : player.rotationY;
     player.aimRotationY = nextAnimation.aimRotationY;
@@ -3064,6 +3066,7 @@ export class NpcServiceMock {
   finishRespawn(sessionId, player) {
     const spawn = this.chooseHospitalRespawnPoint();
     player.x = quantizePosition(spawn.x);
+    player.y = 0;
     player.z = quantizePosition(spawn.z);
     player.rotationY = quantizeRotation(spawn.rotationY);
     player.aimRotationY = player.rotationY;

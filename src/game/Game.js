@@ -1085,6 +1085,23 @@ function distanceSquared2D(ax, az, bx, bz) {
   return (dx * dx) + (dz * dz);
 }
 
+function distanceSquared3D(a = null, b = null) {
+  const distanceSq = distanceSquared2D(
+    Number(a?.x ?? 0),
+    Number(a?.z ?? 0),
+    Number(b?.x ?? 0),
+    Number(b?.z ?? 0)
+  );
+  const ay = Number(a?.y);
+  const by = Number(b?.y);
+  if (!Number.isFinite(ay) || !Number.isFinite(by)) {
+    return distanceSq;
+  }
+
+  const dy = ay - by;
+  return distanceSq + (dy * dy);
+}
+
 function getNpcVoiceDistanceVolumeScale(distance) {
   const numericDistance = Number(distance);
   if (!Number.isFinite(numericDistance) || numericDistance <= NPC_VOICE_FULL_VOLUME_DISTANCE) {
@@ -16796,6 +16813,7 @@ export class Game {
 
   captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {
     const fallbackX = Number(fallbackState?.x ?? 0);
+    const fallbackY = Number(fallbackState?.y ?? 0);
     const fallbackZ = Number(fallbackState?.z ?? 0);
     const fallbackRotationY = Number(fallbackState?.rotationY ?? 0);
     const fallbackAimRotationY = Number(fallbackState?.aimRotationY ?? fallbackRotationY);
@@ -16803,16 +16821,33 @@ export class Game {
     return {
       x: Number.isFinite(overrides.x) ? overrides.x : (avatar?.position.x ?? fallbackX),
       z: Number.isFinite(overrides.z) ? overrides.z : (avatar?.position.z ?? fallbackZ),
-      y: Number.isFinite(overrides.y) ? overrides.y : (avatar?.position.y ?? 0),
+      y: Number.isFinite(overrides.y) ? overrides.y : (avatar?.position.y ?? fallbackY),
       rotationY: Number.isFinite(overrides.rotationY) ? overrides.rotationY : (avatar?.object.rotation.y ?? fallbackRotationY),
       aimRotationY: Number.isFinite(overrides.aimRotationY) ? overrides.aimRotationY : (avatar?.getAimRotation?.() ?? fallbackAimRotationY),
       aiming: overrides.aiming ?? fallbackState?.aiming ?? false
     };
   }
 
+  getRemotePlayerGroundHeight(playerState = null, targetPosition = null) {
+    const stateY = Number(playerState?.y);
+    if (Number.isFinite(stateY)) {
+      return stateY;
+    }
+
+    const activeGroundHeight = targetPosition
+      ? this.getActiveGroundHeightAt(targetPosition)
+      : null;
+    if (Number.isFinite(activeGroundHeight)) {
+      return activeGroundHeight;
+    }
+
+    const fallbackY = Number(targetPosition?.y);
+    return Number.isFinite(fallbackY) ? fallbackY : 0;
+  }
+
   applyAvatarSnapshot(avatar, snapshot, playerState = null) {
     const targetPosition = new THREE.Vector3(snapshot.x, snapshot.y, snapshot.z);
-    const groundHeight = this.worldBuilder?.getGroundHeightAt(targetPosition) ?? snapshot.y ?? 0;
+    const groundHeight = this.getRemotePlayerGroundHeight(playerState, targetPosition);
     const appliedState = playerState
       ? {
         ...playerState,
@@ -17044,8 +17079,10 @@ export class Game {
         continue;
       }
 
-      const groundProbe = this.remotePlayerGroundProbe.set(state.x, avatar.position.y, state.z);
-      const groundHeight = this.worldBuilder?.getGroundHeightAt(groundProbe) ?? 0;
+      const stateY = Number(state.y);
+      const groundProbeY = Number.isFinite(stateY) ? stateY : avatar.position.y;
+      const groundProbe = this.remotePlayerGroundProbe.set(state.x, groundProbeY, state.z);
+      const groundHeight = this.getRemotePlayerGroundHeight(state, groundProbe);
       avatar.applyRemoteState(state, deltaSeconds, groundHeight);
     }
   }
@@ -20189,12 +20226,7 @@ export class Game {
     let nearestDistanceSq = Infinity;
 
     for (const interactable of interactables) {
-      const distanceSq = distanceSquared2D(
-        interactable.position.x,
-        interactable.position.z,
-        this.player.position.x,
-        this.player.position.z
-      );
+      const distanceSq = distanceSquared3D(interactable.position, this.player.position);
       const radius = Number(interactable.radius);
       const radiusSq = radius * radius;
       if (distanceSq < radiusSq && distanceSq < nearestDistanceSq) {
