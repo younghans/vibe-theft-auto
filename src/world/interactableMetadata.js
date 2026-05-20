@@ -29,6 +29,18 @@ export function clonePortalDefinition(portal) {
   };
 }
 
+export function cloneGarageDoorDefinition(garageDoor) {
+  if (!garageDoor) {
+    return null;
+  }
+
+  return {
+    ...garageDoor,
+    closedNodeNames: [...(garageDoor.closedNodeNames ?? [])],
+    openNodeNames: [...(garageDoor.openNodeNames ?? [])]
+  };
+}
+
 export function cloneInteractableDefinition(interactable) {
   if (!interactable) {
     return null;
@@ -39,7 +51,8 @@ export function cloneInteractableDefinition(interactable) {
     localOffset: cloneOffsetValue(interactable.localOffset),
     approachLocalOffset: cloneOffsetValue(interactable.approachLocalOffset),
     interior: cloneInteriorDefinition(interactable.interior),
-    portal: clonePortalDefinition(interactable.portal)
+    portal: clonePortalDefinition(interactable.portal),
+    garageDoor: cloneGarageDoorDefinition(interactable.garageDoor)
   };
 }
 

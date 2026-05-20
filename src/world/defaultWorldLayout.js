@@ -58,6 +58,7 @@ const BUILDING_PLANS = [
   { cell: [4, 2], itemId: 'gym_building', angle: -Math.PI / 2, label: 'Neighborhood gym', action: 'The weight room is finally open for NPC routines.' },
   { cell: [-4, 4], itemId: 'building_g', angle: Math.PI, label: 'Night club', action: 'The club is closed until nightlife systems exist.' },
   { cell: [-2, 4], itemId: 'building_a', angle: Math.PI, label: 'Coffee loft', action: 'A social hub can grow out of this block.' },
+  { cell: [1, 4], itemId: 'police_station_building', angle: Math.PI, label: 'Police Station', action: 'The garage door works, but the bay is secured for future updates.' },
   { cell: [2, 4], itemId: 'building_e', angle: Math.PI, label: 'Taxi dispatch', action: 'Taxi missions can route through this office.' },
   { cell: [4, 4], itemId: 'building_b', angle: -Math.PI / 2, label: 'Pool hall', action: 'Mini-games can anchor this corner later.' },
   { cell: [2, 2], itemId: 'building_h', angle: Math.PI, label: 'Downtown apartments', action: 'Interiors will open up in a later milestone.' },

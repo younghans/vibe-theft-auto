@@ -13,6 +13,7 @@ import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMa
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import {
+  cloneGarageDoorDefinition,
   cloneInteriorDefinition,
   clonePortalDefinition,
   resolvePlacementInteractableDefinition
@@ -45,6 +46,7 @@ const SOLID_COLOR_BUILDING_ASSET_NAMES = new Set([
   'gym_building',
   'gym_building_large',
   'offices_building',
+  'police_station_building',
   'school_building'
 ]);
 const SOLID_COLOR_BUILDING_DETAIL_NAME_PARTS = Object.freeze([
@@ -2608,6 +2610,7 @@ export class WorldRenderer {
       worldInteractable.gameId = String(interactable.gameId ?? '');
       worldInteractable.officeJobId = officeJobId;
       worldInteractable.interior = cloneInteriorDefinition(interactable.interior);
+      worldInteractable.garageDoor = cloneGarageDoorDefinition(interactable.garageDoor);
       worldInteractable.approachPosition = approachPosition;
       worldInteractable.approachRotationY = Number.isFinite(interactable.approachRotationY)
         ? toRotationY(placement.rotationQuarterTurns) + interactable.approachRotationY

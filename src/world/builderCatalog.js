@@ -102,6 +102,7 @@ const PROP_GROUPS = Object.freeze({
 const KENNEY_CITY_PACK = 'kenney_city-kit-commercial_2.1';
 const CUSTOM_CITY_PACK = 'vibe_theft_auto_custom';
 const KENNEY_TILE_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
+const CUSTOM_2X1_BUILDING_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82]);
 const CUSTOM_2X2_BUILDING_SIZE = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
 const DEFAULT_TILE_SURFACE_HEIGHT = 0.7;
 const BUILDING_UNDERLAY_TILE_ID = 'lot_base';
@@ -158,6 +159,13 @@ const HOSPITAL_WIDE_COLLISION_RECTS = Object.freeze([
   { centerX: 7.79, centerZ: -0.51, halfWidth: 2.16, halfDepth: 2.07, minY: 0, maxY: 30 },
   { centerX: 1.31, centerZ: 3.74, halfWidth: 3.51, halfDepth: 1.28, minY: 0, maxY: 30 },
   { centerX: -7.47, centerZ: 3.65, halfWidth: 2.32, halfDepth: 1.35, minY: 0, maxY: 30 }
+]);
+const POLICE_STATION_GARAGE_DOOR_NODE_NAMES = Object.freeze(['police_station_garage_door_closed']);
+const POLICE_STATION_COLLISION_RECTS = Object.freeze([
+  { centerX: 0, centerZ: -5.12, halfWidth: 10.9, halfDepth: 0.34, minY: 0, maxY: 13.2 },
+  { centerX: -10.9, centerZ: 0.15, halfWidth: 0.34, halfDepth: 5.25, minY: 0, maxY: 13.2 },
+  { centerX: 10.9, centerZ: 0.15, halfWidth: 0.34, halfDepth: 5.25, minY: 0, maxY: 13.2 },
+  { centerX: 0, centerZ: 5.4, halfWidth: 10.9, halfDepth: 0.34, minY: 0, maxY: 13.2 }
 ]);
 const BASKETBALL_HOOP_BASE_POLE_COLLISION_RECTS = Object.freeze([
   { centerX: 0, centerZ: -1.6, halfWidth: 0.34, halfDepth: 0.34, minY: 0, maxY: 8.8 }
@@ -460,12 +468,40 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     label: 'Bar Wide',
     asset: customCityAsset('models', 'bar-building-wide.glb'),
     group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82],
+    size: CUSTOM_2X1_BUILDING_SIZE,
     tileFootprint: [2, 1],
     collision: true,
     blocksShots: true,
     padding: 0.5,
     underlayTileId: BUILDING_UNDERLAY_TILE_ID
+  },
+  {
+    id: 'police_station_building',
+    assetName: 'police_station_building',
+    aliases: ['Police Station', 'police station', 'station police'],
+    label: 'Police Station',
+    asset: customCityAsset('models', 'police-station-building.glb'),
+    group: 'lots',
+    size: CUSTOM_2X1_BUILDING_SIZE,
+    tileFootprint: [2, 1],
+    surfaceHeight: 0.76,
+    collision: true,
+    blocksShots: true,
+    movementCollisionRects: POLICE_STATION_COLLISION_RECTS,
+    shotCollisionRects: POLICE_STATION_COLLISION_RECTS,
+    padding: 0.5,
+    underlayTileId: BUILDING_UNDERLAY_TILE_ID,
+    interactable: {
+      label: 'Police Station Garage',
+      prompt: 'Open police garage',
+      actionText: 'Police garage opened.',
+      radius: 5.2,
+      localOffset: [-5.7, 5.95],
+      garageDoor: {
+        type: 'police-station-garage',
+        closedNodeNames: POLICE_STATION_GARAGE_DOOR_NODE_NAMES
+      }
+    }
   },
   ...CUSTOM_2X2_BUILDING_DEFINITIONS,
   {
@@ -536,7 +572,7 @@ const CITY_TILE_DEFINITIONS = Object.freeze([
     label: 'Hospital Wide',
     asset: customCityAsset('models', 'hospital-building-wide.glb'),
     group: 'lots',
-    size: [BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82],
+    size: CUSTOM_2X1_BUILDING_SIZE,
     tileFootprint: [2, 1],
     collision: true,
     blocksShots: true,

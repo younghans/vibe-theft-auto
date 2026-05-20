@@ -224,6 +224,8 @@ function createCameraMovementForward(cameraOffset) {
 const CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(CAMERA_OFFSET);
 const AIM_CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(AIM_CAMERA_OFFSET);
 const PHONE_GRIP_DEBUG_ITEM_ID = HELD_ITEM_IDS.phone;
+const POLICE_STATION_BUILDING_ITEM_ID = 'police_station_building';
+const POLICE_STATION_GARAGE_DOOR_NODE_NAMES = Object.freeze(['police_station_garage_door_closed']);
 const PHONE_GRIP_DEBUG_FIELD_BY_KEY = new Map(PHONE_GRIP_DEBUG_FIELDS.map((field) => [field.key, field]));
 const POSE_DEBUG_SECTIONS = new Set(['unarmed', 'weaponAim', 'phoneGrip']);
 const WORLD_RENDER_LAYER = 0;
@@ -1038,6 +1040,7 @@ export class Game {
     this.portalDisarmedPlacementIds = new Set();
     this.portalSpawnPlacementId = '';
     this.portalSpawnLockUntil = 0;
+    this.openPoliceGaragePlacementIds = new Set();
     this.localPlayerVelocity = new THREE.Vector3();
     this.localPlayerDelta = new THREE.Vector3();
     this.localAnimationSyncState = {};
@@ -9854,6 +9857,68 @@ export class Game {
     return String(interactable?.itemId ?? '').trim() === OFFICE_JOB_TERMINAL_ITEM_ID;
   }
 
+  isOpenableGarageInteractable(interactable = null) {
+    return interactable?.garageDoor?.type === 'police-station-garage'
+      || String(interactable?.itemId ?? '').trim() === POLICE_STATION_BUILDING_ITEM_ID;
+  }
+
+  getGarageDoorClosedNodeNames(interactable = null) {
+    const nodeNames = interactable?.garageDoor?.closedNodeNames;
+    return Array.isArray(nodeNames) && nodeNames.length
+      ? nodeNames
+      : POLICE_STATION_GARAGE_DOOR_NODE_NAMES;
+  }
+
+  isPoliceGarageOpen(placementId = '') {
+    return this.openPoliceGaragePlacementIds.has(String(placementId ?? ''));
+  }
+
+  syncOpenPoliceGarageDoors() {
+    if (!this.worldBuilder?.setPlacementHiddenNodeNames || !this.openPoliceGaragePlacementIds.size) {
+      return;
+    }
+
+    for (const placementId of [...this.openPoliceGaragePlacementIds]) {
+      const placement = this.worldBuilder.worldState?.getPlacement?.(placementId);
+      if (!placement || placement.itemId !== POLICE_STATION_BUILDING_ITEM_ID) {
+        this.openPoliceGaragePlacementIds.delete(placementId);
+        continue;
+      }
+      this.worldBuilder.setPlacementHiddenNodeNames(placementId, POLICE_STATION_GARAGE_DOOR_NODE_NAMES);
+    }
+  }
+
+  getPoliceGaragePromptInteractable(interactable = null) {
+    if (!interactable) {
+      return null;
+    }
+
+    const open = this.isPoliceGarageOpen(interactable.placementId);
+    return {
+      ...interactable,
+      prompt: open ? 'Close police garage' : 'Open police garage',
+      actionText: open ? 'Police garage closed.' : 'Police garage opened.'
+    };
+  }
+
+  togglePoliceGarage(interactable = null) {
+    const placementId = String(interactable?.placementId ?? '').trim();
+    if (!placementId || !this.worldBuilder?.setPlacementHiddenNodeNames) {
+      return false;
+    }
+
+    const open = !this.isPoliceGarageOpen(placementId);
+    if (open) {
+      this.openPoliceGaragePlacementIds.add(placementId);
+      this.worldBuilder.setPlacementHiddenNodeNames(placementId, this.getGarageDoorClosedNodeNames(interactable));
+    } else {
+      this.openPoliceGaragePlacementIds.delete(placementId);
+      this.worldBuilder.setPlacementHiddenNodeNames(placementId, []);
+    }
+    this.hud.showToast(open ? 'Police garage opened.' : 'Police garage closed.');
+    return true;
+  }
+
   isOfficeInteriorJobStationInteractable(interactable = null) {
     return interactable?.kind === 'office-job-station'
       && Boolean(getOfficeJobDefinition(interactable?.officeJobId));
@@ -16530,6 +16595,7 @@ export class Game {
 
   updateInteraction() {
     const worldBuilderInteractables = this.getWorldBuilderInteractables();
+    this.syncOpenPoliceGarageDoors();
     const localPlayerState = this.getLocalPlayerState();
     this.syncDeliveryQuestReminderGate(localPlayerState, worldBuilderInteractables);
 
@@ -16666,6 +16732,15 @@ export class Game {
       this.hud.setPrompt(marthaInteraction);
       if (interactPressed) {
         this.openMarthaMenu(marthaInteraction);
+      }
+      return;
+    }
+
+    if (this.isOpenableGarageInteractable(nearest)) {
+      const garageInteraction = this.getPoliceGaragePromptInteractable(nearest);
+      this.hud.setPrompt(garageInteraction);
+      if (interactPressed) {
+        this.togglePoliceGarage(garageInteraction);
       }
       return;
     }

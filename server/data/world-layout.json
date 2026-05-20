@@ -82,22 +82,19 @@
       "rotationQuarterTurns": 0
     },
     {
-      "id": "placement_5",
-      "itemId": "lot_base",
+      "id": "placement_237",
+      "itemId": "police_station_building",
       "cell": [
         0,
         -4
       ],
-      "rotationQuarterTurns": 0
-    },
-    {
-      "id": "placement_6",
-      "itemId": "lot_base",
-      "cell": [
-        1,
-        -4
-      ],
-      "rotationQuarterTurns": 0
+      "rotationQuarterTurns": 0,
+      "interactable": {
+        "label": "Police Station",
+        "actionText": "The garage door works, but the bay is secured for future updates.",
+        "radius": 4,
+        "distance": 6.16
+      }
     },
     {
       "id": "placement_84",

@@ -1233,6 +1233,7 @@ function validateFootprintSupport() {
   const pawnShop = getBuilderItemById('pawn_building');
   const marthasGrille = getBuilderItemById('marthas_grille_building');
   const realEstateOffice = getBuilderItemById('real_estate_office_building');
+  const policeStation = getBuilderItemById('police_station_building');
   const districtBuildings = [
     { key: 'school', item: getBuilderItemById('school_building') },
     { key: 'bar', item: getBuilderItemById('bar_building') },
@@ -1255,6 +1256,7 @@ function validateFootprintSupport() {
   assert(pawnShop, 'Pawn shop tile should exist');
   assert(marthasGrille, "Martha's Grille tile should exist");
   assert(realEstateOffice, 'Real Estate Office tile should exist');
+  assert(policeStation, 'Police Station tile should exist');
   for (const [index, { item }] of districtBuildings.entries()) {
     assert(item, `District 2x2 building ${index} should exist`);
   }
@@ -1282,6 +1284,18 @@ function validateFootprintSupport() {
   assert(realEstateOffice.tileFootprint[0] === 1 && realEstateOffice.tileFootprint[1] === 1, 'Real Estate Office should be a 1x1 building');
   assert(realEstateOffice.size[0] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[0], 'Real Estate Office should use the standard compact building width');
   assert(realEstateOffice.size[1] === REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT[1], 'Real Estate Office should use the standard compact building depth');
+  assert(policeStation.tileFootprint[0] === 2 && policeStation.tileFootprint[1] === 1, 'Police Station should use a 2x1 footprint');
+  assert(!policeStation.interior, 'Police Station should not define an interior');
+  assert(policeStation.interactable?.garageDoor?.type === 'police-station-garage', 'Police Station should expose an openable garage interaction');
+  assert(
+    policeStation.interactable?.garageDoor?.closedNodeNames?.includes('police_station_garage_door_closed'),
+    'Police Station garage interaction should target the closed garage door node'
+  );
+  assert(
+    policeStation.movementCollisionRects?.some((rect) => rect.centerZ === 5.4 && rect.halfWidth > 8),
+    'Police Station should keep a front collision wall so the open garage is not enterable'
+  );
+  assert(getBuilderItemById('Police Station') === policeStation, 'Police Station should resolve from its display label');
   assert(getBuilderItemById('Car Dealership')?.id === 'car_dealership_building', 'Car Dealership should resolve from its display label');
   assert(getBuilderItemById('auto showroom')?.id === 'car_dealership_building', 'Car Dealership should resolve from its showroom alias');
   for (const { key, item } of districtBuildings) {
@@ -1335,6 +1349,10 @@ function validateFootprintSupport() {
   for (const nodeName of ['gym_hull_wall_back', 'gym_hull_wall_left', 'gym_hull_wall_right', 'gym_hull_wall_front']) {
     assert(largeGymNodeNames.has(nodeName), `Large gym GLB should expose ${nodeName} for cutaway visibility`);
   }
+  const policeStationNodeNames = readGlbNodeNames('assets/vibe_theft_auto_custom/models/police-station-building.glb');
+  assert(policeStationNodeNames.has('police_station_garage_door_closed'), 'Police Station GLB should expose the closed garage door node');
+  assert(policeStationNodeNames.has('car_police'), 'Police Station GLB should include the car_police roof prop node');
+  assert(policeStationNodeNames.has('policeStationSignPanel'), 'Police Station GLB should include the front sign panel');
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
   assert(marthasGrille.asset === null, "Martha's Grille should use a procedural building visual");
@@ -1359,6 +1377,14 @@ function validateFootprintSupport() {
   assert(
     savedWorldLayout.tiles?.some((placement) => placement.itemId === 'real_estate_office_building'),
     'Fallback saved world layout should place the Real Estate Office'
+  );
+  assert(
+    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'police_station_building'),
+    'Default world should place the Police Station'
+  );
+  assert(
+    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'police_station_building'),
+    'Fallback saved world layout should place the Police Station'
   );
   assert(
     defaultWorldLayout.tiles.some((placement) => placement.itemId === 'car_dealership_building'),
@@ -1451,6 +1477,14 @@ function validateFootprintSupport() {
   assert(
     /PerspectiveCamera\(55,\s*window\.innerWidth \/ window\.innerHeight,\s*0\.5,\s*400\)/.test(mainGameSource),
     'Main game camera should use a tighter near plane so shallow building detail remains depth-stable'
+  );
+  assert(
+    /cloneGarageDoorDefinition/.test(worldRendererSource),
+    'World renderer should preserve garage-door interaction metadata'
+  );
+  assert(
+    /togglePoliceGarage/.test(mainGameSource) && /setPlacementHiddenNodeNames\(placementId/.test(mainGameSource),
+    'Main game should toggle the Police Station garage door without entering an interior'
   );
   for (const { relativePath, source } of stableWindowGeneratorSources) {
     assert(
