@@ -160,17 +160,19 @@ const FONT = Object.freeze({
   ]
 });
 
-function createMaterial(color, roughness = 0.92, metalness = 0.05) {
-  return new THREE.MeshStandardMaterial({
+function createMaterial(color, roughness = 0.92, metalness = 0.05, name = '') {
+  const material = new THREE.MeshStandardMaterial({
     color,
     roughness,
     metalness,
     flatShading: true
   });
+  material.name = name;
+  return material;
 }
 
-function createGlassMaterial(color, opacity = 0.48) {
-  return new THREE.MeshPhysicalMaterial({
+function createGlassMaterial(color, opacity = 0.48, name = '') {
+  const material = new THREE.MeshPhysicalMaterial({
     color,
     roughness: 0.2,
     metalness: 0.04,
@@ -182,6 +184,8 @@ function createGlassMaterial(color, opacity = 0.48) {
     side: THREE.DoubleSide,
     envMapIntensity: 0.62
   });
+  material.name = name;
+  return material;
 }
 
 function createMesh(geometry, material, position = [0, 0, 0], rotation = [0, 0, 0], name = '') {
@@ -255,6 +259,49 @@ function addSignText(group, text, options) {
   addPixelText(group, text, options);
 }
 
+function addCarSidePixelText(group, text, {
+  x,
+  centerZ,
+  y,
+  pixelSize,
+  depth,
+  material,
+  namePrefix,
+  mirrorZ = false
+}) {
+  const chars = [...String(text).toUpperCase()];
+  const charAdvance = pixelSize * 6;
+  const totalWidth = Math.max(0, (chars.length * charAdvance) - pixelSize);
+  const originZ = centerZ - (totalWidth * 0.5);
+
+  for (const [charIndex, char] of chars.entries()) {
+    const bitmap = FONT[char] ?? FONT[' '];
+    for (let row = 0; row < bitmap.length; row += 1) {
+      for (let col = 0; col < bitmap[row].length; col += 1) {
+        if (bitmap[row][col] !== '1') {
+          continue;
+        }
+
+        group.add(createBox(
+          [depth, pixelSize, pixelSize],
+          [
+            x,
+            y + (((bitmap.length - 1) * 0.5 - row) * pixelSize),
+            originZ + (
+              mirrorZ
+                ? totalWidth - ((charIndex * charAdvance) + (col * pixelSize) + (pixelSize * 0.5))
+                : (charIndex * charAdvance) + (col * pixelSize) + (pixelSize * 0.5)
+            )
+          ],
+          material,
+          [0, 0, 0],
+          `${namePrefix}_${charIndex}_${row}_${col}`
+        ));
+      }
+    }
+  }
+}
+
 function addFrontWindow(group, {
   x,
   y,
@@ -316,14 +363,17 @@ function createPoliceMaterials() {
     sign: createMaterial(0x172332, 0.52, 0.28),
     signFace: createMaterial(0xf4f7fb, 0.34, 0.12),
     signShadow: createMaterial(0x06090d, 0.6, 0.12),
-    glass: createGlassMaterial(0x9ed0e2, 0.44),
-    glassLite: createGlassMaterial(0xc5edf5, 0.42),
+    glass: createGlassMaterial(0x2f86d8, 0.62, 'policeStationBlueWindowGlass'),
+    glassLite: createGlassMaterial(0x5bb8ff, 0.58, 'policeStationBrightBlueWindowGlass'),
     garageDoor: createMaterial(0x56636e, 0.58, 0.25),
     garageDoorDark: createMaterial(0x202832, 0.7, 0.2),
     redLight: createMaterial(0xd63843, 0.34, 0.2),
     blueLight: createMaterial(0x2d67d8, 0.34, 0.2),
-    carBody: createMaterial(0xf3f4f0, 0.58, 0.12),
-    carWheel: createMaterial(0x15181d, 0.76, 0.18)
+    carBody: createMaterial(0xf3f4f0, 0.58, 0.12, 'policeStationRoofCarWhitePaint'),
+    carBlue: createMaterial(0x164fa3, 0.52, 0.18, 'policeStationRoofCarBluePaint'),
+    carBlack: createMaterial(0x15181d, 0.76, 0.18, 'policeStationRoofCarBlackPaint'),
+    carLetter: createMaterial(0xf6fbff, 0.42, 0.08, 'policeStationRoofCarLetterPaint'),
+    carWheel: createMaterial(0x15181d, 0.76, 0.18, 'policeStationRoofCarWheelPaint')
   };
 }
 
@@ -395,11 +445,33 @@ async function loadCarPoliceProp(materials) {
   const sidePanelHeight = Math.max(0.28, topY * 0.28);
   const sidePanelY = Math.max(0.42, topY * 0.48);
   const sidePanelLength = Math.max(1.7, normalizedSize.z * 0.44);
-  wrapper.add(createBox([0.08, sidePanelHeight, sidePanelLength], [-sidePanelX, sidePanelY, 0], materials.blueDeep, [0, 0, 0], 'policeStationRoofCarBlueSideLeft'));
-  wrapper.add(createBox([0.08, sidePanelHeight, sidePanelLength], [sidePanelX, sidePanelY, 0], materials.blueDeep, [0, 0, 0], 'policeStationRoofCarBlueSideRight'));
-  wrapper.add(createBox([normalizedSize.x * 0.42, 0.08, 0.16], [0, Math.max(0.36, topY * 0.38), (normalizedSize.z * 0.5) + 0.05], materials.trimDark, [0, 0, 0], 'policeStationRoofCarPushBar'));
+  wrapper.add(createBox([0.08, sidePanelHeight, sidePanelLength], [-sidePanelX, sidePanelY, 0], materials.carBlue, [0, 0, 0], 'policeStationRoofCarBlueSideLeft'));
+  wrapper.add(createBox([0.08, sidePanelHeight, sidePanelLength], [sidePanelX, sidePanelY, 0], materials.carBlue, [0, 0, 0], 'policeStationRoofCarBlueSideRight'));
+  wrapper.add(createBox([normalizedSize.x * 0.68, 0.08, normalizedSize.z * 0.18], [0, Math.max(0.44, topY * 0.52), normalizedSize.z * 0.31], materials.carBlue, [0, 0, 0], 'policeStationRoofCarBlueHoodPanel'));
+  wrapper.add(createBox([normalizedSize.x * 0.66, 0.08, normalizedSize.z * 0.16], [0, Math.max(0.42, topY * 0.48), -normalizedSize.z * 0.34], materials.carBlue, [0, 0, 0], 'policeStationRoofCarBlueTrunkPanel'));
+  wrapper.add(createBox([normalizedSize.x * 0.52, 0.08, normalizedSize.z * 0.18], [0, Math.max(0.5, topY * 0.66), normalizedSize.z * 0.08], materials.carBlack, [0, 0, 0], 'policeStationRoofCarBlackWindshield'));
+  wrapper.add(createBox([normalizedSize.x * 0.42, 0.08, 0.16], [0, Math.max(0.36, topY * 0.38), (normalizedSize.z * 0.5) + 0.05], materials.carBlack, [0, 0, 0], 'policeStationRoofCarPushBar'));
   wrapper.add(createBox([0.48, 0.16, 0.22], [-0.26, topY + 0.08, 0.08], materials.redLight, [0, 0, 0], 'policeStationRoofCarLightRed'));
   wrapper.add(createBox([0.48, 0.16, 0.22], [0.26, topY + 0.08, 0.08], materials.blueLight, [0, 0, 0], 'policeStationRoofCarLightBlue'));
+  addCarSidePixelText(wrapper, 'POLICE', {
+    x: -sidePanelX - 0.05,
+    centerZ: 0,
+    y: sidePanelY,
+    pixelSize: Math.min(0.065, sidePanelHeight / 6.7),
+    depth: 0.04,
+    material: materials.carLetter,
+    namePrefix: 'policeStationRoofCarPoliceLabelLeft'
+  });
+  addCarSidePixelText(wrapper, 'POLICE', {
+    x: sidePanelX + 0.05,
+    centerZ: 0,
+    y: sidePanelY,
+    pixelSize: Math.min(0.065, sidePanelHeight / 6.7),
+    depth: 0.04,
+    material: materials.carLetter,
+    namePrefix: 'policeStationRoofCarPoliceLabelRight',
+    mirrorZ: true
+  });
 
   return wrapper;
 }
@@ -429,9 +501,10 @@ async function buildPoliceStation() {
     { name: 'policeStationBlueBandGround', size: [21.9, 0.28, 0.24], position: [0, 5.82, 5.14], material: materials.blue },
     { name: 'policeStationBlueBandSecond', size: [21.9, 0.24, 0.24], position: [0, 8.02, 5.14], material: materials.blueDeep },
     { name: 'policeStationBlueBandThird', size: [21.9, 0.24, 0.24], position: [0, 10.4, 5.14], material: materials.blue },
-    { name: 'policeStationSignPanel', size: [9.55, 2.24, 0.36], position: [5.45, 4.02, 5.21], material: materials.sign },
-    { name: 'policeStationSignTopTrim', size: [9.85, 0.2, 0.44], position: [5.45, 5.22, 5.25], material: materials.trim },
-    { name: 'policeStationSignBottomTrim', size: [9.85, 0.2, 0.44], position: [5.45, 2.82, 5.25], material: materials.trim }
+    { name: 'policeStationSignPanel', size: [10.05, 4.1, 0.36], position: [5.45, 3.35, 5.21], material: materials.sign },
+    { name: 'policeStationSignTopTrim', size: [10.35, 0.2, 0.44], position: [5.45, 5.5, 5.25], material: materials.trim },
+    { name: 'policeStationSignBottomTrim', size: [10.35, 0.2, 0.44], position: [5.45, 1.2, 5.25], material: materials.trim },
+    { name: 'policeStationSignDivider', size: [8.85, 0.08, 0.22], position: [5.45, 3.34, 5.42], material: materials.blue }
   ]);
 
   const garageDoor = new THREE.Group();
@@ -456,9 +529,9 @@ async function buildPoliceStation() {
 
   addSignText(station, 'POLICE', {
     centerX: 5.45,
-    y: 4.42,
+    y: 4.34,
     z: 5.48,
-    pixelSize: 0.24,
+    pixelSize: 0.25,
     depth: 0.18,
     material: materials.signFace,
     shadowMaterial: materials.signShadow,
@@ -466,9 +539,9 @@ async function buildPoliceStation() {
   });
   addSignText(station, 'STATION', {
     centerX: 5.45,
-    y: 3.55,
+    y: 2.36,
     z: 5.48,
-    pixelSize: 0.2,
+    pixelSize: 0.205,
     depth: 0.18,
     material: materials.signFace,
     shadowMaterial: materials.signShadow,
@@ -476,7 +549,7 @@ async function buildPoliceStation() {
   });
 
   for (const y of [6.9, 9.25]) {
-    for (const x of [-8.25, -6.15, -3.95, 2.6, 4.75, 6.9, 9.05]) {
+    for (const x of [-9, -6.75, -4.5, -2.25, 0, 2.25, 4.5, 6.75, 9]) {
       addFrontWindow(station, {
         x,
         y,
@@ -524,6 +597,7 @@ async function buildPoliceStation() {
 
   const roofCar = await loadCarPoliceProp(materials);
   roofCar.position.set(-5.54, 13.04, 3.1);
+  roofCar.rotation.y = Math.PI / 2;
   station.add(roofCar);
 
   scene.add(station);

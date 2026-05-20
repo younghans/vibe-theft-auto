@@ -201,6 +201,99 @@ function readGlbNodeNames(relativePath) {
   return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
 }
 
+function getGlbNodeByName(json, nodeName) {
+  return (json.nodes ?? []).find((node) => node.name === nodeName) ?? null;
+}
+
+function getGlbMaterialNames(json) {
+  return new Set((json.materials ?? []).map((material) => material.name).filter(Boolean));
+}
+
+function isGlbNodeQuarterTurnAroundY(node) {
+  const rotation = node?.rotation;
+  if (Array.isArray(rotation) && rotation.length === 4) {
+    const expected = Math.SQRT1_2;
+    return Math.abs(Math.abs(rotation[1]) - expected) < 0.02
+      && Math.abs(Math.abs(rotation[3]) - expected) < 0.02
+      && Math.abs(rotation[0]) < 0.02
+      && Math.abs(rotation[2]) < 0.02;
+  }
+
+  const matrix = node?.matrix;
+  if (Array.isArray(matrix) && matrix.length === 16) {
+    return Math.abs(matrix[0]) < 0.02
+      && Math.abs(matrix[10]) < 0.02
+      && Math.abs(Math.abs(matrix[2]) - 1) < 0.02
+      && Math.abs(Math.abs(matrix[8]) - 1) < 0.02
+      && Math.abs(matrix[1]) < 0.02
+      && Math.abs(matrix[4]) < 0.02
+      && Math.abs(matrix[6]) < 0.02
+      && Math.abs(matrix[9]) < 0.02;
+  }
+
+  return false;
+}
+
+function getGlbNodeYBounds(json, node) {
+  const mesh = Number.isInteger(node?.mesh) ? json.meshes?.[node.mesh] : null;
+  if (!mesh) {
+    return null;
+  }
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const primitive of mesh.primitives ?? []) {
+    const positionAccessorIndex = primitive.attributes?.POSITION;
+    const positionAccessor = Number.isInteger(positionAccessorIndex)
+      ? json.accessors?.[positionAccessorIndex]
+      : null;
+    const primitiveMinY = Number(positionAccessor?.min?.[1]);
+    const primitiveMaxY = Number(positionAccessor?.max?.[1]);
+    if (Number.isFinite(primitiveMinY)) {
+      minY = Math.min(minY, primitiveMinY);
+    }
+    if (Number.isFinite(primitiveMaxY)) {
+      maxY = Math.max(maxY, primitiveMaxY);
+    }
+  }
+
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    return null;
+  }
+
+  const matrix = node.matrix;
+  const translationY = Array.isArray(matrix) && matrix.length === 16
+    ? Number(matrix[13])
+    : Number(node.translation?.[1] ?? 0);
+  const matrixScaleY = Array.isArray(matrix) && matrix.length === 16
+    ? Math.hypot(Number(matrix[1] ?? 0), Number(matrix[5] ?? 1), Number(matrix[9] ?? 0))
+    : null;
+  const scaleY = Number.isFinite(matrixScaleY) && matrixScaleY > 0
+    ? matrixScaleY
+    : Number(node.scale?.[1] ?? 1);
+
+  return {
+    minY: translationY + (minY * scaleY),
+    maxY: translationY + (maxY * scaleY)
+  };
+}
+
+function getGlbNodePatternYBounds(json, pattern) {
+  const bounds = { minY: Infinity, maxY: -Infinity };
+  for (const node of json.nodes ?? []) {
+    if (!pattern.test(String(node.name ?? ''))) {
+      continue;
+    }
+    const nodeBounds = getGlbNodeYBounds(json, node);
+    if (!nodeBounds) {
+      continue;
+    }
+    bounds.minY = Math.min(bounds.minY, nodeBounds.minY);
+    bounds.maxY = Math.max(bounds.maxY, nodeBounds.maxY);
+  }
+  return Number.isFinite(bounds.minY) && Number.isFinite(bounds.maxY) ? bounds : null;
+}
+
 function getGlbMaxPositionY(json) {
   let maxY = -Infinity;
 
@@ -1415,10 +1508,45 @@ function validateFootprintSupport() {
   for (const nodeName of ['gym_hull_wall_back', 'gym_hull_wall_left', 'gym_hull_wall_right', 'gym_hull_wall_front']) {
     assert(largeGymNodeNames.has(nodeName), `Large gym GLB should expose ${nodeName} for cutaway visibility`);
   }
-  const policeStationNodeNames = readGlbNodeNames('assets/vibe_theft_auto_custom/models/police-station-building.glb');
+  const policeStationGlbJson = readGlbJson('assets/vibe_theft_auto_custom/models/police-station-building.glb');
+  const policeStationNodeNames = new Set((policeStationGlbJson.nodes ?? []).map((node) => node.name).filter(Boolean));
+  const policeStationMaterialNames = getGlbMaterialNames(policeStationGlbJson);
   assert(policeStationNodeNames.has('police_station_garage_door_closed'), 'Police Station GLB should expose the closed garage door node');
   assert(policeStationNodeNames.has('car_police'), 'Police Station GLB should include the car_police roof prop node');
   assert(policeStationNodeNames.has('policeStationSignPanel'), 'Police Station GLB should include the front sign panel');
+  assert(policeStationNodeNames.has('policeStationSignDivider'), 'Police Station GLB should include a divider that separates the two sign lines');
+  const policeStationSignPanelBounds = getGlbNodeYBounds(policeStationGlbJson, getGlbNodeByName(policeStationGlbJson, 'policeStationSignPanel'));
+  const policeStationPoliceTextBounds = getGlbNodePatternYBounds(policeStationGlbJson, /^policeStationSignPolice_\d+_/);
+  const policeStationStationTextBounds = getGlbNodePatternYBounds(policeStationGlbJson, /^policeStationSignStation_\d+_/);
+  assert(
+    policeStationSignPanelBounds
+      && policeStationPoliceTextBounds
+      && policeStationStationTextBounds
+      && policeStationSignPanelBounds.minY < policeStationStationTextBounds.minY - 0.1
+      && policeStationSignPanelBounds.maxY > policeStationPoliceTextBounds.maxY + 0.1,
+    'Police Station sign text should fit fully inside the sign panel'
+  );
+  assert(
+    policeStationStationTextBounds.maxY < policeStationPoliceTextBounds.minY - 0.3,
+    'Police Station sign text lines should be separated and readable'
+  );
+  assert(policeStationNodeNames.has('policeStationRoofCarBlueHoodPanel'), 'Police Station roof car should restore visible blue body color');
+  assert(policeStationNodeNames.has('policeStationRoofCarBlueTrunkPanel'), 'Police Station roof car should restore visible rear blue body color');
+  assert(policeStationNodeNames.has('policeStationRoofCarBlackWindshield'), 'Police Station roof car should include dark windshield paint');
+  assert(
+    isGlbNodeQuarterTurnAroundY(getGlbNodeByName(policeStationGlbJson, 'policeStationRoofCarProp')),
+    'Police Station roof car prop should be rotated 90 degrees on the roof'
+  );
+  assert(
+    policeStationMaterialNames.has('policeStationBlueWindowGlass')
+      && policeStationMaterialNames.has('policeStationBrightBlueWindowGlass'),
+    'Police Station GLB should use blue window glass materials'
+  );
+  assert(
+    policeStationMaterialNames.has('policeStationRoofCarBluePaint')
+      && policeStationMaterialNames.has('policeStationRoofCarWhitePaint'),
+    'Police Station roof car should keep police car paint colors'
+  );
   assert(pawnShop.asset === null, 'Pawn shop should use its procedural building visual instead of increasing the static asset payload');
   assert(typeof pawnShop.createVisual === 'function', 'Pawn shop should define a procedural building visual');
   assert(marthasGrille.asset === null, "Martha's Grille should use a procedural building visual");
