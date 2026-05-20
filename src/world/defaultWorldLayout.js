@@ -136,7 +136,7 @@ const DISTRICT_PROPS = [
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 0.99 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.16 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.33 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
-  { itemId: 'treadmill', position: [3.35 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 },
+  { itemId: 'treadmill', position: [36.61, -100.29], angle: 0 },
   { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 
@@ -398,9 +398,16 @@ function createCarDealershipShowroomCarPlans() {
   });
 }
 
-function createPropLayout() {
+function getMaxPlacementSequence(placements) {
+  return placements.reduce((maxSequence, placement) => {
+    const match = /^placement_(\d+)$/.exec(String(placement?.id ?? ''));
+    return match ? Math.max(maxSequence, Number(match[1])) : maxSequence;
+  }, 0);
+}
+
+function createPropLayout(startSequence = 95) {
   const props = [];
-  let propSequence = 95;
+  let propSequence = Math.max(95, startSequence);
 
   const pushProp = (itemId, position, angle = 0, options = {}) => {
     const defaultScale = getDefaultPropPlacementScale(itemId);
@@ -522,7 +529,7 @@ function createNpcLayout(tiles, props) {
 }
 
 const defaultTiles = createTileLayout();
-const defaultProps = createPropLayout();
+const defaultProps = createPropLayout(getMaxPlacementSequence(defaultTiles));
 const defaultNpcs = createNpcLayout(defaultTiles, defaultProps);
 
 export const defaultWorldLayout = Object.freeze({

@@ -1261,6 +1261,28 @@ function validateTiles() {
   }
 }
 
+function getLayoutPlacementEntries(layout = {}) {
+  return [
+    ...(Array.isArray(layout.tiles) ? layout.tiles.map((placement) => ({ ...placement, layer: 'tile' })) : []),
+    ...(Array.isArray(layout.props) ? layout.props.map((placement) => ({ ...placement, layer: 'prop' })) : []),
+    ...(Array.isArray(layout.npcs) ? layout.npcs.map((placement) => ({ ...placement, layer: 'npc' })) : [])
+  ];
+}
+
+function validateUniquePlacementIds(layout, layoutLabel) {
+  const seen = new Map();
+  for (const placement of getLayoutPlacementEntries(layout)) {
+    const id = String(placement.id ?? '').trim();
+    assert(id, `${layoutLabel}: every placement must have an id`);
+    const existing = seen.get(id);
+    assert(
+      !existing,
+      `${layoutLabel}: duplicate placement id "${id}" used by ${existing?.layer}:${existing?.itemId ?? existing?.modelId ?? 'unknown'} and ${placement.layer}:${placement.itemId ?? placement.modelId ?? 'unknown'}`
+    );
+    seen.set(id, placement);
+  }
+}
+
 function sortedCellKeys(cells) {
   return cells
     .map((cell) => `${cell.x},${cell.z}`)
@@ -1304,6 +1326,8 @@ function validateFootprintSupport() {
   }
 
   const savedWorldLayout = JSON.parse(readRepoText('server/data/world-layout.json'));
+  validateUniquePlacementIds(defaultWorldLayout, 'Default world layout');
+  validateUniquePlacementIds(savedWorldLayout, 'Fallback saved world layout');
 
   assert(baseLot.tileFootprint[0] === 1 && baseLot.tileFootprint[1] === 1, 'Base lot should remain 1x1');
   assert(bar.tileFootprint[0] === 2 && bar.tileFootprint[1] === 1, 'Wide bar should remain 2x1');
