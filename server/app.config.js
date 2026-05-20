@@ -192,6 +192,11 @@ function getCacheControl(filePath) {
     return 'no-store, max-age=0';
   }
 
+  const normalizedPath = String(filePath ?? '').split(path.sep).join('/');
+  if (/\/assets\/generated\/world-map\.(?:json|webp)$/iu.test(normalizedPath)) {
+    return 'no-store, max-age=0';
+  }
+
   const extension = path.extname(filePath).toLowerCase();
   if (extension === '.html') {
     return 'no-cache';
@@ -500,6 +505,11 @@ function normalizeWorldMapDimension(value, fallback) {
   return Math.max(1, Math.min(8192, Math.round(numeric)));
 }
 
+function normalizeWorldMapLayoutHash(value = '') {
+  const text = String(value ?? '').trim();
+  return /^[a-z0-9:_-]{4,128}$/iu.test(text) ? text : '';
+}
+
 async function writeGeneratedWorldMapFile(relativePath, contents) {
   const sourceTarget = path.join(PROJECT_ROOT, relativePath);
   await fsp.mkdir(path.dirname(sourceTarget), { recursive: true });
@@ -680,6 +690,7 @@ const server = defineServer({
           width: normalizeWorldMapDimension(payload?.width, 1024),
           height: normalizeWorldMapDimension(payload?.height, 1536),
           capturedAt,
+          layoutHash: normalizeWorldMapLayoutHash(payload?.layoutHash),
           worldKey: persistence.worldKey ?? null
         };
 

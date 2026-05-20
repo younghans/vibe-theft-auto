@@ -1379,6 +1379,72 @@ function appendCacheBuster(url = '', version = Date.now()) {
   return `${text}${text.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
 }
 
+function normalizeWorldMapLayoutHash(value = '') {
+  const text = String(value ?? '').trim();
+  return /^[a-z0-9:_-]{4,128}$/iu.test(text) ? text : '';
+}
+
+function hashWorldMapText(value = '') {
+  const text = String(value ?? '');
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeWorldMapLayoutNumber(value, fallback = null) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(3)) : fallback;
+}
+
+function normalizeWorldMapLayoutEntries(entries = [], layer = '') {
+  const normalized = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const cell = Array.isArray(entry?.cell)
+      ? [
+          normalizeWorldMapLayoutNumber(entry.cell[0], 0),
+          normalizeWorldMapLayoutNumber(entry.cell[1], 0)
+        ]
+      : null;
+    const position = Array.isArray(entry?.position)
+      ? [
+          normalizeWorldMapLayoutNumber(entry.position[0], 0),
+          normalizeWorldMapLayoutNumber(entry.position[1], 0)
+        ]
+      : null;
+    normalized.push({
+      layer,
+      itemId: String(entry?.itemId ?? entry?.modelId ?? '').trim(),
+      ...(cell ? { cell } : {}),
+      ...(position ? { position } : {}),
+      rotationQuarterTurns: normalizeWorldMapLayoutNumber(entry?.rotationQuarterTurns, 0),
+      ...(Number.isFinite(Number(entry?.rotationY)) ? { rotationY: normalizeWorldMapLayoutNumber(entry.rotationY, 0) } : {}),
+      ...(Number.isFinite(Number(entry?.scale)) ? { scale: normalizeWorldMapLayoutNumber(entry.scale, 1) } : {})
+    });
+  }
+  normalized.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  return normalized;
+}
+
+function createWorldMapLayoutHash(layout = null) {
+  if (!layout || typeof layout !== 'object') {
+    return '';
+  }
+
+  const payload = {
+    tiles: normalizeWorldMapLayoutEntries(layout.tiles, 'tile'),
+    props: normalizeWorldMapLayoutEntries(layout.props, 'prop'),
+    npcs: normalizeWorldMapLayoutEntries(layout.npcs, 'npc')
+  };
+  if (!payload.tiles.length && !payload.props.length && !payload.npcs.length) {
+    return '';
+  }
+
+  return `layout_${hashWorldMapText(JSON.stringify(payload))}`;
+}
+
 function normalizeWorldMapImageMetadata(metadata = {}, sourceUrl = window.location.href) {
   const bounds = normalizeWorldMapBounds(metadata?.bounds);
   const image = typeof metadata?.image === 'string' ? metadata.image.trim() : '';
@@ -1387,7 +1453,11 @@ function normalizeWorldMapImageMetadata(metadata = {}, sourceUrl = window.locati
   }
 
   const capturedMs = Date.parse(metadata.capturedAt ?? '');
-  const version = Number.isFinite(capturedMs) ? capturedMs : Date.now();
+  const layoutHash = normalizeWorldMapLayoutHash(metadata.layoutHash ?? metadata.layout_hash);
+  const versionParts = [
+    Number.isFinite(capturedMs) ? capturedMs : Date.now(),
+    layoutHash
+  ].filter(Boolean);
   let src = image;
   try {
     src = new URL(image, sourceUrl || window.location.href).toString();
@@ -1395,11 +1465,12 @@ function normalizeWorldMapImageMetadata(metadata = {}, sourceUrl = window.locati
     src = image;
   }
   return {
-    src: appendCacheBuster(src, version),
+    src: appendCacheBuster(src, versionParts.join('-')),
     bounds,
     width: Math.max(1, Math.round(Number(metadata.width) || WORLD_MAP_CAPTURE_WIDTH)),
     height: Math.max(1, Math.round(Number(metadata.height) || WORLD_MAP_CAPTURE_HEIGHT)),
     capturedAt: typeof metadata.capturedAt === 'string' ? metadata.capturedAt : '',
+    layoutHash,
     worldKey: typeof metadata.worldKey === 'string' ? metadata.worldKey : ''
   };
 }
@@ -1700,6 +1771,12 @@ export class Game {
     this.worldMapImageRequestSeq = 0;
     this.worldMapImageMetadataUrl = '';
     this.worldMapCaptureInFlight = false;
+    this.worldMapAutoCapturePromise = null;
+    this.worldMapAutoCaptureLastHash = '';
+    this.worldMapAutoCaptureLastAttemptAt = 0;
+    this.worldMapLayoutHashRevision = null;
+    this.worldMapLayoutHashSource = null;
+    this.worldMapLayoutHashValue = '';
     this.gameSettings = readStoredGameSettings();
     this.hud.setSpeechAudioVolume?.(this.gameSettings.masterVolume);
     this.currentBuildCommitSha = getClientBuildCommitSha();
@@ -3055,12 +3132,14 @@ export class Game {
     }
 
     const metadataEndpoint = this.getWorldMapImageMetadataEndpoint();
+    const mapImageFresh = this.isWorldMapImageFreshForCurrentLayout(this.worldMapImage);
     if (
       force
       || (!this.worldMapImage && !this.worldMapImageRequest)
       || (metadataEndpoint && this.worldMapImageMetadataUrl !== metadataEndpoint)
+      || !mapImageFresh
     ) {
-      void this.loadWorldMapImageMetadata({ force });
+      void this.ensureFreshWorldMapImage({ force });
     }
 
     const now = performance.now();
@@ -3103,7 +3182,8 @@ export class Game {
   }
 
   getPhoneMapBounds(localPlayerState = this.getLocalPlayerState()) {
-    const imageBounds = this.worldMapImage?.bounds ?? null;
+    const mapImage = this.isWorldMapImageFreshForCurrentLayout(this.worldMapImage) ? this.worldMapImage : null;
+    const imageBounds = mapImage?.bounds ?? null;
     if (
       Number.isFinite(Number(imageBounds?.minX))
       && Number.isFinite(Number(imageBounds?.maxX))
@@ -4163,6 +4243,48 @@ export class Game {
     return this.worldMapImageRequest;
   }
 
+  async ensureFreshWorldMapImage({ force = false } = {}) {
+    const image = await this.loadWorldMapImageMetadata({ force });
+    if (!this.isWorldMapImageFreshForCurrentLayout(image)) {
+      await this.captureWorldMapIfStale(image);
+    }
+    return this.worldMapImage;
+  }
+
+  async captureWorldMapIfStale(image = this.worldMapImage) {
+    const layoutHash = this.getWorldMapLayoutHash();
+    if (
+      !layoutHash
+      || normalizeWorldMapLayoutHash(image?.layoutHash) === layoutHash
+      || !this.worldLayoutReady
+      || this.currentInterior?.scene
+      || !this.isLocalAdmin()
+      || !this.getAdminAccessToken()
+    ) {
+      return false;
+    }
+
+    if (this.worldMapAutoCapturePromise) {
+      return this.worldMapAutoCapturePromise;
+    }
+
+    const now = Date.now();
+    if (
+      this.worldMapAutoCaptureLastHash === layoutHash
+      && now - this.worldMapAutoCaptureLastAttemptAt < 30000
+    ) {
+      return false;
+    }
+
+    this.worldMapAutoCaptureLastHash = layoutHash;
+    this.worldMapAutoCaptureLastAttemptAt = now;
+    this.worldMapAutoCapturePromise = this.captureAndSaveWorldMap({ automatic: true })
+      .finally(() => {
+        this.worldMapAutoCapturePromise = null;
+      });
+    return this.worldMapAutoCapturePromise;
+  }
+
   getWorldMapCaptureBounds({ width = WORLD_MAP_CAPTURE_WIDTH, height = WORLD_MAP_CAPTURE_HEIGHT } = {}) {
     const features = this.getPhoneMapPlacementFeatures();
     const bounds = {
@@ -4393,28 +4515,35 @@ export class Game {
     }
   }
 
-  async captureAndSaveWorldMap() {
+  async captureAndSaveWorldMap({ automatic = false } = {}) {
     if (this.worldMapCaptureInFlight) {
-      return;
+      return false;
     }
 
     if (!this.isLocalAdmin() || !this.getAdminAccessToken()) {
-      this.hud.showToast('Map capture is admin only.');
-      return;
+      if (!automatic) {
+        this.hud.showToast('Map capture is admin only.');
+      }
+      return false;
     }
 
     if (this.currentInterior?.scene) {
-      this.hud.showToast('Exit interiors before capturing the city map.');
-      return;
+      if (!automatic) {
+        this.hud.showToast('Exit interiors before capturing the city map.');
+      }
+      return false;
     }
 
     this.worldMapCaptureInFlight = true;
     this.refreshMapCaptureHud();
     try {
-      this.hud.showToast('Capturing city map...');
+      if (!automatic) {
+        this.hud.showToast('Capturing city map...');
+      }
       const width = WORLD_MAP_CAPTURE_WIDTH;
       const height = WORLD_MAP_CAPTURE_HEIGHT;
       const bounds = this.getWorldMapCaptureBounds({ width, height });
+      const layoutHash = this.getWorldMapLayoutHash();
       const dataUrl = await this.captureWorldMapDataUrl({ width, height, bounds });
       const response = await fetch(this.getWorldMapCaptureEndpoint(), {
         method: 'POST',
@@ -4423,7 +4552,8 @@ export class Game {
           dataUrl,
           bounds: normalizeWorldMapBounds(bounds),
           width,
-          height
+          height,
+          layoutHash
         })
       });
       const result = await response.json().catch(() => null);
@@ -4435,10 +4565,14 @@ export class Game {
       this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
       this.worldBuilder?.updateBuilderHud?.();
       const sizeKb = Math.max(1, Math.round(Number(result.bytes ?? 0) / 1024));
-      this.hud.showToast(`Phone map captured (${sizeKb} KB).`);
+      this.hud.showToast(automatic ? `Phone map refreshed (${sizeKb} KB).` : `Phone map captured (${sizeKb} KB).`);
+      return true;
     } catch (error) {
       console.warn('[Map] Capture failed.', error);
-      this.hud.showToast(error?.message ?? 'Map capture failed.');
+      if (!automatic) {
+        this.hud.showToast(error?.message ?? 'Map capture failed.');
+      }
+      return false;
     } finally {
       this.worldMapCaptureInFlight = false;
       this.refreshMapCaptureHud();
@@ -5536,6 +5670,37 @@ export class Game {
     };
   }
 
+  getWorldMapLayoutHash() {
+    const cacheKey = this.getPhoneMapPlacementFeatureCacheKey();
+    if (
+      this.worldMapLayoutHashSource === cacheKey.source
+      && this.worldMapLayoutHashRevision === cacheKey.revision
+    ) {
+      return this.worldMapLayoutHashValue;
+    }
+
+    const layout = this.worldBuilder?.getLayout?.() ?? this.currentLayout ?? null;
+    this.worldMapLayoutHashSource = cacheKey.source;
+    this.worldMapLayoutHashRevision = cacheKey.revision;
+    this.worldMapLayoutHashValue = createWorldMapLayoutHash(layout);
+    return this.worldMapLayoutHashValue;
+  }
+
+  invalidateWorldMapLayoutHash() {
+    this.worldMapLayoutHashSource = null;
+    this.worldMapLayoutHashRevision = null;
+    this.worldMapLayoutHashValue = '';
+  }
+
+  isWorldMapImageFreshForCurrentLayout(image = this.worldMapImage) {
+    const layoutHash = this.getWorldMapLayoutHash();
+    if (!layoutHash) {
+      return true;
+    }
+
+    return normalizeWorldMapLayoutHash(image?.layoutHash) === layoutHash;
+  }
+
   appendPhoneMapPlacementFeature(features, placement = null, fallbackLayer = '') {
     const layer = placement?.layer ?? fallbackLayer;
     if (!placement || (layer !== 'tile' && layer !== 'prop')) {
@@ -5663,12 +5828,13 @@ export class Game {
     const playerX = Number(localPlayerState?.x ?? playerPosition?.x);
     const playerZ = Number(localPlayerState?.z ?? playerPosition?.z);
     const playerRotationY = Number(localPlayerState?.rotationY ?? this.player?.rotationY ?? 0);
+    const mapImage = this.isWorldMapImageFreshForCurrentLayout(this.worldMapImage) ? this.worldMapImage : null;
     return {
       player: Number.isFinite(playerX) && Number.isFinite(playerZ)
         ? { x: playerX, z: playerZ, rotationY: Number.isFinite(playerRotationY) ? playerRotationY : 0 }
         : null,
       features: this.getPhoneMapPlacementFeatures(),
-      image: this.worldMapImage,
+      image: mapImage,
       zoom: this.phoneMapZoom,
       minZoom: PHONE_MAP_MIN_ZOOM,
       maxZoom: PHONE_MAP_MAX_ZOOM,
@@ -15579,10 +15745,12 @@ export class Game {
         hud: this.hud,
         worldTransport: this.npcService,
         getWorldMapImage: () => this.worldMapImage,
-        requestWorldMapImage: (options) => this.loadWorldMapImageMetadata(options),
+        isWorldMapImageFresh: (image) => this.isWorldMapImageFreshForCurrentLayout(image),
+        requestWorldMapImage: (options) => this.ensureFreshWorldMapImage(options),
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
+          this.invalidateWorldMapLayoutHash();
           this.syncVibeRadioPlaylist();
           this.gymDoorBlockersDirty = true;
         }
@@ -15620,6 +15788,7 @@ export class Game {
         npcs: sharedLayout.npcs?.length ?? 0
       });
       this.currentLayout = sharedLayout;
+      this.invalidateWorldMapLayoutHash();
       this.syncVibeRadioPlaylist();
       this.gymDoorBlockersDirty = true;
       this.markBoot('boot:avatar:start');

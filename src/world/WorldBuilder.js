@@ -381,6 +381,7 @@ export class WorldBuilder {
     onLayoutChanged,
     worldTransport,
     getWorldMapImage,
+    isWorldMapImageFresh,
     requestWorldMapImage
   }) {
     this.scene = scene;
@@ -392,6 +393,7 @@ export class WorldBuilder {
     this.onLayoutChanged = onLayoutChanged ?? (() => {});
     this.worldTransport = worldTransport ?? null;
     this.getWorldMapImage = getWorldMapImage ?? (() => null);
+    this.isWorldMapImageFresh = isWorldMapImageFresh ?? (() => true);
     this.requestWorldMapImage = requestWorldMapImage ?? null;
     this.canEdit = false;
     this.visible = true;
@@ -746,7 +748,8 @@ export class WorldBuilder {
 
   getTrafficRoutesViewModel() {
     const graph = this.getTrafficRouteGraph();
-    const image = this.getWorldMapImage?.() ?? null;
+    const currentImage = this.getWorldMapImage?.() ?? null;
+    const image = currentImage && this.isWorldMapImageFresh(currentImage) ? currentImage : null;
     const dimensions = getTrafficRouteMapDimensions(image);
     const routes = this.worldState.getPassiveTrafficRoutes();
     const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
@@ -922,18 +925,20 @@ export class WorldBuilder {
     if (!this.requestWorldMapImage || this.trafficRouteMapRequest) {
       return;
     }
-    if (!shouldForce && this.getWorldMapImage?.()) {
+    const image = this.getWorldMapImage?.() ?? null;
+    const imageFresh = image ? this.isWorldMapImageFresh(image) : false;
+    if (!shouldForce && imageFresh) {
       return;
     }
 
     const now = Date.now();
-    if (shouldForce && now - this.trafficRouteMapLastRefreshAt < 4000) {
+    if (shouldForce && imageFresh && now - this.trafficRouteMapLastRefreshAt < 4000) {
       return;
     }
     this.trafficRouteMapLastRefreshAt = now;
 
     this.trafficRouteMapRequest = Promise.resolve()
-      .then(() => this.requestWorldMapImage({ force: shouldForce }))
+      .then(() => this.requestWorldMapImage({ force: shouldForce || !imageFresh }))
       .finally(() => {
         this.trafficRouteMapRequest = null;
         if (this.state.enabled && isTrafficRoutesCategoryId(this.state.activeCategoryId)) {

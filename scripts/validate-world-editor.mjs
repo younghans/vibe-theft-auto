@@ -1351,6 +1351,8 @@ function validatePassiveTraffic() {
   const worldBuilderSource = readRepoText('src/world/WorldBuilder.js');
   const worldEditAdapterSource = readRepoText('src/world/createWorldEditAdapter.js');
   const gameSource = readRepoText('src/game/Game.js');
+  const appConfigSource = readRepoText('server/app.config.js');
+  const devServerSource = readRepoText('scripts/dev-server.mjs');
   const styleSource = readRepoText('styles.css');
   assert(
     worldBuilderSource.includes("id: 'traffic-routes'")
@@ -1363,10 +1365,21 @@ function validatePassiveTraffic() {
   assert(
     worldBuilderSource.includes('getTrafficRouteMapDimensions')
       && worldBuilderSource.includes('requestTrafficRouteMapImage({ force: true })')
-      && worldBuilderSource.includes('requestWorldMapImage({ force: shouldForce })')
-      && gameSource.includes('loadWorldMapImageMetadata({ force })')
-      && gameSource.includes('requestWorldMapImage: (options) => this.loadWorldMapImageMetadata(options)'),
-    'Phone map and traffic route editor should refresh the latest captured map image when opened'
+      && worldBuilderSource.includes('isWorldMapImageFresh')
+      && worldBuilderSource.includes('requestWorldMapImage({ force: shouldForce || !imageFresh })')
+      && gameSource.includes('ensureFreshWorldMapImage({ force })')
+      && gameSource.includes('captureWorldMapIfStale(image)')
+      && gameSource.includes('layoutHash')
+      && gameSource.includes('createWorldMapLayoutHash')
+      && gameSource.includes('isWorldMapImageFreshForCurrentLayout')
+      && gameSource.includes('requestWorldMapImage: (options) => this.ensureFreshWorldMapImage(options)'),
+    'Phone map and traffic route editor should refresh or recapture the current-layout map image when opened'
+  );
+  assert(
+    appConfigSource.includes('layoutHash: normalizeWorldMapLayoutHash(payload?.layoutHash)')
+      && appConfigSource.includes('world-map\\.')
+      && devServerSource.includes('world-map\\.'),
+    'Generated phone map metadata should persist the layout hash and serve generated map assets without stale cache headers'
   );
   assert(
     hudSource.includes('--traffic-route-map-aspect')

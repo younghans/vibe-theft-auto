@@ -292,6 +292,11 @@ function getCacheControl(filePath) {
     return 'no-store, max-age=0';
   }
 
+  const normalizedPath = String(filePath ?? '').split(path.sep).join('/');
+  if (/\/assets\/generated\/world-map\.(?:json|webp)$/iu.test(normalizedPath)) {
+    return 'no-store, max-age=0';
+  }
+
   const extension = path.extname(filePath).toLowerCase();
   if (extension === '.html') {
     return 'no-cache';
