@@ -585,6 +585,20 @@ async function readPostgresTaskById(client, id) {
   return result.rows[0] ?? null;
 }
 
+async function readPostgresTaskOrdinalityById(client, id) {
+  const result = await client.query(`
+    SELECT raw.ordinality
+    FROM ${AGENT_STATE_TABLE} state
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state.payload->'tasks', '[]'::jsonb))
+      WITH ORDINALITY AS raw(task, ordinality)
+    WHERE state.state_key = $1
+      AND raw.task->>'id' = $2
+    LIMIT 1
+  `, [AGENT_TASKS_STATE_KEY, id]);
+
+  return result.rows[0] ?? null;
+}
+
 async function writePostgresTaskAtIndex(client, ordinality, task) {
   const index = Number(ordinality);
   if (!Number.isFinite(index) || index <= 0) {
@@ -1479,6 +1493,76 @@ export async function updateAgentTask(taskId, updates = {}, {
 
     return applyAgentTaskUpdates(task, updates);
   }, { filePath });
+}
+
+export async function updateAgentTaskHeartbeat(taskId, updates = {}, {
+  filePath = AGENT_TASKS_FILE_PATH
+} = {}) {
+  const id = normalizeTaskId(taskId);
+  if (!id) {
+    throw new Error('Task id is required.');
+  }
+
+  const heartbeatAt = normalizeTimestamp(updates.workerHeartbeatAt, Date.now());
+  const heartbeatStatus = String(updates.workerHeartbeatStatus ?? '').trim().slice(0, 120);
+  const updatedAt = Date.now();
+
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresAgentStateTransaction(async (client) => {
+      await ensurePostgresTaskStateLocked(client);
+      const row = await readPostgresTaskOrdinalityById(client, id);
+      if (!row) {
+        return null;
+      }
+
+      const index = Number(row.ordinality);
+      if (!Number.isFinite(index) || index <= 0) {
+        throw new Error('Could not update agent task heartbeat: invalid Postgres JSON index.');
+      }
+
+      await client.query(
+        `UPDATE ${AGENT_STATE_TABLE}
+         SET payload = jsonb_set(
+             jsonb_set(
+               jsonb_set(payload, $2::text[], to_jsonb($3::numeric), false),
+               $4::text[], to_jsonb($5::text), false
+             ),
+             $6::text[], to_jsonb($7::numeric), false
+           ),
+           updated_at = NOW()
+         WHERE state_key = $1`,
+        [
+          AGENT_TASKS_STATE_KEY,
+          ['tasks', String(index - 1), 'workerHeartbeatAt'],
+          heartbeatAt,
+          ['tasks', String(index - 1), 'workerHeartbeatStatus'],
+          heartbeatStatus,
+          ['tasks', String(index - 1), 'updatedAt'],
+          updatedAt
+        ]
+      );
+
+      return {
+        id,
+        workerHeartbeatAt: heartbeatAt,
+        workerHeartbeatStatus: heartbeatStatus,
+        updatedAt
+      };
+    });
+  }
+
+  const task = await updateAgentTask(id, {
+    workerHeartbeatAt: heartbeatAt,
+    workerHeartbeatStatus: heartbeatStatus
+  }, { filePath });
+  return task
+    ? {
+        id: task.id,
+        workerHeartbeatAt: task.workerHeartbeatAt,
+        workerHeartbeatStatus: task.workerHeartbeatStatus,
+        updatedAt: task.updatedAt
+      }
+    : null;
 }
 
 export async function appendAgentTaskLog(taskId, entry = {}, {

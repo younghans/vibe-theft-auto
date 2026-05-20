@@ -1021,7 +1021,7 @@ export class WorldRoom extends Room {
     this.onMessage('world:getLayout', (client, message) => {
       void this.handleRpc(client, message.requestId, () => ({
         layout: this.worldState.serializeLayout()
-      }));
+      }), { persistSnapshot: false });
     });
 
     this.onMessage('world:edit', (client, message) => {
@@ -1062,7 +1062,9 @@ export class WorldRoom extends Room {
     });
 
     this.onMessage('stock:getMarket', (client, message) => {
-      void this.handleRpc(client, message.requestId, () => this.handleStockMarketRequest(client, message));
+      void this.handleRpc(client, message.requestId, () => this.handleStockMarketRequest(client, message), {
+        persistSnapshot: false
+      });
     });
 
     this.onMessage('stock:trade', (client, message) => {
@@ -1098,7 +1100,9 @@ export class WorldRoom extends Room {
     });
 
     this.onMessage('wallet:getSnapshot', (client, message) => {
-      void this.handleRpc(client, message.requestId, () => this.handleWalletSnapshotRequest(client));
+      void this.handleRpc(client, message.requestId, () => this.handleWalletSnapshotRequest(client), {
+        persistSnapshot: false
+      });
     });
 
     this.onMessage('blackjack:start', (client, message) => {
@@ -1617,6 +1621,21 @@ export class WorldRoom extends Room {
     }
   }
 
+  serializeStockMarketForPlayer(sessionId, player, now = Date.now(), persistReason = 'market-refresh') {
+    const portfolio = this.getPlayerStockPortfolio(sessionId);
+    const previousLastUpdatedAt = Number(this.stockMarket?.lastUpdatedAt ?? 0) || 0;
+    const previousNextTickAt = Number(this.stockMarket?.nextTickAt ?? 0) || 0;
+    const market = serializeStockMarket(this.stockMarket, portfolio, player.money, now);
+    const nextLastUpdatedAt = Number(this.stockMarket?.lastUpdatedAt ?? 0) || 0;
+    const nextNextTickAt = Number(this.stockMarket?.nextTickAt ?? 0) || 0;
+
+    if (nextLastUpdatedAt !== previousLastUpdatedAt || nextNextTickAt !== previousNextTickAt) {
+      void this.persistStockMarket(persistReason);
+    }
+
+    return market;
+  }
+
   isAdminClient(client) {
     return this.state.players.get(client.sessionId)?.isAdmin === true;
   }
@@ -2107,9 +2126,7 @@ export class WorldRoom extends Room {
 
   handleStockMarketRequest(client, message = {}) {
     const { player } = this.assertStockMarketAccess(client, message);
-    const portfolio = this.getPlayerStockPortfolio(client.sessionId);
-    const market = serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now());
-    void this.persistStockMarket('market-request');
+    const market = this.serializeStockMarketForPlayer(client.sessionId, player, Date.now(), 'market-request');
     return {
       market,
       money: player.money
@@ -2166,9 +2183,7 @@ export class WorldRoom extends Room {
       throw new Error('Wallet is unavailable right now.');
     }
 
-    const portfolio = this.getPlayerStockPortfolio(client.sessionId);
-    const wallet = serializeStockMarket(this.stockMarket, portfolio, player.money, Date.now());
-    void this.persistStockMarket('wallet-snapshot');
+    const wallet = this.serializeStockMarketForPlayer(client.sessionId, player, Date.now(), 'wallet-snapshot');
     return {
       wallet,
       money: player.money
@@ -3957,15 +3972,18 @@ export class WorldRoom extends Room {
     return true;
   }
 
-  async handleRpc(client, requestId, handler) {
+  async handleRpc(client, requestId, handler, options = {}) {
     try {
+      const persistSnapshot = options?.persistSnapshot !== false;
       const payload = await Promise.resolve().then(() => handler());
       client.send('rpc:response', {
         requestId,
         ok: true,
         ...payload
       });
-      void this.savePlayerSnapshot(client.sessionId);
+      if (persistSnapshot) {
+        void this.savePlayerSnapshot(client.sessionId);
+      }
     } catch (error) {
       logServerError('room', 'RPC request failed.', error, {
         roomId: this.roomId,

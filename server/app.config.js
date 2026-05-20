@@ -16,7 +16,8 @@ import {
   getAgentTaskThread,
   listAgentTaskThreads,
   listAgentTasks,
-  updateAgentTask
+  updateAgentTask,
+  updateAgentTaskHeartbeat
 } from './src/agentTasks.js';
 import {
   getAgentDeploymentState,
@@ -908,7 +909,15 @@ const server = defineServer({
         }
 
         payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
-        const task = await updateAgentTask(req.params.id, payload);
+        const payloadKeys = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? Object.keys(payload)
+          : [];
+        const isHeartbeatOnlyUpdate = payloadKeys.length > 0
+          && payloadKeys.includes('workerHeartbeatAt')
+          && payloadKeys.every((key) => key === 'workerHeartbeatAt' || key === 'workerHeartbeatStatus');
+        const task = isHeartbeatOnlyUpdate
+          ? await updateAgentTaskHeartbeat(req.params.id, payload)
+          : await updateAgentTask(req.params.id, payload);
         if (!task) {
           sendJson(res, 404, { ok: false, error: 'Task not found.' });
           return;
