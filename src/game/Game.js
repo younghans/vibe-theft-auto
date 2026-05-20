@@ -1120,7 +1120,16 @@ function normalizeWorldMapBounds(bounds = {}) {
   return { minX, maxX, minZ, maxZ };
 }
 
-function normalizeWorldMapImageMetadata(metadata = {}) {
+function appendCacheBuster(url = '', version = Date.now()) {
+  const text = String(url ?? '').trim();
+  if (!text) {
+    return '';
+  }
+
+  return `${text}${text.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+}
+
+function normalizeWorldMapImageMetadata(metadata = {}, sourceUrl = window.location.href) {
   const bounds = normalizeWorldMapBounds(metadata?.bounds);
   const image = typeof metadata?.image === 'string' ? metadata.image.trim() : '';
   if (!bounds || !image) {
@@ -1129,8 +1138,14 @@ function normalizeWorldMapImageMetadata(metadata = {}) {
 
   const capturedMs = Date.parse(metadata.capturedAt ?? '');
   const version = Number.isFinite(capturedMs) ? capturedMs : Date.now();
+  let src = image;
+  try {
+    src = new URL(image, sourceUrl || window.location.href).toString();
+  } catch {
+    src = image;
+  }
   return {
-    src: `${image}${image.includes('?') ? '&' : '?'}v=${version}`,
+    src: appendCacheBuster(src, version),
     bounds,
     width: Math.max(1, Math.round(Number(metadata.width) || WORLD_MAP_CAPTURE_WIDTH)),
     height: Math.max(1, Math.round(Number(metadata.height) || WORLD_MAP_CAPTURE_HEIGHT)),
@@ -1376,6 +1391,9 @@ export class Game {
     this.phoneMapPan = { x: 0, z: 0 };
     this.worldMapImage = null;
     this.worldMapImageRequest = null;
+    this.worldMapImageRequestUrl = '';
+    this.worldMapImageRequestSeq = 0;
+    this.worldMapImageMetadataUrl = '';
     this.worldMapCaptureInFlight = false;
     this.gameSettings = readStoredGameSettings();
     this.hud.setSpeechAudioVolume?.(this.gameSettings.masterVolume);
@@ -2529,7 +2547,11 @@ export class Game {
       return;
     }
 
-    if (!this.worldMapImage && !this.worldMapImageRequest) {
+    const metadataEndpoint = this.getWorldMapImageMetadataEndpoint();
+    if (
+      (!this.worldMapImage && !this.worldMapImageRequest)
+      || (metadataEndpoint && this.worldMapImageMetadataUrl !== metadataEndpoint)
+    ) {
       void this.loadWorldMapImageMetadata();
     }
 
@@ -2748,6 +2770,15 @@ export class Game {
     }
 
     return new URL(WORLD_MAP_CAPTURE_ENDPOINT, window.location.href).toString();
+  }
+
+  getWorldMapImageMetadataEndpoint() {
+    const backendEndpoint = getBackendHttpEndpoint(this.npcService?.endpoint, WORLD_MAP_CAPTURE_ENDPOINT);
+    if (backendEndpoint) {
+      return backendEndpoint;
+    }
+
+    return new URL(WORLD_MAP_IMAGE_METADATA_URL, window.location.href).toString();
   }
 
   getAdminAgentTasksEndpoint(pathname = '') {
@@ -3494,33 +3525,65 @@ export class Game {
   }
 
   async loadWorldMapImageMetadata({ force = false } = {}) {
-    if (this.worldMapImageRequest) {
+    const preferredUrl = this.getWorldMapImageMetadataEndpoint();
+    const fallbackUrl = new URL(WORLD_MAP_IMAGE_METADATA_URL, window.location.href).toString();
+    const candidateUrls = preferredUrl === fallbackUrl ? [preferredUrl] : [preferredUrl, fallbackUrl];
+    if (!force && this.worldMapImage && this.worldMapImageMetadataUrl === preferredUrl) {
+      return this.worldMapImage;
+    }
+    if (!force && this.worldMapImageRequest && this.worldMapImageRequestUrl === preferredUrl) {
       return this.worldMapImageRequest;
     }
 
+    const requestSeq = ++this.worldMapImageRequestSeq;
+    this.worldMapImageRequestUrl = preferredUrl;
     this.worldMapImageRequest = (async () => {
+      let lastStatus = 0;
       try {
-        const url = `${WORLD_MAP_IMAGE_METADATA_URL}${force ? `?v=${Date.now()}` : ''}`;
-        const response = await fetch(url, { cache: 'no-store' });
-        if (!response.ok) {
-          if (response.status !== 404) {
-            console.warn('[Map] World map metadata request failed.', response.status);
+        for (const metadataUrl of candidateUrls) {
+          const response = await fetch(
+            force ? appendCacheBuster(metadataUrl, Date.now()) : metadataUrl,
+            { cache: 'no-store' }
+          );
+          if (!response.ok) {
+            lastStatus = response.status;
+            continue;
           }
-          this.worldMapImage = null;
-          return null;
+
+          const image = normalizeWorldMapImageMetadata(await response.json(), metadataUrl);
+          if (requestSeq !== this.worldMapImageRequestSeq) {
+            return image;
+          }
+
+          this.worldMapImage = image;
+          this.worldMapImageMetadataUrl = preferredUrl;
+          if (this.phoneMenuVisible && this.phoneActiveAppId === 'map') {
+            this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+          }
+
+          return this.worldMapImage;
         }
 
-        this.worldMapImage = normalizeWorldMapImageMetadata(await response.json());
-        if (this.phoneMenuVisible && this.phoneActiveAppId === 'map') {
-          this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+        if (requestSeq === this.worldMapImageRequestSeq) {
+          this.worldMapImage = null;
+          this.worldMapImageMetadataUrl = '';
         }
-        return this.worldMapImage;
+        if (lastStatus && lastStatus !== 404) {
+          console.warn('[Map] World map metadata request failed.', lastStatus);
+        }
+        return null;
       } catch (error) {
         console.warn('[Map] Could not load world map image metadata.', error);
-        this.worldMapImage = null;
+        if (requestSeq === this.worldMapImageRequestSeq) {
+          this.worldMapImage = null;
+          this.worldMapImageMetadataUrl = '';
+        }
         return null;
       } finally {
-        this.worldMapImageRequest = null;
+        if (requestSeq === this.worldMapImageRequestSeq) {
+          this.worldMapImageRequest = null;
+          this.worldMapImageRequestUrl = '';
+        }
       }
     })();
 

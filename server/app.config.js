@@ -478,6 +478,31 @@ async function writeGeneratedWorldMapFile(relativePath, contents) {
   }
 }
 
+async function readGeneratedWorldMapMetadata() {
+  const candidates = [
+    path.join(PROJECT_ROOT, GENERATED_WORLD_MAP_METADATA_PATH),
+    path.join(DIST_ROOT, GENERATED_WORLD_MAP_METADATA_PATH)
+  ];
+
+  for (const candidatePath of candidates) {
+    const stats = await fsp.stat(candidatePath).catch(() => null);
+    if (!stats?.isFile()) {
+      continue;
+    }
+
+    const text = await fsp.readFile(candidatePath, 'utf8');
+    const metadata = JSON.parse(text);
+    return {
+      ...metadata,
+      image: typeof metadata.image === 'string' && metadata.image.trim()
+        ? metadata.image.trim()
+        : '/assets/generated/world-map.webp'
+    };
+  }
+
+  return null;
+}
+
 async function removeCompressedVariants(filePath) {
   await Promise.all([
     fsp.rm(`${filePath}.br`, { force: true }),
@@ -568,6 +593,23 @@ const server = defineServer({
     app.options('/admin/world-map', (req, res) => {
       setAdminWorldMapCorsHeaders(req, res);
       res.status(204).end();
+    });
+
+    app.get('/admin/world-map', async (req, res) => {
+      setAdminWorldMapCorsHeaders(req, res);
+      res.setHeader('Cache-Control', 'no-store, max-age=0');
+
+      try {
+        const metadata = await readGeneratedWorldMapMetadata();
+        if (!metadata) {
+          sendJson(res, 404, { ok: false, error: 'World map has not been captured yet.' });
+          return;
+        }
+
+        sendJson(res, 200, metadata);
+      } catch {
+        sendJson(res, 500, { ok: false, error: 'Could not load world map metadata.' });
+      }
     });
 
     app.post('/admin/world-map', async (req, res) => {

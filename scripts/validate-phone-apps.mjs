@@ -163,6 +163,9 @@ assert.match(gameSource, /isVibeHeroHoldingVibeRadio/, 'Vibe Radio playback is g
 assert.match(gameSource, /playVibeRadioTrack[\s\S]*?isVibeHeroHoldingVibeRadio/, 'Vibe Radio should not restart while Vibe Hero is active');
 assert.match(inputSource, /target instanceof Element && Boolean\(target\.closest\('\.hud'\)\)/, 'HUD SVG icon clicks should not fall through to game input');
 assert.match(gameSource, /showSkillLevelUp/, 'Game triggers skill level-up feedback');
+assert.match(appConfigSource, /app\.get\('\/admin\/world-map'/, 'Backend exposes latest captured map metadata');
+assert.match(gameSource, /getWorldMapImageMetadataEndpoint/, 'Game prefers backend map metadata when a backend endpoint is available');
+assert.match(gameSource, /normalizeWorldMapImageMetadata\(metadata = \{\}, sourceUrl/, 'Map image URLs resolve relative to the metadata origin');
 
 assert.ok(assets.audio.phoneUnlock, 'Phone unlock audio should be registered.');
 assert.equal(TEXTING_EMOTE_ID, 'texting', 'Texting emote id remains stable for multiplayer sync.');
