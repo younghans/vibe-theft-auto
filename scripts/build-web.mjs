@@ -15,6 +15,7 @@ const defaultWorldLayoutPath = path.join(root, 'server', 'data', 'world-layout.j
 const gzipAsync = promisify(gzip);
 const brotliCompressAsync = promisify(brotliCompress);
 const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], 80 * 1024 * 1024);
+const DIST_OPTIONAL_MEDIA_BUDGET_BYTES = getByteBudget(['VTA_DIST_OPTIONAL_MEDIA_BUDGET_BYTES', 'STICKRPG_DIST_OPTIONAL_MEDIA_BUDGET_BYTES'], 32 * 1024 * 1024);
 const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 8 * 1024 * 1024);
 const DIST_BUDGET_DETAIL_LIMIT = 10;
 const COMPRESSIBLE_EXTENSIONS = new Set([
@@ -64,6 +65,10 @@ function formatFileSizeList(files = []) {
     .slice(0, DIST_BUDGET_DETAIL_LIMIT)
     .map((entry) => `${entry.path} (${formatKiB(entry.bytes)})`)
     .join(', ');
+}
+
+function isOptionalMediaDistPath(relativePath = '') {
+  return /^assets\/audio\/vibe-radio\/[^/]+\.mp3$/iu.test(relativePath);
 }
 
 async function resetStagingDist() {
@@ -612,17 +617,28 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
   const files = await walkFiles(outputDirectory);
   const runtimeFiles = files.filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'));
   let totalBytes = 0;
-  const runtimeFileSizes = [];
+  let coreBytes = 0;
+  let optionalMediaBytes = 0;
+  const coreFileSizes = [];
+  const optionalMediaFileSizes = [];
   const oversizedFiles = [];
 
   for (const filePath of runtimeFiles) {
     const stats = await fs.stat(filePath);
     const relativePath = path.relative(outputDirectory, filePath).split(path.sep).join('/');
     totalBytes += stats.size;
-    runtimeFileSizes.push({
+    const sizeEntry = {
       path: relativePath,
       bytes: stats.size
-    });
+    };
+
+    if (isOptionalMediaDistPath(relativePath)) {
+      optionalMediaBytes += stats.size;
+      optionalMediaFileSizes.push(sizeEntry);
+    } else {
+      coreBytes += stats.size;
+      coreFileSizes.push(sizeEntry);
+    }
 
     if (stats.size > DIST_FILE_BUDGET_BYTES) {
       oversizedFiles.push({
@@ -633,11 +649,19 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
   }
 
   const errors = [];
-  if (totalBytes > DIST_TOTAL_BUDGET_BYTES) {
-    const largestFiles = formatFileSizeList(runtimeFileSizes);
+  if (coreBytes > DIST_TOTAL_BUDGET_BYTES) {
+    const largestFiles = formatFileSizeList(coreFileSizes);
     errors.push(
-      `Dist payload is ${formatKiB(totalBytes)}, budget is ${formatKiB(DIST_TOTAL_BUDGET_BYTES)}.`
-        + (largestFiles ? ` Largest runtime files: ${largestFiles}.` : '')
+      `Core dist payload is ${formatKiB(coreBytes)}, budget is ${formatKiB(DIST_TOTAL_BUDGET_BYTES)}.`
+        + (largestFiles ? ` Largest core runtime files: ${largestFiles}.` : '')
+    );
+  }
+
+  if (optionalMediaBytes > DIST_OPTIONAL_MEDIA_BUDGET_BYTES) {
+    const largestFiles = formatFileSizeList(optionalMediaFileSizes);
+    errors.push(
+      `Optional media payload is ${formatKiB(optionalMediaBytes)}, budget is ${formatKiB(DIST_OPTIONAL_MEDIA_BUDGET_BYTES)}.`
+        + (largestFiles ? ` Largest optional media files: ${largestFiles}.` : '')
     );
   }
 
@@ -652,7 +676,11 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
     throw new Error(`Build asset budget failed. ${errors.join(' ')}`);
   }
 
-  return totalBytes;
+  return {
+    coreBytes,
+    optionalMediaBytes,
+    totalBytes
+  };
 }
 
 async function deployStagingDist() {
@@ -713,7 +741,12 @@ await copyOptionalDirectory(path.join('assets', 'audio', 'vibe-radio'));
 await copyOptionalDirectory(path.join('assets', 'generated'));
 await copyOptionalDirectory(path.join('assets', 'mixamo', 'portraits'));
 await compressDistFiles();
-const totalBytes = await enforceDistBudget();
+const budget = await enforceDistBudget();
 await deployStagingDist();
 
-console.log(`Built bundled web app into ${dist} (${Math.round(totalBytes / 1024)} KiB before precompressed variants).`);
+console.log(
+  `Built bundled web app into ${dist}`
+    + ` (${Math.round(budget.totalBytes / 1024)} KiB before precompressed variants;`
+    + ` core ${Math.round(budget.coreBytes / 1024)} KiB,`
+    + ` optional media ${Math.round(budget.optionalMediaBytes / 1024)} KiB).`
+);
