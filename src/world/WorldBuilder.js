@@ -795,6 +795,7 @@ export class WorldBuilder {
       draft: this.state.trafficRouteDraft
         ? {
             ...this.state.trafficRouteDraft,
+            waypoints: this.getTrafficRouteDraftWaypointPoints(this.state.trafficRouteDraft, graph),
             color: getTrafficRouteCarColor(this.state.trafficRouteDraft.itemId),
             drawing: this.state.trafficRouteDrawing
           }
@@ -1632,6 +1633,25 @@ export class WorldBuilder {
       return null;
     }
 
+    const halfTile = BUILDER_TILE_SIZE * 0.5;
+    let containingNode = null;
+    let containingDistanceSq = Infinity;
+    for (const node of graph.activeNodes) {
+      if (
+        Math.abs(node.x - x) <= halfTile + 0.001
+        && Math.abs(node.z - z) <= halfTile + 0.001
+      ) {
+        const distanceSq = ((node.x - x) * (node.x - x)) + ((node.z - z) * (node.z - z));
+        if (distanceSq < containingDistanceSq) {
+          containingNode = node;
+          containingDistanceSq = distanceSq;
+        }
+      }
+    }
+    if (containingNode) {
+      return containingNode;
+    }
+
     const fromNode = graph.activeNodeSet.has(fromNodeIndex)
       ? graph.nodes?.[fromNodeIndex]
       : null;
@@ -1665,6 +1685,144 @@ export class WorldBuilder {
     return null;
   }
 
+  getTrafficRouteDraftWaypointNodeIndices(draft = this.state.trafficRouteDraft) {
+    const source = Array.isArray(draft?.waypointNodeIndices)
+      ? draft.waypointNodeIndices
+      : (Array.isArray(draft?.nodeIndices) ? draft.nodeIndices : []);
+    const output = [];
+    for (const nodeIndex of source) {
+      const normalizedIndex = Number(nodeIndex);
+      if (!Number.isInteger(normalizedIndex)) {
+        continue;
+      }
+      if (output[output.length - 1] !== normalizedIndex) {
+        output.push(normalizedIndex);
+      }
+    }
+    return output;
+  }
+
+  getTrafficRouteDraftWaypointPoints(draft = this.state.trafficRouteDraft, graph = this.getTrafficRouteGraph()) {
+    const points = [];
+    const waypointNodeIndices = this.getTrafficRouteDraftWaypointNodeIndices(draft);
+    const markerCount = draft?.closed && waypointNodeIndices.length > 1 && waypointNodeIndices[0] === waypointNodeIndices[waypointNodeIndices.length - 1]
+      ? waypointNodeIndices.length - 1
+      : waypointNodeIndices.length;
+    for (let index = 0; index < markerCount; index += 1) {
+      const node = graph?.nodes?.[waypointNodeIndices[index]];
+      const point = createTrafficRoutePointFromNode(node);
+      if (point) {
+        points.push(point);
+      }
+    }
+    return points;
+  }
+
+  rebuildTrafficRouteDraftFromWaypoints(graph = this.getTrafficRouteGraph()) {
+    const draft = this.state.trafficRouteDraft;
+    const waypointNodeIndices = this.getTrafficRouteDraftWaypointNodeIndices(draft);
+    if (!draft || !graph?.activeNodeSet || !waypointNodeIndices.length) {
+      return false;
+    }
+
+    const firstNodeIndex = waypointNodeIndices[0];
+    const firstNode = graph.nodes?.[firstNodeIndex];
+    if (!firstNode || !graph.activeNodeSet.has(firstNodeIndex)) {
+      return false;
+    }
+
+    const points = [createTrafficRoutePointFromNode(firstNode)];
+    const nodeIndices = [firstNodeIndex];
+    let currentNodeIndex = firstNodeIndex;
+    for (const waypointNodeIndex of waypointNodeIndices.slice(1)) {
+      if (!graph.activeNodeSet.has(waypointNodeIndex)) {
+        return false;
+      }
+      if (waypointNodeIndex === currentNodeIndex) {
+        continue;
+      }
+
+      const path = findPassiveTrafficPath(graph, currentNodeIndex, waypointNodeIndex);
+      if (path.length < 2) {
+        return false;
+      }
+
+      for (const pathNodeIndex of path.slice(1)) {
+        const pathNode = graph.nodes?.[pathNodeIndex];
+        const point = createTrafficRoutePointFromNode(pathNode);
+        if (!point) {
+          return false;
+        }
+        if (nodeIndices[nodeIndices.length - 1] !== pathNodeIndex) {
+          nodeIndices.push(pathNodeIndex);
+          points.push(point);
+        }
+      }
+      currentNodeIndex = waypointNodeIndex;
+    }
+
+    draft.waypointNodeIndices = waypointNodeIndices;
+    draft.nodeIndices = nodeIndices;
+    draft.points = points;
+    draft.closed = waypointNodeIndices.length >= 4 && waypointNodeIndices[0] === waypointNodeIndices[waypointNodeIndices.length - 1];
+    return true;
+  }
+
+  removeTrafficRouteDraftWaypoint(nodeIndex, graph = this.getTrafficRouteGraph()) {
+    const draft = this.state.trafficRouteDraft;
+    if (!draft || draft.closed) {
+      return false;
+    }
+
+    const waypointNodeIndices = this.getTrafficRouteDraftWaypointNodeIndices(draft);
+    if (!waypointNodeIndices.length) {
+      return false;
+    }
+
+    const firstNodeIndex = waypointNodeIndices[0];
+    if (nodeIndex === firstNodeIndex && waypointNodeIndices.length >= 3) {
+      return false;
+    }
+
+    const removeIndex = waypointNodeIndices.indexOf(nodeIndex);
+    if (removeIndex < 0) {
+      return false;
+    }
+
+    const previousWaypoints = waypointNodeIndices.slice();
+    const nextWaypoints = waypointNodeIndices.filter((_, index) => index !== removeIndex);
+    if (!nextWaypoints.length) {
+      this.state.trafficRouteDraft = null;
+      this.state.trafficRoutePreview = null;
+      this.state.trafficRouteDrawing = false;
+      return true;
+    }
+
+    draft.waypointNodeIndices = nextWaypoints;
+    if (nextWaypoints.length === 1) {
+      const node = graph?.nodes?.[nextWaypoints[0]];
+      const point = createTrafficRoutePointFromNode(node);
+      if (!point) {
+        draft.waypointNodeIndices = previousWaypoints;
+        return false;
+      }
+      draft.nodeIndices = [nextWaypoints[0]];
+      draft.points = [point];
+      draft.closed = false;
+      this.state.trafficRoutePreview = null;
+      return true;
+    }
+
+    if (!this.rebuildTrafficRouteDraftFromWaypoints(graph)) {
+      draft.waypointNodeIndices = previousWaypoints;
+      this.rebuildTrafficRouteDraftFromWaypoints(graph);
+      return false;
+    }
+
+    this.state.trafficRoutePreview = null;
+    return true;
+  }
+
   createTrafficRouteDraftPreview(nodeIndex, graph = this.getTrafficRouteGraph()) {
     const draft = this.state.trafficRouteDraft;
     const node = graph?.nodes?.[nodeIndex];
@@ -1679,7 +1837,8 @@ export class WorldBuilder {
       return null;
     }
 
-    if (nodeIndex === firstNodeIndex && nodeIndices.length < 3) {
+    const waypointNodeIndices = this.getTrafficRouteDraftWaypointNodeIndices(draft);
+    if (nodeIndex === firstNodeIndex && waypointNodeIndices.length < 3) {
       return null;
     }
 
@@ -1727,22 +1886,27 @@ export class WorldBuilder {
 
     draft.points = Array.isArray(draft.points) ? draft.points : [];
     draft.nodeIndices = Array.isArray(draft.nodeIndices) ? draft.nodeIndices : [];
+    draft.waypointNodeIndices = Array.isArray(draft.waypointNodeIndices)
+      ? draft.waypointNodeIndices
+      : this.getTrafficRouteDraftWaypointNodeIndices(draft);
     const nodeIndices = draft.nodeIndices;
-    if (!nodeIndices.length) {
+    const waypointNodeIndices = draft.waypointNodeIndices;
+    if (!waypointNodeIndices.length) {
       draft.points = [createTrafficRoutePointFromNode(node)];
       draft.nodeIndices = [nodeIndex];
+      draft.waypointNodeIndices = [nodeIndex];
       draft.closed = false;
       this.state.trafficRoutePreview = null;
       return true;
     }
 
-    const firstNodeIndex = nodeIndices[0];
-    const lastNodeIndex = nodeIndices[nodeIndices.length - 1];
+    const firstNodeIndex = waypointNodeIndices[0];
+    const lastNodeIndex = nodeIndices[nodeIndices.length - 1] ?? waypointNodeIndices[waypointNodeIndices.length - 1];
     if (nodeIndex === lastNodeIndex) {
       return false;
     }
 
-    if (nodeIndex === firstNodeIndex && nodeIndices.length < 3) {
+    if (nodeIndex === firstNodeIndex && waypointNodeIndices.length < 3) {
       return false;
     }
 
@@ -1752,30 +1916,19 @@ export class WorldBuilder {
       return false;
     }
 
-    let changed = false;
-    for (const pathNodeIndex of path.slice(1)) {
-      if (pathNodeIndex === nodeIndices[nodeIndices.length - 1]) {
-        continue;
-      }
-
-      if (closingRoute && pathNodeIndex === firstNodeIndex && nodeIndices.length >= 3) {
-        draft.points.push({ ...draft.points[0] });
-        draft.nodeIndices.push(firstNodeIndex);
-        draft.closed = true;
-        this.state.trafficRoutePreview = null;
-        return true;
-      }
-
-      const pathNode = graph.nodes[pathNodeIndex];
-      draft.points.push(createTrafficRoutePointFromNode(pathNode));
-      draft.nodeIndices.push(pathNodeIndex);
-      changed = true;
+    if (!closingRoute && waypointNodeIndices.includes(nodeIndex)) {
+      return false;
     }
 
-    if (changed) {
-      this.state.trafficRoutePreview = null;
+    const previousWaypoints = waypointNodeIndices.slice();
+    draft.waypointNodeIndices = [...waypointNodeIndices, nodeIndex];
+    if (!this.rebuildTrafficRouteDraftFromWaypoints(graph)) {
+      draft.waypointNodeIndices = previousWaypoints;
+      this.rebuildTrafficRouteDraftFromWaypoints(graph);
+      return false;
     }
-    return changed;
+    this.state.trafficRoutePreview = null;
+    return true;
   }
 
   beginTrafficRouteFromCar(itemId = '', point = null) {
@@ -1801,6 +1954,7 @@ export class WorldBuilder {
       label: getBuilderItemById(itemId)?.label ?? titleCaseLabel(itemId),
       points: [],
       nodeIndices: [],
+      waypointNodeIndices: [],
       closed: false
     };
     this.state.trafficRoutePreview = null;
@@ -1812,11 +1966,23 @@ export class WorldBuilder {
     const itemId = this.state.trafficRouteDraft?.itemId
       ?? this.state.activeTrafficRouteCarItemId
       ?? PASSIVE_TRAFFIC_CAR_ITEM_IDS[0];
+    const hadOpenDraft = Boolean(this.state.trafficRouteDraft && !this.state.trafficRouteDraft.closed);
     if (!this.state.trafficRouteDraft) {
       this.beginTrafficRouteFromCar(itemId, point);
     } else if (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.trafficRouteDraft.itemId)) {
       this.state.activeTrafficRouteCarItemId = this.state.trafficRouteDraft.itemId;
     }
+
+    if (hadOpenDraft) {
+      const graph = this.getTrafficRouteGraph();
+      const lastNodeIndex = this.state.trafficRouteDraft?.nodeIndices?.[this.state.trafficRouteDraft.nodeIndices.length - 1] ?? null;
+      const node = this.getNearestTrafficRouteNode(point, graph, { fromNodeIndex: lastNodeIndex });
+      if (node && this.removeTrafficRouteDraftWaypoint(node.index, graph)) {
+        this.updateBuilderHud();
+        return;
+      }
+    }
+
     this.state.trafficRouteDrawing = Boolean(this.state.trafficRouteDraft && !this.state.trafficRouteDraft.closed);
     this.continueTrafficRouteDrawing(point);
   }

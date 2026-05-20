@@ -8841,11 +8841,21 @@ export class Hud {
     const draftPoints = draft ? makePointList(draft.points) : '';
     const draftFirst = draft?.points?.[0] ?? null;
     const draftLast = draft?.points?.[draft.points.length - 1] ?? null;
+    const draftWaypoints = Array.isArray(draft?.waypoints) ? draft.waypoints : [];
+    const draftWaypointMarkup = draftWaypoints.map((point, index) => {
+      const isFirst = index === 0;
+      const isOpenEndpoint = !draft?.closed && index === draftWaypoints.length - 1;
+      if (isFirst || isOpenEndpoint) {
+        return '';
+      }
+      return `<circle class="hud__traffic-route-waypoint" cx="${toX(point.x).toFixed(1)}" cy="${toY(point.z).toFixed(1)}" r="4.8" style="--traffic-route-color:${escapeHtml(draft?.color ?? '#ffffff')}"></circle>`;
+    }).join('');
     const draftMarkup = draftPoints
       ? `
         <g class="hud__traffic-route-path hud__traffic-route-path--draft${draft.drawing ? ' is-drawing' : ''}">
           <polyline points="${draftPoints}" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></polyline>
           ${draftFirst ? `<circle class="hud__traffic-route-start" cx="${toX(draftFirst.x).toFixed(1)}" cy="${toY(draftFirst.z).toFixed(1)}" r="5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
+          ${draftWaypointMarkup}
           ${draftLast && !draft.closed ? `<circle class="hud__traffic-route-end" cx="${toX(draftLast.x).toFixed(1)}" cy="${toY(draftLast.z).toFixed(1)}" r="6.5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
         </g>
       `

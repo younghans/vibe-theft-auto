@@ -148,6 +148,15 @@ function hasRoadExit(node, deltaX, deltaZ) {
   return false;
 }
 
+function isFlexiblePassiveTrafficCornerNode(node) {
+  const roadName = String(node?.itemId ?? node?.assetName ?? '').toLowerCase();
+  return roadName.startsWith('road_') && roadName.includes('corner');
+}
+
+function canUseRoadExitToward(node, deltaX, deltaZ) {
+  return hasRoadExit(node, deltaX, deltaZ) || isFlexiblePassiveTrafficCornerNode(node);
+}
+
 function canConnectRoadNodes(a, b) {
   const deltaX = Math.sign((b?.cellX ?? 0) - (a?.cellX ?? 0));
   const deltaZ = Math.sign((b?.cellZ ?? 0) - (a?.cellZ ?? 0));
@@ -155,7 +164,8 @@ function canConnectRoadNodes(a, b) {
     return false;
   }
 
-  return hasRoadExit(a, deltaX, deltaZ) && hasRoadExit(b, -deltaX, -deltaZ);
+  return (hasRoadExit(a, deltaX, deltaZ) && hasRoadExit(b, -deltaX, -deltaZ))
+    || (canUseRoadExitToward(a, deltaX, deltaZ) && canUseRoadExitToward(b, -deltaX, -deltaZ));
 }
 
 function connectRoadNodes(nodeByKey, aKey, bKey) {

@@ -6601,6 +6601,12 @@ body.is-admin-prompt-resizing * {
   stroke-width: 3;
 }
 
+.hud__traffic-route-path .hud__traffic-route-waypoint {
+  fill: color-mix(in srgb, var(--traffic-route-color, #f2c871) 72%, white 14%);
+  stroke: rgba(4, 8, 13, 0.86);
+  stroke-width: 2.2;
+}
+
 .hud__traffic-route-path.is-drawing .hud__traffic-route-end {
   filter: drop-shadow(0 0 5px var(--traffic-route-color, #f2c871));
 }

@@ -1134,6 +1134,32 @@ function validatePassiveTraffic() {
     mixedRoadPath.length === mixedRoadTypeTiles.length,
     'Passive traffic should route continuously through straight, corner, curved, T, cross, and junction street road tiles'
   );
+  const tolerantCornerGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_tolerant_corner_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_tolerant_corner_node', itemId: 'road_corner', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_tolerant_corner_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const tolerantCornerSouth = findTrafficNode(tolerantCornerGraph, 0, 1);
+  const tolerantCornerNode = findTrafficNode(tolerantCornerGraph, 0, 0);
+  const tolerantCornerEast = findTrafficNode(tolerantCornerGraph, 1, 0);
+  assert(
+    tolerantCornerSouth && tolerantCornerNode && tolerantCornerEast,
+    'Passive traffic tolerant corner fixture should expose all route nodes'
+  );
+  const tolerantCornerPath = findPassiveTrafficPath(
+    tolerantCornerGraph,
+    tolerantCornerSouth.index,
+    tolerantCornerEast.index
+  );
+  assert(
+    tolerantCornerPath.length === 3
+      && tolerantCornerPath[1] === tolerantCornerNode.index,
+    'Passive traffic route lines should be able to select and path through street corner tiles even when the corner rotation is finicky'
+  );
+  assert(
+    getPassiveTrafficDriveScript(tolerantCornerSouth, tolerantCornerNode, tolerantCornerEast).waypoints.length >= 10,
+    'Passive traffic cars should still receive a curved turn script when a custom route passes through a tolerant corner'
+  );
   const parkOnlyTrafficGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_park_road_type_1', itemId: 'park_road_straight', cell: [0, 0], rotationQuarterTurns: 0 },
     { id: 'traffic_park_road_type_2', itemId: 'park_road_corner_decorated', cell: [0, -1], rotationQuarterTurns: 1 },
@@ -1437,11 +1463,13 @@ function validatePassiveTraffic() {
   assert(
     hudSource.includes('--traffic-route-map-aspect')
       && hudSource.includes('hud__traffic-route-end')
+      && hudSource.includes('hud__traffic-route-waypoint')
       && hudSource.includes('hud__traffic-route-path--preview')
       && hudSource.includes('data-builder-traffic-map-content')
       && hudSource.includes('data-builder-traffic-zoom')
       && styleSource.includes('aspect-ratio: var(--traffic-route-map-aspect')
       && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end')
+      && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-waypoint')
       && styleSource.includes('overflow: auto;')
       && styleSource.includes('.hud__traffic-route-zoom'),
     'Traffic route editor should render the captured phone map without squashing it, support map zoom/scroll, and mark unfinished route endpoints'
@@ -1450,14 +1478,19 @@ function validatePassiveTraffic() {
     /draftItemId[\s\S]*activeItemId = draftItemId/.test(worldBuilderSource)
       && /trafficRoutePreview/.test(worldBuilderSource)
       && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
+      && /waypointNodeIndices/.test(worldBuilderSource)
+      && /removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
+      && /rebuildTrafficRouteDraftFromWaypoints/.test(worldBuilderSource)
+      && /getTrafficRouteDraftWaypointPoints/.test(worldBuilderSource)
       && /preferredComponentIndex/.test(worldBuilderSource)
       && /selectTrafficRouteCar\(itemId = ''\)[\s\S]*trafficRouteDraft\?\.itemId[\s\S]*trafficRouteDraft = null/.test(worldBuilderSource)
       && /createTrafficRouteDraftPreview\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return null;/.test(worldBuilderSource)
       && /appendTrafficRouteDraftNode\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return false;/.test(worldBuilderSource)
       && /const closingRoute = nodeIndex === firstNodeIndex/.test(worldBuilderSource)
+      && /beginTrafficRouteDrawing\(point = null\)[\s\S]*hadOpenDraft[\s\S]*removeTrafficRouteDraftWaypoint/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, and leave clicks resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, remove previous waypoints, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')
