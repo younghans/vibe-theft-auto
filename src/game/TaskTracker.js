@@ -244,6 +244,13 @@ function getGymTaskTarget(context = {}) {
     return activeBasketballHoopTarget;
   }
 
+  const activeTreadmill = (context.activeInteractables ?? [])
+    .find((interactable) => interactable.kind === 'treadmill-workout');
+  const activeTreadmillTarget = getTaskPositionForInteractable(activeTreadmill, context);
+  if (activeTreadmillTarget) {
+    return activeTreadmillTarget;
+  }
+
   const worldSnatch = getWorldBuilderInteractables(context)
     .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
   const worldSnatchTarget = getTaskPositionForInteractable(worldSnatch, context);
@@ -256,6 +263,13 @@ function getGymTaskTarget(context = {}) {
   const worldBasketballHoopTarget = getTaskPositionForInteractable(worldBasketballHoop, context);
   if (worldBasketballHoopTarget) {
     return worldBasketballHoopTarget;
+  }
+
+  const worldTreadmill = getWorldBuilderInteractables(context)
+    .find((interactable) => interactable.kind === 'treadmill-workout' || interactable.itemId === 'treadmill');
+  const worldTreadmillTarget = getTaskPositionForInteractable(worldTreadmill, context);
+  if (worldTreadmillTarget) {
+    return worldTreadmillTarget;
   }
 
   return getGymBuildingTaskTarget(context);

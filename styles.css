@@ -81,6 +81,7 @@ body.is-admin-prompt-resizing * {
 .hud__school-microgame,
 .hud__vibe-hero,
 .hud__basketball-shot,
+.hud__treadmill-run,
 .hud__quick-chat {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -9031,6 +9032,211 @@ body.is-admin-prompt-resizing * {
   border-top-color: #f26d78;
 }
 
+.hud__treadmill-run {
+  left: 50%;
+  bottom: 24px;
+  width: min(500px, calc(100vw - 28px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(81, 215, 255, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(13, 18, 24, 0.95), rgba(5, 8, 12, 0.9));
+  color: #edf6f8;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 18px) scale(0.98);
+  transition: opacity 160ms ease, transform 160ms ease;
+  overflow: hidden;
+  z-index: 24;
+}
+
+.hud__treadmill-run[hidden] {
+  display: none;
+}
+
+.hud__treadmill-run::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-top: 4px solid #51d7ff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  pointer-events: none;
+}
+
+.hud__treadmill-run.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.hud__treadmill-run-header,
+.hud__treadmill-run-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__treadmill-run-title {
+  margin: 0 0 4px;
+  color: #f7fbff;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.hud__treadmill-run-status,
+.hud__treadmill-run-footer p {
+  margin: 0;
+}
+
+.hud__treadmill-run-body {
+  position: relative;
+  min-height: 170px;
+}
+
+.hud__treadmill-run-play {
+  height: 100%;
+  min-height: 170px;
+  display: grid;
+  grid-template-columns: 154px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.hud__treadmill-run-hit {
+  position: relative;
+  width: 154px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(30, 44, 54, 0.96), rgba(7, 11, 15, 0.96));
+  color: #f7fbff;
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+}
+
+.hud__treadmill-run-hit:disabled {
+  cursor: default;
+}
+
+.hud__treadmill-run-pulse {
+  position: absolute;
+  inset: 14px;
+  border: 10px solid rgba(81, 215, 255, 0.18);
+  border-radius: 50%;
+  transform: scale(calc(0.78 + (var(--beat-progress, 0) * 0.26)));
+  opacity: calc(0.38 + (var(--beat-progress, 0) * 0.5));
+  box-shadow: 0 0 26px rgba(81, 215, 255, 0.24);
+}
+
+.hud__treadmill-run-hit strong,
+.hud__treadmill-run-hit em {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__treadmill-run-hit strong {
+  align-self: end;
+  font-size: 22px;
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.hud__treadmill-run-hit em {
+  align-self: start;
+  color: rgba(237, 246, 248, 0.74);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.hud__treadmill-run-meter {
+  position: relative;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 2px, transparent 2px 26px),
+    rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.hud__treadmill-run-meter span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--run-progress, 0) * 100%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #51d7ff, #f2c871, #68e08f);
+  box-shadow: 0 0 18px rgba(81, 215, 255, 0.35);
+}
+
+.hud__treadmill-run-stats {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hud__treadmill-run-stats span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hud__treadmill-run-stats strong {
+  overflow: hidden;
+  color: #f7fbff;
+  font-size: 18px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__treadmill-run-stats em {
+  color: rgba(237, 246, 248, 0.68);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hud__treadmill-run-play.is-perfect .hud__treadmill-run-hit,
+.hud__treadmill-run.is-award .hud__treadmill-run-hit {
+  border-color: rgba(104, 224, 143, 0.55);
+  box-shadow: 0 0 24px rgba(104, 224, 143, 0.22);
+}
+
+.hud__treadmill-run-play.is-miss .hud__treadmill-run-hit,
+.hud__treadmill-run-play.is-early .hud__treadmill-run-hit,
+.hud__treadmill-run-play.is-late .hud__treadmill-run-hit {
+  border-color: rgba(242, 109, 120, 0.48);
+}
+
+.hud__treadmill-run.is-award::before {
+  border-top-color: #68e08f;
+}
+
 .hud__admin-prompt-toggle {
   display: inline-flex;
   width: 52px;
@@ -16046,6 +16252,7 @@ canvas {
   .hud__school-microgame,
   .hud__vibe-hero,
   .hud__basketball-shot,
+  .hud__treadmill-run,
   .hud__aim-debug {
     width: calc(100vw - 32px);
     left: 16px;
@@ -16092,6 +16299,16 @@ canvas {
   }
 
   .hud__basketball-shot {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    width: auto;
+    gap: 8px;
+    padding: 10px;
+    transform: translateY(14px) scale(1);
+  }
+
+  .hud__treadmill-run {
     left: 16px;
     right: 16px;
     bottom: 16px;
@@ -16212,6 +16429,10 @@ canvas {
     font-size: 19px;
   }
 
+  .hud__treadmill-run-title {
+    font-size: 19px;
+  }
+
   .hud__basketball-shot-play {
     min-height: 164px;
     grid-template-columns: 1fr;
@@ -16220,6 +16441,20 @@ canvas {
 
   .hud__basketball-shot-body {
     min-height: 230px;
+  }
+
+  .hud__treadmill-run-play {
+    min-height: 156px;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .hud__treadmill-run-body {
+    min-height: 178px;
+  }
+
+  .hud__treadmill-run-hit {
+    width: 132px;
   }
 
   .hud__basketball-shot-meter {
@@ -16262,6 +16497,10 @@ canvas {
   }
 
   .hud__basketball-shot.is-visible {
+    transform: translateY(0) scale(1);
+  }
+
+  .hud__treadmill-run.is-visible {
     transform: translateY(0) scale(1);
   }
 

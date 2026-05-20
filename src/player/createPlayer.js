@@ -558,6 +558,7 @@ export async function createPlayer(library, {
   const clipNamesToPreload = new Set([
     characterDefinition.idleClip,
     characterDefinition.walkClip,
+    characterDefinition.fastRunClip ?? assets.playerAnimationSet.fastRun,
     characterDefinition.drunkIdleClip,
     characterDefinition.drunkWalkClip,
     DELIVERY_CARRY_CLIP_NAME
@@ -583,6 +584,8 @@ export async function createPlayer(library, {
   const sockets = ensureMixamoSockets(character);
   const idleClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.idleClip), `${characterDefinition.idleClip}_RigSafe`), MIXAMO_BONES.hips);
   const walkClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.walkClip), `${characterDefinition.walkClip}_RigSafe`), MIXAMO_BONES.hips);
+  const fastRunClipName = characterDefinition.fastRunClip ?? assets.playerAnimationSet.fastRun;
+  const fastRunClip = createInPlaceClip(createRigSafeClip(getMixamoClip(fastRunClipName), `${fastRunClipName}_RigSafe`), MIXAMO_BONES.hips);
   const drunkIdleClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.drunkIdleClip ?? characterDefinition.idleClip), `${characterDefinition.drunkIdleClip ?? characterDefinition.idleClip}_RigSafe`), MIXAMO_BONES.hips);
   const drunkWalkClip = createInPlaceClip(createRigSafeClip(getMixamoClip(characterDefinition.drunkWalkClip ?? characterDefinition.walkClip), `${characterDefinition.drunkWalkClip ?? characterDefinition.walkClip}_RigSafe`), MIXAMO_BONES.hips);
   const idleLowerBodyClip = createBoneFilteredClip(idleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.idleClip}_LowerBody`);
@@ -613,6 +616,7 @@ export async function createPlayer(library, {
   const mixer = new THREE.AnimationMixer(character);
   const idleAction = mixer.clipAction(idleClip);
   const walkAction = mixer.clipAction(walkClip);
+  const fastRunAction = mixer.clipAction(fastRunClip);
   const drunkIdleAction = mixer.clipAction(drunkIdleClip);
   const drunkWalkAction = mixer.clipAction(drunkWalkClip);
   const idleLowerBodyAction = mixer.clipAction(idleLowerBodyClip);
@@ -631,6 +635,9 @@ export async function createPlayer(library, {
   walkAction.play();
   walkAction.enabled = true;
   walkAction.setEffectiveWeight(0);
+  fastRunAction.play();
+  fastRunAction.enabled = true;
+  fastRunAction.setEffectiveWeight(0);
   drunkIdleAction.play();
   drunkIdleAction.enabled = true;
   drunkIdleAction.setEffectiveWeight(0);
@@ -713,6 +720,7 @@ export async function createPlayer(library, {
 
   let idleWeight = 1;
   let walkWeight = 0;
+  let fastRunWeight = 0;
   let drunknessLevel = 0;
   let drunkLocomotionWeight = 0;
   let activeEmoteId = null;
@@ -1910,7 +1918,7 @@ export async function createPlayer(library, {
     }
   }
 
-  function updateAnimationState(deltaSeconds, moving, groundHeight = 0) {
+  function updateAnimationState(deltaSeconds, moving, groundHeight = 0, options = {}) {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
     const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
@@ -1947,12 +1955,16 @@ export async function createPlayer(library, {
       deltaSeconds
     );
     const soberLocomotionWeight = 1 - drunkLocomotionWeight;
+    const runLocomotionActive = options.locomotionMode === 'run';
+    const locomotionPlaybackRate = THREE.MathUtils.clamp(Number(options.locomotionPlaybackRate ?? 1) || 1, 0.65, 1.65);
     idleWeight = THREE.MathUtils.damp(idleWeight, locomotionEnabled && !moving ? 1 : 0, smoothing, deltaSeconds);
-    walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving ? 1 : 0, smoothing, deltaSeconds);
+    walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving && !runLocomotionActive ? 1 : 0, smoothing, deltaSeconds);
+    fastRunWeight = THREE.MathUtils.damp(fastRunWeight, locomotionEnabled && moving && runLocomotionActive ? 1 : 0, smoothing, deltaSeconds);
     const fullBodyLocomotionWeight = upperBodyOverlayActive ? 0 : 1;
     const lowerBodyLocomotionWeight = upperBodyOverlayActive ? 1 : 0;
     idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
     walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
+    fastRunAction.setEffectiveWeight(fastRunWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
     drunkIdleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
     drunkWalkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
     idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * soberLocomotionWeight);
@@ -1961,6 +1973,7 @@ export async function createPlayer(library, {
     drunkWalkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight);
     idleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    fastRunAction.setEffectiveTimeScale(locomotionEnabled && moving && runLocomotionActive ? locomotionPlaybackRate : 0.35);
     drunkIdleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     drunkWalkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     idleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
@@ -2621,6 +2634,7 @@ export async function createPlayer(library, {
 
       const rawInput = input.getMovementVector();
       const wantsToMove = rawInput.x !== 0 || rawInput.z !== 0;
+      const stationaryRun = Boolean(options.stationaryRun);
       const selectedVehicleItemId = normalizePlayerVehicleItemId(options.vehicleItemId);
       const transportOwned = Boolean(options.skateboardOwned || selectedVehicleItemId);
       const wantsTransportVisible = Boolean(transportOwned && options.skating && !ragdoll.isActive());
@@ -2636,9 +2650,13 @@ export async function createPlayer(library, {
         stopActiveEmote();
       }
 
-      const moving = wantsToMove && !ragdoll.isActive();
+      const moving = (wantsToMove || stationaryRun) && !ragdoll.isActive();
       const movement = moving
-        ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight, options.movementCameraForward)
+        ? (
+            wantsToMove
+              ? projectMoveOnCamera(camera, rawInput, moveDirection, moveCameraForward, moveCameraRight, options.movementCameraForward)
+              : moveDirection.set(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y))
+          )
         : moveDirection.set(0, 0, 0);
       setSkateboardState({
         owned: transportOwned,
@@ -2646,11 +2664,14 @@ export async function createPlayer(library, {
         vehicleItemId: selectedVehicleItemId
       });
 
-      if (moving) {
+      if (moving && wantsToMove) {
         moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds, movementSpeedScale);
       }
 
-      updateAnimationState(deltaSeconds, moving, groundHeight);
+      updateAnimationState(deltaSeconds, moving, groundHeight, {
+        locomotionMode: stationaryRun ? 'run' : options.locomotionMode,
+        locomotionPlaybackRate: options.locomotionPlaybackRate
+      });
     },
     moveToward(targetPosition, deltaSeconds, colliders, cityBounds, groundHeight = 0, options = {}) {
       if (!aliveState) {

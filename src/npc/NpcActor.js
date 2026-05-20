@@ -515,6 +515,8 @@ export class NpcActor {
       nextAnimation = 'idle';
     } else if (this.runtimeState.activity === 'snatch') {
       nextAnimation = 'snatch';
+    } else if (this.runtimeState.activity === 'treadmill') {
+      nextAnimation = 'fastRun';
     } else if (this.runtimeState.activity === 'punch') {
       nextAnimation = 'punch';
     } else if (

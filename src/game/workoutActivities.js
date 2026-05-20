@@ -10,6 +10,11 @@ export const BASKETBALL_SHOT_WORKOUT_KIND = 'basketball-shot-workout';
 export const BASKETBALL_SHOT_DURATION_MS = 5200;
 export const BASKETBALL_SHOT_APPROACH_STOP_DISTANCE = 0.2;
 
+export const TREADMILL_WORKOUT_TYPE = 'treadmill';
+export const TREADMILL_WORKOUT_KIND = 'treadmill-workout';
+export const TREADMILL_DURATION_MS = 3000;
+export const TREADMILL_APPROACH_STOP_DISTANCE = 0.14;
+
 export const TYPING_WORKOUT_KIND = 'typing-workout';
 export const TYPING_WORKOUT_DURATION_MS = 5200;
 export const TYPING_APPROACH_STOP_DISTANCE = 0.14;
@@ -39,6 +44,21 @@ export const WORKOUT_ACTIVITY_CONFIGS = Object.freeze({
     unavailableToast: 'Could not use that hoop right now.',
     completeToast: 'Clean release.',
     basketballShot: true,
+    playEmoteOnBegin: false,
+    stopEmoteOnFinish: true
+  }),
+  [TREADMILL_WORKOUT_KIND]: Object.freeze({
+    id: TREADMILL_WORKOUT_TYPE,
+    label: 'Treadmill Run',
+    kind: TREADMILL_WORKOUT_KIND,
+    emoteId: '',
+    durationMs: TREADMILL_DURATION_MS,
+    stopDistance: TREADMILL_APPROACH_STOP_DISTANCE,
+    activePhase: 'treadmill-run',
+    busyToast: 'That treadmill is already in use.',
+    unavailableToast: 'Could not use that treadmill right now.',
+    completeToast: 'Treadmill run complete.',
+    treadmillRun: true,
     playEmoteOnBegin: false,
     stopEmoteOnFinish: true
   }),

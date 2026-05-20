@@ -136,6 +136,7 @@ const DISTRICT_PROPS = [
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 0.99 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.16 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
   { itemId: 'slot_machine', position: [1.58 * BUILDER_TILE_SIZE, 1.33 * BUILDER_TILE_SIZE], angle: Math.PI / 2 },
+  { itemId: 'treadmill', position: [3.35 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 },
   { itemId: 'olympic_barbell', position: [3.85 * BUILDER_TILE_SIZE, 2.35 * BUILDER_TILE_SIZE], angle: 0 }
 ];
 

@@ -20,6 +20,8 @@ function createPlayableCharacter(definition) {
     previewClip: assets.playerAnimationSet.fightingIdle,
     portraitClip: assets.playerAnimationSet.idle,
     walkClip: assets.playerAnimationSet.walking,
+    slowRunClip: assets.playerAnimationSet.slowRun,
+    fastRunClip: assets.playerAnimationSet.fastRun,
     drunkIdleClip: assets.playerAnimationSet.drunkIdle,
     drunkWalkClip: assets.playerAnimationSet.drunkWalk,
     emotes: assets.playerAnimationSet.emotes
@@ -40,6 +42,8 @@ export const PLAYABLE_CHARACTER_CATALOG = Object.freeze([
     previewClip: assets.playerAnimationSet.fightingIdle,
     portraitClip: assets.playerAnimationSet.idle,
     walkClip: assets.playerAnimationSet.walking,
+    slowRunClip: assets.playerAnimationSet.slowRun,
+    fastRunClip: assets.playerAnimationSet.fastRun,
     drunkIdleClip: assets.playerAnimationSet.drunkIdle,
     drunkWalkClip: assets.playerAnimationSet.drunkWalk,
     emotes: assets.playerAnimationSet.emotes

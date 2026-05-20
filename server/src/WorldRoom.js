@@ -3115,7 +3115,7 @@ export class WorldRoom extends Room {
         skillAwards.push(skillAward);
       }
       this.normalizePlayerSelectedMission(player);
-    } else if (target.workoutType === 'basketball-shot') {
+    } else if (target.workoutType === 'basketball-shot' || target.workoutType === 'treadmill') {
       player.gymPumpCompletedAt = Date.now();
       const strengthAward = awardXp
         ? this.awardPlayerSkillXp(player, SKILL_IDS.strength, BASKETBALL_SHOT_STRENGTH_XP)

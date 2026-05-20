@@ -153,6 +153,10 @@ assert.match(roomSource, /BASKETBALL_SHOT_STRENGTH_XP/, 'server awards basketbal
 assert.match(roomSource, /BASKETBALL_SHOT_AGILITY_XP/, 'server awards basketball agility XP');
 assert.match(mockServiceSource, /BASKETBALL_SHOT_STRENGTH_XP/, 'mock service awards basketball strength XP');
 assert.match(mockServiceSource, /BASKETBALL_SHOT_AGILITY_XP/, 'mock service awards basketball agility XP');
+assert.match(gameSource, /TREADMILL_RUN_REWARD_SCORE\s*=\s*90/, 'treadmill rhythm run uses a 90% XP reward threshold');
+assert.match(gameSource, /run\.awardXp = run\.score >= TREADMILL_RUN_REWARD_SCORE/, 'treadmill rhythm score controls XP eligibility');
+assert.match(roomSource, /target\.workoutType === 'basketball-shot' \|\| target\.workoutType === 'treadmill'/, 'server treadmill runs share basketball XP awards');
+assert.match(mockServiceSource, /target\.workoutType === 'basketball-shot' \|\| target\.workoutType === 'treadmill'/, 'mock service treadmill runs share basketball XP awards');
 assert.match(gameSource, /phase:\s*countdown\s*\?\s*'countdown'/, 'school rounds start in countdown instead of a start-button ready state');
 assert.match(gameSource, /continueSchoolMicrogameSession/, 'school minigame sessions continue into another random round');
 assert.match(hudSource, /createSchoolCountdownMarkup/, 'HUD renders the school round countdown');

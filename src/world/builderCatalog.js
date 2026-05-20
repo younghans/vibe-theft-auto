@@ -51,6 +51,7 @@ import {
   createSidewalkPropVisual,
   createStandingDeskComputerVisual,
   createStonePathPropVisual,
+  createTreadmillVisual,
   createVibeJamExitPortalVisual,
   createVibeJamStartPortalVisual,
   DIRT_PATH_PROP_FOOTPRINT,
@@ -69,6 +70,7 @@ import {
   SIDEWALK_PROP_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
   STONE_PATH_PROP_FOOTPRINT,
+  TREADMILL_FOOTPRINT,
   VIBE_JAM_PORTAL_FOOTPRINT,
   VIBE_JAM_PORTAL_INTERACTABLE
 } from './proceduralProps.js';
@@ -767,6 +769,30 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       workoutType: 'basketball-shot',
       hideDuringWorkout: false,
       approachLocalOffset: [0, 5.4],
+      approachRotationY: Math.PI
+    }
+  },
+  {
+    id: 'treadmill',
+    assetName: 'treadmill',
+    label: 'Treadmill',
+    asset: null,
+    group: 'fitness',
+    size: TREADMILL_FOOTPRINT,
+    collision: false,
+    blocksMovement: false,
+    blocksShots: false,
+    padding: 0.12,
+    createVisual: createTreadmillVisual,
+    interactable: {
+      label: 'Treadmill',
+      prompt: 'Run treadmill',
+      actionText: 'Match the rhythm of the run.',
+      radius: 4.2,
+      localOffset: [0, 1.45],
+      workoutType: 'treadmill',
+      hideDuringWorkout: false,
+      approachLocalOffset: [0, 0.48],
       approachRotationY: Math.PI
     }
   },

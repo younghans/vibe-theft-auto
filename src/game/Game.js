@@ -22,6 +22,7 @@ import {
 import {
   SNATCH_APPROACH_STOP_DISTANCE,
   SNATCH_WORKOUT_KIND,
+  TREADMILL_DURATION_MS,
   getWorkoutActivityConfig
 } from './workoutActivities.js';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
@@ -272,6 +273,13 @@ const BASKETBALL_SHOT_RIM_LOCAL_Z = 0.44;
 const BASKETBALL_SHOT_RIM_WORLD_HEIGHT = BASKETBALL_HOOP_RIM_HEIGHT * 1.045;
 const BASKETBALL_SHOT_BALL_RADIUS = 0.23;
 const BASKETBALL_SHOT_CAMERA_SMOOTHING = 0.18;
+const TREADMILL_RUN_RESULT_HOLD_MS = 980;
+const TREADMILL_RUN_REWARD_SCORE = 90;
+const TREADMILL_RUN_FIRST_BEAT_MS = 260;
+const TREADMILL_RUN_BEAT_WINDOW_MS = 150;
+const TREADMILL_RUN_EXTRA_TAP_PENALTY = 4;
+const TREADMILL_RUN_CAMERA_SMOOTHING = 0.2;
+const TREADMILL_RUN_BPM_PATTERN = Object.freeze([132, 168, 150, 186]);
 
 function formatVibeHeroTimestamp(milliseconds = 0) {
   const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
@@ -904,6 +912,46 @@ function createBasketballShotBall() {
   return group;
 }
 
+function getTreadmillRunBpmAtElapsed(elapsedMs = 0, durationMs = TREADMILL_DURATION_MS) {
+  const safeDuration = Math.max(1, Number(durationMs) || TREADMILL_DURATION_MS);
+  const patternIndex = Math.min(
+    TREADMILL_RUN_BPM_PATTERN.length - 1,
+    Math.max(0, Math.floor((Math.max(0, Number(elapsedMs) || 0) / safeDuration) * TREADMILL_RUN_BPM_PATTERN.length))
+  );
+  return TREADMILL_RUN_BPM_PATTERN[patternIndex] ?? TREADMILL_RUN_BPM_PATTERN[0];
+}
+
+function createTreadmillRunBeatSchedule(durationMs = TREADMILL_DURATION_MS) {
+  const safeDuration = Math.max(800, Number(durationMs) || TREADMILL_DURATION_MS);
+  const beats = [];
+  let elapsedMs = TREADMILL_RUN_FIRST_BEAT_MS;
+  while (elapsedMs < safeDuration - 90) {
+    const bpm = getTreadmillRunBpmAtElapsed(elapsedMs, safeDuration);
+    const intervalMs = 60000 / Math.max(1, bpm);
+    beats.push({
+      timeMs: elapsedMs,
+      bpm,
+      intervalMs,
+      hitAtMs: null,
+      hitOffsetMs: null,
+      hitScore: 0,
+      status: 'pending'
+    });
+    elapsedMs += intervalMs;
+  }
+  return beats;
+}
+
+function calculateTreadmillRunScore(run = null) {
+  const beats = Array.isArray(run?.beats) ? run.beats : [];
+  if (!beats.length) {
+    return 0;
+  }
+  const rawScore = beats.reduce((total, beat) => total + Math.max(0, Math.min(1, Number(beat.hitScore) || 0)), 0) / beats.length;
+  const penalty = Math.max(0, Math.floor(Number(run?.extraTaps ?? 0) || 0)) * TREADMILL_RUN_EXTRA_TAP_PENALTY;
+  return Math.max(0, Math.min(100, Math.round((rawScore * 100) - penalty)));
+}
+
 function disposeObjectMaterials(root) {
   root?.traverse?.((node) => {
     disposeMaterial(node.material);
@@ -1359,6 +1407,9 @@ export class Game {
     this.basketballShotRimPosition = new THREE.Vector3();
     this.basketballShotForward = new THREE.Vector3();
     this.basketballShotSide = new THREE.Vector3();
+    this.treadmillRunForward = new THREE.Vector3();
+    this.treadmillRunSide = new THREE.Vector3();
+    this.treadmillRunAudioNodes = [];
     this.rentIntroCutsceneForward = new THREE.Vector3();
     this.rentIntroCutsceneSide = new THREE.Vector3();
     this.rentIntroCutsceneNpcPosition = new THREE.Vector3();
@@ -1415,6 +1466,9 @@ export class Game {
     });
     this.hud.bindBasketballShotEvents({
       onAction: (action) => this.handleBasketballShotAction(action)
+    });
+    this.hud.bindTreadmillRunEvents({
+      onAction: (action) => this.handleTreadmillRunAction(action)
     });
     this.hud.bindAdminPromptEvents({
       onToggle: () => this.toggleAdminPromptPanel(),
@@ -2860,6 +2914,7 @@ export class Game {
         schoolMicrogameOpen: this.hud.isSchoolMicrogameOpen(),
         vibeHeroOpen: this.hud.isVibeHeroOpen(),
         basketballShotOpen: this.hud.isBasketballShotOpen(),
+        treadmillRunOpen: this.hud.isTreadmillRunOpen(),
         worldBuilderEnabled: Boolean(this.worldBuilder?.enabled),
         quickChatOpen: this.hud.isQuickChatOpen()
       },
@@ -2913,6 +2968,15 @@ export class Game {
             netWorth: activeStockMarketSnapshot.netWorth ?? 0,
             stockProfit: this.getStockUnrealizedProfit(activeStockMarketSnapshot),
             selectedStock
+          }
+        : null,
+      treadmillRun: this.activeWorkout?.treadmillRun
+        ? {
+            phase: this.activeWorkout.treadmillRun.phase,
+            score: this.activeWorkout.treadmillRun.score,
+            beatCount: this.activeWorkout.treadmillRun.beats?.length ?? 0,
+            hitCount: this.activeWorkout.treadmillRun.beats?.filter?.((beat) => beat.status === 'hit').length ?? 0,
+            awardXp: this.activeWorkout.treadmillRun.awardXp === true
           }
         : null,
       phone: {
@@ -12381,6 +12445,9 @@ export class Game {
     if (activityConfig.basketballShot) {
       this.beginBasketballShotActivity();
     }
+    if (activityConfig.treadmillRun) {
+      this.beginTreadmillRunActivity();
+    }
     return true;
   }
 
@@ -12696,6 +12763,422 @@ export class Game {
     return true;
   }
 
+  beginTreadmillRunActivity() {
+    if (!this.activeWorkout || !this.player) {
+      return false;
+    }
+
+    const now = performance.now();
+    const durationMs = Math.max(1000, Number(this.activeWorkout.activityConfig?.durationMs ?? TREADMILL_DURATION_MS) || TREADMILL_DURATION_MS);
+    const treadmillObject = this.activeWorkout.interactable?.barbellObject ?? null;
+    const beats = createTreadmillRunBeatSchedule(durationMs);
+    this.activeWorkout.treadmillRun = {
+      startedAt: now,
+      durationMs,
+      phase: 'playing',
+      beats,
+      taps: [],
+      extraTaps: 0,
+      score: 0,
+      message: 'Match the footfalls with Space.',
+      lastGrade: 'ready',
+      nextSoundBeatIndex: 0,
+      resultAt: 0,
+      awardXp: false,
+      treadmillObject
+    };
+    if (treadmillObject?.userData) {
+      treadmillObject.userData.treadmillBeltSpeed = 1.15;
+    }
+    this.input.clearKeyPressQueue?.();
+    this.startTreadmillLoopSound();
+    this.updateTreadmillRunHud();
+    this.updateTreadmillRunCamera({ snap: true });
+    return true;
+  }
+
+  getTreadmillRunForward(target = this.treadmillRunForward) {
+    const facing = this.activeWorkout?.interactable?.approachRotationY
+      ?? this.player?.object?.rotation?.y
+      ?? 0;
+    target.set(Math.sin(facing), 0, Math.cos(facing));
+    if (target.lengthSq() <= 0.0001) {
+      target.set(0, 0, -1);
+    }
+    return target.normalize();
+  }
+
+  getTreadmillRunSide(target = this.treadmillRunSide) {
+    const forward = this.getTreadmillRunForward(this.treadmillRunForward);
+    target.set(forward.z, 0, -forward.x);
+    if (target.lengthSq() <= 0.0001) {
+      target.set(1, 0, 0);
+    }
+    return target.normalize();
+  }
+
+  getTreadmillRunElapsed(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
+    return Math.max(0, now - Number(run?.startedAt ?? now));
+  }
+
+  getTreadmillRunBpm(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
+    return getTreadmillRunBpmAtElapsed(
+      this.getTreadmillRunElapsed(run, now),
+      run?.durationMs ?? TREADMILL_DURATION_MS
+    );
+  }
+
+  syncTreadmillRunObjectSpeed(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
+    const treadmillObject = run?.treadmillObject;
+    if (!treadmillObject?.userData) {
+      return;
+    }
+
+    if (run.phase !== 'playing') {
+      treadmillObject.userData.treadmillBeltSpeed = 0.9;
+      return;
+    }
+
+    const bpm = this.getTreadmillRunBpm(run, now);
+    treadmillObject.userData.treadmillBeltSpeed = THREE.MathUtils.clamp(bpm / 120, 0.7, 1.7);
+  }
+
+  startTreadmillLoopSound() {
+    this.stopTreadmillLoopSound();
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      return;
+    }
+
+    void context.resume?.().catch(() => {});
+    const master = context.createGain();
+    const motor = context.createOscillator();
+    const belt = context.createOscillator();
+    const now = context.currentTime;
+    master.gain.setValueAtTime(THREE.MathUtils.clamp(0.018 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.05), now);
+    motor.type = 'sawtooth';
+    motor.frequency.setValueAtTime(72, now);
+    belt.type = 'triangle';
+    belt.frequency.setValueAtTime(118, now);
+    motor.connect(master);
+    belt.connect(master);
+    master.connect(context.destination);
+    motor.start(now);
+    belt.start(now);
+    this.treadmillRunAudioNodes.push(motor, belt, master);
+  }
+
+  stopTreadmillLoopSound() {
+    for (const node of this.treadmillRunAudioNodes) {
+      try {
+        node.stop?.(0);
+      } catch {
+        // Already stopped.
+      }
+      try {
+        node.disconnect?.();
+      } catch {
+        // Already disconnected.
+      }
+    }
+    this.treadmillRunAudioNodes = [];
+  }
+
+  playTreadmillFootstepSound(bpm = 150) {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      this.playSoundEffect(this.playingCardSound, {
+        playbackRate: THREE.MathUtils.clamp(bpm / 150, 0.75, 1.45),
+        preservePitch: false,
+        volumeScale: 0.28
+      });
+      return;
+    }
+
+    void context.resume?.().catch(() => {});
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(58 + ((bpm - 120) * 0.22), now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(THREE.MathUtils.clamp(0.045 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.09), now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.11);
+    oscillator.onended = () => {
+      try {
+        oscillator.disconnect();
+        gain.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    };
+  }
+
+  playTreadmillTapSound(hitScore = 0) {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      this.playSoundEffect(this.typingOnKeyboardSound, {
+        playbackRate: 0.9 + (Math.max(0, hitScore) * 0.35),
+        preservePitch: false,
+        volumeScale: 0.32
+      });
+      return;
+    }
+
+    void context.resume?.().catch(() => {});
+    const now = context.currentTime;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = hitScore >= 0.86 ? 'square' : 'sine';
+    oscillator.frequency.setValueAtTime(hitScore >= 0.86 ? 720 : 290, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(THREE.MathUtils.clamp((hitScore >= 0.86 ? 0.035 : 0.024) * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.07), now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.09);
+    oscillator.onended = () => {
+      try {
+        oscillator.disconnect();
+        gain.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    };
+  }
+
+  getTreadmillBeatWindowMs(beat = null) {
+    return Math.max(95, Math.min(TREADMILL_RUN_BEAT_WINDOW_MS, Number(beat?.intervalMs ?? TREADMILL_RUN_BEAT_WINDOW_MS) * 0.38));
+  }
+
+  recordTreadmillRunTap(now = performance.now()) {
+    const run = this.activeWorkout?.treadmillRun;
+    if (!run || run.phase !== 'playing') {
+      return false;
+    }
+
+    const elapsedMs = this.getTreadmillRunElapsed(run, now);
+    let closestBeat = null;
+    let closestOffsetMs = Infinity;
+    for (const beat of run.beats) {
+      if (beat.status === 'hit') {
+        continue;
+      }
+      const offsetMs = elapsedMs - beat.timeMs;
+      const absOffsetMs = Math.abs(offsetMs);
+      const windowMs = this.getTreadmillBeatWindowMs(beat);
+      if (absOffsetMs <= windowMs && absOffsetMs < Math.abs(closestOffsetMs)) {
+        closestBeat = beat;
+        closestOffsetMs = offsetMs;
+      }
+    }
+
+    let tapScore = 0;
+    let grade = 'miss';
+    if (closestBeat) {
+      const windowMs = this.getTreadmillBeatWindowMs(closestBeat);
+      tapScore = Math.max(0, 1 - (Math.abs(closestOffsetMs) / windowMs));
+      closestBeat.status = 'hit';
+      closestBeat.hitAtMs = elapsedMs;
+      closestBeat.hitOffsetMs = closestOffsetMs;
+      closestBeat.hitScore = tapScore;
+      grade = tapScore >= 0.86 ? 'perfect' : tapScore >= 0.62 ? 'good' : closestOffsetMs < 0 ? 'early' : 'late';
+      run.message = grade === 'perfect'
+        ? 'Perfect stride.'
+        : grade === 'good'
+          ? 'Good stride.'
+          : closestOffsetMs < 0
+            ? 'A little early.'
+            : 'A little late.';
+    } else {
+      run.extraTaps += 1;
+      run.message = 'Off beat.';
+    }
+
+    run.lastGrade = grade;
+    run.taps.push({
+      timeMs: elapsedMs,
+      score: tapScore,
+      grade
+    });
+    run.score = calculateTreadmillRunScore(run);
+    this.playTreadmillTapSound(tapScore);
+    this.updateTreadmillRunHud();
+    return true;
+  }
+
+  updateTreadmillRunBeatState(run = this.activeWorkout?.treadmillRun, now = performance.now(), { playSounds = true } = {}) {
+    if (!run) {
+      return;
+    }
+
+    const elapsedMs = this.getTreadmillRunElapsed(run, now);
+    while (
+      run.nextSoundBeatIndex < run.beats.length
+      && elapsedMs >= run.beats[run.nextSoundBeatIndex].timeMs
+    ) {
+      if (playSounds) {
+        this.playTreadmillFootstepSound(run.beats[run.nextSoundBeatIndex].bpm);
+      }
+      run.nextSoundBeatIndex += 1;
+    }
+
+    for (const beat of run.beats) {
+      if (beat.status !== 'pending') {
+        continue;
+      }
+      if (elapsedMs - beat.timeMs > this.getTreadmillBeatWindowMs(beat)) {
+        beat.status = 'missed';
+      }
+    }
+    run.score = calculateTreadmillRunScore(run);
+  }
+
+  resolveTreadmillRun(now = performance.now()) {
+    const run = this.activeWorkout?.treadmillRun;
+    if (!run || run.phase === 'result') {
+      return false;
+    }
+
+    this.updateTreadmillRunBeatState(run, run.startedAt + run.durationMs + TREADMILL_RUN_BEAT_WINDOW_MS + 1, {
+      playSounds: false
+    });
+    run.phase = 'result';
+    run.score = calculateTreadmillRunScore(run);
+    run.awardXp = run.score >= TREADMILL_RUN_REWARD_SCORE;
+    run.resultAt = now;
+    run.lastGrade = run.awardXp ? 'perfect' : 'miss';
+    run.message = run.awardXp
+      ? `${run.score}% rhythm. XP earned.`
+      : `${run.score}% rhythm. No XP.`;
+    this.syncTreadmillRunObjectSpeed(run, now);
+    this.stopTreadmillLoopSound();
+    this.playSoundEffect(run.awardXp ? this.levelUpSound : this.playingCardSound, {
+      playbackRate: run.awardXp ? 1.08 : 0.68,
+      preservePitch: false,
+      volumeScale: run.awardXp ? 0.45 : 0.5
+    });
+    this.updateTreadmillRunHud();
+    return true;
+  }
+
+  updateTreadmillRunHud() {
+    const run = this.activeWorkout?.treadmillRun;
+    if (!run) {
+      this.hud.setTreadmillRunState({ visible: false, game: null });
+      return;
+    }
+
+    const now = performance.now();
+    const elapsedMs = this.getTreadmillRunElapsed(run, now);
+    const nextBeat = run.beats.find((beat) => beat.status === 'pending') ?? null;
+    this.hud.setTreadmillRunState({
+      visible: true,
+      game: {
+        phase: run.phase,
+        durationMs: run.durationMs,
+        elapsedMs,
+        remainingMs: Math.max(0, run.durationMs - elapsedMs),
+        bpm: this.getTreadmillRunBpm(run, now),
+        score: run.score,
+        beatCount: run.beats.length,
+        hitCount: run.beats.filter((beat) => beat.status === 'hit').length,
+        missedCount: run.beats.filter((beat) => beat.status === 'missed').length,
+        nextBeatProgress: nextBeat
+          ? THREE.MathUtils.clamp(1 - (Math.abs(nextBeat.timeMs - elapsedMs) / this.getTreadmillBeatWindowMs(nextBeat)), 0, 1)
+          : 0,
+        grade: run.lastGrade,
+        awardXp: run.awardXp,
+        rewardScore: TREADMILL_RUN_REWARD_SCORE,
+        message: run.message
+      }
+    });
+  }
+
+  handleTreadmillRunAction(action = '') {
+    if (action === 'tap') {
+      this.recordTreadmillRunTap();
+    }
+  }
+
+  updateTreadmillRunCamera({ snap = false } = {}) {
+    if (!this.player) {
+      return;
+    }
+
+    const forward = this.getTreadmillRunForward(this.treadmillRunForward);
+    const side = this.getTreadmillRunSide(this.treadmillRunSide);
+    const targetPosition = this.cameraTargetPosition
+      .copy(this.player.position)
+      .addScaledVector(forward, -4.6)
+      .addScaledVector(side, 2.15);
+    targetPosition.y += 2.45;
+
+    const lookTarget = this.cameraLookTarget.copy(this.player.position);
+    lookTarget.y += 1.65;
+    lookTarget.addScaledVector(forward, 0.45);
+
+    if (snap) {
+      this.camera.position.copy(targetPosition);
+    } else {
+      this.camera.position.lerp(targetPosition, TREADMILL_RUN_CAMERA_SMOOTHING);
+    }
+    this.camera.lookAt(lookTarget);
+  }
+
+  updateTreadmillRunWorkout(deltaSeconds, { colliders, sceneBounds, groundHeight } = {}) {
+    const run = this.activeWorkout?.treadmillRun;
+    if (!run || !this.player) {
+      return true;
+    }
+
+    const now = performance.now();
+    const bpm = this.getTreadmillRunBpm(run, now);
+    this.syncTreadmillRunObjectSpeed(run, now);
+    this.player.update(
+      deltaSeconds,
+      ZERO_INPUT,
+      this.camera,
+      colliders,
+      sceneBounds,
+      groundHeight,
+      {
+        stationaryRun: run.phase === 'playing',
+        locomotionPlaybackRate: THREE.MathUtils.clamp(bpm / 156, 0.78, 1.45)
+      }
+    );
+
+    if (run.phase === 'playing') {
+      this.updateTreadmillRunBeatState(run, now);
+      if (this.input.consume('Space')) {
+        this.recordTreadmillRunTap(now);
+      }
+      if (this.getTreadmillRunElapsed(run, now) >= run.durationMs) {
+        this.resolveTreadmillRun(now);
+      } else {
+        this.updateTreadmillRunHud();
+      }
+      return true;
+    }
+
+    this.updateTreadmillRunHud();
+    if (now >= run.resultAt + TREADMILL_RUN_RESULT_HOLD_MS) {
+      if (run.awardXp) {
+        this.hud.showToast(`Treadmill score ${run.score}%. XP awarded.`);
+        this.finishWorkout({ showCompleteToast: false });
+      } else {
+        this.hud.showToast(`Treadmill score ${run.score}%. No XP awarded.`);
+        this.finishWorkout({ awardXp: false, showCompleteToast: false });
+      }
+    }
+    return true;
+  }
+
   syncWorkoutBarbell() {
     if (!this.activeWorkout?.carriedBarbell || !this.player?.sockets) {
       return;
@@ -12767,8 +13250,17 @@ export class Game {
       workout.basketballShot.ball.parent?.remove(workout.basketballShot.ball);
       disposeObjectResources(workout.basketballShot.ball);
     }
+    if (workout.treadmillRun) {
+      this.stopTreadmillLoopSound();
+      if (workout.treadmillRun.treadmillObject?.userData) {
+        workout.treadmillRun.treadmillObject.userData.treadmillBeltSpeed = 0.9;
+      }
+    }
     if (workout.activityConfig?.basketballShot) {
       this.hud.setBasketballShotState({ visible: false, game: null });
+    }
+    if (workout.activityConfig?.treadmillRun) {
+      this.hud.setTreadmillRunState({ visible: false, game: null });
     }
     if (placementId) {
       if (cancelled) {
@@ -12823,6 +13315,13 @@ export class Game {
     this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
     if (activityConfig?.basketballShot) {
       return this.updateBasketballShotWorkout(deltaSeconds, {
+        colliders,
+        sceneBounds,
+        groundHeight
+      });
+    }
+    if (activityConfig?.treadmillRun) {
+      return this.updateTreadmillRunWorkout(deltaSeconds, {
         colliders,
         sceneBounds,
         groundHeight
@@ -16355,6 +16854,8 @@ export class Game {
         this.syncInlineShellState();
         if (this.activeWorkout?.activityConfig?.basketballShot) {
           this.updateBasketballShotCamera();
+        } else if (this.activeWorkout?.activityConfig?.treadmillRun) {
+          this.updateTreadmillRunCamera();
         } else {
           this.updateCamera(this.currentAimDirection, false);
         }

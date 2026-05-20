@@ -116,6 +116,7 @@ import {
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   SIDEWALK_PROP_FOOTPRINT,
   STONE_PATH_PROP_FOOTPRINT,
+  TREADMILL_FOOTPRINT,
   VIBE_JAM_PORTAL_INTERACTABLE
 } from '../src/world/proceduralProps.js';
 import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
@@ -145,7 +146,9 @@ import {
 import { TASK_IDS, TaskTracker, resolvePlayerTask } from '../src/game/TaskTracker.js';
 import {
   BASKETBALL_SHOT_DURATION_MS,
-  BASKETBALL_SHOT_WORKOUT_KIND
+  BASKETBALL_SHOT_WORKOUT_KIND,
+  TREADMILL_DURATION_MS,
+  TREADMILL_WORKOUT_KIND
 } from '../src/game/workoutActivities.js';
 import {
   CHARISMA_LEVEL_MISSION_DESCRIPTION,
@@ -1083,6 +1086,33 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes('updateBasketballShotCamera'), 'Game should use a zoomed 3D basketball shot camera');
   assert(gameSource.includes('createBasketballShotBall'), 'Game should spawn a 3D basketball for shot attempts');
   assert(hudSource.includes('hud__basketball-shot-meter'), 'HUD should render the basketball half-circle shot meter');
+
+  const treadmill = getBuilderItemById('treadmill');
+  assert(treadmill, 'Treadmill prop should exist');
+  assert(treadmill.layer === 'prop', 'Treadmill should be a prop catalog item');
+  assert(treadmill.groupId === 'fitness', 'Treadmill should be grouped under Fitness');
+  assert(treadmill.collision === false, 'Treadmill should keep the belt walkable for the running minigame');
+  assert(treadmill.blocksMovement === false, 'Treadmill should not block movement while approaching the belt');
+  assert(treadmill.blocksShots === false, 'Treadmill should not block shots');
+  assert(treadmill.interactable?.workoutType === 'treadmill', 'Treadmill should launch the treadmill workout');
+  assert(treadmill.interactable?.prompt === 'Run treadmill', 'Treadmill should prompt the player to run');
+  assert(treadmill.interactable?.hideDuringWorkout === false, 'Treadmill should stay visible during the rhythm run');
+  assert(Array.isArray(treadmill.interactable?.approachLocalOffset), 'Treadmill should define an on-belt approach point');
+  assert(Math.abs(treadmill.size[0] - TREADMILL_FOOTPRINT[0]) < 0.001, 'Treadmill catalog size should match the procedural footprint width');
+  assert(Math.abs(treadmill.size[1] - TREADMILL_FOOTPRINT[1]) < 0.001, 'Treadmill catalog size should match the procedural footprint depth');
+  assert(typeof treadmill.createVisual === 'function', 'Treadmill should define a procedural visual');
+  const treadmillVisual = treadmill.createVisual();
+  assert(treadmillVisual.getObjectByName('treadmillRunningBelt'), 'Treadmill visual should include a named running belt');
+  assert(treadmillVisual.getObjectByName('treadmillFrontRoller'), 'Treadmill visual should include a named front roller');
+  assert(treadmillVisual.getObjectByName('treadmillConsoleScreen'), 'Treadmill visual should include a console screen');
+  assert(typeof treadmillVisual.userData.onWorldUpdate === 'function', 'Treadmill visual should animate its belt in world updates');
+  assert(TREADMILL_WORKOUT_KIND === 'treadmill-workout', 'Treadmill workout kind should match prop interactable naming');
+  assert(TREADMILL_DURATION_MS === 3000, 'Treadmill rhythm run should last exactly three seconds');
+  assert(gameSource.includes('createTreadmillRunBeatSchedule'), 'Game should create a treadmill rhythm beat schedule');
+  assert(gameSource.includes('recordTreadmillRunTap'), 'Game should score spacebar taps for the treadmill run');
+  assert(gameSource.includes('stationaryRun'), 'Game should force a stationary running animation during the treadmill run');
+  assert(hudSource.includes('hud__treadmill-run-hit'), 'HUD should render the treadmill rhythm hit target');
+  assert(defaultWorldLayout.props.some((prop) => prop.itemId === 'treadmill'), 'Default world should seed a treadmill prop');
 
   const rentCollector = defaultWorldLayout.npcs.find((npc) => isRentIntroCollector(npc));
   const rentIntroPlan = resolveRentIntroPlan(defaultWorldLayout);
@@ -2444,8 +2474,9 @@ function validateMissionSequencer() {
     'Sequenced Charisma mission should preserve the admin description'
   );
   const gymMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.gymPump);
-  assert(gymMission?.title === 'Lift at the gym or take a shot at the basketball hoop', 'Gym mission should mention lifting or shooting hoops');
+  assert(gymMission?.title === 'Lift at the gym, shoot hoops, or run the treadmill', 'Gym mission should mention lifting, shooting hoops, or running');
   assert(/basketball/i.test(gymMission?.description ?? ''), 'Gym mission description should include the basketball completion path');
+  assert(/treadmill/i.test(gymMission?.description ?? ''), 'Gym mission description should include the treadmill completion path');
   const gameSource = readFileSync(new URL('../src/game/Game.js', import.meta.url), 'utf8');
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   const mockServiceSource = readFileSync(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
@@ -2458,8 +2489,16 @@ function validateMissionSequencer() {
     'Server basketball shots should complete the lift-or-shoot mission'
   );
   assert(
+    /target\.workoutType === 'basketball-shot' \|\| target\.workoutType === 'treadmill'[\s\S]*BASKETBALL_SHOT_STRENGTH_XP[\s\S]*BASKETBALL_SHOT_AGILITY_XP/.test(serverSource),
+    'Server treadmill runs should share the basketball strength and agility XP reward'
+  );
+  assert(
     /target\.workoutType === 'basketball-shot'[\s\S]*player\.gymPumpCompletedAt = Date\.now\(\)/.test(mockServiceSource),
     'Mock basketball shots should complete the lift-or-shoot mission'
+  );
+  assert(
+    /target\.workoutType === 'basketball-shot' \|\| target\.workoutType === 'treadmill'[\s\S]*BASKETBALL_SHOT_STRENGTH_XP[\s\S]*BASKETBALL_SHOT_AGILITY_XP/.test(mockServiceSource),
+    'Mock treadmill runs should share the basketball strength and agility XP reward'
   );
   const ceoMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.becomeCeo);
   assert(ceoMission?.label === 'Become CEO', 'Sequenced CEO mission should be promoted into the playable mission catalog');

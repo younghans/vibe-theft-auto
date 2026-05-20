@@ -93,10 +93,10 @@ export const MISSION_CATALOG = Object.freeze([
   },
   {
     id: MISSION_IDS.gymPump,
-    title: 'Lift at the gym or take a shot at the basketball hoop',
-    label: 'Lift or Shoot',
+    title: 'Lift at the gym, shoot hoops, or run the treadmill',
+    label: 'Lift, Shoot, Run',
     icon: 'muscle',
-    description: 'Use the snatch station or take a shot at the basketball hoop.',
+    description: 'Use the snatch station, take a shot at the basketball hoop, or run the treadmill.',
     requirement: 'Help the Shady Figure first.'
   },
   {

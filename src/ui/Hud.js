@@ -1278,6 +1278,74 @@ function createBasketballShotMeterMarkup(game = null) {
   `;
 }
 
+function getTreadmillRunStatusText(game = null) {
+  const phase = String(game?.phase ?? 'idle');
+  if (phase === 'result') {
+    return game?.awardXp ? 'Rhythm Locked' : 'Run Complete';
+  }
+  if (phase === 'playing') {
+    return `${Math.round(Number(game?.bpm ?? 0) || 0)} BPM`;
+  }
+  return 'Ready';
+}
+
+function getTreadmillRunGradeText(game = null) {
+  const grade = String(game?.grade ?? 'ready');
+  if (grade === 'perfect') {
+    return 'Perfect';
+  }
+  if (grade === 'good') {
+    return 'Good';
+  }
+  if (grade === 'early') {
+    return 'Early';
+  }
+  if (grade === 'late') {
+    return 'Late';
+  }
+  if (grade === 'miss') {
+    return 'Miss';
+  }
+  return 'Ready';
+}
+
+function createTreadmillRunMarkup(game = null) {
+  const phase = String(game?.phase ?? 'playing');
+  const elapsedMs = Math.max(0, Number(game?.elapsedMs ?? 0) || 0);
+  const durationMs = Math.max(1, Number(game?.durationMs ?? 3000) || 3000);
+  const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+  const beatProgress = Math.max(0, Math.min(1, Number(game?.nextBeatProgress ?? 0) || 0));
+  const score = Math.max(0, Math.min(100, Math.round(Number(game?.score ?? 0) || 0)));
+  const hitCount = Math.max(0, Math.floor(Number(game?.hitCount ?? 0) || 0));
+  const beatCount = Math.max(0, Math.floor(Number(game?.beatCount ?? 0) || 0));
+  const remainingSeconds = Math.max(0, Number(game?.remainingMs ?? 0) || 0) / 1000;
+  const grade = String(game?.grade ?? 'ready');
+  const disabled = phase !== 'playing';
+
+  return `
+    <div class="hud__treadmill-run-play is-${escapeHtml(grade)}" style="--run-progress:${progress.toFixed(3)};--beat-progress:${beatProgress.toFixed(3)}">
+      <button
+        class="hud__treadmill-run-hit"
+        type="button"
+        data-treadmill-run-action="tap"
+        aria-label="Match treadmill stride"
+        ${disabled ? 'disabled' : ''}
+      >
+        <span class="hud__treadmill-run-pulse" aria-hidden="true"></span>
+        <strong>${escapeHtml(getTreadmillRunGradeText(game))}</strong>
+        <em>${escapeHtml(phase === 'result' ? `${score}%` : `${remainingSeconds.toFixed(1)}s`)}</em>
+      </button>
+      <div class="hud__treadmill-run-meter" aria-hidden="true">
+        <span></span>
+      </div>
+      <div class="hud__treadmill-run-stats">
+        <span><strong>${escapeHtml(String(score))}%</strong><em>Score</em></span>
+        <span><strong>${escapeHtml(`${hitCount}/${beatCount}`)}</strong><em>Steps</em></span>
+      </div>
+    </div>
+  `;
+}
+
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
   const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
@@ -3774,6 +3842,10 @@ export class Hud {
     this.basketballShotStatus = this.overlay.querySelector('[data-basketball-shot-status]');
     this.basketballShotBody = this.overlay.querySelector('[data-basketball-shot-body]');
     this.basketballShotMessage = this.overlay.querySelector('[data-basketball-shot-message]');
+    this.treadmillRunRoot = this.overlay.querySelector('[data-treadmill-run]');
+    this.treadmillRunStatus = this.overlay.querySelector('[data-treadmill-run-status]');
+    this.treadmillRunBody = this.overlay.querySelector('[data-treadmill-run-body]');
+    this.treadmillRunMessage = this.overlay.querySelector('[data-treadmill-run-message]');
     this.rentIntroCutsceneRoot = this.overlay.querySelector('[data-rent-intro-cutscene]');
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
@@ -3889,6 +3961,10 @@ export class Hud {
     this.lastPhoneVibeRadioTrackListSignature = '';
     this.basketballShotVisible = false;
     this.basketballShotState = {
+      game: null
+    };
+    this.treadmillRunVisible = false;
+    this.treadmillRunState = {
       game: null
     };
     this.adminPromptState = {
@@ -4996,6 +5072,19 @@ export class Hud {
         <div class="hud__basketball-shot-body" data-basketball-shot-body></div>
         <footer class="hud__basketball-shot-footer">
           <p data-basketball-shot-message>Line up the meter.</p>
+        </footer>
+      </section>
+      <section class="hud__treadmill-run" data-treadmill-run hidden>
+        <header class="hud__treadmill-run-header">
+          <div>
+            <p class="hud__eyebrow">Treadmill</p>
+            <h2 class="hud__treadmill-run-title">Rhythm Run</h2>
+            <p class="hud__body hud__treadmill-run-status" data-treadmill-run-status>Ready</p>
+          </div>
+        </header>
+        <div class="hud__treadmill-run-body" data-treadmill-run-body></div>
+        <footer class="hud__treadmill-run-footer">
+          <p data-treadmill-run-message>Match the stride.</p>
         </footer>
       </section>
       <form class="hud__quick-chat" data-quick-chat data-quick-chat-form>
@@ -7426,6 +7515,24 @@ export class Hud {
     });
   }
 
+  bindTreadmillRunEvents({
+    onAction
+  }) {
+    this.treadmillRunRoot?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const actionTarget = target?.closest('[data-treadmill-run-action]');
+      if (!actionTarget) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.(actionTarget.getAttribute('data-treadmill-run-action') ?? '');
+    });
+  }
+
   bindQuickChatEvents({ onSubmit, onCancel }) {
     this.quickChatForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -8616,6 +8723,20 @@ export class Hud {
     return Boolean(this.basketballShotVisible && this.basketballShotRoot && !this.basketballShotRoot.hidden);
   }
 
+  setTreadmillRunVisible(visible) {
+    this.treadmillRunVisible = Boolean(visible);
+    if (!this.treadmillRunRoot) {
+      return;
+    }
+
+    this.treadmillRunRoot.hidden = !this.treadmillRunVisible;
+    this.treadmillRunRoot.classList.toggle('is-visible', this.treadmillRunVisible);
+  }
+
+  isTreadmillRunOpen() {
+    return Boolean(this.treadmillRunVisible && this.treadmillRunRoot && !this.treadmillRunRoot.hidden);
+  }
+
   getSchoolTeacherPreviewMount() {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
@@ -8763,6 +8884,39 @@ export class Hud {
 
     if (this.basketballShotMessage) {
       this.basketballShotMessage.textContent = game?.message || 'Release at the top of the meter.';
+    }
+  }
+
+  setTreadmillRunState({
+    visible = this.treadmillRunVisible,
+    game = this.treadmillRunState.game
+  } = {}) {
+    this.treadmillRunState = { game };
+    this.setTreadmillRunVisible(visible);
+    this.renderTreadmillRun();
+  }
+
+  renderTreadmillRun() {
+    if (!this.treadmillRunRoot) {
+      return;
+    }
+
+    const game = this.treadmillRunState.game;
+    const phase = String(game?.phase ?? 'idle');
+    this.treadmillRunRoot.classList.toggle('is-playing', phase === 'playing');
+    this.treadmillRunRoot.classList.toggle('is-result', phase === 'result');
+    this.treadmillRunRoot.classList.toggle('is-award', game?.awardXp === true);
+
+    if (this.treadmillRunStatus) {
+      this.treadmillRunStatus.textContent = getTreadmillRunStatusText(game);
+    }
+
+    if (this.treadmillRunBody) {
+      this.treadmillRunBody.innerHTML = createTreadmillRunMarkup(game);
+    }
+
+    if (this.treadmillRunMessage) {
+      this.treadmillRunMessage.textContent = game?.message || 'Match the stride.';
     }
   }
 

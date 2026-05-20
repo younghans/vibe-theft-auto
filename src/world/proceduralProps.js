@@ -13,6 +13,7 @@ export const BASKETBALL_HALF_COURT_TILE_FOOTPRINT = Object.freeze([BUILDER_TILE_
 export const BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT = 0.7;
 export const BASKETBALL_HOOP_FOOTPRINT = Object.freeze([3.6, 3.6]);
 export const BASKETBALL_HOOP_RIM_HEIGHT = 7.2;
+export const TREADMILL_FOOTPRINT = Object.freeze([2.9, 5.7]);
 export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
 export const OFFICE_LOBBY_CHAIR_FOOTPRINT = Object.freeze([1.05, 1.05]);
 export const OFFICE_LOBBY_TABLE_FOOTPRINT = Object.freeze([3.15, 1.35]);
@@ -2545,6 +2546,104 @@ export function createBasketballHoopVisual() {
   addRimNet(root, rimMaterial, netMaterial);
   addBasketballHoopBolts(root, boltMaterial);
   addBasketball(root, ballMaterial, ballSeamMaterial);
+
+  return root;
+}
+
+export function createTreadmillVisual() {
+  const root = new THREE.Group();
+  root.name = 'Treadmill';
+  root.userData.footprint = [...TREADMILL_FOOTPRINT];
+  root.userData.treadmillProp = true;
+
+  const frameMaterial = createMaterial(0x303944, 0.42, 0.46);
+  const railMaterial = createMaterial(0x9aa6ad, 0.28, 0.62);
+  const beltMaterial = createMaterial(0x11161c, 0.86, 0.05);
+  const beltEdgeMaterial = createMaterial(0x05070a, 0.72, 0.08);
+  const beltStripeBaseMaterial = createMaterial(0x4d5961, 0.72, 0.08);
+  const rollerMaterial = createMaterial(0x171d24, 0.48, 0.38);
+  const consoleMaterial = createMaterial(0x202a33, 0.48, 0.34);
+  const screenMaterial = createMaterial(0x51d7ff, 0.24, 0.08);
+  const buttonMaterial = createMaterial(0xf2c871, 0.36, 0.18);
+
+  root.add(createBox('treadmillBaseFrame', [2.55, 0.2, 4.92], [0, 0.2, 0.26], frameMaterial));
+  root.add(createBox('treadmillLeftDeckRail', [0.17, 0.28, 4.78], [-1.18, 0.45, 0.28], beltEdgeMaterial));
+  root.add(createBox('treadmillRightDeckRail', [0.17, 0.28, 4.78], [1.18, 0.45, 0.28], beltEdgeMaterial));
+  root.add(createBox('treadmillRunningBelt', [2.04, 0.055, 4.34], [0, 0.62, 0.32], beltMaterial, {
+    castShadow: false,
+    receiveShadow: true
+  }));
+
+  const beltStripes = [];
+  for (let index = 0; index < 8; index += 1) {
+    const stripeMaterial = beltStripeBaseMaterial.clone();
+    stripeMaterial.transparent = true;
+    stripeMaterial.opacity = 0.78;
+    const stripe = createBox(`treadmillBeltMotionStripe${index + 1}`, [1.78, 0.018, 0.055], [0, 0.657, -1.72 + (index * 0.56)], stripeMaterial, {
+      castShadow: false,
+      receiveShadow: true
+    });
+    beltStripes.push(stripe);
+    root.add(stripe);
+  }
+
+  const frontRoller = createCylinderBetween('treadmillFrontRoller', [-1.05, 0.62, -1.92], [1.05, 0.62, -1.92], 0.19, rollerMaterial, {
+    radialSegments: 20
+  });
+  const rearRoller = createCylinderBetween('treadmillRearRoller', [-1.05, 0.62, 2.46], [1.05, 0.62, 2.46], 0.19, rollerMaterial, {
+    radialSegments: 20
+  });
+  root.add(frontRoller);
+  root.add(rearRoller);
+
+  for (const side of [-1, 1]) {
+    root.add(createCylinderBetween(`treadmillUpright${side < 0 ? 'Left' : 'Right'}`, [side * 0.94, 0.58, -1.9], [side * 0.8, 2.35, -2.38], 0.07, railMaterial, {
+      radialSegments: 12
+    }));
+    root.add(createCylinderBetween(`treadmillHandle${side < 0 ? 'Left' : 'Right'}`, [side * 0.72, 2.26, -2.22], [side * 1.14, 1.62, -0.88], 0.06, railMaterial, {
+      radialSegments: 12
+    }));
+    root.add(createBox(`treadmillFootPad${side < 0 ? 'Left' : 'Right'}`, [0.42, 0.11, 0.68], [side * 0.9, 0.1, 2.34], frameMaterial));
+  }
+
+  root.add(createBox('treadmillConsoleStem', [0.24, 1.18, 0.2], [0, 1.48, -2.24], railMaterial));
+  root.add(createBox('treadmillConsoleBody', [1.45, 0.72, 0.32], [0, 2.34, -2.36], consoleMaterial, {
+    rotation: [-0.22, 0, 0]
+  }));
+  root.add(createBox('treadmillConsoleScreen', [0.82, 0.32, 0.035], [0, 2.42, -2.18], screenMaterial, {
+    rotation: [-0.22, 0, 0],
+    castShadow: false,
+    receiveShadow: false
+  }));
+  root.add(createBox('treadmillConsoleButtonLeft', [0.18, 0.05, 0.04], [-0.48, 2.23, -2.15], buttonMaterial, {
+    rotation: [-0.22, 0, 0],
+    castShadow: false,
+    receiveShadow: false
+  }));
+  root.add(createBox('treadmillConsoleButtonRight', [0.18, 0.05, 0.04], [0.48, 2.23, -2.15], buttonMaterial, {
+    rotation: [-0.22, 0, 0],
+    castShadow: false,
+    receiveShadow: false
+  }));
+
+  root.userData.treadmillBeltSpeed = 0.9;
+  root.userData.onWorldUpdate = (deltaSeconds = 0, timeSeconds = 0) => {
+    const speed = Math.max(0.32, Number(root.userData.treadmillBeltSpeed ?? 0.9) || 0.9);
+    const beltLength = 4.48;
+    const stripeSpacing = 0.56;
+    beltStripes.forEach((stripe, index) => {
+      const baseZ = -1.92 + ((index * stripeSpacing) % beltLength);
+      const travel = (timeSeconds * speed * 1.45) % beltLength;
+      let z = baseZ + travel;
+      while (z > 2.56) {
+        z -= beltLength;
+      }
+      stripe.position.z = z;
+      stripe.material.opacity = 0.7 + (Math.sin((timeSeconds * 7.2) + index) * 0.18);
+    });
+    frontRoller.rotation.x += deltaSeconds * speed * 5.4;
+    rearRoller.rotation.x += deltaSeconds * speed * 5.4;
+  };
 
   return root;
 }
