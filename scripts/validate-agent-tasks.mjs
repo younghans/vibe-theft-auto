@@ -29,6 +29,8 @@ const filePath = path.join(tempRoot, 'agent-tasks.json');
 const deploymentFilePath = path.join(tempRoot, 'agent-deployments.json');
 const hudSource = await fsp.readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
 const agentWorkerSource = await fsp.readFile(new URL('./agent-worker.mjs', import.meta.url), 'utf8');
+const packageJson = JSON.parse(await fsp.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const workerDocsSource = await fsp.readFile(new URL('../docs/admin-codex-worker.md', import.meta.url), 'utf8');
 
 try {
   assert.match(hudSource, /deploy_queued:\s*'Deploy Queued'/, 'HUD should label approved pending deploys as deploy queued.');
@@ -45,6 +47,13 @@ try {
   assert.match(agentWorkerSource, /\$includeDetachedLocalHelpers -and \$isNew -and \$isTaskRelated/, 'Worker cleanup should only kill detached helpers related to the current task.');
   assert.match(agentWorkerSource, /removedPlacementCount/, 'Worker live world verification should distinguish removed placements from non-placement metadata.');
   assert.match(agentWorkerSource, /only non-placement seed metadata changed/, 'Worker should not fail deploys for non-placement world-layout metadata changes.');
+  assert.equal(
+    packageJson.scripts['worker:prod:bg'],
+    'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod-detached.ps1',
+    'Package scripts should expose a detached production worker launcher.'
+  );
+  assert.match(workerDocsSource, /npm run worker:prod:bg/, 'Worker docs should recommend the detached production launcher.');
+  assert.match(workerDocsSource, /expire by heartbeat/, 'Worker docs should warn against timeout-prone foreground starts.');
 
   const created = await createAgentTask({
     scope: 'game',

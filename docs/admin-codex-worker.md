@@ -345,11 +345,16 @@ If Colyseus Cloud is configured to deploy pushes to `main` through Git integrati
 "BACKEND_DEPLOY_STRATEGY=git" | Add-Content .env.worker.production
 ```
 
-Then start the production worker:
+Then start the production worker in the background:
 
 ```powershell
-npm run worker:prod
+npm run worker:prod:bg
 ```
+
+Use `npm run worker:prod` only when you intentionally want a foreground worker
+attached to the current terminal. A long-running production worker should not be
+started from a command surface that may time out or close, because killing that
+foreground process can leave an active in-game task to expire by heartbeat.
 
 By default, the worker starts two code lanes and one deploy lane. Code lanes only
 claim queued coding tasks, while the deploy lane only claims approved deploy,
@@ -383,10 +388,10 @@ The drain request targets the active worker lock owner and clears itself after
 that worker exits. Each lane finishes any task it has already claimed, then
 exits before claiming more work. New in-game prompts and deploy approvals remain
 queued or ready in the task store; they are not lost. After the worker exits,
-make the maintenance change and restart:
+make the maintenance change and restart in the background:
 
 ```powershell
-npm run worker:prod
+npm run worker:prod:bg
 ```
 
 Use `npm run worker:drain -- --all "maintenance"` only when the drain should
