@@ -1891,17 +1891,27 @@ function validateFootprintSupport() {
   const interactionCameraShoulderOffset = getMainGameNumericConst('INTERACTION_CAMERA_SHOULDER_OFFSET');
   const interactionCameraHeight = getMainGameNumericConst('INTERACTION_CAMERA_HEIGHT');
   const interactionCameraNpcLookHeight = getMainGameNumericConst('INTERACTION_CAMERA_NPC_LOOK_HEIGHT');
+  const interactionCameraLookSideOffset = getMainGameNumericConst('INTERACTION_CAMERA_LOOK_SIDE_OFFSET');
+  const interactionCameraLookSideMaxOffset = getMainGameNumericConst('INTERACTION_CAMERA_LOOK_SIDE_MAX_OFFSET');
+  const interactionCameraSightlineClearance = getMainGameNumericConst('INTERACTION_CAMERA_SIGHTLINE_CLEARANCE');
   assert(
-    interactionCameraShoulderDistance >= 1.8
-      && interactionCameraShoulderDistance <= 2.4
-      && interactionCameraShoulderOffset >= 1
-      && interactionCameraShoulderOffset <= 1.4
-      && interactionCameraHeight >= 3.2
-      && interactionCameraHeight <= 3.8
+    interactionCameraShoulderDistance >= 1.1
+      && interactionCameraShoulderDistance <= 1.7
+      && interactionCameraShoulderOffset >= 1.55
+      && interactionCameraShoulderOffset <= 2.05
+      && interactionCameraHeight >= 3.85
+      && interactionCameraHeight <= 4.25
       && interactionCameraNpcLookHeight >= 3.1
-      && /INTERACTION_CAMERA_LOOK_SIDE_OFFSET/.test(mainGameSource)
-      && /cameraLookTarget\.copy\(lookTarget\)[\s\S]*addScaledVector\(right,\s*INTERACTION_CAMERA_LOOK_SIDE_OFFSET\)[\s\S]*camera\.lookAt\(framedLookTarget\)/.test(mainGameSource),
-    'Interaction camera should frame over the player shoulder with the player near the edge of the view'
+      && interactionCameraLookSideOffset >= 0.75
+      && interactionCameraLookSideOffset <= 1.1
+      && interactionCameraLookSideMaxOffset >= interactionCameraSightlineClearance
+      && interactionCameraSightlineClearance >= 1.25
+      && interactionCameraSightlineClearance <= 1.55
+      && /requiredLookSideOffset/.test(mainGameSource)
+      && /INTERACTION_CAMERA_SIGHTLINE_CLEARANCE[\s\S]*INTERACTION_CAMERA_SHOULDER_DISTANCE/.test(mainGameSource)
+      && /Math\.max\(\s*INTERACTION_CAMERA_LOOK_SIDE_OFFSET,\s*[\s\S]*Math\.min\(INTERACTION_CAMERA_LOOK_SIDE_MAX_OFFSET,\s*requiredLookSideOffset\)/.test(mainGameSource)
+      && /cameraLookTarget\.copy\(lookTarget\)[\s\S]*addScaledVector\(right,\s*lookSideOffset\)[\s\S]*camera\.lookAt\(framedLookTarget\)/.test(mainGameSource),
+    'Interaction camera should clear the player shoulder so the interaction target stays visible'
   );
   assert(
     /cloneGarageDoorDefinition/.test(worldRendererSource),

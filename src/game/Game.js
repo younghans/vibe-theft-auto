@@ -227,14 +227,16 @@ const INTERACTION_CAMERA_FOV = 42;
 const INTERACTION_CAMERA_SMOOTHING = 0.12;
 const INTERACTION_CAMERA_FOV_SMOOTHING = 0.18;
 const INTERACTION_CAMERA_RETURN_FOV_SMOOTHING = 0.12;
-const INTERACTION_CAMERA_SHOULDER_DISTANCE = 2.35;
-const INTERACTION_CAMERA_SHOULDER_OFFSET = 1.18;
-const INTERACTION_CAMERA_HEIGHT = 3.45;
+const INTERACTION_CAMERA_SHOULDER_DISTANCE = 1.35;
+const INTERACTION_CAMERA_SHOULDER_OFFSET = 1.75;
+const INTERACTION_CAMERA_HEIGHT = 4.05;
 const INTERACTION_CAMERA_PLAYER_LOOK_HEIGHT = 3.3;
 const INTERACTION_CAMERA_NPC_LOOK_HEIGHT = 3.35;
 const INTERACTION_CAMERA_OBJECT_LOOK_HEIGHT = 1.55;
 const INTERACTION_CAMERA_LOOK_OVER_LIFT = 0.18;
-const INTERACTION_CAMERA_LOOK_SIDE_OFFSET = 0.28;
+const INTERACTION_CAMERA_LOOK_SIDE_OFFSET = 0.9;
+const INTERACTION_CAMERA_LOOK_SIDE_MAX_OFFSET = 1.45;
+const INTERACTION_CAMERA_SIGHTLINE_CLEARANCE = 1.35;
 const INTERACTION_CAMERA_MIN_MS = 900;
 const INTERACTION_CAMERA_TRANSIENT_MS = 1250;
 function createCameraMovementForward(cameraOffset) {
@@ -18187,6 +18189,7 @@ export class Game {
       this.activeInteractionCamera = null;
       return false;
     }
+    this.facePlayerTowardInteraction(activeCamera.interaction);
 
     const lookTarget = this.getInteractionCameraLookTarget(activeCamera.interaction, this.interactionCameraLookTarget);
     if (!lookTarget) {
@@ -18206,6 +18209,22 @@ export class Game {
     forward.normalize();
 
     const right = this.interactionCameraRight.set(forward.z, 0, -forward.x).normalize();
+    const targetDistance = Math.max(
+      0.1,
+      Math.hypot(
+        lookTarget.x - playerLookTarget.x,
+        lookTarget.z - playerLookTarget.z
+      )
+    );
+    // Keep the camera ray just outside the player's shoulder so close NPCs and props remain visible.
+    const requiredLookSideOffset = (
+      (INTERACTION_CAMERA_SIGHTLINE_CLEARANCE * (targetDistance + INTERACTION_CAMERA_SHOULDER_DISTANCE))
+      - (INTERACTION_CAMERA_SHOULDER_OFFSET * targetDistance)
+    ) / INTERACTION_CAMERA_SHOULDER_DISTANCE;
+    const lookSideOffset = Math.max(
+      INTERACTION_CAMERA_LOOK_SIDE_OFFSET,
+      Math.min(INTERACTION_CAMERA_LOOK_SIDE_MAX_OFFSET, requiredLookSideOffset)
+    );
     const targetPosition = this.cameraTargetPosition.copy(playerLookTarget)
       .addScaledVector(forward, -INTERACTION_CAMERA_SHOULDER_DISTANCE)
       .addScaledVector(right, INTERACTION_CAMERA_SHOULDER_OFFSET);
@@ -18222,7 +18241,7 @@ export class Game {
       this.camera.position.lerp(targetPosition, INTERACTION_CAMERA_SMOOTHING);
     }
     const framedLookTarget = this.cameraLookTarget.copy(lookTarget)
-      .addScaledVector(right, INTERACTION_CAMERA_LOOK_SIDE_OFFSET);
+      .addScaledVector(right, lookSideOffset);
     this.camera.lookAt(framedLookTarget);
     this.updateCameraFov(INTERACTION_CAMERA_FOV, {
       snap,
