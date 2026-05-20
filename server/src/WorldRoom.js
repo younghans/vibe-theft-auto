@@ -301,6 +301,7 @@ export function getWorldRoomAdminDiagnostics() {
 
 const PlayerTransformState = schema({
   x: 'number',
+  y: 'number',
   z: 'number',
   rotationY: 'number',
   aimRotationY: 'number',
@@ -424,7 +425,7 @@ const PLAYER_STATE_SECTIONS = [
   {
     section: 'transform',
     type: PlayerTransformState,
-    fields: ['x', 'z', 'rotationY', 'aimRotationY', 'aiming', 'skating', 'transformSeq']
+    fields: ['x', 'y', 'z', 'rotationY', 'aimRotationY', 'aiming', 'skating', 'transformSeq']
   },
   {
     section: 'animation',
@@ -816,6 +817,7 @@ function createPlayerSnapshotPayload(player, stockPortfolios = {}) {
   return {
     player: {
       x: player.x,
+      y: player.y,
       z: player.z,
       rotationY: player.rotationY,
       aimRotationY: player.aimRotationY,
@@ -893,6 +895,7 @@ function applyPlayerSnapshotPayload(player, snapshot = {}) {
 
   const now = Date.now();
   player.x = quantizePosition(saved.x);
+  player.y = quantizePosition(saved.y);
   player.z = quantizePosition(saved.z);
   player.rotationY = quantizeRotation(saved.rotationY);
   player.aimRotationY = quantizeRotation(saved.aimRotationY ?? saved.rotationY);
@@ -1373,6 +1376,7 @@ export class WorldRoom extends Room {
     const introStartedAt = rentIntro ? Date.now() : 0;
     const isAdmin = authenticatedAccount?.isAdmin === true;
     player.x = quantizePosition(introSpawn?.x ?? spawnX);
+    player.y = 0;
     player.z = quantizePosition(introSpawn?.z ?? spawnZ);
     player.rotationY = Number.isFinite(introSpawn?.rotationY) ? quantizeRotation(introSpawn.rotationY) : 0;
     player.aimRotationY = player.rotationY;
@@ -1908,6 +1912,8 @@ export class WorldRoom extends Room {
 
     this.awardAgilityXpFromDistance(player, meta, travelled);
     player.x = quantizePosition(nextPosition.x);
+    const requestedY = Number(message.y);
+    player.y = Number.isFinite(requestedY) ? quantizePosition(requestedY) : player.y;
     player.z = quantizePosition(nextPosition.z);
     player.transformSeq = nextTransformSeq;
     meta.x = player.x;
@@ -3360,6 +3366,7 @@ export class WorldRoom extends Room {
   finishRespawn(sessionId, player) {
     const spawn = this.chooseHospitalRespawnPoint();
     player.x = quantizePosition(spawn.x);
+    player.y = 0;
     player.z = quantizePosition(spawn.z);
     player.rotationY = quantizeRotation(spawn.rotationY);
     player.aimRotationY = player.rotationY;

@@ -336,6 +336,9 @@ function setInteractableIndicatorsInteriorVisible(root, visible = true) {
 
 function setOfficeVisualTreeOpacity(root, opacity = 1) {
   const normalizedOpacity = THREE.MathUtils.clamp(Number(opacity) || 0, 0, 1);
+  if (root) {
+    root.visible = normalizedOpacity > 0;
+  }
   root?.traverse?.((node) => {
     if (node.userData?.customInteractableIndicatorRoot) {
       node.userData.customInteractableIndicatorFloorVisible = normalizedOpacity > 0;

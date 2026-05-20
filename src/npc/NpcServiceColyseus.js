@@ -99,6 +99,7 @@ function clonePlayerState(player) {
 
   return {
     x: transform.x ?? player?.x ?? 0,
+    y: transform.y ?? player?.y ?? 0,
     z: transform.z ?? player?.z ?? 0,
     rotationY: transform.rotationY ?? player?.rotationY ?? 0,
     aimRotationY: transform.aimRotationY ?? player?.aimRotationY ?? transform.rotationY ?? player?.rotationY ?? 0,
@@ -403,6 +404,7 @@ export class NpcServiceColyseus {
     this.lastTransform = null;
     this.nextTransform = {
       x: 0,
+      y: 0,
       z: 0,
       rotationY: 0,
       aimRotationY: 0,
@@ -877,6 +879,7 @@ export class NpcServiceColyseus {
     const aimRotationY = Number(animationState.aimRotationY);
     const next = this.nextTransform;
     next.x = quantize(position.x);
+    next.y = quantize(position.y);
     next.z = quantize(position.z);
     next.rotationY = quantize(rotationY, 3);
     next.aimRotationY = quantize(Number.isFinite(aimRotationY) ? aimRotationY : rotationY, 3);
@@ -888,6 +891,7 @@ export class NpcServiceColyseus {
     next.emoteSeq = Number.isFinite(animationState.emoteSeq) ? Math.max(0, Math.floor(animationState.emoteSeq)) : 0;
     const moved = !this.lastTransform
       || Math.abs(this.lastTransform.x - next.x) > PLAYER_TRANSFORM_MOVE_EPSILON
+      || Math.abs((this.lastTransform.y ?? 0) - next.y) > PLAYER_TRANSFORM_MOVE_EPSILON
       || Math.abs(this.lastTransform.z - next.z) > PLAYER_TRANSFORM_MOVE_EPSILON;
     const rotated = !this.lastTransform
       || Math.abs(angleDifference(this.lastTransform.rotationY, next.rotationY)) > PLAYER_TRANSFORM_ROTATION_EPSILON;
