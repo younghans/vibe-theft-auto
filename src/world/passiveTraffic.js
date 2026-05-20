@@ -90,7 +90,7 @@ function rotateRoadExitDirection(direction, rotationQuarterTurns = 0) {
 
 function getPassiveTrafficBaseRoadExits(item) {
   const assetName = normalizeRoadAssetName(item);
-  if (!assetName.startsWith('road_') && !assetName.startsWith('park_road_')) {
+  if (!assetName.startsWith('road_')) {
     return [];
   }
 
@@ -814,9 +814,7 @@ function getPassiveTrafficRoutePointNodeIndex(graph, point = null) {
   const cellZ = Number(point.cellZ ?? point.cell?.[1]);
   if (Number.isFinite(cellX) && Number.isFinite(cellZ)) {
     const index = graph.nodeIndexByKey?.get?.(getPassiveTrafficRoadNodeKey(cellX, cellZ));
-    if (graph.activeNodeSet.has(index)) {
-      return index;
-    }
+    return graph.activeNodeSet.has(index) ? index : null;
   }
 
   const x = Number(point.x ?? point.position?.[0]);

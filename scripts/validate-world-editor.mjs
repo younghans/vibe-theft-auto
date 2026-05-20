@@ -911,8 +911,8 @@ function findTrafficNode(graph, cellX, cellZ) {
 function assertAllActiveNodesAreRoads(trafficGraph) {
   for (const node of trafficGraph.activeNodes) {
     assert(
-      String(node.itemId).startsWith('road_') || String(node.assetName).startsWith('park_road_'),
-      'Passive traffic graph should be built specifically from road tiles'
+      String(node.itemId).startsWith('road_') && !String(node.assetName).startsWith('park_road_'),
+      'Passive traffic graph should be built specifically from drivable street road tiles'
     );
   }
 }
@@ -1099,6 +1099,12 @@ function validatePassiveTraffic() {
     }
     assert(exits.size === expectedDirections.length, `Passive traffic should not add extra exits for ${itemId} rotation ${rotationQuarterTurns}`);
   };
+  const assertNoRoadExits = (itemId, rotationQuarterTurns) => {
+    const item = getBuilderItemById(itemId);
+    assert(item?.layer === 'tile', `Passive traffic non-road type ${itemId} should resolve to a tile`);
+    const exits = collectPassiveTrafficRoadExitKeys(item, rotationQuarterTurns);
+    assert(exits.size === 0, `Passive traffic should not treat ${itemId} rotation ${rotationQuarterTurns} as a drivable road`);
+  };
   assertRoadExits('road_straight', 0, [{ x: 0, z: -1 }, { x: 0, z: 1 }]);
   assertRoadExits('road_straight', 1, [{ x: 1, z: 0 }, { x: -1, z: 0 }]);
   assertRoadExits('road_corner', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }]);
@@ -1107,10 +1113,10 @@ function validatePassiveTraffic() {
   assertRoadExits('road_tsplit', 1, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }]);
   assertRoadExits('road_cross', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
   assertRoadExits('road_junction', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
-  assertRoadExits('park_road_straight', 1, [{ x: 1, z: 0 }, { x: -1, z: 0 }]);
-  assertRoadExits('park_road_corner_decorated', 1, [{ x: 1, z: 0 }, { x: 0, z: 1 }]);
-  assertRoadExits('park_road_tsplit_decorated', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: -1, z: 0 }]);
-  assertRoadExits('park_road_junction_decorated_C', 0, [{ x: 0, z: -1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 0 }]);
+  assertNoRoadExits('park_road_straight', 1);
+  assertNoRoadExits('park_road_corner_decorated', 1);
+  assertNoRoadExits('park_road_tsplit_decorated', 0);
+  assertNoRoadExits('park_road_junction_decorated_C', 0);
 
   const mixedRoadTypeTiles = [
     { id: 'traffic_road_type_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 1 },
@@ -1118,19 +1124,41 @@ function validatePassiveTraffic() {
     { id: 'traffic_road_type_3', itemId: 'road_tsplit', cell: [1, 1], rotationQuarterTurns: 0 },
     { id: 'traffic_road_type_4', itemId: 'road_cross', cell: [2, 1], rotationQuarterTurns: 0 },
     { id: 'traffic_road_type_5', itemId: 'road_junction', cell: [3, 1], rotationQuarterTurns: 0 },
-    { id: 'traffic_road_type_6', itemId: 'road_corner_curved', cell: [4, 1], rotationQuarterTurns: 3 },
-    { id: 'traffic_road_type_7', itemId: 'park_road_straight', cell: [4, 0], rotationQuarterTurns: 0 },
-    { id: 'traffic_road_type_8', itemId: 'park_road_corner_decorated', cell: [4, -1], rotationQuarterTurns: 2 },
-    { id: 'traffic_road_type_9', itemId: 'park_road_tsplit_decorated', cell: [3, -1], rotationQuarterTurns: 0 },
-    { id: 'traffic_road_type_10', itemId: 'park_road_junction_decorated_C', cell: [2, -1], rotationQuarterTurns: 0 }
+    { id: 'traffic_road_type_6', itemId: 'road_corner_curved', cell: [4, 1], rotationQuarterTurns: 3 }
   ];
   const mixedRoadTypeGraph = buildPassiveTrafficRoadGraph(mixedRoadTypeTiles);
   const mixedRoadStart = findTrafficNodeIndex(mixedRoadTypeGraph, 0, 0);
-  const mixedRoadEnd = findTrafficNodeIndex(mixedRoadTypeGraph, 2, -1);
+  const mixedRoadEnd = findTrafficNodeIndex(mixedRoadTypeGraph, 4, 1);
   const mixedRoadPath = findPassiveTrafficPath(mixedRoadTypeGraph, mixedRoadStart, mixedRoadEnd);
   assert(
     mixedRoadPath.length === mixedRoadTypeTiles.length,
-    'Passive traffic should route continuously through straight, corner, curved, T, cross, junction, and park road tiles'
+    'Passive traffic should route continuously through straight, corner, curved, T, cross, and junction street road tiles'
+  );
+  const parkOnlyTrafficGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_park_road_type_1', itemId: 'park_road_straight', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_park_road_type_2', itemId: 'park_road_corner_decorated', cell: [0, -1], rotationQuarterTurns: 1 },
+    { id: 'traffic_park_road_type_3', itemId: 'park_road_tsplit_decorated', cell: [1, -1], rotationQuarterTurns: 0 }
+  ]);
+  assert(
+    parkOnlyTrafficGraph.nodes.length === 0 && parkOnlyTrafficGraph.activeNodeIndices.length === 0,
+    'Passive traffic should not add park path tiles to the drivable route graph'
+  );
+  const streetBesideParkGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_street_beside_park_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_street_beside_park_2', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_street_beside_park_3', itemId: 'road_straight', cell: [2, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_park_path_beside_street_1', itemId: 'park_road_straight', cell: [0, 1], rotationQuarterTurns: 1 },
+    { id: 'traffic_park_path_beside_street_2', itemId: 'park_road_straight', cell: [2, 1], rotationQuarterTurns: 1 }
+  ]);
+  assert(
+    getPassiveTrafficRouteNodeIndices(streetBesideParkGraph, {
+      points: [
+        { cellX: 0, cellZ: 1, x: 0, z: BUILDER_TILE_SIZE },
+        { cellX: 2, cellZ: 1, x: BUILDER_TILE_SIZE * 2, z: BUILDER_TILE_SIZE },
+        { cellX: 0, cellZ: 1, x: 0, z: BUILDER_TILE_SIZE }
+      ]
+    }).length === 0,
+    'Passive traffic saved route points with explicit park cells should not snap to neighboring street roads'
   );
 
   const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
@@ -1423,10 +1451,13 @@ function validatePassiveTraffic() {
       && /trafficRoutePreview/.test(worldBuilderSource)
       && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
       && /preferredComponentIndex/.test(worldBuilderSource)
-      && /const closingRoute = targetNodeIndex === firstNodeIndex/.test(worldBuilderSource)
+      && /selectTrafficRouteCar\(itemId = ''\)[\s\S]*trafficRouteDraft\?\.itemId[\s\S]*trafficRouteDraft = null/.test(worldBuilderSource)
+      && /createTrafficRouteDraftPreview\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return null;/.test(worldBuilderSource)
+      && /appendTrafficRouteDraftNode\(nodeIndex[\s\S]*if \(nodeIndex === lastNodeIndex\) \{[\s\S]*return false;/.test(worldBuilderSource)
+      && /const closingRoute = nodeIndex === firstNodeIndex/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected, prefer reachable road components, preview drag routes, and leave clicks resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected per car, prefer reachable road components, preview drag routes, close only at the start node, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')

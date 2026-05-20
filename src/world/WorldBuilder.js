@@ -1613,6 +1613,11 @@ export class WorldBuilder {
     }
 
     this.state.activeTrafficRouteCarItemId = itemId;
+    if (this.state.trafficRouteDraft?.itemId && this.state.trafficRouteDraft.itemId !== itemId) {
+      this.state.trafficRouteDraft = null;
+      this.state.trafficRoutePreview = null;
+      this.state.trafficRouteDrawing = false;
+    }
     this.updateBuilderHud();
   }
 
@@ -1670,19 +1675,15 @@ export class WorldBuilder {
 
     const firstNodeIndex = nodeIndices[0];
     const lastNodeIndex = nodeIndices[nodeIndices.length - 1];
-    let targetNodeIndex = nodeIndex;
     if (nodeIndex === lastNodeIndex) {
-      if (nodeIndices.length < 3) {
-        return null;
-      }
-      targetNodeIndex = firstNodeIndex;
-    }
-
-    if (targetNodeIndex === firstNodeIndex && nodeIndices.length < 3) {
       return null;
     }
 
-    const path = findPassiveTrafficPath(graph, lastNodeIndex, targetNodeIndex);
+    if (nodeIndex === firstNodeIndex && nodeIndices.length < 3) {
+      return null;
+    }
+
+    const path = findPassiveTrafficPath(graph, lastNodeIndex, nodeIndex);
     if (path.length < 2) {
       return null;
     }
@@ -1699,7 +1700,7 @@ export class WorldBuilder {
     return {
       points,
       nodeIndices: path,
-      closed: targetNodeIndex === firstNodeIndex
+      closed: nodeIndex === firstNodeIndex
     };
   }
 
@@ -1737,20 +1738,16 @@ export class WorldBuilder {
 
     const firstNodeIndex = nodeIndices[0];
     const lastNodeIndex = nodeIndices[nodeIndices.length - 1];
-    let targetNodeIndex = nodeIndex;
     if (nodeIndex === lastNodeIndex) {
-      if (nodeIndices.length < 3) {
-        return false;
-      }
-      targetNodeIndex = firstNodeIndex;
-    }
-
-    if (targetNodeIndex === firstNodeIndex && nodeIndices.length < 3) {
       return false;
     }
 
-    const closingRoute = targetNodeIndex === firstNodeIndex;
-    const path = findPassiveTrafficPath(graph, lastNodeIndex, targetNodeIndex);
+    if (nodeIndex === firstNodeIndex && nodeIndices.length < 3) {
+      return false;
+    }
+
+    const closingRoute = nodeIndex === firstNodeIndex;
+    const path = findPassiveTrafficPath(graph, lastNodeIndex, nodeIndex);
     if (path.length < 2) {
       return false;
     }
