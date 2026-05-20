@@ -43,6 +43,8 @@ try {
   assert.match(hudSource, /isAdminPromptDetailNearBottom/, 'HUD should only follow same-thread updates when the reader is near the bottom.');
   assert.match(agentWorkerSource, /\$isTaskRelated = \$false/, 'Worker process cleanup should track whether a process belongs to the current task.');
   assert.match(agentWorkerSource, /\$includeDetachedLocalHelpers -and \$isNew -and \$isTaskRelated/, 'Worker cleanup should only kill detached helpers related to the current task.');
+  assert.match(agentWorkerSource, /removedPlacementCount/, 'Worker live world verification should distinguish removed placements from non-placement metadata.');
+  assert.match(agentWorkerSource, /only non-placement seed metadata changed/, 'Worker should not fail deploys for non-placement world-layout metadata changes.');
 
   const created = await createAgentTask({
     scope: 'game',

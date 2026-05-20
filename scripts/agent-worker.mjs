@@ -2657,7 +2657,7 @@ async function readJsonFromGitRef(task, worktreePath, ref, filePath) {
 async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha = '') {
   const commitSha = String(expectedCommitSha || '').trim();
   if (!commitSha) {
-    return { changedWorldFiles: [], placements: [] };
+    return { changedWorldFiles: [], placements: [], removedPlacementCount: 0 };
   }
 
   let changedWorldFiles = [];
@@ -2679,11 +2679,11 @@ async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha =
       level: 'warn',
       data: { error: truncateText(error?.message || String(error), 1200) }
     });
-    return { changedWorldFiles: [], placements: [] };
+    return { changedWorldFiles: [], placements: [], removedPlacementCount: 0 };
   }
 
   if (!changedWorldFiles.includes(WORLD_LAYOUT_SEED_PATH)) {
-    return { changedWorldFiles, placements: [] };
+    return { changedWorldFiles, placements: [], removedPlacementCount: 0 };
   }
 
   let previousLayout = null;
@@ -2699,6 +2699,21 @@ async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha =
   for (const entry of normalizeLayoutEntries(previousLayout)) {
     previousById.set(getPlacementId(entry), entry);
   }
+  const nextById = new Map();
+  for (const entry of normalizeLayoutEntries(nextLayout)) {
+    const id = getPlacementId(entry);
+    if (id) {
+      nextById.set(id, entry);
+    }
+  }
+
+  let removedPlacementCount = 0;
+  for (const id of previousById.keys()) {
+    if (id && !nextById.has(id)) {
+      removedPlacementCount += 1;
+    }
+  }
+
   const changedPlacements = [];
   for (const entry of normalizeLayoutEntries(nextLayout)) {
     const id = getPlacementId(entry);
@@ -2714,7 +2729,8 @@ async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha =
 
   return {
     changedWorldFiles,
-    placements: changedPlacements
+    placements: changedPlacements,
+    removedPlacementCount
   };
 }
 
@@ -2762,12 +2778,18 @@ async function verifyLiveWorldLayoutChanges(task, worktreePath, {
   expectedCommitSha = '',
   actionLabel = 'Deployment'
 } = {}) {
-  const { changedWorldFiles, placements } = await getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha);
+  const { changedWorldFiles, placements, removedPlacementCount } = await getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha);
   if (changedWorldFiles.length === 0) {
     return null;
   }
 
   if (changedWorldFiles.includes(DEFAULT_WORLD_LAYOUT_PATH) && placements.length === 0) {
+    if (changedWorldFiles.includes(WORLD_LAYOUT_SEED_PATH) && removedPlacementCount === 0) {
+      return {
+        output: `World layout placement verification skipped; ${changedWorldFiles.join(', ')} changed, but only non-placement seed metadata changed.`
+      };
+    }
+
     throw new Error(
       `${actionLabel} changed ${DEFAULT_WORLD_LAYOUT_PATH}, but no ${WORLD_LAYOUT_SEED_PATH} placement delta was available to verify. `
       + 'Production uses persisted world state, so default seed changes do not update the live map by themselves.'
