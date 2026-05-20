@@ -362,6 +362,30 @@ try {
   assert.equal(retryRejected.error, 'deploy rebase conflict');
   assert.ok(retryRejected.deployStartedAt > 0);
   assert.equal(retryRejected.deployApprovedAt, retryApprovedInitial.deployApprovedAt);
+  const retryReady = await updateAgentTask(retryDeployTask.id, {
+    status: 'ready_for_review',
+    error: '',
+    summary: 'Deploy was manually verified and is ready for fresh approval.'
+  }, { filePath });
+  assert.equal(retryReady.status, 'ready_for_review');
+  assert.equal(retryReady.error, '');
+  assert.equal(retryReady.deployApprovedAt, 0);
+  assert.equal(retryReady.deployApprovedBy, '');
+  assert.equal(retryReady.deployStartedAt, 0);
+  assert.equal(retryReady.claimedBy, '');
+  assert.equal(retryReady.claimedAt, 0);
+  assert.equal(retryReady.workerHeartbeatAt, 0);
+  assert.equal(retryReady.workerHeartbeatStatus, '');
+  assert.ok(retryReady.logs.some((entry) => /stale deploy approval cleared/u.test(entry.message)));
+  const retryApprovedAgain = await approveAgentTaskDeploy(retryDeployTask.id, {
+    approvedBy: 'validator',
+    filePath
+  });
+  assert.ok(retryApprovedAgain.deployApprovedAt > 0);
+  await cancelAgentTask(retryDeployTask.id, {
+    cancelledBy: 'validator',
+    filePath
+  });
 
   const approved = await approveAgentTaskDeploy(created.id, {
     approvedBy: 'validator',

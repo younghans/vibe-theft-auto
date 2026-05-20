@@ -1025,6 +1025,7 @@ export async function updateAgentTask(taskId, updates = {}, {
       }
 
       if (key === 'status') {
+        const previousStatus = task.status;
         const status = normalizeStatus(value);
         if (!status) {
           throw new Error(`Invalid task status: ${String(value)}`);
@@ -1035,6 +1036,23 @@ export async function updateAgentTask(taskId, updates = {}, {
         }
         if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
           task.workCompletedAt = now;
+        }
+        if (
+          status === 'ready_for_review'
+          && previousStatus === 'failed'
+          && Number(task.deployStartedAt) > 0
+        ) {
+          task.deployApprovedAt = 0;
+          task.deployApprovedBy = '';
+          task.deployStartedAt = 0;
+          task.claimedBy = '';
+          task.claimedAt = 0;
+          task.workerHeartbeatAt = 0;
+          task.workerHeartbeatStatus = '';
+          addTaskLog(task, 'Failed deploy reset to ready for review; stale deploy approval cleared.', {
+            level: 'warn',
+            data: { previousStatus }
+          });
         }
       } else if (['claimedAt', 'workerHeartbeatAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
         task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
