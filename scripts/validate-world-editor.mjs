@@ -1560,6 +1560,11 @@ function validateCustomPropCatalogItems() {
     portalSpawnDistance > portalSafeRearmDistance,
     'Vibe Jam portal spawn point should be outside the trigger re-arm radius to prevent return loops'
   );
+  assert(
+    /writeSpeechBubbleRecord\([\s\S]*speakerKey = '',\s*tone = '',\s*opacity = undefined[\s\S]*bubble\.tone = tone[\s\S]*bubble\.opacity = Number\.isFinite\(Number\(opacity\)\)/.test(gameSource)
+      && /speakerKey \|\| label \|\| id,\s*tone,\s*opacity/.test(gameSource),
+    'Speech bubble records should accept and forward tone/opacity parameters so floaters cannot crash the frame loop'
+  );
 
   const pistolPickup = getBuilderItemById(COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
   assert(pistolPickup, 'Pistol pickup prop should exist');

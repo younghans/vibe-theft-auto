@@ -20378,7 +20378,9 @@ export class Game {
       modelId,
       voice,
       voiceVolumeScale,
-      speakerKey || label || id
+      speakerKey || label || id,
+      tone,
+      opacity
     );
   }
 
@@ -20400,7 +20402,9 @@ export class Game {
     modelId = '',
     voice = null,
     voiceVolumeScale = 1,
-    speakerKey = ''
+    speakerKey = '',
+    tone = '',
+    opacity = undefined
   ) {
     let bubble = this.speechBubbleRecords.get(id);
     if (!bubble) {
