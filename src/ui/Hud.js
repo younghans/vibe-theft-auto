@@ -1145,7 +1145,7 @@ function createVibeHeroSongSelectMarkup(game = null) {
               style="--song-accent:${escapeHtml(song.previewColor ?? '#54d7ff')}"
             >
               <strong>${escapeHtml(song.title ?? 'Song')}</strong>
-              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes | ${song.difficulty ?? 'Expert'}${song.chartEdited ? ' | Edited' : ''}`)}</span>
+              <span>${escapeHtml(`${Math.round((Number(song.durationMs ?? 0) || 0) / 1000)}s | ${song.noteCount ?? 0} notes | ${song.difficulty ?? 'Expert'}`)}</span>
               <em>${escapeHtml(song.performer ?? song.sourceTitle ?? song.artist ?? 'Classical')}</em>
             </button>
           `;

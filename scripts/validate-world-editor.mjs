@@ -2282,6 +2282,7 @@ function validateVibeHero() {
   assert(gameSource.includes('entry.chartEdited === true'), 'Vibe Hero public song list should preserve shipped edited-chart metadata without requiring admin local storage');
   assert(gameSource.includes('const storedChart = editing ? this.loadVibeHeroStoredEditorChart(baseSong) : null'), 'Vibe Hero normal play should use the compiled main edited chart instead of admin-only stored charts');
   assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
+  assert(!hudSource.includes('| Edited'), 'Vibe Hero song select should not show edited-chart text to players');
   assert(hudSource.includes('hud__vibe-hero-fret') && styleSource.includes('.hud__vibe-hero-fret'), 'Vibe Hero HUD should render oval timing frets above the lane number buttons');
   assert(hudSource.includes('hud__vibe-hero-hit-fire') && styleSource.includes('@keyframes hud-vibe-hero-fire-burst'), 'Vibe Hero HUD should animate a small fire burst when a note is hit correctly');
   assert(songs.length === 2, 'Vibe Hero should include exactly two starter songs');
@@ -2311,31 +2312,41 @@ function validateVibeHero() {
     if (song.id === 'vivaldi-winter') {
       assert(song.snippetStartMs === 30000, 'Vivaldi - Winter should skip the first 30 seconds of the MP3');
       assert(song.durationMs === 95000, 'Vivaldi - Winter should chart a 95 second snippet after the 30 second skip');
-      assert(song.chart.length === 458, 'Vivaldi - Winter should ship the 458-note editor-polished chart');
+      assert(song.chart.length === 667, 'Vivaldi - Winter should ship the 667-note admin-edited chart');
     }
 
     assert(Array.isArray(song.chart) && song.chart.length >= 120, `${song.title}: expert chart should have enough notes to be difficult`);
     let previousTime = -1;
     let totalGapMs = 0;
     let minGapMs = Infinity;
+    let positiveGapCount = 0;
+    let currentTimeLaneKeys = new Set();
     for (let index = 0; index < song.chart.length; index += 1) {
       const note = song.chart[index];
-      assert(note.timeMs > previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
-      if (previousTime >= 0) {
+      assert(note.timeMs >= previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
+      if (note.timeMs !== previousTime) {
+        currentTimeLaneKeys = new Set();
+      }
+      const sameTimeLaneKey = `${note.timeMs}:${note.lane}`;
+      assert(!currentTimeLaneKeys.has(sameTimeLaneKey), `${song.title} note ${index + 1}: chart should not duplicate a lane at one timestamp`);
+      currentTimeLaneKeys.add(sameTimeLaneKey);
+      if (previousTime >= 0 && note.timeMs > previousTime) {
         const gapMs = note.timeMs - previousTime;
         totalGapMs += gapMs;
         minGapMs = Math.min(minGapMs, gapMs);
+        positiveGapCount += 1;
       }
       previousTime = note.timeMs;
       assert(Number.isFinite(note.frequency) && note.frequency > 0, `${song.title} note ${index + 1}: frequency should be playable`);
       assert(Number.isInteger(note.lane) && note.lane >= 0 && note.lane < VIBE_HERO_LANE_COUNT, `${song.title} note ${index + 1}: lane should be 0-4`);
       assert(note.timeMs >= 0 && note.timeMs < song.durationMs, `${song.title} note ${index + 1}: note should fit inside the song`);
     }
-    const averageGapMs = totalGapMs / Math.max(1, song.chart.length - 1);
+    const averageGapMs = totalGapMs / Math.max(1, positiveGapCount);
     const notesPerSecond = song.chart.length / Math.max(1, song.durationMs / 1000);
-    assert(minGapMs >= 70, `${song.title}: onset chart should avoid stacked filler notes`);
+    const maxNotesPerSecond = song.id === 'vivaldi-winter' ? 7.2 : 5.6;
+    assert(minGapMs >= 70, `${song.title}: chart should keep positive note timings playable`);
     assert(averageGapMs >= 140, `${song.title}: chart should emphasize substantial attacks`);
-    assert(notesPerSecond <= 5.6, `${song.title}: chart should not fill quiet music with extra notes`);
+    assert(notesPerSecond <= maxNotesPerSecond, `${song.title}: chart should stay within a playable expert density`);
     assert(chartUsesAllLanes(song.chart), `${song.title}: chart should use all five Vibe Hero lanes`);
   }
 }

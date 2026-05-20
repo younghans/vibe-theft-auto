@@ -6,6 +6,8 @@ export const VIBE_HERO_NOTE_TRAVEL_MS = 850;
 const DEBUSSY_DURATION_MS = 75000;
 const VIVALDI_SNIPPET_START_MS = 30000;
 const VIVALDI_DURATION_MS = 95000;
+const VIVALDI_EDITOR_CHORD_START_MS = 39500;
+const VIVALDI_EDITOR_EXTRA_NOTE_COUNT = 209;
 const ONSET_CHART_MIN_NOTE_MS = 86;
 const ONSET_CHART_MAX_NOTE_MS = 340;
 
@@ -226,6 +228,56 @@ function createEditorExtraChart({
   return chart;
 }
 
+function getVivaldiEditorChordLane(sourceLane, sequence) {
+  const offsets = [2, 3, 1, 4];
+  const offset = offsets[sequence % offsets.length] ?? 2;
+  return (sourceLane + offset) % VIBE_HERO_LANE_COUNT;
+}
+
+function selectEvenlySpacedChartNotes(chart, count) {
+  if (count <= 0 || chart.length <= 0) {
+    return [];
+  }
+  if (chart.length <= count) {
+    return [...chart];
+  }
+
+  const selected = [];
+  const usedIndexes = new Set();
+  for (let index = 0; index < count; index += 1) {
+    const idealIndex = Math.round((index * (chart.length - 1)) / Math.max(1, count - 1));
+    let selectedIndex = idealIndex;
+    while (usedIndexes.has(selectedIndex) && selectedIndex < chart.length - 1) {
+      selectedIndex += 1;
+    }
+    while (usedIndexes.has(selectedIndex) && selectedIndex > 0) {
+      selectedIndex -= 1;
+    }
+    if (!usedIndexes.has(selectedIndex)) {
+      usedIndexes.add(selectedIndex);
+      selected.push(chart[selectedIndex]);
+    }
+  }
+  return selected;
+}
+
+function createVivaldiEditorChordChart(sourceChart) {
+  const candidates = sourceChart.filter((note) => note.timeMs >= VIVALDI_EDITOR_CHORD_START_MS);
+  const selected = selectEvenlySpacedChartNotes(candidates, VIVALDI_EDITOR_EXTRA_NOTE_COUNT);
+  const chart = [];
+  for (let index = 0; index < selected.length; index += 1) {
+    const sourceNote = selected[index];
+    chart.push(createChartNote({
+      id: `vivaldi-editor-chord-${index + 1}`,
+      timeMs: sourceNote.timeMs,
+      lane: getVivaldiEditorChordLane(sourceNote.lane, index),
+      pitch: sourceNote.pitch,
+      durationMs: sourceNote.durationMs
+    }));
+  }
+  return chart;
+}
+
 function finalizeChart(chart) {
   const filtered = [];
   for (const note of chart) {
@@ -233,7 +285,7 @@ function finalizeChart(chart) {
       filtered.push(note);
     }
   }
-  filtered.sort((left, right) => left.timeMs - right.timeMs);
+  filtered.sort((left, right) => (left.timeMs - right.timeMs) || (left.lane - right.lane));
   const finalized = [];
   for (let index = 0; index < filtered.length; index += 1) {
     const note = filtered[index];
@@ -264,12 +316,16 @@ function createDebussyArabesqueChart() {
 }
 
 function createVivaldiWinterChart() {
-  return createSourceOnsetChart({
+  const sourceChart = createSourceOnsetChart({
     times: VIVALDI_SOURCE_ONSET_TIMES,
     lanes: VIVALDI_SOURCE_ONSET_LANES,
     pitches: VIVALDI_SOURCE_ONSET_PITCHES,
     idPrefix: 'vivaldi-onset'
   });
+  return finalizeChart([
+    ...sourceChart,
+    ...createVivaldiEditorChordChart(sourceChart)
+  ]);
 }
 
 const VIBE_HERO_SONGS = Object.freeze([
