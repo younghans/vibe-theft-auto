@@ -369,6 +369,23 @@ const LEGACY_CHARACTER_STORAGE_KEY = 'stickrpg.selectedCharacterId';
 const GAME_SETTINGS_STORAGE_KEY = 'vta.gameSettings';
 const LEGACY_GAME_SETTINGS_STORAGE_KEY = 'stickrpg.gameSettings';
 const HOTBAR_LAYOUT_STORAGE_KEY = 'vta.hotbarItemOrder';
+const PLAYER_DISPLAY_NAME_STORAGE_KEY = 'vta.playerDisplayName';
+const PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY = 'vta.pendingPlayerDisplayName';
+const RANDOM_PLAYER_FIRST_NAMES = Object.freeze([
+  'JELK',
+  'BUNGUS',
+  'MEAT',
+  'DEEZ',
+  'MOIST',
+  'SIGNA'
+]);
+const RANDOM_PLAYER_LAST_NAMES = Object.freeze([
+  'MASTER',
+  'CHUNKER',
+  'GOBLIN',
+  'MAXXER',
+  'RIZZLER'
+]);
 const DEFAULT_GAME_SETTINGS = Object.freeze({
   masterVolume: 0.82
 });
@@ -696,6 +713,89 @@ function writeStoredGameSettings(settings = DEFAULT_GAME_SETTINGS) {
     }));
   } catch {
     // Local persistence is best-effort; gameplay should continue if storage is unavailable.
+  }
+}
+
+function normalizePlayerDisplayName(value = '') {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]+/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 32);
+}
+
+function pickRandomListValue(values) {
+  if (!Array.isArray(values) || values.length <= 0) {
+    return '';
+  }
+
+  const random = globalThis.crypto?.getRandomValues
+    ? globalThis.crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000
+    : Math.random();
+  return values[Math.floor(random * values.length) % values.length] ?? '';
+}
+
+function createRandomPlayerDisplayName() {
+  const firstName = pickRandomListValue(RANDOM_PLAYER_FIRST_NAMES);
+  const lastName = pickRandomListValue(RANDOM_PLAYER_LAST_NAMES);
+  return normalizePlayerDisplayName(`${firstName} ${lastName}`);
+}
+
+function readStoredPlayerDisplayName() {
+  try {
+    return normalizePlayerDisplayName(window.localStorage?.getItem(PLAYER_DISPLAY_NAME_STORAGE_KEY) ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredPlayerDisplayName(displayName = '') {
+  const normalized = normalizePlayerDisplayName(displayName);
+  if (!normalized) {
+    return '';
+  }
+
+  try {
+    window.localStorage?.setItem(PLAYER_DISPLAY_NAME_STORAGE_KEY, normalized);
+  } catch {
+    // Local persistence is best-effort; the server still owns the canonical display name.
+  }
+  return normalized;
+}
+
+function readPendingPlayerDisplayName() {
+  try {
+    return normalizePlayerDisplayName(
+      window.sessionStorage?.getItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY)
+      || window.localStorage?.getItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY)
+      || ''
+    );
+  } catch {
+    return '';
+  }
+}
+
+function writePendingPlayerDisplayName(displayName = '') {
+  const normalized = normalizePlayerDisplayName(displayName);
+  if (!normalized) {
+    return '';
+  }
+
+  try {
+    window.sessionStorage?.setItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY, normalized);
+    window.localStorage?.setItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY, normalized);
+  } catch {
+    // OAuth can still continue; the account may fall back to provider metadata.
+  }
+  return normalized;
+}
+
+function clearPendingPlayerDisplayName() {
+  try {
+    window.sessionStorage?.removeItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY);
+    window.localStorage?.removeItem(PLAYER_PENDING_DISPLAY_NAME_STORAGE_KEY);
+  } catch {
+    // Best effort cleanup only.
   }
 }
 
@@ -1035,6 +1135,7 @@ export class Game {
     this.authService = createSupabaseAuthService();
     this.authState = this.authService.getState();
     this.authUnsubscribe = null;
+    this.playerDisplayName = readStoredPlayerDisplayName();
     this.input = new Input();
     this.input.attachMobileControls(this.hud.getMobileControlsRoot());
     this.input.bindActionPress('chat', () => this.maybeOpenQuickChatFromInput());
@@ -3660,6 +3761,91 @@ export class Game {
       console.warn('[Auth] Supabase auth initialization failed.', error);
     }
     this.refreshPhoneSettingsHud();
+  }
+
+  isAuthSignedIn() {
+    return Boolean(
+      this.authState?.configured
+      && this.authState.status === 'signedIn'
+      && this.authService.getAccessToken()
+    );
+  }
+
+  getAuthDisplayName() {
+    return normalizePlayerDisplayName(
+      this.authState?.displayName
+      || this.authState?.user?.user_metadata?.display_name
+      || this.authState?.user?.user_metadata?.full_name
+      || this.authState?.user?.user_metadata?.name
+      || ''
+    );
+  }
+
+  async resolveStartupPlayerProfile() {
+    const pendingDisplayName = readPendingPlayerDisplayName();
+    if (this.isAuthSignedIn()) {
+      const displayName = normalizePlayerDisplayName(
+        pendingDisplayName
+        || this.playerDisplayName
+        || this.getAuthDisplayName()
+      );
+      if (displayName) {
+        this.playerDisplayName = writeStoredPlayerDisplayName(displayName);
+      }
+      if (pendingDisplayName) {
+        clearPendingPlayerDisplayName();
+      }
+      return {
+        displayName: this.playerDisplayName
+      };
+    }
+
+    let suggestedName = createRandomPlayerDisplayName();
+    while (true) {
+      const selection = await this.hud.showMainMenu({
+        googleEnabled: this.authState?.configured === true,
+        suggestedName
+      });
+      const displayName = writeStoredPlayerDisplayName(
+        normalizePlayerDisplayName(selection.displayName) || suggestedName || createRandomPlayerDisplayName()
+      );
+      this.playerDisplayName = displayName;
+
+      if (selection.action === 'google') {
+        writePendingPlayerDisplayName(displayName);
+        this.authState = await this.authService.signInWithGoogle();
+        this.refreshPhoneSettingsHud();
+        if (this.authState.status === 'error') {
+          this.hud.showToast(this.authState.message || 'Google sign-in failed.');
+          suggestedName = displayName || createRandomPlayerDisplayName();
+          continue;
+        }
+
+        await new Promise(() => {});
+        return {
+          displayName
+        };
+      }
+
+      if (this.authState?.configured === true) {
+        this.authState = await this.authService.signInAnonymously(displayName);
+        this.refreshPhoneSettingsHud();
+        if (!this.isAuthSignedIn()) {
+          console.warn('[Auth] Guest play could not create an authenticated guest account.', {
+            message: this.authState?.message ?? '',
+            status: this.authState?.status ?? ''
+          });
+          this.hud.showToast(this.authState.message || 'Could not create guest account.');
+          suggestedName = displayName || createRandomPlayerDisplayName();
+          continue;
+        }
+      }
+
+      this.hud.hideMainMenu();
+      return {
+        displayName
+      };
+    }
   }
 
   async handleAuthGoogleSignIn() {
@@ -13396,9 +13582,11 @@ export class Game {
       this.setupAtmosphere();
       this.setBootLoadingProgress(0.12);
       await this.initializeAuth();
+      const playerProfile = await this.resolveStartupPlayerProfile();
       this.markBoot('boot:npc-service:start');
       const npcServicePromise = createNpcService({
-        accessToken: this.authService.getAccessToken()
+        accessToken: this.authService.getAccessToken(),
+        displayName: playerProfile.displayName
       });
 
       const cityState = await buildCity(this.scene);

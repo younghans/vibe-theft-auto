@@ -100,6 +100,31 @@ function getSessionEmail(session) {
   return typeof session?.user?.email === 'string' ? session.user.email : '';
 }
 
+function getSessionDisplayName(session) {
+  const metadata = session?.user?.user_metadata && typeof session.user.user_metadata === 'object'
+    ? session.user.user_metadata
+    : {};
+  const candidates = [
+    metadata.display_name,
+    metadata.full_name,
+    metadata.name,
+    getSessionEmail(session).split('@')[0]
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate ?? '').replace(/\s+/gu, ' ').trim();
+    if (value) {
+      return value.slice(0, 80);
+    }
+  }
+
+  return '';
+}
+
+function isAnonymousSession(session) {
+  return session?.user?.is_anonymous === true;
+}
+
 function getRedirectUrl() {
   try {
     const { origin, pathname, search } = window.location;
@@ -111,6 +136,21 @@ function getRedirectUrl() {
 
 function getErrorMessage(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getSafeAuthErrorDetails(error) {
+  if (!error || typeof error !== 'object') {
+    return {
+      message: String(error ?? '')
+    };
+  }
+
+  return {
+    code: typeof error.code === 'string' ? error.code : '',
+    message: typeof error.message === 'string' ? error.message : '',
+    name: typeof error.name === 'string' ? error.name : '',
+    status: Number.isFinite(Number(error.status)) ? Number(error.status) : null
+  };
 }
 
 function createState(overrides = {}) {
@@ -153,9 +193,15 @@ export function createSupabaseAuthService() {
 
   function setSession(session, { status = 'signedOut', message = '' } = {}) {
     const email = getSessionEmail(session);
+    const displayName = getSessionDisplayName(session);
+    const anonymous = isAnonymousSession(session);
     return emit({
       configured,
-      message: message || (session ? `Signed in as ${email || 'player'}.` : 'Signed out.'),
+      displayName,
+      isAnonymous: anonymous,
+      message: message || (session
+        ? `Signed in as ${email || displayName || (anonymous ? 'guest' : 'player')}.`
+        : 'Signed out.'),
       session: session ?? null,
       status: session ? 'signedIn' : status,
       user: session?.user ?? null
@@ -241,6 +287,85 @@ export function createSupabaseAuthService() {
       }
 
       return setSession(data?.session ?? null);
+    },
+
+    async signInAnonymously(displayName = '') {
+      if (!configured) {
+        return state;
+      }
+
+      let supabaseClient = null;
+      try {
+        supabaseClient = await getClient();
+      } catch (error) {
+        const message = getErrorMessage(error, 'Could not initialize Supabase auth.');
+        return emit({
+          ...state,
+          error: message,
+          message,
+          status: 'error'
+        });
+      }
+      if (!supabaseClient) {
+        return state;
+      }
+
+      const normalizedDisplayName = String(displayName ?? '').replace(/\s+/gu, ' ').trim().slice(0, 80);
+      emit({
+        ...state,
+        displayName: normalizedDisplayName || state.displayName || '',
+        error: '',
+        message: 'Creating guest account...',
+        status: 'guestCreating'
+      });
+
+      if (state.session && isAnonymousSession(state.session)) {
+        const { data, error } = normalizedDisplayName
+          ? await supabaseClient.auth.updateUser({
+            data: {
+              display_name: normalizedDisplayName
+            }
+          })
+          : { data: { user: state.user }, error: null };
+        if (error) {
+          return emit({
+            ...state,
+            error: error.message,
+            message: error.message,
+            status: 'error'
+          });
+        }
+
+        return setSession({
+          ...state.session,
+          user: data?.user ?? state.session.user
+        }, {
+          message: `Playing as ${normalizedDisplayName || state.displayName || 'guest'}.`
+        });
+      }
+
+      const { data, error } = await supabaseClient.auth.signInAnonymously({
+        options: {
+          data: normalizedDisplayName
+            ? {
+              display_name: normalizedDisplayName
+            }
+            : {}
+        }
+      });
+      if (error) {
+        console.warn('[Auth] Anonymous guest sign-in failed.', getSafeAuthErrorDetails(error));
+        return emit({
+          ...state,
+          error: error.message,
+          message: error.message,
+          status: 'error'
+        });
+      }
+
+      return setSession(data?.session ?? null, {
+        message: `Playing as ${normalizedDisplayName || 'guest'}.`
+      });
     },
 
     async signInWithEmail(email) {

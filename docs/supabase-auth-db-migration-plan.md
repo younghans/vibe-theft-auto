@@ -360,23 +360,26 @@ Notes:
 
 Goal: introduce a first-screen flow before world join where players choose a display name and decide whether to play as guest or sign in with Google.
 
-Status: planned.
+Status: in progress locally on 2026-05-20.
 
 Proposed flow:
 
 1. Show a main menu before connecting to Colyseus.
-2. Require or strongly prompt for a player name.
+2. Strongly prompt for a player name with an empty username field and a randomized placeholder.
 3. Offer two clear actions:
    - `Play as guest`
    - `Sign in with Google`
-4. For guests, store the chosen name locally and pass it as a sanitized join option.
-5. For signed-in players, use Google as the primary auth action and let the chosen name override or confirm the game display name.
-6. Server remains authoritative:
+4. Generate fallback names by independently choosing a first name and last name:
+   - first names: `JELK`, `BUNGUS`, `MEAT`, `DEEZ`, `MOIST`, `SIGNA`
+   - last names: `MASTER`, `CHUNKER`, `GOBLIN`, `MAXXER`, `RIZZLER`
+5. For guests, use Supabase anonymous sign-in so guest progress writes to permanent `player_saves`.
+6. For signed-in players, use Google as the primary auth action and let the chosen name seed the game display name.
+7. Server remains authoritative:
    - sanitize guest display names
    - upsert signed-in display names into `game_users`
    - keep `is_admin` server-owned
    - never trust browser-supplied admin state
-7. Later, decide whether signing in after guest play should offer to move the current guest progress into the account save.
+8. Later, add Google identity linking so an anonymous guest can upgrade the same account instead of copying saves.
 
 ## Useful Official Docs
 

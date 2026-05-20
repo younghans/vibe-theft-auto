@@ -74,6 +74,7 @@ function readPersistentPlayerId() {
 
 export async function createNpcService({
   accessToken = '',
+  displayName = '',
   endpoint = null,
   connectTimeoutMs = 1200,
   retryWindowMs = 2500,
@@ -86,7 +87,7 @@ export async function createNpcService({
 
   if (url.searchParams.get('npcTransport') === 'mock') {
     console.info('[NPC] Using local mock transport because ?npcTransport=mock is set.');
-    return new NpcServiceMock({ playerId });
+    return new NpcServiceMock({ displayName, playerId });
   }
 
   const deadline = performance.now() + retryWindowMs;
@@ -97,6 +98,7 @@ export async function createNpcService({
     attempt += 1;
     const service = new NpcServiceColyseus({
       accessToken,
+      displayName,
       endpoint: resolvedEndpoint,
       playerId
     });
@@ -133,5 +135,5 @@ export async function createNpcService({
     endpoint: resolvedEndpoint,
     reason
   });
-  return new NpcServiceMock({ playerId });
+  return new NpcServiceMock({ displayName, playerId });
 }

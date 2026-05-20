@@ -319,7 +319,7 @@ function getReconnectDelayMs(attempt) {
 }
 
 export class NpcServiceColyseus {
-  constructor({ endpoint, playerId = '', accessToken = '' }) {
+  constructor({ endpoint, playerId = '', accessToken = '', displayName = '' }) {
     const ClientCtor = globalThis.Colyseus?.Client;
     if (!ClientCtor) {
       throw new Error('Colyseus browser SDK is not loaded.');
@@ -328,6 +328,7 @@ export class NpcServiceColyseus {
     this.endpoint = endpoint;
     this.playerId = typeof playerId === 'string' ? playerId.trim() : '';
     this.accessToken = typeof accessToken === 'string' ? accessToken.trim() : '';
+    this.displayName = typeof displayName === 'string' ? displayName.trim() : '';
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
     this.combatListeners = new Set();
@@ -401,6 +402,7 @@ export class NpcServiceColyseus {
   getJoinOptions() {
     return {
       ...(this.accessToken ? { accessToken: this.accessToken } : {}),
+      ...(this.displayName ? { displayName: this.displayName } : {}),
       ...(this.playerId ? { playerId: this.playerId } : {})
     };
   }

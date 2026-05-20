@@ -464,7 +464,7 @@ function cloneNpcDebugState(debug = {}) {
 }
 
 export class NpcServiceMock {
-  constructor({ playerId = '' } = {}) {
+  constructor({ playerId = '', displayName = '' } = {}) {
     console.info('[NPC] Mock NPC service initialized.');
     this.listeners = new Set();
     this.worldPatchListeners = new Set();
@@ -501,10 +501,11 @@ export class NpcServiceMock {
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
     this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
+    this.displayName = typeof displayName === 'string' && displayName.trim() ? displayName.trim() : '';
     this.stockPortfolios.set(this.state.sessionId, readMockStockPortfolios(this.playerId));
     this.playerRuntimeMeta = new Map();
     this.playerAliasSequence += 1;
-    this.playerAliases.set(this.state.sessionId, `Player ${this.playerAliasSequence}`);
+    this.playerAliases.set(this.state.sessionId, this.displayName || `Player ${this.playerAliasSequence}`);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
     const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
     const introStartedAt = rentIntro ? Date.now() : 0;

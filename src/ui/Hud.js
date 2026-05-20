@@ -3651,6 +3651,11 @@ export class Hud {
     this.loadingProgressDelayTimeout = 0;
     this.loadingProgressLastFrameAt = 0;
     this.loadingProgressUnlockAt = performance.now() + 900;
+    this.mainMenu = this.loading.querySelector('[data-main-menu]');
+    this.mainMenuName = this.loading.querySelector('[data-main-menu-name]');
+    this.mainMenuGuest = this.loading.querySelector('[data-main-menu-guest]');
+    this.mainMenuGoogle = this.loading.querySelector('[data-main-menu-google]');
+    this.mainMenuCleanup = null;
     this.officeMopHeroPointerPosition = { x: 0, y: 0, inside: false };
     this.setLoadingProgress(0);
     this.overlay = this.createOverlay();
@@ -4084,10 +4089,149 @@ export class Hud {
             </span>
           </span>
         </h1>
+        <form class="loading__main-menu" data-main-menu hidden>
+          <input
+            class="loading__main-menu-input"
+            type="text"
+            maxlength="32"
+            autocomplete="nickname"
+            spellcheck="false"
+            data-main-menu-name
+            aria-label="Username"
+          />
+          <button class="loading__main-menu-button" type="submit" data-main-menu-guest>PLAY AS GUEST</button>
+          <button class="loading__main-menu-button loading__main-menu-button--google" type="button" data-main-menu-google>
+            <svg class="loading__main-menu-google-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="#4285F4" d="M21.8 12.2c0-.7-.1-1.3-.2-1.9H12v3.6h5.5a4.7 4.7 0 0 1-2 3.1v2.6h3.2c1.9-1.8 3.1-4.3 3.1-7.4z"/>
+              <path fill="#34A853" d="M12 22c2.7 0 5-0.9 6.7-2.4L15.5 17c-.9.6-2 1-3.5 1-2.7 0-4.9-1.8-5.7-4.2H3v2.7C4.7 19.8 8.1 22 12 22z"/>
+              <path fill="#FBBC05" d="M6.3 13.8A6 6 0 0 1 6 12c0-.6.1-1.2.3-1.8V7.5H3A10 10 0 0 0 2 12c0 1.6.4 3.1 1 4.5l3.3-2.7z"/>
+              <path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9C17 3 14.7 2 12 2 8.1 2 4.7 4.2 3 7.5l3.3 2.7C7.1 7.8 9.3 6 12 6z"/>
+            </svg>
+            <span>PLAY WITH GOOGLE</span>
+          </button>
+        </form>
       </div>
     `;
     this.root.append(node);
     return node;
+  }
+
+  hideMainMenu() {
+    this.mainMenuCleanup?.();
+    this.mainMenuCleanup = null;
+    this.loading?.classList.remove('has-main-menu');
+    if (this.mainMenu) {
+      this.mainMenu.hidden = true;
+    }
+    if (this.mainMenuName) {
+      this.mainMenuName.disabled = false;
+      this.mainMenuName.value = '';
+      this.mainMenuName.placeholder = '';
+    }
+    if (this.mainMenuGuest) {
+      this.mainMenuGuest.disabled = false;
+      this.mainMenuGuest.textContent = 'PLAY AS GUEST';
+    }
+    if (this.mainMenuGoogle) {
+      this.mainMenuGoogle.disabled = false;
+      const label = this.mainMenuGoogle.querySelector('span');
+      if (label) {
+        label.textContent = 'PLAY WITH GOOGLE';
+      }
+    }
+  }
+
+  setMainMenuBusy(action = '') {
+    if (!this.mainMenu || this.mainMenu.hidden) {
+      return;
+    }
+
+    if (this.mainMenuName) {
+      this.mainMenuName.disabled = true;
+    }
+    if (this.mainMenuGuest) {
+      this.mainMenuGuest.disabled = true;
+      this.mainMenuGuest.textContent = action === 'guest' ? 'CREATING GUEST' : 'PLAY AS GUEST';
+    }
+    if (this.mainMenuGoogle) {
+      this.mainMenuGoogle.disabled = true;
+      const label = this.mainMenuGoogle.querySelector('span');
+      if (label) {
+        label.textContent = action === 'google' ? 'OPENING GOOGLE' : 'PLAY WITH GOOGLE';
+      }
+    }
+  }
+
+  showMainMenu({ suggestedName = '', googleEnabled = true } = {}) {
+    this.hideMainMenu();
+    if (!this.mainMenu || !this.mainMenuName || !this.mainMenuGuest || !this.mainMenuGoogle) {
+      return Promise.resolve({
+        action: 'guest',
+        displayName: suggestedName
+      });
+    }
+
+    this.loading.hidden = false;
+    this.loading.classList.remove('is-dismissing', 'is-hidden');
+    this.loading.classList.add('has-main-menu');
+    this.loading.style.pointerEvents = '';
+    this.mainMenu.hidden = false;
+    this.mainMenuName.disabled = false;
+    this.mainMenuName.value = '';
+    this.mainMenuName.placeholder = suggestedName || 'USERNAME';
+    this.mainMenuGuest.disabled = false;
+    this.mainMenuGuest.textContent = 'PLAY AS GUEST';
+    this.mainMenuGoogle.disabled = !googleEnabled;
+    const googleLabel = this.mainMenuGoogle.querySelector('span');
+    if (googleLabel) {
+      googleLabel.textContent = 'PLAY WITH GOOGLE';
+    }
+
+    window.setTimeout(() => {
+      if (!this.mainMenu?.hidden) {
+        this.mainMenuName?.focus?.();
+      }
+    }, 0);
+
+    return new Promise((resolve) => {
+      const readDisplayName = () => this.mainMenuName.value.trim() || suggestedName || '';
+      const choose = (action) => {
+        this.mainMenuCleanup?.();
+        this.mainMenuCleanup = null;
+        this.setMainMenuBusy(action);
+        resolve({
+          action,
+          displayName: readDisplayName()
+        });
+      };
+      const handleSubmit = (event) => {
+        event.preventDefault();
+        if (!this.mainMenuGuest.disabled) {
+          choose('guest');
+        }
+      };
+      const handleGuest = (event) => {
+        event.preventDefault();
+        if (!this.mainMenuGuest.disabled) {
+          choose('guest');
+        }
+      };
+      const handleGoogle = (event) => {
+        event.preventDefault();
+        if (!this.mainMenuGoogle.disabled) {
+          choose('google');
+        }
+      };
+
+      this.mainMenu.addEventListener('submit', handleSubmit);
+      this.mainMenuGuest.addEventListener('click', handleGuest);
+      this.mainMenuGoogle.addEventListener('click', handleGoogle);
+      this.mainMenuCleanup = () => {
+        this.mainMenu?.removeEventListener('submit', handleSubmit);
+        this.mainMenuGuest?.removeEventListener('click', handleGuest);
+        this.mainMenuGoogle?.removeEventListener('click', handleGoogle);
+      };
+    });
   }
 
   buildEmoteWheel() {
@@ -10898,9 +11042,13 @@ export class Hud {
     const signedIn = authConfigured && authStatus === 'signedIn' && authState.user;
     const busy = authStatus === 'loading'
       || authStatus === 'redirecting'
+      || authStatus === 'guestCreating'
       || authStatus === 'signingOut';
     const email = typeof authState.user?.email === 'string' && authState.user.email
       ? authState.user.email
+      : '';
+    const displayName = typeof authState.displayName === 'string' && authState.displayName
+      ? authState.displayName
       : '';
     const statusText = (() => {
       if (!authConfigured) {
@@ -10925,7 +11073,7 @@ export class Hud {
         return 'Account sync unavailable.';
       }
       if (signedIn) {
-        return `Signed in as ${email || 'player'}.`;
+        return `Signed in as ${email || displayName || 'player'}.`;
       }
       return String(authState.message ?? '').trim() || 'Sign in with Google.';
     })();

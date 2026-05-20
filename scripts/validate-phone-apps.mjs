@@ -35,6 +35,7 @@ const stylesSource = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const colyseusNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceColyseus.js'), 'utf8');
 const mockNpcSource = fs.readFileSync(path.join(root, 'src/npc/NpcServiceMock.js'), 'utf8');
 const createNpcServiceSource = fs.readFileSync(path.join(root, 'src/npc/createNpcService.js'), 'utf8');
+const supabaseAuthSource = fs.readFileSync(path.join(root, 'src/auth/supabaseAuth.js'), 'utf8');
 const appConfigSource = fs.readFileSync(path.join(root, 'server/app.config.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'), 'utf8');
 
@@ -80,6 +81,15 @@ assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio s
 assert.match(hudSource, /data-phone-auth-google/, 'Settings account panel exposes Google sign-in');
 assert.doesNotMatch(hudSource, /data-phone-auth-email/, 'Settings account panel does not expose email magic-link sign-in');
 assert.match(gameSource, /handleAuthGoogleSignIn/, 'Game wires Google sign-in from the phone account panel');
+assert.match(hudSource, /data-main-menu/, 'Loading screen exposes the main menu');
+assert.match(hudSource, /PLAY AS GUEST/, 'Main menu exposes guest play');
+assert.match(hudSource, /PLAY WITH GOOGLE/, 'Main menu exposes Google play');
+assert.match(gameSource, /RANDOM_PLAYER_FIRST_NAMES[\s\S]*SIGNA/, 'Main menu fallback names choose random first names');
+assert.match(gameSource, /RANDOM_PLAYER_LAST_NAMES[\s\S]*RIZZLER/, 'Main menu fallback names choose random last names');
+assert.match(supabaseAuthSource, /signInAnonymously/, 'Guest play creates a Supabase anonymous auth session');
+assert.match(createNpcServiceSource, /displayName/, 'NPC service creation forwards player display names');
+assert.match(colyseusNpcSource, /displayName/, 'Colyseus joins include display names');
+assert.match(serverSource, /sanitizeJoinDisplayName/, 'Server sanitizes display names from joins');
 assert.match(gameSource, /getAdminAuthHeaders/, 'Game sends Supabase bearer auth to admin HTTP routes');
 assert.doesNotMatch(gameSource, /adminKey/, 'Game does not read or submit URL admin keys');
 assert.doesNotMatch(createNpcServiceSource, /adminKey/, 'NPC service creation does not read URL admin keys');

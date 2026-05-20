@@ -721,6 +721,14 @@ function sanitizeSnapshotString(value, fallback = '', maxLength = 240) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : fallback;
 }
 
+function sanitizeJoinDisplayName(value = '') {
+  const normalized = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]+/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return normalized ? normalized.slice(0, 32) : '';
+}
+
 function isSnapshotWeaponId(value = '') {
   return Object.values(WEAPON_IDS).includes(String(value ?? '').trim());
 }
@@ -1194,6 +1202,7 @@ export class WorldRoom extends Room {
     if (!accessToken) {
       return null;
     }
+    const displayName = sanitizeJoinDisplayName(options?.displayName);
 
     let authUser = null;
     try {
@@ -1209,7 +1218,7 @@ export class WorldRoom extends Room {
 
     let account = null;
     try {
-      account = await this.playerAccounts.ensureUser(authUser);
+      account = await this.playerAccounts.ensureUser(authUser, { displayName });
     } catch (error) {
       logServerError('room', 'Failed to ensure authenticated game user.', error, {
         roomId: this.roomId,
@@ -1233,6 +1242,7 @@ export class WorldRoom extends Room {
 
   async onJoin(client, options = {}) {
     const authenticatedAccount = await this.resolveAuthenticatedAccount(client, options);
+    const requestedDisplayName = sanitizeJoinDisplayName(options?.displayName);
     let playerSnapshotId = '';
     let playerSnapshot = null;
     let saveTarget = null;
@@ -1289,6 +1299,7 @@ export class WorldRoom extends Room {
       this.playerSnapshotIds.set(client.sessionId, playerSnapshotId);
       this.playerSnapshotSessions.set(playerSnapshotId, client.sessionId);
       saveTarget = {
+        displayName: requestedDisplayName,
         id: playerSnapshotId,
         kind: 'guest'
       };
@@ -1409,6 +1420,8 @@ export class WorldRoom extends Room {
     void this.savePlayerSnapshot(client.sessionId);
     if (authenticatedAccount?.displayName) {
       this.playerAliases.set(client.sessionId, authenticatedAccount.displayName);
+    } else if (requestedDisplayName) {
+      this.playerAliases.set(client.sessionId, requestedDisplayName);
     } else {
       this.playerAliasSequence += 1;
       this.playerAliases.set(client.sessionId, `Player ${this.playerAliasSequence}`);

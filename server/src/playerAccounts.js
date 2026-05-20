@@ -118,11 +118,20 @@ export class AccountSaveValidationError extends Error {
   }
 }
 
-function normalizeDisplayName(authUser = {}) {
+function normalizeDisplayNameValue(value = '', maxLength = 80) {
+  const normalized = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]+/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return normalized ? normalized.slice(0, maxLength) : '';
+}
+
+function normalizeDisplayName(authUser = {}, preferredDisplayName = '') {
   const metadata = authUser?.userMetadata && typeof authUser.userMetadata === 'object'
     ? authUser.userMetadata
     : {};
   const candidates = [
+    preferredDisplayName,
     metadata.display_name,
     metadata.full_name,
     metadata.name,
@@ -130,9 +139,9 @@ function normalizeDisplayName(authUser = {}) {
   ];
 
   for (const candidate of candidates) {
-    const value = String(candidate ?? '').trim();
+    const value = normalizeDisplayNameValue(candidate);
     if (value) {
-      return value.slice(0, 80);
+      return value;
     }
   }
 
@@ -336,24 +345,28 @@ class PostgresPlayerAccountStore {
     this.initialized = true;
   }
 
-  async ensureUser(authUser = {}) {
+  async ensureUser(authUser = {}, { displayName = '' } = {}) {
     const userId = normalizeUserId(authUser.id);
     if (!userId) {
       return null;
     }
 
     await this.initialize();
-    const displayName = normalizeDisplayName(authUser);
+    const preferredDisplayName = normalizeDisplayNameValue(displayName);
+    const normalizedDisplayName = normalizeDisplayName(authUser, preferredDisplayName);
     const result = await this.pool.query(
       `
         INSERT INTO public.game_users (id, display_name, last_seen_at)
         VALUES ($1, $2, NOW())
         ON CONFLICT (id) DO UPDATE
-        SET display_name = COALESCE(public.game_users.display_name, EXCLUDED.display_name),
+        SET display_name = CASE
+              WHEN $3::boolean THEN EXCLUDED.display_name
+              ELSE COALESCE(NULLIF(public.game_users.display_name, ''), EXCLUDED.display_name)
+            END,
             last_seen_at = NOW()
         RETURNING id, display_name, is_admin
       `,
-      [userId, displayName]
+      [userId, normalizedDisplayName, Boolean(preferredDisplayName)]
     );
 
     const row = result.rows[0];
@@ -470,8 +483,8 @@ class PlayerAccountManager {
     await this.store.initialize();
   }
 
-  async ensureUser(authUser) {
-    return this.store.ensureUser(authUser);
+  async ensureUser(authUser, options) {
+    return this.store.ensureUser(authUser, options);
   }
 
   async loadSave(userId) {
