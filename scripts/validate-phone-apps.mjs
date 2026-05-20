@@ -79,14 +79,17 @@ assert.match(stylesSource, /\.hud__money-net-worth\.is-down/, 'Main HUD net wort
 assert.match(hudSource, /data-phone-settings-app/, 'Settings app has dedicated phone markup');
 assert.match(hudSource, /data-phone-setting-audio/, 'Settings app has an audio slider');
 assert.match(hudSource, /data-phone-auth-google/, 'Settings account panel exposes Google sign-in');
+assert.match(hudSource, /Secure with Google/, 'Settings account panel can upgrade guest accounts with Google');
 assert.doesNotMatch(hudSource, /data-phone-auth-email/, 'Settings account panel does not expose email magic-link sign-in');
 assert.match(gameSource, /handleAuthGoogleSignIn/, 'Game wires Google sign-in from the phone account panel');
+assert.match(gameSource, /linkGoogleIdentity/, 'Anonymous guests upgrade through Google identity linking');
 assert.match(hudSource, /data-main-menu/, 'Loading screen exposes the main menu');
 assert.match(hudSource, /PLAY AS GUEST/, 'Main menu exposes guest play');
 assert.match(hudSource, /PLAY WITH GOOGLE/, 'Main menu exposes Google play');
 assert.match(gameSource, /RANDOM_PLAYER_FIRST_NAMES[\s\S]*SIGNA/, 'Main menu fallback names choose random first names');
 assert.match(gameSource, /RANDOM_PLAYER_LAST_NAMES[\s\S]*RIZZLER/, 'Main menu fallback names choose random last names');
 assert.match(supabaseAuthSource, /signInAnonymously/, 'Guest play creates a Supabase anonymous auth session');
+assert.match(supabaseAuthSource, /linkIdentity/, 'Guest-to-Google upgrade links identity without changing user ids');
 assert.match(createNpcServiceSource, /displayName/, 'NPC service creation forwards player display names');
 assert.match(colyseusNpcSource, /displayName/, 'Colyseus joins include display names');
 assert.match(serverSource, /sanitizeJoinDisplayName/, 'Server sanitizes display names from joins');

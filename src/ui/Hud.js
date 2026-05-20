@@ -11040,8 +11040,10 @@ export class Hud {
     const authConfigured = Boolean(authState.configured);
     const authStatus = String(authState.status ?? (authConfigured ? 'signedOut' : 'disabled'));
     const signedIn = authConfigured && authStatus === 'signedIn' && authState.user;
+    const anonymous = signedIn && authState.isAnonymous === true;
     const busy = authStatus === 'loading'
       || authStatus === 'redirecting'
+      || authStatus === 'linkingGoogle'
       || authStatus === 'guestCreating'
       || authStatus === 'signingOut';
     const email = typeof authState.user?.email === 'string' && authState.user.email
@@ -11054,10 +11056,13 @@ export class Hud {
       if (!authConfigured) {
         return 'Offline';
       }
+      if (anonymous) {
+        return 'Guest';
+      }
       if (signedIn) {
         return 'Signed in';
       }
-      if (authStatus === 'redirecting') {
+      if (authStatus === 'redirecting' || authStatus === 'linkingGoogle') {
         return 'Opening';
       }
       if (busy) {
@@ -11071,6 +11076,9 @@ export class Hud {
     const messageText = (() => {
       if (!authConfigured) {
         return 'Account sync unavailable.';
+      }
+      if (anonymous) {
+        return `Playing as ${displayName || 'guest'}.`;
       }
       if (signedIn) {
         return `Signed in as ${email || displayName || 'player'}.`;
@@ -11089,13 +11097,15 @@ export class Hud {
       authMessage.textContent = messageText;
     }
     if (authGoogleButton) {
-      authGoogleButton.hidden = signedIn || !authConfigured;
+      authGoogleButton.hidden = (signedIn && !anonymous) || !authConfigured;
       authGoogleButton.disabled = busy;
       const label = authGoogleButton.querySelector('span:last-child');
       if (label) {
-        label.textContent = authStatus === 'redirecting'
+        label.textContent = authStatus === 'redirecting' || authStatus === 'linkingGoogle'
           ? 'Opening Google'
-          : 'Continue with Google';
+          : anonymous
+            ? 'Secure with Google'
+            : 'Continue with Google';
       }
     }
     if (authSignOutButton) {

@@ -134,6 +134,15 @@ function getRedirectUrl() {
   }
 }
 
+function getGoogleOAuthOptions() {
+  return {
+    queryParams: {
+      prompt: 'select_account'
+    },
+    redirectTo: getRedirectUrl()
+  };
+}
+
 function getErrorMessage(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -459,14 +468,58 @@ export function createSupabaseAuthService() {
 
       const { error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          queryParams: {
-            prompt: 'select_account'
-          },
-          redirectTo: getRedirectUrl()
-        }
+        options: getGoogleOAuthOptions()
       });
       if (error) {
+        return emit({
+          ...state,
+          error: error.message,
+          message: error.message,
+          status: 'error'
+        });
+      }
+
+      return state;
+    },
+
+    async linkGoogleIdentity() {
+      if (!configured) {
+        return state;
+      }
+
+      let supabaseClient = null;
+      try {
+        supabaseClient = await getClient();
+      } catch (error) {
+        const message = getErrorMessage(error, 'Could not initialize Supabase auth.');
+        return emit({
+          ...state,
+          error: message,
+          message,
+          status: 'error'
+        });
+      }
+      if (!supabaseClient) {
+        return state;
+      }
+
+      if (!state.session || !isAnonymousSession(state.session)) {
+        return this.signInWithGoogle();
+      }
+
+      emit({
+        ...state,
+        error: '',
+        message: 'Opening Google...',
+        status: 'linkingGoogle'
+      });
+
+      const { error } = await supabaseClient.auth.linkIdentity({
+        provider: 'google',
+        options: getGoogleOAuthOptions()
+      });
+      if (error) {
+        console.warn('[Auth] Google account linking failed.', getSafeAuthErrorDetails(error));
         return emit({
           ...state,
           error: error.message,

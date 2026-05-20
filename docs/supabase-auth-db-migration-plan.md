@@ -379,7 +379,8 @@ Proposed flow:
    - upsert signed-in display names into `game_users`
    - keep `is_admin` server-owned
    - never trust browser-supplied admin state
-8. Later, add Google identity linking so an anonymous guest can upgrade the same account instead of copying saves.
+8. Add Google identity linking so an anonymous guest can upgrade the same Supabase user instead of copying saves.
+9. In Supabase Auth provider settings, enable manual identity linking before testing guest-to-Google upgrades.
 
 ## Useful Official Docs
 

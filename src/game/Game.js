@@ -3849,7 +3849,9 @@ export class Game {
   }
 
   async handleAuthGoogleSignIn() {
-    this.authState = await this.authService.signInWithGoogle();
+    this.authState = this.authState?.isAnonymous === true
+      ? await this.authService.linkGoogleIdentity()
+      : await this.authService.signInWithGoogle();
     this.refreshPhoneSettingsHud();
     if (this.authState.status === 'error' && this.authState.message) {
       this.hud.showToast(this.authState.message);
