@@ -9340,6 +9340,22 @@ body.is-admin-prompt-resizing * {
   box-shadow: 0 0 24px rgba(104, 224, 143, 0.22);
 }
 
+.hud__treadmill-run.is-countdown::before {
+  border-top-color: #f2c871;
+}
+
+.hud__treadmill-run-play.is-listen .hud__treadmill-run-hit,
+.hud__treadmill-run-play.is-countdown .hud__treadmill-run-hit {
+  border-color: rgba(242, 200, 113, 0.58);
+  box-shadow: 0 0 28px rgba(242, 200, 113, 0.2);
+}
+
+.hud__treadmill-run-play.is-listen .hud__treadmill-run-pulse,
+.hud__treadmill-run-play.is-countdown .hud__treadmill-run-pulse {
+  border-color: rgba(242, 200, 113, 0.24);
+  box-shadow: 0 0 28px rgba(242, 200, 113, 0.25);
+}
+
 .hud__treadmill-run-play.is-miss .hud__treadmill-run-hit,
 .hud__treadmill-run-play.is-early .hud__treadmill-run-hit,
 .hud__treadmill-run-play.is-late .hud__treadmill-run-hit {
