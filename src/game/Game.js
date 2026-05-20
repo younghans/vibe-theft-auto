@@ -179,6 +179,7 @@ import {
 } from '../shared/schoolMicrogames.js';
 import {
   createSchoolGeographyCountry,
+  createSchoolGeographyCountryChoices,
   isSchoolGeographyCountryAnswer
 } from '../shared/geographyCountries.js';
 import {
@@ -10884,6 +10885,32 @@ export class Game {
     return next;
   }
 
+  createSchoolGeographyChoiceSet(country = null) {
+    const choices = createSchoolGeographyCountryChoices({
+      country,
+      rng: () => this.schoolRandom(),
+      count: 4
+    });
+    const targetId = String(country?.id ?? '').trim();
+    const correctChoiceIndex = Math.max(
+      0,
+      choices.findIndex((choice) => String(choice?.id ?? '').trim() === targetId)
+    );
+    return { choices, correctChoiceIndex };
+  }
+
+  isSchoolGeographyChoiceCorrect(country = null, choice = null) {
+    if (!country || !choice) {
+      return false;
+    }
+    const countryId = String(country.id ?? '').trim();
+    const choiceId = String(choice.id ?? '').trim();
+    return Boolean(
+      (countryId && choiceId && countryId === choiceId)
+      || isSchoolGeographyCountryAnswer(country, choice.name)
+    );
+  }
+
   normalizeTeacherTypingText(value = '') {
     return String(value ?? '')
       .toUpperCase()
@@ -10928,7 +10955,11 @@ export class Game {
       data.correctImpactIndex = -1;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.geographyGlobe) {
       round.country = createSchoolGeographyCountry({ rng: () => this.schoolRandom() });
-      data.answerText = '';
+      const choiceSet = this.createSchoolGeographyChoiceSet(round.country);
+      round.choices = choiceSet.choices;
+      round.correctChoiceIndex = choiceSet.correctChoiceIndex;
+      data.selectedChoiceIndex = -1;
+      data.wrongChoiceIndexes = [];
       data.lastGuess = '';
       data.wrongCount = 0;
       data.answerLocked = false;
@@ -11131,7 +11162,13 @@ export class Game {
       if (!this.schoolMicrogame.round.country) {
         this.schoolMicrogame.round.country = createSchoolGeographyCountry({ rng: () => this.schoolRandom() });
       }
-      this.schoolMicrogame.data.answerText = '';
+      if (!Array.isArray(this.schoolMicrogame.round.choices) || this.schoolMicrogame.round.choices.length !== 4) {
+        const choiceSet = this.createSchoolGeographyChoiceSet(this.schoolMicrogame.round.country);
+        this.schoolMicrogame.round.choices = choiceSet.choices;
+        this.schoolMicrogame.round.correctChoiceIndex = choiceSet.correctChoiceIndex;
+      }
+      this.schoolMicrogame.data.selectedChoiceIndex = -1;
+      this.schoolMicrogame.data.wrongChoiceIndexes = [];
       this.schoolMicrogame.data.lastGuess = '';
       this.schoolMicrogame.data.wrongCount = 0;
       this.schoolMicrogame.data.answerLocked = false;
@@ -11918,23 +11955,8 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
-      if (action.startsWith('geography:answer:')) {
-        const encoded = action.slice('geography:answer:'.length);
-        let answer = encoded;
-        try {
-          answer = decodeURIComponent(encoded);
-        } catch {
-          answer = encoded;
-        }
-        this.setSchoolGeographyAnswer(answer);
-        return;
-      }
-      if (action === 'geography:clear') {
-        this.setSchoolGeographyAnswer('');
-        return;
-      }
-      if (action === 'geography:submit') {
-        this.submitSchoolGeographyAnswer();
+      if (action.startsWith('geography:choice:')) {
+        this.chooseSchoolGeographyAnswer(action.slice('geography:choice:'.length));
       }
       return;
     }
@@ -12107,12 +12129,29 @@ export class Game {
     this.syncSchoolMicrogameHud();
   }
 
-  sanitizeSchoolGeographyAnswer(value = '') {
-    return String(value ?? '')
-      .normalize('NFKC')
-      .replace(/[^\p{L}\p{M}\s'.-]+/gu, '')
-      .replace(/\s+/gu, ' ')
-      .slice(0, 54);
+  getSchoolGeographyChoices(game = this.schoolMicrogame) {
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe) {
+      return [];
+    }
+    let country = game.round.country;
+    if (!country) {
+      country = createSchoolGeographyCountry({ rng: () => this.schoolRandom() });
+      game.round.country = country;
+    }
+    let choices = Array.isArray(game.round.choices) ? game.round.choices : [];
+    const hasCorrectChoice = choices.some((choice) => this.isSchoolGeographyChoiceCorrect(country, choice));
+    if (choices.length !== 4 || !hasCorrectChoice) {
+      const choiceSet = this.createSchoolGeographyChoiceSet(country);
+      game.round.choices = choiceSet.choices;
+      game.round.correctChoiceIndex = choiceSet.correctChoiceIndex;
+      choices = choiceSet.choices;
+    } else {
+      game.round.correctChoiceIndex = Math.max(
+        0,
+        choices.findIndex((choice) => this.isSchoolGeographyChoiceCorrect(country, choice))
+      );
+    }
+    return choices;
   }
 
   isSchoolGeographyRevealActive(game = this.schoolMicrogame) {
@@ -12191,7 +12230,7 @@ export class Game {
     return true;
   }
 
-  setSchoolGeographyAnswer(value = '') {
+  chooseSchoolGeographyAnswer(choiceIndexValue = '') {
     const game = this.schoolMicrogame;
     if (
       !game
@@ -12202,8 +12241,45 @@ export class Game {
       return;
     }
 
-    game.data.answerText = this.sanitizeSchoolGeographyAnswer(value);
+    const choices = this.getSchoolGeographyChoices(game);
+    const choiceIndex = Math.floor(Number(choiceIndexValue));
+    const choice = choices[choiceIndex];
+    if (!choice) {
+      return;
+    }
+
+    const wrongChoiceIndexes = new Set(
+      Array.isArray(game.data.wrongChoiceIndexes)
+        ? game.data.wrongChoiceIndexes.map((index) => Math.floor(Number(index))).filter((index) => Number.isFinite(index))
+        : []
+    );
+    if (wrongChoiceIndexes.has(choiceIndex)) {
+      return;
+    }
+
+    const country = game.round.country;
+    const choiceName = String(choice.name ?? '').trim();
+    game.data.selectedChoiceIndex = choiceIndex;
+    game.data.lastGuess = choiceName;
+    game.data.answerLocked = true;
+
+    if (this.isSchoolGeographyChoiceCorrect(country, choice)) {
+      this.startSchoolGeographyAnswerReveal({
+        success: true,
+        resultTitle: 'Nice job!',
+        resultDetail: `The pinpoint was ${country?.name ?? 'the right country'}.`
+      });
+      return;
+    }
+
+    wrongChoiceIndexes.add(choiceIndex);
+    game.data.wrongChoiceIndexes = [...wrongChoiceIndexes].sort((left, right) => left - right);
+    game.data.wrongCount = game.data.wrongChoiceIndexes.length;
     game.data.answerLocked = false;
+    game.message = game.data.wrongCount >= 2
+      ? 'Still not it. Check the needle and try another country.'
+      : 'Not that country. Try another choice.';
+    this.playSoundEffect(this.playingCardSound);
     this.syncSchoolMicrogameHud();
   }
 
@@ -12218,65 +12294,13 @@ export class Game {
       return;
     }
 
-    const inputKey = String(key ?? '');
-    if (inputKey === 'Enter') {
-      this.submitSchoolGeographyAnswer();
+    const inputKey = String(key ?? '').trim();
+    const choiceNumber = Math.floor(Number(inputKey));
+    if (!Number.isInteger(choiceNumber) || choiceNumber < 1 || choiceNumber > 4) {
       return;
     }
 
-    const current = String(game.data.answerText ?? '');
-    if (inputKey === 'Backspace') {
-      this.setSchoolGeographyAnswer(current.slice(0, -1));
-      return;
-    }
-
-    if (inputKey === ' ') {
-      this.setSchoolGeographyAnswer(`${current} `);
-      return;
-    }
-
-    if (/^[A-Z]$/u.test(inputKey)) {
-      this.setSchoolGeographyAnswer(`${current}${inputKey}`);
-    }
-  }
-
-  submitSchoolGeographyAnswer() {
-    const game = this.schoolMicrogame;
-    if (
-      !game
-      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
-      || game.phase !== 'playing'
-      || game.data?.revealActive === true
-    ) {
-      return;
-    }
-
-    const guess = this.sanitizeSchoolGeographyAnswer(game.data.answerText).trim();
-    if (!guess) {
-      game.message = 'Type a country name first.';
-      this.syncSchoolMicrogameHud();
-      return;
-    }
-
-    const country = game.round.country;
-    game.data.lastGuess = guess;
-    game.data.answerLocked = true;
-    if (isSchoolGeographyCountryAnswer(country, guess)) {
-      this.startSchoolGeographyAnswerReveal({
-        success: true,
-        resultTitle: 'Nice job!',
-        resultDetail: `The pinpoint was ${country?.name ?? 'the right country'}.`
-      });
-      return;
-    }
-
-    game.data.wrongCount = Math.max(0, Math.floor(Number(game.data.wrongCount ?? 0) || 0)) + 1;
-    game.data.answerLocked = false;
-    game.message = game.data.wrongCount >= 2
-      ? 'Still not it. Check the pin and try another country.'
-      : 'Not that country. Try again.';
-    this.playSoundEffect(this.playingCardSound);
-    this.syncSchoolMicrogameHud();
+    this.chooseSchoolGeographyAnswer(choiceNumber - 1);
   }
 
   handleSortBackpackAction(action = '') {
@@ -12501,28 +12525,26 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
-      const typingCodes = ['Backspace', 'Space', 'Enter', 'NumpadEnter'];
-      for (let charCode = 65; charCode <= 90; charCode += 1) {
-        typingCodes.push(`Key${String.fromCharCode(charCode)}`);
-      }
+      const choiceCodes = [
+        'Digit1',
+        'Digit2',
+        'Digit3',
+        'Digit4',
+        'Numpad1',
+        'Numpad2',
+        'Numpad3',
+        'Numpad4'
+      ];
 
       for (let index = 0; index < 32; index += 1) {
-        const keyEvent = this.input.consumeNextKeyEvent(typingCodes);
+        const keyEvent = this.input.consumeNextKeyEvent(choiceCodes);
         if (!keyEvent) {
           return;
         }
 
         const code = keyEvent.code;
-        if (code === 'Enter' || code === 'NumpadEnter') {
-          this.pushSchoolGeographyKey('Enter');
-          return;
-        }
-        if (code === 'Backspace') {
-          this.pushSchoolGeographyKey('Backspace');
-        } else if (code === 'Space') {
-          this.pushSchoolGeographyKey(' ');
-        } else if (code.startsWith('Key')) {
-          this.pushSchoolGeographyKey(code.slice(3));
+        if (code.startsWith('Digit') || code.startsWith('Numpad')) {
+          this.pushSchoolGeographyKey(code.slice(-1));
         }
 
         if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {

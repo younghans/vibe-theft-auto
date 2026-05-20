@@ -2079,10 +2079,16 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
     const country = round.country ?? {};
+    const choices = Array.isArray(round.choices) ? round.choices : [];
+    const wrongChoiceIndexes = Array.isArray(data.wrongChoiceIndexes) ? data.wrongChoiceIndexes : [];
     base.push(
       String(country.id ?? country.name ?? ''),
       String(Number.isFinite(Number(country.lat)) ? Number(country.lat).toFixed(4) : ''),
       String(Number.isFinite(Number(country.lon)) ? Number(country.lon).toFixed(4) : ''),
+      choices.map((choice) => String(choice?.id ?? choice?.name ?? '')).join(','),
+      String(Number(round.correctChoiceIndex ?? -1)),
+      String(Number(data.selectedChoiceIndex ?? -1)),
+      wrongChoiceIndexes.join(','),
       String(data.lastGuess ?? ''),
       String(Number(data.wrongCount ?? 0) || 0),
       String(Boolean(data.answerLocked)),
@@ -2542,26 +2548,34 @@ function createTeacherLookingMarkup(game = null) {
 }
 
 function createGeographyGlobeMarkup(game = null) {
+  const round = game?.round ?? {};
   const data = game?.data ?? {};
-  const answer = String(data.answerText ?? '');
+  const choices = Array.isArray(round.choices) ? round.choices : [];
+  const selectedChoiceIndex = Math.floor(Number(data.selectedChoiceIndex ?? -1));
+  const wrongChoiceIndexes = new Set(
+    Array.isArray(data.wrongChoiceIndexes)
+      ? data.wrongChoiceIndexes.map((index) => Math.floor(Number(index))).filter((index) => Number.isFinite(index))
+      : []
+  );
+  const correctChoiceIndex = Math.floor(Number(round.correctChoiceIndex ?? -1));
   const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
   const lastGuess = String(data.lastGuess ?? '').trim();
   const revealActive = data.revealActive === true;
   const revealSuccess = data.revealSuccess === true;
-  const revealAnswer = revealActive ? String(data.revealAnswer || game?.round?.country?.name || '') : '';
+  const revealAnswer = revealActive ? String(data.revealAnswer || round.country?.name || '') : '';
   const revealLabel = revealSuccess ? 'Nice job!' : 'Correct answer';
-  const submitDisabled = revealActive || answer.trim().length <= 0 || data.answerLocked === true;
   const lastGuessLabel = revealActive
     ? (revealSuccess ? 'Correct' : 'Answer revealed')
-    : (lastGuess ? `Last: ${lastGuess}` : 'Pin active');
+    : (lastGuess ? `Last: ${lastGuess}` : 'Needle active');
   const rootClass = `hud__school-geography${revealActive ? ' is-revealing' : ''}${revealSuccess ? ' is-reveal-success' : ''}`;
 
   return `
     <div class="${rootClass}">
       <div class="hud__school-geo-stage">
-        <div class="hud__school-geo-globe" data-school-geography-globe aria-label="Interactive globe with country boundaries and a red pinpoint">
+        <div class="hud__school-geo-globe" data-school-geography-globe aria-label="Interactive globe with country boundaries, highlighted target country, and pointer needle">
           <div class="hud__school-geo-fallback" aria-hidden="true">
             <span class="hud__school-geo-fallback-globe"></span>
+            <span class="hud__school-geo-fallback-highlight"></span>
             <span class="hud__school-geo-fallback-pin"></span>
           </div>
         </div>
@@ -2570,38 +2584,38 @@ function createGeographyGlobeMarkup(game = null) {
           <strong data-school-geography-correct-answer>${escapeHtml(revealAnswer)}</strong>
         </div>
       </div>
-      <form class="hud__school-geo-answer-panel" data-school-geography-form>
+      <div class="hud__school-geo-answer-panel">
         <div class="hud__school-instructions">
           <span>Geography class</span>
-          <strong>Type the country under the red pin.</strong>
+          <strong>Choose the country at the needle tip.</strong>
         </div>
-        <label class="hud__school-geo-answer-label">
-          <span>Answer</span>
-          <input
-            class="hud__school-geo-answer-input"
-            data-school-geography-answer
-            type="text"
-            maxlength="54"
-            autocomplete="off"
-            spellcheck="false"
-            value="${escapeHtml(answer)}"
-            placeholder="Country name"
-            ${revealActive || data.answerLocked === true ? 'disabled' : ''}
-          >
-        </label>
-        <div class="hud__school-geo-answer-readout">
-          <span>Typed</span>
-          <strong data-school-geography-answer-display>${answer ? escapeHtml(answer) : '&nbsp;'}</strong>
+        <div class="hud__school-geo-choice-grid" role="group" aria-label="Country choices">
+          ${choices.map((choice, index) => {
+            const isSelected = selectedChoiceIndex === index;
+            const isWrong = wrongChoiceIndexes.has(index);
+            const isCorrect = revealActive && index === correctChoiceIndex;
+            const disabled = revealActive || data.answerLocked === true || isWrong;
+            const stateClass = `${isSelected ? ' is-selected' : ''}${isWrong ? ' is-wrong' : ''}${isCorrect ? ' is-correct' : ''}`;
+            return `
+              <button
+                class="hud__school-action hud__school-geo-choice${stateClass}"
+                type="button"
+                data-school-microgame-action="geography:choice:${escapeHtml(String(index))}"
+                data-school-geography-choice="${escapeHtml(String(index))}"
+                aria-pressed="${isSelected ? 'true' : 'false'}"
+                ${disabled ? 'disabled' : ''}
+              >
+                <span>${escapeHtml(String(index + 1))}</span>
+                <strong>${escapeHtml(String(choice?.name ?? 'Country'))}</strong>
+              </button>
+            `;
+          }).join('')}
         </div>
         <div class="hud__school-score-strip">
           <span data-school-geography-wrong>${escapeHtml(String(wrongCount))} wrong</span>
           <span data-school-geography-last>${escapeHtml(lastGuessLabel)}</span>
         </div>
-        <div class="hud__school-dual-actions">
-          <button class="hud__school-action is-primary hud__school-geo-submit" type="submit" data-school-geography-submit${submitDisabled ? ' disabled' : ''}>Submit</button>
-          ${createSchoolGameButton('geography:clear', 'Clear', 'hud__school-geo-clear', { disabled: revealActive || !answer.trim() })}
-        </div>
-      </form>
+      </div>
     </div>
   `;
 }
@@ -3185,8 +3199,14 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
   }
 
   const data = game.data ?? {};
-  const answer = String(data.answerText ?? '');
-  const answerText = answer.trim();
+  const choices = Array.isArray(game.round?.choices) ? game.round.choices : [];
+  const selectedChoiceIndex = Math.floor(Number(data.selectedChoiceIndex ?? -1));
+  const wrongChoiceIndexes = new Set(
+    Array.isArray(data.wrongChoiceIndexes)
+      ? data.wrongChoiceIndexes.map((index) => Math.floor(Number(index))).filter((index) => Number.isFinite(index))
+      : []
+  );
+  const correctChoiceIndex = Math.floor(Number(game.round?.correctChoiceIndex ?? -1));
   const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
   const lastGuess = String(data.lastGuess ?? '').trim();
   const revealActive = data.revealActive === true;
@@ -3194,22 +3214,23 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
   const revealAnswer = revealActive ? String(data.revealAnswer || game.round?.country?.name || '') : '';
   const lastGuessLabel = revealActive
     ? (revealSuccess ? 'Correct' : 'Answer revealed')
-    : (lastGuess ? `Last: ${lastGuess}` : 'Pin active');
+    : (lastGuess ? `Last: ${lastGuess}` : 'Needle active');
 
   task.classList.toggle('is-revealing', revealActive);
   task.classList.toggle('is-reveal-success', revealSuccess);
 
-  const input = task.querySelector('[data-school-geography-answer]');
-  if (input && document.activeElement !== input && 'value' in input && input.value !== answer) {
-    input.value = answer;
-  }
-  if (input && 'disabled' in input) {
-    input.disabled = revealActive || data.answerLocked === true;
-  }
-
-  const answerDisplay = task.querySelector('[data-school-geography-answer-display]');
-  if (answerDisplay) {
-    answerDisplay.textContent = answer || '\u00a0';
+  for (const button of task.querySelectorAll('[data-school-geography-choice]')) {
+    const choiceIndex = Math.floor(Number(button.getAttribute('data-school-geography-choice') ?? -1));
+    const isSelected = selectedChoiceIndex === choiceIndex;
+    const isWrong = wrongChoiceIndexes.has(choiceIndex);
+    const isCorrect = revealActive && choiceIndex === correctChoiceIndex;
+    button.classList.toggle('is-selected', isSelected);
+    button.classList.toggle('is-wrong', isWrong);
+    button.classList.toggle('is-correct', isCorrect);
+    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    if ('disabled' in button) {
+      button.disabled = revealActive || data.answerLocked === true || isWrong || !choices[choiceIndex];
+    }
   }
 
   const wrongLabel = task.querySelector('[data-school-geography-wrong]');
@@ -3220,16 +3241,6 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
   const lastLabel = task.querySelector('[data-school-geography-last]');
   if (lastLabel) {
     lastLabel.textContent = lastGuessLabel;
-  }
-
-  const submitButton = task.querySelector('[data-school-geography-submit]');
-  if (submitButton && 'disabled' in submitButton) {
-    submitButton.disabled = revealActive || answerText.length <= 0 || data.answerLocked === true;
-  }
-
-  const clearButton = task.querySelector('[data-school-microgame-action="geography:clear"]');
-  if (clearButton && 'disabled' in clearButton) {
-    clearButton.disabled = revealActive || answerText.length <= 0;
   }
 
   const reveal = task.querySelector('[data-school-geography-reveal]');
@@ -7951,29 +7962,6 @@ export class Hud {
       onAction?.(actionTarget.getAttribute('data-school-microgame-action') ?? '');
     });
 
-    this.schoolMicrogameRoot?.addEventListener('submit', (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target?.matches('[data-school-geography-form]')) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      onAction?.('geography:submit');
-    });
-
-    this.schoolMicrogameRoot?.addEventListener('input', (event) => {
-      const target = event.target instanceof Element
-        ? event.target
-        : event.target?.parentElement ?? null;
-      const input = target?.closest('[data-school-geography-answer]');
-      if (!input || !('value' in input)) {
-        return;
-      }
-
-      onAction?.(`geography:answer:${encodeURIComponent(input.value)}`);
-    });
-
     let holdPointerActive = false;
 
     this.schoolMicrogameRoot?.addEventListener('pointerdown', (event) => {
@@ -9910,21 +9898,21 @@ export class Hud {
     this.renderSchoolMicrogame();
   }
 
-  focusSchoolGeographyAnswerInput(game = this.schoolMicrogameState.game) {
+  focusSchoolGeographyChoice(game = this.schoolMicrogameState.game) {
     if (game?.phase !== 'playing' || game?.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe) {
       return;
     }
 
-    const input = this.schoolMicrogameBody?.querySelector('[data-school-geography-answer]');
-    if (!input || input.disabled || document.activeElement === input) {
+    const choice = this.schoolMicrogameBody?.querySelector('[data-school-geography-choice]:not(:disabled)');
+    if (!choice || document.activeElement === choice) {
       return;
     }
 
     window.setTimeout(() => {
-      if (!this.schoolMicrogameVisible || input.disabled || document.activeElement === input) {
+      if (!this.schoolMicrogameVisible || choice.disabled || document.activeElement === choice) {
         return;
       }
-      input.focus?.({ preventScroll: true });
+      choice.focus?.({ preventScroll: true });
     }, 0);
   }
 
@@ -9982,7 +9970,7 @@ export class Hud {
     }
     updateSchoolMicrogameLiveMarkup(this.schoolMicrogameBody, game);
     if (bodyRendered) {
-      this.focusSchoolGeographyAnswerInput(game);
+      this.focusSchoolGeographyChoice(game);
     }
 
     if (this.schoolMicrogameMessage) {

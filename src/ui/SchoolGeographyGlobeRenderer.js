@@ -20,6 +20,11 @@ const GLOBE_PITCH_MIN = THREE.MathUtils.degToRad(-74);
 const GLOBE_PITCH_MAX = THREE.MathUtils.degToRad(74);
 const PIN_COLOR = 0xff3f5f;
 const PIN_EMISSIVE = 0x8f1028;
+const PIN_NEEDLE_COLOR = 0xffe0e7;
+const PIN_NEEDLE_TIP_GAP = 0.018;
+const PIN_NEEDLE_TIP_LENGTH = 0.15;
+const PIN_NEEDLE_LENGTH = 0.58;
+const TARGET_HIGHLIGHT_COLOR = 0xffcf56;
 const DEFAULT_TARGET = Object.freeze({
   id: 'usa',
   name: 'United States',
@@ -89,7 +94,43 @@ function drawTextureGraticule(context) {
   context.restore();
 }
 
-function drawGlobeTexture(canvas, countryPath) {
+function getCountryTexturePoint(country = DEFAULT_TARGET) {
+  const lat = THREE.MathUtils.clamp(Number(country?.lat ?? DEFAULT_TARGET.lat) || 0, -88, 88);
+  const lon = Number(country?.lon ?? DEFAULT_TARGET.lon) || 0;
+  return {
+    x: ((lon + 180) % 360 + 360) % 360,
+    y: THREE.MathUtils.clamp(90 - lat, 0, 180),
+    lat
+  };
+}
+
+function drawTargetCountryHighlight(context, country = DEFAULT_TARGET) {
+  const point = getCountryTexturePoint(country);
+  const latitudeScale = 1 + Math.min(0.85, Math.abs(point.lat) / 110);
+  const radiusX = Math.max(4.8, 6.8 * latitudeScale);
+  const radiusY = 5.2;
+
+  context.save();
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  for (const offset of [-360, 0, 360]) {
+    const x = point.x + offset;
+    const gradient = context.createRadialGradient(x, point.y, 0, x, point.y, radiusX * 1.55);
+    gradient.addColorStop(0, 'rgba(255, 236, 140, 0.94)');
+    gradient.addColorStop(0.55, 'rgba(255, 207, 86, 0.72)');
+    gradient.addColorStop(1, 'rgba(255, 207, 86, 0)');
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.ellipse(x, point.y, radiusX, radiusY, THREE.MathUtils.degToRad(-8), 0, Math.PI * 2);
+    context.fill();
+    context.lineWidth = 0.62;
+    context.strokeStyle = 'rgba(255, 252, 204, 0.86)';
+    context.stroke();
+  }
+  context.restore();
+}
+
+function drawGlobeTexture(canvas, countryPath, highlightedCountry = DEFAULT_TARGET) {
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
 
@@ -107,6 +148,12 @@ function drawGlobeTexture(canvas, countryPath) {
     context.scale(TEXTURE_WIDTH / 360, TEXTURE_HEIGHT / 180);
     context.fillStyle = '#8ab36f';
     context.fill(countryPath, 'evenodd');
+    if (highlightedCountry) {
+      context.save();
+      context.clip(countryPath, 'evenodd');
+      drawTargetCountryHighlight(context, highlightedCountry);
+      context.restore();
+    }
     context.lineJoin = 'round';
     context.lineCap = 'round';
     context.lineWidth = 0.42;
@@ -115,6 +162,11 @@ function drawGlobeTexture(canvas, countryPath) {
     context.lineWidth = 0.15;
     context.strokeStyle = 'rgba(242, 255, 225, 0.74)';
     context.stroke(countryPath);
+    context.restore();
+  } else if (highlightedCountry) {
+    context.save();
+    context.scale(TEXTURE_WIDTH / 360, TEXTURE_HEIGHT / 180);
+    drawTargetCountryHighlight(context, highlightedCountry);
     context.restore();
   }
 
@@ -168,6 +220,7 @@ export class SchoolGeographyGlobeRenderer {
     this.lastPinchDistance = 0;
     this.elapsed = 0;
     this.size = new THREE.Vector2(0, 0);
+    this.countryPath = createCountryPath();
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 80);
@@ -190,7 +243,7 @@ export class SchoolGeographyGlobeRenderer {
     this.textureCanvas = document.createElement('canvas');
     this.textureCanvas.width = TEXTURE_WIDTH;
     this.textureCanvas.height = TEXTURE_HEIGHT;
-    drawGlobeTexture(this.textureCanvas, createCountryPath());
+    drawGlobeTexture(this.textureCanvas, this.countryPath, DEFAULT_TARGET);
     this.globeTexture = new THREE.CanvasTexture(this.textureCanvas);
     this.globeTexture.colorSpace = THREE.SRGBColorSpace;
     this.globeTexture.anisotropy = 4;
@@ -327,6 +380,11 @@ export class SchoolGeographyGlobeRenderer {
     this.mountNode?.classList.toggle('is-interacting', this.activePointers.size > 0 && !this.revealActive);
   }
 
+  updateGlobeTexture(country = DEFAULT_TARGET) {
+    drawGlobeTexture(this.textureCanvas, this.countryPath, country);
+    this.globeTexture.needsUpdate = true;
+  }
+
   buildScene() {
     this.scene.add(new THREE.HemisphereLight(0xdff9ff, 0x11343e, 1.85));
 
@@ -365,6 +423,29 @@ export class SchoolGeographyGlobeRenderer {
     );
     this.scene.add(this.atmosphere);
 
+    this.targetHighlight = new THREE.Mesh(
+      new THREE.CircleGeometry(0.27, 64),
+      new THREE.MeshBasicMaterial({
+        color: TARGET_HIGHLIGHT_COLOR,
+        transparent: true,
+        opacity: 0.48,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    this.targetHighlight.renderOrder = 2;
+    this.targetHighlightRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.282, 0.009, 10, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff4b0,
+        transparent: true,
+        opacity: 0.78,
+        depthWrite: false
+      })
+    );
+    this.targetHighlightRing.renderOrder = 3;
+    this.globePivot.add(this.targetHighlight, this.targetHighlightRing);
+
     this.pinGroup = new THREE.Group();
     this.globePivot.add(this.pinGroup);
 
@@ -375,18 +456,17 @@ export class SchoolGeographyGlobeRenderer {
       roughness: 0.34,
       metalness: 0.02
     });
-    this.pinTip = new THREE.Mesh(new THREE.ConeGeometry(0.082, 0.34, 32), pinMaterial);
-    this.pinHead = new THREE.Mesh(new THREE.SphereGeometry(0.12, 32, 20), pinMaterial);
-    this.pinRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.185, 0.014, 10, 54),
-      new THREE.MeshBasicMaterial({
-        color: PIN_COLOR,
-        transparent: true,
-        opacity: 0.82,
-        depthWrite: false
-      })
-    );
-    this.pinGroup.add(this.pinTip, this.pinHead, this.pinRing);
+    const needleMaterial = new THREE.MeshStandardMaterial({
+      color: PIN_NEEDLE_COLOR,
+      emissive: PIN_EMISSIVE,
+      emissiveIntensity: 0.3,
+      roughness: 0.22,
+      metalness: 0.08
+    });
+    this.pinTip = new THREE.Mesh(new THREE.ConeGeometry(0.034, PIN_NEEDLE_TIP_LENGTH, 24), needleMaterial);
+    this.pinNeedle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, PIN_NEEDLE_LENGTH, 18), needleMaterial);
+    this.pinHead = new THREE.Mesh(new THREE.SphereGeometry(0.078, 32, 18), pinMaterial);
+    this.pinGroup.add(this.pinTip, this.pinNeedle, this.pinHead);
 
     this.pinLight = new THREE.PointLight(PIN_COLOR, 1.45, 3.8);
     this.pinGroup.add(this.pinLight);
@@ -456,9 +536,11 @@ export class SchoolGeographyGlobeRenderer {
     this.targetCountryId = nextId;
     this.targetCountry = country;
     this.resetViewOnNextTarget = false;
+    this.updateGlobeTexture(country);
 
     const surface = getCountryVector(country, GLOBE_RADIUS);
     const normal = surface.clone().normalize();
+    const inwardNormal = normal.clone().multiplyScalar(-1);
     const focus = getCountryFocusAngles(country);
     this.targetYaw = focus.yaw;
     this.targetPitch = focus.pitch;
@@ -471,12 +553,19 @@ export class SchoolGeographyGlobeRenderer {
       this.targetCameraDistance = CAMERA_DEFAULT_DISTANCE;
     }
 
-    this.pinTip.position.copy(normal).multiplyScalar(GLOBE_RADIUS + 0.13);
-    this.pinTip.quaternion.setFromUnitVectors(UP_VECTOR, normal);
-    this.pinHead.position.copy(normal).multiplyScalar(GLOBE_RADIUS + 0.33);
-    this.pinRing.position.copy(normal).multiplyScalar(GLOBE_RADIUS + 0.028);
-    this.pinRing.quaternion.setFromUnitVectors(FORWARD_VECTOR, normal);
-    this.pinLight.position.copy(normal).multiplyScalar(0.44);
+    const tipCenterDistance = GLOBE_RADIUS + PIN_NEEDLE_TIP_GAP + (PIN_NEEDLE_TIP_LENGTH * 0.5);
+    const needleCenterDistance = GLOBE_RADIUS + PIN_NEEDLE_TIP_GAP + PIN_NEEDLE_TIP_LENGTH + (PIN_NEEDLE_LENGTH * 0.5);
+    const headDistance = GLOBE_RADIUS + PIN_NEEDLE_TIP_GAP + PIN_NEEDLE_TIP_LENGTH + PIN_NEEDLE_LENGTH + 0.08;
+    this.pinTip.position.copy(normal).multiplyScalar(tipCenterDistance);
+    this.pinTip.quaternion.setFromUnitVectors(UP_VECTOR, inwardNormal);
+    this.pinNeedle.position.copy(normal).multiplyScalar(needleCenterDistance);
+    this.pinNeedle.quaternion.setFromUnitVectors(UP_VECTOR, normal);
+    this.pinHead.position.copy(normal).multiplyScalar(headDistance);
+    this.targetHighlight.position.copy(normal).multiplyScalar(GLOBE_RADIUS + 0.014);
+    this.targetHighlight.quaternion.setFromUnitVectors(FORWARD_VECTOR, normal);
+    this.targetHighlightRing.position.copy(normal).multiplyScalar(GLOBE_RADIUS + 0.018);
+    this.targetHighlightRing.quaternion.setFromUnitVectors(FORWARD_VECTOR, normal);
+    this.pinLight.position.copy(normal).multiplyScalar(headDistance + 0.08);
   }
 
   resizeToMount() {
@@ -536,9 +625,12 @@ export class SchoolGeographyGlobeRenderer {
 
     this.globePivot.rotation.set(this.viewPitch, this.viewYaw, 0);
     this.atmosphere.rotation.y -= dt * 0.08;
-    const pulse = (this.revealActive ? 1.13 : 1) + (Math.sin(this.elapsed * 6.6) * (this.revealActive ? 0.085 : 0.065));
-    this.pinGroup.scale.setScalar(pulse);
-    this.pinRing.material.opacity = (this.revealActive ? 0.68 : 0.54) + (Math.sin(this.elapsed * 5.2) * 0.22);
+    const pulse = Math.sin(this.elapsed * 5.2);
+    this.pinHead.scale.setScalar((this.revealActive ? 1.15 : 1) + (pulse * (this.revealActive ? 0.12 : 0.06)));
+    this.targetHighlight.scale.setScalar((this.revealActive ? 1.08 : 1) + (pulse * 0.035));
+    this.targetHighlight.material.opacity = (this.revealActive ? 0.62 : 0.48) + (pulse * 0.08);
+    this.targetHighlightRing.scale.setScalar((this.revealActive ? 1.08 : 1) + (pulse * 0.045));
+    this.targetHighlightRing.material.opacity = (this.revealActive ? 0.82 : 0.64) + (pulse * 0.12);
 
     this.render();
   }

@@ -1,4 +1,7 @@
-import { createSchoolGeographyCountry } from './geographyCountries.js';
+import {
+  createSchoolGeographyCountry,
+  createSchoolGeographyCountryChoices
+} from './geographyCountries.js';
 
 export const SCHOOL_MICROGAME_IDS = Object.freeze({
   popQuiz: 'pop-quiz-panic',
@@ -236,9 +239,9 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     title: 'Geography Globe',
     shortTitle: 'Geography',
     subtitle: 'Identify the pinned country on the rotating globe.',
-    description: 'Study the pinpoint on the country-line globe and type the country name before the bell.',
+    description: 'Study the needle tip on the country-line globe and choose the matching country before the bell.',
     eyebrow: 'Geography Class',
-    prompt: 'Name the pinned country',
+    prompt: 'Choose the pinned country',
     overheadText: 'E for geography globe',
     durationMs: 24000,
     rewardXp: 15,
@@ -248,7 +251,7 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     secondaryAccent: '#ffcf56',
     icon: 'GEO',
     skill: 'intelligence',
-    instructions: 'Type the country name and press Enter or Submit.'
+    instructions: 'Choose the country at the needle tip.'
   }),
   Object.freeze({
     id: SCHOOL_MICROGAME_IDS.teacherIsLooking,
@@ -476,9 +479,13 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
   }
 
   if (definition.id === SCHOOL_MICROGAME_IDS.geographyGlobe) {
+    const country = createSchoolGeographyCountry({ rng });
+    const choices = createSchoolGeographyCountryChoices({ country, rng, count: 4 });
     return {
       ...base,
-      country: createSchoolGeographyCountry({ rng })
+      country,
+      choices,
+      correctChoiceIndex: choices.findIndex((choice) => String(choice.id) === String(country.id))
     };
   }
 

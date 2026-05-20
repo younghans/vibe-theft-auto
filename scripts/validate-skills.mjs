@@ -9,6 +9,7 @@ import {
 import {
   SCHOOL_GEOGRAPHY_TARGET_COUNTRIES,
   createSchoolGeographyCountry,
+  createSchoolGeographyCountryChoices,
   isSchoolGeographyCountryAnswer
 } from '../src/shared/geographyCountries.js';
 import {
@@ -199,16 +200,35 @@ assert.ok(
   isSchoolGeographyCountryAnswer({ name: 'United States', aliases: ['USA'] }, 'usa'),
   'geography accepts common country aliases'
 );
+const geographyChoices = createSchoolGeographyCountryChoices({
+  country: geographyCountry,
+  rng: (() => {
+    let cursor = 0;
+    return () => ((cursor += 17) % 101) / 101;
+  })()
+});
+assert.equal(geographyChoices.length, 4, 'geography rounds should offer four country choices');
+assert.equal(
+  new Set(geographyChoices.map((choice) => choice.id)).size,
+  4,
+  'geography country choices should be distinct'
+);
+assert.ok(
+  geographyChoices.some((choice) => choice.id === geographyCountry.id),
+  'geography country choices should include the target country'
+);
 assert.match(gameSource, /SchoolGeographyGlobeRenderer/, 'game owns the geography globe renderer');
-assert.match(gameSource, /submitSchoolGeographyAnswer/, 'game handles typed geography submissions');
+assert.match(gameSource, /chooseSchoolGeographyAnswer/, 'game handles multiple choice geography answers');
 assert.match(gameSource, /isSchoolGeographyCountryAnswer/, 'game checks geography answers against normalized aliases');
 assert.match(hudSource, /data-school-geography-globe/, 'HUD exposes a geography globe mount point');
-assert.match(hudSource, /data-school-geography-answer/, 'HUD renders the geography answer input');
-assert.match(hudSource, /geography:submit/, 'HUD routes geography form submissions to the game');
+assert.match(hudSource, /data-school-geography-choice/, 'HUD renders geography country choice buttons');
+assert.match(hudSource, /geography:choice:/, 'HUD routes geography choice buttons to the game');
 assert.match(stylesSource, /hud__school-geo-globe/, 'geography globe has dedicated HUD styling');
 assert.match(geographyGlobeSource, /SphereGeometry/, 'geography globe renderer uses a 3D sphere');
 assert.match(geographyGlobeSource, /CanvasTexture/, 'geography globe renderer maps country boundaries onto a texture');
 assert.match(geographyGlobeSource, /setTargetCountry/, 'geography globe renderer can move the pin to the target country');
+assert.match(geographyGlobeSource, /targetHighlight/, 'geography globe renderer highlights the target country');
+assert.match(geographyGlobeSource, /pinNeedle/, 'geography globe renderer uses a needle-style pin');
 assert.match(geographyGlobeSource, /SCHOOL_GEOGRAPHY_COUNTRY_BOUNDARY_PATH/, 'geography globe renderer uses country boundary line data');
 assert.match(geographyGlobeSource, /SCHOOL_GEOGRAPHY_COUNTRY_COUNT/, 'geography globe renderer tracks the boundary country count');
 assert.match(geographyGlobeDataSource, /SCHOOL_GEOGRAPHY_COUNTRY_COUNT = 242/, 'geography boundary data should include the Natural Earth country feature count');

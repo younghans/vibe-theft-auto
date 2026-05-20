@@ -1807,6 +1807,16 @@ function choose(list, rng) {
   return list[Math.floor(rng() * list.length) % list.length] ?? list[0];
 }
 
+function cloneSchoolGeographyCountry(country) {
+  return {
+    id: country.id,
+    name: country.name,
+    lat: country.lat,
+    lon: country.lon,
+    aliases: Array.isArray(country.aliases) ? [...country.aliases] : []
+  };
+}
+
 export function normalizeSchoolGeographyCountryName(value = '') {
   return String(value ?? '')
     .normalize('NFD')
@@ -1843,11 +1853,53 @@ export function isSchoolGeographyCountryAnswer(country = null, guess = '') {
 
 export function createSchoolGeographyCountry({ rng = Math.random } = {}) {
   const country = choose(SCHOOL_GEOGRAPHY_TARGET_COUNTRIES, rng) ?? SCHOOL_GEOGRAPHY_TARGET_COUNTRIES[0];
-  return {
-    id: country.id,
-    name: country.name,
-    lat: country.lat,
-    lon: country.lon,
-    aliases: [...country.aliases]
-  };
+  return cloneSchoolGeographyCountry(country);
+}
+
+export function createSchoolGeographyCountryChoices({
+  country = null,
+  rng = Math.random,
+  count = 4
+} = {}) {
+  const target = country ? cloneSchoolGeographyCountry(country) : createSchoolGeographyCountry({ rng });
+  const targetKey = String(target.id ?? target.name ?? '').trim().toLowerCase();
+  const choiceCount = Math.max(1, Math.min(
+    SCHOOL_GEOGRAPHY_TARGET_COUNTRIES.length,
+    Math.floor(Number(count) || 4)
+  ));
+  const choices = [target];
+  const usedKeys = new Set([targetKey]);
+  let attempts = 0;
+
+  while (choices.length < choiceCount && attempts < SCHOOL_GEOGRAPHY_TARGET_COUNTRIES.length * 4) {
+    attempts += 1;
+    const option = choose(SCHOOL_GEOGRAPHY_TARGET_COUNTRIES, rng);
+    const optionKey = String(option?.id ?? option?.name ?? '').trim().toLowerCase();
+    if (!option || usedKeys.has(optionKey)) {
+      continue;
+    }
+    usedKeys.add(optionKey);
+    choices.push(cloneSchoolGeographyCountry(option));
+  }
+
+  if (choices.length < choiceCount) {
+    for (const option of SCHOOL_GEOGRAPHY_TARGET_COUNTRIES) {
+      const optionKey = String(option?.id ?? option?.name ?? '').trim().toLowerCase();
+      if (usedKeys.has(optionKey)) {
+        continue;
+      }
+      usedKeys.add(optionKey);
+      choices.push(cloneSchoolGeographyCountry(option));
+      if (choices.length >= choiceCount) {
+        break;
+      }
+    }
+  }
+
+  for (let index = choices.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(rng() * (index + 1));
+    [choices[index], choices[swapIndex]] = [choices[swapIndex], choices[index]];
+  }
+
+  return choices;
 }
