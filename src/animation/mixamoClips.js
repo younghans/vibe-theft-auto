@@ -6,7 +6,7 @@ const clipSourceUrls = Object.freeze({
   fightingIdle: assets.mixamo.animations.fightingIdle,
   slowRun: assets.mixamo.animations.slowRun,
   fastRun: assets.mixamo.animations.fastRun,
-  punching: assets.mixamo.animations.punching,
+  leadJab: assets.mixamo.animations.leadJab,
   snatch: assets.mixamo.animations.snatch,
   carrying: assets.mixamo.animations.carrying,
   typing: assets.mixamo.animations.typing,

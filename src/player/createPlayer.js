@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import {
   createBoneFilteredClip,
   createInPlaceClip,
-  createMirroredClip,
-  createPoseClip,
   createTargetFilteredClip,
   ensureMixamoSockets,
   MIXAMO_BONES,
@@ -32,10 +30,17 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
-import { WEAPON_RELOAD_MS } from '../shared/combatConstants.js';
+import {
+  PUNCH_LUNGE_BACKSWING_DISTANCE,
+  PUNCH_LUNGE_DISTANCE,
+  PUNCH_LUNGE_PEAK_MS,
+  PUNCH_LUNGE_RECOVER_MS,
+  PUNCH_LUNGE_WINDUP_MS,
+  WEAPON_RELOAD_MS
+} from '../shared/combatConstants.js';
 import {
   DRUNKNESS_MAX_LEVEL,
   DRUNKNESS_MIN_ANIMATION_LEVEL,
@@ -192,12 +197,6 @@ const FOOT_PLANT_BONE_NAMES = Object.freeze([
   'mixamorigRightFoot',
   'mixamorigRightToeBase'
 ]);
-const UPPER_BODY_MIRROR_BONE_PAIRS = Object.freeze([
-  [MIXAMO_BONES.leftShoulder, MIXAMO_BONES.rightShoulder],
-  [MIXAMO_BONES.leftArm, MIXAMO_BONES.rightArm],
-  [MIXAMO_BONES.leftForeArm, MIXAMO_BONES.rightForeArm],
-  [MIXAMO_BONES.leftHand, MIXAMO_BONES.rightHand]
-]);
 
 function clamp01(value) {
   return THREE.MathUtils.clamp(value, 0, 1);
@@ -256,6 +255,24 @@ function applyEmoteStartOffset(action, emoteConfig, startedAtMs) {
   action.time = emoteConfig.loop
     ? elapsedSeconds % duration
     : Math.min(elapsedSeconds, duration);
+}
+
+function getJabLungeOffset(elapsedMs) {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= PUNCH_LUNGE_RECOVER_MS) {
+    return 0;
+  }
+
+  if (elapsedMs < PUNCH_LUNGE_WINDUP_MS) {
+    return -PUNCH_LUNGE_BACKSWING_DISTANCE * smooth01(elapsedMs / PUNCH_LUNGE_WINDUP_MS);
+  }
+
+  if (elapsedMs < PUNCH_LUNGE_PEAK_MS) {
+    const progress = smooth01((elapsedMs - PUNCH_LUNGE_WINDUP_MS) / (PUNCH_LUNGE_PEAK_MS - PUNCH_LUNGE_WINDUP_MS));
+    return THREE.MathUtils.lerp(-PUNCH_LUNGE_BACKSWING_DISTANCE, PUNCH_LUNGE_DISTANCE, progress);
+  }
+
+  const progress = smooth01((elapsedMs - PUNCH_LUNGE_PEAK_MS) / (PUNCH_LUNGE_RECOVER_MS - PUNCH_LUNGE_PEAK_MS));
+  return THREE.MathUtils.lerp(PUNCH_LUNGE_DISTANCE, 0, progress);
 }
 
 function normalizeCharacter(root) {
@@ -626,23 +643,11 @@ export async function createPlayer(library, {
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
   const drunkIdleLowerBodyClip = createBoneFilteredClip(drunkIdleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkIdleClip}_LowerBody`);
   const drunkWalkLowerBodyClip = createBoneFilteredClip(drunkWalkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkWalkClip}_LowerBody`);
-  const upperBodyMirrorMap = new Map();
-  for (let index = 0; index < UPPER_BODY_MIRROR_BONE_PAIRS.length; index += 1) {
-    const [leftBone, rightBone] = UPPER_BODY_MIRROR_BONE_PAIRS[index];
-    upperBodyMirrorMap.set(leftBone, rightBone);
-    upperBodyMirrorMap.set(rightBone, leftBone);
-  }
   const punchSourceClip = punchClipName
     ? createRigSafeClip(getMixamoClip(punchClipName), `${punchClipName}_RigSafe`)
     : null;
   const punchUpperBodyClip = punchSourceClip
     ? createBoneFilteredClip(punchSourceClip, UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
-    : null;
-  const punchMirroredUpperBodyClip = punchUpperBodyClip
-    ? createMirroredClip(punchUpperBodyClip, upperBodyMirrorMap, `${punchClipName}_UpperBodyMirrored`)
-    : null;
-  const punchGuardClip = punchUpperBodyClip
-    ? createPoseClip(punchUpperBodyClip, 0, `${punchClipName}_UpperBodyGuard`)
     : null;
   const deliveryCarryUpperBodyClip = createBoneFilteredClip(
     createRigSafeClip(getMixamoClip(DELIVERY_CARRY_CLIP_NAME), `${DELIVERY_CARRY_CLIP_NAME}_RigSafe`),
@@ -659,7 +664,6 @@ export async function createPlayer(library, {
   const walkLowerBodyAction = mixer.clipAction(walkLowerBodyClip);
   const drunkIdleLowerBodyAction = mixer.clipAction(drunkIdleLowerBodyClip);
   const drunkWalkLowerBodyAction = mixer.clipAction(drunkWalkLowerBodyClip);
-  const punchGuardAction = punchGuardClip ? mixer.clipAction(punchGuardClip) : null;
   const deliveryCarryAction = mixer.clipAction(deliveryCarryUpperBodyClip);
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
@@ -692,14 +696,6 @@ export async function createPlayer(library, {
   drunkWalkLowerBodyAction.play();
   drunkWalkLowerBodyAction.enabled = true;
   drunkWalkLowerBodyAction.setEffectiveWeight(0);
-  if (punchGuardAction) {
-    punchGuardAction.enabled = true;
-    punchGuardAction.clampWhenFinished = true;
-    punchGuardAction.setLoop(THREE.LoopRepeat, Infinity);
-    punchGuardAction.setEffectiveTimeScale(0);
-    punchGuardAction.setEffectiveWeight(0);
-    punchGuardAction.play();
-  }
   deliveryCarryAction.enabled = true;
   deliveryCarryAction.clampWhenFinished = false;
   deliveryCarryAction.setLoop(THREE.LoopRepeat, Infinity);
@@ -854,7 +850,6 @@ export async function createPlayer(library, {
   let recoilAmount = 0;
   let aimingState = false;
   let aimPoseWeight = 0;
-  let guardPoseWeight = 0;
   let upperBodyLookWeight = 0;
   let taskArrowTarget = null;
   let aimRotationY = 0;
@@ -975,8 +970,6 @@ export async function createPlayer(library, {
             if (emoteConfig?.upperBodyOnly) {
               if (emoteId === PUNCH_EMOTE_ID && punchUpperBodyClip) {
                 clip = punchUpperBodyClip;
-              } else if (emoteId === PUNCH_ALT_EMOTE_ID && punchMirroredUpperBodyClip) {
-                clip = punchMirroredUpperBodyClip;
               } else {
                 clip = createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`);
               }
@@ -1574,9 +1567,7 @@ export async function createPlayer(library, {
     activeAimBones.clear();
     if (hasLookPose) {
       const emoteAimYawOffset = Number(
-        activeEmoteConfig?.aimYawOffset
-        ?? (!activeItemId && aimingState ? getResolvedEmoteConfig(PUNCH_EMOTE_ID)?.aimYawOffset : 0)
-        ?? 0
+        activeEmoteConfig?.aimYawOffset ?? 0
       );
       const aimDelta = normalizeAngle(aimRotationY - anchor.rotation.y + emoteAimYawOffset);
       addBoneRotation(rotationsByBone, UPPER_BODY_ROOT_BONE, 'y', aimDelta);
@@ -2023,14 +2014,6 @@ export async function createPlayer(library, {
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
     const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
-    const wantsGuardPose = Boolean(
-      punchGuardAction
-      && aimingState
-      && !activeAimItemId
-      && !activeEmoteId
-      && aliveState
-      && !isLimpTransitioning()
-    );
     const wantsDeliveryCarry = Boolean(
       deliveryPackageActive
       && aliveState
@@ -2040,9 +2023,8 @@ export async function createPlayer(library, {
       && !reloadPreviewState.active
       && !isLimpTransitioning()
     );
-    guardPoseWeight = THREE.MathUtils.damp(guardPoseWeight, wantsGuardPose ? 1 : 0, wantsGuardPose ? 18 : 14, deltaSeconds);
     deliveryCarryWeight = THREE.MathUtils.damp(deliveryCarryWeight, wantsDeliveryCarry ? 1 : 0, wantsDeliveryCarry ? 12 : 16, deltaSeconds);
-    const upperBodyOverlayActive = upperBodyOnlyEmoteActive || wantsGuardPose || guardPoseWeight > 0.0001 || deliveryCarryWeight > 0.0001;
+    const upperBodyOverlayActive = upperBodyOnlyEmoteActive || deliveryCarryWeight > 0.0001;
     const locomotionEnabled = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     const smoothing = locomotionEnabled ? 12 : 22;
     const drunkBlendSpan = Math.max(1, DRUNKNESS_MAX_LEVEL - DRUNKNESS_MIN_ANIMATION_LEVEL + 1);
@@ -2081,10 +2063,6 @@ export async function createPlayer(library, {
     walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     drunkIdleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     drunkWalkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
-    if (punchGuardAction) {
-      punchGuardAction.setEffectiveWeight(guardPoseWeight);
-      punchGuardAction.setEffectiveTimeScale(0);
-    }
     deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight);
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
@@ -2113,17 +2091,23 @@ export async function createPlayer(library, {
     const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
       const damageSideX = -damageDirection.z;
       const damageSideZ = damageDirection.x;
-      const damageJolt = damageEnvelope * 0.18;
-      const damageShimmy = damageWave * damageEnvelope * 0.09;
+    const damageJolt = damageEnvelope * 0.18;
+    const damageShimmy = damageWave * damageEnvelope * 0.09;
       const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
+      const jabLungeOffset = activeEmoteId === PUNCH_EMOTE_ID
+        ? getJabLungeOffset(Date.now() - activeEmoteStartedAt)
+        : 0;
+      const jabLungeLocalYaw = normalizeAngle(aimRotationY - anchor.rotation.y);
+      const jabLungeLocalX = Math.sin(jabLungeLocalYaw) * jabLungeOffset;
+      const jabLungeLocalZ = Math.cos(jabLungeLocalYaw) * jabLungeOffset;
       const damageFlashAmount = damageActive
         ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
         : 0;
 
       visual.position.set(
-        (damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
+        (damageDirection.x * damageJolt) + (damageSideX * damageShimmy) + jabLungeLocalX,
         (recoilAmount * 0.03) + (damagePulse * 0.12) - footPlantGroundingOffsetY,
-        (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
+        (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy) + jabLungeLocalZ
       );
     visual.rotation.set(
       (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),

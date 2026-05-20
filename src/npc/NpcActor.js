@@ -16,6 +16,13 @@ import {
   normalizeNpcSpeedTier
 } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
+import {
+  PUNCH_LUNGE_BACKSWING_DISTANCE,
+  PUNCH_LUNGE_DISTANCE,
+  PUNCH_LUNGE_PEAK_MS,
+  PUNCH_LUNGE_RECOVER_MS,
+  PUNCH_LUNGE_WINDUP_MS
+} from '../shared/combatConstants.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { applyMarthaNpcBaseStyle, applyNpcCharacterAdornment, prepareNpcRenderObject } from './npcRenderUtils.js';
 
@@ -25,6 +32,7 @@ const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
 const BARBELL_BASE_AXIS = new THREE.Vector3(1, 0, 0);
+const NPC_PUNCH_PLAYBACK_RATE = 4.2;
 const NPC_FOCUS_MIN_DISTANCE = 0.18;
 const NPC_FOCUS_MIN_DISTANCE_SQ = NPC_FOCUS_MIN_DISTANCE * NPC_FOCUS_MIN_DISTANCE;
 const NPC_MOVING_ANIMATION_DISTANCE_SQ = 0.12 * 0.12;
@@ -41,6 +49,29 @@ function createNpcAnimationClip(root, clipName) {
     createTargetFilteredClip(getMixamoClip(clipName), root, `${clipName}_NpcRigSafe`),
     MIXAMO_BONES.hips
   );
+}
+
+function smooth01(value) {
+  const clamped = THREE.MathUtils.clamp(value, 0, 1);
+  return clamped * clamped * (3 - (2 * clamped));
+}
+
+function getJabLungeOffset(elapsedMs) {
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= PUNCH_LUNGE_RECOVER_MS) {
+    return 0;
+  }
+
+  if (elapsedMs < PUNCH_LUNGE_WINDUP_MS) {
+    return -PUNCH_LUNGE_BACKSWING_DISTANCE * smooth01(elapsedMs / PUNCH_LUNGE_WINDUP_MS);
+  }
+
+  if (elapsedMs < PUNCH_LUNGE_PEAK_MS) {
+    const progress = smooth01((elapsedMs - PUNCH_LUNGE_WINDUP_MS) / (PUNCH_LUNGE_PEAK_MS - PUNCH_LUNGE_WINDUP_MS));
+    return THREE.MathUtils.lerp(-PUNCH_LUNGE_BACKSWING_DISTANCE, PUNCH_LUNGE_DISTANCE, progress);
+  }
+
+  const progress = smooth01((elapsedMs - PUNCH_LUNGE_PEAK_MS) / (PUNCH_LUNGE_RECOVER_MS - PUNCH_LUNGE_PEAK_MS));
+  return THREE.MathUtils.lerp(PUNCH_LUNGE_DISTANCE, 0, progress);
 }
 
 function createIndicator(color) {
@@ -191,6 +222,7 @@ export class NpcActor {
     this.mixer = null;
     this.activeAnimation = 'idle';
     this.ragdoll = null;
+    this.punchVisualStartedAt = -Infinity;
     this.damageFeedbackStartedAt = -Infinity;
     this.damageFeedbackEndsAt = -Infinity;
     this.damageDirection = new THREE.Vector3(0, 0, 1);
@@ -280,6 +312,7 @@ export class NpcActor {
           Infinity
         );
         action.setEffectiveWeight(key === 'idle' ? 1 : 0);
+        action.setEffectiveTimeScale(key === 'punch' ? NPC_PUNCH_PLAYBACK_RATE : 1);
         action.play();
       }
     } else {
@@ -606,8 +639,14 @@ export class NpcActor {
       return;
     }
 
-    for (const key of this.animationActions.keys()) {
-      const action = this.animationActions.get(key);
+    if (nextAnimation === 'punch') {
+      this.punchVisualStartedAt = performance.now();
+    }
+
+    for (const [key, action] of this.animationActions.entries()) {
+      if (key === nextAnimation && key === 'punch') {
+        action.reset();
+      }
       action.setEffectiveWeight(key === nextAnimation ? 1 : 0);
     }
     this.activeAnimation = nextAnimation;
@@ -658,11 +697,14 @@ export class NpcActor {
     this.ragdoll?.update(deltaSeconds);
     this.ragdoll?.applyToSkeleton();
     const footPlantGroundingOffsetY = this.getFootPlantGroundingOffset();
+    const jabLungeOffset = this.activeAnimation === 'punch'
+      ? getJabLungeOffset(now - this.punchVisualStartedAt)
+      : 0;
 
     this.visual.position.set(
       (this.damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
       (damagePulse * 0.12) - footPlantGroundingOffsetY,
-      (this.damageDirection.z * damageJolt) + (damageSideZ * damageShimmy)
+      (this.damageDirection.z * damageJolt) + (damageSideZ * damageShimmy) + jabLungeOffset
     );
     this.visual.rotation.set(
       -(this.damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),

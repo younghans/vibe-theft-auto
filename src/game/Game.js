@@ -83,7 +83,7 @@ import {
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { isPointInsidePassiveTrafficHitbox } from '../world/passiveTraffic.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -1749,7 +1749,6 @@ export class Game {
     this.firstPersonLookTarget = new THREE.Vector3();
     this.lastFirstPersonModeHudSignature = '';
     this.lastFirstPersonCrosshairVisible = false;
-    this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
     this.hotbarItemOrder = readStoredHotbarItemOrder();
     this.hotbarLayoutRevision = 0;
@@ -1998,6 +1997,8 @@ export class Game {
     this.deferredMuzzleFlashWarmupId = 0;
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
     this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
+    this.punchImpactSounds = this.createSoundEffectPool(assets.combat.punchImpacts, { volume: 0.62 });
+    this.punchWhiffSounds = this.createSoundEffectPool(assets.combat.punchWhiffs, { volume: 0.34 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
     this.skillXpGainSound = this.createSoundEffect(assets.audio?.skillXpGain, { volume: 0.62 });
     this.levelUpSound = this.createSoundEffect(assets.audio?.levelUp, { volume: 0.72 });
@@ -2533,6 +2534,12 @@ export class Game {
     };
   }
 
+  createSoundEffectPool(urls = [], options = {}) {
+    return (Array.isArray(urls) ? urls : [])
+      .map((url) => this.createSoundEffect(url, options))
+      .filter(Boolean);
+  }
+
   getEffectiveSoundVolume(soundEffect) {
     return THREE.MathUtils.clamp(
       Number(soundEffect?.volume ?? 1) * Number(this.gameSettings?.masterVolume ?? 1),
@@ -3004,6 +3011,35 @@ export class Game {
     }
   }
 
+  playRandomSoundEffect(
+    soundEffects = [],
+    {
+      volumeScale = 1,
+      playbackRateMin = 1,
+      playbackRateMax = 1,
+      preservePitch = false,
+      delayMs = 0
+    } = {}
+  ) {
+    if (!Array.isArray(soundEffects) || soundEffects.length === 0) {
+      return;
+    }
+
+    const soundEffect = soundEffects[Math.floor(Math.random() * soundEffects.length)];
+    const minRate = Number(playbackRateMin) || 1;
+    const maxRate = Number(playbackRateMax) || minRate;
+    const playbackRate = THREE.MathUtils.randFloat(
+      Math.min(minRate, maxRate),
+      Math.max(minRate, maxRate)
+    );
+    this.playSoundEffect(soundEffect, {
+      volumeScale,
+      playbackRate,
+      preservePitch,
+      delayMs
+    });
+  }
+
   playOfficeJobLockError() {
     const context = this.getVibeHeroAudioContext();
     if (!context) {
@@ -3132,9 +3168,13 @@ export class Game {
     ) === true;
 
     if (didPunch) {
-      const emoteId = this.nextPunchEmoteId;
-      this.player?.playEmote(emoteId);
-      this.nextPunchEmoteId = emoteId === PUNCH_EMOTE_ID ? PUNCH_ALT_EMOTE_ID : PUNCH_EMOTE_ID;
+      this.player?.playEmote(PUNCH_EMOTE_ID);
+      this.playRandomSoundEffect(this.punchWhiffSounds, {
+        volumeScale: 0.9,
+        playbackRateMin: 0.94,
+        playbackRateMax: 1.08,
+        preservePitch: false
+      });
     }
 
     return didPunch;
@@ -19290,6 +19330,15 @@ export class Game {
         {
           const { origin, point, delayMs } = this.getImpactEffectSpec(event);
           this.createImpactEffect(point, event.kind, delayMs);
+          if (event.attackType === 'punch' && (event.kind === 'player' || event.kind === 'npc')) {
+            this.playRandomSoundEffect(this.punchImpactSounds, {
+              volumeScale: event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72,
+              playbackRateMin: 0.96,
+              playbackRateMax: 1.07,
+              preservePitch: false,
+              delayMs
+            });
+          }
           if (event.kind === 'player' && event.targetId) {
             const runFeedback = () => {
               const targetAvatar = this.getAvatarForSessionId(event.targetId);
@@ -20455,9 +20504,8 @@ export class Game {
           }
         } else {
           this.clearPendingHipFireShot();
-          aimingMode = secondaryAimHeld;
-          this.currentAimMode = aimingMode;
-          this.player.setAimingState(aimingMode);
+          this.currentAimMode = false;
+          this.player.setAimingState(false);
           if (primaryFirePressed) {
             this.punchLocal(aimDirection);
           }

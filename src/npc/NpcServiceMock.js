@@ -3,6 +3,9 @@ import {
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
   PUNCH_DAMAGE,
+  PUNCH_HITBOX_RADIUS,
+  PUNCH_HIT_DELAY_MS,
+  PUNCH_HIT_ORIGIN_FORWARD_OFFSET,
   PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
@@ -173,6 +176,7 @@ import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMetho
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
   chooseFarthestSpawnPoint,
+  capsuleCircleIntersection,
   clampToWorldBounds,
   distance2D,
   distanceSquared2D,
@@ -1516,13 +1520,29 @@ export class NpcServiceMock {
     player.emoteStartedAt = now;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
     this.triggerPoliceHostilityForPlayer(this.state.sessionId, player, 'punch', now);
+    this.emit();
 
-    const hit = this.resolvePunch(this.state.sessionId, player, aim);
+    setTimeout(() => {
+      this.resolvePlayerPunchImpact(this.state.sessionId, aim, clientPunchAt);
+    }, PUNCH_HIT_DELAY_MS);
+
+    return true;
+  }
+
+  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now()) {
+    const player = this.state.players.get(sessionId);
+    if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+
+    const now = Date.now();
+    const hit = this.resolvePunch(sessionId, player, aim);
     if (hit.kind !== 'miss') {
       this.emitCombatEvent({
         type: 'impact',
         shooterType: 'player',
-        shooterId: this.state.sessionId,
+        shooterId: sessionId,
+        attackType: 'punch',
         kind: hit.kind,
         targetId: hit.targetId ?? '',
         x: hit.hitX,
@@ -1537,17 +1557,16 @@ export class NpcServiceMock {
         target.health = Math.max(0, target.health - PUNCH_DAMAGE);
         target.lastDamagedAt = now;
         if (target.health <= 0) {
-          this.handlePlayerDeath(hit.targetId, this.state.sessionId);
+          this.handlePlayerDeath(hit.targetId, sessionId);
         }
       }
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
-      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, this.state.sessionId, now);
+      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, sessionId, now);
     }
 
     this.emit();
-    return true;
   }
 
   reloadWeapon() {
@@ -3371,16 +3390,21 @@ export class NpcServiceMock {
     ignorePlayerId = '',
     ignoreNpcId = ''
   } = {}) {
-    let nearestDistance = maxDistance;
+    const punchOrigin = {
+      x: origin.x + (aim.x * PUNCH_HIT_ORIGIN_FORWARD_OFFSET),
+      z: origin.z + (aim.z * PUNCH_HIT_ORIGIN_FORWARD_OFFSET)
+    };
+    const punchDistance = Math.max(0.5, maxDistance - PUNCH_HIT_ORIGIN_FORWARD_OFFSET);
+    let nearestDistance = punchDistance;
     let result = {
       kind: 'miss',
-      hitX: origin.x + aim.x * maxDistance,
-      hitZ: origin.z + aim.z * maxDistance,
+      hitX: punchOrigin.x + aim.x * punchDistance,
+      hitZ: punchOrigin.z + aim.z * punchDistance,
       targetId: ''
     };
 
     this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
-      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      const hitDistance = rayRectIntersectionDistance(punchOrigin.x, punchOrigin.z, aim.x, aim.z, nearestDistance, rect);
       if (
         hitDistance == null
         || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
@@ -3392,8 +3416,8 @@ export class NpcServiceMock {
       nearestDistance = hitDistance;
       result = {
         kind: 'world',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: punchOrigin.x + aim.x * hitDistance,
+        hitZ: punchOrigin.z + aim.z * hitDistance,
         targetId: placementId
       };
     }, { collisionKey: 'blocksShots' });
@@ -3404,25 +3428,26 @@ export class NpcServiceMock {
         continue;
       }
 
-      const hitDistance = rayCircleIntersectionDistance(
-        origin.x,
-        origin.z,
+      const hit = capsuleCircleIntersection(
+        punchOrigin.x,
+        punchOrigin.z,
         aim.x,
         aim.z,
         nearestDistance,
         target.x,
         target.z,
-        PLAYER_RADIUS
+        PLAYER_RADIUS,
+        PUNCH_HITBOX_RADIUS
       );
-      if (hitDistance == null || hitDistance >= nearestDistance) {
+      if (hit == null || hit.distance >= nearestDistance) {
         continue;
       }
 
-      nearestDistance = hitDistance;
+      nearestDistance = hit.distance;
       result = {
         kind: 'player',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: hit.hitX,
+        hitZ: hit.hitZ,
         targetId: sessionId
       };
     }
@@ -3434,25 +3459,26 @@ export class NpcServiceMock {
       }
 
       const model = getNpcModelById(target.modelId);
-      const hitDistance = rayCircleIntersectionDistance(
-        origin.x,
-        origin.z,
+      const hit = capsuleCircleIntersection(
+        punchOrigin.x,
+        punchOrigin.z,
         aim.x,
         aim.z,
         nearestDistance,
         target.x,
         target.z,
-        model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+        model?.collider?.radius ?? PLAYER_RADIUS * 0.9,
+        PUNCH_HITBOX_RADIUS
       );
-      if (hitDistance == null || hitDistance >= nearestDistance) {
+      if (hit == null || hit.distance >= nearestDistance) {
         continue;
       }
 
-      nearestDistance = hitDistance;
+      nearestDistance = hit.distance;
       result = {
         kind: 'npc',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: hit.hitX,
+        hitZ: hit.hitZ,
         targetId: npcId
       };
     }
@@ -3526,6 +3552,18 @@ export class NpcServiceMock {
     const aim = normalizeAimVector(targetPosition.x - npc.x, targetPosition.z - npc.z);
     npc.rotationY = quantizeRotation(Math.atan2(aim.x, aim.z));
     npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    setTimeout(() => {
+      this.resolveNpcPunchImpact(npcId, aim, now);
+    }, PUNCH_HIT_DELAY_MS);
+  }
+
+  resolveNpcPunchImpact(npcId, aim, clientPunchAt = Date.now()) {
+    const npc = this.state.npcs.get(npcId);
+    if (!npc || npc.alive === false) {
+      return;
+    }
+
+    const now = Date.now();
     const hit = this.resolvePunchFromNpc(npcId, { x: npc.x, z: npc.z }, aim);
 
     if (hit.kind !== 'miss') {
@@ -3533,11 +3571,12 @@ export class NpcServiceMock {
         type: 'impact',
         shooterType: 'npc',
         shooterId: npcId,
+        attackType: 'punch',
         kind: hit.kind,
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
-        clientPunchAt: now
+        clientPunchAt
       });
     }
 

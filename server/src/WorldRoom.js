@@ -5,6 +5,9 @@ import {
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
   PUNCH_DAMAGE,
+  PUNCH_HITBOX_RADIUS,
+  PUNCH_HIT_DELAY_MS,
+  PUNCH_HIT_ORIGIN_FORWARD_OFFSET,
   PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
@@ -181,6 +184,7 @@ import { normalizeVibeHeroSongId } from '../../src/shared/vibeHero.js';
 import { getTileCenterWorldPosition, rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
 import {
   chooseFarthestSpawnPoint,
+  capsuleCircleIntersection,
   clampToWorldBounds,
   distance2D,
   distanceSquared2D,
@@ -3717,18 +3721,33 @@ export class WorldRoom extends Room {
     player.emoteStartedAt = now;
     player.emoteSeq += 1;
     this.triggerPoliceHostilityForPlayer(client.sessionId, player, 'punch', now);
+    this.queuePlayerSnapshotSave(client.sessionId);
 
-    const hit = this.resolvePunch(client.sessionId, player, aim);
+    const clientPunchAt = Number.isFinite(message.clientPunchAt) ? Math.max(0, Math.floor(message.clientPunchAt)) : now;
+    setTimeout(() => {
+      this.resolvePlayerPunchImpact(client.sessionId, aim, clientPunchAt);
+    }, PUNCH_HIT_DELAY_MS);
+  }
+
+  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now()) {
+    const player = this.state.players.get(sessionId);
+    if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
+      return;
+    }
+
+    const now = Date.now();
+    const hit = this.resolvePunch(sessionId, player, aim);
     if (hit.kind !== 'miss') {
       this.broadcastCombatEvent({
         type: 'impact',
-        shooterId: client.sessionId,
+        shooterId: sessionId,
         shooterType: 'player',
+        attackType: 'punch',
         kind: hit.kind,
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
-        clientPunchAt: Number.isFinite(message.clientPunchAt) ? Math.max(0, Math.floor(message.clientPunchAt)) : now
+        clientPunchAt
       });
     }
 
@@ -3738,16 +3757,16 @@ export class WorldRoom extends Room {
         target.health = Math.max(0, target.health - PUNCH_DAMAGE);
         target.lastDamagedAt = now;
         if (target.health <= 0) {
-          this.handlePlayerDeath(hit.targetId, client.sessionId);
+          this.handlePlayerDeath(hit.targetId, sessionId);
         }
         this.queuePlayerSnapshotSave(hit.targetId);
       }
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
-      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, client.sessionId, now);
+      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, sessionId, now);
     }
-    this.queuePlayerSnapshotSave(client.sessionId);
+    this.queuePlayerSnapshotSave(sessionId);
   }
 
   handlePlayerDeath(victimId, killerId = '') {
@@ -3955,16 +3974,21 @@ export class WorldRoom extends Room {
     ignorePlayerId = '',
     ignoreNpcId = ''
   } = {}) {
-    let nearestDistance = maxDistance;
+    const punchOrigin = {
+      x: origin.x + (aim.x * PUNCH_HIT_ORIGIN_FORWARD_OFFSET),
+      z: origin.z + (aim.z * PUNCH_HIT_ORIGIN_FORWARD_OFFSET)
+    };
+    const punchDistance = Math.max(0.5, maxDistance - PUNCH_HIT_ORIGIN_FORWARD_OFFSET);
+    let nearestDistance = punchDistance;
     let result = {
       kind: 'miss',
-      hitX: origin.x + aim.x * maxDistance,
-      hitZ: origin.z + aim.z * maxDistance,
+      hitX: punchOrigin.x + aim.x * punchDistance,
+      hitZ: punchOrigin.z + aim.z * punchDistance,
       targetId: ''
     };
 
     this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
-      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      const hitDistance = rayRectIntersectionDistance(punchOrigin.x, punchOrigin.z, aim.x, aim.z, nearestDistance, rect);
       if (
         hitDistance == null
         || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
@@ -3976,8 +4000,8 @@ export class WorldRoom extends Room {
       nearestDistance = hitDistance;
       result = {
         kind: 'world',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: punchOrigin.x + aim.x * hitDistance,
+        hitZ: punchOrigin.z + aim.z * hitDistance,
         targetId: placementId
       };
     }, { collisionKey: 'blocksShots' });
@@ -3988,25 +4012,26 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const hitDistance = rayCircleIntersectionDistance(
-        origin.x,
-        origin.z,
+      const hit = capsuleCircleIntersection(
+        punchOrigin.x,
+        punchOrigin.z,
         aim.x,
         aim.z,
         nearestDistance,
         target.x,
         target.z,
-        PLAYER_RADIUS
+        PLAYER_RADIUS,
+        PUNCH_HITBOX_RADIUS
       );
-      if (hitDistance == null || hitDistance >= nearestDistance) {
+      if (hit == null || hit.distance >= nearestDistance) {
         continue;
       }
 
-      nearestDistance = hitDistance;
+      nearestDistance = hit.distance;
       result = {
         kind: 'player',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: hit.hitX,
+        hitZ: hit.hitZ,
         targetId: sessionId
       };
     }
@@ -4018,25 +4043,26 @@ export class WorldRoom extends Room {
       }
 
       const model = getNpcModelById(target.modelId);
-      const hitDistance = rayCircleIntersectionDistance(
-        origin.x,
-        origin.z,
+      const hit = capsuleCircleIntersection(
+        punchOrigin.x,
+        punchOrigin.z,
         aim.x,
         aim.z,
         nearestDistance,
         target.x,
         target.z,
-        model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+        model?.collider?.radius ?? PLAYER_RADIUS * 0.9,
+        PUNCH_HITBOX_RADIUS
       );
-      if (hitDistance == null || hitDistance >= nearestDistance) {
+      if (hit == null || hit.distance >= nearestDistance) {
         continue;
       }
 
-      nearestDistance = hitDistance;
+      nearestDistance = hit.distance;
       result = {
         kind: 'npc',
-        hitX: origin.x + aim.x * hitDistance,
-        hitZ: origin.z + aim.z * hitDistance,
+        hitX: hit.hitX,
+        hitZ: hit.hitZ,
         targetId: npcId
       };
     }
@@ -4110,17 +4136,30 @@ export class WorldRoom extends Room {
     const aim = normalizeAimVector(targetPosition.x - npc.x, targetPosition.z - npc.z);
     npc.rotationY = quantizeRotation(Math.atan2(aim.x, aim.z));
     npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+    setTimeout(() => {
+      this.resolveNpcPunchImpact(npcId, aim, now);
+    }, PUNCH_HIT_DELAY_MS);
+  }
+
+  resolveNpcPunchImpact(npcId, aim, clientPunchAt = Date.now()) {
+    const npc = this.state.npcs.get(npcId);
+    if (!npc || npc.alive === false) {
+      return;
+    }
+
+    const now = Date.now();
     const hit = this.resolvePunchFromNpc(npcId, { x: npc.x, z: npc.z }, aim);
     if (hit.kind !== 'miss') {
       this.broadcastCombatEvent({
         type: 'impact',
         shooterType: 'npc',
         shooterId: npcId,
+        attackType: 'punch',
         kind: hit.kind,
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
-        clientPunchAt: now
+        clientPunchAt
       });
     }
 

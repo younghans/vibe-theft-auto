@@ -10,7 +10,6 @@ export const EMOTE_SLOTS = Object.freeze([
 ]);
 
 export const PUNCH_EMOTE_ID = 'punching';
-export const PUNCH_ALT_EMOTE_ID = 'punchingMirrored';
 export const STAND_UP_EMOTE_ID = 'standUp';
 export const TYPING_EMOTE_ID = 'typing';
 export const TEXTING_EMOTE_ID = 'texting';
@@ -19,27 +18,14 @@ export const SMOKING_EMOTE_ID = 'smoking';
 
 export const EMOTES_BY_ID = Object.freeze({
   [PUNCH_EMOTE_ID]: {
-    label: 'Punching',
-    clipName: 'punching',
+    label: 'Lead Jab',
+    clipName: 'leadJab',
     loop: false,
-    fadeIn: 0.025,
-    fadeOut: 0.055,
-    playbackRate: 1.28,
+    fadeIn: 0.015,
+    fadeOut: 0.05,
+    playbackRate: 4.2,
     cancelOnMove: false,
-    upperBodyOnly: true,
-    aimYawOffset: -1
-  },
-  [PUNCH_ALT_EMOTE_ID]: {
-    label: 'Punching Mirrored',
-    clipName: 'punching',
-    loop: false,
-    fadeIn: 0.025,
-    fadeOut: 0.055,
-    playbackRate: 1.28,
-    cancelOnMove: false,
-    upperBodyOnly: true,
-    aimYawOffset: 1,
-    mirrorOf: PUNCH_EMOTE_ID
+    upperBodyOnly: true
   },
   waving: {
     label: 'Waving',

@@ -34,7 +34,7 @@ export const assets = {
     walking: 'walking',
     slowRun: 'slowRun',
     fastRun: 'fastRun',
-    punching: 'punching',
+    punching: 'leadJab',
     snatch: 'snatch',
     drunkIdle: 'drunkIdle',
     drunkWalk: 'drunkWalk',
@@ -47,7 +47,7 @@ export const assets = {
       fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),
       slowRun: assetUrl('mixamo', 'animations', 'slow-run.json'),
       fastRun: assetUrl('mixamo', 'animations', 'fast-run.json'),
-      punching: assetUrl('mixamo', 'animations', 'punching.json'),
+      leadJab: assetUrl('mixamo', 'animations', 'lead-jab.json'),
       snatch: assetUrl('mixamo', 'animations', 'snatch.json'),
       carrying: assetUrl('mixamo', 'animations', 'carrying-upper-body.json'),
       typing: assetUrl('mixamo', 'animations', 'typing.json'),
@@ -66,7 +66,16 @@ export const assets = {
   combat: {
     pistol: assetUrl('objects', 'low-poly_g17_pistol.glb'),
     pistolCock: assetUrl('audio', 'combat', 'pistol_cock.mp3'),
-    pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.mp3')
+    pistolShot: assetUrl('audio', 'combat', 'pistol_gun_shot.mp3'),
+    punchImpacts: Object.freeze([
+      assetUrl('audio', 'combat', 'punch_impact_1.mp3'),
+      assetUrl('audio', 'combat', 'punch_impact_2.mp3'),
+      assetUrl('audio', 'combat', 'punch_impact_3.mp3')
+    ]),
+    punchWhiffs: Object.freeze([
+      assetUrl('audio', 'combat', 'punch_whiff_2.mp3'),
+      assetUrl('audio', 'combat', 'punch_whiff_3.mp3')
+    ])
   },
   ui: {
     hotbarPistol: assetUrl('generated', 'hotbar-pistol.png')

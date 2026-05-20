@@ -192,6 +192,37 @@ export function rayCircleIntersectionDistance(originX, originZ, dirX, dirZ, maxD
   return distance;
 }
 
+export function capsuleCircleIntersection(originX, originZ, dirX, dirZ, maxDistance, circleX, circleZ, radius, capsuleRadius = 0) {
+  const relX = circleX - originX;
+  const relZ = circleZ - originZ;
+  const projectedDistance = (relX * dirX) + (relZ * dirZ);
+  const totalRadius = Math.max(0, radius + capsuleRadius);
+
+  if (
+    !Number.isFinite(projectedDistance)
+    || projectedDistance < -totalRadius
+    || projectedDistance > maxDistance + totalRadius
+  ) {
+    return null;
+  }
+
+  const closestDistance = Math.min(maxDistance, Math.max(0, projectedDistance));
+  const closestX = originX + (dirX * closestDistance);
+  const closestZ = originZ + (dirZ * closestDistance);
+  const lateralDistance = Math.hypot(circleX - closestX, circleZ - closestZ);
+
+  if (!Number.isFinite(lateralDistance) || lateralDistance > totalRadius) {
+    return null;
+  }
+
+  return {
+    distance: closestDistance,
+    closestDistance,
+    hitX: closestX,
+    hitZ: closestZ
+  };
+}
+
 export function rayRectIntersectionDistance(originX, originZ, dirX, dirZ, maxDistance, rect) {
   if (!rect) {
     return null;
