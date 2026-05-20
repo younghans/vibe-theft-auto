@@ -1616,7 +1616,7 @@ export class WorldBuilder {
     this.updateBuilderHud();
   }
 
-  getNearestTrafficRouteNode(point = null, graph = this.getTrafficRouteGraph()) {
+  getNearestTrafficRouteNode(point = null, graph = this.getTrafficRouteGraph(), { fromNodeIndex = null } = {}) {
     if (!point || !graph?.activeNodes?.length) {
       return null;
     }
@@ -1627,17 +1627,37 @@ export class WorldBuilder {
       return null;
     }
 
-    let bestNode = null;
-    let bestDistanceSq = Infinity;
-    for (const node of graph.activeNodes) {
-      const distanceSq = ((node.x - x) * (node.x - x)) + ((node.z - z) * (node.z - z));
-      if (distanceSq < bestDistanceSq) {
-        bestNode = node;
-        bestDistanceSq = distanceSq;
+    const fromNode = graph.activeNodeSet.has(fromNodeIndex)
+      ? graph.nodes?.[fromNodeIndex]
+      : null;
+    const preferredComponentIndex = fromNode?.componentIndex;
+
+    for (let pass = 0; pass < 2; pass += 1) {
+      const requirePreferredComponent = pass === 0 && preferredComponentIndex !== undefined;
+      if (pass === 1 && preferredComponentIndex === undefined) {
+        break;
+      }
+
+      let bestNode = null;
+      let bestDistanceSq = Infinity;
+      for (const node of graph.activeNodes) {
+        if (requirePreferredComponent && node.componentIndex !== preferredComponentIndex) {
+          continue;
+        }
+
+        const distanceSq = ((node.x - x) * (node.x - x)) + ((node.z - z) * (node.z - z));
+        if (distanceSq < bestDistanceSq) {
+          bestNode = node;
+          bestDistanceSq = distanceSq;
+        }
+      }
+
+      if (bestNode) {
+        return bestNode;
       }
     }
 
-    return bestNode;
+    return null;
   }
 
   createTrafficRouteDraftPreview(nodeIndex, graph = this.getTrafficRouteGraph()) {
@@ -1729,6 +1749,7 @@ export class WorldBuilder {
       return false;
     }
 
+    const closingRoute = targetNodeIndex === firstNodeIndex;
     const path = findPassiveTrafficPath(graph, lastNodeIndex, targetNodeIndex);
     if (path.length < 2) {
       return false;
@@ -1740,7 +1761,7 @@ export class WorldBuilder {
         continue;
       }
 
-      if (pathNodeIndex === firstNodeIndex && nodeIndices.length >= 3) {
+      if (closingRoute && pathNodeIndex === firstNodeIndex && nodeIndices.length >= 3) {
         draft.points.push({ ...draft.points[0] });
         draft.nodeIndices.push(firstNodeIndex);
         draft.closed = true;
@@ -1809,7 +1830,8 @@ export class WorldBuilder {
     }
 
     const graph = this.getTrafficRouteGraph();
-    const node = this.getNearestTrafficRouteNode(point, graph);
+    const lastNodeIndex = this.state.trafficRouteDraft.nodeIndices?.[this.state.trafficRouteDraft.nodeIndices.length - 1] ?? null;
+    const node = this.getNearestTrafficRouteNode(point, graph, { fromNodeIndex: lastNodeIndex });
     if (!node) {
       return;
     }
@@ -1825,7 +1847,8 @@ export class WorldBuilder {
     }
 
     const graph = this.getTrafficRouteGraph();
-    const node = this.getNearestTrafficRouteNode(point, graph);
+    const lastNodeIndex = this.state.trafficRouteDraft?.nodeIndices?.[this.state.trafficRouteDraft.nodeIndices.length - 1] ?? null;
+    const node = this.getNearestTrafficRouteNode(point, graph, { fromNodeIndex: lastNodeIndex });
     const changed = node ? this.appendTrafficRouteDraftNode(node.index, graph) : false;
     this.state.trafficRouteDrawing = false;
     this.state.trafficRoutePreview = null;

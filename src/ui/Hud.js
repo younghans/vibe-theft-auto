@@ -4139,6 +4139,9 @@ const BUILDER_PANEL_DEFAULT_WIDTH = 620;
 const BUILDER_PANEL_MIN_WIDTH = 320;
 const BUILDER_PANEL_MAX_WIDTH = 860;
 const BUILDER_PANEL_MOBILE_BREAKPOINT = 900;
+const TRAFFIC_ROUTE_MAP_ZOOM_MIN = 1;
+const TRAFFIC_ROUTE_MAP_ZOOM_MAX = 3;
+const TRAFFIC_ROUTE_MAP_ZOOM_STEP = 0.25;
 const ADMIN_PROMPT_MIN_WIDTH = 340;
 const ADMIN_PROMPT_MIN_HEIGHT = 280;
 const ADMIN_PROMPT_MAX_WIDTH = 980;
@@ -4612,6 +4615,13 @@ export class Hud {
     this.builderPanelWidth = BUILDER_PANEL_DEFAULT_WIDTH;
     this.builderMissionDragIndex = null;
     this.builderTrafficDrawPointerId = null;
+    this.builderTrafficRouteMapZoom = 1;
+    this.builderTrafficRouteMapScroll = {
+      left: 0,
+      top: 0,
+      centerX: 0.5,
+      centerY: 0.5
+    };
     this.activeBuilderResizePointerId = null;
     this.builderResizeRightEdge = 0;
     this.builderNpcEditorVisible = false;
@@ -7188,12 +7198,108 @@ export class Hud {
     }, { passive: true });
   }
 
+  clampBuilderTrafficRouteMapZoom(value) {
+    const zoom = Number(value);
+    if (!Number.isFinite(zoom)) {
+      return 1;
+    }
+    return Math.min(
+      TRAFFIC_ROUTE_MAP_ZOOM_MAX,
+      Math.max(TRAFFIC_ROUTE_MAP_ZOOM_MIN, zoom)
+    );
+  }
+
+  getBuilderTrafficRouteMapElement() {
+    return this.builderTiles?.querySelector('[data-builder-traffic-map]') ?? null;
+  }
+
+  captureBuilderTrafficRouteMapScroll(map = this.getBuilderTrafficRouteMapElement()) {
+    if (!map) {
+      return this.builderTrafficRouteMapScroll;
+    }
+
+    const scrollWidth = Math.max(1, map.scrollWidth);
+    const scrollHeight = Math.max(1, map.scrollHeight);
+    const snapshot = {
+      left: map.scrollLeft,
+      top: map.scrollTop,
+      centerX: Math.max(0, Math.min(1, (map.scrollLeft + (map.clientWidth * 0.5)) / scrollWidth)),
+      centerY: Math.max(0, Math.min(1, (map.scrollTop + (map.clientHeight * 0.5)) / scrollHeight))
+    };
+    this.builderTrafficRouteMapScroll = snapshot;
+    return snapshot;
+  }
+
+  restoreBuilderTrafficRouteMapScroll(
+    snapshot = this.builderTrafficRouteMapScroll,
+    map = this.getBuilderTrafficRouteMapElement()
+  ) {
+    if (!map || !snapshot) {
+      return;
+    }
+
+    const maxLeft = Math.max(0, map.scrollWidth - map.clientWidth);
+    const maxTop = Math.max(0, map.scrollHeight - map.clientHeight);
+    const centerX = Number.isFinite(snapshot.centerX) ? snapshot.centerX : 0.5;
+    const centerY = Number.isFinite(snapshot.centerY) ? snapshot.centerY : 0.5;
+    const nextLeft = Math.round((centerX * Math.max(1, map.scrollWidth)) - (map.clientWidth * 0.5));
+    const nextTop = Math.round((centerY * Math.max(1, map.scrollHeight)) - (map.clientHeight * 0.5));
+    map.scrollLeft = Math.max(0, Math.min(maxLeft, nextLeft));
+    map.scrollTop = Math.max(0, Math.min(maxTop, nextTop));
+    this.captureBuilderTrafficRouteMapScroll(map);
+  }
+
+  applyBuilderTrafficRouteMapZoom(map = this.getBuilderTrafficRouteMapElement()) {
+    if (!map) {
+      return;
+    }
+
+    const baseWidth = Math.max(1, Number(map.getAttribute('data-map-width')) || 560);
+    const baseHeight = Math.max(1, Number(map.getAttribute('data-map-height')) || 560);
+    const zoom = this.clampBuilderTrafficRouteMapZoom(this.builderTrafficRouteMapZoom);
+    this.builderTrafficRouteMapZoom = zoom;
+    map.style.setProperty('--traffic-route-map-content-width', `${Math.round(baseWidth * zoom)}px`);
+    map.style.setProperty('--traffic-route-map-content-height', `${Math.round(baseHeight * zoom)}px`);
+    map.setAttribute('data-map-zoom', zoom.toFixed(2));
+
+    const section = map.closest('[data-builder-traffic-routes]');
+    const label = section?.querySelector('[data-builder-traffic-zoom-label]');
+    if (label) {
+      label.textContent = `${Math.round(zoom * 100)}%`;
+    }
+    const zoomOut = section?.querySelector('[data-builder-traffic-zoom="out"]');
+    const zoomIn = section?.querySelector('[data-builder-traffic-zoom="in"]');
+    if (zoomOut instanceof HTMLButtonElement) {
+      zoomOut.disabled = zoom <= TRAFFIC_ROUTE_MAP_ZOOM_MIN + 0.001;
+    }
+    if (zoomIn instanceof HTMLButtonElement) {
+      zoomIn.disabled = zoom >= TRAFFIC_ROUTE_MAP_ZOOM_MAX - 0.001;
+    }
+  }
+
+  setBuilderTrafficRouteMapZoom(value) {
+    const map = this.getBuilderTrafficRouteMapElement();
+    const snapshot = this.captureBuilderTrafficRouteMapScroll(map);
+    this.builderTrafficRouteMapZoom = this.clampBuilderTrafficRouteMapZoom(value);
+    this.applyBuilderTrafficRouteMapZoom(map);
+    this.restoreBuilderTrafficRouteMapScroll(snapshot, map);
+  }
+
+  adjustBuilderTrafficRouteMapZoom(direction = 0) {
+    const delta = Math.sign(Number(direction) || 0) * TRAFFIC_ROUTE_MAP_ZOOM_STEP;
+    if (!delta) {
+      return;
+    }
+    this.setBuilderTrafficRouteMapZoom(this.builderTrafficRouteMapZoom + delta);
+  }
+
   getBuilderTrafficRouteMapMetrics(map) {
     if (!map) {
       return null;
     }
 
-    const rect = map.getBoundingClientRect();
+    const content = map.querySelector('[data-builder-traffic-map-content]') ?? map;
+    const rect = content.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) {
       return null;
     }
@@ -7325,6 +7431,21 @@ export class Hud {
         ? event.target
         : event.target?.parentElement ?? null;
       if (!target || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      const zoomButton = target.closest('[data-builder-traffic-zoom]');
+      if (zoomButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const direction = zoomButton.getAttribute('data-builder-traffic-zoom') ?? '';
+        if (direction === 'in') {
+          this.adjustBuilderTrafficRouteMapZoom(1);
+        } else if (direction === 'out') {
+          this.adjustBuilderTrafficRouteMapZoom(-1);
+        } else if (direction === 'reset') {
+          this.setBuilderTrafficRouteMapZoom(1);
+        }
         return;
       }
 
@@ -7479,6 +7600,34 @@ export class Hud {
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
     });
+
+    this.builderTiles.addEventListener('scroll', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : null;
+      if (target?.matches('[data-builder-traffic-map]')) {
+        this.captureBuilderTrafficRouteMapScroll(target);
+      }
+    }, { capture: true, passive: true });
+
+    this.builderTiles.addEventListener('wheel', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const trafficMap = target?.closest('[data-builder-traffic-map]');
+      if (!trafficMap || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      this.captureBuilderTrafficRouteMapScroll(trafficMap);
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      this.adjustBuilderTrafficRouteMapZoom(event.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
 
     this.builderTiles.addEventListener('pointerdown', (event) => {
       if (!this.isElementInteractive(this.builderRoot) || event.button !== 0) {
@@ -8659,6 +8808,11 @@ export class Hud {
     const cars = Array.isArray(trafficRoutes.cars) ? trafficRoutes.cars : [];
     const draft = trafficRoutes.draft ?? null;
     const preview = trafficRoutes.preview ?? null;
+    const zoom = this.clampBuilderTrafficRouteMapZoom(this.builderTrafficRouteMapZoom);
+    this.builderTrafficRouteMapZoom = zoom;
+    const contentWidth = Math.max(1, Math.round(width * zoom));
+    const contentHeight = Math.max(1, Math.round(height * zoom));
+    const zoomPercent = Math.round(zoom * 100);
     const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
     const makePointList = (points = []) => points
       .map((point) => {
@@ -8746,21 +8900,54 @@ export class Hud {
           <p class="hud__builder-section-title">Traffic Routes</p>
           <span class="hud__builder-section-count">${Number(trafficRoutes.roadCount ?? 0)} roads</span>
         </div>
+        <div class="hud__traffic-route-map-toolbar">
+          <div class="hud__traffic-route-zoom" aria-label="Traffic route map zoom">
+            <button
+              class="hud__traffic-route-zoom-button"
+              type="button"
+              data-builder-traffic-zoom="out"
+              title="Zoom out"
+              aria-label="Zoom out"
+              ${zoom <= TRAFFIC_ROUTE_MAP_ZOOM_MIN + 0.001 ? 'disabled' : ''}
+            >-</button>
+            <button
+              class="hud__traffic-route-zoom-label"
+              type="button"
+              data-builder-traffic-zoom="reset"
+              title="Reset zoom"
+              aria-label="Reset zoom"
+              data-builder-traffic-zoom-label
+            >${zoomPercent}%</button>
+            <button
+              class="hud__traffic-route-zoom-button"
+              type="button"
+              data-builder-traffic-zoom="in"
+              title="Zoom in"
+              aria-label="Zoom in"
+              ${zoom >= TRAFFIC_ROUTE_MAP_ZOOM_MAX - 0.001 ? 'disabled' : ''}
+            >+</button>
+          </div>
+        </div>
         <div
           class="hud__traffic-route-map"
           data-builder-traffic-map
+          data-map-width="${width}"
+          data-map-height="${height}"
+          data-map-zoom="${zoom.toFixed(2)}"
           data-min-x="${canProject ? minX : -1}"
           data-max-x="${canProject ? maxX : 1}"
           data-min-z="${canProject ? minZ : -1}"
           data-max-z="${canProject ? maxZ : 1}"
-          style="--traffic-route-map-aspect:${width} / ${height};--traffic-route-map-width:${width}px;--traffic-route-map-height:${height}px"
+          style="--traffic-route-map-aspect:${width} / ${height};--traffic-route-map-width:${width}px;--traffic-route-map-height:${height}px;--traffic-route-map-content-width:${contentWidth}px;--traffic-route-map-content-height:${contentHeight}px"
         >
-          <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Traffic route map">
-            <rect class="hud__traffic-route-map-bg" width="${width}" height="${height}" rx="8"></rect>
-            ${imageMarkup}
-            <g class="hud__traffic-route-roads">${roadMarkup}</g>
-            <g class="hud__traffic-route-lines">${routeMarkup}${draftMarkup}${previewMarkup}</g>
-          </svg>
+          <div class="hud__traffic-route-map-content" data-builder-traffic-map-content>
+            <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Traffic route map">
+              <rect class="hud__traffic-route-map-bg" width="${width}" height="${height}" rx="8"></rect>
+              ${imageMarkup}
+              <g class="hud__traffic-route-roads">${roadMarkup}</g>
+              <g class="hud__traffic-route-lines">${routeMarkup}${draftMarkup}${previewMarkup}</g>
+            </svg>
+          </div>
         </div>
         <div class="hud__traffic-route-actions">
           ${draft ? '<button class="hud__builder-action" type="button" data-builder-traffic-action="clear-draft">Clear Draft</button>' : ''}
@@ -8850,7 +9037,9 @@ export class Hud {
     }
 
     if (trafficRoutes) {
+      const scrollSnapshot = this.captureBuilderTrafficRouteMapScroll();
       this.builderTiles.innerHTML = this.getBuilderTrafficRoutesMarkup(trafficRoutes);
+      this.restoreBuilderTrafficRouteMapScroll(scrollSnapshot);
       return;
     }
 

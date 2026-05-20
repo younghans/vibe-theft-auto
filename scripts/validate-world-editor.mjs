@@ -1410,17 +1410,23 @@ function validatePassiveTraffic() {
     hudSource.includes('--traffic-route-map-aspect')
       && hudSource.includes('hud__traffic-route-end')
       && hudSource.includes('hud__traffic-route-path--preview')
+      && hudSource.includes('data-builder-traffic-map-content')
+      && hudSource.includes('data-builder-traffic-zoom')
       && styleSource.includes('aspect-ratio: var(--traffic-route-map-aspect')
-      && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end'),
-    'Traffic route editor should render the captured phone map without squashing it and mark unfinished route endpoints'
+      && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end')
+      && styleSource.includes('overflow: auto;')
+      && styleSource.includes('.hud__traffic-route-zoom'),
+    'Traffic route editor should render the captured phone map without squashing it, support map zoom/scroll, and mark unfinished route endpoints'
   );
   assert(
     /draftItemId[\s\S]*activeItemId = draftItemId/.test(worldBuilderSource)
       && /trafficRoutePreview/.test(worldBuilderSource)
       && /createTrafficRouteDraftPreview/.test(worldBuilderSource)
+      && /preferredComponentIndex/.test(worldBuilderSource)
+      && /const closingRoute = targetNodeIndex === firstNodeIndex/.test(worldBuilderSource)
       && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
       && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
-    'Traffic route editor should keep unfinished drafts selected, preview drag routes, and leave clicks resumable after pointer-up'
+    'Traffic route editor should keep unfinished drafts selected, prefer reachable road components, preview drag routes, and leave clicks resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')
