@@ -10067,8 +10067,9 @@ export class Game {
   createVibeHeroState(songId = this.vibeHeroSelectedSongId, { editorMode = false } = {}) {
     const normalizedSongId = normalizeVibeHeroSongId(songId);
     const baseSong = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
+    const editing = Boolean(editorMode && this.isLocalAdmin());
     const sourceChart = this.normalizeVibeHeroEditorChart(baseSong?.chart ?? []);
-    const storedChart = this.loadVibeHeroStoredEditorChart(baseSong);
+    const storedChart = editing ? this.loadVibeHeroStoredEditorChart(baseSong) : null;
     const activeChart = storedChart ?? sourceChart;
     const song = baseSong
       ? {
@@ -10079,7 +10080,7 @@ export class Game {
       : null;
     const songs = [];
     for (const entry of listVibeHeroSongs()) {
-      const storedEntryChart = this.loadVibeHeroStoredEditorChart(entry);
+      const storedEntryChart = editing ? this.loadVibeHeroStoredEditorChart(entry) : null;
       songs.push({
         id: entry.id,
         title: entry.title,
@@ -10094,11 +10095,10 @@ export class Game {
         difficulty: entry.difficulty,
         previewColor: entry.previewColor,
         noteCount: (storedEntryChart ?? entry.chart).length,
-        chartEdited: Boolean(storedEntryChart),
+        chartEdited: Boolean(storedEntryChart) || entry.chartEdited === true,
         audioUrl: this.getVibeHeroSongAudioUrl(entry)
       });
     }
-    const editing = Boolean(editorMode && this.isLocalAdmin());
     const notes = [];
     const noteSource = song?.chart ?? [];
     for (let index = 0; index < noteSource.length; index += 1) {

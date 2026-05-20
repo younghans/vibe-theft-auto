@@ -2276,6 +2276,8 @@ function validateVibeHero() {
   assert(gameSource.includes('VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS') && gameSource.includes('editorLaneHeld'), 'Vibe Hero chart editor should debounce fresh taps before held-key repeat notes are recorded');
   assert(gameSource.includes('recordedKeys') && gameSource.includes('mergedChart'), 'Vibe Hero chart editor should avoid preserving exact duplicates when merging recorded notes');
   assert(gameSource.includes('VIBE_HERO_EDITOR_STORAGE_PREFIX'), 'Vibe Hero chart editor should persist edited charts locally for admins');
+  assert(gameSource.includes('entry.chartEdited === true'), 'Vibe Hero public song list should preserve shipped edited-chart metadata without requiring admin local storage');
+  assert(gameSource.includes('const storedChart = editing ? this.loadVibeHeroStoredEditorChart(baseSong) : null'), 'Vibe Hero normal play should use the compiled main edited chart instead of admin-only stored charts');
   assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
   assert(hudSource.includes('hud__vibe-hero-fret') && styleSource.includes('.hud__vibe-hero-fret'), 'Vibe Hero HUD should render oval timing frets above the lane number buttons');
   assert(hudSource.includes('hud__vibe-hero-hit-fire') && styleSource.includes('@keyframes hud-vibe-hero-fire-burst'), 'Vibe Hero HUD should animate a small fire burst when a note is hit correctly');
@@ -2288,6 +2290,8 @@ function validateVibeHero() {
     assert(String(song.publicDomainBasis ?? '').toLowerCase().includes('public domain'), `${song.title}: should document the composition/public-domain basis`);
     assert(String(song.sourceLicense ?? '').length > 20, `${song.title}: should document the recording license/source terms`);
     assert(String(song.chartSource ?? '').toLowerCase().includes('source-mp3 onset'), `${song.title}: should document source-MP3 onset charting`);
+    assert(String(song.chartSource ?? '').toLowerCase().includes('editor-polished'), `${song.title}: main chart should be the admin-edited chart, not only an admin local-storage override`);
+    assert(song.chartEdited === true, `${song.title}: public song metadata should mark the shipped main chart as edited`);
     assert(licenseNotice.includes(song.sourceDownloadUrl), `${song.title}: source MP3 should be listed in the Vibe Hero audio notice`);
     const localAudioFile = new URL(`../assets/audio/vibe-hero/${song.id}.mp3`, import.meta.url);
     const localAudioSize = statSync(localAudioFile).size;
@@ -2304,6 +2308,7 @@ function validateVibeHero() {
     if (song.id === 'vivaldi-winter') {
       assert(song.snippetStartMs === 30000, 'Vivaldi - Winter should skip the first 30 seconds of the MP3');
       assert(song.durationMs === 95000, 'Vivaldi - Winter should chart a 95 second snippet after the 30 second skip');
+      assert(song.chart.length === 458, 'Vivaldi - Winter should ship the 458-note editor-polished chart');
     }
 
     assert(Array.isArray(song.chart) && song.chart.length >= 120, `${song.title}: expert chart should have enough notes to be difficult`);
