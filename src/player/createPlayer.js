@@ -80,18 +80,50 @@ const SLOT_MOTION_BASE = Object.freeze({
 });
 
 const EMPTY_VECTOR_OVERRIDE = Object.freeze([0, 0, 0]);
+const ATTACHMENT_SLOT_LIST = Object.freeze([
+  ATTACHMENT_SLOTS.handRight,
+  ATTACHMENT_SLOTS.handLeft,
+  ATTACHMENT_SLOTS.back
+]);
 const AIM_IDLE_LOCK_BONES = Object.freeze(['leftArm', 'leftForeArm', 'leftHand']);
-const AIM_IDLE_LOCK_FIELD_KEYS = new Set(
-  HELD_ITEM_AIM_POSE_FIELDS
-    .filter((field) => AIM_IDLE_LOCK_BONES.includes(field.bone))
-    .map((field) => field.key)
-);
-const AIM_STABILIZE_BONES = Object.freeze(
-  Array.from(new Set([
-    UPPER_BODY_ROOT_BONE,
-    ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.bone)
-  ]))
-);
+const HELD_ITEM_AIM_POSE_FIELD_KEYS = new Set();
+const AIM_IDLE_LOCK_FIELD_KEYS = new Set();
+const AIM_STABILIZE_BONE_SET = new Set([UPPER_BODY_ROOT_BONE]);
+function copyIterableValues(values) {
+  const copied = [];
+  for (const value of values) {
+    copied.push(value);
+  }
+  return copied;
+}
+
+function combineIterableValues(first, second) {
+  const combined = [];
+  for (const value of first) {
+    combined.push(value);
+  }
+  for (const value of second) {
+    combined.push(value);
+  }
+  return combined;
+}
+
+for (let index = 0; index < HELD_ITEM_AIM_POSE_FIELDS.length; index += 1) {
+  const field = HELD_ITEM_AIM_POSE_FIELDS[index];
+  HELD_ITEM_AIM_POSE_FIELD_KEYS.add(field.key);
+  AIM_STABILIZE_BONE_SET.add(field.bone);
+  let locksAimIdle = false;
+  for (const boneName of AIM_IDLE_LOCK_BONES) {
+    if (boneName === field.bone) {
+      locksAimIdle = true;
+      break;
+    }
+  }
+  if (locksAimIdle) {
+    AIM_IDLE_LOCK_FIELD_KEYS.add(field.key);
+  }
+}
+const AIM_STABILIZE_BONES = Object.freeze(copyIterableValues(AIM_STABILIZE_BONE_SET));
 const RELOAD_POSE_BONES = Object.freeze(['spineUpper', 'leftShoulder', 'leftArm', 'leftForeArm', 'leftHand']);
 const RELOAD_IK_DRIVEN_BONES = new Set(['leftArm', 'leftForeArm', 'leftHand']);
 const UPPER_BODY_EMOTE_BONES = Object.freeze([
@@ -135,12 +167,12 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
 ]);
 const SKATEBOARD_SIDEWAYS_FOOT_YAW = Math.PI / 2;
 const SKATEBOARD_LOWER_BODY_TURN_YAW = Math.PI / 2;
-const SKATEBOARD_LOWER_BODY_STILL_BONES = Object.freeze([...LOWER_BODY_LOCOMOTION_BONES]);
-const SKATEBOARD_UPPER_BODY_STILL_BONES = Object.freeze([...UPPER_BODY_EMOTE_BONES]);
-const SKATEBOARD_STILL_BODY_BONES = Object.freeze([
-  ...SKATEBOARD_LOWER_BODY_STILL_BONES,
-  ...SKATEBOARD_UPPER_BODY_STILL_BONES
-]);
+const SKATEBOARD_LOWER_BODY_STILL_BONES = Object.freeze(copyIterableValues(LOWER_BODY_LOCOMOTION_BONES));
+const SKATEBOARD_UPPER_BODY_STILL_BONES = Object.freeze(copyIterableValues(UPPER_BODY_EMOTE_BONES));
+const SKATEBOARD_STILL_BODY_BONES = Object.freeze(combineIterableValues(
+  SKATEBOARD_LOWER_BODY_STILL_BONES,
+  SKATEBOARD_UPPER_BODY_STILL_BONES
+));
 const SKATEBOARD_STILL_BODY_POSE_ROTATIONS = Object.freeze({
   [MIXAMO_BONES.hips]: Object.freeze([0, SKATEBOARD_LOWER_BODY_TURN_YAW, 0]),
   [MIXAMO_BONES.spine]: Object.freeze([0, -SKATEBOARD_LOWER_BODY_TURN_YAW, 0]),
@@ -316,34 +348,30 @@ function collidesWithCylinder(candidate, collider, radius) {
 }
 
 function collidesWithColliders(candidate, colliders, radius) {
-  return colliders.some((collider) => {
+  for (let index = 0; index < colliders.length; index += 1) {
+    const collider = colliders[index];
     if (!collider || collider.blocksMovement === false) {
-      return false;
+      continue;
     }
 
     if (collider.type === 'cylinder') {
-      return collidesWithCylinder(candidate, collider, radius);
+      if (collidesWithCylinder(candidate, collider, radius)) {
+        return true;
+      }
+      continue;
     }
 
-    return collidesWithBox(candidate, collider, radius);
-  });
+    if (collidesWithBox(candidate, collider, radius)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function dampAngle(current, target, smoothing) {
   const delta = Math.atan2(Math.sin(target - current), Math.cos(target - current));
   return current + delta * smoothing;
-}
-
-function clampBoundsX(cityBounds, fallback) {
-  return Number.isFinite(cityBounds?.min?.x) && Number.isFinite(cityBounds?.max?.x)
-    ? [cityBounds.min.x, cityBounds.max.x]
-    : [fallback, fallback];
-}
-
-function clampBoundsZ(cityBounds, fallback) {
-  return Number.isFinite(cityBounds?.min?.z) && Number.isFinite(cityBounds?.max?.z)
-    ? [cityBounds.min.z, cityBounds.max.z]
-    : [fallback, fallback];
 }
 
 function normalizeAngle(angle) {
@@ -425,27 +453,29 @@ function centerAndGroundVehicleModel(root, itemId = '') {
 function createSkateboardStaticBodyPose(root) {
   const offsetEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const offsetQuaternion = new THREE.Quaternion();
-  return SKATEBOARD_STILL_BODY_BONES
-    .map((boneName) => {
-      const bone = root.getObjectByName(boneName);
-      if (!bone) {
-        return null;
-      }
+  const pose = [];
+  for (let index = 0; index < SKATEBOARD_STILL_BODY_BONES.length; index += 1) {
+    const boneName = SKATEBOARD_STILL_BODY_BONES[index];
+    const bone = root.getObjectByName(boneName);
+    if (!bone) {
+      continue;
+    }
 
-      const targetQuaternion = bone.quaternion.clone();
-      const rotation = SKATEBOARD_STILL_BODY_POSE_ROTATIONS[boneName];
-      if (rotation) {
-        offsetEuler.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
-        offsetQuaternion.setFromEuler(offsetEuler);
-        targetQuaternion.multiply(offsetQuaternion);
-      }
+    const targetQuaternion = bone.quaternion.clone();
+    const rotation = SKATEBOARD_STILL_BODY_POSE_ROTATIONS[boneName];
+    if (rotation) {
+      offsetEuler.set(rotation[0] ?? 0, rotation[1] ?? 0, rotation[2] ?? 0);
+      offsetQuaternion.setFromEuler(offsetEuler);
+      targetQuaternion.multiply(offsetQuaternion);
+    }
 
-      return {
-        bone,
-        targetQuaternion
-      };
-    })
-    .filter(Boolean);
+    pose.push({
+      bone,
+      targetQuaternion
+    });
+  }
+
+  return pose;
 }
 
 function cloneTrackedMaterial(material) {
@@ -474,13 +504,16 @@ function collectDamageTintMaterials(root) {
     }
 
     if (Array.isArray(node.material)) {
-      node.material = node.material.map((entry) => {
+      const clonedMaterials = new Array(node.material.length);
+      for (let index = 0; index < node.material.length; index += 1) {
+        const entry = node.material[index];
         const { material, tracked } = cloneTrackedMaterial(entry);
         if (tracked) {
           trackedMaterials.push(tracked);
         }
-        return material;
-      });
+        clonedMaterials[index] = material;
+      }
+      node.material = clonedMaterials;
       return;
     }
 
@@ -492,6 +525,61 @@ function collectDamageTintMaterials(root) {
   });
 
   return trackedMaterials;
+}
+
+function cloneNumberVector3(values = null, fallback = 0) {
+  return [
+    Number(values?.[0] ?? fallback),
+    Number(values?.[1] ?? fallback),
+    Number(values?.[2] ?? fallback)
+  ];
+}
+
+function mergeNumberVector3(overrideValues = null, baseValues = null, fallback = 0) {
+  return [
+    Number(overrideValues?.[0] ?? baseValues?.[0] ?? fallback),
+    Number(overrideValues?.[1] ?? baseValues?.[1] ?? fallback),
+    Number(overrideValues?.[2] ?? baseValues?.[2] ?? fallback)
+  ];
+}
+
+function addNumberVector3(baseValues = null, deltaValues = null, fallback = 0) {
+  return [
+    (baseValues?.[0] ?? fallback) + (deltaValues?.[0] ?? 0),
+    (baseValues?.[1] ?? fallback) + (deltaValues?.[1] ?? 0),
+    (baseValues?.[2] ?? fallback) + (deltaValues?.[2] ?? 0)
+  ];
+}
+
+function multiplyNumberVector3(baseValues = null, deltaValues = null, fallback = 1) {
+  return [
+    (baseValues?.[0] ?? fallback) * (deltaValues?.[0] ?? 1),
+    (baseValues?.[1] ?? fallback) * (deltaValues?.[1] ?? 1),
+    (baseValues?.[2] ?? fallback) * (deltaValues?.[2] ?? 1)
+  ];
+}
+
+function cloneReloadPose(pose = null) {
+  const nextPose = {};
+  for (const boneKey in pose ?? {}) {
+    if (Object.hasOwn(pose, boneKey)) {
+      nextPose[boneKey] = cloneNumberVector3(pose[boneKey], 0);
+    }
+  }
+  return nextPose;
+}
+
+function hasOwnEnumerableProperties(value = null) {
+  if (!value) {
+    return false;
+  }
+
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function createPlayer(library, {
@@ -513,7 +601,7 @@ export async function createPlayer(library, {
     clipNamesToPreload.add(punchClipName);
   }
 
-  await preloadMixamoClips([...clipNamesToPreload]);
+  await preloadMixamoClips(clipNamesToPreload);
 
   const characterRig = await library.instantiate(characterDefinition.characterRig);
   const character = characterDefinition.characterVariant === 'classicBot'
@@ -537,10 +625,12 @@ export async function createPlayer(library, {
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
   const drunkIdleLowerBodyClip = createBoneFilteredClip(drunkIdleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkIdleClip}_LowerBody`);
   const drunkWalkLowerBodyClip = createBoneFilteredClip(drunkWalkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkWalkClip}_LowerBody`);
-  const upperBodyMirrorMap = new Map(UPPER_BODY_MIRROR_BONE_PAIRS.flatMap(([leftBone, rightBone]) => ([
-    [leftBone, rightBone],
-    [rightBone, leftBone]
-  ])));
+  const upperBodyMirrorMap = new Map();
+  for (let index = 0; index < UPPER_BODY_MIRROR_BONE_PAIRS.length; index += 1) {
+    const [leftBone, rightBone] = UPPER_BODY_MIRROR_BONE_PAIRS[index];
+    upperBodyMirrorMap.set(leftBone, rightBone);
+    upperBodyMirrorMap.set(rightBone, leftBone);
+  }
   const punchSourceClip = punchClipName
     ? createRigSafeClip(getMixamoClip(punchClipName), `${punchClipName}_RigSafe`)
     : null;
@@ -673,7 +763,9 @@ export async function createPlayer(library, {
   let activeEmoteStartedAt = 0;
   let emoteSequence = 0;
   let emotePlaybackRequestId = 0;
-  let lastRemoteEmoteSignature = '';
+  let lastRemoteEmoteActive = false;
+  let lastRemoteEmoteId = '';
+  let lastRemoteEmoteSeq = -1;
   let limpStartedAt = 0;
   let limpRecoverUntilMs = 0;
   const ragdoll = createRagdollController(character);
@@ -702,26 +794,34 @@ export async function createPlayer(library, {
     leftForeArm: character.getObjectByName(MIXAMO_BONES.leftForeArm) ?? null,
     leftHand: character.getObjectByName(MIXAMO_BONES.leftHand) ?? null
   };
-  const aimPoseBoneBases = Object.fromEntries(
-    Object.entries(aimPoseBones).map(([key, bone]) => [key, bone ? { quaternion: bone.quaternion.clone() } : null])
-  );
+  const aimPoseBoneBases = {};
+  for (const key in aimPoseBones) {
+    if (Object.hasOwn(aimPoseBones, key)) {
+      const bone = aimPoseBones[key];
+      aimPoseBoneBases[key] = bone ? { quaternion: bone.quaternion.clone() } : null;
+    }
+  }
   mixer.setTime(0);
   const skateboardStaticBodyPose = createSkateboardStaticBodyPose(character);
-  const aimPoseIdleBases = Object.fromEntries(
-    AIM_IDLE_LOCK_BONES.map((boneKey) => {
-      const bone = aimPoseBones[boneKey];
-      return [boneKey, bone ? { quaternion: bone.quaternion.clone() } : null];
-    })
-  );
+  const aimPoseIdleBases = {};
+  for (let index = 0; index < AIM_IDLE_LOCK_BONES.length; index += 1) {
+    const boneKey = AIM_IDLE_LOCK_BONES[index];
+    const bone = aimPoseBones[boneKey];
+    aimPoseIdleBases[boneKey] = bone ? { quaternion: bone.quaternion.clone() } : null;
+  }
   const aimPoseEuler = new THREE.Euler(0, 0, 0, 'XYZ');
   const aimPoseQuaternion = new THREE.Quaternion();
   const aimPoseTargetQuaternion = new THREE.Quaternion();
   const aimPoseRotationsByBone = new Map();
   const aimPoseBlendWeightsByBone = new Map();
   const activeAimBones = new Set();
-  const footPlantBones = FOOT_PLANT_BONE_NAMES
-    .map((boneName) => character.getObjectByName(boneName))
-    .filter(Boolean);
+  const footPlantBones = [];
+  for (let index = 0; index < FOOT_PLANT_BONE_NAMES.length; index += 1) {
+    const bone = character.getObjectByName(FOOT_PLANT_BONE_NAMES[index]);
+    if (bone) {
+      footPlantBones.push(bone);
+    }
+  }
   const footPlantWorldPosition = new THREE.Vector3();
   const footPlantLocalPosition = new THREE.Vector3();
   const reloadIkTargetPosition = new THREE.Vector3();
@@ -762,6 +862,32 @@ export async function createPlayer(library, {
   let activeVehicleItemId = '';
   let skateboardMotion = 0;
   let skateboardStaticBodyPoseWeight = 0;
+  const skateboardStateScratch = {
+    owned: false,
+    skating: false,
+    vehicleItemId: ''
+  };
+  const animationOptionsScratch = {
+    locomotionMode: undefined,
+    locomotionPlaybackRate: undefined
+  };
+  const aliveStateOptionsScratch = {
+    startedAtMs: 0
+  };
+  const weaponStateOptionsScratch = {
+    visible: true
+  };
+  const reloadStateOptionsScratch = {
+    weaponId: '',
+    startedAtMs: 0,
+    endsAtMs: 0,
+    resetMotion: true
+  };
+  const moveTowardResultScratch = {
+    arrived: false,
+    moving: false,
+    distance: Infinity
+  };
   const playerVehicleModels = new Map();
   const playerVehicleModelLoads = new Map();
   let reloadPoseWeight = 0;
@@ -794,7 +920,7 @@ export async function createPlayer(library, {
   skeletonHelper.material.transparent = true;
   skeletonHelper.material.opacity = 0.9;
 
-  for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+  for (const slot of ATTACHMENT_SLOT_LIST) {
     const socket = sockets[slot];
     const root = new THREE.Group();
     root.name = `EquipmentRoot_${slot}`;
@@ -932,9 +1058,9 @@ export async function createPlayer(library, {
     }
 
     return {
-      position: [...(override.position ?? EMPTY_VECTOR_OVERRIDE)],
-      rotation: [...(override.rotation ?? EMPTY_VECTOR_OVERRIDE)],
-      scale: [...(override.scale ?? [1, 1, 1])]
+      position: cloneNumberVector3(override.position, 0),
+      rotation: cloneNumberVector3(override.rotation, 0),
+      scale: cloneNumberVector3(override.scale, 1)
     };
   }
 
@@ -949,14 +1075,17 @@ export async function createPlayer(library, {
     }
 
     const next = {};
-    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+    let hasOverride = false;
+    for (let index = 0; index < HELD_ITEM_AIM_POSE_FIELDS.length; index += 1) {
+      const field = HELD_ITEM_AIM_POSE_FIELDS[index];
       const value = Number(override[field.key]);
       if (Number.isFinite(value) && Math.abs(value) > 0.000001) {
         next[field.key] = value;
+        hasOverride = true;
       }
     }
 
-    return Object.keys(next).length > 0 ? next : null;
+    return hasOverride ? next : null;
   }
 
   function getMergedAimPose(itemId) {
@@ -979,9 +1108,9 @@ export async function createPlayer(library, {
       handTarget: profile.handTarget
         ? {
           nodeName: profile.handTarget.nodeName ?? '',
-          position: [0, 1, 2].map((index) => Number(profile.handTarget.position?.[index] ?? 0)),
-          rotation: [0, 1, 2].map((index) => Number(profile.handTarget.rotation?.[index] ?? 0)),
-          scale: [0, 1, 2].map((index) => Number(profile.handTarget.scale?.[index] ?? 1))
+          position: cloneNumberVector3(profile.handTarget.position, 0),
+          rotation: cloneNumberVector3(profile.handTarget.rotation, 0),
+          scale: cloneNumberVector3(profile.handTarget.scale, 1)
         }
         : null,
       slide: profile.slide
@@ -990,21 +1119,16 @@ export async function createPlayer(library, {
           start: Number(profile.slide.start ?? 0),
           peak: Number(profile.slide.peak ?? 0),
           end: Number(profile.slide.end ?? 0),
-          position: [0, 1, 2].map((index) => Number(profile.slide.position?.[index] ?? 0))
+          position: cloneNumberVector3(profile.slide.position, 0)
         }
         : null,
       weaponMotion: profile.weaponMotion
         ? {
-          position: [0, 1, 2].map((index) => Number(profile.weaponMotion.position?.[index] ?? 0)),
-          rotation: [0, 1, 2].map((index) => Number(profile.weaponMotion.rotation?.[index] ?? 0))
+          position: cloneNumberVector3(profile.weaponMotion.position, 0),
+          rotation: cloneNumberVector3(profile.weaponMotion.rotation, 0)
         }
         : null,
-      pose: Object.fromEntries(
-        Object.entries(profile.pose ?? {}).map(([boneKey, values]) => [
-          boneKey,
-          [0, 1, 2].map((index) => Number(values?.[index] ?? 0))
-        ])
-      )
+      pose: cloneReloadPose(profile.pose)
     };
   }
 
@@ -1021,30 +1145,39 @@ export async function createPlayer(library, {
       },
       handTarget: {
         nodeName: override?.handTarget?.nodeName ?? base?.handTarget?.nodeName ?? '',
-        position: [0, 1, 2].map((index) => Number(override?.handTarget?.position?.[index] ?? base?.handTarget?.position?.[index] ?? 0)),
-        rotation: [0, 1, 2].map((index) => Number(override?.handTarget?.rotation?.[index] ?? base?.handTarget?.rotation?.[index] ?? 0)),
-        scale: [0, 1, 2].map((index) => Number(override?.handTarget?.scale?.[index] ?? base?.handTarget?.scale?.[index] ?? 1))
+        position: mergeNumberVector3(override?.handTarget?.position, base?.handTarget?.position, 0),
+        rotation: mergeNumberVector3(override?.handTarget?.rotation, base?.handTarget?.rotation, 0),
+        scale: mergeNumberVector3(override?.handTarget?.scale, base?.handTarget?.scale, 1)
       },
       slide: {
         nodeName: override?.slide?.nodeName ?? base?.slide?.nodeName ?? '',
         start: Number(override?.slide?.start ?? base?.slide?.start ?? 0),
         peak: Number(override?.slide?.peak ?? base?.slide?.peak ?? 0),
         end: Number(override?.slide?.end ?? base?.slide?.end ?? 0),
-        position: [0, 1, 2].map((index) => Number(override?.slide?.position?.[index] ?? base?.slide?.position?.[index] ?? 0))
+        position: mergeNumberVector3(override?.slide?.position, base?.slide?.position, 0)
       },
       weaponMotion: {
-        position: [0, 1, 2].map((index) => Number(override?.weaponMotion?.position?.[index] ?? base?.weaponMotion?.position?.[index] ?? 0)),
-        rotation: [0, 1, 2].map((index) => Number(override?.weaponMotion?.rotation?.[index] ?? base?.weaponMotion?.rotation?.[index] ?? 0))
+        position: mergeNumberVector3(override?.weaponMotion?.position, base?.weaponMotion?.position, 0),
+        rotation: mergeNumberVector3(override?.weaponMotion?.rotation, base?.weaponMotion?.rotation, 0)
       },
       pose: {}
     };
 
-    const poseKeys = new Set([
-      ...Object.keys(base?.pose ?? {}),
-      ...Object.keys(override?.pose ?? {})
-    ]);
+    const poseKeys = new Set();
+    const basePose = base?.pose ?? {};
+    const overridePose = override?.pose ?? {};
+    for (const boneKey in basePose) {
+      if (Object.hasOwn(basePose, boneKey)) {
+        poseKeys.add(boneKey);
+      }
+    }
+    for (const boneKey in overridePose) {
+      if (Object.hasOwn(overridePose, boneKey)) {
+        poseKeys.add(boneKey);
+      }
+    }
     for (const boneKey of poseKeys) {
-      next.pose[boneKey] = [0, 1, 2].map((index) => Number(override?.pose?.[boneKey]?.[index] ?? base?.pose?.[boneKey]?.[index] ?? 0));
+      next.pose[boneKey] = mergeNumberVector3(override?.pose?.[boneKey], base?.pose?.[boneKey], 0);
     }
 
     return next;
@@ -1068,7 +1201,8 @@ export async function createPlayer(library, {
   }
 
   function updateHeldItemVisibility() {
-    for (const [itemId, entry] of heldItemEntries.entries()) {
+    for (const itemId of heldItemEntries.keys()) {
+      const entry = heldItemEntries.get(itemId);
       const activeItemId = activeItemsBySlot.get(entry.slot);
       const slotShown = slotVisibility.get(entry.slot) !== false;
       entry.container.visible = aliveState && itemId === activeItemId && slotShown;
@@ -1076,7 +1210,7 @@ export async function createPlayer(library, {
   }
 
   function setHeldItemAimPoseFieldOverride(itemId, fieldKey, value = 0) {
-    if (!itemId || !HELD_ITEM_AIM_POSE_FIELDS.some((field) => field.key === fieldKey)) {
+    if (!itemId || !HELD_ITEM_AIM_POSE_FIELD_KEYS.has(fieldKey)) {
       return itemId ? getMergedAimPose(itemId) : null;
     }
 
@@ -1092,7 +1226,7 @@ export async function createPlayer(library, {
       nextOverride[fieldKey] = overrideValue;
     }
 
-    if (Object.keys(nextOverride).length === 0) {
+    if (!hasOwnEnumerableProperties(nextOverride)) {
       aimPoseOverrides.delete(itemId);
     } else {
       aimPoseOverrides.set(itemId, nextOverride);
@@ -1152,21 +1286,21 @@ export async function createPlayer(library, {
     }
   }
 
-  function setReloadState(reloading, {
-    weaponId = '',
-    startedAtMs = 0,
-    endsAtMs = 0,
-    resetMotion = true
-  } = {}) {
+  function setReloadState(reloading, options = null) {
+    const weaponId = options?.weaponId ?? '';
+    const startedAtMs = options?.startedAtMs ?? 0;
+    const endsAtMs = options?.endsAtMs ?? 0;
+    const resetMotion = options?.resetMotion !== false;
     const previousWeaponId = reloadState.weaponId;
 
     if (!reloading) {
-      reloadState = {
-        active: false,
-        weaponId: '',
-        startedAtMs: 0,
-        endsAtMs: 0
-      };
+      if (!reloadState.active && !previousWeaponId && reloadState.startedAtMs === 0 && reloadState.endsAtMs === 0) {
+        return false;
+      }
+      reloadState.active = false;
+      reloadState.weaponId = '';
+      reloadState.startedAtMs = 0;
+      reloadState.endsAtMs = 0;
       if (previousWeaponId && resetMotion) {
         resetHeldItemReloadMotion(previousWeaponId);
       }
@@ -1185,33 +1319,36 @@ export async function createPlayer(library, {
       ? startedAtMs
       : Math.max(0, resolvedEndsAtMs - WEAPON_RELOAD_MS);
 
-    reloadState = {
-      active: true,
-      weaponId: nextWeaponId,
-      startedAtMs: resolvedStartedAtMs,
-      endsAtMs: resolvedEndsAtMs
-    };
+    reloadState.active = true;
+    reloadState.weaponId = nextWeaponId;
+    reloadState.startedAtMs = resolvedStartedAtMs;
+    reloadState.endsAtMs = resolvedEndsAtMs;
     if (previousWeaponId && previousWeaponId !== nextWeaponId) {
       resetHeldItemReloadMotion(previousWeaponId);
     }
     return true;
   }
 
-  function setReloadPreviewState(previewing, {
-    weaponId = '',
-    startedAtMs = 0,
-    endsAtMs = 0,
-    resetMotion = true
-  } = {}) {
+  function setReloadPreviewState(previewing, options = null) {
+    const weaponId = options?.weaponId ?? '';
+    const startedAtMs = options?.startedAtMs ?? 0;
+    const endsAtMs = options?.endsAtMs ?? 0;
+    const resetMotion = options?.resetMotion !== false;
     const previousWeaponId = reloadPreviewState.weaponId;
 
     if (!previewing) {
-      reloadPreviewState = {
-        active: false,
-        weaponId: '',
-        startedAtMs: 0,
-        endsAtMs: 0
-      };
+      if (
+        !reloadPreviewState.active
+        && !previousWeaponId
+        && reloadPreviewState.startedAtMs === 0
+        && reloadPreviewState.endsAtMs === 0
+      ) {
+        return false;
+      }
+      reloadPreviewState.active = false;
+      reloadPreviewState.weaponId = '';
+      reloadPreviewState.startedAtMs = 0;
+      reloadPreviewState.endsAtMs = 0;
       if (previousWeaponId && !reloadState.active && resetMotion) {
         resetHeldItemReloadMotion(previousWeaponId);
       }
@@ -1230,12 +1367,10 @@ export async function createPlayer(library, {
       ? startedAtMs
       : Math.max(0, resolvedEndsAtMs - WEAPON_RELOAD_MS);
 
-    reloadPreviewState = {
-      active: true,
-      weaponId: nextWeaponId,
-      startedAtMs: resolvedStartedAtMs,
-      endsAtMs: resolvedEndsAtMs
-    };
+    reloadPreviewState.active = true;
+    reloadPreviewState.weaponId = nextWeaponId;
+    reloadPreviewState.startedAtMs = resolvedStartedAtMs;
+    reloadPreviewState.endsAtMs = resolvedEndsAtMs;
     if (previousWeaponId && previousWeaponId !== nextWeaponId) {
       resetHeldItemReloadMotion(previousWeaponId);
     }
@@ -1499,7 +1634,8 @@ export async function createPlayer(library, {
       }
     }
 
-    for (const [boneKey, rotation] of rotationsByBone.entries()) {
+    for (const boneKey of rotationsByBone.keys()) {
+      const rotation = rotationsByBone.get(boneKey);
       const bone = aimPoseBones[boneKey];
       const base = aimPoseBoneBases[boneKey];
       const blendWeight = blendWeightsByBone.get(boneKey) ?? 0;
@@ -1553,7 +1689,12 @@ export async function createPlayer(library, {
           container.add(object);
 
           const points = new Map();
-          for (const pointName of Object.keys(definition.points ?? {})) {
+          const definitionPoints = definition.points ?? {};
+          for (const pointName in definitionPoints) {
+            if (!Object.hasOwn(definitionPoints, pointName)) {
+              continue;
+            }
+
             const pointNode = new THREE.Group();
             pointNode.name = `HeldItemPoint_${pointName}`;
             applyAttachmentTransform(pointNode, getHeldItemPointOffset(itemId, pointName));
@@ -1807,6 +1948,13 @@ export async function createPlayer(library, {
     return skateboardSkating;
   }
 
+  function clearSkateboardMotionState() {
+    skateboardStateScratch.owned = skateboardOwned;
+    skateboardStateScratch.skating = false;
+    skateboardStateScratch.vehicleItemId = activeVehicleItemId;
+    return setSkateboardState(skateboardStateScratch);
+  }
+
   function updateSkateboardVisual(deltaSeconds) {
     const active = Boolean((skateboardOwned || activeVehicleItemId) && skateboardSkating && aliveState && !ragdoll.isActive());
     const activeCar = Boolean(active && activeVehicleItemId);
@@ -2033,7 +2181,7 @@ export async function createPlayer(library, {
 
     const deltaX = taskArrowTarget.x - anchor.position.x;
     const deltaZ = taskArrowTarget.z - anchor.position.z;
-    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaZ) || Math.hypot(deltaX, deltaZ) < 1) {
+    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaZ) || ((deltaX * deltaX) + (deltaZ * deltaZ)) < 1) {
       taskArrow.visible = false;
       return;
     }
@@ -2042,7 +2190,8 @@ export async function createPlayer(library, {
     taskArrow.visible = true;
   }
 
-  async function setWeaponState(weaponId = '', { visible = true } = {}) {
+  async function setWeaponState(weaponId = '', options = null) {
+    const visible = options?.visible !== false;
     const nextWeaponId = weaponId || '';
     const nextVisible = Boolean(visible && nextWeaponId);
     const activeRightItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight);
@@ -2076,17 +2225,20 @@ export async function createPlayer(library, {
     await attachHeldItem(desiredWeaponId, { visible: nextVisible });
   }
 
-  function setAliveState(nextAlive, { startedAtMs = Date.now() } = {}) {
+  function setAliveState(nextAlive, options = null) {
     if (aliveState === nextAlive) {
       return;
     }
 
+    const startedAtMs = Number.isFinite(options?.startedAtMs) && options.startedAtMs > 0
+      ? options.startedAtMs
+      : Date.now();
     aliveState = nextAlive;
     updateHeldItemVisibility();
     if (!nextAlive) {
       setReloadPreviewState(false);
       setReloadState(false);
-      setSkateboardState({ skating: false });
+      clearSkateboardMotionState();
       setLimpActive(true, { startedAtMs, trackSync: false });
       if (desiredWeaponId) {
         void setWeaponState(desiredWeaponId, { visible: false });
@@ -2132,9 +2284,9 @@ export async function createPlayer(library, {
       scale: [1, 1, 1]
     };
     const nextOverride = {
-      position: [0, 1, 2].map((index) => (existing.position?.[index] ?? 0) + (delta.position?.[index] ?? 0)),
-      rotation: [0, 1, 2].map((index) => (existing.rotation?.[index] ?? 0) + (delta.rotation?.[index] ?? 0)),
-      scale: [0, 1, 2].map((index) => (existing.scale?.[index] ?? 1) * (delta.scale?.[index] ?? 1))
+      position: addNumberVector3(existing.position, delta.position, 0),
+      rotation: addNumberVector3(existing.rotation, delta.rotation, 0),
+      scale: multiplyNumberVector3(existing.scale, delta.scale, 1)
     };
     gripOverrides.set(itemId, nextOverride);
     applyHeldItemProfile(itemId);
@@ -2180,8 +2332,12 @@ export async function createPlayer(library, {
     const substepCount = Math.max(1, Math.ceil(safeDeltaSeconds / PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS));
     const substepSeconds = safeDeltaSeconds / substepCount;
     const step = PLAYER_SPEED * Math.max(0, speedScale) * substepSeconds;
-    const [minX, maxX] = clampBoundsX(cityBounds, anchor.position.x);
-    const [minZ, maxZ] = clampBoundsZ(cityBounds, anchor.position.z);
+    const hasFiniteXBounds = Number.isFinite(cityBounds?.min?.x) && Number.isFinite(cityBounds?.max?.x);
+    const hasFiniteZBounds = Number.isFinite(cityBounds?.min?.z) && Number.isFinite(cityBounds?.max?.z);
+    const minX = hasFiniteXBounds ? cityBounds.min.x : anchor.position.x;
+    const maxX = hasFiniteXBounds ? cityBounds.max.x : anchor.position.x;
+    const minZ = hasFiniteZBounds ? cityBounds.min.z : anchor.position.z;
+    const maxZ = hasFiniteZBounds ? cityBounds.max.z : anchor.position.z;
 
     for (let index = 0; index < substepCount; index += 1) {
       moveProposedPosition.copy(anchor.position);
@@ -2216,7 +2372,7 @@ export async function createPlayer(library, {
       return target;
     },
     getAttachmentWorldPoint(pointName = 'muzzle', target = new THREE.Vector3()) {
-      for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+      for (const slot of ATTACHMENT_SLOT_LIST) {
         const activeItemId = activeItemsBySlot.get(slot);
         if (!activeItemId || slotVisibility.get(slot) === false) {
           continue;
@@ -2244,7 +2400,7 @@ export async function createPlayer(library, {
       return target;
     },
     getAttachmentPointNode(pointName = 'muzzle') {
-      for (const slot of Object.values(ATTACHMENT_SLOTS)) {
+      for (const slot of ATTACHMENT_SLOT_LIST) {
         const activeItemId = activeItemsBySlot.get(slot);
         if (!activeItemId || slotVisibility.get(slot) === false) {
           continue;
@@ -2381,7 +2537,7 @@ export async function createPlayer(library, {
         nextOverride[fieldKey] = numericValue;
       }
 
-      if (Object.keys(nextOverride).length === 0) {
+      if (!hasOwnEnumerableProperties(nextOverride)) {
         emoteConfigOverrides.delete(emoteId);
       } else {
         emoteConfigOverrides.set(emoteId, nextOverride);
@@ -2418,7 +2574,7 @@ export async function createPlayer(library, {
         anchor.rotation.y = rotationY;
       }
     },
-    setReloadState(reloading, options = {}) {
+    setReloadState(reloading, options = null) {
       return setReloadState(Boolean(reloading), options);
     },
     triggerShotFeedback() {
@@ -2464,9 +2620,9 @@ export async function createPlayer(library, {
       }
 
       gripOverrides.set(itemId, {
-        position: [...(override.position ?? EMPTY_VECTOR_OVERRIDE)],
-        rotation: [...(override.rotation ?? EMPTY_VECTOR_OVERRIDE)],
-        scale: [...(override.scale ?? [1, 1, 1])]
+        position: cloneNumberVector3(override.position, 0),
+        rotation: cloneNumberVector3(override.rotation, 0),
+        scale: cloneNumberVector3(override.scale, 1)
       });
       applyHeldItemProfile(itemId);
       updateHeldItemVisibility();
@@ -2522,8 +2678,8 @@ export async function createPlayer(library, {
     getAimPoseDebugHelper() {
       return skeletonHelper;
     },
-    setWeaponState(weaponId, { visible = true } = {}) {
-      return setWeaponState(weaponId, { visible });
+    setWeaponState(weaponId, options = null) {
+      return setWeaponState(weaponId, options);
     },
     preloadWeapon(weaponId, { visible = true } = {}) {
       if (!weaponId) {
@@ -2532,7 +2688,7 @@ export async function createPlayer(library, {
 
       return attachHeldItem(weaponId, { visible });
     },
-    setAliveState(alive, options = {}) {
+    setAliveState(alive, options = null) {
       setAliveState(Boolean(alive), options);
     },
     setTaskArrowTarget(targetPosition) {
@@ -2572,7 +2728,7 @@ export async function createPlayer(library, {
     },
     update(deltaSeconds, input, camera, colliders, cityBounds, groundHeight = 0, options = {}) {
       if (!aliveState) {
-        setSkateboardState({ skating: false });
+        clearSkateboardMotionState();
         updateAnimationState(deltaSeconds, false, groundHeight);
         return;
       }
@@ -2603,30 +2759,27 @@ export async function createPlayer(library, {
               : moveDirection.set(Math.sin(anchor.rotation.y), 0, Math.cos(anchor.rotation.y))
           )
         : moveDirection.set(0, 0, 0);
-      setSkateboardState({
-        owned: transportOwned,
-        skating: wantsTransportVisible,
-        vehicleItemId: selectedVehicleItemId
-      });
+      skateboardStateScratch.owned = transportOwned;
+      skateboardStateScratch.skating = wantsTransportVisible;
+      skateboardStateScratch.vehicleItemId = selectedVehicleItemId;
+      setSkateboardState(skateboardStateScratch);
 
       if (moving && wantsToMove) {
         moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds, movementSpeedScale);
       }
 
-      updateAnimationState(deltaSeconds, moving, groundHeight, {
-        locomotionMode: stationaryRun ? 'run' : options.locomotionMode,
-        locomotionPlaybackRate: options.locomotionPlaybackRate
-      });
+      animationOptionsScratch.locomotionMode = stationaryRun ? 'run' : options.locomotionMode;
+      animationOptionsScratch.locomotionPlaybackRate = options.locomotionPlaybackRate;
+      updateAnimationState(deltaSeconds, moving, groundHeight, animationOptionsScratch);
     },
     moveToward(targetPosition, deltaSeconds, colliders, cityBounds, groundHeight = 0, options = {}) {
       if (!aliveState) {
-        setSkateboardState({ skating: false });
+        clearSkateboardMotionState();
         updateAnimationState(deltaSeconds, false, groundHeight);
-        return {
-          arrived: false,
-          moving: false,
-          distance: Infinity
-        };
+        moveTowardResultScratch.arrived = false;
+        moveTowardResultScratch.moving = false;
+        moveTowardResultScratch.distance = Infinity;
+        return moveTowardResultScratch;
       }
 
       if (isLimpTransitioning()) {
@@ -2649,70 +2802,68 @@ export async function createPlayer(library, {
       const toTarget = moveToTarget.copy(target).sub(anchor.position);
       toTarget.y = 0;
       const distance = toTarget.length();
-      setSkateboardState({ skating: false });
+      clearSkateboardMotionState();
 
       if (distance <= stopDistance) {
         updateAnimationState(deltaSeconds, false, groundHeight);
-        return {
-          arrived: true,
-          moving: false,
-          distance
-        };
+        moveTowardResultScratch.arrived = true;
+        moveTowardResultScratch.moving = false;
+        moveTowardResultScratch.distance = distance;
+        return moveTowardResultScratch;
       }
 
       const moving = moveWithWorldVector(toTarget.normalize(), deltaSeconds, colliders, cityBounds, speedScale);
       updateAnimationState(deltaSeconds, moving, groundHeight);
 
       const remaining = moveToTarget.copy(target).sub(anchor.position).setY(0).length();
-      return {
-        arrived: remaining <= stopDistance,
-        moving,
-        distance: remaining
-      };
+      moveTowardResultScratch.arrived = remaining <= stopDistance;
+      moveTowardResultScratch.moving = moving;
+      moveTowardResultScratch.distance = remaining;
+      return moveTowardResultScratch;
     },
     applyRemoteState(state, deltaSeconds, groundHeight = 0) {
       const remoteAlive = state?.alive !== false;
       this.setDrunknessLevel(remoteAlive ? state?.drunknessLevel : 0);
-      setAliveState(remoteAlive, {
-        startedAtMs: Number.isFinite(state?.lastDamagedAt) && state.lastDamagedAt > 0
-          ? state.lastDamagedAt
-          : Date.now()
-      });
+      aliveStateOptionsScratch.startedAtMs = Number.isFinite(state?.lastDamagedAt) && state.lastDamagedAt > 0
+        ? state.lastDamagedAt
+        : 0;
+      setAliveState(remoteAlive, aliveStateOptionsScratch);
       const remoteVehicleItemId = normalizePlayerVehicleItemId(state?.vehicleItemId);
-      setSkateboardState({
-        owned: remoteAlive && (state?.skateboardOwned === true || Boolean(remoteVehicleItemId)),
-        skating: remoteAlive && state?.skating === true,
-        vehicleItemId: remoteVehicleItemId
-      });
+      skateboardStateScratch.owned = remoteAlive && (state?.skateboardOwned === true || Boolean(remoteVehicleItemId));
+      skateboardStateScratch.skating = remoteAlive && state?.skating === true;
+      skateboardStateScratch.vehicleItemId = remoteVehicleItemId;
+      setSkateboardState(skateboardStateScratch);
       const remoteEmoteId = typeof state?.emoteId === 'string' ? state.emoteId : '';
       const remoteEmoteActive = Boolean(state?.emoteActive && remoteEmoteId);
       const remoteTextingActive = remoteAlive && remoteEmoteActive && remoteEmoteId === TEXTING_EMOTE_ID;
       void setDeliveryPackageActive(remoteAlive && isDeliveryQuestActive(state));
       void setPhoneTextingActive(remoteTextingActive);
-      void setWeaponState(
-        remoteAlive ? (typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '') : '',
-        { visible: remoteAlive && Boolean(state?.equippedWeaponId) && !remoteTextingActive }
-      );
+      const remoteWeaponId = remoteAlive && typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '';
+      weaponStateOptionsScratch.visible = remoteAlive && Boolean(state?.equippedWeaponId) && !remoteTextingActive;
+      void setWeaponState(remoteWeaponId, weaponStateOptionsScratch);
 
       if (!remoteAlive) {
         aimingState = false;
-        setSkateboardState({ skating: false });
+        clearSkateboardMotionState();
         setReloadState(false);
         updateAnimationState(deltaSeconds, false, groundHeight);
         return;
       }
 
       const remoteEmoteSeq = Number.isFinite(state?.emoteSeq) ? Math.max(0, Math.floor(state.emoteSeq)) : 0;
-      const remoteEmoteSignature = `${Number(remoteEmoteActive)}:${remoteEmoteId}:${remoteEmoteSeq}`;
       const remoteIsLimp = remoteEmoteActive && remoteEmoteId === LIMP_EMOTE_ID;
 
       if (
-        remoteEmoteSignature !== lastRemoteEmoteSignature
+        remoteEmoteActive !== lastRemoteEmoteActive
+        || remoteEmoteId !== lastRemoteEmoteId
+        || remoteEmoteSeq !== lastRemoteEmoteSeq
         || (remoteEmoteActive && !remoteIsLimp && activeEmoteId !== remoteEmoteId)
         || (remoteIsLimp !== ragdoll.isActive())
         || (!remoteEmoteActive && activeEmoteId)
       ) {
-        lastRemoteEmoteSignature = remoteEmoteSignature;
+        lastRemoteEmoteActive = remoteEmoteActive;
+        lastRemoteEmoteId = remoteEmoteId;
+        lastRemoteEmoteSeq = remoteEmoteSeq;
         if (remoteIsLimp) {
           setLimpActive(true, {
             startedAtMs: Number.isFinite(state?.emoteStartedAt) ? state.emoteStartedAt : Date.now(),
@@ -2735,10 +2886,11 @@ export async function createPlayer(library, {
       const showingRemoteLimp = remoteIsLimp && ragdoll.isActive();
       const showingRemoteEmote = remoteEmoteActive && activeEmoteId === remoteEmoteId;
       aimingState = remoteAlive && Boolean(state?.aiming);
-      setReloadState(Boolean(state?.isReloading), {
-        weaponId: typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '',
-        endsAtMs: Number(state?.reloadEndsAt ?? 0)
-      });
+      reloadStateOptionsScratch.weaponId = typeof state?.equippedWeaponId === 'string' ? state.equippedWeaponId : '';
+      reloadStateOptionsScratch.startedAtMs = 0;
+      reloadStateOptionsScratch.endsAtMs = Number(state?.reloadEndsAt ?? 0);
+      reloadStateOptionsScratch.resetMotion = true;
+      setReloadState(Boolean(state?.isReloading), reloadStateOptionsScratch);
 
       if (Number.isFinite(state?.aimRotationY)) {
         aimRotationY = state.aimRotationY;
@@ -2749,9 +2901,9 @@ export async function createPlayer(library, {
       const targetRotationY = Number.isFinite(state?.rotationY) ? state.rotationY : anchor.rotation.y;
       const deltaX = targetX - anchor.position.x;
       const deltaZ = targetZ - anchor.position.z;
-      const distance = Math.hypot(deltaX, deltaZ);
+      const distanceSq = (deltaX * deltaX) + (deltaZ * deltaZ);
 
-      if (distance > 8) {
+      if (distanceSq > 8 * 8) {
         anchor.position.x = targetX;
         anchor.position.z = targetZ;
       } else {
@@ -2762,7 +2914,7 @@ export async function createPlayer(library, {
 
       const rotationLerp = 1 - Math.exp(-deltaSeconds * 14);
       anchor.rotation.y = dampAngle(anchor.rotation.y, targetRotationY, rotationLerp);
-      updateAnimationState(deltaSeconds, !showingRemoteLimp && !showingRemoteEmote && distance > 0.05, groundHeight);
+      updateAnimationState(deltaSeconds, !showingRemoteLimp && !showingRemoteEmote && distanceSq > 0.05 * 0.05, groundHeight);
     }
   };
 }

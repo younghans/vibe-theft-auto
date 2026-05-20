@@ -88,7 +88,14 @@ function normalizeMixamoBoneNames(root) {
 
 export function validateMixamoHumanoid(root) {
   const renamedBones = normalizeMixamoBoneNames(root);
-  const missingBones = REQUIRED_BONES.filter((boneName) => !root.getObjectByName(boneName));
+  const missingBones = [];
+  for (let index = 0; index < REQUIRED_BONES.length; index += 1) {
+    const boneName = REQUIRED_BONES[index];
+    if (!root.getObjectByName(boneName)) {
+      missingBones.push(boneName);
+    }
+  }
+
   const skinnedMeshes = [];
   const bodyMeshes = [];
 
@@ -97,7 +104,15 @@ export function validateMixamoHumanoid(root) {
       const meshName = node.name || '(unnamed skinned mesh)';
       skinnedMeshes.push(meshName);
 
-      if (!NON_BODY_MESH_PATTERNS.some((pattern) => pattern.test(meshName))) {
+      let isNonBodyMesh = false;
+      for (let index = 0; index < NON_BODY_MESH_PATTERNS.length; index += 1) {
+        if (NON_BODY_MESH_PATTERNS[index].test(meshName)) {
+          isNonBodyMesh = true;
+          break;
+        }
+      }
+
+      if (!isNonBodyMesh) {
         bodyMeshes.push(meshName);
       }
     }
@@ -130,9 +145,14 @@ export function createInPlaceClip(clip, rootBoneName) {
     throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
   }
 
-  const filteredTracks = clip.tracks
-    .filter((track) => track.name !== `${rootBoneName}.position`)
-    .map((track) => track.clone());
+  const filteredTracks = [];
+  const rootPositionTrackName = `${rootBoneName}.position`;
+  for (let index = 0; index < clip.tracks.length; index += 1) {
+    const track = clip.tracks[index];
+    if (track.name !== rootPositionTrackName) {
+      filteredTracks.push(track.clone());
+    }
+  }
 
   return new THREE.AnimationClip(`${clip.name}_InPlace`, clip.duration, filteredTracks);
 }
@@ -142,13 +162,21 @@ export function createBoneFilteredClip(clip, boneNames = [], clipName = `${clip?
     throw new Error(`Expected an animation clip with tracks, but received ${clip ? 'an invalid clip' : 'nothing'}.`);
   }
 
-  const allowedBoneNames = new Set(boneNames.filter(Boolean));
-  const filteredTracks = clip.tracks
-    .filter((track) => {
-      const trackTarget = String(track.name ?? '').split('.')[0];
-      return allowedBoneNames.has(trackTarget);
-    })
-    .map((track) => track.clone());
+  const allowedBoneNames = new Set();
+  for (let index = 0; index < boneNames.length; index += 1) {
+    const boneName = boneNames[index];
+    if (boneName) {
+      allowedBoneNames.add(boneName);
+    }
+  }
+
+  const filteredTracks = [];
+  for (let index = 0; index < clip.tracks.length; index += 1) {
+    const track = clip.tracks[index];
+    if (allowedBoneNames.has(getTrackTarget(track.name))) {
+      filteredTracks.push(track.clone());
+    }
+  }
 
   return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
 }
@@ -165,12 +193,14 @@ export function createTargetFilteredClip(clip, root, clipName = `${clip?.name ??
     }
   });
 
-  const filteredTracks = clip.tracks
-    .filter((track) => {
-      const trackTarget = String(track.name ?? '').split('.')[0];
-      return !trackTarget || targetNames.has(trackTarget);
-    })
-    .map((track) => track.clone());
+  const filteredTracks = [];
+  for (let index = 0; index < clip.tracks.length; index += 1) {
+    const track = clip.tracks[index];
+    const trackTarget = getTrackTarget(track.name);
+    if (!trackTarget || targetNames.has(trackTarget)) {
+      filteredTracks.push(track.clone());
+    }
+  }
 
   return new THREE.AnimationClip(clipName, clip.duration, filteredTracks);
 }
@@ -187,13 +217,20 @@ export function createPoseClip(clip, sampleTimeSeconds = 0, clipName = `${clip?.
     clipDuration
   );
   const poseDuration = 1 / 30;
-  const poseTracks = clip.tracks.map((track) => {
+  const poseTracks = [];
+  for (let index = 0; index < clip.tracks.length; index += 1) {
+    const track = clip.tracks[index];
     const valueSize = track.getValueSize();
     const resultBuffer = new track.ValueBufferType(valueSize);
-    const sampledValues = Array.from(track.createInterpolant(resultBuffer).evaluate(sampleTime)).slice(0, valueSize);
-    const heldValues = [...sampledValues, ...sampledValues];
-    return new track.constructor(track.name, [0, poseDuration], heldValues, track.getInterpolation());
-  });
+    const sampledValues = track.createInterpolant(resultBuffer).evaluate(sampleTime);
+    const heldValues = new track.ValueBufferType(valueSize * 2);
+    for (let valueIndex = 0; valueIndex < valueSize; valueIndex += 1) {
+      const sampledValue = sampledValues[valueIndex];
+      heldValues[valueIndex] = sampledValue;
+      heldValues[valueIndex + valueSize] = sampledValue;
+    }
+    poseTracks.push(new track.constructor(track.name, [0, poseDuration], heldValues, track.getInterpolation()));
+  }
 
   return new THREE.AnimationClip(clipName, poseDuration, poseTracks);
 }
@@ -207,9 +244,14 @@ export function createMirroredClip(clip, boneNameMap = new Map(), clipName = `${
   const sourceRotationMatrix = new THREE.Matrix4();
   const mirroredRotationMatrix = new THREE.Matrix4();
   const mirroredQuaternion = new THREE.Quaternion();
-  const mirroredTracks = clip.tracks.map((track) => {
+  const mirroredTracks = [];
+  for (let trackIndex = 0; trackIndex < clip.tracks.length; trackIndex += 1) {
+    const track = clip.tracks[trackIndex];
     const mirroredTrack = track.clone();
-    const [trackTarget = '', propertyPath = ''] = String(track.name ?? '').split('.');
+    const trackName = String(track.name ?? '');
+    const propertySeparatorIndex = trackName.indexOf('.');
+    const trackTarget = propertySeparatorIndex === -1 ? trackName : trackName.slice(0, propertySeparatorIndex);
+    const propertyPath = propertySeparatorIndex === -1 ? '' : trackName.slice(propertySeparatorIndex + 1);
     const mirroredTarget = boneNameMap.get(trackTarget) ?? trackTarget;
     mirroredTrack.name = propertyPath ? `${mirroredTarget}.${propertyPath}` : mirroredTarget;
 
@@ -224,7 +266,8 @@ export function createMirroredClip(clip, boneNameMap = new Map(), clipName = `${
         mirroredTrack.values[index + 2] = mirroredQuaternion.z;
         mirroredTrack.values[index + 3] = mirroredQuaternion.w;
       }
-      return mirroredTrack;
+      mirroredTracks.push(mirroredTrack);
+      continue;
     }
 
     if (propertyPath === 'position' || propertyPath === 'scale') {
@@ -234,10 +277,16 @@ export function createMirroredClip(clip, boneNameMap = new Map(), clipName = `${
       }
     }
 
-    return mirroredTrack;
-  });
+    mirroredTracks.push(mirroredTrack);
+  }
 
   return new THREE.AnimationClip(clipName, clip.duration, mirroredTracks);
+}
+
+function getTrackTarget(trackName) {
+  const normalizedTrackName = String(trackName ?? '');
+  const propertySeparatorIndex = normalizedTrackName.indexOf('.');
+  return propertySeparatorIndex === -1 ? normalizedTrackName : normalizedTrackName.slice(0, propertySeparatorIndex);
 }
 
 function ensureSocket(root, boneName, socketName, position = null) {

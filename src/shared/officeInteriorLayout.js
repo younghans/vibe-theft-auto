@@ -117,9 +117,11 @@ const OFFICE_INTERIOR_ELEVATOR_TOP_WALL_GAP = 0.12;
 const OFFICE_INTERIOR_ELEVATOR_DOOR_CLEARANCE = 0.72;
 const OFFICE_INTERIOR_ELEVATOR_ARRIVAL_CLEARANCE = 1.78;
 
-const OFFICE_INTERIOR_FLOOR_BY_ID = new Map(
-  OFFICE_INTERIOR_FLOORS.map((floor) => [floor.id, floor])
-);
+const OFFICE_INTERIOR_FLOOR_BY_ID = new Map();
+for (let index = 0; index < OFFICE_INTERIOR_FLOORS.length; index += 1) {
+  const floor = OFFICE_INTERIOR_FLOORS[index];
+  OFFICE_INTERIOR_FLOOR_BY_ID.set(floor.id, floor);
+}
 
 export function getOfficeInteriorFloorLayout(floorId = '') {
   return OFFICE_INTERIOR_FLOOR_LAYOUTS[floorId] ?? OFFICE_INTERIOR_FLOOR_LAYOUTS[OFFICE_INTERIOR_FLOOR_IDS.lobby];
@@ -250,9 +252,11 @@ export const OFFICE_INTERIOR_STATIONS = Object.freeze([
   })
 ]);
 
-const OFFICE_INTERIOR_STATION_BY_ID = new Map(
-  OFFICE_INTERIOR_STATIONS.map((station) => [station.id, station])
-);
+const OFFICE_INTERIOR_STATION_BY_ID = new Map();
+for (let index = 0; index < OFFICE_INTERIOR_STATIONS.length; index += 1) {
+  const station = OFFICE_INTERIOR_STATIONS[index];
+  OFFICE_INTERIOR_STATION_BY_ID.set(station.id, station);
+}
 
 export function listOfficeInteriorStations() {
   return OFFICE_INTERIOR_STATIONS;
@@ -272,7 +276,8 @@ export function getNearestOfficeInteriorFloorDefinition(height = 0) {
   let nearest = OFFICE_INTERIOR_FLOORS[0];
   let nearestDistance = Math.abs(targetHeight - nearest.height);
 
-  for (const floor of OFFICE_INTERIOR_FLOORS.slice(1)) {
+  for (let index = 1; index < OFFICE_INTERIOR_FLOORS.length; index += 1) {
+    const floor = OFFICE_INTERIOR_FLOORS[index];
     const distance = Math.abs(targetHeight - floor.height);
     if (distance < nearestDistance) {
       nearest = floor;
@@ -284,7 +289,11 @@ export function getNearestOfficeInteriorFloorDefinition(height = 0) {
 }
 
 export function getOfficeInteriorTopHeight() {
-  return Math.max(...OFFICE_INTERIOR_FLOORS.map((floor) => floor.height));
+  let topHeight = OFFICE_INTERIOR_FLOORS[0].height;
+  for (let index = 1; index < OFFICE_INTERIOR_FLOORS.length; index += 1) {
+    topHeight = Math.max(topHeight, OFFICE_INTERIOR_FLOORS[index].height);
+  }
+  return topHeight;
 }
 
 export function getOfficeInteriorStationDefinition(stationId = '') {

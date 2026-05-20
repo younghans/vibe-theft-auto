@@ -89,7 +89,16 @@ function getRespawnDeathLine(deaths = 0) {
   return RESPAWN_DEATH_LINES[index];
 }
 
-const PHONE_APPS = Object.freeze([
+function appendSignatureValue(signature, value = '') {
+  const text = String(value ?? '');
+  return `${signature}${text.length}:${text};`;
+}
+
+function appendSignatureFlag(signature, value = false) {
+  return `${signature}${value ? '1' : '0'};`;
+}
+
+const PHONE_APP_DEFINITIONS = Object.freeze([
   ['messages', 'Messages', 'messages', '#30d66a', 'Story texts will appear here.'],
   ['map', 'Map', 'map', '#3aa4ff', 'A portable city map and waypoint list will live here.'],
   ['missions', 'Missions', 'missions', '#f2ba45', 'Active objectives, rewards, and progress will be grouped here.'],
@@ -99,13 +108,22 @@ const PHONE_APPS = Object.freeze([
   ['skills', 'Skills', 'skills', '#68e08f', 'Skill levels and XP progress live here.'],
   ['character', 'Character', 'character', '#f08662', 'Choose your city avatar and keep your selected fighter in sync.'],
   ['settings', 'Settings', 'settings', '#97a4b4', 'Game options and quality-of-life controls will be added here.']
-].map(([id, label, icon, color, body]) => Object.freeze({
-  id,
-  label,
-  icon,
-  color,
-  body
-})));
+]);
+const phoneApps = [];
+const PHONE_APP_BY_ID = new Map();
+for (let index = 0; index < PHONE_APP_DEFINITIONS.length; index += 1) {
+  const [id, label, icon, color, body] = PHONE_APP_DEFINITIONS[index];
+  const app = Object.freeze({
+    id,
+    label,
+    icon,
+    color,
+    body
+  });
+  phoneApps.push(app);
+  PHONE_APP_BY_ID.set(id, app);
+}
+const PHONE_APPS = Object.freeze(phoneApps);
 
 const PHONE_APP_ICON_PATHS = Object.freeze({
   messages: '<path d="M5.5 7.25h13a2.25 2.25 0 0 1 2.25 2.25v4.75a2.25 2.25 0 0 1-2.25 2.25h-6.3l-4.45 3.25v-3.25H5.5a2.25 2.25 0 0 1-2.25-2.25V9.5A2.25 2.25 0 0 1 5.5 7.25Z"/><path d="M7.75 10.5h8.5M7.75 13.25h5.8"/>',
@@ -180,16 +198,19 @@ function setFieldValue(field, value) {
 }
 
 function getBuilderPlaceholder(label) {
-  return String(label ?? '??')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
+  const parts = String(label ?? '??').split(/\s+/);
+  let placeholder = '';
+  for (let index = 0; index < parts.length && placeholder.length < 2; index += 1) {
+    const part = parts[index];
+    if (part) {
+      placeholder += part[0]?.toUpperCase() ?? '';
+    }
+  }
+  return placeholder;
 }
 
 function getPhoneAppById(appId = '') {
-  return PHONE_APPS.find((app) => app.id === appId) ?? null;
+  return PHONE_APP_BY_ID.get(appId) ?? null;
 }
 
 function getPhoneAppIconMarkup(app, extraClass = '') {
@@ -219,10 +240,15 @@ function getPhoneAppButtonMarkup(app) {
 }
 
 function getPhoneHomeMarkup() {
+  let phoneAppMarkup = '';
+  for (let index = 0; index < PHONE_APPS.length; index += 1) {
+    phoneAppMarkup += getPhoneAppButtonMarkup(PHONE_APPS[index]);
+  }
+
   return `
     <div class="hud__phone-home-screen">
       <div class="hud__phone-app-grid">
-        ${PHONE_APPS.map((app) => getPhoneAppButtonMarkup(app)).join('')}
+        ${phoneAppMarkup}
       </div>
     </div>
   `;
@@ -491,6 +517,17 @@ function getPhoneMapAppMarkup(app) {
 }
 
 function getPhoneSettingsAppMarkup(app) {
+  let controlsMarkup = '';
+  for (let index = 0; index < PHONE_SETTINGS_CONTROLS.length; index += 1) {
+    const control = PHONE_SETTINGS_CONTROLS[index];
+    controlsMarkup += `
+            <div class="hud__phone-settings-control-row">
+              <strong>${escapeHtml(control.action)}</strong>
+              <span>${escapeHtml(control.control)}</span>
+            </div>
+          `;
+  }
+
   return `
     <div
       class="hud__phone-app-panel hud__phone-settings-app"
@@ -534,12 +571,7 @@ function getPhoneSettingsAppMarkup(app) {
           <span>Controls</span>
         </div>
         <div class="hud__phone-settings-control-list">
-          ${PHONE_SETTINGS_CONTROLS.map((control) => `
-            <div class="hud__phone-settings-control-row">
-              <strong>${escapeHtml(control.action)}</strong>
-              <span>${escapeHtml(control.control)}</span>
-            </div>
-          `).join('')}
+          ${controlsMarkup}
         </div>
       </section>
     </div>
@@ -711,30 +743,54 @@ function createBlackjackCardVisuals({
 } = {}) {
   const sessionId = String(game?.id ?? '');
   const sameSession = Boolean(sessionId && previousState?.sessionId === sessionId);
-  const splitHands = Array.isArray(playerHands) && playerHands.length > 0
-    ? playerHands.map(getBlackjackPlayerHandCards)
-    : [playerHand];
+  const splitHands = [];
+  if (Array.isArray(playerHands) && playerHands.length > 0) {
+    for (let index = 0; index < playerHands.length; index += 1) {
+      splitHands.push(getBlackjackPlayerHandCards(playerHands[index]));
+    }
+  } else {
+    splitHands.push(playerHand);
+  }
   const activeHandIndex = Math.max(
     0,
     Math.min(splitHands.length - 1, Math.trunc(Number(game?.activeHandIndex ?? 0) || 0))
   );
   const previous = sameSession ? previousState : { dealer: [], player: [], playerHands: [] };
-  const previousPlayerHands = Array.isArray(previous?.playerHands) && previous.playerHands.length > 0
-    ? previous.playerHands
-    : splitHands.length > 1 && Array.isArray(previous?.player)
-      ? previous.player.map((signature) => [signature])
-      : [previous?.player ?? []];
+  let previousPlayerHands = [];
+  if (Array.isArray(previous?.playerHands) && previous.playerHands.length > 0) {
+    previousPlayerHands = previous.playerHands;
+  } else if (splitHands.length > 1 && Array.isArray(previous?.player)) {
+    for (let index = 0; index < previous.player.length; index += 1) {
+      previousPlayerHands.push([previous.player[index]]);
+    }
+  } else {
+    previousPlayerHands.push(previous?.player ?? []);
+  }
   const visuals = { dealer: [], player: [], playerHands: [] };
+  const dealerSignatures = new Array(dealerHand.length);
+  for (let index = 0; index < dealerHand.length; index += 1) {
+    dealerSignatures[index] = getBlackjackCardSignature(dealerHand[index], index);
+  }
+  const playerHandSignatures = new Array(splitHands.length);
+  for (let handIndex = 0; handIndex < splitHands.length; handIndex += 1) {
+    const cards = splitHands[handIndex];
+    const signatures = new Array(cards.length);
+    for (let cardIndex = 0; cardIndex < cards.length; cardIndex += 1) {
+      signatures[cardIndex] = getBlackjackCardSignature(cards[cardIndex], cardIndex);
+    }
+    playerHandSignatures[handIndex] = signatures;
+  }
   const nextState = {
     sessionId,
-    dealer: dealerHand.map(getBlackjackCardSignature),
+    dealer: dealerSignatures,
     player: [],
-    playerHands: splitHands.map((cards) => cards.map(getBlackjackCardSignature))
+    playerHands: playerHandSignatures
   };
   nextState.player = nextState.playerHands[activeHandIndex] ?? nextState.playerHands[0] ?? [];
 
   const assignVisuals = (handKey, cards, nextSignatures, previousSignatures, target) => {
-    cards.forEach((card, index) => {
+    for (let index = 0; index < cards.length; index += 1) {
+      const card = cards[index];
       const signature = nextSignatures[index];
       const previousSignature = previousSignatures?.[index] ?? '';
       const wasHidden = previousSignature.startsWith('hidden:');
@@ -752,11 +808,12 @@ function createBlackjackCardVisuals({
         delay: 0,
         ...getBlackjackCardDealOrigin(handKey, index)
       };
-    });
+    }
   };
 
   assignVisuals('dealer', dealerHand, nextState.dealer, previous.dealer, visuals.dealer);
-  splitHands.forEach((cards, handIndex) => {
+  for (let handIndex = 0; handIndex < splitHands.length; handIndex += 1) {
+    const cards = splitHands[handIndex];
     visuals.playerHands[handIndex] = [];
     assignVisuals(
       `player${handIndex}`,
@@ -765,7 +822,7 @@ function createBlackjackCardVisuals({
       previousPlayerHands[handIndex],
       visuals.playerHands[handIndex]
     );
-  });
+  }
   visuals.player = visuals.playerHands[activeHandIndex] ?? visuals.playerHands[0] ?? [];
 
   const animatedSlots = [];
@@ -783,27 +840,33 @@ function createBlackjackCardVisuals({
   };
 
   const pushPlayerSlots = () => {
-    splitHands.forEach((cards, handIndex) => {
-      cards.forEach((_, index) => pushSlot(`player${handIndex}`, index));
-    });
+    for (let handIndex = 0; handIndex < splitHands.length; handIndex += 1) {
+      const cards = splitHands[handIndex];
+      for (let index = 0; index < cards.length; index += 1) {
+        pushSlot(`player${handIndex}`, index);
+      }
+    }
   };
 
   if (sameSession) {
     pushPlayerSlots();
-    dealerHand.forEach((_, index) => pushSlot('dealer', index));
+    for (let index = 0; index < dealerHand.length; index += 1) {
+      pushSlot('dealer', index);
+    }
   } else {
-    [
-      ['player0', 0],
-      ['dealer', 0],
-      ['player0', 1],
-      ['dealer', 1]
-    ].forEach(([handKey, index]) => pushSlot(handKey, index));
+    pushSlot('player0', 0);
+    pushSlot('dealer', 0);
+    pushSlot('player0', 1);
+    pushSlot('dealer', 1);
     pushPlayerSlots();
-    dealerHand.forEach((_, index) => pushSlot('dealer', index));
+    for (let index = 0; index < dealerHand.length; index += 1) {
+      pushSlot('dealer', index);
+    }
   }
 
   let duration = 0;
-  animatedSlots.forEach(({ handKey, index }, sequence) => {
+  for (let sequence = 0; sequence < animatedSlots.length; sequence += 1) {
+    const { handKey, index } = animatedSlots[sequence];
     const target = handKey === 'dealer'
       ? visuals.dealer
       : visuals.playerHands[Number(handKey.replace('player', ''))] ?? [];
@@ -813,7 +876,7 @@ function createBlackjackCardVisuals({
       duration,
       target[index].delay + (BLACKJACK_CARD_ANIMATION_MS[animation] ?? 0)
     );
-  });
+  }
 
   return { visuals, nextState, duration };
 }
@@ -860,6 +923,18 @@ function createBlackjackCardMarkup(card = {}, index = 0, visual = {}) {
   `;
 }
 
+function createBlackjackCardsMarkup(cards = [], visuals = []) {
+  if (!cards.length) {
+    return '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+  }
+
+  let markup = '';
+  for (let index = 0; index < cards.length; index += 1) {
+    markup += createBlackjackCardMarkup(cards[index], index, visuals[index]);
+  }
+  return markup;
+}
+
 function getBlackjackSplitOutcomeText(outcome = '', active = false) {
   if (active) {
     return 'Active';
@@ -892,11 +967,7 @@ function createBlackjackSplitHandMarkup(hand = {}, index = 0, visuals = []) {
   const wager = Math.max(0, Math.trunc(Number(hand?.wager ?? 0) || 0));
   const label = escapeHtml(hand?.label ?? `Hand ${index + 1}`);
   const status = getBlackjackSplitOutcomeText(outcome, active);
-  const cardMarkup = cards.length
-    ? cards.map((card, cardIndex) =>
-      createBlackjackCardMarkup(card, cardIndex, visuals[cardIndex])
-    ).join('')
-    : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+  const cardMarkup = createBlackjackCardsMarkup(cards, visuals);
 
   return `
     <section class="hud__blackjack-split-hand${activeClass}${outcomeClass}">
@@ -1062,15 +1133,11 @@ function createVibeHeroSongSelectMarkup(game = null) {
   const songs = Array.isArray(game?.songs) ? game.songs : [];
   const selectedSongId = String(game?.selectedSongId ?? '');
   const editorMode = game?.editorMode === true;
-  return `
-    <div class="hud__vibe-hero-select${editorMode ? ' is-editor' : ''}">
-      <div class="hud__vibe-hero-record" aria-hidden="true">
-        <span></span>
-      </div>
-      <div class="hud__vibe-hero-song-list">
-        ${songs.map((song) => {
-          const active = song.id === selectedSongId;
-          return `
+  let songMarkup = '';
+  for (let index = 0; index < songs.length; index += 1) {
+    const song = songs[index];
+    const active = song.id === selectedSongId;
+    songMarkup += `
             <button
               class="hud__vibe-hero-song${active ? ' is-active' : ''}"
               type="button"
@@ -1082,7 +1149,15 @@ function createVibeHeroSongSelectMarkup(game = null) {
               <em>${escapeHtml(song.performer ?? song.sourceTitle ?? song.artist ?? 'Classical')}</em>
             </button>
           `;
-        }).join('')}
+  }
+
+  return `
+    <div class="hud__vibe-hero-select${editorMode ? ' is-editor' : ''}">
+      <div class="hud__vibe-hero-record" aria-hidden="true">
+        <span></span>
+      </div>
+      <div class="hud__vibe-hero-song-list">
+        ${songMarkup}
       </div>
       <button class="hud__vibe-hero-start" type="button" data-vibe-hero-action="start">${editorMode ? 'Edit Chart' : 'Start'}</button>
     </div>
@@ -1112,25 +1187,49 @@ function createVibeHeroTrackMarkup(game = null) {
   const hitWindowMs = Math.max(1, Number(game?.hitWindowMs ?? 185) || 185);
   const laneFlashes = Array.isArray(game?.laneFlashes) ? game.laneFlashes : [];
   const renderNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const visibleNotes = notes.filter((note) => {
-    if (note.status !== 'pending') {
-      return false;
+  const laneNotes = new Array(laneCount);
+  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+    laneNotes[laneIndex] = [];
+  }
+  for (const note of notes) {
+    if (
+      note.status === 'pending'
+      && note.timeMs >= currentTimeMs - hitWindowMs
+      && note.timeMs <= currentTimeMs + travelMs
+    ) {
+      const lane = Math.max(0, Math.min(laneCount - 1, Math.trunc(Number(note.lane ?? 0) || 0)));
+      laneNotes[lane].push(note);
     }
-    return note.timeMs >= currentTimeMs - hitWindowMs && note.timeMs <= currentTimeMs + travelMs;
-  });
+  }
+  const laneFlashesByLane = [];
+  for (const flash of laneFlashes) {
+    const lane = Math.trunc(Number(flash?.lane));
+    if (Number.isInteger(lane) && lane >= 0 && lane < laneCount) {
+      laneFlashesByLane[lane] = flash;
+    }
+  }
   const hitLineY = 82;
+  let laneMarkup = '';
+  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+    const flash = laneFlashesByLane[laneIndex] ?? null;
+    const flashAgeMs = flash ? Math.max(0, renderNow - (Number(flash.at) || 0)) : 0;
+    const showFire = phase === 'playing' && flash && flash.quality !== 'empty';
+    let noteMarkup = '';
+    for (let noteIndex = 0; noteIndex < laneNotes[laneIndex].length; noteIndex += 1) {
+      const note = laneNotes[laneIndex][noteIndex];
+      const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
+      const progress = 1 - (distanceMs / travelMs);
+      const y = Math.max(4, Math.min(94, 8 + (progress * (hitLineY - 8))));
+      noteMarkup += `
+                <span
+                  class="hud__vibe-hero-note is-lane-${laneIndex}"
+                  style="--note-y:${y.toFixed(2)}%; --note-delay:${Math.max(0, distanceMs).toFixed(0)}ms"
+                  aria-hidden="true"
+                ></span>
+              `;
+    }
 
-  return `
-    <div class="hud__vibe-hero-track" aria-label="Vibe Hero track" style="--lane-count:${laneCount}">
-      ${Array.from({ length: laneCount }, (_, laneIndex) => {
-        const flash = laneFlashes.find((entry) => entry.lane === laneIndex);
-        const flashAgeMs = flash ? Math.max(0, renderNow - (Number(flash.at) || 0)) : 0;
-        const showFire = phase === 'playing' && flash && flash.quality !== 'empty';
-        const laneNotes = visibleNotes.filter((note) => {
-          const lane = Math.max(0, Math.min(laneCount - 1, Math.trunc(Number(note.lane ?? 0) || 0)));
-          return lane === laneIndex;
-        });
-        return `
+    laneMarkup += `
           <div class="hud__vibe-hero-lane${flash ? ` is-${escapeHtml(flash.quality)}` : ''}">
             <span class="hud__vibe-hero-lane-rail"></span>
             <span class="hud__vibe-hero-fret" style="--hit-y:${hitLineY}%" aria-hidden="true"></span>
@@ -1143,28 +1242,26 @@ function createVibeHeroTrackMarkup(game = null) {
                 <span></span>
               </span>
             ` : ''}
-            ${laneNotes.map((note) => {
-              const distanceMs = Number(note.timeMs ?? 0) - currentTimeMs;
-              const progress = 1 - (distanceMs / travelMs);
-              const y = Math.max(4, Math.min(94, 8 + (progress * (hitLineY - 8))));
-              return `
-                <span
-                  class="hud__vibe-hero-note is-lane-${laneIndex}"
-                  style="--note-y:${y.toFixed(2)}%; --note-delay:${Math.max(0, distanceMs).toFixed(0)}ms"
-                  aria-hidden="true"
-                ></span>
-              `;
-            }).join('')}
+            ${noteMarkup}
           </div>
         `;
-      }).join('')}
-      <span class="hud__vibe-hero-hit-line" style="--hit-y:${hitLineY}%"></span>
-      <div class="hud__vibe-hero-lane-buttons">
-        ${Array.from({ length: laneCount }, (_, laneIndex) => `
+  }
+
+  let laneButtonMarkup = '';
+  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+    laneButtonMarkup += `
           <button type="button" data-vibe-hero-action="lane:${laneIndex}">
             <span>${laneIndex + 1}</span>
           </button>
-        `).join('')}
+        `;
+  }
+
+  return `
+    <div class="hud__vibe-hero-track" aria-label="Vibe Hero track" style="--lane-count:${laneCount}">
+      ${laneMarkup}
+      <span class="hud__vibe-hero-hit-line" style="--hit-y:${hitLineY}%"></span>
+      <div class="hud__vibe-hero-lane-buttons">
+        ${laneButtonMarkup}
       </div>
     </div>
   `;
@@ -1388,10 +1485,14 @@ function createTreadmillRunMarkup(game = null) {
 function getSchoolMicrogameRewardText(round = {}, { prefix = false } = {}) {
   const xp = Math.max(0, Math.floor(Number(round.rewardXp ?? 0) || 0));
   const money = Math.max(0, Math.floor(Number(round.rewardMoney ?? 0) || 0));
-  return [
-    money > 0 ? `${prefix ? '+' : ''}${formatMoneyAmount(money)}` : '',
-    xp > 0 ? `${prefix ? '+' : ''}${xp} Intelligence XP` : ''
-  ].filter(Boolean).join(' / ');
+  const parts = [];
+  if (money > 0) {
+    parts.push(`${prefix ? '+' : ''}${formatMoneyAmount(money)}`);
+  }
+  if (xp > 0) {
+    parts.push(`${prefix ? '+' : ''}${xp} Intelligence XP`);
+  }
+  return parts.join(' / ');
 }
 
 function getOfficeJobRequirementText(job = {}, skills = {}) {
@@ -1500,10 +1601,16 @@ function getAgentTaskStatusLabel(status = '') {
 
 function getAgentTaskStatusTone(status = '') {
   const normalized = getAgentTaskDisplayStatus(status);
-  if (['ready_for_review', 'deployed'].includes(normalized)) {
+  if (normalized === 'ready_for_review' || normalized === 'deployed') {
     return 'is-good';
   }
-  if (['failed', 'test_failed', 'cancelled', 'rolled_back', 'worker_offline'].includes(normalized)) {
+  if (
+    normalized === 'failed'
+    || normalized === 'test_failed'
+    || normalized === 'cancelled'
+    || normalized === 'rolled_back'
+    || normalized === 'worker_offline'
+  ) {
     return 'is-bad';
   }
   if (normalized === 'deploy_queued' || AGENT_TASK_BUSY_STATUSES.has(normalized)) {
@@ -1656,7 +1763,11 @@ function getAgentTaskActivityTimestamp(task = {}) {
 
 function sortAgentTasksByCreatedAt(tasks = [], direction = 'desc') {
   const multiplier = direction === 'asc' ? 1 : -1;
-  return [...tasks].sort((a, b) => (getAgentTaskSortTimestamp(a) - getAgentTaskSortTimestamp(b)) * multiplier);
+  const sortedTasks = [];
+  for (const task of tasks) {
+    sortedTasks.push(task);
+  }
+  return sortedTasks.sort((a, b) => (getAgentTaskSortTimestamp(a) - getAgentTaskSortTimestamp(b)) * multiplier);
 }
 
 function getAgentThreadTasks(tasks = [], selectedTask = null) {
@@ -1665,18 +1776,36 @@ function getAgentThreadTasks(tasks = [], selectedTask = null) {
     return [];
   }
 
-  return sortAgentTasksByCreatedAt(
-    tasks.filter((task) => getAgentTaskThreadId(task) === threadId),
-    'asc'
-  );
+  const threadTasks = [];
+  for (let index = 0; index < tasks.length; index += 1) {
+    const task = tasks[index];
+    if (getAgentTaskThreadId(task) === threadId) {
+      threadTasks.push(task);
+    }
+  }
+  return sortAgentTasksByCreatedAt(threadTasks, 'asc');
 }
 
 function getAgentThreadLatestTask(threadTasks = []) {
-  return sortAgentTasksByCreatedAt(threadTasks)[0] ?? null;
+  let latestTask = null;
+  let latestTimestamp = -Infinity;
+  for (let index = 0; index < threadTasks.length; index += 1) {
+    const task = threadTasks[index];
+    const timestamp = getAgentTaskSortTimestamp(task);
+    if (!latestTask || timestamp > latestTimestamp) {
+      latestTask = task;
+      latestTimestamp = timestamp;
+    }
+  }
+  return latestTask;
 }
 
 function getAgentThreadActivityTimestamp(threadTasks = []) {
-  return threadTasks.reduce((latest, task) => Math.max(latest, getAgentTaskActivityTimestamp(task)), 0);
+  let latest = 0;
+  for (let index = 0; index < threadTasks.length; index += 1) {
+    latest = Math.max(latest, getAgentTaskActivityTimestamp(threadTasks[index]));
+  }
+  return latest;
 }
 
 function getAgentPromptThreadRows(tasks = []) {
@@ -1692,14 +1821,23 @@ function getAgentPromptThreadRows(tasks = []) {
     groups.get(threadId).push(task);
   }
 
-  return [...groups.values()]
-    .map((threadTasks) => ({
-      latestTask: getAgentThreadLatestTask(threadTasks),
-      activityAt: getAgentThreadActivityTimestamp(threadTasks)
-    }))
-    .filter((thread) => thread.latestTask)
-    .sort((a, b) => b.activityAt - a.activityAt)
-    .map((thread) => thread.latestTask);
+  const threads = [];
+  for (const threadTasks of groups.values()) {
+    const latestTask = getAgentThreadLatestTask(threadTasks);
+    if (latestTask) {
+      threads.push({
+        latestTask,
+        activityAt: getAgentThreadActivityTimestamp(threadTasks)
+      });
+    }
+  }
+  threads.sort((a, b) => b.activityAt - a.activityAt);
+
+  const latestTasks = new Array(threads.length);
+  for (let index = 0; index < threads.length; index += 1) {
+    latestTasks[index] = threads[index].latestTask;
+  }
+  return latestTasks;
 }
 
 function filterAdminPromptTasksForTab(tasks = []) {
@@ -1727,12 +1865,19 @@ function getAgentTaskThreadTitle(task = {}) {
 }
 
 function getAgentTaskContextLine(task = {}, time = '') {
-  return [
+  const parts = [
     getAgentTaskTitle(task),
     getAgentTaskShortId(task),
     time,
     String(task.status ?? '') === 'ready_for_review' ? getAgentTaskWorkedDurationText(task) : ''
-  ].filter(Boolean).join(' - ');
+  ];
+  const visibleParts = [];
+  for (const part of parts) {
+    if (part) {
+      visibleParts.push(part);
+    }
+  }
+  return visibleParts.join(' - ');
 }
 
 function createAgentTaskListMarkup(
@@ -1744,8 +1889,19 @@ function createAgentTaskListMarkup(
 ) {
   const threadRows = filterAdminPromptTasksForTab(tasks);
   const safeLimit = Math.max(ADMIN_PROMPT_THREAD_LIST_LIMIT, Math.floor(Number(threadLimit) || 0));
-  const visibleTasks = threadRows.slice(0, safeLimit);
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const visibleTaskCount = Math.min(threadRows.length, safeLimit);
+  let selectedTask = null;
+  const threadTaskCounts = new Map();
+  for (let index = 0; index < tasks.length; index += 1) {
+    const task = tasks[index];
+    if (!selectedTask && task.id === selectedTaskId) {
+      selectedTask = task;
+    }
+    const threadId = getAgentTaskThreadId(task);
+    if (threadId) {
+      threadTaskCounts.set(threadId, (threadTaskCounts.get(threadId) ?? 0) + 1);
+    }
+  }
   const selectedThreadId = getAgentTaskThreadId(selectedTask);
   const newThreadMarkup = `
     <button class="hud__admin-prompt-task hud__admin-prompt-task--new${activeTab === 'new' ? ' is-active' : ''}" type="button" data-admin-prompt-action="new-thread">
@@ -1756,21 +1912,24 @@ function createAgentTaskListMarkup(
       </span>
     </button>
   `;
-  const threadMarkup = visibleTasks.map((task) => {
-    const threadTasks = getAgentThreadTasks(tasks, task);
+  let threadMarkup = '';
+  for (let index = 0; index < visibleTaskCount; index += 1) {
+    const task = threadRows[index];
+    const threadId = getAgentTaskThreadId(task);
+    const threadTaskCount = threadTaskCounts.get(threadId) ?? 0;
     const activeClass = getAgentTaskThreadId(task) === selectedThreadId ? ' is-active' : '';
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
-    return `
+    threadMarkup += `
       <button class="hud__admin-prompt-task${activeClass}" type="button" data-admin-prompt-action="select:${escapeHtml(task.id)}">
         <span>
           <strong>${escapeHtml(getAgentTaskThreadTitle(task))}</strong>
-          <small>${escapeHtml(`${getAgentTaskContextLine(task, time)}${threadTasks.length > 1 ? ` - ${threadTasks.length} turns` : ''}`)}</small>
+          <small>${escapeHtml(`${getAgentTaskContextLine(task, time)}${threadTaskCount > 1 ? ` - ${threadTaskCount} turns` : ''}`)}</small>
         </span>
         ${createAgentTaskStatusBadge(task, 'em')}
       </button>
     `;
-  }).join('');
-  const hiddenCount = Math.max(0, threadRows.length - visibleTasks.length);
+  }
+  const hiddenCount = Math.max(0, threadRows.length - visibleTaskCount);
   const loadMoreMarkup = hiddenCount > 0 || hasMoreThreads
     ? `
       <button class="hud__admin-prompt-load-more" type="button" data-admin-prompt-action="load-more">
@@ -1840,11 +1999,23 @@ function getVisibleAgentTaskMessage(value = '') {
 }
 
 function isAgentThreadBusy(threadTasks = []) {
-  return threadTasks.some((task) => {
+  for (let index = 0; index < threadTasks.length; index += 1) {
+    const task = threadTasks[index];
     const status = String(task.status ?? '');
-    return ['queued', 'claimed', 'preparing', 'coding', 'testing', 'deploying', 'rolling_back'].includes(status)
-      || (status === 'ready_for_review' && Number(task.deployApprovedAt ?? 0) > 0);
-  });
+    if (
+      status === 'queued'
+      || status === 'claimed'
+      || status === 'preparing'
+      || status === 'coding'
+      || status === 'testing'
+      || status === 'deploying'
+      || status === 'rolling_back'
+      || (status === 'ready_for_review' && Number(task.deployApprovedAt ?? 0) > 0)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function getAgentTaskWaitingMessage(task = {}) {
@@ -1870,13 +2041,15 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
     return '<div class="hud__admin-prompt-empty">No thread messages yet.</div>';
   }
 
-  return threadTasks.map((task, index) => {
+  let markup = '';
+  for (let index = 0; index < threadTasks.length; index += 1) {
+    const task = threadTasks[index];
     const displayStatus = getAgentTaskDisplayStatus(task);
     const time = formatAgentTaskTime(task.updatedAt || task.createdAt);
     const agentMessage = getAgentTaskCompletionMessage(task);
     const statusMessage = String(task.error || (!agentMessage ? task.summary : '') || '').trim();
     const showStatusMessage = statusMessage && statusMessage !== agentMessage;
-    return `
+    markup += `
       <section class="hud__admin-prompt-turn">
         <div class="hud__admin-prompt-bubble is-user">
           <header>
@@ -1913,7 +2086,8 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
         ` : ''}
       </section>
     `;
-  }).join('');
+  }
+  return markup;
 }
 
 function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
@@ -1928,21 +2102,32 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
   const commitSha = String(latestTask.commitSha ?? '').trim();
   const deployApproved = Number(latestTask.deployApprovedAt ?? 0) > 0;
   const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
-  const canCancel = ['queued', 'claimed', 'preparing'].includes(status);
+  const canCancel = status === 'queued' || status === 'claimed' || status === 'preparing';
   const canRollback = status === 'deployed' && Number(latestTask.rollbackApprovedAt ?? 0) <= 0;
   const rollbackApproved = Number(latestTask.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
   const rollbackCommitSha = String(latestTask.rollbackCommitSha ?? '').trim();
   const threadBusy = isAgentThreadBusy(safeThreadTasks);
-  const deployTargets = Array.isArray(latestTask.deployTargets)
-    ? latestTask.deployTargets.map((target) => String(target ?? '').trim()).filter(Boolean)
-    : [];
-  const changedFiles = Array.isArray(latestTask.changedFiles)
-    ? latestTask.changedFiles.map((filePath) => String(filePath ?? '').trim()).filter(Boolean)
-    : [];
-  const links = [
-    createAgentTaskLink('Preview', latestTask.previewUrl),
-    createAgentTaskLink('Deploy', latestTask.deployUrl)
-  ].filter(Boolean).join('');
+  const deployTargets = [];
+  if (Array.isArray(latestTask.deployTargets)) {
+    for (let index = 0; index < latestTask.deployTargets.length; index += 1) {
+      const target = String(latestTask.deployTargets[index] ?? '').trim();
+      if (target) {
+        deployTargets.push(target);
+      }
+    }
+  }
+  const changedFiles = [];
+  if (Array.isArray(latestTask.changedFiles)) {
+    for (let index = 0; index < latestTask.changedFiles.length; index += 1) {
+      const filePath = String(latestTask.changedFiles[index] ?? '').trim();
+      if (filePath) {
+        changedFiles.push(filePath);
+      }
+    }
+  }
+  const previewLink = createAgentTaskLink('Preview', latestTask.previewUrl);
+  const deployLink = createAgentTaskLink('Deploy', latestTask.deployUrl);
+  const links = `${previewLink}${deployLink}`;
   const workedDuration = String(latestTask.status ?? '') === 'ready_for_review'
     ? getAgentTaskWorkedDurationLabel(latestTask)
     : '';
@@ -1998,11 +2183,15 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     String(game?.message ?? '')
   ];
   if (phase === 'menu' && game?.context === 'office-job') {
+    const jobSignatureParts = [];
+    for (const job of Array.isArray(data.jobs) ? data.jobs : []) {
+      jobSignatureParts.push(`${job.id}:${job.unlocked ? '1' : '0'}:${job.instructions ?? ''}`);
+    }
     base.push(
       String(data.intelligence ?? 0),
       String(data.strengthLevel ?? 0),
       String(data.charismaLevel ?? 0),
-      (Array.isArray(data.jobs) ? data.jobs : []).map((job) => `${job.id}:${job.unlocked ? '1' : '0'}:${job.instructions ?? ''}`).join(',')
+      jobSignatureParts.join(',')
     );
     return base.join('|');
   }
@@ -2070,12 +2259,16 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
     const roundResults = Array.isArray(data.roundResults) ? data.roundResults : [];
+    const roundResultSignature = [];
+    for (const result of roundResults) {
+      roundResultSignature.push(result === true ? '1' : result === false ? '0' : '-');
+    }
     base.push(
       String(data.currentQuestionIndex ?? 0),
       String(data.selectedIndex ?? -1),
       String(Boolean(data.questionLocked)),
       String(data.correctImpactIndex ?? -1),
-      roundResults.map((result) => result === true ? '1' : result === false ? '0' : '-').join('')
+      roundResultSignature.join('')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
     const country = round.country ?? {};
@@ -2120,17 +2313,25 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Boolean(data.completing))
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
+    const chalkSignatureParts = [];
+    for (const chalk of data.chalks ?? []) {
+      chalkSignatureParts.push(`${chalk.lane}:${Math.round(Number(chalk.x ?? 0) / 4)}`);
+    }
     base.push(
       String(data.playerLane ?? 1),
       String(data.lives ?? 0),
-      (data.chalks ?? []).map((chalk) => `${chalk.lane}:${Math.round(Number(chalk.x ?? 0) / 4)}`).join(',')
+      chalkSignatureParts.join(',')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.sortBackpack) {
+    const remainingItemIds = [];
+    for (const item of data.remaining ?? []) {
+      remainingItemIds.push(item.id);
+    }
     base.push(
       String(data.selectedItemId ?? ''),
       String(data.correct ?? 0),
       String(data.wrong ?? 0),
-      (data.remaining ?? []).map((item) => item.id).join(',')
+      remainingItemIds.join(',')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.bellSprint) {
     base.push(String(Math.round(Number(data.marker ?? 0) * 100)));
@@ -2145,11 +2346,17 @@ function createReadySchoolMicrogameMarkup(game = null) {
   const intelligenceRequirement = Math.max(0, Math.floor(Number(round.intelligenceRequired ?? 0) || 0));
   const charismaLevelRequirement = Math.max(0, Math.floor(Number(round.charismaLevelRequired ?? 0) || 0));
   const strengthLevelRequirement = Math.max(0, Math.floor(Number(round.strengthLevelRequired ?? 0) || 0));
-  const requirementText = [
-    intelligenceRequirement > 0 ? `Level ${intelligenceRequirement} Intelligence` : '',
-    strengthLevelRequirement > 0 ? `Level ${strengthLevelRequirement} Strength` : '',
-    charismaLevelRequirement > 0 ? `Level ${charismaLevelRequirement} Charisma` : ''
-  ].filter(Boolean).join(' / ');
+  const requirementParts = [];
+  if (intelligenceRequirement > 0) {
+    requirementParts.push(`Level ${intelligenceRequirement} Intelligence`);
+  }
+  if (strengthLevelRequirement > 0) {
+    requirementParts.push(`Level ${strengthLevelRequirement} Strength`);
+  }
+  if (charismaLevelRequirement > 0) {
+    requirementParts.push(`Level ${charismaLevelRequirement} Charisma`);
+  }
+  const requirementText = requirementParts.join(' / ');
   const instructions = String(round.instructions ?? '').trim();
   const officeJobId = String(round.officeJobId ?? round.jobId ?? '');
   const officeReadyBackdrop = game?.context === 'office-job' ? createOfficeJobReadyBackdropMarkup(officeJobId, String(round.gameId ?? '')) : '';
@@ -2341,24 +2548,25 @@ function createOfficeJobMenuMarkup(game = null) {
   const intelligence = Math.max(0, Math.floor(Number(data.intelligence ?? 0) || 0));
   const charismaLevel = Math.max(0, Math.floor(Number(data.charismaLevel ?? 0) || 0));
   const strengthLevel = Math.max(0, Math.floor(Number(data.strengthLevel ?? 0) || 0));
-  const jobs = Array.isArray(data.jobs) && data.jobs.length > 0
-    ? data.jobs
-    : listOfficeJobDefinitions().map((job) => ({
-      ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
-    }));
+  let jobs = Array.isArray(data.jobs) && data.jobs.length > 0 ? data.jobs : null;
+  if (!jobs) {
+    const definitions = listOfficeJobDefinitions();
+    jobs = new Array(definitions.length);
+    for (let index = 0; index < definitions.length; index += 1) {
+      const job = definitions[index];
+      jobs[index] = {
+        ...job,
+        unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
+      };
+    }
+  }
 
-  return `
-    <div class="hud__office-menu">
-      <section class="hud__office-menu-summary">
-        <span>Current Skills</span>
-        <strong>Int Lv ${escapeHtml(String(intelligence))} / Str Lv ${escapeHtml(String(strengthLevel))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
-      </section>
-      <div class="hud__office-job-grid">
-        ${jobs.map((job) => {
-          const unlocked = canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel);
-          const instructions = String(job.instructions ?? '').trim();
-          return `
+  let jobMarkup = '';
+  for (let index = 0; index < jobs.length; index += 1) {
+    const job = jobs[index];
+    const unlocked = canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel);
+    const instructions = String(job.instructions ?? '').trim();
+    jobMarkup += `
             <button
               class="hud__office-job-card${unlocked ? '' : ' is-locked'}"
               type="button"
@@ -2377,7 +2585,16 @@ function createOfficeJobMenuMarkup(game = null) {
               </span>
             </button>
           `;
-        }).join('')}
+  }
+
+  return `
+    <div class="hud__office-menu">
+      <section class="hud__office-menu-summary">
+        <span>Current Skills</span>
+        <strong>Int Lv ${escapeHtml(String(intelligence))} / Str Lv ${escapeHtml(String(strengthLevel))} / Cha Lv ${escapeHtml(String(charismaLevel))}</strong>
+      </section>
+      <div class="hud__office-job-grid">
+        ${jobMarkup}
       </div>
     </div>
   `;
@@ -2399,15 +2616,13 @@ function createPopQuizMarkup(game = null) {
   const questionLocked = Boolean(data.questionLocked);
   const selectedIndex = Number(data.selectedIndex ?? -1);
   const totalQuestions = Math.max(questions.length, Number(round.questionCount ?? 0) || 0, 3);
-  return `
-    <div class="hud__school-quiz">
-      <div class="hud__school-quiz-status" aria-label="Quiz rounds">
-        ${Array.from({ length: totalQuestions }, (_, index) => {
-          const result = roundResults[index];
-          const isImpact = result === true && index === Number(data.correctImpactIndex ?? -1);
-          const stateClass = `${result === true ? ' is-correct' : index === currentQuestionIndex ? ' is-current' : ''}${isImpact ? ' is-impact' : ''}`;
-          const label = result === true ? `Question ${index + 1} correct` : `Question ${index + 1}`;
-          return `
+  let roundMarkup = '';
+  for (let index = 0; index < totalQuestions; index += 1) {
+    const result = roundResults[index];
+    const isImpact = result === true && index === Number(data.correctImpactIndex ?? -1);
+    const stateClass = `${result === true ? ' is-correct' : index === currentQuestionIndex ? ' is-current' : ''}${isImpact ? ' is-impact' : ''}`;
+    const label = result === true ? `Question ${index + 1} correct` : `Question ${index + 1}`;
+    roundMarkup += `
             <span class="hud__school-round${stateClass}" aria-label="${escapeHtml(label)}">
               <span class="hud__school-round-dot" aria-hidden="true"></span>
               ${result === true ? `
@@ -2420,17 +2635,25 @@ function createPopQuizMarkup(game = null) {
               ` : ''}
             </span>
           `;
-        }).join('')}
+  }
+  let answerMarkup = '';
+  const answers = currentQuestion.answers ?? [];
+  for (let answerIndex = 0; answerIndex < answers.length; answerIndex += 1) {
+    const answer = answers[answerIndex];
+    const index = Number(answer.index ?? 0);
+    const selectedClass = selectedIndex === index ? ' is-selected' : '';
+    const correctClass = questionLocked && selectedIndex === index && index === Number(currentQuestion.correctIndex ?? -1) ? ' is-correct' : '';
+    answerMarkup += createSchoolGameButton(`answer:${index}`, answer.label, `hud__school-answer${selectedClass}${correctClass}`, { disabled: questionLocked });
+  }
+  return `
+    <div class="hud__school-quiz">
+      <div class="hud__school-quiz-status" aria-label="Quiz rounds">
+        ${roundMarkup}
       </div>
       <div class="hud__school-question-count">Question ${currentQuestionIndex + 1} of ${totalQuestions}</div>
       <div class="hud__school-question">${escapeHtml(currentQuestion.question ?? 'Question')}</div>
       <div class="hud__school-answer-grid">
-        ${(currentQuestion.answers ?? []).map((answer) => {
-          const index = Number(answer.index ?? 0);
-          const selectedClass = selectedIndex === index ? ' is-selected' : '';
-          const correctClass = questionLocked && selectedIndex === index && index === Number(currentQuestion.correctIndex ?? -1) ? ' is-correct' : '';
-          return createSchoolGameButton(`answer:${index}`, answer.label, `hud__school-answer${selectedClass}${correctClass}`, { disabled: questionLocked });
-        }).join('')}
+        ${answerMarkup}
       </div>
     </div>
   `;
@@ -2442,20 +2665,31 @@ function createLockerComboMarkup(game = null) {
   const combo = Array.isArray(round.combo) ? round.combo : [];
   const entered = Array.isArray(data.entered) ? data.entered : [];
   const previewActive = Boolean(data.previewActive);
+  let comboMarkup = '';
+  for (let index = 0; index < combo.length; index += 1) {
+    const digit = combo[index];
+    comboMarkup += `
+            <span class="hud__school-combo-digit${previewActive ? ' is-visible' : ''}${entered[index] === digit ? ' is-entered' : ''}">
+              ${previewActive ? escapeHtml(digit) : escapeHtml(entered[index] ?? '-')}
+            </span>
+          `;
+  }
+  let keypadMarkup = '';
+  const keypad = round.keypad ?? [];
+  for (let index = 0; index < keypad.length; index += 1) {
+    const digit = keypad[index];
+    keypadMarkup += createSchoolGameButton(`digit:${digit}`, String(digit), 'hud__school-key');
+  }
   return `
     <div class="hud__school-locker${previewActive ? ' is-previewing' : ''}">
       <div class="hud__school-locker-door">
         <div class="hud__school-locker-vents" aria-hidden="true"></div>
         <div class="hud__school-combo-strip">
-          ${combo.map((digit, index) => `
-            <span class="hud__school-combo-digit${previewActive ? ' is-visible' : ''}${entered[index] === digit ? ' is-entered' : ''}">
-              ${previewActive ? escapeHtml(digit) : escapeHtml(entered[index] ?? '-')}
-            </span>
-          `).join('')}
+          ${comboMarkup}
         </div>
       </div>
       <div class="hud__school-keypad">
-        ${(round.keypad ?? []).map((digit) => createSchoolGameButton(`digit:${digit}`, String(digit), 'hud__school-key')).join('')}
+        ${keypadMarkup}
       </div>
     </div>
   `;
@@ -2466,17 +2700,28 @@ function createCopyNotesMarkup(game = null) {
   const data = game?.data ?? {};
   const sequence = Array.isArray(round.sequence) ? round.sequence : [];
   const enteredCount = Math.max(0, Math.floor(Number(data.enteredCount ?? 0) || 0));
-  return `
-    <div class="hud__school-notes">
-      <div class="hud__school-board">
-        ${sequence.map((key, index) => `
+  let sequenceMarkup = '';
+  for (let index = 0; index < sequence.length; index += 1) {
+    const key = sequence[index];
+    sequenceMarkup += `
           <span class="hud__school-board-token${index < enteredCount ? ' is-copied' : ''}${index === enteredCount ? ' is-next' : ''}">
             ${escapeHtml(key)}
           </span>
-        `).join('')}
+        `;
+  }
+  let keyMarkup = '';
+  const keys = round.keys ?? [];
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    keyMarkup += createSchoolGameButton(`note:${key}`, key, 'hud__school-note-key');
+  }
+  return `
+    <div class="hud__school-notes">
+      <div class="hud__school-board">
+        ${sequenceMarkup}
       </div>
       <div class="hud__school-note-buttons">
-        ${(round.keys ?? []).map((key) => createSchoolGameButton(`note:${key}`, key, 'hud__school-note-key')).join('')}
+        ${keyMarkup}
       </div>
     </div>
   `;
@@ -2492,16 +2737,18 @@ function createTeacherLookingMarkup(game = null) {
   const statusLabel = teacherMode === 'looking' ? 'Red light' : teacherMode === 'turning' ? 'Yellow light' : 'Green light';
   const sceneLabel = teacherMode === 'looking' ? 'Freeze' : teacherMode === 'turning' ? 'Stop' : 'Write';
   const progress = sentence.length > 0 ? Math.min(100, (typedText.length / sentence.length) * 100) : 0;
-  const targetMarkup = Array.from(sentence).map((char, index) => {
+  let targetMarkup = '';
+  for (let index = 0; index < sentence.length; index += 1) {
+    const char = sentence[index];
     const isTyped = index < typedText.length;
     const isCurrent = index === typedText.length;
     const isSpace = char === ' ';
-    return `
+    targetMarkup += `
       <span class="hud__school-type-char${isTyped ? ' is-typed' : ''}${isCurrent ? ' is-current' : ''}${isSpace ? ' is-space' : ''}" aria-label="${isSpace ? 'space' : escapeHtml(char)}">
         ${isSpace ? '&nbsp;' : escapeHtml(char)}
       </span>
     `;
-  }).join('');
+  }
   return `
     <div class="hud__school-teacher ${modeClass}">
       <div class="hud__school-teacher-topline">
@@ -2620,50 +2867,53 @@ function createGeographyGlobeMarkup(game = null) {
   `;
 }
 
+function createIdSet(values) {
+  const ids = new Set();
+  if (!Array.isArray(values)) {
+    return ids;
+  }
+  for (const value of values) {
+    ids.add(value);
+  }
+  return ids;
+}
+
 function createMemoryMatchMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
   const cards = Array.isArray(round.cards) ? round.cards : [];
-  const visibleIds = new Set(Array.isArray(data.visibleCardIds) ? data.visibleCardIds : []);
-  const matchedIds = new Set(Array.isArray(data.matchedCardIds) ? data.matchedCardIds : []);
-  const pendingMismatchIds = new Set(Array.isArray(data.pendingMismatchIds) ? data.pendingMismatchIds : []);
-  const celebratingIds = new Set(Array.isArray(data.celebratingCardIds) ? data.celebratingCardIds : []);
-  const flippingBackIds = new Set(Array.isArray(data.flippingBackCardIds) ? data.flippingBackCardIds : []);
+  const visibleIds = createIdSet(data.visibleCardIds);
+  const matchedIds = createIdSet(data.matchedCardIds);
+  const pendingMismatchIds = createIdSet(data.pendingMismatchIds);
+  const celebratingIds = createIdSet(data.celebratingCardIds);
+  const flippingBackIds = createIdSet(data.flippingBackCardIds);
   const matchesFound = Math.max(0, Math.floor(Number(data.matchesFound ?? matchedIds.size / 2) || 0));
   const pairCount = Math.max(1, Math.floor(Number(round.pairCount ?? cards.length / 2) || 1));
   const moves = Math.max(0, Math.floor(Number(data.moves ?? 0) || 0));
+  let cardMarkup = '';
+  for (let index = 0; index < cards.length; index += 1) {
+    const card = cards[index];
+    const isMatched = matchedIds.has(card.id);
+    const isVisible = isMatched || visibleIds.has(card.id);
+    const isPending = pendingMismatchIds.has(card.id);
+    const isCelebrating = celebratingIds.has(card.id);
+    const isFlippingBack = flippingBackIds.has(card.id);
+    const isFlippingUp = isVisible && data.lastFlippedCardId === card.id;
+    let cardClass = 'hud__school-memory-card';
+    if (isVisible) cardClass += ' is-visible';
+    if (isMatched) cardClass += ' is-matched';
+    if (isPending) cardClass += ' is-pending';
+    if (isCelebrating) cardClass += ' is-celebrating';
+    if (isFlippingBack) cardClass += ' is-flipping-back';
+    if (isFlippingUp) cardClass += ' is-flipping-up';
+    const disabled = isMatched || isVisible || isFlippingBack || Boolean(data.completing);
+    const label = isMatched
+      ? `${card.label} matched`
+      : isVisible
+        ? `${card.label} card`
+        : `Face-down memory card ${index + 1}`;
 
-  return `
-    <div class="hud__school-memory">
-      <div class="hud__school-memory-score">
-        <span><strong>${matchesFound}</strong>/${pairCount} pairs</span>
-        <span><strong>${moves}</strong> turns</span>
-      </div>
-      <div class="hud__school-memory-grid" aria-label="Memory card grid">
-        ${cards.map((card, index) => {
-          const isMatched = matchedIds.has(card.id);
-          const isVisible = isMatched || visibleIds.has(card.id);
-          const isPending = pendingMismatchIds.has(card.id);
-          const isCelebrating = celebratingIds.has(card.id);
-          const isFlippingBack = flippingBackIds.has(card.id);
-          const isFlippingUp = isVisible && data.lastFlippedCardId === card.id;
-          const cardClass = [
-            'hud__school-memory-card',
-            isVisible ? 'is-visible' : '',
-            isMatched ? 'is-matched' : '',
-            isPending ? 'is-pending' : '',
-            isCelebrating ? 'is-celebrating' : '',
-            isFlippingBack ? 'is-flipping-back' : '',
-            isFlippingUp ? 'is-flipping-up' : ''
-          ].filter(Boolean).join(' ');
-          const disabled = isMatched || isVisible || isFlippingBack || Boolean(data.completing);
-          const label = isMatched
-            ? `${card.label} matched`
-            : isVisible
-              ? `${card.label} card`
-              : `Face-down memory card ${index + 1}`;
-
-          return `
+    cardMarkup += `
             <button
               class="${cardClass}"
               type="button"
@@ -2690,7 +2940,16 @@ function createMemoryMatchMarkup(game = null) {
               </span>
             </button>
           `;
-        }).join('')}
+  }
+
+  return `
+    <div class="hud__school-memory">
+      <div class="hud__school-memory-score">
+        <span><strong>${matchesFound}</strong>/${pairCount} pairs</span>
+        <span><strong>${moves}</strong> turns</span>
+      </div>
+      <div class="hud__school-memory-grid" aria-label="Memory card grid">
+        ${cardMarkup}
       </div>
     </div>
   `;
@@ -2701,19 +2960,33 @@ function createDodgeChalkMarkup(game = null) {
   const lanes = Array.isArray(game?.round?.lanes) ? game.round.lanes : ['Left', 'Center', 'Right'];
   const playerLane = Math.max(0, Math.min(2, Math.floor(Number(data.playerLane ?? 1) || 1)));
   const chalks = Array.isArray(data.chalks) ? data.chalks : [];
-  return `
-    <div class="hud__school-dodge">
-      <div class="hud__school-lives">${Array.from({ length: 2 }, (_, index) => `<span class="${index < (data.lives ?? 0) ? 'is-live' : ''}"></span>`).join('')}</div>
-      <div class="hud__school-dodge-lanes">
-        ${lanes.map((lane, index) => `
+  let livesMarkup = '';
+  for (let index = 0; index < 2; index += 1) {
+    livesMarkup += `<span class="${index < (data.lives ?? 0) ? 'is-live' : ''}"></span>`;
+  }
+  let laneMarkup = '';
+  for (let index = 0; index < lanes.length; index += 1) {
+    const lane = lanes[index];
+    laneMarkup += `
           <div class="hud__school-dodge-lane${playerLane === index ? ' is-player-lane' : ''}">
             <span>${escapeHtml(lane)}</span>
           </div>
-        `).join('')}
-        <div class="hud__school-dodge-player" style="--lane:${playerLane}" aria-label="Student"></div>
-        ${chalks.map((chalk) => `
+        `;
+  }
+  let chalkMarkup = '';
+  for (let index = 0; index < chalks.length; index += 1) {
+    const chalk = chalks[index];
+    chalkMarkup += `
           <span class="hud__school-chalk" style="--lane:${Math.max(0, Math.min(2, Number(chalk.lane ?? 0)))}; --x:${Math.max(0, Math.min(100, Number(chalk.x ?? 0))).toFixed(2)}%"></span>
-        `).join('')}
+        `;
+  }
+  return `
+    <div class="hud__school-dodge">
+      <div class="hud__school-lives">${livesMarkup}</div>
+      <div class="hud__school-dodge-lanes">
+        ${laneMarkup}
+        <div class="hud__school-dodge-player" style="--lane:${playerLane}" aria-label="Student"></div>
+        ${chalkMarkup}
       </div>
       <div class="hud__school-dual-actions">
         ${createSchoolGameButton('move:left', 'Left', 'hud__school-direction')}
@@ -2728,13 +3001,24 @@ function createSortBackpackMarkup(game = null) {
   const data = game?.data ?? {};
   const remaining = Array.isArray(data.remaining) ? data.remaining : (round.items ?? []);
   const selectedId = String(data.selectedItemId ?? '');
+  let itemMarkup = '';
+  for (let index = 0; index < remaining.length; index += 1) {
+    const item = remaining[index];
+    itemMarkup += createSchoolGameButton(`item:${item.id}`, item.label, `hud__school-backpack-item${selectedId === item.id ? ' is-selected' : ''}`);
+  }
+  let binMarkup = '';
+  const bins = round.bins ?? [];
+  for (let index = 0; index < bins.length; index += 1) {
+    const bin = bins[index];
+    binMarkup += createSchoolGameButton(`bin:${bin}`, bin, 'hud__school-bin');
+  }
   return `
     <div class="hud__school-sort">
       <div class="hud__school-backpack-pile">
-        ${remaining.map((item) => createSchoolGameButton(`item:${item.id}`, item.label, `hud__school-backpack-item${selectedId === item.id ? ' is-selected' : ''}`)).join('')}
+        ${itemMarkup}
       </div>
       <div class="hud__school-bin-grid">
-        ${(round.bins ?? []).map((bin) => createSchoolGameButton(`bin:${bin}`, bin, 'hud__school-bin')).join('')}
+        ${binMarkup}
       </div>
       <div class="hud__school-score-strip">
         <span>${Math.max(0, Number(data.correct ?? 0) || 0)} sorted</span>
@@ -2770,23 +3054,38 @@ function createScantronMarkup(game = null) {
   const data = game?.data ?? {};
   const answerKey = Array.isArray(round.answerKey) ? round.answerKey : [];
   const filled = Array.isArray(data.filled) ? data.filled : [];
+  let answerKeyMarkup = '';
+  for (let index = 0; index < answerKey.length; index += 1) {
+    answerKeyMarkup += `${index > 0 ? ' ' : ''}${escapeHtml(answerKey[index])}`;
+  }
+  let rowMarkup = '';
+  const options = round.options ?? ['A', 'B', 'C', 'D'];
+  for (let rowIndex = 0; rowIndex < answerKey.length; rowIndex += 1) {
+    const answer = answerKey[rowIndex];
+    let optionMarkup = '';
+    for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
+      const option = options[optionIndex];
+      optionMarkup += createSchoolGameButton(
+        `bubble:${rowIndex}:${option}`,
+        option,
+        `hud__school-bubble${filled[rowIndex] === option ? ' is-filled' : ''}${answer === option ? ' is-key' : ''}`
+      );
+    }
+    rowMarkup += `
+          <div class="hud__school-scantron-row">
+            <span>${rowIndex + 1}</span>
+            ${optionMarkup}
+          </div>
+        `;
+  }
   return `
     <div class="hud__school-scantron">
       <div class="hud__school-answer-key">
         <span>Key</span>
-        <strong>${answerKey.map((answer) => escapeHtml(answer)).join(' ')}</strong>
+        <strong>${answerKeyMarkup}</strong>
       </div>
       <div class="hud__school-scantron-sheet">
-        ${answerKey.map((answer, rowIndex) => `
-          <div class="hud__school-scantron-row">
-            <span>${rowIndex + 1}</span>
-            ${(round.options ?? ['A', 'B', 'C', 'D']).map((option) => createSchoolGameButton(
-              `bubble:${rowIndex}:${option}`,
-              option,
-              `hud__school-bubble${filled[rowIndex] === option ? ' is-filled' : ''}${answer === option ? ' is-key' : ''}`
-            )).join('')}
-          </div>
-        `).join('')}
+        ${rowMarkup}
       </div>
       <div class="hud__school-score-strip">
         <span>${Math.max(0, Number(data.correct ?? 0) || 0)} correct</span>
@@ -2885,10 +3184,12 @@ function getOfficeMopHeroProgress(data = {}) {
     return 0;
   }
 
-  const cleanTotal = patches.reduce((sum, patch) => {
+  let cleanTotal = 0;
+  for (let index = 0; index < patches.length; index += 1) {
+    const patch = patches[index];
     const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
-    return sum + clean;
-  }, 0);
+    cleanTotal += clean;
+  }
   return Math.max(0, Math.min(100, (cleanTotal / patches.length) * 100));
 }
 
@@ -2908,11 +3209,21 @@ function createOfficeMopDirtPatchMarkup(patch = {}, index = 0) {
   `;
 }
 
+function getOfficeMopDirtyCount(patches = []) {
+  let dirtyCount = 0;
+  for (const patch of patches) {
+    if (Math.max(0, Math.min(1, Number(patch?.clean ?? 0) || 0)) < 0.98) {
+      dirtyCount += 1;
+    }
+  }
+  return dirtyCount;
+}
+
 function createOfficeMopHeroMarkup(game = null) {
   const data = game?.data ?? {};
   const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
   const progress = getOfficeMopHeroProgress(data);
-  const dirtyCount = patches.filter((patch) => Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)) < 0.98).length;
+  const dirtyCount = getOfficeMopDirtyCount(patches);
   const dirtyLabel = `${dirtyCount} dirty spot${dirtyCount === 1 ? '' : 's'}`;
   const mopX = Math.max(0.04, Math.min(0.96, Number(data.mopX ?? 0.5) || 0.5));
   const mopY = Math.max(0.12, Math.min(0.9, Number(data.mopY ?? 0.66) || 0.66));
@@ -2920,13 +3231,17 @@ function createOfficeMopHeroMarkup(game = null) {
   const sparkly = progress >= 98 || data.sparklyClean === true;
   const squeakyClean = Number(data.mopCleanShowcaseAt ?? 0) > 0;
   const dirtStatusLabel = squeakyClean || dirtyCount === 0 ? 'Squeaky clean floor' : dirtyLabel;
+  let dirtPatchMarkup = '';
+  for (let index = 0; index < patches.length; index += 1) {
+    dirtPatchMarkup += createOfficeMopDirtPatchMarkup(patches[index], index);
+  }
   return `
     <div class="hud__office-task hud__office-mop${mopActive ? ' is-mopping' : ''}${sparkly ? ' is-sparkly' : ''}${squeakyClean ? ' is-squeaky-clean' : ''}" style="--mop-x:${(mopX * 100).toFixed(2)}%; --mop-y:${(mopY * 100).toFixed(2)}%; --mop-progress:${progress.toFixed(2)}%">
       <div class="hud__office-mop-stage" data-office-mop-stage aria-label="Mop Hero office room">
         ${createOfficeMopRoomBackdropMarkup({ gameplay: true })}
         <span class="hud__office-mop-clean-glow"></span>
         <div class="hud__office-mop-dirt-layer">
-          ${patches.map(createOfficeMopDirtPatchMarkup).join('')}
+          ${dirtPatchMarkup}
         </div>
         <span class="hud__office-mop-sparkles" aria-hidden="true">
           <span></span>
@@ -3113,7 +3428,7 @@ function updateOfficeMopHeroLiveMarkup(root = null, game = null) {
   const mopY = Math.max(0.12, Math.min(0.9, Number(data.mopY ?? 0.66) || 0.66));
   const progress = getOfficeMopHeroProgress(data);
   const patches = Array.isArray(data.dirtPatches) ? data.dirtPatches : [];
-  const dirtyCount = patches.filter((patch) => Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)) < 0.98).length;
+  const dirtyCount = getOfficeMopDirtyCount(patches);
   const dirtyLabel = `${dirtyCount} dirty spot${dirtyCount === 1 ? '' : 's'}`;
   const squeakyClean = Number(data.mopCleanShowcaseAt ?? 0) > 0;
   const dirtStatusLabel = squeakyClean || dirtyCount === 0 ? 'Squeaky clean floor' : dirtyLabel;
@@ -3403,14 +3718,25 @@ function createStockIconMarkup(stock = {}, className = '') {
 
 function createAllStockChartMarkup(stocks = [], selectedSymbol = '', options = {}) {
   const layout = options?.layout === 'phone' ? 'phone' : 'wide';
-  const series = (Array.isArray(stocks) ? stocks : [])
-    .map((stock) => ({
-      ...stock,
-      values: Array.isArray(stock?.history)
-        ? stock.history.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-        : []
-    }))
-    .filter((stock) => stock.values.length >= 2);
+  const series = [];
+  for (const stock of Array.isArray(stocks) ? stocks : []) {
+    const values = [];
+    if (Array.isArray(stock?.history)) {
+      for (const rawValue of stock.history) {
+        const value = Number(rawValue);
+        if (Number.isFinite(value)) {
+          values.push(value);
+        }
+      }
+    }
+
+    if (values.length >= 2) {
+      series.push({
+        ...stock,
+        values
+      });
+    }
+  }
   if (!series.length) {
     return '<div class="hud__stock-overview-empty">No market history yet.</div>';
   }
@@ -3425,14 +3751,23 @@ function createAllStockChartMarkup(stocks = [], selectedSymbol = '', options = {
   const plotTop = phoneLayout ? 14 : 18;
   const plotBottom = height - (phoneLayout ? 14 : 18);
   const plotHeight = Math.max(1, plotBottom - plotTop);
-  const scaleValues = series.flatMap((stock) => {
-    const price = Number(stock.price);
-    return Number.isFinite(price)
-      ? [...stock.values, price]
-      : stock.values;
-  });
-  const min = Math.min(...scaleValues);
-  const max = Math.max(...scaleValues);
+  let min = Infinity;
+  let max = -Infinity;
+  const includeScaleValue = (rawValue) => {
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  };
+  for (const stock of series) {
+    for (const value of stock.values) {
+      includeScaleValue(value);
+    }
+    includeScaleValue(stock.price);
+  }
   const span = Math.max(0.01, max - min);
   const toY = (value) => plotBottom - (((value - min) / span) * plotHeight);
   const gridPath = [
@@ -3447,10 +3782,12 @@ function createAllStockChartMarkup(stocks = [], selectedSymbol = '', options = {
   const groups = [];
 
   for (const stock of series) {
-    const points = stock.values.map((value, index) => {
+    let points = '';
+    for (let index = 0; index < stock.values.length; index += 1) {
+      const value = stock.values[index];
       const x = stock.values.length <= 1 ? 0 : (index / (stock.values.length - 1)) * plotRight;
-      return `${x.toFixed(2)},${toY(value).toFixed(2)}`;
-    }).join(' ');
+      points += points ? ` ${x.toFixed(2)},${toY(value).toFixed(2)}` : `${x.toFixed(2)},${toY(value).toFixed(2)}`;
+    }
     const y = toY(stock.price ?? stock.values[stock.values.length - 1]);
     const active = stock.symbol === selectedSymbol;
     const activeClass = active ? ' is-active' : '';
@@ -3570,21 +3907,35 @@ function getNpcRoutineEditorSignature(editorState) {
     return '';
   }
 
-  return JSON.stringify({
-    stepTypes: (editorState.stepTypes ?? []).map((entry) => ({
+  const stepTypes = [];
+  for (const entry of editorState.stepTypes ?? []) {
+    stepTypes.push({
       id: entry.id,
       label: entry.label
-    })),
-    steps: (editorState.routine?.steps ?? []).map((step) => ({
+    });
+  }
+
+  const steps = [];
+  for (const step of editorState.routine?.steps ?? []) {
+    const targetOptions = [];
+    for (const option of step.targetOptions ?? []) {
+      targetOptions.push({
+        id: option.id,
+        label: option.label
+      });
+    }
+    steps.push({
       type: step.type,
       targetPlacementId: step.targetPlacementId ?? '',
       warning: step.warning ?? '',
       pickModeActive: step.pickModeActive === true,
-      targetOptions: (step.targetOptions ?? []).map((option) => ({
-        id: option.id,
-        label: option.label
-      }))
-    }))
+      targetOptions
+    });
+  }
+
+  return JSON.stringify({
+    stepTypes,
+    steps
   });
 }
 
@@ -3725,11 +4076,14 @@ function getCarSelectorCardMarkup(entry = {}) {
 
 function getInteractionActionMarkup(action = {}) {
   const hasVehiclePreview = Boolean(action.previewItemId);
-  const className = [
-    'hud__dialog-button',
-    action.primary ? 'is-primary' : '',
-    hasVehiclePreview ? 'hud__dialog-button--vehicle' : ''
-  ].filter(Boolean).join(' ');
+  const classNames = ['hud__dialog-button'];
+  if (action.primary) {
+    classNames.push('is-primary');
+  }
+  if (hasVehiclePreview) {
+    classNames.push('hud__dialog-button--vehicle');
+  }
+  const className = classNames.join(' ');
   const label = String(action.label ?? action.title ?? 'Action');
   const content = hasVehiclePreview
     ? `
@@ -3772,11 +4126,13 @@ function getHudDrunknessHue(level = 0) {
 }
 
 function getHudDrunknessLabelMarkup() {
-  return Array.from({ length: DRUNKNESS_MAX_LEVEL }, (_, index) => {
+  const markup = [];
+  for (let index = 0; index < DRUNKNESS_MAX_LEVEL; index += 1) {
     const level = DRUNKNESS_MAX_LEVEL - index;
     const hue = getHudDrunknessHue(level);
-    return `<span class="hud__drunkness-label" data-drunkness-label-level="${level}" style="--drunkness-label-hue: ${hue};">${escapeHtml(getDrunknessLevelLabel(level))}</span>`;
-  }).join('');
+    markup.push(`<span class="hud__drunkness-label" data-drunkness-label-level="${level}" style="--drunkness-label-hue: ${hue};">${escapeHtml(getDrunknessLevelLabel(level))}</span>`);
+  }
+  return markup.join('');
 }
 
 const BUILDER_PANEL_DEFAULT_WIDTH = 620;
@@ -3818,14 +4174,18 @@ function getMouseControlIconMarkup(side) {
 }
 
 function getHudControlsMarkup() {
-  return HUD_CONTROLS.map((control) => `
-    <div class="hud__controls-row">
-      ${control.mouseButton
-        ? getMouseControlIconMarkup(control.mouseButton)
-        : `<span class="hud__control-badge hud__control-badge--key">${control.key}</span>`}
-      <span class="hud__controls-label">${control.label}</span>
-    </div>
-  `).join('');
+  const markup = [];
+  for (const control of HUD_CONTROLS) {
+    markup.push(`
+      <div class="hud__controls-row">
+        ${control.mouseButton
+          ? getMouseControlIconMarkup(control.mouseButton)
+          : `<span class="hud__control-badge hud__control-badge--key">${control.key}</span>`}
+        <span class="hud__controls-label">${control.label}</span>
+      </div>
+    `);
+  }
+  return markup.join('');
 }
 
 export class Hud {
@@ -3851,6 +4211,7 @@ export class Hud {
     this.setLoadingProgress(0);
     this.overlay = this.createOverlay();
     this.joinTitle = this.overlay.querySelector('[data-join-title]');
+    this.promptRoot = this.overlay.querySelector('.hud__prompt');
     this.promptText = this.overlay.querySelector('[data-prompt]');
     this.toastText = this.overlay.querySelector('[data-toast]');
     this.jobLockAlert = this.overlay.querySelector('[data-office-prereq-alert]');
@@ -3906,7 +4267,10 @@ export class Hud {
     this.carSelectorGrid = this.overlay.querySelector('[data-car-selector-grid]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
-    this.drunknessLabels = Array.from(this.overlay.querySelectorAll('[data-drunkness-label-level]'));
+    this.drunknessLabels = [];
+    for (const node of this.overlay.querySelectorAll('[data-drunkness-label-level]')) {
+      this.drunknessLabels.push(node);
+    }
     this.moneyRoot = this.overlay.querySelector('[data-money]');
     this.moneyValue = this.overlay.querySelector('[data-money-value]');
     this.moneyNetWorth = this.overlay.querySelector('[data-money-net-worth]');
@@ -3943,7 +4307,10 @@ export class Hud {
     this.builderPropSizeValue = this.overlay.querySelector('[data-builder-prop-size-value]');
     this.builderPropSizeTarget = this.overlay.querySelector('[data-builder-prop-size-target]');
     this.builderClose = this.overlay.querySelector('[data-builder-close]');
-    this.builderResizeHandles = Array.from(this.overlay.querySelectorAll('[data-builder-resize-handle]'));
+    this.builderResizeHandles = [];
+    for (const node of this.overlay.querySelectorAll('[data-builder-resize-handle]')) {
+      this.builderResizeHandles.push(node);
+    }
     this.builderSelection = this.overlay.querySelector('[data-builder-selection]');
     this.builderSelectionMove = this.overlay.querySelector('[data-builder-selection-move]');
     this.builderSelectionRotate = this.overlay.querySelector('[data-builder-selection-rotate]');
@@ -4062,7 +4429,10 @@ export class Hud {
     this.adminPromptToggle = this.overlay.querySelector('[data-admin-prompt-toggle]');
     this.adminPromptRoot = this.overlay.querySelector('[data-admin-prompt]');
     this.adminPromptDragHandle = this.overlay.querySelector('[data-admin-prompt-drag-handle]');
-    this.adminPromptResizeHandles = Array.from(this.overlay.querySelectorAll('[data-admin-prompt-resize-handle]'));
+    this.adminPromptResizeHandles = [];
+    for (const node of this.overlay.querySelectorAll('[data-admin-prompt-resize-handle]')) {
+      this.adminPromptResizeHandles.push(node);
+    }
     this.adminPromptClose = this.overlay.querySelector('[data-admin-prompt-close]');
     this.adminPromptForm = this.overlay.querySelector('[data-admin-prompt-form]');
     this.adminPromptPrompt = this.overlay.querySelector('[data-admin-prompt-prompt]');
@@ -4099,10 +4469,12 @@ export class Hud {
     this.emoteSliceNodes = [];
     this.overheadHealthBarNodes = new Map();
     this.overheadHealthBarFillNodes = new Map();
+    this.overheadHealthBarSignatures = new Map();
     this.overheadHealthBarActiveIds = new Set();
     this.speechBubbleNodes = new Map();
     this.speechBubbleLabelNodes = new Map();
     this.speechBubbleTextNodes = new Map();
+    this.speechBubbleSignatures = new Map();
     this.speechBubbleActiveIds = new Set();
     this.npcSpeechPlayback = new NpcSpeechPlayback();
     this.aimDebugInputs = new Map();
@@ -4125,7 +4497,22 @@ export class Hud {
     this.lastCombatHealthPercent = null;
     this.lastAmmoClipSize = 0;
     this.lastAmmoSignature = '';
+    this.lastAmmoLoadedAmmo = -1;
+    this.lastAmmoReserve = -1;
+    this.lastAmmoReloading = false;
     this.lastHotbarSignature = '';
+    this.lastHotbarSlotStates = [];
+    this.lastMobileControlsSignature = '';
+    this.lastBoundItemsSignature = '';
+    this.lastPromptSignature = '';
+    this.lastPromptVisible = null;
+    this.lastPromptText = null;
+    this.lastMoneySignature = '';
+    this.lastCombatSignature = '';
+    this.lastDrunknessSignature = '';
+    this.lastDrunknessLevel = -1;
+    this.lastTaskSignature = '';
+    this.lastEmoteMenuSignature = '';
     this.hotbarDragState = null;
     this.hotbarSuppressClickUntil = 0;
     this.lastInteractionState = null;
@@ -4427,18 +4814,25 @@ export class Hud {
   }
 
   buildEmoteWheel() {
-    const markup = EMOTE_SLOTS.map((entry, index) => `
-      <div
-        class="hud__emote-slice${entry ? ' is-filled' : ' is-empty'}"
-        data-emote-slice
-        style="--slot-angle:${index * 45}deg"
-      >
-        <span class="hud__emote-label">${entry?.label ?? ''}</span>
-      </div>
-    `).join('');
+    const markup = [];
+    for (let index = 0; index < EMOTE_SLOTS.length; index += 1) {
+      const entry = EMOTE_SLOTS[index];
+      markup.push(`
+        <div
+          class="hud__emote-slice${entry ? ' is-filled' : ' is-empty'}"
+          data-emote-slice
+          style="--slot-angle:${index * 45}deg"
+        >
+          <span class="hud__emote-label">${entry?.label ?? ''}</span>
+        </div>
+      `);
+    }
 
-    this.emoteWheel.insertAdjacentHTML('beforeend', markup);
-    this.emoteSliceNodes = Array.from(this.emoteWheel.querySelectorAll('[data-emote-slice]'));
+    this.emoteWheel.insertAdjacentHTML('beforeend', markup.join(''));
+    this.emoteSliceNodes = [];
+    for (const node of this.emoteWheel.querySelectorAll('[data-emote-slice]')) {
+      this.emoteSliceNodes.push(node);
+    }
   }
 
   buildAimPoseDebugFields() {
@@ -4446,7 +4840,7 @@ export class Hud {
       return;
     }
 
-    const extraMarkup = POSE_DEBUG_EXTRA_FIELDS.map((field) => `
+    const getFieldMarkup = (field) => `
       <label class="hud__aim-debug-field">
         <span class="hud__aim-debug-label">${field.label}</span>
         <div class="hud__aim-debug-inputs">
@@ -4472,63 +4866,19 @@ export class Hud {
           />
         </div>
       </label>
-    `).join('');
-
-    const aimPoseMarkup = HELD_ITEM_AIM_POSE_FIELDS.map((field) => `
-      <label class="hud__aim-debug-field">
-        <span class="hud__aim-debug-label">${field.label}</span>
-        <div class="hud__aim-debug-inputs">
-          <input
-            class="hud__aim-debug-range"
-            type="range"
-            min="${field.min}"
-            max="${field.max}"
-            step="${field.step}"
-            value="0"
-            data-aim-debug-input="${field.key}"
-            data-aim-debug-kind="range"
-          />
-          <input
-            class="hud__field-control hud__aim-debug-number"
-            type="number"
-            min="${field.min}"
-            max="${field.max}"
-            step="${field.step}"
-            value="0"
-            data-aim-debug-input="${field.key}"
-            data-aim-debug-kind="number"
-          />
-        </div>
-      </label>
-    `).join('');
-
-    const phoneGripMarkup = PHONE_GRIP_DEBUG_FIELDS.map((field) => `
-      <label class="hud__aim-debug-field">
-        <span class="hud__aim-debug-label">${field.label}</span>
-        <div class="hud__aim-debug-inputs">
-          <input
-            class="hud__aim-debug-range"
-            type="range"
-            min="${field.min}"
-            max="${field.max}"
-            step="${field.step}"
-            value="0"
-            data-aim-debug-input="${field.key}"
-            data-aim-debug-kind="range"
-          />
-          <input
-            class="hud__field-control hud__aim-debug-number"
-            type="number"
-            min="${field.min}"
-            max="${field.max}"
-            step="${field.step}"
-            value="0"
-            data-aim-debug-input="${field.key}"
-            data-aim-debug-kind="number"
-          />
-        </div>
-      </label>
-    `).join('');
+    `;
+    const extraMarkup = [];
+    for (const field of POSE_DEBUG_EXTRA_FIELDS) {
+      extraMarkup.push(getFieldMarkup(field));
+    }
+    const aimPoseMarkup = [];
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      aimPoseMarkup.push(getFieldMarkup(field));
+    }
+    const phoneGripMarkup = [];
+    for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+      phoneGripMarkup.push(getFieldMarkup(field));
+    }
 
     this.aimDebugFields.innerHTML = `
       <div class="hud__builder-tabs hud__aim-debug-sections" data-aim-debug-sections>
@@ -4540,19 +4890,19 @@ export class Hud {
         <div class="hud__builder-section-header">
           <p class="hud__builder-section-title">Unarmed Pose</p>
         </div>
-        <div class="hud__aim-debug-group">${extraMarkup}</div>
+        <div class="hud__aim-debug-group">${extraMarkup.join('')}</div>
       </section>
       <section class="hud__builder-section" data-aim-debug-section-panel="weaponAim">
         <div class="hud__builder-section-header">
           <p class="hud__builder-section-title">Weapon Aim Pose</p>
         </div>
-        <div class="hud__aim-debug-group">${aimPoseMarkup}</div>
+        <div class="hud__aim-debug-group">${aimPoseMarkup.join('')}</div>
       </section>
       <section class="hud__builder-section" data-aim-debug-section-panel="phoneGrip">
         <div class="hud__builder-section-header">
           <p class="hud__builder-section-title">Phone Grip</p>
         </div>
-        <div class="hud__aim-debug-group">${phoneGripMarkup}</div>
+        <div class="hud__aim-debug-group">${phoneGripMarkup.join('')}</div>
       </section>
     `;
 
@@ -5726,24 +6076,20 @@ export class Hud {
     const topActionsStack = this.overlay?.querySelector('.hud__top-actions-stack') ?? null;
     const topActionsButtons = this.overlay?.querySelector('.hud__top-actions-buttons') ?? null;
     const gap = Math.max(ADMIN_PROMPT_TOP_ACTIONS_GAP, bounds.margin);
-    const clearanceRects = [
-      this.connectionStatusRoot,
-      topActionsButtons
-    ].map((element) => element?.getBoundingClientRect?.() ?? null)
-      .filter((rect) => rect && rect.width > 0 && rect.height > 0);
-    const anchorRects = [
-      topActionsStack,
-      topActionsButtons
-    ].map((element) => element?.getBoundingClientRect?.() ?? null)
-      .filter((rect) => rect && rect.width > 0 && rect.height > 0);
-    const clearedBottom = clearanceRects.reduce(
-      (bottom, rect) => Math.max(bottom, rect.bottom),
-      0
-    );
-    const rightEdge = anchorRects.reduce(
-      (right, rect) => Math.max(right, rect.right),
-      0
-    );
+    let clearedBottom = 0;
+    for (const element of [this.connectionStatusRoot, topActionsButtons]) {
+      const rect = element?.getBoundingClientRect?.() ?? null;
+      if (rect && rect.width > 0 && rect.height > 0) {
+        clearedBottom = Math.max(clearedBottom, rect.bottom);
+      }
+    }
+    let rightEdge = 0;
+    for (const element of [topActionsStack, topActionsButtons]) {
+      const rect = element?.getBoundingClientRect?.() ?? null;
+      if (rect && rect.width > 0 && rect.height > 0) {
+        rightEdge = Math.max(rightEdge, rect.right);
+      }
+    }
 
     return {
       right: rightEdge > 0
@@ -5984,10 +6330,22 @@ export class Hud {
     }
 
     const nextVisible = Boolean(visible);
+    const nextArmed = Boolean(armed);
+    const nextLabel = fireLabel || (nextArmed ? 'Fire' : 'Hit');
+    if (
+      this.lastMobileControlsVisible === nextVisible
+      && this.lastMobileControlsArmed === nextArmed
+      && this.lastMobileControlsLabel === nextLabel
+    ) {
+      return;
+    }
+    this.lastMobileControlsVisible = nextVisible;
+    this.lastMobileControlsArmed = nextArmed;
+    this.lastMobileControlsLabel = nextLabel;
     this.mobileControls.classList.toggle('is-hidden', !nextVisible);
     this.mobileControls.setAttribute('aria-hidden', nextVisible ? 'false' : 'true');
     if (this.mobileFireLabel) {
-      this.mobileFireLabel.textContent = fireLabel || (armed ? 'Fire' : 'Hit');
+      this.mobileFireLabel.textContent = nextLabel;
     }
   }
 
@@ -6067,15 +6425,26 @@ export class Hud {
   }
 
   setPrompt(interactable) {
-    const prompt = this.overlay.querySelector('.hud__prompt');
-    if (!interactable) {
-      prompt.classList.remove('is-visible');
+    const nextPrompt = interactable ? String(interactable.prompt ?? '') : '';
+    const nextVisible = nextPrompt !== '';
+    if (nextVisible === this.lastPromptVisible && nextPrompt === this.lastPromptText) {
+      return;
+    }
+
+    this.lastPromptVisible = nextVisible;
+    this.lastPromptText = nextPrompt;
+    if (!this.promptRoot || !this.promptText) {
+      return;
+    }
+
+    if (!nextPrompt) {
+      this.promptRoot.classList.remove('is-visible');
       this.promptText.textContent = '';
       return;
     }
 
-    this.promptText.textContent = interactable.prompt;
-    prompt.classList.add('is-visible');
+    this.promptText.textContent = nextPrompt;
+    this.promptRoot.classList.add('is-visible');
   }
 
   showToast(message) {
@@ -6131,7 +6500,7 @@ export class Hud {
     };
     this.connectionStatusLabel.textContent = String(label || defaultLabels[normalizedStatus] || 'Online');
     const rawPlayerCount = Number(activePlayerCount);
-    const shouldShowPlayerCount = ['online', 'update-ready'].includes(normalizedStatus)
+    const shouldShowPlayerCount = (normalizedStatus === 'online' || normalizedStatus === 'update-ready')
       && Number.isFinite(rawPlayerCount)
       && rawPlayerCount >= 0;
     const playerCount = shouldShowPlayerCount ? Math.floor(rawPlayerCount) : 0;
@@ -6575,7 +6944,7 @@ export class Hud {
     state.currentY = event.clientY;
     const deltaX = event.clientX - state.startX;
     const deltaY = event.clientY - state.startY;
-    if (!state.dragging && Math.hypot(deltaX, deltaY) < 6) {
+    if (!state.dragging && ((deltaX * deltaX) + (deltaY * deltaY)) < 6 * 6) {
       return;
     }
 
@@ -7045,13 +7414,11 @@ export class Hud {
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = 'move';
       }
-      this.builderTiles
-        .querySelectorAll('.hud__mission-sequencer-row.is-drag-over')
-        .forEach((entry) => {
-          if (entry !== row) {
-            entry.classList.remove('is-drag-over');
-          }
-        });
+      for (const entry of this.builderTiles.querySelectorAll('.hud__mission-sequencer-row.is-drag-over')) {
+        if (entry !== row) {
+          entry.classList.remove('is-drag-over');
+        }
+      }
       row.classList.add('is-drag-over');
     });
 
@@ -8085,11 +8452,12 @@ export class Hud {
   }
 
   clearMissionSequencerDragClasses() {
-    this.builderTiles
+    const rows = this.builderTiles
       ?.querySelectorAll('.hud__mission-sequencer-row.is-dragging, .hud__mission-sequencer-row.is-drag-over')
-      .forEach((entry) => {
-        entry.classList.remove('is-dragging', 'is-drag-over');
-      });
+      ?? [];
+    for (const entry of rows) {
+      entry.classList.remove('is-dragging', 'is-drag-over');
+    }
   }
 
   getBuilderMissionSequencerRowMarkup(row = {}) {
@@ -8196,7 +8564,13 @@ export class Hud {
       <section class="hud__mission-sequencer-section${bonusClass}">
         <div class="hud__mission-sequencer-section-label">${escapeHtml(label)}</div>
         ${rows.length
-          ? rows.map((row) => this.getBuilderMissionSequencerRowMarkup(row)).join('')
+          ? (() => {
+              const rowMarkup = [];
+              for (const row of rows) {
+                rowMarkup.push(this.getBuilderMissionSequencerRowMarkup(row));
+              }
+              return rowMarkup.join('');
+            })()
           : `<div class="hud__mission-sequencer-empty">${escapeHtml(empty || 'No missions yet.')}</div>`}
       </section>
     `;
@@ -8206,8 +8580,15 @@ export class Hud {
     const rows = Array.isArray(missionSequencer.rows) ? missionSequencer.rows : [];
     const prompt = String(missionSequencer.prompt ?? '');
     const activeTab = missionSequencer.activeTab === 'bonus' ? 'bonus' : 'main';
-    const mainRows = rows.filter((row) => row.bonusQuest !== true);
-    const bonusRows = rows.filter((row) => row.bonusQuest === true);
+    const mainRows = [];
+    const bonusRows = [];
+    for (const row of rows) {
+      if (row.bonusQuest === true) {
+        bonusRows.push(row);
+      } else {
+        mainRows.push(row);
+      }
+    }
     const addLabel = activeTab === 'bonus' ? 'New bonus quest prompt' : 'New mission prompt';
     const addPlaceholder = activeTab === 'bonus'
       ? 'Add a bonus quest for the player mission app'
@@ -8397,19 +8778,25 @@ export class Hud {
     this.modeToggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
     this.modeToggle.title = enabled ? 'Return to player mode' : 'Enter world edit mode';
 
-    this.builderTabs.innerHTML = tabs.map((tab) => `
-      <button
-        class="hud__builder-chip${tab.active ? ' is-active' : ''}"
-        type="button"
-        data-builder-category="${tab.id}"
-      >
-        <span>${tab.label}</span>
-        <span class="hud__builder-chip-count">${tab.count}</span>
-      </button>
-    `).join('');
+    const tabMarkup = [];
+    for (const tab of tabs) {
+      tabMarkup.push(`
+        <button
+          class="hud__builder-chip${tab.active ? ' is-active' : ''}"
+          type="button"
+          data-builder-category="${tab.id}"
+        >
+          <span>${tab.label}</span>
+          <span class="hud__builder-chip-count">${tab.count}</span>
+        </button>
+      `);
+    }
+    this.builderTabs.innerHTML = tabMarkup.join('');
 
     this.builderGroups.hidden = Boolean(missionSequencer || trafficRoutes) || groupTabs.length === 0;
-    this.builderGroups.innerHTML = groupTabs.map((group) => `
+    const groupMarkup = [];
+    for (const group of groupTabs) {
+      groupMarkup.push(`
         <button
           class="hud__builder-subchip${group.active ? ' is-active' : ''}"
           type="button"
@@ -8418,7 +8805,9 @@ export class Hud {
           <span>${group.label}</span>
           <span class="hud__builder-chip-count">${group.count ?? 0}</span>
         </button>
-      `).join('');
+      `);
+    }
+    this.builderGroups.innerHTML = groupMarkup.join('');
 
     const showPropSizeControl = Boolean(propSizeControl);
     if (this.builderPropSizePanel) {
@@ -8434,10 +8823,14 @@ export class Hud {
       this.builderPropSizeValue.textContent = `${Number(propSizeControl.value ?? 1).toFixed(2)}x`;
     }
     if (showPropSizeControl && this.builderPropSizeTarget) {
-      this.builderPropSizeTarget.textContent = [
-        propSizeControl.targetMode,
-        propSizeControl.targetLabel
-      ].filter(Boolean).join(' - ');
+      const targetParts = [];
+      if (propSizeControl.targetMode) {
+        targetParts.push(propSizeControl.targetMode);
+      }
+      if (propSizeControl.targetLabel) {
+        targetParts.push(propSizeControl.targetLabel);
+      }
+      this.builderPropSizeTarget.textContent = targetParts.join(' - ');
     }
 
     if (missionSequencer) {
@@ -8450,40 +8843,46 @@ export class Hud {
       return;
     }
 
-    this.builderTiles.innerHTML = sections.map((section) => `
-      <section class="hud__builder-section">
-        <div class="hud__builder-section-header">
-          <p class="hud__builder-section-title">${section.label}</p>
-          <span class="hud__builder-section-count">${section.count}</span>
-        </div>
-        <div class="hud__builder-card-grid">
-          ${section.cards.map((card) => {
-            const preview = this.builderPreviewImages.get(card.previewId) ?? '';
-            const imageSrc = preview || (card.previewMode === 'static' ? card.previewImageSrc : '');
-            if (!preview && card.previewMode === 'static' && card.previewImageSrc) {
-              this.queueBuilderStaticPreview(card.previewId, card.previewImageSrc);
-            }
-            return `
-              <button
-                class="hud__builder-card${card.selected ? ' is-active' : ''}"
-                type="button"
-                data-builder-index="${card.sourceIndex}"
-              >
-                ${card.shortcut ? `<span class="hud__builder-key hud__builder-card-key">${card.shortcut}</span>` : ''}
-                <span class="hud__builder-thumb" data-builder-preview="${card.previewId}">
-                  ${imageSrc
-                    ? `<img class="hud__builder-thumb-image" src="${imageSrc}" alt="${card.label}" loading="lazy" />`
-                    : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(card.label)}</span>`}
-                </span>
-                <span class="hud__builder-card-copy">
-                  <span class="hud__builder-card-title">${card.label}</span>
-                </span>
-              </button>
-            `;
-          }).join('')}
-        </div>
-      </section>
-    `).join('');
+    const sectionMarkup = [];
+    for (const section of sections) {
+      const cardMarkup = [];
+      for (const card of section.cards) {
+        const preview = this.builderPreviewImages.get(card.previewId) ?? '';
+        const imageSrc = preview || (card.previewMode === 'static' ? card.previewImageSrc : '');
+        if (!preview && card.previewMode === 'static' && card.previewImageSrc) {
+          this.queueBuilderStaticPreview(card.previewId, card.previewImageSrc);
+        }
+        cardMarkup.push(`
+          <button
+            class="hud__builder-card${card.selected ? ' is-active' : ''}"
+            type="button"
+            data-builder-index="${card.sourceIndex}"
+          >
+            ${card.shortcut ? `<span class="hud__builder-key hud__builder-card-key">${card.shortcut}</span>` : ''}
+            <span class="hud__builder-thumb" data-builder-preview="${card.previewId}">
+              ${imageSrc
+                ? `<img class="hud__builder-thumb-image" src="${imageSrc}" alt="${card.label}" loading="lazy" />`
+                : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(card.label)}</span>`}
+            </span>
+            <span class="hud__builder-card-copy">
+              <span class="hud__builder-card-title">${card.label}</span>
+            </span>
+          </button>
+        `);
+      }
+      sectionMarkup.push(`
+        <section class="hud__builder-section">
+          <div class="hud__builder-section-header">
+            <p class="hud__builder-section-title">${section.label}</p>
+            <span class="hud__builder-section-count">${section.count}</span>
+          </div>
+          <div class="hud__builder-card-grid">
+            ${cardMarkup.join('')}
+          </div>
+        </section>
+      `);
+    }
+    this.builderTiles.innerHTML = sectionMarkup.join('');
   }
 
   syncBuilderVisibility() {
@@ -8571,31 +8970,47 @@ export class Hud {
     this.builderNpcEditorSubtitle.textContent = editorState.subtitle;
     this.builderNpcMove?.classList.toggle('is-active', Boolean(editorState.selectionActions?.moving));
 
-    const modelsChanged = this.lastNpcEditorState?.models?.length !== editorState.models.length
-      || this.lastNpcEditorState?.models?.some((entry, index) => entry.id !== editorState.models[index].id);
+    let modelsChanged = this.lastNpcEditorState?.models?.length !== editorState.models.length;
+    if (!modelsChanged) {
+      const previousModels = this.lastNpcEditorState?.models ?? [];
+      for (let index = 0; index < editorState.models.length; index += 1) {
+        if (previousModels[index]?.id !== editorState.models[index].id) {
+          modelsChanged = true;
+          break;
+        }
+      }
+    }
 
     if (modelsChanged) {
-      this.builderNpcModel.innerHTML = editorState.models.map((model) => `
-        <option value="${model.id}">${model.label}</option>
-      `).join('');
+      const modelOptionMarkup = [];
+      for (const model of editorState.models) {
+        modelOptionMarkup.push(`
+          <option value="${model.id}">${model.label}</option>
+        `);
+      }
+      this.builderNpcModel.innerHTML = modelOptionMarkup.join('');
 
       if (this.builderNpcModelOptions) {
-        this.builderNpcModelOptions.innerHTML = editorState.models.map((model) => `
-          <button
-            class="hud__npc-model-card"
-            type="button"
-            data-builder-npc-model-option="${escapeHtml(model.id)}"
-            aria-pressed="false"
-            title="${escapeHtml(model.label)}"
-          >
-            <span class="hud__npc-model-card-preview">
-              ${model.portraitSrc
-                ? `<img class="hud__npc-model-card-image" src="${escapeHtml(model.portraitSrc)}" alt="${escapeHtml(model.label)}" loading="lazy" />`
-                : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(model.label)}</span>`}
-            </span>
-            <span class="hud__npc-model-card-label">${escapeHtml(model.label)}</span>
-          </button>
-        `).join('');
+        const modelCardMarkup = [];
+        for (const model of editorState.models) {
+          modelCardMarkup.push(`
+            <button
+              class="hud__npc-model-card"
+              type="button"
+              data-builder-npc-model-option="${escapeHtml(model.id)}"
+              aria-pressed="false"
+              title="${escapeHtml(model.label)}"
+            >
+              <span class="hud__npc-model-card-preview">
+                ${model.portraitSrc
+                  ? `<img class="hud__npc-model-card-image" src="${escapeHtml(model.portraitSrc)}" alt="${escapeHtml(model.label)}" loading="lazy" />`
+                  : `<span class="hud__builder-thumb-placeholder">${getBuilderPlaceholder(model.label)}</span>`}
+              </span>
+              <span class="hud__npc-model-card-label">${escapeHtml(model.label)}</span>
+            </button>
+          `);
+        }
+        this.builderNpcModelOptions.innerHTML = modelCardMarkup.join('');
       }
     }
 
@@ -8603,14 +9018,12 @@ export class Hud {
       this.builderNpcModel.value = editorState.modelId;
     }
     if (this.builderNpcModelOptions) {
-      this.builderNpcModelOptions
-        .querySelectorAll('[data-builder-npc-model-option]')
-        .forEach((button) => {
-          const active = button instanceof HTMLElement
-            && button.dataset.builderNpcModelOption === editorState.modelId;
-          button.classList.toggle('is-active', active);
-          button.setAttribute('aria-pressed', active ? 'true' : 'false');
-        });
+      for (const button of this.builderNpcModelOptions.querySelectorAll('[data-builder-npc-model-option]')) {
+        const active = button instanceof HTMLElement
+          && button.dataset.builderNpcModelOption === editorState.modelId;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      }
     }
     const modelVoice = editorState.modelVoice ?? {};
     setFieldValue(this.builderNpcVoicePitch, String(Math.round(Number(modelVoice.basePitchHz ?? 285))));
@@ -8658,33 +9071,74 @@ export class Hud {
     }
     setFieldValue(this.builderNpcPrompt, editorState.prompt);
 
-    const stepTypesChanged = this.lastNpcEditorState?.stepTypes?.length !== editorState.stepTypes.length
-      || this.lastNpcEditorState?.stepTypes?.some((entry, index) => entry.id !== editorState.stepTypes[index].id);
+    let stepTypesChanged = this.lastNpcEditorState?.stepTypes?.length !== editorState.stepTypes.length;
+    if (!stepTypesChanged) {
+      const previousStepTypes = this.lastNpcEditorState?.stepTypes ?? [];
+      for (let index = 0; index < editorState.stepTypes.length; index += 1) {
+        if (previousStepTypes[index]?.id !== editorState.stepTypes[index].id) {
+          stepTypesChanged = true;
+          break;
+        }
+      }
+    }
     if (stepTypesChanged && this.builderNpcStepAddType) {
-      this.builderNpcStepAddType.innerHTML = editorState.stepTypes.map((stepType) => `
-        <option value="${escapeHtml(stepType.id)}">${escapeHtml(stepType.label)}</option>
-      `).join('');
+      const stepTypeMarkup = [];
+      for (const stepType of editorState.stepTypes) {
+        stepTypeMarkup.push(`
+          <option value="${escapeHtml(stepType.id)}">${escapeHtml(stepType.label)}</option>
+        `);
+      }
+      this.builderNpcStepAddType.innerHTML = stepTypeMarkup.join('');
     }
     if (this.builderNpcStepAddType && document.activeElement !== this.builderNpcStepAddType) {
-      this.builderNpcStepAddType.value = editorState.stepTypes.some((entry) => entry.id === editorState.newStepType)
-        ? editorState.newStepType
-        : editorState.stepTypes[0]?.id ?? '';
+      let hasNewStepType = false;
+      for (const entry of editorState.stepTypes) {
+        if (entry.id === editorState.newStepType) {
+          hasNewStepType = true;
+          break;
+        }
+      }
+      this.builderNpcStepAddType.value = hasNewStepType ? editorState.newStepType : editorState.stepTypes[0]?.id ?? '';
     }
 
-    const archetypesChanged = this.lastNpcEditorState?.combatArchetypes?.length !== editorState.combatArchetypes.length
-      || this.lastNpcEditorState?.combatArchetypes?.some((entry, index) => entry.id !== editorState.combatArchetypes[index].id);
+    let archetypesChanged = this.lastNpcEditorState?.combatArchetypes?.length !== editorState.combatArchetypes.length;
+    if (!archetypesChanged) {
+      const previousArchetypes = this.lastNpcEditorState?.combatArchetypes ?? [];
+      for (let index = 0; index < editorState.combatArchetypes.length; index += 1) {
+        if (previousArchetypes[index]?.id !== editorState.combatArchetypes[index].id) {
+          archetypesChanged = true;
+          break;
+        }
+      }
+    }
     if (archetypesChanged && this.builderNpcCombatArchetype) {
-      this.builderNpcCombatArchetype.innerHTML = editorState.combatArchetypes.map((entry) => `
-        <option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>
-      `).join('');
+      const archetypeMarkup = [];
+      for (const entry of editorState.combatArchetypes) {
+        archetypeMarkup.push(`
+          <option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>
+        `);
+      }
+      this.builderNpcCombatArchetype.innerHTML = archetypeMarkup.join('');
     }
 
-    const weaponOptionsChanged = this.lastNpcEditorState?.weaponOptions?.length !== editorState.weaponOptions.length
-      || this.lastNpcEditorState?.weaponOptions?.some((entry, index) => entry.id !== editorState.weaponOptions[index].id);
+    let weaponOptionsChanged = this.lastNpcEditorState?.weaponOptions?.length !== editorState.weaponOptions.length;
+    if (!weaponOptionsChanged) {
+      const previousWeaponOptions = this.lastNpcEditorState?.weaponOptions ?? [];
+      for (let index = 0; index < editorState.weaponOptions.length; index += 1) {
+        if (previousWeaponOptions[index]?.id !== editorState.weaponOptions[index].id) {
+          weaponOptionsChanged = true;
+          break;
+        }
+      }
+    }
     if (weaponOptionsChanged && this.builderNpcCombatWeapon) {
-      this.builderNpcCombatWeapon.innerHTML = editorState.weaponOptions.map((entry) => `
+      const weaponOptionMarkup = [];
+      for (const entry of editorState.weaponOptions) {
+        weaponOptionMarkup.push(`
         <option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>
-      `).join('');
+        `);
+      }
+      this.builderNpcCombatWeapon.innerHTML = weaponOptionMarkup.join('');
     }
 
     if (document.activeElement !== this.builderNpcCombatArchetype) {
@@ -8721,18 +9175,28 @@ export class Hud {
     const nextRoutineSignature = getNpcRoutineEditorSignature(editorState);
 
     if (this.builderNpcRoutineSteps && previousRoutineSignature !== nextRoutineSignature) {
-      this.builderNpcRoutineSteps.innerHTML = editorState.routine.steps.length
-        ? editorState.routine.steps.map((step, index) => {
+      if (editorState.routine.steps.length) {
+        const stepMarkup = [];
+        for (let index = 0; index < editorState.routine.steps.length; index += 1) {
+          const step = editorState.routine.steps[index];
             const targetOptions = step.targetOptions ?? [];
             const targetValue = step.targetPlacementId ?? '';
-            const targetOptionMarkup = [
-              '<option value="">Select a destination</option>',
-              ...targetOptions.map((option) => `
+            const targetOptionMarkup = ['<option value="">Select a destination</option>'];
+            for (const option of targetOptions) {
+              targetOptionMarkup.push(`
                 <option value="${escapeHtml(option.id)}"${option.id === targetValue ? ' selected' : ''}>
                   ${escapeHtml(option.label)}
                 </option>
-              `)
-            ].join('');
+              `);
+            }
+            const stepTypeOptionMarkup = [];
+            for (const stepType of editorState.stepTypes) {
+              stepTypeOptionMarkup.push(`
+                <option value="${escapeHtml(stepType.id)}"${stepType.id === step.type ? ' selected' : ''}>
+                  ${escapeHtml(stepType.label)}
+                </option>
+              `);
+            }
 
             const detailFields = [];
             if (step.type === 'usePlacement' || step.type === 'loiterNearPlacement' || step.type === 'wanderNearPlacement') {
@@ -8787,7 +9251,7 @@ export class Hud {
               `);
             }
 
-            return `
+            stepMarkup.push(`
               <section class="hud__builder-section">
                 <div class="hud__builder-section-header">
                   <p class="hud__builder-section-title">${index + 1}. ${escapeHtml(formatNpcStepLabel(step.type))}</p>
@@ -8813,11 +9277,7 @@ export class Hud {
                       data-builder-npc-step-index="${index}"
                       data-builder-npc-step-field="type"
                     >
-                      ${editorState.stepTypes.map((stepType) => `
-                        <option value="${escapeHtml(stepType.id)}"${stepType.id === step.type ? ' selected' : ''}>
-                          ${escapeHtml(stepType.label)}
-                        </option>
-                      `).join('')}
+                      ${stepTypeOptionMarkup.join('')}
                     </select>
                   </label>
                   <label class="hud__field">
@@ -8826,9 +9286,9 @@ export class Hud {
                       <select
                         class="hud__field-control"
                         data-builder-npc-step-index="${index}"
-                        data-builder-npc-step-field="targetPlacementId"
+                      data-builder-npc-step-field="targetPlacementId"
                       >
-                        ${targetOptionMarkup}
+                        ${targetOptionMarkup.join('')}
                       </select>
                       <button
                         class="hud__builder-icon-button${step.pickModeActive ? ' is-active' : ''}"
@@ -8852,28 +9312,29 @@ export class Hud {
                 ${detailFields.length ? `<div class="hud__builder-instance-metrics">${detailFields.join('')}</div>` : ''}
                 ${step.warning ? `<p class="hud__body">${escapeHtml(step.warning)}</p>` : ''}
               </section>
-            `;
-          }).join('')
-        : '<p class="hud__body">No routine steps yet. Add a destination-driven step to start the loop.</p>';
+            `);
+        }
+        this.builderNpcRoutineSteps.innerHTML = stepMarkup.join('');
+      } else {
+        this.builderNpcRoutineSteps.innerHTML = '<p class="hud__body">No routine steps yet. Add a destination-driven step to start the loop.</p>';
+      }
     }
 
     if (this.builderNpcRoutineSteps) {
-      this.builderNpcRoutineSteps
-        .querySelectorAll('[data-builder-npc-step-field]')
-        .forEach((field) => {
+      for (const field of this.builderNpcRoutineSteps.querySelectorAll('[data-builder-npc-step-field]')) {
           if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) {
-            return;
+            continue;
           }
 
           const stepIndex = Number(field.dataset.builderNpcStepIndex);
           const fieldName = field.dataset.builderNpcStepField;
           const step = editorState.routine.steps?.[stepIndex];
           if (!Number.isInteger(stepIndex) || !fieldName || !step) {
-            return;
+            continue;
           }
 
           setFieldValue(field, String(getNpcRoutineStepFieldValue(step, fieldName)));
-        });
+      }
     }
 
     if (this.builderNpcDebugSummary) {
@@ -8886,25 +9347,32 @@ export class Hud {
     if (this.builderNpcDebugMetrics) {
       const debug = editorState.debug ?? null;
       this.builderNpcDebugMetrics.hidden = !debug;
-      this.builderNpcDebugMetrics.innerHTML = debug
-        ? [
-            ['Target', debug.targetLabel],
-            ['Path Nodes', `${debug.pathNodeCount} total | index ${debug.pathLabel}`],
-            ['Idle Left', `${Math.max(0, debug.idleRemainingMs ?? 0)} ms`],
-            ['Calm Left', `${Math.max(0, debug.calmRemainingMs ?? 0)} ms`],
-            ['Hidden Left', `${Math.max(0, debug.hiddenRemainingMs ?? 0)} ms`],
-            ['Respawn Left', `${Math.max(0, debug.respawnRemainingMs ?? 0)} ms`],
-            ['Last Repath', `${Math.max(0, debug.lastRepathAgeMs ?? 0)} ms ago`],
-            ['Next Point', debug.nextPathPoint ? `${debug.nextPathPoint.x.toFixed(2)}, ${debug.nextPathPoint.z.toFixed(2)}` : 'None'],
-            ['Steering', debug.steeringTarget ? `${debug.steeringTarget.x.toFixed(2)}, ${debug.steeringTarget.z.toFixed(2)}` : 'None'],
-            ['Final Target', debug.finalTarget ? `${debug.finalTarget.x.toFixed(2)}, ${debug.finalTarget.z.toFixed(2)}` : 'None']
-          ].map(([label, value]) => `
+      if (debug) {
+        const metricRows = [
+          ['Target', debug.targetLabel],
+          ['Path Nodes', `${debug.pathNodeCount} total | index ${debug.pathLabel}`],
+          ['Idle Left', `${Math.max(0, debug.idleRemainingMs ?? 0)} ms`],
+          ['Calm Left', `${Math.max(0, debug.calmRemainingMs ?? 0)} ms`],
+          ['Hidden Left', `${Math.max(0, debug.hiddenRemainingMs ?? 0)} ms`],
+          ['Respawn Left', `${Math.max(0, debug.respawnRemainingMs ?? 0)} ms`],
+          ['Last Repath', `${Math.max(0, debug.lastRepathAgeMs ?? 0)} ms ago`],
+          ['Next Point', debug.nextPathPoint ? `${debug.nextPathPoint.x.toFixed(2)}, ${debug.nextPathPoint.z.toFixed(2)}` : 'None'],
+          ['Steering', debug.steeringTarget ? `${debug.steeringTarget.x.toFixed(2)}, ${debug.steeringTarget.z.toFixed(2)}` : 'None'],
+          ['Final Target', debug.finalTarget ? `${debug.finalTarget.x.toFixed(2)}, ${debug.finalTarget.z.toFixed(2)}` : 'None']
+        ];
+        const metricMarkup = [];
+        for (const [label, value] of metricRows) {
+          metricMarkup.push(`
             <div class="hud__field">
               <span class="hud__field-label">${escapeHtml(label)}</span>
               <span class="hud__body">${escapeHtml(value)}</span>
             </div>
-          `).join('')
-        : '';
+          `);
+        }
+        this.builderNpcDebugMetrics.innerHTML = metricMarkup.join('');
+      } else {
+        this.builderNpcDebugMetrics.innerHTML = '';
+      }
     }
 
     this.builderNpcConfirm.disabled = false;
@@ -8978,7 +9446,11 @@ export class Hud {
     this.interactionTitle.textContent = title;
     this.interactionSubtitle.textContent = subtitle;
     this.interactionRoot.dataset.interactionVariant = String(variant ?? '');
-    this.interactionActions.innerHTML = actions.map((action) => getInteractionActionMarkup(action)).join('');
+    const actionMarkup = [];
+    for (const action of actions) {
+      actionMarkup.push(getInteractionActionMarkup(action));
+    }
+    this.interactionActions.innerHTML = actionMarkup.join('');
     this.interactionRoot.classList.add('is-visible');
     this.setInteractionMenuAnchor(anchor);
   }
@@ -9034,7 +9506,14 @@ export class Hud {
 
     const { market, loading, error } = this.stockMarketState;
     const stocks = Array.isArray(market?.stocks) ? market.stocks : [];
-    const selected = stocks.find((stock) => stock.symbol === this.stockMarketState.selectedSymbol) ?? stocks[0] ?? null;
+    let selected = null;
+    for (const stock of stocks) {
+      if (stock.symbol === this.stockMarketState.selectedSymbol) {
+        selected = stock;
+        break;
+      }
+    }
+    selected ??= stocks[0] ?? null;
     if (selected && selected.symbol !== this.stockMarketState.selectedSymbol) {
       this.stockMarketState.selectedSymbol = selected.symbol;
     }
@@ -9073,11 +9552,12 @@ export class Hud {
     }
 
     if (this.stockMarketList) {
-      this.stockMarketList.innerHTML = stocks.length
-        ? stocks.map((stock) => {
+      if (stocks.length) {
+        const stockRows = [];
+        for (const stock of stocks) {
             const trendClass = getStockTrendClass(stock.delta);
             const activeClass = stock.symbol === selected?.symbol ? ' is-active' : '';
-            return `
+            stockRows.push(`
               <button
                 class="hud__stock-row ${trendClass}${activeClass}"
                 type="button"
@@ -9095,9 +9575,12 @@ export class Hud {
                 </span>
                 ${stock.shares > 0 ? `<span class="hud__stock-row-owned">${formatHudCount(stock.shares)} owned</span>` : ''}
               </button>
-            `;
-          }).join('')
-        : '<p class="hud__stock-empty">No tape yet.</p>';
+            `);
+        }
+        this.stockMarketList.innerHTML = stockRows.join('');
+      } else {
+        this.stockMarketList.innerHTML = '<p class="hud__stock-empty">No tape yet.</p>';
+      }
     }
 
     const quantity = this.stockMarketState.quantity;
@@ -9269,27 +9752,25 @@ export class Hud {
       }, blackjackCardVisuals.duration + 40);
     }
     if (this.blackjackDealerHand) {
-      this.blackjackDealerHand.innerHTML = dealerHand.length
-        ? dealerHand.map((card, index) =>
-          createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.dealer[index])
-        ).join('')
-        : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+      this.blackjackDealerHand.innerHTML = createBlackjackCardsMarkup(dealerHand, blackjackCardVisuals.visuals.dealer);
     }
     if (this.blackjackPlayerHand) {
       if (splitActive) {
+        let splitHandsMarkup = '';
+        for (let index = 0; index < playerHands.length; index += 1) {
+          splitHandsMarkup += createBlackjackSplitHandMarkup(
+            playerHands[index],
+            index,
+            blackjackCardVisuals.visuals.playerHands[index] ?? []
+          );
+        }
         this.blackjackPlayerHand.innerHTML = `
           <div class="hud__blackjack-split-hands">
-            ${playerHands.map((hand, index) =>
-              createBlackjackSplitHandMarkup(hand, index, blackjackCardVisuals.visuals.playerHands[index] ?? [])
-            ).join('')}
+            ${splitHandsMarkup}
           </div>
         `;
       } else {
-        this.blackjackPlayerHand.innerHTML = playerHand.length
-          ? playerHand.map((card, index) =>
-            createBlackjackCardMarkup(card, index, blackjackCardVisuals.visuals.player[index])
-          ).join('')
-          : '<span class="hud__blackjack-card-slot"></span><span class="hud__blackjack-card-slot"></span>';
+        this.blackjackPlayerHand.innerHTML = createBlackjackCardsMarkup(playerHand, blackjackCardVisuals.visuals.player);
       }
     }
     this.blackjackCardVisualState = blackjackCardVisuals.nextState;
@@ -9317,9 +9798,13 @@ export class Hud {
     }
     if (this.blackjackWagerChips) {
       const chipCount = Math.max(1, Math.min(5, Math.ceil(Math.max(0, currentWager) / 25)));
-      this.blackjackWagerChips.innerHTML = Array.from({ length: chipCount }, (_, index) => `
-        <span class="hud__blackjack-chip" style="--chip-index:${index}"></span>
-      `).join('');
+      const chipMarkup = [];
+      for (let index = 0; index < chipCount; index += 1) {
+        chipMarkup.push(`
+          <span class="hud__blackjack-chip" style="--chip-index:${index}"></span>
+        `);
+      }
+      this.blackjackWagerChips.innerHTML = chipMarkup.join('');
       this.blackjackWagerChips.classList.toggle('is-empty', currentWager <= 0);
     }
 
@@ -9447,13 +9932,31 @@ export class Hud {
     const safeActiveTab = getAdminPromptTabId(activeTab);
     const visibleTasks = filterAdminPromptTasksForTab(safeTasks);
     let safeSelectedTaskId = String(selectedTaskId ?? '').trim();
-    if (safeSelectedTaskId && !safeTasks.some((task) => task.id === safeSelectedTaskId)) {
+    let selectedInSafeTasks = false;
+    if (safeSelectedTaskId) {
+      for (const task of safeTasks) {
+        if (task.id === safeSelectedTaskId) {
+          selectedInSafeTasks = true;
+          break;
+        }
+      }
+    }
+    if (safeSelectedTaskId && !selectedInSafeTasks) {
       safeSelectedTaskId = '';
     }
     if (safeActiveTab === 'new') {
       safeSelectedTaskId = '';
     }
-    if (safeActiveTab !== 'new' && safeSelectedTaskId && !visibleTasks.some((task) => task.id === safeSelectedTaskId)) {
+    let selectedInVisibleTasks = false;
+    if (safeSelectedTaskId) {
+      for (const task of visibleTasks) {
+        if (task.id === safeSelectedTaskId) {
+          selectedInVisibleTasks = true;
+          break;
+        }
+      }
+    }
+    if (safeActiveTab !== 'new' && safeSelectedTaskId && !selectedInVisibleTasks) {
       safeSelectedTaskId = '';
     }
 
@@ -9521,7 +10024,7 @@ export class Hud {
     visible = this.basketballShotVisible,
     game = this.basketballShotState.game
   } = {}) {
-    this.basketballShotState = { game };
+    this.basketballShotState.game = game;
     this.setBasketballShotVisible(visible);
     this.renderBasketballShot();
   }
@@ -9555,7 +10058,7 @@ export class Hud {
     visible = this.treadmillRunVisible,
     game = this.treadmillRunState.game
   } = {}) {
-    this.treadmillRunState = { game };
+    this.treadmillRunState.game = game;
     this.setTreadmillRunVisible(visible);
     this.renderTreadmillRun();
   }
@@ -9615,9 +10118,13 @@ export class Hud {
       return false;
     }
 
-    return filterAdminPromptTasksForTab(
-      this.adminPromptState.tasks
-    ).some((task) => isAgentTaskBusy(task.status) && getAgentTaskActiveStartedAt(task) > 0);
+    const tasks = filterAdminPromptTasksForTab(this.adminPromptState.tasks);
+    for (const task of tasks) {
+      if (isAgentTaskBusy(task.status) && getAgentTaskActiveStartedAt(task) > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   syncAdminPromptDurationTimer() {
@@ -9728,7 +10235,11 @@ export class Hud {
     if (this.adminPromptContext) {
       this.adminPromptContext.textContent = `Context: ${contextLabel || 'Game'}`;
     }
-    const tabsSignature = JSON.stringify(tasks.map((task) => [task.id, task.status]));
+    const tabsSignatureParts = [];
+    for (const task of tasks) {
+      tabsSignatureParts.push(`${task.id}:${task.status}`);
+    }
+    const tabsSignature = tabsSignatureParts.join('|');
     if (this.adminPromptTabs && tabsSignature !== this.lastAdminPromptTabsSignature) {
       this.lastAdminPromptTabsSignature = tabsSignature;
       this.adminPromptTabs.innerHTML = createAdminPromptTabsMarkup(tasks);
@@ -9749,19 +10260,17 @@ export class Hud {
       this.adminPromptDetail.hidden = activeTab === 'new';
     }
     const visibleTasks = filterAdminPromptTasksForTab(tasks);
-    const durationTick = visibleTasks.some((task) => (
-      isAgentTaskBusy(task.status)
-      && getAgentTaskActiveStartedAt(task) > 0
-    ))
-      ? this.adminPromptDurationTick
-      : 0;
-    const taskListSignature = JSON.stringify({
-      activeTab,
-      selectedTaskId,
-      durationTick,
-      threadLimit: this.adminPromptThreadLimit,
-      hasMoreThreads,
-      tasks: visibleTasks.map((task) => [
+    let hasDurationTickTask = false;
+    for (const task of visibleTasks) {
+      if (isAgentTaskBusy(task.status) && getAgentTaskActiveStartedAt(task) > 0) {
+        hasDurationTickTask = true;
+        break;
+      }
+    }
+    const durationTick = hasDurationTickTask ? this.adminPromptDurationTick : 0;
+    const taskSignatureRows = [];
+    for (const task of visibleTasks) {
+      taskSignatureRows.push([
         task.id,
         task.status,
         task.updatedAt,
@@ -9781,7 +10290,15 @@ export class Hud {
         task.contextType,
         task.scope,
         task.prompt
-      ])
+      ]);
+    }
+    const taskListSignature = JSON.stringify({
+      activeTab,
+      selectedTaskId,
+      durationTick,
+      threadLimit: this.adminPromptThreadLimit,
+      hasMoreThreads,
+      tasks: taskSignatureRows
     });
     if (this.adminPromptTasks && taskListSignature !== this.lastAdminPromptTaskListSignature) {
       this.lastAdminPromptTaskListSignature = taskListSignature;
@@ -9797,15 +10314,21 @@ export class Hud {
       const selectedTask = activeTab === 'new'
         ? null
         : selectedTaskId
-          ? visibleTasks.find((task) => task.id === selectedTaskId) ?? null
+          ? (() => {
+              for (const task of visibleTasks) {
+                if (task.id === selectedTaskId) {
+                  return task;
+                }
+              }
+              return null;
+            })()
           : null;
       const selectedThreadTasks = selectedTask ? getAgentThreadTasks(tasks, selectedTask) : [];
       const selectedThreadId = selectedTask ? getAgentTaskThreadId(selectedTask) : '';
-      const detailSignature = JSON.stringify({
-        activeTab,
-        selectedTaskId: selectedTask?.id ?? '',
-        threadId: selectedThreadId,
-        threadTasks: selectedThreadTasks.map((task) => [
+      const detailThreadTaskRows = [];
+      const bottomThreadTaskRows = [];
+      for (const task of selectedThreadTasks) {
+        detailThreadTaskRows.push([
           task.id,
           task.status,
           task.updatedAt,
@@ -9819,7 +10342,22 @@ export class Hud {
           task.rollbackApprovedAt ?? 0,
           task.workerHeartbeatAt ?? 0,
           task.workerHeartbeatStatus ?? ''
-        ]),
+        ]);
+        bottomThreadTaskRows.push([
+          task.id,
+          task.status,
+          task.updatedAt,
+          task.prompt,
+          task.summary,
+          task.agentMessage,
+          task.error
+        ]);
+      }
+      const detailSignature = JSON.stringify({
+        activeTab,
+        selectedTaskId: selectedTask?.id ?? '',
+        threadId: selectedThreadId,
+        threadTasks: detailThreadTaskRows,
         status: selectedTask?.status ?? '',
         durationTick: selectedTask && isAgentTaskBusy(selectedTask.status) ? durationTick : 0,
         branch: selectedTask?.branch ?? '',
@@ -9845,15 +10383,7 @@ export class Hud {
       });
       const bottomScrollSignature = JSON.stringify({
         threadId: selectedThreadId,
-        threadTasks: selectedThreadTasks.map((task) => [
-          task.id,
-          task.status,
-          task.updatedAt,
-          task.prompt,
-          task.summary,
-          task.agentMessage,
-          task.error
-        ])
+        threadTasks: bottomThreadTaskRows
       });
       const wasNearBottom = this.isAdminPromptDetailNearBottom();
       const shouldScrollSelectedThread = Boolean(
@@ -10159,6 +10689,9 @@ export class Hud {
       this.ammoRoot.hidden = true;
       this.ammoRoot.classList.remove('is-empty', 'is-low', 'is-reloading');
       this.lastAmmoSignature = '';
+      this.lastAmmoLoadedAmmo = -1;
+      this.lastAmmoReserve = -1;
+      this.lastAmmoReloading = false;
       return;
     }
 
@@ -10169,14 +10702,14 @@ export class Hud {
     const reserve = Math.max(0, Math.trunc(Number(reserveAmmo) || 0));
     const loadedRatio = safeClipSize > 0 ? loadedAmmo / safeClipSize : 0;
     const isReloadingNow = Boolean(isReloading);
-    const signature = [
-      safeClipSize,
-      loadedAmmo,
-      reserve,
-      isReloadingNow ? 1 : 0
-    ].join('|');
 
-    if (this.lastAmmoSignature === signature && this.ammoRoot.hidden === false) {
+    if (
+      this.lastAmmoClipSize === safeClipSize
+      && this.lastAmmoLoadedAmmo === loadedAmmo
+      && this.lastAmmoReserve === reserve
+      && this.lastAmmoReloading === isReloadingNow
+      && this.ammoRoot.hidden === false
+    ) {
       return;
     }
 
@@ -10201,14 +10734,17 @@ export class Hud {
       this.ammoReserveLabel.textContent = isReloadingNow ? 'Reload' : 'Reserve';
     }
 
-    const bullets = Array.from(this.ammoBullets?.children ?? []);
-    bullets.forEach((bullet, index) => {
+    const bullets = this.ammoBullets?.children ?? [];
+    for (let index = 0; index < bullets.length; index += 1) {
+      const bullet = bullets[index];
       const loaded = index < loadedAmmo;
       bullet.classList.toggle('is-loaded', loaded);
       bullet.classList.toggle('is-spent', !loaded);
       bullet.classList.toggle('is-next', loaded && index === loadedAmmo - 1);
-    });
-    this.lastAmmoSignature = signature;
+    }
+    this.lastAmmoLoadedAmmo = loadedAmmo;
+    this.lastAmmoReserve = reserve;
+    this.lastAmmoReloading = isReloadingNow;
   }
 
   setHotbarState({
@@ -10227,24 +10763,49 @@ export class Hud {
     this.hotbarRoot.hidden = !visible;
     this.hotbarRoot.classList.toggle('is-disabled', Boolean(disabled));
 
-    const signature = JSON.stringify({
-      slots: safeSlots.map((slot) => ({
-        index: Number(slot?.index) || 0,
-        key: slot?.key ?? '',
-        itemId: slot?.itemId ?? '',
-        quantity: Number(slot?.quantity) || 0,
-        label: slot?.label ?? '',
-        kind: slot?.kind ?? '',
-        count: Number(slot?.count) || 0,
-        hotbarIconId: slot?.hotbarIconId ?? '',
-        equippedWeaponId: slot?.equippedWeaponId ?? ''
-      }))
-    });
-    if (signature !== this.lastHotbarSignature) {
-      this.lastHotbarSignature = signature;
-      this.hotbarSlotsRoot.innerHTML = safeSlots
-        .map((slot) => getHotbarSlotMarkup(slot, normalizedSelectedIndex))
-        .join('');
+    const slotStates = this.lastHotbarSlotStates;
+    let slotsChanged = slotStates.length !== safeSlots.length;
+    if (!slotsChanged) {
+      for (let index = 0; index < safeSlots.length; index += 1) {
+        const slot = safeSlots[index];
+        const state = slotStates[index];
+        if (
+          !state
+          || state.index !== (Number(slot?.index) || 0)
+          || state.key !== (slot?.key ?? '')
+          || state.itemId !== (slot?.itemId ?? '')
+          || state.quantity !== (Number(slot?.quantity) || 0)
+          || state.label !== (slot?.label ?? '')
+          || state.kind !== (slot?.kind ?? '')
+          || state.count !== (Number(slot?.count) || 0)
+          || state.hotbarIconId !== (slot?.hotbarIconId ?? '')
+          || state.equippedWeaponId !== (slot?.equippedWeaponId ?? '')
+        ) {
+          slotsChanged = true;
+          break;
+        }
+      }
+    }
+
+    if (slotsChanged) {
+      let slotMarkup = '';
+      slotStates.length = safeSlots.length;
+      for (let slotPosition = 0; slotPosition < safeSlots.length; slotPosition += 1) {
+        const slot = safeSlots[slotPosition];
+        const state = slotStates[slotPosition] ?? {};
+        state.index = Number(slot?.index) || 0;
+        state.key = slot?.key ?? '';
+        state.itemId = slot?.itemId ?? '';
+        state.quantity = Number(slot?.quantity) || 0;
+        state.label = slot?.label ?? '';
+        state.kind = slot?.kind ?? '';
+        state.count = Number(slot?.count) || 0;
+        state.hotbarIconId = slot?.hotbarIconId ?? '';
+        state.equippedWeaponId = slot?.equippedWeaponId ?? '';
+        slotStates[slotPosition] = state;
+        slotMarkup += getHotbarSlotMarkup(slot, normalizedSelectedIndex);
+      }
+      this.hotbarSlotsRoot.innerHTML = slotMarkup;
     }
 
     for (const button of this.hotbarSlotsRoot.querySelectorAll('[data-hotbar-slot]')) {
@@ -10272,10 +10833,28 @@ export class Hud {
     const label = hasVehicle
       ? (String(vehicleLabel || 'Car').trim() || 'Car')
       : 'Skateboard';
+    const normalizedVehicleItemId = hasVehicle ? String(vehicleItemId ?? '') : '';
+    const active = skating === true;
+    if (
+      this.lastBoundItemsVisible === visible
+      && this.lastBoundItemsSkateboard === hasSkateboard
+      && this.lastBoundItemsVehicle === hasVehicle
+      && this.lastBoundItemsActive === active
+      && this.lastBoundItemsVehicleItemId === normalizedVehicleItemId
+      && this.lastBoundItemsLabel === label
+    ) {
+      return;
+    }
+    this.lastBoundItemsVisible = visible;
+    this.lastBoundItemsSkateboard = hasSkateboard;
+    this.lastBoundItemsVehicle = hasVehicle;
+    this.lastBoundItemsActive = active;
+    this.lastBoundItemsVehicleItemId = normalizedVehicleItemId;
+    this.lastBoundItemsLabel = label;
     this.boundItemsRoot.hidden = !visible;
     this.boundVehicleRoot.hidden = !visible;
     this.boundVehicleRoot.classList.toggle('is-active', visible && skating === true);
-    this.boundVehicleRoot.dataset.vehicleItemId = hasVehicle ? String(vehicleItemId ?? '') : '';
+    this.boundVehicleRoot.dataset.vehicleItemId = normalizedVehicleItemId;
     if (this.boundVehicleSkateboardIcon) {
       this.boundVehicleSkateboardIcon.hidden = hasVehicle;
     }
@@ -10303,6 +10882,10 @@ export class Hud {
     const ratio = visible ? normalizedLevel / DRUNKNESS_MAX_LEVEL : 0;
     const label = getDrunknessLevelLabel(normalizedLevel);
     const hue = getHudDrunknessHue(normalizedLevel);
+    if (normalizedLevel === this.lastDrunknessLevel) {
+      return;
+    }
+    this.lastDrunknessLevel = normalizedLevel;
 
     this.drunknessRoot.hidden = !visible;
     this.drunknessRoot.style.setProperty('--drunkness-ratio', `${ratio}`);
@@ -10333,8 +10916,13 @@ export class Hud {
     deaths = 0,
     armed = false
   } = {}) {
-    this.combatRoot.hidden = !visible;
-    if (!visible) {
+    const nextVisible = Boolean(visible);
+    if (!nextVisible) {
+      if (this.lastCombatSignature === 'hidden') {
+        return;
+      }
+      this.lastCombatSignature = 'hidden';
+      this.combatRoot.hidden = true;
       this.lastCombatHealthPercent = null;
       this.syncCombatTrail(0);
       this.setAmmoState({ visible: false });
@@ -10351,9 +10939,41 @@ export class Hud {
     const currentHealth = Math.max(0, Math.min(health, safeMaxHealth));
     const previousPercent = this.lastCombatHealthPercent ?? healthPercent;
     const tookDamage = healthPercent < previousPercent;
+    const nextAlive = Boolean(alive);
+    const respawnSeconds = nextAlive ? 0 : Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
+    const nextReloading = Boolean(isReloading);
+    const nextArmed = Boolean(armed);
+    if (
+      this.lastCombatCurrentHealth === currentHealth
+      && this.lastCombatSafeMaxHealth === safeMaxHealth
+      && this.lastCombatHealthPercentValue === healthPercent
+      && this.lastCombatAlive === nextAlive
+      && this.lastCombatRespawnSeconds === respawnSeconds
+      && this.lastCombatDeaths === deaths
+      && this.lastCombatKills === kills
+      && this.lastCombatAmmoInClip === ammoInClip
+      && this.lastCombatReserveAmmo === reserveAmmo
+      && this.lastCombatReloading === nextReloading
+      && this.lastCombatArmed === nextArmed
+      && this.combatRoot.hidden === false
+    ) {
+      return;
+    }
+    this.lastCombatCurrentHealth = currentHealth;
+    this.lastCombatSafeMaxHealth = safeMaxHealth;
+    this.lastCombatHealthPercentValue = healthPercent;
+    this.lastCombatAlive = nextAlive;
+    this.lastCombatRespawnSeconds = respawnSeconds;
+    this.lastCombatDeaths = deaths;
+    this.lastCombatKills = kills;
+    this.lastCombatAmmoInClip = ammoInClip;
+    this.lastCombatReserveAmmo = reserveAmmo;
+    this.lastCombatReloading = nextReloading;
+    this.lastCombatArmed = nextArmed;
 
-    this.combatRoot.classList.toggle('is-critical', alive && healthRatio <= 0.28);
-    this.combatRoot.classList.toggle('is-down', !alive);
+    this.combatRoot.hidden = false;
+    this.combatRoot.classList.toggle('is-critical', nextAlive && healthRatio <= 0.28);
+    this.combatRoot.classList.toggle('is-down', !nextAlive);
     this.combatRoot.style.setProperty('--health-hue-start', `${startHue}`);
     this.combatRoot.style.setProperty('--health-hue-end', `${endHue}`);
     this.combatRoot.style.setProperty('--health-ratio', `${healthRatio}`);
@@ -10372,20 +10992,19 @@ export class Hud {
     }
     this.lastCombatHealthPercent = healthPercent;
     this.setAmmoState({
-      visible: Boolean(alive && armed),
+      visible: Boolean(nextAlive && nextArmed),
       ammoInClip,
       reserveAmmo,
       clipSize: WEAPON_CLIP_SIZE,
-      isReloading
+      isReloading: nextReloading
     });
 
-    if (!alive) {
-      const seconds = Math.max(0, Math.ceil((respawnAt - Date.now()) / 1000));
+    if (!nextAlive) {
       if (this.respawnLine) {
         this.respawnLine.textContent = getRespawnDeathLine(deaths);
       }
       if (this.respawnDetail) {
-        const countdownText = seconds > 0 ? `Respawning in ${seconds}s` : 'Respawning...';
+        const countdownText = respawnSeconds > 0 ? `Respawning in ${respawnSeconds}s` : 'Respawning...';
         this.respawnDetail.textContent = `${countdownText} - hospital bill: ${formatMoneyAmount(PLAYER_RESPAWN_COST)}`;
       }
       this.respawnText.classList.add('is-visible');
@@ -10411,16 +11030,31 @@ export class Hud {
     const profitNumeric = Number(stockProfit ?? 0);
     const displayedProfit = Number.isFinite(profitNumeric) ? Math.trunc(profitNumeric) : 0;
     const trendClass = getStockTrendClass(displayedProfit);
-    this.moneyValue.textContent = formatMoneyAmount(money);
+    const moneyText = formatMoneyAmount(money);
+    const netWorthText = formatMoneyAmount(displayedNetWorth);
+    if (
+      this.lastMoneyAmount === money
+      && this.lastMoneyNetWorth === displayedNetWorth
+      && this.lastMoneyProfit === displayedProfit
+      && this.lastMoneyTrendClass === trendClass
+    ) {
+      return;
+    }
+    this.lastMoneyAmount = money;
+    this.lastMoneyNetWorth = displayedNetWorth;
+    this.lastMoneyProfit = displayedProfit;
+    this.lastMoneyTrendClass = trendClass;
+
+    this.moneyValue.textContent = moneyText;
     this.moneyRoot.classList.toggle('is-negative', money < 0);
     this.moneyRoot.classList.toggle('has-net-worth', true);
     this.moneyRoot.setAttribute(
       'aria-label',
-      `Cash ${formatMoneyAmount(money)}. Net worth ${formatMoneyAmount(displayedNetWorth)}.`
+      `Cash ${moneyText}. Net worth ${netWorthText}.`
     );
 
     if (this.moneyNetWorth) {
-      this.moneyNetWorth.textContent = `(${formatMoneyAmount(displayedNetWorth)})`;
+      this.moneyNetWorth.textContent = `(${netWorthText})`;
       this.moneyNetWorth.classList.toggle('is-up', trendClass === 'is-up');
       this.moneyNetWorth.classList.toggle('is-down', trendClass === 'is-down');
       this.moneyNetWorth.classList.toggle('is-flat', trendClass === 'is-flat');
@@ -10438,6 +11072,12 @@ export class Hud {
       this.pendingTaskState = { visible: nextVisible, title: nextTitle };
       return;
     }
+
+    if (this.lastTaskVisible === nextVisible && this.lastTaskTitle === nextTitle) {
+      return;
+    }
+    this.lastTaskVisible = nextVisible;
+    this.lastTaskTitle = nextTitle;
 
     this.taskRoot.hidden = !nextVisible;
     if (this.taskTitle.textContent !== nextTitle) {
@@ -10647,24 +11287,34 @@ export class Hud {
     if (!visible) {
       this.adminPositionRoot.hidden = true;
       this.lastAdminPositionSignature = '';
+      this.lastAdminPositionX = '';
+      this.lastAdminPositionY = '';
+      this.lastAdminPositionZ = '';
+      this.lastAdminPositionHeading = '';
       return;
     }
 
-    const signature = [
-      Number(x).toFixed(2),
-      Number(y).toFixed(2),
-      Number(z).toFixed(2),
-      Number(heading).toFixed(1)
-    ].join('|');
+    const xText = Number(x).toFixed(2);
+    const yText = Number(y).toFixed(2);
+    const zText = Number(z).toFixed(2);
+    const headingText = Number(heading).toFixed(1);
 
-    if (signature === this.lastAdminPositionSignature) {
+    if (
+      this.lastAdminPositionX === xText
+      && this.lastAdminPositionY === yText
+      && this.lastAdminPositionZ === zText
+      && this.lastAdminPositionHeading === headingText
+    ) {
       this.adminPositionRoot.hidden = false;
       return;
     }
 
-    this.lastAdminPositionSignature = signature;
+    this.lastAdminPositionX = xText;
+    this.lastAdminPositionY = yText;
+    this.lastAdminPositionZ = zText;
+    this.lastAdminPositionHeading = headingText;
     this.adminPositionRoot.hidden = false;
-    this.adminPositionValue.textContent = `X ${Number(x).toFixed(2)}  Y ${Number(y).toFixed(2)}  Z ${Number(z).toFixed(2)}`;
+    this.adminPositionValue.textContent = `X ${xText}  Y ${yText}  Z ${zText}`;
     this.adminPositionHint.textContent = `Heading ${Number(heading).toFixed(1)}°`;
   }
 
@@ -10733,7 +11383,17 @@ export class Hud {
       return;
     }
 
-    const selectedEntry = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
+    const safeEntries = Array.isArray(entries) ? entries : [];
+    let selectedEntry = safeEntries[0] ?? null;
+    let signature = '';
+    for (const entry of safeEntries) {
+      if (entry.id === selectedId) {
+        selectedEntry = entry;
+      }
+      signature = appendSignatureValue(signature, entry.id);
+      signature = appendSignatureValue(signature, entry.label);
+      signature = appendSignatureValue(signature, entry.subtitle ?? '');
+    }
 
     const panelVisible = Boolean(available && visible);
 
@@ -10759,28 +11419,26 @@ export class Hud {
       this.characterSelectorStatus.textContent = statusText;
     }
 
-    const signature = JSON.stringify(entries.map((entry) => ({
-      id: entry.id,
-      label: entry.label,
-      subtitle: entry.subtitle ?? ''
-    })));
-
     if (signature !== this.lastCharacterSelectorSignature) {
       this.lastCharacterSelectorSignature = signature;
-      this.characterSelectorGrid.innerHTML = entries.map((entry) => `
-        <button
-          class="hud__character-card"
-          type="button"
-          data-character-id="${entry.id}"
-        >
-          <span class="hud__character-card-frame">
-            <span class="hud__character-card-preview" data-character-preview-card="${entry.id}">
-              <span class="hud__character-card-placeholder">${entry.label}</span>
+      let markup = '';
+      for (const entry of safeEntries) {
+        markup += `
+          <button
+            class="hud__character-card"
+            type="button"
+            data-character-id="${entry.id}"
+          >
+            <span class="hud__character-card-frame">
+              <span class="hud__character-card-preview" data-character-preview-card="${entry.id}">
+                <span class="hud__character-card-placeholder">${entry.label}</span>
+              </span>
             </span>
-          </span>
-          <span class="hud__character-card-label">${entry.label}</span>
-        </button>
-      `).join('');
+            <span class="hud__character-card-label">${entry.label}</span>
+          </button>
+        `;
+      }
+      this.characterSelectorGrid.innerHTML = markup;
     }
 
     for (const button of this.characterSelectorGrid?.querySelectorAll('[data-character-id]') ?? []) {
@@ -10802,8 +11460,24 @@ export class Hud {
     }
 
     const safeEntries = Array.isArray(entries) ? entries : [];
-    const selectedEntry = safeEntries.find((entry) => entry.id === selectedId) ?? safeEntries[0] ?? null;
-    const activeEntry = safeEntries.find((entry) => entry.id === activeId) ?? null;
+    let selectedEntry = safeEntries[0] ?? null;
+    let activeEntry = null;
+    let signature = '';
+    for (const entry of safeEntries) {
+      const selected = entry.id === selectedId;
+      const active = entry.id === activeId;
+      if (selected) {
+        selectedEntry = entry;
+      }
+      if (active) {
+        activeEntry = entry;
+      }
+      signature = appendSignatureValue(signature, entry.id);
+      signature = appendSignatureValue(signature, entry.label);
+      signature = appendSignatureValue(signature, entry.accent ?? '');
+      signature = appendSignatureFlag(signature, selected);
+      signature = appendSignatureFlag(signature, active);
+    }
     const panelVisible = Boolean(available && visible);
 
     if (this.boundVehicleRoot) {
@@ -10843,22 +11517,17 @@ export class Hud {
       this.carSelectorPreview.innerHTML = '<span class="hud__car-selector-empty">No vehicle</span>';
     }
 
-    const signature = JSON.stringify(safeEntries.map((entry) => ({
-      id: entry.id,
-      label: entry.label,
-      accent: entry.accent ?? '',
-      selected: entry.id === selectedId,
-      active: entry.id === activeId
-    })));
     if (this.carSelectorGrid && signature !== this.lastCarSelectorSignature) {
       this.lastCarSelectorSignature = signature;
-      this.carSelectorGrid.innerHTML = safeEntries.length
-        ? safeEntries.map((entry) => getCarSelectorCardMarkup({
+      let markup = '';
+      for (const entry of safeEntries) {
+        markup += getCarSelectorCardMarkup({
             ...entry,
             selected: entry.id === selectedId,
             active: entry.id === activeId
-          })).join('')
-        : '<p class="hud__body">No owned vehicles yet.</p>';
+          });
+      }
+      this.carSelectorGrid.innerHTML = markup || '<p class="hud__body">No owned vehicles yet.</p>';
     }
 
     for (const button of this.carSelectorGrid?.querySelectorAll('[data-car-item-id]') ?? []) {
@@ -10887,7 +11556,13 @@ export class Hud {
       return;
     }
 
-    const selectedEntry = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null;
+    let selectedEntry = entries[0] ?? null;
+    for (const entry of entries) {
+      if (entry.id === selectedId) {
+        selectedEntry = entry;
+        break;
+      }
+    }
     const status = root.querySelector('[data-phone-character-status]');
 
     if (status) {
@@ -10953,33 +11628,53 @@ export class Hud {
     }
 
     const safeMissions = Array.isArray(missions) ? missions : [];
-    const signature = JSON.stringify(safeMissions.map((mission) => ({
-      id: mission.id,
-      title: mission.title,
-      description: mission.description,
-      requirement: mission.requirement,
-      status: mission.status,
-      selected: mission.selected,
-      selectable: mission.selectable,
-      icon: mission.icon,
-      bonusQuest: mission.bonusQuest,
-      hiddenForPlayers: mission.hiddenForPlayers
-    })).concat([{ selectedMissionId }]));
+    let signature = '';
+    for (const mission of safeMissions) {
+      signature = appendSignatureValue(signature, mission.id);
+      signature = appendSignatureValue(signature, mission.title);
+      signature = appendSignatureValue(signature, mission.description);
+      signature = appendSignatureValue(signature, mission.requirement);
+      signature = appendSignatureValue(signature, mission.status);
+      signature = appendSignatureFlag(signature, mission.selected);
+      signature = appendSignatureFlag(signature, mission.selectable);
+      signature = appendSignatureValue(signature, mission.icon);
+      signature = appendSignatureFlag(signature, mission.bonusQuest);
+      signature = appendSignatureFlag(signature, mission.hiddenForPlayers);
+    }
+    signature = appendSignatureValue(signature, selectedMissionId);
     if (signature === this.lastPhoneMissionsSignature) {
       return;
     }
     this.lastPhoneMissionsSignature = signature;
 
-    const selectedMission = safeMissions.find((mission) => mission.selected || mission.id === selectedMissionId) ?? null;
+    let selectedMission = null;
+    for (const mission of safeMissions) {
+      if (mission.selected || mission.id === selectedMissionId) {
+        selectedMission = mission;
+        break;
+      }
+    }
     const current = root.querySelector('[data-phone-missions-current]');
     const list = root.querySelector('[data-phone-missions-list]');
     const count = root.querySelector('[data-phone-missions-count]');
 
-    const completedCount = safeMissions.filter((mission) => mission.status === 'completed').length;
-    const availableCount = safeMissions.filter((mission) => (
-      mission.status === 'available'
-      || mission.status === 'inProgress'
-    )).length;
+    let completedCount = 0;
+    let availableCount = 0;
+    const mainMissions = [];
+    const bonusMissions = [];
+    for (const mission of safeMissions) {
+      if (mission.status === 'completed') {
+        completedCount += 1;
+      } else if (mission.status === 'available' || mission.status === 'inProgress') {
+        availableCount += 1;
+      }
+
+      if (mission.bonusQuest === true) {
+        bonusMissions.push(mission);
+      } else {
+        mainMissions.push(mission);
+      }
+    }
     if (count) {
       count.textContent = `${completedCount}/${safeMissions.length} complete; ${availableCount} open`;
     }
@@ -10999,16 +11694,22 @@ export class Hud {
     }
 
     if (list) {
-      const mainMissions = safeMissions.filter((mission) => mission.bonusQuest !== true);
-      const bonusMissions = safeMissions.filter((mission) => mission.bonusQuest === true);
+      let mainMissionMarkup = '';
+      for (const mission of mainMissions) {
+        mainMissionMarkup += this.getPhoneMissionRowMarkup(mission);
+      }
+      let bonusMissionMarkup = '';
+      for (const mission of bonusMissions) {
+        bonusMissionMarkup += this.getPhoneMissionRowMarkup(mission);
+      }
       list.innerHTML = `
         <div class="hud__phone-missions-section-label">All Missions</div>
         <div class="hud__phone-missions-scroll">
-          ${mainMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+          ${mainMissionMarkup}
           ${bonusMissions.length
             ? `
               <div class="hud__phone-missions-section-label is-bonus">Bonus Quests</div>
-              ${bonusMissions.map((mission) => this.getPhoneMissionRowMarkup(mission)).join('')}
+              ${bonusMissionMarkup}
             `
             : ''}
         </div>
@@ -11018,7 +11719,12 @@ export class Hud {
 
   getVibeRadioSelectedTrack(state = this.vibeRadioState) {
     const tracks = Array.isArray(state?.tracks) ? state.tracks : [];
-    return tracks.find((track) => track.id === state?.selectedTrackId) ?? tracks[0] ?? null;
+    for (const track of tracks) {
+      if (track.id === state?.selectedTrackId) {
+        return track;
+      }
+    }
+    return tracks[0] ?? null;
   }
 
   getVibeRadioStatusText(state = this.vibeRadioState) {
@@ -11145,20 +11851,21 @@ export class Hud {
     }
 
     if (list) {
-      const listSignature = JSON.stringify({
-        tracks: tracks.map((track) => [
-          track.id,
-          track.title,
-          track.sourceUrl
-        ]),
-        selectedTrackId: state.selectedTrackId,
-        playing: Boolean(state.playing)
-      });
+      let listSignature = '';
+      for (const track of tracks) {
+        listSignature = appendSignatureValue(listSignature, track.id);
+        listSignature = appendSignatureValue(listSignature, track.title);
+        listSignature = appendSignatureValue(listSignature, track.sourceUrl);
+      }
+      listSignature = appendSignatureValue(listSignature, state.selectedTrackId);
+      listSignature = appendSignatureFlag(listSignature, state.playing);
       if (listSignature !== this.lastPhoneVibeRadioTrackListSignature) {
         this.lastPhoneVibeRadioTrackListSignature = listSignature;
-        list.innerHTML = tracks.length
-          ? tracks.map((track) => this.getPhoneVibeRadioTrackMarkup(track, state)).join('')
-          : '<div class="hud__phone-empty-state">No songs in Vibe Radio.</div>';
+        let trackMarkup = '';
+        for (const track of tracks) {
+          trackMarkup += this.getPhoneVibeRadioTrackMarkup(track, state);
+        }
+        list.innerHTML = trackMarkup || '<div class="hud__phone-empty-state">No songs in Vibe Radio.</div>';
       }
     }
 
@@ -11215,15 +11922,16 @@ export class Hud {
     }
 
     const safeSkills = Array.isArray(skills) ? skills : [];
-    const signature = JSON.stringify({
-      skills: safeSkills.map((skill) => ({
-        id: skill.id,
-        xp: skill.xp,
-        level: skill.level,
-        progress: skill.progress
-      })),
-      recentAwardSeq: recentAward?.seq ?? 0
-    });
+    let signature = '';
+    let totalLevel = 0;
+    for (const skill of safeSkills) {
+      totalLevel += Number(skill.level) || 1;
+      signature = appendSignatureValue(signature, skill.id);
+      signature = appendSignatureValue(signature, skill.xp);
+      signature = appendSignatureValue(signature, skill.level);
+      signature = appendSignatureValue(signature, skill.progress);
+    }
+    signature = appendSignatureValue(signature, recentAward?.seq ?? 0);
     if (signature === this.lastPhoneSkillsSignature) {
       return;
     }
@@ -11231,7 +11939,6 @@ export class Hud {
 
     const summary = root.querySelector('[data-phone-skills-summary]');
     const list = root.querySelector('[data-phone-skills-list]');
-    const totalLevel = safeSkills.reduce((total, skill) => total + (Number(skill.level) || 1), 0);
     if (summary) {
       summary.textContent = `${safeSkills.length} skills | total ${totalLevel || safeSkills.length}`;
     }
@@ -11240,30 +11947,30 @@ export class Hud {
       return;
     }
 
-    list.innerHTML = safeSkills.length
-      ? safeSkills.map((skill) => {
-          const progress = Math.max(0, Math.min(1, Number(skill.progress ?? 0)));
-          const maxed = Number(skill.level ?? 1) >= Number(skill.maxLevel ?? 99);
-          const recent = recentAward?.skillId === skill.id ? ' is-recent' : '';
-          return `
-            <article class="hud__phone-skill-card${maxed ? ' is-maxed' : ''}${recent}" style="--skill-accent:${escapeHtml(skill.accent ?? '#68e08f')}">
-              <div class="hud__phone-skill-icon" aria-hidden="true">${this.getPhoneSkillIconMarkup(skill.icon)}</div>
-              <div class="hud__phone-skill-copy">
-                <div class="hud__phone-skill-title">
-                  <strong>${escapeHtml(skill.label ?? 'Skill')}</strong>
-                  <span>${escapeHtml(String(skill.level ?? 1))}/${escapeHtml(String(skill.maxLevel ?? 99))}</span>
-                </div>
-                <div class="hud__phone-skill-progress" aria-hidden="true">
-                  <span style="--skill-progress:${(progress * 100).toFixed(1)}%"></span>
-                </div>
-                <p>${maxed
-                  ? 'Max level reached'
-                  : `${formatHudCount(skill.xpToNextLevel ?? 0)} XP to next`}</p>
-              </div>
-            </article>
-          `;
-        }).join('')
-      : '<div class="hud__phone-empty-state">Skills are syncing.</div>';
+    let skillMarkup = '';
+    for (const skill of safeSkills) {
+      const progress = Math.max(0, Math.min(1, Number(skill.progress ?? 0)));
+      const maxed = Number(skill.level ?? 1) >= Number(skill.maxLevel ?? 99);
+      const recent = recentAward?.skillId === skill.id ? ' is-recent' : '';
+      skillMarkup += `
+        <article class="hud__phone-skill-card${maxed ? ' is-maxed' : ''}${recent}" style="--skill-accent:${escapeHtml(skill.accent ?? '#68e08f')}">
+          <div class="hud__phone-skill-icon" aria-hidden="true">${this.getPhoneSkillIconMarkup(skill.icon)}</div>
+          <div class="hud__phone-skill-copy">
+            <div class="hud__phone-skill-title">
+              <strong>${escapeHtml(skill.label ?? 'Skill')}</strong>
+              <span>${escapeHtml(String(skill.level ?? 1))}/${escapeHtml(String(skill.maxLevel ?? 99))}</span>
+            </div>
+            <div class="hud__phone-skill-progress" aria-hidden="true">
+              <span style="--skill-progress:${(progress * 100).toFixed(1)}%"></span>
+            </div>
+            <p>${maxed
+              ? 'Max level reached'
+              : `${formatHudCount(skill.xpToNextLevel ?? 0)} XP to next`}</p>
+          </div>
+        </article>
+      `;
+    }
+    list.innerHTML = skillMarkup || '<div class="hud__phone-empty-state">Skills are syncing.</div>';
   }
 
   setPhoneStocksState({
@@ -11281,27 +11988,32 @@ export class Hud {
     const safeMarket = market && typeof market === 'object' ? market : null;
     const stocks = Array.isArray(safeMarket?.stocks) ? safeMarket.stocks : [];
     const safeQuantity = normalizeStockTradeQuantity(quantity);
-    const selected = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0] ?? null;
+    let selected = null;
+    let stocksSignature = '';
+    for (const stock of stocks) {
+      if (!selected && stock.symbol === selectedSymbol) {
+        selected = stock;
+      }
+      stocksSignature = appendSignatureValue(stocksSignature, stock.symbol);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.price);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.delta);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.deltaPercent);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.shares);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.marketValue);
+      stocksSignature = appendSignatureValue(stocksSignature, stock.unrealizedProfit);
+    }
+    selected ??= stocks[0] ?? null;
     const resolvedSelectedSymbol = selected?.symbol ?? '';
-    const signature = JSON.stringify({
-      selectedSymbol: resolvedSelectedSymbol,
-      quantity: safeQuantity,
-      loading: Boolean(loading),
-      error,
-      updatedAt: safeMarket?.updatedAt ?? 0,
-      cash: safeMarket?.cash ?? 0,
-      portfolioValue: safeMarket?.portfolioValue ?? 0,
-      netWorth: safeMarket?.netWorth ?? 0,
-      stocks: stocks.map((stock) => [
-        stock.symbol,
-        stock.price,
-        stock.delta,
-        stock.deltaPercent,
-        stock.shares,
-        stock.marketValue,
-        stock.unrealizedProfit
-      ])
-    });
+    let signature = '';
+    signature = appendSignatureValue(signature, resolvedSelectedSymbol);
+    signature = appendSignatureValue(signature, safeQuantity);
+    signature = appendSignatureFlag(signature, loading);
+    signature = appendSignatureValue(signature, error);
+    signature = appendSignatureValue(signature, safeMarket?.updatedAt ?? 0);
+    signature = appendSignatureValue(signature, safeMarket?.cash ?? 0);
+    signature = appendSignatureValue(signature, safeMarket?.portfolioValue ?? 0);
+    signature = appendSignatureValue(signature, safeMarket?.netWorth ?? 0);
+    signature = appendSignatureValue(signature, stocksSignature);
     if (signature === this.lastPhoneStocksSignature) {
       return;
     }
@@ -11355,26 +12067,26 @@ export class Hud {
         : '<div class="hud__phone-empty-state">Market tape is syncing.</div>';
     }
     if (list) {
-      list.innerHTML = stocks.length
-        ? stocks.map((stock) => {
-            const trendClass = getStockTrendClass(stock.delta);
-            const activeClass = stock.symbol === resolvedSelectedSymbol ? ' is-active' : '';
-            return `
-              <button
-                class="hud__phone-stock-chip ${trendClass}${activeClass}"
-                type="button"
-                data-phone-stock-symbol="${escapeHtml(stock.symbol)}"
-                style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}"
-              >
-                ${createStockIconMarkup(stock, 'is-mini')}
-                <span>
-                  <strong>${escapeHtml(stock.symbol)}</strong>
-                  <em>${formatStockMoney(stock.price)}</em>
-                </span>
-              </button>
-            `;
-          }).join('')
-        : '<div class="hud__phone-empty-state">No stocks listed.</div>';
+      let stockMarkup = '';
+      for (const stock of stocks) {
+        const trendClass = getStockTrendClass(stock.delta);
+        const activeClass = stock.symbol === resolvedSelectedSymbol ? ' is-active' : '';
+        stockMarkup += `
+          <button
+            class="hud__phone-stock-chip ${trendClass}${activeClass}"
+            type="button"
+            data-phone-stock-symbol="${escapeHtml(stock.symbol)}"
+            style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}"
+          >
+            ${createStockIconMarkup(stock, 'is-mini')}
+            <span>
+              <strong>${escapeHtml(stock.symbol)}</strong>
+              <em>${formatStockMoney(stock.price)}</em>
+            </span>
+          </button>
+        `;
+      }
+      list.innerHTML = stockMarkup || '<div class="hud__phone-empty-state">No stocks listed.</div>';
     }
 
     if (quantityInput instanceof HTMLInputElement && document.activeElement !== quantityInput) {
@@ -11456,15 +12168,26 @@ export class Hud {
     }
 
     const safeWallet = wallet && typeof wallet === 'object' ? wallet : null;
-    const holdings = (safeWallet?.stocks ?? []).filter((stock) => Number(stock.shares ?? 0) > 0);
-    const signature = JSON.stringify({
-      cash,
-      loading,
-      error,
-      portfolioValue: safeWallet?.portfolioValue ?? 0,
-      netWorth: safeWallet?.netWorth ?? cash,
-      holdings: holdings.map((stock) => [stock.symbol, stock.shares, stock.marketValue, stock.unrealizedProfit])
-    });
+    const holdings = [];
+    let holdingsSignature = '';
+    for (const stock of safeWallet?.stocks ?? []) {
+      if (Number(stock.shares ?? 0) <= 0) {
+        continue;
+      }
+
+      holdings.push(stock);
+      holdingsSignature = appendSignatureValue(holdingsSignature, stock.symbol);
+      holdingsSignature = appendSignatureValue(holdingsSignature, stock.shares);
+      holdingsSignature = appendSignatureValue(holdingsSignature, stock.marketValue);
+      holdingsSignature = appendSignatureValue(holdingsSignature, stock.unrealizedProfit);
+    }
+    let signature = '';
+    signature = appendSignatureValue(signature, cash);
+    signature = appendSignatureFlag(signature, loading);
+    signature = appendSignatureValue(signature, error);
+    signature = appendSignatureValue(signature, safeWallet?.portfolioValue ?? 0);
+    signature = appendSignatureValue(signature, safeWallet?.netWorth ?? cash);
+    signature = appendSignatureValue(signature, holdingsSignature);
     if (signature === this.lastPhoneWalletSignature) {
       return;
     }
@@ -11494,24 +12217,26 @@ export class Hud {
       `;
     }
     if (holdingsNode) {
+      let holdingsMarkup = '';
+      for (const stock of holdings) {
+        holdingsMarkup += `
+          <div class="hud__phone-wallet-holding" style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}">
+            ${createStockIconMarkup(stock, 'is-mini')}
+            <div>
+              <strong>${escapeHtml(stock.symbol)}</strong>
+              <span>${formatHudCount(stock.shares)} shares</span>
+            </div>
+            <div class="${getStockTrendClass(stock.unrealizedProfit)}">
+              <strong>${formatMoneyAmount(stock.marketValue)}</strong>
+              <span>${formatSignedStockMoney(stock.unrealizedProfit)}</span>
+            </div>
+          </div>
+        `;
+      }
       holdingsNode.innerHTML = `
         <div class="hud__phone-wallet-section-label">Holdings</div>
         <div class="hud__phone-wallet-holding-list">
-          ${holdings.length
-            ? holdings.map((stock) => `
-              <div class="hud__phone-wallet-holding" style="--stock-accent:${escapeHtml(stock.accent ?? '#f2c871')}">
-                ${createStockIconMarkup(stock, 'is-mini')}
-                <div>
-                  <strong>${escapeHtml(stock.symbol)}</strong>
-                  <span>${formatHudCount(stock.shares)} shares</span>
-                </div>
-                <div class="${getStockTrendClass(stock.unrealizedProfit)}">
-                  <strong>${formatMoneyAmount(stock.marketValue)}</strong>
-                  <span>${formatSignedStockMoney(stock.unrealizedProfit)}</span>
-                </div>
-              </div>
-            `).join('')
-            : '<div class="hud__phone-empty-state">No holdings yet.</div>'}
+          ${holdingsMarkup || '<div class="hud__phone-empty-state">No holdings yet.</div>'}
         </div>
       `;
     }
@@ -11646,12 +12371,16 @@ export class Hud {
       && Number(imageBounds.maxX) > Number(imageBounds.minX)
       && Number(imageBounds.maxZ) > Number(imageBounds.minZ)
     );
+    const featureSignatureRows = [];
+    for (const feature of safeFeatures) {
+      featureSignatureRows.push([feature.id, feature.kind, feature.label, feature.x, feature.z, feature.width, feature.depth]);
+    }
     const signature = JSON.stringify({
       player,
       zoom,
       pan: [pan?.x ?? 0, pan?.z ?? 0],
       image: hasImage ? [image.src, imageBounds.minX, imageBounds.maxX, imageBounds.minZ, imageBounds.maxZ] : null,
-      features: safeFeatures.map((feature) => [feature.id, feature.kind, feature.label, feature.x, feature.z, feature.width, feature.depth])
+      features: featureSignatureRows
     });
     if (signature === this.lastPhoneMapSignature) {
       return;
@@ -11684,22 +12413,43 @@ export class Hud {
       return;
     }
 
-    const points = [
-      ...safeFeatures.map((feature) => ({ x: Number(feature.x), z: Number(feature.z) })),
-      player ? { x: Number(player.x), z: Number(player.z) } : null
-    ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z));
+    let hasPoint = false;
+    let minPointX = Infinity;
+    let maxPointX = -Infinity;
+    let minPointZ = Infinity;
+    let maxPointZ = -Infinity;
+    const includePoint = (xValue, zValue) => {
+      const x = Number(xValue);
+      const z = Number(zValue);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return;
+      }
 
-    if (!points.length && !hasImage) {
+      hasPoint = true;
+      minPointX = Math.min(minPointX, x);
+      maxPointX = Math.max(maxPointX, x);
+      minPointZ = Math.min(minPointZ, z);
+      maxPointZ = Math.max(maxPointZ, z);
+    };
+
+    for (const feature of safeFeatures) {
+      includePoint(feature.x, feature.z);
+    }
+    if (player) {
+      includePoint(player.x, player.z);
+    }
+
+    if (!hasPoint && !hasImage) {
       canvas.innerHTML = '<div class="hud__phone-empty-state">Map data is syncing.</div>';
       return;
     }
 
     const width = 280;
     const height = 430;
-    const minX = hasImage ? Number(imageBounds.minX) : Math.min(...points.map((point) => point.x)) - 8;
-    const maxX = hasImage ? Number(imageBounds.maxX) : Math.max(...points.map((point) => point.x)) + 8;
-    const minZ = hasImage ? Number(imageBounds.minZ) : Math.min(...points.map((point) => point.z)) - 8;
-    const maxZ = hasImage ? Number(imageBounds.maxZ) : Math.max(...points.map((point) => point.z)) + 8;
+    const minX = hasImage ? Number(imageBounds.minX) : minPointX - 8;
+    const maxX = hasImage ? Number(imageBounds.maxX) : maxPointX + 8;
+    const minZ = hasImage ? Number(imageBounds.minZ) : minPointZ - 8;
+    const maxZ = hasImage ? Number(imageBounds.maxZ) : maxPointZ + 8;
     const spanX = Math.max(1, maxX - minX);
     const spanZ = Math.max(1, maxZ - minZ);
     const viewSpanX = spanX / safeZoom;
@@ -11722,11 +12472,12 @@ export class Hud {
     const rasterMarkup = hasImage
       ? `<image class="hud__phone-map-raster" href="${escapeHtml(image.src)}" x="${(((minX - viewMinX) / viewSpanX) * width).toFixed(1)}" y="${(((minZ - viewMinZ) / viewSpanZ) * height).toFixed(1)}" width="${((spanX / viewSpanX) * width).toFixed(1)}" height="${((spanZ / viewSpanZ) * height).toFixed(1)}" preserveAspectRatio="none"></image>`
       : '';
-    const featureMarkup = safeFeatures.map((feature) => {
+    const featureMarkup = [];
+    for (const feature of safeFeatures) {
       const kind = escapeHtml(feature.kind ?? 'building');
       const x = toX(Number(feature.x));
       const y = toY(Number(feature.z));
-      if (['shady', 'stock', 'blackjack', 'workout'].includes(feature.kind)) {
+      if (feature.kind === 'shady' || feature.kind === 'stock' || feature.kind === 'blackjack' || feature.kind === 'workout') {
         const label = String(feature.label ?? '').trim();
         const tooltip = feature.kind === 'stock'
           ? 'Stock broker'
@@ -11742,20 +12493,21 @@ export class Hud {
             : feature.kind === 'workout'
               ? 'S'
               : '?';
-        return `
+        featureMarkup.push(`
           <g class="hud__phone-map-marker is-${kind}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" tabindex="0" role="button" aria-label="${escapeHtml(tooltip)}" data-phone-map-tooltip="${escapeHtml(tooltip)}" data-phone-map-tooltip-icon="${escapeHtml(markerIcon)}" data-phone-map-tooltip-kind="${kind}">
             <circle r="6"></circle>
             <text y="-9">${escapeHtml(markerIcon)}</text>
           </g>
-        `;
+        `);
+        continue;
       }
       if (hasImage) {
-        return '';
+        continue;
       }
       const w = Math.max(3, (Number(feature.width ?? 1) / viewSpanX) * width);
       const h = Math.max(3, (Number(feature.depth ?? 1) / viewSpanZ) * height);
-      return `<rect class="hud__phone-map-feature is-${kind}" x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2"></rect>`;
-    }).join('');
+      featureMarkup.push(`<rect class="hud__phone-map-feature is-${kind}" x="${(x - w / 2).toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2"></rect>`);
+    }
 
     const playerMarkup = player
       ? `
@@ -11770,7 +12522,7 @@ export class Hud {
       <svg class="hud__phone-map-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="City map">
         <rect class="hud__phone-map-bg" width="${width}" height="${height}" rx="18"></rect>
         ${rasterMarkup}
-        ${featureMarkup}
+        ${featureMarkup.join('')}
         ${playerMarkup}
       </svg>
     `;
@@ -11813,7 +12565,11 @@ export class Hud {
     };
     this.skillLevelUpPopups.push(entry);
     while (this.skillLevelUpPopups.length > SKILL_LEVEL_UP_MAX_VISIBLE) {
-      const oldest = this.skillLevelUpPopups.shift();
+      const oldest = this.skillLevelUpPopups[0] ?? null;
+      for (let index = 1; index < this.skillLevelUpPopups.length; index += 1) {
+        this.skillLevelUpPopups[index - 1] = this.skillLevelUpPopups[index];
+      }
+      this.skillLevelUpPopups.length -= 1;
       window.clearTimeout(oldest?.timeout);
       oldest?.node?.remove();
     }
@@ -11837,13 +12593,20 @@ export class Hud {
     entry.timeout = window.setTimeout(() => {
       popup.classList.remove('is-active');
       popup.remove();
-      this.skillLevelUpPopups = this.skillLevelUpPopups.filter((candidate) => candidate !== entry);
+      const remainingPopups = [];
+      for (const candidate of this.skillLevelUpPopups) {
+        if (candidate !== entry) {
+          remainingPopups.push(candidate);
+        }
+      }
+      this.skillLevelUpPopups = remainingPopups;
       this.syncSkillLevelUpPopupStack();
     }, SKILL_LEVEL_UP_POPUP_MS);
   }
 
   syncSkillLevelUpPopupStack() {
-    for (const [index, entry] of this.skillLevelUpPopups.entries()) {
+    for (let index = 0; index < this.skillLevelUpPopups.length; index += 1) {
+      const entry = this.skillLevelUpPopups[index];
       entry.node?.style?.setProperty('--skill-level-up-offset', `${index * SKILL_LEVEL_UP_STACK_GAP_PX}px`);
     }
   }
@@ -11852,24 +12615,42 @@ export class Hud {
     return this.characterSelectorGrid?.querySelector(`[data-character-preview-card="${characterId}"]`) ?? null;
   }
 
-  getVisibleCharacterSelectorCardIds({ overscanPx = 0 } = {}) {
+  getVisibleCharacterSelectorCardIds({ overscanPx = 0, output = null } = {}) {
+    const ids = output && typeof output.add === 'function'
+      ? output
+      : [];
+    if (ids instanceof Set) {
+      ids.clear();
+    } else {
+      ids.length = 0;
+    }
+
     if (!this.characterSelectorGrid) {
-      return [];
+      return ids;
     }
 
     const gridBounds = this.characterSelectorGrid.getBoundingClientRect();
-    return Array.from(this.characterSelectorGrid.querySelectorAll('[data-character-id]'))
-      .filter((button) => {
-        const bounds = button.getBoundingClientRect();
-        return (
-          bounds.bottom >= gridBounds.top - overscanPx
-          && bounds.top <= gridBounds.bottom + overscanPx
-          && bounds.right >= gridBounds.left
-          && bounds.left <= gridBounds.right
-        );
-      })
-      .map((button) => button.dataset.characterId)
-      .filter(Boolean);
+    for (const button of this.characterSelectorGrid.querySelectorAll('[data-character-id]')) {
+      const bounds = button.getBoundingClientRect();
+      if (
+        bounds.bottom < gridBounds.top - overscanPx
+        || bounds.top > gridBounds.bottom + overscanPx
+        || bounds.right < gridBounds.left
+        || bounds.left > gridBounds.right
+      ) {
+        continue;
+      }
+
+      const characterId = button.dataset.characterId;
+      if (characterId) {
+        if (ids instanceof Set) {
+          ids.add(characterId);
+        } else {
+          ids.push(characterId);
+        }
+      }
+    }
+    return ids;
   }
 
   isCharacterSelectorOpen() {
@@ -11976,9 +12757,10 @@ export class Hud {
     }
     this.shaderDebugIntensityReset?.toggleAttribute('disabled', !intensityEnabled);
 
-    this.shaderDebugList.innerHTML = presets.map((preset) => {
+    const presetMarkup = [];
+    for (const preset of presets) {
       const active = preset.id === activePresetId;
-      return `
+      presetMarkup.push(`
         <button
           class="hud__shader-debug-card${active ? ' is-active' : ''}"
           type="button"
@@ -11990,8 +12772,9 @@ export class Hud {
           </span>
           <span class="hud__shader-debug-card-copy">${preset.description}</span>
         </button>
-      `;
-    }).join('');
+      `);
+    }
+    this.shaderDebugList.innerHTML = presetMarkup.join('');
   }
 
   setSpeechBubbles(bubbles = []) {
@@ -12025,39 +12808,67 @@ export class Hud {
         this.speechBubbleTextNodes.set(bubble.id, textNode);
       }
 
-      node.classList.toggle('is-self', bubble.variant === 'self');
-      node.classList.toggle('is-npc', bubble.variant === 'npc');
-      node.classList.toggle('is-player', bubble.variant === 'player');
-      node.classList.toggle('is-interaction', bubble.variant === 'interaction');
-      node.classList.toggle('is-money', bubble.variant === 'money');
-      node.classList.toggle('is-money-positive', bubble.variant === 'money' && bubble.tone === 'positive');
-      node.classList.toggle('is-money-negative', bubble.variant === 'money' && bubble.tone === 'negative');
-      node.classList.toggle('is-xp', bubble.variant === 'xp');
-      node.classList.toggle('is-thinking', bubble.status === 'thinking');
-      node.style.left = `${bubble.screenX}px`;
-      node.style.top = `${bubble.screenY}px`;
-      node.style.opacity = Number.isFinite(Number(bubble.opacity)) ? String(bubble.opacity) : '';
+      const signature = this.speechBubbleSignatures.get(bubble.id) ?? {};
+      const variant = bubble.variant ?? '';
+      const tone = bubble.tone ?? '';
+      const status = bubble.status ?? '';
+      if (signature.variant !== variant || signature.tone !== tone || signature.status !== status) {
+        node.classList.toggle('is-self', variant === 'self');
+        node.classList.toggle('is-npc', variant === 'npc');
+        node.classList.toggle('is-player', variant === 'player');
+        node.classList.toggle('is-interaction', variant === 'interaction');
+        node.classList.toggle('is-money', variant === 'money');
+        node.classList.toggle('is-money-positive', variant === 'money' && tone === 'positive');
+        node.classList.toggle('is-money-negative', variant === 'money' && tone === 'negative');
+        node.classList.toggle('is-xp', variant === 'xp');
+        node.classList.toggle('is-thinking', status === 'thinking');
+        signature.variant = variant;
+        signature.tone = tone;
+        signature.status = status;
+      }
 
-      if (labelNode) {
-        labelNode.textContent = bubble.label ?? '';
-        labelNode.hidden = !bubble.label;
+      const screenX = Math.round(Number(bubble.screenX) || 0);
+      const screenY = Math.round(Number(bubble.screenY) || 0);
+      if (signature.screenX !== screenX || signature.screenY !== screenY) {
+        node.style.setProperty('--hud-screen-x', `${screenX}px`);
+        node.style.setProperty('--hud-screen-y', `${screenY}px`);
+        signature.screenX = screenX;
+        signature.screenY = screenY;
       }
-      if (textNode) {
-        const bubbleText = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
-        textNode.textContent = bubble.chirp === true
-          ? this.npcSpeechPlayback.updateBubble({
-              id: bubble.id,
-              text: bubbleText,
-              status: bubble.status,
-              voice: bubble.voice,
-              speakerKey: bubble.speakerKey ?? bubble.modelId ?? bubble.label ?? bubble.id,
-              volumeScale: bubble.voiceVolumeScale
-            })
-          : bubbleText;
+
+      const opacity = Number.isFinite(Number(bubble.opacity)) ? String(bubble.opacity) : '';
+      if (signature.opacity !== opacity) {
+        node.style.opacity = opacity;
+        signature.opacity = opacity;
       }
+
+      const labelText = bubble.label ?? '';
+      if (signature.labelText !== labelText) {
+        labelNode.textContent = labelText;
+        labelNode.hidden = !labelText;
+        signature.labelText = labelText;
+      }
+
+      const bubbleText = bubble.status === 'thinking' ? '' : (bubble.text ?? '');
+      const visibleText = bubble.chirp === true
+        ? this.npcSpeechPlayback.updateBubble({
+            id: bubble.id,
+            text: bubbleText,
+            status: bubble.status,
+            voice: bubble.voice,
+            speakerKey: bubble.speakerKey ?? bubble.modelId ?? bubble.label ?? bubble.id,
+            volumeScale: bubble.voiceVolumeScale
+          })
+        : bubbleText;
+      if (signature.visibleText !== visibleText) {
+        textNode.textContent = visibleText;
+        signature.visibleText = visibleText;
+      }
+      this.speechBubbleSignatures.set(bubble.id, signature);
     }
 
-    for (const [id, node] of this.speechBubbleNodes.entries()) {
+    for (const id of this.speechBubbleNodes.keys()) {
+      const node = this.speechBubbleNodes.get(id);
       if (activeIds.has(id)) {
         continue;
       }
@@ -12066,6 +12877,7 @@ export class Hud {
       this.speechBubbleNodes.delete(id);
       this.speechBubbleLabelNodes.delete(id);
       this.speechBubbleTextNodes.delete(id);
+      this.speechBubbleSignatures.delete(id);
     }
     this.npcSpeechPlayback.disposeMissing(activeIds);
   }
@@ -12105,18 +12917,44 @@ export class Hud {
       const healthPercent = Math.round(healthRatio * 100);
       const fillHue = Math.round(healthRatio * 120);
 
-      node.classList.toggle('is-self', bar.variant === 'self');
-      node.classList.toggle('is-player', bar.variant === 'player');
-      node.classList.toggle('is-npc', bar.variant === 'npc');
-      node.classList.toggle('is-critical', healthRatio <= 0.25);
-      node.style.left = `${bar.screenX}px`;
-      node.style.top = `${bar.screenY}px`;
-      node.title = `${bar.health} / ${bar.maxHealth}`;
-      fillNode.style.width = `${healthPercent}%`;
-      fillNode.style.background = `linear-gradient(90deg, hsl(${fillHue} 82% 44%), hsl(${Math.min(120, fillHue + 12)} 96% 58%))`;
+      const signature = this.overheadHealthBarSignatures.get(bar.id) ?? {};
+      const variant = bar.variant ?? '';
+      const critical = healthRatio <= 0.25;
+      if (signature.variant !== variant || signature.critical !== critical) {
+        node.classList.toggle('is-self', variant === 'self');
+        node.classList.toggle('is-player', variant === 'player');
+        node.classList.toggle('is-npc', variant === 'npc');
+        node.classList.toggle('is-critical', critical);
+        signature.variant = variant;
+        signature.critical = critical;
+      }
+
+      const screenX = Math.round(Number(bar.screenX) || 0);
+      const screenY = Math.round(Number(bar.screenY) || 0);
+      if (signature.screenX !== screenX || signature.screenY !== screenY) {
+        node.style.setProperty('--hud-screen-x', `${screenX}px`);
+        node.style.setProperty('--hud-screen-y', `${screenY}px`);
+        signature.screenX = screenX;
+        signature.screenY = screenY;
+      }
+
+      if (signature.health !== bar.health || signature.maxHealth !== bar.maxHealth) {
+        node.title = `${bar.health} / ${bar.maxHealth}`;
+        signature.health = bar.health;
+        signature.maxHealth = bar.maxHealth;
+      }
+
+      if (signature.healthPercent !== healthPercent || signature.fillHue !== fillHue) {
+        fillNode.style.width = `${healthPercent}%`;
+        fillNode.style.background = `linear-gradient(90deg, hsl(${fillHue} 82% 44%), hsl(${Math.min(120, fillHue + 12)} 96% 58%))`;
+        signature.healthPercent = healthPercent;
+        signature.fillHue = fillHue;
+      }
+      this.overheadHealthBarSignatures.set(bar.id, signature);
     }
 
-    for (const [id, node] of this.overheadHealthBarNodes.entries()) {
+    for (const id of this.overheadHealthBarNodes.keys()) {
+      const node = this.overheadHealthBarNodes.get(id);
       if (activeIds.has(id)) {
         continue;
       }
@@ -12124,23 +12962,33 @@ export class Hud {
       node.remove();
       this.overheadHealthBarNodes.delete(id);
       this.overheadHealthBarFillNodes.delete(id);
+      this.overheadHealthBarSignatures.delete(id);
     }
   }
 
   setEmoteMenuState({ open, activeIndex = -1, selectedLabel = '', hasSelection = false }) {
+    const signature = `${open ? 1 : 0}|${activeIndex}|${selectedLabel}|${hasSelection ? 1 : 0}`;
+    if (signature === this.lastEmoteMenuSignature) {
+      return;
+    }
+    this.lastEmoteMenuSignature = signature;
+
     this.emoteMenu.classList.toggle('is-visible', open);
 
     if (!open) {
-      this.emoteSliceNodes.forEach((node) => node.classList.remove('is-active'));
+      for (const node of this.emoteSliceNodes) {
+        node.classList.remove('is-active');
+      }
       this.emoteSelection.classList.remove('is-visible');
       this.emoteSelection.style.setProperty('--emote-angle', '0deg');
       this.emoteHint.textContent = 'Hold B, push the cursor into a slice, release B to emote.';
       return;
     }
 
-    this.emoteSliceNodes.forEach((node, index) => {
+    for (let index = 0; index < this.emoteSliceNodes.length; index += 1) {
+      const node = this.emoteSliceNodes[index];
       node.classList.toggle('is-active', index === activeIndex && hasSelection);
-    });
+    }
     this.emoteSelection.classList.toggle('is-visible', hasSelection);
     this.emoteSelection.style.setProperty('--emote-angle', `${Math.max(activeIndex, 0) * 45}deg`);
 

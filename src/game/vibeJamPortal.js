@@ -5,6 +5,8 @@ import {
 
 export { VIBE_JAM_PORTAL_URL } from '../shared/vibeJamPortalConfig.js';
 
+const VIBE_JAM_PORTAL_PARAM_KEY_SET = new Set(VIBE_JAM_PORTAL_PARAM_KEYS);
+
 export function hasPortalFlag(search = '') {
   const params = search instanceof URLSearchParams
     ? search
@@ -25,7 +27,7 @@ export function normalizePortalUrl(rawUrl) {
 
   try {
     const url = new URL(String(rawUrl));
-    if (!['http:', 'https:'].includes(url.protocol)) {
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       return null;
     }
     return url.toString();
@@ -90,11 +92,13 @@ export function buildPortalRedirectUrl({
     : new URLSearchParams(currentSearch);
   const nextParams = pickForwardedPortalParams(currentParams);
 
-  for (const [key, value] of Object.entries(continuity ?? {})) {
-    if (!VIBE_JAM_PORTAL_PARAM_KEYS.includes(key)) {
+  const continuitySource = continuity && typeof continuity === 'object' ? continuity : {};
+  for (const key in continuitySource) {
+    if (!Object.hasOwn(continuitySource, key) || !VIBE_JAM_PORTAL_PARAM_KEY_SET.has(key)) {
       continue;
     }
 
+    const value = continuitySource[key];
     if (value === undefined || value === null || value === '') {
       nextParams.delete(key);
       continue;

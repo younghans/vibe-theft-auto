@@ -140,9 +140,10 @@ export const STOCK_MARKET_ITEMS = Object.freeze([
   })
 ]);
 
-const STOCK_MARKET_ITEMS_BY_SYMBOL = new Map(
-  STOCK_MARKET_ITEMS.map((item) => [item.symbol, item])
-);
+const STOCK_MARKET_ITEMS_BY_SYMBOL = new Map();
+for (const item of STOCK_MARKET_ITEMS) {
+  STOCK_MARKET_ITEMS_BY_SYMBOL.set(item.symbol, item);
+}
 const MODE_WEIGHTS = Object.freeze([
   ['steady', 42],
   ['climb', 21],
@@ -150,6 +151,11 @@ const MODE_WEIGHTS = Object.freeze([
   ['chop', 12],
   ['squeeze', 4]
 ]);
+let modeWeightTotal = 0;
+for (const modeWeight of MODE_WEIGHTS) {
+  modeWeightTotal += modeWeight[1];
+}
+const MODE_WEIGHT_TOTAL = modeWeightTotal;
 
 function roundCents(value) {
   return quantizeNumber(value, 2);
@@ -183,8 +189,7 @@ function randomInt(min, max) {
 }
 
 function chooseWeightedMode() {
-  const total = MODE_WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
-  let cursor = Math.random() * total;
+  let cursor = Math.random() * MODE_WEIGHT_TOTAL;
   for (const [modeId, weight] of MODE_WEIGHTS) {
     cursor -= weight;
     if (cursor <= 0) {
@@ -200,11 +205,19 @@ function createModeDuration(mode) {
 }
 
 function normalizeHistory(history = [], fallbackPrice = 0) {
-  const values = Array.isArray(history)
-    ? history.map((value) => roundCents(value)).filter((value) => value > 0)
-    : [];
+  const values = [];
+  if (Array.isArray(history)) {
+    const startIndex = Math.max(0, history.length - STOCK_MARKET_HISTORY_LIMIT);
+    for (let index = startIndex; index < history.length; index += 1) {
+      const value = roundCents(history[index]);
+      if (value > 0) {
+        values.push(value);
+      }
+    }
+  }
+
   return values.length
-    ? values.slice(-STOCK_MARKET_HISTORY_LIMIT)
+    ? values
     : [roundCents(fallbackPrice)];
 }
 
@@ -264,7 +277,14 @@ function tickStock(item, stock) {
   stock.velocity = roundCents(nextVelocityAfterBounds);
   stock.price = roundCents(nextPrice);
   stock.modeTicksRemaining -= 1;
-  stock.history = normalizeHistory([...stock.history, stock.price], stock.price);
+  const nextHistory = [];
+  if (Array.isArray(stock.history)) {
+    for (const value of stock.history) {
+      nextHistory.push(value);
+    }
+  }
+  nextHistory.push(stock.price);
+  stock.history = normalizeHistory(nextHistory, stock.price);
 }
 
 export function normalizeStockMarketEnabled(value = false) {
@@ -398,14 +418,10 @@ function getPortfolioEntry(portfolio, symbol) {
 
 export function normalizeStockPortfolioSnapshot(portfolio = {}) {
   const output = {};
-  const entries = portfolio instanceof Map
-    ? [...portfolio.entries()]
-    : Object.entries(portfolio && typeof portfolio === 'object' ? portfolio : {});
-
-  for (const [symbol, entry] of entries) {
+  const assignEntry = (symbol, entry) => {
     const normalizedSymbol = normalizeStockSymbol(symbol);
     if (!getStockMarketItem(normalizedSymbol)) {
-      continue;
+      return;
     }
 
     const shares = Math.max(
@@ -417,7 +433,7 @@ export function normalizeStockPortfolioSnapshot(portfolio = {}) {
       ) || 0)
     );
     if (shares <= 0) {
-      continue;
+      return;
     }
 
     output[normalizedSymbol] = {
@@ -428,9 +444,47 @@ export function normalizeStockPortfolioSnapshot(portfolio = {}) {
           : 0
       )
     };
+  };
+
+  if (portfolio instanceof Map) {
+    for (const [symbol, entry] of portfolio) {
+      assignEntry(symbol, entry);
+    }
+    return output;
+  }
+
+  if (!portfolio || typeof portfolio !== 'object') {
+    return output;
+  }
+
+  for (const symbol in portfolio) {
+    if (Object.hasOwn(portfolio, symbol)) {
+      assignEntry(symbol, portfolio[symbol]);
+    }
   }
 
   return output;
+}
+
+export function hasStockPortfolioSnapshotEntries(portfolio = {}) {
+  if (portfolio instanceof Map) {
+    for (const _entry of portfolio) {
+      return true;
+    }
+    return false;
+  }
+
+  if (!portfolio || typeof portfolio !== 'object') {
+    return false;
+  }
+
+  for (const symbol in portfolio) {
+    if (Object.hasOwn(portfolio, symbol)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function setPortfolioEntry(portfolio, symbol, entry) {
@@ -460,7 +514,8 @@ export function serializeStockMarket(state, portfolio = {}, cash = 0, now = Date
   let portfolioValue = 0;
   let sessionChangePercent = 0;
 
-  const stocks = STOCK_MARKET_ITEMS.map((item) => {
+  const stocks = [];
+  for (const item of STOCK_MARKET_ITEMS) {
     const stock = normalizeStockState(item, market.stocks[item.symbol]);
     const history = normalizeHistory(stock.history, stock.price);
     const previousPrice = history.length > 1 ? history[history.length - 2] : stock.price;
@@ -473,7 +528,7 @@ export function serializeStockMarket(state, portfolio = {}, cash = 0, now = Date
     portfolioValue += marketValue;
     sessionChangePercent += deltaPercent;
 
-    return {
+    stocks.push({
       symbol: item.symbol,
       name: item.name,
       sector: item.sector,
@@ -494,8 +549,8 @@ export function serializeStockMarket(state, portfolio = {}, cash = 0, now = Date
       averageCost: owned.averageCost,
       marketValue,
       unrealizedProfit
-    };
-  });
+    });
+  }
 
   const averageChange = stocks.length ? sessionChangePercent / stocks.length : 0;
   const marketMood = averageChange > 1.25

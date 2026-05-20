@@ -381,13 +381,22 @@ export function getDefaultNpcVoiceForModelId(modelId = '') {
   return NPC_MODEL_VOICE_DEFAULTS[normalizedModelId] ?? createHashedNpcVoice(normalizedModelId);
 }
 
+function isValidNpcVoiceWaveform(value) {
+  for (const waveform of NPC_VOICE_WAVEFORMS) {
+    if (waveform === value) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function normalizeNpcVoice(voice = {}, fallbackVoice = DEFAULT_NPC_VOICE) {
   const fallback = fallbackVoice && typeof fallbackVoice === 'object'
     ? fallbackVoice
     : DEFAULT_NPC_VOICE;
-  const waveform = NPC_VOICE_WAVEFORMS.includes(voice?.waveform)
+  const waveform = isValidNpcVoiceWaveform(voice?.waveform)
     ? voice.waveform
-    : (NPC_VOICE_WAVEFORMS.includes(fallback.waveform) ? fallback.waveform : DEFAULT_NPC_VOICE.waveform);
+    : (isValidNpcVoiceWaveform(fallback.waveform) ? fallback.waveform : DEFAULT_NPC_VOICE.waveform);
 
   return {
     basePitchHz: Math.round(clampNumber(
@@ -420,12 +429,13 @@ export function normalizeNpcVoice(voice = {}, fallbackVoice = DEFAULT_NPC_VOICE)
 }
 
 export function createDefaultNpcModelVoiceMap() {
-  return Object.fromEntries(
-    Object.keys(NPC_MODEL_VOICE_DEFAULTS).map((modelId) => [
-      modelId,
-      normalizeNpcVoice(NPC_MODEL_VOICE_DEFAULTS[modelId])
-    ])
-  );
+  const defaults = {};
+  for (const modelId in NPC_MODEL_VOICE_DEFAULTS) {
+    if (Object.hasOwn(NPC_MODEL_VOICE_DEFAULTS, modelId)) {
+      defaults[modelId] = normalizeNpcVoice(NPC_MODEL_VOICE_DEFAULTS[modelId]);
+    }
+  }
+  return defaults;
 }
 
 export function normalizeNpcModelVoiceMap(modelVoices = {}) {
@@ -435,7 +445,12 @@ export function normalizeNpcModelVoiceMap(modelVoices = {}) {
     : {};
   const output = { ...defaults };
 
-  for (const [modelId, voice] of Object.entries(input)) {
+  for (const modelId in input) {
+    if (!Object.hasOwn(input, modelId)) {
+      continue;
+    }
+
+    const voice = input[modelId];
     if (!modelId) {
       continue;
     }

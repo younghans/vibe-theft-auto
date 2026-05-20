@@ -64,6 +64,7 @@ import { normalizeNpcVoice } from '../../src/shared/npcVoice.js';
 import {
   executeStockTrade,
   getStockMarketPromptRadius,
+  hasStockPortfolioSnapshotEntries,
   isStockMarketNpc,
   normalizeStockPortfolioSnapshot,
   serializeStockMarket
@@ -182,8 +183,8 @@ import {
   chooseFarthestSpawnPoint,
   clampToWorldBounds,
   distance2D,
+  distanceSquared2D,
   normalizeAimVector,
-  placementToCollisionRects,
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
@@ -199,6 +200,7 @@ import {
   normalizePropPlacementScale
 } from '../../src/shared/placementScale.js';
 import {
+  cloneNpcBehavior,
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
@@ -257,13 +259,25 @@ const PLAYER_SNAPSHOT_AUTOSAVE_MS = 5000;
 const ADMIN_JOIN_DIAGNOSTIC_LIMIT = 20;
 const adminJoinDiagnostics = [];
 
+function removeFirstArrayEntry(values) {
+  if (!Array.isArray(values) || !values.length) {
+    return null;
+  }
+  const entry = values[0];
+  for (let index = 1; index < values.length; index += 1) {
+    values[index - 1] = values[index];
+  }
+  values.length -= 1;
+  return entry;
+}
+
 function recordAdminJoinDiagnostic(diagnostic = {}) {
   adminJoinDiagnostics.push({
     at: new Date().toISOString(),
     ...diagnostic
   });
   while (adminJoinDiagnostics.length > ADMIN_JOIN_DIAGNOSTIC_LIMIT) {
-    adminJoinDiagnostics.shift();
+    removeFirstArrayEntry(adminJoinDiagnostics);
   }
 }
 
@@ -273,10 +287,15 @@ function normalizeTransformSeq(value) {
 }
 
 export function getWorldRoomAdminDiagnostics() {
+  const recentJoins = [];
+  const startIndex = Math.max(0, adminJoinDiagnostics.length - ADMIN_JOIN_DIAGNOSTIC_LIMIT);
+  for (let index = startIndex; index < adminJoinDiagnostics.length; index += 1) {
+    recentJoins.push(adminJoinDiagnostics[index]);
+  }
   return {
     adminSource: 'supabase',
     urlAdminKeysAccepted: false,
-    recentJoins: adminJoinDiagnostics.slice(-ADMIN_JOIN_DIAGNOSTIC_LIMIT)
+    recentJoins
   };
 }
 
@@ -627,7 +646,12 @@ const WorldRoomState = schema({
 });
 
 function trimTranscript(entries) {
-  return entries.slice(Math.max(0, entries.length - MAX_TRANSCRIPT_ENTRIES));
+  const trimmed = [];
+  const startIndex = Math.max(0, entries.length - MAX_TRANSCRIPT_ENTRIES);
+  for (let index = startIndex; index < entries.length; index += 1) {
+    trimmed.push(entries[index]);
+  }
+  return trimmed;
 }
 
 function createTranscriptEntry(id, speaker, author, text) {
@@ -729,8 +753,26 @@ function sanitizeJoinDisplayName(value = '') {
   return normalized ? normalized.slice(0, 32) : '';
 }
 
+function clonePlainObject(value = null) {
+  const clone = {};
+  if (!value || typeof value !== 'object') {
+    return clone;
+  }
+
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) {
+      clone[key] = value[key];
+    }
+  }
+  return clone;
+}
+
+const SNAPSHOT_WEAPON_IDS = new Set([
+  WEAPON_IDS.pistol
+]);
+
 function isSnapshotWeaponId(value = '') {
-  return Object.values(WEAPON_IDS).includes(String(value ?? '').trim());
+  return SNAPSHOT_WEAPON_IDS.has(String(value ?? '').trim());
 }
 
 function sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios = {}) {
@@ -739,10 +781,13 @@ function sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios = {}) {
     return output;
   }
 
-  for (const [characterId, portfolio] of Object.entries(stockPortfolios)) {
+  for (const characterId in stockPortfolios) {
+    if (!Object.hasOwn(stockPortfolios, characterId)) {
+      continue;
+    }
     const normalizedCharacterId = sanitizeCharacterId(characterId);
-    const normalizedPortfolio = normalizeStockPortfolioSnapshot(portfolio);
-    if (Object.keys(normalizedPortfolio).length > 0) {
+    const normalizedPortfolio = normalizeStockPortfolioSnapshot(stockPortfolios[characterId]);
+    if (hasStockPortfolioSnapshotEntries(normalizedPortfolio)) {
       output[normalizedCharacterId] = normalizedPortfolio;
     }
   }
@@ -753,7 +798,7 @@ function sanitizeCharacterStockPortfoliosSnapshot(stockPortfolios = {}) {
 function restoreCharacterStockPortfoliosSnapshot(snapshot = {}, fallbackCharacterId = DEFAULT_PLAYABLE_CHARACTER_ID) {
   const output = sanitizeCharacterStockPortfoliosSnapshot(snapshot?.stockPortfolios);
   const legacyPortfolio = normalizeStockPortfolioSnapshot(snapshot?.stockPortfolio);
-  if (Object.keys(legacyPortfolio).length > 0) {
+  if (hasStockPortfolioSnapshotEntries(legacyPortfolio)) {
     const legacyCharacterId = sanitizeCharacterId(snapshot?.player?.characterId ?? fallbackCharacterId);
     output[legacyCharacterId] = {
       ...(output[legacyCharacterId] ?? {}),
@@ -974,6 +1019,8 @@ export class WorldRoom extends Room {
     this.npcDebugEnabled = isNpcDebugEnabled();
     this.lastNpcDebugBroadcastAt = 0;
     this.lastNpcDebugPayloadSignature = '';
+    this.gymDoorBlockers = [];
+    this.gymDoorBlockersRevision = -1;
 
     this.worldState.loadLayout(this.worldPersistence.getInitialLayout());
     this.syncNpcDefinitionsFromWorld();
@@ -1321,7 +1368,7 @@ export class WorldRoom extends Room {
 
     const player = new PlayerState();
     const [spawnX, spawnZ] = this.chooseRespawnPoint(client.sessionId);
-    const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
+    const rentIntro = resolveRentIntroPlan(this.worldState);
     const introSpawn = rentIntro?.spawn ?? null;
     const introStartedAt = rentIntro ? Date.now() : 0;
     const isAdmin = authenticatedAccount?.isAdmin === true;
@@ -1500,15 +1547,22 @@ export class WorldRoom extends Room {
   }
 
   isClientSessionConnected(sessionId = '') {
-    return this.clients.some((client) => client.sessionId === sessionId);
+    for (const client of this.clients) {
+      if (client.sessionId === sessionId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   syncConnectedPlayerCount({ excludingSessionId = '', includingSessionId = '' } = {}) {
-    const connectedSessionIds = new Set(
-      (Array.isArray(this.clients) ? this.clients : [])
-        .map((connectedClient) => connectedClient.sessionId)
-        .filter((sessionId) => sessionId && sessionId !== excludingSessionId)
-    );
+    const connectedSessionIds = new Set();
+    for (const connectedClient of Array.isArray(this.clients) ? this.clients : []) {
+      const sessionId = connectedClient.sessionId;
+      if (sessionId && sessionId !== excludingSessionId) {
+        connectedSessionIds.add(sessionId);
+      }
+    }
     if (includingSessionId && includingSessionId !== excludingSessionId) {
       connectedSessionIds.add(includingSessionId);
     }
@@ -1603,10 +1657,21 @@ export class WorldRoom extends Room {
   }
 
   async flushDirtyPlayerSnapshots({ force = false } = {}) {
-    const sessionIds = force
-      ? [...this.state.players.keys()]
-      : [...this.dirtyPlayerSnapshots];
-    await Promise.all(sessionIds.map((sessionId) => this.savePlayerSnapshot(sessionId)));
+    const sessionIds = [];
+    if (force) {
+      for (const sessionId of this.state.players.keys()) {
+        sessionIds.push(sessionId);
+      }
+    } else {
+      for (const sessionId of this.dirtyPlayerSnapshots) {
+        sessionIds.push(sessionId);
+      }
+    }
+    const savePromises = new Array(sessionIds.length);
+    for (let index = 0; index < sessionIds.length; index += 1) {
+      savePromises[index] = this.savePlayerSnapshot(sessionIds[index]);
+    }
+    await Promise.all(savePromises);
   }
 
   async persistStockMarket(reason = 'update') {
@@ -1630,7 +1695,11 @@ export class WorldRoom extends Room {
     const nextNextTickAt = Number(this.stockMarket?.nextTickAt ?? 0) || 0;
 
     if (nextLastUpdatedAt !== previousLastUpdatedAt || nextNextTickAt !== previousNextTickAt) {
-      void this.persistStockMarket(persistReason);
+      if (persistReason === 'wallet-snapshot') {
+        void this.persistStockMarket('wallet-snapshot');
+      } else {
+        void this.persistStockMarket(persistReason);
+      }
     }
 
     return market;
@@ -1653,12 +1722,16 @@ export class WorldRoom extends Room {
 
   syncCombatPickupsFromWorld({ reset = false } = {}) {
     const spawnDefinitions = getCombatPickupSpawnDefinitions(
-      this.worldState.getPlacements(),
+      this.worldState,
       getBuilderItemById
     );
-    const nextSpawnIds = new Set(spawnDefinitions.map((spawn) => spawn.id));
+    const nextSpawnIds = new Set();
+    for (const spawn of spawnDefinitions) {
+      nextSpawnIds.add(spawn.id);
+    }
 
-    for (const [pickupId, pickup] of [...this.state.pickups.entries()]) {
+    for (const pickupId of this.state.pickups.keys()) {
+      const pickup = this.state.pickups.get(pickupId);
       if (pickup.kind === 'spawn' && (reset || !nextSpawnIds.has(pickupId))) {
         this.state.pickups.delete(pickupId);
       }
@@ -1684,14 +1757,18 @@ export class WorldRoom extends Room {
   }
 
   chooseRespawnPoint(exceptSessionId = '') {
-    const livingPlayers = [...this.state.players.entries()]
-      .filter(([sessionId, player]) => sessionId !== exceptSessionId && player.alive !== false)
-      .map(([, player]) => ({ x: player.x, z: player.z }));
+    const livingPlayers = [];
+    for (const sessionId of this.state.players.keys()) {
+      const player = this.state.players.get(sessionId);
+      if (sessionId !== exceptSessionId && player.alive !== false) {
+        livingPlayers.push({ x: player.x, z: player.z });
+      }
+    }
     return chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS, livingPlayers);
   }
 
   chooseHospitalRespawnPoint() {
-    return getHospitalRespawnPoint(this.worldState.getPlacements(), getBuilderItemById);
+    return getHospitalRespawnPoint(this.worldState, getBuilderItemById);
   }
 
   getPlayerMeta(sessionId) {
@@ -1921,7 +1998,7 @@ export class WorldRoom extends Room {
     }
 
     const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
-    return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+    return distanceSquared2D(player.x, player.z, npc.x, npc.z) <= radius * radius;
   }
 
   isPlayerInGymCheckInPurchaseRadius(player, npc) {
@@ -1929,7 +2006,8 @@ export class WorldRoom extends Room {
       return false;
     }
 
-    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInPromptRadius(npc);
+    const radius = getGymCheckInPromptRadius(npc);
+    return distanceSquared2D(player.x, player.z, npc.x, npc.z) <= radius * radius;
   }
 
   hasActiveGymCheckInNpc() {
@@ -1955,39 +2033,46 @@ export class WorldRoom extends Room {
   }
 
   getGymDoorBlockers() {
-    return this.worldState.getPlacements()
-      .map((placement) => {
-        const item = getBuilderItemById(placement?.itemId);
-        if (!item || placement?.layer !== 'tile' || !this.isGymDoorPlacement(placement, item)) {
-          return null;
-        }
+    const revision = this.worldState.getPlacementRevision?.() ?? 0;
+    if (this.gymDoorBlockersRevision === revision) {
+      return this.gymDoorBlockers;
+    }
 
-        const doorOffset = item.interior?.exteriorDoorOffset
-          ?? placement.interactable?.interior?.exteriorDoorOffset
-          ?? item.npcRouteDoorOffset
-          ?? null;
-        if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
-          return null;
-        }
+    const blockers = [];
+    this.worldState.forEachPlacement((placement) => {
+      const item = getBuilderItemById(placement?.itemId);
+      if (!item || placement?.layer !== 'tile' || !this.isGymDoorPlacement(placement, item)) {
+        return;
+      }
 
-        const center = getTileCenterWorldPosition(
-          item,
-          placement.cellX,
-          placement.cellZ,
-          placement.rotationQuarterTurns
-        );
-        const rotatedOffset = rotateFootprintOffset(
-          Number(doorOffset[0]) || 0,
-          Number(doorOffset[1]) || 0,
-          placement.rotationQuarterTurns
-        );
-        return {
-          x: center.x + rotatedOffset.x,
-          z: center.z + rotatedOffset.z,
-          radius: GYM_DOOR_BLOCKER_RADIUS
-        };
-      })
-      .filter(Boolean);
+      const doorOffset = item.interior?.exteriorDoorOffset
+        ?? placement.interactable?.interior?.exteriorDoorOffset
+        ?? item.npcRouteDoorOffset
+        ?? null;
+      if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
+        return;
+      }
+
+      const center = getTileCenterWorldPosition(
+        item,
+        placement.cellX,
+        placement.cellZ,
+        placement.rotationQuarterTurns
+      );
+      const rotatedOffset = rotateFootprintOffset(
+        Number(doorOffset[0]) || 0,
+        Number(doorOffset[1]) || 0,
+        placement.rotationQuarterTurns
+      );
+      blockers.push({
+        x: center.x + rotatedOffset.x,
+        z: center.z + rotatedOffset.z,
+        radius: GYM_DOOR_BLOCKER_RADIUS
+      });
+    });
+    this.gymDoorBlockers = blockers;
+    this.gymDoorBlockersRevision = revision;
+    return this.gymDoorBlockers;
   }
 
   isGymGateBlockingPosition(player, position) {
@@ -2001,7 +2086,8 @@ export class WorldRoom extends Room {
     }
 
     for (const blocker of this.getGymDoorBlockers()) {
-      if (distance2D(position.x, position.z, blocker.x, blocker.z) <= blocker.radius + PLAYER_RADIUS) {
+      const radius = blocker.radius + PLAYER_RADIUS;
+      if (distanceSquared2D(position.x, position.z, blocker.x, blocker.z) <= radius * radius) {
         return true;
       }
     }
@@ -2066,17 +2152,25 @@ export class WorldRoom extends Room {
     return portfolios[characterId];
   }
 
-  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
+  *iterateNpcCandidates(requestedNpcId = '') {
     const normalizedNpcId = typeof requestedNpcId === 'string'
       ? requestedNpcId.trim()
       : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
+    if (normalizedNpcId) {
+      const npc = this.state.npcs.get(normalizedNpcId);
+      if (npc) {
+        yield npc;
+      }
+      return;
+    }
 
+    yield* this.state.npcs.values();
+  }
+
+  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isStockMarketNpc(npc)
         || npc.alive === false
@@ -2086,11 +2180,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getStockMarketPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2191,16 +2285,9 @@ export class WorldRoom extends Room {
   }
 
   getBartenderNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isBartenderNpc(npc)
         || npc.alive === false
@@ -2210,11 +2297,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getBartenderPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2265,16 +2352,9 @@ export class WorldRoom extends Room {
   }
 
   getPawnShopOwnerNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isPawnShopOwnerNpc(npc)
         || npc.alive === false
@@ -2284,11 +2364,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getPawnShopPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2372,16 +2452,9 @@ export class WorldRoom extends Room {
   }
 
   getCarDealerNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isCarDealerNpc(npc)
         || npc.alive === false
@@ -2391,11 +2464,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getCarDealerPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2500,16 +2573,9 @@ export class WorldRoom extends Room {
   }
 
   getMarthaNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isMarthaNpc(npc)
         || npc.alive === false
@@ -2519,11 +2585,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getMarthaPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2612,9 +2678,12 @@ export class WorldRoom extends Room {
       ? this.awardCharismaForDrink(player, result, previousDrunknessLevel)
       : null;
     this.queuePlayerSnapshotSave(client.sessionId);
-    return skillAward
-      ? { ...result, skillAward }
-      : result;
+    if (!skillAward) {
+      return result;
+    }
+    const nextResult = clonePlainObject(result);
+    nextResult.skillAward = skillAward;
+    return nextResult;
   }
 
   handleVibeHeroComplete(client, message = {}) {
@@ -2636,16 +2705,9 @@ export class WorldRoom extends Room {
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isBlackjackDealerNpc(npc)
         || npc.alive === false
@@ -2655,11 +2717,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getBlackjackPromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2773,16 +2835,9 @@ export class WorldRoom extends Room {
   }
 
   getSchoolMicrogameNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isSchoolMicrogameNpc(npc)
         || npc.alive === false
@@ -2792,11 +2847,11 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
       const radius = getSchoolMicrogamePromptRadius(npc);
-      if (distance <= radius && distance < nearestDistance) {
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2836,9 +2891,7 @@ export class WorldRoom extends Room {
       Math.floor(Number(player.schoolTasksCompletedCount ?? 0) || 0)
     ) + 1;
     this.normalizePlayerSelectedMission(player);
-    const rewardText = [
-      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
-    ].filter(Boolean).join('  ');
+    const rewardText = reward.xp > 0 ? `+${reward.xp} Intelligence XP` : '';
     this.setNpcChatPhase(
       npc,
       'done',
@@ -2901,13 +2954,11 @@ export class WorldRoom extends Room {
     const stationZ = center.z + stationOffset.z;
     const playerY = Number.isFinite(Number(player.y)) ? Number(player.y) : stationY;
     const radius = Math.max(1.5, Number(station.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS) + 1.25;
-    const distance = Math.hypot(
-      (Number(player.x) || 0) - stationX,
-      playerY - stationY,
-      (Number(player.z) || 0) - stationZ
-    );
+    const dx = (Number(player.x) || 0) - stationX;
+    const dy = playerY - stationY;
+    const dz = (Number(player.z) || 0) - stationZ;
 
-    if (distance > radius) {
+    if (((dx * dx) + (dy * dy) + (dz * dz)) > (radius * radius)) {
       return null;
     }
 
@@ -2934,14 +2985,10 @@ export class WorldRoom extends Room {
       return this.getOfficeInteriorJobStationForPlayer(player, normalizedPlacementId, requestedJobId);
     }
 
-    const candidates = normalizedPlacementId
-      ? [this.worldState.getPlacement(normalizedPlacementId)].filter(Boolean)
-      : this.worldState.getPlacements();
-
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
     const requestedOfficeJobId = getOfficeJobDefinition(requestedJobId)?.id ?? '';
-    for (const placement of candidates) {
+    const evaluatePlacement = (placement) => {
       const item = getBuilderItemById(placement?.itemId);
       const placementOfficeJobId = getOfficeJobDefinition(
         placement?.interactable?.officeJobId ?? item?.interactable?.officeJobId
@@ -2957,18 +3004,24 @@ export class WorldRoom extends Room {
         || !placementMatchesRequestedJob
         || !Array.isArray(placement.position)
       ) {
-        continue;
+        return;
       }
 
       const radius = Math.max(
         1.5,
         Number(placement.interactable?.radius ?? item?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
       ) + 1.25;
-      const distance = distance2D(player.x, player.z, placement.position[0], placement.position[1]);
-      if (distance <= radius && distance < nearestDistance) {
+      const distanceSq = distanceSquared2D(player.x, player.z, placement.position[0], placement.position[1]);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = placement;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
+    };
+
+    if (normalizedPlacementId) {
+      evaluatePlacement(this.worldState.getPlacement(normalizedPlacementId));
+    } else {
+      this.worldState.forEachPlacement(evaluatePlacement);
     }
 
     return nearest;
@@ -3021,10 +3074,15 @@ export class WorldRoom extends Room {
       player.ceoCompletedAt = Date.now();
       this.normalizePlayerSelectedMission(player);
     }
-    const rewardText = [
-      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
-      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
-    ].filter(Boolean).join('  ');
+    let rewardText = '';
+    if (moneyAwarded > 0) {
+      rewardText = `+$${moneyAwarded}`;
+    }
+    if (reward.xp > 0) {
+      rewardText = rewardText
+        ? `${rewardText}  +${reward.xp} Intelligence XP`
+        : `+${reward.xp} Intelligence XP`;
+    }
     return {
       ok: true,
       jobId: job.id,
@@ -3255,7 +3313,8 @@ export class WorldRoom extends Room {
     const deltaMs = Math.max(16, now - this.lastNpcSimulationAt);
     this.lastNpcSimulationAt = now;
 
-    for (const [sessionId, player] of this.state.players.entries()) {
+    for (const sessionId of this.state.players.keys()) {
+      const player = this.state.players.get(sessionId);
       if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
         this.completeReload(player);
         this.queuePlayerSnapshotSave(sessionId);
@@ -3275,7 +3334,7 @@ export class WorldRoom extends Room {
       }
     }
 
-    for (const pickup of [...this.state.pickups.values()]) {
+    for (const pickup of this.state.pickups.values()) {
       if (!pickup.active && pickup.kind === 'spawn' && pickup.respawnAt && now >= pickup.respawnAt) {
         pickup.active = true;
         pickup.respawnAt = 0;
@@ -3388,7 +3447,7 @@ export class WorldRoom extends Room {
     }
 
     const meta = this.getPlayerMeta(client.sessionId);
-    if (distance2D(meta.x, meta.z, pickup.x, pickup.z) > PICKUP_INTERACT_RADIUS) {
+    if (distanceSquared2D(meta.x, meta.z, pickup.x, pickup.z) > PICKUP_INTERACT_RADIUS * PICKUP_INTERACT_RADIUS) {
       return;
     }
 
@@ -3629,8 +3688,9 @@ export class WorldRoom extends Room {
     };
     const offsetX = nextOrigin.x - player.x;
     const offsetZ = nextOrigin.z - player.z;
-    const offsetLength = Math.hypot(offsetX, offsetZ);
-    if (offsetLength > SHOT_ORIGIN_MAX_OFFSET && offsetLength > 0.0001) {
+    const offsetLengthSq = (offsetX * offsetX) + (offsetZ * offsetZ);
+    if (offsetLengthSq > SHOT_ORIGIN_MAX_OFFSET * SHOT_ORIGIN_MAX_OFFSET && offsetLengthSq > 0.0001 * 0.0001) {
+      const offsetLength = Math.sqrt(offsetLengthSq);
       const scale = SHOT_ORIGIN_MAX_OFFSET / offsetLength;
       nextOrigin.x = player.x + offsetX * scale;
       nextOrigin.z = player.z + offsetZ * scale;
@@ -3651,32 +3711,27 @@ export class WorldRoom extends Room {
       targetId: ''
     };
 
-    for (const placement of this.worldState.getPlacements()) {
-      const item = getBuilderItemById(placement.itemId);
-      const rects = placementToCollisionRects(placement, item, {
-        collisionKey: 'blocksShots'
-      });
-      for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
-        if (
-          hitDistance == null
-          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
-          || hitDistance >= nearestDistance
-        ) {
-          continue;
-        }
-
-        nearestDistance = hitDistance;
-        result = {
-          kind: 'world',
-          hitX: origin.x + aim.x * hitDistance,
-          hitZ: origin.z + aim.z * hitDistance,
-          targetId: placement.id
-        };
+    this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
+        return;
       }
-    }
 
-    for (const [sessionId, target] of this.state.players.entries()) {
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: placementId
+      };
+    }, { collisionKey: 'blocksShots' });
+
+    for (const sessionId of this.state.players.keys()) {
+      const target = this.state.players.get(sessionId);
       if (sessionId === ignorePlayerId || target.alive === false) {
         continue;
       }
@@ -3704,7 +3759,8 @@ export class WorldRoom extends Room {
       };
     }
 
-    for (const [npcId, target] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const target = this.state.npcs.get(npcId);
       if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }
@@ -3760,32 +3816,27 @@ export class WorldRoom extends Room {
       targetId: ''
     };
 
-    for (const placement of this.worldState.getPlacements()) {
-      const item = getBuilderItemById(placement.itemId);
-      const rects = placementToCollisionRects(placement, item, {
-        collisionKey: 'blocksShots'
-      });
-      for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
-        if (
-          hitDistance == null
-          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
-          || hitDistance >= nearestDistance
-        ) {
-          continue;
-        }
-
-        nearestDistance = hitDistance;
-        result = {
-          kind: 'world',
-          hitX: origin.x + aim.x * hitDistance,
-          hitZ: origin.z + aim.z * hitDistance,
-          targetId: placement.id
-        };
+    this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
+        return;
       }
-    }
 
-    for (const [sessionId, target] of this.state.players.entries()) {
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: placementId
+      };
+    }, { collisionKey: 'blocksShots' });
+
+    for (const sessionId of this.state.players.keys()) {
+      const target = this.state.players.get(sessionId);
       if (sessionId === ignorePlayerId || target.alive === false) {
         continue;
       }
@@ -3813,7 +3864,8 @@ export class WorldRoom extends Room {
       };
     }
 
-    for (const [npcId, target] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const target = this.state.npcs.get(npcId);
       if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }
@@ -4122,7 +4174,7 @@ export class WorldRoom extends Room {
       }
       case 'updateNpc': {
         const placement = this.assertEditablePlacement(payload.placementId, 'npc');
-        const previousNpc = structuredClone(placement.npc);
+        const previousNpc = cloneNpcBehavior(placement.npc);
         const updates = this.sanitizeNpcUpdates(payload);
         const updatedPlacement = this.worldState.updateNpc(placement.id, updates);
         if (!updatedPlacement) {
@@ -4344,72 +4396,91 @@ export class WorldRoom extends Room {
 
   sanitizeNpcUpdates(message = {}) {
     const updates = {};
+    let hasUpdates = false;
 
     if (Object.hasOwn(message, 'name')) {
       updates.name = String(message.name ?? 'NPC').trim().slice(0, NPC_NAME_MAX_LENGTH) || 'NPC';
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'prompt')) {
       updates.prompt = String(message.prompt ?? '').slice(0, NPC_PROMPT_MAX_LENGTH);
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'interactRadius')) {
       updates.interactRadius = clampNpcRadius(message.interactRadius);
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'respawnDelayMs')) {
       updates.respawnDelayMs = normalizeNpcBehavior({ respawnDelayMs: message.respawnDelayMs }, {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).respawnDelayMs;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'speed')) {
       updates.speed = normalizeNpcBehavior({ speed: message.speed }, {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).speed;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'deliveryQuestEnabled')) {
       updates.deliveryQuestEnabled = message.deliveryQuestEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'gymCheckInEnabled')) {
       updates.gymCheckInEnabled = message.gymCheckInEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'rentCollectorEnabled')) {
       updates.rentCollectorEnabled = message.rentCollectorEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'stockMarketEnabled')) {
       updates.stockMarketEnabled = message.stockMarketEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'bartenderEnabled')) {
       updates.bartenderEnabled = message.bartenderEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'pawnShopOwnerEnabled')) {
       updates.pawnShopOwnerEnabled = message.pawnShopOwnerEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'carDealerEnabled')) {
       updates.carDealerEnabled = message.carDealerEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'marthaEnabled')) {
       updates.marthaEnabled = message.marthaEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'blackjackDealerEnabled')) {
       updates.blackjackDealerEnabled = message.blackjackDealerEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'schoolMicrogameEnabled')) {
       updates.schoolMicrogameEnabled = message.schoolMicrogameEnabled === true;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'schoolMicrogameId')) {
       updates.schoolMicrogameId = normalizeSchoolMicrogameId(message.schoolMicrogameId, SCHOOL_MICROGAME_ALL_ID);
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'routine')) {
       updates.routine = normalizeNpcBehavior({ routine: message.routine }, {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).routine;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'combat')) {
       updates.combat = normalizeNpcBehavior({ combat: message.combat }, {
         position: [0, 0],
         rotationQuarterTurns: 0
       }).combat;
+      hasUpdates = true;
     }
     if (Object.hasOwn(message, 'modelId')) {
       const model = getNpcModelById(message.modelId);
@@ -4418,9 +4489,10 @@ export class WorldRoom extends Room {
       }
       updates.modelId = model.id;
       updates.itemId = model.itemId;
+      hasUpdates = true;
     }
 
-    if (!Object.keys(updates).length) {
+    if (!hasUpdates) {
       throw new Error('No NPC changes were provided.');
     }
 
@@ -4521,11 +4593,11 @@ export class WorldRoom extends Room {
   }
 
   syncNpcDefinitionsFromWorld() {
-    const definitions = this.worldState.serializeLayout().npcs ?? [];
-    const nextIds = new Set(definitions.map((entry) => entry.id));
+    const nextIds = new Set();
 
-    for (const definition of definitions) {
-      const normalizedDefinition = normalizeNpcBehavior(structuredClone(definition), {
+    this.worldState.forEachNpcDefinition((definition) => {
+      nextIds.add(definition.id);
+      const normalizedDefinition = normalizeNpcBehavior(definition, {
         position: definition.position,
         rotationQuarterTurns: definition.rotationQuarterTurns
       });
@@ -4584,9 +4656,9 @@ export class WorldRoom extends Room {
         this.transcripts.set(definition.id, []);
       }
       this.state.npcs.set(definition.id, existing);
-    }
+    });
 
-    for (const npcId of [...this.state.npcs.keys()]) {
+    for (const npcId of this.state.npcs.keys()) {
       if (nextIds.has(npcId)) {
         continue;
       }
@@ -4595,7 +4667,7 @@ export class WorldRoom extends Room {
       this.npcDefinitions.delete(npcId);
       this.npcRuntimeMeta.delete(npcId);
       this.transcripts.delete(npcId);
-      for (const cooldownKey of [...this.cooldowns.keys()]) {
+      for (const cooldownKey of this.cooldowns.keys()) {
         if (cooldownKey.endsWith(`:${npcId}`)) {
           this.cooldowns.delete(cooldownKey);
         }
@@ -4621,7 +4693,8 @@ export class WorldRoom extends Room {
   buildNpcDebugPayload(now = Date.now()) {
     const npcs = {};
 
-    for (const [npcId, npc] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
       const definition = this.getNpcDefinition(npcId);
       if (!definition) {
         continue;
@@ -4669,7 +4742,12 @@ export class WorldRoom extends Room {
 
   appendTranscript(npcId, entry) {
     const current = this.transcripts.get(npcId) ?? [];
-    const next = trimTranscript([...current, entry]);
+    const startIndex = Math.max(0, current.length + 1 - MAX_TRANSCRIPT_ENTRIES);
+    const next = [];
+    for (let index = startIndex; index < current.length; index += 1) {
+      next.push(current[index]);
+    }
+    next.push(entry);
     this.transcripts.set(npcId, next);
   }
 
@@ -4712,7 +4790,7 @@ export class WorldRoom extends Room {
 
   findNearestHeardNpc(player) {
     let nearestNpc = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const npc of this.state.npcs.values()) {
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
@@ -4722,13 +4800,14 @@ export class WorldRoom extends Room {
         continue;
       }
 
-      const distance = distance2D(npc.x, npc.z, player.x, player.z);
-      if (distance > npc.interactRadius || distance >= nearestDistance) {
+      const radius = Math.max(0, Number(npc.interactRadius ?? 0) || 0);
+      const distanceSq = distanceSquared2D(npc.x, npc.z, player.x, player.z);
+      if (distanceSq > radius * radius || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
       nearestNpc = npc;
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearestNpc;

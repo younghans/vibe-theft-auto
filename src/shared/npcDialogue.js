@@ -65,16 +65,45 @@ function lowerText(value) {
 }
 
 function hasAny(text, terms) {
-  return terms.split('|').some((term) => term && text.includes(term));
+  let startIndex = 0;
+  for (let index = 0; index <= terms.length; index += 1) {
+    if (index < terms.length && terms[index] !== '|') {
+      continue;
+    }
+
+    let term = '';
+    for (let termIndex = startIndex; termIndex < index; termIndex += 1) {
+      term += terms[termIndex];
+    }
+    if (term && text.includes(term)) {
+      return true;
+    }
+    startIndex = index + 1;
+  }
+
+  return false;
 }
 
 function chooseFreshLine(lines, transcript = []) {
-  const recent = new Set(
-    (Array.isArray(transcript) ? transcript.slice(-8) : [])
-      .filter((entry) => String(entry?.speaker ?? '').toLowerCase() === 'npc')
-      .map((entry) => normalizeText(entry?.text))
-  );
-  return lines.find((line) => line && !recent.has(line)) || lines.find(Boolean) || 'I hear you. Keep moving.';
+  const recent = new Set();
+  const entries = Array.isArray(transcript) ? transcript : [];
+  for (let index = Math.max(0, entries.length - 8); index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (String(entry?.speaker ?? '').toLowerCase() === 'npc') {
+      recent.add(normalizeText(entry?.text));
+    }
+  }
+  for (const line of lines) {
+    if (line && !recent.has(line)) {
+      return line;
+    }
+  }
+  for (const line of lines) {
+    if (line) {
+      return line;
+    }
+  }
+  return 'I hear you. Keep moving.';
 }
 
 function getServiceReply(profileKey, profile) {
@@ -109,13 +138,23 @@ function getServiceReply(profileKey, profile) {
 }
 
 export function describeNpcCapabilities(npc = {}) {
-  const labels = CAPABILITIES.filter(([flag]) => npc?.[flag] === true).map(([, label]) => label);
+  const labels = [];
+  for (const [flag, label] of CAPABILITIES) {
+    if (npc?.[flag] === true) {
+      labels.push(label);
+    }
+  }
   return labels.length ? labels.join(', ') : 'ambient conversation only';
 }
 
 export function getNpcDialogueProfileKey(npc = {}) {
   const haystack = `${lowerText(npc?.name)} ${lowerText(npc?.prompt)}`;
-  for (const [key, profile] of Object.entries(PROFILES)) {
+  for (const key in PROFILES) {
+    if (!Object.hasOwn(PROFILES, key)) {
+      continue;
+    }
+
+    const profile = PROFILES[key];
     if (key !== 'local' && ((profile[0] && npc?.[profile[0]] === true) || hasAny(haystack, profile[1]))) {
       return key;
     }

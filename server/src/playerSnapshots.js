@@ -156,9 +156,14 @@ class FilePlayerSnapshotStore {
     }
 
     return this.withStore((state) => {
-      const snapshot = state.snapshots
-        .map((entry) => normalizeSnapshot(entry, { worldKey: this.worldKey }))
-        .find((entry) => entry.worldKey === this.worldKey && entry.playerId === normalizedPlayerId);
+      let snapshot = null;
+      for (let index = 0; index < state.snapshots.length; index += 1) {
+        const entry = normalizeSnapshot(state.snapshots[index], { worldKey: this.worldKey });
+        if (entry.worldKey === this.worldKey && entry.playerId === normalizedPlayerId) {
+          snapshot = entry;
+          break;
+        }
+      }
       return isSnapshotFresh(snapshot) ? snapshot : null;
     }, { write: false });
   }
@@ -181,13 +186,20 @@ class FilePlayerSnapshotStore {
         playerId: normalizedPlayerId
       });
 
-      state.snapshots = [
-        ...state.snapshots.filter((entry) => {
-          const current = normalizeSnapshot(entry, { worldKey: this.worldKey });
-          return current.worldKey !== this.worldKey || current.playerId !== normalizedPlayerId;
-        }),
-        normalized
-      ].filter(isSnapshotFresh);
+      const nextSnapshots = [];
+      for (let index = 0; index < state.snapshots.length; index += 1) {
+        const current = normalizeSnapshot(state.snapshots[index], { worldKey: this.worldKey });
+        if (
+          (current.worldKey !== this.worldKey || current.playerId !== normalizedPlayerId)
+          && isSnapshotFresh(current)
+        ) {
+          nextSnapshots.push(current);
+        }
+      }
+      if (isSnapshotFresh(normalized)) {
+        nextSnapshots.push(normalized);
+      }
+      state.snapshots = nextSnapshots;
 
       return normalized;
     });
@@ -196,9 +208,14 @@ class FilePlayerSnapshotStore {
   async pruneExpired() {
     return this.withStore((state) => {
       const before = state.snapshots.length;
-      state.snapshots = state.snapshots
-        .map((entry) => normalizeSnapshot(entry, { worldKey: this.worldKey }))
-        .filter(isSnapshotFresh);
+      const snapshots = [];
+      for (let index = 0; index < state.snapshots.length; index += 1) {
+        const snapshot = normalizeSnapshot(state.snapshots[index], { worldKey: this.worldKey });
+        if (isSnapshotFresh(snapshot)) {
+          snapshots.push(snapshot);
+        }
+      }
+      state.snapshots = snapshots;
       return { pruned: before - state.snapshots.length };
     });
   }

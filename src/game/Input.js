@@ -16,17 +16,19 @@ const ACTION_POINTER_BUTTONS = Object.freeze({
 });
 
 const MOBILE_STICK_DEADZONE = 0.12;
+const MOBILE_STICK_DEADZONE_SQ = MOBILE_STICK_DEADZONE * MOBILE_STICK_DEADZONE;
 const TOUCH_MOUSE_SUPPRESSION_MS = 700;
 
 function clampStickVector(dx, dy, radius, target = { x: 0, y: 0 }) {
   const safeRadius = Math.max(1, Number(radius) || 1);
-  const distance = Math.hypot(dx, dy);
-  if (distance <= safeRadius) {
+  const distanceSq = (dx * dx) + (dy * dy);
+  if (distanceSq <= safeRadius * safeRadius) {
     target.x = dx;
     target.y = dy;
     return target;
   }
 
+  const distance = Math.sqrt(distanceSq);
   const scale = safeRadius / distance;
   target.x = dx * scale;
   target.y = dy * scale;
@@ -35,6 +37,19 @@ function clampStickVector(dx, dy, radius, target = { x: 0, y: 0 }) {
 
 function applyDeadzone(value) {
   return Math.abs(value) < MOBILE_STICK_DEADZONE ? 0 : value;
+}
+
+function removeArrayEntryAt(values, index) {
+  if (!Array.isArray(values) || index < 0 || index >= values.length) {
+    return null;
+  }
+
+  const entry = values[index];
+  for (let moveIndex = index + 1; moveIndex < values.length; moveIndex += 1) {
+    values[moveIndex - 1] = values[moveIndex];
+  }
+  values.length = Math.max(0, values.length - 1);
+  return entry;
 }
 
 export class Input {
@@ -102,7 +117,7 @@ export class Input {
       if (this.isEditableTarget(event.target)) {
         this.keys.delete(event.code);
         this.justPressed.delete(event.code);
-        this.keyPressQueue = [];
+        this.keyPressQueue.length = 0;
         return;
       }
 
@@ -114,7 +129,7 @@ export class Input {
         this.justPressed.add(event.code);
         this.keyPressQueue.push({ code: event.code, at: performance.now() });
         if (this.keyPressQueue.length > 64) {
-          this.keyPressQueue.shift();
+          removeArrayEntryAt(this.keyPressQueue, 0);
         }
       }
       this.keys.add(event.code);
@@ -124,7 +139,7 @@ export class Input {
       if (this.isEditableTarget(event.target)) {
         this.keys.delete(event.code);
         this.justPressed.delete(event.code);
-        this.keyPressQueue = [];
+        this.keyPressQueue.length = 0;
         return;
       }
 
@@ -478,7 +493,7 @@ export class Input {
   releaseAllInputs() {
     this.keys.clear();
     this.justPressed.clear();
-    this.keyPressQueue = [];
+    this.keyPressQueue.length = 0;
     this.pointerButtons.clear();
     this.justPressedPointerButtons.clear();
     this.wheelDirection = 0;
@@ -515,9 +530,10 @@ export class Input {
       z += this.touchMovementVector.z;
     }
 
-    const length = Math.hypot(x, z);
+    const lengthSq = (x * x) + (z * z);
     const output = this.movementVector;
-    if (length > 1) {
+    if (lengthSq > 1) {
+      const length = Math.sqrt(lengthSq);
       output.x = x / length;
       output.z = z / length;
       return output;
@@ -569,7 +585,7 @@ export class Input {
     }
 
     const { x, z } = this.touchAimVector;
-    if (Math.hypot(x, z) < MOBILE_STICK_DEADZONE) {
+    if ((x * x) + (z * z) < MOBILE_STICK_DEADZONE_SQ) {
       return null;
     }
 
@@ -585,9 +601,15 @@ export class Input {
     const pressed = this.justPressed.has(code);
     this.justPressed.delete(code);
     if (pressed) {
-      const queueIndex = this.keyPressQueue.findIndex((entry) => entry.code === code);
+      let queueIndex = -1;
+      for (let index = 0; index < this.keyPressQueue.length; index += 1) {
+        if (this.keyPressQueue[index].code === code) {
+          queueIndex = index;
+          break;
+        }
+      }
       if (queueIndex >= 0) {
-        this.keyPressQueue.splice(queueIndex, 1);
+        removeArrayEntryAt(this.keyPressQueue, queueIndex);
       }
     }
     return pressed;
@@ -599,7 +621,7 @@ export class Input {
 
   consumeNextKeyEvent(codes = []) {
     if (this.isKeyboardSuspended()) {
-      this.keyPressQueue = [];
+      this.keyPressQueue.length = 0;
       return null;
     }
 
@@ -607,7 +629,18 @@ export class Input {
     const codesHas = typeof codes.has === 'function';
     for (let index = 0; index < this.keyPressQueue.length; index += 1) {
       const code = this.keyPressQueue[index].code;
-      if (codesHas ? codes.has(code) : codes.includes(code)) {
+      let matches = false;
+      if (codesHas) {
+        matches = codes.has(code);
+      } else {
+        for (let codeIndex = 0; codeIndex < codes.length; codeIndex += 1) {
+          if (codes[codeIndex] === code) {
+            matches = true;
+            break;
+          }
+        }
+      }
+      if (matches) {
         queueIndex = index;
         break;
       }
@@ -616,13 +649,13 @@ export class Input {
       return null;
     }
 
-    const [entry] = this.keyPressQueue.splice(queueIndex, 1);
+    const entry = removeArrayEntryAt(this.keyPressQueue, queueIndex);
     this.justPressed.delete(entry.code);
     return entry;
   }
 
   clearKeyPressQueue() {
-    this.keyPressQueue = [];
+    this.keyPressQueue.length = 0;
   }
 
   isPressed(code) {

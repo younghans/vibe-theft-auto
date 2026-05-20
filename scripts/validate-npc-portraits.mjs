@@ -6,12 +6,16 @@ import { listPlayableCharacters } from '../src/player/playableCharacterCatalog.j
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const portraitsRoot = path.join(root, 'assets', 'mixamo', 'portraits');
-const portraitEntries = listPlayableCharacters()
-  .filter((entry) => entry?.portraitFileName)
-  .map((entry) => ({
+const portraitEntries = [];
+for (const entry of listPlayableCharacters()) {
+  if (!entry?.portraitFileName) {
+    continue;
+  }
+  portraitEntries.push({
     id: entry.id,
     portraitFileName: entry.portraitFileName
-  }));
+  });
+}
 
 const missing = [];
 

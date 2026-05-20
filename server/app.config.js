@@ -58,6 +58,7 @@ const SOURCE_FILE_ALLOWLIST = new Set([
   'styles.css'
 ]);
 const SOURCE_DIRECTORY_ALLOWLIST = ['animations/', 'assets/', 'src/', 'vendor/'];
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav']);
 const GENERATED_WORLD_MAP_IMAGE_PATH = path.join('assets', 'generated', 'world-map.webp');
 const GENERATED_WORLD_MAP_METADATA_PATH = path.join('assets', 'generated', 'world-map.json');
 const ADMIN_WORLD_MAP_MAX_BYTES = 14 * 1024 * 1024;
@@ -142,11 +143,20 @@ async function resolveDistAssetPath(requestPath) {
 
 async function resolveSourceAssetPath(requestPath) {
   const normalizedPath = normalizeAssetPath(requestPath);
+  let isAllowedSourceDirectory = false;
+  if (normalizedPath != null) {
+    for (const prefix of SOURCE_DIRECTORY_ALLOWLIST) {
+      if (normalizedPath.startsWith(prefix)) {
+        isAllowedSourceDirectory = true;
+        break;
+      }
+    }
+  }
   if (
     normalizedPath == null
     || (
       !SOURCE_FILE_ALLOWLIST.has(normalizedPath)
-      && !SOURCE_DIRECTORY_ALLOWLIST.some((prefix) => normalizedPath.startsWith(prefix))
+      && !isAllowedSourceDirectory
     )
   ) {
     return null;
@@ -170,7 +180,7 @@ async function resolveSourceAssetPath(requestPath) {
 }
 
 function isFingerprinted(filePath) {
-  if (['.mp3', '.wav'].includes(path.extname(filePath).toLowerCase())) {
+  if (AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
     return false;
   }
 
@@ -199,12 +209,14 @@ function getCacheControl(filePath) {
 }
 
 function parseAdminKeys(value = '') {
-  return new Set(
-    String(value)
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-  );
+  const keys = new Set();
+  for (const entry of String(value).split(',')) {
+    const key = entry.trim();
+    if (key) {
+      keys.add(key);
+    }
+  }
+  return keys;
 }
 
 function getNonNegativeIntegerEnv(name, fallback) {
@@ -231,11 +243,22 @@ function getAccessRuntimeDiagnostics() {
     legacyAdminKeysAccepted: false,
     workerTokensConfigured: workerTokens.size > 0,
     workerTokenCount: workerTokens.size,
-    workerTokenEnvNames: [
-      'AGENT_WORKER_TOKENS',
-      'AGENT_WORKER_TOKEN'
-    ].filter((key) => process.env[key] !== undefined)
+    workerTokenEnvNames: getConfiguredWorkerTokenEnvNames()
   };
+}
+
+function getConfiguredWorkerTokenEnvNames() {
+  const names = [];
+  const keys = [
+    'AGENT_WORKER_TOKENS',
+    'AGENT_WORKER_TOKEN'
+  ];
+  for (const key of keys) {
+    if (process.env[key] !== undefined) {
+      names.push(key);
+    }
+  }
+  return names;
 }
 
 function normalizePublicAddress(value = '') {
@@ -330,7 +353,13 @@ async function hasSupabaseAdminOrWorkerAccess(req) {
 }
 
 function isTruthyRequestValue(value = '') {
-  return ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function isFalsyRequestValue(value = '') {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '0' || normalized === 'false' || normalized === 'no';
 }
 
 function setAdminWorldMapCorsHeaders(req, res) {
@@ -448,7 +477,14 @@ function normalizeWorldMapBounds(bounds = {}) {
   const maxX = Number(bounds.maxX);
   const minZ = Number(bounds.minZ);
   const maxZ = Number(bounds.maxZ);
-  if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) {
+  if (
+    !Number.isFinite(minX)
+    || !Number.isFinite(maxX)
+    || !Number.isFinite(minZ)
+    || !Number.isFinite(maxZ)
+    || maxX <= minX
+    || maxZ <= minZ
+  ) {
     throw new Error('Invalid map bounds.');
   }
 
@@ -744,7 +780,11 @@ const server = defineServer({
             compact
           });
           const hasMore = threadTasks.length > threadLimit;
-          const tasks = threadTasks.slice(0, threadLimit);
+          const taskCount = Math.min(threadTasks.length, threadLimit);
+          const tasks = [];
+          for (let index = 0; index < taskCount; index += 1) {
+            tasks.push(threadTasks[index]);
+          }
           sendJson(res, 200, {
             ok: true,
             tasks,
@@ -810,8 +850,8 @@ const server = defineServer({
 
         const result = await claimNextAgentTask({
           scope: typeof req.query?.scope === 'string' ? req.query.scope : '',
-          deployEnabled: ['1', 'true', 'yes'].includes(String(req.query?.deployEnabled ?? '').toLowerCase()),
-          codeEnabled: !['0', 'false', 'no'].includes(String(req.query?.codeEnabled ?? 'true').toLowerCase()),
+          deployEnabled: isTruthyRequestValue(req.query?.deployEnabled),
+          codeEnabled: !isFalsyRequestValue(req.query?.codeEnabled ?? 'true'),
           staleDeployingAfterMs: typeof req.query?.staleDeployingAfterMs === 'string'
             ? Number(req.query.staleDeployingAfterMs)
             : 0,
@@ -909,12 +949,26 @@ const server = defineServer({
         }
 
         payload = await readJsonRequest(req, { maxBytes: 128 * 1024 });
-        const payloadKeys = payload && typeof payload === 'object' && !Array.isArray(payload)
-          ? Object.keys(payload)
-          : [];
-        const isHeartbeatOnlyUpdate = payloadKeys.length > 0
-          && payloadKeys.includes('workerHeartbeatAt')
-          && payloadKeys.every((key) => key === 'workerHeartbeatAt' || key === 'workerHeartbeatStatus');
+        let payloadKeyCount = 0;
+        let hasWorkerHeartbeatAt = false;
+        let hasOnlyHeartbeatKeys = true;
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          for (const key in payload) {
+            if (!Object.hasOwn(payload, key)) {
+              continue;
+            }
+
+            payloadKeyCount += 1;
+            if (key === 'workerHeartbeatAt') {
+              hasWorkerHeartbeatAt = true;
+            } else if (key !== 'workerHeartbeatStatus') {
+              hasOnlyHeartbeatKeys = false;
+            }
+          }
+        }
+        const isHeartbeatOnlyUpdate = payloadKeyCount > 0
+          && hasWorkerHeartbeatAt
+          && hasOnlyHeartbeatKeys;
         const task = isHeartbeatOnlyUpdate
           ? await updateAgentTaskHeartbeat(req.params.id, payload)
           : await updateAgentTask(req.params.id, payload);

@@ -60,12 +60,24 @@ function createCarDealerNpcForDealership(dealershipPlacement) {
 
 function ensureCarDealerNpc(layout = defaultWorldLayout) {
   const nextLayout = cloneLayout(layout);
-  const dealershipPlacement = nextLayout.tiles.find((placement) => placement?.itemId === 'car_dealership_building');
+  let dealershipPlacement = null;
+  for (const placement of nextLayout.tiles) {
+    if (placement?.itemId === 'car_dealership_building') {
+      dealershipPlacement = placement;
+      break;
+    }
+  }
   if (!dealershipPlacement) {
     return { layout: nextLayout, changed: false };
   }
 
-  const existing = nextLayout.npcs.find((npc) => npc?.id === 'npc_car_dealer' || npc?.carDealerEnabled === true);
+  let existing = null;
+  for (const npc of nextLayout.npcs) {
+    if (npc?.id === 'npc_car_dealer' || npc?.carDealerEnabled === true) {
+      existing = npc;
+      break;
+    }
+  }
   const carDealerNpc = createCarDealerNpcForDealership(dealershipPlacement);
   if (existing) {
     const wasEnabled = existing.carDealerEnabled === true;
@@ -83,11 +95,11 @@ function parseBooleanEnv(value, fallback) {
   }
 
   const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
     return true;
   }
 
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
     return false;
   }
 
@@ -158,19 +170,27 @@ function isProductionFileFallbackAllowed() {
 }
 
 function getPersistenceEnvSummary(databaseUrl) {
+  const visibleConfigKeys = [];
+  const configKeys = [
+    'DATABASE_URL',
+    'WORLD_KEY',
+    'WORLD_LAYOUT_SEED_PATH',
+    'WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK',
+    'OPENAI_API_KEY',
+    'ADMIN_KEYS'
+  ];
+  for (let index = 0; index < configKeys.length; index += 1) {
+    const key = configKeys[index];
+    if (process.env[key] !== undefined) {
+      visibleConfigKeys.push(key);
+    }
+  }
   return {
     nodeEnv: String(process.env.NODE_ENV ?? ''),
     databaseUrlConfigured: Boolean(databaseUrl),
     worldPersistenceAllowFileFallback: isProductionFileFallbackAllowed(),
     worldKey: getWorldKey(),
-    visibleConfigKeys: [
-      'DATABASE_URL',
-      'WORLD_KEY',
-      'WORLD_LAYOUT_SEED_PATH',
-      'WORLD_PERSISTENCE_ALLOW_FILE_FALLBACK',
-      'OPENAI_API_KEY',
-      'ADMIN_KEYS'
-    ].filter((key) => process.env[key] !== undefined)
+    visibleConfigKeys
   };
 }
 
@@ -191,10 +211,21 @@ function getBackupDayKey(capturedAtMs) {
 }
 
 function getLatestBackupEntry(entries, worldKey) {
-  return [...entries]
-    .filter((entry) => entry?.worldKey === worldKey)
-    .filter((entry) => Number.isFinite(getBackupCapturedAtMs(entry)))
-    .sort((a, b) => getBackupCapturedAtMs(b) - getBackupCapturedAtMs(a))[0] ?? null;
+  let latestEntry = null;
+  let latestCapturedAtMs = -Infinity;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry?.worldKey !== worldKey) {
+      continue;
+    }
+
+    const capturedAtMs = getBackupCapturedAtMs(entry);
+    if (Number.isFinite(capturedAtMs) && capturedAtMs > latestCapturedAtMs) {
+      latestEntry = entry;
+      latestCapturedAtMs = capturedAtMs;
+    }
+  }
+  return latestEntry;
 }
 
 function shouldCaptureWorldBackup({ latestEntry, layoutHash, config, nowMs = Date.now() }) {
@@ -227,27 +258,37 @@ export function getRetainedWorldBackupEntries(entries, config, nowMs = Date.now(
   const maxCutoffMs = maxDailyDays > 0 ? nowMs - maxDailyDays * 24 * 60 * 60 * 1000 : null;
   const keptOlderDayKeys = new Set();
 
-  return [...entries]
-    .filter((entry) => Number.isFinite(getBackupCapturedAtMs(entry)))
-    .sort((a, b) => getBackupCapturedAtMs(b) - getBackupCapturedAtMs(a))
-    .filter((entry) => {
-      const capturedAtMs = getBackupCapturedAtMs(entry);
-      if (maxCutoffMs !== null && capturedAtMs < maxCutoffMs) {
-        return false;
-      }
+  const validEntries = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (Number.isFinite(getBackupCapturedAtMs(entry))) {
+      validEntries.push(entry);
+    }
+  }
+  validEntries.sort((a, b) => getBackupCapturedAtMs(b) - getBackupCapturedAtMs(a));
 
-      if (capturedAtMs >= recentCutoffMs) {
-        return true;
-      }
+  const retainedEntries = [];
+  for (let index = 0; index < validEntries.length; index += 1) {
+    const entry = validEntries[index];
+    const capturedAtMs = getBackupCapturedAtMs(entry);
+    if (maxCutoffMs !== null && capturedAtMs < maxCutoffMs) {
+      continue;
+    }
 
-      const dayKey = `${entry.worldKey ?? DEFAULT_WORLD_KEY}:${getBackupDayKey(capturedAtMs)}`;
-      if (keptOlderDayKeys.has(dayKey)) {
-        return false;
-      }
+    if (capturedAtMs >= recentCutoffMs) {
+      retainedEntries.push(entry);
+      continue;
+    }
 
-      keptOlderDayKeys.add(dayKey);
-      return true;
-    });
+    const dayKey = `${entry.worldKey ?? DEFAULT_WORLD_KEY}:${getBackupDayKey(capturedAtMs)}`;
+    if (keptOlderDayKeys.has(dayKey)) {
+      continue;
+    }
+
+    keptOlderDayKeys.add(dayKey);
+    retainedEntries.push(entry);
+  }
+  return retainedEntries;
 }
 
 function getBackupFileWorldKey(worldKey) {
@@ -383,10 +424,22 @@ class FileWorldPersistenceStore {
   }
 
   async deletePrunedBackupFiles({ beforeEntries, afterEntries }) {
-    const keptFileNames = new Set(afterEntries.map((entry) => entry.fileName).filter(Boolean));
-    const prunedEntries = beforeEntries.filter((entry) => entry.fileName && !keptFileNames.has(entry.fileName));
+    const keptFileNames = new Set();
+    for (let index = 0; index < afterEntries.length; index += 1) {
+      const fileName = afterEntries[index].fileName;
+      if (fileName) {
+        keptFileNames.add(fileName);
+      }
+    }
 
-    await Promise.all(prunedEntries.map(async (entry) => {
+    const deletePromises = [];
+    for (let index = 0; index < beforeEntries.length; index += 1) {
+      const entry = beforeEntries[index];
+      if (!entry.fileName || keptFileNames.has(entry.fileName)) {
+        continue;
+      }
+
+      deletePromises.push((async () => {
       try {
         await fsp.unlink(path.join(this.getBackupDirectoryPath(), entry.fileName));
       } catch (error) {
@@ -394,7 +447,10 @@ class FileWorldPersistenceStore {
           throw error;
         }
       }
-    }));
+      })());
+    }
+
+    await Promise.all(deletePromises);
   }
 
   async pruneBackups(entries, nowMs = Date.now()) {
@@ -450,7 +506,12 @@ class FileWorldPersistenceStore {
       sourceVersion: saveResult?.version ?? null,
       fileName
     };
-    const retainedEntries = await this.pruneBackups([...entries, backupEntry], nowMs);
+    const entriesWithBackup = [];
+    for (let index = 0; index < entries.length; index += 1) {
+      entriesWithBackup.push(entries[index]);
+    }
+    entriesWithBackup.push(backupEntry);
+    const retainedEntries = await this.pruneBackups(entriesWithBackup, nowMs);
     await this.writeBackupIndex(retainedEntries);
 
     logServer('world-backup', 'Captured file world backup.', {

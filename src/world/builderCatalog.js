@@ -227,11 +227,14 @@ function createCutawayInteriorWallNodeNames(key) {
 }
 
 function createCutawayVisibleNodeNames(key, { includeInterior = true } = {}) {
-  return [
-    `${key}_foundation`,
-    ...(includeInterior ? [`${key}_interior`] : []),
-    ...createCutawayInteriorWallNodeNames(key)
-  ];
+  const nodeNames = [`${key}_foundation`];
+  if (includeInterior) {
+    nodeNames.push(`${key}_interior`);
+  }
+  for (const nodeName of createCutawayInteriorWallNodeNames(key)) {
+    nodeNames.push(nodeName);
+  }
+  return nodeNames;
 }
 
 function createCutawayHiddenNodeNames(key) {
@@ -241,6 +244,12 @@ function createCutawayHiddenNodeNames(key) {
     `${key}_exterior_detail`,
     `${key}_hull_wall_front`
   ];
+}
+
+function createOfficesCutawayHiddenNodeNames() {
+  const nodeNames = createCutawayHiddenNodeNames('offices');
+  nodeNames.push('offices_interior');
+  return nodeNames;
 }
 
 function createCustom2x2BuildingDefinition({
@@ -294,26 +303,30 @@ function createCustom2x2BuildingDefinition({
   };
 }
 
-const KENNEY_TILE_DEFINITIONS = Object.freeze([
-  ...KENNEY_BUILDING_VARIANTS.map((variant) =>
-    createKenneyBuildingDefinition({
-      id: `kenney_building_${variant}`,
-      label: `Kenney Building ${variant.toUpperCase()}`,
-      fileName: `building-${variant}.glb`
-    })
-  ),
-  ...KENNEY_SKYSCRAPER_VARIANTS.map((variant) =>
-    createKenneyBuildingDefinition({
-      id: `kenney_building_skyscraper_${variant}`,
-      label: `Kenney Skyscraper ${variant.toUpperCase()}`,
-      fileName: `building-skyscraper-${variant}.glb`
-    })
-  )
-]);
+const kenneyTileDefinitions = [];
+for (let index = 0; index < KENNEY_BUILDING_VARIANTS.length; index += 1) {
+  const variant = KENNEY_BUILDING_VARIANTS[index];
+  kenneyTileDefinitions.push(createKenneyBuildingDefinition({
+    id: `kenney_building_${variant}`,
+    label: `Kenney Building ${variant.toUpperCase()}`,
+    fileName: `building-${variant}.glb`
+  }));
+}
+for (let index = 0; index < KENNEY_SKYSCRAPER_VARIANTS.length; index += 1) {
+  const variant = KENNEY_SKYSCRAPER_VARIANTS[index];
+  kenneyTileDefinitions.push(createKenneyBuildingDefinition({
+    id: `kenney_building_skyscraper_${variant}`,
+    label: `Kenney Skyscraper ${variant.toUpperCase()}`,
+    fileName: `building-skyscraper-${variant}.glb`
+  }));
+}
+const KENNEY_TILE_DEFINITIONS = Object.freeze(kenneyTileDefinitions);
 
-const KENNEY_PROP_DEFINITIONS = Object.freeze(
-  KENNEY_DETAIL_DEFINITIONS.map(createKenneyPropDefinition)
-);
+const kenneyPropDefinitions = [];
+for (let index = 0; index < KENNEY_DETAIL_DEFINITIONS.length; index += 1) {
+  kenneyPropDefinitions.push(createKenneyPropDefinition(KENNEY_DETAIL_DEFINITIONS[index]));
+}
+const KENNEY_PROP_DEFINITIONS = Object.freeze(kenneyPropDefinitions);
 
 const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
   createCustom2x2BuildingDefinition({
@@ -357,7 +370,7 @@ const CUSTOM_2X2_BUILDING_DEFINITIONS = Object.freeze([
     prompt: 'Enter offices',
     cameraOcclusionPreserveNodeNames: createCutawayVisibleNodeNames('offices', { includeInterior: false }),
     interiorOverrides: {
-      cutawayNodeNames: [...createCutawayHiddenNodeNames('offices'), 'offices_interior'],
+      cutawayNodeNames: createOfficesCutawayHiddenNodeNames(),
       cutawayVisibleNodeNames: createCutawayVisibleNodeNames('offices', { includeInterior: false })
     }
   }),
@@ -1055,26 +1068,40 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
 ]);
 
 function titleCaseWords(value) {
-  return value
+  const words = value
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => {
-      const lower = part.toLowerCase();
+    .split(/\s+/);
+  const titleParts = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const part = words[index];
+    if (!part) {
+      continue;
+    }
 
-      if (lower === 'tsplit') return 'T-Split';
-      if (lower === 'watertower') return 'Water Tower';
-      if (lower === 'firehydrant') return 'Fire Hydrant';
-      if (lower === 'streetlight') return 'Streetlight';
-      if (lower === 'trafficlight') return 'Traffic Light';
-      if (lower === 'without') return 'Without';
-      if (lower === 'base') return 'Base';
-      if (/^[a-h]$/i.test(part)) return part.toUpperCase();
+    const lower = part.toLowerCase();
+    if (lower === 'tsplit') {
+      titleParts.push('T-Split');
+    } else if (lower === 'watertower') {
+      titleParts.push('Water Tower');
+    } else if (lower === 'firehydrant') {
+      titleParts.push('Fire Hydrant');
+    } else if (lower === 'streetlight') {
+      titleParts.push('Streetlight');
+    } else if (lower === 'trafficlight') {
+      titleParts.push('Traffic Light');
+    } else if (lower === 'without') {
+      titleParts.push('Without');
+    } else if (lower === 'base') {
+      titleParts.push('Base');
+    } else if (/^[a-h]$/i.test(part)) {
+      titleParts.push(part.toUpperCase());
+    } else {
+      titleParts.push(lower.charAt(0).toUpperCase() + lower.slice(1));
+    }
+  }
 
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(' ');
+  return titleParts.join(' ');
 }
 
 function formatCityLabel(assetName) {
@@ -1163,6 +1190,27 @@ function propPaddingForAsset(assetName) {
   return undefined;
 }
 
+function cloneRectList(rects = null) {
+  if (!Array.isArray(rects)) {
+    return null;
+  }
+
+  const clonedRects = new Array(rects.length);
+  for (let index = 0; index < rects.length; index += 1) {
+    clonedRects[index] = { ...rects[index] };
+  }
+  return clonedRects;
+}
+
+function cloneList(values = null) {
+  const source = values ?? [];
+  const cloned = new Array(source.length);
+  for (let index = 0; index < source.length; index += 1) {
+    cloned[index] = source[index];
+  }
+  return cloned;
+}
+
 function createCityTile(definition) {
   const blocksMovement = definition.blocksMovement ?? definition.collision ?? tileCollisionForAsset(definition.assetName);
   const blocksShots = definition.blocksShots ?? definition.collision ?? tileBallisticCollisionForAsset(definition.assetName);
@@ -1178,23 +1226,23 @@ function createCityTile(definition) {
     size: definition.size ?? tileSizeForAsset(definition.assetName),
     tileFootprint: definition.tileFootprint ?? [1, 1],
     surfaceHeight: definition.surfaceHeight ?? DEFAULT_TILE_SURFACE_HEIGHT,
-    movementCollisionRects: definition.movementCollisionRects?.map((rect) => ({ ...rect })) ?? null,
-    shotCollisionRects: definition.shotCollisionRects?.map((rect) => ({ ...rect })) ?? null,
+    movementCollisionRects: cloneRectList(definition.movementCollisionRects),
+    shotCollisionRects: cloneRectList(definition.shotCollisionRects),
     layer: 'tile',
     collision: blocksMovement,
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? tilePaddingForAsset(definition.assetName),
     npcRouteDoorOffset: Array.isArray(definition.npcRouteDoorOffset)
-      ? [...definition.npcRouteDoorOffset]
+      ? cloneList(definition.npcRouteDoorOffset)
       : undefined,
-    cameraOcclusionPreserveNodeNames: [...(definition.cameraOcclusionPreserveNodeNames ?? [])],
-    cameraOcclusionAlwaysPreserveNodeNames: [...(definition.cameraOcclusionAlwaysPreserveNodeNames ?? [])],
+    cameraOcclusionPreserveNodeNames: cloneList(definition.cameraOcclusionPreserveNodeNames),
+    cameraOcclusionAlwaysPreserveNodeNames: cloneList(definition.cameraOcclusionAlwaysPreserveNodeNames),
     interior: cloneInteriorDefinition(definition.interior),
     interactable: cloneInteractableDefinition(definition.interactable),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     underlayTileId: definition.underlayTileId ?? null,
-    aliases: [...(definition.aliases ?? [])],
+    aliases: cloneList(definition.aliases),
     groupId: definition.group,
     groupLabel: TILE_GROUPS[definition.group]
   };
@@ -1214,23 +1262,58 @@ function createCityProp(definition) {
     asset,
     size: definition.size ?? propSizeForAsset(definition.assetName),
     layer: 'prop',
-    movementCollisionRects: definition.movementCollisionRects?.map((rect) => ({ ...rect })) ?? null,
-    shotCollisionRects: definition.shotCollisionRects?.map((rect) => ({ ...rect })) ?? null,
+    movementCollisionRects: cloneRectList(definition.movementCollisionRects),
+    shotCollisionRects: cloneRectList(definition.shotCollisionRects),
     collision: blocksMovement,
     blocksMovement,
     blocksShots,
     padding: definition.padding ?? propPaddingForAsset(definition.assetName),
     groundClearance: Number.isFinite(definition.groundClearance) ? definition.groundClearance : undefined,
-    groundSnapNodeNameParts: [...(definition.groundSnapNodeNameParts ?? [])],
+    groundSnapNodeNameParts: cloneList(definition.groundSnapNodeNameParts),
     interactable: cloneInteractableDefinition(definition.interactable),
     combatPickup: cloneCombatPickupDefinition(definition.combatPickup),
     createVisual: typeof definition.createVisual === 'function' ? definition.createVisual : undefined,
     modelRotationY: Number.isFinite(definition.modelRotationY) ? definition.modelRotationY : undefined,
     modelTransformRoot: definition.modelTransformRoot === true,
-    aliases: [...(definition.aliases ?? [])],
+    aliases: cloneList(definition.aliases),
     groupId: definition.group,
     groupLabel: PROP_GROUPS[definition.group]
   };
+}
+
+const cityTileItems = [];
+for (let index = 0; index < CITY_TILE_DEFINITIONS.length; index += 1) {
+  cityTileItems.push(createCityTile(CITY_TILE_DEFINITIONS[index]));
+}
+
+const cityPropItems = [];
+for (let index = 0; index < CITY_PROP_DEFINITIONS.length; index += 1) {
+  cityPropItems.push(createCityProp(CITY_PROP_DEFINITIONS[index]));
+}
+
+const npcBuilderItems = [];
+for (let index = 0; index < NPC_MODEL_CATALOG.length; index += 1) {
+  const model = NPC_MODEL_CATALOG[index];
+  npcBuilderItems.push({
+    id: model.itemId,
+    modelId: model.id,
+    label: model.label,
+    asset: model.asset,
+    previewMode: 'static',
+    previewImageSrc: npcPortraitPath(model.portraitFileName),
+    size: model.footprint,
+    layer: 'npc',
+    collision: false,
+    blocksMovement: false,
+    blocksShots: false,
+    padding: 0.1,
+    groupId: 'citizens',
+    groupLabel: 'Citizens',
+    interactionOffset: model.interactionOffset,
+    interactionRadius: model.interactionRadius,
+    collider: { ...model.collider },
+    pickCollider: { ...model.pickCollider }
+  });
 }
 
 export const BUILDER_CATEGORIES = [
@@ -1238,47 +1321,40 @@ export const BUILDER_CATEGORIES = [
     id: 'tiles',
     label: 'Tiles',
     description: 'Snapped tile pieces for roads, lots, parks, and blockout structures.',
-    items: CITY_TILE_DEFINITIONS.map(createCityTile)
+    items: cityTileItems
   },
   {
     id: 'props',
     label: 'Props',
     description: 'Free-place dressing pieces for streets, greenery, storage, vehicles, and utilities.',
-    items: CITY_PROP_DEFINITIONS.map(createCityProp)
+    items: cityPropItems
   },
   {
     id: 'npcs',
     label: 'NPCs',
     description: 'Author character models with names and prompts for AI-driven interactions.',
-    items: NPC_MODEL_CATALOG.map((model) => ({
-      id: model.itemId,
-      modelId: model.id,
-      label: model.label,
-      asset: model.asset,
-      previewMode: 'static',
-      previewImageSrc: npcPortraitPath(model.portraitFileName),
-      size: model.footprint,
-      layer: 'npc',
-      collision: false,
-      blocksMovement: false,
-      blocksShots: false,
-      padding: 0.1,
-      groupId: 'citizens',
-      groupLabel: 'Citizens',
-      interactionOffset: model.interactionOffset,
-      interactionRadius: model.interactionRadius,
-      collider: { ...model.collider },
-      pickCollider: { ...model.pickCollider }
-    }))
+    items: npcBuilderItems
   }
 ];
 
-export const BUILDER_ITEMS = BUILDER_CATEGORIES.flatMap((category) =>
-  category.items.map((item) => ({ ...item, categoryId: category.id }))
-);
+export const BUILDER_ITEMS = [];
+for (let categoryIndex = 0; categoryIndex < BUILDER_CATEGORIES.length; categoryIndex += 1) {
+  const category = BUILDER_CATEGORIES[categoryIndex];
+  for (let itemIndex = 0; itemIndex < category.items.length; itemIndex += 1) {
+    BUILDER_ITEMS.push({ ...category.items[itemIndex], categoryId: category.id });
+  }
+}
 
-const CATEGORY_BY_ID = new Map(BUILDER_CATEGORIES.map((category) => [category.id, category]));
-const ITEM_BY_ID = new Map(BUILDER_ITEMS.map((item) => [item.id, item]));
+const CATEGORY_BY_ID = new Map();
+for (let index = 0; index < BUILDER_CATEGORIES.length; index += 1) {
+  const category = BUILDER_CATEGORIES[index];
+  CATEGORY_BY_ID.set(category.id, category);
+}
+const ITEM_BY_ID = new Map();
+for (let index = 0; index < BUILDER_ITEMS.length; index += 1) {
+  const item = BUILDER_ITEMS[index];
+  ITEM_BY_ID.set(item.id, item);
+}
 const ITEM_BY_LOOKUP_KEY = new Map();
 
 function normalizeBuilderItemLookupKey(value) {

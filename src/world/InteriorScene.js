@@ -136,7 +136,11 @@ const INTERIOR_TEMPLATES = Object.freeze([
   }
 ]);
 
-const TEMPLATE_BY_ID = new Map(INTERIOR_TEMPLATES.map((template) => [template.id, template]));
+const TEMPLATE_BY_ID = new Map();
+for (let index = 0; index < INTERIOR_TEMPLATES.length; index += 1) {
+  const template = INTERIOR_TEMPLATES[index];
+  TEMPLATE_BY_ID.set(template.id, template);
+}
 
 function transformLocalPoint(origin, rotationQuarterTurns, x, y, z) {
   const rotated = rotateLocalOffset(x, z, rotationQuarterTurns);
@@ -295,9 +299,16 @@ function ensureUniqueOpacityMaterials(mesh) {
     return;
   }
 
-  mesh.material = Array.isArray(mesh.material)
-    ? mesh.material.map((material) => material?.clone?.() ?? material)
-    : mesh.material.clone?.() ?? mesh.material;
+  if (Array.isArray(mesh.material)) {
+    const clonedMaterials = new Array(mesh.material.length);
+    for (let index = 0; index < mesh.material.length; index += 1) {
+      const material = mesh.material[index];
+      clonedMaterials[index] = material?.clone?.() ?? material;
+    }
+    mesh.material = clonedMaterials;
+  } else {
+    mesh.material = mesh.material.clone?.() ?? mesh.material;
+  }
   mesh.userData.officeOpacityMaterialCloned = true;
 }
 
@@ -383,7 +394,8 @@ function setOfficeActiveFloor(officeVisuals = null, floorId = OFFICE_INTERIOR_FL
     return;
   }
 
-  for (const [candidateFloorId, floorGroup] of officeVisuals.floorGroups.entries()) {
+  for (const candidateFloorId of officeVisuals.floorGroups.keys()) {
+    const floorGroup = officeVisuals.floorGroups.get(candidateFloorId);
     setOfficeVisualTreeOpacity(
       floorGroup,
       candidateFloorId === activeFloorId ? 1 : OFFICE_INACTIVE_FLOOR_OPACITY
@@ -490,10 +502,17 @@ function addOfficeRectWithCutouts(group, {
   material,
   cutouts = []
 }) {
-  const cutoutRects = cutouts.map(toCutoutRect);
   let segments = [{ xMin, xMax, zMin, zMax }];
-  for (const cutout of cutoutRects) {
-    segments = segments.flatMap((segment) => splitRectAroundCutout(segment, cutout));
+  for (let cutoutIndex = 0; cutoutIndex < cutouts.length; cutoutIndex += 1) {
+    const cutout = toCutoutRect(cutouts[cutoutIndex]);
+    const nextSegments = [];
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      const splitSegments = splitRectAroundCutout(segments[segmentIndex], cutout);
+      for (let splitIndex = 0; splitIndex < splitSegments.length; splitIndex += 1) {
+        nextSegments.push(splitSegments[splitIndex]);
+      }
+    }
+    segments = nextSegments;
   }
 
   for (const segment of segments) {
@@ -1322,16 +1341,28 @@ function createOfficeCeoGlassWallColliders(origin, rotationQuarterTurns) {
   const leftCenterX = centerX - (doorWidth * 0.5) - (sidePanelWidth * 0.5);
   const rightCenterX = centerX + (doorWidth * 0.5) + (sidePanelWidth * 0.5);
 
-  return [leftCenterX, rightCenterX].map((panelCenterX) => createOfficeObjectCollider(
-    origin,
-    rotationQuarterTurns,
-    OFFICE_INTERIOR_FLOOR_IDS.ceo,
-    panelCenterX,
-    centerZ,
-    sidePanelWidth,
-    depth,
-    height
-  ));
+  return [
+    createOfficeObjectCollider(
+      origin,
+      rotationQuarterTurns,
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      leftCenterX,
+      centerZ,
+      sidePanelWidth,
+      depth,
+      height
+    ),
+    createOfficeObjectCollider(
+      origin,
+      rotationQuarterTurns,
+      OFFICE_INTERIOR_FLOOR_IDS.ceo,
+      rightCenterX,
+      centerZ,
+      sidePanelWidth,
+      depth,
+      height
+    )
+  ];
 }
 
 function createOfficeCeoRooftopRailingColliders(origin, rotationQuarterTurns) {
@@ -1592,9 +1623,32 @@ export function createInteriorScene(interiorId, options = {}) {
 
     const floorId = resolveOfficeFloorIdAtWorldPosition(origin, normalizedRotation, worldPosition);
     const activeFloorColliders = officeActiveFloorCollidersById?.get(floorId) ?? [];
-    return floorId === OFFICE_INTERIOR_FLOOR_IDS.lobby || !upperFloorDoorwayBlocker
-      ? [...activeFloorColliders]
-      : [...activeFloorColliders, upperFloorDoorwayBlocker];
+    if (floorId === OFFICE_INTERIOR_FLOOR_IDS.lobby || !upperFloorDoorwayBlocker) {
+      return activeFloorColliders;
+    }
+
+    const collidersWithDoorBlocker = [];
+    for (const collider of activeFloorColliders) {
+      collidersWithDoorBlocker.push(collider);
+    }
+    collidersWithDoorBlocker.push(upperFloorDoorwayBlocker);
+    return collidersWithDoorBlocker;
+  }
+
+  function getAllCollidersAt(worldPosition = null) {
+    if (!isOfficeInterior) {
+      return colliders;
+    }
+
+    const activeOfficeColliders = getActiveOfficeColliders(worldPosition);
+    const combinedColliders = [];
+    for (const collider of colliders) {
+      combinedColliders.push(collider);
+    }
+    for (const collider of activeOfficeColliders) {
+      combinedColliders.push(collider);
+    }
+    return combinedColliders;
   }
 
   for (const station of template.workoutStations ?? []) {
@@ -1745,9 +1799,7 @@ export function createInteriorScene(interiorId, options = {}) {
       return getActiveOfficeColliders(worldPosition);
     },
     getCollidersAt(worldPosition = null) {
-      return isOfficeInterior
-        ? [...colliders, ...getActiveOfficeColliders(worldPosition)]
-        : colliders;
+      return getAllCollidersAt(worldPosition);
     },
     setActiveFloorForWorldPosition(worldPosition = null) {
       if (isOfficeInterior && worldPosition) {

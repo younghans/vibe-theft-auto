@@ -291,7 +291,14 @@ export async function readPostgresAgentTaskThreadSummaries(stateKey, {
     LIMIT $4 OFFSET $5
   `, [stateKey, normalizedScope, normalizedGameId, safeLimit, safeOffset]);
 
-  return result.rows.map((row) => row.task).filter(Boolean);
+  const tasks = [];
+  for (let index = 0; index < result.rows.length; index += 1) {
+    const task = result.rows[index].task;
+    if (task) {
+      tasks.push(task);
+    }
+  }
+  return tasks;
 }
 
 export async function readPostgresAgentTaskThread(stateKey, {
@@ -326,5 +333,12 @@ export async function readPostgresAgentTaskThread(stateKey, {
     ORDER BY ${getTaskNumberExpression('createdAt')} ASC
   `, [stateKey, String(taskId ?? '').trim()]);
 
-  return result.rows.map((row) => row.task).filter(Boolean);
+  const tasks = [];
+  for (let index = 0; index < result.rows.length; index += 1) {
+    const task = result.rows[index].task;
+    if (task) {
+      tasks.push(task);
+    }
+  }
+  return tasks;
 }

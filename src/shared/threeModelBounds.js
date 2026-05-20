@@ -22,9 +22,14 @@ function normalizeNodeNameParts(nodeNameParts = []) {
     return [];
   }
 
-  return Array.from(source)
-    .map((part) => String(part ?? '').trim().toLowerCase())
-    .filter(Boolean);
+  const parts = [];
+  for (const rawPart of source) {
+    const part = String(rawPart ?? '').trim().toLowerCase();
+    if (part) {
+      parts.push(part);
+    }
+  }
+  return parts;
 }
 
 function nodeNameMatchesParts(node, nodeNameParts) {
@@ -33,7 +38,12 @@ function nodeNameMatchesParts(node, nodeNameParts) {
   }
 
   const name = String(node?.name ?? '').toLowerCase();
-  return nodeNameParts.some((part) => name.includes(part));
+  for (let index = 0; index < nodeNameParts.length; index += 1) {
+    if (name.includes(nodeNameParts[index])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function getObjectBounds(root, nodeNameParts = []) {

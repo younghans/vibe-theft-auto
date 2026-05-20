@@ -66,6 +66,11 @@ const EMPTY_TRANSFORM = Object.freeze({
   scale: DEFAULT_SCALE
 });
 
+function cloneTransformVector(values, fallback) {
+  const source = values ?? fallback;
+  return [source[0], source[1], source[2]];
+}
+
 function createBoxMesh(size, position, material, name) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
   mesh.name = name;
@@ -403,6 +408,14 @@ const HELD_ITEM_DEFINITIONS = Object.freeze({
   })
 });
 
+const HELD_ITEM_DEFINITION_ENTRIES = [];
+for (const key in HELD_ITEM_DEFINITIONS) {
+  if (Object.hasOwn(HELD_ITEM_DEFINITIONS, key)) {
+    HELD_ITEM_DEFINITION_ENTRIES.push(HELD_ITEM_DEFINITIONS[key]);
+  }
+}
+const HELD_ITEM_DEFINITION_LIST = Object.freeze(HELD_ITEM_DEFINITION_ENTRIES);
+
 function scaleModel(root, targetMaxDimension) {
   const bounds = new THREE.Box3().setFromObject(root);
   const size = bounds.getSize(new THREE.Vector3());
@@ -447,7 +460,7 @@ export function getHeldItemDefinition(itemId) {
 }
 
 export function listHeldItemDefinitions() {
-  return Object.values(HELD_ITEM_DEFINITIONS);
+  return HELD_ITEM_DEFINITION_LIST;
 }
 
 export function getHeldItemAssetUrl(itemId) {
@@ -461,9 +474,9 @@ export function getHeldItemAttachmentSlot(itemId) {
 export function getHeldItemGripProfile(itemId) {
   const gripOffset = getHeldItemDefinition(itemId)?.gripOffset ?? EMPTY_TRANSFORM;
   return {
-    position: [...(gripOffset.position ?? EMPTY_TRANSFORM.position)],
-    rotation: [...(gripOffset.rotation ?? EMPTY_TRANSFORM.rotation)],
-    scale: [...(gripOffset.scale ?? EMPTY_TRANSFORM.scale)]
+    position: cloneTransformVector(gripOffset.position, EMPTY_TRANSFORM.position),
+    rotation: cloneTransformVector(gripOffset.rotation, EMPTY_TRANSFORM.rotation),
+    scale: cloneTransformVector(gripOffset.scale, EMPTY_TRANSFORM.scale)
   };
 }
 
@@ -482,9 +495,9 @@ export function getHeldItemPointOffset(itemId, pointName) {
   }
 
   return {
-    position: [...(point.position ?? EMPTY_TRANSFORM.position)],
-    rotation: [...(point.rotation ?? EMPTY_TRANSFORM.rotation)],
-    scale: [...(point.scale ?? EMPTY_TRANSFORM.scale)]
+    position: cloneTransformVector(point.position, EMPTY_TRANSFORM.position),
+    rotation: cloneTransformVector(point.rotation, EMPTY_TRANSFORM.rotation),
+    scale: cloneTransformVector(point.scale, EMPTY_TRANSFORM.scale)
   };
 }
 
@@ -532,16 +545,24 @@ export function applyAttachmentTransform(target, transform) {
 export function mergeAttachmentTransform(base = EMPTY_TRANSFORM, override = null) {
   if (!override) {
     return {
-      position: [...(base.position ?? EMPTY_TRANSFORM.position)],
-      rotation: [...(base.rotation ?? EMPTY_TRANSFORM.rotation)],
-      scale: [...(base.scale ?? EMPTY_TRANSFORM.scale)]
+      position: cloneTransformVector(base.position, EMPTY_TRANSFORM.position),
+      rotation: cloneTransformVector(base.rotation, EMPTY_TRANSFORM.rotation),
+      scale: cloneTransformVector(base.scale, EMPTY_TRANSFORM.scale)
     };
   }
 
+  const position = [];
+  const rotation = [];
+  const scale = [];
+  for (let index = 0; index < 3; index += 1) {
+    position.push((base.position?.[index] ?? EMPTY_TRANSFORM.position[index]) + (override.position?.[index] ?? 0));
+    rotation.push((base.rotation?.[index] ?? EMPTY_TRANSFORM.rotation[index]) + (override.rotation?.[index] ?? 0));
+    scale.push((base.scale?.[index] ?? EMPTY_TRANSFORM.scale[index]) * (override.scale?.[index] ?? 1));
+  }
   return {
-    position: [0, 1, 2].map((index) => (base.position?.[index] ?? EMPTY_TRANSFORM.position[index]) + (override.position?.[index] ?? 0)),
-    rotation: [0, 1, 2].map((index) => (base.rotation?.[index] ?? EMPTY_TRANSFORM.rotation[index]) + (override.rotation?.[index] ?? 0)),
-    scale: [0, 1, 2].map((index) => (base.scale?.[index] ?? EMPTY_TRANSFORM.scale[index]) * (override.scale?.[index] ?? 1))
+    position,
+    rotation,
+    scale
   };
 }
 
@@ -551,25 +572,29 @@ export function cloneAimPose(pose = null) {
   }
 
   const next = {};
+  let hasValues = false;
   for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
     const value = Number(pose[field.key]);
     if (Number.isFinite(value)) {
       next[field.key] = value;
+      hasValues = true;
     }
   }
 
-  return Object.keys(next).length > 0 ? next : null;
+  return hasValues ? next : null;
 }
 
 export function mergeAimPose(base = null, override = null) {
   const merged = {};
+  let hasValues = false;
 
   for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
     const value = Number(base?.[field.key] ?? 0) + Number(override?.[field.key] ?? 0);
     if (Number.isFinite(value) && Math.abs(value) > 0.000001) {
       merged[field.key] = value;
+      hasValues = true;
     }
   }
 
-  return Object.keys(merged).length > 0 ? merged : null;
+  return hasValues ? merged : null;
 }

@@ -56,6 +56,12 @@ const PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES = Object.freeze([0.1, 0.2, 0.3, 0.4, 0
 const PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE = BUILDER_TILE_SIZE * 0.5;
 const PASSIVE_TRAFFIC_ROAD_TILE_EDGE_INSET = BUILDER_TILE_SIZE * 0.015;
 const PASSIVE_TRAFFIC_JUNCTION_ITEM_PATTERN = /(?:road_cross|road_junction|road_tsplit)/;
+const TURN_START_SCRATCH = new THREE.Vector3();
+const TURN_END_SCRATCH = new THREE.Vector3();
+const TURN_CONTROL_A_SCRATCH = new THREE.Vector3();
+const TURN_CONTROL_B_SCRATCH = new THREE.Vector3();
+const TURN_ENTRY_LANE_SCRATCH = new THREE.Vector3();
+const TURN_EXIT_LANE_SCRATCH = new THREE.Vector3();
 
 function roadNodeKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
@@ -105,8 +111,11 @@ function getPassiveTrafficBaseRoadExits(item) {
 }
 
 export function getPassiveTrafficRoadExits(item, rotationQuarterTurns = 0) {
-  return getPassiveTrafficBaseRoadExits(item)
-    .map((direction) => rotateRoadExitDirection(direction, rotationQuarterTurns));
+  const exits = [];
+  for (const direction of getPassiveTrafficBaseRoadExits(item)) {
+    exits.push(rotateRoadExitDirection(direction, rotationQuarterTurns));
+  }
+  return exits;
 }
 
 function isPassiveTrafficRoadItem(item) {
@@ -131,7 +140,12 @@ function makeRoadNode(cellX, cellZ, placement, item, roadExits) {
 }
 
 function hasRoadExit(node, deltaX, deltaZ) {
-  return Boolean(node?.roadExits?.some((direction) => direction.x === deltaX && direction.z === deltaZ));
+  for (const direction of node?.roadExits ?? []) {
+    if (direction.x === deltaX && direction.z === deltaZ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function canConnectRoadNodes(a, b) {
@@ -155,10 +169,24 @@ function connectRoadNodes(nodeByKey, aKey, bKey) {
     return;
   }
 
-  if (!a.neighbors.includes(b.index)) {
+  let hasNeighbor = false;
+  for (const neighborIndex of a.neighbors) {
+    if (neighborIndex === b.index) {
+      hasNeighbor = true;
+      break;
+    }
+  }
+  if (!hasNeighbor) {
     a.neighbors.push(b.index);
   }
-  if (!b.neighbors.includes(a.index)) {
+  hasNeighbor = false;
+  for (const neighborIndex of b.neighbors) {
+    if (neighborIndex === a.index) {
+      hasNeighbor = true;
+      break;
+    }
+  }
+  if (!hasNeighbor) {
     b.neighbors.push(a.index);
   }
 }
@@ -195,34 +223,46 @@ function collectConnectedComponents(nodes) {
   }
 
   components.sort((a, b) => b.length - a.length);
-  components.forEach((component, componentIndex) => {
+  for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
+    const component = components[componentIndex];
     for (const nodeIndex of component) {
       if (nodes[nodeIndex]) {
         nodes[nodeIndex].componentIndex = componentIndex;
       }
     }
-  });
+  }
   return components;
 }
 
-function createGraphSignature(nodes, activeNodeIndices) {
-  return activeNodeIndices
-    .map((nodeIndex) => {
-      const node = nodes[nodeIndex];
-      const exits = node.roadExits
-        .map((direction) => `${direction.x}:${direction.z}`)
-        .sort()
-        .join(',');
-      const neighbors = node.neighbors
-        .filter((neighborIndex) => activeNodeIndices.includes(neighborIndex))
-        .map((neighborIndex) => nodes[neighborIndex]?.key ?? '')
-        .filter(Boolean)
-        .sort()
-        .join(',');
-      return `${node.key}[${exits}]>${neighbors}`;
-    })
-    .sort()
-    .join('|');
+function createGraphSignature(nodes, activeNodeIndices, activeNodeSet) {
+  const signatures = [];
+  for (const nodeIndex of activeNodeIndices) {
+    const node = nodes[nodeIndex];
+    if (!node) {
+      continue;
+    }
+
+    const exits = [];
+    for (const direction of node.roadExits) {
+      exits.push(`${direction.x}:${direction.z}`);
+    }
+    exits.sort();
+
+    const neighbors = [];
+    for (const neighborIndex of node.neighbors) {
+      if (!activeNodeSet.has(neighborIndex)) {
+        continue;
+      }
+      const neighborKey = nodes[neighborIndex]?.key ?? '';
+      if (neighborKey) {
+        neighbors.push(neighborKey);
+      }
+    }
+    neighbors.sort();
+    signatures.push(`${node.key}[${exits.join(',')}]>${neighbors.join(',')}`);
+  }
+  signatures.sort();
+  return signatures.join('|');
 }
 
 function normalizePlacementList(source) {
@@ -230,15 +270,34 @@ function normalizePlacementList(source) {
     return [];
   }
 
+  const placements = [];
+  const appendPlacement = (entry) => {
+    const placement = entry?.placement ?? entry;
+    if (placement) {
+      placements.push(placement);
+    }
+  };
+
+  if (typeof source.forEachPlacement === 'function') {
+    source.forEachPlacement(appendPlacement);
+    return placements;
+  }
+
   if (source instanceof Map) {
-    return [...source.values()].map((entry) => entry?.placement ?? entry).filter(Boolean);
+    for (const entry of source.values()) {
+      appendPlacement(entry);
+    }
+    return placements;
   }
 
   if (typeof source[Symbol.iterator] === 'function') {
-    return [...source].map((entry) => entry?.placement ?? entry).filter(Boolean);
+    for (const entry of source) {
+      appendPlacement(entry);
+    }
+    return placements;
   }
 
-  return [];
+  return placements;
 }
 
 export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemById) {
@@ -290,10 +349,28 @@ export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemByI
   }
 
   const components = collectConnectedComponents(nodes);
-  const activeComponents = components.filter((component) => component.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES);
-  const activeNodeIndices = activeComponents.flat();
-  const activeNodeSet = new Set(activeNodeIndices);
-  const activeNodes = activeNodeIndices.map((nodeIndex) => nodes[nodeIndex]);
+  const activeComponents = [];
+  const activeNodeIndices = [];
+  for (const component of components) {
+    if (component.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      continue;
+    }
+    activeComponents.push(component);
+    for (const nodeIndex of component) {
+      activeNodeIndices.push(nodeIndex);
+    }
+  }
+  const activeNodeSet = new Set();
+  for (const nodeIndex of activeNodeIndices) {
+    activeNodeSet.add(nodeIndex);
+  }
+  const activeNodes = [];
+  for (const nodeIndex of activeNodeIndices) {
+    const node = nodes[nodeIndex];
+    if (node) {
+      activeNodes.push(node);
+    }
+  }
 
   return {
     nodes,
@@ -303,38 +380,29 @@ export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemByI
     nodeIndexByKey,
     activeComponents,
     components,
-    signature: createGraphSignature(nodes, activeNodeIndices)
-  };
-}
-
-function getPassiveTrafficDriverRightDirection(deltaX, deltaZ) {
-  const length = Math.hypot(deltaX, deltaZ);
-  const dirX = length > 0.0001 ? deltaX / length : 0;
-  const dirZ = length > 0.0001 ? deltaZ / length : 1;
-  return {
-    x: -dirZ,
-    z: dirX
+    signature: createGraphSignature(nodes, activeNodeIndices, activeNodeSet)
   };
 }
 
 function setPassiveTrafficLanePosition(anchorNode, deltaX, deltaZ, target = new THREE.Vector3()) {
+  const length = Math.sqrt((deltaX * deltaX) + (deltaZ * deltaZ));
+  const dirX = length > 0.0001 ? deltaX / length : 0;
+  const dirZ = length > 0.0001 ? deltaZ / length : 1;
   return setPassiveTrafficLanePositionAtPoint(
     anchorNode,
     anchorNode?.x ?? 0,
     anchorNode?.z ?? 0,
-    deltaX,
-    deltaZ,
+    -dirZ,
+    dirX,
     target
   );
 }
 
-function setPassiveTrafficLanePositionAtPoint(anchorNode, baseX, baseZ, deltaX, deltaZ, target = new THREE.Vector3()) {
-  const right = getPassiveTrafficDriverRightDirection(deltaX, deltaZ);
-
+function setPassiveTrafficLanePositionAtPoint(anchorNode, baseX, baseZ, rightX, rightZ, target = new THREE.Vector3()) {
   target.set(
-    (Number(baseX) || 0) + (right.x * PASSIVE_TRAFFIC_LANE_OFFSET),
+    (Number(baseX) || 0) + (rightX * PASSIVE_TRAFFIC_LANE_OFFSET),
     0,
-    (Number(baseZ) || 0) + (right.z * PASSIVE_TRAFFIC_LANE_OFFSET)
+    (Number(baseZ) || 0) + (rightZ * PASSIVE_TRAFFIC_LANE_OFFSET)
   );
   clampPassiveTrafficPositionToRoadNode(anchorNode, target, target);
   return target;
@@ -443,8 +511,8 @@ function getPassiveTrafficEdgeLanePosition(currentNode, travelDirection, edgeDir
     currentNode,
     currentNode.x + (edgeDirection.x * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
     currentNode.z + (edgeDirection.z * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    -travelDirection.z,
     travelDirection.x,
-    travelDirection.z,
     target
   );
 }
@@ -528,78 +596,93 @@ function getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextN
   return waypoints;
 }
 
-export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode) {
+export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode, output = []) {
+  let waypointCount = 0;
   if (!previousNode || !currentNode || !nextNode) {
-    return [];
+    output.length = 0;
+    return output;
   }
 
-  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  const incomingX = Math.sign((currentNode?.cellX ?? 0) - (previousNode?.cellX ?? 0));
+  const incomingZ = Math.sign((currentNode?.cellZ ?? 0) - (previousNode?.cellZ ?? 0));
+  const outgoingX = Math.sign((nextNode?.cellX ?? 0) - (currentNode?.cellX ?? 0));
+  const outgoingZ = Math.sign((nextNode?.cellZ ?? 0) - (currentNode?.cellZ ?? 0));
   if (
-    command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
-    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+    (Math.abs(incomingX) + Math.abs(incomingZ) !== 1)
+    || (Math.abs(outgoingX) + Math.abs(outgoingZ) !== 1)
+    || ((incomingX * outgoingX) + (incomingZ * outgoingZ)) !== 0
   ) {
-    return [];
+    output.length = 0;
+    return output;
   }
 
-  const incoming = getPassiveTrafficRoadStep(previousNode, currentNode);
-  const outgoing = getPassiveTrafficRoadStep(currentNode, nextNode);
-  if (
-    (Math.abs(incoming.x) + Math.abs(incoming.z) !== 1)
-    || (Math.abs(outgoing.x) + Math.abs(outgoing.z) !== 1)
-    || ((incoming.x * outgoing.x) + (incoming.z * outgoing.z)) !== 0
-  ) {
-    return [];
-  }
-
-  const start = getPassiveTrafficEdgeLanePosition(
+  const incomingRightX = -incomingZ;
+  const incomingRightZ = incomingX;
+  const outgoingRightX = -outgoingZ;
+  const outgoingRightZ = outgoingX;
+  const start = setPassiveTrafficLanePositionAtPoint(
     currentNode,
-    incoming,
-    { x: -incoming.x, z: -incoming.z },
-    new THREE.Vector3()
+    currentNode.x - (incomingX * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    currentNode.z - (incomingZ * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    incomingRightX,
+    incomingRightZ,
+    TURN_START_SCRATCH
   );
-  const end = getPassiveTrafficEdgeLanePosition(
+  const end = setPassiveTrafficLanePositionAtPoint(
     currentNode,
-    outgoing,
-    outgoing,
-    new THREE.Vector3()
+    currentNode.x + (outgoingX * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    currentNode.z + (outgoingZ * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    outgoingRightX,
+    outgoingRightZ,
+    TURN_END_SCRATCH
   );
   const controlDistance = BUILDER_TILE_SIZE * 0.42;
-  const controlA = new THREE.Vector3(
-    start.x + (incoming.x * controlDistance),
+  const controlA = TURN_CONTROL_A_SCRATCH.set(
+    start.x + (incomingX * controlDistance),
     0,
-    start.z + (incoming.z * controlDistance)
+    start.z + (incomingZ * controlDistance)
   );
-  const controlB = new THREE.Vector3(
-    end.x - (outgoing.x * controlDistance),
+  const controlB = TURN_CONTROL_B_SCRATCH.set(
+    end.x - (outgoingX * controlDistance),
     0,
-    end.z - (outgoing.z * controlDistance)
+    end.z - (outgoingZ * controlDistance)
   );
   clampPassiveTrafficPositionToRoadNode(currentNode, controlA, controlA);
   clampPassiveTrafficPositionToRoadNode(currentNode, controlB, controlB);
 
-  const entryLane = getPassiveTrafficLanePosition(previousNode, currentNode, new THREE.Vector3());
-  const exitLane = getPassiveTrafficLanePosition(currentNode, nextNode, new THREE.Vector3());
-  const waypoints = [];
-  if (entryLane.distanceTo(start) > 0.001) {
-    pushDistinctPassiveTrafficWaypoint(waypoints, start.clone());
+  const entryLane = getPassiveTrafficLanePosition(previousNode, currentNode, TURN_ENTRY_LANE_SCRATCH);
+  const exitLane = getPassiveTrafficLanePosition(currentNode, nextNode, TURN_EXIT_LANE_SCRATCH);
+  const writeWaypoint = (source) => {
+    let waypoint = output[waypointCount];
+    if (!waypoint) {
+      waypoint = new THREE.Vector3();
+      output[waypointCount] = waypoint;
+    }
+    waypoint.copy(source);
+    waypointCount += 1;
+    return waypoint;
+  };
+  if (entryLane.distanceToSquared(start) > 0.001 * 0.001) {
+    writeWaypoint(start);
   }
 
   for (const time of PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES) {
-    pushDistinctPassiveTrafficWaypoint(
-      waypoints,
-      clampPassiveTrafficPositionToRoadNode(
-        currentNode,
-        setCubicBezierPoint(start, controlA, controlB, end, time, new THREE.Vector3()),
-        new THREE.Vector3()
-      )
-    );
+    let waypoint = output[waypointCount];
+    if (!waypoint) {
+      waypoint = new THREE.Vector3();
+      output[waypointCount] = waypoint;
+    }
+    setCubicBezierPoint(start, controlA, controlB, end, time, waypoint);
+    clampPassiveTrafficPositionToRoadNode(currentNode, waypoint, waypoint);
+    waypointCount += 1;
   }
 
-  if (waypoints[waypoints.length - 1]?.distanceTo(exitLane) > 0.001) {
-    pushDistinctPassiveTrafficWaypoint(waypoints, exitLane);
+  if (output[waypointCount - 1]?.distanceToSquared(exitLane) > 0.001 * 0.001) {
+    writeWaypoint(exitLane);
   }
 
-  return waypoints;
+  output.length = waypointCount;
+  return output;
 }
 
 export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode) {
@@ -629,7 +712,8 @@ export function findPassiveTrafficPath(graph, startIndex, goalIndex) {
   }
 
   const queue = [startIndex];
-  const previous = new Map([[startIndex, null]]);
+  const previous = new Map();
+  previous.set(startIndex, null);
 
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const nodeIndex = queue[cursor];

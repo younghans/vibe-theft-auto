@@ -10,20 +10,31 @@ const PLAYER_TRANSFORM_SEND_INTERVAL_MS = 50;
 const PLAYER_TRANSFORM_MOVE_EPSILON = 0.08;
 const PLAYER_TRANSFORM_ROTATION_EPSILON = 0.08;
 
-function schemaMapToEntries(schemaMap) {
-  const entries = [];
+function forEachSchemaMapEntry(schemaMap, callback) {
   if (!schemaMap) {
-    return entries;
+    return;
   }
 
-  if (typeof schemaMap.forEach === 'function') {
-    schemaMap.forEach((value, key) => {
-      entries.push([key, value]);
+  if (typeof schemaMap.keys === 'function' && typeof schemaMap.get === 'function') {
+    for (const key of schemaMap.keys()) {
+      callback(key, schemaMap.get(key));
+    }
+    return;
+  }
+
+  const forEachEntry = schemaMap.forEach;
+  if (typeof forEachEntry === 'function') {
+    forEachEntry.call(schemaMap, (value, key) => {
+      callback(key, value);
     });
-    return entries;
+    return;
   }
 
-  return Object.entries(schemaMap);
+  for (const key in schemaMap) {
+    if (Object.hasOwn(schemaMap, key)) {
+      callback(key, schemaMap[key]);
+    }
+  }
 }
 
 function normalizeTransformSeq(value, fallback = 0) {
@@ -166,7 +177,28 @@ function clonePlayerState(player) {
   };
 }
 
+function clonePlainObject(source = null) {
+  const clone = {};
+  if (!source || typeof source !== 'object') {
+    return clone;
+  }
+
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      clone[key] = source[key];
+    }
+  }
+  return clone;
+}
+
 function cloneNpcDebugState(debug = {}) {
+  const path = [];
+  if (Array.isArray(debug.path)) {
+    for (const point of debug.path) {
+      path.push(clonePlainObject(point));
+    }
+  }
+
   return {
     id: debug.id || '',
     mode: debug.mode || '',
@@ -175,11 +207,11 @@ function cloneNpcDebugState(debug = {}) {
     currentStepType: debug.currentStepType || '',
     stepCount: debug.stepCount ?? 0,
     targetPlacementId: debug.targetPlacementId || '',
-    targetApproach: debug.targetApproach ? { ...debug.targetApproach } : null,
-    nextPathPoint: debug.nextPathPoint ? { ...debug.nextPathPoint } : null,
-    steeringTarget: debug.steeringTarget ? { ...debug.steeringTarget } : null,
-    finalTarget: debug.finalTarget ? { ...debug.finalTarget } : null,
-    path: Array.isArray(debug.path) ? debug.path.map((point) => ({ ...point })) : [],
+    targetApproach: debug.targetApproach ? clonePlainObject(debug.targetApproach) : null,
+    nextPathPoint: debug.nextPathPoint ? clonePlainObject(debug.nextPathPoint) : null,
+    steeringTarget: debug.steeringTarget ? clonePlainObject(debug.steeringTarget) : null,
+    finalTarget: debug.finalTarget ? clonePlainObject(debug.finalTarget) : null,
+    path,
     pathIndex: debug.pathIndex ?? 0,
     pathNodeCount: debug.pathNodeCount ?? 0,
     pathKey: debug.pathKey || '',
@@ -188,7 +220,7 @@ function cloneNpcDebugState(debug = {}) {
     calmEndsAt: debug.calmEndsAt ?? 0,
     hiddenUntil: debug.hiddenUntil ?? 0,
     respawnAt: debug.respawnAt ?? 0,
-    wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
+    wanderPoint: debug.wanderPoint ? clonePlainObject(debug.wanderPoint) : null,
     stepStartedAt: debug.stepStartedAt ?? 0,
     busy: Boolean(debug.busy),
     alive: debug.alive !== false,
@@ -236,8 +268,8 @@ function angleDifference(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
-function stableStringify(value) {
-  return JSON.stringify(value, Object.keys(value).sort());
+function getBuilderPresenceSignature(presence) {
+  return `${presence.active ? '1' : '0'}|${presence.itemId}|${presence.rotationQuarterTurns}|${presence.rotationY}|${presence.scale}|${presence.cellX}|${presence.cellZ}|${presence.x}|${presence.z}|${presence.selectionPlacementId}`;
 }
 
 function parseEndpointUrl(endpoint) {
@@ -449,23 +481,23 @@ export class NpcServiceColyseus {
 
     room.onStateChange((state) => {
       const nextPlayers = new Map();
-      for (const [id, player] of schemaMapToEntries(state.players)) {
+      forEachSchemaMapEntry(state.players, (id, player) => {
         nextPlayers.set(id, clonePlayerState(player));
-      }
+      });
       const nextBuilders = new Map();
-      for (const [id, builder] of schemaMapToEntries(state.builders)) {
+      forEachSchemaMapEntry(state.builders, (id, builder) => {
         nextBuilders.set(id, cloneBuilderState(builder));
-      }
+      });
 
       const nextNpcs = new Map();
-      for (const [id, npc] of schemaMapToEntries(state.npcs)) {
+      forEachSchemaMapEntry(state.npcs, (id, npc) => {
         nextNpcs.set(id, cloneNpcState(npc));
-      }
+      });
 
       const nextPickups = new Map();
-      for (const [id, pickup] of schemaMapToEntries(state.pickups)) {
+      forEachSchemaMapEntry(state.pickups, (id, pickup) => {
         nextPickups.set(id, clonePickupState(pickup));
-      }
+      });
 
       this.state.players = nextPlayers;
       this.state.builders = nextBuilders;
@@ -502,7 +534,13 @@ export class NpcServiceColyseus {
 
     room.onMessage('npc:debugSnapshot', (message = {}) => {
       const nextNpcDebug = new Map();
-      for (const [id, debug] of Object.entries(message?.npcs ?? {})) {
+      const npcs = message?.npcs ?? {};
+      for (const id in npcs) {
+        if (!Object.hasOwn(npcs, id)) {
+          continue;
+        }
+
+        const debug = npcs[id];
         nextNpcDebug.set(id, cloneNpcDebugState(debug));
       }
       this.state.npcDebug = nextNpcDebug;
@@ -699,7 +737,8 @@ export class NpcServiceColyseus {
   }
 
   failPendingRequests(message = 'The multiplayer server did not respond.') {
-    for (const [requestId, pending] of this.pendingRequests.entries()) {
+    for (const requestId of this.pendingRequests.keys()) {
+      const pending = this.pendingRequests.get(requestId);
       this.pendingRequests.delete(requestId);
       pending.reject?.(new Error(message));
     }
@@ -733,14 +772,43 @@ export class NpcServiceColyseus {
   }
 
   getState() {
-    return {
-      ...this.state,
-      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, { ...player }])),
-      builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, { ...npc }])),
-      npcDebug: new Map([...this.state.npcDebug.entries()].map(([id, debug]) => [id, cloneNpcDebugState(debug)])),
-      pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, { ...pickup }]))
-    };
+    const players = new Map();
+    for (const id of this.state.players.keys()) {
+      const player = this.state.players.get(id);
+      players.set(id, clonePlainObject(player));
+    }
+
+    const builders = new Map();
+    for (const id of this.state.builders.keys()) {
+      const builder = this.state.builders.get(id);
+      builders.set(id, clonePlainObject(builder));
+    }
+
+    const npcs = new Map();
+    for (const id of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(id);
+      npcs.set(id, clonePlainObject(npc));
+    }
+
+    const npcDebug = new Map();
+    for (const id of this.state.npcDebug.keys()) {
+      const debug = this.state.npcDebug.get(id);
+      npcDebug.set(id, cloneNpcDebugState(debug));
+    }
+
+    const pickups = new Map();
+    for (const id of this.state.pickups.keys()) {
+      const pickup = this.state.pickups.get(id);
+      pickups.set(id, clonePlainObject(pickup));
+    }
+
+    const snapshot = clonePlainObject(this.state);
+    snapshot.players = players;
+    snapshot.builders = builders;
+    snapshot.npcs = npcs;
+    snapshot.npcDebug = npcDebug;
+    snapshot.pickups = pickups;
+    return snapshot;
   }
 
   async rpc(type, payload = {}) {
@@ -891,7 +959,7 @@ export class NpcServiceColyseus {
       z: quantize(presence.z),
       selectionPlacementId: presence.selectionPlacementId ?? ''
     };
-    const signature = stableStringify(next);
+    const signature = getBuilderPresenceSignature(next);
     const now = performance.now();
 
     if (signature === this.lastBuilderPresenceSignature && now - this.lastBuilderPresenceSentAt < 120) {

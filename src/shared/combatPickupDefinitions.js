@@ -20,8 +20,12 @@ export const COMBAT_PICKUP_ITEM_DEFINITIONS = Object.freeze({
   })
 });
 
+const VALID_WEAPON_IDS = new Set([
+  WEAPON_IDS.pistol
+]);
+
 function cloneOffset(offset) {
-  return Array.isArray(offset) ? [...offset] : null;
+  return Array.isArray(offset) ? [offset[0], offset[1]] : null;
 }
 
 export function cloneCombatPickupDefinition(definition) {
@@ -41,7 +45,7 @@ export function getCombatPickupItemDefinition(itemOrId) {
 }
 
 function isValidWeaponId(weaponId) {
-  return Object.values(WEAPON_IDS).includes(String(weaponId ?? '').trim());
+  return VALID_WEAPON_IDS.has(String(weaponId ?? '').trim());
 }
 
 function normalizeAmmo(value, fallback) {
@@ -89,7 +93,21 @@ export function createCombatPickupSpawnDefinition(placement, item) {
 }
 
 export function getCombatPickupSpawnDefinitions(placements = [], getItemById = () => null) {
-  return [...(placements ?? [])]
-    .map((placement) => createCombatPickupSpawnDefinition(placement, getItemById(placement?.itemId)))
-    .filter(Boolean);
+  const spawnDefinitions = [];
+  const appendPlacement = (placement) => {
+    const spawn = createCombatPickupSpawnDefinition(placement, getItemById(placement?.itemId));
+    if (spawn) {
+      spawnDefinitions.push(spawn);
+    }
+  };
+
+  if (placements && typeof placements.forEachPlacement === 'function') {
+    placements.forEachPlacement(appendPlacement);
+    return spawnDefinitions;
+  }
+
+  for (const placement of placements ?? []) {
+    appendPlacement(placement);
+  }
+  return spawnDefinitions;
 }

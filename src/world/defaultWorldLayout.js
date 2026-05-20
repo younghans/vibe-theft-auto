@@ -85,8 +85,18 @@ const CAR_DEALERSHIP_SHOWROOM_CARS = Object.freeze([
   }
 ]);
 
+function getBuildingPlanByItemId(itemId = '') {
+  for (const plan of BUILDING_PLANS) {
+    if (plan.itemId === itemId) {
+      return plan;
+    }
+  }
+
+  return null;
+}
+
 function createCarDealershipDealerPlan() {
-  const dealershipPlan = BUILDING_PLANS.find((plan) => plan.itemId === 'car_dealership_building');
+  const dealershipPlan = getBuildingPlanByItemId('car_dealership_building');
   const dealershipItem = getBuilderItemById('car_dealership_building');
   if (!dealershipPlan || !dealershipItem) {
     return null;
@@ -286,7 +296,11 @@ function createRoadTile(x, z) {
   const east = hasRoad(x + 1, z);
   const south = hasRoad(x, z + 1);
   const west = hasRoad(x - 1, z);
-  const count = [north, east, south, west].filter(Boolean).length;
+  let count = 0;
+  if (north) count += 1;
+  if (east) count += 1;
+  if (south) count += 1;
+  if (west) count += 1;
 
   if (count === 4) {
     return { itemId: 'road_cross', rotationQuarterTurns: 0 };
@@ -350,7 +364,7 @@ function createTileLayout() {
     tiles.set(key(plan.cell[0], plan.cell[1]), {
       id: `placement_${++tileSequence}`,
       itemId: plan.itemId,
-      cell: [...plan.cell],
+      cell: [plan.cell[0], plan.cell[1]],
       rotationQuarterTurns,
       interactable: {
         label: plan.label,
@@ -361,11 +375,15 @@ function createTileLayout() {
     });
   }
 
-  return [...tiles.values()];
+  const placements = [];
+  for (const placement of tiles.values()) {
+    placements.push(placement);
+  }
+  return placements;
 }
 
 function createCarDealershipShowroomCarPlans() {
-  const dealershipPlan = BUILDING_PLANS.find((plan) => plan.itemId === 'car_dealership_building');
+  const dealershipPlan = getBuildingPlanByItemId('car_dealership_building');
   const dealershipItem = getBuilderItemById('car_dealership_building');
   if (!dealershipPlan || !dealershipItem) {
     return [];
@@ -379,13 +397,14 @@ function createCarDealershipShowroomCarPlans() {
     rotationQuarterTurns
   );
 
-  return CAR_DEALERSHIP_SHOWROOM_CARS.map((car) => {
+  const plans = [];
+  for (const car of CAR_DEALERSHIP_SHOWROOM_CARS) {
     const localZ = CAR_DEALERSHIP_SHOWROOM_CAR_LOCAL_Z;
     const rotatedOffset = rotateFootprintOffset(car.localX, localZ, rotationQuarterTurns);
     const localRotationY = Math.atan2(car.doorTargetLocalX - car.localX, CAR_DEALERSHIP_DOOR_LOCAL_Z - localZ);
     const rotationY = dealershipPlan.angle + localRotationY;
 
-    return {
+    plans.push({
       itemId: car.itemId,
       position: [
         quantizePosition(dealershipCenter.x + rotatedOffset.x),
@@ -394,15 +413,20 @@ function createCarDealershipShowroomCarPlans() {
       angle: rotationY,
       rotationY: quantizeRotation(rotationY),
       scale: CAR_DEALERSHIP_SHOWROOM_CAR_SCALE
-    };
-  });
+    });
+  }
+  return plans;
 }
 
 function getMaxPlacementSequence(placements) {
-  return placements.reduce((maxSequence, placement) => {
+  let maxSequence = 0;
+  for (const placement of placements) {
     const match = /^placement_(\d+)$/.exec(String(placement?.id ?? ''));
-    return match ? Math.max(maxSequence, Number(match[1])) : maxSequence;
-  }, 0);
+    if (match) {
+      maxSequence = Math.max(maxSequence, Number(match[1]));
+    }
+  }
+  return maxSequence;
 }
 
 function createPropLayout(startSequence = 95) {
@@ -467,11 +491,23 @@ function createPropLayout(startSequence = 95) {
 }
 
 function findTilePlacementIdByCell(tiles, [cellX, cellZ]) {
-  return tiles.find((tile) => tile.cell?.[0] === cellX && tile.cell?.[1] === cellZ)?.id ?? '';
+  for (const tile of tiles) {
+    if (tile.cell?.[0] === cellX && tile.cell?.[1] === cellZ) {
+      return tile.id ?? '';
+    }
+  }
+
+  return '';
 }
 
 function findPropPlacementId(props, itemId) {
-  return props.find((prop) => prop.itemId === itemId)?.id ?? '';
+  for (const prop of props) {
+    if (prop.itemId === itemId) {
+      return prop.id ?? '';
+    }
+  }
+
+  return '';
 }
 
 function buildNpcRoutine(plan, references) {
@@ -482,13 +518,22 @@ function buildNpcRoutine(plan, references) {
   return {
     mode: 'loop',
     resumePolicy: 'resume-step',
-    steps: [
-      { type: 'travelToPlacement', targetPlacementId: references.barbellId },
-      { type: 'usePlacement', targetPlacementId: references.barbellId, durationMs: 5435 },
-      { type: 'loiterNearPlacement', targetPlacementId: references.gymId, durationMs: 3600, radius: 4.5 },
-      { type: 'enterHideAtPlacement', targetPlacementId: references.apartmentId, hiddenDurationMs: 6500 },
-      { type: 'wanderNearPlacement', targetPlacementId: references.gymId, durationMs: 5200, radius: 8 }
-    ].filter((step) => step.targetPlacementId)
+    steps: (() => {
+      const steps = [
+        { type: 'travelToPlacement', targetPlacementId: references.barbellId },
+        { type: 'usePlacement', targetPlacementId: references.barbellId, durationMs: 5435 },
+        { type: 'loiterNearPlacement', targetPlacementId: references.gymId, durationMs: 3600, radius: 4.5 },
+        { type: 'enterHideAtPlacement', targetPlacementId: references.apartmentId, hiddenDurationMs: 6500 },
+        { type: 'wanderNearPlacement', targetPlacementId: references.gymId, durationMs: 5200, radius: 8 }
+      ];
+      const visibleSteps = [];
+      for (const step of steps) {
+        if (step.targetPlacementId) {
+          visibleSteps.push(step);
+        }
+      }
+      return visibleSteps;
+    })()
   };
 }
 
@@ -499,33 +544,42 @@ function createNpcLayout(tiles, props) {
     barbellId: findPropPlacementId(props, 'olympic_barbell')
   };
 
-  const plans = [
-    ...NPC_PLANS,
-    createCarDealershipDealerPlan()
-  ].filter(Boolean);
+  const plans = [];
+  for (const plan of NPC_PLANS) {
+    plans.push(plan);
+  }
+  const dealerPlan = createCarDealershipDealerPlan();
+  if (dealerPlan) {
+    plans.push(dealerPlan);
+  }
 
-  return plans.map((plan) => ({
-    id: plan.id,
-    modelId: plan.modelId,
-    position: [...plan.position],
-    rotationQuarterTurns: toQuarterTurns(plan.angle),
-    name: plan.name,
-    prompt: plan.prompt,
-    interactRadius: plan.interactRadius,
-    deliveryQuestEnabled: plan.deliveryQuestEnabled === true,
-    gymCheckInEnabled: plan.gymCheckInEnabled === true,
-    rentCollectorEnabled: plan.rentCollectorEnabled === true,
-    stockMarketEnabled: plan.stockMarketEnabled === true,
-    bartenderEnabled: plan.bartenderEnabled === true,
-    pawnShopOwnerEnabled: plan.pawnShopOwnerEnabled === true,
-    carDealerEnabled: plan.carDealerEnabled === true,
-    marthaEnabled: plan.marthaEnabled === true,
-    blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
-    schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
-    schoolMicrogameId: plan.schoolMicrogameId ?? 'all',
-    ...(plan.combat ? { combat: plan.combat } : {}),
-    ...(buildNpcRoutine(plan, references) ? { routine: buildNpcRoutine(plan, references) } : {})
-  }));
+  const npcs = [];
+  for (const plan of plans) {
+    const routine = buildNpcRoutine(plan, references);
+    npcs.push({
+      id: plan.id,
+      modelId: plan.modelId,
+      position: [plan.position[0], plan.position[1]],
+      rotationQuarterTurns: toQuarterTurns(plan.angle),
+      name: plan.name,
+      prompt: plan.prompt,
+      interactRadius: plan.interactRadius,
+      deliveryQuestEnabled: plan.deliveryQuestEnabled === true,
+      gymCheckInEnabled: plan.gymCheckInEnabled === true,
+      rentCollectorEnabled: plan.rentCollectorEnabled === true,
+      stockMarketEnabled: plan.stockMarketEnabled === true,
+      bartenderEnabled: plan.bartenderEnabled === true,
+      pawnShopOwnerEnabled: plan.pawnShopOwnerEnabled === true,
+      carDealerEnabled: plan.carDealerEnabled === true,
+      marthaEnabled: plan.marthaEnabled === true,
+      blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
+      schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
+      schoolMicrogameId: plan.schoolMicrogameId ?? 'all',
+      ...(plan.combat ? { combat: plan.combat } : {}),
+      ...(routine ? { routine } : {})
+    });
+  }
+  return npcs;
 }
 
 const defaultTiles = createTileLayout();

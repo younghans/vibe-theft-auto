@@ -172,7 +172,7 @@ function addPixelWordOnSide(group, text, {
   depth,
   material
 }) {
-  const chars = [...String(text).toUpperCase()];
+  const chars = String(text).toUpperCase();
   const charAdvance = pixelSize * 6;
   const totalWidth = Math.max(0, (chars.length * charAdvance) - pixelSize);
   let cursorZ = centerZ - (totalWidth * 0.5);
@@ -213,7 +213,10 @@ function mergeMeshesByMaterial(group) {
 
     node.updateWorldMatrix(true, false);
     const geometry = node.geometry.clone();
-    for (const attributeName of Object.keys(geometry.attributes)) {
+    for (const attributeName in geometry.attributes) {
+      if (!Object.hasOwn(geometry.attributes, attributeName)) {
+        continue;
+      }
       if (attributeName !== 'position' && attributeName !== 'normal') {
         geometry.deleteAttribute(attributeName);
       }

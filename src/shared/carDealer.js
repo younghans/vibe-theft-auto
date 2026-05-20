@@ -26,9 +26,10 @@ export const CAR_DEALER_MENU_ITEMS = Object.freeze([
   })
 ]);
 
-const CAR_DEALER_MENU_ITEM_BY_ID = new Map(
-  CAR_DEALER_MENU_ITEMS.map((item) => [item.id, item])
-);
+const CAR_DEALER_MENU_ITEM_BY_ID = new Map();
+for (const item of CAR_DEALER_MENU_ITEMS) {
+  CAR_DEALER_MENU_ITEM_BY_ID.set(item.id, item);
+}
 
 export function normalizeCarDealerEnabled(value = false) {
   return value === true;
@@ -81,9 +82,13 @@ export function normalizePlayerOwnedVehicleItemIds(value = '') {
     ids.push(itemId);
   }
 
-  return CAR_DEALER_MENU_ITEMS
-    .map((item) => item.id)
-    .filter((itemId) => seen.has(itemId));
+  const orderedIds = [];
+  for (const item of CAR_DEALER_MENU_ITEMS) {
+    if (seen.has(item.id)) {
+      orderedIds.push(item.id);
+    }
+  }
+  return orderedIds;
 }
 
 export function serializePlayerOwnedVehicleItemIds(value = '') {
@@ -113,14 +118,27 @@ export function getPlayerOwnedVehicleItemIds(player = null) {
 }
 
 export function getPlayerOwnedVehicleMenuItems(player = null) {
-  return getPlayerOwnedVehicleItemIds(player)
-    .map((itemId) => getCarDealerMenuItem(itemId))
-    .filter(Boolean);
+  const items = [];
+  for (const itemId of getPlayerOwnedVehicleItemIds(player)) {
+    const item = getCarDealerMenuItem(itemId);
+    if (item) {
+      items.push(item);
+    }
+  }
+  return items;
 }
 
 export function playerOwnsVehicleItem(player = null, itemId = '') {
   const normalizedItemId = normalizePlayerVehicleItemId(itemId);
-  return Boolean(normalizedItemId && getPlayerOwnedVehicleItemIds(player).includes(normalizedItemId));
+  if (!normalizedItemId) {
+    return false;
+  }
+  for (const ownedItemId of getPlayerOwnedVehicleItemIds(player)) {
+    if (ownedItemId === normalizedItemId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function isPlayerVehicleOwner(player = null) {
@@ -164,17 +182,22 @@ export function clearPlayerVehicleItem(player = null) {
 export function getPlayerVehicleInventorySnapshot(player = null) {
   const vehicleItemId = getPlayerVehicleItemId(player);
   const ownedVehicleItemIds = getPlayerOwnedVehicleItemIds(player);
+  const ownedVehicles = [];
+  for (const itemId of ownedVehicleItemIds) {
+    const item = getCarDealerMenuItem(itemId);
+    if (item) {
+      ownedVehicles.push({
+        id: item.id,
+        label: item.label
+      });
+    }
+  }
+
   return {
     skateboardOwned: player?.skateboardOwned === true,
     vehicleItemId,
     vehicleLabel: getCarDealerMenuItem(vehicleItemId)?.label ?? '',
     ownedVehicleItemIds: serializePlayerOwnedVehicleItemIds(ownedVehicleItemIds),
-    ownedVehicles: ownedVehicleItemIds
-      .map((itemId) => getCarDealerMenuItem(itemId))
-      .filter(Boolean)
-      .map((item) => ({
-        id: item.id,
-        label: item.label
-      }))
+    ownedVehicles
   };
 }

@@ -98,17 +98,17 @@ const OFFICE_JOB_DEFINITIONS = Object.freeze([
   })
 ]);
 
-const OFFICE_JOB_BY_ID = new Map(OFFICE_JOB_DEFINITIONS.map((job) => [job.id, job]));
-const OFFICE_JOB_BY_GAME_ID = new Map(OFFICE_JOB_DEFINITIONS.flatMap((job) => {
-  const gameIds = new Set([
-    job.gameId,
-    ...(Array.isArray(job.gameIds) ? job.gameIds : [])
-  ]);
-  return [...gameIds].map((gameId) => [gameId, job]);
-}));
+const OFFICE_JOB_BY_ID = new Map();
+const OFFICE_JOB_BY_GAME_ID = new Map();
 const OFFICE_JOB_ALIAS_BY_ID = new Map();
 
 for (const job of OFFICE_JOB_DEFINITIONS) {
+  OFFICE_JOB_BY_ID.set(job.id, job);
+  OFFICE_JOB_BY_GAME_ID.set(job.gameId, job);
+  for (const gameId of Array.isArray(job.gameIds) ? job.gameIds : []) {
+    OFFICE_JOB_BY_GAME_ID.set(gameId, job);
+  }
+
   const aliases = [
     job.id,
     job.gameId,
@@ -206,11 +206,17 @@ export function getOfficeJobRequirementSummary(
   const charismaLevelRequired = normalizeOfficeJobSkillValue(job?.charismaLevelRequired);
   const strengthLevelRequired = normalizeOfficeJobSkillValue(job?.strengthLevelRequired);
   const currentIntelligenceLevel = normalizeOfficeJobSkillValue(intelligenceLevel);
-  return [
-    intelligenceRequired > 0 ? `Intelligence Lv ${currentIntelligenceLevel}/${intelligenceRequired}` : '',
-    strengthLevelRequired > 0 ? `Strength Lv ${normalizeOfficeJobSkillValue(strengthLevel)}/${strengthLevelRequired}` : '',
-    charismaLevelRequired > 0 ? `Charisma Lv ${normalizeOfficeJobSkillValue(charismaLevel)}/${charismaLevelRequired}` : ''
-  ].filter(Boolean).join(' / ');
+  const parts = [];
+  if (intelligenceRequired > 0) {
+    parts.push(`Intelligence Lv ${currentIntelligenceLevel}/${intelligenceRequired}`);
+  }
+  if (strengthLevelRequired > 0) {
+    parts.push(`Strength Lv ${normalizeOfficeJobSkillValue(strengthLevel)}/${strengthLevelRequired}`);
+  }
+  if (charismaLevelRequired > 0) {
+    parts.push(`Charisma Lv ${normalizeOfficeJobSkillValue(charismaLevel)}/${charismaLevelRequired}`);
+  }
+  return parts.join(' / ');
 }
 
 export function getOfficeJobLockedMessage(
@@ -226,11 +232,16 @@ export function getOfficeJobLockedMessage(
   const charismaLevelRequired = normalizeOfficeJobSkillValue(job.charismaLevelRequired);
   const strengthLevelRequired = normalizeOfficeJobSkillValue(job.strengthLevelRequired);
   const currentIntelligenceLevel = normalizeOfficeJobSkillValue(intelligenceLevel);
-  const missing = [
-    currentIntelligenceLevel < intelligenceRequired ? `Level ${intelligenceRequired} Intelligence` : '',
-    normalizeOfficeJobSkillValue(strengthLevel) < strengthLevelRequired ? `Level ${strengthLevelRequired} Strength` : '',
-    normalizeOfficeJobSkillValue(charismaLevel) < charismaLevelRequired ? `Level ${charismaLevelRequired} Charisma` : ''
-  ].filter(Boolean);
+  const missing = [];
+  if (currentIntelligenceLevel < intelligenceRequired) {
+    missing.push(`Level ${intelligenceRequired} Intelligence`);
+  }
+  if (normalizeOfficeJobSkillValue(strengthLevel) < strengthLevelRequired) {
+    missing.push(`Level ${strengthLevelRequired} Strength`);
+  }
+  if (normalizeOfficeJobSkillValue(charismaLevel) < charismaLevelRequired) {
+    missing.push(`Level ${charismaLevelRequired} Charisma`);
+  }
   return missing.length > 0 ? `${job.roleLabel} requires ${missing.join(' and ')}.` : '';
 }
 

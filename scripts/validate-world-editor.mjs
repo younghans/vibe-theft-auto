@@ -211,15 +211,42 @@ function readGlbJson(relativePath) {
 
 function readGlbNodeNames(relativePath) {
   const json = readGlbJson(relativePath);
-  return new Set((json.nodes ?? []).map((node) => node.name).filter(Boolean));
+  const nodeNames = new Set();
+  for (const node of json.nodes ?? []) {
+    if (node.name) {
+      nodeNames.add(node.name);
+    }
+  }
+  return nodeNames;
 }
 
 function getGlbNodeByName(json, nodeName) {
-  return (json.nodes ?? []).find((node) => node.name === nodeName) ?? null;
+  for (const node of json.nodes ?? []) {
+    if (node.name === nodeName) {
+      return node;
+    }
+  }
+  return null;
 }
 
 function getGlbMaterialNames(json) {
-  return new Set((json.materials ?? []).map((material) => material.name).filter(Boolean));
+  const materialNames = new Set();
+  for (const material of json.materials ?? []) {
+    if (material.name) {
+      materialNames.add(material.name);
+    }
+  }
+  return materialNames;
+}
+
+function getGlbNodeNameSet(json) {
+  const nodeNames = new Set();
+  for (const node of json.nodes ?? []) {
+    if (node.name) {
+      nodeNames.add(node.name);
+    }
+  }
+  return nodeNames;
 }
 
 function isGlbNodeQuarterTurnAroundY(node) {
@@ -396,8 +423,550 @@ function normalizeQuarterTurnsFromRotationY(rotationY) {
   return ((Math.round(rotationY / (Math.PI / 2)) % 4) + 4) % 4;
 }
 
+function findPlacementByItemId(placements, itemId) {
+  for (const placement of placements ?? []) {
+    if (placement.itemId === itemId) {
+      return placement;
+    }
+  }
+  return null;
+}
+
+function hasPlacementWithItemId(placements, itemId) {
+  return Boolean(findPlacementByItemId(placements, itemId));
+}
+
+function findNpcById(npcs, npcId) {
+  for (const npc of npcs ?? []) {
+    if (npc.id === npcId) {
+      return npc;
+    }
+  }
+  return null;
+}
+
+function findShowroomProp(layout, itemId, expectedPosition) {
+  for (const placement of layout.props ?? []) {
+    if (
+      placement.itemId === itemId
+      && Math.abs((placement.position?.[0] ?? Number.NaN) - expectedPosition[0]) <= 0.01
+      && Math.abs((placement.position?.[1] ?? Number.NaN) - expectedPosition[1]) <= 0.01
+    ) {
+      return placement;
+    }
+  }
+  return null;
+}
+
+function countVehicleProps(placements) {
+  let count = 0;
+  for (const placement of placements ?? []) {
+    if (isVehiclePropItemId(placement.itemId)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function pushLetteredBuildingIds(target, prefix, variants) {
+  for (const variant of variants) {
+    target.push(`${prefix}${variant}`);
+  }
+}
+
+function getGlbNodesByName(json, nodeName) {
+  const matchingNodes = [];
+  for (const node of json.nodes ?? []) {
+    if (node.name === nodeName) {
+      matchingNodes.push(node);
+    }
+  }
+  return matchingNodes;
+}
+
+function getMaxCollisionRectY(rects) {
+  let maxY = -Infinity;
+  for (const rect of rects ?? []) {
+    maxY = Math.max(maxY, rect.maxY ?? 0);
+  }
+  return maxY;
+}
+
+function getRectSpan(rects, axis) {
+  const centerKey = axis === 'x' ? 'x' : 'z';
+  const halfKey = axis === 'x' ? 'halfWidth' : 'halfDepth';
+  let min = Infinity;
+  let max = -Infinity;
+  for (const rect of rects ?? []) {
+    min = Math.min(min, rect[centerKey] - rect[halfKey]);
+    max = Math.max(max, rect[centerKey] + rect[halfKey]);
+  }
+  return max - min;
+}
+
+function countBankTransparentGlassMaterials(materials) {
+  let count = 0;
+  for (const material of materials ?? []) {
+    const colorFactor = material.pbrMetallicRoughness?.baseColorFactor ?? [];
+    const alpha = Number(colorFactor[3] ?? 1);
+    if (material.alphaMode === 'BLEND' && alpha >= 0.35 && alpha <= 0.45) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function findCollisionRectByCenterZ(rects, centerZ) {
+  for (const rect of rects ?? []) {
+    if (rect.centerZ === centerZ) {
+      return rect;
+    }
+  }
+  return null;
+}
+
+function hasBlockedFrontOpening(rects) {
+  for (const rect of rects ?? []) {
+    if (rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function countSmallDeskCollisionRects(rects) {
+  let count = 0;
+  for (const rect of rects ?? []) {
+    if (rect.centerZ < -3 && rect.halfWidth <= 0.9) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function collectTransparentMeshNames(root) {
+  const names = [];
+  for (const { node, material } of collectMeshMaterials(root)) {
+    if (material.transparent === true || (material.opacity ?? 1) < 1) {
+      names.push(node.name || '(unnamed mesh)');
+    }
+  }
+  return names;
+}
+
+function collectUnexpectedTransparentMeshNames(root, allowedNames) {
+  const names = [];
+  for (const { node, material } of collectMeshMaterials(root)) {
+    if (
+      (material.transparent === true || (material.opacity ?? 1) < 1)
+      && !allowedNames.has(node.name || '(unnamed mesh)')
+    ) {
+      names.push(node.name || '(unnamed mesh)');
+    }
+  }
+  return names;
+}
+
+function hasSavedMarthaNpc(npcs) {
+  for (const npc of npcs ?? []) {
+    if (
+      npc.id === 'npc_martha'
+      && npc.modelId === 'martha'
+      && npc.name === 'Martha'
+      && npc.marthaEnabled === true
+      && /fat old white lady/.test(npc.prompt ?? '')
+      && /fluffy white hair/.test(npc.prompt ?? '')
+      && /round glasses/.test(npc.prompt ?? '')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasPawnBackCounterRect(rects) {
+  for (const rect of rects ?? []) {
+    if (rect.centerZ === -7.2 && rect.halfWidth > 8 && rect.halfDepth >= 0.67) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function countPawnCounterReturnRects(rects) {
+  let count = 0;
+  for (const rect of rects ?? []) {
+    if (rect.centerZ === -4.1 && rect.halfWidth >= 0.67 && rect.halfDepth > 3) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function getRequiredPawnGlassMeshes(pawnVisual) {
+  const names = [
+    'pawnShopFrontWindow-7.6',
+    'pawnShopFrontWindow-5.25',
+    'pawnShopFrontWindow5.25',
+    'pawnShopFrontWindow7.6',
+    'pawnShopBackCounterGlass',
+    'pawnShopLeftCounterReturnGlass',
+    'pawnShopRightCounterReturnGlass'
+  ];
+  const meshes = [];
+  for (const name of names) {
+    meshes.push(pawnVisual.getObjectByName(name));
+  }
+  return meshes;
+}
+
+function assertAllMeshesPresent(meshes, message) {
+  for (const mesh of meshes) {
+    assert(mesh, message);
+  }
+}
+
+function positionValuesAreFinite(position) {
+  for (const value of position) {
+    if (!Number.isFinite(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function collectPickupProps(props) {
+  const pickupProps = [];
+  for (const prop of props ?? []) {
+    if (prop.itemId === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
+      pickupProps.push(prop);
+    }
+  }
+  return pickupProps;
+}
+
+function allPickupSpawnsArePistol(pickupSpawns) {
+  for (const spawn of pickupSpawns) {
+    if (spawn.weaponId !== WEAPON_IDS.pistol) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function deliveryCarryClipHasOnlyUpperBodyTracks(tracks) {
+  for (const track of tracks ?? []) {
+    if (/^mixamorig(?:Hips|LeftUpLeg|RightUpLeg|LeftLeg|RightLeg|LeftFoot|RightFoot)/u.test(track.name ?? '')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sequenceMissionIdsMatch(sequence, expectedOrder) {
+  if (sequence.length !== expectedOrder.length) {
+    return false;
+  }
+  for (let index = 0; index < expectedOrder.length; index += 1) {
+    if (sequence[index]?.missionId !== expectedOrder[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function findCatalogMissionById(missionId) {
+  for (const mission of MISSION_CATALOG) {
+    if (mission.id === missionId) {
+      return mission;
+    }
+  }
+  return null;
+}
+
+function findMissionSnapshotById(snapshots, missionId) {
+  for (const mission of snapshots) {
+    if (mission.id === missionId) {
+      return mission;
+    }
+  }
+  return null;
+}
+
+function findMissionSequenceEntry(sequence, missionId) {
+  for (const mission of sequence) {
+    if (mission.missionId === missionId) {
+      return mission;
+    }
+  }
+  return null;
+}
+
+function rowsHaveStableMissionNumbers(rows) {
+  for (let index = 0; index < rows.length; index += 1) {
+    if (rows[index].missionNumber !== index + 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function fourMoreWheelsFieldsAreRetitled(mission) {
+  const values = [
+    mission?.title,
+    mission?.label,
+    mission?.description,
+    mission?.prompt
+  ];
+  for (const value of values) {
+    if (!String(value ?? '').startsWith(FOUR_MORE_WHEELS_MISSION_TITLE)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function allNpcsHaveFlag(npcs, flagName) {
+  for (const npc of npcs ?? []) {
+    if (!Object.hasOwn(npc, flagName)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function hasNpcWithFlag(npcs, npcId, flagName) {
+  for (const npc of npcs ?? []) {
+    if (npc.id === npcId && npc[flagName] === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ownedVehicleMenuHasItem(menuItems, itemId) {
+  for (const item of menuItems) {
+    if (item.id === itemId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hotbarSlotsExcludeItem(slots, itemId) {
+  for (const slot of slots) {
+    if (slot.itemId === itemId) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function parsePlayerSchemas(serverSource) {
+  const playerSchemas = [];
+  const schemaPattern = /const (?<name>Player[A-Za-z0-9]*State) = schema\(\{(?<body>[\s\S]*?)\n\}\);/g;
+  let schemaMatch = schemaPattern.exec(serverSource);
+  while (schemaMatch) {
+    const fields = [];
+    const fieldPattern = /^\s+([A-Za-z0-9_]+):/gm;
+    let fieldMatch = fieldPattern.exec(schemaMatch.groups.body);
+    while (fieldMatch) {
+      fields.push(fieldMatch[1]);
+      fieldMatch = fieldPattern.exec(schemaMatch.groups.body);
+    }
+    playerSchemas.push({
+      name: schemaMatch.groups.name,
+      fields
+    });
+    schemaMatch = schemaPattern.exec(serverSource);
+  }
+  return playerSchemas;
+}
+
+function findPlayerSchemaByName(playerSchemas, name) {
+  for (const entry of playerSchemas) {
+    if (entry.name === name) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function playerStateHasNestedSchemaFields(fields) {
+  const requiredFields = ['transform', 'combat', 'inventory', 'deliveryQuest', 'skills', 'profile'];
+  for (const field of requiredFields) {
+    if (!fields.includes(field)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getStonePaverSizeSpread(pavers) {
+  const size = new Vector3();
+  let minWidth = Infinity;
+  let maxWidth = -Infinity;
+  let minDepth = Infinity;
+  let maxDepth = -Infinity;
+  for (const paver of pavers) {
+    new Box3().setFromObject(paver).getSize(size);
+    minWidth = Math.min(minWidth, size.x);
+    maxWidth = Math.max(maxWidth, size.x);
+    minDepth = Math.min(minDepth, size.z);
+    maxDepth = Math.max(maxDepth, size.z);
+  }
+  return {
+    width: maxWidth - minWidth,
+    depth: maxDepth - minDepth
+  };
+}
+
+function findRentCollector(npcs) {
+  for (const npc of npcs ?? []) {
+    if (isRentIntroCollector(npc)) {
+      return npc;
+    }
+  }
+  return null;
+}
+
+function chartUsesAllLanes(chart) {
+  const lanes = new Set();
+  for (const note of chart) {
+    lanes.add(note.lane);
+  }
+  return lanes.size === VIBE_HERO_LANE_COUNT;
+}
+
+function pushLayeredPlacementEntries(entries, placements, layer) {
+  if (!Array.isArray(placements)) {
+    return;
+  }
+  for (const placement of placements) {
+    entries.push({ ...placement, layer });
+  }
+}
+
+function hasAllNames(container, names) {
+  for (const name of names) {
+    if (!container?.includes(name)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function hasPoliceFrontCollisionWall(rects) {
+  for (const rect of rects ?? []) {
+    if (rect.centerZ === 5.4 && rect.halfWidth > 8) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectSourceEntries(relativePaths) {
+  const entries = [];
+  for (const relativePath of relativePaths) {
+    entries.push({
+      relativePath,
+      source: readRepoText(relativePath)
+    });
+  }
+  return entries;
+}
+
+function findSourceEntry(entries, relativePath) {
+  for (const entry of entries) {
+    if (entry.relativePath === relativePath) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function collectPassiveTrafficRoadExitKeys(item, rotationQuarterTurns) {
+  const exits = new Set();
+  for (const direction of getPassiveTrafficRoadExits(item, rotationQuarterTurns)) {
+    exits.add(`${direction.x}:${direction.z}`);
+  }
+  return exits;
+}
+
+function findTrafficNodeIndex(graph, cellX, cellZ) {
+  for (const node of graph.nodes) {
+    if (node.cellX === cellX && node.cellZ === cellZ) {
+      return node.index;
+    }
+  }
+  return undefined;
+}
+
+function findTrafficNode(graph, cellX, cellZ) {
+  const index = findTrafficNodeIndex(graph, cellX, cellZ);
+  return index === undefined ? null : graph.nodes[index] ?? null;
+}
+
+function assertAllActiveNodesAreRoads(trafficGraph) {
+  for (const node of trafficGraph.activeNodes) {
+    assert(
+      String(node.itemId).startsWith('road_') || String(node.assetName).startsWith('park_road_'),
+      'Passive traffic graph should be built specifically from road tiles'
+    );
+  }
+}
+
+function assertPathInsideActiveNodeSet(path, activeNodeSet) {
+  for (const nodeIndex of path) {
+    assert(activeNodeSet.has(nodeIndex), 'Passive traffic paths should stay on road graph nodes');
+  }
+}
+
+function findPassiveTrafficTurnCandidate(trafficGraph) {
+  for (const node of trafficGraph.activeNodes) {
+    for (const incomingIndex of node.neighbors) {
+      for (const outgoingIndex of node.neighbors) {
+        if (
+          incomingIndex === outgoingIndex
+          || !trafficGraph.activeNodeSet.has(incomingIndex)
+          || !trafficGraph.activeNodeSet.has(outgoingIndex)
+        ) {
+          continue;
+        }
+
+        const incomingNode = trafficGraph.nodes[incomingIndex];
+        const outgoingNode = trafficGraph.nodes[outgoingIndex];
+        const incomingX = Math.sign(node.cellX - incomingNode.cellX);
+        const incomingZ = Math.sign(node.cellZ - incomingNode.cellZ);
+        const outgoingX = Math.sign(outgoingNode.cellX - node.cellX);
+        const outgoingZ = Math.sign(outgoingNode.cellZ - node.cellZ);
+        if (((incomingX * outgoingX) + (incomingZ * outgoingZ)) === 0) {
+          return { incomingNode, node, outgoingNode };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function assertTurnWaypointsStayOnRoad(turnCandidate, turnWaypoints) {
+  let touchesIntersection = false;
+  for (const waypoint of turnWaypoints) {
+    assert(
+      isPassiveTrafficPositionInsideRoadNode(turnCandidate.incomingNode, waypoint)
+        || isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint)
+        || isPassiveTrafficPositionInsideRoadNode(turnCandidate.outgoingNode, waypoint),
+      'Passive traffic 90-degree turn waypoints should stay inside the connected street tiles'
+    );
+    if (isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint, BUILDER_TILE_SIZE * 0.12)) {
+      touchesIntersection = true;
+    }
+  }
+  assert(touchesIntersection, 'Passive traffic 90-degree turns should arc through the intersection street tile before exiting');
+}
+
 function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
-  const dealershipPlacement = layout.tiles?.find((placement) => placement.itemId === 'car_dealership_building');
+  const dealershipPlacement = findPlacementByItemId(layout.tiles, 'car_dealership_building');
   assert(dealershipPlacement, `${layoutLabel} should include a Car Dealership tile for showroom cars`);
   const rotationQuarterTurns = dealershipPlacement.rotationQuarterTurns ?? 0;
   const dealershipCenter = getTileCenterWorldPosition(
@@ -420,11 +989,7 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
     const localRotationY = Math.atan2(spec.doorTargetLocalX - spec.localX, CAR_DEALERSHIP_DOOR_LOCAL_Z - localZ);
     const expectedRotationY = (rotationQuarterTurns * (Math.PI / 2)) + localRotationY;
     const expectedRotationQuarterTurns = normalizeQuarterTurnsFromRotationY(expectedRotationY);
-    const matchingProps = (layout.props ?? []).filter((placement) => placement.itemId === spec.itemId);
-    const prop = matchingProps.find((placement) => (
-      Math.abs((placement.position?.[0] ?? Number.NaN) - expectedPosition[0]) <= 0.01
-      && Math.abs((placement.position?.[1] ?? Number.NaN) - expectedPosition[1]) <= 0.01
-    ));
+    const prop = findShowroomProp(layout, spec.itemId, expectedPosition);
 
     assert(prop, `${layoutLabel} should place the ${spec.label} in the dealership showroom bay`);
     assert(
@@ -453,9 +1018,12 @@ function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
 }
 
 function assertVehiclePropScales(layout, layoutLabel) {
-  const vehicleProps = (layout.props ?? []).filter((placement) => isVehiclePropItemId(placement.itemId));
-  assert(vehicleProps.length >= 2, `${layoutLabel} should include vehicle props to validate car scale`);
-  for (const prop of vehicleProps) {
+  let vehiclePropCount = 0;
+  for (const prop of layout.props ?? []) {
+    if (!isVehiclePropItemId(prop.itemId)) {
+      continue;
+    }
+    vehiclePropCount += 1;
     assert(
       getDefaultPropPlacementScale(prop) === VEHICLE_PROP_PLACEMENT_SCALE,
       `${layoutLabel} ${prop.itemId} should resolve a 0.75x default vehicle scale`
@@ -465,6 +1033,7 @@ function assertVehiclePropScales(layout, layoutLabel) {
       `${layoutLabel} ${prop.itemId} should render at 0.75x standard size`
     );
   }
+  assert(vehiclePropCount >= 2, `${layoutLabel} should include vehicle props to validate car scale`);
 }
 
 function assertVehicleModelGrounding() {
@@ -520,7 +1089,7 @@ function validatePassiveTraffic() {
   const assertRoadExits = (itemId, rotationQuarterTurns, expectedDirections) => {
     const item = getBuilderItemById(itemId);
     assert(item?.layer === 'tile', `Passive traffic road type ${itemId} should resolve to a tile`);
-    const exits = new Set(getPassiveTrafficRoadExits(item, rotationQuarterTurns).map(directionKey));
+    const exits = collectPassiveTrafficRoadExitKeys(item, rotationQuarterTurns);
     for (const expectedDirection of expectedDirections) {
       assert(
         exits.has(directionKey(expectedDirection)),
@@ -555,8 +1124,8 @@ function validatePassiveTraffic() {
     { id: 'traffic_road_type_10', itemId: 'park_road_junction_decorated_C', cell: [2, -1], rotationQuarterTurns: 0 }
   ];
   const mixedRoadTypeGraph = buildPassiveTrafficRoadGraph(mixedRoadTypeTiles);
-  const mixedRoadStart = mixedRoadTypeGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0)?.index;
-  const mixedRoadEnd = mixedRoadTypeGraph.nodes.find((node) => node.cellX === 2 && node.cellZ === -1)?.index;
+  const mixedRoadStart = findTrafficNodeIndex(mixedRoadTypeGraph, 0, 0);
+  const mixedRoadEnd = findTrafficNodeIndex(mixedRoadTypeGraph, 2, -1);
   const mixedRoadPath = findPassiveTrafficPath(mixedRoadTypeGraph, mixedRoadStart, mixedRoadEnd);
   assert(
     mixedRoadPath.length === mixedRoadTypeTiles.length,
@@ -566,19 +1135,13 @@ function validatePassiveTraffic() {
   const trafficGraph = buildPassiveTrafficRoadGraph(defaultWorldLayout.tiles);
   assert(trafficGraph.activeNodeIndices.length >= 30, 'Default world should expose a broad road-tile network for passive traffic');
   assert(trafficGraph.activeComponents?.length >= 1, 'Passive traffic should expose active road components for broad map coverage');
-  assert(
-    trafficGraph.activeNodes.every((node) => String(node.itemId).startsWith('road_') || String(node.assetName).startsWith('park_road_')),
-    'Passive traffic graph should be built specifically from road tiles'
-  );
+  assertAllActiveNodesAreRoads(trafficGraph);
 
   const startIndex = trafficGraph.activeNodeIndices[0];
   const endIndex = trafficGraph.activeNodeIndices[trafficGraph.activeNodeIndices.length - 1];
   const path = findPassiveTrafficPath(trafficGraph, startIndex, endIndex);
   assert(path.length >= 2, 'Passive traffic should be able to route across the default road network');
-  assert(
-    path.every((nodeIndex) => trafficGraph.activeNodeSet.has(nodeIndex)),
-    'Passive traffic paths should stay on road graph nodes'
-  );
+  assertPathInsideActiveNodeSet(path, trafficGraph.activeNodeSet);
 
   const multiComponentTrafficGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_component_a_1', itemId: 'road_straight', cell: [0, 0], rotationQuarterTurns: 1 },
@@ -588,9 +1151,9 @@ function validatePassiveTraffic() {
   ]);
   assert(multiComponentTrafficGraph.activeComponents.length === 2, 'Passive traffic should keep every drivable road component active for map coverage');
   assert(multiComponentTrafficGraph.activeNodeIndices.length === 4, 'Passive traffic should not drop smaller connected street groups from the active graph');
-  const componentAStart = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0)?.index;
-  const componentAEnd = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 1 && node.cellZ === 0)?.index;
-  const componentBEnd = multiComponentTrafficGraph.nodes.find((node) => node.cellX === 11 && node.cellZ === 0)?.index;
+  const componentAStart = findTrafficNodeIndex(multiComponentTrafficGraph, 0, 0);
+  const componentAEnd = findTrafficNodeIndex(multiComponentTrafficGraph, 1, 0);
+  const componentBEnd = findTrafficNodeIndex(multiComponentTrafficGraph, 11, 0);
   assert(findPassiveTrafficPath(multiComponentTrafficGraph, componentAStart, componentAEnd).length === 2, 'Passive traffic should route inside each active road component');
   assert(findPassiveTrafficPath(multiComponentTrafficGraph, componentAStart, componentBEnd).length === 0, 'Passive traffic should not path through non-road gaps between disconnected street components');
 
@@ -616,7 +1179,11 @@ function validatePassiveTraffic() {
     { id: 'traffic_straight_2', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
     { id: 'traffic_straight_3', itemId: 'road_straight', cell: [0, 2], rotationQuarterTurns: 0 }
   ]);
-  const straightNodes = [0, 1, 2].map((z) => straightTrafficGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === z));
+  const straightNodes = [
+    findTrafficNode(straightTrafficGraph, 0, 0),
+    findTrafficNode(straightTrafficGraph, 0, 1),
+    findTrafficNode(straightTrafficGraph, 0, 2)
+  ];
   const firstStraightLane = getPassiveTrafficLanePosition(straightNodes[0], straightNodes[1], new Vector3());
   const secondStraightLane = getPassiveTrafficLanePosition(straightNodes[1], straightNodes[2], new Vector3());
   assert(
@@ -738,32 +1305,7 @@ function validatePassiveTraffic() {
     'Passive traffic should clamp recovery positions back inside the mapped road tile'
   );
 
-  const turnCandidate = trafficGraph.activeNodes
-    .map((node) => {
-      for (const incomingIndex of node.neighbors) {
-        for (const outgoingIndex of node.neighbors) {
-          if (
-            incomingIndex === outgoingIndex
-            || !trafficGraph.activeNodeSet.has(incomingIndex)
-            || !trafficGraph.activeNodeSet.has(outgoingIndex)
-          ) {
-            continue;
-          }
-
-          const incomingNode = trafficGraph.nodes[incomingIndex];
-          const outgoingNode = trafficGraph.nodes[outgoingIndex];
-          const incomingX = Math.sign(node.cellX - incomingNode.cellX);
-          const incomingZ = Math.sign(node.cellZ - incomingNode.cellZ);
-          const outgoingX = Math.sign(outgoingNode.cellX - node.cellX);
-          const outgoingZ = Math.sign(outgoingNode.cellZ - node.cellZ);
-          if (((incomingX * outgoingX) + (incomingZ * outgoingZ)) === 0) {
-            return { incomingNode, node, outgoingNode };
-          }
-        }
-      }
-      return null;
-    })
-    .find(Boolean);
+  const turnCandidate = findPassiveTrafficTurnCandidate(trafficGraph);
   assert(turnCandidate, 'Default road graph should include a passive-traffic turn candidate');
   const incomingTurnLane = getPassiveTrafficLanePosition(turnCandidate.incomingNode, turnCandidate.node, new Vector3());
   const outgoingIntersectionLane = getPassiveTrafficLanePositionAtNode(turnCandidate.node, turnCandidate.outgoingNode, new Vector3());
@@ -783,18 +1325,7 @@ function validatePassiveTraffic() {
     turnWaypoints[turnWaypoints.length - 1].distanceTo(outgoingTurnLane) < 0.001,
     'Passive traffic turn waypoints should finish on the outgoing right-hand lane'
   );
-  assert(
-    turnWaypoints.every((waypoint) => (
-      isPassiveTrafficPositionInsideRoadNode(turnCandidate.incomingNode, waypoint)
-      || isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint)
-      || isPassiveTrafficPositionInsideRoadNode(turnCandidate.outgoingNode, waypoint)
-    )),
-    'Passive traffic 90-degree turn waypoints should stay inside the connected street tiles'
-  );
-  assert(
-    turnWaypoints.some((waypoint) => isPassiveTrafficPositionInsideRoadNode(turnCandidate.node, waypoint, BUILDER_TILE_SIZE * 0.12)),
-    'Passive traffic 90-degree turns should arc through the intersection street tile before exiting'
-  );
+  assertTurnWaypointsStayOnRoad(turnCandidate, turnWaypoints);
 
   const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
   assert(
@@ -859,7 +1390,7 @@ function validatePassiveTraffic() {
 }
 
 function assertCarDealerNpc(layout, layoutLabel, carDealershipItem) {
-  const dealershipPlacement = layout.tiles?.find((placement) => placement.itemId === 'car_dealership_building');
+  const dealershipPlacement = findPlacementByItemId(layout.tiles, 'car_dealership_building');
   assert(dealershipPlacement, `${layoutLabel} should include a Car Dealership tile for the car dealer NPC`);
   const rotationQuarterTurns = dealershipPlacement.rotationQuarterTurns ?? 0;
   const dealershipCenter = getTileCenterWorldPosition(
@@ -877,7 +1408,7 @@ function assertCarDealerNpc(layout, layoutLabel, carDealershipItem) {
     Number((dealershipCenter.x + offset.x).toFixed(2)),
     Number((dealershipCenter.z + offset.z).toFixed(2))
   ];
-  const carDealerNpc = (layout.npcs ?? []).find((npc) => npc.id === 'npc_car_dealer');
+  const carDealerNpc = findNpcById(layout.npcs, 'npc_car_dealer');
   assert(carDealerNpc, `${layoutLabel} should seed the Car Dealer NPC`);
   assert(carDealerNpc.carDealerEnabled === true, `${layoutLabel} Car Dealer NPC should enable carDealerEnabled`);
   assert(carDealerNpc.name === 'Car Dealer', `${layoutLabel} Car Dealer NPC should be named Car Dealer`);
@@ -901,8 +1432,6 @@ function validateKenneyCatalogItems() {
     'gym_building_large',
     'hospital_building',
     'hospital_building_wide',
-    ...'abcdefghijklmn'.split('').map((variant) => `kenney_building_${variant}`),
-    ...'abcde'.split('').map((variant) => `kenney_building_skyscraper_${variant}`),
     'kenney_detail_awning',
     'kenney_detail_awning_wide',
     'kenney_detail_overhang',
@@ -910,6 +1439,8 @@ function validateKenneyCatalogItems() {
     'kenney_detail_parasol_a',
     'kenney_detail_parasol_b'
   ];
+  pushLetteredBuildingIds(expectedIds, 'kenney_building_', 'abcdefghijklmn');
+  pushLetteredBuildingIds(expectedIds, 'kenney_building_skyscraper_', 'abcde');
 
   for (const itemId of expectedIds) {
     const item = getBuilderItemById(itemId);
@@ -925,9 +1456,8 @@ function validateCustomTileCatalogItems() {
   };
   const assertHospitalGlbProfile = (relativePath, profileNodeName, label) => {
     const glbJson = readGlbJson(relativePath);
-    const nodes = glbJson.nodes ?? [];
-    const profileNode = nodes.find((node) => node.name === profileNodeName);
-    const crossNodes = nodes.filter((node) => node.name === 'hospital_cross_symbol');
+    const profileNode = getGlbNodeByName(glbJson, profileNodeName);
+    const crossNodes = getGlbNodesByName(glbJson, 'hospital_cross_symbol');
     assert(profileNode, `${label} GLB should expose the form-fitting profile node`);
     assertClose(getGlbNodeLocalScale(profileNode)[1], 1.7, `${label} profile should stretch vertically by 1.7x`);
     assert(crossNodes.length >= 2, `${label} GLB should keep separate hospital cross symbol nodes`);
@@ -945,8 +1475,8 @@ function validateCustomTileCatalogItems() {
   assert(wideHospital.movementCollisionRects?.length === 5, 'Wide hospital should use form-fitting movement colliders instead of a full 2x1 box');
   assert(hospital.shotCollisionRects?.length === hospital.movementCollisionRects.length, 'Hospital shot collision should match its rebuilt silhouette');
   assert(wideHospital.shotCollisionRects?.length === wideHospital.movementCollisionRects.length, 'Wide hospital shot collision should match its rebuilt silhouette');
-  assert(Math.max(...hospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 29, 'Hospital collision height should cover the 1.7x rebuilt profile');
-  assert(Math.max(...wideHospital.movementCollisionRects.map((rect) => rect.maxY ?? 0)) >= 29, 'Wide hospital collision height should cover the 1.7x rebuilt profile');
+  assert(getMaxCollisionRectY(hospital.movementCollisionRects) >= 29, 'Hospital collision height should cover the 1.7x rebuilt profile');
+  assert(getMaxCollisionRectY(wideHospital.movementCollisionRects) >= 29, 'Wide hospital collision height should cover the 1.7x rebuilt profile');
   assertHospitalGlbProfile(
     'assets/vibe_theft_auto_custom/models/hospital-building.glb',
     'hospital_building_form_fit',
@@ -958,13 +1488,6 @@ function validateCustomTileCatalogItems() {
     'Wide hospital'
   );
 
-  const getRectSpan = (rects, axis) => {
-    const centerKey = axis === 'x' ? 'x' : 'z';
-    const halfKey = axis === 'x' ? 'halfWidth' : 'halfDepth';
-    const min = Math.min(...rects.map((rect) => rect[centerKey] - rect[halfKey]));
-    const max = Math.max(...rects.map((rect) => rect[centerKey] + rect[halfKey]));
-    return max - min;
-  };
   const hospitalCollisionRects = placementToCollisionRects(
     { itemId: hospital.id, layer: 'tile', cellX: 0, cellZ: 0, rotationQuarterTurns: 0 },
     hospital,
@@ -1247,12 +1770,8 @@ function validateCustomPropCatalogItems() {
   });
   assert(stonePathPavers.length === 21, 'Stone Path visual should use a full uniform grid of pavers');
   assert(!stonePathVisual.getObjectByName('stonePathMossLeftEdge'), 'Stone Path should not rely on moss edge decoration');
-  const stonePaverSizes = stonePathPavers.map((paver) => new Box3().setFromObject(paver).getSize(new Vector3()));
-  const paverWidthSpread = Math.max(...stonePaverSizes.map((size) => size.x))
-    - Math.min(...stonePaverSizes.map((size) => size.x));
-  const paverDepthSpread = Math.max(...stonePaverSizes.map((size) => size.z))
-    - Math.min(...stonePaverSizes.map((size) => size.z));
-  assert(paverWidthSpread < 0.001 && paverDepthSpread < 0.001, 'Stone Path pavers should be uniform in size');
+  const stonePaverSizeSpread = getStonePaverSizeSpread(stonePathPavers);
+  assert(stonePaverSizeSpread.width < 0.001 && stonePaverSizeSpread.depth < 0.001, 'Stone Path pavers should be uniform in size');
 
   const vibeJamExitPortal = getBuilderItemById('vibe_jam_exit_portal');
   const vibeJamStartPortal = getBuilderItemById('vibe_jam_start_portal');
@@ -1436,9 +1955,9 @@ function validateCustomPropCatalogItems() {
   assert(gameSource.includes("run.phase === 'countdown' || run.phase === 'playing'"), 'Treadmill character should run during both countdown and scoring');
   assert(hudSource.includes('is-countdown'), 'HUD should render a distinct treadmill countdown state');
   assert(hudSource.includes('hud__treadmill-run-hit'), 'HUD should render the treadmill rhythm hit target');
-  assert(defaultWorldLayout.props.some((prop) => prop.itemId === 'treadmill'), 'Default world should seed a treadmill prop');
+  assert(hasPlacementWithItemId(defaultWorldLayout.props, 'treadmill'), 'Default world should seed a treadmill prop');
 
-  const rentCollector = defaultWorldLayout.npcs.find((npc) => isRentIntroCollector(npc));
+  const rentCollector = findRentCollector(defaultWorldLayout.npcs);
   const rentIntroPlan = resolveRentIntroPlan(defaultWorldLayout);
   assert(rentCollector?.id === 'npc_landlord', 'Default world should seed the landlord as the rent collector');
   assert(rentIntroPlan?.collectorNpcId === 'npc_landlord', 'Rent intro should resolve to the landlord collector');
@@ -1545,7 +2064,8 @@ function validateVibeHero() {
     let previousTime = -1;
     let totalGapMs = 0;
     let minGapMs = Infinity;
-    for (const [index, note] of song.chart.entries()) {
+    for (let index = 0; index < song.chart.length; index += 1) {
+      const note = song.chart[index];
       assert(note.timeMs > previousTime, `${song.title} note ${index + 1}: chart timings should be sorted`);
       if (previousTime >= 0) {
         const gapMs = note.timeMs - previousTime;
@@ -1562,15 +2082,15 @@ function validateVibeHero() {
     assert(minGapMs >= 70, `${song.title}: onset chart should avoid stacked filler notes`);
     assert(averageGapMs >= 140, `${song.title}: chart should emphasize substantial attacks`);
     assert(notesPerSecond <= 5.6, `${song.title}: chart should not fill quiet music with extra notes`);
-    const lanes = new Set(song.chart.map((note) => note.lane));
-    assert(lanes.size === VIBE_HERO_LANE_COUNT, `${song.title}: chart should use all five Vibe Hero lanes`);
+    assert(chartUsesAllLanes(song.chart), `${song.title}: chart should use all five Vibe Hero lanes`);
   }
 }
 
 function validateTiles() {
   const seenCells = new Set();
 
-  for (const [index, tile] of defaultWorldLayout.tiles.entries()) {
+  for (let index = 0; index < defaultWorldLayout.tiles.length; index += 1) {
+    const tile = defaultWorldLayout.tiles[index];
     const item = getBuilderItemById(tile.itemId);
     assert(item, `Tile ${index}: unknown itemId "${tile.itemId}"`);
     assert(item.layer === 'tile', `Tile ${index}: "${tile.itemId}" is not a tile catalog item`);
@@ -1586,11 +2106,11 @@ function validateTiles() {
 }
 
 function getLayoutPlacementEntries(layout = {}) {
-  return [
-    ...(Array.isArray(layout.tiles) ? layout.tiles.map((placement) => ({ ...placement, layer: 'tile' })) : []),
-    ...(Array.isArray(layout.props) ? layout.props.map((placement) => ({ ...placement, layer: 'prop' })) : []),
-    ...(Array.isArray(layout.npcs) ? layout.npcs.map((placement) => ({ ...placement, layer: 'npc' })) : [])
-  ];
+  const entries = [];
+  pushLayeredPlacementEntries(entries, layout.tiles, 'tile');
+  pushLayeredPlacementEntries(entries, layout.props, 'prop');
+  pushLayeredPlacementEntries(entries, layout.npcs, 'npc');
+  return entries;
 }
 
 function validateUniquePlacementIds(layout, layoutLabel) {
@@ -1608,9 +2128,11 @@ function validateUniquePlacementIds(layout, layoutLabel) {
 }
 
 function sortedCellKeys(cells) {
-  return cells
-    .map((cell) => `${cell.x},${cell.z}`)
-    .sort();
+  const keys = [];
+  for (const cell of cells) {
+    keys.push(`${cell.x},${cell.z}`);
+  }
+  return keys.sort();
 }
 
 function validateFootprintSupport() {
@@ -1645,7 +2167,8 @@ function validateFootprintSupport() {
   assert(marthasGrille, "Martha's Grille tile should exist");
   assert(realEstateOffice, 'Real Estate Office tile should exist');
   assert(policeStation, 'Police Station tile should exist');
-  for (const [index, { item }] of districtBuildings.entries()) {
+  for (let index = 0; index < districtBuildings.length; index += 1) {
+    const { item } = districtBuildings[index];
     assert(item, `District 2x2 building ${index} should exist`);
   }
 
@@ -1660,7 +2183,7 @@ function validateFootprintSupport() {
   assert(
     largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_foundation')
       && largeGym.interior?.cutawayVisibleNodeNames?.includes('gym_interior')
-      && cutawayVisibleWallNames('gym').every((nodeName) => largeGym.interior?.cutawayVisibleNodeNames?.includes(nodeName)),
+      && hasAllNames(largeGym.interior?.cutawayVisibleNodeNames, cutawayVisibleWallNames('gym')),
     'Large gym should keep its floor, interior, and back/side walls visible while the exterior is transparent'
   );
   assert(
@@ -1682,7 +2205,7 @@ function validateFootprintSupport() {
     'Police Station garage interaction should target the closed garage door node'
   );
   assert(
-    policeStation.movementCollisionRects?.some((rect) => rect.centerZ === 5.4 && rect.halfWidth > 8),
+    hasPoliceFrontCollisionWall(policeStation.movementCollisionRects),
     'Police Station should keep a front collision wall so the open garage is not enterable'
   );
   assert(getBuilderItemById('Police Station') === policeStation, 'Police Station should resolve from its display label');
@@ -1698,7 +2221,7 @@ function validateFootprintSupport() {
       `${item.id} should keep its floor/foundation visible while the exterior is transparent`
     );
     assert(
-      cutawayVisibleWallNames(key).every((nodeName) => item.interior?.cutawayVisibleNodeNames?.includes(nodeName)),
+      hasAllNames(item.interior?.cutawayVisibleNodeNames, cutawayVisibleWallNames(key)),
       `${item.id} should keep its back and side walls visible while the exterior is transparent`
     );
     assert(
@@ -1707,7 +2230,7 @@ function validateFootprintSupport() {
       `${item.id} should hide its front exterior wall and outside detail during cutaway`
     );
     assert(
-      cutawayVisibleWallNames(key).every((nodeName) => item.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+      hasAllNames(item.cameraOcclusionPreserveNodeNames, cutawayVisibleWallNames(key)),
       `${item.id} should preserve its back and side walls during active camera occlusion`
     );
     if (key !== 'offices') {
@@ -1740,7 +2263,7 @@ function validateFootprintSupport() {
     assert(largeGymNodeNames.has(nodeName), `Large gym GLB should expose ${nodeName} for cutaway visibility`);
   }
   const policeStationGlbJson = readGlbJson('assets/vibe_theft_auto_custom/models/police-station-building.glb');
-  const policeStationNodeNames = new Set((policeStationGlbJson.nodes ?? []).map((node) => node.name).filter(Boolean));
+  const policeStationNodeNames = getGlbNodeNameSet(policeStationGlbJson);
   const policeStationMaterialNames = getGlbMaterialNames(policeStationGlbJson);
   assert(policeStationNodeNames.has('police_station_garage_door_closed'), 'Police Station GLB should expose the closed garage door node');
   assert(policeStationNodeNames.has('car_police'), 'Police Station GLB should include the car_police roof prop node');
@@ -1792,31 +2315,31 @@ function validateFootprintSupport() {
   assert(carDealership.size[0] === CAR_DEALERSHIP_BUILDING_FOOTPRINT[0], 'Car Dealership should use a 2x2 building width');
   assert(carDealership.size[1] === CAR_DEALERSHIP_BUILDING_FOOTPRINT[1], 'Car Dealership should use a 2x2 building depth');
   assert(
-    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'marthas_grille_building'),
+    hasPlacementWithItemId(defaultWorldLayout.tiles, 'marthas_grille_building'),
     "Default world should place Martha's Grille"
   );
   assert(
-    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'real_estate_office_building'),
+    hasPlacementWithItemId(defaultWorldLayout.tiles, 'real_estate_office_building'),
     'Default world should place the Real Estate Office'
   );
   assert(
-    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'real_estate_office_building'),
+    hasPlacementWithItemId(savedWorldLayout.tiles, 'real_estate_office_building'),
     'Fallback saved world layout should place the Real Estate Office'
   );
   assert(
-    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'police_station_building'),
+    hasPlacementWithItemId(defaultWorldLayout.tiles, 'police_station_building'),
     'Default world should place the Police Station'
   );
   assert(
-    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'police_station_building'),
+    hasPlacementWithItemId(savedWorldLayout.tiles, 'police_station_building'),
     'Fallback saved world layout should place the Police Station'
   );
   assert(
-    defaultWorldLayout.tiles.some((placement) => placement.itemId === 'car_dealership_building'),
+    hasPlacementWithItemId(defaultWorldLayout.tiles, 'car_dealership_building'),
     'Default world should place the Car Dealership'
   );
   assert(
-    savedWorldLayout.tiles?.some((placement) => placement.itemId === 'car_dealership_building'),
+    hasPlacementWithItemId(savedWorldLayout.tiles, 'car_dealership_building'),
     'Fallback saved world layout should place the Car Dealership'
   );
   assertDealershipShowroomCars(defaultWorldLayout, 'Default world layout', carDealership);
@@ -1877,7 +2400,7 @@ function validateFootprintSupport() {
     "Martha's Grille back-wall menu should stay visible when the exterior becomes transparent"
   );
   assert(
-    cutawayVisibleWallNames('marthas_grille').every((nodeName) => marthasGrille.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+    hasAllNames(marthasGrille.cameraOcclusionPreserveNodeNames, cutawayVisibleWallNames('marthas_grille')),
     "Martha's Grille should keep its back and side walls visible during camera occlusion"
   );
   assert(
@@ -1886,15 +2409,12 @@ function validateFootprintSupport() {
   );
   const worldRendererSource = readRepoText('src/world/WorldRenderer.js');
   const mainGameSource = readRepoText('src/game/Game.js');
-  const stableWindowGeneratorSources = [
+  const stableWindowGeneratorSources = collectSourceEntries([
     'scripts/generate-district-buildings.mjs',
     'scripts/generate-gym-building.mjs',
     'scripts/generate-gym-building-large.mjs',
     'scripts/generate-bar-building.mjs'
-  ].map((relativePath) => ({
-    relativePath,
-    source: readRepoText(relativePath)
-  }));
+  ]);
   assert(
     /const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;/.test(worldRendererSource),
     'World renderer should make occluding building exteriors fully transparent'
@@ -1904,7 +2424,7 @@ function validateFootprintSupport() {
     'Main game camera should use a tighter near plane so shallow building detail remains depth-stable'
   );
   assert(
-    /startInteractionCameraFocus\(interaction[\s\S]*updateInteractionCameraFocus\(\{ snap \}\)/.test(mainGameSource)
+    /startInteractionCameraFocus\(interaction[\s\S]*updateInteractionCameraFocus\((?:\{\s*snap(?:,\s*now)?\s*\}|focusOptions)\)/.test(mainGameSource)
       && /openStockMarket\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'stock-market' \}/.test(mainGameSource)
       && /closeStockMarket\(\)\s*\{[\s\S]*clearInteractionCameraFocus\('stock-market'\)/.test(mainGameSource)
       && /openBlackjack\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'blackjack' \}/.test(mainGameSource)
@@ -1959,8 +2479,7 @@ function validateFootprintSupport() {
       `${relativePath} should not place full window frame panels into the glass depth range`
     );
   }
-  const districtBuildingSource = stableWindowGeneratorSources
-    .find((entry) => entry.relativePath === 'scripts/generate-district-buildings.mjs')?.source ?? '';
+  const districtBuildingSource = findSourceEntry(stableWindowGeneratorSources, 'scripts/generate-district-buildings.mjs')?.source ?? '';
   const getSourceSection = (source, startNeedle, endNeedle) => {
     const startIndex = source.indexOf(startNeedle);
     const endIndex = startIndex >= 0 ? source.indexOf(endNeedle, startIndex) : -1;
@@ -2009,7 +2528,7 @@ function validateFootprintSupport() {
     'Bank exterior generator should not restore the old classical columns or sparse side-window pass'
   );
   const bankGlbJson = readGlbJson('assets/vibe_theft_auto_custom/models/bank-building.glb');
-  const bankNodeNames = new Set((bankGlbJson.nodes ?? []).map((node) => node.name).filter(Boolean));
+  const bankNodeNames = getGlbNodeNameSet(bankGlbJson);
   assert(
     bankNodeNames.has('bank_interior') && bankNodeNames.has('bank_exterior_detail'),
     'Bank GLB should keep separate interior and exterior-detail nodes for cutaway rendering'
@@ -2018,13 +2537,8 @@ function validateFootprintSupport() {
     getGlbMaxPositionY(bankGlbJson) >= 24.5,
     'Bank GLB should be regenerated with the taller exterior tower'
   );
-  const bankTransparentGlassMaterials = (bankGlbJson.materials ?? []).filter((material) => {
-    const colorFactor = material.pbrMetallicRoughness?.baseColorFactor ?? [];
-    const alpha = Number(colorFactor[3] ?? 1);
-    return material.alphaMode === 'BLEND' && alpha >= 0.35 && alpha <= 0.45;
-  });
   assert(
-    bankTransparentGlassMaterials.length >= 2,
+    countBankTransparentGlassMaterials(bankGlbJson.materials) >= 2,
     'Bank GLB should include transparent modern glass materials in the generated exterior asset'
   );
   assert(
@@ -2048,7 +2562,7 @@ function validateFootprintSupport() {
     'Real Estate Office interior should stay visible during camera occlusion'
   );
   assert(
-    cutawayVisibleWallNames('real_estate_office').every((nodeName) => realEstateOffice.cameraOcclusionPreserveNodeNames?.includes(nodeName)),
+    hasAllNames(realEstateOffice.cameraOcclusionPreserveNodeNames, cutawayVisibleWallNames('real_estate_office')),
     'Real Estate Office should keep its back and side walls visible during camera occlusion'
   );
   assert(
@@ -2057,20 +2571,20 @@ function validateFootprintSupport() {
   );
   assert(marthasGrille.movementCollisionRects?.length === 6, "Martha's Grille should define wall and counter movement collision");
   assert(marthasGrille.shotCollisionRects?.length === marthasGrille.movementCollisionRects.length, "Martha's Grille wall and counter collision should also block shots");
-  const grilleCounterRect = marthasGrille.movementCollisionRects.find((rect) => rect.centerZ === 1.05);
+  const grilleCounterRect = findCollisionRectByCenterZ(marthasGrille.movementCollisionRects, 1.05);
   assert(grilleCounterRect?.halfWidth > 4.4 && grilleCounterRect?.halfDepth >= 0.72, "Martha's Grille counter should be impervious across the service line");
   assert(
-    !marthasGrille.movementCollisionRects.some((rect) => rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5),
+    !hasBlockedFrontOpening(marthasGrille.movementCollisionRects),
     "Martha's Grille should leave a large unblocked front opening"
   );
   assert(realEstateOffice.movementCollisionRects?.length === 8, 'Real Estate Office should define wall and desk movement collision');
   assert(realEstateOffice.shotCollisionRects?.length === realEstateOffice.movementCollisionRects.length, 'Real Estate Office collision should also block shots');
   assert(
-    !realEstateOffice.movementCollisionRects.some((rect) => rect.centerZ > 4.5 && Math.abs(rect.centerX) < 2.5),
+    !hasBlockedFrontOpening(realEstateOffice.movementCollisionRects),
     'Real Estate Office should leave a large unblocked front opening'
   );
   assert(
-    realEstateOffice.movementCollisionRects.filter((rect) => rect.centerZ < -3 && rect.halfWidth <= 0.9).length === 3,
+    countSmallDeskCollisionRects(realEstateOffice.movementCollisionRects) === 3,
     'Real Estate Office should give its three small desks focused collision'
   );
   const grillePlacement = {
@@ -2168,9 +2682,7 @@ function validateFootprintSupport() {
   const grilleSignPanelBounds = new Box3().setFromObject(grilleSignPanel);
   const grilleMarthaPortraitBounds = new Box3().setFromObject(grilleMarthaPortrait);
   assert(grilleMarthaPortraitBounds.min.y > grilleSignPanelBounds.max.y, "Martha's Grille Martha billboard should sit above the main sign");
-  const grilleTransparentMeshes = collectMeshMaterials(grilleVisual)
-    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
-    .map(({ node }) => node.name || '(unnamed mesh)');
+  const grilleTransparentMeshes = collectTransparentMeshNames(grilleVisual);
   assert(grilleTransparentMeshes.length === 0, `Martha's Grille should not use transparent materials that can tint the building blue: ${grilleTransparentMeshes.join(', ')}`);
   assert(grilleVisual.getObjectByName('marthasGrilleOpenFrontThreshold'), "Martha's Grille visual should mark the open front threshold");
   const grilleBounds = new Box3().setFromObject(grilleVisual);
@@ -2178,7 +2690,7 @@ function validateFootprintSupport() {
   assert(grilleSize.y >= 8, "Martha's Grille visual should be taller with the pavilion roof");
   assert(grilleSize.x <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[0] + 0.02, "Martha's Grille visual should stay within one tile width before fitting");
   assert(grilleSize.z <= MARTHAS_GRILLE_BUILDING_FOOTPRINT[1] + 0.02, "Martha's Grille visual should stay within one tile depth before fitting");
-  const defaultMartha = defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_martha');
+  const defaultMartha = findNpcById(defaultWorldLayout.npcs, 'npc_martha');
   assert(defaultMartha?.modelId === 'martha', 'Default world should create Martha using the Martha model');
   assert(defaultMartha?.name === 'Martha', 'Default world should expose Martha as a named NPC');
   assert(defaultMartha?.marthaEnabled === true, 'Default world should enable the Martha NPC food function');
@@ -2195,13 +2707,7 @@ function validateFootprintSupport() {
     'Default Martha prompt should describe her requested in-game appearance'
   );
   assert(
-    savedWorldLayout.npcs?.some((npc) => npc.id === 'npc_martha'
-      && npc.modelId === 'martha'
-      && npc.name === 'Martha'
-      && npc.marthaEnabled === true
-      && /fat old white lady/.test(npc.prompt ?? '')
-      && /fluffy white hair/.test(npc.prompt ?? '')
-      && /round glasses/.test(npc.prompt ?? '')),
+    hasSavedMarthaNpc(savedWorldLayout.npcs),
     'Saved world layout should include Martha near the grille'
   );
   const marthaAdornment = createMarthaNpcAdornment({ height: 4.8 });
@@ -2232,7 +2738,7 @@ function validateFootprintSupport() {
   );
   assert(isMarthaNpc(defaultMartha), 'Martha NPC food function should be detected from the default NPC definition');
   assert(
-    !shouldApplyMarthaNpcAdornment({ id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte')),
+    !shouldApplyMarthaNpcAdornment({ id: 'martha' }, findNpcById(defaultWorldLayout.npcs, 'npc_professor_byte')),
     'Martha NPC adornment should not affect the school teacher using the same base model'
   );
   const marthaBaseMock = new Group();
@@ -2257,7 +2763,7 @@ function validateFootprintSupport() {
   professorBaseBody.name = 'Ch27_Body';
   professorBaseMock.add(professorBaseBody);
   assert(
-    !applyMarthaNpcBaseStyle(professorBaseMock, { id: 'martha' }, defaultWorldLayout.npcs.find((npc) => npc.id === 'npc_professor_byte'))
+    !applyMarthaNpcBaseStyle(professorBaseMock, { id: 'martha' }, findNpcById(defaultWorldLayout.npcs, 'npc_professor_byte'))
       && professorBaseBody.material === professorBaseSkinMaterial,
     'Martha base styling should not affect Professor Byte even though he uses the same GLB'
   );
@@ -2341,9 +2847,7 @@ function validateFootprintSupport() {
   assert(realEstateSignLabel?.material?.color?.getHex() === 0x4c535a, 'Real Estate Office fallback sign label should be gray instead of green');
   assert(realEstateSignLabel?.material?.transparent !== true, 'Real Estate Office sign label should avoid transparent material sorting');
   assert(realEstateSignLabel?.material?.depthWrite !== false, 'Real Estate Office sign label should write depth as an opaque sign');
-  const realEstateTransparentMeshes = collectMeshMaterials(realEstateVisual)
-    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
-    .map(({ node }) => node.name || '(unnamed mesh)');
+  const realEstateTransparentMeshes = collectTransparentMeshNames(realEstateVisual);
   assert(realEstateTransparentMeshes.length === 0, `Real Estate Office should not use transparent materials that can tint the building blue: ${realEstateTransparentMeshes.join(', ')}`);
   const realEstateBounds = new Box3().setFromObject(realEstateVisual);
   const realEstateSize = realEstateBounds.getSize(new Vector3());
@@ -2410,11 +2914,7 @@ function validateFootprintSupport() {
     const bounds = new Box3().setFromObject(carDealershipVisual.getObjectByName(nodeName));
     assert(bounds.max.z <= -1.4, `${nodeName} should stay in the back half so the bottom two showroom tiles remain empty`);
   }
-  const carDealershipTransparentMeshes = collectMeshMaterials(carDealershipVisual)
-    .filter(({ material }) => material.transparent === true || (material.opacity ?? 1) < 1)
-    .map(({ node }) => node.name || '(unnamed mesh)');
-  const unexpectedCarDealershipTransparentMeshes = carDealershipTransparentMeshes
-    .filter((name) => !carDealershipTransparentGlassNames.has(name));
+  const unexpectedCarDealershipTransparentMeshes = collectUnexpectedTransparentMeshNames(carDealershipVisual, carDealershipTransparentGlassNames);
   assert(
     unexpectedCarDealershipTransparentMeshes.length === 0,
     `Only Car Dealership glass panels should use transparent materials: ${unexpectedCarDealershipTransparentMeshes.join(', ')}`
@@ -2429,13 +2929,17 @@ function validateFootprintSupport() {
   );
   assert(pawnShop.movementCollisionRects?.length >= 8, 'Pawn shop should block movement with hull and counter/table collision');
   assert(pawnShop.shotCollisionRects?.length === pawnShop.movementCollisionRects.length, 'Pawn shop counter/table collision should also block shots');
-  const pawnCounterRects = pawnShop.movementCollisionRects.slice(-3);
+  const pawnCounterRects = [];
+  const pawnCounterStart = Math.max(0, pawnShop.movementCollisionRects.length - 3);
+  for (let index = pawnCounterStart; index < pawnShop.movementCollisionRects.length; index += 1) {
+    pawnCounterRects.push(pawnShop.movementCollisionRects[index]);
+  }
   assert(
-    pawnCounterRects.some((rect) => rect.centerZ === -7.2 && rect.halfWidth > 8 && rect.halfDepth >= 0.67),
+    hasPawnBackCounterRect(pawnCounterRects),
     'Pawn shop back counter/table should have movement collision'
   );
   assert(
-    pawnCounterRects.filter((rect) => rect.centerZ === -4.1 && rect.halfWidth >= 0.67 && rect.halfDepth > 3).length === 2,
+    countPawnCounterReturnRects(pawnCounterRects) === 2,
     'Pawn shop counter/table returns should have movement collision'
   );
   const pawnPlacement = {
@@ -2463,16 +2967,8 @@ function validateFootprintSupport() {
   assert(pawnVisual.getObjectByName('pawnShopLeftCounterReturn'), 'Pawn shop counter should wrap along the left back side');
   assert(pawnVisual.getObjectByName('pawnShopRightCounterReturn'), 'Pawn shop counter should wrap along the right back side');
   assert(pawnVisual.getObjectByName('pawnShopEntranceSignPanel'), 'Pawn shop should include a front entrance sign panel');
-  const pawnGlassMeshes = [
-    'pawnShopFrontWindow-7.6',
-    'pawnShopFrontWindow-5.25',
-    'pawnShopFrontWindow5.25',
-    'pawnShopFrontWindow7.6',
-    'pawnShopBackCounterGlass',
-    'pawnShopLeftCounterReturnGlass',
-    'pawnShopRightCounterReturnGlass'
-  ].map((name) => pawnVisual.getObjectByName(name));
-  assert(pawnGlassMeshes.every(Boolean), 'Pawn shop should expose named glass meshes for depth validation');
+  const pawnGlassMeshes = getRequiredPawnGlassMeshes(pawnVisual);
+  assertAllMeshesPresent(pawnGlassMeshes, 'Pawn shop should expose named glass meshes for depth validation');
   for (const glassMesh of pawnGlassMeshes) {
     assert(glassMesh.material?.transparent === true, `${glassMesh.name} should use a transparent material`);
     assert(glassMesh.material?.depthWrite === false, `${glassMesh.name} should not write depth while transparent`);
@@ -2504,21 +3000,22 @@ function validateFootprintSupport() {
 }
 
 function validateProps() {
-  for (const [index, prop] of defaultWorldLayout.props.entries()) {
+  for (let index = 0; index < defaultWorldLayout.props.length; index += 1) {
+    const prop = defaultWorldLayout.props[index];
     const item = getBuilderItemById(prop.itemId);
     assert(item, `Prop ${index}: unknown itemId "${prop.itemId}"`);
     assert(item.layer === 'prop', `Prop ${index}: "${prop.itemId}" is not a prop catalog item`);
     assert(Array.isArray(prop.position) && prop.position.length === 2, `Prop ${index}: position must be [x, z]`);
-    assert(prop.position.every((value) => Number.isFinite(value)), `Prop ${index}: position values must be finite numbers`);
+    assert(positionValuesAreFinite(prop.position), `Prop ${index}: position values must be finite numbers`);
     validateRotationQuarterTurns(prop.rotationQuarterTurns, `Prop ${index}`);
   }
 
-  const pickupProps = defaultWorldLayout.props.filter((prop) => prop.itemId === COMBAT_PICKUP_PROP_ITEM_IDS.pistol);
+  const pickupProps = collectPickupProps(defaultWorldLayout.props);
   const pickupSpawns = getCombatPickupSpawnDefinitions(defaultWorldLayout.props, getBuilderItemById);
   assert(pickupProps.length >= 4, 'Default world should seed pistol pickups as placeable props');
   assert(pickupSpawns.length === pickupProps.length, 'Every default pistol pickup prop should resolve to a combat spawn');
   assert(
-    pickupSpawns.every((spawn) => spawn.weaponId === WEAPON_IDS.pistol),
+    allPickupSpawnsArePistol(pickupSpawns),
     'Default pickup props should resolve to pistol pickup spawns'
   );
 }
@@ -2807,7 +3304,7 @@ function validateDeliveryQuestCarry() {
     'Optimized delivery carry clip should include animation tracks.'
   );
   assert(
-    carryingClip.tracks.every((track) => !/^mixamorig(?:Hips|LeftUpLeg|RightUpLeg|LeftLeg|RightLeg|LeftFoot|RightFoot)/u.test(track.name ?? '')),
+    deliveryCarryClipHasOnlyUpperBodyTracks(carryingClip.tracks),
     'Optimized delivery carry clip should not include lower-body tracks.'
   );
   assert(deliveryBox, 'Delivery quest should define a held delivery box item.');
@@ -2893,20 +3390,20 @@ function validateMissionSequencer() {
   const expectedGateNumbers = [0, 1, 2, 3, 4, 4, 4, 4, 7, 9, 10];
   assert(sequence.length === MISSION_CATALOG.length, 'Mission sequencer should include every catalog mission');
   assert(
-    JSON.stringify(sequence.map((entry) => entry.missionId)) === JSON.stringify(expectedOrder),
+    sequenceMissionIdsMatch(sequence, expectedOrder),
     'Mission sequencer should use the admin-authored mission order'
   );
-  const janitorMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.janitorTasks);
+  const janitorMission = findCatalogMissionById(TASK_IDS.janitorTasks);
   assert(janitorMission?.title === 'Get a job: Complete 4 janitor tasks', 'Janitor mission should require four tasks in the catalog title');
   assert(janitorMission?.description === 'Work four janitor tasks from the office job board.', 'Janitor mission should require four tasks in the catalog description');
   assert(sequence[3]?.title === 'Get a job : Complete 4 janitor tasks', 'Janitor sequencer row should show four janitor tasks');
-  const charismaMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  const charismaMission = findCatalogMissionById(TASK_IDS.charismaLevel5);
   assert(charismaMission?.title === 'Get Charisma level 5', 'Sequenced Charisma mission should use the admin title');
   assert(
     charismaMission?.description === CHARISMA_LEVEL_MISSION_DESCRIPTION,
     'Sequenced Charisma mission should preserve the admin description'
   );
-  const gymMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.gymPump);
+  const gymMission = findCatalogMissionById(TASK_IDS.gymPump);
   assert(gymMission?.title === 'Lift at the gym, shoot hoops, or run the treadmill', 'Gym mission should mention lifting, shooting hoops, or running');
   assert(/basketball/i.test(gymMission?.description ?? ''), 'Gym mission description should include the basketball completion path');
   assert(/treadmill/i.test(gymMission?.description ?? ''), 'Gym mission description should include the treadmill completion path');
@@ -2933,7 +3430,7 @@ function validateMissionSequencer() {
     /target\.workoutType === 'basketball-shot' \|\| target\.workoutType === 'treadmill'[\s\S]*BASKETBALL_SHOT_STRENGTH_XP[\s\S]*BASKETBALL_SHOT_AGILITY_XP/.test(mockServiceSource),
     'Mock treadmill runs should share the basketball strength and agility XP reward'
   );
-  const ceoMission = MISSION_CATALOG.find((mission) => mission.id === TASK_IDS.becomeCeo);
+  const ceoMission = findCatalogMissionById(TASK_IDS.becomeCeo);
   assert(ceoMission?.label === 'Become CEO', 'Sequenced CEO mission should be promoted into the playable mission catalog');
   assert(sequence[0].makeAvailableAfterMission === false, 'The first mission should be available without a prior mission');
   for (let index = 1; index < sequence.length; index += 1) {
@@ -2963,26 +3460,24 @@ function validateMissionSequencer() {
     officeManagerCompletedAt: 0,
     charismaXp: 0
   };
-  const stockSnapshot = getMissionSnapshots(noProgressPlayer, '', ungatedStock)
-    .find((mission) => mission.id === TASK_IDS.stockBuy);
+  const stockSnapshot = findMissionSnapshotById(getMissionSnapshots(noProgressPlayer, '', ungatedStock), TASK_IDS.stockBuy);
   assert(stockSnapshot?.status === MISSION_STATUS.available, 'Unchecked mission gates should make that mission available when its own task is unfinished');
 
   const editedStockText = 'Buy one share from any bank terminal.';
   const editedStockSequence = updateMissionSequenceEntry(sequence, TASK_IDS.stockBuy, {
     text: editedStockText
   });
-  const editedStockSnapshot = getMissionSnapshots(noProgressPlayer, '', editedStockSequence)
-    .find((mission) => mission.id === TASK_IDS.stockBuy);
+  const editedStockSnapshot = findMissionSnapshotById(getMissionSnapshots(noProgressPlayer, '', editedStockSequence), TASK_IDS.stockBuy);
   assert(editedStockSnapshot?.title === editedStockText, 'Mission text edits should override player-facing catalog mission titles');
 
   const defaultSnapshots = getMissionSnapshots({
     ...noProgressPlayer,
     deliveryQuestCompletionCount: 1
   }, '', sequence);
-  const schoolSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.schoolTeacherTasks);
-  const janitorLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.janitorTasks);
-  const stockLockedSnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.stockBuy);
-  const makeMoneySnapshot = defaultSnapshots.find((mission) => mission.id === TASK_IDS.makeMoney);
+  const schoolSnapshot = findMissionSnapshotById(defaultSnapshots, TASK_IDS.schoolTeacherTasks);
+  const janitorLockedSnapshot = findMissionSnapshotById(defaultSnapshots, TASK_IDS.janitorTasks);
+  const stockLockedSnapshot = findMissionSnapshotById(defaultSnapshots, TASK_IDS.stockBuy);
+  const makeMoneySnapshot = findMissionSnapshotById(defaultSnapshots, TASK_IDS.makeMoney);
   assert(makeMoneySnapshot?.status === MISSION_STATUS.completed, 'Default sequence should complete the make-money prompt after the first delivery');
   assert(makeMoneySnapshot?.selectable === false, 'Completed make-money prompt should not remain selectable as a repeatable Shady Figure mission');
   assert(schoolSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock school after delivery');
@@ -2995,8 +3490,8 @@ function validateMissionSequencer() {
     schoolTasksCompletedCount: SCHOOL_TEACHER_TASKS_REQUIRED,
     janitorTasksCompletedCount: JANITOR_TASKS_REQUIRED
   }, '', sequence);
-  const gymSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.gymPump);
-  const transportationSnapshot = postJanitorSnapshots.find((mission) => mission.id === TASK_IDS.transportationUpgrade);
+  const gymSnapshot = findMissionSnapshotById(postJanitorSnapshots, TASK_IDS.gymPump);
+  const transportationSnapshot = findMissionSnapshotById(postJanitorSnapshots, TASK_IDS.transportationUpgrade);
   assert(gymSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock gym after janitor work');
   assert(transportationSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the skateboard mission after janitor work');
 
@@ -3011,7 +3506,7 @@ function validateMissionSequencer() {
     skateboardOwned: true,
     officeManagerCompletedAt: 1
   }, '', sequence);
-  const charismaSnapshot = postOfficeSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
+  const charismaSnapshot = findMissionSnapshotById(postOfficeSnapshots, TASK_IDS.charismaLevel5);
   assert(charismaSnapshot?.status === MISSION_STATUS.available, 'Default sequence should unlock the Charisma mission after office manager work');
   assert(charismaSnapshot?.selectable === true, 'Unlocked Charisma mission should be selectable before level 5');
 
@@ -3027,8 +3522,8 @@ function validateMissionSequencer() {
     officeManagerCompletedAt: 1,
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL)
   }, '', sequence);
-  const completedCharismaSnapshot = postCharismaSnapshots.find((mission) => mission.id === TASK_IDS.charismaLevel5);
-  const availableCeoSnapshot = postCharismaSnapshots.find((mission) => mission.id === TASK_IDS.becomeCeo);
+  const completedCharismaSnapshot = findMissionSnapshotById(postCharismaSnapshots, TASK_IDS.charismaLevel5);
+  const availableCeoSnapshot = findMissionSnapshotById(postCharismaSnapshots, TASK_IDS.becomeCeo);
   assert(completedCharismaSnapshot?.status === MISSION_STATUS.completed, 'Charisma mission should complete at level 5');
   assert(availableCeoSnapshot?.status === MISSION_STATUS.available, 'CEO mission should unlock after the Charisma mission');
 
@@ -3045,11 +3540,11 @@ function validateMissionSequencer() {
     charismaXp: getSkillXpForLevel(CHARISMA_LEVEL_MISSION_TARGET_LEVEL),
     ceoCompletedAt: 1
   }, '', sequence);
-  const completedCeoSnapshot = postCeoSnapshots.find((mission) => mission.id === TASK_IDS.becomeCeo);
+  const completedCeoSnapshot = findMissionSnapshotById(postCeoSnapshots, TASK_IDS.becomeCeo);
   assert(completedCeoSnapshot?.status === MISSION_STATUS.completed, 'CEO mission should complete after a CEO shift');
 
   const rows = getMissionSequenceViewModel(sequence);
-  assert(rows.every((row, index) => row.missionNumber === index + 1), 'Mission sequencer view model should expose stable mission numbers');
+  assert(rowsHaveStableMissionNumbers(rows), 'Mission sequencer view model should expose stable mission numbers');
   assert(rows[0].canRequireMission === false, 'The opening mission row should not allow a self dependency');
 
   const customPrompt = 'Win a street race behind the casino.';
@@ -3119,27 +3614,21 @@ function validateMissionSequencer() {
     'Legacy Two more wheels custom mission id should stay selectable after retitling'
   );
   assert(
-    [
-      fourMoreWheelsMission?.title,
-      fourMoreWheelsMission?.label,
-      fourMoreWheelsMission?.description,
-      fourMoreWheelsMission?.prompt
-    ].every((value) => String(value ?? '').startsWith(FOUR_MORE_WHEELS_MISSION_TITLE)),
+    fourMoreWheelsFieldsAreRetitled(fourMoreWheelsMission),
     'Legacy Two more wheels custom mission should display as Four more wheels everywhere'
   );
-  const fourMoreWheelsSnapshot = getMissionSnapshots(
+  const fourMoreWheelsSnapshot = findMissionSnapshotById(getMissionSnapshots(
     completePlayer,
     FOUR_MORE_WHEELS_LEGACY_MISSION_ID,
     retitledFourMoreWheelsSequence
-  ).find((mission) => mission.id === FOUR_MORE_WHEELS_LEGACY_MISSION_ID);
+  ), FOUR_MORE_WHEELS_LEGACY_MISSION_ID);
   assert(
     fourMoreWheelsSnapshot?.title.startsWith(FOUR_MORE_WHEELS_MISSION_TITLE),
     'Mission snapshots should expose the Four more wheels retitle'
   );
   assert(fourMoreWheelsSnapshot?.selectable === true, 'Four more wheels should remain selectable under the legacy custom mission id');
 
-  const customSnapshot = getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission)
-    .find((mission) => mission.id === customMission.missionId);
+  const customSnapshot = findMissionSnapshotById(getMissionSnapshots(completePlayer, customMission.missionId, sequenceWithCustomMission), customMission.missionId);
   assert(customSnapshot?.status === MISSION_STATUS.available, 'Custom missions should become available when their sequence gate is satisfied');
   assert(customSnapshot?.selectable === true, 'Available custom missions should be selectable from the mission app');
 
@@ -3148,15 +3637,14 @@ function validateMissionSequencer() {
     hiddenForPlayers: true,
     text: hiddenBonusText
   });
-  const hiddenBonusEntry = hiddenBonusSequence.find((mission) => mission.missionId === bonusMission.missionId);
+  const hiddenBonusEntry = findMissionSequenceEntry(hiddenBonusSequence, bonusMission.missionId);
   assert(hiddenBonusEntry?.textOverride === true, 'Edited bonus quests should persist an explicit text override');
   assert(hiddenBonusEntry?.prompt === hiddenBonusText, 'Edited bonus quests should preserve the admin-authored text');
   const hiddenBonusRows = getMissionSequenceViewModel(hiddenBonusSequence);
-  const hiddenBonusRow = hiddenBonusRows.find((mission) => mission.missionId === bonusMission.missionId);
+  const hiddenBonusRow = findMissionSequenceEntry(hiddenBonusRows, bonusMission.missionId);
   assert(hiddenBonusRow?.bonusQuest === true, 'Bonus quest rows should expose their bonus section to the sequencer view model');
   assert(hiddenBonusRow?.hiddenForPlayers === true, 'Sequencer rows should expose the hidden-for-players flag');
-  const hiddenBonusSnapshot = getMissionSnapshots(completePlayer, bonusMission.missionId, hiddenBonusSequence)
-    .find((mission) => mission.id === bonusMission.missionId);
+  const hiddenBonusSnapshot = findMissionSnapshotById(getMissionSnapshots(completePlayer, bonusMission.missionId, hiddenBonusSequence), bonusMission.missionId);
   assert(hiddenBonusSnapshot?.bonusQuest === true, 'Bonus quest snapshots should remain marked for the player mission section');
   assert(hiddenBonusSnapshot?.hiddenForPlayers === true, 'Hidden bonus quest snapshots should preserve the hidden flag');
   assert(hiddenBonusSnapshot?.title === 'Hidden', 'Hidden bonus quests should display a hidden title to players');
@@ -3164,8 +3652,7 @@ function validateMissionSequencer() {
 
   const chainedCustomSequence = appendMissionSequencePromptEntry(sequenceWithCustomMission, 'Check off the crew board.');
   const chainedCustomMission = chainedCustomSequence.at(-1);
-  const chainedCustomSnapshot = getMissionSnapshots(completePlayer, chainedCustomMission.missionId, chainedCustomSequence)
-    .find((mission) => mission.id === chainedCustomMission.missionId);
+  const chainedCustomSnapshot = findMissionSnapshotById(getMissionSnapshots(completePlayer, chainedCustomMission.missionId, chainedCustomSequence), chainedCustomMission.missionId);
   assert(chainedCustomSnapshot?.status === MISSION_STATUS.available, 'Custom missions should not permanently block later sequenced missions');
 }
 
@@ -3256,7 +3743,7 @@ function validateBartenderFunction() {
     'HUD interaction menu should accept a world anchor'
   );
   assert(
-    /getNearestBartenderInteractable\(\{\s*npcId = ''[\s\S]*?worldBuilderInteractables = this\.getWorldBuilderInteractables\(\)[\s\S]*?\} = \{\}\)/.test(gameSource),
+    /getNearestBartenderInteractable\((?:\{\s*npcId = ''[\s\S]*?worldBuilderInteractables = this\.getWorldBuilderInteractables\(\)[\s\S]*?\} = \{\}|options = null\)[\s\S]*?options\?\.npcId)/.test(gameSource),
     'Bartender proximity lookup should support the active NPC id'
   );
   assert(
@@ -3346,7 +3833,7 @@ function validateBartenderFunction() {
   });
   assert(isBartenderNpc(bartender), 'Normalized NPC should preserve bartenderEnabled');
   assert(
-    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'bartenderEnabled')),
+    allNpcsHaveFlag(defaultWorldLayout.npcs, 'bartenderEnabled'),
     'Default NPC layout should serialize bartenderEnabled for world-builder compatibility'
   );
 
@@ -3397,7 +3884,7 @@ function validateBartenderFunction() {
   assert(playerOwnsVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.fiatDuna), 'Purchased cars should be tracked in the owned car list');
   setPlayerVehicleItem(vehiclePlayer, CAR_DEALER_ITEM_IDS.toyotaAe86);
   assert(getPlayerOwnedVehicleItemIds(vehiclePlayer).length === 2, 'Player vehicle inventory should retain multiple owned cars');
-  assert(getPlayerOwnedVehicleMenuItems(vehiclePlayer).some((item) => item.id === CAR_DEALER_ITEM_IDS.fiatDuna), 'Owned car selector entries should include the Fiat Duna');
+  assert(ownedVehicleMenuHasItem(getPlayerOwnedVehicleMenuItems(vehiclePlayer), CAR_DEALER_ITEM_IDS.fiatDuna), 'Owned car selector entries should include the Fiat Duna');
   vehiclePlayer.vehicleItemId = '';
   assert(getPlayerVehicleItemId(vehiclePlayer) === '', 'Clearing the active car should preserve a skateboard selection even when cars are owned');
   assert(getPlayerDefaultVehicleItemId(vehiclePlayer) === CAR_DEALER_ITEM_IDS.toyotaAe86, 'Persisted owned cars should still expose a default active car for migration');
@@ -3412,7 +3899,7 @@ function validateBartenderFunction() {
     'Vehicle inventory snapshot should include every owned car id'
   );
   assert(
-    createHotbarSlots({ skateboardOwned: true }).every((slot) => slot.itemId !== CAR_DEALER_ITEM_IDS.fiatDuna),
+    hotbarSlotsExcludeItem(createHotbarSlots({ skateboardOwned: true }), CAR_DEALER_ITEM_IDS.fiatDuna),
     'Owned cars should not occupy a hotbar slot'
   );
   const burger = getMarthaMenuItem(MARTHA_ITEM_IDS.burger);
@@ -3456,11 +3943,11 @@ function validateBartenderFunction() {
   });
   assert(isPawnShopOwnerNpc(pawnOwner), 'Normalized NPC should preserve pawnShopOwnerEnabled');
   assert(
-    defaultWorldLayout.npcs.some((npc) => npc.id === 'npc_roth' && npc.pawnShopOwnerEnabled === true),
+    hasNpcWithFlag(defaultWorldLayout.npcs, 'npc_roth', 'pawnShopOwnerEnabled'),
     'Default NPC layout should seed Roth as the pawn shop owner'
   );
   assert(
-    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'pawnShopOwnerEnabled')),
+    allNpcsHaveFlag(defaultWorldLayout.npcs, 'pawnShopOwnerEnabled'),
     'Default NPC layout should serialize pawnShopOwnerEnabled for world-builder compatibility'
   );
   const carDealer = normalizeNpcBehavior({
@@ -3474,11 +3961,11 @@ function validateBartenderFunction() {
   });
   assert(isCarDealerNpc(carDealer), 'Normalized NPC should preserve carDealerEnabled');
   assert(
-    defaultWorldLayout.npcs.some((npc) => npc.id === 'npc_car_dealer' && npc.carDealerEnabled === true),
+    hasNpcWithFlag(defaultWorldLayout.npcs, 'npc_car_dealer', 'carDealerEnabled'),
     'Default NPC layout should seed a Car Dealer NPC'
   );
   assert(
-    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'carDealerEnabled')),
+    allNpcsHaveFlag(defaultWorldLayout.npcs, 'carDealerEnabled'),
     'Default NPC layout should serialize carDealerEnabled for world-builder compatibility'
   );
   const marthaNpc = normalizeNpcBehavior({
@@ -3492,7 +3979,7 @@ function validateBartenderFunction() {
   });
   assert(isMarthaNpc(marthaNpc), 'Normalized NPC should preserve marthaEnabled');
   assert(
-    defaultWorldLayout.npcs.every((npc) => Object.hasOwn(npc, 'marthaEnabled')),
+    allNpcsHaveFlag(defaultWorldLayout.npcs, 'marthaEnabled'),
     'Default NPC layout should serialize marthaEnabled for world-builder compatibility'
   );
   assert(
@@ -3605,9 +4092,9 @@ function validateBartenderFunction() {
     'Player avatar should render the procedural skateboard and replace the character with a footprint-normalized grounded 0.75x selected car while car-driving'
   );
   assert(
-    /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
-      && /SKATEBOARD_UPPER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.UPPER_BODY_EMOTE_BONES\]\)/.test(playerSource)
-      && /SKATEBOARD_STILL_BODY_BONES\s*=\s*Object\.freeze\(\[\s*\.\.\.SKATEBOARD_LOWER_BODY_STILL_BONES,\s*\.\.\.SKATEBOARD_UPPER_BODY_STILL_BONES\s*\]\)/.test(playerSource)
+    /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(copyIterableValues\(LOWER_BODY_LOCOMOTION_BONES\)\)/.test(playerSource)
+      && /SKATEBOARD_UPPER_BODY_STILL_BONES\s*=\s*Object\.freeze\(copyIterableValues\(UPPER_BODY_EMOTE_BONES\)\)/.test(playerSource)
+      && /SKATEBOARD_STILL_BODY_BONES\s*=\s*Object\.freeze\(combineIterableValues\(\s*SKATEBOARD_LOWER_BODY_STILL_BONES,\s*SKATEBOARD_UPPER_BODY_STILL_BONES\s*\)\)/.test(playerSource)
       && /SKATEBOARD_SIDEWAYS_FOOT_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
       && /SKATEBOARD_LOWER_BODY_TURN_YAW\s*=\s*Math\.PI\s*\/\s*2/.test(playerSource)
       && /\[MIXAMO_BONES\.hips\]:\s*Object\.freeze\(\[0,\s*SKATEBOARD_LOWER_BODY_TURN_YAW,\s*0\]\)/.test(playerSource)
@@ -3652,13 +4139,8 @@ function validateBartenderFunction() {
 
 function validatePlayerSchemaFieldBudget() {
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
-  const playerSchemas = [...serverSource.matchAll(/const (?<name>Player[A-Za-z0-9]*State) = schema\(\{(?<body>[\s\S]*?)\n\}\);/g)]
-    .map((match) => ({
-      name: match.groups.name,
-      fields: [...match.groups.body.matchAll(/^\s+([A-Za-z0-9_]+):/gm)]
-        .map((fieldMatch) => fieldMatch[1])
-    }));
-  const playerState = playerSchemas.find((entry) => entry.name === 'PlayerState');
+  const playerSchemas = parsePlayerSchemas(serverSource);
+  const playerState = findPlayerSchemaByName(playerSchemas, 'PlayerState');
   assert(playerState, 'WorldRoom should define a PlayerState schema');
 
   for (const { name, fields } of playerSchemas) {
@@ -3668,7 +4150,7 @@ function validatePlayerSchemaFieldBudget() {
   const adminIndex = playerState.fields.indexOf('isAdmin');
   assert(adminIndex >= 0 && adminIndex < 64, 'PlayerState isAdmin must be inside the Colyseus schema field budget');
   assert(
-    ['transform', 'combat', 'inventory', 'deliveryQuest', 'skills', 'profile'].every((field) => playerState.fields.includes(field)),
+    playerStateHasNestedSchemaFields(playerState.fields),
     'PlayerState should remain grouped into nested schemas so future features do not overflow the top-level field budget'
   );
 }

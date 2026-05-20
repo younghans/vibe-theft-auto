@@ -67,12 +67,26 @@ function normalizeVibeRadioSource(value = '') {
     !sourcePath
     || !lowerPath.startsWith(VIBE_RADIO_AUDIO_PATH_PREFIX)
     || !lowerPath.endsWith('.mp3')
-    || sourcePath.split('/').includes('..')
+    || hasParentPathSegment(sourcePath)
   ) {
     return '';
   }
 
   return normalized;
+}
+
+function hasParentPathSegment(sourcePath = '') {
+  let segmentStart = 0;
+  for (let index = 0; index <= sourcePath.length; index += 1) {
+    if (index < sourcePath.length && sourcePath[index] !== '/') {
+      continue;
+    }
+    if (sourcePath.slice(segmentStart, index) === '..') {
+      return true;
+    }
+    segmentStart = index + 1;
+  }
+  return false;
 }
 
 function slugifyVibeRadioTrack(value = '') {
@@ -111,7 +125,10 @@ function createVibeRadioTrackId(track = {}, tracks = []) {
   const source = normalizeVibeRadioSource(track.sourceUrl ?? track.url ?? track.src ?? track.fileName);
   const title = normalizeVibeRadioText(track.title ?? track.label ?? '');
   const base = `${VIBE_RADIO_TRACK_ID_PREFIX}${slugifyVibeRadioTrack(title || source)}-${hashVibeRadioTrack(source || title)}`;
-  const existingIds = new Set(normalizeVibeRadioTracks(tracks).map((entry) => entry.id));
+  const existingIds = new Set();
+  for (const entry of normalizeVibeRadioTracks(tracks)) {
+    existingIds.add(entry.id);
+  }
   if (!existingIds.has(base)) {
     return base;
   }
@@ -133,7 +150,13 @@ function getTrackTitleFromSource(sourceUrl = '') {
   }
 
   const withoutQuery = normalized.split(/[?#]/u)[0] ?? normalized;
-  const fileName = withoutQuery.split(/[\\/]+/u).filter(Boolean).at(-1) ?? '';
+  const parts = withoutQuery.split(/[\\/]+/u);
+  let fileName = '';
+  for (const part of parts) {
+    if (part) {
+      fileName = part;
+    }
+  }
   const baseName = fileName.replace(/\.[a-z0-9]{2,6}$/iu, '').replace(/[-_]+/gu, ' ');
   return normalizeVibeRadioText(baseName, VIBE_RADIO_TRACK_TITLE_MAX_LENGTH);
 }
@@ -191,5 +214,9 @@ export function normalizeVibeRadioTracks(tracks = null) {
 }
 
 function cloneVibeRadioTracks(tracks = null) {
-  return normalizeVibeRadioTracks(tracks).map((track) => ({ ...track }));
+  const clones = [];
+  for (const track of normalizeVibeRadioTracks(tracks)) {
+    clones.push({ ...track });
+  }
+  return clones;
 }

@@ -22,7 +22,12 @@ export const DEFAULT_HOTBAR_ITEM_ORDER = Object.freeze([
   ITEM_IDS.soda,
   '',
 ]);
-const HOTBAR_ITEM_IDS = new Set(DEFAULT_HOTBAR_ITEM_ORDER.filter(Boolean));
+const HOTBAR_ITEM_IDS = new Set();
+for (const itemId of DEFAULT_HOTBAR_ITEM_ORDER) {
+  if (itemId) {
+    HOTBAR_ITEM_IDS.add(itemId);
+  }
+}
 
 export const DEFAULT_HOTBAR_ASSIGNMENTS = Object.freeze([
   Object.freeze({ slotIndex: 0, itemId: ITEM_IDS.pistol }),
@@ -79,7 +84,10 @@ function normalizeHotbarItemId(value = '') {
 
 export function normalizeHotbarItemOrder(value = DEFAULT_HOTBAR_ITEM_ORDER) {
   const source = Array.isArray(value) ? value : [];
-  const order = Array.from({ length: HOTBAR_SLOT_COUNT }, () => '');
+  const order = [];
+  for (let index = 0; index < HOTBAR_SLOT_COUNT; index += 1) {
+    order.push('');
+  }
   const usedItemIds = new Set();
 
   for (let index = 0; index < HOTBAR_SLOT_COUNT; index += 1) {
@@ -97,7 +105,13 @@ export function normalizeHotbarItemOrder(value = DEFAULT_HOTBAR_ITEM_ORDER) {
       continue;
     }
 
-    const emptyIndex = order.findIndex((slotItemId) => !slotItemId);
+    let emptyIndex = -1;
+    for (let index = 0; index < order.length; index += 1) {
+      if (!order[index]) {
+        emptyIndex = index;
+        break;
+      }
+    }
     if (emptyIndex < 0) {
       break;
     }
@@ -112,7 +126,11 @@ export function normalizeHotbarItemOrder(value = DEFAULT_HOTBAR_ITEM_ORDER) {
 export function moveHotbarItemOrderSlot(order = DEFAULT_HOTBAR_ITEM_ORDER, fromIndex, toIndex) {
   const normalizedFromIndex = normalizeHotbarSlotIndex(fromIndex);
   const normalizedToIndex = normalizeHotbarSlotIndex(toIndex);
-  const nextOrder = [...normalizeHotbarItemOrder(order)];
+  const normalizedOrder = normalizeHotbarItemOrder(order);
+  const nextOrder = [];
+  for (const itemId of normalizedOrder) {
+    nextOrder.push(itemId);
+  }
   if (
     normalizedFromIndex < 0
     || normalizedToIndex < 0
@@ -201,21 +219,23 @@ export function createHotbarSlots({
   const inventoryState = { ownedWeaponIds, equippedWeaponId, beerCount, shotCount, cigaretteCount, burgerCount, glizzyCount, sodaCount };
   const itemOrder = normalizeHotbarItemOrder(hotbarItemOrder);
 
-  return Object.freeze(
-    Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
-      const itemId = itemOrder[index];
-      return itemId && canShowHotbarItem(itemId, inventoryState)
-        ? createItemSlot(index, itemId, { quantity: getHotbarItemQuantity(itemId, inventoryState) })
-        : createEmptySlot(index);
-    })
-  );
+  const slots = [];
+  for (let index = 0; index < HOTBAR_SLOT_COUNT; index += 1) {
+    const itemId = itemOrder[index];
+    slots.push(itemId && canShowHotbarItem(itemId, inventoryState)
+      ? createItemSlot(index, itemId, { quantity: getHotbarItemQuantity(itemId, inventoryState) })
+      : createEmptySlot(index));
+  }
+  return Object.freeze(slots);
 }
 
 export const HOTBAR_SLOTS = createHotbarSlots();
 
-export const HOTBAR_KEY_CODES = Object.freeze(
-  HOTBAR_SLOTS.flatMap((slot) => [`Digit${slot.key}`, `Numpad${slot.key}`])
-);
+const HOTBAR_KEY_CODE_ENTRIES = [];
+for (const slot of HOTBAR_SLOTS) {
+  HOTBAR_KEY_CODE_ENTRIES.push(`Digit${slot.key}`, `Numpad${slot.key}`);
+}
+export const HOTBAR_KEY_CODES = Object.freeze(HOTBAR_KEY_CODE_ENTRIES);
 
 export function normalizeHotbarSlotIndex(value) {
   const numeric = Number(value);
@@ -282,11 +302,24 @@ export function getPreferredHotbarSlotIndexForItem(
     return -1;
   }
 
-  const orderedIndex = normalizeHotbarItemOrder(hotbarItemOrder).findIndex((entry) => entry === normalizedItemId);
+  const order = normalizeHotbarItemOrder(hotbarItemOrder);
+  let orderedIndex = -1;
+  for (let index = 0; index < order.length; index += 1) {
+    if (order[index] === normalizedItemId) {
+      orderedIndex = index;
+      break;
+    }
+  }
   if (orderedIndex >= 0) {
     return normalizeHotbarSlotIndex(orderedIndex);
   }
 
-  const assignment = DEFAULT_HOTBAR_ASSIGNMENTS.find((entry) => entry.itemId === normalizedItemId);
+  let assignment = null;
+  for (const entry of DEFAULT_HOTBAR_ASSIGNMENTS) {
+    if (entry.itemId === normalizedItemId) {
+      assignment = entry;
+      break;
+    }
+  }
   return assignment ? normalizeHotbarSlotIndex(assignment.slotIndex) : -1;
 }

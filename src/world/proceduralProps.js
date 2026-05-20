@@ -6,6 +6,8 @@ import {
 import { MARTHA_ITEM_IDS, getMarthaMenuItem } from '../shared/martha.js';
 import { BUILDER_TILE_SIZE } from '../shared/worldConstants.js';
 
+const CYLINDER_UP = new THREE.Vector3(0, 1, 0);
+
 export const OLYMPIC_BARBELL_LENGTH = 5.6;
 export const OLYMPIC_BARBELL_PLATE_RADIUS = 0.78;
 export const OLYMPIC_BARBELL_FOOTPRINT = Object.freeze([5.6, 1.7]);
@@ -132,10 +134,16 @@ function createCylinderBetween(name, start, end, radius, material, {
   castShadow = true,
   receiveShadow = true
 } = {}) {
-  const startVector = new THREE.Vector3(start[0], start[1], start[2]);
-  const endVector = new THREE.Vector3(end[0], end[1], end[2]);
-  const midpoint = startVector.clone().add(endVector).multiplyScalar(0.5);
-  const direction = endVector.clone().sub(startVector);
+  const midpoint = new THREE.Vector3(
+    ((start[0] ?? 0) + (end[0] ?? 0)) * 0.5,
+    ((start[1] ?? 0) + (end[1] ?? 0)) * 0.5,
+    ((start[2] ?? 0) + (end[2] ?? 0)) * 0.5
+  );
+  const direction = new THREE.Vector3(
+    (end[0] ?? 0) - (start[0] ?? 0),
+    (end[1] ?? 0) - (start[1] ?? 0),
+    (end[2] ?? 0) - (start[2] ?? 0)
+  );
   const length = direction.length();
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, Math.max(length, 0.001), radialSegments),
@@ -143,7 +151,7 @@ function createCylinderBetween(name, start, end, radius, material, {
   );
   mesh.name = name;
   mesh.position.copy(midpoint);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  mesh.quaternion.setFromUnitVectors(CYLINDER_UP, direction.normalize());
   mesh.castShadow = castShadow;
   mesh.receiveShadow = receiveShadow;
   return mesh;
@@ -185,10 +193,14 @@ function createGroundPlane(name, width, depth, x, z, material, {
   return mesh;
 }
 
+function copyFootprint(footprint) {
+  return [footprint[0], footprint[1]];
+}
+
 function createFlatPathRoot(name, footprint) {
   const root = new THREE.Group();
   root.name = name;
-  root.userData.footprint = [...footprint];
+  root.userData.footprint = copyFootprint(footprint);
   root.userData.flatGroundProp = true;
   return root;
 }
@@ -540,7 +552,8 @@ function attachPortalAnimator(root, {
       shimmerRing.material.opacity = 0.25 + (pulse * 0.18);
     }
 
-    orbiters.forEach((orbiter, index) => {
+    for (let index = 0; index < orbiters.length; index += 1) {
+      const orbiter = orbiters[index];
       const angle = (timeSeconds * (0.72 + (index * 0.08))) + phaseOffset + (index * ((Math.PI * 2) / Math.max(1, orbiters.length)));
       const radius = PORTAL_RING_RADIUS + 0.22 + (Math.sin(angle * 1.7) * 0.14);
       orbiter.position.set(
@@ -549,7 +562,7 @@ function attachPortalAnimator(root, {
         Math.sin(angle * 1.4) * 0.42
       );
       orbiter.scale.setScalar(0.85 + ((Math.sin(angle * 2.8) + 1) * 0.14));
-    });
+    }
   };
 }
 
@@ -612,11 +625,12 @@ function buildPortalVisual({
   shimmerRing.position.set(0, PORTAL_CENTER_HEIGHT, 0.02);
   root.add(shimmerRing);
 
-  const orbiters = Array.from({ length: 6 }, () => {
+  const orbiters = [];
+  for (let index = 0; index < 6; index += 1) {
     const orbiter = createPortalOrbiter(orbiterMaterial);
     root.add(orbiter);
-    return orbiter;
-  });
+    orbiters.push(orbiter);
+  }
 
   const floorHalo = new THREE.Mesh(
     new THREE.RingGeometry(1.4, 2.6, 40),
@@ -641,7 +655,7 @@ function buildPortalVisual({
 export function createBasketballHalfCourtTileVisual() {
   const root = new THREE.Group();
   root.name = 'BasketballHalfCourtTile';
-  root.userData.footprint = [...BASKETBALL_HALF_COURT_TILE_FOOTPRINT];
+  root.userData.footprint = copyFootprint(BASKETBALL_HALF_COURT_TILE_FOOTPRINT);
 
   const tileSize = BUILDER_TILE_SIZE;
   const halfTile = tileSize * 0.5;
@@ -841,7 +855,9 @@ function createPawnShopSignLabel() {
 function addPawnWindow(group, materials, x) {
   addPawnBox(group, `pawnShopFrontWindow${x}`, [1.46, 1.72, 0.1], [x, 2.35, 11.05], materials.glass);
   addPawnBox(group, `pawnShopFrontWindowFrame${x}`, [1.72, 1.96, 0.08], [x, 2.35, 10.98], materials.trim);
-  for (const [index, offset] of [-0.42, 0, 0.42].entries()) {
+  const securityBarOffsets = [-0.42, 0, 0.42];
+  for (let index = 0; index < securityBarOffsets.length; index += 1) {
+    const offset = securityBarOffsets[index];
     addPawnBox(
       group,
       `pawnShopWindowSecurityBar${x}_${index}`,
@@ -980,7 +996,9 @@ export function createPawnShopBuildingVisual() {
   exterior.add(medallion);
 
   addPawnBox(interior, 'pawnShopBackShelfPanel', [15.8, 2.15, 0.16], [0, 2.58, -9.12], materials.facadeAlt);
-  for (const [index, y] of [1.86, 2.56, 3.26].entries()) {
+  const shelfRows = [1.86, 2.56, 3.26];
+  for (let index = 0; index < shelfRows.length; index += 1) {
+    const y = shelfRows[index];
     addPawnBox(interior, `pawnShopBackShelf${index + 1}`, [15.2, 0.16, 0.46], [0, y, -8.82], materials.woodDark);
   }
   addPawnBox(interior, 'pawnShopShelfGoldRail', [15.6, 0.12, 0.18], [0, 3.82, -8.72], materials.gold);
@@ -1001,10 +1019,12 @@ export function createPawnShopBuildingVisual() {
     glassSide: -1
   });
 
-  for (const [index, x] of [-6.3, -4.2, -2.1, 0, 2.1, 4.2, 6.3].entries()) {
+  const shelfItemXs = [-6.3, -4.2, -2.1, 0, 2.1, 4.2, 6.3];
+  for (let index = 0; index < shelfItemXs.length; index += 1) {
+    const x = shelfItemXs[index];
     addPawnDisplayObject(interior, materials, `pawnShopShelfItem${index + 1}`, [x, 1.56, -8.36], index % 2 === 0 ? 'watch' : 'screen');
   }
-  for (const [index, entry] of [
+  const caseItemEntries = [
     [-6.4, -6.56, 'watch'],
     [-3.2, -6.56, 'screen'],
     [0, -6.56, 'watch'],
@@ -1012,7 +1032,9 @@ export function createPawnShopBuildingVisual() {
     [6.4, -6.56, 'watch'],
     [-7.55, -4.35, 'guitar'],
     [7.55, -4.35, 'guitar']
-  ].entries()) {
+  ];
+  for (let index = 0; index < caseItemEntries.length; index += 1) {
+    const entry = caseItemEntries[index];
     addPawnDisplayObject(interior, materials, `pawnShopCaseItem${index + 1}`, [entry[0], 1.52, entry[1]], entry[2]);
   }
 
@@ -1321,9 +1343,14 @@ function createMarthasGrilleMarthaBillboard(materials) {
 }
 
 function getMarthasGrilleBackWallMenuItems() {
-  return MARTHAS_GRILLE_BACK_WALL_MENU_ITEM_IDS
-    .map((itemId) => getMarthaMenuItem(itemId))
-    .filter(Boolean);
+  const menuItems = [];
+  for (const itemId of MARTHAS_GRILLE_BACK_WALL_MENU_ITEM_IDS) {
+    const item = getMarthaMenuItem(itemId);
+    if (item) {
+      menuItems.push(item);
+    }
+  }
+  return menuItems;
 }
 
 function createMarthasGrilleBackWallMenuLabel() {
@@ -1364,7 +1391,8 @@ function createMarthasGrilleBackWallMenuLabel() {
       context.fillStyle = '#fff6cf';
       const startY = 164;
       const rowGap = 78;
-      for (const [index, item] of menuItems.entries()) {
+      for (let index = 0; index < menuItems.length; index += 1) {
+        const item = menuItems[index];
         const y = startY + (index * rowGap);
         const label = String(item.label ?? '').toUpperCase();
         const price = Number.isFinite(item.price) ? `$${item.price}` : '';
@@ -1388,9 +1416,14 @@ function createMarthasGrilleBackWallMenuLabel() {
 
   const label = new THREE.Mesh(geometry, material);
   label.name = 'marthasGrilleBackWallMenuLabel';
-  label.userData.itemIds = menuItems.map((item) => item.id);
-  label.userData.menuItems = menuItems.map((item) => item.label);
-  label.userData.menuText = menuItems.map((item) => item.label).join(' ');
+  label.userData.itemIds = [];
+  label.userData.menuItems = [];
+  label.userData.menuText = '';
+  for (const item of menuItems) {
+    label.userData.itemIds.push(item.id);
+    label.userData.menuItems.push(item.label);
+    label.userData.menuText += label.userData.menuText ? ` ${item.label}` : item.label;
+  }
   label.castShadow = false;
   label.receiveShadow = false;
   return label;
@@ -1430,7 +1463,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
   root.add(kitchen);
 
   addMarthasGrilleBox(kitchen, 'marthasGrilleKitchenBacksplash', [9.55, 1.18, 0.1], [0, 1.62, -4.91], materials.tile);
-  for (const [index, x] of [-4.15, -2.85, -1.55, -0.25, 1.05, 2.35, 3.65].entries()) {
+  const backsplashTileXs = [-4.15, -2.85, -1.55, -0.25, 1.05, 2.35, 3.65];
+  for (let index = 0; index < backsplashTileXs.length; index += 1) {
+    const x = backsplashTileXs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleBacksplashTileLine${index + 1}`,
@@ -1440,7 +1475,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
       { castShadow: false, receiveShadow: true }
     );
   }
-  for (const [index, y] of [1.23, 1.62, 2.01].entries()) {
+  const backsplashRowYs = [1.23, 1.62, 2.01];
+  for (let index = 0; index < backsplashRowYs.length; index += 1) {
+    const y = backsplashRowYs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleBacksplashRowLine${index + 1}`,
@@ -1457,7 +1494,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
   addMarthasGrilleBox(kitchen, 'marthasGrilleTomatoBin', [0.48, 0.16, 0.36], [-3.92, 1.76, -2.34], materials.tomato);
   addMarthasGrilleBox(kitchen, 'marthasGrilleBunTray', [0.54, 0.12, 0.38], [-3.28, 1.72, -2.34], materials.bun);
 
-  for (const [index, x] of [-2.45, -1.85, -1.25, -0.65].entries()) {
+  const heatZoneXs = [-2.45, -1.85, -1.25, -0.65];
+  for (let index = 0; index < heatZoneXs.length; index += 1) {
+    const x = heatZoneXs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleFlatTopHeatZone${index + 1}`,
@@ -1467,7 +1506,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
       { castShadow: false, receiveShadow: true }
     );
   }
-  for (const [index, [x, z]] of [[-2.05, -4.18], [-1.5, -3.86], [-0.92, -4.08]].entries()) {
+  const pattyPositions = [[-2.05, -4.18], [-1.5, -3.86], [-0.92, -4.08]];
+  for (let index = 0; index < pattyPositions.length; index += 1) {
+    const [x, z] = pattyPositions[index];
     const patty = createCylinder(0.19, 0.2, 0.08, 18, materials.patty);
     patty.name = `marthasGrilleBurgerPatty${index + 1}`;
     patty.position.set(x, 1.72, z);
@@ -1490,7 +1531,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
 
   addMarthasGrilleBox(kitchen, 'marthasGrilleOverheadShelf', [8.25, 0.16, 0.42], [0, 2.78, -4.55], materials.steel);
   addMarthasGrilleBox(kitchen, 'marthasGrilleHangingUtensilRail', [5.8, 0.07, 0.08], [0, 2.42, -4.38], materials.dark);
-  for (const [index, x] of [-2.05, -1.35, -0.65, 0.65, 1.35, 2.05].entries()) {
+  const utensilXs = [-2.05, -1.35, -0.65, 0.65, 1.35, 2.05];
+  for (let index = 0; index < utensilXs.length; index += 1) {
+    const x = utensilXs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleHangingUtensil${index + 1}`,
@@ -1504,7 +1547,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
 
   addMarthasGrilleBox(kitchen, 'marthasGrilleServingShelf', [7.55, 0.16, 0.46], [0, 2.42, 0.22], materials.steel);
   addMarthasGrilleBox(kitchen, 'marthasGrilleTicketRail', [3.2, 0.08, 0.08], [0.4, 2.72, 0.48], materials.dark);
-  for (const [index, x] of [-0.78, -0.26, 0.26, 0.78, 1.3].entries()) {
+  const ticketXs = [-0.78, -0.26, 0.26, 0.78, 1.3];
+  for (let index = 0; index < ticketXs.length; index += 1) {
+    const x = ticketXs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleOrderTicket${index + 1}`,
@@ -1514,7 +1559,9 @@ function addMarthasGrilleKitchenDetails(root, materials) {
       { castShadow: false, receiveShadow: false }
     );
   }
-  for (const [index, x] of [-2.7, -2.35, 2.35, 2.7].entries()) {
+  const heatLampXs = [-2.7, -2.35, 2.35, 2.7];
+  for (let index = 0; index < heatLampXs.length; index += 1) {
+    const x = heatLampXs[index];
     addMarthasGrilleBox(
       kitchen,
       `marthasGrilleHeatLamp${index + 1}`,
@@ -1528,7 +1575,7 @@ function addMarthasGrilleKitchenDetails(root, materials) {
 export function createMarthasGrilleBuildingVisual() {
   const root = new THREE.Group();
   root.name = 'marthas_grille_building';
-  root.userData.footprint = [...MARTHAS_GRILLE_BUILDING_FOOTPRINT];
+  root.userData.footprint = copyFootprint(MARTHAS_GRILLE_BUILDING_FOOTPRINT);
 
   const slab = createMaterial(0x555b5f, 0.9, 0.04);
   const floor = createMaterial(0x6a6255, 0.92, 0.02);
@@ -1609,14 +1656,18 @@ export function createMarthasGrilleBuildingVisual() {
     side: 'front',
     size: [1.18, 1.42]
   });
-  for (const [index, x] of [-3.2, 0, 3.2].entries()) {
+  const backWindowXs = [-3.2, 0, 3.2];
+  for (let index = 0; index < backWindowXs.length; index += 1) {
+    const x = backWindowXs[index];
     addMarthasGrilleWindow(shellBack, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleBackWindow${index + 1}`, {
       position: [x, 3.55, -5.34],
       side: 'back',
       size: [1.32, 1.28]
     });
   }
-  for (const [index, z] of [-3.2, -0.55, 2.1].entries()) {
+  const sideWindowZs = [-3.2, -0.55, 2.1];
+  for (let index = 0; index < sideWindowZs.length; index += 1) {
+    const z = sideWindowZs[index];
     addMarthasGrilleWindow(shellLeft, { windowFrame, windowGlass, windowMuntin }, `marthasGrilleLeftWindow${index + 1}`, {
       position: [-5.34, 3.58, z],
       side: 'left',
@@ -1721,7 +1772,9 @@ function addRealEstateOfficeDesk(group, materials, deskIndex, position, rotation
 
   addRealEstateOfficeBox(desk, `${desk.name}Top`, [1.55, 0.16, 0.9], [0, 1.13, 0], materials.deskTop);
   addRealEstateOfficeBox(desk, `${desk.name}FrontPanel`, [1.45, 0.82, 0.12], [0, 0.7, 0.39], materials.deskWood);
-  for (const [legIndex, [x, z]] of [[-0.62, -0.34], [0.62, -0.34], [-0.62, 0.34], [0.62, 0.34]].entries()) {
+  const deskLegPositions = [[-0.62, -0.34], [0.62, -0.34], [-0.62, 0.34], [0.62, 0.34]];
+  for (let legIndex = 0; legIndex < deskLegPositions.length; legIndex += 1) {
+    const [x, z] = deskLegPositions[legIndex];
     addRealEstateOfficeBox(
       desk,
       `${desk.name}Leg${legIndex + 1}`,
@@ -1746,11 +1799,13 @@ function addRealEstateOfficeDesk(group, materials, deskIndex, position, rotation
 
 function addRealEstateOfficeListingBoard(group, materials) {
   addRealEstateOfficeBox(group, 'realEstateOfficeListingBoard', [0.1, 1.75, 3.15], [-4.88, 2.28, -1.25], materials.board);
-  for (const [index, [x, y]] of [
+  const listingCardPositions = [
     [-4.9, 2.78],
     [-4.9, 2.22],
     [-4.9, 1.66]
-  ].entries()) {
+  ];
+  for (let index = 0; index < listingCardPositions.length; index += 1) {
+    const [x, y] = listingCardPositions[index];
     addRealEstateOfficeBox(
       group,
       `realEstateOfficeListingCard${index + 1}`,
@@ -1812,7 +1867,8 @@ function addRealEstateOfficeWindowGrid(group, materials) {
     const frontZ = tier.position[2] + (tier.size[2] * 0.5) + REAL_ESTATE_OFFICE_TOWER_WINDOW_OFFSET;
     for (const y of tier.frontRows) {
       frontRowIndex += 1;
-      for (const [columnIndex, x] of tier.frontColumns.entries()) {
+      for (let columnIndex = 0; columnIndex < tier.frontColumns.length; columnIndex += 1) {
+        const x = tier.frontColumns[columnIndex];
         addRealEstateOfficeWindow(
           group,
           `realEstateOfficeTallWindow${frontRowIndex}_${columnIndex + 1}`,
@@ -1850,7 +1906,7 @@ function addRealEstateOfficeWindowGrid(group, materials) {
 export function createRealEstateOfficeBuildingVisual() {
   const root = new THREE.Group();
   root.name = 'real_estate_office_building';
-  root.userData.footprint = [...REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT];
+  root.userData.footprint = copyFootprint(REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT);
 
   const materials = {
     slab: createMaterial(0x555b5f, 0.9, 0.04),
@@ -2018,7 +2074,8 @@ function addCarDealershipWallMullions(group, prefix, {
     ? [center[0] + (isLeft ? 0.22 : -0.22), center[1], center[2]]
     : [center[0], center[1], center[2] + (isBack ? 0.22 : -0.22)];
 
-  for (const [index, offset] of verticalPositions.entries()) {
+  for (let index = 0; index < verticalPositions.length; index += 1) {
+    const offset = verticalPositions[index];
     const position = isSide
       ? [depthCenter[0], 4.08, center[2] + offset]
       : [center[0] + offset, 4.08, depthCenter[2]];
@@ -2031,7 +2088,8 @@ function addCarDealershipWallMullions(group, prefix, {
     );
   }
 
-  for (const [index, y] of horizontalPositions.entries()) {
+  for (let index = 0; index < horizontalPositions.length; index += 1) {
+    const y = horizontalPositions[index];
     addCarDealershipBox(
       group,
       `${prefix}HorizontalMullion${index + 1}`,
@@ -2096,7 +2154,9 @@ function addCarDealershipChair(group, materials, name, x, z, rotationY = 0) {
     receiveShadow: true
   });
 
-  for (const [index, [legX, legZ]] of [[-0.31, -0.26], [0.31, -0.26], [-0.31, 0.27], [0.31, 0.27]].entries()) {
+  const chairLegPositions = [[-0.31, -0.26], [0.31, -0.26], [-0.31, 0.27], [0.31, 0.27]];
+  for (let index = 0; index < chairLegPositions.length; index += 1) {
+    const [legX, legZ] = chairLegPositions[index];
     addCarDealershipBox(
       chair,
       `${name}Leg${index + 1}`,
@@ -2119,12 +2179,14 @@ function addCarDealershipPlant(group, materials, name, x, z) {
   trunk.position.set(0, 1.55, 0);
   plant.add(trunk);
 
-  for (const [index, [leafX, leafY, leafZ, scaleX, scaleZ]] of [
+  const leafClusters = [
     [0, 2.12, 0, 1, 0.76],
     [-0.28, 1.88, 0.08, 0.78, 0.62],
     [0.28, 1.88, -0.08, 0.78, 0.62],
     [0.02, 2.38, -0.02, 0.66, 0.54]
-  ].entries()) {
+  ];
+  for (let index = 0; index < leafClusters.length; index += 1) {
+    const [leafX, leafY, leafZ, scaleX, scaleZ] = leafClusters[index];
     const leaf = createSphere(
       `${name}LeafCluster${index + 1}`,
       0.38,
@@ -2156,7 +2218,7 @@ function addCarDealershipCounter(group, materials) {
 export function createCarDealershipBuildingVisual() {
   const root = new THREE.Group();
   root.name = 'car_dealership_building';
-  root.userData.footprint = [...CAR_DEALERSHIP_BUILDING_FOOTPRINT];
+  root.userData.footprint = copyFootprint(CAR_DEALERSHIP_BUILDING_FOOTPRINT);
   const materials = createCarDealershipMaterials();
 
   const foundation = new THREE.Group();
@@ -2188,7 +2250,9 @@ export function createCarDealershipBuildingVisual() {
   addCarDealershipCounter(interior, materials);
   addCarDealershipBox(interior, 'carDealershipBackFeatureWall', [15.4, 2.05, 0.14], [0, 3.12, -9.72], materials.glassDeep);
   addCarDealershipBox(interior, 'carDealershipBackFeatureStripe', [14.2, 0.14, 0.18], [0, 3.88, -9.55], materials.mullionLight);
-  for (const [index, x] of [-5.6, -2.8, 0, 2.8, 5.6].entries()) {
+  const backDisplayPanelXs = [-5.6, -2.8, 0, 2.8, 5.6];
+  for (let index = 0; index < backDisplayPanelXs.length; index += 1) {
+    const x = backDisplayPanelXs[index];
     addCarDealershipBox(
       interior,
       `carDealershipBackDisplayPanel${index + 1}`,
@@ -2258,10 +2322,14 @@ export function createCarDealershipBuildingVisual() {
   roof.name = 'car_dealership_cutaway_roof';
   root.add(roof);
   addCarDealershipBox(roof, 'carDealershipGlassRoof', [21.35, 0.3, 20.95], [0, 7.7, 0.28], materials.glassDeep);
-  for (const [index, x] of [-7.1, -3.55, 0, 3.55, 7.1].entries()) {
+  const roofLongMullionXs = [-7.1, -3.55, 0, 3.55, 7.1];
+  for (let index = 0; index < roofLongMullionXs.length; index += 1) {
+    const x = roofLongMullionXs[index];
     addCarDealershipBox(roof, `carDealershipRoofLongMullion${index + 1}`, [0.14, 0.26, 20.95], [x, 7.94, 0.28], materials.mullion);
   }
-  for (const [index, z] of [-7, -3.5, 0, 3.5, 7].entries()) {
+  const roofCrossMullionZs = [-7, -3.5, 0, 3.5, 7];
+  for (let index = 0; index < roofCrossMullionZs.length; index += 1) {
+    const z = roofCrossMullionZs[index];
     addCarDealershipBox(roof, `carDealershipRoofCrossMullion${index + 1}`, [21.35, 0.26, 0.14], [0, 7.95, z], materials.mullion);
   }
 
@@ -2444,7 +2512,8 @@ function addBasketballHoopBolts(root, material) {
     [0.34, BASKETBALL_HOOP_RIM_HEIGHT, -0.15]
   ];
 
-  boltPositions.forEach(([x, y, z], index) => {
+  for (let index = 0; index < boltPositions.length; index += 1) {
+    const [x, y, z] = boltPositions[index];
     const bolt = createCylinder(0.045, 0.045, 0.03, 12, material);
     bolt.name = `basketballHoopBolt${index + 1}`;
     bolt.rotation.x = Math.PI * 0.5;
@@ -2452,7 +2521,7 @@ function addBasketballHoopBolts(root, material) {
     bolt.castShadow = true;
     bolt.receiveShadow = true;
     root.add(bolt);
-  });
+  }
 }
 
 function addBasketball(root, ballMaterial, seamMaterial) {
@@ -2475,7 +2544,8 @@ function addBasketball(root, ballMaterial, seamMaterial) {
     [0.58, 0, 0.34],
     [-0.58, 0, -0.34]
   ];
-  seamRotations.forEach((rotation, index) => {
+  for (let index = 0; index < seamRotations.length; index += 1) {
+    const rotation = seamRotations[index];
     const seam = new THREE.Mesh(
       new THREE.TorusGeometry(ballRadius * 1.01, 0.006, 5, 48),
       seamMaterial
@@ -2486,13 +2556,13 @@ function addBasketball(root, ballMaterial, seamMaterial) {
     seam.castShadow = false;
     seam.receiveShadow = true;
     root.add(seam);
-  });
+  }
 }
 
 export function createBasketballHoopVisual() {
   const root = new THREE.Group();
   root.name = 'BasketballHoop';
-  root.userData.footprint = [...BASKETBALL_HOOP_FOOTPRINT];
+  root.userData.footprint = copyFootprint(BASKETBALL_HOOP_FOOTPRINT);
 
   const poleMaterial = createMaterial(0x8e98a6, 0.32, 0.62);
   const bracketMaterial = createMaterial(0x39404a, 0.36, 0.58);
@@ -2553,7 +2623,7 @@ export function createBasketballHoopVisual() {
 export function createTreadmillVisual() {
   const root = new THREE.Group();
   root.name = 'Treadmill';
-  root.userData.footprint = [...TREADMILL_FOOTPRINT];
+  root.userData.footprint = copyFootprint(TREADMILL_FOOTPRINT);
   root.userData.treadmillProp = true;
 
   const frameMaterial = createMaterial(0x303944, 0.42, 0.46);
@@ -2631,7 +2701,8 @@ export function createTreadmillVisual() {
     const speed = Math.max(0.32, Number(root.userData.treadmillBeltSpeed ?? 0.9) || 0.9);
     const beltLength = 4.48;
     const stripeSpacing = 0.56;
-    beltStripes.forEach((stripe, index) => {
+    for (let index = 0; index < beltStripes.length; index += 1) {
+      const stripe = beltStripes[index];
       const baseZ = -1.92 + ((index * stripeSpacing) % beltLength);
       const travel = (timeSeconds * speed * 1.45) % beltLength;
       let z = baseZ + travel;
@@ -2640,7 +2711,7 @@ export function createTreadmillVisual() {
       }
       stripe.position.z = z;
       stripe.material.opacity = 0.7 + (Math.sin((timeSeconds * 7.2) + index) * 0.18);
-    });
+    }
     frontRoller.rotation.x += deltaSeconds * speed * 5.4;
     rearRoller.rotation.x += deltaSeconds * speed * 5.4;
   };
@@ -2670,7 +2741,7 @@ function createOfficeFurnitureMaterials() {
 export function createOfficeLobbyChairVisual() {
   const root = new THREE.Group();
   root.name = 'OfficeLobbyChair';
-  root.userData.footprint = [...OFFICE_LOBBY_CHAIR_FOOTPRINT];
+  root.userData.footprint = copyFootprint(OFFICE_LOBBY_CHAIR_FOOTPRINT);
   root.userData.officeLobbyChairProp = true;
 
   const materials = createOfficeFurnitureMaterials();
@@ -2694,7 +2765,7 @@ function createOfficeLobbyTableRoot({
 }) {
   const root = new THREE.Group();
   root.name = name;
-  root.userData.footprint = [...footprint];
+  root.userData.footprint = copyFootprint(footprint);
   root.userData.officeLobbyTableProp = true;
 
   const materials = createOfficeFurnitureMaterials();
@@ -2742,7 +2813,7 @@ export function createOfficeLobbySideTableVisual() {
 export function createOfficeJanitorShiftClosetVisual() {
   const root = new THREE.Group();
   root.name = 'OfficeJanitorShiftCloset';
-  root.userData.footprint = [...OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT];
+  root.userData.footprint = copyFootprint(OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT);
   root.userData.officeJanitorClosetProp = true;
   root.userData.officeJanitorClosetSize = { ...OFFICE_INTERIOR_JANITOR_CLOSET_SIZE };
 
@@ -2790,7 +2861,7 @@ export function createOfficeJanitorShiftClosetVisual() {
 export function createOfficeManagerShiftCoffeeStationVisual() {
   const root = new THREE.Group();
   root.name = 'OfficeManagerShiftCoffeeStation';
-  root.userData.footprint = [...OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT];
+  root.userData.footprint = copyFootprint(OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT);
   root.userData.officeManagerCoffeeStationProp = true;
 
   const materials = createOfficeFurnitureMaterials();
@@ -2844,7 +2915,7 @@ export function createOfficeManagerShiftCoffeeStationVisual() {
 export function createOfficeCubicleWorkstationVisual() {
   const root = new THREE.Group();
   root.name = 'OfficeCubicleWorkstation';
-  root.userData.footprint = [...OFFICE_CUBICLE_WORKSTATION_FOOTPRINT];
+  root.userData.footprint = copyFootprint(OFFICE_CUBICLE_WORKSTATION_FOOTPRINT);
   root.userData.officeCubicleWorkstationProp = true;
 
   const materials = createOfficeFurnitureMaterials();
@@ -2867,7 +2938,7 @@ export function createOfficeCubicleWorkstationVisual() {
 export function createOfficeCeoMeetingTableVisual() {
   const root = new THREE.Group();
   root.name = 'OfficeCeoMeetingTable';
-  root.userData.footprint = [...OFFICE_CEO_MEETING_TABLE_FOOTPRINT];
+  root.userData.footprint = copyFootprint(OFFICE_CEO_MEETING_TABLE_FOOTPRINT);
   root.userData.officeCeoMeetingTableProp = true;
 
   const {
@@ -2894,7 +2965,7 @@ export function createOfficeCeoMeetingTableVisual() {
 export function createStandingDeskComputerVisual() {
   const root = new THREE.Group();
   root.name = 'StandingDeskComputer';
-  root.userData.footprint = [...STANDING_DESK_COMPUTER_FOOTPRINT];
+  root.userData.footprint = copyFootprint(STANDING_DESK_COMPUTER_FOOTPRINT);
 
   const floorPadMaterial = createMaterial(0x0e1117, 0.86, 0.05);
   const deskTopMaterial = createMaterial(0x6f5238, 0.42, 0.04);
@@ -3067,7 +3138,8 @@ function addInstrumentClusterPiano(root, materials) {
   }
 
   const blackKeyOffsets = [0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14];
-  blackKeyOffsets.forEach((offset, index) => {
+  for (let index = 0; index < blackKeyOffsets.length; index += 1) {
+    const offset = blackKeyOffsets[index];
     root.add(createBox(
       `instrumentClusterPianoBlackKey${index + 1}`,
       [0.066, 0.052, 0.16],
@@ -3075,7 +3147,7 @@ function addInstrumentClusterPiano(root, materials) {
       materials.keyBlack,
       { castShadow: true, receiveShadow: true }
     ));
-  });
+  }
 
   root.add(createCylinderBetween('instrumentClusterPianoStandFrontFoot', [-1.0, 0.08, -0.2], [1.16, 0.08, -0.2], 0.035, materials.standMetal));
   root.add(createCylinderBetween('instrumentClusterPianoStandBackFoot', [-1.0, 0.08, -0.92], [1.16, 0.08, -0.92], 0.035, materials.standMetal));
@@ -3156,7 +3228,8 @@ function addInstrumentClusterMicrophoneStand(root, materials) {
     [baseX + 0.02, 0.06, baseZ - 0.5]
   ];
 
-  for (const [index, end] of legEnds.entries()) {
+  for (let index = 0; index < legEnds.length; index += 1) {
+    const end = legEnds[index];
     root.add(createCylinderBetween(
       `instrumentClusterMicrophoneStandTripodLeg${index + 1}`,
       [baseX, 0.1, baseZ],
@@ -3188,7 +3261,7 @@ function addInstrumentClusterMicrophoneStand(root, materials) {
 export function createInstrumentClusterVisual() {
   const root = new THREE.Group();
   root.name = 'InstrumentCluster';
-  root.userData.footprint = [...INSTRUMENT_CLUSTER_FOOTPRINT];
+  root.userData.footprint = copyFootprint(INSTRUMENT_CLUSTER_FOOTPRINT);
 
   const materials = {
     rug: createMaterial(0x263042, 0.82, 0.04),
@@ -3247,7 +3320,7 @@ export function createInstrumentClusterVisual() {
 export function createBlackjackTableVisual() {
   const root = new THREE.Group();
   root.name = 'BlackjackTable';
-  root.userData.footprint = [...BLACKJACK_TABLE_FOOTPRINT];
+  root.userData.footprint = copyFootprint(BLACKJACK_TABLE_FOOTPRINT);
 
   const baseMaterial = createMaterial(0x1b1511, 0.62, 0.12);
   const brassMaterial = createMaterial(0xc49443, 0.32, 0.48);
@@ -3308,7 +3381,9 @@ export function createBlackjackTableVisual() {
   trim.receiveShadow = true;
   root.add(trim);
 
-  for (const [index, x] of [-1.55, 0, 1.55].entries()) {
+  const bettingCircleXs = [-1.55, 0, 1.55];
+  for (let index = 0; index < bettingCircleXs.length; index += 1) {
+    const x = bettingCircleXs[index];
     const betSpot = new THREE.Mesh(
       new THREE.TorusGeometry(0.46, 0.018, 8, 36),
       feltLineMaterial
@@ -3372,7 +3447,8 @@ export function createBlackjackTableVisual() {
     [1.25, 0.18, -0.12],
     [1.54, 0.2, 0.13]
   ];
-  cardPositions.forEach(([x, z, rotation], index) => {
+  for (let index = 0; index < cardPositions.length; index += 1) {
+    const [x, z, rotation] = cardPositions[index];
     const card = createBox(
       `blackjackTableCard${index + 1}`,
       [0.34, 0.022, 0.48],
@@ -3388,7 +3464,7 @@ export function createBlackjackTableVisual() {
       index % 2 === 0 ? cardRedMaterial : cardBlackMaterial,
       { rotation: [0, rotation, 0], castShadow: false, receiveShadow: false }
     ));
-  });
+  }
 
   root.add(createBox('blackjackTableDealerPlaque', [1.08, 0.036, 0.22], [0, 1.555, -1.5], railTrimMaterial, {
     castShadow: false,
@@ -3405,7 +3481,7 @@ export function createBlackjackTableVisual() {
 export function createCasinoSlotMachineVisual() {
   const root = new THREE.Group();
   root.name = 'CasinoSlotMachine';
-  root.userData.footprint = [...CASINO_SLOT_MACHINE_FOOTPRINT];
+  root.userData.footprint = copyFootprint(CASINO_SLOT_MACHINE_FOOTPRINT);
   root.userData.casinoSlotMachineProp = true;
 
   const bodyMaterial = createMaterial(0x9a2638, 0.58, 0.16);
@@ -3425,7 +3501,9 @@ export function createCasinoSlotMachineVisual() {
   root.add(createBox('casinoSlotMachineBody', [1.05, 2.25, 0.72], [0, 1.24, 0], bodyMaterial));
   root.add(createBox('casinoSlotMachineScreen', [0.76, 0.48, 0.08], [0, 1.7, 0.4], glassMaterial));
   root.add(createBox('casinoSlotMachinePrizePanel', [0.78, 0.34, 0.08], [0, 0.98, 0.41], signMaterial));
-  for (const [index, x] of [-0.28, 0, 0.28].entries()) {
+  const reelXs = [-0.28, 0, 0.28];
+  for (let index = 0; index < reelXs.length; index += 1) {
+    const x = reelXs[index];
     root.add(createBox(`casinoSlotMachineReel${index + 1}`, [0.18, 0.2, 0.1], [x, 1.7, 0.47], accentMaterial));
   }
 

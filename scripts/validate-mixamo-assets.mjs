@@ -85,7 +85,15 @@ if (!clip || !Array.isArray(clip.tracks) || clip.tracks.length === 0) {
   process.exit(1);
 }
 
-if (!clip.tracks.some((track) => track.name === 'mixamorigHips.position')) {
+let hasHipsPositionTrack = false;
+for (const track of clip.tracks) {
+  if (track.name === 'mixamorigHips.position') {
+    hasHipsPositionTrack = true;
+    break;
+  }
+}
+
+if (!hasHipsPositionTrack) {
   console.error(`Expected mixamorigHips.position track in ${clipPath}`);
   process.exit(1);
 }
@@ -93,7 +101,11 @@ if (!clip.tracks.some((track) => track.name === 'mixamorigHips.position')) {
 console.log(`Validated Mixamo character: ${characterPath}`);
 console.log(`Skinned meshes: ${humanoid.skinnedMeshes.join(', ')}`);
 if (humanoid.renamedBones.length > 0) {
-  console.log(`Normalized bones: ${humanoid.renamedBones.map(({ from, to }) => `${from}->${to}`).join(', ')}`);
+  let normalizedBoneSummary = '';
+  for (const { from, to } of humanoid.renamedBones) {
+    normalizedBoneSummary = normalizedBoneSummary ? `${normalizedBoneSummary}, ${from}->${to}` : `${from}->${to}`;
+  }
+  console.log(`Normalized bones: ${normalizedBoneSummary}`);
 }
 console.log(`Validated Mixamo clip: ${clipPath}`);
 console.log(`Track count: ${clip.tracks.length}`);

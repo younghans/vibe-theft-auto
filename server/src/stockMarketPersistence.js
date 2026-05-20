@@ -131,9 +131,14 @@ class FileStockMarketStore {
 
   async load() {
     return this.withStore((state) => {
-      const record = state.markets
-        .map((entry) => normalizeMarketRecord(entry, { worldKey: this.worldKey }))
-        .find((entry) => entry.worldKey === this.worldKey);
+      let record = null;
+      for (let index = 0; index < state.markets.length; index += 1) {
+        const entry = normalizeMarketRecord(state.markets[index], { worldKey: this.worldKey });
+        if (entry.worldKey === this.worldKey) {
+          record = entry;
+          break;
+        }
+      }
       return record?.market ?? null;
     }, { write: false });
   }
@@ -146,13 +151,15 @@ class FileStockMarketStore {
     }, { worldKey: this.worldKey });
 
     return this.withStore((state) => {
-      state.markets = [
-        ...state.markets.filter((entry) => {
-          const current = normalizeMarketRecord(entry, { worldKey: this.worldKey });
-          return current.worldKey !== this.worldKey;
-        }),
-        normalized
-      ];
+      const markets = [];
+      for (let index = 0; index < state.markets.length; index += 1) {
+        const current = normalizeMarketRecord(state.markets[index], { worldKey: this.worldKey });
+        if (current.worldKey !== this.worldKey) {
+          markets.push(current);
+        }
+      }
+      markets.push(normalized);
+      state.markets = markets;
       return normalized.market;
     });
   }

@@ -94,6 +94,7 @@ const ALLOWED_EXACT_FILES = new Set([
   'package-lock.json',
   'styles.css'
 ]);
+const DEPLOY_TARGET_VALUES = new Set(['frontend', 'backend']);
 
 const ALLOWED_PREFIXES = [
   'assets/',
@@ -147,12 +148,12 @@ function isRetryableApiError(error) {
     return true;
   }
 
-  const text = String([
-    error?.code,
-    error?.message,
-    error?.responseError,
-    error?.stack
-  ].filter(Boolean).join('\n'));
+  let text = '';
+  for (const value of [error?.code, error?.message, error?.responseError, error?.stack]) {
+    if (value) {
+      text = text ? `${text}\n${value}` : String(value);
+    }
+  }
   return /bad gateway|cloudflare|connection reset|database|eai_again|econnreset|enotfound|etimedout|fetch failed|gateway|network|origin|postgres|render\.com|socket|timeout|timed out/i.test(text);
 }
 
@@ -202,13 +203,27 @@ function sanitizeDiagnosticValue(value, key = '', depth = 0) {
     return '[max-depth]';
   }
   if (Array.isArray(value)) {
-    return value.slice(0, 40).map((item) => sanitizeDiagnosticValue(item, '', depth + 1));
+    const sanitized = [];
+    const limit = Math.min(value.length, 40);
+    for (let index = 0; index < limit; index += 1) {
+      sanitized.push(sanitizeDiagnosticValue(value[index], '', depth + 1));
+    }
+    return sanitized;
   }
   if (typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).slice(0, 60).map(([entryKey, entryValue]) => [
-      entryKey,
-      sanitizeDiagnosticValue(entryValue, entryKey, depth + 1)
-    ]));
+    const sanitized = {};
+    let count = 0;
+    for (const entryKey in value) {
+      if (!Object.hasOwn(value, entryKey)) {
+        continue;
+      }
+      sanitized[entryKey] = sanitizeDiagnosticValue(value[entryKey], entryKey, depth + 1);
+      count += 1;
+      if (count >= 60) {
+        break;
+      }
+    }
+    return sanitized;
   }
   return String(value);
 }
@@ -529,34 +544,71 @@ function normalizeStringList(value = []) {
   const rawItems = Array.isArray(value)
     ? value
     : String(value ?? '').split(/[\n,]/u);
-  return [...new Set(rawItems
-    .map((item) => String(item ?? '').trim())
-    .filter(Boolean))];
+  const seen = new Set();
+  const items = [];
+  for (const item of rawItems) {
+    const normalized = String(item ?? '').trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    items.push(normalized);
+  }
+  return items;
 }
 
 function normalizeChangedFiles(value = []) {
-  return normalizeStringList(value)
-    .map(normalizeRepoPath)
-    .filter(Boolean);
+  const normalizedFiles = [];
+  for (const filePath of normalizeStringList(value)) {
+    const normalized = normalizeRepoPath(filePath);
+    if (normalized) {
+      normalizedFiles.push(normalized);
+    }
+  }
+  return normalizedFiles;
 }
 
 function mergeChangedFiles(...values) {
-  return normalizeChangedFiles(values.flatMap((value) => (
-    Array.isArray(value) ? value : String(value ?? '').split(/[\n,]/u)
-  )));
+  const merged = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        merged.push(item);
+      }
+    } else {
+      for (const item of String(value ?? '').split(/[\n,]/u)) {
+        merged.push(item);
+      }
+    }
+  }
+  return normalizeChangedFiles(merged);
 }
 
 function normalizeDeployTargets(value = []) {
-  const allowedTargets = new Set(['frontend', 'backend']);
-  return normalizeStringList(value)
-    .map((target) => target.toLowerCase())
-    .filter((target) => allowedTargets.has(target));
+  const targets = [];
+  for (const target of normalizeStringList(value)) {
+    const normalized = target.toLowerCase();
+    if (DEPLOY_TARGET_VALUES.has(normalized)) {
+      targets.push(normalized);
+    }
+  }
+  return targets;
 }
 
 function mergeDeployTargets(...values) {
-  return normalizeDeployTargets(values.flatMap((value) => (
-    Array.isArray(value) ? value : String(value ?? '').split(/[\n,]/u)
-  )));
+  const merged = [];
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        merged.push(item);
+      }
+    } else {
+      for (const item of String(value ?? '').split(/[\n,]/u)) {
+        merged.push(item);
+      }
+    }
+  }
+  return normalizeDeployTargets(merged);
 }
 
 function isBackendSharedSourcePath(normalizedPath = '') {
@@ -597,7 +649,11 @@ function inferDeployTargets(changedFiles = []) {
     }
   }
 
-  return [...targets];
+  const deployTargets = [];
+  for (const target of targets) {
+    deployTargets.push(target);
+  }
+  return deployTargets;
 }
 
 function resolveDeployTargets(changedFiles = [], recordedTargets = []) {
@@ -646,8 +702,15 @@ function summarizeDeployResult(actionLabel, targets = []) {
 
 function isAllowedChangedFile(filePath = '') {
   const normalized = normalizeRepoPath(filePath);
-  return ALLOWED_EXACT_FILES.has(normalized)
-    || ALLOWED_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  if (ALLOWED_EXACT_FILES.has(normalized)) {
+    return true;
+  }
+  for (const prefix of ALLOWED_PREFIXES) {
+    if (normalized.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function safeTaskSlug(value = '') {
@@ -697,16 +760,26 @@ function splitCommandLine(value = '') {
   for (const match of value.matchAll(pattern)) {
     parts.push(match[1] ?? match[2] ?? match[3] ?? '');
   }
-  return parts.filter(Boolean);
+  const filtered = [];
+  for (const part of parts) {
+    if (part) {
+      filtered.push(part);
+    }
+  }
+  return filtered;
 }
 
 function formatCodexExecArgs(args = [], {
   worktreePath = '',
   lastMessagePath = ''
 } = {}) {
-  return args.map((arg) => String(arg)
-    .replaceAll('{worktree}', worktreePath)
-    .replaceAll('{lastMessage}', lastMessagePath));
+  const formattedArgs = [];
+  for (const arg of args) {
+    formattedArgs.push(String(arg)
+      .replaceAll('{worktree}', worktreePath)
+      .replaceAll('{lastMessage}', lastMessagePath));
+  }
+  return formattedArgs;
 }
 
 function getDefaultCodexExecArgs(worktreePath, lastMessagePath) {
@@ -750,7 +823,11 @@ function shouldStripCodexEnvKey(key = '') {
 
 function getSanitizedCodexEnv(sourceEnv = process.env) {
   const sanitized = {};
-  for (const [key, value] of Object.entries(sourceEnv ?? {})) {
+  for (const key in sourceEnv ?? {}) {
+    if (!Object.hasOwn(sourceEnv, key)) {
+      continue;
+    }
+    const value = sourceEnv[key];
     if (!shouldStripCodexEnvKey(key)) {
       sanitized[key] = value;
     }
@@ -854,15 +931,19 @@ foreach ($proc in $all) {
   $commandLine = [string]$proc.CommandLine
   $normalizedCommandLine = $commandLine.Replace('/', '\\').ToLowerInvariant()
   $reasons = @()
+  $isTaskRelated = $false
   if ($descendantIds.Contains($pidValue)) {
     $reasons += 'descendant'
+    $isTaskRelated = $true
   }
   if ($worktreeNorm -and $normalizedCommandLine.Contains($worktreeNorm)) {
     $reasons += 'worktree-path'
+    $isTaskRelated = $true
   }
   foreach ($needle in $taskNeedles) {
     if ($commandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
       $reasons += "task-marker:$needle"
+      $isTaskRelated = $true
       break
     }
   }
@@ -870,7 +951,7 @@ foreach ($proc in $all) {
   if ($sinceMs -gt 0 -and $null -ne $proc.CreationDate) {
     $isNew = ([datetime]$proc.CreationDate) -ge $since
   }
-  if ($includeDetachedLocalHelpers -and $isNew) {
+  if ($includeDetachedLocalHelpers -and $isNew -and $isTaskRelated) {
     if ($commandLine -match 'scripts[\\\\/]+dev-server\\.mjs') {
       $reasons += 'new-dev-server'
     } elseif ($commandLine -match '--remote-debugging-port' -or $commandLine -match 'headless') {
@@ -945,17 +1026,21 @@ async function cleanupWindowsTaskProcesses({
     : matches
       ? [matches]
       : [];
-  return {
-    killed: Boolean(kill),
-    matchCount: normalizedMatches.length,
-    matches: normalizedMatches.map((entry) => ({
+  const matchSummaries = [];
+  for (const entry of normalizedMatches) {
+    matchSummaries.push({
       pid: entry.pid,
       parentPid: entry.parentPid,
       name: entry.name,
       createdAt: entry.createdAt,
       reasons: entry.reasons,
       commandLine: truncateText(entry.commandLine ?? '', 500)
-    }))
+    });
+  }
+  return {
+    killed: Boolean(kill),
+    matchCount: normalizedMatches.length,
+    matches: matchSummaries
   };
 }
 
@@ -1030,7 +1115,12 @@ async function apiRequest(endpoint, {
   }
 
   const url = new URL(endpoint, `${API_BASE}/`);
-  for (const [key, value] of Object.entries(query ?? {})) {
+  const queryValues = query ?? {};
+  for (const key in queryValues) {
+    if (!Object.hasOwn(queryValues, key)) {
+      continue;
+    }
+    const value = queryValues[key];
     if (value != null && value !== '') {
       url.searchParams.set(key, String(value));
     }
@@ -1671,10 +1761,23 @@ async function createRollbackWorktree(task) {
 }
 
 function indentBlock(value = '') {
-  return String(value ?? '')
-    .split(/\r?\n/u)
-    .map((line) => `  ${line}`)
-    .join('\n');
+  let output = '';
+  const lines = String(value ?? '').split(/\r?\n/u);
+  for (const line of lines) {
+    output = output ? `${output}\n  ${line}` : `  ${line}`;
+  }
+  return output;
+}
+
+function joinNonEmptyLines(lines = []) {
+  let output = '';
+  for (const line of lines) {
+    if (!line) {
+      continue;
+    }
+    output = output ? `${output}\n${line}` : line;
+  }
+  return output;
 }
 
 function formatThreadHistoryForPrompt(history = []) {
@@ -1682,20 +1785,32 @@ function formatThreadHistoryForPrompt(history = []) {
     return 'No prior thread messages.';
   }
 
-  return history.map((entry, index) => {
+  const formattedEntries = [];
+  for (let index = 0; index < history.length; index += 1) {
+    const entry = history[index];
     const prompt = truncateText(entry?.prompt ?? '', 1200);
     const agentMessage = truncateText(entry?.agentMessage || entry?.summary || entry?.error || '', 1600);
-    const metadata = [
-      entry?.status ? `status=${entry.status}` : '',
-      entry?.branch ? `branch=${entry.branch}` : '',
-      entry?.commitSha ? `commit=${String(entry.commitSha).slice(0, 12)}` : ''
-    ].filter(Boolean).join(', ');
-    return [
-      `Thread turn ${index + 1}${metadata ? ` (${metadata})` : ''}:`,
-      prompt ? `Admin asked:\n${indentBlock(prompt)}` : '',
-      agentMessage ? `Agent replied:\n${indentBlock(agentMessage)}` : ''
-    ].filter(Boolean).join('\n');
-  }).join('\n\n');
+    const metadataParts = [];
+    if (entry?.status) {
+      metadataParts.push(`status=${entry.status}`);
+    }
+    if (entry?.branch) {
+      metadataParts.push(`branch=${entry.branch}`);
+    }
+    if (entry?.commitSha) {
+      metadataParts.push(`commit=${String(entry.commitSha).slice(0, 12)}`);
+    }
+    const metadata = metadataParts.join(', ');
+    const lines = [`Thread turn ${index + 1}${metadata ? ` (${metadata})` : ''}:`];
+    if (prompt) {
+      lines.push(`Admin asked:\n${indentBlock(prompt)}`);
+    }
+    if (agentMessage) {
+      lines.push(`Agent replied:\n${indentBlock(agentMessage)}`);
+    }
+    formattedEntries.push(lines.join('\n'));
+  }
+  return formattedEntries.join('\n\n');
 }
 
 function extractCodexSessionId(output = '') {
@@ -1836,9 +1951,27 @@ async function getUnmergedFiles(worktreePath, taskId = '') {
     taskId,
     label: 'git list unmerged files'
   });
-  return normalizeChangedFiles(output
-    .split(/\r?\n/u)
-    .filter((line) => !line.startsWith('warning:')));
+  const lines = output.split(/\r?\n/u);
+  const files = [];
+  for (const line of lines) {
+    if (!line.startsWith('warning:')) {
+      files.push(line);
+    }
+  }
+  return normalizeChangedFiles(files);
+}
+
+function formatConflictFiles(conflictFiles = []) {
+  if (!conflictFiles.length) {
+    return '- none detected';
+  }
+
+  let output = '';
+  for (const filePath of conflictFiles) {
+    const line = `- ${filePath}`;
+    output = output ? `${output}\n${line}` : line;
+  }
+  return output;
 }
 
 async function getFilesWithConflictMarkers(worktreePath, filePaths = []) {
@@ -1877,7 +2010,7 @@ Current state:
 - Do not push.
 
 Conflicted files:
-${conflictFiles.length ? conflictFiles.map((filePath) => `- ${filePath}`).join('\n') : '- none detected'}
+${formatConflictFiles(conflictFiles)}
 
 Ongoing thread context:
 ${formatThreadHistoryForPrompt(task.threadHistory)}
@@ -1989,16 +2122,28 @@ async function getChangedFiles(worktreePath) {
     cwd: worktreePath,
     label: 'git ls-files untracked'
   });
-  return normalizeChangedFiles([...new Set(`${trackedOutput}\n${untrackedOutput}`
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => !line.startsWith('warning:'))
-    .filter(Boolean))]);
+  const seen = new Set();
+  const files = [];
+  const lines = `${trackedOutput}\n${untrackedOutput}`.split(/\r?\n/u);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('warning:') || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    files.push(trimmed);
+  }
+  return normalizeChangedFiles(files);
 }
 
 async function enforceAllowlist(task, worktreePath) {
   const changedFiles = await getChangedFiles(worktreePath);
-  const disallowed = changedFiles.filter((filePath) => !isAllowedChangedFile(filePath));
+  const disallowed = [];
+  for (const filePath of changedFiles) {
+    if (!isAllowedChangedFile(filePath)) {
+      disallowed.push(filePath);
+    }
+  }
   if (disallowed.length > 0) {
     throw new Error(`Codex changed files outside the MVP allowlist: ${disallowed.join(', ')}`);
   }
@@ -2013,8 +2158,12 @@ async function enforceAllowlist(task, worktreePath) {
 }
 
 function assertAllowedChangedFiles(changedFiles = []) {
-  const disallowed = normalizeChangedFiles(changedFiles)
-    .filter((filePath) => !isAllowedChangedFile(filePath));
+  const disallowed = [];
+  for (const filePath of normalizeChangedFiles(changedFiles)) {
+    if (!isAllowedChangedFile(filePath)) {
+      disallowed.push(filePath);
+    }
+  }
   if (disallowed.length > 0) {
     throw new Error(`Deploy diff includes files outside the allowlist: ${disallowed.join(', ')}`);
   }
@@ -2056,9 +2205,13 @@ async function getDiffChangedFiles(worktreePath, fromRef, toRef = 'HEAD') {
     cwd: worktreePath,
     label: 'git diff deploy changed files'
   });
-  return normalizeChangedFiles(diffOutput
-    .split(/\r?\n/u)
-    .filter((line) => !line.startsWith('warning:')));
+  const files = [];
+  for (const line of diffOutput.split(/\r?\n/u)) {
+    if (!line.startsWith('warning:')) {
+      files.push(line);
+    }
+  }
+  return normalizeChangedFiles(files);
 }
 
 async function getDeployChangedFiles(task, worktreePath, fromRef) {
@@ -2163,7 +2316,12 @@ async function runDeployCommand(task, worktreePath, {
     throw new Error(`${label} command is empty.`);
   }
 
-  return runCommand(deployParts[0], deployParts.slice(1), {
+  const deployArgs = [];
+  for (let index = 1; index < deployParts.length; index += 1) {
+    deployArgs.push(deployParts[index]);
+  }
+
+  return runCommand(deployParts[0], deployArgs, {
     cwd: worktreePath,
     taskId: task.id,
     timeoutMs: 30 * 60 * 1000,
@@ -2371,11 +2529,23 @@ function getBackendRoomEndpoint() {
 }
 
 function normalizeLayoutEntries(layout = {}) {
-  return [
-    ...(Array.isArray(layout.tiles) ? layout.tiles.map((entry) => ({ ...entry, layer: 'tile' })) : []),
-    ...(Array.isArray(layout.props) ? layout.props.map((entry) => ({ ...entry, layer: 'prop' })) : []),
-    ...(Array.isArray(layout.npcs) ? layout.npcs.map((entry) => ({ ...entry, layer: 'npc' })) : [])
-  ];
+  const entries = [];
+  if (Array.isArray(layout.tiles)) {
+    for (const entry of layout.tiles) {
+      entries.push({ ...entry, layer: 'tile' });
+    }
+  }
+  if (Array.isArray(layout.props)) {
+    for (const entry of layout.props) {
+      entries.push({ ...entry, layer: 'prop' });
+    }
+  }
+  if (Array.isArray(layout.npcs)) {
+    for (const entry of layout.npcs) {
+      entries.push({ ...entry, layer: 'npc' });
+    }
+  }
+  return entries;
 }
 
 function getPlacementId(entry = {}) {
@@ -2497,10 +2667,13 @@ async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha =
       taskId: task.id,
       label: 'git diff world layout seed changes'
     });
-    changedWorldFiles = diffOutput
-      .split(/\r?\n/gu)
-      .map((line) => line.trim())
-      .filter((line) => WORLD_LAYOUT_CHANGE_PATHS.has(line));
+    changedWorldFiles = [];
+    for (const line of diffOutput.split(/\r?\n/gu)) {
+      const trimmed = line.trim();
+      if (WORLD_LAYOUT_CHANGE_PATHS.has(trimmed)) {
+        changedWorldFiles.push(trimmed);
+      }
+    }
   } catch (error) {
     await appendLog(task.id, 'World layout verification skipped; could not inspect the deploy commit diff.', {
       level: 'warn',
@@ -2522,16 +2695,22 @@ async function getWorldLayoutSeedChanges(task, worktreePath, expectedCommitSha =
   }
   nextLayout = await readJsonFromGitRef(task, worktreePath, commitSha, WORLD_LAYOUT_SEED_PATH);
 
-  const previousById = new Map(normalizeLayoutEntries(previousLayout).map((entry) => [getPlacementId(entry), entry]));
-  const changedPlacements = normalizeLayoutEntries(nextLayout).filter((entry) => {
+  const previousById = new Map();
+  for (const entry of normalizeLayoutEntries(previousLayout)) {
+    previousById.set(getPlacementId(entry), entry);
+  }
+  const changedPlacements = [];
+  for (const entry of normalizeLayoutEntries(nextLayout)) {
     const id = getPlacementId(entry);
     if (!id) {
-      return false;
+      continue;
     }
 
     const previous = previousById.get(id);
-    return !previous || JSON.stringify(previous) !== JSON.stringify(entry);
-  });
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(entry)) {
+      changedPlacements.push(entry);
+    }
+  }
 
   return {
     changedWorldFiles,
@@ -2603,7 +2782,10 @@ async function verifyLiveWorldLayoutChanges(task, worktreePath, {
 
   const liveLayout = await readLiveWorldLayout();
   const liveEntries = normalizeLayoutEntries(liveLayout);
-  const liveById = new Map(liveEntries.map((entry) => [getPlacementId(entry), entry]));
+  const liveById = new Map();
+  for (const entry of liveEntries) {
+    liveById.set(getPlacementId(entry), entry);
+  }
   const missing = [];
 
   for (const expected of placements) {
@@ -2613,14 +2795,25 @@ async function verifyLiveWorldLayoutChanges(task, worktreePath, {
       continue;
     }
 
-    const fallbackMatch = liveEntries.find((entry) => placementMatchesExpected(expected, entry));
+    let fallbackMatch = null;
+    for (const entry of liveEntries) {
+      if (placementMatchesExpected(expected, entry)) {
+        fallbackMatch = entry;
+        break;
+      }
+    }
     if (!fallbackMatch) {
       missing.push(expected);
     }
   }
 
   if (missing.length > 0) {
-    const formatted = missing.slice(0, 8).map(formatPlacementSummary).join('; ');
+    let formatted = '';
+    const limit = Math.min(missing.length, 8);
+    for (let index = 0; index < limit; index += 1) {
+      const summary = formatPlacementSummary(missing[index]);
+      formatted = formatted ? `${formatted}; ${summary}` : summary;
+    }
     throw new Error(
       `${actionLabel} live world layout verification failed: ${missing.length} of ${placements.length} changed seed placements `
       + `are not present in the persisted Colyseus world. Missing: ${formatted}. `
@@ -2653,7 +2846,25 @@ function extractHtmlAssetUrls(html = '', baseUrl = '') {
     }
   }
 
-  return [...new Set(assets)];
+  const dedupedAssets = [];
+  const seenAssets = new Set();
+  for (const asset of assets) {
+    if (seenAssets.has(asset)) {
+      continue;
+    }
+    seenAssets.add(asset);
+    dedupedAssets.push(asset);
+  }
+  return dedupedAssets;
+}
+
+function copyAssetPreview(assets = [], limit = 0) {
+  const cappedLimit = Math.max(0, Math.min(assets.length, limit));
+  const preview = [];
+  for (let index = 0; index < cappedLimit; index += 1) {
+    preview.push(assets[index]);
+  }
+  return preview;
 }
 
 async function verifyFrontendDeployment(task, worktreePath, {
@@ -2733,18 +2944,18 @@ async function verifyFrontendDeployment(task, worktreePath, {
             attempts: attempt,
             etag: result.etag,
             cacheControl: result.cacheControl,
-            assets: lastAssets.slice(0, 8)
+            assets: copyAssetPreview(lastAssets, 8)
           }
         });
         return {
           deployUrl: verifyUrl,
-          output: [
+          output: joinNonEmptyLines([
             message,
             `URL: ${verifyUrl}`,
             `Attempts: ${attempt}`,
             result.etag ? `ETag: ${result.etag}` : '',
-            lastAssets.length ? `Assets: ${lastAssets.slice(0, 8).join(', ')}` : ''
-          ].filter(Boolean).join('\n')
+            lastAssets.length ? `Assets: ${copyAssetPreview(lastAssets, 8).join(', ')}` : ''
+          ])
         };
       }
 
@@ -2760,7 +2971,7 @@ async function verifyFrontendDeployment(task, worktreePath, {
   }
 
   const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
-  throw new Error(`${actionLabel} frontend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}${lastEtag ? `; last etag ${lastEtag}` : ''}${lastAssets.length ? `; last assets ${lastAssets.slice(0, 5).join(', ')}` : ''}`);
+  throw new Error(`${actionLabel} frontend verification timed out after ${elapsedSeconds}s at ${verifyUrl}: ${lastError}${lastEtag ? `; last etag ${lastEtag}` : ''}${lastAssets.length ? `; last assets ${copyAssetPreview(lastAssets, 5).join(', ')}` : ''}`);
 }
 
 async function verifyBackendDeployment(task, {
@@ -2822,13 +3033,13 @@ async function verifyBackendDeployment(task, {
         });
         return {
           deployUrl: verifyUrl,
-          output: [
+          output: joinNonEmptyLines([
             message,
             `URL: ${verifyUrl}`,
             `Attempts: ${attempt}`,
             result.json?.persistenceMode ? `World persistence: ${result.json.persistenceMode}` : '',
             result.json?.playerSnapshotPersistenceMode ? `Player snapshots: ${result.json.playerSnapshotPersistenceMode}` : ''
-          ].filter(Boolean).join('\n')
+          ])
         };
       }
 
@@ -2936,9 +3147,16 @@ async function servedCommitIncludesExpected(task, expectedCommitSha = '', served
 }
 
 async function chooseReconciledLiveCommitSha(task, results = [], fallbackCommitSha = '') {
-  const commits = [...new Set(results
-    .map((result) => String(result.servedCommitSha || '').trim())
-    .filter(Boolean))];
+  const commits = [];
+  const seen = new Set();
+  for (const result of results) {
+    const commit = String(result.servedCommitSha || '').trim();
+    if (!commit || seen.has(commit)) {
+      continue;
+    }
+    seen.add(commit);
+    commits.push(commit);
+  }
   for (const candidate of commits) {
     let includesAllServedCommits = true;
     for (const other of commits) {
@@ -2990,18 +3208,32 @@ async function reconcileStaleDeployTask(task) {
       && await servedCommitIncludesExpected(task, expectedCommitSha, result.servedCommitSha);
   }
 
-  const output = results.map((result) => [
-    `[${result.target}] ${result.output}`,
-    result.servedCommitSha ? `Served commit: ${result.servedCommitSha}` : '',
-    result.includesExpectedCommit ? `Includes task commit: ${expectedCommitSha}` : 'Includes task commit: no'
-  ].filter(Boolean).join('\n')).join('\n\n');
+  const outputBlocks = [];
+  let hasMissingExpectedCommit = results.length === 0;
+  for (const result of results) {
+    outputBlocks.push(joinNonEmptyLines([
+      `[${result.target}] ${result.output}`,
+      result.servedCommitSha ? `Served commit: ${result.servedCommitSha}` : '',
+      result.includesExpectedCommit ? `Includes task commit: ${expectedCommitSha}` : 'Includes task commit: no'
+    ]));
+    if (!result.includesExpectedCommit) {
+      hasMissingExpectedCommit = true;
+    }
+  }
+  const output = outputBlocks.join('\n\n');
 
-  if (!results.length || results.some((result) => !result.includesExpectedCommit)) {
+  if (hasMissingExpectedCommit) {
     throw new Error(`Stale deploy could not be reconciled against the live runtime.\n${output}`);
   }
 
   const liveCommitSha = await chooseReconciledLiveCommitSha(task, results, expectedCommitSha);
-  const deployUrl = results.find((result) => result.deployUrl)?.deployUrl || task.deployUrl || '';
+  let deployUrl = task.deployUrl || '';
+  for (const result of results) {
+    if (result.deployUrl) {
+      deployUrl = result.deployUrl;
+      break;
+    }
+  }
   const message = liveCommitSha === expectedCommitSha
     ? `Deployment reconciled: live runtime is serving commit ${expectedCommitSha.slice(0, 12)}.`
     : `Deployment reconciled: live runtime is serving ${liveCommitSha.slice(0, 12)}, which includes task commit ${expectedCommitSha.slice(0, 12)}.`;
@@ -3171,11 +3403,9 @@ async function prepareDeployCommit(task, worktreePath) {
       taskId: task.id,
       label: 'git read deploy head subject'
     })).trim();
-    const expectedSubjects = new Set([
-      `Agent task ${task.id}`,
-      getAgentTaskCommitSubject(task)
-    ]);
-    if (!expectedIsAncestor && !expectedSubjects.has(headSubject)) {
+    const defaultSubject = `Agent task ${task.id}`;
+    const taskSubject = getAgentTaskCommitSubject(task);
+    if (!expectedIsAncestor && headSubject !== defaultSubject && headSubject !== taskSubject) {
       throw new Error(`Deploy checkout is at ${headCommitSha}, expected task commit ${expectedCommitSha}.`);
     }
 
@@ -3778,7 +4008,14 @@ async function runWorker() {
   }
 
   const laneResults = await Promise.all(lanes);
-  if (laneResults.some((result) => result === 'drained')) {
+  let hasDrainedLane = false;
+  for (const result of laneResults) {
+    if (result === 'drained') {
+      hasDrainedLane = true;
+      break;
+    }
+  }
+  if (hasDrainedLane) {
     const control = getActiveDrainControl();
     await writeWorkerDiagnostic('info', 'worker_drain_complete', {
       control: control
@@ -3977,21 +4214,22 @@ function runSelfTest() {
     }
   ];
 
-  const output = scenarios.map((scenario) => {
+  const output = [];
+  for (const scenario of scenarios) {
     const plan = getSimulatedDeployPlan(scenario.changedFiles, scenario.recordedDeployTargets);
     assertSelfTestEqual(plan.deployTargets, scenario.deployTargets, `${scenario.label} deploy targets`);
     assertSelfTestEqual(plan.checks, scenario.checks, `${scenario.label} checks`);
     assertSelfTestEqual(plan.frontendDeploy, scenario.frontendDeploy, `${scenario.label} frontend deploy`);
     assertSelfTestEqual(plan.backendDeploy, scenario.backendDeploy, `${scenario.label} backend deploy`);
-    return {
+    output.push({
       label: scenario.label,
       deployTargets: plan.deployTargets,
       checks: plan.checks,
       frontendDeploy: plan.frontendDeploy,
       backendDeploy: plan.backendDeploy,
       backendVerify: plan.backendVerify
-    };
-  });
+    });
+  }
 
   console.log(JSON.stringify({
     ok: true,

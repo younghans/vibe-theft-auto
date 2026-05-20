@@ -38,6 +38,43 @@ function getObjectBounds(root, name, label = 'visual') {
   return new THREE.Box3().setFromObject(object);
 }
 
+function placementWithItemId(placements, itemId) {
+  if (!placements) {
+    return null;
+  }
+  for (const placement of placements) {
+    if (placement.itemId === itemId) {
+      return placement;
+    }
+  }
+  return null;
+}
+
+function placementsWithItemId(placements, itemId) {
+  const matchingPlacements = [];
+  if (!placements) {
+    return matchingPlacements;
+  }
+  for (const placement of placements) {
+    if (placement.itemId === itemId) {
+      matchingPlacements.push(placement);
+    }
+  }
+  return matchingPlacements;
+}
+
+function hasBlackjackDealerNpc(npcs) {
+  if (!npcs) {
+    return false;
+  }
+  for (const npc of npcs) {
+    if (npc.blackjackDealerEnabled === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function validateSharedRules() {
   assert(getBlackjackHandValue([{ rank: 'A' }, { rank: '9' }, { rank: 'A' }]) === 21, 'Aces should be reduced without busting.');
   assert(isSoftBlackjackHand([{ rank: 'A' }, { rank: '9' }]), 'A+9 should be a soft hand.');
@@ -88,7 +125,9 @@ function validateSharedRules() {
   splitBlackjackSession(splitSession);
   assert(splitSession.playerHands.length === 2, 'Split should create two player hands.');
   assert(splitSession.wager === 30, 'Split should add an equal second wager.');
-  assert(splitSession.playerHands.every((hand) => hand.cards.length === 2), 'Each split hand should receive one card.');
+  for (const hand of splitSession.playerHands) {
+    assert(hand.cards.length === 2, 'Each split hand should receive one card.');
+  }
   const splitPublicState = serializeBlackjackSession(splitSession, { money: 0 });
   assert(splitPublicState.split === true, 'Public state should mark split hands.');
   assert(splitPublicState.playerHands.length === 2, 'Public state should include both split hands.');
@@ -173,39 +212,41 @@ function validateSlotMachineModel() {
 }
 
 function assertSlotMachinesLeftOfBlackjack(layout, label) {
-  const blackjackTable = layout.props?.find((placement) => placement.itemId === 'blackjack_table');
-  const slotMachines = layout.props?.filter((placement) => placement.itemId === 'slot_machine') ?? [];
+  const blackjackTable = placementWithItemId(layout.props, 'blackjack_table');
+  const slotMachines = placementsWithItemId(layout.props, 'slot_machine');
 
   assert(blackjackTable, `${label} should include a blackjack table placement.`);
   assert(slotMachines.length >= 4, `${label} should include moveable slot machine placements.`);
-  assert(
-    slotMachines.every((placement) => Number(placement.position?.[0]) < Number(blackjackTable.position?.[0])),
-    `${label} slot machines should be positioned to the left of the blackjack table.`
-  );
-  assert(
-    slotMachines.every((placement) => placement.rotationQuarterTurns === 1),
-    `${label} slot machines should face right from the left side.`
-  );
+  for (const placement of slotMachines) {
+    assert(
+      Number(placement.position?.[0]) < Number(blackjackTable.position?.[0]),
+      `${label} slot machines should be positioned to the left of the blackjack table.`
+    );
+    assert(
+      placement.rotationQuarterTurns === 1,
+      `${label} slot machines should face right from the left side.`
+    );
+  }
 }
 
 async function validateCheckedInPlacements() {
   assert(
-    defaultWorldLayout.props.some((placement) => placement.itemId === 'blackjack_table'),
+    placementWithItemId(defaultWorldLayout.props, 'blackjack_table'),
     'Default world should include a blackjack table placement.'
   );
   assert(
-    defaultWorldLayout.npcs.some((npc) => npc.blackjackDealerEnabled === true),
+    hasBlackjackDealerNpc(defaultWorldLayout.npcs),
     'Default world should include a blackjack dealer NPC.'
   );
   assertSlotMachinesLeftOfBlackjack(defaultWorldLayout, 'Default world');
 
   const savedLayout = JSON.parse(await readFile(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
   assert(
-    savedLayout.props?.some((placement) => placement.itemId === 'blackjack_table'),
+    placementWithItemId(savedLayout.props, 'blackjack_table'),
     'Fallback saved world layout should include a blackjack table placement.'
   );
   assert(
-    savedLayout.npcs?.some((npc) => npc.blackjackDealerEnabled === true),
+    hasBlackjackDealerNpc(savedLayout.npcs),
     'Fallback saved world layout should include a blackjack dealer NPC.'
   );
   assertSlotMachinesLeftOfBlackjack(savedLayout, 'Fallback saved world');

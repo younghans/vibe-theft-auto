@@ -150,7 +150,7 @@ function createRigidSegment(bone, childBone, boneIndex, width, depth, options = 
   const segmentVector = childBone.position.clone();
   const segmentLength = Math.max(0.001, segmentVector.length());
   const geometry = new THREE.BoxGeometry(width, segmentLength, depth, 1, 1, 1).toNonIndexed();
-  const segmentDirection = segmentVector.clone().normalize();
+  const segmentDirection = LOCAL_OFFSET.copy(segmentVector).normalize();
   const rotationQuaternion = new THREE.Quaternion().setFromUnitVectors(PRIMITIVE_UP, segmentDirection);
   const midpoint = segmentVector.multiplyScalar(0.5);
   const localOffset = options.offset ?? [0, 0, 0];
@@ -174,7 +174,7 @@ function createRigidTaperedSegment(bone, childBone, boneIndex, size, taper, opti
   const segmentVector = childBone.position.clone();
   const segmentLength = Math.max(0.001, segmentVector.length());
   const geometry = createTaperedBoxGeometry([size[0], segmentLength, size[1]], taper);
-  const segmentDirection = segmentVector.clone().normalize();
+  const segmentDirection = LOCAL_OFFSET.copy(segmentVector).normalize();
   const rotationQuaternion = new THREE.Quaternion().setFromUnitVectors(PRIMITIVE_UP, segmentDirection);
   const midpoint = segmentVector.multiplyScalar(0.5);
   const localOffset = options.offset ?? [0, 0, 0];
@@ -235,8 +235,20 @@ export function createClassicBotCharacter(root) {
   const skeleton = sourceMesh.skeleton;
   const bindMatrix = sourceMesh.bindMatrix.clone();
   const materials = createClassicBotMaterials();
-  const piecesByMaterial = new Map(Object.keys(materials).map((key) => [key, []]));
-  const getBoneIndex = (boneName) => skeleton.bones.findIndex((bone) => bone.name === boneName);
+  const piecesByMaterial = new Map();
+  for (const key in materials) {
+    if (Object.hasOwn(materials, key)) {
+      piecesByMaterial.set(key, []);
+    }
+  }
+  const boneIndexByName = new Map();
+  for (let index = 0; index < skeleton.bones.length; index += 1) {
+    const bone = skeleton.bones[index];
+    if (bone?.name) {
+      boneIndexByName.set(bone.name, index);
+    }
+  }
+  const getBoneIndex = (boneName) => boneIndexByName.get(boneName) ?? -1;
   const getBone = (boneName) => skeleton.getBoneByName(boneName);
   const addPiece = (materialKey, geometry) => {
     if (geometry) {
@@ -495,7 +507,8 @@ export function createClassicBotCharacter(root) {
 
   hideSourceMeshes(root);
 
-  for (const [materialKey, geometries] of piecesByMaterial.entries()) {
+  for (const materialKey of piecesByMaterial.keys()) {
+    const geometries = piecesByMaterial.get(materialKey);
     if (geometries.length === 0) {
       continue;
     }

@@ -21,9 +21,10 @@ const backupEntries = [
   { worldKey: 'primary', capturedAt: 'not-a-date', layoutHash: 'malformed' }
 ];
 
-const retainedHashes = new Set(
-  getRetainedWorldBackupEntries(backupEntries, retentionConfig, nowMs).map((entry) => entry.layoutHash)
-);
+const retainedHashes = new Set();
+for (const entry of getRetainedWorldBackupEntries(backupEntries, retentionConfig, nowMs)) {
+  retainedHashes.add(entry.layoutHash);
+}
 
 assert(retainedHashes.has('recent-primary'), 'recent backups should be retained');
 assert(retainedHashes.has('recent-primary-2'), 'all backups inside the recent window should be retained');
@@ -34,13 +35,14 @@ assert(!retainedHashes.has('older-staging-earlier'), 'older same-day backups sho
 assert(!retainedHashes.has('too-old-primary'), 'backups older than the max daily window should be pruned');
 assert(!retainedHashes.has('malformed'), 'malformed backup index entries should not be retained');
 
-const retainedWithoutMax = new Set(
-  getRetainedWorldBackupEntries(
-    backupEntries,
-    { ...retentionConfig, maxDailyDays: 0 },
-    nowMs
-  ).map((entry) => entry.layoutHash)
-);
+const retainedWithoutMax = new Set();
+for (const entry of getRetainedWorldBackupEntries(
+  backupEntries,
+  { ...retentionConfig, maxDailyDays: 0 },
+  nowMs
+)) {
+  retainedWithoutMax.add(entry.layoutHash);
+}
 assert(retainedWithoutMax.has('too-old-primary'), 'maxDailyDays=0 should keep daily backups without a max age');
 
 const layoutA = {

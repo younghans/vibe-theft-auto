@@ -6,11 +6,17 @@ import {
 import { getPlacementScale } from './placementScale.js';
 
 export function distance2D(ax, az, bx, bz) {
-  return Math.hypot(ax - bx, az - bz);
+  return Math.sqrt(distanceSquared2D(ax, az, bx, bz));
+}
+
+export function distanceSquared2D(ax, az, bx, bz) {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return (dx * dx) + (dz * dz);
 }
 
 export function normalizeAimVector(x, z) {
-  const length = Math.hypot(x, z);
+  const length = Math.sqrt((x * x) + (z * z));
   if (!Number.isFinite(length) || length <= 0.0001) {
     return { x: 0, z: 1 };
   }
@@ -30,23 +36,23 @@ export function clampToWorldBounds(x, z) {
 
 export function chooseFarthestSpawnPoint(spawnPoints, livingPlayers = []) {
   let bestSpawn = spawnPoints[0] ?? [0, 0];
-  let bestDistance = -Infinity;
+  let bestDistanceSq = -Infinity;
 
   for (const spawn of spawnPoints) {
-    let nearest = Infinity;
+    let nearestSq = Infinity;
 
     for (const player of livingPlayers) {
-      nearest = Math.min(nearest, distance2D(spawn[0], spawn[1], player.x, player.z));
+      nearestSq = Math.min(nearestSq, distanceSquared2D(spawn[0], spawn[1], player.x, player.z));
     }
 
-    const score = Number.isFinite(nearest) ? nearest : Infinity;
-    if (score > bestDistance) {
-      bestDistance = score;
+    const scoreSq = Number.isFinite(nearestSq) ? nearestSq : Infinity;
+    if (scoreSq > bestDistanceSq) {
+      bestDistanceSq = scoreSq;
       bestSpawn = spawn;
     }
   }
 
-  return [...bestSpawn];
+  return [bestSpawn[0], bestSpawn[1]];
 }
 
 function itemBlocksCollision(item, collisionKey = 'blocksShots') {
@@ -119,7 +125,11 @@ export function placementToCollisionRects(placement, item, { collisionKey = 'blo
 
   const customRects = getCustomCollisionRects(item, collisionKey);
   if (customRects?.length) {
-    return customRects.map((rect) => localRectToWorldRect(placement, item, rect));
+    const rects = [];
+    for (const rect of customRects) {
+      rects.push(localRectToWorldRect(placement, item, rect));
+    }
+    return rects;
   }
 
   if (!itemBlocksCollision(item, collisionKey)) {
@@ -198,46 +208,41 @@ export function rayRectIntersectionDistance(originX, originZ, dirX, dirZ, maxDis
   let tMin = 0;
   let tMax = maxDistance;
 
-  const xHit = clipRayToAxis(localOriginX, localDirX, -rect.halfWidth, rect.halfWidth, tMin, tMax);
-  if (!xHit) {
-    return null;
-  }
-  tMin = xHit.tMin;
-  tMax = xHit.tMax;
-
-  const zHit = clipRayToAxis(localOriginZ, localDirZ, -rect.halfDepth, rect.halfDepth, tMin, tMax);
-  if (!zHit) {
-    return null;
-  }
-  tMin = zHit.tMin;
-  tMax = zHit.tMax;
-
-  if (tMin < 0 || tMin > maxDistance) {
-    return null;
-  }
-
-  return tMin;
-}
-
-function clipRayToAxis(origin, direction, min, max, tMin, tMax) {
-  if (Math.abs(direction) < 0.000001) {
-    if (origin < min || origin > max) {
+  if (Math.abs(localDirX) < 0.000001) {
+    if (localOriginX < -rect.halfWidth || localOriginX > rect.halfWidth) {
       return null;
     }
-    return { tMin, tMax };
+  } else {
+    const invDirection = 1 / localDirX;
+    let nextMin = (-rect.halfWidth - localOriginX) * invDirection;
+    let nextMax = (rect.halfWidth - localOriginX) * invDirection;
+    if (nextMin > nextMax) {
+      [nextMin, nextMax] = [nextMax, nextMin];
+    }
+    tMin = Math.max(tMin, nextMin);
+    tMax = Math.min(tMax, nextMax);
+    if (tMin > tMax) {
+      return null;
+    }
   }
 
-  const invDirection = 1 / direction;
-  let nextMin = (min - origin) * invDirection;
-  let nextMax = (max - origin) * invDirection;
-  if (nextMin > nextMax) {
-    [nextMin, nextMax] = [nextMax, nextMin];
+  if (Math.abs(localDirZ) < 0.000001) {
+    if (localOriginZ < -rect.halfDepth || localOriginZ > rect.halfDepth) {
+      return null;
+    }
+  } else {
+    const invDirection = 1 / localDirZ;
+    let nextMin = (-rect.halfDepth - localOriginZ) * invDirection;
+    let nextMax = (rect.halfDepth - localOriginZ) * invDirection;
+    if (nextMin > nextMax) {
+      [nextMin, nextMax] = [nextMax, nextMin];
+    }
+    tMin = Math.max(tMin, nextMin);
+    tMax = Math.min(tMax, nextMax);
+    if (tMin > tMax) {
+      return null;
+    }
   }
 
-  const clipped = {
-    tMin: Math.max(tMin, nextMin),
-    tMax: Math.min(tMax, nextMax)
-  };
-
-  return clipped.tMin <= clipped.tMax ? clipped : null;
+  return tMin >= 0 && tMin <= maxDistance ? tMin : null;
 }

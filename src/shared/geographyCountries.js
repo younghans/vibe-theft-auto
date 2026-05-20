@@ -1836,9 +1836,19 @@ export function getSchoolGeographyCountryAliases(country = null) {
   if (!country) {
     return [];
   }
-  return [country.name, ...(Array.isArray(country.aliases) ? country.aliases : [])]
-    .map((alias) => String(alias ?? '').trim())
-    .filter(Boolean);
+  const aliases = [];
+  const name = String(country.name ?? '').trim();
+  if (name) {
+    aliases.push(name);
+  }
+  const countryAliases = Array.isArray(country.aliases) ? country.aliases : [];
+  for (let index = 0; index < countryAliases.length; index += 1) {
+    const alias = String(countryAliases[index] ?? '').trim();
+    if (alias) {
+      aliases.push(alias);
+    }
+  }
+  return aliases;
 }
 
 export function isSchoolGeographyCountryAnswer(country = null, guess = '') {
@@ -1846,9 +1856,13 @@ export function isSchoolGeographyCountryAnswer(country = null, guess = '') {
   if (!normalizedGuess) {
     return false;
   }
-  return getSchoolGeographyCountryAliases(country)
-    .map((alias) => normalizeSchoolGeographyCountryName(alias))
-    .some((alias) => alias === normalizedGuess);
+  const aliases = getSchoolGeographyCountryAliases(country);
+  for (let index = 0; index < aliases.length; index += 1) {
+    if (normalizeSchoolGeographyCountryName(aliases[index]) === normalizedGuess) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function createSchoolGeographyCountry({ rng = Math.random } = {}) {

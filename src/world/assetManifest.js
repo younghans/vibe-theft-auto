@@ -13,11 +13,19 @@ export const assetUrl = (...parts) => new URL(parts.join('/'), assetBaseUrl).hre
 export const cityAsset = (modelName) =>
   assetUrl('KayKit_City_Builder_Bits_1.0_FREE', 'Assets', 'gltf', `${modelName}.gltf`);
 
-const PLAYER_EMOTES = Object.freeze(
-  Object.fromEntries(
-    Object.entries(EMOTES_BY_ID).map(([emoteId, emote]) => [emoteId, emote.clipName])
-  )
-);
+const playerEmotes = {};
+for (const emoteId in EMOTES_BY_ID) {
+  if (Object.hasOwn(EMOTES_BY_ID, emoteId)) {
+    playerEmotes[emoteId] = EMOTES_BY_ID[emoteId].clipName;
+  }
+}
+const PLAYER_EMOTES = Object.freeze(playerEmotes);
+
+const MIXAMO_CHARACTER_ASSETS = {};
+for (let index = 0; index < MIXAMO_CHARACTER_DEFINITIONS.length; index += 1) {
+  const entry = MIXAMO_CHARACTER_DEFINITIONS[index];
+  MIXAMO_CHARACTER_ASSETS[entry.id] = assetUrl('runtime', 'mixamo', 'characters', `${entry.id}.glb`);
+}
 
 export const assets = {
   playerAnimationSet: {
@@ -33,12 +41,7 @@ export const assets = {
     emotes: PLAYER_EMOTES
   },
   mixamo: {
-    characters: Object.fromEntries(
-      MIXAMO_CHARACTER_DEFINITIONS.map((entry) => [
-        entry.id,
-        assetUrl('runtime', 'mixamo', 'characters', `${entry.id}.glb`)
-      ])
-    ),
+    characters: MIXAMO_CHARACTER_ASSETS,
     animations: {
       idle: assetUrl('mixamo', 'animations', 'idle.json'),
       fightingIdle: assetUrl('mixamo', 'animations', 'fighting-idle.json'),

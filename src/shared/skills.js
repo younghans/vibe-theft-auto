@@ -53,7 +53,10 @@ export const SKILL_DEFINITIONS = Object.freeze([
   })
 ]);
 
-const SKILL_BY_ID = new Map(SKILL_DEFINITIONS.map((skill) => [skill.id, skill]));
+const SKILL_BY_ID = new Map();
+for (const skill of SKILL_DEFINITIONS) {
+  SKILL_BY_ID.set(skill.id, skill);
+}
 
 export function normalizeSkillId(skillId = '') {
   const normalized = String(skillId ?? '').trim();
@@ -81,9 +84,11 @@ export function getSkillXpForLevel(level = 1) {
   return Math.max(1, Math.floor(getClassicXpForLevel(targetLevel) / SKILL_XP_SCALE));
 }
 
-export const SKILL_LEVEL_THRESHOLDS = Object.freeze(
-  Array.from({ length: SKILL_MAX_LEVEL + 1 }, (_, level) => getSkillXpForLevel(level))
-);
+const SKILL_LEVEL_THRESHOLD_ENTRIES = [];
+for (let level = 0; level <= SKILL_MAX_LEVEL; level += 1) {
+  SKILL_LEVEL_THRESHOLD_ENTRIES.push(getSkillXpForLevel(level));
+}
+export const SKILL_LEVEL_THRESHOLDS = Object.freeze(SKILL_LEVEL_THRESHOLD_ENTRIES);
 
 export function normalizeSkillXp(value = 0) {
   const numeric = Number(value ?? 0);
@@ -154,9 +159,14 @@ export function getPlayerSkillSnapshot(player = null, skillId = '') {
 }
 
 export function getPlayerSkillsSnapshot(player = null) {
-  return SKILL_DEFINITIONS
-    .map((definition) => getPlayerSkillSnapshot(player, definition.id))
-    .filter(Boolean);
+  const snapshots = [];
+  for (const definition of SKILL_DEFINITIONS) {
+    const snapshot = getPlayerSkillSnapshot(player, definition.id);
+    if (snapshot) {
+      snapshots.push(snapshot);
+    }
+  }
+  return snapshots;
 }
 
 export function createSkillAward(skillId = '', oldXp = 0, newXp = 0) {

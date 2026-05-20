@@ -36,10 +36,11 @@ export function createRagdollController(character) {
   const alignQuaternion = new THREE.Quaternion();
   const targetGlobalQuaternion = new THREE.Quaternion();
   const parentInverseQuaternion = new THREE.Quaternion();
-  const targetLocalQuaternion = new THREE.Quaternion();
   const currentHipsPosition = new THREE.Vector3();
   const targetHipsPosition = new THREE.Vector3();
   const flailForce = new THREE.Vector3();
+  const gravityStep = new THREE.Vector3();
+  const impulseScratch = new THREE.Vector3();
 
   character.updateMatrixWorld(true);
 
@@ -62,60 +63,62 @@ export function createRagdollController(character) {
     });
   }
 
-  const links = RAGDOLL_LINK_DEFS
-    .map(([from, to]) => {
-      const fromNode = nodes.get(from);
-      const toNode = nodes.get(to);
-      if (!fromNode || !toNode) {
-        return null;
-      }
+  const links = [];
+  for (let index = 0; index < RAGDOLL_LINK_DEFS.length; index += 1) {
+    const [from, to] = RAGDOLL_LINK_DEFS[index];
+    const fromNode = nodes.get(from);
+    const toNode = nodes.get(to);
+    if (!fromNode || !toNode) {
+      continue;
+    }
 
-      return {
-        from,
-        to,
-        length: fromNode.basePosition.distanceTo(toNode.basePosition),
-        stiffness: 1
-      };
-    })
-    .filter(Boolean);
+    links.push({
+      from,
+      to,
+      length: fromNode.basePosition.distanceTo(toNode.basePosition),
+      stiffness: 1
+    });
+  }
 
-  const extraConstraints = RAGDOLL_EXTRA_CONSTRAINTS
-    .map(([from, to, stiffness]) => {
-      const fromNode = nodes.get(from);
-      const toNode = nodes.get(to);
-      if (!fromNode || !toNode) {
-        return null;
-      }
+  const extraConstraints = [];
+  for (let index = 0; index < RAGDOLL_EXTRA_CONSTRAINTS.length; index += 1) {
+    const [from, to, stiffness] = RAGDOLL_EXTRA_CONSTRAINTS[index];
+    const fromNode = nodes.get(from);
+    const toNode = nodes.get(to);
+    if (!fromNode || !toNode) {
+      continue;
+    }
 
-      return {
-        from,
-        to,
-        length: fromNode.basePosition.distanceTo(toNode.basePosition),
-        stiffness
-      };
-    })
-    .filter(Boolean);
+    extraConstraints.push({
+      from,
+      to,
+      length: fromNode.basePosition.distanceTo(toNode.basePosition),
+      stiffness
+    });
+  }
 
-  const boneTargets = RAGDOLL_BONE_DEFS
-    .map((boneDef) => {
-      const bone = character.getObjectByName(boneDef.boneName);
-      const fromNode = nodes.get(boneDef.from);
-      const toNode = nodes.get(boneDef.to);
-      if (!bone || !fromNode || !toNode) {
-        return null;
-      }
+  const boneTargets = [];
+  for (let index = 0; index < RAGDOLL_BONE_DEFS.length; index += 1) {
+    const boneDef = RAGDOLL_BONE_DEFS[index];
+    const bone = character.getObjectByName(boneDef.boneName);
+    const fromNode = nodes.get(boneDef.from);
+    const toNode = nodes.get(boneDef.to);
+    if (!bone || !fromNode || !toNode) {
+      continue;
+    }
 
-      bone.getWorldQuaternion(targetGlobalQuaternion);
-      restDirection.copy(toNode.basePosition).sub(fromNode.basePosition).normalize();
+    bone.getWorldQuaternion(targetGlobalQuaternion);
+    restDirection.copy(toNode.basePosition).sub(fromNode.basePosition).normalize();
 
-      return {
-        ...boneDef,
-        bone,
-        baseGlobalQuaternion: targetGlobalQuaternion.clone(),
-        restDirection: restDirection.clone()
-      };
-    })
-    .filter(Boolean);
+    boneTargets.push({
+      ...boneDef,
+      bone,
+      baseGlobalQuaternion: targetGlobalQuaternion.clone(),
+      restDirection: restDirection.clone(),
+      targetGlobalQuaternion: new THREE.Quaternion(),
+      targetLocalQuaternion: new THREE.Quaternion()
+    });
+  }
 
   const targetLocalRotations = new Map();
   const targetGlobalRotations = new Map();
@@ -222,7 +225,7 @@ export function createRagdollController(character) {
     const clampedDelta = Math.min(deltaSeconds, 1 / 30);
     const stepCount = Math.max(1, Math.min(5, Math.ceil(clampedDelta / RAGDOLL_SUBSTEP)));
     const stepDelta = clampedDelta / stepCount;
-    const gravityStep = RAGDOLL_GRAVITY.clone().multiplyScalar(stepDelta * stepDelta);
+    gravityStep.copy(RAGDOLL_GRAVITY).multiplyScalar(stepDelta * stepDelta);
 
     for (let step = 0; step < stepCount; step += 1) {
       for (const node of nodes.values()) {
@@ -262,26 +265,30 @@ export function createRagdollController(character) {
       state.side = chooseSide(startedAtMs);
       state.activeTime = Math.max(0, (Date.now() - startedAtMs) / 1000);
 
-      const bodyImpulse = new THREE.Vector3(state.side * RAGDOLL_INITIAL_BODY_IMPULSE, -12, 3.8);
-      const armImpulse = new THREE.Vector3(state.side * RAGDOLL_INITIAL_ARM_IMPULSE, 7.5, 3.2);
-      const counterArmImpulse = new THREE.Vector3(state.side * -12, 4, -2.4);
-      const legImpulse = new THREE.Vector3(state.side * -RAGDOLL_INITIAL_LEG_IMPULSE, 2.8, -9.6);
-      const counterLegImpulse = new THREE.Vector3(state.side * 8.5, 1.2, -6.4);
-      applyImpulse('spine2', bodyImpulse);
-      applyImpulse('neck', bodyImpulse);
-      applyImpulse('head', bodyImpulse);
-      applyImpulse('leftShoulder', armImpulse);
-      applyImpulse('leftForeArm', armImpulse.clone().multiplyScalar(1.18));
-      applyImpulse('leftHand', armImpulse.clone().multiplyScalar(1.32));
-      applyImpulse('rightShoulder', counterArmImpulse);
-      applyImpulse('rightForeArm', counterArmImpulse.clone().multiplyScalar(0.92));
-      applyImpulse('rightHand', counterArmImpulse.clone().multiplyScalar(1.08));
-      applyImpulse('leftUpLeg', legImpulse);
-      applyImpulse('leftLeg', legImpulse.clone().multiplyScalar(1.08));
-      applyImpulse('leftFoot', legImpulse.clone().multiplyScalar(1.16));
-      applyImpulse('rightUpLeg', counterLegImpulse);
-      applyImpulse('rightLeg', counterLegImpulse.clone().multiplyScalar(0.94));
-      applyImpulse('rightFoot', counterLegImpulse.clone().multiplyScalar(1.06));
+      impulseScratch.set(state.side * RAGDOLL_INITIAL_BODY_IMPULSE, -12, 3.8);
+      applyImpulse('spine2', impulseScratch);
+      applyImpulse('neck', impulseScratch);
+      applyImpulse('head', impulseScratch);
+
+      impulseScratch.set(state.side * RAGDOLL_INITIAL_ARM_IMPULSE, 7.5, 3.2);
+      applyImpulse('leftShoulder', impulseScratch);
+      applyImpulse('leftForeArm', impulseScratch.set(state.side * RAGDOLL_INITIAL_ARM_IMPULSE, 7.5, 3.2).multiplyScalar(1.18));
+      applyImpulse('leftHand', impulseScratch.set(state.side * RAGDOLL_INITIAL_ARM_IMPULSE, 7.5, 3.2).multiplyScalar(1.32));
+
+      impulseScratch.set(state.side * -12, 4, -2.4);
+      applyImpulse('rightShoulder', impulseScratch);
+      applyImpulse('rightForeArm', impulseScratch.set(state.side * -12, 4, -2.4).multiplyScalar(0.92));
+      applyImpulse('rightHand', impulseScratch.set(state.side * -12, 4, -2.4).multiplyScalar(1.08));
+
+      impulseScratch.set(state.side * -RAGDOLL_INITIAL_LEG_IMPULSE, 2.8, -9.6);
+      applyImpulse('leftUpLeg', impulseScratch);
+      applyImpulse('leftLeg', impulseScratch.set(state.side * -RAGDOLL_INITIAL_LEG_IMPULSE, 2.8, -9.6).multiplyScalar(1.08));
+      applyImpulse('leftFoot', impulseScratch.set(state.side * -RAGDOLL_INITIAL_LEG_IMPULSE, 2.8, -9.6).multiplyScalar(1.16));
+
+      impulseScratch.set(state.side * 8.5, 1.2, -6.4);
+      applyImpulse('rightUpLeg', impulseScratch);
+      applyImpulse('rightLeg', impulseScratch.set(state.side * 8.5, 1.2, -6.4).multiplyScalar(0.94));
+      applyImpulse('rightFoot', impulseScratch.set(state.side * 8.5, 1.2, -6.4).multiplyScalar(1.06));
     },
     deactivate() {
       if (!state.active && !state.recovering) {
@@ -352,17 +359,17 @@ export function createRagdollController(character) {
         }
 
         alignQuaternion.setFromUnitVectors(boneTarget.restDirection, desiredDirection);
-        targetGlobalQuaternion.copy(alignQuaternion).multiply(boneTarget.baseGlobalQuaternion);
-        targetGlobalRotations.set(boneTarget.boneName, targetGlobalQuaternion.clone());
+        boneTarget.targetGlobalQuaternion.copy(alignQuaternion).multiply(boneTarget.baseGlobalQuaternion);
+        targetGlobalRotations.set(boneTarget.boneName, boneTarget.targetGlobalQuaternion);
 
         if (boneTarget.parentBoneName && targetGlobalRotations.has(boneTarget.parentBoneName)) {
           parentInverseQuaternion.copy(targetGlobalRotations.get(boneTarget.parentBoneName)).invert();
-          targetLocalQuaternion.copy(parentInverseQuaternion).multiply(targetGlobalQuaternion);
+          boneTarget.targetLocalQuaternion.copy(parentInverseQuaternion).multiply(boneTarget.targetGlobalQuaternion);
         } else {
-          targetLocalQuaternion.copy(targetGlobalQuaternion);
+          boneTarget.targetLocalQuaternion.copy(boneTarget.targetGlobalQuaternion);
         }
 
-        targetLocalRotations.set(boneTarget.boneName, targetLocalQuaternion.clone());
+        targetLocalRotations.set(boneTarget.boneName, boneTarget.targetLocalQuaternion);
       }
 
       currentHipsPosition.copy(hipsBone.position);

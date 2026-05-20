@@ -212,9 +212,12 @@ function applyFormFittingHospitalProfile(group, {
   structure.scale.set(scaleX, scaleY, scaleZ);
   structure.position.y = anchorY * (1 - scaleY);
 
-  const structureChildren = group.children.slice(groundChildCount);
-  for (const child of structureChildren) {
-    structure.add(child);
+  const structureChildren = [];
+  for (let index = groundChildCount; index < group.children.length; index += 1) {
+    structureChildren.push(group.children[index]);
+  }
+  for (let index = 0; index < structureChildren.length; index += 1) {
+    structure.add(structureChildren[index]);
   }
 
   group.add(structure);

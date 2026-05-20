@@ -6,7 +6,6 @@ import {
   WEAPON_RANGE
 } from '../shared/combatConstants.js';
 import { tickHealthRegen } from '../shared/combatRegen.js';
-import { distance2D } from '../shared/combatMath.js';
 import {
   normalizeRotationQuarterTurns,
   quantizePosition,
@@ -49,6 +48,12 @@ const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 
+function distanceSquared2D(ax, az, bx, bz) {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return (dx * dx) + (dz * dz);
+}
+
 function clonePoint(point = null) {
   if (!point) {
     return null;
@@ -76,7 +81,14 @@ function smoothstep(value) {
 }
 
 function cloneDebugPath(points = []) {
-  return points.map((point) => clonePoint(point)).filter(Boolean);
+  const path = [];
+  for (const point of points) {
+    const clonedPoint = clonePoint(point);
+    if (clonedPoint) {
+      path.push(clonedPoint);
+    }
+  }
+  return path;
 }
 
 function getNpcInteractionRadius(npc) {
@@ -313,22 +325,23 @@ export const npcSimulationMethods = {
       };
     }
 
-    const buildingTargets = collectNpcTargetOptions(this.worldState)
-      .filter((entry) => entry.hideCapable && entry.approachPosition);
     let nearestBuildingTarget = null;
-    let nearestDistance = Infinity;
-    for (const target of buildingTargets) {
-      const distance = distance2D(
+    let nearestDistanceSq = Infinity;
+    for (const target of collectNpcTargetOptions(this.worldState)) {
+      if (!target.hideCapable || !target.approachPosition) {
+        continue;
+      }
+      const distanceSq = distanceSquared2D(
         spawnPoint.x,
         spawnPoint.z,
         target.approachPosition.x,
         target.approachPosition.z
       );
-      if (distance >= nearestDistance) {
+      if (distanceSq >= nearestDistanceSq) {
         continue;
       }
       nearestBuildingTarget = target;
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     if (nearestBuildingTarget) {
@@ -367,7 +380,8 @@ export const npcSimulationMethods = {
       return false;
     }
 
-    for (const [playerId, player] of this.state.players.entries()) {
+    for (const playerId of this.state.players.keys()) {
+      const player = this.state.players.get(playerId);
       if (
         playerId !== ignorePlayerId
         && player?.alive !== false
@@ -377,7 +391,8 @@ export const npcSimulationMethods = {
       }
     }
 
-    for (const [npcId, npc] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
       if (
         npcId !== ignoreNpcId
         && npc?.alive !== false
@@ -488,7 +503,8 @@ export const npcSimulationMethods = {
   buildNpcDebugSnapshotMap(now = Date.now()) {
     const next = new Map();
 
-    for (const [npcId, npc] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
       const definition = this.getNpcDefinition(npcId);
       if (!definition) {
         continue;
@@ -597,7 +613,7 @@ export const npcSimulationMethods = {
       const reachDistance = meta.pathIndex < path.length
         ? this.getNpcWaypointReachDistance(path, meta.pathIndex, npc, stopDistance)
         : stopDistance;
-      if (distance2D(npc.x, npc.z, nextPoint.x, nextPoint.z) > reachDistance) {
+      if (distanceSquared2D(npc.x, npc.z, nextPoint.x, nextPoint.z) > reachDistance * reachDistance) {
         break;
       }
 
@@ -623,11 +639,12 @@ export const npcSimulationMethods = {
     const steeringTarget = this.getNpcSteeringTarget(path, meta.pathIndex, npc, nextPoint);
     const toTargetX = steeringTarget.x - npc.x;
     const toTargetZ = steeringTarget.z - npc.z;
-    const distance = Math.hypot(toTargetX, toTargetZ);
-    if (distance <= stopDistance) {
+    const distanceSq = (toTargetX * toTargetX) + (toTargetZ * toTargetZ);
+    if (distanceSq <= stopDistance * stopDistance) {
       npc.x = quantizePosition(nextPoint.x);
       npc.z = quantizePosition(nextPoint.z);
     } else {
+      const distance = Math.sqrt(distanceSq);
       const maxStep = Math.max(0.1, speed) * (deltaMs / 1000);
       const step = Math.min(distance, maxStep);
       npc.x = quantizePosition(npc.x + (toTargetX / distance) * step);
@@ -637,7 +654,7 @@ export const npcSimulationMethods = {
     }
 
     this.syncNpcDerivedState?.(npc);
-    return distance2D(npc.x, npc.z, finalTarget.x, finalTarget.z) <= stopDistance;
+    return distanceSquared2D(npc.x, npc.z, finalTarget.x, finalTarget.z) <= stopDistance * stopDistance;
   },
 
   getNpcSteeringTarget(path, pathIndex, npc, nextPoint) {
@@ -648,10 +665,10 @@ export const npcSimulationMethods = {
 
     const inX = nextPoint.x - npc.x;
     const inZ = nextPoint.z - npc.z;
-    const inLength = Math.hypot(inX, inZ);
+    const inLength = Math.sqrt((inX * inX) + (inZ * inZ));
     const outX = upcomingPoint.x - nextPoint.x;
     const outZ = upcomingPoint.z - nextPoint.z;
-    const outLength = Math.hypot(outX, outZ);
+    const outLength = Math.sqrt((outX * outX) + (outZ * outZ));
     if (inLength <= 0.0001 || outLength <= 0.0001) {
       return nextPoint;
     }
@@ -695,10 +712,10 @@ export const npcSimulationMethods = {
 
     const inX = nextPoint.x - npc.x;
     const inZ = nextPoint.z - npc.z;
-    const inLength = Math.hypot(inX, inZ);
+    const inLength = Math.sqrt((inX * inX) + (inZ * inZ));
     const outX = upcomingPoint.x - nextPoint.x;
     const outZ = upcomingPoint.z - nextPoint.z;
-    const outLength = Math.hypot(outX, outZ);
+    const outLength = Math.sqrt((outX * outX) + (outZ * outZ));
     if (inLength <= 0.0001 || outLength <= 0.0001) {
       return stopDistance;
     }
@@ -720,25 +737,28 @@ export const npcSimulationMethods = {
     }
 
     const radius = getNpcInteractionRadius(npc);
+    const radiusSq = radius * radius;
     let nearestPlayer = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
-    for (const [playerId, player] of this.state.players.entries()) {
+    for (const playerId of this.state.players.keys()) {
+      const player = this.state.players.get(playerId);
       if (!player || player.alive === false) {
         continue;
       }
 
-      const distance = distance2D(npc.x, npc.z, player.x, player.z);
-      if (distance > radius || distance >= nearestDistance) {
+      const dx = npc.x - player.x;
+      const dz = npc.z - player.z;
+      const distanceSq = (dx * dx) + (dz * dz);
+      if (distanceSq > radiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
       nearestPlayer = {
         id: playerId,
-        player,
-        distance
+        player
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearestPlayer;
@@ -751,7 +771,7 @@ export const npcSimulationMethods = {
 
     const deltaX = targetPosition.x - npc.x;
     const deltaZ = targetPosition.z - npc.z;
-    if (Math.hypot(deltaX, deltaZ) <= 0.0001) {
+    if (((deltaX * deltaX) + (deltaZ * deltaZ)) <= 0.00000001) {
       return false;
     }
 
@@ -783,7 +803,8 @@ export const npcSimulationMethods = {
     }
 
     const homeAnchor = this.getNpcSpawnPoint(definition);
-    return distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z) > NPC_HOME_RETURN_STOP_DISTANCE;
+    return distanceSquared2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z)
+      > NPC_HOME_RETURN_STOP_DISTANCE * NPC_HOME_RETURN_STOP_DISTANCE;
   },
 
   pickNpcWanderPoint(anchorPosition, radius = 6, npcId = '') {
@@ -802,8 +823,8 @@ export const npcSimulationMethods = {
     npc.targetPlacementId = '';
     npc.activity = '';
 
-    const distanceFromHome = distance2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z);
-    if (distanceFromHome <= NPC_HOME_RETURN_STOP_DISTANCE) {
+    const distanceFromHomeSq = distanceSquared2D(npc.x, npc.z, homeAnchor.x, homeAnchor.z);
+    if (distanceFromHomeSq <= NPC_HOME_RETURN_STOP_DISTANCE * NPC_HOME_RETURN_STOP_DISTANCE) {
       this.clearNpcPath(npcId);
       npc.x = quantizePosition(homeAnchor.x);
       npc.z = quantizePosition(homeAnchor.z);
@@ -1017,8 +1038,8 @@ export const npcSimulationMethods = {
     }
 
     const threatPosition = { x: targetPlayer.x, z: targetPlayer.z };
-    const distanceToThreat = distance2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
-    const distanceFromHome = distance2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
+    const distanceToThreatSq = distanceSquared2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
+    const distanceFromHomeSq = distanceSquared2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
     if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive) {
       const runSpeed = getNpcRunSpeed(definition?.speed);
@@ -1032,7 +1053,8 @@ export const npcSimulationMethods = {
       );
       this.moveNpcAlongPath(npcId, npc, fleeTarget, deltaMs, { speed: runSpeed });
       npc.activity = '';
-      if (distanceToThreat >= (combat.aggroRadius ?? 0) && now >= meta.calmEndsAt) {
+      const aggroRadius = combat.aggroRadius ?? 0;
+      if (distanceToThreatSq >= aggroRadius * aggroRadius && now >= meta.calmEndsAt) {
         this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
         this.clearNpcPath(npcId);
       }
@@ -1040,7 +1062,7 @@ export const npcSimulationMethods = {
     }
 
     const leashRadius = Number(combat.leashRadius ?? 0);
-    if (leashRadius > 0 && distanceFromHome > leashRadius) {
+    if (leashRadius > 0 && distanceFromHomeSq > leashRadius * leashRadius) {
       meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
       meta.combatAnchor = null;
       this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.routine);
@@ -1052,7 +1074,8 @@ export const npcSimulationMethods = {
     npc.activity = '';
     const runSpeed = getNpcRunSpeed(definition?.speed);
     if (combat.weaponId === WEAPON_IDS.pistol) {
-      if (distanceToThreat <= WEAPON_RANGE * 0.72 && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
+      const shootRange = WEAPON_RANGE * 0.72;
+      if (distanceToThreatSq <= shootRange * shootRange && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
         this.performNpcShot(npcId, npc, threatPosition, now);
         meta.lastAttackAt = now;
       } else {
@@ -1071,7 +1094,8 @@ export const npcSimulationMethods = {
       return true;
     }
 
-    if (distanceToThreat <= (PUNCH_RANGE + NPC_COMBAT_REACH_BUFFER) && (now - meta.lastAttackAt) >= NPC_PUNCH_INTERVAL_MS) {
+    const punchReach = PUNCH_RANGE + NPC_COMBAT_REACH_BUFFER;
+    if (distanceToThreatSq <= punchReach * punchReach && (now - meta.lastAttackAt) >= NPC_PUNCH_INTERVAL_MS) {
       this.performNpcPunch(npcId, npc, threatPosition, now);
       meta.lastAttackAt = now;
       npc.activity = 'punch';
@@ -1095,7 +1119,8 @@ export const npcSimulationMethods = {
   updateNpcSimulation(now, deltaMs) {
     let changed = false;
 
-    for (const [npcId, npc] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
       const definition = this.getNpcDefinition(npcId);
       if (!definition) {
         continue;

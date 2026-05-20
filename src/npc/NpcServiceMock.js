@@ -50,6 +50,7 @@ import {
   createInitialStockMarketState,
   executeStockTrade,
   getStockMarketPromptRadius,
+  hasStockPortfolioSnapshotEntries,
   isStockMarketNpc,
   normalizeStockMarketSnapshot,
   normalizeStockPortfolioSnapshot,
@@ -161,6 +162,7 @@ import {
 } from '../shared/skills.js';
 import { normalizeVibeHeroSongId } from '../shared/vibeHero.js';
 import {
+  cloneNpcBehavior,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -173,8 +175,8 @@ import {
   chooseFarthestSpawnPoint,
   clampToWorldBounds,
   distance2D,
+  distanceSquared2D,
   normalizeAimVector,
-  placementToCollisionRects,
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../shared/combatMath.js';
@@ -221,7 +223,12 @@ function makeTranscriptEntry(id, speaker, author, text) {
 }
 
 function clampTranscript(transcript, limit = 16) {
-  return transcript.slice(Math.max(0, transcript.length - limit));
+  const clamped = [];
+  const startIndex = Math.max(0, transcript.length - limit);
+  for (let index = startIndex; index < transcript.length; index += 1) {
+    clamped.push(transcript[index]);
+  }
+  return clamped;
 }
 
 function buildMockNpcReply(definition = {}) {
@@ -283,10 +290,13 @@ function normalizeMockCharacterStockPortfolios(stockPortfolios = {}) {
     return output;
   }
 
-  for (const [characterId, portfolio] of Object.entries(stockPortfolios)) {
+  for (const characterId in stockPortfolios) {
+    if (!Object.hasOwn(stockPortfolios, characterId)) {
+      continue;
+    }
     const normalizedCharacterId = getPlayableCharacterById(characterId).id;
-    const normalizedPortfolio = normalizeStockPortfolioSnapshot(portfolio);
-    if (Object.keys(normalizedPortfolio).length > 0) {
+    const normalizedPortfolio = normalizeStockPortfolioSnapshot(stockPortfolios[characterId]);
+    if (hasStockPortfolioSnapshotEntries(normalizedPortfolio)) {
       output[normalizedCharacterId] = normalizedPortfolio;
     }
   }
@@ -420,14 +430,35 @@ function createDefaultPlayerState(overrides = {}) {
 }
 
 function clonePlayerState(player) {
-  return { ...player };
+  return clonePlainObject(player);
 }
 
 function clonePickupState(pickup) {
-  return { ...pickup };
+  return clonePlainObject(pickup);
+}
+
+function clonePlainObject(source = null) {
+  const clone = {};
+  if (!source || typeof source !== 'object') {
+    return clone;
+  }
+
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      clone[key] = source[key];
+    }
+  }
+  return clone;
 }
 
 function cloneNpcDebugState(debug = {}) {
+  const path = [];
+  if (Array.isArray(debug.path)) {
+    for (const point of debug.path) {
+      path.push(clonePlainObject(point));
+    }
+  }
+
   return {
     id: debug.id || '',
     mode: debug.mode || '',
@@ -436,11 +467,11 @@ function cloneNpcDebugState(debug = {}) {
     currentStepType: debug.currentStepType || '',
     stepCount: debug.stepCount ?? 0,
     targetPlacementId: debug.targetPlacementId || '',
-    targetApproach: debug.targetApproach ? { ...debug.targetApproach } : null,
-    nextPathPoint: debug.nextPathPoint ? { ...debug.nextPathPoint } : null,
-    steeringTarget: debug.steeringTarget ? { ...debug.steeringTarget } : null,
-    finalTarget: debug.finalTarget ? { ...debug.finalTarget } : null,
-    path: Array.isArray(debug.path) ? debug.path.map((point) => ({ ...point })) : [],
+    targetApproach: debug.targetApproach ? clonePlainObject(debug.targetApproach) : null,
+    nextPathPoint: debug.nextPathPoint ? clonePlainObject(debug.nextPathPoint) : null,
+    steeringTarget: debug.steeringTarget ? clonePlainObject(debug.steeringTarget) : null,
+    finalTarget: debug.finalTarget ? clonePlainObject(debug.finalTarget) : null,
+    path,
     pathIndex: debug.pathIndex ?? 0,
     pathNodeCount: debug.pathNodeCount ?? 0,
     pathKey: debug.pathKey || '',
@@ -449,7 +480,7 @@ function cloneNpcDebugState(debug = {}) {
     calmEndsAt: debug.calmEndsAt ?? 0,
     hiddenUntil: debug.hiddenUntil ?? 0,
     respawnAt: debug.respawnAt ?? 0,
-    wanderPoint: debug.wanderPoint ? { ...debug.wanderPoint } : null,
+    wanderPoint: debug.wanderPoint ? clonePlainObject(debug.wanderPoint) : null,
     stepStartedAt: debug.stepStartedAt ?? 0,
     busy: Boolean(debug.busy),
     alive: debug.alive !== false,
@@ -500,6 +531,8 @@ export class NpcServiceMock {
     this.playerAliasSequence = 0;
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
+    this.gymDoorBlockers = [];
+    this.gymDoorBlockersRevision = -1;
     this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
     this.displayName = typeof displayName === 'string' && displayName.trim() ? displayName.trim() : '';
     this.stockPortfolios.set(this.state.sessionId, readMockStockPortfolios(this.playerId));
@@ -507,7 +540,7 @@ export class NpcServiceMock {
     this.playerAliasSequence += 1;
     this.playerAliases.set(this.state.sessionId, this.displayName || `Player ${this.playerAliasSequence}`);
     const [spawnX, spawnZ] = chooseFarthestSpawnPoint(COMBAT_RESPAWN_POINTS);
-    const rentIntro = resolveRentIntroPlan(this.worldState.serializeLayout());
+    const rentIntro = resolveRentIntroPlan(this.worldState);
     const introStartedAt = rentIntro ? Date.now() : 0;
     const introSpawn = rentIntro?.spawn ?? null;
     this.state.players.set(this.state.sessionId, createDefaultPlayerState({
@@ -551,17 +584,50 @@ export class NpcServiceMock {
   }
 
   getState() {
-    return {
-      ...this.state,
-      players: new Map([...this.state.players.entries()].map(([id, player]) => [id, clonePlayerState(player)])),
-      builders: new Map([...this.state.builders.entries()].map(([id, builder]) => [id, { ...builder }])),
-      npcs: new Map([...this.state.npcs.entries()].map(([id, npc]) => [id, {
-        ...npc,
-        position: [npc.x, npc.z]
-      }])),
-      npcDebug: new Map([...this.buildNpcDebugSnapshotMap().entries()].map(([id, debug]) => [id, cloneNpcDebugState(debug)])),
-      pickups: new Map([...this.state.pickups.entries()].map(([id, pickup]) => [id, clonePickupState(pickup)]))
-    };
+    const players = new Map();
+    for (const id of this.state.players.keys()) {
+      const player = this.state.players.get(id);
+      players.set(id, clonePlayerState(player));
+    }
+
+    const builders = new Map();
+    for (const id of this.state.builders.keys()) {
+      const builder = this.state.builders.get(id);
+      builders.set(id, clonePlainObject(builder));
+    }
+
+    const npcs = new Map();
+    for (const id of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(id);
+      const clonedNpc = clonePlainObject(npc);
+      clonedNpc.position = [npc.x, npc.z];
+      npcs.set(id, clonedNpc);
+    }
+
+    const npcDebug = new Map();
+    const debugNow = Date.now();
+    for (const id of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(id);
+      const definition = this.getNpcDefinition(id);
+      if (!definition) {
+        continue;
+      }
+      npcDebug.set(id, cloneNpcDebugState(this.buildNpcDebugSnapshotEntry(id, npc, definition, debugNow)));
+    }
+
+    const pickups = new Map();
+    for (const id of this.state.pickups.keys()) {
+      const pickup = this.state.pickups.get(id);
+      pickups.set(id, clonePickupState(pickup));
+    }
+
+    const snapshot = clonePlainObject(this.state);
+    snapshot.players = players;
+    snapshot.builders = builders;
+    snapshot.npcs = npcs;
+    snapshot.npcDebug = npcDebug;
+    snapshot.pickups = pickups;
+    return snapshot;
   }
 
   emit() {
@@ -651,13 +717,17 @@ export class NpcServiceMock {
 
   syncCombatPickupsFromWorld({ reset = false } = {}) {
     const spawnDefinitions = getCombatPickupSpawnDefinitions(
-      this.worldState.getPlacements(),
+      this.worldState,
       getBuilderItemById
     );
-    const nextSpawnIds = new Set(spawnDefinitions.map((spawn) => spawn.id));
+    const nextSpawnIds = new Set();
+    for (const spawn of spawnDefinitions) {
+      nextSpawnIds.add(spawn.id);
+    }
     let changed = false;
 
-    for (const [pickupId, pickup] of [...this.state.pickups.entries()]) {
+    for (const pickupId of this.state.pickups.keys()) {
+      const pickup = this.state.pickups.get(pickupId);
       if (pickup.kind === 'spawn' && (reset || !nextSpawnIds.has(pickupId))) {
         this.state.pickups.delete(pickupId);
         changed = true;
@@ -705,11 +775,11 @@ export class NpcServiceMock {
   }
 
   syncNpcStateFromWorld() {
-    const layout = this.worldState.serializeLayout();
-    const nextIds = new Set(layout.npcs.map((npc) => npc.id));
+    const nextIds = new Set();
 
-    for (const npc of layout.npcs) {
-      const definition = normalizeNpcBehavior(structuredClone(npc), {
+    this.worldState.forEachNpcDefinition((npc) => {
+      nextIds.add(npc.id);
+      const definition = normalizeNpcBehavior(npc, {
         position: npc.position,
         rotationQuarterTurns: npc.rotationQuarterTurns
       });
@@ -763,9 +833,9 @@ export class NpcServiceMock {
       if (!this.transcripts.has(npc.id)) {
         this.transcripts.set(npc.id, []);
       }
-    }
+    });
 
-    for (const npcId of [...this.state.npcs.keys()]) {
+    for (const npcId of this.state.npcs.keys()) {
       if (nextIds.has(npcId)) {
         continue;
       }
@@ -952,9 +1022,9 @@ export class NpcServiceMock {
       case 'updateNpc': {
         const existingPlacement = this.worldState.getPlacement(payload.placementId);
         const previousNpc = existingPlacement?.npc
-          ? structuredClone(existingPlacement.npc)
+          ? cloneNpcBehavior(existingPlacement.npc)
           : null;
-        const nextUpdates = { ...payload };
+        const nextUpdates = clonePlainObject(payload);
         delete nextUpdates.placementId;
         if (nextUpdates.modelId) {
           const model = getNpcModelById(nextUpdates.modelId);
@@ -1198,7 +1268,7 @@ export class NpcServiceMock {
 
   findNearestHeardNpc(player) {
     let nearestNpc = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const npc of this.state.npcs.values()) {
       if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
@@ -1208,13 +1278,14 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(npc.x, npc.z, player.x, player.z);
-      if (distance > npc.interactRadius || distance >= nearestDistance) {
+      const radius = Math.max(0, Number(npc.interactRadius ?? 0) || 0);
+      const distanceSq = distanceSquared2D(npc.x, npc.z, player.x, player.z);
+      if (distanceSq > radius * radius || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
       nearestNpc = npc;
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearestNpc;
@@ -1277,9 +1348,11 @@ export class NpcServiceMock {
     await new Promise((resolve) => window.setTimeout(resolve, 320));
 
     const reply = this.buildReply(definition);
-    const words = reply.split(/\s+/).filter(Boolean);
     let partial = '';
-    for (const word of words) {
+    for (const word of reply.split(/\s+/)) {
+      if (!word) {
+        continue;
+      }
       partial = partial ? `${partial} ${word}` : word;
       this.setNpcChatPhase(npc, 'streaming', partial);
       this.emit();
@@ -1307,8 +1380,7 @@ export class NpcServiceMock {
       return;
     }
 
-    const distance = distance2D(player.x, player.z, pickup.x, pickup.z);
-    if (distance > PICKUP_INTERACT_RADIUS) {
+    if (distanceSquared2D(player.x, player.z, pickup.x, pickup.z) > PICKUP_INTERACT_RADIUS * PICKUP_INTERACT_RADIUS) {
       return;
     }
 
@@ -1487,7 +1559,7 @@ export class NpcServiceMock {
     }
 
     const radius = Math.max(1.5, Number(npc.interactRadius ?? 4.2) || 4.2);
-    return distance2D(player.x, player.z, npc.x, npc.z) <= radius;
+    return distanceSquared2D(player.x, player.z, npc.x, npc.z) <= radius * radius;
   }
 
   isPlayerInGymCheckInPurchaseRadius(player, npc) {
@@ -1495,7 +1567,8 @@ export class NpcServiceMock {
       return false;
     }
 
-    return distance2D(player.x, player.z, npc.x, npc.z) <= getGymCheckInPromptRadius(npc);
+    const radius = getGymCheckInPromptRadius(npc);
+    return distanceSquared2D(player.x, player.z, npc.x, npc.z) <= radius * radius;
   }
 
   isPlayerInStockMarketRadius(player, npc) {
@@ -1503,7 +1576,8 @@ export class NpcServiceMock {
       return false;
     }
 
-    return distance2D(player.x, player.z, npc.x, npc.z) <= getStockMarketPromptRadius(npc);
+    const radius = getStockMarketPromptRadius(npc);
+    return distanceSquared2D(player.x, player.z, npc.x, npc.z) <= radius * radius;
   }
 
   getPlayerStockPortfolio(sessionId = this.state.sessionId) {
@@ -1529,17 +1603,25 @@ export class NpcServiceMock {
     writeMockStockMarket(this.stockMarket);
   }
 
-  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
+  *iterateNpcCandidates(requestedNpcId = '') {
     const normalizedNpcId = typeof requestedNpcId === 'string'
       ? requestedNpcId.trim()
       : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
+    if (normalizedNpcId) {
+      const npc = this.state.npcs.get(normalizedNpcId);
+      if (npc) {
+        yield npc;
+      }
+      return;
+    }
 
+    yield* this.state.npcs.values();
+  }
+
+  getStockMarketNpcForPlayer(player, requestedNpcId = '') {
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isStockMarketNpc(npc)
         || npc.alive === false
@@ -1549,10 +1631,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getStockMarketPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getStockMarketPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -1659,16 +1742,9 @@ export class NpcServiceMock {
   }
 
   getBartenderNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isBartenderNpc(npc)
         || npc.alive === false
@@ -1678,10 +1754,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getBartenderPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getBartenderPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -1738,16 +1815,9 @@ export class NpcServiceMock {
   }
 
   getPawnShopOwnerNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isPawnShopOwnerNpc(npc)
         || npc.alive === false
@@ -1757,10 +1827,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getPawnShopPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getPawnShopPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -1852,16 +1923,9 @@ export class NpcServiceMock {
   }
 
   getCarDealerNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isCarDealerNpc(npc)
         || npc.alive === false
@@ -1871,10 +1935,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getCarDealerPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getCarDealerPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -1988,16 +2053,9 @@ export class NpcServiceMock {
   }
 
   getMarthaNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isMarthaNpc(npc)
         || npc.alive === false
@@ -2007,10 +2065,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getMarthaPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getMarthaPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2105,9 +2164,12 @@ export class NpcServiceMock {
       ? this.awardCharismaForDrink(player, result, previousDrunknessLevel)
       : null;
     this.emit();
-    return skillAward
-      ? { ...result, skillAward }
-      : result;
+    if (!skillAward) {
+      return result;
+    }
+    const nextResult = clonePlainObject(result);
+    nextResult.skillAward = skillAward;
+    return nextResult;
   }
 
   async completeVibeHero(songId = '', result = {}) {
@@ -2130,16 +2192,9 @@ export class NpcServiceMock {
   }
 
   getBlackjackDealerForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isBlackjackDealerNpc(npc)
         || npc.alive === false
@@ -2149,10 +2204,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getBlackjackPromptRadius(npc) && distance < nearestDistance) {
+      const radius = getBlackjackPromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2297,16 +2353,9 @@ export class NpcServiceMock {
   }
 
   getSchoolMicrogameNpcForPlayer(player, requestedNpcId = '') {
-    const normalizedNpcId = typeof requestedNpcId === 'string'
-      ? requestedNpcId.trim()
-      : '';
-    const candidates = normalizedNpcId
-      ? [this.state.npcs.get(normalizedNpcId)].filter(Boolean)
-      : [...this.state.npcs.values()];
-
     let nearest = null;
-    let nearestDistance = Infinity;
-    for (const npc of candidates) {
+    let nearestDistanceSq = Infinity;
+    for (const npc of this.iterateNpcCandidates(requestedNpcId)) {
       if (
         !isSchoolMicrogameNpc(npc)
         || npc.alive === false
@@ -2316,10 +2365,11 @@ export class NpcServiceMock {
         continue;
       }
 
-      const distance = distance2D(player.x, player.z, npc.x, npc.z);
-      if (distance <= getSchoolMicrogamePromptRadius(npc) && distance < nearestDistance) {
+      const radius = getSchoolMicrogamePromptRadius(npc);
+      const distanceSq = distanceSquared2D(player.x, player.z, npc.x, npc.z);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = npc;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -2363,9 +2413,7 @@ export class NpcServiceMock {
       Math.floor(Number(access.player.schoolTasksCompletedCount ?? 0) || 0)
     ) + 1;
     this.normalizePlayerSelectedMission(access.player);
-    const rewardText = [
-      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
-    ].filter(Boolean).join('  ');
+    const rewardText = reward.xp > 0 ? `+${reward.xp} Intelligence XP` : '';
     this.setNpcChatPhase(
       access.npc,
       'done',
@@ -2430,13 +2478,11 @@ export class NpcServiceMock {
     const stationZ = center.z + stationOffset.z;
     const playerY = Number.isFinite(Number(player.y)) ? Number(player.y) : stationY;
     const radius = Math.max(1.5, Number(station.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS) + 1.25;
-    const distance = Math.hypot(
-      (Number(player.x) || 0) - stationX,
-      playerY - stationY,
-      (Number(player.z) || 0) - stationZ
-    );
+    const dx = (Number(player.x) || 0) - stationX;
+    const dy = playerY - stationY;
+    const dz = (Number(player.z) || 0) - stationZ;
 
-    if (distance > radius) {
+    if (((dx * dx) + (dy * dy) + (dz * dz)) > (radius * radius)) {
       return null;
     }
 
@@ -2463,14 +2509,10 @@ export class NpcServiceMock {
       return this.getOfficeInteriorJobStationForPlayer(player, normalizedPlacementId, requestedJobId);
     }
 
-    const candidates = normalizedPlacementId
-      ? [this.worldState.getPlacement(normalizedPlacementId)].filter(Boolean)
-      : this.worldState.getPlacements();
-
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
     const requestedOfficeJobId = getOfficeJobDefinition(requestedJobId)?.id ?? '';
-    for (const placement of candidates) {
+    const evaluatePlacement = (placement) => {
       const item = getBuilderItemById(placement?.itemId);
       const placementOfficeJobId = getOfficeJobDefinition(
         placement?.interactable?.officeJobId ?? item?.interactable?.officeJobId
@@ -2486,18 +2528,24 @@ export class NpcServiceMock {
         || !placementMatchesRequestedJob
         || !Array.isArray(placement.position)
       ) {
-        continue;
+        return;
       }
 
       const radius = Math.max(
         1.5,
         Number(placement.interactable?.radius ?? item?.interactable?.radius ?? OFFICE_JOB_TERMINAL_RADIUS) || OFFICE_JOB_TERMINAL_RADIUS
       ) + 1.25;
-      const distance = distance2D(player.x, player.z, placement.position[0], placement.position[1]);
-      if (distance <= radius && distance < nearestDistance) {
+      const distanceSq = distanceSquared2D(player.x, player.z, placement.position[0], placement.position[1]);
+      if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
         nearest = placement;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
+    };
+
+    if (normalizedPlacementId) {
+      evaluatePlacement(this.worldState.getPlacement(normalizedPlacementId));
+    } else {
+      this.worldState.forEachPlacement(evaluatePlacement);
     }
 
     return nearest;
@@ -2559,10 +2607,15 @@ export class NpcServiceMock {
       access.player.ceoCompletedAt = Date.now();
       this.normalizePlayerSelectedMission(access.player);
     }
-    const rewardText = [
-      moneyAwarded > 0 ? `+$${moneyAwarded}` : '',
-      reward.xp > 0 ? `+${reward.xp} Intelligence XP` : ''
-    ].filter(Boolean).join('  ');
+    let rewardText = '';
+    if (moneyAwarded > 0) {
+      rewardText = `+$${moneyAwarded}`;
+    }
+    if (reward.xp > 0) {
+      rewardText = rewardText
+        ? `${rewardText}  +${reward.xp} Intelligence XP`
+        : `+${reward.xp} Intelligence XP`;
+    }
     this.emit();
     return {
       ok: true,
@@ -2601,39 +2654,46 @@ export class NpcServiceMock {
   }
 
   getGymDoorBlockers() {
-    return this.worldState.getPlacements()
-      .map((placement) => {
-        const item = getBuilderItemById(placement?.itemId);
-        if (!item || placement?.layer !== 'tile' || !this.isGymDoorPlacement(placement, item)) {
-          return null;
-        }
+    const revision = this.worldState.getPlacementRevision?.() ?? 0;
+    if (this.gymDoorBlockersRevision === revision) {
+      return this.gymDoorBlockers;
+    }
 
-        const doorOffset = item.interior?.exteriorDoorOffset
-          ?? placement.interactable?.interior?.exteriorDoorOffset
-          ?? item.npcRouteDoorOffset
-          ?? null;
-        if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
-          return null;
-        }
+    const blockers = [];
+    this.worldState.forEachPlacement((placement) => {
+      const item = getBuilderItemById(placement?.itemId);
+      if (!item || placement?.layer !== 'tile' || !this.isGymDoorPlacement(placement, item)) {
+        return;
+      }
 
-        const center = getTileCenterWorldPosition(
-          item,
-          placement.cellX,
-          placement.cellZ,
-          placement.rotationQuarterTurns
-        );
-        const rotatedOffset = rotateFootprintOffset(
-          Number(doorOffset[0]) || 0,
-          Number(doorOffset[1]) || 0,
-          placement.rotationQuarterTurns
-        );
-        return {
-          x: center.x + rotatedOffset.x,
-          z: center.z + rotatedOffset.z,
-          radius: GYM_DOOR_BLOCKER_RADIUS
-        };
-      })
-      .filter(Boolean);
+      const doorOffset = item.interior?.exteriorDoorOffset
+        ?? placement.interactable?.interior?.exteriorDoorOffset
+        ?? item.npcRouteDoorOffset
+        ?? null;
+      if (!Array.isArray(doorOffset) || doorOffset.length < 2) {
+        return;
+      }
+
+      const center = getTileCenterWorldPosition(
+        item,
+        placement.cellX,
+        placement.cellZ,
+        placement.rotationQuarterTurns
+      );
+      const rotatedOffset = rotateFootprintOffset(
+        Number(doorOffset[0]) || 0,
+        Number(doorOffset[1]) || 0,
+        placement.rotationQuarterTurns
+      );
+      blockers.push({
+        x: center.x + rotatedOffset.x,
+        z: center.z + rotatedOffset.z,
+        radius: GYM_DOOR_BLOCKER_RADIUS
+      });
+    });
+    this.gymDoorBlockers = blockers;
+    this.gymDoorBlockersRevision = revision;
+    return this.gymDoorBlockers;
   }
 
   isGymGateBlockingPosition(player, position) {
@@ -2647,7 +2707,8 @@ export class NpcServiceMock {
     }
 
     for (const blocker of this.getGymDoorBlockers()) {
-      if (distance2D(position.x, position.z, blocker.x, blocker.z) <= blocker.radius + PLAYER_RADIUS) {
+      const radius = blocker.radius + PLAYER_RADIUS;
+      if (distanceSquared2D(position.x, position.z, blocker.x, blocker.z) <= radius * radius) {
         return true;
       }
     }
@@ -2950,7 +3011,8 @@ export class NpcServiceMock {
     this.lastNpcSimulationAt = now;
     let stateChanged = false;
 
-    for (const [sessionId, player] of this.state.players.entries()) {
+    for (const sessionId of this.state.players.keys()) {
+      const player = this.state.players.get(sessionId);
       if (player.isReloading && player.reloadEndsAt && now >= player.reloadEndsAt) {
         this.completeReload(player);
         stateChanged = true;
@@ -2996,7 +3058,7 @@ export class NpcServiceMock {
   }
 
   chooseHospitalRespawnPoint() {
-    return getHospitalRespawnPoint(this.worldState.getPlacements(), getBuilderItemById);
+    return getHospitalRespawnPoint(this.worldState, getBuilderItemById);
   }
 
   finishRespawn(sessionId, player) {
@@ -3118,8 +3180,9 @@ export class NpcServiceMock {
     };
     const offsetX = nextOrigin.x - player.x;
     const offsetZ = nextOrigin.z - player.z;
-    const offsetLength = Math.hypot(offsetX, offsetZ);
-    if (offsetLength > SHOT_ORIGIN_MAX_OFFSET && offsetLength > 0.0001) {
+    const offsetLengthSq = (offsetX * offsetX) + (offsetZ * offsetZ);
+    if (offsetLengthSq > SHOT_ORIGIN_MAX_OFFSET * SHOT_ORIGIN_MAX_OFFSET && offsetLengthSq > 0.0001 * 0.0001) {
+      const offsetLength = Math.sqrt(offsetLengthSq);
       const scale = SHOT_ORIGIN_MAX_OFFSET / offsetLength;
       nextOrigin.x = player.x + offsetX * scale;
       nextOrigin.z = player.z + offsetZ * scale;
@@ -3140,32 +3203,27 @@ export class NpcServiceMock {
       targetId: ''
     };
 
-    for (const placement of this.worldState.getPlacements()) {
-      const item = getBuilderItemById(placement.itemId);
-      const rects = placementToCollisionRects(placement, item, {
-        collisionKey: 'blocksShots'
-      });
-      for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
-        if (
-          hitDistance == null
-          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
-          || hitDistance >= nearestDistance
-        ) {
-          continue;
-        }
-
-        nearestDistance = hitDistance;
-        result = {
-          kind: 'world',
-          hitX: origin.x + aim.x * hitDistance,
-          hitZ: origin.z + aim.z * hitDistance,
-          targetId: placement.id
-        };
+    this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, SHOT_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
+        return;
       }
-    }
 
-    for (const [id, target] of this.state.players.entries()) {
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: placementId
+      };
+    }, { collisionKey: 'blocksShots' });
+
+    for (const id of this.state.players.keys()) {
+      const target = this.state.players.get(id);
       if (id === ignorePlayerId || target.alive === false) {
         continue;
       }
@@ -3194,7 +3252,8 @@ export class NpcServiceMock {
       };
     }
 
-    for (const [npcId, target] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const target = this.state.npcs.get(npcId);
       if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }
@@ -3251,32 +3310,27 @@ export class NpcServiceMock {
       targetId: ''
     };
 
-    for (const placement of this.worldState.getPlacements()) {
-      const item = getBuilderItemById(placement.itemId);
-      const rects = placementToCollisionRects(placement, item, {
-        collisionKey: 'blocksShots'
-      });
-      for (const rect of rects) {
-        const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, maxDistance, rect);
-        if (
-          hitDistance == null
-          || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
-          || hitDistance >= nearestDistance
-        ) {
-          continue;
-        }
-
-        nearestDistance = hitDistance;
-        result = {
-          kind: 'world',
-          hitX: origin.x + aim.x * hitDistance,
-          hitZ: origin.z + aim.z * hitDistance,
-          targetId: placement.id
-        };
+    this.worldState.forEachPlacementCollisionRect(({ placementId, rect }) => {
+      const hitDistance = rayRectIntersectionDistance(origin.x, origin.z, aim.x, aim.z, nearestDistance, rect);
+      if (
+        hitDistance == null
+        || hitDistance <= Math.max(SHOT_BLOCKER_EPSILON, PUNCH_WORLD_BLOCKER_GRACE_DISTANCE)
+        || hitDistance >= nearestDistance
+      ) {
+        return;
       }
-    }
 
-    for (const [sessionId, target] of this.state.players.entries()) {
+      nearestDistance = hitDistance;
+      result = {
+        kind: 'world',
+        hitX: origin.x + aim.x * hitDistance,
+        hitZ: origin.z + aim.z * hitDistance,
+        targetId: placementId
+      };
+    }, { collisionKey: 'blocksShots' });
+
+    for (const sessionId of this.state.players.keys()) {
+      const target = this.state.players.get(sessionId);
       if (sessionId === ignorePlayerId || target.alive === false) {
         continue;
       }
@@ -3304,7 +3358,8 @@ export class NpcServiceMock {
       };
     }
 
-    for (const [npcId, target] of this.state.npcs.entries()) {
+    for (const npcId of this.state.npcs.keys()) {
+      const target = this.state.npcs.get(npcId);
       if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
         continue;
       }

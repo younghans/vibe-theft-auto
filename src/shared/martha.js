@@ -39,13 +39,14 @@ export const MARTHA_MENU_ITEMS = Object.freeze([
   })
 ]);
 
-const MARTHA_MENU_ITEM_BY_ID = new Map(
-  MARTHA_MENU_ITEMS.map((item) => [item.id, item])
-);
+const MARTHA_MENU_ITEM_BY_ID = new Map();
+const MARTHA_INVENTORY_FIELD_ENTRIES = {};
+for (const item of MARTHA_MENU_ITEMS) {
+  MARTHA_MENU_ITEM_BY_ID.set(item.id, item);
+  MARTHA_INVENTORY_FIELD_ENTRIES[item.id] = item.inventoryField;
+}
 
-const MARTHA_INVENTORY_FIELDS = Object.freeze(
-  Object.fromEntries(MARTHA_MENU_ITEMS.map((item) => [item.id, item.inventoryField]))
-);
+const MARTHA_INVENTORY_FIELDS = Object.freeze(MARTHA_INVENTORY_FIELD_ENTRIES);
 
 export function normalizeMarthaEnabled(value = false) {
   return value === true;

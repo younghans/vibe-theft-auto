@@ -84,43 +84,64 @@ async function loadWorldSnapshot(pool, worldKey) {
 }
 
 function flattenLayout(layout = {}) {
-  return [
-    ...(layout.tiles ?? []).map((placement) => ({ ...placement, layer: 'tile' })),
-    ...(layout.props ?? []).map((placement) => ({ ...placement, layer: 'prop' })),
-    ...(layout.npcs ?? []).map((placement) => ({ ...placement, layer: 'npc' }))
-  ];
+  const placements = [];
+  for (const placement of layout.tiles ?? []) {
+    placements.push({ ...placement, layer: 'tile' });
+  }
+  for (const placement of layout.props ?? []) {
+    placements.push({ ...placement, layer: 'prop' });
+  }
+  for (const placement of layout.npcs ?? []) {
+    placements.push({ ...placement, layer: 'npc' });
+  }
+  return placements;
 }
 
 function inspectAroundOrigin(layout, radiusCells = 2, radiusWorld = 28) {
   const allPlacements = flattenLayout(layout);
-  const tiles = allPlacements
-    .filter((placement) =>
+  const tiles = [];
+  const props = [];
+  const npcs = [];
+  const blockers = [];
+
+  for (const placement of allPlacements) {
+    if (
       placement.layer === 'tile'
       && Array.isArray(placement.cell)
       && Math.abs(placement.cell[0]) <= radiusCells
       && Math.abs(placement.cell[1]) <= radiusCells
-    )
-    .map(placementSummary);
+    ) {
+      const summary = placementSummary(placement);
+      tiles.push(summary);
+      if (summary.blocksMovement) {
+        blockers.push(summary);
+      }
+      continue;
+    }
 
-  const props = allPlacements
-    .filter((placement) =>
+    if (
       placement.layer === 'prop'
       && Array.isArray(placement.position)
       && Math.abs(placement.position[0]) <= radiusWorld
       && Math.abs(placement.position[1]) <= radiusWorld
-    )
-    .map(placementSummary);
+    ) {
+      const summary = placementSummary(placement);
+      props.push(summary);
+      if (summary.blocksMovement) {
+        blockers.push(summary);
+      }
+      continue;
+    }
 
-  const npcs = allPlacements
-    .filter((placement) =>
+    if (
       placement.layer === 'npc'
       && Array.isArray(placement.position)
       && Math.abs(placement.position[0]) <= radiusWorld
       && Math.abs(placement.position[1]) <= radiusWorld
-    )
-    .map(placementSummary);
-
-  const blockers = [...tiles, ...props].filter((placement) => placement.blocksMovement);
+    ) {
+      npcs.push(placementSummary(placement));
+    }
+  }
   return { tiles, props, npcs, blockers };
 }
 
@@ -149,16 +170,37 @@ async function removePlacementCommand(pool, worldKey, placementId) {
   const snapshot = await loadWorldSnapshot(pool, worldKey);
   const layout = structuredClone(snapshot.layout ?? { tiles: [], props: [], npcs: [] });
   const before = flattenLayout(layout);
-  const placement = before.find((entry) => entry.id === placementId);
+  let placement = null;
+  for (const entry of before) {
+    if (entry.id === placementId) {
+      placement = entry;
+      break;
+    }
+  }
 
   if (!placement) {
     console.error(`[world-tool] Placement "${placementId}" was not found in world "${worldKey}".`);
     process.exit(1);
   }
 
-  layout.tiles = (layout.tiles ?? []).filter((entry) => entry.id !== placementId);
-  layout.props = (layout.props ?? []).filter((entry) => entry.id !== placementId);
-  layout.npcs = (layout.npcs ?? []).filter((entry) => entry.id !== placementId);
+  layout.tiles = [];
+  for (const entry of snapshot.layout?.tiles ?? []) {
+    if (entry.id !== placementId) {
+      layout.tiles.push(entry);
+    }
+  }
+  layout.props = [];
+  for (const entry of snapshot.layout?.props ?? []) {
+    if (entry.id !== placementId) {
+      layout.props.push(entry);
+    }
+  }
+  layout.npcs = [];
+  for (const entry of snapshot.layout?.npcs ?? []) {
+    if (entry.id !== placementId) {
+      layout.npcs.push(entry);
+    }
+  }
 
   await pool.query(
     `

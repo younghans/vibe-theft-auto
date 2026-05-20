@@ -17,6 +17,9 @@ const brotliCompressAsync = promisify(brotliCompress);
 const DIST_TOTAL_BUDGET_BYTES = getByteBudget(['VTA_DIST_TOTAL_BUDGET_BYTES', 'STICKRPG_DIST_TOTAL_BUDGET_BYTES'], 80 * 1024 * 1024);
 const DIST_OPTIONAL_MEDIA_BUDGET_BYTES = getByteBudget(['VTA_DIST_OPTIONAL_MEDIA_BUDGET_BYTES', 'STICKRPG_DIST_OPTIONAL_MEDIA_BUDGET_BYTES'], 32 * 1024 * 1024);
 const DIST_FILE_BUDGET_BYTES = getByteBudget(['VTA_DIST_FILE_BUDGET_BYTES', 'STICKRPG_DIST_FILE_BUDGET_BYTES'], 8 * 1024 * 1024);
+const DIST_STALE_FRONTEND_KEEP_COUNT = getIntegerBudget(['VTA_DIST_STALE_FRONTEND_KEEP_COUNT', 'STICKRPG_DIST_STALE_FRONTEND_KEEP_COUNT'], 2);
+const DIST_COPY_CONCURRENCY = getIntegerBudget(['VTA_DIST_COPY_CONCURRENCY', 'STICKRPG_DIST_COPY_CONCURRENCY'], 16);
+const DIST_PRECOMPRESS_CONCURRENCY = getIntegerBudget(['VTA_DIST_PRECOMPRESS_CONCURRENCY', 'STICKRPG_DIST_PRECOMPRESS_CONCURRENCY'], 4);
 const DIST_BUDGET_DETAIL_LIMIT = 10;
 const COMPRESSIBLE_EXTENSIONS = new Set([
   '.css',
@@ -44,6 +47,17 @@ function getByteBudget(names, fallback) {
   return fallback;
 }
 
+function getIntegerBudget(names, fallback) {
+  const envNames = Array.isArray(names) ? names : [names];
+  for (const name of envNames) {
+    const value = Number(process.env[name]);
+    if (Number.isInteger(value) && value >= 0) {
+      return value;
+    }
+  }
+  return fallback;
+}
+
 function readEnvString(names) {
   const envNames = Array.isArray(names) ? names : [names];
   for (const name of envNames) {
@@ -59,12 +73,27 @@ function formatKiB(bytes) {
   return `${Math.round(bytes / 1024)} KiB`;
 }
 
+function copyIterable(iterable) {
+  const copied = [];
+  for (const value of iterable) {
+    copied.push(value);
+  }
+  return copied;
+}
+
+function copySortedIterable(iterable) {
+  return copyIterable(iterable).sort();
+}
+
 function formatFileSizeList(files = []) {
-  return [...files]
-    .sort((left, right) => right.bytes - left.bytes)
-    .slice(0, DIST_BUDGET_DETAIL_LIMIT)
-    .map((entry) => `${entry.path} (${formatKiB(entry.bytes)})`)
-    .join(', ');
+  const sortedFiles = copyIterable(files).sort((left, right) => right.bytes - left.bytes);
+  const limit = Math.min(sortedFiles.length, DIST_BUDGET_DETAIL_LIMIT);
+  let text = '';
+  for (let index = 0; index < limit; index += 1) {
+    const entry = sortedFiles[index];
+    text += `${index > 0 ? ', ' : ''}${entry.path} (${formatKiB(entry.bytes)})`;
+  }
+  return text;
 }
 
 function isOptionalMediaDistPath(relativePath = '') {
@@ -147,22 +176,29 @@ async function getReferencedAssetUris(normalizedPath) {
   if (extension === '.gltf') {
     const contents = await fs.readFile(normalizedPath, 'utf8');
     const document = JSON.parse(contents);
-    return [
-      ...(document.buffers ?? []).map((entry) => entry.uri),
-      ...(document.images ?? []).map((entry) => entry.uri)
-    ];
+    return getGltfReferencedUris(document);
   }
 
   if (extension === '.glb') {
     const contents = await fs.readFile(normalizedPath);
     const document = parseGlbJsonChunk(contents);
-    return [
-      ...(document?.buffers ?? []).map((entry) => entry.uri),
-      ...(document?.images ?? []).map((entry) => entry.uri)
-    ];
+    return getGltfReferencedUris(document);
   }
 
   return [];
+}
+
+function getGltfReferencedUris(document = null) {
+  const uris = [];
+  const buffers = document?.buffers ?? [];
+  for (let index = 0; index < buffers.length; index += 1) {
+    uris.push(buffers[index].uri);
+  }
+  const images = document?.images ?? [];
+  for (let index = 0; index < images.length; index += 1) {
+    uris.push(images[index].uri);
+  }
+  return uris;
 }
 
 function collectAssetUrls(value, output = new Set()) {
@@ -183,8 +219,10 @@ function collectAssetUrls(value, output = new Set()) {
   }
 
   if (typeof value === 'object') {
-    for (const entry of Object.values(value)) {
-      collectAssetUrls(entry, output);
+    for (const key in value) {
+      if (Object.hasOwn(value, key)) {
+        collectAssetUrls(value[key], output);
+      }
     }
   }
 
@@ -231,7 +269,9 @@ async function buildAssetCopyList() {
 
   const assetUrls = new Set();
   collectAssetUrls(assetManifestModule.assets, assetUrls);
-  collectAssetUrls(builderCatalogModule.BUILDER_ITEMS.map((item) => item.asset), assetUrls);
+  for (let index = 0; index < builderCatalogModule.BUILDER_ITEMS.length; index += 1) {
+    collectAssetUrls(builderCatalogModule.BUILDER_ITEMS[index].asset, assetUrls);
+  }
   const startupMixamoCharacterPaths = await getStartupMixamoCharacterPaths({
     assets: assetManifestModule.assets,
     getNpcModelByItemId: npcCatalogModule.getNpcModelByItemId,
@@ -251,8 +291,8 @@ async function buildAssetCopyList() {
   }
 
   return {
-    files: [...filesToCopy].sort(),
-    licenses: [...licenseFiles].sort()
+    files: copySortedIterable(filesToCopy),
+    licenses: copySortedIterable(licenseFiles)
   };
 }
 
@@ -269,7 +309,11 @@ async function readWorldLayoutCandidate(filePath) {
 }
 
 function worldLayoutHasPlacements(layout) {
-  return ['tiles', 'props', 'npcs'].some((key) => Array.isArray(layout?.[key]) && layout[key].length > 0);
+  return (
+    (Array.isArray(layout?.tiles) && layout.tiles.length > 0)
+    || (Array.isArray(layout?.props) && layout.props.length > 0)
+    || (Array.isArray(layout?.npcs) && layout.npcs.length > 0)
+  );
 }
 
 async function loadWorldLayoutForBuild() {
@@ -279,9 +323,13 @@ async function loadWorldLayoutForBuild() {
       ? (path.isAbsolute(configuredLayoutPath) ? configuredLayoutPath : path.resolve(root, configuredLayoutPath))
       : null,
     defaultWorldLayoutPath
-  ].filter(Boolean);
+  ];
 
   for (const candidatePath of candidatePaths) {
+    if (!candidatePath) {
+      continue;
+    }
+
     const layout = await readWorldLayoutCandidate(candidatePath);
     if (worldLayoutHasPlacements(layout)) {
       return layout;
@@ -316,11 +364,13 @@ async function getStartupMixamoCharacterPaths({
     }
   }
 
-  return new Set(
-    [...startupCharacterUrls]
-      .filter(isAssetUrl)
-      .map((assetUrl) => path.normalize(fileURLToPath(assetUrl)))
-  );
+  const startupCharacterPaths = new Set();
+  for (const assetUrl of startupCharacterUrls) {
+    if (isAssetUrl(assetUrl)) {
+      startupCharacterPaths.add(path.normalize(fileURLToPath(assetUrl)));
+    }
+  }
+  return startupCharacterPaths;
 }
 
 function shouldSkipStartupCopy(filePath, startupMixamoCharacterPaths) {
@@ -342,15 +392,15 @@ function shouldSkipStartupCopy(filePath, startupMixamoCharacterPaths) {
 async function copyRuntimeAssets(outputDirectory = stagingDist) {
   const assetCopyList = await buildAssetCopyList();
 
-  for (const licensePath of assetCopyList.licenses) {
+  await runWithConcurrency(assetCopyList.licenses, DIST_COPY_CONCURRENCY, async (licensePath) => {
     const relativePath = path.relative(root, licensePath);
     await copyFile(licensePath, path.join(outputDirectory, relativePath));
-  }
+  });
 
-  for (const sourcePath of assetCopyList.files) {
+  await runWithConcurrency(assetCopyList.files, DIST_COPY_CONCURRENCY, async (sourcePath) => {
     const relativePath = path.relative(root, sourcePath);
     await copyOptimizedTextAsset(sourcePath, path.join(outputDirectory, relativePath));
-  }
+  });
 }
 
 async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagingDist) {
@@ -361,10 +411,10 @@ async function copyOptionalDirectory(relativeDirectory, outputDirectory = stagin
   }
 
   const files = await walkFiles(sourceDirectory);
-  for (const filePath of files) {
+  await runWithConcurrency(files, DIST_COPY_CONCURRENCY, async (filePath) => {
     const relativePath = path.relative(root, filePath);
     await copyFile(filePath, path.join(outputDirectory, relativePath));
-  }
+  });
 }
 
 function readFrontendServerUrl() {
@@ -451,9 +501,10 @@ function buildHtmlFromTemplate(template, { appScript, stylesheet, modulePreloads
   }
 
   if (modulePreloads.length > 0) {
-    const preloadTags = modulePreloads
-      .map((file) => `    <link rel="modulepreload" href="./${file}" />`)
-      .join('\n');
+    let preloadTags = '';
+    for (let index = 0; index < modulePreloads.length; index += 1) {
+      preloadTags += `${index > 0 ? '\n' : ''}    <link rel="modulepreload" href="./${modulePreloads[index]}" />`;
+    }
     html = html.replace('</head>', `${preloadTags}\n  </head>`);
   }
 
@@ -463,6 +514,83 @@ function buildHtmlFromTemplate(template, { appScript, stylesheet, modulePreloads
   }
 
   return html;
+}
+
+function normalizeOutputPath(filePath) {
+  return String(filePath ?? '').split(path.sep).join('/');
+}
+
+function getStagingRelativeOutputPath(filePath) {
+  const normalized = path.normalize(filePath);
+  const relative = path.relative(
+    stagingDist,
+    path.resolve(root, normalized)
+  );
+  return normalizeOutputPath(relative);
+}
+
+function resolveMetafileImportPath(fromRelativePath, importPath, outputByRelativePath) {
+  const rawImportPath = String(importPath ?? '');
+  if (!rawImportPath) {
+    return '';
+  }
+
+  const candidates = new Set();
+  candidates.add(normalizeOutputPath(rawImportPath));
+  candidates.add(getStagingRelativeOutputPath(rawImportPath));
+  if (path.isAbsolute(rawImportPath)) {
+    candidates.add(getStagingRelativeOutputPath(rawImportPath));
+  } else {
+    candidates.add(path.posix.normalize(rawImportPath));
+    candidates.add(path.posix.normalize(path.posix.join(path.posix.dirname(fromRelativePath), rawImportPath)));
+  }
+
+  for (const candidate of candidates) {
+    if (outputByRelativePath.has(candidate)) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function getStaticModulePreloads(metafile, entryRelativePath) {
+  const outputByRelativePath = new Map();
+  for (const filePath in metafile.outputs) {
+    if (Object.hasOwn(metafile.outputs, filePath)) {
+      outputByRelativePath.set(getStagingRelativeOutputPath(filePath), metafile.outputs[filePath]);
+    }
+  }
+  const visited = new Set();
+  const preloadPaths = new Set();
+
+  function visit(relativePath) {
+    if (visited.has(relativePath)) {
+      return;
+    }
+    visited.add(relativePath);
+
+    const output = outputByRelativePath.get(relativePath);
+    for (const imported of output?.imports ?? []) {
+      if (imported.external || imported.kind === 'dynamic-import') {
+        continue;
+      }
+
+      const importedRelativePath = resolveMetafileImportPath(
+        relativePath,
+        imported.path,
+        outputByRelativePath
+      );
+      if (!importedRelativePath || !/assets\/chunks\/[^/]+\.js$/u.test(importedRelativePath)) {
+        continue;
+      }
+
+      preloadPaths.add(importedRelativePath);
+      visit(importedRelativePath);
+    }
+  }
+
+  visit(entryRelativePath);
+  return copySortedIterable(preloadPaths);
 }
 
 async function bundleClient() {
@@ -486,20 +614,20 @@ async function bundleClient() {
     target: ['es2022']
   });
 
-  const outputs = Object.keys(result.metafile.outputs)
-    .map((file) => {
-      const normalized = path.normalize(file);
-      const relative = path.relative(
-        stagingDist,
-        path.resolve(root, normalized)
-      );
-      return relative.split(path.sep).join('/');
-    });
-  const appScript = outputs.find((file) => /assets\/app-[^/]+\.js$/u.test(file));
-  const stylesheet = outputs.find((file) => /assets\/styles-[^/]+\.css$/u.test(file));
-  const modulePreloads = outputs
-    .filter((file) => /assets\/chunks\/[^/]+\.js$/u.test(file))
-    .sort();
+  let appScript = '';
+  let stylesheet = '';
+  for (const file in result.metafile.outputs) {
+    if (!Object.hasOwn(result.metafile.outputs, file)) {
+      continue;
+    }
+
+    const outputPath = getStagingRelativeOutputPath(file);
+    if (!appScript && /assets\/app-[^/]+\.js$/u.test(outputPath)) {
+      appScript = outputPath;
+    } else if (!stylesheet && /assets\/styles-[^/]+\.css$/u.test(outputPath)) {
+      stylesheet = outputPath;
+    }
+  }
 
   if (!appScript) {
     throw new Error('Bundled app entry was not generated.');
@@ -508,7 +636,7 @@ async function bundleClient() {
   return {
     appScript,
     stylesheet: stylesheet ?? '',
-    modulePreloads
+    modulePreloads: getStaticModulePreloads(result.metafile, appScript)
   };
 }
 
@@ -542,7 +670,10 @@ async function walkFiles(directory) {
   for (const entry of entries) {
     const fullPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await walkFiles(fullPath));
+      const childFiles = await walkFiles(fullPath);
+      for (let index = 0; index < childFiles.length; index += 1) {
+        files.push(childFiles[index]);
+      }
     } else if (entry.isFile()) {
       files.push(fullPath);
     }
@@ -586,15 +717,33 @@ async function writeCompressedVariant(filePath, source, encoding) {
   await fs.writeFile(compressedPath, compressed);
 }
 
+async function runWithConcurrency(items, concurrency, worker) {
+  const limit = Math.max(1, Math.min(items.length, concurrency));
+  let nextIndex = 0;
+  const workers = new Array(limit);
+  for (let workerIndex = 0; workerIndex < limit; workerIndex += 1) {
+    workers[workerIndex] = (async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        await worker(items[index], index);
+      }
+    })();
+  }
+  await Promise.all(workers);
+}
+
 async function compressDistFiles(outputDirectory = stagingDist) {
   const files = await walkFiles(outputDirectory);
-
-  for (const filePath of files) {
-    const extension = path.extname(filePath).toLowerCase();
-    if (!COMPRESSIBLE_EXTENSIONS.has(extension)) {
-      continue;
+  const compressibleFiles = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const filePath = files[index];
+    if (COMPRESSIBLE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
+      compressibleFiles.push(filePath);
     }
+  }
 
+  await runWithConcurrency(compressibleFiles, DIST_PRECOMPRESS_CONCURRENCY, async (filePath) => {
     let source;
     try {
       source = await readFileWithRetry(filePath);
@@ -605,17 +754,25 @@ async function compressDistFiles(outputDirectory = stagingDist) {
 
       const relativePath = path.relative(outputDirectory, filePath).split(path.sep).join('/');
       console.warn(`Skipping precompression for missing file: ${relativePath}`);
-      continue;
+      return;
     }
 
-    await writeCompressedVariant(filePath, source, 'gz');
-    await writeCompressedVariant(filePath, source, 'br');
-  }
+    await Promise.all([
+      writeCompressedVariant(filePath, source, 'gz'),
+      writeCompressedVariant(filePath, source, 'br')
+    ]);
+  });
 }
 
 async function enforceDistBudget(outputDirectory = stagingDist) {
   const files = await walkFiles(outputDirectory);
-  const runtimeFiles = files.filter((filePath) => !filePath.endsWith('.gz') && !filePath.endsWith('.br'));
+  const runtimeFiles = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const filePath = files[index];
+    if (!filePath.endsWith('.gz') && !filePath.endsWith('.br')) {
+      runtimeFiles.push(filePath);
+    }
+  }
   let totalBytes = 0;
   let coreBytes = 0;
   let optionalMediaBytes = 0;
@@ -686,16 +843,19 @@ async function enforceDistBudget(outputDirectory = stagingDist) {
 async function deployStagingDist() {
   await fs.mkdir(dist, { recursive: true });
   const stagingFiles = await walkFiles(stagingDist);
-  const stagingRelativePaths = new Set(
-    stagingFiles.map((sourcePath) => path.relative(stagingDist, sourcePath))
-  );
-  const orderedFiles = stagingFiles.sort((left, right) => {
-    const leftPriority = left.endsWith(`${path.sep}index.html`) ? 1 : 0;
-    const rightPriority = right.endsWith(`${path.sep}index.html`) ? 1 : 0;
-    return leftPriority - rightPriority;
-  });
+  const stagingRelativePaths = new Set();
+  const htmlFiles = [];
+  const assetFiles = [];
+  for (const sourcePath of stagingFiles) {
+    stagingRelativePaths.add(path.relative(stagingDist, sourcePath));
+    if (sourcePath.endsWith(`${path.sep}index.html`)) {
+      htmlFiles.push(sourcePath);
+    } else {
+      assetFiles.push(sourcePath);
+    }
+  }
 
-  for (const sourcePath of orderedFiles) {
+  const copyStagingFile = async (sourcePath) => {
     const relativePath = path.relative(stagingDist, sourcePath);
     const targetPath = path.join(dist, relativePath);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -711,24 +871,85 @@ async function deployStagingDist() {
         fs.stat(targetPath).catch(() => null)
       ]);
       if (targetStats && sourceStats.size === targetStats.size) {
-        continue;
+        return;
       }
       throw error;
     }
+  };
+
+  await runWithConcurrency(assetFiles, DIST_COPY_CONCURRENCY, copyStagingFile);
+  for (const sourcePath of htmlFiles) {
+    await copyStagingFile(sourcePath);
   }
 
   const existingDistFiles = await walkFiles(dist);
+  const staleFrontendAssetKeysToKeep = await getStaleFrontendAssetKeysToKeep(existingDistFiles, stagingRelativePaths);
   for (const targetPath of existingDistFiles) {
     const relativePath = path.relative(dist, targetPath);
-    if (!stagingRelativePaths.has(relativePath) && !shouldKeepStaleDistFile(relativePath)) {
+    if (!stagingRelativePaths.has(relativePath) && !shouldKeepStaleDistFile(relativePath, staleFrontendAssetKeysToKeep)) {
       await fs.rm(targetPath, { force: true });
     }
   }
 }
 
-function shouldKeepStaleDistFile(relativePath) {
+function getStaleFrontendAssetInfo(relativePath) {
   const normalizedPath = relativePath.split(path.sep).join('/');
-  return /^assets\/(?:app|styles)-[a-z0-9]+\.(?:js|css)(?:\.(?:br|gz))?$/iu.test(normalizedPath);
+  const match = /^assets\/((app|styles)-[a-z0-9]+\.(?:js|css))(?:\.(?:br|gz))?$/iu.exec(normalizedPath);
+  return match
+    ? {
+        key: match[1].toLowerCase(),
+        kind: match[2].toLowerCase()
+      }
+    : null;
+}
+
+async function getStaleFrontendAssetKeysToKeep(existingDistFiles, stagingRelativePaths) {
+  if (DIST_STALE_FRONTEND_KEEP_COUNT <= 0) {
+    return new Set();
+  }
+
+  const entriesByKey = new Map();
+  for (const filePath of existingDistFiles) {
+    const relativePath = path.relative(dist, filePath);
+    if (stagingRelativePaths.has(relativePath)) {
+      continue;
+    }
+
+    const info = getStaleFrontendAssetInfo(relativePath);
+    if (!info) {
+      continue;
+    }
+
+    const stats = await fs.stat(filePath).catch(() => null);
+    const existing = entriesByKey.get(info.key);
+    if (!existing || (stats?.mtimeMs ?? 0) > existing.mtimeMs) {
+      entriesByKey.set(info.key, {
+        kind: info.kind,
+        mtimeMs: stats?.mtimeMs ?? 0
+      });
+    }
+  }
+
+  const keepKeys = new Set();
+  for (const kind of ['app', 'styles']) {
+    const candidates = [];
+    for (const [key, entry] of entriesByKey) {
+      if (entry.kind === kind) {
+        candidates.push([key, entry]);
+      }
+    }
+    candidates.sort((left, right) => right[1].mtimeMs - left[1].mtimeMs);
+    const keepCount = Math.min(DIST_STALE_FRONTEND_KEEP_COUNT, candidates.length);
+    for (let index = 0; index < keepCount; index += 1) {
+      keepKeys.add(candidates[index][0]);
+    }
+  }
+  return keepKeys;
+}
+
+function shouldKeepStaleDistFile(relativePath, staleFrontendAssetKeysToKeep = new Set()) {
+  const info = getStaleFrontendAssetInfo(relativePath);
+  return Boolean(info && staleFrontendAssetKeysToKeep.has(info.key));
 }
 
 await resetStagingDist();

@@ -37,7 +37,13 @@ const inputPath = path.resolve(inputArg);
 const outputPath = path.resolve(outputArg);
 const bytes = await fs.readFile(inputPath);
 const object = new FBXLoader().parse(getArrayBuffer(bytes), path.dirname(inputPath) + path.sep);
-const sourceClip = object.animations.find((clip) => clip && Array.isArray(clip.tracks) && clip.tracks.length > 0);
+let sourceClip = null;
+for (const clip of object.animations ?? []) {
+  if (clip && Array.isArray(clip.tracks) && clip.tracks.length > 0) {
+    sourceClip = clip;
+    break;
+  }
+}
 
 if (!sourceClip) {
   throw new Error(`No usable animation clip found in ${inputPath}`);

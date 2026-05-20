@@ -88,6 +88,7 @@ const TRAFFIC_ROUTE_COLORS = Object.freeze([
   '#c99cff',
   '#f06aa6'
 ]);
+const EMPTY_MAP = new Map();
 
 function clonePreviewMaterial(material, opacity = 0.86) {
   const next = material.clone();
@@ -97,10 +98,10 @@ function clonePreviewMaterial(material, opacity = 0.86) {
   next.depthTest = false;
 
   if ('emissive' in next) {
-    next.emissive = next.emissive.clone().lerp(PREVIEW_COLOR, 0.75);
+    next.emissive.lerp(PREVIEW_COLOR, 0.75);
     next.emissiveIntensity = 1;
   } else if ('color' in next) {
-    next.color = next.color.clone().lerp(PREVIEW_COLOR, 0.38);
+    next.color.lerp(PREVIEW_COLOR, 0.38);
   }
 
   return next;
@@ -113,7 +114,10 @@ function applyPreviewMaterial(root, opacity) {
     }
 
     const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const clonedMaterials = materials.map((material) => clonePreviewMaterial(material, opacity));
+    const clonedMaterials = [];
+    for (const material of materials) {
+      clonedMaterials.push(clonePreviewMaterial(material, opacity));
+    }
     node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
     node.renderOrder = PREVIEW_RENDER_ORDER;
   });
@@ -162,13 +166,18 @@ function toGroundProbe(x, z) {
 }
 
 function titleCaseLabel(value = '') {
-  return String(value)
+  const normalized = String(value)
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .replace(/_/g, ' ');
+  const parts = normalized.split(/\s+/);
+  let label = '';
+  for (const part of parts) {
+    if (!part) {
+      continue;
+    }
+    label += label ? ` ${part.charAt(0).toUpperCase()}${part.slice(1)}` : `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+  }
+  return label;
 }
 
 function mergeNestedDraft(current, updates) {
@@ -176,6 +185,19 @@ function mergeNestedDraft(current, updates) {
     ...(current ?? {}),
     ...(updates ?? {})
   };
+}
+
+function collectDefinedChanges(changes = {}) {
+  const output = {};
+  let hasChanges = false;
+  for (const key in changes) {
+    if (!Object.hasOwn(changes, key) || changes[key] === undefined) {
+      continue;
+    }
+    output[key] = changes[key];
+    hasChanges = true;
+  }
+  return hasChanges ? output : null;
 }
 
 function collectBuilderGroups(items) {
@@ -228,14 +250,23 @@ function groupVisibleEntries(entries) {
     });
   }
 
-  return sections.map((section) => ({
-    ...section,
-    count: section.cards.length
-  }));
+  const output = [];
+  for (const section of sections) {
+    output.push({
+      ...section,
+      count: section.cards.length
+    });
+  }
+  return output;
 }
 
 function getBuilderTabCategoryById(categoryId) {
-  return BUILDER_TAB_CATEGORIES.find((entry) => entry.id === categoryId) ?? null;
+  for (const entry of BUILDER_TAB_CATEGORIES) {
+    if (entry.id === categoryId) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 function isTrafficRoutesCategoryId(categoryId = '') {
@@ -294,6 +325,14 @@ function getPlacementRotationY(placement) {
     : toRotationY(placement?.rotationQuarterTurns ?? 0);
 }
 
+function createDefaultActiveGroupIds() {
+  const groupIds = {};
+  for (const category of BUILDER_CATEGORIES) {
+    groupIds[category.id] = 'all';
+  }
+  return groupIds;
+}
+
 function createDefaultEditorState() {
   return {
     enabled: false,
@@ -301,7 +340,7 @@ function createDefaultEditorState() {
     zoom: 1,
     pointer: new THREE.Vector2(2, 2),
     activeCategoryId: BUILDER_CATEGORIES[0].id,
-    activeGroupIdByCategory: Object.fromEntries(BUILDER_CATEGORIES.map((category) => [category.id, 'all'])),
+    activeGroupIdByCategory: createDefaultActiveGroupIds(),
     activeItemIndex: 0,
     missionSequencerActiveTab: MISSION_SEQUENCE_SECTIONS.main,
     missionSequencerPrompt: '',
@@ -362,6 +401,11 @@ export class WorldBuilder {
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.hoverHit = new THREE.Vector3();
     this.snapHoverHit = new THREE.Vector3();
+    this.cameraOffsetScratch = new THREE.Vector3();
+    this.cameraTargetScratch = new THREE.Vector3();
+    this.selectionCenterScratch = new THREE.Vector3();
+    this.selectionSizeScratch = new THREE.Vector3();
+    this.selectionAnchorScratch = new THREE.Vector3();
     this.hoverCell = { x: 0, z: 0 };
     this.previewLoadToken = 0;
     this.builderPreviewCategoryId = null;
@@ -374,6 +418,10 @@ export class WorldBuilder {
     this.pendingPropScaleByPlacementId = new Map();
     this.pendingPropScaleTimeouts = new Map();
     this.npcTargetPickState = null;
+    this.npcTargetOptionsRevision = null;
+    this.npcTargetOptionsCache = [];
+    this.npcTargetOptionMapRevision = null;
+    this.npcTargetOptionMapCache = new Map();
     this.activeMovePlacementId = null;
     this.awaitingMovedPlacementIds = new Set();
     this.builderInteriorPreviewPlacementIds = new Set();
@@ -645,13 +693,14 @@ export class WorldBuilder {
   getVisibleCategoryEntries(categoryId = this.state.activeCategoryId) {
     const category = getBuilderTabCategoryById(categoryId) ?? BUILDER_CATEGORIES[0];
     const activeGroupId = this.state.activeGroupIdByCategory[category.id] ?? 'all';
-    const entries = category.items.map((item, index) => ({ item, index }));
-
-    if (activeGroupId === 'all') {
-      return entries;
+    const entries = [];
+    for (let index = 0; index < category.items.length; index += 1) {
+      const item = category.items[index];
+      if (activeGroupId === 'all' || item.groupId === activeGroupId) {
+        entries.push({ item, index });
+      }
     }
-
-    return entries.filter(({ item }) => item.groupId === activeGroupId);
+    return entries;
   }
 
   getTrafficRouteGraph() {
@@ -753,40 +802,57 @@ export class WorldBuilder {
 
   getBuilderViewModel() {
     const activeCategory = this.activeCategory;
-    const visibleEntries = this.getVisibleCategoryEntries()
-      .map((entry, visibleIndex) => ({ ...entry, visibleIndex }));
+    const visibleEntries = [];
+    const categoryEntries = this.getVisibleCategoryEntries();
+    for (let visibleIndex = 0; visibleIndex < categoryEntries.length; visibleIndex += 1) {
+      visibleEntries.push({
+        ...categoryEntries[visibleIndex],
+        visibleIndex
+      });
+    }
     const missionSequenceRows = getMissionSequenceViewModel(this.worldState.getMissionSequence());
-    const tabs = BUILDER_TAB_CATEGORIES.map((category) => ({
-      id: category.id,
-      label: category.label,
-      count: category.id === BUILDER_MISSION_SEQUENCER_CATEGORY.id
-        ? missionSequenceRows.length
-        : category.id === BUILDER_TRAFFIC_ROUTES_CATEGORY.id
-          ? PASSIVE_TRAFFIC_CAR_ITEM_IDS.length
-          : category.items.length,
-      active: category.id === this.state.activeCategoryId
-    }));
-    const groupTabs = activeCategory.items.length
-      ? [
-          {
-            id: 'all',
-            label: 'All',
-            count: activeCategory.items.length,
-            active: this.activeGroupId === 'all'
-          },
-          ...collectBuilderGroups(activeCategory.items).map((group) => ({
-            ...group,
-            active: group.id === this.activeGroupId
-          }))
-        ]
-      : [];
-    const sections = groupVisibleEntries(visibleEntries).map((section) => ({
-      ...section,
-      cards: section.cards.map((card) => ({
-        ...card,
-        selected: card.sourceIndex === this.state.activeItemIndex
-      }))
-    }));
+    const tabs = [];
+    for (const category of BUILDER_TAB_CATEGORIES) {
+      tabs.push({
+        id: category.id,
+        label: category.label,
+        count: category.id === BUILDER_MISSION_SEQUENCER_CATEGORY.id
+          ? missionSequenceRows.length
+          : category.id === BUILDER_TRAFFIC_ROUTES_CATEGORY.id
+            ? PASSIVE_TRAFFIC_CAR_ITEM_IDS.length
+            : category.items.length,
+        active: category.id === this.state.activeCategoryId
+      });
+    }
+    const groupTabs = [];
+    if (activeCategory.items.length) {
+      groupTabs.push({
+        id: 'all',
+        label: 'All',
+        count: activeCategory.items.length,
+        active: this.activeGroupId === 'all'
+      });
+      for (const group of collectBuilderGroups(activeCategory.items)) {
+        groupTabs.push({
+          ...group,
+          active: group.id === this.activeGroupId
+        });
+      }
+    }
+    const sections = [];
+    for (const section of groupVisibleEntries(visibleEntries)) {
+      const cards = [];
+      for (const card of section.cards) {
+        cards.push({
+          ...card,
+          selected: card.sourceIndex === this.state.activeItemIndex
+        });
+      }
+      sections.push({
+        ...section,
+        cards
+      });
+    }
     const selectedPlacement = this.getSelectedPlacement();
     const selectedPropItem = selectedPlacement?.layer === 'prop'
       ? getBuilderItemById(selectedPlacement.itemId)
@@ -909,9 +975,12 @@ export class WorldBuilder {
   async syncBuilderCatalogPreviews() {
     const categoryId = this.state.activeCategoryId;
     const groupId = this.activeGroupId;
-    const items = this.getVisibleCategoryEntries(categoryId)
-      .map(({ item }) => item)
-      .filter((item) => (item.previewMode ?? 'render') === 'render');
+    const items = [];
+    for (const entry of this.getVisibleCategoryEntries(categoryId)) {
+      if ((entry.item.previewMode ?? 'render') === 'render') {
+        items.push(entry.item);
+      }
+    }
     const generation = ++this.builderPreviewGeneration;
 
     if (!items.length) {
@@ -992,23 +1061,27 @@ export class WorldBuilder {
     return this.worldRenderer.getNpcSpeechAnchors();
   }
 
+  getNpcSpeechAnchor(placementId, target = null) {
+    return this.worldRenderer.getNpcSpeechAnchor(placementId, target);
+  }
+
   setNpcRuntimeState(npcStateMap) {
     this.worldRenderer.applyNpcRuntimeState(npcStateMap);
   }
 
   setPlayerWorkoutState(
-    playerStateMap = new Map(),
+    playerStateMap = EMPTY_MAP,
     workoutState = {}
   ) {
     this.worldRenderer.applyPlayerWorkoutState(playerStateMap, workoutState);
   }
 
-  setNpcFocusTargets(npcFocusTargets = new Map()) {
+  setNpcFocusTargets(npcFocusTargets = EMPTY_MAP) {
     this.worldRenderer.applyNpcFocusTargets(npcFocusTargets);
   }
 
-  setNpcDebugState(npcDebugMap = new Map()) {
-    this.npcDebugState = new Map(npcDebugMap);
+  setNpcDebugState(npcDebugMap = EMPTY_MAP) {
+    this.npcDebugState = npcDebugMap instanceof Map ? npcDebugMap : new Map(npcDebugMap);
     this.worldRenderer.applyNpcDebugState(this.npcDebugState);
     this.syncNpcDebugTools();
     this.updateBuilderNpcEditor();
@@ -1067,7 +1140,7 @@ export class WorldBuilder {
       return;
     }
 
-    for (const placementId of [...this.builderInteriorPreviewPlacementIds]) {
+    for (const placementId of this.builderInteriorPreviewPlacementIds) {
       this.worldRenderer.setPlacementCutawayState(placementId);
       this.worldRenderer.setPlacementVisualHidden(placementId, false);
     }
@@ -1153,40 +1226,45 @@ export class WorldBuilder {
     }
 
     const routine = this.getNpcRoutineDraft(placement);
-    const targetOptions = collectNpcTargetOptions(this.worldState);
-    const targetOptionMap = new Map(targetOptions.map((option) => [option.placementId, option]));
+    const targetOptionMap = this.getNpcTargetOptionMap();
     const activePickStepIndex = this.npcTargetPickState?.placementId === placement.id
       ? this.npcTargetPickState.stepIndex
       : -1;
 
-    return (routine.steps ?? []).map((step, index) => {
+    const markers = [];
+    const steps = routine.steps ?? [];
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
       const target = step.targetPlacementId
         ? targetOptionMap.get(step.targetPlacementId)
         : null;
       if (!target?.approachPosition) {
-        return null;
+        continue;
       }
 
-      return {
+      markers.push({
         stepIndex: index,
         stepType: step.type,
-        placementId: target.placementId,
+        placementId: target.placementId ?? target.id,
         point: { ...target.approachPosition },
         originPoint: target.originPosition ? { ...target.originPosition } : null,
-        label: target.label,
+        label: target.displayLabel ?? target.label,
         activePick: index === activePickStepIndex
-      };
-    }).filter(Boolean);
+      });
+    }
+
+    return markers;
   }
 
-  setRemoteBuilders(builders = new Map(), localSessionId = '') {
+  setRemoteBuilders(builders = EMPTY_MAP, localSessionId = '') {
     if (!this.visible) {
       this.remoteBuilderRenderer.clear();
       return;
     }
 
     const remoteBuilders = new Map();
-    for (const [sessionId, presence] of builders.entries()) {
+    for (const sessionId of builders.keys()) {
+      const presence = builders.get(sessionId);
       if (!presence?.active || sessionId === localSessionId) {
         continue;
       }
@@ -1755,7 +1833,15 @@ export class WorldBuilder {
       return;
     }
 
-    if (!visibleEntries.some(({ index }) => index === this.state.activeItemIndex)) {
+    let activeItemVisible = false;
+    for (let index = 0; index < visibleEntries.length; index += 1) {
+      if (visibleEntries[index].index === this.state.activeItemIndex) {
+        activeItemVisible = true;
+        break;
+      }
+    }
+
+    if (!activeItemVisible) {
       this.state.activeItemIndex = visibleEntries[0].index;
     }
   }
@@ -1801,8 +1887,8 @@ export class WorldBuilder {
     this.updateBuilderHud();
   }
 
-  update(deltaSeconds, input) {
-    this.worldRenderer.update(deltaSeconds);
+  update(deltaSeconds, input, now = performance.now()) {
+    this.worldRenderer.update(deltaSeconds, now);
     this.syncModifierState(input);
 
     if (!this.state.enabled) {
@@ -1841,19 +1927,37 @@ export class WorldBuilder {
       if (input.consume('BracketRight')) {
         const visibleEntries = this.getVisibleCategoryEntries();
         if (visibleEntries.length) {
-          const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+          let currentVisibleIndex = 0;
+          for (let index = 0; index < visibleEntries.length; index += 1) {
+            if (visibleEntries[index].index === this.state.activeItemIndex) {
+              currentVisibleIndex = index;
+              break;
+            }
+          }
           this.selectVisibleItem((currentVisibleIndex + 1) % visibleEntries.length);
         }
       }
       if (input.consume('BracketLeft')) {
         const visibleEntries = this.getVisibleCategoryEntries();
         if (visibleEntries.length) {
-          const currentVisibleIndex = Math.max(visibleEntries.findIndex(({ index }) => index === this.state.activeItemIndex), 0);
+          let currentVisibleIndex = 0;
+          for (let index = 0; index < visibleEntries.length; index += 1) {
+            if (visibleEntries[index].index === this.state.activeItemIndex) {
+              currentVisibleIndex = index;
+              break;
+            }
+          }
           this.selectVisibleItem((currentVisibleIndex - 1 + visibleEntries.length) % visibleEntries.length);
         }
       }
       if (input.consume('Tab')) {
-        const currentIndex = BUILDER_TAB_CATEGORIES.findIndex((entry) => entry.id === this.state.activeCategoryId);
+        let currentIndex = -1;
+        for (let index = 0; index < BUILDER_TAB_CATEGORIES.length; index += 1) {
+          if (BUILDER_TAB_CATEGORIES[index].id === this.state.activeCategoryId) {
+            currentIndex = index;
+            break;
+          }
+        }
         const nextCategory = BUILDER_TAB_CATEGORIES[(currentIndex + 1) % BUILDER_TAB_CATEGORIES.length];
         this.selectCategory(nextCategory.id);
       }
@@ -1921,7 +2025,7 @@ export class WorldBuilder {
 
     const snapped = findNearestAdjacentPropSnapPoint({
       point,
-      placements: this.worldState.getPlacements(),
+      placements: this.worldState,
       activeItem: target.item,
       activeScale: target.scale,
       activeRotationY: target.rotationY,
@@ -2193,9 +2297,9 @@ export class WorldBuilder {
   }
 
   updateCamera(camera) {
-    const offset = EDITOR_CAMERA_OFFSET.clone().multiplyScalar(this.state.zoom);
-    const targetPosition = this.state.focus.clone().add(offset);
-    camera.position.lerp(targetPosition, 0.12);
+    this.cameraOffsetScratch.copy(EDITOR_CAMERA_OFFSET).multiplyScalar(this.state.zoom);
+    this.cameraTargetScratch.copy(this.state.focus).add(this.cameraOffsetScratch);
+    camera.position.lerp(this.cameraTargetScratch, 0.12);
     camera.lookAt(this.state.focus);
   }
 
@@ -2484,7 +2588,7 @@ export class WorldBuilder {
 
   clearPlacements() {
     this.clearInteriorPlacementPreview();
-    for (const placementId of [...this.pendingPropScaleByPlacementId.keys()]) {
+    for (const placementId of this.pendingPropScaleByPlacementId.keys()) {
       this.clearPendingPropScaleUpdate(placementId);
     }
     this.worldState.clear();
@@ -2507,8 +2611,21 @@ export class WorldBuilder {
     }
 
     if (placement?.layer === 'npc') {
-      const npcCategory = BUILDER_CATEGORIES.find((entry) => entry.id === 'npcs');
-      const npcItemIndex = npcCategory?.items.findIndex((item) => item.id === placement.itemId) ?? -1;
+      let npcCategory = null;
+      for (const entry of BUILDER_CATEGORIES) {
+        if (entry.id === 'npcs') {
+          npcCategory = entry;
+          break;
+        }
+      }
+      let npcItemIndex = -1;
+      const npcItems = npcCategory?.items ?? [];
+      for (let index = 0; index < npcItems.length; index += 1) {
+        if (npcItems[index].id === placement.itemId) {
+          npcItemIndex = index;
+          break;
+        }
+      }
       const switchedCategory = this.state.activeCategoryId !== 'npcs';
 
       this.state.activeCategoryId = 'npcs';
@@ -2764,14 +2881,14 @@ export class WorldBuilder {
         return;
       }
 
-      const center = bounds.getCenter(new THREE.Vector3());
-      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(this.selectionCenterScratch);
+      const size = bounds.getSize(this.selectionSizeScratch);
       const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
       this.selectionRing.visible = true;
       this.selectionRing.position.set(center.x, bounds.min.y + 0.08, center.z);
       this.selectionRing.scale.setScalar(ringScale);
 
-      const anchor = new THREE.Vector3(center.x, bounds.max.y + 2.2, center.z);
+      const anchor = this.selectionAnchorScratch.set(center.x, bounds.max.y + 2.2, center.z);
       const projected = anchor.project(this.camera);
       const screenX = screenClamp(((projected.x + 1) * 0.5) * window.innerWidth, 100, window.innerWidth - 100);
       const screenY = screenClamp(((-projected.y + 1) * 0.5) * window.innerHeight, 80, window.innerHeight - 100);
@@ -2792,19 +2909,28 @@ export class WorldBuilder {
       this.hud.setBuilderSelection(null);
       return;
     }
-    const center = bounds.getCenter(new THREE.Vector3());
-    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(this.selectionCenterScratch);
+    const size = bounds.getSize(this.selectionSizeScratch);
     const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
     this.selectionRing.visible = true;
     this.selectionRing.position.set(center.x, bounds.min.y + 0.08, center.z);
     this.selectionRing.scale.setScalar(ringScale);
 
-    const anchor = new THREE.Vector3(center.x, bounds.max.y + 2.2, center.z);
+    const anchor = this.selectionAnchorScratch.set(center.x, bounds.max.y + 2.2, center.z);
     const projected = anchor.project(this.camera);
     const screenX = screenClamp(((projected.x + 1) * 0.5) * window.innerWidth, 100, window.innerWidth - 100);
     const screenY = screenClamp(((-projected.y + 1) * 0.5) * window.innerHeight, 80, window.innerHeight - 100);
 
     this.hud.setBuilderSelection({ screenX, screenY, moving: false });
+  }
+
+  npcTargetSupportsStep(target = null, stepType = '') {
+    for (const supportedStepType of target?.supportedStepTypes ?? []) {
+      if (supportedStepType === stepType) {
+        return true;
+      }
+    }
+    return false;
   }
 
   updateNpcTargetPickVisual() {
@@ -2815,7 +2941,7 @@ export class WorldBuilder {
 
     const hoveredPlacement = this.getHoveredPlacement();
     const target = hoveredPlacement ? resolveNpcTargetOption(hoveredPlacement) : null;
-    const supportsStep = Boolean(target?.supportedStepTypes?.includes(this.npcTargetPickState.stepType));
+    const supportsStep = Boolean(target && this.npcTargetSupportsStep(target, this.npcTargetPickState.stepType));
     const markerColor = supportsStep
       ? NPC_TARGET_PICK_VALID_COLOR
       : target
@@ -2834,7 +2960,7 @@ export class WorldBuilder {
     let markerScale = 1;
     const bounds = hoveredPlacement ? this.worldRenderer.getPlacementBounds(hoveredPlacement.id) : null;
     if (bounds && !bounds.isEmpty()) {
-      const size = bounds.getSize(new THREE.Vector3());
+      const size = bounds.getSize(this.selectionSizeScratch);
       markerScale = THREE.MathUtils.clamp(Math.max(size.x, size.z) / 4, 0.9, 1.8);
     }
     this.npcTargetPickMarker.scale.setScalar(markerScale);
@@ -2842,16 +2968,45 @@ export class WorldBuilder {
   }
 
   getNpcTargetOptions() {
-    return collectNpcTargetOptions(this.worldState).map((option) => ({
-      ...option,
-      id: option.placementId,
-      label: `${option.label} (${option.placementId})`,
-      supportedStepTypes: [...(option.supportedStepTypes ?? [])]
-    }));
+    const revision = this.worldState.getPlacementRevision();
+    if (this.npcTargetOptionsRevision === revision) {
+      return this.npcTargetOptionsCache;
+    }
+
+    this.npcTargetOptionsRevision = revision;
+    this.npcTargetOptionMapRevision = null;
+    this.npcTargetOptionMapCache = new Map();
+    const targetOptions = collectNpcTargetOptions(this.worldState);
+    this.npcTargetOptionsCache = [];
+    for (const option of targetOptions) {
+      const supportedStepTypes = [];
+      for (const stepType of option.supportedStepTypes ?? []) {
+        supportedStepTypes.push(stepType);
+      }
+      this.npcTargetOptionsCache.push({
+        ...option,
+        id: option.placementId,
+        displayLabel: option.label,
+        label: `${option.label} (${option.placementId})`,
+        supportedStepTypes
+      });
+    }
+    return this.npcTargetOptionsCache;
   }
 
   getNpcTargetOptionMap() {
-    return new Map(this.getNpcTargetOptions().map((option) => [option.id, option]));
+    const revision = this.worldState.getPlacementRevision();
+    if (this.npcTargetOptionMapRevision === revision) {
+      return this.npcTargetOptionMapCache;
+    }
+
+    const optionMap = new Map();
+    for (const option of this.getNpcTargetOptions()) {
+      optionMap.set(option.id, option);
+    }
+    this.npcTargetOptionMapRevision = revision;
+    this.npcTargetOptionMapCache = optionMap;
+    return optionMap;
   }
 
   cancelNpcRoutineTargetPickMode() {
@@ -2922,7 +3077,7 @@ export class WorldBuilder {
       return true;
     }
 
-    if (!target.supportedStepTypes.includes(pickState.stepType)) {
+    if (!this.npcTargetSupportsStep(target, pickState.stepType)) {
       this.hud.showToast(`${target.label} does not support ${titleCaseLabel(pickState.stepType)}.`);
       return true;
     }
@@ -2967,19 +3122,25 @@ export class WorldBuilder {
   buildNpcRoutineEditorState(placement) {
     const routine = this.getNpcRoutineDraft(placement);
     const targetOptions = this.getNpcTargetOptions();
-    const targetOptionMap = new Map(targetOptions.map((option) => [option.id, option]));
+    const targetOptionMap = this.getNpcTargetOptionMap();
     const warnings = [];
-    const steps = (routine.steps ?? []).map((step, index) => {
-      const supportedTargetOptions = targetOptions.filter((option) =>
-        option.supportedStepTypes.includes(step.type)
-      );
+    const steps = [];
+    const routineSteps = routine.steps ?? [];
+    for (let index = 0; index < routineSteps.length; index += 1) {
+      const step = routineSteps[index];
+      const supportedTargetOptions = [];
+      for (const option of targetOptions) {
+        if (this.npcTargetSupportsStep(option, step.type)) {
+          supportedTargetOptions.push(option);
+        }
+      }
       let warning = '';
 
       if (step.targetPlacementId) {
         const target = targetOptionMap.get(step.targetPlacementId);
         if (!target) {
           warning = `Step ${index + 1} points at a missing placement and will be skipped at runtime.`;
-        } else if (!target.supportedStepTypes.includes(step.type)) {
+        } else if (!this.npcTargetSupportsStep(target, step.type)) {
           warning = `Step ${index + 1} targets ${target.label}, but that destination does not support ${titleCaseLabel(step.type)}.`;
         }
       }
@@ -2988,14 +3149,14 @@ export class WorldBuilder {
         warnings.push(warning);
       }
 
-      return {
+      steps.push({
         ...step,
         targetOptions: supportedTargetOptions,
         pickModeActive: this.npcTargetPickState?.placementId === placement.id
           && this.npcTargetPickState?.stepIndex === index,
         warning
-      };
-    });
+      });
+    }
 
     return {
       mode: routine.mode,
@@ -3055,6 +3216,31 @@ export class WorldBuilder {
     const routine = this.buildNpcRoutineEditorState(placement);
     const combat = this.getNpcCombatDraft(placement);
     const debug = this.buildNpcDebugEditorState(placement);
+    const models = [];
+    for (const entry of NPC_MODEL_CATALOG) {
+      models.push({
+        id: entry.id,
+        label: entry.label,
+        portraitSrc: entry.portraitFileName
+          ? `/assets/mixamo/portraits/${entry.portraitFileName}`
+          : ''
+      });
+    }
+    const npcStepTypes = listNpcStepTypes();
+    const stepTypes = [];
+    for (const stepType of npcStepTypes) {
+      stepTypes.push({
+        id: stepType,
+        label: titleCaseLabel(stepType)
+      });
+    }
+    const combatArchetypes = [];
+    for (const archetype of listNpcCombatArchetypes()) {
+      combatArchetypes.push({
+        id: archetype,
+        label: titleCaseLabel(archetype)
+      });
+    }
     this.hud.setBuilderNpcEditor({
       id: placement.id,
       title: npcDraft?.name || model?.label || 'NPC',
@@ -3080,30 +3266,18 @@ export class WorldBuilder {
       selectionActions: {
         moving: this.activeMovePlacementId === placement.id
       },
-      models: NPC_MODEL_CATALOG.map((entry) => ({
-        id: entry.id,
-        label: entry.label,
-        portraitSrc: entry.portraitFileName
-          ? `/assets/mixamo/portraits/${entry.portraitFileName}`
-          : ''
-      })),
+      models,
       routine,
       warnings: routine.warnings,
-      stepTypes: listNpcStepTypes().map((stepType) => ({
-        id: stepType,
-        label: titleCaseLabel(stepType)
-      })),
-      newStepType: listNpcStepTypes()[0],
+      stepTypes,
+      newStepType: npcStepTypes[0],
       combat: {
         archetype: combat.archetype,
         aggroRadius: Number(combat.aggroRadius?.toFixed?.(2) ?? combat.aggroRadius ?? 0),
         leashRadius: Number(combat.leashRadius?.toFixed?.(2) ?? combat.leashRadius ?? 0),
         weaponId: combat.weaponId || ''
       },
-      combatArchetypes: listNpcCombatArchetypes().map((archetype) => ({
-        id: archetype,
-        label: titleCaseLabel(archetype)
-      })),
+      combatArchetypes,
       weaponOptions: [
         { id: '', label: 'Unarmed' },
         { id: WEAPON_IDS.pistol, label: 'Pistol' }
@@ -3430,10 +3604,8 @@ export class WorldBuilder {
       return;
     }
 
-    const nextChanges = Object.fromEntries(
-      Object.entries(changes).filter(([, value]) => value !== undefined)
-    );
-    if (!Object.keys(nextChanges).length) {
+    const nextChanges = collectDefinedChanges(changes);
+    if (!nextChanges) {
       return;
     }
 
@@ -3446,10 +3618,8 @@ export class WorldBuilder {
       return;
     }
 
-    const nextChanges = Object.fromEntries(
-      Object.entries(changes).filter(([, value]) => value !== undefined)
-    );
-    if (!Object.keys(nextChanges).length) {
+    const nextChanges = collectDefinedChanges(changes);
+    if (!nextChanges) {
       return;
     }
 
@@ -3464,10 +3634,15 @@ export class WorldBuilder {
 
     const routine = this.getNpcRoutineDraft(placement);
     const nextStep = createDefaultNpcRoutineStep(stepType);
+    const steps = [];
+    for (const step of routine.steps ?? []) {
+      steps.push(step);
+    }
+    steps.push(nextStep);
     await this.updateSelectedNpc({
       routine: {
         ...routine,
-        steps: [...(routine.steps ?? []), nextStep]
+        steps
       }
     });
   }
@@ -3483,10 +3658,16 @@ export class WorldBuilder {
       return;
     }
 
+    const steps = [];
+    for (let index = 0; index < routine.steps.length; index += 1) {
+      if (index !== stepIndex) {
+        steps.push(routine.steps[index]);
+      }
+    }
     await this.updateSelectedNpc({
       routine: {
         ...routine,
-        steps: routine.steps.filter((_, index) => index !== stepIndex)
+        steps
       }
     });
   }
@@ -3498,7 +3679,10 @@ export class WorldBuilder {
     }
 
     const routine = this.getNpcRoutineDraft(placement);
-    const steps = [...(routine.steps ?? [])];
+    const steps = [];
+    for (const step of routine.steps ?? []) {
+      steps.push(step);
+    }
     const currentStep = steps[stepIndex];
     if (!currentStep || !field) {
       return;

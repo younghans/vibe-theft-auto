@@ -85,10 +85,18 @@ function resolveInputFiles(args) {
   }
 
   if (!args.length) {
-    return DEFAULT_REFERENCE_FILES.map((file) => path.resolve(repoRoot, file));
+    const files = [];
+    for (const file of DEFAULT_REFERENCE_FILES) {
+      files.push(path.resolve(repoRoot, file));
+    }
+    return files;
   }
 
-  return args.map((file) => path.resolve(repoRoot, file));
+  const files = [];
+  for (const file of args) {
+    files.push(path.resolve(repoRoot, file));
+  }
+  return files;
 }
 
 function readGlbJson(filePath) {
@@ -148,8 +156,8 @@ function inspectAsset(filePath) {
       }
 
       if (!min) {
-        min = [...accessor.min];
-        max = [...accessor.max];
+        min = [accessor.min[0], accessor.min[1], accessor.min[2]];
+        max = [accessor.max[0], accessor.max[1], accessor.max[2]];
         continue;
       }
 
@@ -173,10 +181,10 @@ function inspectAsset(filePath) {
 
 async function inspectCustomGlbAsset(filePath) {
   const json = readGlbJson(filePath);
-  const primitiveCount = (json.meshes ?? []).reduce(
-    (sum, mesh) => sum + (mesh.primitives?.length ?? 0),
-    0
-  );
+  let primitiveCount = 0;
+  for (const mesh of json.meshes ?? []) {
+    primitiveCount += mesh.primitives?.length ?? 0;
+  }
   const buffer = fs.readFileSync(filePath);
   const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   const asset = await gltfLoader.parseAsync(arrayBuffer, '');
@@ -225,16 +233,25 @@ function summarizeFamily(rows) {
 
   const summaries = [];
 
-  for (const [family, familyRows] of families.entries()) {
-    const renderedHeights = familyRows.map((row) => row.renderedHeight);
-    const meshCounts = familyRows.map((row) => row.meshes);
+  for (const family of families.keys()) {
+    const familyRows = families.get(family);
+    let minRenderedHeight = Infinity;
+    let maxRenderedHeight = -Infinity;
+    let totalRenderedHeight = 0;
+    let maxMeshes = 0;
+    for (const row of familyRows) {
+      minRenderedHeight = Math.min(minRenderedHeight, row.renderedHeight);
+      maxRenderedHeight = Math.max(maxRenderedHeight, row.renderedHeight);
+      totalRenderedHeight += row.renderedHeight;
+      maxMeshes = Math.max(maxMeshes, row.meshes);
+    }
     summaries.push({
       family,
       count: familyRows.length,
-      minRenderedHeight: round(Math.min(...renderedHeights)),
-      maxRenderedHeight: round(Math.max(...renderedHeights)),
-      avgRenderedHeight: round(renderedHeights.reduce((sum, value) => sum + value, 0) / familyRows.length),
-      maxMeshes: Math.max(...meshCounts)
+      minRenderedHeight: round(minRenderedHeight),
+      maxRenderedHeight: round(maxRenderedHeight),
+      avgRenderedHeight: round(totalRenderedHeight / familyRows.length),
+      maxMeshes
     });
   }
 
@@ -242,8 +259,17 @@ function summarizeFamily(rows) {
 }
 
 async function main() {
-  const files = resolveInputFiles(process.argv.slice(2));
-  const missing = files.filter((file) => !fs.existsSync(file));
+  const args = [];
+  for (let index = 2; index < process.argv.length; index += 1) {
+    args.push(process.argv[index]);
+  }
+  const files = resolveInputFiles(args);
+  const missing = [];
+  for (const file of files) {
+    if (!fs.existsSync(file)) {
+      missing.push(file);
+    }
+  }
 
   if (missing.length) {
     console.error('Missing files:');
@@ -253,7 +279,11 @@ async function main() {
     process.exit(1);
   }
 
-  const rows = await Promise.all(files.map(inspectAssetAccurately));
+  const rowPromises = [];
+  for (const file of files) {
+    rowPromises.push(inspectAssetAccurately(file));
+  }
+  const rows = await Promise.all(rowPromises);
   console.log(`Target lot footprint: ${TARGET_FOOTPRINT.toFixed(2)} x ${TARGET_FOOTPRINT.toFixed(2)}`);
   console.log('');
   console.table(rows);

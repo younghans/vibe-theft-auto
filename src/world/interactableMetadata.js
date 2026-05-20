@@ -1,5 +1,13 @@
 function cloneOffsetValue(value) {
-  return Array.isArray(value) ? [...value] : value;
+  return Array.isArray(value) ? cloneArray(value) : value;
+}
+
+function cloneArray(values = []) {
+  const cloned = [];
+  for (const value of values) {
+    cloned.push(value);
+  }
+  return cloned;
 }
 
 export function cloneInteriorDefinition(interior) {
@@ -9,11 +17,11 @@ export function cloneInteriorDefinition(interior) {
 
   return {
     ...interior,
-    cutawayNodeNames: [...(interior.cutawayNodeNames ?? [])],
-    cutawayFadeNodeNames: [...(interior.cutawayFadeNodeNames ?? [])],
-    cutawayVisibleNodeNames: [...(interior.cutawayVisibleNodeNames ?? [])],
-    exteriorDoorOffset: [...(interior.exteriorDoorOffset ?? [0, 0])],
-    exteriorSpawnOffset: [...(interior.exteriorSpawnOffset ?? [0, 0])]
+    cutawayNodeNames: cloneArray(interior.cutawayNodeNames ?? []),
+    cutawayFadeNodeNames: cloneArray(interior.cutawayFadeNodeNames ?? []),
+    cutawayVisibleNodeNames: cloneArray(interior.cutawayVisibleNodeNames ?? []),
+    exteriorDoorOffset: cloneArray(interior.exteriorDoorOffset ?? [0, 0]),
+    exteriorSpawnOffset: cloneArray(interior.exteriorSpawnOffset ?? [0, 0])
   };
 }
 
@@ -36,8 +44,8 @@ export function cloneGarageDoorDefinition(garageDoor) {
 
   return {
     ...garageDoor,
-    closedNodeNames: [...(garageDoor.closedNodeNames ?? [])],
-    openNodeNames: [...(garageDoor.openNodeNames ?? [])]
+    closedNodeNames: cloneArray(garageDoor.closedNodeNames ?? []),
+    openNodeNames: cloneArray(garageDoor.openNodeNames ?? [])
   };
 }
 
@@ -63,7 +71,7 @@ export function resolvePlacementInteractableDefinition(placement, item) {
         prompt: item.interior.prompt ?? `Enter ${item.interior.label ?? item.label}`,
         actionText: item.interior.actionText ?? `Enter ${item.interior.label ?? item.label}.`,
         radius: item.interior.exteriorInteractRadius ?? 4.4,
-        localOffset: [...(item.interior.exteriorDoorOffset ?? [0, 0])],
+        localOffset: cloneArray(item.interior.exteriorDoorOffset ?? [0, 0]),
         interior: cloneInteriorDefinition(item.interior)
       }
     : item?.interactable
@@ -94,15 +102,15 @@ export function resolvePlacementInteractableDefinition(placement, item) {
   }
 
   if (Array.isArray(placement.interactable?.localOffset)) {
-    mergedInteractable.localOffset = [...placement.interactable.localOffset];
+    mergedInteractable.localOffset = cloneArray(placement.interactable.localOffset);
   } else if (Array.isArray(baseInteractable?.localOffset)) {
-    mergedInteractable.localOffset = [...baseInteractable.localOffset];
+    mergedInteractable.localOffset = cloneArray(baseInteractable.localOffset);
   }
 
   if (Array.isArray(placement.interactable?.approachLocalOffset)) {
-    mergedInteractable.approachLocalOffset = [...placement.interactable.approachLocalOffset];
+    mergedInteractable.approachLocalOffset = cloneArray(placement.interactable.approachLocalOffset);
   } else if (Array.isArray(baseInteractable?.approachLocalOffset)) {
-    mergedInteractable.approachLocalOffset = [...baseInteractable.approachLocalOffset];
+    mergedInteractable.approachLocalOffset = cloneArray(baseInteractable.approachLocalOffset);
   }
 
   return mergedInteractable;

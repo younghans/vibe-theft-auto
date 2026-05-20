@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const configPath = path.join(root, '.colyseus-cloud.json');
 const env = process.env.COLYSEUS_DEPLOY_ENV || process.env.COLYSEUS_ENV || 'production';
-const extraArgs = process.argv.slice(2);
+const extraArgs = [];
+for (let index = 2; index < process.argv.length; index += 1) {
+  extraArgs.push(process.argv[index]);
+}
 const deployAttempts = getPositiveIntegerEnv('COLYSEUS_DEPLOY_ATTEMPTS', 3);
 const deployRetryDelayMs = getPositiveIntegerEnv('COLYSEUS_DEPLOY_RETRY_DELAY_MS', 10000);
 
@@ -16,7 +19,12 @@ function getPositiveIntegerEnv(name, fallback) {
 }
 
 function hasCliOption(args = [], option = '') {
-  return args.some((arg) => arg === option || arg.startsWith(`${option}=`));
+  for (const arg of args) {
+    if (arg === option || arg.startsWith(`${option}=`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function sleep(ms) {
@@ -60,9 +68,10 @@ function addPathDirectory(childEnv, directory = '') {
   }
 
   const currentPath = getPathValue(childEnv);
-  const pathEntries = currentPath.split(path.delimiter).filter(Boolean);
-  if (pathEntries.some((entry) => entry.toLowerCase() === normalizedDirectory.toLowerCase())) {
-    return;
+  for (const entry of currentPath.split(path.delimiter)) {
+    if (entry && entry.toLowerCase() === normalizedDirectory.toLowerCase()) {
+      return;
+    }
   }
   setPathValue(childEnv, `${normalizedDirectory}${path.delimiter}${currentPath}`);
 }
@@ -78,17 +87,30 @@ function getDiscoveredGitCommands(childEnv) {
   if (result.status !== 0) {
     return [];
   }
-  return String(result.stdout ?? '')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const commands = [];
+  for (const line of String(result.stdout ?? '').split(/\r?\n/u)) {
+    const command = line.trim();
+    if (command) {
+      commands.push(command);
+    }
+  }
+  return commands;
 }
 
 function getGitCandidates(childEnv) {
   const candidates = [];
   const addCandidate = (candidate) => {
     const normalized = String(candidate ?? '').trim();
-    if (normalized && !candidates.some((value) => value.toLowerCase() === normalized.toLowerCase())) {
+    if (!normalized) {
+      return;
+    }
+
+    for (const value of candidates) {
+      if (value.toLowerCase() === normalized.toLowerCase()) {
+        return;
+      }
+    }
+    {
       candidates.push(normalized);
     }
   };
@@ -170,7 +192,12 @@ function getColyseusDeployFailure(output = '') {
     /unauthorized|forbidden|invalid token/iu,
     /Error:\s+\S/iu
   ];
-  return failurePatterns.find((pattern) => pattern.test(text))?.source ?? '';
+  for (const pattern of failurePatterns) {
+    if (pattern.test(text)) {
+      return pattern.source;
+    }
+  }
+  return '';
 }
 
 function isRetryableColyseusDeployError(error) {

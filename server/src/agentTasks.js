@@ -34,8 +34,10 @@ export const AGENT_TASK_STATUSES = Object.freeze([
   'failed',
   'cancelled'
 ]);
+const AGENT_TASK_STATUS_VALUES = new Set(AGENT_TASK_STATUSES);
 
 export const AGENT_TASK_MODES = Object.freeze(['draft', 'preview', 'auto']);
+const AGENT_TASK_MODE_VALUES = new Set(AGENT_TASK_MODES);
 export const AGENT_TASK_DEFAULT_SCOPE = 'game';
 export const AGENT_TASK_LOG_LIMIT = 240;
 export const AGENT_TASK_THREAD_HISTORY_LIMIT = 12;
@@ -71,6 +73,21 @@ const MUTABLE_TASK_FIELDS = new Set([
   'rollbackCommitSha',
   'rollbackLog'
 ]);
+const WORK_STARTED_STATUSES = new Set(['claimed', 'preparing', 'coding', 'testing']);
+const TASK_TIMESTAMP_FIELDS = new Set([
+  'claimedAt',
+  'workerHeartbeatAt',
+  'workStartedAt',
+  'workCompletedAt',
+  'deployStartedAt',
+  'deployedAt',
+  'rollbackStartedAt',
+  'rolledBackAt'
+]);
+const TASK_LONG_TEXT_FIELDS = new Set(['summary', 'agentMessage', 'deployLog', 'rollbackLog']);
+const ACTIVE_DEPLOY_STATUSES = new Set(['deploying', 'rolling_back']);
+const AGENT_DEPLOY_TARGET_VALUES = new Set(['frontend', 'backend']);
+const CANCEL_TERMINAL_STATUSES = new Set(['deployed', 'rolled_back', 'cancelled']);
 
 const THREAD_ACTIVE_STATUSES = new Set([
   'queued',
@@ -93,6 +110,14 @@ const FOLLOWUP_BASE_STATUSES = new Set([
 ]);
 
 let taskStoreQueue = Promise.resolve();
+
+function getWorkerHeartbeatActiveStatusValues() {
+  const values = [];
+  for (const status of WORKER_HEARTBEAT_ACTIVE_STATUSES) {
+    values.push(status);
+  }
+  return values;
+}
 
 function createEmptyState() {
   return {
@@ -125,7 +150,7 @@ function normalizeScope(value = '') {
 
 function normalizeMode(value = '') {
   const mode = String(value ?? '').trim().toLowerCase();
-  return AGENT_TASK_MODES.includes(mode) ? mode : 'preview';
+  return AGENT_TASK_MODE_VALUES.has(mode) ? mode : 'preview';
 }
 
 function normalizeContextType(value = '') {
@@ -135,7 +160,7 @@ function normalizeContextType(value = '') {
 
 function normalizeStatus(value = '') {
   const status = String(value ?? '').trim().toLowerCase();
-  return AGENT_TASK_STATUSES.includes(status) ? status : '';
+  return AGENT_TASK_STATUS_VALUES.has(status) ? status : '';
 }
 
 function normalizeTimestamp(value, fallback = 0) {
@@ -148,12 +173,18 @@ function normalizeLogs(logs = []) {
     return [];
   }
 
-  return logs.slice(-AGENT_TASK_LOG_LIMIT).map((entry) => ({
-    at: Number.isFinite(Number(entry?.at)) ? Number(entry.at) : Date.now(),
-    level: String(entry?.level ?? 'info').slice(0, 24),
-    message: truncateText(entry?.message ?? '', 4000),
-    data: entry?.data == null ? null : cloneJson(entry.data)
-  }));
+  const normalized = [];
+  const startIndex = Math.max(0, logs.length - AGENT_TASK_LOG_LIMIT);
+  for (let index = startIndex; index < logs.length; index += 1) {
+    const entry = logs[index];
+    normalized.push({
+      at: Number.isFinite(Number(entry?.at)) ? Number(entry.at) : Date.now(),
+      level: String(entry?.level ?? 'info').slice(0, 24),
+      message: truncateText(entry?.message ?? '', 4000),
+      data: entry?.data == null ? null : cloneJson(entry.data)
+    });
+  }
+  return normalized;
 }
 
 function normalizeThreadHistory(history = []) {
@@ -161,21 +192,30 @@ function normalizeThreadHistory(history = []) {
     return [];
   }
 
-  return history.slice(-AGENT_TASK_THREAD_HISTORY_LIMIT).map((entry) => ({
-    taskId: normalizeTaskId(entry?.taskId),
-    parentTaskId: normalizeTaskId(entry?.parentTaskId),
-    prompt: truncateText(entry?.prompt ?? '', AGENT_TASK_PROMPT_MAX_LENGTH),
-    status: normalizeStatus(entry?.status) || 'queued',
-    summary: truncateText(entry?.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
-    agentMessage: truncateText(entry?.agentMessage ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
-    error: truncateText(entry?.error ?? '', AGENT_TASK_ERROR_MAX_LENGTH),
-    branch: String(entry?.branch ?? ''),
-    commitSha: String(entry?.commitSha ?? ''),
-    deployTargets: normalizeDeployTargets(entry?.deployTargets),
-    changedFiles: normalizeStringList(entry?.changedFiles),
-    createdAt: Number.isFinite(Number(entry?.createdAt)) ? Number(entry.createdAt) : 0,
-    updatedAt: Number.isFinite(Number(entry?.updatedAt)) ? Number(entry.updatedAt) : 0
-  })).filter((entry) => entry.taskId || entry.prompt || entry.agentMessage || entry.summary);
+  const normalized = [];
+  const startIndex = Math.max(0, history.length - AGENT_TASK_THREAD_HISTORY_LIMIT);
+  for (let index = startIndex; index < history.length; index += 1) {
+    const entry = history[index];
+    const normalizedEntry = {
+      taskId: normalizeTaskId(entry?.taskId),
+      parentTaskId: normalizeTaskId(entry?.parentTaskId),
+      prompt: truncateText(entry?.prompt ?? '', AGENT_TASK_PROMPT_MAX_LENGTH),
+      status: normalizeStatus(entry?.status) || 'queued',
+      summary: truncateText(entry?.summary ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+      agentMessage: truncateText(entry?.agentMessage ?? '', AGENT_TASK_SUMMARY_MAX_LENGTH),
+      error: truncateText(entry?.error ?? '', AGENT_TASK_ERROR_MAX_LENGTH),
+      branch: String(entry?.branch ?? ''),
+      commitSha: String(entry?.commitSha ?? ''),
+      deployTargets: normalizeDeployTargets(entry?.deployTargets),
+      changedFiles: normalizeStringList(entry?.changedFiles),
+      createdAt: Number.isFinite(Number(entry?.createdAt)) ? Number(entry.createdAt) : 0,
+      updatedAt: Number.isFinite(Number(entry?.updatedAt)) ? Number(entry.updatedAt) : 0
+    };
+    if (normalizedEntry.taskId || normalizedEntry.prompt || normalizedEntry.agentMessage || normalizedEntry.summary) {
+      normalized.push(normalizedEntry);
+    }
+  }
+  return normalized;
 }
 
 function normalizeStringList(value = [], {
@@ -185,18 +225,33 @@ function normalizeStringList(value = [], {
   const rawItems = Array.isArray(value)
     ? value
     : String(value ?? '').split(/[\n,]/u);
-  return [...new Set(rawItems
-    .map((item) => String(item ?? '').trim().replaceAll('\\', '/').replace(/^\.\/+/u, ''))
-    .filter(Boolean)
-    .map((item) => item.slice(0, maxLength)))]
-    .slice(0, maxItems);
+  const seen = new Set();
+  const normalizedItems = [];
+  for (let index = 0; index < rawItems.length && normalizedItems.length < maxItems; index += 1) {
+    const item = String(rawItems[index] ?? '').trim().replaceAll('\\', '/').replace(/^\.\/+/u, '');
+    if (!item) {
+      continue;
+    }
+
+    const truncated = item.slice(0, maxLength);
+    if (!seen.has(truncated)) {
+      seen.add(truncated);
+      normalizedItems.push(truncated);
+    }
+  }
+  return normalizedItems;
 }
 
 function normalizeDeployTargets(value = []) {
-  const allowedTargets = new Set(['frontend', 'backend']);
-  return normalizeStringList(value, { maxItems: 4, maxLength: 32 })
-    .map((target) => target.toLowerCase())
-    .filter((target) => allowedTargets.has(target));
+  const normalized = normalizeStringList(value, { maxItems: 4, maxLength: 32 });
+  const targets = [];
+  for (let index = 0; index < normalized.length; index += 1) {
+    const target = normalized[index].toLowerCase();
+    if (AGENT_DEPLOY_TARGET_VALUES.has(target)) {
+      targets.push(target);
+    }
+  }
+  return targets;
 }
 
 function normalizeTask(raw = {}) {
@@ -350,22 +405,76 @@ function getLatestTaskByThread(tasks = []) {
     groups.get(threadId).push(task);
   }
 
-  return [...groups.values()]
-    .map((threadTasks) => ({
-      latestTask: sortTasks(threadTasks)[0] ?? null,
-      activityAt: threadTasks.reduce((latest, task) => Math.max(latest, getTaskActivityTimestamp(task)), 0)
-    }))
-    .filter((thread) => thread.latestTask)
-    .sort((a, b) => b.activityAt - a.activityAt)
-    .map((thread) => thread.latestTask);
+  const threads = [];
+  for (const threadTasks of groups.values()) {
+    let latestTask = null;
+    let latestCreatedAt = -Infinity;
+    let activityAt = 0;
+    for (let index = 0; index < threadTasks.length; index += 1) {
+      const task = threadTasks[index];
+      const createdAt = Number(task.createdAt ?? 0);
+      if (!latestTask || createdAt > latestCreatedAt) {
+        latestTask = task;
+        latestCreatedAt = createdAt;
+      }
+      activityAt = Math.max(activityAt, getTaskActivityTimestamp(task));
+    }
+    if (latestTask) {
+      threads.push({ latestTask, activityAt });
+    }
+  }
+
+  threads.sort((a, b) => b.activityAt - a.activityAt);
+  const latestTasks = new Array(threads.length);
+  for (let index = 0; index < threads.length; index += 1) {
+    latestTasks[index] = threads[index].latestTask;
+  }
+  return latestTasks;
 }
 
 function sortTasks(tasks = []) {
-  return [...tasks].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  const sorted = [];
+  for (const task of tasks) {
+    sorted.push(task);
+  }
+  sorted.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  return sorted;
 }
 
 function sortTasksAscending(tasks = []) {
-  return [...tasks].sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+  const sorted = [];
+  for (const task of tasks) {
+    sorted.push(task);
+  }
+  sorted.sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+  return sorted;
+}
+
+function findTaskById(tasks = [], id = '') {
+  for (const task of tasks) {
+    if (task.id === id) {
+      return task;
+    }
+  }
+
+  return null;
+}
+
+function findOldestTask(tasks = [], predicate = () => false) {
+  let selectedTask = null;
+  let selectedCreatedAt = Infinity;
+  for (const task of tasks) {
+    if (!predicate(task)) {
+      continue;
+    }
+
+    const createdAt = Number(task.createdAt ?? 0);
+    if (!selectedTask || createdAt < selectedCreatedAt) {
+      selectedTask = task;
+      selectedCreatedAt = createdAt;
+    }
+  }
+  return selectedTask;
 }
 
 function getTaskThreadId(task = {}) {
@@ -405,14 +514,25 @@ function createThreadHistoryEntry(task = {}) {
 }
 
 function buildThreadHistory(tasks = [], threadId = '') {
-  return normalizeThreadHistory(sortTasksAscending(tasks)
-    .filter((task) => getTaskThreadId(task) === threadId)
-    .map(createThreadHistoryEntry));
+  const threadTasks = [];
+  for (let index = 0; index < tasks.length; index += 1) {
+    const task = tasks[index];
+    if (getTaskThreadId(task) === threadId) {
+      threadTasks.push(task);
+    }
+  }
+  const sortedTasks = sortTasksAscending(threadTasks);
+  const history = new Array(sortedTasks.length);
+  for (let index = 0; index < sortedTasks.length; index += 1) {
+    history[index] = createThreadHistoryEntry(sortedTasks[index]);
+  }
+  return normalizeThreadHistory(history);
 }
 
 function getFollowupBaseTask(threadTasks = []) {
-  return sortTasks(threadTasks)
-    .find((task) => (
+  const sortedTasks = sortTasks(threadTasks);
+  for (const task of sortedTasks) {
+    if (
       FOLLOWUP_BASE_STATUSES.has(String(task.status ?? ''))
       && (
         String(task.branch ?? '').trim()
@@ -420,7 +540,12 @@ function getFollowupBaseTask(threadTasks = []) {
         || String(task.commitSha ?? '').trim()
       )
       && String(getFollowupBaseCommitSha(task)).trim()
-    )) ?? null;
+    ) {
+      return task;
+    }
+  }
+
+  return null;
 }
 
 function getFollowupBaseBranch(task = null) {
@@ -470,19 +595,31 @@ async function readTaskFileState(filePath = AGENT_TASKS_FILE_PATH) {
 
 function normalizeTaskState(parsed = {}) {
   const rawTasks = Array.isArray(parsed) ? parsed : parsed?.tasks;
+  const tasks = [];
+  if (Array.isArray(rawTasks)) {
+    for (let index = 0; index < rawTasks.length; index += 1) {
+      const task = normalizeTask(rawTasks[index]);
+      if (task.id) {
+        tasks.push(task);
+      }
+    }
+  }
   return {
     version: Number(parsed?.version ?? 1) || 1,
-    tasks: Array.isArray(rawTasks)
-      ? rawTasks.map(normalizeTask).filter((task) => task.id)
-      : []
+    tasks
   };
 }
 
 async function writeTaskState(state, filePath = AGENT_TASKS_FILE_PATH) {
   await fsp.mkdir(path.dirname(filePath), { recursive: true });
+  const sortedTasks = sortTasks(state.tasks);
+  const tasks = new Array(sortedTasks.length);
+  for (let index = 0; index < sortedTasks.length; index += 1) {
+    tasks[index] = normalizeTask(sortedTasks[index]);
+  }
   const payload = {
     version: 1,
-    tasks: sortTasks(state.tasks).map(normalizeTask)
+    tasks
   };
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fsp.writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
@@ -505,7 +642,11 @@ function withTaskStore(operation, { filePath = AGENT_TASKS_FILE_PATH, write = tr
         const state = normalizeTaskState(rawState);
         const result = await operation(state);
         rawState.version = 1;
-        rawState.tasks = sortTasks(state.tasks).map(normalizeTask);
+        const sortedTasks = sortTasks(state.tasks);
+        rawState.tasks = new Array(sortedTasks.length);
+        for (let index = 0; index < sortedTasks.length; index += 1) {
+          rawState.tasks[index] = normalizeTask(sortedTasks[index]);
+        }
         return result;
       }, { write });
     });
@@ -763,7 +904,7 @@ async function failStaleActivePostgresAgentTasks(client, {
     AGENT_TASKS_STATE_KEY,
     Boolean(shouldFilterScope),
     normalizeScope(scope),
-    [...WORKER_HEARTBEAT_ACTIVE_STATUSES],
+    getWorkerHeartbeatActiveStatusValues(),
     now,
     staleActiveMs
   ]);
@@ -1016,10 +1157,18 @@ export async function listAgentTasks({
     });
     const normalizedGameId = String(gameId ?? '').trim();
     const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 25)));
-    return sortTasks(state.tasks)
-      .filter((task) => !shouldFilterScope || task.scope === normalizedScope)
-      .filter((task) => !normalizedGameId || task.gameId === normalizedGameId)
-      .slice(0, safeLimit);
+    const sortedTasks = sortTasks(state.tasks);
+    const tasks = [];
+    for (let index = 0; index < sortedTasks.length && tasks.length < safeLimit; index += 1) {
+      const task = sortedTasks[index];
+      if (
+        (!shouldFilterScope || task.scope === normalizedScope)
+        && (!normalizedGameId || task.gameId === normalizedGameId)
+      ) {
+        tasks.push(task);
+      }
+    }
+    return tasks;
   }, { filePath, write: staleActiveMs > 0 });
 }
 
@@ -1055,13 +1204,30 @@ export async function listAgentTaskThreads({
       shouldFilterScope
     });
     const normalizedGameId = String(gameId ?? '').trim();
-    const filteredTasks = state.tasks
-      .filter((task) => !shouldFilterScope || task.scope === normalizedScope)
-      .filter((task) => !normalizedGameId || task.gameId === normalizedGameId);
-    const latestTasks = getLatestTaskByThread(filteredTasks).slice(safeOffset, safeOffset + safeLimit);
-    return compact
-      ? latestTasks.map((task) => projectAgentTaskForPrompt(task))
-      : latestTasks;
+    const filteredTasks = [];
+    for (let index = 0; index < state.tasks.length; index += 1) {
+      const task = state.tasks[index];
+      if (
+        (!shouldFilterScope || task.scope === normalizedScope)
+        && (!normalizedGameId || task.gameId === normalizedGameId)
+      ) {
+        filteredTasks.push(task);
+      }
+    }
+    const latestByThread = getLatestTaskByThread(filteredTasks);
+    const latestEnd = Math.min(latestByThread.length, safeOffset + safeLimit);
+    const latestTasks = [];
+    for (let index = safeOffset; index < latestEnd; index += 1) {
+      latestTasks.push(latestByThread[index]);
+    }
+    if (!compact) {
+      return latestTasks;
+    }
+    const projectedTasks = new Array(latestTasks.length);
+    for (let index = 0; index < latestTasks.length; index += 1) {
+      projectedTasks[index] = projectAgentTaskForPrompt(latestTasks[index]);
+    }
+    return projectedTasks;
   }, { filePath, write: staleActiveMs > 0 });
 }
 
@@ -1087,7 +1253,7 @@ export async function getAgentTask(taskId, {
       now: Date.now(),
       staleActiveAfterMs: staleActiveMs
     });
-    return state.tasks.find((task) => task.id === id) ?? null;
+    return findTaskById(state.tasks, id);
   }, {
     filePath,
     write: staleActiveMs > 0
@@ -1117,17 +1283,27 @@ export async function getAgentTaskThread(taskId, {
       now: Date.now(),
       staleActiveAfterMs: staleActiveMs
     });
-    const selectedTask = state.tasks.find((task) => task.id === id);
+    const selectedTask = findTaskById(state.tasks, id);
     if (!selectedTask) {
       return [];
     }
     const threadId = getTaskThreadId(selectedTask);
-    const threadTasks = sortTasksAscending(
-      state.tasks.filter((task) => getTaskThreadId(task) === threadId)
-    );
-    return compact
-      ? threadTasks.map((task) => projectAgentTaskForPrompt(task, { includeMessages: true }))
-      : threadTasks;
+    const matchingTasks = [];
+    for (let index = 0; index < state.tasks.length; index += 1) {
+      const task = state.tasks[index];
+      if (getTaskThreadId(task) === threadId) {
+        matchingTasks.push(task);
+      }
+    }
+    const threadTasks = sortTasksAscending(matchingTasks);
+    if (!compact) {
+      return threadTasks;
+    }
+    const projectedTasks = new Array(threadTasks.length);
+    for (let index = 0; index < threadTasks.length; index += 1) {
+      projectedTasks[index] = projectAgentTaskForPrompt(threadTasks[index], { includeMessages: true });
+    }
+    return projectedTasks;
   }, {
     filePath,
     write: staleActiveMs > 0
@@ -1156,7 +1332,7 @@ export async function createAgentTask(payload = {}, {
     const id = `task_${now.toString(36)}_${randomUUID().slice(0, 8)}`;
     const parentTaskId = normalizeTaskId(payload.parentTaskId);
     const parentTask = parentTaskId
-      ? state.tasks.find((candidate) => candidate.id === parentTaskId)
+      ? findTaskById(state.tasks, parentTaskId)
       : null;
 
     if (parentTaskId && !parentTask) {
@@ -1167,8 +1343,19 @@ export async function createAgentTask(payload = {}, {
     const threadId = parentTask
       ? getTaskThreadId(parentTask)
       : explicitThreadId || id;
-    const threadTasks = state.tasks.filter((task) => getTaskThreadId(task) === threadId);
-    const activeThreadTask = threadTasks.find(isThreadActiveTask);
+    const threadTasks = [];
+    let activeThreadTask = null;
+    for (let index = 0; index < state.tasks.length; index += 1) {
+      const task = state.tasks[index];
+      if (getTaskThreadId(task) !== threadId) {
+        continue;
+      }
+
+      threadTasks.push(task);
+      if (!activeThreadTask && isThreadActiveTask(task)) {
+        activeThreadTask = task;
+      }
+    }
     if (parentTask && activeThreadTask) {
       throw new Error('This prompt thread already has an active worker run.');
     }
@@ -1264,9 +1451,9 @@ export async function claimNextAgentTask({
 
     if (canClaimDeployActions) {
       if (staleDeployingMs > 0) {
-        const staleDeployingTask = sortTasks(state.tasks)
-          .reverse()
-          .find((task) => {
+        const staleDeployingTask = findOldestTask(
+          state.tasks,
+          (task) => {
             if (shouldFilterScope && task.scope !== normalizedScope) {
               return false;
             }
@@ -1276,7 +1463,8 @@ export async function claimNextAgentTask({
             }
 
             return isDeployTaskStale(task, now, staleDeployingMs);
-          });
+          }
+        );
 
         if (staleDeployingTask) {
           const staleReferenceAt = getStaleDeployReferenceAt(staleDeployingTask);
@@ -1302,14 +1490,14 @@ export async function claimNextAgentTask({
         }
       }
 
-      const activeDeployTask = sortTasks(state.tasks)
-        .reverse()
-        .find((task) => {
+      const activeDeployTask = findOldestTask(
+        state.tasks,
+        (task) => {
           if (shouldFilterScope && task.scope !== normalizedScope) {
             return false;
           }
 
-          if (!['deploying', 'rolling_back'].includes(task.status)) {
+          if (!ACTIVE_DEPLOY_STATUSES.has(task.status)) {
             return false;
           }
 
@@ -1318,17 +1506,19 @@ export async function claimNextAgentTask({
           }
 
           return true;
-        });
+        }
+      );
 
       if (!activeDeployTask) {
-        const rollbackTask = sortTasks(state.tasks)
-          .reverse()
-          .find((task) => (
+        const rollbackTask = findOldestTask(
+          state.tasks,
+          (task) => (
             (!shouldFilterScope || task.scope === normalizedScope)
             && task.status === 'deployed'
             && Number(task.rollbackApprovedAt) > 0
             && !Number(task.rollbackStartedAt)
-          ));
+          )
+        );
 
         if (rollbackTask) {
           rollbackTask.status = 'rolling_back';
@@ -1349,14 +1539,15 @@ export async function claimNextAgentTask({
           };
         }
 
-        const deployTask = sortTasks(state.tasks)
-          .reverse()
-          .find((task) => (
+        const deployTask = findOldestTask(
+          state.tasks,
+          (task) => (
             (!shouldFilterScope || task.scope === normalizedScope)
             && task.status === 'ready_for_review'
             && Number(task.deployApprovedAt) > 0
             && !Number(task.deployStartedAt)
-          ));
+          )
+        );
 
         if (deployTask) {
           deployTask.status = 'deploying';
@@ -1386,9 +1577,10 @@ export async function claimNextAgentTask({
       };
     }
 
-    const queuedTask = sortTasks(state.tasks)
-      .reverse()
-      .find((task) => (!shouldFilterScope || task.scope === normalizedScope) && task.status === 'queued');
+    const queuedTask = findOldestTask(
+      state.tasks,
+      (task) => (!shouldFilterScope || task.scope === normalizedScope) && task.status === 'queued'
+    );
 
     if (!queuedTask) {
       return {
@@ -1417,7 +1609,13 @@ export async function claimNextAgentTask({
 }
 
 function applyAgentTaskUpdates(task, updates = {}, now = Date.now()) {
-  for (const [key, value] of Object.entries(updates ?? {})) {
+  const updateSource = updates && typeof updates === 'object' ? updates : {};
+  for (const key in updateSource) {
+    if (!Object.hasOwn(updateSource, key)) {
+      continue;
+    }
+
+    const value = updateSource[key];
     if (!MUTABLE_TASK_FIELDS.has(key)) {
       continue;
     }
@@ -1429,7 +1627,7 @@ function applyAgentTaskUpdates(task, updates = {}, now = Date.now()) {
         throw new Error(`Invalid task status: ${String(value)}`);
       }
       task.status = status;
-      if (['claimed', 'preparing', 'coding', 'testing'].includes(status) && Number(task.workStartedAt) <= 0) {
+      if (WORK_STARTED_STATUSES.has(status) && Number(task.workStartedAt) <= 0) {
         task.workStartedAt = now;
       }
       if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
@@ -1452,7 +1650,7 @@ function applyAgentTaskUpdates(task, updates = {}, now = Date.now()) {
           data: { previousStatus }
         });
       }
-    } else if (['claimedAt', 'workerHeartbeatAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
+    } else if (TASK_TIMESTAMP_FIELDS.has(key)) {
       task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
     } else if (key === 'changedFiles') {
       task.changedFiles = normalizeStringList(value);
@@ -1460,7 +1658,7 @@ function applyAgentTaskUpdates(task, updates = {}, now = Date.now()) {
       task.deployTargets = normalizeDeployTargets(value);
     } else if (key === 'error') {
       task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
-    } else if (['summary', 'agentMessage', 'deployLog', 'rollbackLog'].includes(key)) {
+    } else if (TASK_LONG_TEXT_FIELDS.has(key)) {
       task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
     } else if (key === 'workerHeartbeatStatus') {
       task.workerHeartbeatStatus = String(value ?? '').trim().slice(0, 120);
@@ -1486,7 +1684,7 @@ export async function updateAgentTask(taskId, updates = {}, {
   }
 
   return withTaskStore((state) => {
-    const task = state.tasks.find((entry) => entry.id === id);
+    const task = findTaskById(state.tasks, id);
     if (!task) {
       return null;
     }
@@ -1586,7 +1784,7 @@ export async function appendAgentTaskLog(taskId, entry = {}, {
   }
 
   return withTaskStore((state) => {
-    const task = state.tasks.find((candidate) => candidate.id === id);
+    const task = findTaskById(state.tasks, id);
     if (!task) {
       return null;
     }
@@ -1605,7 +1803,6 @@ export async function cancelAgentTask(taskId, {
   cancelledBy = '',
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
-  const terminalStatuses = new Set(['deployed', 'rolled_back', 'cancelled']);
   const id = normalizeTaskId(taskId);
   if (!id) {
     throw new Error('Task id is required.');
@@ -1613,7 +1810,7 @@ export async function cancelAgentTask(taskId, {
 
   if (shouldUseTaskPostgresState(filePath)) {
     return withPostgresTaskById(id, (task) => {
-      if (terminalStatuses.has(task.status)) {
+      if (CANCEL_TERMINAL_STATUSES.has(task.status)) {
         return task;
       }
 
@@ -1628,12 +1825,12 @@ export async function cancelAgentTask(taskId, {
   }
 
   return withTaskStore((state) => {
-    const task = state.tasks.find((candidate) => candidate.id === id);
+    const task = findTaskById(state.tasks, id);
     if (!task) {
       return null;
     }
 
-    if (terminalStatuses.has(task.status)) {
+    if (CANCEL_TERMINAL_STATUSES.has(task.status)) {
       return task;
     }
 
@@ -1674,7 +1871,7 @@ export async function approveAgentTaskDeploy(taskId, {
   }
 
   return withTaskStore((state) => {
-    const task = state.tasks.find((candidate) => candidate.id === id);
+    const task = findTaskById(state.tasks, id);
     if (!task) {
       return null;
     }
@@ -1725,7 +1922,7 @@ export async function approveAgentTaskRollback(taskId, {
   }
 
   return withTaskStore((state) => {
-    const task = state.tasks.find((candidate) => candidate.id === id);
+    const task = findTaskById(state.tasks, id);
     if (!task) {
       return null;
     }

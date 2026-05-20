@@ -20,6 +20,7 @@ import {
 import {
   cloneMissionSequence
 } from '../shared/missions.js';
+import { placementToCollisionRects } from '../shared/combatMath.js';
 import {
   cloneNpcModelVoiceMap,
   getNpcModelVoice,
@@ -38,6 +39,10 @@ function cloneInteractable(interactable) {
   return cloneInteractableDefinition(interactable);
 }
 
+function clonePosition(position) {
+  return position ? [position[0], position[1]] : null;
+}
+
 function clonePlacement(placement) {
   return {
     id: placement.id,
@@ -50,9 +55,51 @@ function clonePlacement(placement) {
     scale: placement.layer === 'prop' ? getPlacementScale(placement) : undefined,
     cellX: placement.cellX,
     cellZ: placement.cellZ,
-    position: placement.position ? [...placement.position] : null,
+    position: clonePosition(placement.position),
     interactable: cloneInteractableDefinition(placement.interactable),
     npc: placement.npc ? cloneNpcBehavior(placement.npc) : null
+  };
+}
+
+function serializeNpcPlacement(placement) {
+  return {
+    id: placement.id,
+    modelId: placement.npc.modelId,
+    position: [
+      normalizePositionValue(placement.position[0]),
+      normalizePositionValue(placement.position[1])
+    ],
+    rotationQuarterTurns: placement.rotationQuarterTurns,
+    name: placement.npc.name,
+    prompt: placement.npc.prompt,
+    interactRadius: placement.npc.interactRadius,
+    speed: placement.npc.speed,
+    routine: placement.npc.routine,
+    combat: placement.npc.combat,
+    respawnDelayMs: placement.npc.respawnDelayMs,
+    deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
+    gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
+    rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
+    stockMarketEnabled: placement.npc.stockMarketEnabled === true,
+    bartenderEnabled: placement.npc.bartenderEnabled === true,
+    pawnShopOwnerEnabled: placement.npc.pawnShopOwnerEnabled === true,
+    carDealerEnabled: placement.npc.carDealerEnabled === true,
+    marthaEnabled: placement.npc.marthaEnabled === true,
+    blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
+    schoolMicrogameEnabled: placement.npc.schoolMicrogameEnabled === true,
+    schoolMicrogameId: placement.npc.schoolMicrogameId,
+    spawnPosition: Array.isArray(placement.npc.spawnPosition)
+      ? [
+          normalizePositionValue(placement.npc.spawnPosition[0]),
+          normalizePositionValue(placement.npc.spawnPosition[1])
+        ]
+      : [
+          normalizePositionValue(placement.position[0]),
+          normalizePositionValue(placement.position[1])
+        ],
+    spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
+      placement.npc.spawnRotationQuarterTurns ?? placement.rotationQuarterTurns
+    )
   };
 }
 
@@ -202,7 +249,10 @@ export class WorldState {
     this.propPlacements = new Map();
     this.npcPlacements = new Map();
     this.placementsById = new Map();
+    this.collisionRectsByPlacementId = new Map();
+    this.collisionRectEntriesByKey = new Map();
     this.placementSequence = 0;
+    this.placementRevision = 0;
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
     this.passiveTrafficRoutes = clonePassiveTrafficRoutes();
@@ -214,7 +264,10 @@ export class WorldState {
     this.propPlacements.clear();
     this.npcPlacements.clear();
     this.placementsById.clear();
+    this.collisionRectsByPlacementId.clear();
+    this.collisionRectEntriesByKey.clear();
     this.placementSequence = 0;
+    this.bumpPlacementRevision();
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
     this.passiveTrafficRoutes = clonePassiveTrafficRoutes();
@@ -225,12 +278,78 @@ export class WorldState {
   }
 
   getPlacements() {
-    return [...this.placementsById.values()].map(clonePlacement);
+    const placements = [];
+    for (const placement of this.placementsById.values()) {
+      placements.push(clonePlacement(placement));
+    }
+    return placements;
   }
 
   forEachPlacement(callback) {
     for (const placement of this.placementsById.values()) {
       callback(placement);
+    }
+  }
+
+  forEachNpcDefinition(callback) {
+    for (const placement of this.npcPlacements.values()) {
+      callback(serializeNpcPlacement(placement));
+    }
+  }
+
+  getPlacementRevision() {
+    return this.placementRevision;
+  }
+
+  getPlacementCollisionRects(placementOrId, item = null, { collisionKey = 'blocksShots' } = {}) {
+    const placement = typeof placementOrId === 'string'
+      ? this.getPlacement(placementOrId)
+      : placementOrId;
+    if (!placement?.id) {
+      return [];
+    }
+
+    let rectsByKey = this.collisionRectsByPlacementId.get(placement.id);
+    if (!rectsByKey) {
+      rectsByKey = new Map();
+      this.collisionRectsByPlacementId.set(placement.id, rectsByKey);
+    }
+
+    const normalizedCollisionKey = String(collisionKey || 'blocksShots');
+    const cachedRects = rectsByKey.get(normalizedCollisionKey);
+    if (cachedRects) {
+      return cachedRects;
+    }
+
+    const resolvedItem = item ?? getBuilderItemById(placement.itemId);
+    const rects = placementToCollisionRects(placement, resolvedItem, {
+      collisionKey: normalizedCollisionKey
+    });
+    rectsByKey.set(normalizedCollisionKey, rects);
+    return rects;
+  }
+
+  forEachPlacementCollisionRect(callback, { collisionKey = 'blocksShots' } = {}) {
+    const normalizedCollisionKey = String(collisionKey || 'blocksShots');
+    let entries = this.collisionRectEntriesByKey.get(normalizedCollisionKey);
+    if (!entries) {
+      entries = [];
+      for (const placement of this.placementsById.values()) {
+        const rects = this.getPlacementCollisionRects(placement, null, {
+          collisionKey: normalizedCollisionKey
+        });
+        for (const rect of rects) {
+          entries.push({
+            placementId: placement.id,
+            rect
+          });
+        }
+      }
+      this.collisionRectEntriesByKey.set(normalizedCollisionKey, entries);
+    }
+
+    for (const entry of entries) {
+      callback(entry);
     }
   }
 
@@ -454,6 +573,7 @@ export class WorldState {
 
     if (itemId && itemId !== placement.itemId) {
       placement.itemId = itemId;
+      this.invalidatePlacementCollisionRects(placement.id);
     }
 
     placement.npc = normalizeNpcBehavior({
@@ -463,6 +583,7 @@ export class WorldState {
       position: placement.position,
       rotationQuarterTurns: placement.rotationQuarterTurns
     });
+    this.bumpPlacementRevision();
 
     return clonePlacement(placement);
   }
@@ -474,6 +595,7 @@ export class WorldState {
     }
 
     placement.interactable = cloneInteractable(interactable);
+    this.bumpPlacementRevision();
     return clonePlacement(placement);
   }
 
@@ -484,6 +606,8 @@ export class WorldState {
     }
 
     placement.scale = normalizePropPlacementScale(scale, getDefaultPropPlacementScale(placement));
+    this.invalidatePlacementCollisionRects(placement.id);
+    this.bumpPlacementRevision();
     return clonePlacement(placement);
   }
 
@@ -539,6 +663,8 @@ export class WorldState {
     if (placement.layer === 'npc' && placement.npc) {
       placement.npc.spawnPosition = [x, z];
     }
+    this.invalidatePlacementCollisionRects(placement.id);
+    this.bumpPlacementRevision();
     return {
       placement: clonePlacement(placement),
       error: null,
@@ -563,6 +689,8 @@ export class WorldState {
       const nextRotationY = quantizeRotation(rawNextRotationY);
       placement.rotationY = nextRotationY;
       placement.rotationQuarterTurns = rotationRadiansToQuarterTurns(rawNextRotationY);
+      this.invalidatePlacementCollisionRects(placement.id);
+      this.bumpPlacementRevision();
       return { placement: clonePlacement(placement), error: null };
     }
 
@@ -594,6 +722,8 @@ export class WorldState {
       if (placement.layer === 'npc' && placement.npc) {
         placement.npc.spawnRotationQuarterTurns = nextRotationQuarterTurns;
       }
+      this.invalidatePlacementCollisionRects(placement.id);
+      this.bumpPlacementRevision();
     }
 
     return { placement: clonePlacement(placement), error: null };
@@ -610,76 +740,54 @@ export class WorldState {
   }
 
   serializeLayout() {
-    const tiles = [...this.tilePlacements.values()]
-      .sort((a, b) => (a.cellZ - b.cellZ) || (a.cellX - b.cellX))
-      .map((placement) => ({
+    const sortedTiles = [];
+    for (const placement of this.tilePlacements.values()) {
+      sortedTiles.push(placement);
+    }
+    sortedTiles.sort((a, b) => (a.cellZ - b.cellZ) || (a.cellX - b.cellX));
+    const tiles = [];
+    for (const placement of sortedTiles) {
+      tiles.push({
         id: placement.id,
         itemId: placement.itemId,
         cell: [placement.cellX, placement.cellZ],
         rotationQuarterTurns: placement.rotationQuarterTurns,
         ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
-      }));
-
-    const props = [...this.propPlacements.values()]
-      .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))
-      .map((placement) => {
-        const scale = getPlacementScale(placement);
-        const defaultScale = getDefaultPropPlacementScale(placement);
-        return {
-          id: placement.id,
-          itemId: placement.itemId,
-          position: [
-            normalizePositionValue(placement.position[0]),
-            normalizePositionValue(placement.position[1])
-          ],
-          rotationQuarterTurns: placement.rotationQuarterTurns,
-          ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
-          ...(scale !== defaultScale ? { scale } : {}),
-          ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
-        };
       });
+    }
 
-    const npcs = [...this.npcPlacements.values()]
-      .sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]))
-      .map((placement) => ({
+    const sortedProps = [];
+    for (const placement of this.propPlacements.values()) {
+      sortedProps.push(placement);
+    }
+    sortedProps.sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]));
+    const props = [];
+    for (const placement of sortedProps) {
+      const scale = getPlacementScale(placement);
+      const defaultScale = getDefaultPropPlacementScale(placement);
+      props.push({
         id: placement.id,
-        modelId: placement.npc.modelId,
+        itemId: placement.itemId,
         position: [
           normalizePositionValue(placement.position[0]),
           normalizePositionValue(placement.position[1])
         ],
         rotationQuarterTurns: placement.rotationQuarterTurns,
-        name: placement.npc.name,
-        prompt: placement.npc.prompt,
-        interactRadius: placement.npc.interactRadius,
-        speed: placement.npc.speed,
-        routine: placement.npc.routine,
-        combat: placement.npc.combat,
-        respawnDelayMs: placement.npc.respawnDelayMs,
-        deliveryQuestEnabled: placement.npc.deliveryQuestEnabled === true,
-        gymCheckInEnabled: placement.npc.gymCheckInEnabled === true,
-        rentCollectorEnabled: placement.npc.rentCollectorEnabled === true,
-        stockMarketEnabled: placement.npc.stockMarketEnabled === true,
-        bartenderEnabled: placement.npc.bartenderEnabled === true,
-        pawnShopOwnerEnabled: placement.npc.pawnShopOwnerEnabled === true,
-        carDealerEnabled: placement.npc.carDealerEnabled === true,
-        marthaEnabled: placement.npc.marthaEnabled === true,
-        blackjackDealerEnabled: placement.npc.blackjackDealerEnabled === true,
-        schoolMicrogameEnabled: placement.npc.schoolMicrogameEnabled === true,
-        schoolMicrogameId: placement.npc.schoolMicrogameId,
-        spawnPosition: Array.isArray(placement.npc.spawnPosition)
-          ? [
-              normalizePositionValue(placement.npc.spawnPosition[0]),
-              normalizePositionValue(placement.npc.spawnPosition[1])
-            ]
-          : [
-              normalizePositionValue(placement.position[0]),
-              normalizePositionValue(placement.position[1])
-            ],
-        spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
-          placement.npc.spawnRotationQuarterTurns ?? placement.rotationQuarterTurns
-        )
-      }));
+        ...(Number.isFinite(Number(placement.rotationY)) ? { rotationY: quantizeRotation(placement.rotationY) } : {}),
+        ...(scale !== defaultScale ? { scale } : {}),
+        ...(placement.interactable ? { interactable: cloneInteractable(placement.interactable) } : {})
+      });
+    }
+
+    const sortedNpcs = [];
+    for (const placement of this.npcPlacements.values()) {
+      sortedNpcs.push(placement);
+    }
+    sortedNpcs.sort((a, b) => (a.position[1] - b.position[1]) || (a.position[0] - b.position[0]));
+    const npcs = [];
+    for (const placement of sortedNpcs) {
+      npcs.push(serializeNpcPlacement(placement));
+    }
 
     return {
       tiles,
@@ -699,7 +807,9 @@ export class WorldState {
   }
 
   registerPlacement(placement) {
+    this.invalidatePlacementCollisionRects(placement.id);
     this.placementsById.set(placement.id, placement);
+    this.bumpPlacementRevision();
 
     if (placement.layer === 'tile') {
       this.tilePlacements.set(placement.id, placement);
@@ -726,6 +836,8 @@ export class WorldState {
     }
 
     this.placementsById.delete(id);
+    this.invalidatePlacementCollisionRects(id);
+    this.bumpPlacementRevision();
     if (placement.layer === 'tile') {
       this.tilePlacements.delete(id);
       const item = getBuilderItemById(placement.itemId);
@@ -751,6 +863,19 @@ export class WorldState {
     return `${x},${z}`;
   }
 
+  invalidatePlacementCollisionRects(id) {
+    if (!id) {
+      return;
+    }
+
+    this.collisionRectsByPlacementId.delete(id);
+    this.collisionRectEntriesByKey.clear();
+  }
+
+  bumpPlacementRevision() {
+    this.placementRevision += 1;
+  }
+
   getOverlappingTilePlacementIds(item, cellX, cellZ, rotationQuarterTurns, ignorePlacementId = null) {
     const overlappingIds = new Set();
     const occupiedCells = getTileOccupiedCells(item, cellX, cellZ, rotationQuarterTurns);
@@ -763,7 +888,11 @@ export class WorldState {
       overlappingIds.add(placement.id);
     }
 
-    return [...overlappingIds];
+    const overlapping = [];
+    for (const id of overlappingIds) {
+      overlapping.push(id);
+    }
+    return overlapping;
   }
 
   createPlacementId() {

@@ -18,7 +18,10 @@ const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
 const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
+const BARBELL_BASE_AXIS = new THREE.Vector3(1, 0, 0);
 const NPC_FOCUS_MIN_DISTANCE = 0.18;
+const NPC_FOCUS_MIN_DISTANCE_SQ = NPC_FOCUS_MIN_DISTANCE * NPC_FOCUS_MIN_DISTANCE;
+const NPC_MOVING_ANIMATION_DISTANCE_SQ = 0.12 * 0.12;
 const FOOT_PLANT_BONE_NAMES = Object.freeze([
   'mixamorigLeftFoot',
   'mixamorigLeftToeBase',
@@ -117,13 +120,15 @@ function collectDamageTintMaterials(root) {
     }
 
     if (Array.isArray(node.material)) {
-      node.material = node.material.map((entry) => {
+      const materials = [];
+      for (const entry of node.material) {
         const { material, tracked } = cloneTrackedMaterial(entry);
         if (tracked) {
           trackedMaterials.push(tracked);
         }
-        return material;
-      });
+        materials.push(material);
+      }
+      node.material = materials;
       return;
     }
 
@@ -219,9 +224,13 @@ export class NpcActor {
     const humanoid = validateMixamoHumanoid(this.character);
     if (humanoid.isHumanoid) {
       this.sockets = ensureMixamoSockets(this.character);
-      this.footPlantBones = FOOT_PLANT_BONE_NAMES
-        .map((boneName) => this.character.getObjectByName(boneName))
-        .filter(Boolean);
+      this.footPlantBones = [];
+      for (const boneName of FOOT_PLANT_BONE_NAMES) {
+        const bone = this.character.getObjectByName(boneName);
+        if (bone) {
+          this.footPlantBones.push(bone);
+        }
+      }
       this.mixer = new THREE.AnimationMixer(this.character);
       this.ragdoll = createRagdollController(this.character);
       this.animationActions = new Map([
@@ -233,7 +242,8 @@ export class NpcActor {
         ['punch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.punching))],
         ['snatch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.snatch))]
       ]);
-      for (const [key, action] of this.animationActions.entries()) {
+      for (const key of this.animationActions.keys()) {
+        const action = this.animationActions.get(key);
         action.enabled = true;
         action.setLoop(
           key === 'punch'
@@ -350,7 +360,7 @@ export class NpcActor {
 
     this.workoutBarbellMidpoint.addScaledVector(this.workoutForward, 0.08);
     this.workoutBarbellQuaternion.setFromUnitVectors(
-      new THREE.Vector3(1, 0, 0),
+      BARBELL_BASE_AXIS,
       this.workoutBarbellAxis
     );
 
@@ -415,7 +425,12 @@ export class NpcActor {
   }
 
   setInteractRadiusVisible(visible) {
-    this.interactRadiusVisible = Boolean(visible);
+    const nextVisible = Boolean(visible);
+    if (this.interactRadiusVisible === nextVisible) {
+      return;
+    }
+
+    this.interactRadiusVisible = nextVisible;
     this.syncInteractRadiusVisibility();
   }
 
@@ -445,15 +460,20 @@ export class NpcActor {
   setRuntimeState(state = {}, groundY = this.anchor.position.y) {
     const wasAlive = this.runtimeState.alive !== false;
     const nextAlive = state.alive !== false;
-    this.runtimeState = {
-      ...this.runtimeState,
-      ...state,
-      x: Number.isFinite(state.x) ? state.x : this.runtimeState.x,
-      z: Number.isFinite(state.z) ? state.z : this.runtimeState.z,
-      rotationY: Number.isFinite(state.rotationY) ? state.rotationY : this.runtimeState.rotationY,
-      hidden: state.mode === NPC_RUNTIME_MODES.hidden,
-      alive: state.alive !== false
-    };
+    const runtimeState = this.runtimeState;
+    const previousX = runtimeState.x;
+    const previousZ = runtimeState.z;
+    const previousRotationY = runtimeState.rotationY;
+    for (const key in state) {
+      if (Object.prototype.hasOwnProperty.call(state, key)) {
+        runtimeState[key] = state[key];
+      }
+    }
+    runtimeState.x = Number.isFinite(state.x) ? state.x : previousX;
+    runtimeState.z = Number.isFinite(state.z) ? state.z : previousZ;
+    runtimeState.rotationY = Number.isFinite(state.rotationY) ? state.rotationY : previousRotationY;
+    runtimeState.hidden = state.mode === NPC_RUNTIME_MODES.hidden;
+    runtimeState.alive = state.alive !== false;
     this.anchor.position.y = groundY;
     this.setBusy(Boolean(state.busy));
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
@@ -505,10 +525,9 @@ export class NpcActor {
       return;
     }
 
-    const moving = Math.hypot(
-      this.runtimeState.x - this.anchor.position.x,
-      this.runtimeState.z - this.anchor.position.z
-    ) > 0.12;
+    const movingDx = this.runtimeState.x - this.anchor.position.x;
+    const movingDz = this.runtimeState.z - this.anchor.position.z;
+    const moving = (movingDx * movingDx) + (movingDz * movingDz) > NPC_MOVING_ANIMATION_DISTANCE_SQ;
     let nextAnimation = 'idle';
 
     if (!this.runtimeState.alive || this.runtimeState.mode === NPC_RUNTIME_MODES.dead) {
@@ -536,7 +555,8 @@ export class NpcActor {
       return;
     }
 
-    for (const [key, action] of this.animationActions.entries()) {
+    for (const key of this.animationActions.keys()) {
+      const action = this.animationActions.get(key);
       action.setEffectiveWeight(key === nextAnimation ? 1 : 0);
     }
     this.activeAnimation = nextAnimation;
@@ -554,7 +574,7 @@ export class NpcActor {
     ) {
       const focusDeltaX = this.focusTarget.x - this.anchor.position.x;
       const focusDeltaZ = this.focusTarget.z - this.anchor.position.z;
-      if (Math.hypot(focusDeltaX, focusDeltaZ) > NPC_FOCUS_MIN_DISTANCE) {
+      if ((focusDeltaX * focusDeltaX) + (focusDeltaZ * focusDeltaZ) > NPC_FOCUS_MIN_DISTANCE_SQ) {
         targetRotationY = Math.atan2(focusDeltaX, focusDeltaZ);
       }
     }

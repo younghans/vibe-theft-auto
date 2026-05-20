@@ -47,6 +47,20 @@ function finalizePartialReply(text) {
     : `${normalized}...`;
 }
 
+function buildTranscriptWindow(transcript = [], maxEntries = 10) {
+  const entryCount = Array.isArray(transcript) ? transcript.length : 0;
+  const startIndex = Math.max(0, entryCount - maxEntries);
+  let text = '';
+
+  for (let index = startIndex; index < entryCount; index += 1) {
+    const entry = transcript[index];
+    const line = `${entry?.author}: ${entry?.text}`;
+    text = text ? `${text}\n${line}` : line;
+  }
+
+  return text;
+}
+
 function summarizeError(error) {
   if (!(error instanceof Error)) {
     return {
@@ -317,16 +331,15 @@ export class NpcChatEngine {
       });
     }
 
-    const transcriptWindow = transcript.slice(-10)
-      .map((entry) => `${entry.author}: ${entry.text}`)
-      .join('\n');
+    const transcriptWindow = buildTranscriptWindow(transcript);
+    const transcriptEntries = Array.isArray(transcript) ? transcript.length : 0;
     let firstErrorSummary = null;
 
     for (let attempt = 1; attempt <= MAX_STREAM_ATTEMPTS; attempt += 1) {
       const attemptResult = await this.streamReplyAttempt({
         npc,
         transcriptWindow,
-        transcriptEntries: transcript.length,
+        transcriptEntries,
         playerMessage,
         onDelta,
         traceId,

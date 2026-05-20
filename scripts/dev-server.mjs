@@ -5,9 +5,19 @@ import path from 'node:path';
 import process from 'node:process';
 import { config as loadDotenv } from 'dotenv';
 
-const cliArgs = process.argv.slice(2);
-const positionalArgs = cliArgs.filter((arg) => !arg.startsWith('--'));
-const flags = new Set(cliArgs.filter((arg) => arg.startsWith('--')));
+const cliArgs = [];
+for (let index = 2; index < process.argv.length; index += 1) {
+  cliArgs.push(process.argv[index]);
+}
+const positionalArgs = [];
+const flags = new Set();
+for (const arg of cliArgs) {
+  if (arg.startsWith('--')) {
+    flags.add(arg);
+  } else {
+    positionalArgs.push(arg);
+  }
+}
 
 const root = path.resolve(positionalArgs[0] ?? '.');
 for (const envFile of ['.env.local', '.env']) {
@@ -89,10 +99,15 @@ const mimeTypes = {
 const compressibleExtensions = new Set(['.css', '.glb', '.html', '.js', '.json', '.svg', '.txt']);
 
 function normalizeRelativePath(filePath = '') {
-  return String(filePath)
-    .split(/[\\/]+/u)
-    .filter(Boolean)
-    .join(path.sep);
+  const segments = String(filePath).split(/[\\/]+/u);
+  let normalizedPath = '';
+  for (const segment of segments) {
+    if (!segment) {
+      continue;
+    }
+    normalizedPath = normalizedPath ? `${normalizedPath}${path.sep}${segment}` : segment;
+  }
+  return normalizedPath;
 }
 
 function shouldIgnoreWatchedPath(filePath = '') {
@@ -102,13 +117,19 @@ function shouldIgnoreWatchedPath(filePath = '') {
   }
 
   const pathSegments = normalizedPath.split(path.sep);
-  if (pathSegments.some((segment) => ignoredWatchPathSegments.has(segment))) {
-    return true;
+  for (const segment of pathSegments) {
+    if (ignoredWatchPathSegments.has(segment)) {
+      return true;
+    }
   }
 
-  return ignoredWatchPathPrefixes.some((prefix) =>
-    normalizedPath === prefix || normalizedPath.startsWith(`${prefix}${path.sep}`)
-  );
+  for (const prefix of ignoredWatchPathPrefixes) {
+    if (normalizedPath === prefix || normalizedPath.startsWith(`${prefix}${path.sep}`)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function scheduleLiveReload(changedPath = '', { force = false } = {}) {
@@ -239,7 +260,7 @@ function resolveWritableAssetPath(relativePath = '') {
   if (
     !normalizedRelativePath
     || !normalizedRelativePath.startsWith(allowedPrefix)
-    || !['.png', '.json'].includes(extension)
+    || (extension !== '.png' && extension !== '.json')
   ) {
     return null;
   }
@@ -254,7 +275,8 @@ function resolveWritableAssetPath(relativePath = '') {
 }
 
 function isFingerprinted(filePath) {
-  if (['.mp3', '.wav'].includes(path.extname(filePath).toLowerCase())) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.mp3' || extension === '.wav') {
     return false;
   }
 

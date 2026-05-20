@@ -58,7 +58,7 @@ export const BECOME_CEO_STRENGTH_LEVEL_REQUIRED = Math.max(
 export const FOUR_MORE_WHEELS_LEGACY_MISSION_ID = 'custom-mission-two-more-wheels-purchase-a-car-from--1uv50rm';
 export const FOUR_MORE_WHEELS_MISSION_TITLE = 'Four more wheels';
 
-export const MISSION_CATALOG = Object.freeze([
+const MISSION_CATALOG_ENTRIES = [
   {
     id: MISSION_IDS.makeMoney,
     title: '\u{1F4B5} Make some money. Maybe the Shady Figure can help?',
@@ -147,9 +147,16 @@ export const MISSION_CATALOG = Object.freeze([
     description: BECOME_CEO_MISSION_DESCRIPTION,
     requirement: 'Complete the Charisma mission first.'
   }
-].map(Object.freeze));
+];
+for (let index = 0; index < MISSION_CATALOG_ENTRIES.length; index += 1) {
+  MISSION_CATALOG_ENTRIES[index] = Object.freeze(MISSION_CATALOG_ENTRIES[index]);
+}
+export const MISSION_CATALOG = Object.freeze(MISSION_CATALOG_ENTRIES);
 
-const MISSION_BY_ID = new Map(MISSION_CATALOG.map((mission) => [mission.id, mission]));
+const MISSION_BY_ID = new Map();
+for (const mission of MISSION_CATALOG) {
+  MISSION_BY_ID.set(mission.id, mission);
+}
 const DEFAULT_MISSION_SEQUENCE = Object.freeze([
   Object.freeze({
     missionId: MISSION_IDS.makeMoney,
@@ -308,7 +315,10 @@ function normalizeCustomMissionId(missionId = '') {
 
 function createCustomMissionId(prompt = '', sequence = null) {
   const base = `${CUSTOM_MISSION_ID_PREFIX}${slugifyMissionPrompt(prompt)}-${hashMissionPrompt(prompt)}`;
-  const existingIds = new Set(normalizeMissionSequenceConfig(sequence).map((entry) => entry.missionId));
+  const existingIds = new Set();
+  for (const entry of normalizeMissionSequenceConfig(sequence)) {
+    existingIds.add(entry.missionId);
+  }
   if (!existingIds.has(base)) {
     return base;
   }
@@ -346,10 +356,16 @@ function getCustomMissionDefinition(entry = {}) {
   const title = normalizeMissionText(entry.title, CUSTOM_MISSION_PROMPT_MAX_LENGTH) || prompt || label;
   const description = normalizeMissionText(entry.description, CUSTOM_MISSION_DESCRIPTION_MAX_LENGTH)
     || (prompt && prompt !== title ? prompt : 'Admin-authored mission.');
-  const shouldRetitleFourMoreWheels = missionId === FOUR_MORE_WHEELS_LEGACY_MISSION_ID
-    || [entry.title, entry.label, entry.description, entry.prompt].some((value) => (
-      /^\s*two\s+more\s+wheels\b/iu.test(String(value ?? ''))
-    ));
+  let shouldRetitleFourMoreWheels = missionId === FOUR_MORE_WHEELS_LEGACY_MISSION_ID;
+  if (!shouldRetitleFourMoreWheels) {
+    const titleValues = [entry.title, entry.label, entry.description, entry.prompt];
+    for (const value of titleValues) {
+      if (/^\s*two\s+more\s+wheels\b/iu.test(String(value ?? ''))) {
+        shouldRetitleFourMoreWheels = true;
+        break;
+      }
+    }
+  }
 
   return Object.freeze({
     id: missionId,
@@ -477,7 +493,11 @@ function getRawMissionSequenceEntryGateNumber(entry = {}, fallback = 0) {
 }
 
 export function createDefaultMissionSequence() {
-  return DEFAULT_MISSION_SEQUENCE.map((entry) => Object.freeze({ ...entry }));
+  const sequence = [];
+  for (const entry of DEFAULT_MISSION_SEQUENCE) {
+    sequence.push(Object.freeze({ ...entry }));
+  }
+  return sequence;
 }
 
 export function normalizeMissionSequenceConfig(sequence = null) {
@@ -506,12 +526,17 @@ export function normalizeMissionSequenceConfig(sequence = null) {
     }
   }
 
-  const orderedMissionIds = [
-    ...orderedMainMissionIds,
-    ...orderedBonusMissionIds
-  ];
+  const orderedMissionIds = [];
+  for (const missionId of orderedMainMissionIds) {
+    orderedMissionIds.push(missionId);
+  }
+  for (const missionId of orderedBonusMissionIds) {
+    orderedMissionIds.push(missionId);
+  }
 
-  return orderedMissionIds.map((missionId, index) => {
+  const normalizedEntries = [];
+  for (let index = 0; index < orderedMissionIds.length; index += 1) {
+    const missionId = orderedMissionIds[index];
     const rawEntry = rawEntryByMissionId.get(missionId) ?? {};
     const defaultGateNumber = index > 0 ? index : 0;
     const rawGateEnabled = Object.hasOwn(rawEntry, 'makeAvailableAfterMission')
@@ -541,10 +566,11 @@ export function normalizeMissionSequenceConfig(sequence = null) {
     const textOverrideDefinition = getMissionTextOverrideDefinition(rawEntry);
 
     if (!customDefinition && !textOverrideDefinition) {
-      return Object.freeze(baseEntry);
+      normalizedEntries.push(Object.freeze(baseEntry));
+      continue;
     }
 
-    return Object.freeze({
+    normalizedEntries.push(Object.freeze({
       ...baseEntry,
       ...(customDefinition
         ? {
@@ -557,12 +583,51 @@ export function normalizeMissionSequenceConfig(sequence = null) {
           }
         : {}),
       ...(textOverrideDefinition ?? {})
-    });
-  });
+    }));
+  }
+  return normalizedEntries;
 }
 
 export function cloneMissionSequence(sequence = null) {
-  return normalizeMissionSequenceConfig(sequence).map(cloneMissionSequenceEntry);
+  const normalized = normalizeMissionSequenceConfig(sequence);
+  const cloned = [];
+  for (const entry of normalized) {
+    cloned.push(cloneMissionSequenceEntry(entry));
+  }
+  return cloned;
+}
+
+function findMissionSequenceEntry(sequence = null, missionId = '') {
+  for (const entry of normalizeMissionSequenceConfig(sequence)) {
+    if (entry.missionId === missionId) {
+      return entry;
+    }
+  }
+
+  return null;
+}
+
+function getMissionSequenceEntryIndex(sequence = null, missionId = '') {
+  const normalizedSequence = normalizeMissionSequenceConfig(sequence);
+  for (let index = 0; index < normalizedSequence.length; index += 1) {
+    if (normalizedSequence[index].missionId === missionId) {
+      return {
+        index,
+        entry: normalizedSequence[index],
+        sequence: normalizedSequence
+      };
+    }
+  }
+
+  return {
+    index: -1,
+    entry: null,
+    sequence: normalizedSequence
+  };
+}
+
+function hasMissionSequenceEntry(sequence = null, missionId = '') {
+  return Boolean(findMissionSequenceEntry(sequence, missionId));
 }
 
 export function appendMissionSequencePromptEntry(sequence = null, prompt = '', options = {}) {
@@ -573,9 +638,15 @@ export function appendMissionSequencePromptEntry(sequence = null, prompt = '', o
 
   const entries = cloneMissionSequence(sequence);
   const bonusQuest = options?.bonusQuest === true;
-  const insertIndex = bonusQuest
-    ? entries.length
-    : entries.findIndex((entry) => entry.bonusQuest === true);
+  let insertIndex = entries.length;
+  if (!bonusQuest) {
+    for (let index = 0; index < entries.length; index += 1) {
+      if (entries[index].bonusQuest === true) {
+        insertIndex = index;
+        break;
+      }
+    }
+  }
   const safeInsertIndex = insertIndex >= 0 ? insertIndex : entries.length;
   const nextEntry = {
     missionId: createCustomMissionId(missionPrompt, entries),
@@ -626,15 +697,17 @@ export function updateMissionSequenceEntry(sequence = null, missionId = '', upda
     return normalizeMissionSequenceConfig(sequence);
   }
 
-  const entries = cloneMissionSequence(sequence).map((entry) => {
+  const entries = [];
+  for (const entry of cloneMissionSequence(sequence)) {
     if (entry.missionId !== normalizedMissionId) {
-      return entry;
+      entries.push(entry);
+      continue;
     }
 
     const textOverride = Object.hasOwn(updates, 'text')
       ? getMissionTextOverrideDefinition({ text: updates.text, textOverride: true })
       : null;
-    return {
+    entries.push({
       ...entry,
       ...(Object.hasOwn(updates, 'makeAvailableAfterMission')
         ? { makeAvailableAfterMission: updates.makeAvailableAfterMission === true }
@@ -649,18 +722,20 @@ export function updateMissionSequenceEntry(sequence = null, missionId = '', upda
         ? { bonusQuest: updates.bonusQuest === true }
         : {}),
       ...(textOverride ?? {})
-    };
-  });
+    });
+  }
 
   return normalizeMissionSequenceConfig(entries);
 }
 
 export function getMissionSequenceViewModel(sequence = null) {
   const normalizedSequence = normalizeMissionSequenceConfig(sequence);
-  return normalizedSequence.map((entry, index) => {
+  const viewModel = [];
+  for (let index = 0; index < normalizedSequence.length; index += 1) {
+    const entry = normalizedSequence[index];
     const definition = getMissionDefinition(entry.missionId, normalizedSequence);
     const missionNumber = index + 1;
-    return Object.freeze({
+    viewModel.push(Object.freeze({
       ...cloneMissionSequenceEntry(entry),
       missionNumber,
       canRequireMission: index > 0,
@@ -671,8 +746,9 @@ export function getMissionSequenceViewModel(sequence = null) {
       title: entry.title ?? definition?.title ?? definition?.label ?? entry.missionId,
       description: entry.description ?? definition?.description ?? '',
       prompt: entry.prompt ?? definition?.title ?? definition?.label ?? entry.missionId
-    });
-  });
+    }));
+  }
+  return viewModel;
 }
 
 function getMissionDefinitionFromSequence(missionId = '', sequence = null) {
@@ -681,8 +757,7 @@ function getMissionDefinitionFromSequence(missionId = '', sequence = null) {
     return null;
   }
 
-  const entry = normalizeMissionSequenceConfig(sequence)
-    .find((sequenceEntry) => sequenceEntry.missionId === normalizedMissionId);
+  const entry = findMissionSequenceEntry(sequence, normalizedMissionId);
   if (!entry) {
     return null;
   }
@@ -798,7 +873,13 @@ export function isMissionCompleteForSequence(missionId = '', player = null, sequ
 
   if (isCustomMissionId(id)) {
     const normalizedSequence = normalizeMissionSequenceConfig(sequence);
-    const entry = normalizedSequence.find((sequenceEntry) => sequenceEntry.missionId === id);
+    let entry = null;
+    for (const sequenceEntry of normalizedSequence) {
+      if (sequenceEntry.missionId === id) {
+        entry = sequenceEntry;
+        break;
+      }
+    }
     if (!entry) {
       return false;
     }
@@ -842,9 +923,11 @@ export function getMissionSequenceGate(missionId = '', player = null, sequence =
     return null;
   }
 
-  const normalizedSequence = normalizeMissionSequenceConfig(sequence);
-  const entryIndex = normalizedSequence.findIndex((entry) => entry.missionId === id);
-  const entry = normalizedSequence[entryIndex] ?? null;
+  const {
+    index: entryIndex,
+    entry,
+    sequence: normalizedSequence
+  } = getMissionSequenceEntryIndex(sequence, id);
   if (!entry?.makeAvailableAfterMission || entry.availableAfterMissionNumber <= 0) {
     return null;
   }
@@ -874,7 +957,7 @@ export function getMissionStatus(missionId = '', player = null, sequence = null)
     return MISSION_STATUS.locked;
   }
 
-  if (isCustomMissionId(id) && !normalizeMissionSequenceConfig(sequence).some((entry) => entry.missionId === id)) {
+  if (isCustomMissionId(id) && !hasMissionSequenceEntry(sequence, id)) {
     return MISSION_STATUS.locked;
   }
 
@@ -949,7 +1032,7 @@ export function isMissionSelectable(missionId = '', player = null, sequence = nu
     return false;
   }
 
-  if (definition.custom && !normalizeMissionSequenceConfig(sequence).some((entry) => entry.missionId === definition.id)) {
+  if (definition.custom && !hasMissionSequenceEntry(sequence, definition.id)) {
     return false;
   }
 
@@ -1010,24 +1093,33 @@ export function resolveSelectedMissionId(player = null, requestedMissionId = pla
     return requestedId;
   }
 
-  const selectableFallbacks = normalizeMissionSequenceConfig(sequence)
-    .map((entry) => entry.missionId)
-    .filter((missionId) => isMissionSelectable(missionId, player, sequence));
-  return selectableFallbacks.find((missionId) => {
+  const selectableFallbacks = [];
+  const normalizedSequence = normalizeMissionSequenceConfig(sequence);
+  for (const entry of normalizedSequence) {
+    if (isMissionSelectable(entry.missionId, player, normalizedSequence)) {
+      selectableFallbacks.push(entry.missionId);
+    }
+  }
+  for (const missionId of selectableFallbacks) {
     const definition = getMissionDefinition(missionId, sequence);
-    return definition?.repeatable !== true || !isMissionCompleteForSequence(missionId, player, sequence);
-  }) ?? selectableFallbacks[0] ?? '';
+    if (definition?.repeatable !== true || !isMissionCompleteForSequence(missionId, player, sequence)) {
+      return missionId;
+    }
+  }
+  return selectableFallbacks[0] ?? '';
 }
 
 export function getMissionSnapshots(player = null, selectedMissionId = player?.selectedMissionId ?? '', sequence = null) {
   const normalizedSequence = normalizeMissionSequenceConfig(sequence);
   const resolvedSelectedMissionId = resolveSelectedMissionId(player, selectedMissionId, normalizedSequence);
-  return normalizedSequence.map((entry, index) => {
+  const snapshots = [];
+  for (let index = 0; index < normalizedSequence.length; index += 1) {
+    const entry = normalizedSequence[index];
     const definition = getMissionDefinition(entry.missionId, normalizedSequence);
     const status = getMissionStatus(entry.missionId, player, normalizedSequence);
     const selectable = isMissionSelectable(entry.missionId, player, normalizedSequence);
     const hiddenForPlayers = entry.hiddenForPlayers === true;
-    return {
+    snapshots.push({
       id: definition.id,
       missionNumber: index + 1,
       title: hiddenForPlayers ? 'Hidden' : definition.title,
@@ -1046,6 +1138,7 @@ export function getMissionSnapshots(player = null, selectedMissionId = player?.s
       selectable,
       completed: status === MISSION_STATUS.completed,
       locked: status === MISSION_STATUS.locked
-    };
-  });
+    });
+  }
+  return snapshots;
 }

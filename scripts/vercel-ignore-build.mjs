@@ -37,8 +37,17 @@ function normalizeRepoPath(filePath = '') {
 
 function isFrontendPath(filePath = '') {
   const normalized = normalizeRepoPath(filePath).toLowerCase();
-  return FRONTEND_EXACT_PATHS.has(normalized)
-    || FRONTEND_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  if (FRONTEND_EXACT_PATHS.has(normalized)) {
+    return true;
+  }
+
+  for (const prefix of FRONTEND_PATH_PREFIXES) {
+    if (normalized.startsWith(prefix)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function resolveGitCommand() {
@@ -48,9 +57,10 @@ function resolveGitCommand() {
   }
 
   if (process.platform === 'win32') {
-    const candidate = WINDOWS_GIT_CANDIDATES.find((filePath) => existsSync(filePath));
-    if (candidate) {
-      return candidate;
+    for (const filePath of WINDOWS_GIT_CANDIDATES) {
+      if (existsSync(filePath)) {
+        return filePath;
+      }
     }
   }
 
@@ -94,10 +104,15 @@ function getChangedFiles(baseRef, headRef) {
     throw new Error(`Could not read changed files from ${baseRef} to ${headRef}${detail ? `: ${detail}` : ''}`);
   }
 
-  return String(result.stdout || '')
-    .split(/\r?\n/u)
-    .map(normalizeRepoPath)
-    .filter(Boolean);
+  const lines = String(result.stdout || '').split(/\r?\n/u);
+  const changedFiles = [];
+  for (const line of lines) {
+    const normalized = normalizeRepoPath(line);
+    if (normalized) {
+      changedFiles.push(normalized);
+    }
+  }
+  return changedFiles;
 }
 
 function shouldInspectDeployment() {
@@ -129,7 +144,12 @@ function main() {
     process.exit(0);
   }
 
-  const frontendFiles = changedFiles.filter(isFrontendPath);
+  const frontendFiles = [];
+  for (const filePath of changedFiles) {
+    if (isFrontendPath(filePath)) {
+      frontendFiles.push(filePath);
+    }
+  }
   if (frontendFiles.length > 0) {
     log(`Frontend changes detected from ${baseRef} to ${headRef}: ${frontendFiles.join(', ')}`);
     process.exit(1);

@@ -45,11 +45,50 @@ const optimizerArgs = Object.freeze([
   '1024'
 ]);
 
-const definitionById = new Map(MIXAMO_CHARACTER_DEFINITIONS.map((entry) => [entry.id, entry]));
-const definitionByItemId = new Map(MIXAMO_CHARACTER_DEFINITIONS.map((entry) => [entry.itemId, entry]));
-const cliArgs = process.argv.slice(2);
-const flags = new Set(cliArgs.filter((arg) => arg.startsWith('--')));
-const requestedIds = cliArgs.filter((arg) => !arg.startsWith('--'));
+function createDefinitionMap(keyName) {
+  const map = new Map();
+  for (const entry of MIXAMO_CHARACTER_DEFINITIONS) {
+    map.set(entry[keyName], entry);
+  }
+  return map;
+}
+
+function splitCliArgs(args) {
+  const flags = new Set();
+  const requestedIds = [];
+  for (const arg of args) {
+    if (arg.startsWith('--')) {
+      flags.add(arg);
+    } else {
+      requestedIds.push(arg);
+    }
+  }
+  return { flags, requestedIds };
+}
+
+function copyDefinitions(definitions) {
+  const copied = [];
+  for (const definition of definitions) {
+    copied.push(definition);
+  }
+  return copied;
+}
+
+function copyOptimizerArgs() {
+  const args = [];
+  for (const arg of optimizerArgs) {
+    args.push(arg);
+  }
+  return args;
+}
+
+const definitionById = createDefinitionMap('id');
+const definitionByItemId = createDefinitionMap('itemId');
+const cliArgs = [];
+for (let index = 2; index < process.argv.length; index += 1) {
+  cliArgs.push(process.argv[index]);
+}
+const { flags, requestedIds } = splitCliArgs(cliArgs);
 
 installDomShims();
 
@@ -160,21 +199,29 @@ async function getStartupCharacterIds() {
 
 async function getDefinitionsToOptimize() {
   if (requestedIds.length > 0) {
-    return requestedIds.map((id) => {
+    const definitions = [];
+    for (const id of requestedIds) {
       const definition = definitionById.get(id);
       if (!definition) {
         throw new Error(`Unknown Mixamo character id: ${id}`);
       }
-      return definition;
-    });
+      definitions.push(definition);
+    }
+    return definitions;
   }
 
   if (flags.has('--startup-only')) {
     const startupIds = await getStartupCharacterIds();
-    return MIXAMO_CHARACTER_DEFINITIONS.filter((entry) => startupIds.has(entry.id));
+    const definitions = [];
+    for (const entry of MIXAMO_CHARACTER_DEFINITIONS) {
+      if (startupIds.has(entry.id)) {
+        definitions.push(entry);
+      }
+    }
+    return definitions;
   }
 
-  return [...MIXAMO_CHARACTER_DEFINITIONS];
+  return copyDefinitions(MIXAMO_CHARACTER_DEFINITIONS);
 }
 
 async function isRuntimeAssetCurrent(sourcePath, outputPath) {
@@ -210,7 +257,7 @@ async function exportRawGlb(_definition, sourcePath, rawOutputPath) {
 }
 
 function runGltfTransform(rawInputPath, outputPath) {
-  const args = [...optimizerArgs];
+  const args = copyOptimizerArgs();
   args[1] = rawInputPath;
   args[2] = outputPath;
 
@@ -312,8 +359,12 @@ for (const definition of definitions) {
   );
 }
 
-const totalSourceBytes = results.reduce((sum, entry) => sum + entry.sourceBytes, 0);
-const totalRuntimeBytes = results.reduce((sum, entry) => sum + entry.runtimeBytes, 0);
+let totalSourceBytes = 0;
+let totalRuntimeBytes = 0;
+for (const entry of results) {
+  totalSourceBytes += entry.sourceBytes;
+  totalRuntimeBytes += entry.runtimeBytes;
+}
 const totalRatio = totalSourceBytes > 0
   ? `${((1 - (totalRuntimeBytes / totalSourceBytes)) * 100).toFixed(1)}% smaller`
   : 'n/a';

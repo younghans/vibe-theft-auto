@@ -14,6 +14,14 @@ function clampWholeNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, whole));
 }
 
+function cloneCards(cards = []) {
+  const clones = [];
+  for (const card of Array.isArray(cards) ? cards : []) {
+    clones.push({ ...card });
+  }
+  return clones;
+}
+
 function createDeck() {
   const cards = [];
   for (const suit of SUITS) {
@@ -29,7 +37,10 @@ function createDeck() {
 }
 
 function shuffleDeck(deck, rng = Math.random) {
-  const cards = [...deck];
+  const cards = [];
+  for (const card of deck) {
+    cards.push(card);
+  }
   for (let index = cards.length - 1; index > 0; index -= 1) {
     const randomIndex = Math.floor(rng() * (index + 1));
     [cards[index], cards[randomIndex]] = [cards[randomIndex], cards[index]];
@@ -98,8 +109,11 @@ function syncActivePlayerHand(session = null) {
 
 function syncSplitWager(session = null) {
   if (isSplitBlackjackSession(session)) {
-    session.wager = session.playerHands.reduce((total, hand) =>
-      total + Math.max(0, Math.trunc(Number(hand?.wager ?? 0) || 0)), 0);
+    let wager = 0;
+    for (let index = 0; index < session.playerHands.length; index += 1) {
+      wager += Math.max(0, Math.trunc(Number(session.playerHands[index]?.wager ?? 0) || 0));
+    }
+    session.wager = wager;
   }
   return session;
 }
@@ -293,13 +307,28 @@ function getSplitAggregateOutcome(session) {
       return 'push';
     }
   }
-  if (hands.every((hand) => hand?.outcome === 'bust')) {
+  let allBust = hands.length > 0;
+  let hasWin = false;
+  let allPush = hands.length > 0;
+  for (let index = 0; index < hands.length; index += 1) {
+    const outcome = hands[index]?.outcome;
+    if (outcome !== 'bust') {
+      allBust = false;
+    }
+    if (outcome === 'win') {
+      hasWin = true;
+    }
+    if (outcome !== 'push') {
+      allPush = false;
+    }
+  }
+  if (allBust) {
     return 'bust';
   }
-  if (hands.some((hand) => hand?.outcome === 'win')) {
+  if (hasWin) {
     return 'win';
   }
-  if (hands.every((hand) => hand?.outcome === 'push')) {
+  if (allPush) {
     return 'push';
   }
   return 'dealer_win';
@@ -319,9 +348,13 @@ function getSplitHandOutcomeLabel(outcome = '') {
 }
 
 function getSplitResultMessage(session) {
-  const summaries = session.playerHands
-    .map((hand, index) => `Hand ${index + 1} ${getSplitHandOutcomeLabel(hand?.outcome)}`)
-    .join(', ');
+  let summaries = '';
+  for (let index = 0; index < session.playerHands.length; index += 1) {
+    const hand = session.playerHands[index];
+    summaries += summaries
+      ? `, Hand ${index + 1} ${getSplitHandOutcomeLabel(hand?.outcome)}`
+      : `Hand ${index + 1} ${getSplitHandOutcomeLabel(hand?.outcome)}`;
+  }
   return `Split settled: ${summaries}.`;
 }
 
@@ -339,8 +372,11 @@ function finishSplitSession(session) {
   }
   syncSplitWager(session);
   session.phase = 'complete';
-  session.payout = session.playerHands.reduce((total, hand) =>
-    total + Math.max(0, Math.trunc(Number(hand?.payout ?? 0) || 0)), 0);
+  let payout = 0;
+  for (let index = 0; index < session.playerHands.length; index += 1) {
+    payout += Math.max(0, Math.trunc(Number(session.playerHands[index]?.payout ?? 0) || 0));
+  }
+  session.payout = payout;
   session.outcome = getSplitAggregateOutcome(session);
   session.message = getSplitResultMessage(session);
   return syncActivePlayerHand(session);
@@ -363,7 +399,13 @@ function compareHands(session) {
 
 function playDealerHand(session) {
   if (isSplitBlackjackSession(session)) {
-    const hasLiveHand = session.playerHands.some((hand) => hand?.outcome !== 'bust');
+    let hasLiveHand = false;
+    for (let index = 0; index < session.playerHands.length; index += 1) {
+      if (session.playerHands[index]?.outcome !== 'bust') {
+        hasLiveHand = true;
+        break;
+      }
+    }
     if (hasLiveHand) {
       while (getBlackjackHandValue(session.dealerHand) < BLACKJACK_DEALER_STAND_VALUE) {
         drawToHand(session, 'dealerHand');
@@ -383,7 +425,13 @@ function advanceSplitHand(session) {
     return session;
   }
 
-  const nextIndex = session.playerHands.findIndex((hand) => !hand?.outcome);
+  let nextIndex = -1;
+  for (let index = 0; index < session.playerHands.length; index += 1) {
+    if (!session.playerHands[index]?.outcome) {
+      nextIndex = index;
+      break;
+    }
+  }
   if (nextIndex >= 0) {
     session.activeHandIndex = nextIndex;
     syncActivePlayerHand(session);
@@ -581,14 +629,13 @@ export function serializeBlackjackSession(session = null, {
   }
 
   const concealDealer = hideDealerHole && session.phase === 'playerTurn';
-  const dealerHand = session.dealerHand.map((card, index) =>
-    concealDealer && index === 1
+  const dealerHand = [];
+  for (let index = 0; index < session.dealerHand.length; index += 1) {
+    const card = session.dealerHand[index];
+    dealerHand.push(concealDealer && index === 1
       ? { hidden: true, code: '??' }
-      : { ...card }
-  );
-  const dealerVisibleCards = concealDealer
-    ? session.dealerHand.slice(0, 1)
-    : session.dealerHand;
+      : { ...card });
+  }
   const canAct = session.phase === 'playerTurn';
   syncActivePlayerHand(session);
   syncSplitWager(session);
@@ -596,27 +643,33 @@ export function serializeBlackjackSession(session = null, {
   const activeHandIndex = getActiveHandIndex(session);
   const activeHand = getActivePlayerHand(session);
   const activeCards = getActivePlayerCards(session);
-  const playerHands = split
-    ? session.playerHands.map((hand, index) => ({
-      id: hand.id ?? `hand_${index + 1}`,
-      label: `Hand ${index + 1}`,
-      cards: Array.isArray(hand.cards) ? hand.cards.map((card) => ({ ...card })) : [],
-      value: getBlackjackHandValue(hand.cards),
-      wager: hand.wager,
-      outcome: hand.outcome,
-      payout: hand.payout,
-      active: canAct && index === activeHandIndex
-    }))
-    : [{
+  const playerHands = [];
+  if (split) {
+    for (let index = 0; index < session.playerHands.length; index += 1) {
+      const hand = session.playerHands[index];
+      playerHands.push({
+        id: hand.id ?? `hand_${index + 1}`,
+        label: `Hand ${index + 1}`,
+        cards: cloneCards(hand.cards),
+        value: getBlackjackHandValue(hand.cards),
+        wager: hand.wager,
+        outcome: hand.outcome,
+        payout: hand.payout,
+        active: canAct && index === activeHandIndex
+      });
+    }
+  } else {
+    playerHands.push({
       id: 'hand_1',
       label: 'Your Hand',
-      cards: session.playerHand.map((card) => ({ ...card })),
+      cards: cloneCards(session.playerHand),
       value: getBlackjackHandValue(session.playerHand),
       wager: session.wager,
       outcome: session.outcome,
       payout: session.payout,
       active: canAct
-    }];
+    });
+  }
 
   return {
     id: session.id,
@@ -629,10 +682,12 @@ export function serializeBlackjackSession(session = null, {
     split,
     activeHandIndex,
     playerHands,
-    playerHand: activeCards.map((card) => ({ ...card })),
+    playerHand: cloneCards(activeCards),
     dealerHand,
     playerValue: getBlackjackHandValue(activeCards),
-    dealerValue: getBlackjackHandValue(dealerVisibleCards),
+    dealerValue: concealDealer
+      ? getCardValue(session.dealerHand[0]?.rank)
+      : getBlackjackHandValue(session.dealerHand),
     message: session.message,
     canHit: canAct && !activeHand?.outcome,
     canStand: canAct && !activeHand?.outcome,

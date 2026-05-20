@@ -15,8 +15,21 @@ const DEFAULT_AGENT_DEPLOYMENTS_FILE_PATH = fileURLToPath(new URL('../data/agent
 const AGENT_DEPLOYMENTS_STATE_KEY = 'agent_deployments';
 
 const DEPLOYMENT_HISTORY_LIMIT = 50;
+const AGENT_DEPLOYMENT_TARGET_VALUES = new Set(['frontend', 'backend']);
 
 let deploymentStoreQueue = Promise.resolve();
+
+function removeFirstArrayEntry(values) {
+  if (!Array.isArray(values) || !values.length) {
+    return null;
+  }
+  const entry = values[0];
+  for (let index = 1; index < values.length; index += 1) {
+    values[index - 1] = values[index];
+  }
+  values.length -= 1;
+  return entry;
+}
 
 function createEmptyState() {
   return {
@@ -41,13 +54,19 @@ function normalizeTimestamp(value = 0) {
 }
 
 function normalizeDeployTargets(value = []) {
-  const allowedTargets = new Set(['frontend', 'backend']);
   const rawItems = Array.isArray(value)
     ? value
     : String(value ?? '').split(/[\n,]/u);
-  return [...new Set(rawItems
-    .map((target) => String(target ?? '').trim().toLowerCase())
-    .filter((target) => allowedTargets.has(target)))];
+  const seen = new Set();
+  const targets = [];
+  for (let index = 0; index < rawItems.length; index += 1) {
+    const target = String(rawItems[index] ?? '').trim().toLowerCase();
+    if (AGENT_DEPLOYMENT_TARGET_VALUES.has(target) && !seen.has(target)) {
+      seen.add(target);
+      targets.push(target);
+    }
+  }
+  return targets;
 }
 
 function normalizeState(raw = {}) {
@@ -61,7 +80,16 @@ function normalizeState(raw = {}) {
     deployedAt: normalizeTimestamp(raw.deployedAt),
     rolledBackAt: normalizeTimestamp(raw.rolledBackAt),
     updatedAt: normalizeTimestamp(raw.updatedAt),
-    history: history.slice(-DEPLOYMENT_HISTORY_LIMIT).map((entry) => ({
+    history: normalizeDeploymentHistory(history)
+  };
+}
+
+function normalizeDeploymentHistory(history = []) {
+  const startIndex = Math.max(0, history.length - DEPLOYMENT_HISTORY_LIMIT);
+  const normalizedHistory = [];
+  for (let index = startIndex; index < history.length; index += 1) {
+    const entry = history[index];
+    normalizedHistory.push({
       at: normalizeTimestamp(entry?.at),
       action: String(entry?.action ?? ''),
       taskId: String(entry?.taskId ?? ''),
@@ -70,8 +98,9 @@ function normalizeState(raw = {}) {
       rollbackCommitSha: String(entry?.rollbackCommitSha ?? ''),
       deployUrl: String(entry?.deployUrl ?? ''),
       deployTargets: normalizeDeployTargets(entry?.deployTargets)
-    }))
-  };
+    });
+  }
+  return normalizedHistory;
 }
 
 async function readDeploymentState(filePath = AGENT_DEPLOYMENTS_FILE_PATH) {
@@ -191,19 +220,19 @@ export async function recordAgentDeploymentState(payload = {}, {
       state.deployedAt = now;
     }
     state.updatedAt = now;
-    state.history = [
-      ...state.history,
-      {
-        at: now,
-        action,
-        taskId,
-        currentCommitSha,
-        previousCommitSha,
-        rollbackCommitSha,
-        deployUrl,
-        deployTargets
-      }
-    ].slice(-DEPLOYMENT_HISTORY_LIMIT);
+    state.history.push({
+      at: now,
+      action,
+      taskId,
+      currentCommitSha,
+      previousCommitSha,
+      rollbackCommitSha,
+      deployUrl,
+      deployTargets
+    });
+    while (state.history.length > DEPLOYMENT_HISTORY_LIMIT) {
+      removeFirstArrayEntry(state.history);
+    }
 
     return state;
   }, { filePath });

@@ -6,10 +6,19 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const args = process.argv.slice(2);
+const args = [];
+for (let index = 2; index < process.argv.length; index += 1) {
+  args.push(process.argv[index]);
+}
 const force = args.includes('--force') || process.env.npm_config_force === 'true';
 const initGit = args.includes('--init-git') || process.env.npm_config_init_git === 'true';
-const targetArg = args.find((arg) => !arg.startsWith('--')) ?? '.public-export/vibe-theft-auto';
+let targetArg = '.public-export/vibe-theft-auto';
+for (const arg of args) {
+  if (!arg.startsWith('--')) {
+    targetArg = arg;
+    break;
+  }
+}
 const targetRoot = path.resolve(root, targetArg);
 
 function fail(message) {
@@ -55,7 +64,13 @@ function runGit(args) {
 
 async function copyTrackedFiles() {
   const raw = runGit(['ls-files', '-z', '--cached', '--others', '--exclude-standard']);
-  const files = raw.toString('utf8').split('\0').filter(Boolean);
+  const rawFiles = raw.toString('utf8').split('\0');
+  const files = [];
+  for (const file of rawFiles) {
+    if (file) {
+      files.push(file);
+    }
+  }
 
   for (const relativePath of files) {
     const source = path.join(root, relativePath);

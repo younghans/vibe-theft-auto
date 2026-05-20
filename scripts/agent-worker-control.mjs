@@ -85,7 +85,10 @@ const OWNER_FILE = path.join(LOCK_ROOT, 'owner.json');
 const CONTROL_FILE = path.join(WORK_ROOT, '.agent-worker-control.json');
 
 const command = String(process.argv[2] || 'status').toLowerCase();
-const args = process.argv.slice(3);
+const args = [];
+for (let index = 3; index < process.argv.length; index += 1) {
+  args.push(process.argv[index]);
+}
 
 function getOwner() {
   const owner = readJson(OWNER_FILE);
@@ -126,7 +129,14 @@ function printStatus() {
 
 function requestDrain() {
   const all = args.includes('--all');
-  const reason = args.filter((arg) => arg !== '--all').join(' ').trim();
+  let reason = '';
+  for (const arg of args) {
+    if (arg === '--all') {
+      continue;
+    }
+    reason = reason ? `${reason} ${arg}` : arg;
+  }
+  reason = reason.trim();
   const owner = getOwner();
   if (!all && !owner?.active) {
     console.error('No active worker lock was found. Use --all to create a global drain request.');

@@ -44,6 +44,14 @@ const roomSource = fs.readFileSync(`${root}/server/src/WorldRoom.js`, 'utf8');
 const mockServiceSource = fs.readFileSync(`${root}/src/npc/NpcServiceMock.js`, 'utf8');
 const stylesSource = fs.readFileSync(`${root}/styles.css`, 'utf8');
 
+function getSchoolGameIds(games = []) {
+  const ids = [];
+  for (const game of games) {
+    ids.push(game.id);
+  }
+  return ids;
+}
+
 function assertMp3Audio(buffer, label) {
   const hasId3Header = buffer.subarray(0, 3).toString('ascii') === 'ID3';
   const hasFrameSync = buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
@@ -103,8 +111,17 @@ const playerSkills = getPlayerSkillsSnapshot({
   charismaXp: CHARISMA_BEER_XP
 });
 assert.equal(playerSkills.length, 4, 'all initial skills are present');
-assert.equal(playerSkills.find((skill) => skill.id === SKILL_IDS.strength)?.xp, STRENGTH_SNATCH_XP, 'strength XP reads from player state');
-assert.equal(playerSkills.find((skill) => skill.id === SKILL_IDS.charisma)?.xp, CHARISMA_BEER_XP, 'charisma XP reads from player state');
+let strengthSkill = null;
+let charismaSkill = null;
+for (const skill of playerSkills) {
+  if (skill.id === SKILL_IDS.strength) {
+    strengthSkill = skill;
+  } else if (skill.id === SKILL_IDS.charisma) {
+    charismaSkill = skill;
+  }
+}
+assert.equal(strengthSkill?.xp, STRENGTH_SNATCH_XP, 'strength XP reads from player state');
+assert.equal(charismaSkill?.xp, CHARISMA_BEER_XP, 'charisma XP reads from player state');
 
 const serverPlayerShape = { strengthXp: 0, agilityXp: 0, intelligenceXp: 0, charismaXp: 0 };
 const strengthAward = applySkillXpToPlayer(serverPlayerShape, SKILL_IDS.strength, STRENGTH_SNATCH_XP);
@@ -175,7 +192,7 @@ assert.match(stylesSource, /hud-school-countdown-pop/, 'school countdown has a d
 
 const activeSchoolGames = listSchoolMicrogames();
 assert.deepEqual(
-  activeSchoolGames.map((game) => game.id),
+  getSchoolGameIds(activeSchoolGames),
   [
     SCHOOL_MICROGAME_IDS.popQuizPanic,
     SCHOOL_MICROGAME_IDS.geographyGlobe,
@@ -244,8 +261,12 @@ const allPopQuizQuestions = createSchoolPopQuizQuestions({
   })()
 });
 assert.ok(allPopQuizQuestions.length >= 120, 'pop quiz should have a large question bank for variation');
+const uniquePopQuizQuestions = new Set();
+for (const question of allPopQuizQuestions) {
+  uniquePopQuizQuestions.add(question.question);
+}
 assert.equal(
-  new Set(allPopQuizQuestions.map((question) => question.question)).size,
+  uniquePopQuizQuestions.size,
   allPopQuizQuestions.length,
   'pop quiz questions should be unique'
 );

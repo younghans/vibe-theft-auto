@@ -217,12 +217,13 @@ function addPixelText(group, text, {
   material,
   namePrefix
 }) {
-  const chars = [...String(text).toUpperCase()];
+  const chars = String(text).toUpperCase();
   const charAdvance = pixelSize * 6;
   const totalWidth = Math.max(0, (chars.length * charAdvance) - pixelSize);
   let cursorX = centerX - (totalWidth * 0.5);
 
-  for (const [charIndex, char] of chars.entries()) {
+  for (let charIndex = 0; charIndex < chars.length; charIndex += 1) {
+    const char = chars[charIndex];
     const bitmap = FONT[char] ?? FONT[' '];
     for (let row = 0; row < bitmap.length; row += 1) {
       for (let col = 0; col < bitmap[row].length; col += 1) {
@@ -269,12 +270,13 @@ function addCarSidePixelText(group, text, {
   namePrefix,
   mirrorZ = false
 }) {
-  const chars = [...String(text).toUpperCase()];
+  const chars = String(text).toUpperCase();
   const charAdvance = pixelSize * 6;
   const totalWidth = Math.max(0, (chars.length * charAdvance) - pixelSize);
   const originZ = centerZ - (totalWidth * 0.5);
 
-  for (const [charIndex, char] of chars.entries()) {
+  for (let charIndex = 0; charIndex < chars.length; charIndex += 1) {
+    const char = chars[charIndex];
     const bitmap = FONT[char] ?? FONT[' '];
     for (let row = 0; row < bitmap.length; row += 1) {
       for (let col = 0; col < bitmap[row].length; col += 1) {

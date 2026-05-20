@@ -107,6 +107,25 @@ const ITEM_DEFINITIONS = Object.freeze({
   })
 });
 
+const ITEM_DEFINITION_ENTRIES = [];
+for (const key in ITEM_DEFINITIONS) {
+  if (Object.hasOwn(ITEM_DEFINITIONS, key)) {
+    ITEM_DEFINITION_ENTRIES.push(ITEM_DEFINITIONS[key]);
+  }
+}
+const ITEM_DEFINITION_LIST = Object.freeze(ITEM_DEFINITION_ENTRIES);
+const ITEM_BY_EQUIPPED_WEAPON_ID = new Map();
+const ITEM_BY_DRINK_ITEM_ID = new Map();
+
+for (const item of ITEM_DEFINITION_LIST) {
+  if (item.equippedWeaponId) {
+    ITEM_BY_EQUIPPED_WEAPON_ID.set(item.equippedWeaponId, item);
+  }
+  if (item.drinkItemId) {
+    ITEM_BY_DRINK_ITEM_ID.set(item.drinkItemId, item);
+  }
+}
+
 export function normalizeItemId(itemId = '') {
   const normalizedItemId = String(itemId ?? '').trim();
   return ITEM_DEFINITIONS[normalizedItemId]?.id ?? '';
@@ -117,7 +136,7 @@ export function getItemDefinition(itemId = '') {
 }
 
 export function listItemDefinitions() {
-  return Object.freeze(Object.values(ITEM_DEFINITIONS));
+  return ITEM_DEFINITION_LIST;
 }
 
 export function getItemKind(itemId = '') {
@@ -150,12 +169,12 @@ export function getItemActionLabel(itemId = '', fallback = 'Use') {
 
 export function getItemByEquippedWeaponId(weaponId = '') {
   const normalizedWeaponId = String(weaponId ?? '').trim();
-  return Object.values(ITEM_DEFINITIONS).find((item) => item.equippedWeaponId === normalizedWeaponId) ?? null;
+  return ITEM_BY_EQUIPPED_WEAPON_ID.get(normalizedWeaponId) ?? null;
 }
 
 export function getItemByDrinkItemId(drinkItemId = '') {
   const normalizedDrinkItemId = String(drinkItemId ?? '').trim();
-  return Object.values(ITEM_DEFINITIONS).find((item) => item.drinkItemId === normalizedDrinkItemId) ?? null;
+  return ITEM_BY_DRINK_ITEM_ID.get(normalizedDrinkItemId) ?? null;
 }
 
 export function getItemEquipAnimation(itemId = '') {

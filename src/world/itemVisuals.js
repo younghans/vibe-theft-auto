@@ -133,8 +133,9 @@ export async function instantiateItemVisual(library, item) {
   const underlayOffsets = item?.layer === 'tile'
     ? getTileLocalCellOffsets(item)
     : [{ x: 0, z: 0 }];
-  const underlayObjects = await Promise.all(
-    underlayOffsets.map(async (offset) => {
+  const underlayPromises = [];
+  for (const offset of underlayOffsets) {
+    underlayPromises.push((async () => {
       const underlayObject = await library.instantiate(underlayItem.asset);
       underlayObject.position.set(
         offset.x - tileCenterOffset.x,
@@ -143,16 +144,19 @@ export async function instantiateItemVisual(library, item) {
       );
       root.add(underlayObject);
       return underlayObject;
-    })
-  );
+    })());
+  }
+  const underlayObjects = await Promise.all(underlayPromises);
+  const parts = [];
+  for (const object of underlayObjects) {
+    parts.push({ object, item: underlayItem, role: 'underlay' });
+  }
+  parts.push({ object: primaryObject, item, role: 'primary' });
 
   return {
     root,
     colliderObject: primaryObject,
-    parts: [
-      ...underlayObjects.map((object) => ({ object, item: underlayItem, role: 'underlay' })),
-      { object: primaryObject, item, role: 'primary' }
-    ]
+    parts
   };
 }
 

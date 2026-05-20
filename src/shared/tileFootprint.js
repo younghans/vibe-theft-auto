@@ -81,10 +81,15 @@ export function getTileOccupiedCellOffsets(item, rotationQuarterTurns = 0) {
 }
 
 export function getTileOccupiedCells(item, cellX, cellZ, rotationQuarterTurns = 0) {
-  return getTileOccupiedCellOffsets(item, rotationQuarterTurns).map((offset) => ({
-    x: cellX + offset.x,
-    z: cellZ + offset.z
-  }));
+  const offsets = getTileOccupiedCellOffsets(item, rotationQuarterTurns);
+  const cells = [];
+  for (const offset of offsets) {
+    cells.push({
+      x: cellX + offset.x,
+      z: cellZ + offset.z
+    });
+  }
+  return cells;
 }
 
 export function getTileAnchorWorldPosition(cellX, cellZ) {

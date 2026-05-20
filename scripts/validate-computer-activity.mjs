@@ -71,6 +71,123 @@ function getBoundsForObject(root, name) {
   return new THREE.Box3().setFromObject(object);
 }
 
+function hasPlacementWithItemId(placements, itemId) {
+  if (!placements) {
+    return false;
+  }
+  for (const placement of placements) {
+    if (placement.itemId === itemId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findStationById(stations, stationId) {
+  for (const station of stations) {
+    if (station.id === stationId) {
+      return station;
+    }
+  }
+  return null;
+}
+
+function hasStationWithJobId(stations, jobId) {
+  for (const station of stations) {
+    if (station.jobId === jobId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasCeoTransportStation(stations) {
+  for (const station of stations) {
+    if (
+      station.type === OFFICE_INTERIOR_STATION_TYPES.transport
+      && station.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.ceo
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectOfficeInteractables(scene) {
+  const jobStations = [];
+  const floorTransitions = [];
+  for (const interactable of scene.interactables) {
+    if (interactable.kind === 'office-job-station') {
+      jobStations.push(interactable);
+    } else if (interactable.kind === 'office-floor-transition') {
+      floorTransitions.push(interactable);
+    }
+  }
+  return { jobStations, floorTransitions };
+}
+
+function findOfficeJobStation(jobStations, officeJobId) {
+  for (const station of jobStations) {
+    if (station.officeJobId === officeJobId) {
+      return station;
+    }
+  }
+  return null;
+}
+
+function assertParseableJobStationPlacementIds(jobStations) {
+  for (const station of jobStations) {
+    assert(parseOfficeInteriorStationPlacementId(station.placementId), 'Office job stations should use parseable virtual placement IDs.');
+  }
+}
+
+function assertCubicleElevatorAisleClear(cubicleWorkstations, elevatorX, approachClearZ) {
+  for (const cubicle of cubicleWorkstations) {
+    assert(
+      Math.abs(cubicle.position.x - elevatorX) > 3.0 || cubicle.position.z > approachClearZ,
+      'Second-floor cubicles should leave a clear elevator approach aisle.'
+    );
+  }
+}
+
+function hasCubicleAtLayoutSlot(cubicleWorkstations, expectedCubicle) {
+  for (const cubicle of cubicleWorkstations) {
+    if (
+      Math.abs(cubicle.position.x - expectedCubicle.centerX) < 0.001
+      && Math.abs(cubicle.position.z - expectedCubicle.centerZ) < 0.001
+      && Math.abs(cubicle.rotation.y - expectedCubicle.rotationY) < 0.001
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function countUniqueCubiclePositions(cubicleWorkstations, axis) {
+  const uniquePositions = new Set();
+  for (const cubicle of cubicleWorkstations) {
+    uniquePositions.add(cubicle.position[axis].toFixed(2));
+  }
+  return uniquePositions.size;
+}
+
+function getClosestCubicleZ(cubicleWorkstations) {
+  let closestZ = Infinity;
+  for (const cubicle of cubicleWorkstations) {
+    closestZ = Math.min(closestZ, cubicle.position.z);
+  }
+  return closestZ;
+}
+
+function hasAnimationTrackNamed(clip, trackName) {
+  for (const track of clip.tracks) {
+    if (track.name === trackName) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function validateBuilderDefinition() {
   const item = getBuilderItemById(OFFICE_JOB_TERMINAL_ITEM_ID);
   assert(item, 'Standing desk computer builder item is missing.');
@@ -190,16 +307,16 @@ async function validateOfficeBuildingInteriorFlow() {
 
   const stations = listOfficeInteriorStations();
   assert(stations.length >= 7, 'Office interior should define lobby, cubicle, and CEO stations.');
-  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.janitor), 'Office lobby should expose the janitor station.');
-  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.officeManager), 'Office second floor should expose the office manager station.');
-  assert(stations.some((station) => station.jobId === OFFICE_JOB_IDS.ceo), 'Office top floor should expose the CEO station.');
-  assert(stations.some((station) => station.type === OFFICE_INTERIOR_STATION_TYPES.transport && station.targetFloorId === OFFICE_INTERIOR_FLOOR_IDS.ceo), 'Office break room should include the CEO elevator.');
-  const stairsToCubicles = stations.find((station) => station.id === 'stairs-to-cubicles');
-  const stairsToLobby = stations.find((station) => station.id === 'stairs-to-lobby');
-  const elevatorToCeo = stations.find((station) => station.id === 'elevator-to-ceo');
-  const elevatorToCubicles = stations.find((station) => station.id === 'elevator-to-cubicles');
-  const janitorCloset = stations.find((station) => station.id === 'janitor-closet');
-  const ceoMeetingTableStation = stations.find((station) => station.id === 'ceo-meeting-table');
+  assert(hasStationWithJobId(stations, OFFICE_JOB_IDS.janitor), 'Office lobby should expose the janitor station.');
+  assert(hasStationWithJobId(stations, OFFICE_JOB_IDS.officeManager), 'Office second floor should expose the office manager station.');
+  assert(hasStationWithJobId(stations, OFFICE_JOB_IDS.ceo), 'Office top floor should expose the CEO station.');
+  assert(hasCeoTransportStation(stations), 'Office break room should include the CEO elevator.');
+  const stairsToCubicles = findStationById(stations, 'stairs-to-cubicles');
+  const stairsToLobby = findStationById(stations, 'stairs-to-lobby');
+  const elevatorToCeo = findStationById(stations, 'elevator-to-ceo');
+  const elevatorToCubicles = findStationById(stations, 'elevator-to-cubicles');
+  const janitorCloset = findStationById(stations, 'janitor-closet');
+  const ceoMeetingTableStation = findStationById(stations, 'ceo-meeting-table');
   const cubicleElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   const ceoElevatorDoor = getOfficeInteriorElevatorDoorPosition(OFFICE_INTERIOR_FLOOR_IDS.ceo);
   const cubicleElevatorArrival = getOfficeInteriorElevatorArrivalPosition(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
@@ -229,14 +346,13 @@ async function validateOfficeBuildingInteriorFlow() {
     includeExitInteractable: false
   });
   assert(scene, 'Office interior scene should be creatable.');
-  const jobStations = scene.interactables.filter((interactable) => interactable.kind === 'office-job-station');
-  const floorTransitions = scene.interactables.filter((interactable) => interactable.kind === 'office-floor-transition');
+  const { jobStations, floorTransitions } = collectOfficeInteractables(scene);
   assert(jobStations.length === 3, 'Office interior should expose exactly three job station prompts.');
   assert(floorTransitions.length >= 4, 'Office interior should expose stairs and elevator prompts.');
-  assert(jobStations.every((station) => parseOfficeInteriorStationPlacementId(station.placementId)), 'Office job stations should use parseable virtual placement IDs.');
-  const janitorStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.janitor);
-  const managerStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.officeManager);
-  const ceoStation = jobStations.find((station) => station.officeJobId === OFFICE_JOB_IDS.ceo);
+  assertParseableJobStationPlacementIds(jobStations);
+  const janitorStation = findOfficeJobStation(jobStations, OFFICE_JOB_IDS.janitor);
+  const managerStation = findOfficeJobStation(jobStations, OFFICE_JOB_IDS.officeManager);
+  const ceoStation = findOfficeJobStation(jobStations, OFFICE_JOB_IDS.ceo);
   assert(janitorStation && managerStation && ceoStation, 'Office scene should include all three room-specific job stations.');
   assert(Math.abs(janitorStation.position.y - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby)) < 0.001, 'Janitor station should be on the lobby floor.');
   assert(Math.abs(managerStation.position.y - getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.cubicles)) < 0.001, 'Manager station should be on the second floor.');
@@ -358,20 +474,13 @@ async function validateOfficeBuildingInteriorFlow() {
 
   const [cubicleElevatorVisualX, cubicleElevatorVisualZ] = getOfficeInteriorElevatorCenter(OFFICE_INTERIOR_FLOOR_IDS.cubicles);
   const cubicleElevatorApproachClearZ = cubicleElevatorVisualZ + OFFICE_INTERIOR_ELEVATOR_SIZE.depth + 1.2;
-  assert(cubicleWorkstations.every((cubicle) => (
-    Math.abs(cubicle.position.x - cubicleElevatorVisualX) > 3.0
-    || cubicle.position.z > cubicleElevatorApproachClearZ
-  )), 'Second-floor cubicles should leave a clear elevator approach aisle.');
+  assertCubicleElevatorAisleClear(cubicleWorkstations, cubicleElevatorVisualX, cubicleElevatorApproachClearZ);
   for (const expectedCubicle of OFFICE_INTERIOR_CUBICLE_WORKSTATIONS) {
-    assert(cubicleWorkstations.some((cubicle) => (
-      Math.abs(cubicle.position.x - expectedCubicle.centerX) < 0.001
-      && Math.abs(cubicle.position.z - expectedCubicle.centerZ) < 0.001
-      && Math.abs(cubicle.rotation.y - expectedCubicle.rotationY) < 0.001
-    )), 'Second-floor cubicles should use the shared compact grid layout.');
+    assert(hasCubicleAtLayoutSlot(cubicleWorkstations, expectedCubicle), 'Second-floor cubicles should use the shared compact grid layout.');
   }
-  assert(new Set(cubicleWorkstations.map((cubicle) => cubicle.position.x.toFixed(2))).size === 3, 'Second-floor cubicles should form three clean columns.');
-  assert(new Set(cubicleWorkstations.map((cubicle) => cubicle.position.z.toFixed(2))).size === 3, 'Second-floor cubicles should form three clean rows.');
-  const closestCubicleToElevator = Math.min(...cubicleWorkstations.map((cubicle) => cubicle.position.z));
+  assert(countUniqueCubiclePositions(cubicleWorkstations, 'x') === 3, 'Second-floor cubicles should form three clean columns.');
+  assert(countUniqueCubiclePositions(cubicleWorkstations, 'z') === 3, 'Second-floor cubicles should form three clean rows.');
+  const closestCubicleToElevator = getClosestCubicleZ(cubicleWorkstations);
   const breakRoomSouthEdge = OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.centerZ + (OFFICE_INTERIOR_BREAK_ROOM_RIGHT_WALL.depth * 0.5);
   assert(closestCubicleToElevator - cubicleElevatorApproachClearZ > 2.4, 'Second-floor cubicle grid should not crowd the elevator aisle.');
   assert(closestCubicleToElevator - breakRoomSouthEdge > 2.4, 'Second-floor cubicle grid should not crowd the break room.');
@@ -463,7 +572,12 @@ async function validateOfficeBuildingInteriorFlow() {
       getOfficeInteriorFloorHeight(floorId) + 1,
       1000 + localZ
     );
-    return colliders.some((collider) => (collider.box ?? collider).containsPoint?.(point));
+    for (const collider of colliders) {
+      if ((collider.box ?? collider).containsPoint?.(point)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function collidersBlockPlayerAtLocalPoint(colliders, floorId, localX, localZ) {
@@ -472,17 +586,20 @@ async function validateOfficeBuildingInteriorFlow() {
       getOfficeInteriorFloorHeight(floorId) + 1,
       1000 + localZ
     );
-    return colliders.some((collider) => {
+    for (const collider of colliders) {
       const box = collider.box ?? collider;
-      return Boolean(
+      if (
         box?.min
         && box?.max
         && point.x > box.min.x - PLAYER_RADIUS
         && point.x < box.max.x + PLAYER_RADIUS
         && point.z > box.min.z - PLAYER_RADIUS
         && point.z < box.max.z + PLAYER_RADIUS
-      );
-    });
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   const lobbyColliders = scene.getActiveOfficeColliders(new THREE.Vector3(1000, getOfficeInteriorFloorHeight(OFFICE_INTERIOR_FLOOR_IDS.lobby), 1000));
@@ -607,9 +724,8 @@ async function validateAssets() {
   assert(typingClip.name === 'typing', 'Typing clip should be named "typing".');
   assert(typingClip.duration >= 3 && typingClip.duration <= 30, 'Typing clip duration is outside the expected range.');
   assert(typingClip.tracks.length >= 13, 'Typing clip should include the core upper-body tracks.');
-  const trackNames = typingClip.tracks.map((track) => track.name);
   for (const requiredTrack of ['mixamorigSpine.quaternion', 'mixamorigRightHand.quaternion', 'mixamorigLeftHand.quaternion']) {
-    assert(trackNames.includes(requiredTrack), `Typing clip missing required track "${requiredTrack}".`);
+    assert(hasAnimationTrackNamed(typingClip, requiredTrack), `Typing clip missing required track "${requiredTrack}".`);
   }
 
   const typingAudioPath = getAssetPath(assets.audio.typingOnKeyboard);
@@ -804,21 +920,21 @@ async function validateOfficeJobHudSurfaces() {
 
 async function validateCheckedInPlacements() {
   assert(
-    defaultWorldLayout.props.some((placement) => placement.itemId === 'standing_desk_computer'),
+    hasPlacementWithItemId(defaultWorldLayout.props, 'standing_desk_computer'),
     'Default world should include a standing desk computer placement.'
   );
 
   const savedLayout = JSON.parse(await readFile(new URL('../server/data/world-layout.json', import.meta.url), 'utf8'));
   assert(
-    savedLayout.props?.some((placement) => placement.itemId === 'standing_desk_computer'),
+    hasPlacementWithItemId(savedLayout.props, 'standing_desk_computer'),
     'Fallback saved world layout should include a standing desk computer placement.'
   );
   assert(
-    defaultWorldLayout.tiles.some((placement) => placement.itemId === OFFICE_BUILDING_ITEM_ID),
+    hasPlacementWithItemId(defaultWorldLayout.tiles, OFFICE_BUILDING_ITEM_ID),
     'Default world should include the multi-story office building.'
   );
   assert(
-    savedLayout.tiles?.some((placement) => placement.itemId === OFFICE_BUILDING_ITEM_ID),
+    hasPlacementWithItemId(savedLayout.tiles, OFFICE_BUILDING_ITEM_ID),
     'Fallback saved world layout should include the multi-story office building.'
   );
 }

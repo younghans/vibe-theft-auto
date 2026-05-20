@@ -8,6 +8,7 @@ import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 
 const REMOTE_PREVIEW_COLOR = new THREE.Color(0x68c7ff);
+const EMPTY_MAP = new Map();
 
 function clonePreviewMaterial(material, opacity = 0.42) {
   const next = material.clone();
@@ -16,10 +17,10 @@ function clonePreviewMaterial(material, opacity = 0.42) {
   next.depthWrite = false;
 
   if ('emissive' in next) {
-    next.emissive = next.emissive.clone().lerp(REMOTE_PREVIEW_COLOR, 0.78);
+    next.emissive.lerp(REMOTE_PREVIEW_COLOR, 0.78);
     next.emissiveIntensity = 1;
   } else if ('color' in next) {
-    next.color = next.color.clone().lerp(REMOTE_PREVIEW_COLOR, 0.5);
+    next.color.lerp(REMOTE_PREVIEW_COLOR, 0.5);
   }
 
   return next;
@@ -31,9 +32,15 @@ function applyPreviewMaterial(root) {
       return;
     }
 
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const clonedMaterials = materials.map((material) => clonePreviewMaterial(material));
-    node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
+    if (Array.isArray(node.material)) {
+      const clonedMaterials = new Array(node.material.length);
+      for (let index = 0; index < node.material.length; index += 1) {
+        clonedMaterials[index] = clonePreviewMaterial(node.material[index]);
+      }
+      node.material = clonedMaterials;
+    } else {
+      node.material = clonePreviewMaterial(node.material);
+    }
     node.renderOrder = 9;
   });
 }
@@ -61,17 +68,25 @@ export class RemoteBuilderRenderer {
     this.worldRenderer = worldRenderer;
     this.entries = new Map();
     this.loadTokens = new Map();
+    this.selectionCenterScratch = new THREE.Vector3();
+    this.selectionSizeScratch = new THREE.Vector3();
   }
 
   clear() {
-    for (const sessionId of [...this.entries.keys()]) {
+    const sessionIds = [];
+    for (const sessionId of this.entries.keys()) {
+      sessionIds.push(sessionId);
+    }
+    for (let index = 0; index < sessionIds.length; index += 1) {
+      const sessionId = sessionIds[index];
       this.remove(sessionId);
     }
   }
 
-  sync(builders = new Map()) {
+  sync(builders = EMPTY_MAP) {
     const nextIds = new Set();
-    for (const [sessionId, presence] of builders.entries()) {
+    for (const sessionId of builders.keys()) {
+      const presence = builders.get(sessionId);
       if (!presence?.active) {
         continue;
       }
@@ -80,10 +95,14 @@ export class RemoteBuilderRenderer {
       void this.upsert(sessionId, presence);
     }
 
-    for (const sessionId of [...this.entries.keys()]) {
+    const staleSessionIds = [];
+    for (const sessionId of this.entries.keys()) {
       if (!nextIds.has(sessionId)) {
-        this.remove(sessionId);
+        staleSessionIds.push(sessionId);
       }
+    }
+    for (let index = 0; index < staleSessionIds.length; index += 1) {
+      this.remove(staleSessionIds[index]);
     }
   }
 
@@ -234,8 +253,8 @@ export class RemoteBuilderRenderer {
       return;
     }
 
-    const center = bounds.getCenter(new THREE.Vector3());
-    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(this.selectionCenterScratch);
+    const size = bounds.getSize(this.selectionSizeScratch);
     const ringScale = Math.max(1, Math.max(size.x, size.z) / 4.5);
     entry.selectionRing.position.set(center.x, 0.08, center.z);
     entry.selectionRing.scale.setScalar(ringScale);

@@ -280,9 +280,9 @@ export class SchoolTeacherPreviewRenderer {
       turning: this.createStatusLight(0xffd166, -0.92),
       looking: this.createStatusLight(0xff607f, -0.36)
     };
-    for (const light of Object.values(this.statusLights)) {
-      room.add(light);
-    }
+    room.add(this.statusLights.away);
+    room.add(this.statusLights.turning);
+    room.add(this.statusLights.looking);
 
     this.scene.add(this.teacherPivot);
   }
@@ -483,7 +483,12 @@ export class SchoolTeacherPreviewRenderer {
     this.boardMesh.material.emissive.setHex(mode === 'away' ? 0x08221d : mode === 'turning' ? 0x322600 : 0x320814);
     this.boardMesh.material.emissiveIntensity = mode === 'away' ? 0.28 : 0.48;
 
-    for (const [key, light] of Object.entries(this.statusLights)) {
+    for (const key in this.statusLights) {
+      if (!Object.hasOwn(this.statusLights, key)) {
+        continue;
+      }
+
+      const light = this.statusLights[key];
       const active = key === mode || (key === 'away' && mode === 'away');
       light.material.color.setHex(active ? light.userData.activeColor : 0x2a3036);
       light.material.emissiveIntensity = active ? 1.8 : 0.05;

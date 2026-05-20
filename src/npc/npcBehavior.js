@@ -68,6 +68,38 @@ export const NPC_ACTIVITY_MIN_DURATIONS_MS = Object.freeze({
   snatch: 5435
 });
 
+const NPC_STEP_TYPE_LIST = Object.freeze([
+  NPC_STEP_TYPES.travelToPlacement,
+  NPC_STEP_TYPES.usePlacement,
+  NPC_STEP_TYPES.loiterNearPlacement,
+  NPC_STEP_TYPES.enterHideAtPlacement,
+  NPC_STEP_TYPES.wanderNearPlacement
+]);
+const NPC_STEP_TYPE_SET = new Set(NPC_STEP_TYPE_LIST);
+const NPC_SPEED_TIER_LIST = Object.freeze([
+  NPC_SPEED_TIERS.slow,
+  NPC_SPEED_TIERS.fast
+]);
+const NPC_SPEED_TIER_SET = new Set(NPC_SPEED_TIER_LIST);
+const NPC_COMBAT_ARCHETYPE_LIST = Object.freeze([
+  NPC_COMBAT_ARCHETYPES.passive,
+  NPC_COMBAT_ARCHETYPES.hostile
+]);
+const NPC_COMBAT_ARCHETYPE_SET = new Set(NPC_COMBAT_ARCHETYPE_LIST);
+const NON_RUNTIME_RESET_NPC_UPDATE_KEYS = new Set([
+  'deliveryQuestEnabled',
+  'gymCheckInEnabled',
+  'rentCollectorEnabled',
+  'stockMarketEnabled',
+  'bartenderEnabled',
+  'pawnShopOwnerEnabled',
+  'carDealerEnabled',
+  'marthaEnabled',
+  'blackjackDealerEnabled',
+  'schoolMicrogameEnabled',
+  'schoolMicrogameId'
+]);
+
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -98,7 +130,7 @@ function normalizeWeaponId(value, fallback = '') {
 }
 
 export function normalizeNpcSpeedTier(value, fallback = NPC_DEFAULT_SPEED_TIER) {
-  return Object.values(NPC_SPEED_TIERS).includes(value)
+  return NPC_SPEED_TIER_SET.has(value)
     ? value
     : fallback;
 }
@@ -140,12 +172,18 @@ export function cloneNpcRoutine(routine = null) {
     return createDefaultNpcRoutine();
   }
 
+  const steps = [];
+  for (const step of routine.steps ?? []) {
+    const clonedStep = cloneNpcRoutineStep(step);
+    if (clonedStep) {
+      steps.push(clonedStep);
+    }
+  }
+
   return {
     mode: routine.mode ?? NPC_ROUTINE_MODES.loop,
     resumePolicy: routine.resumePolicy ?? 'resume-step',
-    steps: (routine.steps ?? [])
-      .map((step) => cloneNpcRoutineStep(step))
-      .filter(Boolean)
+    steps
   };
 }
 
@@ -227,7 +265,7 @@ export function normalizeNpcRoutineStep(step = null) {
   const draft = step && typeof step === 'object'
     ? step
     : {};
-  const type = Object.values(NPC_STEP_TYPES).includes(draft.type)
+  const type = NPC_STEP_TYPE_SET.has(draft.type)
     ? draft.type
     : NPC_STEP_TYPES.travelToPlacement;
 
@@ -275,6 +313,13 @@ export function normalizeNpcRoutine(routine = null) {
   const draft = routine && typeof routine === 'object'
     ? routine
     : {};
+  const steps = [];
+  for (const step of draft.steps ?? []) {
+    const normalizedStep = normalizeNpcRoutineStep(step);
+    if (normalizedStep) {
+      steps.push(normalizedStep);
+    }
+  }
 
   return {
     mode: draft.mode === NPC_ROUTINE_MODES.loop
@@ -283,46 +328,60 @@ export function normalizeNpcRoutine(routine = null) {
     resumePolicy: typeof draft.resumePolicy === 'string' && draft.resumePolicy.trim()
       ? draft.resumePolicy.trim()
       : 'resume-step',
-    steps: (draft.steps ?? [])
-      .map((step) => normalizeNpcRoutineStep(step))
-      .filter(Boolean)
+    steps
   };
 }
 
-function getNpcRoutineRuntimeStructure(routine = null) {
-  const normalizedRoutine = normalizeNpcRoutine(routine);
-  return {
-    mode: normalizedRoutine.mode,
-    resumePolicy: normalizedRoutine.resumePolicy,
-    steps: normalizedRoutine.steps.map((step) => ({
-      type: step.type,
-      targetPlacementId: step.targetPlacementId ?? ''
-    }))
-  };
+function npcRoutinesHaveSameRuntimeStructure(previousRoutine = null, nextRoutine = null) {
+  const previous = normalizeNpcRoutine(previousRoutine);
+  const next = normalizeNpcRoutine(nextRoutine);
+  if (previous.mode !== next.mode || previous.resumePolicy !== next.resumePolicy) {
+    return false;
+  }
+
+  if (previous.steps.length !== next.steps.length) {
+    return false;
+  }
+
+  for (let index = 0; index < previous.steps.length; index += 1) {
+    const previousStep = previous.steps[index];
+    const nextStep = next.steps[index];
+    if (
+      previousStep.type !== nextStep.type
+      || (previousStep.targetPlacementId ?? '') !== (nextStep.targetPlacementId ?? '')
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getSingleOwnKey(value = null) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  let singleKey = null;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+    if (singleKey !== null) {
+      return '';
+    }
+    singleKey = key;
+  }
+  return singleKey;
 }
 
 export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextNpc = null, updates = {}) {
-  if (Object.keys(updates ?? {}).length === 1 && Object.hasOwn(updates, 'routine')) {
-    return JSON.stringify(getNpcRoutineRuntimeStructure(previousNpc?.routine))
-      !== JSON.stringify(getNpcRoutineRuntimeStructure(nextNpc?.routine));
+  const singleUpdateKey = getSingleOwnKey(updates);
+  if (singleUpdateKey === 'routine') {
+    return !npcRoutinesHaveSameRuntimeStructure(previousNpc?.routine, nextNpc?.routine);
   }
 
-  if (
-    Object.keys(updates ?? {}).length === 1
-    && (
-      Object.hasOwn(updates, 'deliveryQuestEnabled')
-      || Object.hasOwn(updates, 'gymCheckInEnabled')
-      || Object.hasOwn(updates, 'rentCollectorEnabled')
-      || Object.hasOwn(updates, 'stockMarketEnabled')
-      || Object.hasOwn(updates, 'bartenderEnabled')
-      || Object.hasOwn(updates, 'pawnShopOwnerEnabled')
-      || Object.hasOwn(updates, 'carDealerEnabled')
-      || Object.hasOwn(updates, 'marthaEnabled')
-      || Object.hasOwn(updates, 'blackjackDealerEnabled')
-      || Object.hasOwn(updates, 'schoolMicrogameEnabled')
-      || Object.hasOwn(updates, 'schoolMicrogameId')
-    )
-  ) {
+  if (singleUpdateKey && NON_RUNTIME_RESET_NPC_UPDATE_KEYS.has(singleUpdateKey)) {
     return false;
   }
 
@@ -338,7 +397,7 @@ export function normalizeNpcCombat(combat = null) {
     : draft.archetype === 'flee'
       ? NPC_COMBAT_ARCHETYPES.passive
       : draft.archetype;
-  const archetype = Object.values(NPC_COMBAT_ARCHETYPES).includes(requestedArchetype)
+  const archetype = NPC_COMBAT_ARCHETYPE_SET.has(requestedArchetype)
     ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
   const defaultWeaponId = archetype === NPC_COMBAT_ARCHETYPES.hostile
@@ -381,7 +440,7 @@ export function cloneNpcBehavior(npc = null) {
     routine: cloneNpcRoutine(npc?.routine),
     combat: cloneNpcCombat(npc?.combat),
     spawnPosition: Array.isArray(npc?.spawnPosition)
-      ? [...npc.spawnPosition]
+      ? [npc.spawnPosition[0], npc.spawnPosition[1]]
       : null
   };
 }
@@ -423,16 +482,13 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
 }
 
 export function listNpcStepTypes() {
-  return Object.values(NPC_STEP_TYPES);
+  return NPC_STEP_TYPE_LIST;
 }
 
 export function listNpcCombatArchetypes() {
-  return [
-    NPC_COMBAT_ARCHETYPES.passive,
-    NPC_COMBAT_ARCHETYPES.hostile
-  ];
+  return NPC_COMBAT_ARCHETYPE_LIST;
 }
 
 export function listNpcSpeedTiers() {
-  return Object.values(NPC_SPEED_TIERS);
+  return NPC_SPEED_TIER_LIST;
 }

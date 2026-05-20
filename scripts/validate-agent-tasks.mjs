@@ -28,6 +28,7 @@ const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'vta-agent-tasks-'));
 const filePath = path.join(tempRoot, 'agent-tasks.json');
 const deploymentFilePath = path.join(tempRoot, 'agent-deployments.json');
 const hudSource = await fsp.readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
+const agentWorkerSource = await fsp.readFile(new URL('./agent-worker.mjs', import.meta.url), 'utf8');
 
 try {
   assert.match(hudSource, /deploy_queued:\s*'Deploy Queued'/, 'HUD should label approved pending deploys as deploy queued.');
@@ -40,6 +41,8 @@ try {
   assert.match(hudSource, /onLoadMore/, 'HUD should notify the game when prompt threads request more rows.');
   assert.match(hudSource, /lastAdminPromptBottomScrollSignature/, 'HUD should track prompt thread bottom scroll state.');
   assert.match(hudSource, /isAdminPromptDetailNearBottom/, 'HUD should only follow same-thread updates when the reader is near the bottom.');
+  assert.match(agentWorkerSource, /\$isTaskRelated = \$false/, 'Worker process cleanup should track whether a process belongs to the current task.');
+  assert.match(agentWorkerSource, /\$includeDetachedLocalHelpers -and \$isNew -and \$isTaskRelated/, 'Worker cleanup should only kill detached helpers related to the current task.');
 
   const created = await createAgentTask({
     scope: 'game',
@@ -93,7 +96,14 @@ try {
     level: 'info',
     message: 'Validation log entry.'
   }, { filePath });
-  assert.ok(logged.logs.some((entry) => entry.message === 'Validation log entry.'));
+  let foundValidationLog = false;
+  for (const entry of logged.logs) {
+    if (entry.message === 'Validation log entry.') {
+      foundValidationLog = true;
+      break;
+    }
+  }
+  assert.ok(foundValidationLog);
 
   const ready = await updateAgentTask(created.id, {
     status: 'ready_for_review',
@@ -149,7 +159,13 @@ try {
     compact: true,
     filePath
   });
-  const compactPromptThread = compactThreadSummaries.find((task) => task.threadId === readyWithoutDeployApproval.threadId);
+  let compactPromptThread = null;
+  for (const task of compactThreadSummaries) {
+    if (task.threadId === readyWithoutDeployApproval.threadId) {
+      compactPromptThread = task;
+      break;
+    }
+  }
   assert.ok(compactPromptThread, 'Prompt thread summaries should include latest tasks per thread.');
   assert.equal(compactPromptThread.logs, undefined);
   assert.equal(compactPromptThread.snapshot, undefined);
@@ -282,7 +298,13 @@ try {
     staleActiveAfterMs: 1,
     filePath
   });
-  const failedHeartbeatTask = staleHeartbeatTasks.find((task) => task.id === heartbeatTask.id);
+  let failedHeartbeatTask = null;
+  for (const task of staleHeartbeatTasks) {
+    if (task.id === heartbeatTask.id) {
+      failedHeartbeatTask = task;
+      break;
+    }
+  }
   assert.equal(failedHeartbeatTask.status, 'failed');
   assert.match(failedHeartbeatTask.error, /heartbeat expired/u);
 
@@ -376,7 +398,14 @@ try {
   assert.equal(retryReady.claimedAt, 0);
   assert.equal(retryReady.workerHeartbeatAt, 0);
   assert.equal(retryReady.workerHeartbeatStatus, '');
-  assert.ok(retryReady.logs.some((entry) => /stale deploy approval cleared/u.test(entry.message)));
+  let staleApprovalLogFound = false;
+  for (const entry of retryReady.logs) {
+    if (/stale deploy approval cleared/u.test(entry.message)) {
+      staleApprovalLogFound = true;
+      break;
+    }
+  }
+  assert.ok(staleApprovalLogFound);
   const retryApprovedAgain = await approveAgentTaskDeploy(retryDeployTask.id, {
     approvedBy: 'validator',
     filePath

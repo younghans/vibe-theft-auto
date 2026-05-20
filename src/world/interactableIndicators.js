@@ -12,6 +12,7 @@ const INDICATOR_RENDER_ORDER = 42;
 export const INTERACTABLE_INDICATOR_LAYER = 7;
 
 const indicatorTextureCache = new Map();
+const WORLD_SCALE_SCRATCH = new THREE.Vector3();
 
 function hasFiniteBox(box) {
   return Boolean(
@@ -140,8 +141,7 @@ function getIndicatorAnchorPosition(object, options = {}) {
     return new THREE.Vector3(0, Number(options.fallbackY ?? 1.2) || 1.2, 0);
   }
 
-  const worldCenter = bounds.getCenter(new THREE.Vector3());
-  const localCenter = object.worldToLocal(worldCenter.clone());
+  const localCenter = object.worldToLocal(bounds.getCenter(new THREE.Vector3()));
   localCenter.y += Number(options.verticalOffset ?? 0) || 0;
   if (Number.isFinite(Number(options.minLocalY))) {
     localCenter.y = Math.max(localCenter.y, Number(options.minLocalY));
@@ -150,7 +150,7 @@ function getIndicatorAnchorPosition(object, options = {}) {
 }
 
 function preserveWorldScale(indicator, object) {
-  const worldScale = object.getWorldScale(new THREE.Vector3());
+  const worldScale = object.getWorldScale(WORLD_SCALE_SCRATCH);
   indicator.scale.set(
     worldScale.x ? 1 / worldScale.x : 1,
     worldScale.y ? 1 / worldScale.y : 1,

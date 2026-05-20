@@ -166,27 +166,36 @@ function createSourceOnsetChart({
   pitches,
   idPrefix
 }) {
-  return finalizeChart(
-    times.map((timeMs, index) => createChartNote({
+  const chart = [];
+  for (let index = 0; index < times.length; index += 1) {
+    chart.push(createChartNote({
       id: `${idPrefix}-${index + 1}`,
-      timeMs,
+      timeMs: times[index],
       lane: Number(lanes[index] ?? 0),
       pitch: decodePitch(pitches, index),
       durationMs: getOnsetDurationMs(times, index)
-    }))
-  );
+    }));
+  }
+  return finalizeChart(chart);
 }
 
 function finalizeChart(chart) {
-  return Object.freeze(
-    chart
-      .filter((note) => note.timeMs >= 0)
-      .sort((left, right) => left.timeMs - right.timeMs)
-      .map((note, index) => Object.freeze({
-        ...note,
-        id: note.id || `n${index + 1}`
-      }))
-  );
+  const filtered = [];
+  for (const note of chart) {
+    if (note.timeMs >= 0) {
+      filtered.push(note);
+    }
+  }
+  filtered.sort((left, right) => left.timeMs - right.timeMs);
+  const finalized = [];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const note = filtered[index];
+    finalized.push(Object.freeze({
+      ...note,
+      id: note.id || `n${index + 1}`
+    }));
+  }
+  return Object.freeze(finalized);
 }
 
 function createDebussyArabesqueChart() {
@@ -247,29 +256,45 @@ const VIBE_HERO_SONGS = Object.freeze([
     chart: createVivaldiWinterChart()
   })
 ]);
+const VIBE_HERO_SONG_BY_ID = new Map();
+for (let index = 0; index < VIBE_HERO_SONGS.length; index += 1) {
+  const song = VIBE_HERO_SONGS[index];
+  VIBE_HERO_SONG_BY_ID.set(song.id, song);
+}
+
+function cloneVibeHeroSong(song = null) {
+  if (!song) {
+    return null;
+  }
+
+  const chart = [];
+  for (const note of song.chart) {
+    chart.push({ ...note });
+  }
+  return {
+    ...song,
+    chart
+  };
+}
 
 export function listVibeHeroSongs() {
-  return VIBE_HERO_SONGS.map((song) => ({
-    ...song,
-    chart: song.chart.map((note) => ({ ...note }))
-  }));
+  const songs = [];
+  for (const song of VIBE_HERO_SONGS) {
+    songs.push(cloneVibeHeroSong(song));
+  }
+  return songs;
 }
 
 export function getVibeHeroSong(songId = VIBE_HERO_DEFAULT_SONG_ID) {
   const normalizedId = normalizeVibeHeroSongId(songId);
-  const song = VIBE_HERO_SONGS.find((entry) => entry.id === normalizedId)
+  const song = VIBE_HERO_SONG_BY_ID.get(normalizedId)
     ?? VIBE_HERO_SONGS[0];
-  return song
-    ? {
-        ...song,
-        chart: song.chart.map((note) => ({ ...note }))
-      }
-    : null;
+  return cloneVibeHeroSong(song);
 }
 
 export function normalizeVibeHeroSongId(songId = VIBE_HERO_DEFAULT_SONG_ID) {
   const normalizedId = String(songId ?? '').trim().toLowerCase();
-  return VIBE_HERO_SONGS.some((song) => song.id === normalizedId)
+  return VIBE_HERO_SONG_BY_ID.has(normalizedId)
     ? normalizedId
     : VIBE_HERO_DEFAULT_SONG_ID;
 }

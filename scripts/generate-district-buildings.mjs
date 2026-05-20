@@ -258,7 +258,7 @@ function addPixelText(group, text, {
   depth,
   material
 }) {
-  const chars = [...String(text).toUpperCase()];
+  const chars = String(text).toUpperCase();
   const charAdvance = pixelSize * 6;
   const totalWidth = Math.max(0, (chars.length * charAdvance) - pixelSize);
   let cursorX = centerX - (totalWidth * 0.5);
@@ -745,12 +745,16 @@ function createThemeMaterials(overrides = {}) {
     ...overrides
   };
 
-  return Object.fromEntries(
-    Object.entries(palette).map(([key, color]) => [
-      key,
-      createMaterial(color, key.includes('metal') ? 0.88 : 0.96, key.includes('metal') ? 0.12 : 0.04)
-    ])
-  );
+  const materials = {};
+  for (const key in palette) {
+    if (!Object.hasOwn(palette, key)) {
+      continue;
+    }
+    const color = palette[key];
+    const isMetal = key.includes('metal');
+    materials[key] = createMaterial(color, isMetal ? 0.88 : 0.96, isMetal ? 0.12 : 0.04);
+  }
+  return materials;
 }
 
 function createBaseGroups(key) {
@@ -1937,14 +1941,28 @@ async function exportBuilding(definition, exporter) {
 async function main() {
   const exporter = new GLTFExporter();
   await fs.mkdir(outputDirectory, { recursive: true });
-  const requestedKeys = new Set(process.argv.slice(2).map((key) => key.trim()).filter(Boolean));
-  const definitions = requestedKeys.size > 0
-    ? BUILDINGS.filter((definition) => requestedKeys.has(definition.key))
-    : BUILDINGS;
-  const knownKeys = new Set(BUILDINGS.map((definition) => definition.key));
+  const requestedKeys = new Set();
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const key = process.argv[index].trim();
+    if (key) {
+      requestedKeys.add(key);
+    }
+  }
+  const definitions = [];
+  const knownKeys = new Set();
+  for (const definition of BUILDINGS) {
+    knownKeys.add(definition.key);
+    if (requestedKeys.size === 0 || requestedKeys.has(definition.key)) {
+      definitions.push(definition);
+    }
+  }
   for (const key of requestedKeys) {
     if (!knownKeys.has(key)) {
-      throw new Error(`Unknown district building key "${key}". Known keys: ${[...knownKeys].join(', ')}`);
+      let knownKeyList = '';
+      for (const knownKey of knownKeys) {
+        knownKeyList += `${knownKeyList ? ', ' : ''}${knownKey}`;
+      }
+      throw new Error(`Unknown district building key "${key}". Known keys: ${knownKeyList}`);
     }
   }
   for (const definition of definitions) {

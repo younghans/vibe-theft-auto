@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
-const PRESETS = [
+const PRESETS = [];
+const PRESET_DEFINITIONS = [
   {
     id: 'borderlands',
     label: 'VIBES',
@@ -36,7 +37,14 @@ const PRESETS = [
     label: 'None',
     description: 'The original look with the game\'s native lighting, fog, and color balance.'
   }
-].map((preset, index) => ({ ...preset, index }));
+];
+
+for (let index = 0; index < PRESET_DEFINITIONS.length; index += 1) {
+  PRESETS.push({
+    ...PRESET_DEFINITIONS[index],
+    index
+  });
+}
 
 export const VIBE_SHADER_PRESETS = PRESETS;
 export const DEFAULT_VIBE_SHADER_PRESET_ID = PRESETS[0].id;
@@ -44,7 +52,13 @@ export const DEFAULT_VIBE_SHADER_INTENSITY = 0.6;
 export const NO_VIBE_SHADER_PRESET_ID = 'none';
 
 export function getVibeShaderPreset(presetId) {
-  return PRESETS.find((preset) => preset.id === presetId) ?? PRESETS[0];
+  for (const preset of PRESETS) {
+    if (preset.id === presetId) {
+      return preset;
+    }
+  }
+
+  return PRESETS[0];
 }
 
 export function createVibeShaderDefinition() {

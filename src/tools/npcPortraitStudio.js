@@ -55,10 +55,13 @@ const portraitRenderer = new CharacterPreviewRenderer({
 
 const app = document.querySelector('[data-npc-portrait-studio]');
 
-const state = {
-  entries: listPlayableCharacters()
-    .filter((entry) => entry?.portraitFileName)
-    .map((entry) => ({
+function createPortraitEntries() {
+  const entries = [];
+  for (const entry of listPlayableCharacters()) {
+    if (!entry?.portraitFileName) {
+      continue;
+    }
+    entries.push({
       ...entry,
       saving: false,
       rendering: false,
@@ -68,7 +71,13 @@ const state = {
       savedPath: '',
       needsRender: false,
       needsSave: false
-    })),
+    });
+  }
+  return entries;
+}
+
+const state = {
+  entries: createPortraitEntries(),
   sharedPreset: { ...DEFAULT_MUGSHOT_CAMERA_PRESET },
   sharedPresetDirty: false,
   running: false,
@@ -133,6 +142,75 @@ function getBatchSummaryText() {
   return `Last batch finished. Saved ${state.batchSaved}/${state.batchTotal}${state.batchFailed ? `, failed ${state.batchFailed}` : ''}.`;
 }
 
+function countSavedEntries() {
+  let count = 0;
+  for (const entry of state.entries) {
+    if (entry.savedPath) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function hasActiveEntryWork() {
+  for (const entry of state.entries) {
+    if (entry.rendering || entry.saving) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function renderPresetControls() {
+  let markup = '';
+  for (const field of PRESET_FIELDS) {
+    markup += renderPresetControl(field);
+  }
+  return markup;
+}
+
+function renderBatchFailures() {
+  let markup = '';
+  for (const failure of state.batchFailures) {
+    markup += `
+                <div class="portrait-studio__batch-failure">${escapeHtml(failure)}</div>
+              `;
+  }
+  return markup;
+}
+
+function renderEntryCards() {
+  let markup = '';
+  for (const entry of state.entries) {
+    markup += `
+        <article class="portrait-studio__card">
+          <div class="portrait-studio__frame">
+            ${entry.previewSrc
+              ? `<img class="portrait-studio__image" src="${entry.previewSrc}" alt="${escapeHtml(entry.label)} portrait" />`
+              : `<div class="portrait-studio__placeholder">${escapeHtml(entry.label)}</div>`}
+          </div>
+          <div class="portrait-studio__card-body">
+            <div>
+              <h2>${escapeHtml(entry.label)}</h2>
+              <p>${escapeHtml(entry.subtitle ?? '')}</p>
+            </div>
+            <code>${escapeHtml(getOutputPath(entry))}</code>
+            <p class="portrait-studio__status${entry.error ? ' is-error' : ''}">${escapeHtml(getStatusText(entry))}</p>
+            <div class="portrait-studio__card-actions">
+              <button class="portrait-studio__button" type="button" data-action="render-one" data-character-id="${entry.id}" ${entry.rendering || entry.saving ? 'disabled' : ''}>
+                Render Preview
+              </button>
+              <button class="portrait-studio__button portrait-studio__button--secondary" type="button" data-action="save-one" data-character-id="${entry.id}" ${!entry.dataUrl || entry.saving || entry.rendering || entry.needsRender ? 'disabled' : ''}>
+                Save PNG
+              </button>
+            </div>
+          </div>
+        </article>
+      `;
+  }
+  return markup;
+}
+
 async function readJsonResponse(response, fallbackMessage) {
   const raw = await response.text();
   if (!raw) {
@@ -194,12 +272,12 @@ function renderPresetControl(field) {
 }
 
 function render() {
-  const completed = state.entries.filter((entry) => entry.savedPath).length;
+  const completed = countSavedEntries();
   const busy = (
     state.running
     || state.previewingAll
     || state.savingPresets
-    || state.entries.some((entry) => entry.rendering || entry.saving)
+    || hasActiveEntryWork()
   );
 
   app.innerHTML = `
@@ -213,7 +291,7 @@ function render() {
           instead of instantiating every character rig for menu thumbnails.
         </p>
         <div class="portrait-studio__controls portrait-studio__controls--hero">
-          ${PRESET_FIELDS.map((field) => renderPresetControl(field)).join('')}
+          ${renderPresetControls()}
         </div>
         <p class="portrait-studio__hero-note">
           This shared framing applies across the full roster, so the same preset feeds both the NPC builder and the character select menu.
@@ -248,46 +326,25 @@ function render() {
         ${state.batchFailures.length
           ? `
             <div class="portrait-studio__batch-failures">
-              ${state.batchFailures.map((failure) => `
-                <div class="portrait-studio__batch-failure">${escapeHtml(failure)}</div>
-              `).join('')}
+              ${renderBatchFailures()}
             </div>
           `
           : ''}
       </div>
     </section>
     <section class="portrait-studio__grid">
-      ${state.entries.map((entry) => `
-        <article class="portrait-studio__card">
-          <div class="portrait-studio__frame">
-            ${entry.previewSrc
-              ? `<img class="portrait-studio__image" src="${entry.previewSrc}" alt="${escapeHtml(entry.label)} portrait" />`
-              : `<div class="portrait-studio__placeholder">${escapeHtml(entry.label)}</div>`}
-          </div>
-          <div class="portrait-studio__card-body">
-            <div>
-              <h2>${escapeHtml(entry.label)}</h2>
-              <p>${escapeHtml(entry.subtitle ?? '')}</p>
-            </div>
-            <code>${escapeHtml(getOutputPath(entry))}</code>
-            <p class="portrait-studio__status${entry.error ? ' is-error' : ''}">${escapeHtml(getStatusText(entry))}</p>
-            <div class="portrait-studio__card-actions">
-              <button class="portrait-studio__button" type="button" data-action="render-one" data-character-id="${entry.id}" ${entry.rendering || entry.saving ? 'disabled' : ''}>
-                Render Preview
-              </button>
-              <button class="portrait-studio__button portrait-studio__button--secondary" type="button" data-action="save-one" data-character-id="${entry.id}" ${!entry.dataUrl || entry.saving || entry.rendering || entry.needsRender ? 'disabled' : ''}>
-                Save PNG
-              </button>
-            </div>
-          </div>
-        </article>
-      `).join('')}
+      ${renderEntryCards()}
     </section>
   `;
 }
 
 function getEntry(characterId) {
-  return state.entries.find((entry) => entry.id === characterId) ?? null;
+  for (const entry of state.entries) {
+    if (entry.id === characterId) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 function updateEntry(characterId, updates) {
@@ -332,11 +389,15 @@ async function loadPresetFile() {
       return;
     }
 
-    const legacyPreset = Object.values(payload)
-      .map((value) => readPresetCandidate(value))
-      .find(Boolean);
-    if (legacyPreset) {
-      state.sharedPreset = legacyPreset;
+    for (const key in payload) {
+      if (!Object.hasOwn(payload, key)) {
+        continue;
+      }
+      const legacyPreset = readPresetCandidate(payload[key]);
+      if (legacyPreset) {
+        state.sharedPreset = legacyPreset;
+        return;
+      }
     }
   } catch (error) {
     state.presetsError = error?.message ?? String(error);
@@ -344,9 +405,9 @@ async function loadPresetFile() {
 }
 
 async function loadExistingPortraits() {
-  await Promise.all(state.entries.map(async (entry) => {
+  for (const entry of state.entries) {
     if (!entry.portraitStaticSrc) {
-      return;
+      continue;
     }
 
     try {
@@ -363,7 +424,7 @@ async function loadExistingPortraits() {
     } catch {
       // Ignore missing portraits on disk and fall back to placeholders.
     }
-  }));
+  }
 }
 
 async function savePresetFile() {
@@ -449,7 +510,12 @@ async function renderPreviewGrid(options = {}) {
     state.pendingPreviewRefresh = true;
     return;
   }
-  const targets = state.entries.filter((entry) => shouldRenderPreview(entry, { force }));
+  const targets = [];
+  for (const entry of state.entries) {
+    if (shouldRenderPreview(entry, { force })) {
+      targets.push(entry);
+    }
+  }
   if (targets.length === 0) {
     return;
   }

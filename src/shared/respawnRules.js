@@ -17,7 +17,9 @@ const FALLBACK_HOSPITAL_RESPAWN_POINT = Object.freeze({
 
 function getHospitalPlacementScore(placement, item) {
   const [width = 1, depth = 1] = getTileFootprint(item);
-  const distanceFromCenter = Math.hypot(Number(placement.cellX) || 0, Number(placement.cellZ) || 0);
+  const cellX = Number(placement.cellX) || 0;
+  const cellZ = Number(placement.cellZ) || 0;
+  const distanceFromCenter = Math.sqrt((cellX * cellX) + (cellZ * cellZ));
   return (width * depth * 1000) - distanceFromCenter;
 }
 
@@ -25,24 +27,32 @@ export function getHospitalRespawnPoint(placements = [], getItemById = () => nul
   let best = null;
   let bestScore = -Infinity;
 
-  for (const placement of placements) {
+  const visitPlacement = (placement) => {
     if (
       !placement
       || placement.layer !== 'tile'
       || !HOSPITAL_ITEM_IDS.has(placement.itemId)
     ) {
-      continue;
+      return;
     }
 
     const item = getItemById(placement.itemId);
     if (!item) {
-      continue;
+      return;
     }
 
     const score = getHospitalPlacementScore(placement, item);
     if (score > bestScore) {
       best = { placement, item };
       bestScore = score;
+    }
+  };
+
+  if (placements && typeof placements.forEachPlacement === 'function') {
+    placements.forEachPlacement(visitPlacement);
+  } else {
+    for (const placement of placements ?? []) {
+      visitPlacement(placement);
     }
   }
 

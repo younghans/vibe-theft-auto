@@ -17,8 +17,11 @@ import {
   MISSION_STATUS,
   SCHOOL_TEACHER_TASKS_REQUIRED,
   getDeliveryCompletionCount,
+  getMissionDefinition,
   getMissionProgressSnapshot,
   getMissionSnapshots,
+  getMissionStatus,
+  isMissionSelectable,
   resolveSelectedMissionId
 } from '../shared/missions.js';
 import { OFFICE_JOB_IDS } from '../shared/officeJobs.js';
@@ -72,6 +75,18 @@ function getTaskPositionForInteractable(interactable = null, context = {}) {
 function getWorldBuilderInteractables(context = {}) {
   return context.worldBuilderInteractables
     ?? context.worldBuilder?.getInteractables?.()
+    ?? [];
+}
+
+function getActiveInteractables(context = {}) {
+  return context.activeInteractables
+    ?? context.getActiveInteractables?.()
+    ?? [];
+}
+
+function getGymDoorBlockers(context = {}) {
+  return context.gymDoorBlockers
+    ?? context.getGymDoorBlockers?.()
     ?? [];
 }
 
@@ -221,7 +236,7 @@ function getBuildingTaskTarget(context = {}, predicate = () => false) {
 }
 
 function getGymBuildingTaskTarget(context = {}) {
-  const doorTarget = context.gymDoorBlockers?.[0] ?? null;
+  const doorTarget = getGymDoorBlockers(context)[0] ?? null;
   if (doorTarget) {
     return getTaskPositionFromValue(doorTarget, context);
   }
@@ -229,47 +244,49 @@ function getGymBuildingTaskTarget(context = {}) {
   return getBuildingTaskTarget(context, isGymTaskBuildingPlacement);
 }
 
+function getWorkoutTaskTargetFromInteractables(interactables = [], context = {}, { includeItemAliases = false } = {}) {
+  const matches = [null, null, null];
+  for (const interactable of interactables) {
+    if (!interactable) {
+      continue;
+    }
+
+    if (!matches[0] && (interactable.kind === 'snatch-workout' || (includeItemAliases && interactable.itemId === 'olympic_barbell'))) {
+      matches[0] = interactable;
+    } else if (!matches[1] && (interactable.kind === 'basketball-shot-workout' || (includeItemAliases && interactable.itemId === 'basketball_hoop'))) {
+      matches[1] = interactable;
+    } else if (!matches[2] && (interactable.kind === 'treadmill-workout' || (includeItemAliases && interactable.itemId === 'treadmill'))) {
+      matches[2] = interactable;
+    }
+
+    if (matches[0] && matches[1] && matches[2]) {
+      break;
+    }
+  }
+
+  for (const interactable of matches) {
+    const target = getTaskPositionForInteractable(interactable, context);
+    if (target) {
+      return target;
+    }
+  }
+
+  return null;
+}
+
 function getGymTaskTarget(context = {}) {
-  const activeSnatch = (context.activeInteractables ?? [])
-    .find((interactable) => interactable.kind === 'snatch-workout');
-  const activeSnatchTarget = getTaskPositionForInteractable(activeSnatch, context);
-  if (activeSnatchTarget) {
-    return activeSnatchTarget;
+  const activeTarget = getWorkoutTaskTargetFromInteractables(getActiveInteractables(context), context);
+  if (activeTarget) {
+    return activeTarget;
   }
 
-  const activeBasketballHoop = (context.activeInteractables ?? [])
-    .find((interactable) => interactable.kind === 'basketball-shot-workout');
-  const activeBasketballHoopTarget = getTaskPositionForInteractable(activeBasketballHoop, context);
-  if (activeBasketballHoopTarget) {
-    return activeBasketballHoopTarget;
-  }
-
-  const activeTreadmill = (context.activeInteractables ?? [])
-    .find((interactable) => interactable.kind === 'treadmill-workout');
-  const activeTreadmillTarget = getTaskPositionForInteractable(activeTreadmill, context);
-  if (activeTreadmillTarget) {
-    return activeTreadmillTarget;
-  }
-
-  const worldSnatch = getWorldBuilderInteractables(context)
-    .find((interactable) => interactable.kind === 'snatch-workout' || interactable.itemId === 'olympic_barbell');
-  const worldSnatchTarget = getTaskPositionForInteractable(worldSnatch, context);
-  if (worldSnatchTarget) {
-    return worldSnatchTarget;
-  }
-
-  const worldBasketballHoop = getWorldBuilderInteractables(context)
-    .find((interactable) => interactable.kind === 'basketball-shot-workout' || interactable.itemId === 'basketball_hoop');
-  const worldBasketballHoopTarget = getTaskPositionForInteractable(worldBasketballHoop, context);
-  if (worldBasketballHoopTarget) {
-    return worldBasketballHoopTarget;
-  }
-
-  const worldTreadmill = getWorldBuilderInteractables(context)
-    .find((interactable) => interactable.kind === 'treadmill-workout' || interactable.itemId === 'treadmill');
-  const worldTreadmillTarget = getTaskPositionForInteractable(worldTreadmill, context);
-  if (worldTreadmillTarget) {
-    return worldTreadmillTarget;
+  const worldTarget = getWorkoutTaskTargetFromInteractables(
+    getWorldBuilderInteractables(context),
+    context,
+    { includeItemAliases: true }
+  );
+  if (worldTarget) {
+    return worldTarget;
   }
 
   return getGymBuildingTaskTarget(context);
@@ -290,23 +307,33 @@ function getSchoolTaskTarget(context = {}) {
     ?? getBuildingTaskTarget(context, (placement, item) => isNamedTaskBuildingPlacement(placement, item, 'school'));
 }
 
-function getOfficeJobTaskTarget(context = {}, jobId = '') {
-  const activeStation = (context.activeInteractables ?? [])
-    .find((interactable) =>
+function getOfficeJobTaskTargetFromInteractables(interactables = [], context = {}, jobId = '') {
+  for (const interactable of interactables) {
+    if (
       interactable.kind === 'office-job-station'
       && (!jobId || interactable.officeJobId === jobId)
-    );
-  const activeStationTarget = getTaskPositionForInteractable(activeStation, context);
+    ) {
+      const target = getTaskPositionForInteractable(interactable, context);
+      if (target) {
+        return target;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getOfficeJobTaskTarget(context = {}, jobId = '') {
+  const activeStationTarget = getOfficeJobTaskTargetFromInteractables(getActiveInteractables(context), context, jobId);
   if (activeStationTarget) {
     return activeStationTarget;
   }
 
-  const worldStation = (context.worldBuilder?.getInteractables?.() ?? [])
-    .find((interactable) =>
-      interactable.kind === 'office-job-station'
-      && (!jobId || interactable.officeJobId === jobId)
-    );
-  const worldStationTarget = getTaskPositionForInteractable(worldStation, context);
+  const worldStationTarget = getOfficeJobTaskTargetFromInteractables(
+    context.worldBuilder?.getInteractables?.() ?? [],
+    context,
+    jobId
+  );
   if (worldStationTarget) {
     return worldStationTarget;
   }
@@ -461,30 +488,84 @@ function isTaskIntroReady(localPlayerState = null, rentIntroState = {}) {
 }
 
 function getMissionDefinitionById(missionId = '') {
-  return MISSION_CATALOG.find((mission) => mission.id === missionId) ?? null;
+  return MISSION_DEFINITION_BY_ID.get(missionId) ?? null;
+}
+
+const MISSION_DEFINITION_BY_ID = new Map();
+for (const mission of MISSION_CATALOG) {
+  MISSION_DEFINITION_BY_ID.set(mission.id, mission);
+}
+
+function getSelectedMissionSnapshot(player = null, selectedMissionId = '', sequence = null) {
+  if (!selectedMissionId) {
+    return null;
+  }
+
+  const definition = getMissionDefinition(selectedMissionId, sequence);
+  if (!definition) {
+    return null;
+  }
+
+  const status = getMissionStatus(definition.id, player, sequence);
+  return {
+    id: definition.id,
+    title: definition.title,
+    label: definition.label,
+    icon: definition.icon,
+    description: definition.description,
+    requirement: '',
+    bonusQuest: false,
+    hiddenForPlayers: false,
+    status,
+    selected: true,
+    selectable: isMissionSelectable(definition.id, player, sequence),
+    completed: status === MISSION_STATUS.completed,
+    locked: status === MISSION_STATUS.locked
+  };
 }
 
 export function resolvePlayerMissions(context = {}) {
   const { localPlayerState } = context;
-  const missionSequence = context.worldBuilder?.getMissionSequence?.() ?? context.missionSequence ?? null;
+  const missionSequence = context.missionSequence ?? context.worldBuilder?.getMissionSequence?.() ?? null;
   const progress = getMissionProgressSnapshot(localPlayerState);
   const selectedMissionId = resolveSelectedMissionId(localPlayerState, localPlayerState?.selectedMissionId, missionSequence);
-  const missions = getMissionSnapshots(localPlayerState, selectedMissionId, missionSequence)
-    .map((mission) => ({
-      ...mission,
-      title: getMissionTitle(mission, context),
-      description: getMissionDescription(mission, context),
-      target: getMissionTarget(mission.id, context)
-    }));
-  const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? null;
+  const includeMissionList = context.includeMissionList !== false;
+  let missions = Array.isArray(context.previousMissions) ? context.previousMissions : [];
+  let selectedMission = null;
+  if (includeMissionList) {
+    missions = [];
+    for (const missionSnapshot of getMissionSnapshots(localPlayerState, selectedMissionId, missionSequence)) {
+      const mission = {
+        ...missionSnapshot,
+        title: getMissionTitle(missionSnapshot, context),
+        description: getMissionDescription(missionSnapshot, context)
+      };
+      if (mission.id === selectedMissionId) {
+        selectedMission = mission;
+      }
+      missions.push(mission);
+    }
+  } else {
+    selectedMission = getSelectedMissionSnapshot(localPlayerState, selectedMissionId, missionSequence);
+  }
+  if (!includeMissionList && selectedMission) {
+    selectedMission.title = getMissionTitle(selectedMission, context);
+    selectedMission.description = getMissionDescription(selectedMission, context);
+  }
+  const taskIntroReady = isTaskIntroReady(localPlayerState, context.rentIntroState);
   const visible = Boolean(
     localPlayerState
     && selectedMission
     && selectedMission.status !== MISSION_STATUS.locked
     && selectedMission.status !== MISSION_STATUS.completed
-    && isTaskIntroReady(localPlayerState, context.rentIntroState)
+    && taskIntroReady
   );
   const fallbackDefinition = getMissionDefinitionById(TASK_IDS.makeMoney);
+  const selectedTarget = visible ? getMissionTarget(selectedMission.id, context) : null;
+  const fallbackVisible = Boolean(localPlayerState && taskIntroReady);
+  const fallbackTarget = fallbackVisible && (includeMissionList || !visible)
+    ? getDeliveryQuestGiverTaskTarget(context)
+    : null;
 
   return {
     missions,
@@ -494,13 +575,13 @@ export function resolvePlayerMissions(context = {}) {
       id: visible ? selectedMission.id : '',
       visible,
       title: visible ? selectedMission.title : '',
-      target: visible ? selectedMission.target : null
+      target: selectedTarget
     },
     fallbackTask: {
       id: TASK_IDS.makeMoney,
-      visible: Boolean(localPlayerState && isTaskIntroReady(localPlayerState, context.rentIntroState)),
+      visible: fallbackVisible,
       title: fallbackDefinition?.title ?? '',
-      target: getDeliveryQuestGiverTaskTarget(context)
+      target: fallbackTarget
     }
   };
 }

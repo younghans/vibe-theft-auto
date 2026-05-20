@@ -88,27 +88,79 @@ export function getRentIntroSpawnForBuilding(placement = null) {
   };
 }
 
+function forEachRentIntroNpc(source = null, callback) {
+  if (typeof source?.forEachPlacement === 'function') {
+    source.forEachPlacement((placement) => {
+      if (placement?.layer === 'npc') {
+        callback(placement, placement.npc ?? placement);
+      }
+    });
+    return;
+  }
+
+  for (const npc of source?.npcs ?? []) {
+    callback(npc, npc);
+  }
+}
+
+function forEachRentIntroBuilding(source = null, callback) {
+  if (typeof source?.forEachPlacement === 'function') {
+    source.forEachPlacement((placement) => {
+      if (placement?.layer === 'tile') {
+        callback(placement);
+      }
+    });
+    return;
+  }
+
+  for (const placement of source?.tiles ?? []) {
+    callback(placement);
+  }
+}
+
 export function resolveRentIntroPlan(layout = null) {
-  const npcs = [...(layout?.npcs ?? [])];
-  const tiles = [...(layout?.tiles ?? [])];
-  const collector = npcs.find((npc) => isRentIntroCollector(npc)) ?? null;
-  const collectorPosition = getNpcPosition(collector);
+  let collector = null;
+  let collectorNpcId = '';
+  let collectorPosition = null;
+  forEachRentIntroNpc(layout, (placement, npc) => {
+    if (collector || !isRentIntroCollector(npc)) {
+      return;
+    }
+
+    const position = getNpcPosition(placement);
+    if (!position) {
+      return;
+    }
+
+    collector = npc;
+    collectorNpcId = placement.id ?? npc.id ?? '';
+    collectorPosition = position;
+  });
+
   if (!collector || !collectorPosition) {
     return null;
   }
 
-  const building = tiles
-    .filter((placement) => isRentIntroBuilding(placement))
-    .map((placement) => ({
-      placement,
-      center: getTileCenter(placement)
-    }))
-    .filter((entry) => entry.center)
-    .sort((a, b) => {
-      const distanceA = Math.hypot(a.center.x - collectorPosition.x, a.center.z - collectorPosition.z);
-      const distanceB = Math.hypot(b.center.x - collectorPosition.x, b.center.z - collectorPosition.z);
-      return distanceA - distanceB;
-    })[0]?.placement ?? null;
+  let building = null;
+  let buildingDistanceSq = Infinity;
+  forEachRentIntroBuilding(layout, (placement) => {
+    if (!isRentIntroBuilding(placement)) {
+      return;
+    }
+
+    const center = getTileCenter(placement);
+    if (!center) {
+      return;
+    }
+
+    const dx = center.x - collectorPosition.x;
+    const dz = center.z - collectorPosition.z;
+    const distanceSq = (dx * dx) + (dz * dz);
+    if (distanceSq < buildingDistanceSq) {
+      building = placement;
+      buildingDistanceSq = distanceSq;
+    }
+  });
 
   const spawn = getRentIntroSpawnForBuilding(building);
   if (!building || !spawn) {
@@ -118,7 +170,7 @@ export function resolveRentIntroPlan(layout = null) {
   return {
     amount: RENT_INTRO_AMOUNT,
     line: RENT_INTRO_LINE,
-    collectorNpcId: collector.id ?? '',
+    collectorNpcId,
     buildingPlacementId: building.id ?? '',
     spawn
   };

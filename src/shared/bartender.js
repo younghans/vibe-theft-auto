@@ -30,17 +30,17 @@ export const DRUNKNESS_MAX_DURATION_MS = DRUNKNESS_MAX_LEVEL * DRUNKNESS_LEVEL_D
 export const DRUNKNESS_DOSE_THRESHOLDS = Object.freeze([1, 5, 10, 15, DRUNKNESS_MAX_DOSE]);
 export const DRUNKNESS_LEVEL_LABELS = Object.freeze(['sober', 'buzzed', 'tipsy', 'drunk', 'wasted', 'plastered']);
 
-const BARTENDER_MENU_ITEM_BY_ID = new Map(
-  BARTENDER_MENU_ITEMS.map((item) => [item.id, item])
-);
+const BARTENDER_MENU_ITEM_BY_ID = new Map();
+const DRINK_INVENTORY_FIELD_ENTRIES = {};
+const DRINK_DOSE_ENTRIES = {};
+for (const item of BARTENDER_MENU_ITEMS) {
+  BARTENDER_MENU_ITEM_BY_ID.set(item.id, item);
+  DRINK_INVENTORY_FIELD_ENTRIES[item.id] = item.inventoryField;
+  DRINK_DOSE_ENTRIES[item.id] = item.dose;
+}
 
-const DRINK_INVENTORY_FIELDS = Object.freeze(
-  Object.fromEntries(BARTENDER_MENU_ITEMS.map((item) => [item.id, item.inventoryField]))
-);
-
-const DRINK_DOSES = Object.freeze(
-  Object.fromEntries(BARTENDER_MENU_ITEMS.map((item) => [item.id, item.dose]))
-);
+const DRINK_INVENTORY_FIELDS = Object.freeze(DRINK_INVENTORY_FIELD_ENTRIES);
+const DRINK_DOSES = Object.freeze(DRINK_DOSE_ENTRIES);
 
 export function normalizeBartenderEnabled(value = false) {
   return value === true;
@@ -117,10 +117,12 @@ export function getDrunknessLevelForDose(dose = 0) {
     return 0;
   }
 
-  const thresholdIndex = DRUNKNESS_DOSE_THRESHOLDS.findIndex((threshold) => normalizedDose < threshold);
-  return thresholdIndex < 0
-    ? DRUNKNESS_MAX_LEVEL
-    : normalizeDrunknessLevel(thresholdIndex);
+  for (let thresholdIndex = 0; thresholdIndex < DRUNKNESS_DOSE_THRESHOLDS.length; thresholdIndex += 1) {
+    if (normalizedDose < DRUNKNESS_DOSE_THRESHOLDS[thresholdIndex]) {
+      return normalizeDrunknessLevel(thresholdIndex);
+    }
+  }
+  return DRUNKNESS_MAX_LEVEL;
 }
 
 export function getDrunknessDurationMs(level = 0) {

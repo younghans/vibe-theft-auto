@@ -65,23 +65,32 @@ export class ModelLibrary {
   }
 
   async preload(urls = [], { concurrency = 8 } = {}) {
-    const queue = [...new Set(
-      (urls ?? [])
-        .filter((url) => typeof url === 'string' && url)
-    )];
+    const seen = new Set();
+    const queue = [];
+    for (const url of urls ?? []) {
+      if (typeof url !== 'string' || !url || seen.has(url)) {
+        continue;
+      }
+      seen.add(url);
+      queue.push(url);
+    }
     if (!queue.length) {
       return;
     }
 
     let index = 0;
     const workerCount = Math.max(1, Math.min(Math.floor(concurrency) || 1, queue.length));
-    await Promise.all(Array.from({ length: workerCount }, async () => {
+    const workers = [];
+    for (let workerIndex = 0; workerIndex < workerCount; workerIndex += 1) {
+      workers.push((async () => {
       while (index < queue.length) {
         const url = queue[index];
         index += 1;
         await this.load(url);
       }
-    }));
+      })());
+    }
+    await Promise.all(workers);
   }
 
   async instantiate(url) {

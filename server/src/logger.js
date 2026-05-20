@@ -1,12 +1,28 @@
 function readEnabledFlag(value) {
-  return ['1', 'true', 'yes', 'on', 'debug'].includes(String(value ?? '').trim().toLowerCase());
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1'
+    || normalized === 'true'
+    || normalized === 'yes'
+    || normalized === 'on'
+    || normalized === 'debug';
 }
 
 const SERVER_DEBUG_LOGS_ENABLED = readEnabledFlag(process.env.SERVER_DEBUG ?? process.env.DEBUG_SERVER);
 const NPC_DEBUG_LOGS_ENABLED = readEnabledFlag(process.env.NPC_DEBUG);
 
 function formatMeta(meta) {
-  if (!meta || typeof meta !== 'object' || !Object.keys(meta).length) {
+  if (!meta || typeof meta !== 'object') {
+    return '';
+  }
+
+  let hasMeta = false;
+  for (const key in meta) {
+    if (Object.hasOwn(meta, key)) {
+      hasMeta = true;
+      break;
+    }
+  }
+  if (!hasMeta) {
     return '';
   }
 

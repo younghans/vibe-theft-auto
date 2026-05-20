@@ -47,6 +47,7 @@ function createMixamoCharacterDefinition({
   npcLabel = label,
   npcProfile = DEFAULT_NPC_PROFILE
 }) {
+  const footprint = npcProfile.footprint;
   return Object.freeze({
     id,
     label,
@@ -57,7 +58,7 @@ function createMixamoCharacterDefinition({
     npcLabel,
     npcProfile: Object.freeze({
       height: npcProfile.height,
-      footprint: Object.freeze([...npcProfile.footprint]),
+      footprint: Object.freeze([footprint[0], footprint[1]]),
       interactionOffset: npcProfile.interactionOffset,
       interactionRadius: npcProfile.interactionRadius,
       colliderRadius: npcProfile.colliderRadius

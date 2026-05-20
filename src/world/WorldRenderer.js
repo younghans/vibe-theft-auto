@@ -80,6 +80,8 @@ const SOLID_COLOR_BUILDING_GLASS_COLORS = new Set([
   0xdcc76a,
   0xe0c172
 ]);
+const EMPTY_NODE_NAME_SET = new Set();
+const EMPTY_MAP = new Map();
 const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
   assets.playerAnimationSet.idle,
   assets.playerAnimationSet.walking,
@@ -181,8 +183,10 @@ function nodeNameIncludesAny(node, root, fragments) {
   let current = node;
   while (current && current !== root.parent) {
     const name = String(current.name ?? '').toLowerCase();
-    if (fragments.some((fragment) => name.includes(fragment))) {
-      return true;
+    for (let index = 0; index < fragments.length; index += 1) {
+      if (name.includes(fragments[index])) {
+        return true;
+      }
     }
     if (current === root) {
       break;
@@ -306,6 +310,10 @@ function isCameraOccludingBuildingItem(item) {
   );
 }
 
+function isInlineInteriorMode(mode = '') {
+  return mode === 'inline-shell' || mode === 'inline-cutaway';
+}
+
 function createNpcDebugMarker(color, radius = 0.22) {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 14, 14),
@@ -343,12 +351,58 @@ function replaceLineGeometry(line, points = []) {
     return;
   }
 
-  const nextPoints = points.length
-    ? points
-    : [new THREE.Vector3(0, -9999, 0), new THREE.Vector3(0, -9999, 0)];
-  const nextGeometry = new THREE.BufferGeometry().setFromPoints(nextPoints);
+  const pointCount = points.length || 2;
+  const positions = new Float32Array(pointCount * 3);
+  if (points.length) {
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      const offset = index * 3;
+      positions[offset] = point.x;
+      positions[offset + 1] = point.y;
+      positions[offset + 2] = point.z;
+    }
+  } else {
+    positions[1] = -9999;
+    positions[4] = -9999;
+  }
+  const nextGeometry = new THREE.BufferGeometry();
+  nextGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   line.geometry.dispose();
   line.geometry = nextGeometry;
+}
+
+function createDebugLineGeometry(startPoint, endPoint) {
+  const positions = new Float32Array(6);
+  positions[0] = startPoint.x;
+  positions[1] = startPoint.y;
+  positions[2] = startPoint.z;
+  positions[3] = endPoint.x;
+  positions[4] = endPoint.y;
+  positions[5] = endPoint.z;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  return geometry;
+}
+
+function copyDebugPlainObject(source = null) {
+  const copy = {};
+  if (!source || typeof source !== 'object') {
+    return copy;
+  }
+
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      copy[key] = source[key];
+    }
+  }
+  return copy;
+}
+
+function copyNpcRoutinePreviewEntry(entry) {
+  const copy = copyDebugPlainObject(entry);
+  copy.point = entry?.point ? copyDebugPlainObject(entry.point) : null;
+  copy.originPoint = entry?.originPoint ? copyDebugPlainObject(entry.originPoint) : null;
+  return copy;
 }
 
 function getNpcRoutineStepColor(stepType = '', activePick = false) {
@@ -377,7 +431,9 @@ function areDebugPointsClose(a, b, epsilon = 0.08) {
     return false;
   }
 
-  return Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.z ?? 0) - (b.z ?? 0)) <= epsilon;
+  const dx = (a.x ?? 0) - (b.x ?? 0);
+  const dz = (a.z ?? 0) - (b.z ?? 0);
+  return (dx * dx) + (dz * dz) <= epsilon * epsilon;
 }
 
 function getReusableVector(value) {
@@ -385,7 +441,11 @@ function getReusableVector(value) {
 }
 
 function syncPlainObject(target, source = {}) {
-  for (const key of Object.keys(target)) {
+  for (const key in target) {
+    if (!Object.hasOwn(target, key)) {
+      continue;
+    }
+
     if (!Object.prototype.hasOwnProperty.call(source, key)) {
       delete target[key];
     }
@@ -658,10 +718,20 @@ function isNodeVisibleWithinRoot(node, root) {
 }
 
 function collectMaterials(material) {
-  return Array.isArray(material) ? material.filter(Boolean) : [material].filter(Boolean);
+  if (!Array.isArray(material)) {
+    return material ? [material] : [];
+  }
+
+  const materials = [];
+  for (const entry of material) {
+    if (entry) {
+      materials.push(entry);
+    }
+  }
+  return materials;
 }
 
-function nodeNameMatches(node, nodeNames = new Set()) {
+function nodeNameMatches(node, nodeNames = EMPTY_NODE_NAME_SET) {
   for (const pattern of nodeNames ?? []) {
     if (node.name === pattern || node.name.startsWith(`${pattern}_`)) {
       return true;
@@ -670,7 +740,7 @@ function nodeNameMatches(node, nodeNames = new Set()) {
   return false;
 }
 
-function nodeOrAncestorNameMatches(node, nodeNames = new Set(), root = null) {
+function nodeOrAncestorNameMatches(node, nodeNames = EMPTY_NODE_NAME_SET, root = null) {
   let current = node;
   while (current) {
     if (nodeNameMatches(current, nodeNames)) {
@@ -687,7 +757,7 @@ function nodeOrAncestorNameMatches(node, nodeNames = new Set(), root = null) {
   return false;
 }
 
-function nodeOrDescendantNameMatches(node, nodeNames = new Set()) {
+function nodeOrDescendantNameMatches(node, nodeNames = EMPTY_NODE_NAME_SET) {
   if (nodeNameMatches(node, nodeNames)) {
     return true;
   }
@@ -704,12 +774,12 @@ function nodeOrDescendantNameMatches(node, nodeNames = new Set()) {
   return matched;
 }
 
-function nodeWithinVisibleNameFilter(node, nodeNames = new Set(), root = null) {
+function nodeWithinVisibleNameFilter(node, nodeNames = EMPTY_NODE_NAME_SET, root = null) {
   return nodeOrAncestorNameMatches(node, nodeNames, root)
     || nodeOrDescendantNameMatches(node, nodeNames);
 }
 
-function nodeNameSetsEqual(a = new Set(), b = new Set()) {
+function nodeNameSetsEqual(a = EMPTY_NODE_NAME_SET, b = EMPTY_NODE_NAME_SET) {
   if ((a?.size ?? 0) !== (b?.size ?? 0)) {
     return false;
   }
@@ -724,12 +794,40 @@ function nodeNameSetsEqual(a = new Set(), b = new Set()) {
 }
 
 function normalizeNodeNameSet(nodeNames = []) {
+  const normalized = new Set();
   if (!nodeNames) {
-    return new Set();
+    return normalized;
   }
 
-  const values = typeof nodeNames === 'string' ? [nodeNames] : Array.from(nodeNames);
-  return new Set(values.filter(Boolean));
+  if (typeof nodeNames === 'string') {
+    if (nodeNames) {
+      normalized.add(nodeNames);
+    }
+    return normalized;
+  }
+
+  if (typeof nodeNames[Symbol.iterator] !== 'function') {
+    return normalized;
+  }
+
+  for (const nodeName of nodeNames) {
+    if (nodeName) {
+      normalized.add(nodeName);
+    }
+  }
+  return normalized;
+}
+
+function createBooleanGrid(size) {
+  const grid = [];
+  for (let z = 0; z < size; z += 1) {
+    const row = [];
+    for (let x = 0; x < size; x += 1) {
+      row.push(false);
+    }
+    grid.push(row);
+  }
+  return grid;
 }
 
 function hasNodeNameEntries(nodeNames = null) {
@@ -792,7 +890,8 @@ function cloneMaterialsForNodeFade(root) {
     }
 
     const sourceMaterials = collectMaterials(node.material);
-    const clonedMaterials = sourceMaterials.map((material) => {
+    const clonedMaterials = [];
+    for (const material of sourceMaterials) {
       const cloned = material.clone();
       materialStates.set(cloned, {
         material: cloned,
@@ -800,8 +899,8 @@ function cloneMaterialsForNodeFade(root) {
         transparent: material.transparent,
         depthWrite: material.depthWrite
       });
-      return cloned;
-    });
+      clonedMaterials.push(cloned);
+    }
 
     node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
   });
@@ -832,7 +931,7 @@ function cloneMaterialsForCameraOcclusion(root, {
   preservedNodeNames = new Set()
 } = {}) {
   const materialStates = [];
-  const preservedNames = new Set(Array.from(preservedNodeNames ?? []).filter(Boolean));
+  const preservedNames = normalizeNodeNameSet(preservedNodeNames);
 
   root?.traverse?.((node) => {
     if (!node.isMesh || !node.material) {
@@ -857,7 +956,8 @@ function cloneMaterialsForCameraOcclusion(root, {
       return;
     }
 
-    const clonedMaterials = sourceMaterials.map((material) => {
+    const clonedMaterials = [];
+    for (const material of sourceMaterials) {
       const cloned = material.clone();
       if (!nodePreserved) {
         materialStates.push({
@@ -867,8 +967,8 @@ function cloneMaterialsForCameraOcclusion(root, {
           depthWrite: material.depthWrite
         });
       }
-      return cloned;
-    });
+      clonedMaterials.push(cloned);
+    }
 
     node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0];
   });
@@ -947,7 +1047,7 @@ function buildParkWallColliders(object) {
   const tileMaxX = object.position.x + tileHalf;
   const tileMaxZ = object.position.z + tileHalf;
   const gridSize = Math.ceil(BUILDER_TILE_SIZE / PARK_WALL_COLLIDER_CELL_SIZE);
-  const occupied = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+  const occupied = createBooleanGrid(gridSize);
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const c = new THREE.Vector3();
@@ -993,7 +1093,7 @@ function buildParkWallColliders(object) {
   });
 
   const colliders = [];
-  const consumed = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+  const consumed = createBooleanGrid(gridSize);
 
   for (let z = 0; z < gridSize; z += 1) {
     for (let x = 0; x < gridSize; x += 1) {
@@ -1047,7 +1147,11 @@ function createPlacementColliders(object, item, placement, actor) {
   }
 
   if (item?.movementCollisionRects?.length) {
-    return item.movementCollisionRects.map((rect) => createColliderFromLocalRect(rect, placement, item));
+    const colliders = [];
+    for (let index = 0; index < item.movementCollisionRects.length; index += 1) {
+      colliders.push(createColliderFromLocalRect(item.movementCollisionRects[index], placement, item));
+    }
+    return colliders;
   }
 
   if (isParkWallItem(item)) {
@@ -1089,6 +1193,7 @@ export class WorldRenderer {
     this.cameraOcclusionBoundsHit = new THREE.Vector3();
     this.cameraOccludedPlacementIds = new Set();
     this.cameraOcclusionCandidates = [];
+    this.cameraOcclusionRenderedPlacements = new Set();
     this.cameraOcclusionIdsToClear = [];
     this.nextCameraOccludedPlacementIds = new Set();
     this.excludedCameraOcclusionPlacementIds = new Set();
@@ -1112,6 +1217,9 @@ export class WorldRenderer {
     this.scene.add(this.npcRoutineRoot);
 
     this.renderedPlacements = new Map();
+    this.updatingRenderedPlacements = new Set();
+    this.interactableIndicatorRenderedPlacements = new Set();
+    this.interactablePlacementIds = new Set();
     this.actorPlacementIds = new Set();
     this.staticColliderEntries = new Map();
     this.visibleStaticColliders = [];
@@ -1127,6 +1235,9 @@ export class WorldRenderer {
     this.activeInteractableCacheKeys = new Set();
     this.occupiedWorkoutPlacementIds = new Set();
     this.visibleWorkoutPlacementIds = new Set();
+    this.hiddenWorkoutPlacementIds = new Set();
+    this.workoutPlacementIdsToSync = new Set();
+    this.lastVisibleWorkoutPlacementIds = new Set();
     this.playerState = new Map();
     this.localWorkoutState = {
       pendingPlacementId: '',
@@ -1144,6 +1255,12 @@ export class WorldRenderer {
     this.passiveTrafficNodeVisitOrder = new Map();
     this.passiveTrafficScratch = new THREE.Vector3();
     this.passiveTrafficTargetScratch = new THREE.Vector3();
+    this.passiveTrafficActiveDestinations = new Set();
+    this.passiveTrafficDestinationCandidates = [];
+    this.passiveTrafficDestinationCandidatePool = [];
+    this.passiveTrafficDestinationCandidateNodeIndices = [];
+    this.indicatorVisibilityPosition = new THREE.Vector3();
+    this.passiveTrafficActiveNeighbors = [];
     this.passiveTrafficRefreshSuspended = false;
     this.passiveTrafficLoadRequestId = 0;
     this.npcInteractRadiusVisible = false;
@@ -1176,10 +1293,14 @@ export class WorldRenderer {
   async syncFromState(worldState) {
     this.clear();
     this.passiveTrafficRoutes = clonePassiveTrafficRoutes(worldState?.getPassiveTrafficRoutes?.() ?? []);
-    this.passiveTrafficRoutesByItemId = new Map(
-      this.passiveTrafficRoutes.map((route) => [route.itemId, route])
-    );
-    const placements = [...worldState.getPlacements()];
+    this.passiveTrafficRoutesByItemId = new Map();
+    for (const route of this.passiveTrafficRoutes) {
+      this.passiveTrafficRoutesByItemId.set(route.itemId, route);
+    }
+    const placements = [];
+    worldState.forEachPlacement((placement) => {
+      placements.push(placement);
+    });
     await this.preloadPlacementAssets(placements);
 
     this.passiveTrafficRefreshSuspended = true;
@@ -1196,16 +1317,22 @@ export class WorldRenderer {
   clear() {
     this.clearCameraOcclusion();
     this.clearPassiveTraffic();
-    for (const rendered of this.renderedPlacements.values()) {
+    for (const rendered of this.cameraOcclusionRenderedPlacements) {
       rendered.object.parent?.remove(rendered.object);
     }
     this.renderedPlacements.clear();
+    this.updatingRenderedPlacements.clear();
+    this.interactableIndicatorRenderedPlacements.clear();
+    this.interactablePlacementIds.clear();
+    this.cameraOcclusionRenderedPlacements.clear();
     this.actorPlacementIds.clear();
     this.staticColliderEntries.clear();
     this.interactableCache.clear();
     this.activeInteractableCacheKeys.clear();
     this.visibleStaticColliders = [];
     this.staticCollidersDirty = true;
+    this.hiddenWorkoutPlacementIds.clear();
+    this.lastVisibleWorkoutPlacementIds.clear();
     this.surfaceHeightByCell.clear();
     this.surfaceHeightIndexDirty = true;
     this.tileRoot.clear();
@@ -1226,7 +1353,7 @@ export class WorldRenderer {
     }
 
     await Promise.all([
-      this.library.preload([...modelUrls]),
+      this.library.preload(modelUrls),
       hasNpc ? preloadMixamoClips(NPC_CORE_ANIMATION_CLIPS) : Promise.resolve()
     ]);
   }
@@ -1254,12 +1381,15 @@ export class WorldRenderer {
     }
 
     const colliders = [];
-    for (const [placementId, entryColliders] of this.staticColliderEntries.entries()) {
+    for (const placementId of this.staticColliderEntries.keys()) {
+      const entryColliders = this.staticColliderEntries.get(placementId);
       const rendered = this.renderedPlacements.get(placementId);
       if (!rendered || rendered.hidden) {
         continue;
       }
-      colliders.push(...entryColliders);
+      for (let index = 0; index < entryColliders.length; index += 1) {
+        colliders.push(entryColliders[index]);
+      }
     }
 
     this.visibleStaticColliders = colliders;
@@ -1304,16 +1434,20 @@ export class WorldRenderer {
   }
 
   syncNpcInteractRadiusIndicators(worldState, playerPosition = null) {
-    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
-      if (!rendered.actor) {
+    for (const placementId of this.actorPlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered?.actor) {
         continue;
       }
 
       const placement = worldState.getPlacement(placementId);
+      const radius = placement?.npc?.interactRadius ?? rendered.item.interactionRadius ?? 4.2;
+      const dx = (rendered.object.position.x ?? 0) - (playerPosition?.x ?? 0);
+      const dz = (rendered.object.position.z ?? 0) - (playerPosition?.z ?? 0);
       const withinRadius = Boolean(
         playerPosition
         && placement?.layer === 'npc'
-        && rendered.object.position.distanceTo(playerPosition) < (placement.npc?.interactRadius ?? rendered.item.interactionRadius ?? 4.2)
+        && ((dx * dx) + (dz * dz)) < (radius * radius)
       );
 
       rendered.actor.setInteractRadiusVisible(this.npcInteractRadiusVisible || withinRadius);
@@ -1383,6 +1517,9 @@ export class WorldRenderer {
     renderedPlacement.colliders = createPlacementColliders(colliderObject, item, placement, actor);
 
     this.renderedPlacements.set(placement.id, renderedPlacement);
+    this.trackUpdatingRenderedPlacement(renderedPlacement);
+    this.trackCameraOcclusionRenderedPlacement(renderedPlacement);
+    this.trackInteractablePlacement(renderedPlacement);
     this.syncPlacementInteractableIndicator(renderedPlacement);
     if (actor) {
       this.actorPlacementIds.add(placement.id);
@@ -1406,6 +1543,44 @@ export class WorldRenderer {
     return renderedPlacement;
   }
 
+  trackUpdatingRenderedPlacement(rendered) {
+    if (
+      rendered?.actor
+      || typeof rendered?.object?.userData?.onWorldUpdate === 'function'
+    ) {
+      this.updatingRenderedPlacements.add(rendered);
+    }
+  }
+
+  trackCameraOcclusionRenderedPlacement(rendered) {
+    if (
+      rendered?.cameraOcclusionObject
+      && isCameraOccludingBuildingItem(rendered.item)
+    ) {
+      this.cameraOcclusionRenderedPlacements.add(rendered);
+    }
+  }
+
+  trackInteractablePlacement(rendered) {
+    if (!rendered?.id) {
+      return;
+    }
+
+    const placement = rendered.placement;
+    const item = rendered.item;
+    if (
+      placement?.layer === 'npc'
+      || placement?.interactable
+      || item?.interior
+      || item?.interactable
+    ) {
+      this.interactablePlacementIds.add(rendered.id);
+      return;
+    }
+
+    this.interactablePlacementIds.delete(rendered.id);
+  }
+
   syncPlacementInteractableIndicator(rendered) {
     if (!rendered) {
       return;
@@ -1414,12 +1589,14 @@ export class WorldRenderer {
     const indicatorText = getPlacementInteractableIndicatorText(rendered.placement, rendered.item);
     const existingIndicator = rendered.interactableIndicator ?? null;
     if (existingIndicator?.userData?.indicatorText === indicatorText) {
+      this.interactableIndicatorRenderedPlacements.add(rendered);
       return;
     }
 
     if (existingIndicator) {
       existingIndicator.parent?.remove(existingIndicator);
       rendered.interactableIndicator = null;
+      this.interactableIndicatorRenderedPlacements.delete(rendered);
     }
 
     if (!indicatorText) {
@@ -1443,18 +1620,14 @@ export class WorldRenderer {
       indicatorText,
       indicatorOptions
     );
+    this.interactableIndicatorRenderedPlacements.add(rendered);
   }
 
   updateInteractableIndicatorVisibility(resolver = null) {
     const hasResolver = typeof resolver === 'function';
-    const worldPosition = this.indicatorVisibilityPosition ?? new THREE.Vector3();
-    this.indicatorVisibilityPosition = worldPosition;
+    const worldPosition = this.indicatorVisibilityPosition;
 
-    for (const rendered of this.renderedPlacements.values()) {
-      if (!rendered?.interactableIndicator) {
-        continue;
-      }
-
+    for (const rendered of this.interactableIndicatorRenderedPlacements) {
       let visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
       if (visible && rendered.actor) {
         visible = rendered.actor.runtimeState?.mode !== NPC_RUNTIME_MODES.hidden
@@ -1579,18 +1752,23 @@ export class WorldRenderer {
   }
 
   async createPassiveTrafficCars(requestId, graph) {
-    const cars = await Promise.all(PASSIVE_TRAFFIC_CAR_ITEM_IDS.map(async (itemId, carIndex) => {
-      try {
-        const object = await this.createPassiveTrafficObject(itemId, carIndex);
-        return object ? this.createPassiveTrafficCarState(object, itemId, carIndex, graph) : null;
-      } catch (error) {
-        console.warn('[WorldRenderer] Failed to create passive traffic car.', {
-          itemId,
-          error
-        });
-        return null;
-      }
-    }));
+    const carPromises = [];
+    for (let carIndex = 0; carIndex < PASSIVE_TRAFFIC_CAR_ITEM_IDS.length; carIndex += 1) {
+      const itemId = PASSIVE_TRAFFIC_CAR_ITEM_IDS[carIndex];
+      carPromises.push((async () => {
+        try {
+          const object = await this.createPassiveTrafficObject(itemId, carIndex);
+          return object ? this.createPassiveTrafficCarState(object, itemId, carIndex, graph) : null;
+        } catch (error) {
+          console.warn('[WorldRenderer] Failed to create passive traffic car.', {
+            itemId,
+            error
+          });
+          return null;
+        }
+      })());
+    }
+    const cars = await Promise.all(carPromises);
 
     if (requestId !== this.passiveTrafficLoadRequestId || graph.signature !== this.passiveTrafficSignature) {
       for (const car of cars) {
@@ -1599,7 +1777,12 @@ export class WorldRenderer {
       return;
     }
 
-    this.passiveTrafficCars = cars.filter(Boolean);
+    this.passiveTrafficCars = [];
+    for (const car of cars) {
+      if (car) {
+        this.passiveTrafficCars.push(car);
+      }
+    }
     for (const car of this.passiveTrafficCars) {
       this.passiveTrafficRoot.add(car.object);
     }
@@ -1667,6 +1850,7 @@ export class WorldRenderer {
       turnWaypointActive: false,
       turnWaypointIndex: 0,
       turnWaypointQueue: [],
+      turnWaypointCursor: 0,
       stuckSeconds: 0,
       lastPosition: new THREE.Vector3()
     };
@@ -1703,11 +1887,18 @@ export class WorldRenderer {
   getPassiveTrafficActiveNeighbors(nodeIndex) {
     const graph = this.passiveTrafficGraph;
     const node = graph?.nodes?.[nodeIndex];
+    const neighbors = this.passiveTrafficActiveNeighbors;
+    neighbors.length = 0;
     if (!node) {
-      return [];
+      return neighbors;
     }
 
-    return node.neighbors.filter((neighborIndex) => graph.activeNodeSet.has(neighborIndex));
+    for (const neighborIndex of node.neighbors) {
+      if (graph.activeNodeSet.has(neighborIndex)) {
+        neighbors.push(neighborIndex);
+      }
+    }
+    return neighbors;
   }
 
   isPassiveTrafficTurn(previousNodeIndex, currentNodeIndex, nextNodeIndex) {
@@ -1770,45 +1961,70 @@ export class WorldRenderer {
       return [];
     }
 
-    const activeDestinations = new Set(this.passiveTrafficCars
-      .filter((otherCar) => otherCar && otherCar !== car)
-      .map((otherCar) => otherCar.routeDestinationIndex ?? otherCar.targetNodeIndex)
-      .filter((nodeIndex) => nodeIndex !== null && nodeIndex !== undefined));
+    const activeDestinations = this.passiveTrafficActiveDestinations;
+    activeDestinations.clear();
+    for (const otherCar of this.passiveTrafficCars) {
+      if (!otherCar || otherCar === car) {
+        continue;
+      }
+      const nodeIndex = otherCar.routeDestinationIndex ?? otherCar.targetNodeIndex;
+      if (nodeIndex !== null && nodeIndex !== undefined) {
+        activeDestinations.add(nodeIndex);
+      }
+    }
     const componentIndex = currentNode.componentIndex;
-    const candidates = graph.activeNodeIndices
-      .filter((nodeIndex) => nodeIndex !== car.currentNodeIndex)
-      .filter((nodeIndex) => graph.nodes[nodeIndex]?.componentIndex === componentIndex)
-      .map((nodeIndex) => {
-        const node = graph.nodes[nodeIndex];
-        const visitCount = this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0;
-        const lastVisitOrder = this.passiveTrafficNodeVisitOrder.get(nodeIndex) ?? -100000;
-        const carVisited = car.visitedNodeIndices?.has(nodeIndex) ? 1 : 0;
-        const distance = Math.abs(node.cellX - currentNode.cellX) + Math.abs(node.cellZ - currentNode.cellZ);
-        return {
-          nodeIndex,
-          carVisited,
-          visitCount,
-          lastVisitOrder,
-          distance,
-          activeDestination: activeDestinations.has(nodeIndex) ? 1 : 0,
-          tieBreak: passiveTrafficTieBreak(nodeIndex, car.carIndex)
-        };
-      })
-      .sort((a, b) => (
-        (a.carVisited - b.carVisited)
-        || (a.visitCount - b.visitCount)
-        || (a.activeDestination - b.activeDestination)
-        || (a.lastVisitOrder - b.lastVisitOrder)
-        || (b.distance - a.distance)
-        || (a.tieBreak - b.tieBreak)
-      ));
+    const candidates = this.passiveTrafficDestinationCandidates;
+    const candidatePool = this.passiveTrafficDestinationCandidatePool;
+    const candidateNodeIndices = this.passiveTrafficDestinationCandidateNodeIndices;
+    let candidateCount = 0;
+    candidates.length = 0;
+    candidateNodeIndices.length = 0;
+    for (const nodeIndex of graph.activeNodeIndices) {
+      const node = graph.nodes[nodeIndex];
+      if (nodeIndex === car.currentNodeIndex || node?.componentIndex !== componentIndex) {
+        continue;
+      }
 
-    const candidatePool = candidates.slice(0, PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT);
-    if (!candidatePool.length) {
-      return [];
+      const visitCount = this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0;
+      const lastVisitOrder = this.passiveTrafficNodeVisitOrder.get(nodeIndex) ?? -100000;
+      let candidate = candidatePool[candidateCount];
+      if (!candidate) {
+        candidate = {
+          nodeIndex: -1,
+          carVisited: 0,
+          visitCount: 0,
+          lastVisitOrder: 0,
+          distance: 0,
+          activeDestination: 0,
+          tieBreak: 0
+        };
+        candidatePool[candidateCount] = candidate;
+      }
+      candidate.nodeIndex = nodeIndex;
+      candidate.carVisited = car.visitedNodeIndices?.has(nodeIndex) ? 1 : 0;
+      candidate.visitCount = visitCount;
+      candidate.lastVisitOrder = lastVisitOrder;
+      candidate.distance = Math.abs(node.cellX - currentNode.cellX) + Math.abs(node.cellZ - currentNode.cellZ);
+      candidate.activeDestination = activeDestinations.has(nodeIndex) ? 1 : 0;
+      candidate.tieBreak = passiveTrafficTieBreak(nodeIndex, car.carIndex);
+      candidates.push(candidate);
+      candidateCount += 1;
     }
 
-    candidatePool.sort((a, b) => (
+    if (!candidates.length) {
+      return candidateNodeIndices;
+    }
+
+    candidates.sort((a, b) => (
+      (a.carVisited - b.carVisited)
+      || (a.visitCount - b.visitCount)
+      || (a.activeDestination - b.activeDestination)
+      || (a.lastVisitOrder - b.lastVisitOrder)
+      || (b.distance - a.distance)
+      || (a.tieBreak - b.tieBreak)
+    ));
+    candidates.length = Math.min(candidates.length, PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT);
+    candidates.sort((a, b) => (
       (b.distance - a.distance)
       || (a.carVisited - b.carVisited)
       || (a.visitCount - b.visitCount)
@@ -1816,7 +2032,10 @@ export class WorldRenderer {
       || (a.lastVisitOrder - b.lastVisitOrder)
       || (a.tieBreak - b.tieBreak)
     ));
-    return candidatePool.map((candidate) => candidate.nodeIndex);
+    for (const candidate of candidates) {
+      candidateNodeIndices.push(candidate.nodeIndex);
+    }
+    return candidateNodeIndices;
   }
 
   choosePassiveTrafficDestination(car) {
@@ -2008,6 +2227,7 @@ export class WorldRenderer {
     car.turnStopWaypointIndex = -1;
     car.turnStopSatisfied = false;
     car.turnWaypointQueue.length = 0;
+    car.turnWaypointCursor = 0;
     getPassiveTrafficLanePosition(
       shouldScriptThroughRouteNode ? routeNode : currentNode,
       finalNode,
@@ -2016,12 +2236,15 @@ export class WorldRenderer {
     car.finalTargetPosition.y = this.getSurfaceHeightAtPosition(car.finalTargetPosition.x, car.finalTargetPosition.z);
 
     if (shouldScriptThroughRouteNode) {
-      car.turnWaypointQueue = routeScript.waypoints.map((waypoint) => {
+      for (const waypoint of routeScript.waypoints) {
         waypoint.y = this.getSurfaceHeightAtPosition(waypoint.x, waypoint.z);
-        return waypoint;
-      });
+        car.turnWaypointQueue.push(waypoint);
+      }
       car.turnStopWaypointIndex = routeScript.stopWaypointIndex;
-      const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
+      const nextTurnWaypoint = car.turnWaypointCursor < car.turnWaypointQueue.length
+        ? car.turnWaypointQueue[car.turnWaypointCursor]
+        : null;
+      car.turnWaypointCursor += nextTurnWaypoint ? 1 : 0;
       if (nextTurnWaypoint) {
         car.targetPosition.copy(nextTurnWaypoint);
         car.turnWaypointActive = true;
@@ -2165,7 +2388,10 @@ export class WorldRenderer {
               break;
             }
 
-            const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
+            const nextTurnWaypoint = car.turnWaypointCursor < car.turnWaypointQueue.length
+              ? car.turnWaypointQueue[car.turnWaypointCursor]
+              : null;
+            car.turnWaypointCursor += nextTurnWaypoint ? 1 : 0;
             if (nextTurnWaypoint) {
               car.turnWaypointIndex += 1;
               car.targetPosition.copy(nextTurnWaypoint);
@@ -2173,6 +2399,8 @@ export class WorldRenderer {
             }
 
             car.turnWaypointActive = false;
+            car.turnWaypointCursor = 0;
+            car.turnWaypointQueue.length = 0;
             car.targetPosition.copy(car.finalTargetPosition);
             continue;
           }
@@ -2227,15 +2455,20 @@ export class WorldRenderer {
     }
   }
 
-  update(deltaSeconds) {
-    const timeSeconds = performance.now() * 0.001;
-    for (const rendered of this.renderedPlacements.values()) {
+  update(deltaSeconds, now = performance.now()) {
+    const timeSeconds = now * 0.001;
+    for (const rendered of this.updatingRenderedPlacements) {
       rendered.actor?.update(deltaSeconds);
-      rendered.object?.userData?.onWorldUpdate?.(deltaSeconds, timeSeconds);
+      const onWorldUpdate = rendered.object?.userData?.onWorldUpdate;
+      if (typeof onWorldUpdate === 'function') {
+        onWorldUpdate(deltaSeconds, timeSeconds);
+      }
     }
     this.updatePassiveTraffic(deltaSeconds);
 
-    this.refreshNpcDebugGizmos();
+    if (this.npcDebugVisible) {
+      this.refreshNpcDebugGizmos();
+    }
   }
 
   isPlacementVisibleForCameraOcclusion(rendered) {
@@ -2257,7 +2490,7 @@ export class WorldRenderer {
   ) {
     candidates.length = 0;
 
-    for (const rendered of this.renderedPlacements.values()) {
+    for (const rendered of this.cameraOcclusionRenderedPlacements) {
       if (excludedPlacementIds.has(rendered.id)) {
         continue;
       }
@@ -2447,7 +2680,7 @@ export class WorldRenderer {
         );
         if (
           hit
-          && hit.distanceTo(camera.position) <= this.cameraOcclusionRaycaster.far
+          && hit.distanceToSquared(camera.position) <= this.cameraOcclusionRaycaster.far * this.cameraOcclusionRaycaster.far
         ) {
           nextOccludedPlacementIds.add(rendered.id);
         }
@@ -2464,6 +2697,7 @@ export class WorldRenderer {
     }
 
     rendered.placement = placement;
+    this.trackInteractablePlacement(rendered);
     rendered.surfaceHeight = placement.layer === 'tile'
       ? (rendered.item.surfaceHeight ?? 0)
       : null;
@@ -2640,7 +2874,12 @@ export class WorldRenderer {
     this.cameraOccludedPlacementIds.delete(id);
     rendered.object.parent?.remove(rendered.object);
     this.renderedPlacements.delete(id);
+    this.updatingRenderedPlacements.delete(rendered);
+    this.interactableIndicatorRenderedPlacements.delete(rendered);
+    this.interactablePlacementIds.delete(id);
+    this.cameraOcclusionRenderedPlacements.delete(rendered);
     this.actorPlacementIds.delete(id);
+    this.npcSpeechAnchorVectors.delete(id);
     this.staticColliderEntries.delete(id);
     this.markStaticCollidersDirty();
     if (rendered.layer === 'tile') {
@@ -2803,24 +3042,18 @@ export class WorldRenderer {
     interactables.length = 0;
     activeKeys.clear();
 
-    worldState.forEachPlacement((placement) => {
-      if (placement.layer !== 'npc') {
-        const placementItem = getBuilderItemById(placement.itemId);
-        if (!placement.interactable && !placementItem?.interior && !placementItem?.interactable) {
-          return;
-        }
-      }
-
-      const rendered = this.renderedPlacements.get(placement.id);
-      const item = getBuilderItemById(placement.itemId);
+    for (const placementId of this.interactablePlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      const placement = rendered?.placement ?? worldState?.getPlacement?.(placementId);
+      const item = rendered?.item ?? getBuilderItemById(placement?.itemId);
       if (!rendered || rendered.hidden || !item) {
-        return;
+        continue;
       }
 
       if (placement.layer === 'npc' && placement.npc) {
         const runtimeState = this.npcRuntimeState.get(placement.id);
         if (runtimeState?.mode === NPC_RUNTIME_MODES.hidden || runtimeState?.alive === false) {
-          return;
+          continue;
         }
 
         const rotationY = toRotationY(placement.rotationQuarterTurns);
@@ -2842,12 +3075,12 @@ export class WorldRenderer {
         npcInteractable.prompt = `Talk to ${placement.npc.name}`;
         npcInteractable.actionText = `Talk to ${placement.npc.name}`;
         interactables.push(npcInteractable);
-        return;
+        continue;
       }
 
       const interactable = resolvePlacementInteractableDefinition(placement, item);
-      if (!interactable || ['inline-shell', 'inline-cutaway'].includes(interactable.interior?.mode)) {
-        return;
+      if (!interactable || isInlineInteriorMode(interactable.interior?.mode)) {
+        continue;
       }
 
       if (interactable.portal) {
@@ -2863,7 +3096,7 @@ export class WorldRenderer {
           activeKeys.add(cacheKey);
           interactables.push(portalInteractable);
         }
-        return;
+        continue;
       }
 
       const distance = interactable.distance ?? BUILDER_TILE_SIZE * 0.44;
@@ -2924,7 +3157,7 @@ export class WorldRenderer {
         : undefined;
       worldInteractable.barbellObject = interactable.workoutType ? rendered.object : null;
       interactables.push(worldInteractable);
-    });
+    }
 
     for (const cacheKey of this.interactableCache.keys()) {
       if (!activeKeys.has(cacheKey)) {
@@ -2989,7 +3222,25 @@ export class WorldRenderer {
       getPlacement: (placementId) => this.renderedPlacements.get(placementId)?.placement ?? null
     };
     const visibleWorkoutPlacementIds = this.getVisibleWorkoutPlacementIds(resolvedWorldState);
-    for (const rendered of this.renderedPlacements.values()) {
+    if (nodeNameSetsEqual(visibleWorkoutPlacementIds, this.lastVisibleWorkoutPlacementIds)) {
+      return;
+    }
+
+    const idsToSync = this.workoutPlacementIdsToSync;
+    idsToSync.clear();
+    for (const placementId of this.hiddenWorkoutPlacementIds) {
+      idsToSync.add(placementId);
+    }
+    for (const placementId of visibleWorkoutPlacementIds) {
+      idsToSync.add(placementId);
+    }
+
+    for (const placementId of idsToSync) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered) {
+        continue;
+      }
+
       const nextWorkoutHidden = visibleWorkoutPlacementIds.has(rendered.id);
       if (rendered.workoutHidden === nextWorkoutHidden) {
         continue;
@@ -2997,6 +3248,15 @@ export class WorldRenderer {
 
       rendered.workoutHidden = nextWorkoutHidden;
       this.applyPlacementVisibility(rendered);
+    }
+
+    this.hiddenWorkoutPlacementIds.clear();
+    for (const placementId of visibleWorkoutPlacementIds) {
+      this.hiddenWorkoutPlacementIds.add(placementId);
+    }
+    this.lastVisibleWorkoutPlacementIds.clear();
+    for (const placementId of visibleWorkoutPlacementIds) {
+      this.lastVisibleWorkoutPlacementIds.add(placementId);
     }
   }
 
@@ -3014,7 +3274,7 @@ export class WorldRenderer {
       const interactable = resolvePlacementInteractableDefinition(placement, item);
       if (
         !interactable?.interior?.id
-        || !['inline-shell', 'inline-cutaway'].includes(interactable.interior.mode)
+        || !isInlineInteriorMode(interactable.interior.mode)
       ) {
         return;
       }
@@ -3028,11 +3288,12 @@ export class WorldRenderer {
     return entries;
   }
 
-  applyNpcRuntimeState(npcStateMap = new Map()) {
-    this.npcRuntimeState = new Map(npcStateMap);
+  applyNpcRuntimeState(npcStateMap = EMPTY_MAP) {
+    this.npcRuntimeState = npcStateMap instanceof Map ? npcStateMap : new Map(npcStateMap);
 
-    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
-      if (!rendered.actor) {
+    for (const placementId of this.actorPlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered?.actor) {
         continue;
       }
       const runtimeState = this.npcRuntimeState.get(placementId) ?? {};
@@ -3052,14 +3313,14 @@ export class WorldRenderer {
   }
 
   applyPlayerWorkoutState(
-    playerStateMap = new Map(),
+    playerStateMap = EMPTY_MAP,
     {
       pendingPlacementId = '',
       claimedPlacementId = '',
       activePlacementId = ''
     } = {}
   ) {
-    this.playerState = new Map(playerStateMap);
+    this.playerState = playerStateMap instanceof Map ? playerStateMap : new Map(playerStateMap);
     this.localWorkoutState = {
       pendingPlacementId: typeof pendingPlacementId === 'string' ? pendingPlacementId : '',
       claimedPlacementId: typeof claimedPlacementId === 'string' ? claimedPlacementId : '',
@@ -3068,9 +3329,10 @@ export class WorldRenderer {
     this.refreshWorkoutPlacementState();
   }
 
-  applyNpcFocusTargets(npcFocusTargets = new Map()) {
+  applyNpcFocusTargets(npcFocusTargets = EMPTY_MAP) {
     this.npcFocusTargets.clear();
-    for (const [npcId, target] of npcFocusTargets.entries()) {
+    for (const npcId of npcFocusTargets.keys()) {
+      const target = npcFocusTargets.get(npcId);
       if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) {
         continue;
       }
@@ -3080,8 +3342,9 @@ export class WorldRenderer {
       });
     }
 
-    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
-      if (!rendered.actor) {
+    for (const placementId of this.actorPlacementIds) {
+      const rendered = this.renderedPlacements.get(placementId);
+      if (!rendered?.actor) {
         continue;
       }
 
@@ -3089,19 +3352,18 @@ export class WorldRenderer {
     }
   }
 
-  applyNpcDebugState(npcDebugMap = new Map()) {
-    this.npcDebugState = new Map(npcDebugMap);
+  applyNpcDebugState(npcDebugMap = EMPTY_MAP) {
+    this.npcDebugState = npcDebugMap instanceof Map ? npcDebugMap : new Map(npcDebugMap);
     this.refreshNpcDebugGizmos();
   }
 
   setNpcRoutinePreview(preview = [], { visible = true } = {}) {
-    this.npcRoutinePreview = Array.isArray(preview)
-      ? preview.map((entry) => ({
-          ...entry,
-          point: entry?.point ? { ...entry.point } : null,
-          originPoint: entry?.originPoint ? { ...entry.originPoint } : null
-        }))
-      : [];
+    this.npcRoutinePreview = [];
+    if (Array.isArray(preview)) {
+      for (const entry of preview) {
+        this.npcRoutinePreview.push(copyNpcRoutinePreviewEntry(entry));
+      }
+    }
     this.npcRoutineVisible = Boolean(visible);
     this.refreshNpcRoutinePreview();
   }
@@ -3173,21 +3435,37 @@ export class WorldRenderer {
       : null;
   }
 
+  getNpcSpeechAnchor(placementId, target = null) {
+    const id = String(placementId ?? '');
+    const rendered = id ? this.renderedPlacements.get(id) : null;
+    if (!rendered?.actor || rendered.actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden) {
+      if (id && !rendered) {
+        this.npcSpeechAnchorVectors.delete(id);
+      }
+      return null;
+    }
+
+    let anchor = target;
+    if (!anchor) {
+      anchor = this.npcSpeechAnchorVectors.get(id);
+      if (!anchor) {
+        anchor = new THREE.Vector3();
+        this.npcSpeechAnchorVectors.set(id, anchor);
+      }
+    }
+
+    return rendered.actor.getSpeechAnchorWorldPosition(anchor);
+  }
+
   getNpcSpeechAnchors() {
     const anchors = this.npcSpeechAnchors;
     anchors.clear();
 
-    for (const [placementId, rendered] of this.renderedPlacements.entries()) {
-      if (!rendered.actor || rendered.actor.runtimeState?.mode === NPC_RUNTIME_MODES.hidden) {
-        continue;
+    for (const placementId of this.actorPlacementIds) {
+      const anchor = this.getNpcSpeechAnchor(placementId);
+      if (anchor) {
+        anchors.set(placementId, anchor);
       }
-
-      let anchor = this.npcSpeechAnchorVectors.get(placementId);
-      if (!anchor) {
-        anchor = new THREE.Vector3();
-        this.npcSpeechAnchorVectors.set(placementId, anchor);
-      }
-      anchors.set(placementId, rendered.actor.getSpeechAnchorWorldPosition(anchor));
     }
 
     for (const placementId of this.npcSpeechAnchorVectors.keys()) {
@@ -3240,15 +3518,16 @@ export class WorldRenderer {
 
     this.npcRoutineRoot.visible = true;
 
-    this.npcRoutinePreview.forEach((entry, index) => {
+    for (let index = 0; index < this.npcRoutinePreview.length; index += 1) {
+      const entry = this.npcRoutinePreview[index];
       if (!entry?.point) {
-        return;
+        continue;
       }
 
       const marker = createNpcRoutineMarker(getNpcRoutineStepColor(entry.stepType, entry.activePick), 0.17);
       const worldPoint = this.toNpcDebugWorldPoint(entry.point, 0.26 + (index * 0.08));
       if (!worldPoint) {
-        return;
+        continue;
       }
 
       marker.position.copy(worldPoint);
@@ -3259,7 +3538,7 @@ export class WorldRenderer {
         const originWorldPoint = this.toNpcDebugWorldPoint(entry.originPoint, 0.08);
         if (originWorldPoint) {
           const line = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([originWorldPoint, worldPoint]),
+            createDebugLineGeometry(originWorldPoint, worldPoint),
             new THREE.LineBasicMaterial({
               color: getNpcRoutineStepColor(entry.stepType, entry.activePick),
               transparent: true,
@@ -3273,7 +3552,7 @@ export class WorldRenderer {
           this.npcRoutineRoot.add(line);
         }
       }
-    });
+    }
   }
 
   refreshNpcDebugGizmos() {
@@ -3314,14 +3593,19 @@ export class WorldRenderer {
     pushPoint(actorPosition);
     pushPoint(debug.steeringTarget);
     pushPoint(debug.nextPathPoint);
-    for (const point of debug.path?.slice(Math.max(0, debug.pathIndex ?? 0)) ?? []) {
-      pushPoint(point);
+    const path = Array.isArray(debug.path) ? debug.path : [];
+    for (let index = Math.max(0, debug.pathIndex ?? 0); index < path.length; index += 1) {
+      pushPoint(path[index]);
     }
     pushPoint(debug.finalTarget);
 
-    const worldPoints = pathPoints
-      .map((point, index) => this.toNpcDebugWorldPoint(point, index === 0 ? 0.34 : 0.22))
-      .filter(Boolean);
+    const worldPoints = [];
+    for (let index = 0; index < pathPoints.length; index += 1) {
+      const worldPoint = this.toNpcDebugWorldPoint(pathPoints[index], index === 0 ? 0.34 : 0.22);
+      if (worldPoint) {
+        worldPoints.push(worldPoint);
+      }
+    }
 
     replaceLineGeometry(this.npcDebugPathLine, worldPoints);
     this.npcDebugRoot.visible = this.tileRoot.visible && this.npcDebugVisible;

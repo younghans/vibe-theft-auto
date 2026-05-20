@@ -27,8 +27,6 @@ import {
 } from './workoutActivities.js';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { Hud } from '../ui/Hud.js';
-import { SchoolGeographyGlobeRenderer } from '../ui/SchoolGeographyGlobeRenderer.js';
-import { SchoolTeacherPreviewRenderer } from '../ui/SchoolTeacherPreviewRenderer.js';
 import { createSupabaseAuthService } from '../auth/supabaseAuth.js';
 import { assets } from '../world/assetManifest.js';
 import {
@@ -186,6 +184,7 @@ import {
   CHARISMA_VIBE_HERO_XP,
   SKILL_DEFINITIONS,
   SKILL_IDS,
+  getSkillDefinition,
   getSkillLevelFromXp,
   getPlayerSkillXp,
   getPlayerSkillsSnapshot
@@ -252,7 +251,11 @@ const AIM_CAMERA_MOVEMENT_FORWARD = createCameraMovementForward(AIM_CAMERA_OFFSE
 const PHONE_GRIP_DEBUG_ITEM_ID = HELD_ITEM_IDS.phone;
 const POLICE_STATION_BUILDING_ITEM_ID = 'police_station_building';
 const POLICE_STATION_GARAGE_DOOR_NODE_NAMES = Object.freeze(['police_station_garage_door_closed']);
-const PHONE_GRIP_DEBUG_FIELD_BY_KEY = new Map(PHONE_GRIP_DEBUG_FIELDS.map((field) => [field.key, field]));
+const PHONE_GRIP_DEBUG_FIELD_BY_KEY = new Map();
+for (let index = 0; index < PHONE_GRIP_DEBUG_FIELDS.length; index += 1) {
+  const field = PHONE_GRIP_DEBUG_FIELDS[index];
+  PHONE_GRIP_DEBUG_FIELD_BY_KEY.set(field.key, field);
+}
 const POSE_DEBUG_SECTIONS = new Set(['unarmed', 'weaponAim', 'phoneGrip']);
 const WORLD_RENDER_LAYER = 0;
 const CAMERA_ZOOM_LEVELS = [0.67, 0.74, 0.82, 0.92, 1, 1.12, 1.26];
@@ -281,10 +284,14 @@ const VIBE_HERO_EDITOR_NOTE_DURATION_MS = 150;
 const VIBE_HERO_EDITOR_STORAGE_PREFIX = 'vta:vibeHero:chart-editor:v1:';
 const VIBE_HERO_EDITOR_LANE_PITCHES = Object.freeze(['C4', 'D4', 'E4', 'G4', 'A4']);
 const VIBE_HERO_EDITOR_LANE_FREQUENCIES = Object.freeze([261.63, 293.66, 329.63, 392, 440]);
-const VIBE_HERO_LANE_KEY_CODES = Object.freeze(Array.from({ length: VIBE_HERO_LANE_COUNT }, (_, index) => Object.freeze([
-  `Digit${index + 1}`,
-  `Numpad${index + 1}`
-])));
+const vibeHeroLaneKeyCodes = [];
+for (let index = 0; index < VIBE_HERO_LANE_COUNT; index += 1) {
+  vibeHeroLaneKeyCodes.push(Object.freeze([
+    `Digit${index + 1}`,
+    `Numpad${index + 1}`
+  ]));
+}
+const VIBE_HERO_LANE_KEY_CODES = Object.freeze(vibeHeroLaneKeyCodes);
 const VIBE_RADIO_VOLUME_STORAGE_KEY = 'vta:vibeRadio:volume';
 const VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY = 'vta:vibeRadio:volumeVersion';
 const VIBE_RADIO_VOLUME_STORAGE_VERSION = '3';
@@ -317,6 +324,96 @@ const TREADMILL_RUN_EXTRA_TAP_PENALTY = 4;
 const TREADMILL_RUN_CAMERA_SMOOTHING = 0.2;
 const TREADMILL_RUN_MIN_BPM = 100;
 const TREADMILL_RUN_MAX_BPM = 140;
+
+function createVibeHeroLaneLastRecordMs() {
+  const lanes = [];
+  for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
+    lanes.push(-Infinity);
+  }
+  return lanes;
+}
+
+function cloneVibeHeroLaneLastRecordMs(values = null) {
+  const lanes = [];
+  for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
+    const value = Number(values?.[lane]);
+    lanes.push(Number.isFinite(value) ? value : -Infinity);
+  }
+  return lanes;
+}
+
+function createVibeHeroLaneHeldState() {
+  const lanes = [];
+  for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
+    lanes.push(false);
+  }
+  return lanes;
+}
+
+function cloneVibeHeroLaneHeldState(values = null) {
+  const lanes = [];
+  for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
+    lanes.push(Boolean(values?.[lane]));
+  }
+  return lanes;
+}
+
+function copyOwnEnumerableProperties(source = null) {
+  const copy = {};
+  if (!source || typeof source !== 'object') {
+    return copy;
+  }
+
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      copy[key] = source[key];
+    }
+  }
+  return copy;
+}
+
+function copyOwnEnumerablePropertiesInto(target, source = null) {
+  if (!source || typeof source !== 'object') {
+    return target;
+  }
+
+  for (const key in source) {
+    if (Object.hasOwn(source, key)) {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+function cloneVibeHeroChart(chart = []) {
+  const cloned = [];
+  for (const note of Array.isArray(chart) ? chart : []) {
+    cloned.push(copyOwnEnumerableProperties(note));
+  }
+  return cloned;
+}
+
+function createNullResults(count = 0) {
+  const results = [];
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  for (let index = 0; index < safeCount; index += 1) {
+    results.push(null);
+  }
+  return results;
+}
+
+function cloneRoundResults(results = null, count = 0) {
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+  if (!Array.isArray(results) || results.length !== safeCount) {
+    return createNullResults(safeCount);
+  }
+
+  const cloned = [];
+  for (let index = 0; index < safeCount; index += 1) {
+    cloned.push(results[index]);
+  }
+  return cloned;
+}
 
 function formatVibeHeroTimestamp(milliseconds = 0) {
   const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
@@ -391,10 +488,13 @@ const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
 const DAMAGE_CAMERA_KICK_MS = 260;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
+const EFFECT_UP = new THREE.Vector3(0, 1, 0);
+const BARBELL_BASE_AXIS = new THREE.Vector3(1, 0, 0);
 const HIP_FIRE_AIM_LEAD_MS = 90;
 const HIP_FIRE_AIM_HOLD_MS = 120;
 const SHOT_COLLISION_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
 const EMOTE_MENU_DEADZONE = 54;
+const EMOTE_MENU_DEADZONE_SQ = EMOTE_MENU_DEADZONE * EMOTE_MENU_DEADZONE;
 const CHAT_BUBBLE_MIN_LIFETIME_MS = 2600;
 const CHAT_BUBBLE_MAX_LIFETIME_MS = 12000;
 const CHAT_BUBBLE_BASE_LIFETIME_MS = 1800;
@@ -617,6 +717,10 @@ const LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE = 3;
 const LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE = 5;
 const LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS = 220;
 const LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE = 8;
+const LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE_SQ = LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE ** 2;
+const LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE_SQ = LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE ** 2;
+const LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE_SQ = LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE ** 2;
+const LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE_SQ = LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE ** 2;
 const LOCAL_AUTHORITATIVE_RECONCILE_RATE = 5.5;
 const ADAPTIVE_RENDER_SAMPLE_MIN_COUNT = 45;
 const ADAPTIVE_RENDER_SLOW_FRAME_P95_MS = 44;
@@ -626,8 +730,11 @@ const ADAPTIVE_RENDER_PIXEL_RATIO_STEP = 0.25;
 const ADAPTIVE_RENDER_MIN_PIXEL_RATIO_CAP = 1;
 const EMPTY_NPC_FOCUS_TARGETS = new Map();
 const EMPTY_NPC_SPEECH_ANCHORS = new Map();
+const EMPTY_NPC_SERVICE_PLAYERS = new Map();
+const EMPTY_NPC_DEBUG_STATE = new Map();
 const EMPTY_VISIBLE_OVERHEAD_HEALTH_BAR_IDS = new Set();
 const EMPTY_INTERACTABLES = Object.freeze([]);
+const EMPTY_COLLIDERS = Object.freeze([]);
 
 function getSortedPercentile(values, percentile) {
   if (!values.length) {
@@ -741,7 +848,9 @@ function readStoredGameSettings() {
         : DEFAULT_GAME_SETTINGS.masterVolume
     };
   } catch {
-    return { ...DEFAULT_GAME_SETTINGS };
+    return {
+      masterVolume: DEFAULT_GAME_SETTINGS.masterVolume
+    };
   }
 }
 
@@ -914,6 +1023,17 @@ function writeStoredHotbarItemOrder(order = DEFAULT_HOTBAR_ITEM_ORDER) {
   }
 }
 
+function areHotbarItemOrdersEqual(left = DEFAULT_HOTBAR_ITEM_ORDER, right = DEFAULT_HOTBAR_ITEM_ORDER) {
+  const leftOrder = Array.isArray(left) ? left : DEFAULT_HOTBAR_ITEM_ORDER;
+  const rightOrder = Array.isArray(right) ? right : DEFAULT_HOTBAR_ITEM_ORDER;
+  for (let index = 0; index < HOTBAR_SLOT_COUNT; index += 1) {
+    if ((leftOrder[index] ?? '') !== (rightOrder[index] ?? '')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function isLocalDebugHost() {
   const hostname = globalThis.location?.hostname ?? '';
   return hostname === 'localhost' || hostname === '127.0.0.1';
@@ -925,7 +1045,18 @@ function getChatBubbleLifetimeMs(text) {
     return CHAT_BUBBLE_MIN_LIFETIME_MS;
   }
 
-  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  let wordCount = 0;
+  let inWord = false;
+  for (let index = 0; index < normalized.length; index += 1) {
+    const charCode = normalized.charCodeAt(index);
+    const isWhitespace = charCode <= 32 || charCode === 160;
+    if (isWhitespace) {
+      inWord = false;
+    } else if (!inWord) {
+      wordCount += 1;
+      inWord = true;
+    }
+  }
   const estimatedWordCount = Math.max(wordCount, Math.ceil(normalized.length / 6));
   const lifetime = CHAT_BUBBLE_BASE_LIFETIME_MS + estimatedWordCount * CHAT_BUBBLE_MS_PER_WORD;
   return THREE.MathUtils.clamp(
@@ -935,14 +1066,23 @@ function getChatBubbleLifetimeMs(text) {
   );
 }
 
-function getFirstFiniteNumber(...values) {
-  for (const value of values) {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) {
-      return numeric;
-    }
+function getFirstFiniteNumber(first, second = undefined, third = undefined) {
+  const firstNumber = Number(first);
+  if (Number.isFinite(firstNumber)) {
+    return firstNumber;
   }
-  return null;
+  const secondNumber = Number(second);
+  if (Number.isFinite(secondNumber)) {
+    return secondNumber;
+  }
+  const thirdNumber = Number(third);
+  return Number.isFinite(thirdNumber) ? thirdNumber : null;
+}
+
+function distanceSquared2D(ax, az, bx, bz) {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return (dx * dx) + (dz * dz);
 }
 
 function getNpcVoiceDistanceVolumeScale(distance) {
@@ -995,7 +1135,7 @@ function formatPortalNumber(value, digits = 3) {
   return String(Number(numeric.toFixed(digits)));
 }
 
-function getPortalTriggerDistance(playerPosition, interactable) {
+function getPortalTriggerDistanceSquared(playerPosition, interactable) {
   if (!playerPosition || !interactable?.triggerPosition) {
     return Number.POSITIVE_INFINITY;
   }
@@ -1008,15 +1148,19 @@ function getPortalTriggerDistance(playerPosition, interactable) {
     return Number.POSITIVE_INFINITY;
   }
 
-  return Math.hypot(
-    (interactable.triggerPosition.x ?? 0) - (playerPosition.x ?? 0),
-    (interactable.triggerPosition.z ?? 0) - (playerPosition.z ?? 0)
+  return distanceSquared2D(
+    interactable.triggerPosition.x ?? 0,
+    interactable.triggerPosition.z ?? 0,
+    playerPosition.x ?? 0,
+    playerPosition.z ?? 0
   );
 }
 
 function disposeMaterial(material) {
   if (Array.isArray(material)) {
-    material.forEach((entry) => entry?.dispose?.());
+    for (let index = 0; index < material.length; index += 1) {
+      material[index]?.dispose?.();
+    }
     return;
   }
 
@@ -1052,13 +1196,15 @@ function createBasketballShotBall() {
   ball.receiveShadow = true;
   group.add(ball);
 
-  [
+  const seamRotations = [
     [0, 0, 0],
     [Math.PI * 0.5, 0, 0],
     [0, Math.PI * 0.5, 0],
     [0.58, 0, 0.34],
     [-0.58, 0, -0.34]
-  ].forEach((rotation, index) => {
+  ];
+  for (let index = 0; index < seamRotations.length; index += 1) {
+    const rotation = seamRotations[index];
     const seam = new THREE.Mesh(
       new THREE.TorusGeometry(BASKETBALL_SHOT_BALL_RADIUS * 1.012, 0.006, 5, 54),
       seamMaterial
@@ -1068,7 +1214,7 @@ function createBasketballShotBall() {
     seam.castShadow = false;
     seam.receiveShadow = true;
     group.add(seam);
-  });
+  }
 
   return group;
 }
@@ -1132,7 +1278,11 @@ function calculateTreadmillRunScore(run = null) {
   if (!beats.length) {
     return 0;
   }
-  const rawScore = beats.reduce((total, beat) => total + Math.max(0, Math.min(1, Number(beat.hitScore) || 0)), 0) / beats.length;
+  let scoreTotal = 0;
+  for (let index = 0; index < beats.length; index += 1) {
+    scoreTotal += Math.max(0, Math.min(1, Number(beats[index].hitScore) || 0));
+  }
+  const rawScore = scoreTotal / beats.length;
   const penalty = Math.max(0, Math.floor(Number(run?.extraTaps ?? 0) || 0)) * TREADMILL_RUN_EXTRA_TAP_PENALTY;
   return Math.max(0, Math.min(100, Math.round((rawScore * 100) - penalty)));
 }
@@ -1144,7 +1294,50 @@ function disposeObjectMaterials(root) {
 }
 
 function collectMaterialList(material) {
-  return Array.isArray(material) ? material.filter(Boolean) : [material].filter(Boolean);
+  if (!Array.isArray(material)) {
+    return material ? [material] : [];
+  }
+
+  const materials = [];
+  for (const entry of material) {
+    if (entry) {
+      materials.push(entry);
+    }
+  }
+  return materials;
+}
+
+function cloneEntryList(entries = []) {
+  const clonedEntries = new Array(entries.length);
+  for (let index = 0; index < entries.length; index += 1) {
+    clonedEntries[index] = copyOwnEnumerableProperties(entries[index]);
+  }
+  return clonedEntries;
+}
+
+function getSelectedIdListSignature(selectedId = '', entries = []) {
+  let signature = String(selectedId ?? '');
+  for (let index = 0; index < entries.length; index += 1) {
+    signature += `|${entries[index]?.id ?? ''}`;
+  }
+  return signature;
+}
+
+function listContainsValue(values = [], value = '') {
+  for (const entry of values) {
+    if (entry === value) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function addValuesToSet(target, values = []) {
+  target.clear();
+  for (const value of values) {
+    target.add(value);
+  }
+  return target;
 }
 
 function cloneVector3Like(point = { x: 0, y: 0, z: 0 }) {
@@ -1163,7 +1356,14 @@ function normalizeWorldMapBounds(bounds = {}) {
   const maxX = Number(bounds.maxX);
   const minZ = Number(bounds.minZ);
   const maxZ = Number(bounds.maxZ);
-  if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) {
+  if (
+    !Number.isFinite(minX)
+    || !Number.isFinite(maxX)
+    || !Number.isFinite(minZ)
+    || !Number.isFinite(maxZ)
+    || maxX <= minX
+    || maxZ <= minZ
+  ) {
     return null;
   }
 
@@ -1288,6 +1488,9 @@ export class Game {
     this.desiredPickupIds = new Set();
     this.pickupIdsToRemove = [];
     this.combatEffects = [];
+    this.muzzleFlashDirection = new THREE.Vector3();
+    this.muzzleFlashLocalDirection = new THREE.Vector3();
+    this.muzzleFlashParentQuaternion = new THREE.Quaternion();
     this.currentInteractable = null;
     this.portalArrival = parsePortalArrival(window.location.search);
     this.portalRedirectInFlight = false;
@@ -1303,6 +1506,9 @@ export class Game {
     this.gymCheckInColliders = [];
     this.activeInteractables = [];
     this.worldBuilderInteractables = [];
+    this.worldBuilderInteractablesFrame = -1;
+    this.activeInteractablesFrame = -1;
+    this.frameCounter = 0;
     this.portalInteractables = [];
     this.gymDoorBlockers = [];
     this.gymDoorBlockersDirty = true;
@@ -1333,6 +1539,29 @@ export class Game {
     this.lastNpcFocusTargetSignature = '';
     this.npcFocusTargets = new Map();
     this.npcFocusTargetValues = new Map();
+    this.lastNpcFocusTargetStates = new Map();
+    this.npcFocusTargetIdsToRemove = [];
+    this.npcHudSpeechAnchors = new Map();
+    this.npcInteractionHintFrame = -1;
+    this.npcInteractionHintState = {
+      npcInteractable: null,
+      deliveryInteraction: null,
+      deliveryPromptInteraction: null,
+      gymCheckInInteraction: null,
+      stockMarketInteraction: null,
+      blackjackInteraction: null,
+      schoolMicrogameInteraction: null,
+      bartenderInteraction: null,
+      pawnShopOwnerInteraction: null,
+      carDealerInteraction: null,
+      marthaInteraction: null,
+      interactable: null
+    };
+    this.npcVendorSearchOptions = {
+      npcId: '',
+      worldBuilderInteractables: EMPTY_INTERACTABLES
+    };
+    this.npcVendorPositionScratch = new THREE.Vector3();
     this.taskTrackerRentIntroState = {
       pendingSeq: 0,
       activeSeq: 0,
@@ -1350,7 +1579,10 @@ export class Game {
       rentIntroState: this.taskTrackerRentIntroState,
       getGroundHeightAt: (position) => this.getActiveGroundHeightAt(position)
     };
+    this.taskTrackerGetActiveInteractables = () => this.getActiveInteractables(this.taskTrackerContext.worldBuilderInteractables);
+    this.taskTrackerGetGymDoorBlockers = () => this.getGymDoorBlockers();
     this.pendingWorldPatches = [];
+    this.pendingWorldPatchCursor = 0;
     this.worldLayoutReady = false;
     this.worldPatchUnsubscribe = null;
     this.combatEventUnsubscribe = null;
@@ -1369,12 +1601,18 @@ export class Game {
       npcDebug: new Map(),
       pickups: new Map()
     };
+    this.npcRuntimeRenderState = new Map();
+    this.npcRuntimeRenderIdsToRemove = [];
     this.emoteMenuOpen = false;
+    this.emoteSelectionScratch = { index: -1, entry: null, hasSelection: false };
     this.projectedSpeechPosition = new THREE.Vector3();
     this.projectedSpeechScreen = { x: 0, y: 0 };
     this.speechAnchorScratch = new THREE.Vector3();
     this.visibleOverheadHealthBarIds = new Set();
+    this.overheadHealthBarRecords = new Map();
     this.overheadHealthBars = [];
+    this.speechBubbleRecords = new Map();
+    this.speechBubbleRecordActiveIds = new Set();
     this.speechBubbles = [];
     this.bartenderMenuAnchorPosition = new THREE.Vector3();
     this.aimRaycaster = new THREE.Raycaster();
@@ -1391,10 +1629,23 @@ export class Game {
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
     this.hotbarItemOrder = readStoredHotbarItemOrder();
+    this.hotbarLayoutRevision = 0;
     this.hotbarSlots = createHotbarSlots({ hotbarItemOrder: this.hotbarItemOrder });
     this.selectedHotbarSlotIndex = 0;
     this.pendingHotbarWeaponId = null;
     this.pendingHotbarRequestedAt = 0;
+    this.lastHotbarHudSignature = '';
+    this.lastHotbarHudLayoutRevision = -1;
+    this.lastHotbarHudSelectedIndex = -1;
+    this.lastHotbarHudDisabled = null;
+    this.lastHotbarHudOwnedWeaponIds = null;
+    this.lastHotbarHudEquippedWeaponId = null;
+    this.lastHotbarHudBeerCount = null;
+    this.lastHotbarHudShotCount = null;
+    this.lastHotbarHudCigaretteCount = null;
+    this.lastHotbarHudBurgerCount = null;
+    this.lastHotbarHudGlizzyCount = null;
+    this.lastHotbarHudSodaCount = null;
     this.hotbarEquipIntro = {
       weaponId: '',
       startedAtMs: 0,
@@ -1440,6 +1691,9 @@ export class Game {
     };
     this.phoneMapZoom = PHONE_MAP_DEFAULT_ZOOM;
     this.phoneMapPan = { x: 0, z: 0 };
+    this.phoneMapPlacementFeatureRevision = null;
+    this.phoneMapPlacementFeatureSource = null;
+    this.phoneMapPlacementFeatures = [];
     this.worldMapImage = null;
     this.worldMapImageRequest = null;
     this.worldMapImageRequestUrl = '';
@@ -1458,10 +1712,25 @@ export class Game {
     this.releaseReloadStarted = false;
     this.releaseVersionVisibilityHandler = null;
     this.lastConnectionHudSignature = '';
+    this.lastConnectionHudStatus = null;
+    this.lastConnectionHudLabel = null;
+    this.lastConnectionHudDetail = null;
+    this.lastConnectionHudActivePlayerCount = null;
     this.lastConnectionToastStatus = '';
     this.lastSkillAwardSeq = 0;
+    this.lastSkillProgressSignature = '';
+    this.lastSkillProgressStrengthXp = -1;
+    this.lastSkillProgressAgilityXp = -1;
+    this.lastSkillProgressIntelligenceXp = -1;
+    this.lastSkillProgressCharismaXp = -1;
+    this.lastSkillProgressAwardSeq = -1;
+    this.lastSkillProgressAwardSkillId = '';
+    this.lastSkillProgressAwardXpGained = -1;
+    this.lastSkillProgressAwardOldLevel = -1;
+    this.lastSkillProgressAwardNewLevel = -1;
     this.skillLevelSnapshot = new Map();
     this.recentSkillLevelUpFeedback = new Map();
+    this.visibleCharacterSelectorCardIds = new Set();
     this.lastSkillLevelUpSoundAt = -Infinity;
     this.walletRequestInFlight = false;
     this.walletRefreshAt = 0;
@@ -1507,8 +1776,17 @@ export class Game {
     this.schoolMicrogameSessionActive = false;
     this.schoolMicrogameSessionRoundCount = 0;
     this.schoolMicrogameSessionXpEarned = 0;
+    this.memoryMatchMatchedIdSet = new Set();
+    this.schoolGeographyCountryModule = null;
+    this.schoolGeographyCountryModulePromise = null;
+    this.schoolGeographyCountrySyncPending = false;
+    this.schoolGeographyCountrySyncPendingGameId = '';
     this.schoolGeographyGlobeRenderer = null;
+    this.schoolGeographyGlobeRendererPromise = null;
+    this.schoolGeographyGlobeSyncPending = false;
     this.schoolTeacherPreviewRenderer = null;
+    this.schoolTeacherPreviewRendererPromise = null;
+    this.schoolTeacherPreviewSyncPending = false;
     this.vibeHero = null;
     this.vibeHeroSelectedSongId = VIBE_HERO_DEFAULT_SONG_ID;
     this.vibeHeroSequence = 0;
@@ -1554,9 +1832,12 @@ export class Game {
     this.poseDebugSection = 'unarmed';
     this.shaderDebugMenuVisible = false;
     this.activeVibeShaderPresetId = DEFAULT_VIBE_SHADER_PRESET_ID;
-    this.vibeShaderPresetIntensities = new Map(
-      VIBE_SHADER_PRESETS.map((preset) => [preset.id, DEFAULT_VIBE_SHADER_INTENSITY])
-    );
+    this.vibeShaderPresetIntensities = new Map();
+    this.lastDrunknessShaderLevel = NaN;
+    this.lastDrunknessShaderIntensity = NaN;
+    for (let index = 0; index < VIBE_SHADER_PRESETS.length; index += 1) {
+      this.vibeShaderPresetIntensities.set(VIBE_SHADER_PRESETS[index].id, DEFAULT_VIBE_SHADER_INTENSITY);
+    }
     this.cameraZoomIndex = DEFAULT_CAMERA_ZOOM_INDEX;
     this.deathCameraZoomStartedAt = -Infinity;
     this.deathCameraZoomFromLevel = CAMERA_ZOOM_LEVELS[DEFAULT_CAMERA_ZOOM_INDEX];
@@ -1605,6 +1886,37 @@ export class Game {
     this.moneyFloaters = [];
     this.moneyFloaterSequence = 0;
     this.moneyFloaterAnchor = new THREE.Vector3();
+    this.moneyHudState = {
+      amount: 0,
+      netWorth: 0,
+      stockProfit: 0
+    };
+    this.taskHudState = {
+      visible: false,
+      title: ''
+    };
+    this.combatHudState = {
+      visible: true,
+      health: PLAYER_MAX_HEALTH,
+      maxHealth: PLAYER_MAX_HEALTH,
+      ammoInClip: 0,
+      reserveAmmo: 0,
+      isReloading: false,
+      reloadEndsAt: 0,
+      alive: true,
+      respawnAt: 0,
+      kills: 0,
+      deaths: 0,
+      armed: false
+    };
+    this.mobileControlsHudState = {
+      visible: true,
+      armed: false,
+      fireLabel: ''
+    };
+    this.drunknessHudState = {
+      level: 0
+    };
     this.skillXpFloaters = [];
     this.skillXpFloaterSequence = 0;
     this.skillXpFloaterAnchor = new THREE.Vector3();
@@ -1622,6 +1934,86 @@ export class Game {
     this.basketballShotSide = new THREE.Vector3();
     this.treadmillRunForward = new THREE.Vector3();
     this.treadmillRunSide = new THREE.Vector3();
+    this.playerBoundItemsHudState = {
+      skateboardOwned: false,
+      skating: false,
+      vehicleItemId: '',
+      vehicleLabel: ''
+    };
+    this.playerSkateboardState = {
+      owned: false,
+      skating: false,
+      vehicleItemId: ''
+    };
+    this.playerUpdateOptions = {
+      skateboardOwned: false,
+      vehicleItemId: '',
+      skating: false,
+      speedScale: 1,
+      movementCameraForward: CAMERA_MOVEMENT_FORWARD,
+      stationaryRun: false,
+      locomotionMode: undefined,
+      locomotionPlaybackRate: undefined
+    };
+    this.playerWeaponStateOptions = {
+      visible: true
+    };
+    this.playerReloadStateOptions = {
+      weaponId: '',
+      startedAtMs: 0,
+      endsAtMs: 0,
+      resetMotion: true
+    };
+    this.playerAliveStateOptions = {
+      startedAtMs: 0
+    };
+    this.activeWorkoutUpdateOptions = {
+      localAlive: true,
+      colliders: EMPTY_COLLIDERS,
+      sceneBounds: null,
+      groundHeight: 0,
+      now: 0
+    };
+    this.workoutMoveOptions = {
+      speedScale: 1,
+      stopDistance: SNATCH_APPROACH_STOP_DISTANCE
+    };
+    this.basketballShotHudGame = {
+      phase: 'idle',
+      progress: 0,
+      released: false,
+      made: null,
+      release: null,
+      score: 0,
+      message: ''
+    };
+    this.basketballShotHudState = {
+      visible: false,
+      game: null
+    };
+    this.treadmillRunHudGame = {
+      phase: 'idle',
+      countdownMs: TREADMILL_RUN_COUNTDOWN_MS,
+      countdownElapsedMs: 0,
+      countdownRemainingMs: 0,
+      durationMs: 0,
+      elapsedMs: 0,
+      remainingMs: 0,
+      bpm: 0,
+      score: 0,
+      beatCount: 0,
+      hitCount: 0,
+      missedCount: 0,
+      nextBeatProgress: 0,
+      grade: '',
+      awardXp: false,
+      rewardScore: TREADMILL_RUN_REWARD_SCORE,
+      message: ''
+    };
+    this.treadmillRunHudState = {
+      visible: false,
+      game: null
+    };
     this.treadmillRunAudioNodes = [];
     this.rentIntroCutsceneForward = new THREE.Vector3();
     this.rentIntroCutsceneSide = new THREE.Vector3();
@@ -1642,6 +2034,22 @@ export class Game {
     this.cameraOcclusionPreservePlacementIds = [];
     this.cameraOcclusionOptions = {
       preserveInteriorNodePlacementIds: this.cameraOcclusionPreservePlacementIds
+    };
+    this.cameraUpdateOptions = {
+      snap: false,
+      now: 0
+    };
+    this.interactionCameraFocusOptions = {
+      snap: false,
+      now: 0
+    };
+    this.cameraFovOptions = {
+      snap: false,
+      smoothing: INTERACTION_CAMERA_RETURN_FOV_SMOOTHING
+    };
+    this.movementFrameSummaryOptions = {
+      force: false,
+      now: 0
     };
     this.playerCameraOcclusionRenderState = null;
 
@@ -1806,12 +2214,19 @@ export class Game {
       return;
     }
 
-    const measures = performance.getEntriesByType('measure')
-      .filter((entry) => this.bootMeasureLabels.includes(entry.name))
-      .map((entry) => ({
+    const measureEntries = performance.getEntriesByType('measure');
+    const measures = [];
+    for (let index = 0; index < measureEntries.length; index += 1) {
+      const entry = measureEntries[index];
+      if (!listContainsValue(this.bootMeasureLabels, entry.name)) {
+        continue;
+      }
+
+      measures.push({
         name: entry.name,
         durationMs: Number(entry.duration.toFixed(1))
-      }));
+      });
+    }
 
     if (measures.length) {
       console.info('[Boot] Performance measures.', measures);
@@ -2200,11 +2615,13 @@ export class Game {
   updateDrunknessEffects(localPlayerState = this.getLocalPlayerState()) {
     const level = Math.max(0, Math.min(DRUNKNESS_MAX_LEVEL, Math.floor(Number(localPlayerState?.drunknessLevel) || 0)));
     const intensity = level > 0 ? level / DRUNKNESS_MAX_LEVEL : 0;
-    if (this.vibeShaderPass?.uniforms?.uDrunknessLevel) {
+    if (level !== this.lastDrunknessShaderLevel && this.vibeShaderPass?.uniforms?.uDrunknessLevel) {
       this.vibeShaderPass.uniforms.uDrunknessLevel.value = level;
+      this.lastDrunknessShaderLevel = level;
     }
-    if (this.vibeShaderPass?.uniforms?.uDrunknessIntensity) {
+    if (intensity !== this.lastDrunknessShaderIntensity && this.vibeShaderPass?.uniforms?.uDrunknessIntensity) {
       this.vibeShaderPass.uniforms.uDrunknessIntensity.value = intensity;
+      this.lastDrunknessShaderIntensity = intensity;
     }
   }
 
@@ -2432,9 +2849,11 @@ export class Game {
   }
 
   syncVisibleCharacterSelectorPortraits(entries, renderer, selectedId) {
-    const visibleIds = new Set(
-      this.hud.getVisibleCharacterSelectorCardIds({ overscanPx: 180 })
-    );
+    const visibleIds = this.visibleCharacterSelectorCardIds;
+    this.hud.getVisibleCharacterSelectorCardIds({
+      overscanPx: 180,
+      output: visibleIds
+    });
     visibleIds.add(selectedId);
 
     for (const entry of entries) {
@@ -2481,7 +2900,7 @@ export class Game {
     }
 
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
-    const entries = this.characterRoster.map((entry) => ({ ...entry }));
+    const entries = cloneEntryList(this.characterRoster);
     this.hud.setPhoneCharacterState({
       selectedId,
       entries
@@ -2494,12 +2913,15 @@ export class Game {
     this.hud.setPhoneMissionsState(this.phoneMissionState);
   }
 
-  refreshPhoneSkillsHud(localPlayerState = this.getLocalPlayerState()) {
+  refreshPhoneSkillsHud(localPlayerState = this.getLocalPlayerState(), { skills = null } = {}) {
     if (localPlayerState) {
       this.phoneSkillsState = {
-        skills: getPlayerSkillsSnapshot(localPlayerState),
+        skills: Array.isArray(skills) ? skills : getPlayerSkillsSnapshot(localPlayerState),
         recentAward: this.phoneSkillsState.recentAward ?? null
       };
+    }
+    if (!this.phoneMenuVisible || this.phoneActiveAppId !== 'skills') {
+      return;
     }
     this.hud.setPhoneSkillsState(this.phoneSkillsState);
   }
@@ -2511,7 +2933,30 @@ export class Game {
       wallet: this.getActiveStockMarketSnapshot(localPlayerState) ?? this.phoneWalletState.wallet,
       cash: normalizeMoneyAmount(localPlayerState?.money ?? this.phoneWalletState.cash ?? 0)
     };
+    if (!this.phoneMenuVisible || this.phoneActiveAppId !== 'wallet') {
+      return;
+    }
     this.hud.setPhoneWalletState(this.phoneWalletState);
+  }
+
+  getListedStockSymbol(stocks = [], preferredSymbol = '') {
+    const normalizedPreferredSymbol = String(preferredSymbol ?? '').trim().toUpperCase();
+    let fallbackSymbol = '';
+    for (const stock of Array.isArray(stocks) ? stocks : []) {
+      const symbol = String(stock?.symbol ?? '').trim().toUpperCase();
+      if (!symbol) {
+        continue;
+      }
+
+      if (!fallbackSymbol) {
+        fallbackSymbol = symbol;
+      }
+      if (symbol === normalizedPreferredSymbol) {
+        return symbol;
+      }
+    }
+
+    return fallbackSymbol;
   }
 
   refreshPhoneStocksHud() {
@@ -2519,9 +2964,9 @@ export class Game {
       ?? this.phoneStocksState.market
       ?? this.phoneWalletState.wallet;
     const stocks = Array.isArray(market?.stocks) ? market.stocks : [];
-    const listedSymbols = new Set(stocks.map((stock) => stock.symbol));
-    if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
-      this.stockMarketSelectedSymbol = stocks[0]?.symbol ?? '';
+    const listedSymbol = this.getListedStockSymbol(stocks, this.stockMarketSelectedSymbol);
+    if (!this.stockMarketSelectedSymbol || listedSymbol !== this.stockMarketSelectedSymbol) {
+      this.stockMarketSelectedSymbol = listedSymbol;
     }
     this.phoneStocksState = {
       ...this.phoneStocksState,
@@ -2529,6 +2974,9 @@ export class Game {
       selectedSymbol: this.stockMarketSelectedSymbol,
       quantity: this.stockMarketQuantity
     };
+    if (!this.phoneMenuVisible || this.phoneActiveAppId !== 'stocks') {
+      return;
+    }
     this.hud.setPhoneStocksState(this.phoneStocksState);
   }
 
@@ -2594,10 +3042,11 @@ export class Game {
 
   getStockUnrealizedProfit(snapshot = null) {
     const stocks = Array.isArray(snapshot?.stocks) ? snapshot.stocks : [];
-    return stocks.reduce(
-      (sum, stock) => sum + normalizeMoneyAmount(stock?.unrealizedProfit ?? 0),
-      0
-    );
+    let sum = 0;
+    for (let index = 0; index < stocks.length; index += 1) {
+      sum += normalizeMoneyAmount(stocks[index]?.unrealizedProfit ?? 0);
+    }
+    return sum;
   }
 
   refreshPhoneMapHud(localPlayerState = this.getLocalPlayerState(), { force = false } = {}) {
@@ -2678,12 +3127,33 @@ export class Game {
     }
 
     const features = this.getPhoneMapPlacementFeatures();
-    const points = [
-      ...features.map((feature) => ({ x: Number(feature.x), z: Number(feature.z) })),
-      localPlayerState ? { x: Number(localPlayerState.x), z: Number(localPlayerState.z) } : null
-    ].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.z));
+    let hasPoint = false;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    const includePoint = (xValue, zValue) => {
+      const x = Number(xValue);
+      const z = Number(zValue);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return;
+      }
 
-    if (!points.length) {
+      hasPoint = true;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    };
+
+    for (const feature of features) {
+      includePoint(feature.x, feature.z);
+    }
+    if (localPlayerState) {
+      includePoint(localPlayerState.x, localPlayerState.z);
+    }
+
+    if (!hasPoint) {
       const minX = -WORLD_GROUND_RADIUS * 0.5;
       const maxX = WORLD_GROUND_RADIUS * 0.5;
       const minZ = -WORLD_GROUND_RADIUS * 0.5;
@@ -2698,10 +3168,10 @@ export class Game {
       };
     }
 
-    const minX = Math.min(...points.map((point) => point.x)) - 8;
-    const maxX = Math.max(...points.map((point) => point.x)) + 8;
-    const minZ = Math.min(...points.map((point) => point.z)) - 8;
-    const maxZ = Math.max(...points.map((point) => point.z)) + 8;
+    minX -= 8;
+    maxX += 8;
+    minZ -= 8;
+    maxZ += 8;
     return {
       minX,
       maxX,
@@ -2799,7 +3269,7 @@ export class Game {
       return;
     }
 
-    const length = Math.hypot(x, z) || 1;
+    const length = x && z ? Math.SQRT2 : 1;
     const bounds = this.getPhoneMapBounds();
     const viewSpanX = bounds.spanX / this.phoneMapZoom;
     const viewSpanZ = bounds.spanZ / this.phoneMapZoom;
@@ -2855,7 +3325,8 @@ export class Game {
   isAdminPromptAutoDeployAvailable() {
     try {
       const url = new URL(window.location.href);
-      return ['1', 'true', 'yes'].includes(String(url.searchParams.get('agentAutoDeploy') ?? '').toLowerCase());
+      const value = String(url.searchParams.get('agentAutoDeploy') ?? '').toLowerCase();
+      return value === '1' || value === 'true' || value === 'yes';
     } catch {
       return false;
     }
@@ -2871,15 +3342,27 @@ export class Game {
       return '';
     }
 
-    const summaryTask = this.adminPromptTasks.find((task) => task.id === id);
+    let summaryTask = null;
+    for (const task of this.adminPromptTasks) {
+      if (task.id === id) {
+        summaryTask = task;
+        break;
+      }
+    }
     if (summaryTask) {
       return String(summaryTask.threadId || summaryTask.id || '').trim();
     }
 
     for (const threadTasks of this.adminPromptThreadTasks.values()) {
-      const task = Array.isArray(threadTasks)
-        ? threadTasks.find((candidate) => candidate.id === id)
-        : null;
+      let task = null;
+      if (Array.isArray(threadTasks)) {
+        for (const candidate of threadTasks) {
+          if (candidate.id === id) {
+            task = candidate;
+            break;
+          }
+        }
+      }
       if (task) {
         return String(task.threadId || task.id || '').trim();
       }
@@ -2906,11 +3389,21 @@ export class Game {
           continue;
         }
         const summaryTask = mergedTasks.get(task.id);
-        mergedTasks.set(task.id, summaryTask ? { ...task, ...summaryTask } : task);
+        if (summaryTask) {
+          const mergedTask = copyOwnEnumerableProperties(task);
+          copyOwnEnumerablePropertiesInto(mergedTask, summaryTask);
+          mergedTasks.set(task.id, mergedTask);
+        } else {
+          mergedTasks.set(task.id, task);
+        }
       }
     }
 
-    return [...mergedTasks.values()];
+    const tasks = [];
+    for (const task of mergedTasks.values()) {
+      tasks.push(task);
+    }
+    return tasks;
   }
 
   async loadAdminPromptThread(taskId = '', { force = false } = {}) {
@@ -3020,9 +3513,12 @@ export class Game {
     }
 
     const position = this.getAdminPromptVectorSnapshot(interactable.position);
-    const distance = position && this.player?.position
-      ? Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z)
-      : 0;
+    let distance = 0;
+    if (position && this.player?.position) {
+      const dx = position.x - this.player.position.x;
+      const dz = position.z - this.player.position.z;
+      distance = Math.sqrt((dx * dx) + (dz * dz));
+    }
     return {
       kind: String(interactable.kind ?? ''),
       prompt: String(interactable.prompt ?? ''),
@@ -3302,11 +3798,17 @@ export class Game {
 
       this.adminPromptTasks = Array.isArray(result.tasks) ? result.tasks : [];
       this.adminPromptHasMoreThreads = Boolean(result.hasMore);
-      if (
-        this.adminPromptSelectedTaskId
-        && !this.adminPromptTasks.some((task) => task.id === this.adminPromptSelectedTaskId)
-      ) {
-        this.adminPromptSelectedTaskId = '';
+      if (this.adminPromptSelectedTaskId) {
+        let selectedTaskExists = false;
+        for (let index = 0; index < this.adminPromptTasks.length; index += 1) {
+          if (this.adminPromptTasks[index].id === this.adminPromptSelectedTaskId) {
+            selectedTaskExists = true;
+            break;
+          }
+        }
+        if (!selectedTaskExists) {
+          this.adminPromptSelectedTaskId = '';
+        }
       }
       this.adminPromptRefreshAt = performance.now() + ADMIN_PROMPT_TASK_REFRESH_MS;
     } catch (error) {
@@ -3356,15 +3858,27 @@ export class Game {
   }
 
   setAdminPromptTab(tabId = '') {
-    this.adminPromptActiveTab = ['new', 'threads'].includes(String(tabId))
-      ? String(tabId)
+    const normalizedTabId = String(tabId);
+    this.adminPromptActiveTab = normalizedTabId === 'new' || normalizedTabId === 'threads'
+      ? normalizedTabId
       : 'threads';
     this.refreshAdminPromptHud();
   }
 
   selectAdminPromptTask(taskId = '') {
     const id = String(taskId ?? '').trim();
-    if (!id || !this.adminPromptTasks.some((task) => task.id === id)) {
+    if (!id) {
+      return;
+    }
+
+    let taskExists = false;
+    for (let index = 0; index < this.adminPromptTasks.length; index += 1) {
+      if (this.adminPromptTasks[index].id === id) {
+        taskExists = true;
+        break;
+      }
+    }
+    if (!taskExists) {
       return;
     }
 
@@ -3651,26 +4165,27 @@ export class Game {
 
   getWorldMapCaptureBounds({ width = WORLD_MAP_CAPTURE_WIDTH, height = WORLD_MAP_CAPTURE_HEIGHT } = {}) {
     const features = this.getPhoneMapPlacementFeatures();
-    const bounds = features.reduce((box, feature) => {
+    const bounds = {
+      minX: Infinity,
+      maxX: -Infinity,
+      minZ: Infinity,
+      maxZ: -Infinity
+    };
+    for (let index = 0; index < features.length; index += 1) {
+      const feature = features[index];
       const x = Number(feature.x);
       const z = Number(feature.z);
       const halfWidth = Math.max(0.5, Number(feature.width ?? 1) * 0.5);
       const halfDepth = Math.max(0.5, Number(feature.depth ?? 1) * 0.5);
       if (!Number.isFinite(x) || !Number.isFinite(z)) {
-        return box;
+        continue;
       }
 
-      box.minX = Math.min(box.minX, x - halfWidth);
-      box.maxX = Math.max(box.maxX, x + halfWidth);
-      box.minZ = Math.min(box.minZ, z - halfDepth);
-      box.maxZ = Math.max(box.maxZ, z + halfDepth);
-      return box;
-    }, {
-      minX: Infinity,
-      maxX: -Infinity,
-      minZ: Infinity,
-      maxZ: -Infinity
-    });
+      bounds.minX = Math.min(bounds.minX, x - halfWidth);
+      bounds.maxX = Math.max(bounds.maxX, x + halfWidth);
+      bounds.minZ = Math.min(bounds.minZ, z - halfDepth);
+      bounds.maxZ = Math.max(bounds.maxZ, z + halfDepth);
+    }
 
     const playerPosition = this.player?.position;
     if (Number.isFinite(playerPosition?.x) && Number.isFinite(playerPosition?.z)) {
@@ -3680,7 +4195,12 @@ export class Game {
       bounds.maxZ = Math.max(bounds.maxZ, playerPosition.z);
     }
 
-    if (![bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ].every(Number.isFinite)) {
+    if (
+      !Number.isFinite(bounds.minX)
+      || !Number.isFinite(bounds.maxX)
+      || !Number.isFinite(bounds.minZ)
+      || !Number.isFinite(bounds.maxZ)
+    ) {
       bounds.minX = -WORLD_GROUND_RADIUS * 0.5;
       bounds.maxX = WORLD_GROUND_RADIUS * 0.5;
       bounds.minZ = -WORLD_GROUND_RADIUS * 0.5;
@@ -3713,7 +4233,16 @@ export class Game {
     spanZ = Math.max(1, bounds.maxZ - bounds.minZ);
     const centerX = (bounds.minX + bounds.maxX) * 0.5;
     const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
-    return { ...bounds, spanX, spanZ, centerX, centerZ };
+    return {
+      minX: bounds.minX,
+      maxX: bounds.maxX,
+      minZ: bounds.minZ,
+      maxZ: bounds.maxZ,
+      spanX,
+      spanZ,
+      centerX,
+      centerZ
+    };
   }
 
   collectWorldMapCaptureHiddenObjects() {
@@ -3743,7 +4272,15 @@ export class Game {
       }
     }
 
-    return [...new Set(objects.filter(Boolean))];
+    const uniqueObjects = [];
+    const seenObjects = new Set();
+    for (const object of objects) {
+      if (object && !seenObjects.has(object)) {
+        seenObjects.add(object);
+        uniqueObjects.push(object);
+      }
+    }
+    return uniqueObjects;
   }
 
   async captureWorldMapDataUrl({
@@ -3775,7 +4312,10 @@ export class Game {
     const previousRenderTarget = this.renderer.getRenderTarget();
     const previousFog = this.scene.fog;
     const hiddenObjects = this.collectWorldMapCaptureHiddenObjects();
-    const previousVisibility = hiddenObjects.map((object) => [object, object.visible]);
+    const previousVisibility = [];
+    for (const object of hiddenObjects) {
+      previousVisibility.push([object, object.visible]);
+    }
 
     try {
       this.worldBuilder?.clearCameraOcclusion?.();
@@ -4064,9 +4604,13 @@ export class Game {
   }
 
   getVibeRadioSelectedTrack() {
-    return this.vibeRadioTracks.find((track) => track.id === this.vibeRadioSelectedTrackId)
-      ?? this.vibeRadioTracks[0]
-      ?? null;
+    for (const track of this.vibeRadioTracks) {
+      if (track.id === this.vibeRadioSelectedTrackId) {
+        return track;
+      }
+    }
+
+    return this.vibeRadioTracks[0] ?? null;
   }
 
   getVibeRadioAudioDuration() {
@@ -4236,7 +4780,13 @@ export class Game {
     const previousSelectedTrackId = this.vibeRadioSelectedTrackId;
     this.vibeRadioTracks = nextTracks;
 
-    const selectedStillExists = nextTracks.some((track) => track.id === previousSelectedTrackId);
+    let selectedStillExists = false;
+    for (let index = 0; index < nextTracks.length; index += 1) {
+      if (nextTracks[index].id === previousSelectedTrackId) {
+        selectedStillExists = true;
+        break;
+      }
+    }
     this.vibeRadioSelectedTrackId = selectedStillExists
       ? previousSelectedTrackId
       : nextTracks[0]?.id ?? '';
@@ -4350,7 +4900,13 @@ export class Game {
 
   selectVibeRadioTrack(trackId = '', { autoplay = false } = {}) {
     const normalizedTrackId = String(trackId ?? '').trim();
-    const track = this.vibeRadioTracks.find((entry) => entry.id === normalizedTrackId) ?? null;
+    let track = null;
+    for (const entry of this.vibeRadioTracks) {
+      if (entry.id === normalizedTrackId) {
+        track = entry;
+        break;
+      }
+    }
     if (!track) {
       return false;
     }
@@ -4397,10 +4953,13 @@ export class Game {
       return false;
     }
 
-    const currentIndex = Math.max(
-      0,
-      this.vibeRadioTracks.findIndex((track) => track.id === this.vibeRadioSelectedTrackId)
-    );
+    let currentIndex = 0;
+    for (let index = 0; index < this.vibeRadioTracks.length; index += 1) {
+      if (this.vibeRadioTracks[index].id === this.vibeRadioSelectedTrackId) {
+        currentIndex = index;
+        break;
+      }
+    }
     const nextIndex = currentIndex + Math.sign(direction || 1);
     const resolvedIndex = wrap
       ? (nextIndex + this.vibeRadioTracks.length) % this.vibeRadioTracks.length
@@ -4564,7 +5123,7 @@ export class Game {
     const available = this.canUseCharacterSelector();
     const visible = available && this.characterSelectorVisible;
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
-    const entries = this.characterRoster.map((entry) => ({ ...entry }));
+    const entries = cloneEntryList(this.characterRoster);
     this.hud.setCharacterSelectorState({
       available,
       visible,
@@ -4677,12 +5236,14 @@ export class Game {
       });
     }
 
-    entries.push(...getPlayerOwnedVehicleMenuItems(localPlayerState).map((entry) => ({
-      ...entry,
-      kind: 'car',
-      selected: entry.id === selectedId,
-      active: entry.id === activeId
-    })));
+    for (const entry of getPlayerOwnedVehicleMenuItems(localPlayerState)) {
+      entries.push({
+        ...entry,
+        kind: 'car',
+        selected: entry.id === selectedId,
+        active: entry.id === activeId
+      });
+    }
 
     return entries;
   }
@@ -4691,8 +5252,12 @@ export class Game {
     const activeId = this.getSelectedVehicleSelectorItemId(localPlayerState);
     const entries = this.getCarSelectorEntries(localPlayerState, activeId);
     const focusedId = String(this.carSelectorFocusedItemId ?? '').trim();
-    if (focusedId && entries.some((entry) => entry.id === focusedId)) {
-      return focusedId;
+    if (focusedId) {
+      for (const entry of entries) {
+        if (entry.id === focusedId) {
+          return focusedId;
+        }
+      }
     }
 
     return activeId || entries[0]?.id || '';
@@ -4742,10 +5307,7 @@ export class Game {
       return;
     }
 
-    const previewSignature = JSON.stringify({
-      selectedId: focusedId,
-      entries: entries.map((entry) => entry.id)
-    });
+    const previewSignature = getSelectedIdListSignature(focusedId, entries);
     if (previewSignature !== this.lastCarSelectorPreviewSignature) {
       this.lastCarSelectorPreviewSignature = previewSignature;
       void this.syncCarSelectorVehiclePreviews(entries, focusedId);
@@ -4901,6 +5463,9 @@ export class Game {
       this.cancelPhoneCharacterPreviewSync();
     }
     this.hud.setPhoneState({ visible: true, activeAppId: this.phoneActiveAppId });
+    if (this.phoneActiveAppId === 'missions') {
+      this.syncTaskHud(this.getLocalPlayerState(), { includeMissionList: true });
+    }
     this.scheduleActivePhoneAppHudRefresh(this.getLocalPlayerState(), { forceMap: true });
     if (this.phoneActiveAppId === 'wallet' || this.phoneActiveAppId === 'stocks') {
       void this.refreshWalletSnapshot({ force: true });
@@ -4962,52 +5527,99 @@ export class Game {
     }
   }
 
-  getPhoneMapPlacementFeatures() {
-    const layout = this.worldBuilder?.getLayout?.() ?? this.currentLayout ?? {};
-    const features = [];
-    for (const placement of [...(layout.tiles ?? []), ...(layout.props ?? [])]) {
-      const item = getBuilderItemById(placement?.itemId);
-      const cellX = Number(placement?.cell?.[0] ?? placement?.cellX);
-      const cellZ = Number(placement?.cell?.[1] ?? placement?.cellZ);
-      const center = Number.isFinite(cellX) && Number.isFinite(cellZ) && item
-        ? getTileCenterWorldPosition(item, cellX, cellZ, placement.rotationQuarterTurns ?? 0)
-        : {
-            x: Number(placement?.x ?? placement?.position?.[0]),
-            z: Number(placement?.z ?? placement?.position?.[1])
-          };
-      if (!Number.isFinite(center?.x) || !Number.isFinite(center?.z)) {
-        continue;
-      }
+  getPhoneMapPlacementFeatureCacheKey() {
+    const source = this.worldBuilder?.worldState ?? this.currentLayout ?? null;
+    const revision = Number(this.worldBuilder?.worldState?.getPlacementRevision?.());
+    return {
+      source,
+      revision: Number.isFinite(revision) ? revision : null
+    };
+  }
 
-      const label = String(item?.label ?? placement?.label ?? placement?.itemId ?? '').trim();
-      const key = `${placement?.itemId ?? ''} ${label}`.toLowerCase();
-      const [footprintWidth = 1, footprintDepth = 1] = item?.layer === 'tile'
-        ? getTileFootprintWorldSize(item, placement.rotationQuarterTurns ?? 0)
-        : (item?.size ?? [1, 1]);
-      const width = Math.max(1, Number(footprintWidth) || 1);
-      const depth = Math.max(1, Number(footprintDepth) || 1);
-      const kind = key.includes('road')
-        ? 'road'
-        : key.includes('gym')
-          ? 'gym'
-          : key.includes('bank')
-            ? 'bank'
-            : key.includes('casino')
-              ? 'casino'
-              : key.includes('barbell') || key.includes('snatch')
-                ? 'workout'
-                : placement?.layer === 'prop'
-                  ? 'prop'
-                  : 'building';
-      features.push({
-        id: placement?.id ?? `${placement?.itemId}:${features.length}`,
-        kind,
-        label,
-        x: center.x,
-        z: center.z,
-        width,
-        depth
+  appendPhoneMapPlacementFeature(features, placement = null, fallbackLayer = '') {
+    const layer = placement?.layer ?? fallbackLayer;
+    if (!placement || (layer !== 'tile' && layer !== 'prop')) {
+      return;
+    }
+
+    const item = getBuilderItemById(placement?.itemId);
+    const cellX = Number(placement?.cell?.[0] ?? placement?.cellX);
+    const cellZ = Number(placement?.cell?.[1] ?? placement?.cellZ);
+    const center = Number.isFinite(cellX) && Number.isFinite(cellZ) && item
+      ? getTileCenterWorldPosition(item, cellX, cellZ, placement.rotationQuarterTurns ?? 0)
+      : {
+          x: Number(placement?.x ?? placement?.position?.[0]),
+          z: Number(placement?.z ?? placement?.position?.[1])
+        };
+    if (!Number.isFinite(center?.x) || !Number.isFinite(center?.z)) {
+      return;
+    }
+
+    const label = String(item?.label ?? placement?.label ?? placement?.itemId ?? '').trim();
+    const key = `${placement?.itemId ?? ''} ${label}`.toLowerCase();
+    const [footprintWidth = 1, footprintDepth = 1] = item?.layer === 'tile'
+      ? getTileFootprintWorldSize(item, placement.rotationQuarterTurns ?? 0)
+      : (item?.size ?? [1, 1]);
+    const width = Math.max(1, Number(footprintWidth) || 1);
+    const depth = Math.max(1, Number(footprintDepth) || 1);
+    const kind = key.includes('road')
+      ? 'road'
+      : key.includes('gym')
+        ? 'gym'
+        : key.includes('bank')
+          ? 'bank'
+          : key.includes('casino')
+            ? 'casino'
+            : key.includes('barbell') || key.includes('snatch')
+              ? 'workout'
+              : layer === 'prop'
+                ? 'prop'
+                : 'building';
+    features.push({
+      id: placement?.id ?? `${placement?.itemId}:${features.length}`,
+      kind,
+      label,
+      x: center.x,
+      z: center.z,
+      width,
+      depth
+    });
+  }
+
+  getPhoneMapPlacementFeatureCache() {
+    const cacheKey = this.getPhoneMapPlacementFeatureCacheKey();
+    if (
+      this.phoneMapPlacementFeatureSource === cacheKey.source
+      && this.phoneMapPlacementFeatureRevision === cacheKey.revision
+    ) {
+      return this.phoneMapPlacementFeatures;
+    }
+
+    const features = [];
+    if (this.worldBuilder?.forEachPlacement) {
+      this.worldBuilder.forEachPlacement((placement) => {
+        this.appendPhoneMapPlacementFeature(features, placement);
       });
+    } else {
+      const layout = this.currentLayout ?? {};
+      for (const placement of layout.tiles ?? []) {
+        this.appendPhoneMapPlacementFeature(features, placement, 'tile');
+      }
+      for (const placement of layout.props ?? []) {
+        this.appendPhoneMapPlacementFeature(features, placement, 'prop');
+      }
+    }
+
+    this.phoneMapPlacementFeatureSource = cacheKey.source;
+    this.phoneMapPlacementFeatureRevision = cacheKey.revision;
+    this.phoneMapPlacementFeatures = features;
+    return features;
+  }
+
+  getPhoneMapPlacementFeatures() {
+    const features = [];
+    for (const feature of this.getPhoneMapPlacementFeatureCache()) {
+      features.push(feature);
     }
 
     for (const npc of this.npcServiceState.npcs?.values?.() ?? []) {
@@ -5192,7 +5804,13 @@ export class Game {
       return;
     }
 
-    const currentIndex = entries.findIndex((entry) => entry.id === focusedId);
+    let currentIndex = -1;
+    for (let index = 0; index < entries.length; index += 1) {
+      if (entries[index].id === focusedId) {
+        currentIndex = index;
+        break;
+      }
+    }
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = (safeIndex + step + entries.length) % entries.length;
     this.focusCarSelectorVehicle(entries[nextIndex]?.id ?? focusedId);
@@ -5202,7 +5820,14 @@ export class Game {
     const localPlayerState = this.getLocalPlayerState();
     const entries = this.getCarSelectorEntries(localPlayerState, this.getCarSelectorFocusedItemId(localPlayerState));
     const normalizedItemId = String(itemId ?? '').trim();
-    if (!entries.some((entry) => entry.id === normalizedItemId)) {
+    let itemExists = false;
+    for (let index = 0; index < entries.length; index += 1) {
+      if (entries[index].id === normalizedItemId) {
+        itemExists = true;
+        break;
+      }
+    }
+    if (!itemExists) {
       return false;
     }
 
@@ -5230,11 +5855,11 @@ export class Game {
       skating: false
     };
     this.npcServiceState.players.set(sessionId, nextPlayerState);
-    this.player?.setSkateboardState?.({
-      owned: nextPlayerState.skateboardOwned || isPlayerVehicleOwner(nextPlayerState),
-      skating: false,
-      vehicleItemId: nextPlayerState.vehicleItemId
-    });
+    this.setLocalPlayerSkateboardState(
+      nextPlayerState.skateboardOwned || isPlayerVehicleOwner(nextPlayerState),
+      false,
+      nextPlayerState.vehicleItemId
+    );
   }
 
   async selectPlayerVehicle(itemId = '') {
@@ -5301,7 +5926,13 @@ export class Game {
     }
 
     const selectedId = getPlayableCharacterById(this.desiredLocalCharacterId).id;
-    const currentIndex = this.characterRoster.findIndex((entry) => entry.id === selectedId);
+    let currentIndex = -1;
+    for (let index = 0; index < this.characterRoster.length; index += 1) {
+      if (this.characterRoster[index].id === selectedId) {
+        currentIndex = index;
+        break;
+      }
+    }
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = (safeIndex + step + this.characterRoster.length) % this.characterRoster.length;
     this.selectCharacter(this.characterRoster[nextIndex]?.id ?? selectedId);
@@ -5450,9 +6081,14 @@ export class Game {
       return;
     }
 
-    for (const patch of this.pendingWorldPatches.splice(0)) {
+    while (this.pendingWorldPatchCursor < this.pendingWorldPatches.length) {
+      const patch = this.pendingWorldPatches[this.pendingWorldPatchCursor];
+      this.pendingWorldPatches[this.pendingWorldPatchCursor] = null;
+      this.pendingWorldPatchCursor += 1;
       await this.handleWorldPatch(patch);
     }
+    this.pendingWorldPatches.length = 0;
+    this.pendingWorldPatchCursor = 0;
   }
 
   requestDeferredSceneSync({ worldPatches = false, pickups = false, remotePlayers = false } = {}) {
@@ -5471,7 +6107,16 @@ export class Game {
       return;
     }
 
-    const nextPatch = this.pendingWorldPatches.shift();
+    if (this.pendingWorldPatchCursor >= this.pendingWorldPatches.length) {
+      this.pendingWorldPatches.length = 0;
+      this.pendingWorldPatchCursor = 0;
+      this.worldPatchSyncRequested = false;
+      return;
+    }
+
+    const nextPatch = this.pendingWorldPatches[this.pendingWorldPatchCursor];
+    this.pendingWorldPatches[this.pendingWorldPatchCursor] = null;
+    this.pendingWorldPatchCursor += 1;
     if (!nextPatch) {
       this.worldPatchSyncRequested = false;
       return;
@@ -5483,7 +6128,12 @@ export class Game {
       })
       .finally(() => {
         this.worldPatchDrainPromise = null;
-        this.worldPatchSyncRequested = this.pendingWorldPatches.length > 0;
+        const hasMorePatches = this.pendingWorldPatchCursor < this.pendingWorldPatches.length;
+        if (!hasMorePatches) {
+          this.pendingWorldPatches.length = 0;
+          this.pendingWorldPatchCursor = 0;
+        }
+        this.worldPatchSyncRequested = hasMorePatches;
       });
   }
 
@@ -5572,27 +6222,30 @@ export class Game {
     this.updateCamera(this.currentAimDirection, false, { snap: true });
   }
 
-  resetLocalPlayerKinematics(position = this.player?.position ?? null) {
+  resetLocalPlayerKinematics(position = this.player?.position ?? null, now = performance.now()) {
     this.localPlayerVelocity.set(0, 0, 0);
     if (!position?.isVector3) {
       this.lastLocalPlayerSample = null;
       return;
     }
 
-    this.lastLocalPlayerSample = {
-      position: position.clone(),
-      timeMs: performance.now()
-    };
+    if (!this.lastLocalPlayerSample) {
+      this.lastLocalPlayerSample = {
+        position: new THREE.Vector3(),
+        timeMs: 0
+      };
+    }
+    this.lastLocalPlayerSample.position.copy(position);
+    this.lastLocalPlayerSample.timeMs = now;
   }
 
-  updateLocalPlayerKinematics() {
+  updateLocalPlayerKinematics(now = performance.now()) {
     if (!this.player) {
       return;
     }
 
-    const now = performance.now();
     if (!this.lastLocalPlayerSample) {
-      this.resetLocalPlayerKinematics(this.player.position);
+      this.resetLocalPlayerKinematics(this.player.position, now);
       return;
     }
 
@@ -5645,16 +6298,18 @@ export class Game {
       const origin = candidate.originPosition?.isVector3
         ? candidate.originPosition
         : candidate.spawnPosition;
-      const distance = Math.hypot(
-        (origin?.x ?? 0) - (anchorPosition.x ?? 0),
-        (origin?.z ?? 0) - (anchorPosition.z ?? 0)
+      const distanceSq = distanceSquared2D(
+        origin?.x ?? 0,
+        origin?.z ?? 0,
+        anchorPosition.x ?? 0,
+        anchorPosition.z ?? 0
       );
-      if (distance >= bestDistance) {
+      if (distanceSq >= bestDistance) {
         continue;
       }
 
       bestCandidate = candidate;
-      bestDistance = distance;
+      bestDistance = distanceSq;
     }
 
     return bestCandidate ?? firstCandidate;
@@ -5758,15 +6413,17 @@ export class Game {
         continue;
       }
 
-      const triggerDistance = getPortalTriggerDistance(this.player.position, portal);
+      const triggerDistanceSq = getPortalTriggerDistanceSquared(this.player.position, portal);
       if (this.portalDisarmedPlacementIds.has(portal.placementId)) {
-        if (triggerDistance > ((portal.triggerRadius ?? 0) + PORTAL_EXIT_REARM_PADDING)) {
+        const rearmRadius = (portal.triggerRadius ?? 0) + PORTAL_EXIT_REARM_PADDING;
+        if (triggerDistanceSq > rearmRadius * rearmRadius) {
           this.portalDisarmedPlacementIds.delete(portal.placementId);
         }
         continue;
       }
 
-      if (triggerDistance > (portal.triggerRadius ?? 0)) {
+      const triggerRadius = portal.triggerRadius ?? 0;
+      if (triggerDistanceSq > triggerRadius * triggerRadius) {
         continue;
       }
 
@@ -5775,9 +6432,9 @@ export class Game {
         continue;
       }
 
-      if (triggerDistance < nearestTriggerDistance) {
+      if (triggerDistanceSq < nearestTriggerDistance) {
         nearestRedirectUrl = redirectUrl;
-        nearestTriggerDistance = triggerDistance;
+        nearestTriggerDistance = triggerDistanceSq;
       }
     }
 
@@ -6156,9 +6813,14 @@ export class Game {
       }
     }
 
+    if (!inlineScenes.length) {
+      worldRenderer.updateInteractableIndicatorVisibility();
+      return;
+    }
+
     const playerPosition = this.player?.position ?? null;
     worldRenderer.updateInteractableIndicatorVisibility((rendered, worldPosition) => {
-      if (!rendered || !worldPosition || !inlineScenes.length) {
+      if (!rendered || !worldPosition) {
         return true;
       }
 
@@ -6344,19 +7006,24 @@ export class Game {
       return false;
     }
 
-    return worldBuilderInteractables.some((interactable) => {
+    for (let index = 0; index < worldBuilderInteractables.length; index += 1) {
+      const interactable = worldBuilderInteractables[index];
       if (interactable.kind !== 'npc') {
-        return false;
+        continue;
       }
 
       const npcDetails = this.getGymCheckInNpcDetails(interactable);
-      return Boolean(
+      if (
         isGymCheckInNpc(npcDetails)
         && npcDetails.alive !== false
         && npcDetails.mode !== 'hidden'
         && npcDetails.mode !== 'dead'
-      );
-    });
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   isGymDoorPlacement(placement = null, item = null) {
@@ -6437,7 +7104,7 @@ export class Game {
     }
 
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -6459,9 +7126,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getGymCheckInPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -6475,7 +7143,7 @@ export class Game {
         prompt: `Buy gym membership ($${GYM_MEMBERSHIP_COST})`,
         actionText: 'Gym membership purchased.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -6513,24 +7181,24 @@ export class Game {
 
   getInlineOfficeDoorBlockers() {
     if (!this.player || this.currentInterior?.scene) {
-      return [];
+      return EMPTY_COLLIDERS;
     }
 
     const scene = this.getActiveInlineInteriorScene();
     if (scene?.id !== OFFICE_INTERIOR_ID) {
-      return [];
+      return EMPTY_COLLIDERS;
     }
 
     return scene.getActiveOfficeColliders?.(this.player.position)
       ?? scene.getConditionalDoorColliders?.(this.player.position)
-      ?? [];
+      ?? EMPTY_COLLIDERS;
   }
 
   getActiveColliders() {
     if (this.currentInterior?.scene) {
       return this.currentInterior.scene.getCollidersAt?.(this.player?.position)
         ?? this.currentInterior.scene.colliders
-        ?? [];
+        ?? EMPTY_COLLIDERS;
     }
 
     const colliders = this.activeColliders;
@@ -6547,15 +7215,25 @@ export class Game {
       return EMPTY_INTERACTABLES;
     }
 
-    return this.worldBuilder.getInteractables(this.worldBuilderInteractables);
+    if (this.worldBuilderInteractablesFrame !== this.frameCounter) {
+      this.worldBuilder.getInteractables(this.worldBuilderInteractables);
+      this.worldBuilderInteractablesFrame = this.frameCounter;
+    }
+
+    return this.worldBuilderInteractables;
   }
 
   getActiveInteractables(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
     const interactables = this.activeInteractables;
+    if (this.activeInteractablesFrame === this.frameCounter) {
+      return interactables;
+    }
+
     interactables.length = 0;
 
     if (this.currentInterior?.scene) {
       appendList(interactables, this.currentInterior.scene.interactables);
+      this.activeInteractablesFrame = this.frameCounter;
       return interactables;
     }
 
@@ -6607,6 +7285,7 @@ export class Game {
       }
     }
 
+    this.activeInteractablesFrame = this.frameCounter;
     return interactables;
   }
 
@@ -6616,7 +7295,7 @@ export class Game {
     }
 
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc' || !interactable.position) {
@@ -6628,10 +7307,16 @@ export class Game {
         continue;
       }
 
-      const distance = interactable.position.distanceTo(this.player.position);
-      if (distance < radius && distance < nearestDistance) {
+      const distanceSq = distanceSquared2D(
+        interactable.position.x,
+        interactable.position.z,
+        this.player.position.x,
+        this.player.position.z
+      );
+      const radiusSq = radius * radius;
+      if (distanceSq < radiusSq && distanceSq < nearestDistanceSq) {
         nearest = interactable;
-        nearestDistance = distance;
+        nearestDistanceSq = distanceSq;
       }
     }
 
@@ -6655,7 +7340,7 @@ export class Game {
     return null;
   }
 
-  createTaskTrackerContext(localPlayerState = null) {
+  createTaskTrackerContext(localPlayerState = null, includeMissionList = true) {
     const worldBuilderInteractables = localPlayerState
       ? this.getWorldBuilderInteractables()
       : EMPTY_INTERACTABLES;
@@ -6671,16 +7356,21 @@ export class Game {
     context.worldBuilder = this.worldBuilder;
     context.worldBuilderInteractables = worldBuilderInteractables;
     context.missionSequence = this.currentLayout?.missionSequence ?? null;
-    context.activeInteractables = localPlayerState
-      ? this.getActiveInteractables(worldBuilderInteractables)
-      : EMPTY_INTERACTABLES;
-    context.gymDoorBlockers = localPlayerState
-      ? this.getGymDoorBlockers()
-      : EMPTY_INTERACTABLES;
+    context.includeMissionList = includeMissionList;
+    context.previousMissions = this.phoneMissionState.missions;
+    context.activeInteractables = null;
+    context.gymDoorBlockers = null;
+    context.getActiveInteractables = localPlayerState
+      ? this.taskTrackerGetActiveInteractables
+      : null;
+    context.getGymDoorBlockers = localPlayerState
+      ? this.taskTrackerGetGymDoorBlockers
+      : null;
     return context;
   }
 
-  syncTaskHud(localPlayerState = null) {
+  syncTaskHud(localPlayerState = null, options = null) {
+    const includeMissionList = options?.includeMissionList ?? (this.phoneMenuVisible && this.phoneActiveAppId === 'missions');
     const completedTaskId = this.taskTracker.currentTaskId;
     const {
       task,
@@ -6688,14 +7378,16 @@ export class Game {
       selectedMission,
       completedTask
     } = this.taskTracker.update(
-      this.createTaskTrackerContext(localPlayerState)
+      this.createTaskTrackerContext(localPlayerState, includeMissionList)
     );
     if (localPlayerState) {
       this.phoneMissionState = {
         missions,
         selectedMissionId: selectedMission?.id ?? ''
       };
-      this.refreshPhoneMissionsHud();
+      if (includeMissionList) {
+        this.refreshPhoneMissionsHud();
+      }
     }
 
     if (completedTask) {
@@ -6710,10 +7402,10 @@ export class Game {
         this.gymPumpTaskConfettiPlayed = false;
       }
     } else {
-      this.hud.setTaskState({
-        visible: task.visible,
-        title: task.title
-      });
+      const taskHudState = this.taskHudState;
+      taskHudState.visible = task.visible;
+      taskHudState.title = task.title;
+      this.hud.setTaskState(taskHudState);
       if (task.id !== TASK_IDS.gymPump && completedTaskId !== TASK_IDS.gymPump) {
         this.gymPumpTaskConfettiPlayed = false;
       }
@@ -6728,14 +7420,18 @@ export class Game {
 
   resolveSkillAwardDefinition(award = null, skills = []) {
     const awardSkillId = String(award?.skillId ?? '');
-    return skills.find((entry) => entry.id === awardSkillId)
-      ?? SKILL_DEFINITIONS.find((entry) => entry.id === awardSkillId)
-      ?? {
-        id: awardSkillId,
-        label: award?.label || 'Skill',
-        icon: award?.icon || awardSkillId,
-        accent: award?.accent || '#58b8ff'
-      };
+    for (const entry of skills) {
+      if (entry.id === awardSkillId) {
+        return entry;
+      }
+    }
+
+    return getSkillDefinition(awardSkillId) ?? {
+      id: awardSkillId,
+      label: award?.label || 'Skill',
+      icon: award?.icon || awardSkillId,
+      accent: award?.accent || '#58b8ff'
+    };
   }
 
   getSkillXpEmoji(skill = null) {
@@ -6772,7 +7468,8 @@ export class Game {
   markSkillLevelUpFeedbackPresented({ skill = {}, newLevel = 1 } = {}) {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const cutoff = now - SKILL_LEVEL_UP_FEEDBACK_DEDUPE_MS;
-    for (const [key, presentedAt] of this.recentSkillLevelUpFeedback.entries()) {
+    for (const key of this.recentSkillLevelUpFeedback.keys()) {
+      const presentedAt = this.recentSkillLevelUpFeedback.get(key);
       if (Number(presentedAt) <= cutoff) {
         this.recentSkillLevelUpFeedback.delete(key);
       }
@@ -6857,7 +7554,7 @@ export class Game {
   presentSkillAwardsFromResult(result = null) {
     const awards = Array.isArray(result?.skillAwards) && result.skillAwards.length > 0
       ? result.skillAwards
-      : [result?.skillAward].filter(Boolean);
+      : (result?.skillAward ? [result.skillAward] : []);
     let presented = false;
 
     for (const award of awards) {
@@ -6866,7 +7563,7 @@ export class Game {
       }
 
       this.lastSkillAwardSeq = award.seq;
-      const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
+      const skill = getSkillDefinition(award.skillId) ?? {
         id: award.skillId,
         label: award.label,
         icon: award.icon,
@@ -6894,17 +7591,49 @@ export class Game {
       return;
     }
 
-    const skills = getPlayerSkillsSnapshot(localPlayerState);
-    const hadSnapshot = this.skillLevelSnapshot.size > 0;
+    const strengthXp = Math.max(0, Math.floor(Number(localPlayerState.strengthXp ?? 0) || 0));
+    const agilityXp = Math.max(0, Math.floor(Number(localPlayerState.agilityXp ?? 0) || 0));
+    const intelligenceXp = Math.max(0, Math.floor(Number(localPlayerState.intelligenceXp ?? 0) || 0));
+    const charismaXp = Math.max(0, Math.floor(Number(localPlayerState.charismaXp ?? 0) || 0));
     const awardSeq = Math.max(0, Math.floor(Number(localPlayerState.skillAwardSeq ?? 0) || 0));
     const awardSkillId = String(localPlayerState.skillAwardSkillId ?? '');
+    const awardXpGained = Math.max(0, Math.floor(Number(localPlayerState.skillAwardXpGained ?? 0) || 0));
+    const awardOldLevel = Math.max(1, Math.floor(Number(localPlayerState.skillAwardOldLevel ?? 1) || 1));
+    const awardNewLevel = Math.max(1, Math.floor(Number(localPlayerState.skillAwardNewLevel ?? 1) || 1));
+
+    if (
+      this.skillLevelSnapshot.size > 0
+      && this.lastSkillProgressStrengthXp === strengthXp
+      && this.lastSkillProgressAgilityXp === agilityXp
+      && this.lastSkillProgressIntelligenceXp === intelligenceXp
+      && this.lastSkillProgressCharismaXp === charismaXp
+      && this.lastSkillProgressAwardSeq === awardSeq
+      && this.lastSkillProgressAwardSkillId === awardSkillId
+      && this.lastSkillProgressAwardXpGained === awardXpGained
+      && this.lastSkillProgressAwardOldLevel === awardOldLevel
+      && this.lastSkillProgressAwardNewLevel === awardNewLevel
+    ) {
+      return;
+    }
+    this.lastSkillProgressStrengthXp = strengthXp;
+    this.lastSkillProgressAgilityXp = agilityXp;
+    this.lastSkillProgressIntelligenceXp = intelligenceXp;
+    this.lastSkillProgressCharismaXp = charismaXp;
+    this.lastSkillProgressAwardSeq = awardSeq;
+    this.lastSkillProgressAwardSkillId = awardSkillId;
+    this.lastSkillProgressAwardXpGained = awardXpGained;
+    this.lastSkillProgressAwardOldLevel = awardOldLevel;
+    this.lastSkillProgressAwardNewLevel = awardNewLevel;
+
+    const skills = getPlayerSkillsSnapshot(localPlayerState);
+    const hadSnapshot = this.skillLevelSnapshot.size > 0;
     const award = awardSeq > this.lastSkillAwardSeq && awardSkillId
       ? {
           seq: awardSeq,
           skillId: awardSkillId,
-          xpGained: Math.max(0, Math.floor(Number(localPlayerState.skillAwardXpGained ?? 0) || 0)),
-          oldLevel: Math.max(1, Math.floor(Number(localPlayerState.skillAwardOldLevel ?? 1) || 1)),
-          newLevel: Math.max(1, Math.floor(Number(localPlayerState.skillAwardNewLevel ?? 1) || 1)),
+          xpGained: awardXpGained,
+          oldLevel: awardOldLevel,
+          newLevel: awardNewLevel,
           awardedAt: Number(localPlayerState.skillAwardAt ?? 0) || Date.now()
         }
       : null;
@@ -6942,7 +7671,7 @@ export class Game {
       };
     }
 
-    this.refreshPhoneSkillsHud(localPlayerState);
+    this.refreshPhoneSkillsHud(localPlayerState, { skills });
   }
 
   getDeliveryQuestReminderKey(questState = null) {
@@ -7002,7 +7731,7 @@ export class Game {
       this.player
       && giver?.position
       && Number.isFinite(radius)
-      && this.player.position.distanceTo(giver.position) < radius
+      && distanceSquared2D(this.player.position.x, this.player.position.z, giver.position.x, giver.position.z) < radius * radius
     );
 
     if (!insideGiverRadius) {
@@ -7183,7 +7912,7 @@ export class Game {
       npcState,
       interactable,
       radius,
-      distance: Math.hypot(this.player.position.x - x, this.player.position.z - z)
+      distanceSq: distanceSquared2D(this.player.position.x, this.player.position.z, x, z)
     };
   }
 
@@ -7198,7 +7927,7 @@ export class Game {
     }
 
     const proximity = this.getActiveDeliveryTargetProximity(playerState, worldBuilderInteractables);
-    if (!proximity || proximity.distance > proximity.radius) {
+    if (!proximity || proximity.distanceSq > proximity.radius * proximity.radius) {
       this.deliveryQuestAutoCompleteAttemptKey = '';
       this.deliveryQuestAutoCompleteAttemptAt = 0;
       return false;
@@ -7293,7 +8022,7 @@ export class Game {
     }
 
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -7315,9 +8044,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getStockMarketPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -7331,7 +8061,7 @@ export class Game {
         prompt: 'Trade stocks',
         actionText: 'Market opened.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -7358,10 +8088,7 @@ export class Game {
       market = this.getActiveStockMarketSnapshot() ?? this.phoneStocksState.market ?? this.phoneWalletState.wallet;
     }
 
-    const listedSymbols = new Set((market?.stocks ?? []).map((stock) => stock.symbol));
-    const symbol = listedSymbols.has(this.stockMarketSelectedSymbol)
-      ? this.stockMarketSelectedSymbol
-      : market?.stocks?.[0]?.symbol ?? '';
+    const symbol = this.getListedStockSymbol(market?.stocks, this.stockMarketSelectedSymbol);
     if (!symbol) {
       this.hud.showToast('Market data is still syncing.');
       return;
@@ -7410,10 +8137,7 @@ export class Game {
         loading: false,
         error: ''
       };
-      const listedAfterTrade = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
-      this.stockMarketSelectedSymbol = listedAfterTrade.has(symbol)
-        ? symbol
-        : result.market.stocks?.[0]?.symbol ?? '';
+      this.stockMarketSelectedSymbol = this.getListedStockSymbol(result.market.stocks, symbol);
       this.scheduleStockMarketRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.refreshPhoneStocksHud();
       this.refreshPhoneWalletHud();
@@ -7551,9 +8275,9 @@ export class Game {
         loading: false,
         error: ''
       };
-      const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
-      if (!this.stockMarketSelectedSymbol || !listedSymbols.has(this.stockMarketSelectedSymbol)) {
-        this.stockMarketSelectedSymbol = result.market.stocks?.[0]?.symbol ?? '';
+      const listedSymbol = this.getListedStockSymbol(result.market.stocks, this.stockMarketSelectedSymbol);
+      if (!this.stockMarketSelectedSymbol || listedSymbol !== this.stockMarketSelectedSymbol) {
+        this.stockMarketSelectedSymbol = listedSymbol;
       }
       this.hud.setStockMarketState({
         visible: this.hud.isStockMarketOpen(),
@@ -7585,10 +8309,7 @@ export class Game {
       return;
     }
 
-    const listedSymbols = new Set((this.stockMarketSnapshot?.stocks ?? []).map((stock) => stock.symbol));
-    const symbol = listedSymbols.has(this.stockMarketSelectedSymbol)
-      ? this.stockMarketSelectedSymbol
-      : this.stockMarketSnapshot?.stocks?.[0]?.symbol ?? '';
+    const symbol = this.getListedStockSymbol(this.stockMarketSnapshot?.stocks, this.stockMarketSelectedSymbol);
     if (!symbol) {
       return;
     }
@@ -7640,10 +8361,7 @@ export class Game {
         error: ''
       };
       this.refreshPhoneWalletHud();
-      const listedSymbols = new Set((result.market.stocks ?? []).map((stock) => stock.symbol));
-      this.stockMarketSelectedSymbol = listedSymbols.has(symbol)
-        ? symbol
-        : result.market.stocks?.[0]?.symbol ?? '';
+      this.stockMarketSelectedSymbol = this.getListedStockSymbol(result.market.stocks, symbol);
       this.scheduleStockMarketRefresh(result.market, STOCK_MARKET_TICK_MS);
       this.hud.setStockMarketState({
         visible: this.hud.isStockMarketOpen(),
@@ -7686,7 +8404,7 @@ export class Game {
     };
   }
 
-  getBartenderNpcPosition(interactable = null, npcDetails = null) {
+  getBartenderNpcPosition(interactable = null, npcDetails = null, target = this.npcVendorPositionScratch) {
     const x = Number(
       npcDetails?.x
       ?? npcDetails?.position?.[0]
@@ -7703,20 +8421,21 @@ export class Game {
       return null;
     }
 
-    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+    target.set(x, 0, z);
+    target.y = this.getActiveGroundHeightAt(target);
+    return target;
   }
 
-  getNearestBartenderInteractable({
-    npcId = '',
-    worldBuilderInteractables = this.getWorldBuilderInteractables()
-  } = {}) {
+  getNearestBartenderInteractable(options = null) {
+    const npcId = options?.npcId ?? '';
+    const worldBuilderInteractables = options?.worldBuilderInteractables ?? this.getWorldBuilderInteractables();
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
 
     const targetNpcId = String(npcId ?? '').trim();
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -7743,9 +8462,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getBartenderPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -7759,7 +8479,7 @@ export class Game {
         prompt: 'Order drinks',
         actionText: 'Bar menu opened.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -7768,7 +8488,7 @@ export class Game {
   getBartenderMenuAnchor(interaction = null) {
     const npcId = String(interaction?.npcId || interaction?.placementId || '').trim();
     const speechAnchor = npcId
-      ? this.worldBuilder?.getNpcSpeechAnchors?.()?.get(npcId)
+      ? this.worldBuilder?.getNpcSpeechAnchor?.(npcId) ?? this.worldBuilder?.getNpcSpeechAnchors?.()?.get(npcId)
       : null;
     const speechScreenPosition = speechAnchor ? this.projectSpeechAnchor(speechAnchor) : null;
     if (speechScreenPosition) {
@@ -7851,12 +8571,21 @@ export class Game {
     const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
     const localPlayerState = this.getLocalPlayerState();
     const items = listBartenderMenuItems();
-    const actions = items.map((item) => ({
-      id: `bartender:${item.id}`,
-      label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${getPlayerDrinkCount(localPlayerState, item.id)})`,
-      primary: item.id === 'beer',
-      disabled: this.bartenderRequestInFlight || cash < item.price
-    }));
+    const actions = [];
+    const priceParts = [];
+    const inventoryParts = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const count = getPlayerDrinkCount(localPlayerState, item.id);
+      actions.push({
+        id: `bartender:${item.id}`,
+        label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${count})`,
+        primary: item.id === 'beer',
+        disabled: this.bartenderRequestInFlight || cash < item.price
+      });
+      priceParts.push(`${item.label} ${formatMoneyAmount(item.price)}`);
+      inventoryParts.push(`${item.label}: ${count}`);
+    }
 
     actions.push({
       id: 'close',
@@ -7866,7 +8595,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Bartender',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${items.map((item) => `${item.label}: ${getPlayerDrinkCount(localPlayerState, item.id)}`).join(', ')}.`,
+      subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${inventoryParts.join(', ')}.`,
       actions,
       anchor: menu.anchor
     });
@@ -7944,7 +8673,7 @@ export class Game {
     };
   }
 
-  getPawnShopOwnerNpcPosition(interactable = null, npcDetails = null) {
+  getPawnShopOwnerNpcPosition(interactable = null, npcDetails = null, target = this.npcVendorPositionScratch) {
     const x = Number(
       npcDetails?.x
       ?? npcDetails?.position?.[0]
@@ -7961,20 +8690,21 @@ export class Game {
       return null;
     }
 
-    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+    target.set(x, 0, z);
+    target.y = this.getActiveGroundHeightAt(target);
+    return target;
   }
 
-  getNearestPawnShopOwnerInteractable({
-    npcId = '',
-    worldBuilderInteractables = this.getWorldBuilderInteractables()
-  } = {}) {
+  getNearestPawnShopOwnerInteractable(options = null) {
+    const npcId = options?.npcId ?? '';
+    const worldBuilderInteractables = options?.worldBuilderInteractables ?? this.getWorldBuilderInteractables();
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
 
     const targetNpcId = String(npcId ?? '').trim();
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -8001,9 +8731,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getPawnShopPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -8017,7 +8748,7 @@ export class Game {
         prompt: 'Browse pawn shop',
         actionText: 'Pawn shop menu opened.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -8054,18 +8785,22 @@ export class Game {
     const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
     const localPlayerState = this.getLocalPlayerState();
     const items = listPawnShopMenuItems();
-    const actions = items.map((item) => {
+    const actions = [];
+    const priceParts = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
       const owned = item.kind === 'permanent' && isPlayerPawnShopItemOwned(localPlayerState, item.id);
       const count = item.kind === 'consumable'
         ? ` (${getPlayerPawnShopItemCount(localPlayerState, item.id)})`
         : '';
-      return {
+      actions.push({
         id: `pawnShop:${item.id}`,
         label: owned ? `${item.label} - Owned` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}${count}`,
         primary: item.id === 'cigarettes',
         disabled: this.pawnShopRequestInFlight || owned || cash < item.price
-      };
-    });
+      });
+      priceParts.push(`${item.label} ${formatMoneyAmount(item.price)}`);
+    }
 
     actions.push({
       id: 'close',
@@ -8075,7 +8810,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Pawn Shop',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
+      subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
       actions,
       anchor: menu.anchor
     });
@@ -8154,17 +8889,16 @@ export class Game {
     };
   }
 
-  getNearestCarDealerInteractable({
-    npcId = '',
-    worldBuilderInteractables = this.getWorldBuilderInteractables()
-  } = {}) {
+  getNearestCarDealerInteractable(options = null) {
+    const npcId = options?.npcId ?? '';
+    const worldBuilderInteractables = options?.worldBuilderInteractables ?? this.getWorldBuilderInteractables();
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
 
     const targetNpcId = String(npcId ?? '').trim();
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -8191,9 +8925,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getCarDealerPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -8207,7 +8942,7 @@ export class Game {
         prompt: 'Browse cars',
         actionText: 'Car dealer menu opened.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -8246,7 +8981,10 @@ export class Game {
     const currentVehicleItemId = getPlayerVehicleItemId(localPlayerState);
     const currentVehicle = getPlayerVehicleMenuItem(localPlayerState);
     const items = listCarDealerMenuItems();
-    const actions = items.map((item) => {
+    const actions = [];
+    const priceParts = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
       const owned = playerOwnsVehicleItem(localPlayerState, item.id);
       const selected = currentVehicleItemId === item.id;
       const state = owned
@@ -8254,7 +8992,7 @@ export class Game {
         : cash < item.price
           ? `${formatMoneyAmount(item.price - cash)} short`
           : 'Available now';
-      return {
+      actions.push({
         id: owned ? `vehicleSelect:${item.id}` : `carDealer:${item.id}`,
         label: owned ? `${selected ? 'Selected' : 'Select'} ${item.label}` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}`,
         title: owned ? `${selected ? 'Selected' : 'Select'} ${item.label}` : `Buy ${item.label}`,
@@ -8263,8 +9001,9 @@ export class Game {
         previewItemId: item.id,
         primary: item.id === 'car_fiat_duna',
         disabled: this.carDealerRequestInFlight || this.carSelectorRequestInFlight || selected || (!owned && cash < item.price)
-      };
-    });
+      });
+      priceParts.push(`${item.label} ${formatMoneyAmount(item.price)}`);
+    }
 
     actions.push({
       id: 'close',
@@ -8274,7 +9013,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Car Dealer',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Current car: ${currentVehicle?.label ?? 'None'}.`,
+      subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Current car: ${currentVehicle?.label ?? 'None'}.`,
       actions,
       anchor: menu.anchor,
       variant: 'car-dealer'
@@ -8356,7 +9095,7 @@ export class Game {
     };
   }
 
-  getMarthaNpcPosition(interactable = null, npcDetails = null) {
+  getMarthaNpcPosition(interactable = null, npcDetails = null, target = this.npcVendorPositionScratch) {
     const x = Number(
       npcDetails?.x
       ?? npcDetails?.position?.[0]
@@ -8373,20 +9112,21 @@ export class Game {
       return null;
     }
 
-    return new THREE.Vector3(x, this.getActiveGroundHeightAt({ x, z }), z);
+    target.set(x, 0, z);
+    target.y = this.getActiveGroundHeightAt(target);
+    return target;
   }
 
-  getNearestMarthaInteractable({
-    npcId = '',
-    worldBuilderInteractables = this.getWorldBuilderInteractables()
-  } = {}) {
+  getNearestMarthaInteractable(options = null) {
+    const npcId = options?.npcId ?? '';
+    const worldBuilderInteractables = options?.worldBuilderInteractables ?? this.getWorldBuilderInteractables();
     if (!this.player || this.currentInterior?.scene || !this.worldBuilder) {
       return null;
     }
 
     const targetNpcId = String(npcId ?? '').trim();
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -8413,9 +9153,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getMarthaPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -8429,7 +9170,7 @@ export class Game {
         prompt: 'Order food',
         actionText: "Martha's menu opened."
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -8466,12 +9207,21 @@ export class Game {
     const cash = normalizeMoneyAmount(this.getLocalPlayerState()?.money ?? 0);
     const localPlayerState = this.getLocalPlayerState();
     const items = listMarthaMenuItems();
-    const actions = items.map((item) => ({
-      id: `martha:${item.id}`,
-      label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${getPlayerMarthaItemCount(localPlayerState, item.id)})`,
-      primary: item.id === 'burger',
-      disabled: this.marthaRequestInFlight || cash < item.price
-    }));
+    const actions = [];
+    const priceParts = [];
+    const inventoryParts = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const count = getPlayerMarthaItemCount(localPlayerState, item.id);
+      actions.push({
+        id: `martha:${item.id}`,
+        label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${count})`,
+        primary: item.id === 'burger',
+        disabled: this.marthaRequestInFlight || cash < item.price
+      });
+      priceParts.push(`${item.label} ${formatMoneyAmount(item.price)}`);
+      inventoryParts.push(`${item.label}: ${count}`);
+    }
 
     actions.push({
       id: 'close',
@@ -8481,7 +9231,7 @@ export class Game {
 
     this.hud.showInteractionMenu({
       title: menu.npcName || 'Martha',
-      subtitle: `${items.map((item) => `${item.label} ${formatMoneyAmount(item.price)}`).join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${items.map((item) => `${item.label}: ${getPlayerMarthaItemCount(localPlayerState, item.id)}`).join(', ')}.`,
+      subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${inventoryParts.join(', ')}.`,
       actions,
       anchor: menu.anchor
     });
@@ -8650,7 +9400,7 @@ export class Game {
     }
 
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -8672,9 +9422,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getBlackjackPromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -8688,7 +9439,7 @@ export class Game {
         prompt: 'Play blackjack',
         actionText: 'Sat at the blackjack table.'
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -8735,7 +9486,7 @@ export class Game {
     }
 
     let nearest = null;
-    let nearestDistance = Infinity;
+    let nearestDistanceSq = Infinity;
 
     for (const interactable of worldBuilderInteractables) {
       if (interactable.kind !== 'npc') {
@@ -8757,9 +9508,10 @@ export class Game {
         continue;
       }
 
-      const distance = Math.hypot(position.x - this.player.position.x, position.z - this.player.position.z);
+      const distanceSq = distanceSquared2D(position.x, position.z, this.player.position.x, this.player.position.z);
       const promptRadius = getSchoolMicrogamePromptRadius(npcDetails, interactable.radius);
-      if (distance > promptRadius || distance >= nearestDistance) {
+      const promptRadiusSq = promptRadius * promptRadius;
+      if (distanceSq > promptRadiusSq || distanceSq >= nearestDistanceSq) {
         continue;
       }
 
@@ -8777,7 +9529,7 @@ export class Game {
         prompt: gameDefinition?.prompt ?? 'Play school microgame',
         actionText: `${gameDefinition?.title ?? 'School microgame'} started.`
       };
-      nearestDistance = distance;
+      nearestDistanceSq = distanceSq;
     }
 
     return nearest;
@@ -8831,7 +9583,11 @@ export class Game {
 
   openDebugMinigameHud(minigameId = 'blackjack') {
     const normalizedId = String(minigameId ?? '').trim().toLowerCase();
-    if (['vibe-hero-editor', 'vibeheroeditor', 'vibe-hero-chart-editor'].includes(normalizedId)) {
+    if (
+      normalizedId === 'vibe-hero-editor'
+      || normalizedId === 'vibeheroeditor'
+      || normalizedId === 'vibe-hero-chart-editor'
+    ) {
       const opened = this.openVibeHeroChartEditor();
       if (opened) {
         this.hud.showToast('Vibe Hero chart editor opened.');
@@ -8999,14 +9755,20 @@ export class Game {
       return [];
     }
 
-    return chart
-      .map((note, index) => this.normalizeVibeHeroEditorChartNote(note, index))
-      .filter(Boolean)
-      .sort((left, right) => left.timeMs - right.timeMs)
-      .map((note, index) => ({
-        ...note,
-        id: note.id || `editor-note-${index + 1}`
-      }));
+    const normalized = [];
+    for (let index = 0; index < chart.length; index += 1) {
+      const note = this.normalizeVibeHeroEditorChartNote(chart[index], index);
+      if (note) {
+        normalized.push(note);
+      }
+    }
+    normalized.sort((left, right) => left.timeMs - right.timeMs);
+    for (let index = 0; index < normalized.length; index += 1) {
+      if (!normalized[index].id) {
+        normalized[index].id = `editor-note-${index + 1}`;
+      }
+    }
+    return normalized;
   }
 
   normalizeVibeHeroEditorChartNote(note = null, index = 0) {
@@ -9072,14 +9834,19 @@ export class Game {
   }
 
   serializeVibeHeroEditorChart(chart = []) {
-    return this.normalizeVibeHeroEditorChart(chart).map((note) => ({
-      id: note.id,
-      timeMs: note.timeMs,
-      durationMs: note.durationMs,
-      lane: note.lane,
-      pitch: note.pitch,
-      frequency: note.frequency
-    }));
+    const normalized = this.normalizeVibeHeroEditorChart(chart);
+    const serialized = [];
+    for (const note of normalized) {
+      serialized.push({
+        id: note.id,
+        timeMs: note.timeMs,
+        durationMs: note.durationMs,
+        lane: note.lane,
+        pitch: note.pitch,
+        frequency: note.frequency
+      });
+    }
+    return serialized;
   }
 
   saveVibeHeroEditorChart(game = this.vibeHero, { force = false } = {}) {
@@ -9123,13 +9890,14 @@ export class Game {
     const song = baseSong
       ? {
           ...baseSong,
-          chart: activeChart.map((note) => ({ ...note })),
+          chart: cloneVibeHeroChart(activeChart),
           audioUrl: this.getVibeHeroSongAudioUrl(baseSong)
         }
       : null;
-    const songs = listVibeHeroSongs().map((entry) => {
+    const songs = [];
+    for (const entry of listVibeHeroSongs()) {
       const storedEntryChart = this.loadVibeHeroStoredEditorChart(entry);
-      return {
+      songs.push({
         id: entry.id,
         title: entry.title,
         artist: entry.artist,
@@ -9145,9 +9913,14 @@ export class Game {
         noteCount: (storedEntryChart ?? entry.chart).length,
         chartEdited: Boolean(storedEntryChart),
         audioUrl: this.getVibeHeroSongAudioUrl(entry)
-      };
-    });
+      });
+    }
     const editing = Boolean(editorMode && this.isLocalAdmin());
+    const notes = [];
+    const noteSource = song?.chart ?? [];
+    for (let index = 0; index < noteSource.length; index += 1) {
+      notes.push(this.createVibeHeroNoteState(noteSource[index], index));
+    }
 
     return {
       id: `vibe_hero_${++this.vibeHeroSequence}`,
@@ -9158,9 +9931,9 @@ export class Game {
       selectedSongId: song?.id ?? VIBE_HERO_DEFAULT_SONG_ID,
       song,
       songs,
-      sourceChart: sourceChart.map((note) => ({ ...note })),
-      editorChart: activeChart.map((note) => ({ ...note })),
-      notes: (song?.chart ?? []).map((note, index) => this.createVibeHeroNoteState(note, index)),
+      sourceChart: cloneVibeHeroChart(sourceChart),
+      editorChart: cloneVibeHeroChart(activeChart),
+      notes,
       noteTravelMs: VIBE_HERO_NOTE_TRAVEL_MS,
       hitWindowMs: VIBE_HERO_HIT_WINDOW_MS,
       durationMs: song?.durationMs ?? 0,
@@ -9189,8 +9962,8 @@ export class Game {
       editorRecordWindowMs: VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS,
       editorRecordStepMs: VIBE_HERO_EDITOR_RECORD_STEP_MS,
       editorHoldRepeatDelayMs: VIBE_HERO_EDITOR_HOLD_REPEAT_DELAY_MS,
-      editorLaneLastRecordMs: Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity),
-      editorLaneHeld: Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false),
+      editorLaneLastRecordMs: createVibeHeroLaneLastRecordMs(),
+      editorLaneHeld: createVibeHeroLaneHeldState(),
       editorDirty: false,
       editorSavedAt: 0,
       message: editing ? 'Pick a song to edit.' : 'Pick a song and take the stage.',
@@ -9421,8 +10194,7 @@ export class Game {
     game.remainingMs = Math.max(0, game.durationMs - game.currentTimeMs);
     this.updateVibeHeroAudioFade(game);
     this.handleVibeHeroKeyboardInput();
-    this.updateVibeHeroMisses(game);
-    const pendingNotes = game.notes.some((note) => note.status === 'pending');
+    const pendingNotes = this.updateVibeHeroMisses(game);
     if (!pendingNotes && game.currentTimeMs >= Math.max(0, game.durationMs - VIBE_HERO_POST_SONG_MS)) {
       this.finishVibeHero();
       return;
@@ -9433,7 +10205,7 @@ export class Game {
     }
 
     if (Number(deltaSeconds) >= 0) {
-      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS);
+      this.pruneVibeHeroLaneFlashes(game, now);
     }
     this.syncVibeHeroHud();
   }
@@ -9455,8 +10227,8 @@ export class Game {
     this.vibeHero.editorPlaybackBaseMs = 0;
     this.vibeHero.editorPlaybackStartedAt = now;
     this.vibeHero.editorLastOverwriteMs = 0;
-    this.vibeHero.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
-    this.vibeHero.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
+    this.vibeHero.editorLaneLastRecordMs = createVibeHeroLaneLastRecordMs();
+    this.vibeHero.editorLaneHeld = createVibeHeroLaneHeldState();
     this.vibeHero.currentTimeMs = 0;
     this.vibeHero.remainingMs = this.vibeHero.durationMs;
     this.vibeHero.message = `${this.vibeHero.song?.title ?? 'Song'} chart editor.`;
@@ -9486,7 +10258,7 @@ export class Game {
     this.updateVibeHeroAudioFade(game);
     this.handleVibeHeroKeyboardInput();
     if (Number(deltaSeconds) >= 0) {
-      game.laneFlashes = (game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS);
+      this.pruneVibeHeroLaneFlashes(game, now);
     }
     this.syncVibeHeroHud();
     return true;
@@ -9530,8 +10302,8 @@ export class Game {
       game.editorPlaybackBaseMs = THREE.MathUtils.clamp(game.currentTimeMs, 0, game.durationMs);
       game.editorPlaybackStartedAt = now;
       game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, game.currentTimeMs - 1) : game.currentTimeMs;
-      game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
-      game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
+      game.editorLaneLastRecordMs = createVibeHeroLaneLastRecordMs();
+      game.editorLaneHeld = createVibeHeroLaneHeldState();
       game.message = game.editorRecording ? 'Recording.' : 'Playing.';
       this.scheduleVibeHeroSong(game.song, { offsetMs: game.currentTimeMs });
     } else {
@@ -9556,8 +10328,8 @@ export class Game {
     game.editorRecording = !game.editorRecording;
     const currentTimeMs = Math.max(0, Number(game.currentTimeMs ?? 0) || 0);
     game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, currentTimeMs - 1) : currentTimeMs;
-    game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
-    game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
+    game.editorLaneLastRecordMs = createVibeHeroLaneLastRecordMs();
+    game.editorLaneHeld = createVibeHeroLaneHeldState();
     game.message = game.editorRecording ? 'Recording.' : 'Recording stopped.';
     if (!game.editorRecording) {
       this.saveVibeHeroEditorChart(game);
@@ -9585,8 +10357,8 @@ export class Game {
     game.editorPlaybackBaseMs = nextTimeMs;
     game.editorPlaybackStartedAt = now;
     game.editorLastOverwriteMs = game.editorRecording ? Math.max(0, nextTimeMs - 1) : nextTimeMs;
-    game.editorLaneLastRecordMs = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
-    game.editorLaneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, () => false);
+    game.editorLaneLastRecordMs = createVibeHeroLaneLastRecordMs();
+    game.editorLaneHeld = createVibeHeroLaneHeldState();
     game.message = `${deltaMs < 0 ? 'Rewind' : 'Fast forward'} to ${formatVibeHeroTimestamp(nextTimeMs)}.`;
     if (wasPlaying) {
       this.scheduleVibeHeroSong(game.song, { offsetMs: nextTimeMs });
@@ -9599,11 +10371,19 @@ export class Game {
 
   getVibeHeroEditorPressedLaneIndexes() {
     const lanes = [];
-    VIBE_HERO_LANE_KEY_CODES.forEach((codes, laneIndex) => {
-      if (codes.some((code) => this.input.isPressed(code))) {
+    for (let laneIndex = 0; laneIndex < VIBE_HERO_LANE_KEY_CODES.length; laneIndex += 1) {
+      const codes = VIBE_HERO_LANE_KEY_CODES[laneIndex];
+      let pressed = false;
+      for (const code of codes) {
+        if (this.input.isPressed(code)) {
+          pressed = true;
+          break;
+        }
+      }
+      if (pressed) {
         lanes.push(laneIndex);
       }
-    });
+    }
     return lanes;
   }
 
@@ -9615,7 +10395,12 @@ export class Game {
     const startMs = Math.max(0, Math.min(Number(fromMs) || 0, Number(toMs) || 0));
     const endMs = Math.max(startMs, Math.max(Number(fromMs) || 0, Number(toMs) || 0));
     const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
-    const nextChart = chart.filter((note) => !(note.timeMs > startMs && note.timeMs <= endMs));
+    const nextChart = [];
+    for (const note of chart) {
+      if (!(note.timeMs > startMs && note.timeMs <= endMs)) {
+        nextChart.push(note);
+      }
+    }
     if (nextChart.length === chart.length) {
       return false;
     }
@@ -9636,13 +10421,19 @@ export class Game {
     }
 
     const activeLanes = this.getVibeHeroEditorPressedLaneIndexes();
-    const activeLaneSet = new Set(activeLanes);
+    let activeLaneMask = 0;
+    for (const lane of activeLanes) {
+      activeLaneMask |= 1 << lane;
+    }
     const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
-    const retainedChart = chart.filter((note) => !(note.timeMs > startMs && note.timeMs <= endMs));
-    const lastRecordMs = Array.isArray(game.editorLaneLastRecordMs)
-      ? [...game.editorLaneLastRecordMs]
-      : Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
-    const laneHeld = Array.from({ length: VIBE_HERO_LANE_COUNT }, (_, lane) => Boolean(game.editorLaneHeld?.[lane]));
+    const retainedChart = [];
+    for (const note of chart) {
+      if (!(note.timeMs > startMs && note.timeMs <= endMs)) {
+        retainedChart.push(note);
+      }
+    }
+    const lastRecordMs = cloneVibeHeroLaneLastRecordMs(game.editorLaneLastRecordMs);
+    const laneHeld = cloneVibeHeroLaneHeldState(game.editorLaneHeld);
     const stepMs = Math.max(50, Math.min(
       220,
       Number(game.editorRecordStepMs ?? VIBE_HERO_EDITOR_RECORD_STEP_MS) || VIBE_HERO_EDITOR_RECORD_STEP_MS
@@ -9654,7 +10445,7 @@ export class Game {
     const recordedNotes = [];
 
     for (let lane = 0; lane < VIBE_HERO_LANE_COUNT; lane += 1) {
-      if (!activeLaneSet.has(lane)) {
+      if ((activeLaneMask & (1 << lane)) === 0) {
         laneHeld[lane] = false;
         continue;
       }
@@ -9685,12 +10476,31 @@ export class Game {
       return false;
     }
 
-    const laneText = activeLanes.map((lane) => String(lane + 1)).join(' ');
-    const recordedKeys = new Set(recordedNotes.map((note) => `${note.lane}:${note.timeMs}`));
-    const mergedChart = recordedKeys.size > 0
-      ? retainedChart.filter((note) => !recordedKeys.has(`${note.lane}:${note.timeMs}`))
-      : retainedChart;
-    this.setVibeHeroEditorChart(game, [...mergedChart, ...recordedNotes], {
+    let laneText = '';
+    for (const lane of activeLanes) {
+      laneText += laneText ? ` ${lane + 1}` : String(lane + 1);
+    }
+    const recordedKeys = new Set();
+    for (const note of recordedNotes) {
+      recordedKeys.add(`${note.lane}:${note.timeMs}`);
+    }
+    const mergedChart = [];
+    if (recordedKeys.size > 0) {
+      for (const note of retainedChart) {
+        if (!recordedKeys.has(`${note.lane}:${note.timeMs}`)) {
+          mergedChart.push(note);
+        }
+      }
+    } else {
+      for (let index = 0; index < retainedChart.length; index += 1) {
+        mergedChart.push(retainedChart[index]);
+      }
+    }
+    const nextChart = mergedChart;
+    for (const note of recordedNotes) {
+      nextChart.push(note);
+    }
+    this.setVibeHeroEditorChart(game, nextChart, {
       save: false,
       message: recordedNotes.length > 0
         ? `Recording ${laneText} at ${formatVibeHeroTimestamp(endMs)}.`
@@ -9699,14 +10509,7 @@ export class Game {
 
     if (activeLanes.length > 0) {
       const now = performance.now();
-      game.laneFlashes = [
-        ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
-        ...activeLanes.map((lane) => ({
-          lane,
-          at: now,
-          quality: 'hit'
-        }))
-      ];
+      this.pushVibeHeroLaneFlashes(game, activeLanes, 'hit', now);
     }
     return true;
   }
@@ -9717,21 +10520,34 @@ export class Game {
     }
 
     const normalizedChart = this.serializeVibeHeroEditorChart(chart);
-    game.editorChart = normalizedChart.map((note) => ({ ...note }));
-    game.notes = normalizedChart.map((note, index) => this.createVibeHeroNoteState(note, index));
-    game.song = game.song
-      ? {
-          ...game.song,
-          chart: normalizedChart.map((note) => ({ ...note }))
-        }
-      : game.song;
-    game.songs = (game.songs ?? []).map((song) => song.id === game.selectedSongId
-      ? {
-          ...song,
-          noteCount: normalizedChart.length,
-          chartEdited: true
-        }
-      : song);
+    const editorChart = [];
+    const notes = [];
+    const songChart = [];
+    for (let index = 0; index < normalizedChart.length; index += 1) {
+      const note = normalizedChart[index];
+      editorChart.push(copyOwnEnumerableProperties(note));
+      notes.push(this.createVibeHeroNoteState(note, index));
+      songChart.push(copyOwnEnumerableProperties(note));
+    }
+    game.editorChart = editorChart;
+    game.notes = notes;
+    if (game.song) {
+      const nextSong = copyOwnEnumerableProperties(game.song);
+      nextSong.chart = songChart;
+      game.song = nextSong;
+    }
+    const songs = [];
+    for (const song of game.songs ?? []) {
+      if (song.id === game.selectedSongId) {
+        const nextSong = copyOwnEnumerableProperties(song);
+        nextSong.noteCount = normalizedChart.length;
+        nextSong.chartEdited = true;
+        songs.push(nextSong);
+      } else {
+        songs.push(song);
+      }
+    }
+    game.songs = songs;
     game.editorDirty = true;
     if (message) {
       game.message = message;
@@ -9793,17 +10609,46 @@ export class Game {
     const lane = THREE.MathUtils.clamp(Math.trunc(Number(laneIndex) || 0), 0, VIBE_HERO_LANE_COUNT - 1);
     const now = performance.now();
     const frequency = VIBE_HERO_EDITOR_LANE_FREQUENCIES[lane] ?? 440;
-    game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
-      {
-        lane,
-        at: now,
-        quality: game.editorRecording ? 'hit' : 'empty'
-      }
-    ];
+    this.pushVibeHeroLaneFlashes(game, [lane], game.editorRecording ? 'hit' : 'empty', now);
     this.playVibeHeroFeedbackTone(frequency, game.editorRecording ? 'great' : 'good');
     this.syncVibeHeroHud();
     return true;
+  }
+
+  pruneVibeHeroLaneFlashes(game = this.vibeHero, now = performance.now()) {
+    if (!game) {
+      return [];
+    }
+
+    const laneFlashes = Array.isArray(game.laneFlashes) ? game.laneFlashes : [];
+    let writeIndex = 0;
+    for (let index = 0; index < laneFlashes.length; index += 1) {
+      const flash = laneFlashes[index];
+      if (!flash || now - (Number(flash.at) || 0) >= VIBE_HERO_LANE_FLASH_MS) {
+        continue;
+      }
+      laneFlashes[writeIndex] = flash;
+      writeIndex += 1;
+    }
+    laneFlashes.length = writeIndex;
+    game.laneFlashes = laneFlashes;
+    return laneFlashes;
+  }
+
+  pushVibeHeroLaneFlashes(game = this.vibeHero, lanes = [], quality = 'hit', now = performance.now()) {
+    const laneFlashes = this.pruneVibeHeroLaneFlashes(game, now);
+    for (const laneIndex of lanes ?? []) {
+      const lane = Math.trunc(Number(laneIndex));
+      if (!Number.isInteger(lane) || lane < 0 || lane >= VIBE_HERO_LANE_COUNT) {
+        continue;
+      }
+      laneFlashes.push({
+        lane,
+        at: now,
+        quality
+      });
+    }
+    return laneFlashes;
   }
 
   recordVibeHeroEditorLanes(laneIndexes = []) {
@@ -9812,15 +10657,28 @@ export class Game {
       return false;
     }
 
-    const lanes = [...new Set(laneIndexes
-      .map((laneIndex) => Math.trunc(Number(laneIndex)))
-      .filter((laneIndex) => Number.isInteger(laneIndex) && laneIndex >= 0 && laneIndex < VIBE_HERO_LANE_COUNT))];
+    const lanes = [];
+    let laneMask = 0;
+    for (const laneIndex of laneIndexes ?? []) {
+      const lane = Math.trunc(Number(laneIndex));
+      if (!Number.isInteger(lane) || lane < 0 || lane >= VIBE_HERO_LANE_COUNT) {
+        continue;
+      }
+      const laneBit = 1 << lane;
+      if ((laneMask & laneBit) !== 0) {
+        continue;
+      }
+      laneMask |= laneBit;
+      lanes.push(lane);
+    }
     if (lanes.length <= 0) {
       return false;
     }
 
     if (!game.editorRecording) {
-      lanes.forEach((laneIndex) => this.previewVibeHeroEditorLane(laneIndex));
+      for (const laneIndex of lanes) {
+        this.previewVibeHeroEditorLane(laneIndex);
+      }
       game.message = 'Recording is off.';
       return true;
     }
@@ -9829,29 +10687,32 @@ export class Game {
     const currentTimeMs = Math.round(Number(game.currentTimeMs ?? 0) || 0);
     const windowMs = Math.max(20, Number(game.editorRecordWindowMs ?? VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS) || VIBE_HERO_EDITOR_OVERWRITE_WINDOW_MS);
     const chart = this.serializeVibeHeroEditorChart(game.editorChart ?? game.notes ?? []);
-    const retainedChart = chart.filter((note) => Math.abs(note.timeMs - currentTimeMs) > windowMs);
-    const recordedNotes = lanes.map((laneIndex, index) => this.createVibeHeroEditorRecordedNote(laneIndex, currentTimeMs, index));
-    this.setVibeHeroEditorChart(game, [...retainedChart, ...recordedNotes], {
+    const retainedChart = [];
+    for (const note of chart) {
+      if (Math.abs(note.timeMs - currentTimeMs) > windowMs) {
+        retainedChart.push(note);
+      }
+    }
+    const recordedNotes = [];
+    for (let index = 0; index < lanes.length; index += 1) {
+      recordedNotes.push(this.createVibeHeroEditorRecordedNote(lanes[index], currentTimeMs, index));
+    }
+    const nextChart = retainedChart;
+    for (const note of recordedNotes) {
+      nextChart.push(note);
+    }
+    this.setVibeHeroEditorChart(game, nextChart, {
       save: true,
       message: `${recordedNotes.length} note${recordedNotes.length === 1 ? '' : 's'} recorded at ${formatVibeHeroTimestamp(currentTimeMs)}.`
     });
     game.editorLastOverwriteMs = currentTimeMs;
-    const lastRecordMs = Array.isArray(game.editorLaneLastRecordMs)
-      ? [...game.editorLaneLastRecordMs]
-      : Array.from({ length: VIBE_HERO_LANE_COUNT }, () => -Infinity);
+    const lastRecordMs = cloneVibeHeroLaneLastRecordMs(game.editorLaneLastRecordMs);
     for (const lane of lanes) {
       lastRecordMs[lane] = currentTimeMs;
     }
     game.editorLaneLastRecordMs = lastRecordMs;
     const now = performance.now();
-    game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
-      ...lanes.map((lane) => ({
-        lane,
-        at: now,
-        quality: 'hit'
-      }))
-    ];
+    this.pushVibeHeroLaneFlashes(game, lanes, 'hit', now);
     for (const note of recordedNotes) {
       this.playVibeHeroFeedbackTone(note.frequency, 'perfect');
     }
@@ -9881,18 +10742,29 @@ export class Game {
     }
 
     const editorLaneIndexes = [];
-    VIBE_HERO_LANE_KEY_CODES.forEach((codes, laneIndex) => {
-      if (codes.some((code) => this.input.consume(code))) {
+    for (let laneIndex = 0; laneIndex < VIBE_HERO_LANE_KEY_CODES.length; laneIndex += 1) {
+      const codes = VIBE_HERO_LANE_KEY_CODES[laneIndex];
+      let laneConsumed = false;
+      for (let codeIndex = 0; codeIndex < codes.length; codeIndex += 1) {
+        if (this.input.consume(codes[codeIndex])) {
+          laneConsumed = true;
+          break;
+        }
+      }
+
+      if (laneConsumed) {
         if (this.vibeHero.phase === 'editor') {
           editorLaneIndexes.push(laneIndex);
         } else {
           handled = this.hitVibeHeroLane(laneIndex) || handled;
         }
       }
-    });
+    }
     if (editorLaneIndexes.length > 0) {
       if (this.vibeHero.phase === 'editor' && this.vibeHero.editorRecording && !this.vibeHero.editorPaused) {
-        editorLaneIndexes.forEach((laneIndex) => this.previewVibeHeroEditorLane(laneIndex));
+        for (let index = 0; index < editorLaneIndexes.length; index += 1) {
+          this.previewVibeHeroEditorLane(editorLaneIndexes[index]);
+        }
         handled = true;
       } else {
         handled = this.recordVibeHeroEditorLanes(editorLaneIndexes) || handled;
@@ -9915,15 +10787,17 @@ export class Game {
 
   updateVibeHeroMisses(game = this.vibeHero) {
     if (!game || game.phase !== 'playing') {
-      return;
+      return false;
     }
 
     let missed = 0;
+    let hasPendingNotes = false;
     for (const note of game.notes) {
       if (note.status !== 'pending') {
         continue;
       }
       if (game.currentTimeMs - note.timeMs <= VIBE_HERO_HIT_WINDOW_MS) {
+        hasPendingNotes = true;
         continue;
       }
       note.status = 'missed';
@@ -9935,6 +10809,8 @@ export class Game {
       game.combo = 0;
       game.message = missed === 1 ? 'Miss' : `${missed} missed notes`;
     }
+
+    return hasPendingNotes;
   }
 
   hitVibeHeroLane(laneIndex = 0) {
@@ -9949,33 +10825,31 @@ export class Game {
       return false;
     }
 
-    const candidates = game.notes
-      .filter((note) => note.status === 'pending' && note.lane === normalizedLane)
-      .map((note) => ({
-        note,
-        errorMs: Math.abs(game.currentTimeMs - note.timeMs)
-      }))
-      .filter((entry) => entry.errorMs <= VIBE_HERO_HIT_WINDOW_MS)
-      .sort((a, b) => a.errorMs - b.errorMs);
-    const match = candidates[0] ?? null;
+    let matchNote = null;
+    let matchErrorMs = Number.POSITIVE_INFINITY;
+    for (const note of game.notes) {
+      if (note.status !== 'pending' || note.lane !== normalizedLane) {
+        continue;
+      }
+      const errorMs = Math.abs(game.currentTimeMs - note.timeMs);
+      if (errorMs > VIBE_HERO_HIT_WINDOW_MS || errorMs >= matchErrorMs) {
+        continue;
+      }
+      matchNote = note;
+      matchErrorMs = errorMs;
+    }
     const now = performance.now();
 
-    game.laneFlashes = [
-      ...(game.laneFlashes ?? []).filter((flash) => now - flash.at < VIBE_HERO_LANE_FLASH_MS),
-      {
-        lane: normalizedLane,
-        at: now,
-        quality: match ? 'hit' : 'empty'
-      }
-    ];
+    this.pushVibeHeroLaneFlashes(game, [normalizedLane], matchNote ? 'hit' : 'empty', now);
 
-    if (!match) {
+    if (!matchNote) {
       game.message = 'Too early';
       this.syncVibeHeroHud();
       return false;
     }
 
-    const { note, errorMs } = match;
+    const note = matchNote;
+    const errorMs = matchErrorMs;
     const quality = errorMs <= VIBE_HERO_PERFECT_WINDOW_MS
       ? 'perfect'
       : errorMs <= VIBE_HERO_GREAT_WINDOW_MS
@@ -10046,7 +10920,7 @@ export class Game {
       const award = result.skillAward;
       if (award?.seq && award.seq > this.lastSkillAwardSeq) {
         this.lastSkillAwardSeq = award.seq;
-        const skill = SKILL_DEFINITIONS.find((entry) => entry.id === award.skillId) ?? {
+        const skill = getSkillDefinition(award.skillId) ?? {
           id: award.skillId,
           label: award.label,
           icon: award.icon,
@@ -10223,7 +11097,8 @@ export class Game {
     this.vibeHeroAudioMaster = master;
     const startAt = context.currentTime + 0.055;
     const safeOffsetMs = Math.max(0, Number(offsetMs) || 0);
-    for (const [index, note] of song.chart.entries()) {
+    for (let index = 0; index < song.chart.length; index += 1) {
+      const note = song.chart[index];
       const offsetNoteTimeMs = Math.max(0, Number(note.timeMs) || 0) - safeOffsetMs;
       if (offsetNoteTimeMs < -VIBE_HERO_HIT_WINDOW_MS) {
         continue;
@@ -10385,11 +11260,29 @@ export class Game {
     }
 
     const previous = normalizeSchoolMicrogameId(previousId, '');
-    const choices = games.length > 1
-      ? games.filter((game) => game.id !== previous)
-      : games;
-    const index = Math.floor(this.schoolRandom() * choices.length);
-    return choices[index]?.id ?? games[0]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
+    if (games.length > 1 && previous) {
+      let choiceCount = 0;
+      for (const game of games) {
+        if (game.id !== previous) {
+          choiceCount += 1;
+        }
+      }
+      if (choiceCount > 0) {
+        let choiceIndex = Math.floor(this.schoolRandom() * choiceCount);
+        for (const game of games) {
+          if (game.id === previous) {
+            continue;
+          }
+          if (choiceIndex <= 0) {
+            return game.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
+          }
+          choiceIndex -= 1;
+        }
+      }
+    }
+
+    const index = Math.floor(this.schoolRandom() * games.length);
+    return games[index]?.id ?? SCHOOL_MICROGAME_DEFAULT_ID;
   }
 
   isOfficeJobComputerInteractable(interactable = null) {
@@ -10417,7 +11310,7 @@ export class Game {
       return;
     }
 
-    for (const placementId of [...this.openPoliceGaragePlacementIds]) {
+    for (const placementId of this.openPoliceGaragePlacementIds) {
       const placement = this.worldBuilder.worldState?.getPlacement?.(placementId);
       if (!placement || placement.itemId !== POLICE_STATION_BUILDING_ITEM_ID) {
         this.openPoliceGaragePlacementIds.delete(placementId);
@@ -10526,10 +11419,16 @@ export class Game {
     const intelligence = this.getOfficeJobIntelligence();
     const charismaLevel = this.getOfficeJobCharismaLevel();
     const strengthLevel = this.getOfficeJobStrengthLevel();
-    return listOfficeJobDefinitions().map((job) => ({
-      ...job,
-      unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
-    }));
+    const definitions = listOfficeJobDefinitions();
+    const jobs = new Array(definitions.length);
+    for (let index = 0; index < definitions.length; index += 1) {
+      const job = definitions[index];
+      jobs[index] = {
+        ...job,
+        unlocked: canPlayerWorkOfficeJob(intelligence, job, charismaLevel, strengthLevel)
+      };
+    }
+    return jobs;
   }
 
   createOfficeJobMenuState() {
@@ -10666,11 +11565,13 @@ export class Game {
   }
 
   createJanitorMopDirtPatches() {
-    return OFFICE_JANITOR_MOP_DIRT_PATCHES.map((patch, index) => {
+    const patches = new Array(OFFICE_JANITOR_MOP_DIRT_PATCHES.length);
+    for (let index = 0; index < OFFICE_JANITOR_MOP_DIRT_PATCHES.length; index += 1) {
+      const patch = OFFICE_JANITOR_MOP_DIRT_PATCHES[index];
       const jitterX = (this.schoolRandom() - 0.5) * 0.035;
       const jitterY = (this.schoolRandom() - 0.5) * 0.035;
       const jitterSize = (this.schoolRandom() - 0.5) * 0.025;
-      return {
+      patches[index] = {
         id: `mop-dirt-${index + 1}`,
         x: THREE.MathUtils.clamp(Number(patch.x ?? 0.5) + jitterX, 0.08, 0.92),
         y: THREE.MathUtils.clamp(Number(patch.y ?? 0.5) + jitterY, 0.2, 0.88),
@@ -10678,7 +11579,8 @@ export class Game {
         rotation: Number(patch.rotation ?? 0) + Math.round((this.schoolRandom() - 0.5) * 18),
         clean: 0
       };
-    });
+    }
+    return patches;
   }
 
   configureJanitorMopHero(round = {}, data = {}) {
@@ -10881,7 +11783,10 @@ export class Game {
   }
 
   schoolShuffle(items = []) {
-    const next = [...items];
+    const next = [];
+    for (const item of items) {
+      next.push(item);
+    }
     for (let index = next.length - 1; index > 0; index -= 1) {
       const swapIndex = Math.floor(this.schoolRandom() * (index + 1));
       [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
@@ -10927,6 +11832,80 @@ export class Game {
     return this.schoolPick(TEACHER_TYPING_SENTENCES);
   }
 
+  ensureSchoolGeographyCountryModule() {
+    if (this.schoolGeographyCountryModule) {
+      return Promise.resolve(this.schoolGeographyCountryModule);
+    }
+
+    if (!this.schoolGeographyCountryModulePromise) {
+      this.schoolGeographyCountryModulePromise = import('../shared/geographyCountries.js')
+        .then((module) => {
+          this.schoolGeographyCountryModule = module;
+          return module;
+        })
+        .catch((error) => {
+          this.schoolGeographyCountryModulePromise = null;
+          throw error;
+        });
+    }
+
+    return this.schoolGeographyCountryModulePromise;
+  }
+
+  createLoadedSchoolGeographyCountry() {
+    const createCountry = this.schoolGeographyCountryModule?.createSchoolGeographyCountry;
+    return typeof createCountry === 'function'
+      ? createCountry({ rng: () => this.schoolRandom() })
+      : null;
+  }
+
+  isLoadedSchoolGeographyCountryAnswer(country, guess) {
+    const isAnswer = this.schoolGeographyCountryModule?.isSchoolGeographyCountryAnswer;
+    return typeof isAnswer === 'function' ? isAnswer(country, guess) : false;
+  }
+
+  loadSchoolGeographyCountryForCurrentRound(game = this.schoolMicrogame) {
+    const gameInstanceId = game?.id ?? '';
+    if (
+      (this.schoolGeographyCountrySyncPending && this.schoolGeographyCountrySyncPendingGameId === gameInstanceId)
+      || !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
+      || game.round?.country
+    ) {
+      return;
+    }
+
+    this.schoolGeographyCountrySyncPending = true;
+    this.schoolGeographyCountrySyncPendingGameId = gameInstanceId;
+    void this.ensureSchoolGeographyCountryModule()
+      .then(() => {
+        if (
+          this.schoolMicrogame?.id !== gameInstanceId
+          || this.schoolMicrogame.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
+          || this.schoolMicrogame.round?.country
+        ) {
+          return;
+        }
+
+        this.schoolMicrogame.round.country = this.createLoadedSchoolGeographyCountry();
+        this.schoolMicrogame.data.geographyLoading = false;
+        this.syncSchoolMicrogameHud({ loading: false });
+      })
+      .catch((error) => {
+        console.warn('[School] Geography country data failed to load.', error);
+        if (this.schoolMicrogame?.id === gameInstanceId) {
+          this.schoolMicrogame.message = 'Country data is still loading. Try another round if it does not appear.';
+          this.syncSchoolMicrogameHud({ loading: false });
+        }
+      })
+      .finally(() => {
+        if (this.schoolGeographyCountrySyncPendingGameId === gameInstanceId) {
+          this.schoolGeographyCountrySyncPending = false;
+          this.schoolGeographyCountrySyncPendingGameId = '';
+        }
+      });
+  }
+
   createSchoolMicrogameRound(gameId = SCHOOL_MICROGAME_DEFAULT_ID) {
     const definition = getSchoolMicrogameDefinition(gameId) ?? getSchoolMicrogameDefinition(SCHOOL_MICROGAME_DEFAULT_ID);
     const round = {
@@ -10950,7 +11929,7 @@ export class Game {
       round.correctIndex = question.correctIndex;
       data.currentQuestionIndex = 0;
       data.selectedIndex = -1;
-      data.roundResults = Array.from({ length: questions.length }, () => null);
+      data.roundResults = createNullResults(questions.length);
       data.correctCount = 0;
       data.questionLocked = false;
       data.advanceAt = 0;
@@ -10968,7 +11947,10 @@ export class Game {
       data.wrongCount = 0;
       data.answerLocked = false;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.lockerCombo) {
-      round.combo = Array.from({ length: 3 }, () => String(this.schoolRandomInt(0, 9)));
+      round.combo = [];
+      for (let index = 0; index < 3; index += 1) {
+        round.combo.push(String(this.schoolRandomInt(0, 9)));
+      }
       round.keypad = this.schoolShuffle(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
       data.entered = [];
       data.previewActive = true;
@@ -10976,7 +11958,10 @@ export class Game {
     } else if (definition.id === SCHOOL_MICROGAME_IDS.copyNotes) {
       const keys = ['W', 'A', 'S', 'D'];
       round.keys = keys;
-      round.sequence = Array.from({ length: 4 }, () => this.schoolPick(keys));
+      round.sequence = [];
+      for (let index = 0; index < 4; index += 1) {
+        round.sequence.push(this.schoolPick(keys));
+      }
       data.enteredCount = 0;
     } else if (definition.id === SCHOOL_MICROGAME_IDS.teacherLooking) {
       round.sentence = this.normalizeTeacherTypingText(this.chooseTeacherTypingSentence());
@@ -11026,7 +12011,10 @@ export class Game {
         { id: 'spray', label: 'Spray Can', bin: 'Contraband' },
         { id: 'fireworks', label: 'Fireworks', bin: 'Contraband' }
       ]);
-      data.remaining = [...round.items];
+      data.remaining = [];
+      for (const item of round.items) {
+        data.remaining.push(item);
+      }
       data.selectedItemId = data.remaining[0]?.id ?? '';
       data.correct = 0;
       data.wrong = 0;
@@ -11041,7 +12029,10 @@ export class Game {
     } else if (definition.id === SCHOOL_MICROGAME_IDS.scantron) {
       const options = ['A', 'B', 'C', 'D'];
       round.options = options;
-      round.answerKey = Array.from({ length: 4 }, () => this.schoolPick(options));
+      round.answerKey = [];
+      for (let index = 0; index < 4; index += 1) {
+        round.answerKey.push(this.schoolPick(options));
+      }
       data.filled = [];
       data.correct = 0;
       data.wrong = 0;
@@ -11134,6 +12125,7 @@ export class Game {
       loading: false,
       error: ''
     });
+    this.loadSchoolGeographyCountryForCurrentRound(this.schoolMicrogame);
     this.adminPromptError = '';
     this.refreshAdminPromptHud();
   }
@@ -11154,7 +12146,7 @@ export class Game {
     this.schoolMicrogame.resultDetail = '';
     if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.popQuiz) {
       const questions = this.getPopQuizQuestions(this.schoolMicrogame);
-      this.schoolMicrogame.data.roundResults = Array.from({ length: questions.length }, () => null);
+      this.schoolMicrogame.data.roundResults = createNullResults(questions.length);
       this.schoolMicrogame.data.correctCount = 0;
       this.schoolMicrogame.data.questionLocked = false;
       this.schoolMicrogame.data.advanceAt = 0;
@@ -11164,7 +12156,9 @@ export class Game {
       this.setCurrentPopQuizQuestion(this.schoolMicrogame, 0);
     } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
       if (!this.schoolMicrogame.round.country) {
-        this.schoolMicrogame.round.country = createSchoolGeographyCountry({ rng: () => this.schoolRandom() });
+        this.schoolMicrogame.message = 'Loading country data...';
+        this.loadSchoolGeographyCountryForCurrentRound(this.schoolMicrogame);
+        this.syncSchoolMicrogameHud({ loading: true });
       }
       if (!Array.isArray(this.schoolMicrogame.round.choices) || this.schoolMicrogame.round.choices.length !== 4) {
         const choiceSet = this.createSchoolGeographyChoiceSet(this.schoolMicrogame.round.country);
@@ -11311,36 +12305,75 @@ export class Game {
     this.syncSchoolTeacherPreview();
   }
 
-  getOrCreateSchoolGeographyGlobeRenderer() {
-    if (!this.schoolGeographyGlobeRenderer) {
-      this.schoolGeographyGlobeRenderer = new SchoolGeographyGlobeRenderer();
-    }
-
-    return this.schoolGeographyGlobeRenderer;
-  }
-
-  syncSchoolGeographyGlobe() {
-    const game = this.schoolMicrogame;
-    const isGeographyGame = (
+  isSchoolGeographyGameActive(game = this.schoolMicrogame) {
+    return (
       this.hud.isSchoolMicrogameOpen()
       && game?.round?.gameId === SCHOOL_MICROGAME_IDS.geographyGlobe
       && game.phase === 'playing'
     );
-    if (!isGeographyGame) {
-      this.schoolGeographyGlobeRenderer?.setActive(false);
-      return;
+  }
+
+  ensureSchoolGeographyGlobeRenderer() {
+    if (this.schoolGeographyGlobeRenderer) {
+      return Promise.resolve(this.schoolGeographyGlobeRenderer);
     }
 
+    if (!this.schoolGeographyGlobeRendererPromise) {
+      this.schoolGeographyGlobeRendererPromise = import('../ui/SchoolGeographyGlobeRenderer.js')
+        .then(({ SchoolGeographyGlobeRenderer }) => {
+          this.schoolGeographyGlobeRenderer = new SchoolGeographyGlobeRenderer();
+          return this.schoolGeographyGlobeRenderer;
+        })
+        .catch((error) => {
+          this.schoolGeographyGlobeRendererPromise = null;
+          throw error;
+        });
+    }
+
+    return this.schoolGeographyGlobeRendererPromise;
+  }
+
+  applySchoolGeographyGlobeRenderer(renderer, game = this.schoolMicrogame) {
     const mount = this.hud.getSchoolGeographyGlobeMount?.();
-    if (!mount) {
-      return;
+    if (!renderer || !this.isSchoolGeographyGameActive(game) || !mount || !game.round?.country) {
+      renderer?.setActive(false);
+      return false;
     }
 
-    const renderer = this.getOrCreateSchoolGeographyGlobeRenderer();
     renderer.mount(mount);
     renderer.setTargetCountry(game.round?.country);
     renderer.setRevealActive(game.data?.revealActive === true);
     renderer.setActive(true);
+    return true;
+  }
+
+  syncSchoolGeographyGlobe() {
+    const game = this.schoolMicrogame;
+    if (!this.isSchoolGeographyGameActive(game)) {
+      this.schoolGeographyGlobeRenderer?.setActive(false);
+      return;
+    }
+
+    if (this.schoolGeographyGlobeRenderer) {
+      this.applySchoolGeographyGlobeRenderer(this.schoolGeographyGlobeRenderer, game);
+      return;
+    }
+
+    if (this.schoolGeographyGlobeSyncPending || !this.hud.getSchoolGeographyGlobeMount?.()) {
+      return;
+    }
+
+    this.schoolGeographyGlobeSyncPending = true;
+    void this.ensureSchoolGeographyGlobeRenderer()
+      .then((renderer) => {
+        this.applySchoolGeographyGlobeRenderer(renderer);
+      })
+      .catch((error) => {
+        console.warn('[School] Geography globe renderer failed to initialize.', error);
+      })
+      .finally(() => {
+        this.schoolGeographyGlobeSyncPending = false;
+      });
   }
 
   updateSchoolGeographyGlobe(deltaSeconds = 0) {
@@ -11348,34 +12381,43 @@ export class Game {
     this.schoolGeographyGlobeRenderer?.update(deltaSeconds);
   }
 
-  getOrCreateSchoolTeacherPreviewRenderer() {
-    if (!this.schoolTeacherPreviewRenderer) {
-      this.schoolTeacherPreviewRenderer = new SchoolTeacherPreviewRenderer({
-        library: this.library
-      });
-    }
-
-    return this.schoolTeacherPreviewRenderer;
-  }
-
-  syncSchoolTeacherPreview() {
-    const game = this.schoolMicrogame;
-    const isTeacherGame = (
+  isSchoolTeacherGameActive(game = this.schoolMicrogame) {
+    return (
       this.hud.isSchoolMicrogameOpen()
       && game?.round?.gameId === SCHOOL_MICROGAME_IDS.teacherLooking
       && game.phase === 'playing'
     );
-    if (!isTeacherGame) {
-      this.schoolTeacherPreviewRenderer?.setActive(false);
-      return;
+  }
+
+  ensureSchoolTeacherPreviewRenderer() {
+    if (this.schoolTeacherPreviewRenderer) {
+      return Promise.resolve(this.schoolTeacherPreviewRenderer);
     }
 
+    if (!this.schoolTeacherPreviewRendererPromise) {
+      this.schoolTeacherPreviewRendererPromise = import('../ui/SchoolTeacherPreviewRenderer.js')
+        .then(({ SchoolTeacherPreviewRenderer }) => {
+          this.schoolTeacherPreviewRenderer = new SchoolTeacherPreviewRenderer({
+            library: this.library
+          });
+          return this.schoolTeacherPreviewRenderer;
+        })
+        .catch((error) => {
+          this.schoolTeacherPreviewRendererPromise = null;
+          throw error;
+        });
+    }
+
+    return this.schoolTeacherPreviewRendererPromise;
+  }
+
+  applySchoolTeacherPreviewRenderer(renderer, game = this.schoolMicrogame) {
     const mount = this.hud.getSchoolTeacherPreviewMount?.();
-    if (!mount) {
-      return;
+    if (!renderer || !this.isSchoolTeacherGameActive(game) || !mount) {
+      renderer?.setActive(false);
+      return false;
     }
 
-    const renderer = this.getOrCreateSchoolTeacherPreviewRenderer();
     renderer.mount(mount);
     renderer.setActive(true);
     void renderer.setTeacherModel(game.round?.teacherModelId ?? this.schoolMicrogameNpcModelId);
@@ -11393,6 +12435,36 @@ export class Game {
       lookEndsAt: Number(game.data?.lookEndsAt ?? 0) || 0,
       remainingMs: Number(game.remainingMs ?? 0) || 0
     });
+    return true;
+  }
+
+  syncSchoolTeacherPreview() {
+    const game = this.schoolMicrogame;
+    if (!this.isSchoolTeacherGameActive(game)) {
+      this.schoolTeacherPreviewRenderer?.setActive(false);
+      return;
+    }
+
+    if (this.schoolTeacherPreviewRenderer) {
+      this.applySchoolTeacherPreviewRenderer(this.schoolTeacherPreviewRenderer, game);
+      return;
+    }
+
+    if (this.schoolTeacherPreviewSyncPending || !this.hud.getSchoolTeacherPreviewMount?.()) {
+      return;
+    }
+
+    this.schoolTeacherPreviewSyncPending = true;
+    void this.ensureSchoolTeacherPreviewRenderer()
+      .then((renderer) => {
+        this.applySchoolTeacherPreviewRenderer(renderer);
+      })
+      .catch((error) => {
+        console.warn('[School] Teacher preview renderer failed to initialize.', error);
+      })
+      .finally(() => {
+        this.schoolTeacherPreviewSyncPending = false;
+      });
   }
 
   updateSchoolTeacherPreview(deltaSeconds = 0) {
@@ -11690,9 +12762,7 @@ export class Game {
     const currentIndex = Math.max(0, Math.min(questions.length - 1, Math.floor(Number(game.data.currentQuestionIndex ?? 0) || 0)));
     const question = questions[currentIndex] ?? {};
     const selectedIndex = Math.floor(Number(index));
-    const roundResults = Array.isArray(game.data.roundResults) && game.data.roundResults.length === questions.length
-      ? [...game.data.roundResults]
-      : Array.from({ length: questions.length }, () => null);
+    const roundResults = cloneRoundResults(game.data.roundResults, questions.length);
     const isCorrect = selectedIndex === Number(question.correctIndex ?? -1);
 
     game.data.selectedIndex = selectedIndex;
@@ -11706,7 +12776,13 @@ export class Game {
       return;
     }
 
-    game.data.correctCount = roundResults.filter((result) => result === true).length;
+    let correctCount = 0;
+    for (const result of roundResults) {
+      if (result === true) {
+        correctCount += 1;
+      }
+    }
+    game.data.correctCount = correctCount;
     game.data.correctImpactIndex = currentIndex;
     game.data.advanceAt = performance.now() + 900;
     game.data.completing = currentIndex >= questions.length - 1;
@@ -11721,12 +12797,27 @@ export class Game {
     return Array.isArray(game?.round?.cards) ? game.round.cards : [];
   }
 
+  isMemoryCardIdAllowed(cardId = '', cards = this.getMemoryMatchCards()) {
+    for (const card of cards) {
+      if (card?.id === cardId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   normalizeMemoryCardIds(ids = [], cards = this.getMemoryMatchCards()) {
-    const allowed = new Set(cards.map((card) => card.id));
     const next = [];
     for (const id of Array.isArray(ids) ? ids : []) {
       const cardId = String(id ?? '');
-      if (allowed.has(cardId) && !next.includes(cardId)) {
+      let alreadyAdded = false;
+      for (const existingId of next) {
+        if (existingId === cardId) {
+          alreadyAdded = true;
+          break;
+        }
+      }
+      if (this.isMemoryCardIdAllowed(cardId, cards) && !alreadyAdded) {
         next.push(cardId);
       }
     }
@@ -11740,29 +12831,55 @@ export class Game {
     }
 
     const cards = this.getMemoryMatchCards(game);
-    const selectedCard = cards.find((card) => card.id === cardId);
+    let selectedCard = null;
+    for (const card of cards) {
+      if (card.id === cardId) {
+        selectedCard = card;
+        break;
+      }
+    }
     if (!selectedCard) {
       return;
     }
 
-    const matchedIds = new Set(this.normalizeMemoryCardIds(game.data.matchedCardIds, cards));
+    const matchedIds = addValuesToSet(this.memoryMatchMatchedIdSet, this.normalizeMemoryCardIds(game.data.matchedCardIds, cards));
     if (matchedIds.has(cardId)) {
       return;
     }
 
-    let visibleIds = this.normalizeMemoryCardIds(game.data.visibleCardIds, cards)
-      .filter((id) => !matchedIds.has(id));
+    const normalizedVisibleIds = this.normalizeMemoryCardIds(game.data.visibleCardIds, cards);
+    let visibleIds = [];
+    for (const id of normalizedVisibleIds) {
+      if (!matchedIds.has(id)) {
+        visibleIds.push(id);
+      }
+    }
     const pendingMismatchIds = this.normalizeMemoryCardIds(game.data.pendingMismatchIds, cards);
     if (pendingMismatchIds.length >= 2) {
-      visibleIds = visibleIds.filter((id) => !pendingMismatchIds.includes(id));
+      const retainedVisibleIds = [];
+      for (const id of visibleIds) {
+        let pendingMismatch = false;
+        for (const pendingId of pendingMismatchIds) {
+          if (pendingId === id) {
+            pendingMismatch = true;
+            break;
+          }
+        }
+        if (!pendingMismatch) {
+          retainedVisibleIds.push(id);
+        }
+      }
+      visibleIds = retainedVisibleIds;
       game.data.pendingMismatchIds = [];
       game.data.celebratingCardIds = [];
       game.data.flippingBackCardIds = pendingMismatchIds;
       game.data.flipBackEndsAt = performance.now() + 340;
     }
 
-    if (visibleIds.includes(cardId)) {
-      return;
+    for (const id of visibleIds) {
+      if (id === cardId) {
+        return;
+      }
     }
 
     if (visibleIds.length >= 2) {
@@ -11784,8 +12901,19 @@ export class Game {
 
     game.data.moves = Math.max(0, Math.floor(Number(game.data.moves ?? 0) || 0)) + 1;
     const [firstId, secondId] = visibleIds;
-    const firstCard = cards.find((card) => card.id === firstId);
-    const secondCard = cards.find((card) => card.id === secondId);
+    let firstCard = null;
+    let secondCard = null;
+    for (const card of cards) {
+      if (!firstCard && card.id === firstId) {
+        firstCard = card;
+      }
+      if (!secondCard && card.id === secondId) {
+        secondCard = card;
+      }
+      if (firstCard && secondCard) {
+        break;
+      }
+    }
     const isMatch = Boolean(firstCard && secondCard && firstCard.pairId === secondCard.pairId);
 
     if (!isMatch) {
@@ -11798,7 +12926,10 @@ export class Game {
     matchedIds.add(firstId);
     matchedIds.add(secondId);
     const pairCount = Math.max(1, Math.floor(Number(game.round.pairCount ?? cards.length / 2) || 1));
-    game.data.matchedCardIds = [...matchedIds];
+    game.data.matchedCardIds = [];
+    for (const id of matchedIds) {
+      game.data.matchedCardIds.push(id);
+    }
     game.data.visibleCardIds = [];
     game.data.pendingMismatchIds = [];
     game.data.celebratingCardIds = [firstId, secondId];
@@ -12331,12 +13462,24 @@ export class Game {
     }
 
     const bin = action.slice('bin:'.length);
-    const item = (game.data.remaining ?? []).find((entry) => entry.id === selectedId);
+    let item = null;
+    for (const entry of game.data.remaining ?? []) {
+      if (entry.id === selectedId) {
+        item = entry;
+        break;
+      }
+    }
     if (!item) {
       return;
     }
 
-    game.data.remaining = game.data.remaining.filter((entry) => entry.id !== selectedId);
+    const remaining = [];
+    for (const entry of game.data.remaining ?? []) {
+      if (entry.id !== selectedId) {
+        remaining.push(entry);
+      }
+    }
+    game.data.remaining = remaining;
     if (item.bin === bin) {
       game.data.correct += 1;
       this.playSoundEffect(this.typingOnKeyboardSound);
@@ -12388,13 +13531,12 @@ export class Game {
     this.syncSchoolMicrogameHud();
   }
 
-  updateSchoolMicrogame(deltaSeconds = 0) {
+  updateSchoolMicrogame(deltaSeconds = 0, now = performance.now()) {
     const game = this.schoolMicrogame;
     if (!game || !this.hud.isSchoolMicrogameOpen()) {
       return;
     }
 
-    const now = performance.now();
     if (game.phase === 'countdown') {
       this.updateSchoolMicrogameCountdown(game, now);
       return;
@@ -12607,7 +13749,12 @@ export class Game {
     if (gameId === SCHOOL_MICROGAME_IDS.scantron) {
       for (const option of ['A', 'B', 'C', 'D']) {
         if (this.input.consume(`Key${option}`)) {
-          const row = (game.data.filled ?? []).filter(Boolean).length;
+          let row = 0;
+          for (const value of game.data.filled ?? []) {
+            if (value) {
+              row += 1;
+            }
+          }
           this.fillScantronBubble(row, option);
           return;
         }
@@ -12743,18 +13890,22 @@ export class Game {
         const patchY = Number(patch.y ?? 0.5) || 0.5;
         const patchSize = Number(patch.size ?? 0.14) || 0.14;
         const reach = OFFICE_JANITOR_MOP_BRUSH_RADIUS + patchSize * 0.34;
-        const distance = Math.hypot(mopX - patchX, mopY - patchY);
-        if (distance > reach) {
+        const distanceSq = distanceSquared2D(mopX, mopY, patchX, patchY);
+        if (distanceSq > reach * reach) {
           continue;
         }
 
+        const distance = Math.sqrt(distanceSq);
         const falloff = 1 - (distance / Math.max(0.001, reach));
         const clean = Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0));
         patch.clean = Math.min(1, clean + dt * OFFICE_JANITOR_MOP_CLEAN_RATE * (0.42 + falloff));
       }
     }
 
-    const cleanTotal = patches.reduce((sum, patch) => sum + Math.max(0, Math.min(1, Number(patch.clean ?? 0) || 0)), 0);
+    let cleanTotal = 0;
+    for (let index = 0; index < patches.length; index += 1) {
+      cleanTotal += Math.max(0, Math.min(1, Number(patches[index].clean ?? 0) || 0));
+    }
     const cleanProgress = patches.length > 0 ? cleanTotal / patches.length : 0;
     game.data.cleanProgress = cleanProgress;
     if (cleanProgress >= 0.72 && !game.data.sparkleHinted) {
@@ -12949,9 +14100,22 @@ export class Game {
         });
         game.data.spawnIn = Math.max(0.42, 0.92 - ((game.round.durationMs - game.remainingMs) / game.round.durationMs) * 0.34);
       }
-      game.data.chalks = game.data.chalks
-        .map((chalk) => ({ ...chalk, x: Number(chalk.x ?? 0) - dt * 72 }))
-        .filter((chalk) => chalk.x > -8);
+      const chalks = Array.isArray(game.data.chalks) ? game.data.chalks : [];
+      let writeIndex = 0;
+      for (let index = 0; index < chalks.length; index += 1) {
+        const chalk = chalks[index];
+        if (!chalk) {
+          continue;
+        }
+        chalk.x = Number(chalk.x ?? 0) - dt * 72;
+        if (chalk.x <= -8) {
+          continue;
+        }
+        chalks[writeIndex] = chalk;
+        writeIndex += 1;
+      }
+      chalks.length = writeIndex;
+      game.data.chalks = chalks;
 
       for (const chalk of game.data.chalks) {
         const inHitZone = chalk.x >= 9 && chalk.x <= 21;
@@ -13059,7 +14223,7 @@ export class Game {
       return;
     }
 
-    this.worldBuilder.setPlayerWorkoutState(this.npcServiceState.players ?? new Map(), {
+    this.worldBuilder.setPlayerWorkoutState(this.npcServiceState.players ?? EMPTY_NPC_SERVICE_PLAYERS, {
       pendingPlacementId: this.pendingWorkoutPlacementId,
       claimedPlacementId: this.claimedWorkoutPlacementId,
       activePlacementId: this.activeWorkoutPlacementId
@@ -13485,23 +14649,25 @@ export class Game {
 
   updateBasketballShotHud() {
     const shot = this.activeWorkout?.basketballShot;
+    const state = this.basketballShotHudState;
     if (!shot) {
-      this.hud.setBasketballShotState({ visible: false, game: null });
+      state.visible = false;
+      state.game = null;
+      this.hud.setBasketballShotState(state);
       return;
     }
 
-    this.hud.setBasketballShotState({
-      visible: true,
-      game: {
-        phase: shot.released ? 'result' : 'playing',
-        progress: shot.released ? shot.releaseProgress : shot.progress,
-        released: shot.released,
-        made: shot.released ? shot.made : null,
-        release: shot.release,
-        score: shot.score,
-        message: shot.message
-      }
-    });
+    const game = this.basketballShotHudGame;
+    game.phase = shot.released ? 'result' : 'playing';
+    game.progress = shot.released ? shot.releaseProgress : shot.progress;
+    game.released = shot.released;
+    game.made = shot.released ? shot.made : null;
+    game.release = shot.release;
+    game.score = shot.score;
+    game.message = shot.message;
+    state.visible = true;
+    state.game = game;
+    this.hud.setBasketballShotState(state);
   }
 
   handleBasketballShotAction(action = '') {
@@ -13540,13 +14706,25 @@ export class Game {
     this.camera.lookAt(lookTarget);
   }
 
-  updateBasketballShotWorkout(deltaSeconds, { colliders, sceneBounds, groundHeight } = {}) {
+  updateBasketballShotWorkout(deltaSeconds, options = null) {
+    const colliders = options?.colliders ?? EMPTY_COLLIDERS;
+    const sceneBounds = options?.sceneBounds ?? null;
+    const groundHeight = options?.groundHeight ?? 0;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
     const shot = this.activeWorkout?.basketballShot;
     if (!shot || !this.player) {
       return true;
     }
 
-    const now = performance.now();
+    const playerUpdateOptions = this.playerUpdateOptions;
+    playerUpdateOptions.skateboardOwned = false;
+    playerUpdateOptions.vehicleItemId = '';
+    playerUpdateOptions.skating = false;
+    playerUpdateOptions.speedScale = 0;
+    playerUpdateOptions.movementCameraForward = CAMERA_MOVEMENT_FORWARD;
+    playerUpdateOptions.stationaryRun = false;
+    playerUpdateOptions.locomotionMode = undefined;
+    playerUpdateOptions.locomotionPlaybackRate = undefined;
     this.player.update(
       deltaSeconds,
       ZERO_INPUT,
@@ -13554,7 +14732,7 @@ export class Game {
       colliders,
       sceneBounds,
       groundHeight,
-      { speedScale: 0 }
+      playerUpdateOptions
     );
 
     if (!shot.released) {
@@ -14019,19 +15197,32 @@ export class Game {
     return true;
   }
 
-  updateTreadmillRunHud() {
+  updateTreadmillRunHud(now = performance.now()) {
     const run = this.activeWorkout?.treadmillRun;
+    const state = this.treadmillRunHudState;
     if (!run) {
-      this.hud.setTreadmillRunState({ visible: false, game: null });
+      state.visible = false;
+      state.game = null;
+      this.hud.setTreadmillRunState(state);
       return;
     }
 
-    const now = performance.now();
     const elapsedMs = this.getTreadmillRunElapsed(run, now);
     const countdownElapsedMs = this.getTreadmillRunCountdownElapsed(run, now);
     const countdownRemainingMs = Math.max(0, Number(run.countdownMs ?? TREADMILL_RUN_COUNTDOWN_MS) - countdownElapsedMs);
     const countdownBeats = Array.isArray(run.countdownBeats) ? run.countdownBeats : [];
-    const nextRunBeat = run.beats.find((beat) => beat.status === 'pending') ?? null;
+    let nextRunBeat = null;
+    let hitCount = 0;
+    let missedCount = 0;
+    for (const beat of run.beats) {
+      if (beat?.status === 'hit') {
+        hitCount += 1;
+      } else if (beat?.status === 'missed') {
+        missedCount += 1;
+      } else if (beat?.status === 'pending' && !nextRunBeat) {
+        nextRunBeat = beat;
+      }
+    }
     const nextCountdownBeat = run.phase === 'countdown'
       ? countdownBeats[run.nextCountdownSoundBeatIndex] ?? null
       : null;
@@ -14040,28 +15231,27 @@ export class Game {
       : nextRunBeat
         ? THREE.MathUtils.clamp(1 - (Math.abs(nextRunBeat.timeMs - elapsedMs) / this.getTreadmillBeatWindowMs(nextRunBeat)), 0, 1)
         : 0;
-    this.hud.setTreadmillRunState({
-      visible: true,
-      game: {
-        phase: run.phase,
-        countdownMs: run.countdownMs ?? TREADMILL_RUN_COUNTDOWN_MS,
-        countdownElapsedMs,
-        countdownRemainingMs,
-        durationMs: run.durationMs,
-        elapsedMs,
-        remainingMs: Math.max(0, run.durationMs - elapsedMs),
-        bpm: this.getTreadmillRunBpm(run, now),
-        score: run.score,
-        beatCount: run.beats.length,
-        hitCount: run.beats.filter((beat) => beat.status === 'hit').length,
-        missedCount: run.beats.filter((beat) => beat.status === 'missed').length,
-        nextBeatProgress,
-        grade: run.lastGrade,
-        awardXp: run.awardXp,
-        rewardScore: TREADMILL_RUN_REWARD_SCORE,
-        message: run.message
-      }
-    });
+    const game = this.treadmillRunHudGame;
+    game.phase = run.phase;
+    game.countdownMs = run.countdownMs ?? TREADMILL_RUN_COUNTDOWN_MS;
+    game.countdownElapsedMs = countdownElapsedMs;
+    game.countdownRemainingMs = countdownRemainingMs;
+    game.durationMs = run.durationMs;
+    game.elapsedMs = elapsedMs;
+    game.remainingMs = Math.max(0, run.durationMs - elapsedMs);
+    game.bpm = this.getTreadmillRunBpm(run, now);
+    game.score = run.score;
+    game.beatCount = run.beats.length;
+    game.hitCount = hitCount;
+    game.missedCount = missedCount;
+    game.nextBeatProgress = nextBeatProgress;
+    game.grade = run.lastGrade;
+    game.awardXp = run.awardXp;
+    game.rewardScore = TREADMILL_RUN_REWARD_SCORE;
+    game.message = run.message;
+    state.visible = true;
+    state.game = game;
+    this.hud.setTreadmillRunState(state);
   }
 
   handleTreadmillRunAction(action = '') {
@@ -14095,16 +15285,28 @@ export class Game {
     this.camera.lookAt(lookTarget);
   }
 
-  updateTreadmillRunWorkout(deltaSeconds, { colliders, sceneBounds, groundHeight } = {}) {
+  updateTreadmillRunWorkout(deltaSeconds, options = null) {
+    const colliders = options?.colliders ?? EMPTY_COLLIDERS;
+    const sceneBounds = options?.sceneBounds ?? null;
+    const groundHeight = options?.groundHeight ?? 0;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
     const run = this.activeWorkout?.treadmillRun;
     if (!run || !this.player) {
       return true;
     }
 
-    const now = performance.now();
     const bpm = this.getTreadmillRunBpm(run, now);
     const runActive = run.phase === 'countdown' || run.phase === 'playing';
     this.syncTreadmillRunObjectSpeed(run, now);
+    const playerUpdateOptions = this.playerUpdateOptions;
+    playerUpdateOptions.skateboardOwned = false;
+    playerUpdateOptions.vehicleItemId = '';
+    playerUpdateOptions.skating = false;
+    playerUpdateOptions.speedScale = 1;
+    playerUpdateOptions.movementCameraForward = CAMERA_MOVEMENT_FORWARD;
+    playerUpdateOptions.stationaryRun = runActive;
+    playerUpdateOptions.locomotionMode = undefined;
+    playerUpdateOptions.locomotionPlaybackRate = THREE.MathUtils.clamp(bpm / 156, 0.78, 1.45);
     this.player.update(
       deltaSeconds,
       ZERO_INPUT,
@@ -14112,10 +15314,7 @@ export class Game {
       colliders,
       sceneBounds,
       groundHeight,
-      {
-        stationaryRun: runActive,
-        locomotionPlaybackRate: THREE.MathUtils.clamp(bpm / 156, 0.78, 1.45)
-      }
+      playerUpdateOptions
     );
 
     if (run.phase === 'countdown') {
@@ -14125,7 +15324,7 @@ export class Game {
         this.startTreadmillScoredRun(run);
         this.updateTreadmillRunBeatState(run, now);
       } else {
-        this.updateTreadmillRunHud();
+        this.updateTreadmillRunHud(now);
       }
       return true;
     }
@@ -14138,12 +15337,12 @@ export class Game {
       if (this.getTreadmillRunElapsed(run, now) >= run.durationMs) {
         this.resolveTreadmillRun(now);
       } else {
-        this.updateTreadmillRunHud();
+        this.updateTreadmillRunHud(now);
       }
       return true;
     }
 
-    this.updateTreadmillRunHud();
+    this.updateTreadmillRunHud(now);
     if (now >= run.resultAt + TREADMILL_RUN_RESULT_HOLD_MS) {
       if (run.awardXp) {
         this.hud.showToast(`Nice Run! Treadmill score ${run.score}%. XP awarded.`);
@@ -14193,7 +15392,7 @@ export class Game {
       .copy(this.workoutBarbellMidpoint)
       .addScaledVector(this.workoutForward, 0.08);
     this.workoutBarbellQuaternion.setFromUnitVectors(
-      new THREE.Vector3(1, 0, 0),
+      BARBELL_BASE_AXIS,
       this.workoutBarbellAxis
     );
     this.activeWorkout.carriedBarbell.quaternion.copy(this.workoutBarbellQuaternion);
@@ -14252,7 +15451,12 @@ export class Game {
     return true;
   }
 
-  updateActiveWorkout(deltaSeconds, { localAlive, colliders, sceneBounds, groundHeight } = {}) {
+  updateActiveWorkout(deltaSeconds, options = null) {
+    const localAlive = options?.localAlive;
+    const colliders = options?.colliders ?? EMPTY_COLLIDERS;
+    const sceneBounds = options?.sceneBounds ?? null;
+    const groundHeight = options?.groundHeight ?? 0;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
     if (!this.activeWorkout || !this.player) {
       return false;
     }
@@ -14266,16 +15470,16 @@ export class Game {
     const activityConfig = this.activeWorkout.activityConfig ?? getWorkoutActivityConfig(this.activeWorkout);
 
     if (this.activeWorkout.phase === 'approach') {
+      const moveOptions = this.workoutMoveOptions;
+      moveOptions.speedScale = 0.82;
+      moveOptions.stopDistance = activityConfig?.stopDistance ?? SNATCH_APPROACH_STOP_DISTANCE;
       const movement = this.player.moveToward(
         this.activeWorkout.interactable.approachPosition,
         deltaSeconds,
         colliders,
         sceneBounds,
         groundHeight,
-        {
-          speedScale: 0.82,
-          stopDistance: activityConfig?.stopDistance ?? SNATCH_APPROACH_STOP_DISTANCE
-        }
+        moveOptions
       );
       if (movement.arrived) {
         this.player.position.copy(this.activeWorkout.interactable.approachPosition);
@@ -14291,31 +15495,33 @@ export class Game {
     this.player.setFacing(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
     this.player.setAimRotation(this.activeWorkout.interactable.approachRotationY ?? this.player.object.rotation.y);
     if (activityConfig?.basketballShot) {
-      return this.updateBasketballShotWorkout(deltaSeconds, {
-        colliders,
-        sceneBounds,
-        groundHeight
-      });
+      return this.updateBasketballShotWorkout(deltaSeconds, options);
     }
     if (activityConfig?.treadmillRun) {
-      return this.updateTreadmillRunWorkout(deltaSeconds, {
-        colliders,
-        sceneBounds,
-        groundHeight
-      });
+      return this.updateTreadmillRunWorkout(deltaSeconds, options);
     }
 
+    const playerUpdateOptions = this.playerUpdateOptions;
+    playerUpdateOptions.skateboardOwned = false;
+    playerUpdateOptions.vehicleItemId = '';
+    playerUpdateOptions.skating = false;
+    playerUpdateOptions.speedScale = 1;
+    playerUpdateOptions.movementCameraForward = CAMERA_MOVEMENT_FORWARD;
+    playerUpdateOptions.stationaryRun = false;
+    playerUpdateOptions.locomotionMode = undefined;
+    playerUpdateOptions.locomotionPlaybackRate = undefined;
     this.player.update(
       deltaSeconds,
       ZERO_INPUT,
       this.camera,
       colliders,
       sceneBounds,
-      groundHeight
+      groundHeight,
+      playerUpdateOptions
     );
     this.syncWorkoutBarbell();
 
-    if (performance.now() >= this.activeWorkout.endsAt) {
+    if (now >= this.activeWorkout.endsAt) {
       this.finishWorkout();
     }
 
@@ -14452,19 +15658,23 @@ export class Game {
       this.refreshAimPoseDebugHud();
       if (localPlayerState) {
         const localAlive = localPlayerState.alive !== false;
-        this.player.setAliveState(localAlive, {
-          startedAtMs: Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
-            ? localPlayerState.lastDamagedAt
-            : Date.now()
-        });
+        const aliveStateOptions = this.playerAliveStateOptions;
+        aliveStateOptions.startedAtMs = Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
+          ? localPlayerState.lastDamagedAt
+          : 0;
+        this.player.setAliveState(localAlive, aliveStateOptions);
+        const weaponStateOptions = this.playerWeaponStateOptions;
+        weaponStateOptions.visible = localAlive && Boolean(localPlayerState.equippedWeaponId);
         await this.player.setWeaponState(
           localAlive ? localPlayerState.equippedWeaponId : '',
-          { visible: localAlive && Boolean(localPlayerState.equippedWeaponId) }
+          weaponStateOptions
         );
-        this.player.setReloadState(Boolean(localAlive && localPlayerState.isReloading), {
-          weaponId: localAlive ? localPlayerState.equippedWeaponId : '',
-          endsAtMs: localPlayerState.reloadEndsAt ?? 0
-        });
+        const reloadStateOptions = this.playerReloadStateOptions;
+        reloadStateOptions.weaponId = localAlive ? localPlayerState.equippedWeaponId : '';
+        reloadStateOptions.startedAtMs = 0;
+        reloadStateOptions.endsAtMs = localPlayerState.reloadEndsAt ?? 0;
+        reloadStateOptions.resetMotion = true;
+        this.player.setReloadState(Boolean(localAlive && localPlayerState.isReloading), reloadStateOptions);
       }
       this.applyHotbarSelection({ force: true });
       if (portalSpawnApplied) {
@@ -14594,7 +15804,13 @@ export class Game {
           ? this.schoolGeographyGlobeRenderer.targetYaw
           : null
       }),
-      schoolGames: () => listSchoolMicrogames().map((game) => game.id)
+      schoolGames: () => {
+        const ids = [];
+        for (const game of listSchoolMicrogames()) {
+          ids.push(game.id);
+        }
+        return ids;
+      }
     };
     globalThis.openMinigameHud = (...args) => globalThis.__stickRpgMinigameDebug.open(...args);
     globalThis.openBlackjackHud = () => globalThis.__stickRpgMinigameDebug.openBlackjack();
@@ -14612,7 +15828,51 @@ export class Game {
     const localDebugHost = isLocalDebugHost();
     const adminAimPoseDebug = this.canUseAimPoseDebug();
     const getActiveItemId = () => this.getLocalPlayerState()?.equippedWeaponId || HELD_ITEM_IDS.pistol;
-    const clampVector = (values, fallback = [0, 0, 0]) => [0, 1, 2].map((index) => Number(values?.[index] ?? fallback[index] ?? 0));
+    const clampVector = (values, fallback = [0, 0, 0]) => {
+      const vector = [];
+      for (let index = 0; index < 3; index += 1) {
+        vector.push(Number(values?.[index] ?? fallback[index] ?? 0));
+      }
+      return vector;
+    };
+    const roundVector = (values) => {
+      const vector = [];
+      for (let index = 0; index < values.length; index += 1) {
+        vector.push(Number(values[index].toFixed(4)));
+      }
+      return vector;
+    };
+    const listHeldItemIds = () => {
+      const ids = [];
+      for (const definition of listHeldItemDefinitions()) {
+        ids.push(definition.id);
+      }
+      return ids;
+    };
+    const listVibeShaderPresetIds = () => {
+      const ids = [];
+      for (const preset of VIBE_SHADER_PRESETS) {
+        ids.push(preset.id);
+      }
+      return ids;
+    };
+    const listVibeShaderPresetSummaries = () => {
+      const presets = [];
+      for (const preset of VIBE_SHADER_PRESETS) {
+        presets.push({ id: preset.id, label: preset.label });
+      }
+      return presets;
+    };
+    const getAimPoseDebugFieldKeys = () => {
+      const fields = ['punchAimYawOffset'];
+      for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+        fields.push(field.key);
+      }
+      for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+        fields.push(field.key);
+      }
+      return fields;
+    };
     if (localDebugHost) {
       const printGrip = (itemId = getActiveItemId()) => {
         const profile = this.player.getHeldItemGripProfile(itemId);
@@ -14624,9 +15884,9 @@ export class Game {
         const printable = {
           id: itemId,
           gripOffset: {
-            position: profile.position.map((value) => Number(value.toFixed(4))),
-            rotation: profile.rotation.map((value) => Number(value.toFixed(4))),
-            scale: profile.scale.map((value) => Number(value.toFixed(4)))
+            position: roundVector(profile.position),
+            rotation: roundVector(profile.rotation),
+            scale: roundVector(profile.scale)
           }
         };
         console.info('[HeldItemDebug] Current grip profile.', printable);
@@ -14643,13 +15903,21 @@ export class Game {
 
       const roundDebugValue = (value) => {
         if (Array.isArray(value)) {
-          return value.map((entry) => roundDebugValue(entry));
+          const output = [];
+          for (const entry of value) {
+            output.push(roundDebugValue(entry));
+          }
+          return output;
         }
 
         if (value && typeof value === 'object') {
-          return Object.fromEntries(
-            Object.entries(value).map(([key, entry]) => [key, roundDebugValue(entry)])
-          );
+          const output = {};
+          for (const key in value) {
+            if (Object.hasOwn(value, key)) {
+              output[key] = roundDebugValue(value[key]);
+            }
+          }
+          return output;
         }
 
         return Number.isFinite(value) ? Number(value.toFixed(4)) : value;
@@ -14688,7 +15956,7 @@ export class Game {
       };
 
       globalThis.__stickRpgHeldItemDebug = {
-        items: listHeldItemDefinitions().map((definition) => definition.id),
+        items: listHeldItemIds(),
         printGrip,
         nudgePosition: (deltaX = 0, deltaY = 0, deltaZ = 0, itemId = getActiveItemId()) => {
           const next = this.player.nudgeHeldItemGripOverride(itemId, {
@@ -14739,7 +16007,12 @@ export class Game {
           updateReloadProfile((profile) => {
             profile.pose ??= {};
             const current = profile.pose[boneKey] ?? [0, 0, 0];
-            profile.pose[boneKey] = [0, 1, 2].map((index) => Number(current[index] ?? 0) + Number([deltaX, deltaY, deltaZ][index] ?? 0));
+            const delta = [deltaX, deltaY, deltaZ];
+            const nextPose = [];
+            for (let index = 0; index < 3; index += 1) {
+              nextPose.push(Number(current[index] ?? 0) + Number(delta[index] ?? 0));
+            }
+            profile.pose[boneKey] = nextPose;
           }, itemId),
         setReloadEnvelope: (start = 0.14, peak = 0.4, end = 0.88, itemId = getActiveItemId()) =>
           updateReloadProfile((profile) => {
@@ -14810,7 +16083,7 @@ export class Game {
       globalThis.previewPhoneTexting = (...args) => globalThis.__stickRpgHeldItemDebug.previewPhoneTexting(...args);
       globalThis.stopPhoneTexting = (...args) => globalThis.__stickRpgHeldItemDebug.stopPhoneTexting(...args);
       globalThis.__stickRpgShaderDebug = {
-        presets: VIBE_SHADER_PRESETS.map(({ id, label }) => ({ id, label })),
+        presets: listVibeShaderPresetSummaries(),
         getActivePreset: () => this.getActiveVibeShaderPreset().id,
         setPreset: (presetId = DEFAULT_VIBE_SHADER_PRESET_ID) => this.setVibeShaderPreset(presetId, { announce: false }),
         getIntensity: (presetId = this.activeVibeShaderPresetId) => this.getVibeShaderIntensity(presetId),
@@ -14822,7 +16095,7 @@ export class Game {
       };
 
       console.info('[HeldItemDebug] Attached window.__stickRpgHeldItemDebug helpers.', {
-        items: listHeldItemDefinitions().map((definition) => definition.id)
+        items: listHeldItemIds()
       });
       console.info('[ReloadDebug] Attached window.__stickRpgHeldItemDebug reload helpers.', {
         methods: [
@@ -14840,13 +16113,13 @@ export class Game {
         ]
       });
       console.info('[ShaderDebug] Attached window.__stickRpgShaderDebug helpers.', {
-        presets: VIBE_SHADER_PRESETS.map(({ id }) => id)
+        presets: listVibeShaderPresetIds()
       });
     }
 
     if (adminAimPoseDebug) {
       globalThis.__stickRpgAimPoseDebug = {
-        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key), ...PHONE_GRIP_DEBUG_FIELDS.map((field) => field.key)],
+        fields: getAimPoseDebugFieldKeys(),
         setSection: (section = 'unarmed') => this.setPoseDebugSection(section),
         print: (itemId = getActiveItemId()) => this.printAimPoseDebug(itemId),
         setField: (fieldKey, value = 0, itemId = getActiveItemId()) => this.setAimPoseDebugField(fieldKey, value, itemId),
@@ -14859,7 +16132,7 @@ export class Game {
       globalThis.resetAimPose = (...args) => globalThis.__stickRpgAimPoseDebug.reset(...args);
 
       console.info('[PoseDebug] Attached window.__stickRpgAimPoseDebug helpers.', {
-        fields: ['punchAimYawOffset', ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => field.key), ...PHONE_GRIP_DEBUG_FIELDS.map((field) => field.key)]
+        fields: getAimPoseDebugFieldKeys()
       });
     }
   }
@@ -14874,12 +16147,11 @@ export class Game {
   }
 
   getPhoneGripDebugValues(profile = this.getPhoneGripDebugProfile()) {
-    return Object.fromEntries(
-      PHONE_GRIP_DEBUG_FIELDS.map((field) => [
-        field.key,
-        Number(profile?.[field.group]?.[field.axis] ?? 0)
-      ])
-    );
+    const values = {};
+    for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+      values[field.key] = Number(profile?.[field.group]?.[field.axis] ?? 0);
+    }
+    return values;
   }
 
   startPhoneGripDebugPreview() {
@@ -14998,9 +16270,9 @@ export class Game {
 
     const current = this.getPhoneGripDebugProfile();
     const nextProfile = {
-      position: [...(current.position ?? [0, 0, 0])],
-      rotation: [...(current.rotation ?? [0, 0, 0])],
-      scale: [...(current.scale ?? [1, 1, 1])]
+      position: cloneNumberVector3(current.position, 0),
+      rotation: cloneNumberVector3(current.rotation, 0),
+      scale: cloneNumberVector3(current.scale, 1)
     };
     const numericValue = Number(value);
     nextProfile[field.group][field.axis] = Number.isFinite(numericValue)
@@ -15009,13 +16281,18 @@ export class Game {
 
     const baseProfile = getHeldItemGripProfile(PHONE_GRIP_DEBUG_ITEM_ID);
     const override = {
-      position: [0, 1, 2].map((index) => nextProfile.position[index] - baseProfile.position[index]),
-      rotation: [0, 1, 2].map((index) => nextProfile.rotation[index] - baseProfile.rotation[index]),
-      scale: [0, 1, 2].map((index) => {
+      position: [],
+      rotation: [],
+      scale: []
+    };
+    for (let index = 0; index < 3; index += 1) {
+      override.position.push(nextProfile.position[index] - baseProfile.position[index]);
+      override.rotation.push(nextProfile.rotation[index] - baseProfile.rotation[index]);
+      override.scale.push((() => {
         const baseScale = baseProfile.scale[index] || 1;
         return nextProfile.scale[index] / baseScale;
-      })
-    };
+      })());
+    }
     const updatedProfile = this.player.setHeldItemGripOverride?.(PHONE_GRIP_DEBUG_ITEM_ID, override) ?? null;
     this.startPhoneGripDebugPreview();
     this.refreshAimPoseDebugHud();
@@ -15065,11 +16342,20 @@ export class Game {
         section: 'phoneGrip',
         id: PHONE_GRIP_DEBUG_ITEM_ID,
         gripOffset: {
-          position: grip.position.map((entry) => Number(entry.toFixed(4))),
-          rotation: grip.rotation.map((entry) => Number(entry.toFixed(4))),
-          scale: grip.scale.map((entry) => Number(entry.toFixed(4)))
+          position: [],
+          rotation: [],
+          scale: []
         }
       };
+      for (let index = 0; index < grip.position.length; index += 1) {
+        printable.gripOffset.position.push(Number(grip.position[index].toFixed(4)));
+      }
+      for (let index = 0; index < grip.rotation.length; index += 1) {
+        printable.gripOffset.rotation.push(Number(grip.rotation[index].toFixed(4)));
+      }
+      for (let index = 0; index < grip.scale.length; index += 1) {
+        printable.gripOffset.scale.push(Number(grip.scale[index].toFixed(4)));
+      }
       console.info('[PoseDebug] Current phone grip settings.', printable);
       return printable;
     }
@@ -15087,13 +16373,16 @@ export class Game {
       : {
         section: 'weaponAim',
         id: itemId,
-        aimPose: Object.fromEntries(
-          HELD_ITEM_AIM_POSE_FIELDS
-            .map((field) => [field.key, Number(pose?.[field.key] ?? 0)])
-            .filter(([, value]) => Math.abs(value) > 0.000001)
-            .map(([key, value]) => [key, Number(value.toFixed(4))])
-        )
+        aimPose: {}
       };
+    if (this.poseDebugSection !== 'unarmed') {
+      for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+        const fieldValue = Number(pose?.[field.key] ?? 0);
+        if (Math.abs(fieldValue) > 0.000001) {
+          printable.aimPose[field.key] = Number(fieldValue.toFixed(4));
+        }
+      }
+    }
     console.info('[PoseDebug] Current pose settings.', printable);
     return printable;
   }
@@ -15109,7 +16398,11 @@ export class Game {
     statusParts.push(this.poseDebugSection === 'phoneGrip' ? `Item: ${PHONE_GRIP_DEBUG_ITEM_ID}` : `Weapon: ${itemId || 'none'}`);
     statusParts.push(`Punch offset: ${punchFacingOffset.toFixed(2)}`);
     if (this.poseDebugSection === 'phoneGrip') {
-      statusParts.push(`Phone pos: ${phoneGripProfile.position.map((entry) => Number(entry).toFixed(3)).join(', ')}`);
+      const phonePositionParts = [];
+      for (const entry of phoneGripProfile.position) {
+        phonePositionParts.push(Number(entry).toFixed(3));
+      }
+      statusParts.push(`Phone pos: ${phonePositionParts.join(', ')}`);
     }
     statusParts.push(this.currentAimMode ? 'Previewing right-click aim.' : 'Press O to open pose debug. Left click punch to test facing.');
     const nextState = {
@@ -15124,11 +16417,14 @@ export class Game {
       phoneGripValues,
       selectedSection: this.poseDebugSection
     };
-    const valueSignature = [
-      punchFacingOffset.toFixed(3),
-      ...HELD_ITEM_AIM_POSE_FIELDS.map((field) => Number(nextState.values?.[field.key] ?? 0).toFixed(3)),
-      ...PHONE_GRIP_DEBUG_FIELDS.map((field) => Number(phoneGripValues?.[field.key] ?? 0).toFixed(3))
-    ].join('|');
+    const valueSignatureParts = [punchFacingOffset.toFixed(3)];
+    for (const field of HELD_ITEM_AIM_POSE_FIELDS) {
+      valueSignatureParts.push(Number(nextState.values?.[field.key] ?? 0).toFixed(3));
+    }
+    for (const field of PHONE_GRIP_DEBUG_FIELDS) {
+      valueSignatureParts.push(Number(phoneGripValues?.[field.key] ?? 0).toFixed(3));
+    }
+    const valueSignature = valueSignatureParts.join('|');
     const signature = [
       Number(nextState.available),
       Number(nextState.visible),
@@ -15181,27 +16477,44 @@ export class Game {
       return;
     }
 
-    const runtime = new Map();
-    for (const [npcId, npc] of this.npcServiceState.npcs.entries()) {
-      runtime.set(npcId, {
-        x: npc.position?.[0] ?? npc.x,
-        z: npc.position?.[1] ?? npc.z,
-        rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
-        interactRadius: npc.interactRadius,
-        gymCheckInEnabled: npc.gymCheckInEnabled === true,
-        stockMarketEnabled: npc.stockMarketEnabled === true,
-        bartenderEnabled: npc.bartenderEnabled === true,
-        pawnShopOwnerEnabled: npc.pawnShopOwnerEnabled === true,
-        carDealerEnabled: npc.carDealerEnabled === true,
-        blackjackDealerEnabled: npc.blackjackDealerEnabled === true,
-        busy: npc.busy,
-        mode: npc.mode,
-        activity: npc.activity,
-        targetPlacementId: npc.targetPlacementId || '',
-        alive: npc.alive !== false,
-        lastDamagedAt: npc.lastDamagedAt ?? 0,
-        respawnAt: npc.respawnAt ?? 0
-      });
+    const runtime = this.npcRuntimeRenderState;
+    const npcs = this.npcServiceState.npcs;
+    const idsToRemove = this.npcRuntimeRenderIdsToRemove;
+    idsToRemove.length = 0;
+    for (const npcId of runtime.keys()) {
+      if (!npcs.has(npcId)) {
+        idsToRemove.push(npcId);
+      }
+    }
+    for (const npcId of idsToRemove) {
+      runtime.delete(npcId);
+    }
+
+    for (const npcId of npcs.keys()) {
+      const npc = npcs.get(npcId);
+      let entry = runtime.get(npcId);
+      if (!entry) {
+        entry = {};
+        runtime.set(npcId, entry);
+      }
+      entry.x = npc.position?.[0] ?? npc.x;
+      entry.z = npc.position?.[1] ?? npc.z;
+      entry.rotationY = npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2));
+      entry.interactRadius = npc.interactRadius;
+      entry.gymCheckInEnabled = npc.gymCheckInEnabled === true;
+      entry.stockMarketEnabled = npc.stockMarketEnabled === true;
+      entry.bartenderEnabled = npc.bartenderEnabled === true;
+      entry.pawnShopOwnerEnabled = npc.pawnShopOwnerEnabled === true;
+      entry.carDealerEnabled = npc.carDealerEnabled === true;
+      entry.blackjackDealerEnabled = npc.blackjackDealerEnabled === true;
+      entry.busy = npc.busy;
+      entry.mode = npc.mode;
+      entry.activity = npc.activity;
+      entry.targetPlacementId = npc.targetPlacementId || '';
+      entry.alive = npc.alive !== false;
+      entry.lastDamagedAt = npc.lastDamagedAt ?? 0;
+      entry.respawnAt = npc.respawnAt ?? 0;
+      entry.snap = false;
     }
     if (this.rentIntroCutsceneRestoreSnapNpcId) {
       const restoreState = runtime.get(this.rentIntroCutsceneRestoreSnapNpcId);
@@ -15213,7 +16526,7 @@ export class Game {
     this.applyRentIntroNpcRuntimeOverride(runtime);
     this.worldBuilder.setNpcRuntimeState(runtime);
     this.syncWorkoutState();
-    this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? new Map());
+    this.worldBuilder.setNpcDebugState(this.npcServiceState.npcDebug ?? EMPTY_NPC_DEBUG_STATE);
   }
 
   updateNpcFocusTargets() {
@@ -15223,7 +16536,8 @@ export class Game {
 
     const focusTargets = this.npcFocusTargets;
     focusTargets.clear();
-    for (const [npcId, npc] of this.npcServiceState.npcs.entries()) {
+    for (const npcId of this.npcServiceState.npcs.keys()) {
+      const npc = this.npcServiceState.npcs.get(npcId);
       if (
         !npc
         || npc.alive === false
@@ -15256,28 +16570,59 @@ export class Game {
       focusTargets.set(npcId, target);
     }
 
-    const focusSignature = this.getNpcFocusTargetSignature(focusTargets);
-    if (focusSignature === this.lastNpcFocusTargetSignature) {
+    if (!this.rememberNpcFocusTargetsIfChanged(focusTargets)) {
       return;
     }
 
-    this.lastNpcFocusTargetSignature = focusSignature;
     this.worldBuilder.setNpcFocusTargets(focusTargets.size ? focusTargets : EMPTY_NPC_FOCUS_TARGETS);
   }
 
-  getNpcFocusTargetSignature(focusTargets) {
+  rememberNpcFocusTargetsIfChanged(focusTargets) {
+    const previousTargets = this.lastNpcFocusTargetStates;
     if (!focusTargets?.size) {
-      return '';
+      if (!previousTargets.size) {
+        return false;
+      }
+      previousTargets.clear();
+      return true;
     }
 
-    let signature = '';
-    for (const [npcId, target] of focusTargets.entries()) {
-      if (signature) {
-        signature += '|';
+    let changed = previousTargets.size !== focusTargets.size;
+    for (const npcId of focusTargets.keys()) {
+      const target = focusTargets.get(npcId);
+      const roundedX = Math.round(Number(target?.x) * 20);
+      const roundedZ = Math.round(Number(target?.z) * 20);
+      const x = Number.isFinite(roundedX) ? roundedX : 0;
+      const z = Number.isFinite(roundedZ) ? roundedZ : 0;
+      const previousTarget = previousTargets.get(npcId);
+      if (!previousTarget) {
+        previousTargets.set(npcId, { x, z });
+        changed = true;
+        continue;
       }
-      signature += `${npcId}:${Math.round(Number(target.x) * 20)}:${Math.round(Number(target.z) * 20)}`;
+      if (previousTarget.x !== x || previousTarget.z !== z) {
+        previousTarget.x = x;
+        previousTarget.z = z;
+        changed = true;
+      }
     }
-    return signature;
+
+    const idsToRemove = this.npcFocusTargetIdsToRemove;
+    idsToRemove.length = 0;
+    for (const npcId of previousTargets.keys()) {
+      if (!focusTargets.has(npcId)) {
+        idsToRemove.push(npcId);
+      }
+    }
+    if (idsToRemove.length > 0) {
+      changed = true;
+      for (let index = 0; index < idsToRemove.length; index += 1) {
+        previousTargets.delete(idsToRemove[index]);
+      }
+      idsToRemove.length = 0;
+    }
+
+    return changed;
   }
 
   captureAvatarSnapshot(avatar, fallbackState = null, overrides = {}) {
@@ -15431,9 +16776,6 @@ export class Game {
     }
 
     await this.worldBuilder.applyWorldPatch(patch);
-    this.currentLayout = this.worldBuilder.getLayout();
-    this.syncVibeRadioPlaylist();
-    this.gymDoorBlockersDirty = true;
   }
 
   async ensureRemotePlayer(sessionId, initialState) {
@@ -15483,7 +16825,8 @@ export class Game {
     let hasMoreWork = false;
     const desiredSessionIds = this.desiredRemoteSessionIds;
     desiredSessionIds.clear();
-    for (const [sessionId, playerState] of this.npcServiceState.players.entries()) {
+    for (const sessionId of this.npcServiceState.players.keys()) {
+      const playerState = this.npcServiceState.players.get(sessionId);
       if (sessionId === this.npcServiceState.sessionId) {
         continue;
       }
@@ -15525,7 +16868,8 @@ export class Game {
   }
 
   updateRemotePlayers(deltaSeconds) {
-    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+    for (const sessionId of this.remotePlayers.keys()) {
+      const avatar = this.remotePlayers.get(sessionId);
       const state = this.npcServiceState.players.get(sessionId);
       if (!state) {
         continue;
@@ -15562,7 +16906,8 @@ export class Game {
     let hasMoreWork = false;
     const desiredIds = this.desiredPickupIds;
     desiredIds.clear();
-    for (const [pickupId, pickup] of this.npcServiceState.pickups.entries()) {
+    for (const pickupId of this.npcServiceState.pickups.keys()) {
+      const pickup = this.npcServiceState.pickups.get(pickupId);
       if (!pickup?.active) {
         continue;
       }
@@ -15654,7 +16999,8 @@ export class Game {
   }
 
   updatePickupVisuals(deltaSeconds) {
-    for (const [pickupId, visual] of this.pickupVisuals.entries()) {
+    for (const pickupId of this.pickupVisuals.keys()) {
+      const visual = this.pickupVisuals.get(pickupId);
       const pickup = this.npcServiceState.pickups.get(pickupId);
       if (!pickup?.active) {
         this.removePickupVisual(pickupId);
@@ -15690,7 +17036,7 @@ export class Game {
     this.moneyDisplayAmount = from;
   }
 
-  getAnimatedMoneyAmount(targetAmount) {
+  getAnimatedMoneyAmount(targetAmount, now = performance.now()) {
     const target = normalizeMoneyAmount(targetAmount);
     if (!this.moneyAnimation) {
       this.moneyDisplayAmount = target;
@@ -15707,7 +17053,6 @@ export class Game {
       }
     }
 
-    const now = performance.now();
     const progress = (now - this.moneyAnimation.startedAt) / this.moneyAnimation.durationMs;
     if (progress >= 1) {
       this.moneyDisplayAmount = this.moneyAnimation.to;
@@ -15722,15 +17067,15 @@ export class Game {
     return this.moneyDisplayAmount;
   }
 
-  syncMoneyHud(targetAmount) {
-    const amount = this.getAnimatedMoneyAmount(targetAmount);
+  syncMoneyHud(targetAmount, now = performance.now()) {
+    const amount = this.getAnimatedMoneyAmount(targetAmount, now);
     const wallet = this.getActiveStockMarketSnapshot();
     const portfolioValue = normalizeMoneyAmount(wallet?.portfolioValue ?? 0);
-    this.hud.setMoneyState({
-      amount,
-      netWorth: amount + portfolioValue,
-      stockProfit: this.getStockUnrealizedProfit(wallet)
-    });
+    const moneyHudState = this.moneyHudState;
+    moneyHudState.amount = amount;
+    moneyHudState.netWorth = amount + portfolioValue;
+    moneyHudState.stockProfit = this.getStockUnrealizedProfit(wallet);
+    this.hud.setMoneyState(moneyHudState);
   }
 
   maybeAnimateMoneyChange(authoritativeAmount) {
@@ -15849,18 +17194,19 @@ export class Game {
     }
 
     const npcPosition = this.getRentIntroCutsceneNpcPosition(this.rentIntroCutsceneNpcPosition);
-    const previous = runtime.get(cutscene.npcId) ?? {};
-    runtime.set(cutscene.npcId, {
-      ...previous,
-      x: npcPosition.x,
-      z: npcPosition.z,
-      rotationY: Math.atan2(this.player.position.x - npcPosition.x, this.player.position.z - npcPosition.z),
-      mode: 'routine',
-      activity: '',
-      busy: false,
-      alive: true,
-      snap: true
-    });
+    let previous = runtime.get(cutscene.npcId);
+    if (!previous) {
+      previous = {};
+      runtime.set(cutscene.npcId, previous);
+    }
+    previous.x = npcPosition.x;
+    previous.z = npcPosition.z;
+    previous.rotationY = Math.atan2(this.player.position.x - npcPosition.x, this.player.position.z - npcPosition.z);
+    previous.mode = 'routine';
+    previous.activity = '';
+    previous.busy = false;
+    previous.alive = true;
+    previous.snap = true;
   }
 
   updateRentIntroCutscene() {
@@ -15881,7 +17227,7 @@ export class Game {
     this.hud.setRentIntroCutsceneState({ visible: true, blink });
     this.player.object.visible = !firstPerson && cutscene.playerVisibleBefore !== false;
     this.player.setAimingState(false);
-    this.player.setSkateboardState?.({ skating: false });
+    this.setLocalPlayerSkateboardState(undefined, false, undefined);
 
     if (!cutscene.standUpPlayed && elapsedMs >= RENT_INTRO_CUTSCENE_GET_UP_START_MS) {
       cutscene.standUpPlayed = true;
@@ -16065,7 +17411,7 @@ export class Game {
     }
 
     const now = performance.now();
-    const activeFloaters = [];
+    let writeIndex = 0;
     this.moneyFloaterAnchor.set(
       this.player.position.x,
       this.player.position.y + 3.3,
@@ -16073,34 +17419,40 @@ export class Game {
     );
     const projected = this.projectSpeechAnchor(this.moneyFloaterAnchor);
 
-    for (const floater of this.moneyFloaters) {
+    for (let readIndex = 0; readIndex < this.moneyFloaters.length; readIndex += 1) {
+      const floater = this.moneyFloaters[readIndex];
       const progress = (now - floater.startedAt) / floater.durationMs;
       if (progress >= 1) {
         continue;
       }
 
-      activeFloaters.push(floater);
+      this.moneyFloaters[writeIndex] = floater;
+      writeIndex += 1;
       if (!projected) {
         continue;
       }
 
       const eased = easeOutCubic(progress);
       const driftX = Math.sin(progress * Math.PI) * 16;
-      bubbles.push({
-        id: `money-floater:${floater.id}`,
-        text: formatMoneyDelta(floater.amount),
-        label: '',
-        variant: 'money',
-        tone: floater.amount >= 0 ? 'positive' : 'negative',
-        status: 'done',
-        visible: true,
-        screenX: projected.x + driftX,
-        screenY: projected.y - 18 - (eased * 70),
-        opacity: Math.max(0, 1 - (progress * 1.12))
-      });
+      bubbles.push(this.writeSpeechBubbleRecord(
+        `money-floater:${floater.id}`,
+        formatMoneyDelta(floater.amount),
+        '',
+        'money',
+        'done',
+        projected.x + driftX,
+        projected.y - 18 - (eased * 70),
+        false,
+        '',
+        null,
+        1,
+        '',
+        floater.amount >= 0 ? 'positive' : 'negative',
+        Math.max(0, 1 - (progress * 1.12))
+      ));
     }
 
-    this.moneyFloaters = activeFloaters;
+    this.moneyFloaters.length = writeIndex;
   }
 
   addSkillXpFloaterBubbles(bubbles) {
@@ -16109,7 +17461,7 @@ export class Game {
     }
 
     const now = performance.now();
-    const activeFloaters = [];
+    let writeIndex = 0;
     this.skillXpFloaterAnchor.set(
       this.player.position.x,
       this.player.position.y + 3.95,
@@ -16117,13 +17469,15 @@ export class Game {
     );
     const projected = this.projectSpeechAnchor(this.skillXpFloaterAnchor);
 
-    for (const floater of this.skillXpFloaters) {
+    for (let readIndex = 0; readIndex < this.skillXpFloaters.length; readIndex += 1) {
+      const floater = this.skillXpFloaters[readIndex];
       const progress = (now - floater.startedAt) / floater.durationMs;
       if (progress >= 1) {
         continue;
       }
 
-      activeFloaters.push(floater);
+      this.skillXpFloaters[writeIndex] = floater;
+      writeIndex += 1;
       if (!projected) {
         continue;
       }
@@ -16131,20 +17485,25 @@ export class Game {
       const eased = easeOutCubic(progress);
       const arc = Math.sin(progress * Math.PI);
       const driftX = (Math.sin(progress * Math.PI * 1.35) * 18) + (arc * 10);
-      bubbles.push({
-        id: `skill-xp-floater:${floater.id}`,
-        text: `+${floater.amount.toLocaleString('en-US')} ${floater.emoji}`,
-        label: '',
-        variant: 'xp',
-        status: 'done',
-        visible: true,
-        screenX: projected.x + driftX,
-        screenY: projected.y - 28 - (eased * 86) - (arc * 8),
-        opacity: Math.max(0, 1 - (progress * 1.08))
-      });
+      bubbles.push(this.writeSpeechBubbleRecord(
+        `skill-xp-floater:${floater.id}`,
+        `+${floater.amount.toLocaleString('en-US')} ${floater.emoji}`,
+        '',
+        'xp',
+        'done',
+        projected.x + driftX,
+        projected.y - 28 - (eased * 86) - (arc * 8),
+        false,
+        '',
+        null,
+        1,
+        '',
+        '',
+        Math.max(0, 1 - (progress * 1.08))
+      ));
     }
 
-    this.skillXpFloaters = activeFloaters;
+    this.skillXpFloaters.length = writeIndex;
   }
 
   recordMovementFrameTiming(rawDeltaSeconds, deltaSeconds) {
@@ -16157,8 +17516,9 @@ export class Game {
     );
   }
 
-  getMovementFrameSummary({ force = false } = {}) {
-    const now = performance.now();
+  getMovementFrameSummary(options = null) {
+    const force = options?.force === true;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
     if (
       !force
       && this.frameTimingSummary
@@ -16189,12 +17549,11 @@ export class Game {
     return summary;
   }
 
-  updateAdaptiveRenderQuality(frameSummary = this.getMovementFrameSummary()) {
+  updateAdaptiveRenderQuality(frameSummary = this.getMovementFrameSummary(), now = performance.now()) {
     if (!this.detailedRenderingEnabled || frameSummary.sampleCount < ADAPTIVE_RENDER_SAMPLE_MIN_COUNT) {
       return;
     }
 
-    const now = performance.now();
     if (now - this.lastAdaptiveRenderAdjustAt < ADAPTIVE_RENDER_ADJUST_INTERVAL_MS) {
       return;
     }
@@ -16264,7 +17623,7 @@ export class Game {
     this.player.position.y = this.getActiveGroundHeightAt(this.player.position) ?? groundHeight;
   }
 
-  syncLocalPlayerState(localPlayerState, deltaSeconds = 0) {
+  syncLocalPlayerState(localPlayerState, deltaSeconds = 0, now = performance.now()) {
     if (!this.player || !localPlayerState) {
       return;
     }
@@ -16295,7 +17654,12 @@ export class Game {
       localPlayerState.z
     );
     const authoritativeSample = this.updateAuthoritativeLocalPositionSample(targetPosition);
-    const distance = this.player.position.distanceTo(targetPosition);
+    const distanceSq = distanceSquared2D(
+      this.player.position.x,
+      this.player.position.z,
+      targetPosition.x,
+      targetPosition.z
+    );
     const respawned = this.localStateInitialized && !this.lastLocalAlive && isAlive;
     const died = this.localStateInitialized && this.lastLocalAlive && !isAlive;
     const transformLag = this.getAuthoritativeTransformLag(localPlayerState);
@@ -16314,7 +17678,7 @@ export class Game {
     } else if (respawned) {
       this.resetDeathCameraZoomTransition();
     }
-    const portalSpawnLocked = (performance.now() < this.portalSpawnLockUntil) && !respawned && !died;
+    const portalSpawnLocked = now < this.portalSpawnLockUntil && !respawned && !died;
 
     if (this.currentInterior?.scene && (died || respawned || !isAlive)) {
       this.exitInterior({ showToast: false });
@@ -16325,7 +17689,7 @@ export class Game {
     }
 
     const groundHeight = this.getActiveGroundHeightAt(targetPosition);
-    if (!portalSpawnLocked && distance <= LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE) {
+    if (!portalSpawnLocked && distanceSq <= LOCAL_AUTHORITATIVE_PORTAL_UNLOCK_DISTANCE_SQ) {
       this.portalSpawnLockUntil = 0;
     }
 
@@ -16334,7 +17698,7 @@ export class Game {
       (!this.currentInterior?.scene)
       && !portalSpawnLocked
       && !skipStaleAuthoritativePosition
-      && (!this.localStateInitialized || respawned || died || distance > LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE)
+      && (!this.localStateInitialized || respawned || died || distanceSq > LOCAL_AUTHORITATIVE_HARD_SNAP_DISTANCE_SQ)
     ) {
       this.player.position.set(localPlayerState.x, groundHeight, localPlayerState.z);
       snappedToAuthoritativePosition = true;
@@ -16343,24 +17707,26 @@ export class Game {
       && !this.currentInterior?.scene
       && !portalSpawnLocked
       && !skipStaleAuthoritativePosition
-      && distance > LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE
+      && distanceSq > LOCAL_AUTHORITATIVE_SOFT_RECONCILE_DISTANCE_SQ
       && (
         authoritativeSample.staleMs >= LOCAL_AUTHORITATIVE_STALE_RECONCILE_MS
-        || distance > LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE
+        || distanceSq > LOCAL_AUTHORITATIVE_ACTIVE_RECONCILE_DISTANCE_SQ
       )
     ) {
       this.gentlyReconcileLocalPlayerPosition(targetPosition, groundHeight, deltaSeconds);
     }
 
-    this.player.setAliveState(isAlive, {
-      startedAtMs: Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
-        ? localPlayerState.lastDamagedAt
-        : Date.now()
-    });
+    const aliveStateOptions = this.playerAliveStateOptions;
+    aliveStateOptions.startedAtMs = Number.isFinite(localPlayerState.lastDamagedAt) && localPlayerState.lastDamagedAt > 0
+      ? localPlayerState.lastDamagedAt
+      : 0;
+    this.player.setAliveState(isAlive, aliveStateOptions);
     const localDrunknessLevel = isAlive ? Math.max(0, Math.floor(Number(localPlayerState.drunknessLevel) || 0)) : 0;
     this.player.setDrunknessLevel(localDrunknessLevel);
     this.syncDeliveryPackageVisual(localPlayerState);
-    this.hud.setDrunknessState({ level: localDrunknessLevel });
+    const drunknessHudState = this.drunknessHudState;
+    drunknessHudState.level = localDrunknessLevel;
+    this.hud.setDrunknessState(drunknessHudState);
     const localWeaponId = isAlive ? (localPlayerState.equippedWeaponId || '') : '';
     const selectedHotbarWeaponId = this.getSelectedHotbarWeaponId();
     if (
@@ -16380,41 +17746,53 @@ export class Game {
     }
     const introWeaponId = this.isHotbarEquipIntroActive() ? (this.hotbarEquipIntro.weaponId || '') : '';
     const displayedWeaponId = introWeaponId && !localWeaponId ? introWeaponId : localWeaponId;
+    const weaponStateOptions = this.playerWeaponStateOptions;
+    weaponStateOptions.visible = isAlive && Boolean(displayedWeaponId) && !this.phoneMenuVisible;
     this.player.setWeaponState(
       displayedWeaponId,
-      { visible: isAlive && Boolean(displayedWeaponId) && !this.phoneMenuVisible }
+      weaponStateOptions
     );
-    this.player.setReloadState(Boolean(isAlive && localPlayerState.isReloading), {
-      weaponId: localWeaponId,
-      endsAtMs: localPlayerState.reloadEndsAt ?? 0
-    });
+    const reloadStateOptions = this.playerReloadStateOptions;
+    reloadStateOptions.weaponId = localWeaponId;
+    reloadStateOptions.startedAtMs = 0;
+    reloadStateOptions.endsAtMs = localPlayerState.reloadEndsAt ?? 0;
+    reloadStateOptions.resetMotion = true;
+    this.player.setReloadState(Boolean(isAlive && localPlayerState.isReloading), reloadStateOptions);
 
     this.maybeStartRentIntro(localPlayerState);
     this.updateRentIntroPresentation();
     this.maybeAnimateMoneyChange(localPlayerState.money ?? 0);
-    this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0));
+    this.syncMoneyHud(this.getRentIntroMoneyTargetAmount(localPlayerState.money ?? 0), now);
     this.syncPlayerBoundItemsHud(localPlayerState);
-    this.refreshCarSelectorHud(localPlayerState);
+    if (this.carSelectorVisible || this.carSelectorRequestInFlight) {
+      this.refreshCarSelectorHud(localPlayerState);
+    }
 
-    this.hud.setCombatState({
-      visible: true,
-      health: localPlayerState.health ?? PLAYER_MAX_HEALTH,
-      maxHealth: localPlayerState.maxHealth ?? PLAYER_MAX_HEALTH,
-      ammoInClip: localPlayerState.ammoInClip ?? 0,
-      reserveAmmo: localPlayerState.reserveAmmo ?? 0,
-      isReloading: Boolean(localPlayerState.isReloading),
-      reloadEndsAt: localPlayerState.reloadEndsAt ?? 0,
-      alive: isAlive,
-      respawnAt: localPlayerState.respawnAt ?? 0,
-      kills: localPlayerState.kills ?? 0,
-      deaths: localPlayerState.deaths ?? 0,
-      armed: Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId() && !this.getSelectedHotbarConsumableItemId())
-    });
+    const combatHudState = this.combatHudState;
+    combatHudState.visible = true;
+    combatHudState.health = localPlayerState.health ?? PLAYER_MAX_HEALTH;
+    combatHudState.maxHealth = localPlayerState.maxHealth ?? PLAYER_MAX_HEALTH;
+    combatHudState.ammoInClip = localPlayerState.ammoInClip ?? 0;
+    combatHudState.reserveAmmo = localPlayerState.reserveAmmo ?? 0;
+    combatHudState.isReloading = Boolean(localPlayerState.isReloading);
+    combatHudState.reloadEndsAt = localPlayerState.reloadEndsAt ?? 0;
+    combatHudState.alive = isAlive;
+    combatHudState.respawnAt = localPlayerState.respawnAt ?? 0;
+    combatHudState.kills = localPlayerState.kills ?? 0;
+    combatHudState.deaths = localPlayerState.deaths ?? 0;
+    combatHudState.armed = Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId() && !this.getSelectedHotbarConsumableItemId());
+    this.hud.setCombatState(combatHudState);
     this.syncTaskHud(localPlayerState);
     this.syncSkillProgress(localPlayerState);
     if (this.phoneMenuVisible) {
-      this.refreshPhoneWalletHud();
-      this.refreshPhoneMapHud(localPlayerState);
+      if (this.phoneActiveAppId === 'wallet') {
+        this.refreshPhoneWalletHud();
+      } else if (this.phoneActiveAppId === 'stocks') {
+        this.refreshPhoneStocksHud();
+      }
+      if (this.phoneActiveAppId === 'map') {
+        this.refreshPhoneMapHud(localPlayerState);
+      }
     }
 
     if (respawned) {
@@ -16499,7 +17877,8 @@ export class Game {
       if (targetAvatar) {
         end.y = targetAvatar.position.y + 2.4;
       } else if (event.kind === 'npc') {
-        const npcAnchor = this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
+        const npcAnchor = this.worldBuilder?.getNpcSpeechAnchor?.(event.targetId)
+          ?? this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
         if (npcAnchor) {
           end.y = npcAnchor.y - 2;
         }
@@ -16521,7 +17900,8 @@ export class Game {
         point.y = targetAvatar.position.y + 2.4;
       }
     } else if (event.kind === 'npc' && event.targetId) {
-      const npcAnchor = this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
+      const npcAnchor = this.worldBuilder?.getNpcSpeechAnchor?.(event.targetId)
+        ?? this.worldBuilder?.getNpcSpeechAnchors?.()?.get(event.targetId);
       if (npcAnchor) {
         point.y = npcAnchor.y - 2;
       }
@@ -16541,41 +17921,60 @@ export class Game {
   }
 
   createTracerEffect(start, end) {
-    const travel = end.clone().sub(start);
-    const distance = travel.length();
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const deltaZ = end.z - start.z;
+    const distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY) + (deltaZ * deltaZ));
     if (distance <= 0.001) {
       return;
     }
 
-    const direction = travel.clone().normalize();
+    const inverseDistance = 1 / distance;
+    const directionX = deltaX * inverseDistance;
+    const directionY = deltaY * inverseDistance;
+    const directionZ = deltaZ * inverseDistance;
     const trailMaterial = new THREE.MeshBasicMaterial({
       color: 0xf6d87f,
       transparent: true,
       opacity: 0.92
     });
-    const trailGeometry = new THREE.BufferGeometry().setFromPoints([start, start]);
+    const trailPositions = new Float32Array(6);
+    trailPositions[0] = start.x;
+    trailPositions[1] = start.y;
+    trailPositions[2] = start.z;
+    trailPositions[3] = start.x;
+    trailPositions[4] = start.y;
+    trailPositions[5] = start.z;
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
     const trail = new THREE.Line(
       trailGeometry,
       trailMaterial
     );
+    trail.frustumCulled = false;
     this.scene.add(trail);
     const durationMs = THREE.MathUtils.clamp(
       (distance / PROJECTILE_VISUAL_SPEED) * 1000,
       PROJECTILE_MIN_LIFETIME_MS,
       PROJECTILE_MAX_LIFETIME_MS
     );
+    const now = performance.now();
     this.combatEffects.push({
       type: 'projectile',
       object: trail,
       trail,
       trailGeometry,
+      trailPositions,
       material: trailMaterial,
-      start: start.clone(),
-      end: end.clone(),
-      direction,
+      startX: start.x,
+      startY: start.y,
+      startZ: start.z,
+      directionX,
+      directionY,
+      directionZ,
       distance,
-      startedAt: performance.now(),
-      expiresAt: performance.now() + durationMs
+      startedAt: now,
+      expiresAt: now + durationMs
     });
   }
 
@@ -16653,7 +18052,7 @@ export class Game {
   }
 
   createMuzzleFlashEffect(avatar, start, end) {
-    const direction = end.clone().sub(start);
+    const direction = this.muzzleFlashDirection.copy(end).sub(start);
     if (direction.lengthSq() <= 0.0001) {
       direction.set(0, 0, 1);
     } else {
@@ -16663,14 +18062,14 @@ export class Game {
     const flashGroup = new THREE.Group();
     const attachmentNode = avatar?.getAttachmentPointNode?.('muzzle') ?? null;
     if (attachmentNode) {
-      const parentWorldQuaternion = attachmentNode.getWorldQuaternion(new THREE.Quaternion());
-      const localDirection = direction.clone().applyQuaternion(parentWorldQuaternion.invert()).normalize();
+      const parentWorldQuaternion = attachmentNode.getWorldQuaternion(this.muzzleFlashParentQuaternion);
+      const localDirection = this.muzzleFlashLocalDirection.copy(direction).applyQuaternion(parentWorldQuaternion.invert()).normalize();
       flashGroup.position.copy(localDirection).multiplyScalar(0.04);
-      flashGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localDirection);
+      flashGroup.quaternion.setFromUnitVectors(EFFECT_UP, localDirection);
       attachmentNode.add(flashGroup);
     } else {
       flashGroup.position.copy(start).addScaledVector(direction, 0.04);
-      flashGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      flashGroup.quaternion.setFromUnitVectors(EFFECT_UP, direction);
       this.scene.add(flashGroup);
     }
 
@@ -16707,13 +18106,15 @@ export class Game {
     sideFlareB.position.set(-0.075, 0.18, -0.03);
     sideFlareB.rotation.z = -0.78;
 
-    const sparks = resources.sparkGeometries.map((geometry, index) => {
+    const sparks = new Array(resources.sparkGeometries.length);
+    for (let index = 0; index < resources.sparkGeometries.length; index += 1) {
+      const geometry = resources.sparkGeometries[index];
       const spark = new THREE.Mesh(geometry, resources.sparkMaterialTemplate.clone());
       const offset = resources.sparkOffsets[index];
       spark.position.set(offset.x, offset.y, offset.z);
       spark.rotation.z = offset.zRot;
-      return spark;
-    });
+      sparks[index] = spark;
+    }
 
     const light = new THREE.PointLight(0xff7a24, 2.4, 5.3, 2);
     light.position.y = 0.18;
@@ -16725,9 +18126,15 @@ export class Game {
     flashGroup.add(shockRing);
     flashGroup.add(sideFlareA);
     flashGroup.add(sideFlareB);
-    sparks.forEach((spark) => flashGroup.add(spark));
+    for (let index = 0; index < sparks.length; index += 1) {
+      flashGroup.add(sparks[index]);
+    }
     flashGroup.add(light);
     const now = performance.now();
+    const sparkOffsets = new Array(resources.sparkOffsets.length);
+    for (let index = 0; index < resources.sparkOffsets.length; index += 1) {
+      sparkOffsets[index] = cloneVector3Like(resources.sparkOffsets[index]);
+    }
     this.combatEffects.push({
       type: 'muzzleFlash',
       object: flashGroup,
@@ -16740,17 +18147,17 @@ export class Game {
       sideFlareA,
       sideFlareB,
       sparks,
-      sparkOffsets: resources.sparkOffsets.map((offset) => cloneVector3Like(offset)),
+      sparkOffsets,
       light,
       startedAt: now,
       expiresAt: now + MUZZLE_FLASH_LIFETIME_MS
     });
   }
 
-  updateCombatEffects() {
-    const now = performance.now();
-    const next = [];
-    for (const effect of this.combatEffects) {
+  updateCombatEffects(now = performance.now()) {
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < this.combatEffects.length; readIndex += 1) {
+      const effect = this.combatEffects[readIndex];
       if (now >= effect.expiresAt) {
         effect.object.parent?.remove(effect.object);
         if (effect.trail) {
@@ -16773,14 +18180,22 @@ export class Game {
         if (effect.trail && effect.trailGeometry) {
           const travelledDistance = effect.distance * progress;
           const tailDistance = Math.max(0, travelledDistance - PROJECTILE_TRAIL_LENGTH);
-          const tail = effect.start.clone().addScaledVector(effect.direction, tailDistance);
-          const head = effect.start.clone().addScaledVector(effect.direction, travelledDistance);
-          effect.trailGeometry.setFromPoints([tail, head]);
+          const positions = effect.trailPositions;
+          if (positions) {
+            positions[0] = effect.startX + effect.directionX * tailDistance;
+            positions[1] = effect.startY + effect.directionY * tailDistance;
+            positions[2] = effect.startZ + effect.directionZ * tailDistance;
+            positions[3] = effect.startX + effect.directionX * travelledDistance;
+            positions[4] = effect.startY + effect.directionY * travelledDistance;
+            positions[5] = effect.startZ + effect.directionZ * travelledDistance;
+            effect.trailGeometry.attributes.position.needsUpdate = true;
+          }
         }
         effect.material.opacity = THREE.MathUtils.lerp(0.92, 0.18, progress);
       } else if (effect.type === 'impact') {
         if (now < effect.startAt) {
-          next.push(effect);
+          this.combatEffects[writeIndex] = effect;
+          writeIndex += 1;
           continue;
         }
 
@@ -16828,7 +18243,8 @@ export class Game {
         effect.sideFlareB.position.y = 0.16 + progress * 0.11;
         effect.object.scale.setScalar(1 + progress * 0.12);
 
-        for (const [index, spark] of effect.sparks.entries()) {
+        for (let index = 0; index < effect.sparks.length; index += 1) {
+          const spark = effect.sparks[index];
           const offset = effect.sparkOffsets[index];
           const sparkGrowth = 1 + progress * (1.45 + index * 0.34);
           spark.scale.set(1, sparkGrowth, 1);
@@ -16842,14 +18258,16 @@ export class Game {
         effect.sideFlareA.material.opacity = 0.74 * Math.max(0, 1 - progress * 1.15);
         effect.sideFlareB.material.opacity = 0.55 * Math.max(0, 1 - progress);
         effect.plume.material.opacity = 0.88 * Math.max(0, 1 - progress * 1.2);
-        effect.sparks.forEach((spark, index) => {
+        for (let index = 0; index < effect.sparks.length; index += 1) {
+          const spark = effect.sparks[index];
           spark.material.opacity = Math.max(0, 0.95 - progress * (1.2 + index * 0.14));
-        });
+        }
         effect.light.intensity = 2.4 * Math.max(0, 1 - progress * 1.28);
       }
-      next.push(effect);
+      this.combatEffects[writeIndex] = effect;
+      writeIndex += 1;
     }
-    this.combatEffects = next;
+    this.combatEffects.length = writeIndex;
   }
 
   handleCombatEvent(event = {}) {
@@ -17029,13 +18447,21 @@ export class Game {
 
   refreshConnectionHud({ force = false } = {}) {
     const info = this.getConnectionHudInfo();
-    const signature = JSON.stringify(info);
-    if (!force && signature === this.lastConnectionHudSignature) {
+    if (
+      !force
+      && info.status === this.lastConnectionHudStatus
+      && info.label === this.lastConnectionHudLabel
+      && info.detail === this.lastConnectionHudDetail
+      && (info.activePlayerCount ?? null) === this.lastConnectionHudActivePlayerCount
+    ) {
       return;
     }
 
     const previousStatus = this.lastConnectionToastStatus;
-    this.lastConnectionHudSignature = signature;
+    this.lastConnectionHudStatus = info.status;
+    this.lastConnectionHudLabel = info.label;
+    this.lastConnectionHudDetail = info.detail;
+    this.lastConnectionHudActivePlayerCount = info.activePlayerCount ?? null;
     this.hud.setConnectionStatus(info);
 
     if (info.status === this.lastConnectionToastStatus) {
@@ -17043,9 +18469,20 @@ export class Game {
     }
 
     this.lastConnectionToastStatus = info.status;
-    if (['reconnecting', 'rejoining', 'updating', 'offline'].includes(info.status)) {
+    if (
+      info.status === 'reconnecting'
+      || info.status === 'rejoining'
+      || info.status === 'updating'
+      || info.status === 'offline'
+    ) {
       this.hud.showToast(info.detail);
-    } else if (info.status === 'online' && previousStatus && !['online', 'local', 'update-ready'].includes(previousStatus)) {
+    } else if (
+      info.status === 'online'
+      && previousStatus
+      && previousStatus !== 'online'
+      && previousStatus !== 'local'
+      && previousStatus !== 'update-ready'
+    ) {
       this.hud.showToast('Back online.');
     }
   }
@@ -17130,8 +18567,8 @@ export class Game {
       && !this.hud.isInteractionMenuOpen();
   }
 
-  processPendingFrontendReload() {
-    if (this.releaseReloadStarted || !this.frontendUpdateAvailable || performance.now() < this.releaseReloadScheduledAt) {
+  processPendingFrontendReload(now = performance.now()) {
+    if (this.releaseReloadStarted || !this.frontendUpdateAvailable || now < this.releaseReloadScheduledAt) {
       return;
     }
 
@@ -17144,30 +18581,34 @@ export class Game {
       return;
     }
 
-    if (performance.now() >= this.releaseReloadDelayToastAt) {
-      this.releaseReloadDelayToastAt = performance.now() + 12000;
+    if (now >= this.releaseReloadDelayToastAt) {
+      this.releaseReloadDelayToastAt = now + 12000;
       this.hud.showToast('Update ready. Close active panels to reload.');
     }
   }
 
-  getActiveEmoteSelection() {
+  getActiveEmoteSelection(target = this.emoteSelectionScratch) {
     const pointer = this.input.getPointerPosition();
     const centerX = window.innerWidth * 0.5;
     const centerY = window.innerHeight * 0.5;
     const offsetX = pointer.x - centerX;
     const offsetY = pointer.y - centerY;
-    const distance = Math.hypot(offsetX, offsetY);
 
-    if (distance < EMOTE_MENU_DEADZONE) {
-      return { index: -1, entry: null, hasSelection: false };
+    if ((offsetX * offsetX) + (offsetY * offsetY) < EMOTE_MENU_DEADZONE_SQ) {
+      target.index = -1;
+      target.entry = null;
+      target.hasSelection = false;
+      return target;
     }
 
     const angle = Math.atan2(offsetY, offsetX);
     const normalizedAngle = (angle + Math.PI * 2 + Math.PI / 8) % (Math.PI * 2);
     const index = Math.floor(normalizedAngle / (Math.PI / 4));
     const entry = EMOTE_SLOTS[index] ?? null;
-    const hasSelection = Boolean(entry?.id);
-    return { index, entry, hasSelection };
+    target.index = index;
+    target.entry = entry;
+    target.hasSelection = Boolean(entry?.id);
+    return target;
   }
 
   updateEmoteMenu() {
@@ -17451,13 +18892,21 @@ export class Game {
     return true;
   }
 
+  setLocalPlayerSkateboardState(owned = undefined, skating = false, vehicleItemId = undefined) {
+    const skateboardState = this.playerSkateboardState;
+    skateboardState.owned = owned;
+    skateboardState.skating = skating;
+    skateboardState.vehicleItemId = vehicleItemId;
+    this.player?.setSkateboardState?.(skateboardState);
+  }
+
   syncPlayerBoundItemsHud(localPlayerState = this.getLocalPlayerState()) {
-    this.hud.setPlayerBoundItemsState({
-      skateboardOwned: isPlayerSkateboardOwner(localPlayerState),
-      skating: Boolean(localPlayerState?.skating),
-      vehicleItemId: getPlayerVehicleItemId(localPlayerState),
-      vehicleLabel: getPlayerVehicleMenuItem(localPlayerState)?.label ?? ''
-    });
+    const boundItemsHudState = this.playerBoundItemsHudState;
+    boundItemsHudState.skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
+    boundItemsHudState.skating = Boolean(localPlayerState?.skating);
+    boundItemsHudState.vehicleItemId = getPlayerVehicleItemId(localPlayerState);
+    boundItemsHudState.vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
+    this.hud.setPlayerBoundItemsState(boundItemsHudState);
   }
 
   createCurrentHotbarSlots(localPlayerState = this.getLocalPlayerState()) {
@@ -17474,14 +18923,48 @@ export class Game {
     });
   }
 
-  refreshHotbarHud() {
-    this.hotbarSlots = this.createCurrentHotbarSlots();
+  hasHotbarHudStateChanged(localPlayerState = this.getLocalPlayerState(), disabled = !this.canUseHotbarInput()) {
+    return this.hotbarLayoutRevision !== this.lastHotbarHudLayoutRevision
+      || this.selectedHotbarSlotIndex !== this.lastHotbarHudSelectedIndex
+      || Boolean(disabled) !== this.lastHotbarHudDisabled
+      || (localPlayerState?.ownedWeaponIds ?? '') !== this.lastHotbarHudOwnedWeaponIds
+      || (localPlayerState?.equippedWeaponId ?? '') !== this.lastHotbarHudEquippedWeaponId
+      || (localPlayerState?.beerCount ?? 0) !== this.lastHotbarHudBeerCount
+      || (localPlayerState?.shotCount ?? 0) !== this.lastHotbarHudShotCount
+      || (localPlayerState?.cigaretteCount ?? 0) !== this.lastHotbarHudCigaretteCount
+      || (localPlayerState?.burgerCount ?? 0) !== this.lastHotbarHudBurgerCount
+      || (localPlayerState?.glizzyCount ?? 0) !== this.lastHotbarHudGlizzyCount
+      || (localPlayerState?.sodaCount ?? 0) !== this.lastHotbarHudSodaCount;
+  }
+
+  rememberHotbarHudState(localPlayerState = this.getLocalPlayerState(), disabled = !this.canUseHotbarInput()) {
+    this.lastHotbarHudLayoutRevision = this.hotbarLayoutRevision;
+    this.lastHotbarHudSelectedIndex = this.selectedHotbarSlotIndex;
+    this.lastHotbarHudDisabled = Boolean(disabled);
+    this.lastHotbarHudOwnedWeaponIds = localPlayerState?.ownedWeaponIds ?? '';
+    this.lastHotbarHudEquippedWeaponId = localPlayerState?.equippedWeaponId ?? '';
+    this.lastHotbarHudBeerCount = localPlayerState?.beerCount ?? 0;
+    this.lastHotbarHudShotCount = localPlayerState?.shotCount ?? 0;
+    this.lastHotbarHudCigaretteCount = localPlayerState?.cigaretteCount ?? 0;
+    this.lastHotbarHudBurgerCount = localPlayerState?.burgerCount ?? 0;
+    this.lastHotbarHudGlizzyCount = localPlayerState?.glizzyCount ?? 0;
+    this.lastHotbarHudSodaCount = localPlayerState?.sodaCount ?? 0;
+  }
+
+  refreshHotbarHud({ force = false } = {}) {
+    const localPlayerState = this.getLocalPlayerState();
+    const disabled = !this.canUseHotbarInput();
+    if (!force && !this.hasHotbarHudStateChanged(localPlayerState, disabled)) {
+      return;
+    }
+    this.rememberHotbarHudState(localPlayerState, disabled);
+    this.hotbarSlots = this.createCurrentHotbarSlots(localPlayerState);
 
     this.hud.setHotbarState({
       visible: true,
       slots: this.hotbarSlots,
       selectedIndex: this.selectedHotbarSlotIndex,
-      disabled: !this.canUseHotbarInput()
+      disabled
     });
   }
 
@@ -17506,16 +18989,23 @@ export class Game {
       normalizedFromIndex,
       normalizedToIndex
     );
-    if (nextOrder.join('|') === this.hotbarItemOrder.join('|')) {
+    if (areHotbarItemOrdersEqual(nextOrder, this.hotbarItemOrder)) {
       return false;
     }
 
     this.hotbarItemOrder = nextOrder;
+    this.hotbarLayoutRevision += 1;
     writeStoredHotbarItemOrder(this.hotbarItemOrder);
     this.hotbarSlots = this.createCurrentHotbarSlots();
 
     if (selectedItemId) {
-      const nextSelectedIndex = this.hotbarSlots.findIndex((slot) => slot.itemId === selectedItemId);
+      let nextSelectedIndex = -1;
+      for (let index = 0; index < this.hotbarSlots.length; index += 1) {
+        if (this.hotbarSlots[index].itemId === selectedItemId) {
+          nextSelectedIndex = index;
+          break;
+        }
+      }
       if (nextSelectedIndex >= 0) {
         this.selectedHotbarSlotIndex = nextSelectedIndex;
       }
@@ -17604,13 +19094,13 @@ export class Game {
     } else if (!desiredEquipAnimation || !this.isHotbarEquipIntroActive(desiredWeaponId)) {
       this.cancelHotbarEquipIntro();
     }
-    void this.player?.setWeaponState?.(desiredWeaponId, {
-      visible: Boolean(desiredWeaponId)
-    });
+    const weaponStateOptions = this.playerWeaponStateOptions;
+    weaponStateOptions.visible = Boolean(desiredWeaponId);
+    void this.player?.setWeaponState?.(desiredWeaponId, weaponStateOptions);
     return true;
   }
 
-  syncSelectedHotbarEquipment(localPlayerState = this.getLocalPlayerState()) {
+  syncSelectedHotbarEquipment(localPlayerState = this.getLocalPlayerState(), now = performance.now()) {
     if (!localPlayerState || localPlayerState.alive === false) {
       return;
     }
@@ -17621,10 +19111,10 @@ export class Game {
       this.pendingHotbarWeaponId = null;
     }
     if (this.pendingHotbarWeaponId !== null) {
-      if (performance.now() - this.pendingHotbarRequestedAt < 500) {
-        void this.player?.setWeaponState?.(this.pendingHotbarWeaponId, {
-          visible: Boolean(this.pendingHotbarWeaponId)
-        });
+      if (now - this.pendingHotbarRequestedAt < 500) {
+        const weaponStateOptions = this.playerWeaponStateOptions;
+        weaponStateOptions.visible = Boolean(this.pendingHotbarWeaponId);
+        void this.player?.setWeaponState?.(this.pendingHotbarWeaponId, weaponStateOptions);
       }
       return;
     }
@@ -17672,7 +19162,11 @@ export class Game {
       ? 'Drink'
       : (selectedConsumableItemId ? getItemActionLabel(this.getSelectedHotbarItemId()) : (armed ? 'Fire' : 'Hit'));
 
-    this.hud.setMobileControlsState({ visible, armed, fireLabel });
+    const mobileControlsHudState = this.mobileControlsHudState;
+    mobileControlsHudState.visible = visible;
+    mobileControlsHudState.armed = armed;
+    mobileControlsHudState.fireLabel = fireLabel;
+    this.hud.setMobileControlsState(mobileControlsHudState);
     this.input.setTouchControlsEnabled(visible);
   }
 
@@ -17699,6 +19193,7 @@ export class Game {
   }
 
   frame() {
+    this.frameCounter += 1;
     if (!this.firstFrameMarked) {
       this.firstFrameMarked = true;
       this.markBoot('boot:first-frame');
@@ -17710,26 +19205,35 @@ export class Game {
 
     const rawDeltaSeconds = this.clock.getDelta();
     const deltaSeconds = Math.min(rawDeltaSeconds, FRAME_DELTA_MAX_SECONDS);
+    const frameNow = performance.now();
     this.recordMovementFrameTiming(rawDeltaSeconds, deltaSeconds);
     const localPlayerState = this.getLocalPlayerState();
-    this.processPendingFrontendReload();
+    this.processPendingFrontendReload(frameNow);
     this.syncMobileControlsHud(localPlayerState);
     const rentIntroCutsceneActiveAtFrameStart = this.isRentIntroCutsceneActive();
     const emoteMenuActive = rentIntroCutsceneActiveAtFrameStart ? false : this.updateEmoteMenu();
     this.refreshHotbarHud();
     if (this.hud.isStockMarketOpen()) {
-      void this.refreshStockMarket();
-    } else if (localPlayerState?.alive !== false) {
-      void this.refreshWalletSnapshot({ passive: true });
+      if (!this.stockMarketRequestInFlight && frameNow >= this.stockMarketRefreshAt) {
+        void this.refreshStockMarket();
+      }
+    } else {
+      if (
+        localPlayerState?.alive !== false
+        && !this.walletRequestInFlight
+        && frameNow >= this.walletRefreshAt
+      ) {
+        void this.refreshWalletSnapshot({ passive: true });
+      }
     }
     this.updateAdminPromptPolling();
     if (this.hud.isSchoolMicrogameOpen()) {
-      this.updateSchoolMicrogame(deltaSeconds);
+      this.updateSchoolMicrogame(deltaSeconds, frameNow);
       this.updateSchoolGeographyGlobe(deltaSeconds);
       this.updateSchoolTeacherPreview(deltaSeconds);
     }
     if (this.hud.isVibeHeroOpen()) {
-      this.updateVibeHero(deltaSeconds);
+      this.updateVibeHero(deltaSeconds, frameNow);
     }
 
     if (!rentIntroCutsceneActiveAtFrameStart && this.input.consume('KeyO') && this.canUseAimPoseDebug()) {
@@ -17789,13 +19293,15 @@ export class Game {
     }
 
     if (localPlayerState) {
-      this.syncLocalPlayerState(localPlayerState, deltaSeconds);
-      this.syncSelectedHotbarEquipment(localPlayerState);
+      this.syncLocalPlayerState(localPlayerState, deltaSeconds, frameNow);
+      this.syncSelectedHotbarEquipment(localPlayerState, frameNow);
     } else {
       this.syncTaskHud(null);
     }
 
-    this.worldBuilder.update(deltaSeconds, this.input);
+    this.worldBuilder.update(deltaSeconds, this.input, frameNow);
+    this.worldBuilderInteractablesFrame = -1;
+    this.activeInteractablesFrame = -1;
 
     if (this.worldBuilder.enabled) {
       this.suspendInlineShellForBuilder();
@@ -17803,7 +19309,7 @@ export class Game {
       this.clearPendingHipFireShot();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
-      this.player?.setSkateboardState?.({ skating: false });
+      this.setLocalPlayerSkateboardState(undefined, false, undefined);
       this.updateBuilderCamera();
       this.clearInteractionCameraFocus();
       this.currentInteractable = null;
@@ -17827,7 +19333,7 @@ export class Game {
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
       const hipFirePending = this.pendingHipFireShot;
-      const hipFirePoseActive = Boolean(hipFirePending && performance.now() < hipFirePending.releaseAt);
+      const hipFirePoseActive = Boolean(hipFirePending && frameNow < hipFirePending.releaseAt);
       const aimDirection = canCursorAim
         ? this.getAimDirection()
         : this.aimDirectionScratch.copy(this.currentAimDirection);
@@ -17854,19 +19360,26 @@ export class Game {
       const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
         ? AIM_CAMERA_MOVEMENT_FORWARD
         : CAMERA_MOVEMENT_FORWARD;
-      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: transportRidingActive, vehicleItemId, vehicleLabel });
-      const workoutActive = this.updateActiveWorkout(deltaSeconds, {
-        localAlive,
-        colliders: activeColliders,
-        sceneBounds: activeSceneBounds,
-        groundHeight
-      });
+      const boundItemsHudState = this.playerBoundItemsHudState;
+      boundItemsHudState.skateboardOwned = skateboardOwned;
+      boundItemsHudState.skating = transportRidingActive;
+      boundItemsHudState.vehicleItemId = vehicleItemId;
+      boundItemsHudState.vehicleLabel = vehicleLabel;
+      this.hud.setPlayerBoundItemsState(boundItemsHudState);
+
+      const workoutOptions = this.activeWorkoutUpdateOptions;
+      workoutOptions.localAlive = localAlive;
+      workoutOptions.colliders = activeColliders;
+      workoutOptions.sceneBounds = activeSceneBounds;
+      workoutOptions.groundHeight = groundHeight;
+      workoutOptions.now = frameNow;
+      const workoutActive = this.updateActiveWorkout(deltaSeconds, workoutOptions);
       let aimingMode = false;
 
       if (workoutActive) {
         this.clearPendingHipFireShot();
         this.currentAimMode = false;
-        this.player.setSkateboardState?.({ owned: transportOwned, skating: false, vehicleItemId });
+        this.setLocalPlayerSkateboardState(transportOwned, false, vehicleItemId);
         const facing = this.player.object.rotation.y;
         this.currentAimDirection.set(Math.sin(facing), 0, Math.cos(facing)).normalize();
         this.syncInlineShellState();
@@ -17877,11 +19390,23 @@ export class Game {
         } else if (this.activeWorkout?.activityConfig?.kind === SNATCH_WORKOUT_KIND) {
           this.updateSnatchWorkoutCamera();
         } else {
-          this.updateCamera(this.currentAimDirection, false);
+          const cameraOptions = this.cameraUpdateOptions;
+          cameraOptions.snap = false;
+          cameraOptions.now = frameNow;
+          this.updateCamera(this.currentAimDirection, false, cameraOptions);
         }
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {
+        const playerUpdateOptions = this.playerUpdateOptions;
+        playerUpdateOptions.skateboardOwned = transportOwned;
+        playerUpdateOptions.vehicleItemId = vehicleItemId;
+        playerUpdateOptions.skating = transportRidingActive;
+        playerUpdateOptions.speedScale = vehicleSpeedScale;
+        playerUpdateOptions.movementCameraForward = movementCameraForward;
+        playerUpdateOptions.stationaryRun = false;
+        playerUpdateOptions.locomotionMode = undefined;
+        playerUpdateOptions.locomotionPlaybackRate = undefined;
         this.player.update(
           deltaSeconds,
           playerInput,
@@ -17889,13 +19414,7 @@ export class Game {
           activeColliders,
           activeSceneBounds,
           groundHeight,
-          {
-            skateboardOwned: transportOwned,
-            vehicleItemId,
-            skating: transportRidingActive,
-            speedScale: vehicleSpeedScale,
-            movementCameraForward
-          }
+          this.playerUpdateOptions
         );
         this.syncInlineShellState();
         const combatInputEnabled = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
@@ -17921,7 +19440,7 @@ export class Game {
           if (aimingMode ? primaryFireHeld : primaryFirePressed) {
             if (aimingMode) {
               this.fireLocalWeapon(aimDirection, this.getShotCollisionOrigin(aimDirection));
-            } else if (!hipFirePending || performance.now() >= hipFirePending.releaseAt) {
+            } else if (!hipFirePending || frameNow >= hipFirePending.releaseAt) {
               this.queueHipFireShot(aimDirection);
             }
           }
@@ -17940,14 +19459,13 @@ export class Game {
         if (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
-          const now = performance.now();
-          this.player.setAimingState(aimingMode || now < this.pendingHipFireShot.releaseAt);
+          this.player.setAimingState(aimingMode || frameNow < this.pendingHipFireShot.releaseAt);
           this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
-          if (!this.pendingHipFireShot.fired && now >= this.pendingHipFireShot.fireAt) {
+          if (!this.pendingHipFireShot.fired && frameNow >= this.pendingHipFireShot.fireAt) {
             this.pendingHipFireShot.fired = true;
             this.fireLocalWeapon(this.pendingHipFireShot.direction, this.pendingHipFireShot.origin);
           }
-          if (now >= this.pendingHipFireShot.releaseAt) {
+          if (frameNow >= this.pendingHipFireShot.releaseAt) {
             this.clearPendingHipFireShot();
             this.player.setAimingState(aimingMode);
           }
@@ -17955,10 +19473,13 @@ export class Game {
         if (rentIntroCutsceneActive) {
           this.updateRentIntroCutscene();
         } else {
-          this.updateCamera(this.currentAimDirection, this.currentAimMode && armed);
+          const cameraOptions = this.cameraUpdateOptions;
+          cameraOptions.snap = false;
+          cameraOptions.now = frameNow;
+          this.updateCamera(this.currentAimDirection, this.currentAimMode && armed, cameraOptions);
         }
       }
-      this.updateLocalPlayerKinematics();
+      this.updateLocalPlayerKinematics(frameNow);
       const animationSyncState = this.player.getAnimationSyncState(this.localAnimationSyncState);
       animationSyncState.aiming = Boolean(this.currentAimMode || hipFirePoseActive);
       this.npcService?.setPlayerTransform(
@@ -17978,8 +19499,8 @@ export class Game {
 
     this.updateRemotePlayers(deltaSeconds);
     this.updatePickupVisuals(deltaSeconds);
-    this.updateCombatEffects();
-    const hitMarkerVisible = performance.now() < this.hitMarkerUntil;
+    this.updateCombatEffects(frameNow);
+    const hitMarkerVisible = frameNow < this.hitMarkerUntil;
     if (hitMarkerVisible !== this.lastHudHitMarkerVisible) {
       this.hud.setHitMarkerVisible(hitMarkerVisible);
       this.lastHudHitMarkerVisible = hitMarkerVisible;
@@ -17996,9 +19517,14 @@ export class Game {
     this.updateCameraOcclusion();
     this.updateWorldInteractableIndicatorVisibility();
     this.updateDrunknessEffects(localPlayerState);
-    this.updateAdaptiveRenderQuality(this.getMovementFrameSummary());
+    const movementFrameSummaryOptions = this.movementFrameSummaryOptions;
+    movementFrameSummaryOptions.force = false;
+    movementFrameSummaryOptions.now = frameNow;
+    this.updateAdaptiveRenderQuality(this.getMovementFrameSummary(movementFrameSummaryOptions), frameNow);
+    this.worldBuilderInteractablesFrame = -1;
+    this.activeInteractablesFrame = -1;
     if (this.vibeShaderPass?.uniforms?.uTime) {
-      this.vibeShaderPass.uniforms.uTime.value = performance.now() * 0.001;
+      this.vibeShaderPass.uniforms.uTime.value = frameNow * 0.001;
     }
 
     this.renderSceneFrame();
@@ -18006,11 +19532,15 @@ export class Game {
     this.input.endFrame();
   }
 
-  updateCameraFov(targetFov = DEFAULT_CAMERA_FOV, { snap = false, smoothing = INTERACTION_CAMERA_RETURN_FOV_SMOOTHING } = {}) {
+  updateCameraFov(targetFov = DEFAULT_CAMERA_FOV, options = null) {
     if (!this.camera) {
       return;
     }
 
+    const snap = options?.snap === true;
+    const smoothing = Number.isFinite(options?.smoothing)
+      ? options.smoothing
+      : INTERACTION_CAMERA_RETURN_FOV_SMOOTHING;
     const nextFov = THREE.MathUtils.clamp(Number(targetFov) || DEFAULT_CAMERA_FOV, 25, DEFAULT_CAMERA_FOV);
     const previousFov = this.camera.fov;
     this.camera.fov = snap
@@ -18182,13 +19712,14 @@ export class Game {
     return true;
   }
 
-  updateInteractionCameraFocus({ snap = false } = {}) {
+  updateInteractionCameraFocus(options = null) {
+    const snap = options?.snap === true;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
     const activeCamera = this.activeInteractionCamera;
     if (!activeCamera || !this.player) {
       return false;
     }
 
-    const now = performance.now();
     if (!activeCamera.persistent && now >= activeCamera.releaseAt) {
       this.activeInteractionCamera = null;
       return false;
@@ -18247,15 +19778,20 @@ export class Game {
     const framedLookTarget = this.cameraLookTarget.copy(lookTarget)
       .addScaledVector(right, lookSideOffset);
     this.camera.lookAt(framedLookTarget);
-    this.updateCameraFov(INTERACTION_CAMERA_FOV, {
-      snap,
-      smoothing: INTERACTION_CAMERA_FOV_SMOOTHING
-    });
+    const fovOptions = this.cameraFovOptions;
+    fovOptions.snap = snap;
+    fovOptions.smoothing = INTERACTION_CAMERA_FOV_SMOOTHING;
+    this.updateCameraFov(INTERACTION_CAMERA_FOV, fovOptions);
     return true;
   }
 
-  updateCamera(aimDirection = this.currentAimDirection, isAiming = false, { snap = false } = {}) {
-    if (this.updateInteractionCameraFocus({ snap })) {
+  updateCamera(aimDirection = this.currentAimDirection, isAiming = false, options = null) {
+    const snap = options?.snap === true;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
+    const focusOptions = this.interactionCameraFocusOptions;
+    focusOptions.snap = snap;
+    focusOptions.now = now;
+    if (this.updateInteractionCameraFocus(focusOptions)) {
       return;
     }
 
@@ -18265,7 +19801,6 @@ export class Game {
       .multiplyScalar(zoomLevel);
     const targetPosition = this.cameraTargetPosition.copy(this.player.position).add(cameraOffset);
     const lookTarget = this.cameraLookTarget.copy(this.player.position).add(CAMERA_LOOK_OFFSET);
-    const now = performance.now();
 
     if (now < this.damageCameraKickEndsAt) {
       const lifetime = Math.max(1, this.damageCameraKickEndsAt - this.damageCameraKickStartedAt);
@@ -18287,10 +19822,10 @@ export class Game {
       this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
     }
     this.camera.lookAt(lookTarget);
-    this.updateCameraFov(DEFAULT_CAMERA_FOV, {
-      snap,
-      smoothing: INTERACTION_CAMERA_RETURN_FOV_SMOOTHING
-    });
+    const fovOptions = this.cameraFovOptions;
+    fovOptions.snap = snap;
+    fovOptions.smoothing = INTERACTION_CAMERA_RETURN_FOV_SMOOTHING;
+    this.updateCameraFov(DEFAULT_CAMERA_FOV, fovOptions);
   }
 
   triggerDamageCameraFeedback(direction = null) {
@@ -18418,32 +19953,9 @@ export class Game {
     this.setLocalPlayerCameraOcclusionRenderActive(occludedBuildingCount > 0);
   }
 
-  updateInteraction() {
-    const worldBuilderInteractables = this.getWorldBuilderInteractables();
-    this.syncOpenPoliceGarageDoors();
-    const localPlayerState = this.getLocalPlayerState();
-    this.syncDeliveryQuestReminderGate(localPlayerState, worldBuilderInteractables);
-
-    const interactables = this.getActiveInteractables(worldBuilderInteractables);
-    let nearest = null;
-    let nearestDistance = Infinity;
-
-    for (const interactable of interactables) {
-      const distance = interactable.position.distanceTo(this.player.position);
-      if (distance < interactable.radius && distance < nearestDistance) {
-        nearest = interactable;
-        nearestDistance = distance;
-      }
-    }
-
-    if (this.maybeActivatePortalInteractable(interactables)) {
-      return;
-    }
-
-    this.currentInteractable = nearest;
-    if (this.maybeAutoCompleteDelivery(localPlayerState, worldBuilderInteractables)) {
-      this.hud.setPrompt(null);
-      return;
+  getNpcInteractionHintState(worldBuilderInteractables = this.getWorldBuilderInteractables()) {
+    if (this.npcInteractionHintFrame === this.frameCounter && this.npcInteractionHintState) {
+      return this.npcInteractionHintState;
     }
 
     const npcInteractable = this.getNearestNpcInteractable(worldBuilderInteractables);
@@ -18461,18 +19973,89 @@ export class Game {
     const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
       ? null
       : this.getNearestSchoolMicrogameInteractable(worldBuilderInteractables);
+    const vendorSearchOptions = this.npcVendorSearchOptions;
+    vendorSearchOptions.npcId = '';
+    vendorSearchOptions.worldBuilderInteractables = worldBuilderInteractables;
     const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
       ? null
-      : this.getNearestBartenderInteractable({ worldBuilderInteractables });
+      : this.getNearestBartenderInteractable(vendorSearchOptions);
     const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
       ? null
-      : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
+      : this.getNearestPawnShopOwnerInteractable(vendorSearchOptions);
     const carDealerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
       ? null
-      : this.getNearestCarDealerInteractable({ worldBuilderInteractables });
+      : this.getNearestCarDealerInteractable(vendorSearchOptions);
     const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction || carDealerInteraction
       ? null
-      : this.getNearestMarthaInteractable({ worldBuilderInteractables });
+      : this.getNearestMarthaInteractable(vendorSearchOptions);
+    const interactable = deliveryInteraction
+      ? npcInteractable
+      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? carDealerInteraction ?? marthaInteraction ?? npcInteractable);
+
+    this.npcInteractionHintFrame = this.frameCounter;
+    const state = this.npcInteractionHintState;
+    state.npcInteractable = npcInteractable;
+    state.deliveryInteraction = deliveryInteraction;
+    state.deliveryPromptInteraction = deliveryPromptInteraction;
+    state.gymCheckInInteraction = gymCheckInInteraction;
+    state.stockMarketInteraction = stockMarketInteraction;
+    state.blackjackInteraction = blackjackInteraction;
+    state.schoolMicrogameInteraction = schoolMicrogameInteraction;
+    state.bartenderInteraction = bartenderInteraction;
+    state.pawnShopOwnerInteraction = pawnShopOwnerInteraction;
+    state.carDealerInteraction = carDealerInteraction;
+    state.marthaInteraction = marthaInteraction;
+    state.interactable = interactable;
+    return state;
+  }
+
+  updateInteraction() {
+    const worldBuilderInteractables = this.getWorldBuilderInteractables();
+    this.syncOpenPoliceGarageDoors();
+    const localPlayerState = this.getLocalPlayerState();
+    this.syncDeliveryQuestReminderGate(localPlayerState, worldBuilderInteractables);
+
+    const interactables = this.getActiveInteractables(worldBuilderInteractables);
+    let nearest = null;
+    let nearestDistanceSq = Infinity;
+
+    for (const interactable of interactables) {
+      const distanceSq = distanceSquared2D(
+        interactable.position.x,
+        interactable.position.z,
+        this.player.position.x,
+        this.player.position.z
+      );
+      const radius = Number(interactable.radius);
+      const radiusSq = radius * radius;
+      if (distanceSq < radiusSq && distanceSq < nearestDistanceSq) {
+        nearest = interactable;
+        nearestDistanceSq = distanceSq;
+      }
+    }
+
+    if (this.maybeActivatePortalInteractable(interactables)) {
+      return;
+    }
+
+    this.currentInteractable = nearest;
+    if (this.maybeAutoCompleteDelivery(localPlayerState, worldBuilderInteractables)) {
+      this.hud.setPrompt(null);
+      return;
+    }
+
+    const {
+      deliveryInteraction,
+      deliveryPromptInteraction,
+      gymCheckInInteraction,
+      stockMarketInteraction,
+      blackjackInteraction,
+      schoolMicrogameInteraction,
+      bartenderInteraction,
+      pawnShopOwnerInteraction,
+      carDealerInteraction,
+      marthaInteraction
+    } = this.getNpcInteractionHintState(worldBuilderInteractables);
     this.syncActiveBartenderMenu(bartenderInteraction);
     this.syncActivePawnShopMenu(pawnShopOwnerInteraction);
     this.syncActiveCarDealerMenu(carDealerInteraction);
@@ -18712,15 +20295,69 @@ export class Game {
     this.closeQuickChat();
   }
 
-  collectSpeechBubble(id, text, startedAt, anchor, variant, label = '', options = {}) {
-    const isThinking = options.status === 'thinking';
-    const isBusy = Boolean(options.busy);
+  isSpeechBubbleActive(text, startedAt, options = {}, now = Date.now()) {
+    return this.isSpeechBubbleActiveState(
+      text,
+      startedAt,
+      options.status ?? 'done',
+      Boolean(options.busy),
+      now
+    );
+  }
+
+  isSpeechBubbleActiveState(text, startedAt, status = 'done', busy = false, now = Date.now()) {
+    const isThinking = status === 'thinking';
+    const isBusy = Boolean(busy);
     const hasVisibleText = Boolean(text) || isThinking;
     if (!hasVisibleText || !startedAt) {
-      return null;
+      return false;
     }
 
-    if (!isBusy && (Date.now() - startedAt) > getChatBubbleLifetimeMs(text)) {
+    if (!isBusy && (now - startedAt) > getChatBubbleLifetimeMs(text)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  collectSpeechBubble(id, text, startedAt, anchor, variant, label = '', options = {}) {
+    return this.collectSpeechBubbleRecord(
+      id,
+      text,
+      startedAt,
+      anchor,
+      variant,
+      label,
+      options.status ?? 'done',
+      Boolean(options.busy),
+      Number(options.screenYOffset) || 0,
+      options.chirp === true,
+      options.modelId ?? '',
+      options.voice ?? null,
+      options.voiceVolumeScale ?? 1,
+      options.speakerKey ?? label ?? id
+    );
+  }
+
+  collectSpeechBubbleRecord(
+    id,
+    text,
+    startedAt,
+    anchor,
+    variant,
+    label = '',
+    status = 'done',
+    busy = false,
+    screenYOffset = 0,
+    chirp = false,
+    modelId = '',
+    voice = null,
+    voiceVolumeScale = 1,
+    speakerKey = '',
+    tone = '',
+    opacity = undefined
+  ) {
+    if (!this.isSpeechBubbleActiveState(text, startedAt, status, busy)) {
       return null;
     }
 
@@ -18729,21 +20366,20 @@ export class Game {
       return null;
     }
 
-    return {
+    return this.writeSpeechBubbleRecord(
       id,
       text,
       label,
       variant,
-      status: options.status ?? 'done',
-      chirp: options.chirp === true,
-      modelId: options.modelId ?? '',
-      voice: options.voice ?? null,
-      voiceVolumeScale: options.voiceVolumeScale ?? 1,
-      speakerKey: options.speakerKey ?? label ?? id,
-      visible: true,
-      screenX: projected.x,
-      screenY: projected.y - (Number(options.screenYOffset) || 0)
-    };
+      status,
+      projected.x,
+      projected.y - screenYOffset,
+      chirp,
+      modelId,
+      voice,
+      voiceVolumeScale,
+      speakerKey || label || id
+    );
   }
 
   pushSpeechBubble(bubbles, bubble) {
@@ -18752,17 +20388,92 @@ export class Game {
     }
   }
 
-  addPlayerSpeechBubble(bubbles, sessionId, playerState, anchor, variant, options = {}) {
+  writeSpeechBubbleRecord(
+    id,
+    text,
+    label,
+    variant,
+    status,
+    screenX,
+    screenY,
+    chirp = false,
+    modelId = '',
+    voice = null,
+    voiceVolumeScale = 1,
+    speakerKey = ''
+  ) {
+    let bubble = this.speechBubbleRecords.get(id);
+    if (!bubble) {
+      bubble = {
+        id,
+        text: '',
+        label: '',
+        variant: '',
+        status: 'done',
+        tone: '',
+        chirp: false,
+        modelId: '',
+        voice: null,
+        voiceVolumeScale: 1,
+        speakerKey: '',
+        visible: true,
+        screenX: 0,
+        screenY: 0
+      };
+      this.speechBubbleRecords.set(id, bubble);
+    }
+    this.speechBubbleRecordActiveIds.add(id);
+    bubble.text = text;
+    bubble.label = label;
+    bubble.variant = variant;
+    bubble.status = status;
+    bubble.tone = tone;
+    bubble.chirp = chirp;
+    bubble.modelId = modelId;
+    bubble.voice = voice;
+    bubble.voiceVolumeScale = voiceVolumeScale;
+    bubble.speakerKey = speakerKey || label || id;
+    bubble.visible = true;
+    bubble.screenX = screenX;
+    bubble.screenY = screenY;
+    bubble.opacity = Number.isFinite(Number(opacity)) ? opacity : undefined;
+    return bubble;
+  }
+
+  pushSimpleSpeechBubble(bubbles, id, text, label, variant, projected, screenYOffset = 0, status = 'done') {
+    bubbles.push(this.writeSpeechBubbleRecord(
+      id,
+      text,
+      label,
+      variant,
+      status,
+      projected.x,
+      projected.y - screenYOffset
+    ));
+  }
+
+  pruneSpeechBubbleRecords() {
+    const activeIds = this.speechBubbleRecordActiveIds;
+    for (const id of this.speechBubbleRecords.keys()) {
+      if (!activeIds.has(id)) {
+        this.speechBubbleRecords.delete(id);
+      }
+    }
+  }
+
+  addPlayerSpeechBubble(bubbles, sessionId, playerState, anchor, variant, screenYOffset = 0) {
     this.pushSpeechBubble(
       bubbles,
-      this.collectSpeechBubble(
+      this.collectSpeechBubbleRecord(
         `player:${sessionId}`,
         playerState.chatText,
         playerState.chatStartedAt,
         anchor,
         variant,
         '',
-        options
+        'done',
+        false,
+        screenYOffset
       )
     );
   }
@@ -18778,44 +20489,57 @@ export class Game {
       return 1;
     }
 
-    return getNpcVoiceDistanceVolumeScale(Math.hypot(playerX - npcX, playerZ - npcZ));
+    const distanceSq = distanceSquared2D(playerX, playerZ, npcX, npcZ);
+    if (distanceSq <= NPC_VOICE_FULL_VOLUME_DISTANCE * NPC_VOICE_FULL_VOLUME_DISTANCE) {
+      return 1;
+    }
+    if (distanceSq >= NPC_VOICE_AUDIBLE_DISTANCE * NPC_VOICE_AUDIBLE_DISTANCE) {
+      return 0;
+    }
+
+    return getNpcVoiceDistanceVolumeScale(Math.sqrt(distanceSq));
   }
 
-  addNpcSpeechBubble(bubbles, npcId, npcState, anchor, options = {}) {
+  addNpcSpeechBubble(bubbles, npcId, npcState, anchor, screenYOffset = 0) {
     if (this.isRentIntroReservedNpc(npcId)) {
+      return;
+    }
+
+    const status = npcState.chatStatus ?? 'done';
+    const busy = Boolean(npcState.busy);
+    const safeScreenYOffset = Number(screenYOffset) || 0;
+    if (!this.isSpeechBubbleActiveState(npcState.chatText, npcState.chatStartedAt, status, busy)) {
       return;
     }
 
     this.pushSpeechBubble(
       bubbles,
-      this.collectSpeechBubble(
+      this.collectSpeechBubbleRecord(
         `npc:${npcId}`,
         npcState.chatText,
         npcState.chatStartedAt,
         anchor,
         'npc',
         npcState.name,
-        {
-          status: npcState.chatStatus,
-          busy: npcState.busy,
-          chirp: true,
-          modelId: npcState.modelId,
-          voice: getNpcModelVoice(this.currentLayout?.npcModelVoices, npcState.modelId),
-          voiceVolumeScale: this.getNpcSpeechVoiceVolumeScale(npcState, anchor),
-          speakerKey: `${npcState.modelId}:${npcState.name}`,
-          screenYOffset: options.screenYOffset
-        }
+        status,
+        busy,
+        safeScreenYOffset,
+        true,
+        npcState.modelId,
+        getNpcModelVoice(this.currentLayout?.npcModelVoices, npcState.modelId),
+        this.getNpcSpeechVoiceVolumeScale(npcState, anchor),
+        `${npcState.modelId}:${npcState.name}`
       )
     );
   }
 
-  addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = new Set()) {
+  addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = EMPTY_VISIBLE_OVERHEAD_HEALTH_BAR_IDS) {
     const intro = this.activeRentIntro;
     if (!intro?.npcId) {
       return;
     }
 
-    const anchor = npcSpeechAnchors.get(intro.npcId);
+    const anchor = this.getNpcHudSpeechAnchor(intro.npcId, npcSpeechAnchors);
     if (!anchor) {
       return;
     }
@@ -18834,49 +20558,31 @@ export class Game {
     const screenYOffset = visibleOverheadHealthBarIds.has(`npc:${intro.npcId}`)
       ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
       : 0;
-    bubbles.push({
-      id: `npc-rent-intro:${intro.seq}`,
+    this.pushSimpleSpeechBubble(
+      bubbles,
+      `npc-rent-intro:${intro.seq}`,
       text,
-      label: npcState?.name ?? '',
-      variant: 'npc',
-      status: 'done',
-      visible: true,
-      screenX: projected.x,
-      screenY: projected.y - screenYOffset
-    });
+      npcState?.name ?? '',
+      'npc',
+      projected,
+      screenYOffset
+    );
   }
 
-  addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = new Set()) {
+  addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds = EMPTY_VISIBLE_OVERHEAD_HEALTH_BAR_IDS) {
     const worldBuilderInteractables = this.getWorldBuilderInteractables();
-    const npcInteractable = this.getNearestNpcInteractable(worldBuilderInteractables);
-    const deliveryInteraction = this.getDeliveryQuestInteractionForNpc(npcInteractable, worldBuilderInteractables);
-    const gymCheckInInteraction = deliveryInteraction
-      ? null
-      : this.getNearestGymCheckInInteractable(worldBuilderInteractables);
-    const stockMarketInteraction = deliveryInteraction || gymCheckInInteraction
-      ? null
-      : this.getNearestStockMarketInteractable(worldBuilderInteractables);
-    const blackjackInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction
-      ? null
-      : this.getNearestBlackjackDealerInteractable(worldBuilderInteractables);
-    const schoolMicrogameInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction
-      ? null
-      : this.getNearestSchoolMicrogameInteractable(worldBuilderInteractables);
-    const bartenderInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction
-      ? null
-      : this.getNearestBartenderInteractable({ worldBuilderInteractables });
-    const pawnShopOwnerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction
-      ? null
-      : this.getNearestPawnShopOwnerInteractable({ worldBuilderInteractables });
-    const carDealerInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction
-      ? null
-      : this.getNearestCarDealerInteractable({ worldBuilderInteractables });
-    const marthaInteraction = deliveryInteraction || gymCheckInInteraction || stockMarketInteraction || blackjackInteraction || schoolMicrogameInteraction || bartenderInteraction || pawnShopOwnerInteraction || carDealerInteraction
-      ? null
-      : this.getNearestMarthaInteractable({ worldBuilderInteractables });
-    const interactable = deliveryInteraction
-      ? npcInteractable
-      : (gymCheckInInteraction ?? stockMarketInteraction ?? blackjackInteraction ?? schoolMicrogameInteraction ?? bartenderInteraction ?? pawnShopOwnerInteraction ?? carDealerInteraction ?? marthaInteraction ?? npcInteractable);
+    const {
+      deliveryInteraction,
+      gymCheckInInteraction,
+      stockMarketInteraction,
+      blackjackInteraction,
+      schoolMicrogameInteraction,
+      bartenderInteraction,
+      pawnShopOwnerInteraction,
+      carDealerInteraction,
+      marthaInteraction,
+      interactable
+    } = this.getNpcInteractionHintState(worldBuilderInteractables);
     const npcId = interactable
       ? (interactable.npcId || interactable.placementId || '')
       : '';
@@ -18913,7 +20619,7 @@ export class Game {
       return;
     }
 
-    const anchor = npcSpeechAnchors.get(npcId);
+    const anchor = this.getNpcHudSpeechAnchor(npcId, npcSpeechAnchors);
     if (!anchor) {
       return;
     }
@@ -18928,58 +20634,38 @@ export class Game {
       : 0;
 
     if (gymCheckInInteraction) {
-      bubbles.push({
-        id: `npc-gym-check-in:${npcId}`,
-        text: GYM_CHECK_IN_LINE,
-        label: npcState?.name ?? interactable?.npc?.name ?? '',
-        variant: 'npc',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(
+        bubbles,
+        `npc-gym-check-in:${npcId}`,
+        GYM_CHECK_IN_LINE,
+        npcState?.name ?? interactable?.npc?.name ?? '',
+        'npc',
+        projected,
+        screenYOffset
+      );
       return;
     }
 
     if (deliveryInteraction) {
-      bubbles.push({
-        id: `npc-delivery:${npcId}:${deliveryInteraction.kind}`,
-        text: deliveryInteraction.overheadText,
-        label: deliveryInteraction.label ?? '',
-        variant: deliveryInteraction.variant ?? 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(
+        bubbles,
+        `npc-delivery:${npcId}:${deliveryInteraction.kind}`,
+        deliveryInteraction.overheadText,
+        deliveryInteraction.label ?? '',
+        deliveryInteraction.variant ?? 'interaction',
+        projected,
+        screenYOffset
+      );
       return;
     }
 
     if (stockMarketInteraction) {
-      bubbles.push({
-        id: `npc-stock-market:${npcId}`,
-        text: 'E to trade stocks',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-stock-market:${npcId}`, 'E to trade stocks', '', 'interaction', projected, screenYOffset);
       return;
     }
 
     if (blackjackInteraction) {
-      bubbles.push({
-        id: `npc-blackjack:${npcId}`,
-        text: 'E to play blackjack',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-blackjack:${npcId}`, 'E to play blackjack', '', 'interaction', projected, screenYOffset);
       return;
     }
 
@@ -18987,88 +20673,42 @@ export class Game {
       const game = schoolMicrogameInteraction.gameId === SCHOOL_MICROGAME_ALL_ID
         ? null
         : getSchoolMicrogameDefinition(schoolMicrogameInteraction.gameId);
-      bubbles.push({
-        id: `npc-school-microgame:${npcId}`,
-        text: game ? `E to play ${game.shortTitle ?? game.title}` : 'E to play school microgame',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(
+        bubbles,
+        `npc-school-microgame:${npcId}`,
+        game ? `E to play ${game.shortTitle ?? game.title}` : 'E to play school microgame',
+        '',
+        'interaction',
+        projected,
+        screenYOffset
+      );
       return;
     }
 
     if (bartenderInteraction) {
-      bubbles.push({
-        id: `npc-bartender:${npcId}`,
-        text: 'E to order drinks',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-bartender:${npcId}`, 'E to order drinks', '', 'interaction', projected, screenYOffset);
       return;
     }
 
     if (pawnShopOwnerInteraction) {
-      bubbles.push({
-        id: `npc-pawn-shop:${npcId}`,
-        text: 'E to browse pawn shop',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-pawn-shop:${npcId}`, 'E to browse pawn shop', '', 'interaction', projected, screenYOffset);
       return;
     }
 
     if (carDealerInteraction) {
-      bubbles.push({
-        id: `npc-car-dealer:${npcId}`,
-        text: 'E to browse cars',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-car-dealer:${npcId}`, 'E to browse cars', '', 'interaction', projected, screenYOffset);
       return;
     }
 
     if (marthaInteraction) {
-      bubbles.push({
-        id: `npc-martha:${npcId}`,
-        text: 'E to order food',
-        label: '',
-        variant: 'interaction',
-        status: 'done',
-        visible: true,
-        screenX: projected.x,
-        screenY: projected.y - screenYOffset
-      });
+      this.pushSimpleSpeechBubble(bubbles, `npc-martha:${npcId}`, 'E to order food', '', 'interaction', projected, screenYOffset);
       return;
     }
 
-    bubbles.push({
-      id: `npc-interaction:${npcId}`,
-      text: 'Enter to chat',
-      label: '',
-      variant: 'interaction',
-      status: 'done',
-      visible: true,
-      screenX: projected.x,
-      screenY: projected.y - screenYOffset
-    });
+    this.pushSimpleSpeechBubble(bubbles, `npc-interaction:${npcId}`, 'Enter to chat', '', 'interaction', projected, screenYOffset);
   }
 
-  collectOverheadHealthBar(id, anchor, { health = 0, maxHealth = 100, alive = true } = {}, variant = 'npc') {
+  collectOverheadHealthBar(id, anchor, health = 0, maxHealth = 100, alive = true, variant = 'npc') {
     const safeMaxHealth = Math.max(1, Number(maxHealth) || 1);
     const currentHealth = Math.max(0, Math.min(safeMaxHealth, Number(health) || 0));
     if (!alive || currentHealth >= safeMaxHealth) {
@@ -19080,16 +20720,28 @@ export class Game {
       return null;
     }
 
-    return {
-      id,
-      variant,
-      visible: true,
-      health: currentHealth,
-      maxHealth: safeMaxHealth,
-      healthRatio: currentHealth / safeMaxHealth,
-      screenX: projected.x,
-      screenY: projected.y
-    };
+    let bar = this.overheadHealthBarRecords.get(id);
+    if (!bar) {
+      bar = {
+        id,
+        variant,
+        visible: true,
+        health: 0,
+        maxHealth: 0,
+        healthRatio: 0,
+        screenX: 0,
+        screenY: 0
+      };
+      this.overheadHealthBarRecords.set(id, bar);
+    }
+    bar.variant = variant;
+    bar.visible = true;
+    bar.health = currentHealth;
+    bar.maxHealth = safeMaxHealth;
+    bar.healthRatio = currentHealth / safeMaxHealth;
+    bar.screenX = projected.x;
+    bar.screenY = projected.y;
+    return bar;
   }
 
   pushOverheadHealthBar(bars, bar) {
@@ -19103,7 +20755,27 @@ export class Game {
       return EMPTY_NPC_SPEECH_ANCHORS;
     }
 
-    return this.worldBuilder.getNpcSpeechAnchors();
+    this.npcHudSpeechAnchors.clear();
+    return this.npcHudSpeechAnchors;
+  }
+
+  getNpcHudSpeechAnchor(npcId = '', npcSpeechAnchors = this.npcHudSpeechAnchors) {
+    const id = String(npcId ?? '');
+    if (!id || !this.worldBuilder || this.currentInterior?.scene) {
+      return null;
+    }
+
+    if (npcSpeechAnchors?.has?.(id)) {
+      return npcSpeechAnchors.get(id) ?? null;
+    }
+
+    const anchor = this.worldBuilder.getNpcSpeechAnchor?.(id)
+      ?? this.worldBuilder.getNpcSpeechAnchors?.()?.get(id)
+      ?? null;
+    if (anchor && npcSpeechAnchors?.set) {
+      npcSpeechAnchors.set(id, anchor);
+    }
+    return anchor;
   }
 
   updateOverheadHealthBars(npcSpeechAnchors = EMPTY_NPC_SPEECH_ANCHORS) {
@@ -19113,6 +20785,7 @@ export class Game {
     bars.length = 0;
 
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
+      this.overheadHealthBarRecords.clear();
       this.hud.setOverheadHealthBars(bars);
       return visibleIds;
     }
@@ -19122,11 +20795,9 @@ export class Game {
       const bar = this.collectOverheadHealthBar(
         `player:${this.npcServiceState.sessionId}`,
         this.player.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
-        {
-          health: localPlayerState.health,
-          maxHealth: localPlayerState.maxHealth,
-          alive: localPlayerState.alive !== false
-        },
+        localPlayerState.health,
+        localPlayerState.maxHealth,
+        localPlayerState.alive !== false,
         'self'
       );
       this.pushOverheadHealthBar(bars, bar);
@@ -19135,7 +20806,8 @@ export class Game {
       }
     }
 
-    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+    for (const sessionId of this.remotePlayers.keys()) {
+      const avatar = this.remotePlayers.get(sessionId);
       const playerState = this.npcServiceState.players.get(sessionId);
       if (!playerState) {
         continue;
@@ -19144,11 +20816,9 @@ export class Game {
       const bar = this.collectOverheadHealthBar(
         `player:${sessionId}`,
         avatar.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
-        {
-          health: playerState.health,
-          maxHealth: playerState.maxHealth,
-          alive: playerState.alive !== false
-        },
+        playerState.health,
+        playerState.maxHealth,
+        playerState.alive !== false,
         'player'
       );
       this.pushOverheadHealthBar(bars, bar);
@@ -19157,8 +20827,15 @@ export class Game {
       }
     }
 
-    for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
-      const anchor = npcSpeechAnchors.get(npcId);
+    for (const npcId of this.npcServiceState.npcs.keys()) {
+      const npcState = this.npcServiceState.npcs.get(npcId);
+      const safeMaxHealth = Math.max(1, Number(npcState.maxHealth) || 1);
+      const currentHealth = Math.max(0, Math.min(safeMaxHealth, Number(npcState.health) || 0));
+      if (npcState.alive === false || currentHealth >= safeMaxHealth) {
+        continue;
+      }
+
+      const anchor = this.getNpcHudSpeechAnchor(npcId, npcSpeechAnchors);
       if (!anchor) {
         continue;
       }
@@ -19166,11 +20843,9 @@ export class Game {
       const bar = this.collectOverheadHealthBar(
         `npc:${npcId}`,
         anchor,
-        {
-          health: npcState.health,
-          maxHealth: npcState.maxHealth,
-          alive: npcState.alive !== false
-        },
+        currentHealth,
+        safeMaxHealth,
+        true,
         'npc'
       );
       this.pushOverheadHealthBar(bars, bar);
@@ -19179,6 +20854,11 @@ export class Game {
       }
     }
 
+    for (const id of this.overheadHealthBarRecords.keys()) {
+      if (!visibleIds.has(id)) {
+        this.overheadHealthBarRecords.delete(id);
+      }
+    }
     this.hud.setOverheadHealthBars(bars);
     return visibleIds;
   }
@@ -19205,12 +20885,15 @@ export class Game {
     npcSpeechAnchors = EMPTY_NPC_SPEECH_ANCHORS
   ) {
     if (!this.player || !this.worldBuilder || this.currentInterior?.scene) {
+      this.speechBubbleRecordActiveIds.clear();
+      this.speechBubbleRecords.clear();
       this.hud.setSpeechBubbles([]);
       return;
     }
 
     const bubbles = this.speechBubbles;
     bubbles.length = 0;
+    this.speechBubbleRecordActiveIds.clear();
     const localPlayerState = this.npcServiceState.players.get(this.npcServiceState.sessionId);
     if (localPlayerState) {
       this.addPlayerSpeechBubble(
@@ -19219,15 +20902,14 @@ export class Game {
         localPlayerState,
         this.player.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         'self',
-        {
-          screenYOffset: visibleOverheadHealthBarIds.has(`player:${this.npcServiceState.sessionId}`)
-            ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
-            : 0
-        }
+        visibleOverheadHealthBarIds.has(`player:${this.npcServiceState.sessionId}`)
+          ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+          : 0
       );
     }
 
-    for (const [sessionId, avatar] of this.remotePlayers.entries()) {
+    for (const sessionId of this.remotePlayers.keys()) {
+      const avatar = this.remotePlayers.get(sessionId);
       const playerState = this.npcServiceState.players.get(sessionId);
       if (!playerState) {
         continue;
@@ -19239,31 +20921,47 @@ export class Game {
         playerState,
         avatar.getSpeechAnchorWorldPosition(this.speechAnchorScratch),
         'player',
-        {
-          screenYOffset: visibleOverheadHealthBarIds.has(`player:${sessionId}`)
-            ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
-            : 0
-        }
+        visibleOverheadHealthBarIds.has(`player:${sessionId}`)
+          ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
+          : 0
       );
     }
 
-    for (const [npcId, npcState] of this.npcServiceState.npcs.entries()) {
-      const anchor = npcSpeechAnchors.get(npcId);
+    for (const npcId of this.npcServiceState.npcs.keys()) {
+      const npcState = this.npcServiceState.npcs.get(npcId);
+      if (
+        this.isRentIntroReservedNpc(npcId)
+        || !this.isSpeechBubbleActiveState(
+          npcState.chatText,
+          npcState.chatStartedAt,
+          npcState.chatStatus ?? 'done',
+          Boolean(npcState.busy)
+        )
+      ) {
+        continue;
+      }
+
+      const anchor = this.getNpcHudSpeechAnchor(npcId, npcSpeechAnchors);
       if (!anchor) {
         continue;
       }
 
-      this.addNpcSpeechBubble(bubbles, npcId, npcState, anchor, {
-        screenYOffset: visibleOverheadHealthBarIds.has(`npc:${npcId}`)
+      this.addNpcSpeechBubble(
+        bubbles,
+        npcId,
+        npcState,
+        anchor,
+        visibleOverheadHealthBarIds.has(`npc:${npcId}`)
           ? OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX
           : 0
-      });
+      );
     }
 
     this.addRentIntroSpeechBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
     this.addNpcInteractionHintBubble(bubbles, npcSpeechAnchors, visibleOverheadHealthBarIds);
     this.addMoneyFloaterBubbles(bubbles);
     this.addSkillXpFloaterBubbles(bubbles);
+    this.pruneSpeechBubbleRecords();
     this.hud.setSpeechBubbles(bubbles);
   }
 }

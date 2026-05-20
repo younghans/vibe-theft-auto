@@ -1,4 +1,4 @@
-import { distance2D } from '../shared/combatMath.js';
+import { distance2D, distanceSquared2D } from '../shared/combatMath.js';
 import { quantizePosition } from '../shared/numberMath.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from '../world/builderCatalog.js';
@@ -39,26 +39,34 @@ function addEdge(nodeMap, a, b) {
   nodeMap.get(b).neighbors.add(a);
 }
 
+function collectMapValues(map) {
+  const values = [];
+  for (const value of map.values()) {
+    values.push(value);
+  }
+  return values;
+}
+
 function findNearestNode(nodes = [], position = null, filter = () => true) {
   if (!position) {
     return null;
   }
 
   let nearest = null;
-  let nearestDistance = Infinity;
+  let nearestDistanceSq = Infinity;
 
   for (const node of nodes) {
     if (!filter(node)) {
       continue;
     }
 
-    const distance = distance2D(position.x, position.z, node.x, node.z);
-    if (distance >= nearestDistance) {
+    const distanceSq = distanceSquared2D(position.x, position.z, node.x, node.z);
+    if (distanceSq >= nearestDistanceSq) {
       continue;
     }
 
     nearest = node;
-    nearestDistance = distance;
+    nearestDistanceSq = distanceSq;
   }
 
   return nearest;
@@ -67,6 +75,9 @@ function findNearestNode(nodes = [], position = null, filter = () => true) {
 const NPC_LOCAL_DIRECT_PATH_DISTANCE = BUILDER_TILE_SIZE * 1.35;
 const NPC_START_NODE_SKIP_DISTANCE = BUILDER_TILE_SIZE * 0.82;
 const NPC_PLACEMENT_CHAIN_START_DISTANCE = BUILDER_TILE_SIZE * 2.2;
+const NPC_LOCAL_DIRECT_PATH_DISTANCE_SQ = NPC_LOCAL_DIRECT_PATH_DISTANCE * NPC_LOCAL_DIRECT_PATH_DISTANCE;
+const NPC_START_NODE_SKIP_DISTANCE_SQ = NPC_START_NODE_SKIP_DISTANCE * NPC_START_NODE_SKIP_DISTANCE;
+const NPC_PLACEMENT_CHAIN_START_DISTANCE_SQ = NPC_PLACEMENT_CHAIN_START_DISTANCE * NPC_PLACEMENT_CHAIN_START_DISTANCE;
 
 function trimPathFromStart(path = [], startPosition = null) {
   if (!startPosition || path.length <= 1) {
@@ -76,14 +87,20 @@ function trimPathFromStart(path = [], startPosition = null) {
   let trimCount = 0;
   while (
     trimCount < (path.length - 1)
-    && distance2D(startPosition.x, startPosition.z, path[trimCount].x, path[trimCount].z) <= NPC_START_NODE_SKIP_DISTANCE
+    && distanceSquared2D(startPosition.x, startPosition.z, path[trimCount].x, path[trimCount].z) <= NPC_START_NODE_SKIP_DISTANCE_SQ
   ) {
     trimCount += 1;
   }
 
-  return trimCount > 0
-    ? path.slice(trimCount)
-    : path;
+  if (trimCount <= 0) {
+    return path;
+  }
+
+  const trimmedPath = [];
+  for (let index = trimCount; index < path.length; index += 1) {
+    trimmedPath.push(path[index]);
+  }
+  return trimmedPath;
 }
 
 function cloneNodePoint(node, id = node?.id ?? 'direct') {
@@ -98,18 +115,36 @@ function cloneNodePoint(node, id = node?.id ?? 'direct') {
   };
 }
 
+function cloneOptionalNodePath(...nodes) {
+  const path = [];
+  for (const node of nodes) {
+    const point = cloneNodePoint(node);
+    if (point) {
+      path.push(point);
+    }
+  }
+  return path;
+}
+
 function isPointInsideTilePlacement(point, placementMeta = null) {
   if (!point || !placementMeta?.occupiedCells?.length) {
     return false;
   }
 
   const halfTile = BUILDER_TILE_SIZE * 0.5;
-  return placementMeta.occupiedCells.some((cell) => (
-    point.x >= ((cell.x * BUILDER_TILE_SIZE) - halfTile)
-    && point.x <= ((cell.x * BUILDER_TILE_SIZE) + halfTile)
-    && point.z >= ((cell.z * BUILDER_TILE_SIZE) - halfTile)
-    && point.z <= ((cell.z * BUILDER_TILE_SIZE) + halfTile)
-  ));
+  for (let index = 0; index < placementMeta.occupiedCells.length; index += 1) {
+    const cell = placementMeta.occupiedCells[index];
+    if (
+      point.x >= ((cell.x * BUILDER_TILE_SIZE) - halfTile)
+      && point.x <= ((cell.x * BUILDER_TILE_SIZE) + halfTile)
+      && point.z >= ((cell.z * BUILDER_TILE_SIZE) - halfTile)
+      && point.z <= ((cell.z * BUILDER_TILE_SIZE) + halfTile)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function getPlacementStartNode(graph, startPosition, goalNode) {
@@ -132,12 +167,12 @@ function getPlacementStartNode(graph, startPosition, goalNode) {
   const nearestPlacementChainNode = findNearestNode(placementChainNodes, startPosition);
   if (
     nearestPlacementChainNode
-    && distance2D(
+    && distanceSquared2D(
       startPosition.x,
       startPosition.z,
       nearestPlacementChainNode.x,
       nearestPlacementChainNode.z
-    ) <= NPC_PLACEMENT_CHAIN_START_DISTANCE
+    ) <= NPC_PLACEMENT_CHAIN_START_DISTANCE_SQ
   ) {
     return nearestPlacementChainNode;
   }
@@ -163,20 +198,20 @@ function runAStar(nodeMap, startId, goalId) {
     return [];
   }
 
-  const open = new Set([startId]);
+  const startNode = nodeMap.get(startId);
+  const goalNode = nodeMap.get(goalId);
+  const open = new Set();
+  open.add(startId);
   const previousById = new Map();
-  const gScore = new Map([[startId, 0]]);
-  const fScore = new Map([
-    [
-      startId,
-      distance2D(
-        nodeMap.get(startId).x,
-        nodeMap.get(startId).z,
-        nodeMap.get(goalId).x,
-        nodeMap.get(goalId).z
-      )
-    ]
-  ]);
+  const gScore = new Map();
+  gScore.set(startId, 0);
+  const fScore = new Map();
+  fScore.set(startId, distance2D(
+    startNode.x,
+    startNode.z,
+    goalNode.x,
+    goalNode.z
+  ));
 
   while (open.size) {
     let currentId = null;
@@ -216,7 +251,7 @@ function runAStar(nodeMap, startId, goalId) {
       gScore.set(neighborId, tentativeG);
       fScore.set(
         neighborId,
-        tentativeG + distance2D(neighbor.x, neighbor.z, nodeMap.get(goalId).x, nodeMap.get(goalId).z)
+        tentativeG + distance2D(neighbor.x, neighbor.z, goalNode.x, goalNode.z)
       );
       open.add(neighborId);
     }
@@ -232,7 +267,7 @@ export function buildNpcRouteGraph(worldState) {
   const placementMetaById = new Map();
   const targets = collectNpcTargetOptions(worldState);
 
-  for (const placement of worldState.getPlacements()) {
+  worldState.forEachPlacement((placement) => {
     const item = getBuilderItemById(placement.itemId);
     if (placement?.layer === 'tile' && item) {
       placementMetaById.set(placement.id, {
@@ -252,7 +287,7 @@ export function buildNpcRouteGraph(worldState) {
     }
 
     if (!isRoutePlacement(placement, item)) {
-      continue;
+      return;
     }
 
     const key = nodeKeyForCell(placement.cellX ?? 0, placement.cellZ ?? 0);
@@ -267,7 +302,7 @@ export function buildNpcRouteGraph(worldState) {
       nodeMap.set(key, node);
       routeNodes.push(node);
     }
-  }
+  });
 
   for (const node of routeNodes) {
     addEdge(nodeMap, node.id, nodeKeyForCell((node.cellX ?? 0) + 1, node.cellZ ?? 0));
@@ -306,7 +341,7 @@ export function buildNpcRouteGraph(worldState) {
 
   return {
     nodeMap,
-    nodes: [...nodeMap.values()],
+    nodes: collectMapValues(nodeMap),
     routeNodes,
     placementNodeById,
     placementMetaById
@@ -337,7 +372,7 @@ export function buildNpcPathToPlacement(graph, startPosition, targetPlacementId)
     !requiresRouteViaEntry
     &&
     startPosition
-    && distance2D(startPosition.x, startPosition.z, goalNode.x, goalNode.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE
+    && distanceSquared2D(startPosition.x, startPosition.z, goalNode.x, goalNode.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE_SQ
   ) {
     return [cloneNodePoint(goalNode)];
   }
@@ -349,7 +384,7 @@ export function buildNpcPathToPlacement(graph, startPosition, targetPlacementId)
     if (requiresRouteViaEntry) {
       const viaNodeId = graph?.placementNodeById?.get(routeViaPlacementId);
       const viaNode = viaNodeId ? graph?.nodeMap?.get(viaNodeId) : null;
-      return [viaNode, goalNode].filter(Boolean).map((node) => cloneNodePoint(node));
+      return cloneOptionalNodePath(viaNode, goalNode);
     }
 
     return [cloneNodePoint(goalNode)];
@@ -360,14 +395,14 @@ export function buildNpcPathToPlacement(graph, startPosition, targetPlacementId)
     if (requiresRouteViaEntry) {
       const viaNodeId = graph?.placementNodeById?.get(routeViaPlacementId);
       const viaNode = viaNodeId ? graph?.nodeMap?.get(viaNodeId) : null;
-      return [viaNode, goalNode].filter(Boolean).map((node) => cloneNodePoint(node));
+      return cloneOptionalNodePath(viaNode, goalNode);
     }
 
     return [cloneNodePoint(goalNode)];
   }
 
   const lastPoint = path[path.length - 1];
-  if (distance2D(lastPoint.x, lastPoint.z, goalNode.x, goalNode.z) > 0.25) {
+  if (distanceSquared2D(lastPoint.x, lastPoint.z, goalNode.x, goalNode.z) > 0.25 * 0.25) {
     path.push(cloneNodePoint(goalNode));
   }
 
@@ -381,7 +416,7 @@ export function buildNpcPathToPosition(graph, startPosition, targetPosition) {
 
   if (
     startPosition
-    && distance2D(startPosition.x, startPosition.z, targetPosition.x, targetPosition.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE
+    && distanceSquared2D(startPosition.x, startPosition.z, targetPosition.x, targetPosition.z) <= NPC_LOCAL_DIRECT_PATH_DISTANCE_SQ
   ) {
     return [{ x: quantizePosition(targetPosition.x), z: quantizePosition(targetPosition.z), id: 'direct' }];
   }
@@ -400,7 +435,7 @@ export function buildNpcPathToPosition(graph, startPosition, targetPosition) {
   }
 
   const lastPoint = path[path.length - 1];
-  if (distance2D(lastPoint.x, lastPoint.z, targetPosition.x, targetPosition.z) > 0.25) {
+  if (distanceSquared2D(lastPoint.x, lastPoint.z, targetPosition.x, targetPosition.z) > 0.25 * 0.25) {
     path.push({ x: quantizePosition(targetPosition.x), z: quantizePosition(targetPosition.z), id: 'direct' });
   }
 

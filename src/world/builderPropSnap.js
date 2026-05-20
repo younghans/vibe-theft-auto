@@ -85,7 +85,7 @@ export function getAdjacentPropSnapCandidates({
     return [];
   }
 
-  return [
+  const candidates = [
     {
       side: 'right',
       offsetX: anchorHalfWidth + activeExtentAlongAnchorX,
@@ -106,15 +106,18 @@ export function getAdjacentPropSnapCandidates({
       offsetX: 0,
       offsetZ: -(anchorHalfDepth + activeExtentAlongAnchorZ)
     }
-  ].map((candidate) => {
+  ];
+  const anchors = [];
+  for (const candidate of candidates) {
     const rotated = rotateLocalOffset(candidate.offsetX, candidate.offsetZ, anchorRotationY);
-    return {
+    anchors.push({
       x: anchorX + rotated.x,
       z: anchorZ + rotated.z,
       side: candidate.side,
       anchorPlacementId: anchorPlacement.id
-    };
-  });
+    });
+  }
+  return anchors;
 }
 
 function isCandidateOccupied(candidate, placements, activeItemId, ignorePlacementId = null) {
@@ -131,11 +134,40 @@ function isCandidateOccupied(candidate, placements, activeItemId, ignorePlacemen
 
     const dx = Number(placement.position[0]) - candidate.x;
     const dz = Number(placement.position[1]) - candidate.z;
-    if (Number.isFinite(dx) && Number.isFinite(dz) && Math.hypot(dx, dz) <= PROP_SNAP_OCCUPIED_EPSILON) {
+    if (
+      Number.isFinite(dx)
+      && Number.isFinite(dz)
+      && ((dx * dx) + (dz * dz)) <= PROP_SNAP_OCCUPIED_EPSILON * PROP_SNAP_OCCUPIED_EPSILON
+    ) {
       return true;
     }
   }
   return false;
+}
+
+function collectMatchingPropPlacements(placements, activeItemId, ignorePlacementId = null) {
+  const placementList = [];
+  const appendPlacement = (placement) => {
+    if (
+      placement
+      && placement.id !== ignorePlacementId
+      && placement.layer === 'prop'
+      && placement.itemId === activeItemId
+      && Array.isArray(placement.position)
+    ) {
+      placementList.push(placement);
+    }
+  };
+
+  if (placements && typeof placements.forEachPlacement === 'function') {
+    placements.forEachPlacement(appendPlacement);
+    return placementList;
+  }
+
+  for (const placement of placements ?? []) {
+    appendPlacement(placement);
+  }
+  return placementList;
 }
 
 export function findNearestAdjacentPropSnapPoint({
@@ -158,7 +190,7 @@ export function findNearestAdjacentPropSnapPoint({
     return null;
   }
 
-  const placementList = Array.from(placements ?? []);
+  const placementList = collectMatchingPropPlacements(placements, activeItem.id, ignorePlacementId);
   const searchRadius = Number.isFinite(Number(maxDistance))
     ? Number(maxDistance)
     : getPropSnapSearchRadius(activeItem, activeScale);
@@ -166,16 +198,6 @@ export function findNearestAdjacentPropSnapPoint({
   let bestDistanceSq = searchRadius * searchRadius;
 
   for (const placement of placementList) {
-    if (
-      !placement
-      || placement.id === ignorePlacementId
-      || placement.layer !== 'prop'
-      || placement.itemId !== activeItem.id
-      || !Array.isArray(placement.position)
-    ) {
-      continue;
-    }
-
     const anchorItem = getItemById(placement.itemId) ?? activeItem;
     const candidates = getAdjacentPropSnapCandidates({
       activeItem,

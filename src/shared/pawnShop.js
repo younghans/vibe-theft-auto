@@ -45,25 +45,21 @@ export const PAWN_SHOP_MENU_ITEMS = Object.freeze([
   })
 ]);
 
-const PAWN_SHOP_MENU_ITEM_BY_ID = new Map(
-  PAWN_SHOP_MENU_ITEMS.map((item) => [item.id, item])
-);
+const PAWN_SHOP_MENU_ITEM_BY_ID = new Map();
+const PAWN_SHOP_INVENTORY_FIELD_ENTRIES = {};
+const PAWN_SHOP_OWNED_FIELD_ENTRIES = {};
+for (const item of PAWN_SHOP_MENU_ITEMS) {
+  PAWN_SHOP_MENU_ITEM_BY_ID.set(item.id, item);
+  if (item.inventoryField) {
+    PAWN_SHOP_INVENTORY_FIELD_ENTRIES[item.id] = item.inventoryField;
+  }
+  if (item.ownedField) {
+    PAWN_SHOP_OWNED_FIELD_ENTRIES[item.id] = item.ownedField;
+  }
+}
 
-const PAWN_SHOP_INVENTORY_FIELDS = Object.freeze(
-  Object.fromEntries(
-    PAWN_SHOP_MENU_ITEMS
-      .filter((item) => item.inventoryField)
-      .map((item) => [item.id, item.inventoryField])
-  )
-);
-
-const PAWN_SHOP_OWNED_FIELDS = Object.freeze(
-  Object.fromEntries(
-    PAWN_SHOP_MENU_ITEMS
-      .filter((item) => item.ownedField)
-      .map((item) => [item.id, item.ownedField])
-  )
-);
+const PAWN_SHOP_INVENTORY_FIELDS = Object.freeze(PAWN_SHOP_INVENTORY_FIELD_ENTRIES);
+const PAWN_SHOP_OWNED_FIELDS = Object.freeze(PAWN_SHOP_OWNED_FIELD_ENTRIES);
 
 export function normalizePawnShopOwnerEnabled(value = false) {
   return value === true;

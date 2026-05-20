@@ -70,24 +70,41 @@ function quoted(name) {
   return pg.escapeIdentifier(name);
 }
 
+function joinQuoted(columns, separator = ', ') {
+  let output = '';
+  for (const column of columns) {
+    output = output ? `${output}${separator}${quoted(column)}` : quoted(column);
+  }
+  return output;
+}
+
 function upsertSql(table) {
-  const columns = table.columns.map(quoted).join(', ');
-  const values = table.columns.map((column, index) => (
-    table.jsonb.has(column) ? `$${index + 1}::jsonb` : `$${index + 1}`
-  )).join(', ');
-  const conflict = table.conflict.map(quoted).join(', ');
-  const updates = table.columns
-    .filter((column) => !table.conflict.includes(column))
-    .map((column) => `${quoted(column)} = excluded.${quoted(column)}`)
-    .join(', ');
+  const columns = joinQuoted(table.columns);
+  let values = '';
+  for (let index = 0; index < table.columns.length; index += 1) {
+    const column = table.columns[index];
+    const placeholder = table.jsonb.has(column) ? `$${index + 1}::jsonb` : `$${index + 1}`;
+    values = values ? `${values}, ${placeholder}` : placeholder;
+  }
+  const conflict = joinQuoted(table.conflict);
+  let updates = '';
+  for (const column of table.columns) {
+    if (table.conflict.includes(column)) {
+      continue;
+    }
+    const update = `${quoted(column)} = excluded.${quoted(column)}`;
+    updates = updates ? `${updates}, ${update}` : update;
+  }
 
   return `insert into public.${quoted(table.name)} (${columns}) values (${values}) on conflict (${conflict}) do update set ${updates}`;
 }
 
 function rowValues(table, row) {
-  return table.columns.map((column) => (
-    table.jsonb.has(column) ? JSON.stringify(row[column]) : row[column]
-  ));
+  const values = [];
+  for (const column of table.columns) {
+    values.push(table.jsonb.has(column) ? JSON.stringify(row[column]) : row[column]);
+  }
+  return values;
 }
 
 function normalize(value) {
@@ -96,15 +113,26 @@ function normalize(value) {
   }
 
   if (Array.isArray(value)) {
-    return value.map(normalize);
+    const normalized = [];
+    for (const item of value) {
+      normalized.push(normalize(item));
+    }
+    return normalized;
   }
 
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, normalize(value[key])])
-    );
+    const keys = [];
+    for (const key in value) {
+      if (Object.hasOwn(value, key)) {
+        keys.push(key);
+      }
+    }
+    keys.sort();
+    const normalized = {};
+    for (const key of keys) {
+      normalized[key] = normalize(value[key]);
+    }
+    return normalized;
   }
 
   return value;
@@ -115,14 +143,18 @@ function stable(row) {
 }
 
 function rowKey(table, row) {
-  return table.conflict.map((column) => String(row[column])).join('\u0000');
+  let key = '';
+  for (const column of table.conflict) {
+    key = key ? `${key}\u0000${String(row[column])}` : String(row[column]);
+  }
+  return key;
 }
 
 async function readSourceSnapshot(sourceClient) {
   const sourceData = new Map();
   for (const table of tables) {
     const result = await sourceClient.query(
-      `select ${table.columns.map(quoted).join(', ')} from public.${quoted(table.name)} order by ${table.orderBy}`
+      `select ${joinQuoted(table.columns)} from public.${quoted(table.name)} order by ${table.orderBy}`
     );
     sourceData.set(table.name, result.rows);
   }
@@ -135,7 +167,10 @@ async function applySnapshot(targetClient, sourceData) {
 
   for (const table of tables) {
     const rows = sourceData.get(table.name) ?? [];
-    const seenKeys = new Set(rows.map((row) => rowKey(table, row)));
+    const seenKeys = new Set();
+    for (const row of rows) {
+      seenKeys.add(rowKey(table, row));
+    }
     const sql = upsertSql(table);
 
     for (const row of rows) {
@@ -143,17 +178,25 @@ async function applySnapshot(targetClient, sourceData) {
     }
 
     const targetRows = await targetClient.query(
-      `select ${table.conflict.map(quoted).join(', ')} from public.${quoted(table.name)}`
+      `select ${joinQuoted(table.conflict)} from public.${quoted(table.name)}`
     );
     for (const row of targetRows.rows) {
       if (seenKeys.has(rowKey(table, row))) {
         continue;
       }
 
-      const where = table.conflict.map((column, index) => `${quoted(column)} = $${index + 1}`).join(' and ');
+      let where = '';
+      for (let index = 0; index < table.conflict.length; index += 1) {
+        const condition = `${quoted(table.conflict[index])} = $${index + 1}`;
+        where = where ? `${where} and ${condition}` : condition;
+      }
+      const values = [];
+      for (const column of table.conflict) {
+        values.push(row[column]);
+      }
       await targetClient.query(
         `delete from public.${quoted(table.name)} where ${where}`,
-        table.conflict.map((column) => row[column])
+        values
       );
     }
   }
@@ -171,18 +214,24 @@ async function verifySnapshot(targetPool, sourceData) {
   const verification = [];
   for (const table of tables) {
     const targetRows = await targetPool.query(
-      `select ${table.columns.map(quoted).join(', ')} from public.${quoted(table.name)} order by ${table.orderBy}`
+      `select ${joinQuoted(table.columns)} from public.${quoted(table.name)} order by ${table.orderBy}`
     );
     const sourceRows = sourceData.get(table.name) ?? [];
-    const sourceStable = sourceRows.map(stable);
-    const targetStable = targetRows.rows.map(stable);
+    let snapshotMatch = sourceRows.length === targetRows.rows.length;
+    if (snapshotMatch) {
+      for (let index = 0; index < sourceRows.length; index += 1) {
+        if (stable(sourceRows[index]) !== stable(targetRows.rows[index])) {
+          snapshotMatch = false;
+          break;
+        }
+      }
+    }
 
     verification.push({
       table: table.name,
       sourceRows: sourceRows.length,
       targetRows: targetRows.rows.length,
-      snapshotMatch: sourceStable.length === targetStable.length
-        && sourceStable.every((entry, index) => entry === targetStable[index])
+      snapshotMatch
     });
   }
   return verification;
@@ -230,8 +279,15 @@ try {
   }
 
   const verification = await verifySnapshot(target, sourceData);
+  let ok = true;
+  for (const entry of verification) {
+    if (!entry.snapshotMatch) {
+      ok = false;
+      break;
+    }
+  }
   console.log(JSON.stringify({
-    ok: verification.every((entry) => entry.snapshotMatch),
+    ok,
     mode: verifyOnly ? 'verify-only' : 'sync',
     verification
   }, null, 2));

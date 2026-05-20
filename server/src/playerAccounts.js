@@ -90,7 +90,12 @@ function collectSensitiveSnapshotKeyPaths(value, path = '$', output = []) {
     return output;
   }
 
-  for (const [key, child] of Object.entries(value)) {
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+
+    const child = value[key];
     const childPath = `${path}.${key}`;
     if (SENSITIVE_SNAPSHOT_KEY_PATTERN.test(key)) {
       output.push(childPath);
@@ -208,7 +213,12 @@ export function validateAccountSaveSnapshot(snapshot = {}, {
 
   const expectedWorldKey = normalizeWorldKey(worldKey, DEFAULT_WORLD_KEY);
   const expectedUserId = normalizeUserId(userId);
-  const unexpectedTopLevelKeys = Object.keys(snapshot).filter((key) => !ACCOUNT_SAVE_TOP_LEVEL_KEYS.has(key));
+  const unexpectedTopLevelKeys = [];
+  for (const key in snapshot) {
+    if (Object.hasOwn(snapshot, key) && !ACCOUNT_SAVE_TOP_LEVEL_KEYS.has(key)) {
+      unexpectedTopLevelKeys.push(key);
+    }
+  }
   if (unexpectedTopLevelKeys.length > 0) {
     throw new AccountSaveValidationError('Account save snapshot contains unsupported top-level keys.', {
       unexpectedTopLevelKeys
@@ -245,7 +255,12 @@ export function validateAccountSaveSnapshot(snapshot = {}, {
     throw new AccountSaveValidationError('Account save snapshot player payload must be a JSON object.');
   }
 
-  const missingPlayerKeys = ACCOUNT_SAVE_REQUIRED_PLAYER_KEYS.filter((key) => !Object.hasOwn(snapshot.player, key));
+  const missingPlayerKeys = [];
+  for (const key of ACCOUNT_SAVE_REQUIRED_PLAYER_KEYS) {
+    if (!Object.hasOwn(snapshot.player, key)) {
+      missingPlayerKeys.push(key);
+    }
+  }
   if (missingPlayerKeys.length > 0) {
     throw new AccountSaveValidationError('Account save snapshot is missing required player fields.', {
       missingPlayerKeys

@@ -39,6 +39,15 @@ export function isNpcTargetablePlacement(placement, item = getBuilderItemById(pl
   return placement.layer === 'prop';
 }
 
+function stepTypesInclude(stepTypes = [], stepType = '') {
+  for (const type of stepTypes) {
+    if (type === stepType) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getPlacementWorldOrigin(placement, item = getBuilderItemById(placement?.itemId)) {
   if (!placement || !item) {
     return null;
@@ -58,6 +67,10 @@ export function getPlacementWorldOrigin(placement, item = getBuilderItemById(pla
     x: placement.position?.[0] ?? 0,
     z: placement.position?.[1] ?? 0
   };
+}
+
+function distanceSquared(x, z) {
+  return (x * x) + (z * z);
 }
 
 export function getPlacementWorldPoint(placement, offset = [0, 0], item = getBuilderItemById(placement?.itemId)) {
@@ -117,23 +130,32 @@ function placementContainsWorldPoint(placement, item, point) {
     placement.rotationQuarterTurns ?? 0
   );
 
-  return occupiedCells.some((cell) => (
-    point.x >= ((cell.x * BUILDER_TILE_SIZE) - halfTile)
-    && point.x <= ((cell.x * BUILDER_TILE_SIZE) + halfTile)
-    && point.z >= ((cell.z * BUILDER_TILE_SIZE) - halfTile)
-    && point.z <= ((cell.z * BUILDER_TILE_SIZE) + halfTile)
-  ));
+  for (const cell of occupiedCells) {
+    if (
+      point.x >= ((cell.x * BUILDER_TILE_SIZE) - halfTile)
+      && point.x <= ((cell.x * BUILDER_TILE_SIZE) + halfTile)
+      && point.z >= ((cell.z * BUILDER_TILE_SIZE) - halfTile)
+      && point.z <= ((cell.z * BUILDER_TILE_SIZE) + halfTile)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
-function findContainingBuildingPlacement(worldState, placement, originPosition) {
-  if (!worldState?.getPlacements || placement?.layer !== 'prop' || !originPosition) {
+function findContainingBuildingPlacement(worldState, placement, originPosition, candidatePlacements = null) {
+  if (placement?.layer !== 'prop' || !originPosition) {
     return null;
   }
 
   let bestMatch = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestDistanceSq = Number.POSITIVE_INFINITY;
+  const candidates = Array.isArray(candidatePlacements)
+    ? candidatePlacements
+    : worldState?.getPlacements?.() ?? [];
 
-  for (const candidate of worldState.getPlacements()) {
+  for (const candidate of candidates) {
     if (!candidate || candidate.id === placement.id) {
       continue;
     }
@@ -144,10 +166,10 @@ function findContainingBuildingPlacement(worldState, placement, originPosition) 
     }
 
     const candidateOrigin = getPlacementWorldOrigin(candidate, candidateItem);
-    const distance = candidateOrigin
-      ? Math.hypot(candidateOrigin.x - originPosition.x, candidateOrigin.z - originPosition.z)
+    const distanceSq = candidateOrigin
+      ? distanceSquared(candidateOrigin.x - originPosition.x, candidateOrigin.z - originPosition.z)
       : 0;
-    if (distance >= bestDistance) {
+    if (distanceSq >= bestDistanceSq) {
       continue;
     }
 
@@ -155,7 +177,7 @@ function findContainingBuildingPlacement(worldState, placement, originPosition) 
       placement: candidate,
       item: candidateItem
     };
-    bestDistance = distance;
+    bestDistanceSq = distanceSq;
   }
 
   return bestMatch;
@@ -164,7 +186,8 @@ function findContainingBuildingPlacement(worldState, placement, originPosition) 
 export function resolveNpcTargetOption(
   placement,
   item = getBuilderItemById(placement?.itemId),
-  worldState = null
+  worldState = null,
+  candidatePlacements = null
 ) {
   if (!isNpcTargetablePlacement(placement, item)) {
     return null;
@@ -173,7 +196,7 @@ export function resolveNpcTargetOption(
   const origin = getPlacementWorldOrigin(placement, item);
   const approachPosition = getPlacementApproachPoint(placement, item) ?? origin;
   const interactable = resolvePlacementInteractableDefinition(placement, item);
-  const container = findContainingBuildingPlacement(worldState, placement, origin);
+  const container = findContainingBuildingPlacement(worldState, placement, origin, candidatePlacements);
   const supportedStepTypes = [
     NPC_STEP_TYPES.travelToPlacement,
     NPC_STEP_TYPES.loiterNearPlacement,
@@ -196,9 +219,9 @@ export function resolveNpcTargetOption(
     layer: placement.layer,
     groupLabel: item.groupLabel ?? '',
     supportedStepTypes,
-    hideCapable: supportedStepTypes.includes(NPC_STEP_TYPES.enterHideAtPlacement),
+    hideCapable: stepTypesInclude(supportedStepTypes, NPC_STEP_TYPES.enterHideAtPlacement),
     loiterCapable: true,
-    activityCapable: supportedStepTypes.includes(NPC_STEP_TYPES.usePlacement),
+    activityCapable: stepTypesInclude(supportedStepTypes, NPC_STEP_TYPES.usePlacement),
     workoutType: interactable?.workoutType ?? '',
     approachRotationY: Number.isFinite(interactable?.approachRotationY)
       ? quantizeRotation(toRotationY(placement.rotationQuarterTurns ?? 0) + interactable.approachRotationY)
@@ -211,12 +234,29 @@ export function resolveNpcTargetOption(
 }
 
 export function collectNpcTargetOptions(worldState) {
-  if (!worldState?.getPlacements) {
+  if (!worldState?.getPlacements && typeof worldState?.forEachPlacement !== 'function') {
     return [];
   }
 
-  return worldState.getPlacements()
-    .map((placement) => resolveNpcTargetOption(placement, undefined, worldState))
-    .filter(Boolean)
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const placements = [];
+  if (typeof worldState.forEachPlacement === 'function') {
+    worldState.forEachPlacement((placement) => {
+      placements.push(placement);
+    });
+  } else {
+    const worldPlacements = worldState.getPlacements();
+    for (let index = 0; index < worldPlacements.length; index += 1) {
+      placements.push(worldPlacements[index]);
+    }
+  }
+
+  const options = [];
+  for (const placement of placements) {
+    const option = resolveNpcTargetOption(placement, undefined, worldState, placements);
+    if (option) {
+      options.push(option);
+    }
+  }
+  options.sort((a, b) => a.label.localeCompare(b.label));
+  return options;
 }

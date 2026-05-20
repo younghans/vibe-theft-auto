@@ -7,6 +7,7 @@ const LETTER_PATTERN = /[\p{L}\p{N}]/u;
 const VOWEL_PATTERN = /[aeiouy]/iu;
 const CONSONANT_PATTERN = /[bcdfghjklmnpqrstvwxyz]/iu;
 const MAX_REVEAL_STEPS_PER_FRAME = 10;
+const EMPTY_ACTIVE_ID_SET = new Set();
 const VOICE_GRAIN_MIN_INTERVAL_MS = 18;
 const VOWEL_GRAIN_DURATION_SECONDS = 0.072;
 const CONSONANT_GRAIN_DURATION_SECONDS = 0.052;
@@ -195,7 +196,7 @@ export class NpcSpeechPlayback {
     }
   }
 
-  disposeMissing(activeIds = new Set()) {
+  disposeMissing(activeIds = EMPTY_ACTIVE_ID_SET) {
     for (const id of this.states.keys()) {
       if (!activeIds.has(id)) {
         this.states.delete(id);

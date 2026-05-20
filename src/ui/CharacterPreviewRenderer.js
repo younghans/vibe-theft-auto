@@ -475,9 +475,16 @@ export class CharacterPreviewRenderer {
   }
 
   invalidatePortraits(characterIds = null) {
-    const ids = Array.isArray(characterIds) && characterIds.length > 0
-      ? characterIds.map((characterId) => getPlayableCharacterById(characterId).id)
-      : [...this.portraitEntries.keys()];
+    const ids = [];
+    if (Array.isArray(characterIds) && characterIds.length > 0) {
+      for (const characterId of characterIds) {
+        ids.push(getPlayableCharacterById(characterId).id);
+      }
+    } else {
+      for (const characterId of this.portraitEntries.keys()) {
+        ids.push(characterId);
+      }
+    }
 
     this.portraitVersion += 1;
     for (const characterId of ids) {
@@ -686,9 +693,16 @@ export class CharacterPreviewRenderer {
   }
 
   async refreshPortraits(characterIds = null) {
-    const ids = Array.isArray(characterIds) && characterIds.length > 0
-      ? characterIds.map((characterId) => this.getOrCreatePortraitEntry(characterId).characterId)
-      : [...this.portraitEntries.keys()];
+    const ids = [];
+    if (Array.isArray(characterIds) && characterIds.length > 0) {
+      for (const characterId of characterIds) {
+        ids.push(this.getOrCreatePortraitEntry(characterId).characterId);
+      }
+    } else {
+      for (const characterId of this.portraitEntries.keys()) {
+        ids.push(characterId);
+      }
+    }
 
     const dynamicIds = [];
 
@@ -714,7 +728,12 @@ export class CharacterPreviewRenderer {
 
     const task = (async () => {
       while (this.active) {
-        const queuedIds = [...this.pendingPortraitIds].filter((characterId) => this.portraitDirtyIds.has(characterId));
+        const queuedIds = [];
+        for (const characterId of this.pendingPortraitIds) {
+          if (this.portraitDirtyIds.has(characterId)) {
+            queuedIds.push(characterId);
+          }
+        }
         if (queuedIds.length === 0) {
           break;
         }
@@ -743,7 +762,12 @@ export class CharacterPreviewRenderer {
         }
 
         if (this.active) {
-          const remainingDirtyIds = [...this.portraitDirtyIds].filter((characterId) => this.pendingPortraitIds.has(characterId));
+          const remainingDirtyIds = [];
+          for (const characterId of this.portraitDirtyIds) {
+            if (this.pendingPortraitIds.has(characterId)) {
+              remainingDirtyIds.push(characterId);
+            }
+          }
           if (remainingDirtyIds.length > 0) {
             void this.refreshPortraits(remainingDirtyIds);
           }

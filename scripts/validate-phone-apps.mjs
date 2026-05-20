@@ -39,6 +39,22 @@ const supabaseAuthSource = fs.readFileSync(path.join(root, 'src/auth/supabaseAut
 const appConfigSource = fs.readFileSync(path.join(root, 'server/app.config.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server/src/WorldRoom.js'), 'utf8');
 
+function getPlaylistTitles(playlist = []) {
+  const titles = [];
+  for (const track of playlist) {
+    titles.push(track.title);
+  }
+  return titles;
+}
+
+function getPlaylistSourceUrls(playlist = []) {
+  const urls = [];
+  for (const track of playlist) {
+    urls.push(track.sourceUrl);
+  }
+  return urls;
+}
+
 assert.match(hudSource, /\['skills', 'Skills'/, 'Skills app is registered on the phone home screen');
 assert.match(hudSource, /\['stocks', 'Stocks'/, 'Stocks app is registered on the phone home screen');
 assert.match(hudSource, /\['vibe-radio', 'Vibe Radio'/, 'Vibe Radio app is registered on the phone home screen');
@@ -181,7 +197,11 @@ const phoneUnlockHasId3Header = phoneUnlockAudio.subarray(0, 3).toString('ascii'
 const phoneUnlockHasFrameSync = phoneUnlockAudio[0] === 0xff && (phoneUnlockAudio[1] & 0xe0) === 0xe0;
 assert.ok(phoneUnlockHasId3Header || phoneUnlockHasFrameSync, 'Phone unlock audio should be an MP3 file.');
 
-for (const [label, url] of Object.entries(assets.audio.vibeHero ?? {})) {
+for (const label in assets.audio.vibeHero ?? {}) {
+  if (!Object.hasOwn(assets.audio.vibeHero, label)) {
+    continue;
+  }
+  const url = assets.audio.vibeHero[label];
   const audio = fs.readFileSync(new URL(url));
   assert.ok(audio.length > 1024, `${label} Vibe Hero audio should not be empty.`);
   const hasId3Header = audio.subarray(0, 3).toString('ascii') === 'ID3';
@@ -189,7 +209,11 @@ for (const [label, url] of Object.entries(assets.audio.vibeHero ?? {})) {
   assert.ok(hasId3Header || hasFrameSync, `${label} Vibe Hero audio should be an MP3 file.`);
 }
 
-for (const [label, url] of Object.entries(assets.audio.vibeRadio ?? {})) {
+for (const label in assets.audio.vibeRadio ?? {}) {
+  if (!Object.hasOwn(assets.audio.vibeRadio, label)) {
+    continue;
+  }
+  const url = assets.audio.vibeRadio[label];
   const audio = fs.readFileSync(new URL(url));
   assert.ok(audio.length > 1024, `${label} Vibe Radio audio should not be empty.`);
   const hasId3Header = audio.subarray(0, 3).toString('ascii') === 'ID3';
@@ -216,7 +240,7 @@ assert.doesNotMatch(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit tra
 
 const defaultRadioPlaylist = createDefaultVibeRadioTracks();
 assert.deepEqual(
-  defaultRadioPlaylist.map((track) => track.title),
+  getPlaylistTitles(defaultRadioPlaylist),
   [
     'Bright Light and Spacious',
     'Kiss of Life',
@@ -228,7 +252,7 @@ assert.deepEqual(
   'Vibe Radio starts with the bundled MP3 playlist'
 );
 assert.deepEqual(
-  defaultRadioPlaylist.map((track) => track.sourceUrl),
+  getPlaylistSourceUrls(defaultRadioPlaylist),
   [
     'assets/audio/vibe-radio/bright-light-and-spacious.mp3',
     'assets/audio/vibe-radio/kiss-of-life.mp3',
@@ -269,7 +293,14 @@ const trade = executeStockTrade({
 });
 assert.equal(trade.ok, true, 'stock buy can create a wallet holding');
 const after = trade.market;
-assert.ok(after.stocks.some((stock) => stock.shares > 0), 'wallet market snapshot includes owned stock');
+let walletIncludesOwnedStock = false;
+for (const stock of after.stocks) {
+  if (stock.shares > 0) {
+    walletIncludesOwnedStock = true;
+    break;
+  }
+}
+assert.ok(walletIncludesOwnedStock, 'wallet market snapshot includes owned stock');
 assert.equal(after.netWorth, after.cash + after.portfolioValue, 'wallet net worth is cash plus portfolio value');
 
 const persistedPortfolio = normalizeStockPortfolioSnapshot(portfolio);

@@ -230,9 +230,15 @@ export function applyMarthaNpcBaseStyle(root, model = null, definition = null) {
       return material;
     };
 
-    node.material = Array.isArray(node.material)
-      ? node.material.map(styleMaterial)
-      : styleMaterial(node.material);
+    if (Array.isArray(node.material)) {
+      const materials = [];
+      for (const material of node.material) {
+        materials.push(styleMaterial(material));
+      }
+      node.material = materials;
+    } else {
+      node.material = styleMaterial(node.material);
+    }
   });
 
   return styledAny;

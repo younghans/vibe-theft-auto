@@ -68,12 +68,26 @@ export function getAgentTaskCommitSubject(task = {}) {
 
 export function getAgentTaskCommitBody(task = {}, changedFiles = []) {
   const prompt = normalizePromptText(task.prompt);
-  const files = Array.isArray(changedFiles)
-    ? changedFiles.map((filePath) => String(filePath ?? '').trim()).filter(Boolean)
-    : [];
-  return [
-    `Task ID: ${String(task.id ?? '').trim() || 'unknown'}`,
-    prompt ? `Prompt: ${truncateAtWord(prompt, 240)}` : '',
-    files.length ? `Changed files:\n${files.map((filePath) => `- ${filePath}`).join('\n')}` : ''
-  ].filter(Boolean).join('\n\n');
+  const files = [];
+  if (Array.isArray(changedFiles)) {
+    for (let index = 0; index < changedFiles.length; index += 1) {
+      const filePath = String(changedFiles[index] ?? '').trim();
+      if (filePath) {
+        files.push(filePath);
+      }
+    }
+  }
+
+  let body = `Task ID: ${String(task.id ?? '').trim() || 'unknown'}`;
+  if (prompt) {
+    body += `\n\nPrompt: ${truncateAtWord(prompt, 240)}`;
+  }
+  if (files.length) {
+    let changedFileText = '';
+    for (let index = 0; index < files.length; index += 1) {
+      changedFileText += `${index > 0 ? '\n' : ''}- ${files[index]}`;
+    }
+    body += `\n\nChanged files:\n${changedFileText}`;
+  }
+  return body;
 }

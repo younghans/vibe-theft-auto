@@ -3,14 +3,16 @@ const DEFAULT_BACKEND_URL = 'https://us-atl-06d422c8.vibetheftauto.xyz';
 
 function getArgValue(name, fallback = '') {
   const prefix = `${name}=`;
-  const match = process.argv.slice(2).find((arg) => arg === name || arg.startsWith(prefix));
-  if (!match) {
-    return fallback;
+  for (let index = 2; index < process.argv.length; index += 1) {
+    const arg = process.argv[index];
+    if (arg === name) {
+      return '1';
+    }
+    if (arg.startsWith(prefix)) {
+      return arg.slice(prefix.length);
+    }
   }
-  if (match === name) {
-    return '1';
-  }
-  return match.slice(prefix.length);
+  return fallback;
 }
 
 function normalizeBaseUrl(value = '') {
@@ -36,8 +38,12 @@ function assertCheck(condition, message, details = {}) {
 }
 
 function getAppScriptUrls(html = '', baseUrl = '') {
-  return [...html.matchAll(/<script[^>]+src="([^"]*\/assets\/app-[^"]+\.js[^"]*)"/gu)]
-    .map((match) => new URL(match[1], baseUrl).toString());
+  const appScriptUrls = [];
+  const appScriptPattern = /<script[^>]+src="([^"]*\/assets\/app-[^"]+\.js[^"]*)"/gu;
+  for (const match of html.matchAll(appScriptPattern)) {
+    appScriptUrls.push(new URL(match[1], baseUrl).toString());
+  }
+  return appScriptUrls;
 }
 
 async function checkFrontend(frontendUrl) {
@@ -125,7 +131,7 @@ async function checkAdminRouteRejections(backendUrl) {
       label: check.label,
       status: response.status
     });
-    assertCheck([401, 403].includes(response.status), `Admin route did not reject ${check.label}.`, {
+    assertCheck(response.status === 401 || response.status === 403, `Admin route did not reject ${check.label}.`, {
       label: check.label,
       status: response.status
     });

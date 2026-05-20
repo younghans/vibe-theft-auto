@@ -51,20 +51,24 @@ const candidates = nodeEnv === 'production'
       '.env'
     ];
 
-for (const candidate of candidates.filter(Boolean)) {
-  loadEnvFile(candidate);
+for (const candidate of candidates) {
+  if (candidate) {
+    loadEnvFile(candidate);
+  }
 }
 
 if (process.env.COLYSEUS_CLOUD !== undefined) {
-  const cloudEnvPaths = [
+  const rawCloudEnvPaths = [
     process.env.APP_ROOT_PATH ? path.join(process.env.APP_ROOT_PATH, '.env.cloud') : '',
     path.resolve(projectRoot, '..', 'current', '.env.cloud'),
     path.resolve(process.cwd(), '..', 'current', '.env.cloud'),
     path.join(projectRoot, '.env.cloud'),
     path.resolve(process.cwd(), '.env.cloud')
-  ].filter(Boolean);
+  ];
 
-  for (const envPath of cloudEnvPaths) {
-    loadEnvPath(envPath, { override: true });
+  for (const envPath of rawCloudEnvPaths) {
+    if (envPath) {
+      loadEnvPath(envPath, { override: true });
+    }
   }
 }

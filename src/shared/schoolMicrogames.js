@@ -204,6 +204,13 @@ const SCANTRON_KEYS = Object.freeze([
   Object.freeze(['D', 'B', 'C', 'A'])
 ]);
 
+const FALLBACK_GEOGRAPHY_COUNTRIES = Object.freeze([
+  Object.freeze({ id: 'usa', name: 'United States', lat: 39.8, lon: -98.6, aliases: Object.freeze(['United States of America', 'USA']) }),
+  Object.freeze({ id: 'bra', name: 'Brazil', lat: -10.8, lon: -53.1, aliases: Object.freeze(['Federative Republic of Brazil']) }),
+  Object.freeze({ id: 'jpn', name: 'Japan', lat: 37.5, lon: 138.3, aliases: Object.freeze(['Nippon']) }),
+  Object.freeze({ id: 'zaf', name: 'South Africa', lat: -29, lon: 24, aliases: Object.freeze(['Republic of South Africa']) })
+]);
+
 const MEMORY_MATCH_PAIRS = Object.freeze([
   Object.freeze({ pairId: 'math', icon: 'PI', label: 'Math', accent: '#38d3ff' }),
   Object.freeze({ pairId: 'science', icon: 'H2O', label: 'Science', accent: '#58e2a5' }),
@@ -291,7 +298,11 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
   })
 ]);
 
-const SCHOOL_MICROGAME_BY_ID = new Map(SCHOOL_MICROGAME_DEFINITIONS.map((game) => [game.id, game]));
+const SCHOOL_MICROGAME_BY_ID = new Map();
+for (let index = 0; index < SCHOOL_MICROGAME_DEFINITIONS.length; index += 1) {
+  const game = SCHOOL_MICROGAME_DEFINITIONS[index];
+  SCHOOL_MICROGAME_BY_ID.set(game.id, game);
+}
 const SCHOOL_MICROGAME_ALIAS_BY_ID = new Map();
 
 for (const game of SCHOOL_MICROGAME_DEFINITIONS) {
@@ -336,8 +347,19 @@ function choose(list, rng) {
   return list[Math.floor(rng() * list.length) % list.length];
 }
 
+function createFallbackSchoolGeographyCountry({ rng = Math.random } = {}) {
+  const country = choose(FALLBACK_GEOGRAPHY_COUNTRIES, rng) ?? FALLBACK_GEOGRAPHY_COUNTRIES[0];
+  return {
+    id: country.id,
+    name: country.name,
+    lat: country.lat,
+    lon: country.lon,
+    aliases: cloneArray(country.aliases)
+  };
+}
+
 function shuffle(list, rng) {
-  const next = [...list];
+  const next = cloneArray(list);
   for (let index = next.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(rng() * (index + 1));
     [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
@@ -345,17 +367,34 @@ function shuffle(list, rng) {
   return next;
 }
 
+function cloneArray(list = []) {
+  const next = [];
+  for (const item of list) {
+    next.push(item);
+  }
+  return next;
+}
+
 function formatQuizQuestion(question) {
+  const answers = [];
+  for (let index = 0; index < question.answers.length; index += 1) {
+    answers.push({ label: question.answers[index], index });
+  }
   return {
     question: question.question,
-    answers: question.answers.map((label, index) => ({ label, index })),
+    answers,
     correctIndex: question.correctIndex
   };
 }
 
 export function createSchoolPopQuizQuestions({ rng = Math.random, count = SCHOOL_POP_QUIZ_ROUND_COUNT } = {}) {
   const questionCount = Math.max(1, Math.min(QUESTION_BANK.length, Math.trunc(Number(count) || SCHOOL_POP_QUIZ_ROUND_COUNT)));
-  return shuffle(QUESTION_BANK, rng).slice(0, questionCount).map(formatQuizQuestion);
+  const shuffled = shuffle(QUESTION_BANK, rng);
+  const questions = [];
+  for (let index = 0; index < questionCount; index += 1) {
+    questions.push(formatQuizQuestion(shuffled[index]));
+  }
+  return questions;
 }
 
 function createCombo(rng) {
@@ -364,23 +403,38 @@ function createCombo(rng) {
 }
 
 function createBackpackRound(rng) {
-  return shuffle(BACKPACK_ITEMS, rng).slice(0, 6).map((item, index) => ({
-    ...item,
-    id: `${item.id}-${index}`
-  }));
+  const shuffled = shuffle(BACKPACK_ITEMS, rng);
+  const items = [];
+  for (let index = 0; index < 6 && index < shuffled.length; index += 1) {
+    const item = shuffled[index];
+    items.push({
+      ...item,
+      id: `${item.id}-${index}`
+    });
+  }
+  return items;
 }
 
 export function createSchoolMemoryMatchCards({ rng = Math.random } = {}) {
-  return shuffle(
-    MEMORY_MATCH_PAIRS.flatMap((pair) => [0, 1].map((copyIndex) => ({
-      ...pair,
-      id: `${pair.pairId}-${copyIndex}`
-    }))),
-    rng
-  ).map((card, index) => ({
-    ...card,
-    slot: index
-  }));
+  const pairs = [];
+  for (const pair of MEMORY_MATCH_PAIRS) {
+    for (let copyIndex = 0; copyIndex < 2; copyIndex += 1) {
+      pairs.push({
+        ...pair,
+        id: `${pair.pairId}-${copyIndex}`
+      });
+    }
+  }
+
+  const shuffled = shuffle(pairs, rng);
+  const cards = [];
+  for (let index = 0; index < shuffled.length; index += 1) {
+    cards.push({
+      ...shuffled[index],
+      slot: index
+    });
+  }
+  return cards;
 }
 
 export function listSchoolMicrogames() {
@@ -501,7 +555,7 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
   if (definition.id === SCHOOL_MICROGAME_IDS.copyTheNotes) {
     return {
       ...base,
-      sequence: [...choose(NOTE_SEQUENCES, rng)],
+      sequence: cloneArray(choose(NOTE_SEQUENCES, rng)),
       keys: ['W', 'A', 'S', 'D']
     };
   }
@@ -539,7 +593,7 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
     return {
       ...base,
       items: createBackpackRound(rng),
-      bins: [...BACKPACK_BINS],
+      bins: cloneArray(BACKPACK_BINS),
       targetCorrect: 5,
       maxWrong: 2
     };
@@ -558,7 +612,7 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
   if (definition.id === SCHOOL_MICROGAME_IDS.scantronSpeedrun) {
     return {
       ...base,
-      answerKey: [...choose(SCANTRON_KEYS, rng)],
+      answerKey: cloneArray(choose(SCANTRON_KEYS, rng)),
       options: ['A', 'B', 'C', 'D'],
       maxWrong: 1
     };

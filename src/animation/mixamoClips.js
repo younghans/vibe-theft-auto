@@ -24,6 +24,13 @@ const clipSourceUrls = Object.freeze({
 
 const clipRegistry = new Map();
 const clipLoadPromises = new Map();
+const defaultClipNames = [];
+for (const name in clipSourceUrls) {
+  if (Object.hasOwn(clipSourceUrls, name)) {
+    defaultClipNames.push(name);
+  }
+}
+const DEFAULT_CLIP_NAMES = Object.freeze(defaultClipNames);
 
 async function loadMixamoClip(name) {
   const clipUrl = clipSourceUrls[name];
@@ -56,12 +63,20 @@ async function loadMixamoClip(name) {
   return clip;
 }
 
-export async function preloadMixamoClips(names = Object.keys(clipSourceUrls)) {
-  const normalizedNames = [...new Set((names ?? []).filter((name) => typeof name === 'string' && name.trim()))];
+export async function preloadMixamoClips(names = DEFAULT_CLIP_NAMES) {
+  const requestedNames = names ?? DEFAULT_CLIP_NAMES;
+  const seenNames = new Set();
+  const loadPromises = [];
 
-  await Promise.all(normalizedNames.map((name) => {
+  for (const name of requestedNames) {
+    if (typeof name !== 'string' || !name.trim() || seenNames.has(name)) {
+      continue;
+    }
+
+    seenNames.add(name);
     if (clipRegistry.has(name)) {
-      return Promise.resolve(clipRegistry.get(name));
+      loadPromises.push(Promise.resolve(clipRegistry.get(name)));
+      continue;
     }
 
     if (!clipLoadPromises.has(name)) {
@@ -74,8 +89,10 @@ export async function preloadMixamoClips(names = Object.keys(clipSourceUrls)) {
       );
     }
 
-    return clipLoadPromises.get(name);
-  }));
+    loadPromises.push(clipLoadPromises.get(name));
+  }
+
+  await Promise.all(loadPromises);
 }
 
 export function getMixamoClip(name) {
