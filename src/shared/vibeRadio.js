@@ -14,6 +14,26 @@ const VIBE_RADIO_DEFAULT_TRACKS = Object.freeze([
     id: 'vibe-radio-track-kiss-of-life',
     title: 'Kiss of Life',
     sourceUrl: 'assets/audio/vibe-radio/kiss-of-life.mp3'
+  }),
+  Object.freeze({
+    id: 'vibe-radio-track-retro-game-arcade',
+    title: 'Retro Game Arcade',
+    sourceUrl: 'assets/audio/vibe-radio/retro-game-arcade.mp3'
+  }),
+  Object.freeze({
+    id: 'vibe-radio-track-retrowave-ambient-dreamwave',
+    title: 'Retrowave Ambient Dreamwave',
+    sourceUrl: 'assets/audio/vibe-radio/retrowave-ambient-dreamwave.mp3'
+  }),
+  Object.freeze({
+    id: 'vibe-radio-track-retro-swing',
+    title: 'Retro Swing',
+    sourceUrl: 'assets/audio/vibe-radio/retro-swing.mp3'
+  }),
+  Object.freeze({
+    id: 'vibe-radio-track-lo-fi-chillout',
+    title: 'Lo-Fi Chillout',
+    sourceUrl: 'assets/audio/vibe-radio/lo-fi-chillout.mp3'
   })
 ]);
 

@@ -84,7 +84,11 @@ export const assets = {
     },
     vibeRadio: {
       brightLightAndSpacious: assetUrl('audio', 'vibe-radio', 'bright-light-and-spacious.mp3'),
-      kissOfLife: assetUrl('audio', 'vibe-radio', 'kiss-of-life.mp3')
+      kissOfLife: assetUrl('audio', 'vibe-radio', 'kiss-of-life.mp3'),
+      retroGameArcade: assetUrl('audio', 'vibe-radio', 'retro-game-arcade.mp3'),
+      retrowaveAmbientDreamwave: assetUrl('audio', 'vibe-radio', 'retrowave-ambient-dreamwave.mp3'),
+      retroSwing: assetUrl('audio', 'vibe-radio', 'retro-swing.mp3'),
+      loFiChillout: assetUrl('audio', 'vibe-radio', 'lo-fi-chillout.mp3')
     }
   },
   city: {

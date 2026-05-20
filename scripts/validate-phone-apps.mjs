@@ -149,6 +149,7 @@ assert.doesNotMatch(gameSource, /syncVibeRadioTracksFromLayout/, 'Game should no
 assert.doesNotMatch(gameSource, /layout\?\.vibeRadioTracks/, 'Game should not read Vibe Radio tracks from world layout');
 assert.match(gameSource, /handleVibeRadioAction/, 'Game owns Vibe Radio playback actions');
 assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_KEY/, 'Game stores radio volume locally per player');
+assert.match(gameSource, /VIBE_RADIO_PLAYBACK_STORAGE_KEY/, 'Game stores radio play-pause state locally per player');
 assert.match(gameSource, /VIBE_RADIO_VOLUME_STORAGE_VERSION = '3'/, 'Vibe Radio can migrate old stored volume values');
 assert.match(gameSource, /VIBE_RADIO_DEFAULT_VOLUME = 0\.5/, 'Vibe Radio defaults the slider to 50 percent');
 assert.match(gameSource, /raw == null \|\| raw === ''/, 'Vibe Radio defaults volume when no player-specific volume is stored');
@@ -213,14 +214,25 @@ assert.doesNotMatch(mockNpcSource, /updateVibeRadioTracks/, 'Mock world edit tra
 const defaultRadioPlaylist = createDefaultVibeRadioTracks();
 assert.deepEqual(
   defaultRadioPlaylist.map((track) => track.title),
-  ['Bright Light and Spacious', 'Kiss of Life'],
+  [
+    'Bright Light and Spacious',
+    'Kiss of Life',
+    'Retro Game Arcade',
+    'Retrowave Ambient Dreamwave',
+    'Retro Swing',
+    'Lo-Fi Chillout'
+  ],
   'Vibe Radio starts with the bundled MP3 playlist'
 );
 assert.deepEqual(
   defaultRadioPlaylist.map((track) => track.sourceUrl),
   [
     'assets/audio/vibe-radio/bright-light-and-spacious.mp3',
-    'assets/audio/vibe-radio/kiss-of-life.mp3'
+    'assets/audio/vibe-radio/kiss-of-life.mp3',
+    'assets/audio/vibe-radio/retro-game-arcade.mp3',
+    'assets/audio/vibe-radio/retrowave-ambient-dreamwave.mp3',
+    'assets/audio/vibe-radio/retro-swing.mp3',
+    'assets/audio/vibe-radio/lo-fi-chillout.mp3'
   ],
   'Vibe Radio starter songs use local MP3 files'
 );

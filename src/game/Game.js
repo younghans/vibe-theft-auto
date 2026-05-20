@@ -264,6 +264,9 @@ const VIBE_HERO_LANE_KEY_CODES = Object.freeze(Array.from({ length: VIBE_HERO_LA
 const VIBE_RADIO_VOLUME_STORAGE_KEY = 'vta:vibeRadio:volume';
 const VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY = 'vta:vibeRadio:volumeVersion';
 const VIBE_RADIO_VOLUME_STORAGE_VERSION = '3';
+const VIBE_RADIO_PLAYBACK_STORAGE_KEY = 'vta:vibeRadio:playbackState';
+const VIBE_RADIO_PLAYBACK_PLAYING = 'playing';
+const VIBE_RADIO_PLAYBACK_PAUSED = 'paused';
 const VIBE_RADIO_DEFAULT_VOLUME = 0.5;
 const VIBE_RADIO_SEEK_SECONDS = 10;
 const BASKETBALL_SHOT_SWEEP_MS = 1320;
@@ -842,6 +845,27 @@ function writeStoredVibeRadioVolume(volume = VIBE_RADIO_DEFAULT_VOLUME) {
       String(THREE.MathUtils.clamp(Number(volume) || 0, 0, 1))
     );
     window.localStorage?.setItem(VIBE_RADIO_VOLUME_STORAGE_VERSION_KEY, VIBE_RADIO_VOLUME_STORAGE_VERSION);
+  } catch {
+    // Local persistence is best-effort; radio playback should continue if storage is unavailable.
+  }
+}
+
+function readStoredVibeRadioPlaybackState() {
+  try {
+    return window.localStorage?.getItem(VIBE_RADIO_PLAYBACK_STORAGE_KEY) === VIBE_RADIO_PLAYBACK_PAUSED
+      ? VIBE_RADIO_PLAYBACK_PAUSED
+      : VIBE_RADIO_PLAYBACK_PLAYING;
+  } catch {
+    return VIBE_RADIO_PLAYBACK_PLAYING;
+  }
+}
+
+function writeStoredVibeRadioPlaybackState(state = VIBE_RADIO_PLAYBACK_PLAYING) {
+  try {
+    window.localStorage?.setItem(
+      VIBE_RADIO_PLAYBACK_STORAGE_KEY,
+      state === VIBE_RADIO_PLAYBACK_PAUSED ? VIBE_RADIO_PLAYBACK_PAUSED : VIBE_RADIO_PLAYBACK_PLAYING
+    );
   } catch {
     // Local persistence is best-effort; radio playback should continue if storage is unavailable.
   }
@@ -1428,11 +1452,12 @@ export class Game {
     this.vibeRadioSelectedTrackId = '';
     this.vibeRadioPlaying = false;
     this.vibeRadioVolume = readStoredVibeRadioVolume();
+    this.vibeRadioPlaybackState = readStoredVibeRadioPlaybackState();
     this.vibeRadioError = '';
     this.vibeRadioLoadedTrackId = '';
     this.vibeRadioLoadedSourceUrl = '';
     this.vibeRadioTimeUpdateFrame = 0;
-    this.vibeRadioAutoplayPending = true;
+    this.vibeRadioAutoplayPending = this.vibeRadioPlaybackState !== VIBE_RADIO_PLAYBACK_PAUSED;
     this.vibeRadioAutoplayUnlockHandler = null;
     this.vibeRadioPausedForVibeHero = false;
     this.officeJobPlacementId = '';
@@ -4181,6 +4206,8 @@ export class Game {
         return false;
       }
       this.vibeRadioPlaying = true;
+      this.vibeRadioPlaybackState = VIBE_RADIO_PLAYBACK_PLAYING;
+      writeStoredVibeRadioPlaybackState(this.vibeRadioPlaybackState);
       this.vibeRadioAutoplayPending = false;
       this.clearVibeRadioAutoplayUnlock();
       this.vibeRadioError = '';
@@ -4231,6 +4258,8 @@ export class Game {
       this.vibeRadioAudio.pause();
       this.vibeRadioPlaying = false;
       this.vibeRadioAutoplayPending = false;
+      this.vibeRadioPlaybackState = VIBE_RADIO_PLAYBACK_PAUSED;
+      writeStoredVibeRadioPlaybackState(this.vibeRadioPlaybackState);
       this.clearVibeRadioAutoplayUnlock();
       this.refreshVibeRadioHud();
       return;
