@@ -1301,6 +1301,9 @@ function getTreadmillRunStatusText(game = null) {
   if (phase === 'result') {
     return game?.awardXp ? 'Rhythm Locked' : 'Run Complete';
   }
+  if (phase === 'countdown') {
+    return `Listen: ${Math.round(Number(game?.bpm ?? 0) || 0)} BPM`;
+  }
   if (phase === 'playing') {
     return `${Math.round(Number(game?.bpm ?? 0) || 0)} BPM`;
   }
@@ -1309,6 +1312,9 @@ function getTreadmillRunStatusText(game = null) {
 
 function getTreadmillRunGradeText(game = null) {
   const grade = String(game?.grade ?? 'ready');
+  if (grade === 'listen') {
+    return 'Listen';
+  }
   if (grade === 'perfect') {
     return 'Perfect';
   }
@@ -1329,19 +1335,28 @@ function getTreadmillRunGradeText(game = null) {
 
 function createTreadmillRunMarkup(game = null) {
   const phase = String(game?.phase ?? 'playing');
+  const isCountdown = phase === 'countdown';
   const elapsedMs = Math.max(0, Number(game?.elapsedMs ?? 0) || 0);
   const durationMs = Math.max(1, Number(game?.durationMs ?? 3000) || 3000);
-  const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+  const countdownMs = Math.max(1, Number(game?.countdownMs ?? 3000) || 3000);
+  const countdownElapsedMs = Math.max(0, Number(game?.countdownElapsedMs ?? 0) || 0);
+  const progress = isCountdown
+    ? Math.max(0, Math.min(1, countdownElapsedMs / countdownMs))
+    : Math.max(0, Math.min(1, elapsedMs / durationMs));
   const beatProgress = Math.max(0, Math.min(1, Number(game?.nextBeatProgress ?? 0) || 0));
   const score = Math.max(0, Math.min(100, Math.round(Number(game?.score ?? 0) || 0)));
   const hitCount = Math.max(0, Math.floor(Number(game?.hitCount ?? 0) || 0));
   const beatCount = Math.max(0, Math.floor(Number(game?.beatCount ?? 0) || 0));
-  const remainingSeconds = Math.max(0, Number(game?.remainingMs ?? 0) || 0) / 1000;
+  const remainingMs = isCountdown
+    ? Math.max(0, Number(game?.countdownRemainingMs ?? countdownMs) || 0)
+    : Math.max(0, Number(game?.remainingMs ?? 0) || 0);
+  const remainingSeconds = remainingMs / 1000;
   const grade = String(game?.grade ?? 'ready');
   const disabled = phase !== 'playing';
+  const bpm = Math.max(0, Math.round(Number(game?.bpm ?? 0) || 0));
 
   return `
-    <div class="hud__treadmill-run-play is-${escapeHtml(grade)}" style="--run-progress:${progress.toFixed(3)};--beat-progress:${beatProgress.toFixed(3)}">
+    <div class="hud__treadmill-run-play is-${escapeHtml(grade)}${isCountdown ? ' is-countdown' : ''}" style="--run-progress:${progress.toFixed(3)};--beat-progress:${beatProgress.toFixed(3)}">
       <button
         class="hud__treadmill-run-hit"
         type="button"
@@ -1357,8 +1372,8 @@ function createTreadmillRunMarkup(game = null) {
         <span></span>
       </div>
       <div class="hud__treadmill-run-stats">
-        <span><strong>${escapeHtml(String(score))}%</strong><em>Score</em></span>
-        <span><strong>${escapeHtml(`${hitCount}/${beatCount}`)}</strong><em>Steps</em></span>
+        <span><strong>${escapeHtml(isCountdown ? String(bpm) : `${score}%`)}</strong><em>${escapeHtml(isCountdown ? 'BPM' : 'Score')}</em></span>
+        <span><strong>${escapeHtml(isCountdown ? remainingSeconds.toFixed(1) : `${hitCount}/${beatCount}`)}</strong><em>${escapeHtml(isCountdown ? 'Starts' : 'Steps')}</em></span>
       </div>
     </div>
   `;
@@ -9087,6 +9102,7 @@ export class Hud {
 
     const game = this.treadmillRunState.game;
     const phase = String(game?.phase ?? 'idle');
+    this.treadmillRunRoot.classList.toggle('is-countdown', phase === 'countdown');
     this.treadmillRunRoot.classList.toggle('is-playing', phase === 'playing');
     this.treadmillRunRoot.classList.toggle('is-result', phase === 'result');
     this.treadmillRunRoot.classList.toggle('is-award', game?.awardXp === true);

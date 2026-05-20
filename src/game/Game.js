@@ -298,6 +298,7 @@ const SNATCH_WORKOUT_CAMERA_HEIGHT = 1.85;
 const SNATCH_WORKOUT_CAMERA_LOOK_HEIGHT = 1.42;
 const SNATCH_WORKOUT_CAMERA_BAR_PADDING = 0.85;
 const TREADMILL_RUN_RESULT_HOLD_MS = 980;
+const TREADMILL_RUN_COUNTDOWN_MS = 3000;
 const TREADMILL_RUN_REWARD_SCORE = 90;
 const TREADMILL_RUN_FIRST_BEAT_MS = 260;
 const TREADMILL_RUN_BEAT_WINDOW_MS = 150;
@@ -1088,6 +1089,27 @@ function createTreadmillRunBeatSchedule(durationMs = TREADMILL_DURATION_MS) {
     elapsedMs += intervalMs;
   }
   return beats;
+}
+
+function createTreadmillRunCountdownBeatSchedule({
+  countdownMs = TREADMILL_RUN_COUNTDOWN_MS,
+  beats = [],
+  durationMs = TREADMILL_DURATION_MS
+} = {}) {
+  const safeCountdownMs = Math.max(1000, Number(countdownMs) || TREADMILL_RUN_COUNTDOWN_MS);
+  const firstRunBeatMs = Math.max(0, Number(beats?.[0]?.timeMs ?? TREADMILL_RUN_FIRST_BEAT_MS) || TREADMILL_RUN_FIRST_BEAT_MS);
+  const startBpm = getTreadmillRunBpmAtElapsed(0, durationMs);
+  const intervalMs = 60000 / Math.max(1, startBpm);
+  const countdownBeats = [];
+  for (let timeMs = safeCountdownMs + firstRunBeatMs - intervalMs; timeMs > 0; timeMs -= intervalMs) {
+    countdownBeats.push({
+      timeMs,
+      bpm: startBpm,
+      intervalMs
+    });
+  }
+  countdownBeats.sort((a, b) => a.timeMs - b.timeMs);
+  return countdownBeats;
 }
 
 function calculateTreadmillRunScore(run = null) {
@@ -13223,18 +13245,28 @@ export class Game {
 
     const now = performance.now();
     const durationMs = Math.max(1000, Number(this.activeWorkout.activityConfig?.durationMs ?? TREADMILL_DURATION_MS) || TREADMILL_DURATION_MS);
+    const countdownMs = TREADMILL_RUN_COUNTDOWN_MS;
     const treadmillObject = this.activeWorkout.interactable?.barbellObject ?? null;
     const beats = createTreadmillRunBeatSchedule(durationMs);
-    this.activeWorkout.treadmillRun = {
-      startedAt: now,
-      durationMs,
-      phase: 'playing',
+    const countdownBeats = createTreadmillRunCountdownBeatSchedule({
+      countdownMs,
       beats,
+      durationMs
+    });
+    this.activeWorkout.treadmillRun = {
+      countdownStartedAt: now,
+      countdownMs,
+      startedAt: now + countdownMs,
+      durationMs,
+      phase: 'countdown',
+      beats,
+      countdownBeats,
       taps: [],
       extraTaps: 0,
       score: 0,
-      message: 'Match the footfalls with Space.',
-      lastGrade: 'ready',
+      message: 'Press Spacebar to the beat of the player running.',
+      lastGrade: 'listen',
+      nextCountdownSoundBeatIndex: 0,
       nextSoundBeatIndex: 0,
       resultAt: 0,
       awardXp: false,
@@ -13274,6 +13306,10 @@ export class Game {
     return Math.max(0, now - Number(run?.startedAt ?? now));
   }
 
+  getTreadmillRunCountdownElapsed(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
+    return Math.max(0, now - Number(run?.countdownStartedAt ?? now));
+  }
+
   getTreadmillRunBpm(run = this.activeWorkout?.treadmillRun, now = performance.now()) {
     return getTreadmillRunBpmAtElapsed(
       this.getTreadmillRunElapsed(run, now),
@@ -13287,7 +13323,8 @@ export class Game {
       return;
     }
 
-    if (run.phase !== 'playing') {
+    const runActive = run.phase === 'countdown' || run.phase === 'playing';
+    if (!runActive) {
       treadmillObject.userData.treadmillBeltSpeed = 0.9;
       return;
     }
@@ -13308,11 +13345,11 @@ export class Game {
     const motor = context.createOscillator();
     const belt = context.createOscillator();
     const now = context.currentTime;
-    master.gain.setValueAtTime(THREE.MathUtils.clamp(0.018 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.05), now);
+    master.gain.setValueAtTime(THREE.MathUtils.clamp(0.006 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.018), now);
     motor.type = 'sawtooth';
-    motor.frequency.setValueAtTime(72, now);
+    motor.frequency.setValueAtTime(54, now);
     belt.type = 'triangle';
-    belt.frequency.setValueAtTime(118, now);
+    belt.frequency.setValueAtTime(94, now);
     motor.connect(master);
     belt.connect(master);
     master.connect(context.destination);
@@ -13337,38 +13374,115 @@ export class Game {
     this.treadmillRunAudioNodes = [];
   }
 
-  playTreadmillFootstepSound(bpm = 150) {
+  playTreadmillFootstepSound(bpm = 150, { countdown = false, accent = 1 } = {}) {
+    const safeBpm = Math.max(60, Number(bpm) || 150);
+    const volume = Math.max(0, Number(this.gameSettings?.masterVolume ?? 1) || 0);
     const context = this.getVibeHeroAudioContext();
     if (!context) {
       this.playSoundEffect(this.playingCardSound, {
-        playbackRate: THREE.MathUtils.clamp(bpm / 150, 0.75, 1.45),
+        playbackRate: THREE.MathUtils.clamp(safeBpm / 150, 0.75, 1.45),
         preservePitch: false,
-        volumeScale: 0.28
+        volumeScale: countdown ? 0.72 : 0.92
       });
       return;
     }
 
     void context.resume?.().catch(() => {});
     const now = context.currentTime;
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(58 + ((bpm - 120) * 0.22), now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(THREE.MathUtils.clamp(0.045 * Number(this.gameSettings?.masterVolume ?? 1), 0.0001, 0.09), now + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.11);
-    oscillator.onended = () => {
+    const durationSeconds = 0.18;
+    const sampleCount = Math.max(1, Math.floor(context.sampleRate * durationSeconds));
+    const noiseBuffer = context.createBuffer(1, sampleCount, context.sampleRate);
+    const noiseData = noiseBuffer.getChannelData(0);
+    for (let index = 0; index < sampleCount; index += 1) {
+      const decay = 1 - (index / sampleCount);
+      noiseData[index] = ((Math.random() * 2) - 1) * decay * decay;
+    }
+
+    const master = context.createGain();
+    const panner = typeof context.createStereoPanner === 'function'
+      ? context.createStereoPanner()
+      : null;
+    const run = this.activeWorkout?.treadmillRun;
+    const panSide = Number(run?.footstepPanSide ?? -1) < 0 ? -1 : 1;
+    if (run) {
+      run.footstepPanSide = panSide * -1;
+    }
+    if (panner) {
+      panner.pan.setValueAtTime(panSide * 0.14, now);
+      master.connect(panner);
+      panner.connect(context.destination);
+    } else {
+      master.connect(context.destination);
+    }
+
+    const outputGain = THREE.MathUtils.clamp((countdown ? 0.19 : 0.27) * volume * Math.max(0.35, Number(accent) || 1), 0.0001, 0.38);
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(outputGain, now + 0.006);
+    master.gain.exponentialRampToValueAtTime(0.0001, now + durationSeconds);
+
+    const thump = context.createOscillator();
+    const thumpGain = context.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(92 + ((safeBpm - 132) * 0.08), now);
+    thump.frequency.exponentialRampToValueAtTime(38, now + 0.12);
+    thumpGain.gain.setValueAtTime(0.0001, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.92, now + 0.004);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    thump.connect(thumpGain);
+    thumpGain.connect(master);
+
+    const slap = context.createBufferSource();
+    const slapFilter = context.createBiquadFilter();
+    const slapGain = context.createGain();
+    slap.buffer = noiseBuffer;
+    slapFilter.type = 'lowpass';
+    slapFilter.frequency.setValueAtTime(690 + ((safeBpm - 120) * 1.4), now);
+    slapFilter.frequency.exponentialRampToValueAtTime(260, now + 0.15);
+    slapFilter.Q.setValueAtTime(0.82, now);
+    slapGain.gain.setValueAtTime(0.0001, now);
+    slapGain.gain.exponentialRampToValueAtTime(0.78, now + 0.006);
+    slapGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    slap.connect(slapFilter);
+    slapFilter.connect(slapGain);
+    slapGain.connect(master);
+
+    const grit = context.createBufferSource();
+    const gritFilter = context.createBiquadFilter();
+    const gritGain = context.createGain();
+    grit.buffer = noiseBuffer;
+    gritFilter.type = 'highpass';
+    gritFilter.frequency.setValueAtTime(1260, now);
+    gritFilter.Q.setValueAtTime(0.7, now);
+    gritGain.gain.setValueAtTime(0.0001, now);
+    gritGain.gain.exponentialRampToValueAtTime(0.24, now + 0.003);
+    gritGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+    grit.connect(gritFilter);
+    gritFilter.connect(gritGain);
+    gritGain.connect(master);
+
+    const cleanup = () => {
       try {
-        oscillator.disconnect();
-        gain.disconnect();
+        thump.disconnect();
+        thumpGain.disconnect();
+        slap.disconnect();
+        slapFilter.disconnect();
+        slapGain.disconnect();
+        grit.disconnect();
+        gritFilter.disconnect();
+        gritGain.disconnect();
+        master.disconnect();
+        panner?.disconnect();
       } catch {
         // Already disconnected.
       }
     };
+    slap.onended = cleanup;
+    thump.start(now);
+    thump.stop(now + durationSeconds);
+    slap.start(now);
+    slap.stop(now + durationSeconds);
+    grit.start(now);
+    grit.stop(now + 0.055);
   }
 
   playTreadmillTapSound(hitScore = 0) {
@@ -13407,6 +13521,19 @@ export class Game {
 
   getTreadmillBeatWindowMs(beat = null) {
     return Math.max(95, Math.min(TREADMILL_RUN_BEAT_WINDOW_MS, Number(beat?.intervalMs ?? TREADMILL_RUN_BEAT_WINDOW_MS) * 0.38));
+  }
+
+  startTreadmillScoredRun(run = this.activeWorkout?.treadmillRun) {
+    if (!run || run.phase !== 'countdown') {
+      return false;
+    }
+
+    run.phase = 'playing';
+    run.message = 'Match Spacebar taps to the running footstep beat.';
+    run.lastGrade = 'ready';
+    this.input.clearKeyPressQueue?.();
+    this.updateTreadmillRunHud();
+    return true;
   }
 
   recordTreadmillRunTap(now = performance.now()) {
@@ -13470,13 +13597,34 @@ export class Game {
       return;
     }
 
+    if (run.phase === 'countdown') {
+      const elapsedMs = this.getTreadmillRunCountdownElapsed(run, now);
+      const countdownBeats = Array.isArray(run.countdownBeats) ? run.countdownBeats : [];
+      while (
+        run.nextCountdownSoundBeatIndex < countdownBeats.length
+        && elapsedMs >= countdownBeats[run.nextCountdownSoundBeatIndex].timeMs
+      ) {
+        if (playSounds) {
+          this.playTreadmillFootstepSound(countdownBeats[run.nextCountdownSoundBeatIndex].bpm, {
+            countdown: true,
+            accent: 0.9
+          });
+        }
+        run.nextCountdownSoundBeatIndex += 1;
+      }
+      return;
+    }
+
     const elapsedMs = this.getTreadmillRunElapsed(run, now);
     while (
       run.nextSoundBeatIndex < run.beats.length
       && elapsedMs >= run.beats[run.nextSoundBeatIndex].timeMs
     ) {
       if (playSounds) {
-        this.playTreadmillFootstepSound(run.beats[run.nextSoundBeatIndex].bpm);
+        this.playTreadmillFootstepSound(run.beats[run.nextSoundBeatIndex].bpm, {
+          countdown: false,
+          accent: 1
+        });
       }
       run.nextSoundBeatIndex += 1;
     }
@@ -13529,11 +13677,25 @@ export class Game {
 
     const now = performance.now();
     const elapsedMs = this.getTreadmillRunElapsed(run, now);
-    const nextBeat = run.beats.find((beat) => beat.status === 'pending') ?? null;
+    const countdownElapsedMs = this.getTreadmillRunCountdownElapsed(run, now);
+    const countdownRemainingMs = Math.max(0, Number(run.countdownMs ?? TREADMILL_RUN_COUNTDOWN_MS) - countdownElapsedMs);
+    const countdownBeats = Array.isArray(run.countdownBeats) ? run.countdownBeats : [];
+    const nextRunBeat = run.beats.find((beat) => beat.status === 'pending') ?? null;
+    const nextCountdownBeat = run.phase === 'countdown'
+      ? countdownBeats[run.nextCountdownSoundBeatIndex] ?? null
+      : null;
+    const nextBeatProgress = nextCountdownBeat
+      ? THREE.MathUtils.clamp(1 - (Math.abs(nextCountdownBeat.timeMs - countdownElapsedMs) / this.getTreadmillBeatWindowMs(nextCountdownBeat)), 0, 1)
+      : nextRunBeat
+        ? THREE.MathUtils.clamp(1 - (Math.abs(nextRunBeat.timeMs - elapsedMs) / this.getTreadmillBeatWindowMs(nextRunBeat)), 0, 1)
+        : 0;
     this.hud.setTreadmillRunState({
       visible: true,
       game: {
         phase: run.phase,
+        countdownMs: run.countdownMs ?? TREADMILL_RUN_COUNTDOWN_MS,
+        countdownElapsedMs,
+        countdownRemainingMs,
         durationMs: run.durationMs,
         elapsedMs,
         remainingMs: Math.max(0, run.durationMs - elapsedMs),
@@ -13542,9 +13704,7 @@ export class Game {
         beatCount: run.beats.length,
         hitCount: run.beats.filter((beat) => beat.status === 'hit').length,
         missedCount: run.beats.filter((beat) => beat.status === 'missed').length,
-        nextBeatProgress: nextBeat
-          ? THREE.MathUtils.clamp(1 - (Math.abs(nextBeat.timeMs - elapsedMs) / this.getTreadmillBeatWindowMs(nextBeat)), 0, 1)
-          : 0,
+        nextBeatProgress,
         grade: run.lastGrade,
         awardXp: run.awardXp,
         rewardScore: TREADMILL_RUN_REWARD_SCORE,
@@ -13592,6 +13752,7 @@ export class Game {
 
     const now = performance.now();
     const bpm = this.getTreadmillRunBpm(run, now);
+    const runActive = run.phase === 'countdown' || run.phase === 'playing';
     this.syncTreadmillRunObjectSpeed(run, now);
     this.player.update(
       deltaSeconds,
@@ -13601,10 +13762,22 @@ export class Game {
       sceneBounds,
       groundHeight,
       {
-        stationaryRun: run.phase === 'playing',
+        stationaryRun: runActive,
         locomotionPlaybackRate: THREE.MathUtils.clamp(bpm / 156, 0.78, 1.45)
       }
     );
+
+    if (run.phase === 'countdown') {
+      this.updateTreadmillRunBeatState(run, now);
+      this.input.consume('Space');
+      if (now >= run.startedAt) {
+        this.startTreadmillScoredRun(run);
+        this.updateTreadmillRunBeatState(run, now);
+      } else {
+        this.updateTreadmillRunHud();
+      }
+      return true;
+    }
 
     if (run.phase === 'playing') {
       this.updateTreadmillRunBeatState(run, now);

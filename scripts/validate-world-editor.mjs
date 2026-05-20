@@ -1244,9 +1244,16 @@ function validateCustomPropCatalogItems() {
   assert(typeof treadmillVisual.userData.onWorldUpdate === 'function', 'Treadmill visual should animate its belt in world updates');
   assert(TREADMILL_WORKOUT_KIND === 'treadmill-workout', 'Treadmill workout kind should match prop interactable naming');
   assert(TREADMILL_DURATION_MS === 3000, 'Treadmill rhythm run should last exactly three seconds');
+  assert(gameSource.includes('TREADMILL_RUN_COUNTDOWN_MS = 3000'), 'Treadmill run should include a three second countdown before scoring starts');
+  assert(gameSource.includes("phase: 'countdown'"), 'Treadmill run should begin in a countdown phase before the scored run');
+  assert(gameSource.includes('createTreadmillRunCountdownBeatSchedule'), 'Treadmill countdown should use a BPM-matched footstep guide schedule');
+  assert(gameSource.includes('Press Spacebar to the beat of the player running'), 'Treadmill countdown should instruct players to match Spacebar to the running beat');
+  assert(gameSource.includes('createBuffer(1, sampleCount, context.sampleRate)'), 'Treadmill footstep sound should use a synthesized running footstep noise burst');
   assert(gameSource.includes('createTreadmillRunBeatSchedule'), 'Game should create a treadmill rhythm beat schedule');
   assert(gameSource.includes('recordTreadmillRunTap'), 'Game should score spacebar taps for the treadmill run');
   assert(gameSource.includes('stationaryRun'), 'Game should force a stationary running animation during the treadmill run');
+  assert(gameSource.includes("run.phase === 'countdown' || run.phase === 'playing'"), 'Treadmill character should run during both countdown and scoring');
+  assert(hudSource.includes('is-countdown'), 'HUD should render a distinct treadmill countdown state');
   assert(hudSource.includes('hud__treadmill-run-hit'), 'HUD should render the treadmill rhythm hit target');
   assert(defaultWorldLayout.props.some((prop) => prop.itemId === 'treadmill'), 'Default world should seed a treadmill prop');
 
