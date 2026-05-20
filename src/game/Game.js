@@ -262,6 +262,7 @@ const AIM_DIRECTION_MIN_DISTANCE = 3;
 const PROJECTILE_VISUAL_SPEED = 48;
 const PROJECTILE_MIN_LIFETIME_MS = 120;
 const SCHOOL_MICROGAME_COUNTDOWN_MS = 3000;
+const SCHOOL_GEOGRAPHY_REVEAL_MS = 2000;
 const VIBE_HERO_COUNTDOWN_MS = 2400;
 const VIBE_HERO_COUNTDOWN_GO_MS = 450;
 const VIBE_HERO_HIT_WINDOW_MS = 185;
@@ -11133,6 +11134,13 @@ export class Game {
       this.schoolMicrogame.data.lastGuess = '';
       this.schoolMicrogame.data.wrongCount = 0;
       this.schoolMicrogame.data.answerLocked = false;
+      this.schoolMicrogame.data.revealActive = false;
+      this.schoolMicrogame.data.revealSuccess = false;
+      this.schoolMicrogame.data.revealStartedAt = 0;
+      this.schoolMicrogame.data.revealEndsAt = 0;
+      this.schoolMicrogame.data.revealAnswer = '';
+      this.schoolMicrogame.data.revealResultTitle = '';
+      this.schoolMicrogame.data.revealResultDetail = '';
     } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
       this.schoolMicrogame.data.entered = [];
       this.schoolMicrogame.data.previewActive = true;
@@ -11289,6 +11297,7 @@ export class Game {
     const renderer = this.getOrCreateSchoolGeographyGlobeRenderer();
     renderer.mount(mount);
     renderer.setTargetCountry(game.round?.country);
+    renderer.setRevealActive(game.data?.revealActive === true);
     renderer.setActive(true);
   }
 
@@ -11373,7 +11382,10 @@ export class Game {
     }
   }
 
-  async finishSchoolMicrogame(success, resultTitle, resultDetail = '') {
+  async finishSchoolMicrogame(success, resultTitle, resultDetail = '', {
+    playSuccessSound = true,
+    playFailureSound = true
+  } = {}) {
     if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
       return;
     }
@@ -11401,7 +11413,9 @@ export class Game {
       if (isSchoolSession) {
         this.schoolMicrogameSessionRoundCount += 1;
       }
-      this.playSoundEffect(this.playingCardSound);
+      if (playFailureSound) {
+        this.playSoundEffect(this.playingCardSound);
+      }
       this.syncSchoolMicrogameHud();
       if (isSchoolSession) {
         this.continueSchoolMicrogameSession({
@@ -11415,8 +11429,10 @@ export class Game {
     }
 
     const completionSoundStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    this.playTaskCompleteSound();
-    this.hud.playTaskConfetti();
+    if (playSuccessSound) {
+      this.playTaskCompleteSound();
+      this.hud.playTaskConfetti();
+    }
     this.syncSchoolMicrogameHud();
 
     const canCompleteReward = completingOfficeJob
@@ -12098,9 +12114,90 @@ export class Game {
       .slice(0, 54);
   }
 
-  setSchoolGeographyAnswer(value = '') {
+  isSchoolGeographyRevealActive(game = this.schoolMicrogame) {
+    return Boolean(
+      game?.phase === 'playing'
+      && game.round?.gameId === SCHOOL_MICROGAME_IDS.geographyGlobe
+      && game.data?.revealActive === true
+    );
+  }
+
+  startSchoolGeographyAnswerReveal({
+    success = false,
+    resultTitle = '',
+    resultDetail = ''
+  } = {}) {
     const game = this.schoolMicrogame;
     if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe || game.phase !== 'playing') {
+      return;
+    }
+
+    if (game.data?.revealActive === true) {
+      return;
+    }
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const countryName = String(game.round?.country?.name ?? 'the target country');
+    const revealSuccess = Boolean(success);
+    const title = resultTitle || (revealSuccess ? 'Nice job!' : 'Missed Country');
+    const detail = resultDetail || `The pinpoint was ${countryName}.`;
+    game.data.answerLocked = true;
+    game.data.revealActive = true;
+    game.data.revealSuccess = revealSuccess;
+    game.data.revealStartedAt = now;
+    game.data.revealEndsAt = now + SCHOOL_GEOGRAPHY_REVEAL_MS;
+    game.data.revealAnswer = countryName;
+    game.data.revealResultTitle = title;
+    game.data.revealResultDetail = detail;
+    game.endsAt = game.data.revealEndsAt;
+    game.remainingMs = SCHOOL_GEOGRAPHY_REVEAL_MS;
+    game.message = revealSuccess ? 'Nice job!' : detail;
+
+    if (revealSuccess) {
+      this.playTaskCompleteSound();
+      this.hud.playTaskConfetti();
+    } else {
+      this.playSoundEffect(this.playingCardSound);
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
+  updateSchoolGeographyRevealState(game = this.schoolMicrogame, now = performance.now()) {
+    if (!this.isSchoolGeographyRevealActive(game)) {
+      return false;
+    }
+
+    const countryName = String(game.round?.country?.name ?? 'the target country');
+    const revealEndsAt = Number(game.data.revealEndsAt ?? 0) || now;
+    game.endsAt = Math.max(Number(game.endsAt ?? revealEndsAt) || revealEndsAt, revealEndsAt);
+    game.remainingMs = Math.max(0, revealEndsAt - now);
+    game.message = game.data.revealSuccess === true
+      ? 'Nice job!'
+      : (game.data.revealResultDetail || `The pinpoint was ${countryName}.`);
+
+    if (now < revealEndsAt) {
+      return true;
+    }
+
+    const revealSuccess = game.data.revealSuccess === true;
+    const title = game.data.revealResultTitle || (revealSuccess ? 'Nice job!' : 'Missed Country');
+    const detail = game.data.revealResultDetail || `The pinpoint was ${countryName}.`;
+    game.data.revealActive = false;
+    void this.finishSchoolMicrogame(revealSuccess, title, detail, {
+      playSuccessSound: false,
+      playFailureSound: false
+    });
+    return true;
+  }
+
+  setSchoolGeographyAnswer(value = '') {
+    const game = this.schoolMicrogame;
+    if (
+      !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
+      || game.phase !== 'playing'
+      || game.data?.revealActive === true
+    ) {
       return;
     }
 
@@ -12111,7 +12208,12 @@ export class Game {
 
   pushSchoolGeographyKey(key = '') {
     const game = this.schoolMicrogame;
-    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe || game.phase !== 'playing') {
+    if (
+      !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
+      || game.phase !== 'playing'
+      || game.data?.revealActive === true
+    ) {
       return;
     }
 
@@ -12139,7 +12241,12 @@ export class Game {
 
   submitSchoolGeographyAnswer() {
     const game = this.schoolMicrogame;
-    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe || game.phase !== 'playing') {
+    if (
+      !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe
+      || game.phase !== 'playing'
+      || game.data?.revealActive === true
+    ) {
       return;
     }
 
@@ -12154,8 +12261,11 @@ export class Game {
     game.data.lastGuess = guess;
     game.data.answerLocked = true;
     if (isSchoolGeographyCountryAnswer(country, guess)) {
-      this.playSoundEffect(this.levelUpSound);
-      void this.finishSchoolMicrogame(true, 'Correct Country', `The pinpoint was ${country?.name ?? 'the right country'}.`);
+      this.startSchoolGeographyAnswerReveal({
+        success: true,
+        resultTitle: 'Nice job!',
+        resultDetail: `The pinpoint was ${country?.name ?? 'the right country'}.`
+      });
       return;
     }
 
@@ -12269,10 +12379,17 @@ export class Game {
     this.schoolMicrogameLastTickAt = now;
     game.remainingMs = Math.max(0, Number(game.endsAt ?? now) - now);
 
-    this.handleSchoolMicrogameKeyboardInput();
+    if (!this.isSchoolGeographyRevealActive(game)) {
+      this.handleSchoolMicrogameKeyboardInput();
+    }
     this.updatePlayingSchoolMicrogame(dt, now);
 
     if (!this.schoolMicrogame || this.schoolMicrogame.phase !== 'playing') {
+      return;
+    }
+
+    if (this.isSchoolGeographyRevealActive(game)) {
+      this.syncSchoolMicrogameHud();
       return;
     }
 
@@ -12301,7 +12418,11 @@ export class Game {
       } else if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch) {
         void this.finishSchoolMicrogame(false, 'Still Hidden', 'The last pairs stayed face down when the bell rang.');
       } else if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
-        void this.finishSchoolMicrogame(false, 'Missed Country', `The pinpoint was ${game.round?.country?.name ?? 'the target country'}.`);
+        this.startSchoolGeographyAnswerReveal({
+          success: false,
+          resultTitle: 'Missed Country',
+          resultDetail: `The pinpoint was ${game.round?.country?.name ?? 'the target country'}.`
+        });
       } else {
         void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
       }
@@ -12764,6 +12885,10 @@ export class Game {
 
     if (this.isOfficeJobGame(game)) {
       this.updatePlayingOfficeJob(dt, now);
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe && this.updateSchoolGeographyRevealState(game, now)) {
       return;
     }
 

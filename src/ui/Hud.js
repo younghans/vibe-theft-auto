@@ -940,6 +940,12 @@ function getSchoolMicrogameStatusText(game = null) {
     return `Round ${roundNumber}`;
   }
   if (phase === 'playing') {
+    if (
+      game?.round?.gameId === SCHOOL_MICROGAME_IDS.geographyGlobe
+      && game?.data?.revealActive === true
+    ) {
+      return game.data.revealSuccess === true ? 'Nice job!' : 'Answer';
+    }
     return `${formatMicrogameSeconds(game?.remainingMs)} seconds`;
   }
   if (phase === 'success') {
@@ -2079,7 +2085,10 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(Number.isFinite(Number(country.lon)) ? Number(country.lon).toFixed(4) : ''),
       String(data.lastGuess ?? ''),
       String(Number(data.wrongCount ?? 0) || 0),
-      String(Boolean(data.answerLocked))
+      String(Boolean(data.answerLocked)),
+      String(Boolean(data.revealActive)),
+      String(Boolean(data.revealSuccess)),
+      String(data.revealAnswer ?? '')
     );
   } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
     base.push(Boolean(data.previewActive) ? 'preview' : 'entry', (data.entered ?? []).join(','));
@@ -2537,17 +2546,28 @@ function createGeographyGlobeMarkup(game = null) {
   const answer = String(data.answerText ?? '');
   const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
   const lastGuess = String(data.lastGuess ?? '').trim();
-  const submitDisabled = answer.trim().length <= 0 || data.answerLocked === true;
-  const lastGuessLabel = lastGuess ? `Last: ${lastGuess}` : 'Pin active';
+  const revealActive = data.revealActive === true;
+  const revealSuccess = data.revealSuccess === true;
+  const revealAnswer = revealActive ? String(data.revealAnswer || game?.round?.country?.name || '') : '';
+  const revealLabel = revealSuccess ? 'Nice job!' : 'Correct answer';
+  const submitDisabled = revealActive || answer.trim().length <= 0 || data.answerLocked === true;
+  const lastGuessLabel = revealActive
+    ? (revealSuccess ? 'Correct' : 'Answer revealed')
+    : (lastGuess ? `Last: ${lastGuess}` : 'Pin active');
+  const rootClass = `hud__school-geography${revealActive ? ' is-revealing' : ''}${revealSuccess ? ' is-reveal-success' : ''}`;
 
   return `
-    <div class="hud__school-geography">
+    <div class="${rootClass}">
       <div class="hud__school-geo-stage">
-        <div class="hud__school-geo-globe" data-school-geography-globe aria-label="Animated globe with country boundaries and a red pinpoint">
+        <div class="hud__school-geo-globe" data-school-geography-globe aria-label="Interactive globe with country boundaries and a red pinpoint">
           <div class="hud__school-geo-fallback" aria-hidden="true">
             <span class="hud__school-geo-fallback-globe"></span>
             <span class="hud__school-geo-fallback-pin"></span>
           </div>
+        </div>
+        <div class="hud__school-geo-reveal" data-school-geography-reveal aria-live="polite" aria-hidden="${revealActive ? 'false' : 'true'}">
+          <span data-school-geography-reveal-label>${escapeHtml(revealLabel)}</span>
+          <strong data-school-geography-correct-answer>${escapeHtml(revealAnswer)}</strong>
         </div>
       </div>
       <form class="hud__school-geo-answer-panel" data-school-geography-form>
@@ -2566,6 +2586,7 @@ function createGeographyGlobeMarkup(game = null) {
             spellcheck="false"
             value="${escapeHtml(answer)}"
             placeholder="Country name"
+            ${revealActive || data.answerLocked === true ? 'disabled' : ''}
           >
         </label>
         <div class="hud__school-geo-answer-readout">
@@ -2578,7 +2599,7 @@ function createGeographyGlobeMarkup(game = null) {
         </div>
         <div class="hud__school-dual-actions">
           <button class="hud__school-action is-primary hud__school-geo-submit" type="submit" data-school-geography-submit${submitDisabled ? ' disabled' : ''}>Submit</button>
-          ${createSchoolGameButton('geography:clear', 'Clear', 'hud__school-geo-clear', { disabled: !answer.trim() })}
+          ${createSchoolGameButton('geography:clear', 'Clear', 'hud__school-geo-clear', { disabled: revealActive || !answer.trim() })}
         </div>
       </form>
     </div>
@@ -3168,11 +3189,22 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
   const answerText = answer.trim();
   const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
   const lastGuess = String(data.lastGuess ?? '').trim();
-  const lastGuessLabel = lastGuess ? `Last: ${lastGuess}` : 'Pin active';
+  const revealActive = data.revealActive === true;
+  const revealSuccess = data.revealSuccess === true;
+  const revealAnswer = revealActive ? String(data.revealAnswer || game.round?.country?.name || '') : '';
+  const lastGuessLabel = revealActive
+    ? (revealSuccess ? 'Correct' : 'Answer revealed')
+    : (lastGuess ? `Last: ${lastGuess}` : 'Pin active');
+
+  task.classList.toggle('is-revealing', revealActive);
+  task.classList.toggle('is-reveal-success', revealSuccess);
 
   const input = task.querySelector('[data-school-geography-answer]');
   if (input && document.activeElement !== input && 'value' in input && input.value !== answer) {
     input.value = answer;
+  }
+  if (input && 'disabled' in input) {
+    input.disabled = revealActive || data.answerLocked === true;
   }
 
   const answerDisplay = task.querySelector('[data-school-geography-answer-display]');
@@ -3192,12 +3224,25 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
 
   const submitButton = task.querySelector('[data-school-geography-submit]');
   if (submitButton && 'disabled' in submitButton) {
-    submitButton.disabled = answerText.length <= 0 || data.answerLocked === true;
+    submitButton.disabled = revealActive || answerText.length <= 0 || data.answerLocked === true;
   }
 
   const clearButton = task.querySelector('[data-school-microgame-action="geography:clear"]');
   if (clearButton && 'disabled' in clearButton) {
-    clearButton.disabled = answerText.length <= 0;
+    clearButton.disabled = revealActive || answerText.length <= 0;
+  }
+
+  const reveal = task.querySelector('[data-school-geography-reveal]');
+  if (reveal) {
+    reveal.setAttribute('aria-hidden', revealActive ? 'false' : 'true');
+  }
+  const revealLabel = task.querySelector('[data-school-geography-reveal-label]');
+  if (revealLabel) {
+    revealLabel.textContent = revealActive ? (revealSuccess ? 'Nice job!' : 'Correct answer') : '';
+  }
+  const correctAnswer = task.querySelector('[data-school-geography-correct-answer]');
+  if (correctAnswer) {
+    correctAnswer.textContent = revealAnswer;
   }
 }
 
