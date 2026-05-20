@@ -26,3 +26,4 @@ server/data/agent-tasks.json
 server/data/agent-deployments.json
 server/data/player-snapshots.json
 server/data/stock-market.json
+.vercel
