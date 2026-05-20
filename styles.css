@@ -10364,8 +10364,30 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-breakroom-backdrop {
   --fill: 76%;
-  --target-bottom: 72%;
-  --target-height: 10%;
+  --target-bottom: 70%;
+  --target-height: 14%;
+  --office-coffee-mug-scale: 1.7;
+  --office-coffee-mug-width: 248px;
+  --office-coffee-mug-height: 201px;
+  --office-coffee-mug-bottom: 22px;
+  --office-coffee-mug-border: 12px;
+  --office-coffee-mug-radius: 41px;
+  --office-coffee-handle-right: -77px;
+  --office-coffee-handle-top: 54px;
+  --office-coffee-handle-width: 99px;
+  --office-coffee-handle-height: 92px;
+  --office-coffee-handle-border: 12px;
+  --office-coffee-handle-radius: 58px;
+  --office-coffee-shine-left: 31px;
+  --office-coffee-shine-top: 31px;
+  --office-coffee-shine-width: 31px;
+  --office-coffee-shine-height: 122px;
+  --office-coffee-steam-bottom: 156px;
+  --office-coffee-steam-width: 14px;
+  --office-coffee-steam-height: 58px;
+  --office-coffee-steam-one-left: 78px;
+  --office-coffee-steam-two-left: 116px;
+  --office-coffee-steam-three-left: 156px;
   background:
     linear-gradient(180deg, rgba(8, 14, 18, 0.03), rgba(8, 14, 18, 0.74)),
     linear-gradient(135deg, #42505b, #171b20);
@@ -10378,23 +10400,23 @@ body.is-admin-prompt-resizing * {
 .hud__office-breakroom-backdrop .hud__office-cup {
   position: absolute;
   left: 50%;
-  bottom: 36px;
-  width: 146px;
-  height: 118px;
+  bottom: var(--office-coffee-mug-bottom, 22px);
+  width: var(--office-coffee-mug-width, 248px);
+  height: var(--office-coffee-mug-height, 201px);
   overflow: visible;
-  border-width: 7px;
-  border-radius: 0 0 24px 24px;
+  border-width: var(--office-coffee-mug-border, 12px);
+  border-radius: 0 0 var(--office-coffee-mug-radius, 41px) var(--office-coffee-mug-radius, 41px);
   transform: translateX(-50%);
   z-index: 3;
 }
 
 .hud__office-breakroom-backdrop .hud__office-cup::after {
-  right: -45px;
-  top: 32px;
-  width: 58px;
-  height: 54px;
-  border-width: 7px;
-  border-radius: 0 34px 34px 0;
+  right: var(--office-coffee-handle-right, -77px);
+  top: var(--office-coffee-handle-top, 54px);
+  width: var(--office-coffee-handle-width, 99px);
+  height: var(--office-coffee-handle-height, 92px);
+  border-width: var(--office-coffee-handle-border, 12px);
+  border-radius: 0 var(--office-coffee-handle-radius, 58px) var(--office-coffee-handle-radius, 58px) 0;
 }
 
 .hud__office-breakroom-backdrop .hud__office-coffee-fill {
@@ -12473,6 +12495,32 @@ body.is-admin-prompt-resizing * {
   align-content: center;
 }
 
+.hud__office-coffee {
+  --office-coffee-mug-scale: 1.7;
+  --office-coffee-mug-width: 248px;
+  --office-coffee-mug-height: 201px;
+  --office-coffee-mug-bottom: 18px;
+  --office-coffee-mug-border: 12px;
+  --office-coffee-mug-radius: 41px;
+  --office-coffee-handle-right: -77px;
+  --office-coffee-handle-top: 54px;
+  --office-coffee-handle-width: 99px;
+  --office-coffee-handle-height: 92px;
+  --office-coffee-handle-border: 12px;
+  --office-coffee-handle-radius: 58px;
+  --office-coffee-shine-left: 31px;
+  --office-coffee-shine-top: 31px;
+  --office-coffee-shine-width: 31px;
+  --office-coffee-shine-height: 122px;
+  --office-coffee-steam-bottom: 156px;
+  --office-coffee-steam-width: 14px;
+  --office-coffee-steam-height: 58px;
+  --office-coffee-steam-one-left: 78px;
+  --office-coffee-steam-two-left: 116px;
+  --office-coffee-steam-three-left: 156px;
+  --office-coffee-stream-height: 156px;
+}
+
 .hud__office-aim-meter {
   position: relative;
   height: 116px;
@@ -13537,7 +13585,7 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__office-coffee-station {
-  height: 300px;
+  height: 380px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%),
     linear-gradient(135deg, #29333b, #171b20);
@@ -13660,7 +13708,7 @@ body.is-admin-prompt-resizing * {
 .hud__office-coffee-spout {
   position: absolute;
   left: 50%;
-  bottom: 48px;
+  bottom: 72px;
   width: 58px;
   height: 22px;
   border-radius: 0 0 14px 14px;
@@ -13683,7 +13731,7 @@ body.is-admin-prompt-resizing * {
 .hud__office-coffee-stream {
   position: absolute;
   left: 50%;
-  top: 150px;
+  top: 128px;
   width: 13px;
   height: 0;
   border-radius: 999px;
@@ -13695,31 +13743,31 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__office-coffee.is-brewing .hud__office-coffee-stream {
-  height: 94px;
+  height: var(--office-coffee-stream-height, 126px);
   opacity: 1;
-  animation: hud-office-coffee-stream 220ms linear infinite;
+  animation: hud-office-coffee-stream 420ms ease-in-out infinite;
 }
 
 .hud__office-coffee .hud__office-cup {
   position: absolute;
   left: 50%;
-  bottom: 18px;
-  width: 146px;
-  height: 118px;
+  bottom: var(--office-coffee-mug-bottom, 18px);
+  width: var(--office-coffee-mug-width, 248px);
+  height: var(--office-coffee-mug-height, 201px);
   overflow: visible;
-  border-width: 7px;
-  border-radius: 0 0 24px 24px;
+  border-width: var(--office-coffee-mug-border, 12px);
+  border-radius: 0 0 var(--office-coffee-mug-radius, 41px) var(--office-coffee-mug-radius, 41px);
   transform: translateX(-50%);
   z-index: 3;
 }
 
 .hud__office-coffee .hud__office-cup::after {
-  right: -45px;
-  top: 32px;
-  width: 58px;
-  height: 54px;
-  border-width: 7px;
-  border-radius: 0 34px 34px 0;
+  right: var(--office-coffee-handle-right, -77px);
+  top: var(--office-coffee-handle-top, 54px);
+  width: var(--office-coffee-handle-width, 99px);
+  height: var(--office-coffee-handle-height, 92px);
+  border-width: var(--office-coffee-handle-border, 12px);
+  border-radius: 0 var(--office-coffee-handle-radius, 58px) var(--office-coffee-handle-radius, 58px) 0;
 }
 
 .hud__office-coffee-fill {
@@ -13728,10 +13776,10 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-coffee-shine {
   position: absolute;
-  left: 18px;
-  top: 18px;
-  width: 18px;
-  height: 72px;
+  left: var(--office-coffee-shine-left, 31px);
+  top: var(--office-coffee-shine-top, 31px);
+  width: var(--office-coffee-shine-width, 31px);
+  height: var(--office-coffee-shine-height, 122px);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
   transform: rotate(10deg);
@@ -13739,9 +13787,9 @@ body.is-admin-prompt-resizing * {
 
 .hud__office-coffee-steam {
   position: absolute;
-  bottom: 92px;
-  width: 8px;
-  height: 34px;
+  bottom: var(--office-coffee-steam-bottom, 156px);
+  width: var(--office-coffee-steam-width, 14px);
+  height: var(--office-coffee-steam-height, 58px);
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.64), transparent);
   opacity: 0;
@@ -13749,21 +13797,21 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__office-coffee-steam.is-one {
-  left: 46px;
+  left: var(--office-coffee-steam-one-left, 78px);
 }
 
 .hud__office-coffee-steam.is-two {
-  left: 68px;
+  left: var(--office-coffee-steam-two-left, 116px);
   animation-delay: -420ms;
 }
 
 .hud__office-coffee-steam.is-three {
-  left: 92px;
+  left: var(--office-coffee-steam-three-left, 156px);
   animation-delay: -840ms;
 }
 
 .hud__office-coffee.is-brewing .hud__office-cup {
-  animation: hud-office-mug-bob 520ms ease-in-out infinite;
+  animation: hud-office-mug-bob 760ms ease-in-out infinite;
 }
 
 .hud__office-boardroom-scene {
@@ -14515,10 +14563,17 @@ body.is-admin-prompt-resizing * {
 
 @keyframes hud-office-coffee-stream {
   0% {
-    clip-path: inset(0 0 64% 0);
+    opacity: 0.94;
+    transform: translateX(-50%) scaleX(0.92);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.08);
+    transform: translateX(-50%) scaleX(1.04);
   }
   100% {
-    clip-path: inset(34% 0 0 0);
+    opacity: 0.96;
+    transform: translateX(-50%) scaleX(0.96);
   }
 }
 
@@ -14538,7 +14593,7 @@ body.is-admin-prompt-resizing * {
 
 @keyframes hud-office-mug-bob {
   50% {
-    transform: translateX(-50%) translateY(-3px);
+    transform: translateX(-50%) translateY(-1px) rotate(-0.12deg);
   }
 }
 
@@ -15880,7 +15935,33 @@ canvas {
   }
 
   .hud__office-coffee-station {
-    height: 240px;
+    height: 330px;
+  }
+
+  .hud__office-coffee,
+  .hud__office-breakroom-backdrop {
+    --office-coffee-mug-width: 214px;
+    --office-coffee-mug-height: 163px;
+    --office-coffee-mug-bottom: 14px;
+    --office-coffee-mug-border: 10px;
+    --office-coffee-mug-radius: 34px;
+    --office-coffee-handle-right: -66px;
+    --office-coffee-handle-top: 44px;
+    --office-coffee-handle-width: 84px;
+    --office-coffee-handle-height: 78px;
+    --office-coffee-handle-border: 10px;
+    --office-coffee-handle-radius: 49px;
+    --office-coffee-shine-left: 26px;
+    --office-coffee-shine-top: 26px;
+    --office-coffee-shine-width: 26px;
+    --office-coffee-shine-height: 99px;
+    --office-coffee-steam-bottom: 127px;
+    --office-coffee-steam-width: 12px;
+    --office-coffee-steam-height: 49px;
+    --office-coffee-steam-one-left: 67px;
+    --office-coffee-steam-two-left: 100px;
+    --office-coffee-steam-three-left: 135px;
+    --office-coffee-stream-height: 170px;
   }
 
   .hud__office-coffee-maker {
@@ -15889,9 +15970,18 @@ canvas {
     height: 146px;
   }
 
+  .hud__office-coffee-spout {
+    bottom: 58px;
+  }
+
   .hud__office-coffee .hud__office-cup {
-    width: 126px;
-    height: 96px;
+    bottom: var(--office-coffee-mug-bottom, 14px);
+    width: var(--office-coffee-mug-width, 214px);
+    height: var(--office-coffee-mug-height, 163px);
+  }
+
+  .hud__office-coffee-stream {
+    top: 102px;
   }
 
   .hud__office-breakroom-cabinets {

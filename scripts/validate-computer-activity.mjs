@@ -670,8 +670,15 @@ async function validateOfficeJobHudSurfaces() {
   const hudSource = await readFile(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const cssSource = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
   const gameSource = await readFile(new URL('../src/game/Game.js', import.meta.url), 'utf8');
+  const proceduralPropsSource = await readFile(new URL('../src/world/proceduralProps.js', import.meta.url), 'utf8');
   const officeCountdownMatch = gameSource.match(/const\s+OFFICE_JOB_COUNTDOWN_MS\s*=\s*(\d+)/);
   const officeCountdownMs = Number(officeCountdownMatch?.[1] ?? 0);
+  const managerTargetStartMatch = gameSource.match(/const\s+OFFICE_MANAGER_COFFEE_TARGET_START\s*=\s*(\d+)/);
+  const managerTargetEndMatch = gameSource.match(/const\s+OFFICE_MANAGER_COFFEE_TARGET_END\s*=\s*(\d+)/);
+  const managerFillSpeedMatch = gameSource.match(/const\s+OFFICE_MANAGER_COFFEE_FILL_SPEED\s*=\s*(\d+)/);
+  const managerTargetStart = Number(managerTargetStartMatch?.[1] ?? 0);
+  const managerTargetEnd = Number(managerTargetEndMatch?.[1] ?? 0);
+  const managerFillSpeed = Number(managerFillSpeedMatch?.[1] ?? 0);
   const mopHeroDurationMatch = gameSource.match(/const\s+OFFICE_JANITOR_MOP_HERO_DURATION_MS\s*=\s*(\d+)/);
   const mopHeroDurationMs = Number(mopHeroDurationMatch?.[1] ?? 0);
   const mopHeroShowcaseMatch = gameSource.match(/const\s+OFFICE_JANITOR_MOP_CLEAN_SHOWCASE_MS\s*=\s*(\d+)/);
@@ -679,6 +686,9 @@ async function validateOfficeJobHudSurfaces() {
 
   assert(gameSource.includes('startOfficeJobCountdown'), 'Office jobs should run a quick countdown before play starts.');
   assert(officeCountdownMs > 0 && officeCountdownMs < 2000, 'Office job countdown should finish in less than 2 seconds.');
+  assert(managerTargetStart === 70 && managerTargetEnd === 84, 'Office Manager coffee target should use the easier 70-84 mug band.');
+  assert(managerTargetEnd - managerTargetStart >= 14, 'Office Manager coffee target should be wider than the old 10-point timing band.');
+  assert(managerFillSpeed === 32, 'Office Manager coffee fill speed should stay familiar while the target band gets easier.');
   assert(mopHeroDurationMs === 8000, 'Mop Hero should give the player exactly 8 seconds.');
   assert(mopHeroShowcaseMs === 1000, 'Mop Hero should hold the clean floor reveal for exactly one second.');
   assert(gameSource.includes('officeJanitorGameCycleIndex'), 'Janitor should track the next game in a deterministic cycle.');
@@ -763,9 +773,16 @@ async function validateOfficeJobHudSurfaces() {
   assert(cssSource.includes('.hud__office-trash-scene .hud__office-janitor-closet'), 'Janitor gameplay should style the closet as the trash toss scene background.');
   assert(cssSource.includes('@keyframes hud-office-coffee-stream'), 'Office Manager coffee maker should have a brewing stream animation.');
   assert(cssSource.includes('@keyframes hud-office-mug-bob'), 'Office Manager coffee mug should animate while brewing.');
+  assert(cssSource.includes('--office-coffee-mug-scale: 1.7'), 'Office Manager coffee mug should advertise the requested 1.7x scale.');
+  assert(cssSource.includes('--office-coffee-mug-width: 248px'), 'Office Manager coffee mug should render 1.7x wider in the HUD.');
+  assert(cssSource.includes('--office-coffee-stream-height: 156px'), 'Office Manager coffee stream should consistently reach the larger mug.');
+  assert(!cssSource.includes('clip-path: inset(0 0 64% 0)'), 'Office Manager coffee stream should no longer use a clipped, sputtering pour.');
+  assert(cssSource.includes('translateY(-1px)') && cssSource.includes('animation: hud-office-mug-bob 760ms'), 'Office Manager coffee mug shake should be reduced while brewing.');
   assert(cssSource.includes('hud__office-breakroom-wall'), 'Office Manager coffee station should include a break room background.');
   assert(cssSource.includes('hud__office-breakroom-backdrop'), 'Office Manager start screen should include the break room backdrop.');
   assert(cssSource.includes('.hud__office-brew-button:hover') && cssSource.includes('.hud__office-brew-button:active') && cssSource.includes('transform: none'), 'Office Manager hold brew button should not shift on hover or active press.');
+  assert(proceduralPropsSource.includes('const coffeeMugScale = 1.7'), 'Office Manager world coffee station mug should match the larger HUD scale.');
+  assert(proceduralPropsSource.includes('coffeeStream.position.set(coffeeMugX'), 'Office Manager world coffee stream should align with the enlarged mug.');
   assert(cssSource.includes('@keyframes hud-office-stamp-slam'), 'CEO stamp should have a slam animation.');
   assert(cssSource.includes('top: -38px'), 'CEO stamp should rest higher above the memo so prompt text stays readable.');
   assert(cssSource.includes('translateY(72px)'), 'CEO stamp slam should still travel down from the raised rest position.');

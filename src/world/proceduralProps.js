@@ -2809,27 +2809,31 @@ export function createOfficeManagerShiftCoffeeStationVisual() {
     receiveShadow: false
   }));
 
-  const mug = createCylinder(0.24, 0.28, 0.46, 14, materials.gold);
+  const coffeeMugScale = 1.7;
+  const coffeeMugX = 1.55;
+  const coffeeMugBottomY = 1.095;
+  const coffeeMugHeight = 0.46 * coffeeMugScale;
+  const mug = createCylinder(0.24 * coffeeMugScale, 0.28 * coffeeMugScale, coffeeMugHeight, 14, materials.gold);
   mug.name = 'officeManagerCoffeeStationMug';
-  mug.position.set(1.65, 1.325, 0.4);
+  mug.position.set(coffeeMugX, coffeeMugBottomY + coffeeMugHeight * 0.5, 0.4);
   mug.castShadow = true;
   mug.receiveShadow = true;
   root.add(mug);
 
   const mugHandle = new THREE.Mesh(
-    new THREE.TorusGeometry(0.16, 0.025, 8, 14, Math.PI * 1.35),
+    new THREE.TorusGeometry(0.16 * coffeeMugScale, 0.025 * coffeeMugScale, 8, 14, Math.PI * 1.35),
     materials.gold
   );
   mugHandle.name = 'officeManagerCoffeeStationMugHandle';
-  mugHandle.position.set(1.88, 1.36, 0.4);
+  mugHandle.position.set(coffeeMugX + 0.23 * coffeeMugScale, coffeeMugBottomY + coffeeMugHeight * 0.58, 0.4);
   mugHandle.rotation.y = Math.PI * 0.5;
   mugHandle.castShadow = true;
   mugHandle.receiveShadow = true;
   root.add(mugHandle);
 
-  const coffeeStream = createCylinder(0.025, 0.018, 0.42, 8, materials.woodDark);
+  const coffeeStream = createCylinder(0.025, 0.018, 0.58, 8, materials.woodDark);
   coffeeStream.name = 'officeManagerCoffeeStationCoffeeStream';
-  coffeeStream.position.set(1.48, 1.63, 0.4);
+  coffeeStream.position.set(coffeeMugX, 1.84, 0.4);
   coffeeStream.castShadow = true;
   coffeeStream.receiveShadow = false;
   root.add(coffeeStream);

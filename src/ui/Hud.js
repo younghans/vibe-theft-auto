@@ -57,6 +57,8 @@ const BLACKJACK_CARD_ANIMATION_MS = Object.freeze({
   'deal-hidden': 185,
   reveal: 254
 });
+const OFFICE_MANAGER_COFFEE_TARGET_START = 70;
+const OFFICE_MANAGER_COFFEE_TARGET_END = 84;
 const INTERACTION_MENU_VIEWPORT_PADDING = 12;
 const INTERACTION_MENU_ANCHOR_GAP = 14;
 const INTERACTION_MENU_ANCHOR_SIDE_GAP = 18;
@@ -2842,8 +2844,8 @@ function createOfficeCoffeeFillMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
   const fill = Math.max(0, Math.min(100, Number(data.fill ?? 0) || 0));
-  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? 72) || 72));
-  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? 82) || 82));
+  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? OFFICE_MANAGER_COFFEE_TARGET_START) || OFFICE_MANAGER_COFFEE_TARGET_START));
+  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? OFFICE_MANAGER_COFFEE_TARGET_END) || OFFICE_MANAGER_COFFEE_TARGET_END));
   const brewing = data.brewing === true && data.released !== true;
   return `
     <div class="hud__office-task hud__office-coffee${brewing ? ' is-brewing' : ''}${data.released === true ? ' is-released' : ''}" style="--fill:${fill.toFixed(2)}%; --target-bottom:${targetStart.toFixed(2)}%; --target-height:${(targetEnd - targetStart).toFixed(2)}%">
@@ -3051,8 +3053,8 @@ function updateOfficeCoffeeFillLiveMarkup(root = null, game = null) {
   const round = game.round ?? {};
   const data = game.data ?? {};
   const fill = Math.max(0, Math.min(100, Number(data.fill ?? 0) || 0));
-  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? 72) || 72));
-  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? 82) || 82));
+  const targetStart = Math.max(0, Math.min(100, Number(round.targetStart ?? OFFICE_MANAGER_COFFEE_TARGET_START) || OFFICE_MANAGER_COFFEE_TARGET_START));
+  const targetEnd = Math.max(targetStart, Math.min(100, Number(round.targetEnd ?? OFFICE_MANAGER_COFFEE_TARGET_END) || OFFICE_MANAGER_COFFEE_TARGET_END));
   const brewing = data.brewing === true && data.released !== true;
 
   task.style.setProperty('--fill', `${fill.toFixed(2)}%`);

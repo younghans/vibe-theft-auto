@@ -335,6 +335,9 @@ const OFFICE_JANITOR_MOP_BRUSH_RADIUS = 0.16;
 const OFFICE_JANITOR_MOP_CLEAN_RATE = 3.4;
 const OFFICE_JANITOR_MOP_COMPLETE_PROGRESS = 0.985;
 const OFFICE_JANITOR_MOP_CLEAN_SHOWCASE_MS = 1000;
+const OFFICE_MANAGER_COFFEE_TARGET_START = 70;
+const OFFICE_MANAGER_COFFEE_TARGET_END = 84;
+const OFFICE_MANAGER_COFFEE_FILL_SPEED = 32;
 const OFFICE_JANITOR_MOP_DIRT_PATCHES = Object.freeze([
   Object.freeze({ x: 0.16, y: 0.74, size: 0.19, rotation: -14 }),
   Object.freeze({ x: 0.29, y: 0.61, size: 0.15, rotation: 18 }),
@@ -10589,10 +10592,10 @@ export class Game {
         this.configureJanitorTrashTossShot(round, data, 1);
       }
     } else if (job.id === OFFICE_JOB_IDS.officeManager) {
-      round.targetStart = 72;
-      round.targetEnd = 82;
+      round.targetStart = OFFICE_MANAGER_COFFEE_TARGET_START;
+      round.targetEnd = OFFICE_MANAGER_COFFEE_TARGET_END;
       data.fill = 0;
-      data.fillSpeed = 32;
+      data.fillSpeed = OFFICE_MANAGER_COFFEE_FILL_SPEED;
       data.released = false;
       data.brewing = false;
     } else if (job.id === OFFICE_JOB_IDS.ceo) {
@@ -11545,8 +11548,8 @@ export class Game {
       game.data.released = true;
       game.data.brewing = false;
       const fill = Number(game.data.fill ?? 0) || 0;
-      const targetStart = Number(game.round.targetStart ?? 72) || 72;
-      const targetEnd = Number(game.round.targetEnd ?? 82) || 82;
+      const targetStart = Number(game.round.targetStart ?? OFFICE_MANAGER_COFFEE_TARGET_START) || OFFICE_MANAGER_COFFEE_TARGET_START;
+      const targetEnd = Number(game.round.targetEnd ?? OFFICE_MANAGER_COFFEE_TARGET_END) || OFFICE_MANAGER_COFFEE_TARGET_END;
       const perfect = fill >= targetStart && fill <= targetEnd;
       void this.finishOfficeJob(
         perfect,
@@ -12363,7 +12366,7 @@ export class Game {
     if (jobId === OFFICE_JOB_IDS.officeManager) {
       if (this.schoolMicrogameHoldActive && !game.data.released) {
         game.data.brewing = true;
-        game.data.fill = Math.min(110, Number(game.data.fill ?? 0) + Number(game.data.fillSpeed ?? 32) * dt);
+        game.data.fill = Math.min(110, Number(game.data.fill ?? 0) + Number(game.data.fillSpeed ?? OFFICE_MANAGER_COFFEE_FILL_SPEED) * dt);
         if (game.data.fill >= 100) {
           game.data.released = true;
           game.data.brewing = false;
