@@ -1,6 +1,10 @@
+import { createSchoolGeographyCountry } from './geographyCountries.js';
+
 export const SCHOOL_MICROGAME_IDS = Object.freeze({
   popQuiz: 'pop-quiz-panic',
   popQuizPanic: 'pop-quiz-panic',
+  geography: 'geography-globe',
+  geographyGlobe: 'geography-globe',
   lockerCombo: 'locker-combo',
   copyNotes: 'copy-the-notes',
   copyTheNotes: 'copy-the-notes',
@@ -228,6 +232,25 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     skill: 'intelligence'
   }),
   Object.freeze({
+    id: SCHOOL_MICROGAME_IDS.geographyGlobe,
+    title: 'Geography Globe',
+    shortTitle: 'Geography',
+    subtitle: 'Identify the pinned country on the rotating globe.',
+    description: 'Study the pinpoint on the country-line globe and type the country name before the bell.',
+    eyebrow: 'Geography Class',
+    prompt: 'Name the pinned country',
+    overheadText: 'E for geography globe',
+    durationMs: 24000,
+    rewardXp: 15,
+    rewardMoney: 0,
+    accent: '#5bd7ff',
+    accent2: '#ffcf56',
+    secondaryAccent: '#ffcf56',
+    icon: 'GEO',
+    skill: 'intelligence',
+    instructions: 'Type the country name and press Enter or Submit.'
+  }),
+  Object.freeze({
     id: SCHOOL_MICROGAME_IDS.teacherIsLooking,
     title: 'Teacher Is Looking',
     shortTitle: 'Teacher',
@@ -285,6 +308,11 @@ for (const game of SCHOOL_MICROGAME_DEFINITIONS) {
 }
 
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('pop-quiz', SCHOOL_MICROGAME_IDS.popQuizPanic);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('geo', SCHOOL_MICROGAME_IDS.geographyGlobe);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('geography', SCHOOL_MICROGAME_IDS.geographyGlobe);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('geography-class', SCHOOL_MICROGAME_IDS.geographyGlobe);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('globe', SCHOOL_MICROGAME_IDS.geographyGlobe);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('country-globe', SCHOOL_MICROGAME_IDS.geographyGlobe);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('teacher-looking', SCHOOL_MICROGAME_IDS.teacherIsLooking);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-card-flip', SCHOOL_MICROGAME_IDS.memoryMatch);
@@ -444,6 +472,13 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
       question: question.question,
       answers: question.answers,
       correctIndex: question.correctIndex
+    };
+  }
+
+  if (definition.id === SCHOOL_MICROGAME_IDS.geographyGlobe) {
+    return {
+      ...base,
+      country: createSchoolGeographyCountry({ rng })
     };
   }
 

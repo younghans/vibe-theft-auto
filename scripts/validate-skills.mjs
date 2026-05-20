@@ -7,6 +7,11 @@ import {
   listSchoolMicrogames
 } from '../src/shared/schoolMicrogames.js';
 import {
+  SCHOOL_GEOGRAPHY_TARGET_COUNTRIES,
+  createSchoolGeographyCountry,
+  isSchoolGeographyCountryAnswer
+} from '../src/shared/geographyCountries.js';
+import {
   AGILITY_DISTANCE_PER_XP,
   AGILITY_MAX_XP_PER_UPDATE,
   BASKETBALL_SHOT_AGILITY_XP,
@@ -32,6 +37,8 @@ import { assets } from '../src/world/assetManifest.js';
 const root = process.cwd();
 const gameSource = fs.readFileSync(`${root}/src/game/Game.js`, 'utf8');
 const hudSource = fs.readFileSync(`${root}/src/ui/Hud.js`, 'utf8');
+const geographyGlobeSource = fs.readFileSync(`${root}/src/ui/SchoolGeographyGlobeRenderer.js`, 'utf8');
+const geographyGlobeDataSource = fs.readFileSync(`${root}/src/ui/geographyGlobeData.js`, 'utf8');
 const roomSource = fs.readFileSync(`${root}/server/src/WorldRoom.js`, 'utf8');
 const mockServiceSource = fs.readFileSync(`${root}/src/npc/NpcServiceMock.js`, 'utf8');
 const stylesSource = fs.readFileSync(`${root}/styles.css`, 'utf8');
@@ -167,10 +174,11 @@ assert.deepEqual(
   activeSchoolGames.map((game) => game.id),
   [
     SCHOOL_MICROGAME_IDS.popQuizPanic,
+    SCHOOL_MICROGAME_IDS.geographyGlobe,
     SCHOOL_MICROGAME_IDS.teacherIsLooking,
     SCHOOL_MICROGAME_IDS.memoryMatch
   ],
-  'school microgame roster is limited to quiz, teacher, and memory card flip'
+  'school microgame roster includes quiz, geography, teacher, and memory card flip'
 );
 for (const game of activeSchoolGames) {
   const reward = getSchoolMicrogameReward(game.id);
@@ -178,6 +186,32 @@ for (const game of activeSchoolGames) {
   assert.equal(reward.skill, SKILL_IDS.intelligence, `${game.id} should award Intelligence XP`);
   assert.ok(reward.xp > 0, `${game.id} should award positive Intelligence XP`);
 }
+
+assert.ok(SCHOOL_GEOGRAPHY_TARGET_COUNTRIES.length >= 190, 'geography target pool should cover nearly every country');
+const geographyCountry = createSchoolGeographyCountry({
+  rng: () => 0
+});
+assert.ok(geographyCountry?.name, 'geography rounds should select a named country');
+assert.ok(Number.isFinite(geographyCountry.lat), 'geography target should include a latitude');
+assert.ok(Number.isFinite(geographyCountry.lon), 'geography target should include a longitude');
+assert.ok(isSchoolGeographyCountryAnswer(geographyCountry, geographyCountry.name), 'geography accepts the displayed country name');
+assert.ok(
+  isSchoolGeographyCountryAnswer({ name: 'United States', aliases: ['USA'] }, 'usa'),
+  'geography accepts common country aliases'
+);
+assert.match(gameSource, /SchoolGeographyGlobeRenderer/, 'game owns the geography globe renderer');
+assert.match(gameSource, /submitSchoolGeographyAnswer/, 'game handles typed geography submissions');
+assert.match(gameSource, /isSchoolGeographyCountryAnswer/, 'game checks geography answers against normalized aliases');
+assert.match(hudSource, /data-school-geography-globe/, 'HUD exposes a geography globe mount point');
+assert.match(hudSource, /data-school-geography-answer/, 'HUD renders the geography answer input');
+assert.match(hudSource, /geography:submit/, 'HUD routes geography form submissions to the game');
+assert.match(stylesSource, /hud__school-geo-globe/, 'geography globe has dedicated HUD styling');
+assert.match(geographyGlobeSource, /SphereGeometry/, 'geography globe renderer uses a 3D sphere');
+assert.match(geographyGlobeSource, /CanvasTexture/, 'geography globe renderer maps country boundaries onto a texture');
+assert.match(geographyGlobeSource, /setTargetCountry/, 'geography globe renderer can move the pin to the target country');
+assert.match(geographyGlobeSource, /SCHOOL_GEOGRAPHY_COUNTRY_BOUNDARY_PATH/, 'geography globe renderer uses country boundary line data');
+assert.match(geographyGlobeSource, /SCHOOL_GEOGRAPHY_COUNTRY_COUNT/, 'geography globe renderer tracks the boundary country count');
+assert.match(geographyGlobeDataSource, /SCHOOL_GEOGRAPHY_COUNTRY_COUNT = 242/, 'geography boundary data should include the Natural Earth country feature count');
 
 const allPopQuizQuestions = createSchoolPopQuizQuestions({
   count: 999,

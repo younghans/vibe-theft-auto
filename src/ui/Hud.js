@@ -2071,6 +2071,16 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(data.correctImpactIndex ?? -1),
       roundResults.map((result) => result === true ? '1' : result === false ? '0' : '-').join('')
     );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe) {
+    const country = round.country ?? {};
+    base.push(
+      String(country.id ?? country.name ?? ''),
+      String(Number.isFinite(Number(country.lat)) ? Number(country.lat).toFixed(4) : ''),
+      String(Number.isFinite(Number(country.lon)) ? Number(country.lon).toFixed(4) : ''),
+      String(data.lastGuess ?? ''),
+      String(Number(data.wrongCount ?? 0) || 0),
+      String(Boolean(data.answerLocked))
+    );
   } else if (gameId === SCHOOL_MICROGAME_IDS.lockerCombo) {
     base.push(Boolean(data.previewActive) ? 'preview' : 'entry', (data.entered ?? []).join(','));
   } else if (gameId === SCHOOL_MICROGAME_IDS.copyNotes) {
@@ -2522,6 +2532,59 @@ function createTeacherLookingMarkup(game = null) {
   `;
 }
 
+function createGeographyGlobeMarkup(game = null) {
+  const data = game?.data ?? {};
+  const answer = String(data.answerText ?? '');
+  const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
+  const lastGuess = String(data.lastGuess ?? '').trim();
+  const submitDisabled = answer.trim().length <= 0 || data.answerLocked === true;
+  const lastGuessLabel = lastGuess ? `Last: ${lastGuess}` : 'Pin active';
+
+  return `
+    <div class="hud__school-geography">
+      <div class="hud__school-geo-stage">
+        <div class="hud__school-geo-globe" data-school-geography-globe aria-label="Animated globe with country boundaries and a red pinpoint">
+          <div class="hud__school-geo-fallback" aria-hidden="true">
+            <span class="hud__school-geo-fallback-globe"></span>
+            <span class="hud__school-geo-fallback-pin"></span>
+          </div>
+        </div>
+      </div>
+      <form class="hud__school-geo-answer-panel" data-school-geography-form>
+        <div class="hud__school-instructions">
+          <span>Geography class</span>
+          <strong>Type the country under the red pin.</strong>
+        </div>
+        <label class="hud__school-geo-answer-label">
+          <span>Answer</span>
+          <input
+            class="hud__school-geo-answer-input"
+            data-school-geography-answer
+            type="text"
+            maxlength="54"
+            autocomplete="off"
+            spellcheck="false"
+            value="${escapeHtml(answer)}"
+            placeholder="Country name"
+          >
+        </label>
+        <div class="hud__school-geo-answer-readout">
+          <span>Typed</span>
+          <strong data-school-geography-answer-display>${answer ? escapeHtml(answer) : '&nbsp;'}</strong>
+        </div>
+        <div class="hud__school-score-strip">
+          <span data-school-geography-wrong>${escapeHtml(String(wrongCount))} wrong</span>
+          <span data-school-geography-last>${escapeHtml(lastGuessLabel)}</span>
+        </div>
+        <div class="hud__school-dual-actions">
+          <button class="hud__school-action is-primary hud__school-geo-submit" type="submit" data-school-geography-submit${submitDisabled ? ' disabled' : ''}>Submit</button>
+          ${createSchoolGameButton('geography:clear', 'Clear', 'hud__school-geo-clear', { disabled: !answer.trim() })}
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 function createMemoryMatchMarkup(game = null) {
   const round = game?.round ?? {};
   const data = game?.data ?? {};
@@ -2944,6 +3007,8 @@ function createSchoolMicrogamePlayMarkup(game = null) {
   switch (gameId) {
     case SCHOOL_MICROGAME_IDS.popQuiz:
       return createPopQuizMarkup(game);
+    case SCHOOL_MICROGAME_IDS.geographyGlobe:
+      return createGeographyGlobeMarkup(game);
     case SCHOOL_MICROGAME_IDS.lockerCombo:
       return createLockerComboMarkup(game);
     case SCHOOL_MICROGAME_IDS.copyNotes:
@@ -3092,8 +3157,61 @@ function updateOfficeCoffeeFillLiveMarkup(root = null, game = null) {
   }
 }
 
+function updateSchoolGeographyLiveMarkup(root = null, game = null) {
+  const task = root?.querySelector?.('.hud__school-geography');
+  if (!task || game?.phase !== 'playing') {
+    return;
+  }
+
+  const data = game.data ?? {};
+  const answer = String(data.answerText ?? '');
+  const answerText = answer.trim();
+  const wrongCount = Math.max(0, Math.floor(Number(data.wrongCount ?? 0) || 0));
+  const lastGuess = String(data.lastGuess ?? '').trim();
+  const lastGuessLabel = lastGuess ? `Last: ${lastGuess}` : 'Pin active';
+
+  const input = task.querySelector('[data-school-geography-answer]');
+  if (input && document.activeElement !== input && 'value' in input && input.value !== answer) {
+    input.value = answer;
+  }
+
+  const answerDisplay = task.querySelector('[data-school-geography-answer-display]');
+  if (answerDisplay) {
+    answerDisplay.textContent = answer || '\u00a0';
+  }
+
+  const wrongLabel = task.querySelector('[data-school-geography-wrong]');
+  if (wrongLabel) {
+    wrongLabel.textContent = `${wrongCount} wrong`;
+  }
+
+  const lastLabel = task.querySelector('[data-school-geography-last]');
+  if (lastLabel) {
+    lastLabel.textContent = lastGuessLabel;
+  }
+
+  const submitButton = task.querySelector('[data-school-geography-submit]');
+  if (submitButton && 'disabled' in submitButton) {
+    submitButton.disabled = answerText.length <= 0 || data.answerLocked === true;
+  }
+
+  const clearButton = task.querySelector('[data-school-microgame-action="geography:clear"]');
+  if (clearButton && 'disabled' in clearButton) {
+    clearButton.disabled = answerText.length <= 0;
+  }
+}
+
 function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
-  if (!root || game?.context !== 'office-job' || game?.phase !== 'playing') {
+  if (!root || game?.phase !== 'playing') {
+    return;
+  }
+
+  if (String(game.round?.gameId ?? '') === SCHOOL_MICROGAME_IDS.geographyGlobe) {
+    updateSchoolGeographyLiveMarkup(root, game);
+    return;
+  }
+
+  if (game?.context !== 'office-job') {
     return;
   }
 
@@ -7627,6 +7745,29 @@ export class Hud {
       onAction?.(actionTarget.getAttribute('data-school-microgame-action') ?? '');
     });
 
+    this.schoolMicrogameRoot?.addEventListener('submit', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.matches('[data-school-geography-form]')) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      onAction?.('geography:submit');
+    });
+
+    this.schoolMicrogameRoot?.addEventListener('input', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const input = target?.closest('[data-school-geography-answer]');
+      if (!input || !('value' in input)) {
+        return;
+      }
+
+      onAction?.(`geography:answer:${encodeURIComponent(input.value)}`);
+    });
+
     let holdPointerActive = false;
 
     this.schoolMicrogameRoot?.addEventListener('pointerdown', (event) => {
@@ -8940,6 +9081,10 @@ export class Hud {
     return this.schoolMicrogameBody?.querySelector('[data-school-teacher-preview]') ?? null;
   }
 
+  getSchoolGeographyGlobeMount() {
+    return this.schoolMicrogameBody?.querySelector('[data-school-geography-globe]') ?? null;
+  }
+
   getOfficeMopHeroPointerPosition(pointer = {}, target = this.officeMopHeroPointerPosition) {
     const stage = this.schoolMicrogameBody?.querySelector('[data-office-mop-stage]');
     if (!(stage instanceof HTMLElement)) {
@@ -9438,6 +9583,24 @@ export class Hud {
     this.renderSchoolMicrogame();
   }
 
+  focusSchoolGeographyAnswerInput(game = this.schoolMicrogameState.game) {
+    if (game?.phase !== 'playing' || game?.round?.gameId !== SCHOOL_MICROGAME_IDS.geographyGlobe) {
+      return;
+    }
+
+    const input = this.schoolMicrogameBody?.querySelector('[data-school-geography-answer]');
+    if (!input || input.disabled || document.activeElement === input) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!this.schoolMicrogameVisible || input.disabled || document.activeElement === input) {
+        return;
+      }
+      input.focus?.({ preventScroll: true });
+    }, 0);
+  }
+
   renderSchoolMicrogame() {
     if (!this.schoolMicrogameRoot) {
       return;
@@ -9481,14 +9644,19 @@ export class Hud {
     }
 
     const bodyRenderKey = getSchoolMicrogameBodyRenderKey(game, error);
+    let bodyRendered = false;
     if (this.schoolMicrogameBody && this.schoolMicrogameBodyRenderKey !== bodyRenderKey) {
       this.schoolMicrogameBody.innerHTML = createSchoolMicrogameBodyMarkup({
         ...game,
         message: error || game?.message || ''
       });
       this.schoolMicrogameBodyRenderKey = bodyRenderKey;
+      bodyRendered = true;
     }
     updateSchoolMicrogameLiveMarkup(this.schoolMicrogameBody, game);
+    if (bodyRendered) {
+      this.focusSchoolGeographyAnswerInput(game);
+    }
 
     if (this.schoolMicrogameMessage) {
       this.schoolMicrogameMessage.textContent = error || game?.message || round.description || 'Play fast.';
