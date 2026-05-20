@@ -51,12 +51,22 @@ try {
   assert.match(agentWorkerSource, /continuing deploy from the pushed worktree commit/, 'Worker should not stop backend deploy after a transient post-push fetch failure.');
   assert.match(agentWorkerSource, /isNonFastForwardPushError/, 'Worker should detect non-fast-forward deploy push races.');
   assert.match(agentWorkerSource, /advanced while pushing main; refetching, rebasing, rechecking, and retrying deploy push/, 'Worker should recover when origin/main advances during a deploy push.');
+  assert.match(agentWorkerSource, /mode !== 'deploy_drain'/, 'Worker should support a deploy-lane-only drain control mode.');
+  assert.match(agentWorkerSource, /shouldPauseLaneForDeployDrain/, 'Deploy drain should pause only deploy lanes without stopping code lanes.');
+  assert.match(agentWorkerSource, /AGENT_START_DEPLOY_DRAINED/, 'Worker startup should support default deploy-lane drain control.');
+  assert.match(agentWorkerSource, /worker startup default deploy drain/, 'Worker should start deploy-drained by default.');
   assert.equal(
     packageJson.scripts['worker:prod:bg'],
     'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod-detached.ps1',
     'Package scripts should expose a detached production worker launcher.'
   );
+  assert.equal(
+    packageJson.scripts['worker:drain:deploy'],
+    'node scripts/agent-worker-control.mjs drain-deploy',
+    'Package scripts should expose a deploy-lane drain control.'
+  );
   assert.match(workerDocsSource, /npm run worker:prod:bg/, 'Worker docs should recommend the detached production launcher.');
+  assert.match(workerDocsSource, /npm run worker:drain:deploy/, 'Worker docs should document deploy-lane drains.');
   assert.match(workerDocsSource, /expire by heartbeat/, 'Worker docs should warn against timeout-prone foreground starts.');
 
   const created = await createAgentTask({

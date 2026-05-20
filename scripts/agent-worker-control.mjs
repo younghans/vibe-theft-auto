@@ -60,12 +60,14 @@ function usage(exitCode = 0) {
   const text = `Usage:
   node scripts/agent-worker-control.mjs status
   node scripts/agent-worker-control.mjs drain [--all] [reason...]
+  node scripts/agent-worker-control.mjs drain-deploy [--all] [reason...]
   node scripts/agent-worker-control.mjs resume
 
 Commands:
-  status   Show the active worker lock and control mode.
-  drain    Switch control to drain: finish current lanes, then exit before claiming more work.
-  resume   Switch control to accepting mode.
+  status        Show the active worker lock and control mode.
+  drain         Finish current lanes, then exit before claiming more work.
+  drain-deploy  Finish any active deploy, then pause only the deploy lane.
+  resume        Switch control to accepting mode.
 
 By default, drain targets the active worker lock owner. Use --all only when you
 intentionally want a global drain request that also affects future workers until
@@ -127,7 +129,10 @@ function printStatus() {
   }
 }
 
-function requestDrain() {
+function requestDrain({
+  mode = 'drain',
+  label = 'Drain'
+} = {}) {
   const all = args.includes('--all');
   let reason = '';
   for (const arg of args) {
@@ -144,7 +149,7 @@ function requestDrain() {
   }
 
   const control = {
-    mode: 'drain',
+    mode,
     requestedAt: new Date().toISOString(),
     requestedBy: `${os.hostname()}-${process.pid}`,
     targetWorkerId: all ? '' : String(owner.workerId || ''),
@@ -155,9 +160,9 @@ function requestDrain() {
   mkdirSync(WORK_ROOT, { recursive: true });
   writeFileSync(CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
   if (all) {
-    console.log(`Global drain requested at ${CONTROL_FILE}.`);
+    console.log(`Global ${label.toLowerCase()} requested at ${CONTROL_FILE}.`);
   } else {
-    console.log(`Drain requested for worker ${control.targetWorkerId || control.targetPid} at ${CONTROL_FILE}.`);
+    console.log(`${label} requested for worker ${control.targetWorkerId || control.targetPid} at ${CONTROL_FILE}.`);
   }
 }
 
@@ -185,6 +190,11 @@ if (command === 'status') {
   printStatus();
 } else if (command === 'drain') {
   requestDrain();
+} else if (command === 'drain-deploy' || command === 'deploy-drain' || command === 'pause-deploy') {
+  requestDrain({
+    mode: 'deploy_drain',
+    label: 'Deploy drain'
+  });
 } else if (command === 'resume' || command === 'clear' || command === 'clear-drain') {
   resumeWorker();
 } else {

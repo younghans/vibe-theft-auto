@@ -356,11 +356,13 @@ attached to the current terminal. A long-running production worker should not be
 started from a command surface that may time out or close, because killing that
 foreground process can leave an active in-game task to expire by heartbeat.
 
-By default, the worker starts two code lanes and one deploy lane. Code lanes only
-claim queued coding tasks, while the deploy lane only claims approved deploy,
-rollback, or stale-deploy reconciliation work. Deploy claims are also serialized
-server-side, so two worker PCs cannot run overlapping production deploys for the
-same scope. To change the number of parallel coding tasks on a worker PC, add:
+By default, the worker starts two code lanes and one deploy lane, and startup
+puts the deploy lane into deploy-drain mode. Code lanes only claim queued coding
+tasks, while the deploy lane only claims approved deploy, rollback, or
+stale-deploy reconciliation work after deploy claiming has been resumed. Deploy
+claims are also serialized server-side, so two worker PCs cannot run overlapping
+production deploys for the same scope. To change the number of parallel coding
+tasks on a worker PC, add:
 
 ```powershell
 "AGENT_CODE_CONCURRENCY=1" | Add-Content .env.worker.production
@@ -372,8 +374,30 @@ For a one-task smoke run with the same production defaults:
 npm run worker:prod:once
 ```
 
-To pause the worker safely for local edits, manual deploys, dependency updates,
-or a restart, request a drain:
+To pause only production deploys while allowing new coding prompts to continue,
+request a deploy drain:
+
+```powershell
+npm run worker:drain:deploy -- "manual deploy window"
+npm run worker:status
+```
+
+The deploy drain targets the active worker lock owner. The deploy lane finishes
+any deploy, rollback, or stale-deploy reconciliation task it has already
+claimed, then pauses without claiming more deploy work. Code lanes keep polling
+and can continue coding queued prompts. Since deploy-drain mode is also the
+default startup state, use resume when you are ready for this worker to claim
+production deploys:
+
+```powershell
+npm run worker:resume -- "manual deploy complete"
+```
+
+Set `AGENT_START_DEPLOY_DRAINED=false` only on a worker that should claim deploy
+approvals immediately after every restart.
+
+To pause the whole worker safely for local edits, dependency updates, or a
+restart, request a full drain:
 
 ```powershell
 npm run worker:drain -- "maintenance restart"
@@ -384,18 +408,20 @@ The control helper loads `.env.worker.production` and otherwise uses the same
 production work root as the start script (`D:\agent-work` on Windows), so the
 drain file is written where the active worker is watching.
 
-The drain request targets the active worker lock owner and clears itself after
-that worker exits. Each lane finishes any task it has already claimed, then
-exits before claiming more work. New in-game prompts and deploy approvals remain
-queued or ready in the task store; they are not lost. After the worker exits,
-make the maintenance change and restart in the background:
+The full drain request targets the active worker lock owner and clears itself
+after that worker exits. Each lane finishes any task it has already claimed,
+then exits before claiming more work. New in-game prompts and deploy approvals
+remain queued or ready in the task store; they are not lost. After the worker
+exits, make the maintenance change and restart in the background:
 
 ```powershell
 npm run worker:prod:bg
 ```
 
 Use `npm run worker:drain -- --all "maintenance"` only when the drain should
-also stop future worker starts until `npm run worker:resume` clears it.
+also stop future worker starts until `npm run worker:resume` clears it. Use
+`npm run worker:drain:deploy -- --all "manual deploy window"` only when deploy
+claiming should stay paused across future worker restarts until resume clears it.
 
 For a one-task smoke run:
 

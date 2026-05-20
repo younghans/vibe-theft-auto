@@ -79,9 +79,11 @@ const PENDING_TASK_UPDATES_ROOT = path.join(WORKER_LOG_ROOT, 'pending-task-updat
 const RUN_ONCE = process.argv.includes('--once');
 const RUN_SELF_TEST = process.argv.includes('--self-test');
 const START_DRAINED = getBooleanEnv('AGENT_START_DRAINED', false);
+const START_DEPLOY_DRAINED = getBooleanEnv('AGENT_START_DEPLOY_DRAINED', true);
 const DISABLE_INSTANCE_LOCK = getBooleanEnv('AGENT_DISABLE_INSTANCE_LOCK', false);
 const WORKER_INSTANCE_LOCK_TOKEN = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 const drainLoggedLaneLabels = new Set();
+const deployDrainLoggedLaneLabels = new Set();
 const WORLD_LAYOUT_SEED_PATH = 'server/data/world-layout.json';
 const DEFAULT_WORLD_LAYOUT_PATH = 'src/world/defaultWorldLayout.js';
 const WORLD_LAYOUT_CHANGE_PATHS = new Set([
@@ -418,6 +420,15 @@ function getActiveDrainControl() {
   return isWorkerControlTargetedHere(control) ? control : null;
 }
 
+function getActiveDeployDrainControl() {
+  const control = readWorkerControlFile();
+  if (!control || control.mode !== 'deploy_drain') {
+    return null;
+  }
+
+  return isWorkerControlTargetedHere(control) ? control : null;
+}
+
 async function shouldStopLaneForDrain(laneLabel) {
   const control = getActiveDrainControl();
   if (!control) {
@@ -437,6 +448,35 @@ async function shouldStopLaneForDrain(laneLabel) {
       }
     });
     console.log(`[agent-worker] ${laneLabel} drain requested; lane will stop without claiming new work.`);
+  }
+
+  return true;
+}
+
+async function shouldPauseLaneForDeployDrain(lane, laneLabel) {
+  if (lane !== 'deploy') {
+    return false;
+  }
+
+  const control = getActiveDeployDrainControl();
+  if (!control) {
+    deployDrainLoggedLaneLabels.delete(laneLabel);
+    return false;
+  }
+
+  if (!deployDrainLoggedLaneLabels.has(laneLabel)) {
+    deployDrainLoggedLaneLabels.add(laneLabel);
+    await writeWorkerDiagnostic('info', 'worker_deploy_drain_lane_paused', {
+      lane: laneLabel,
+      control: {
+        requestedAt: control.requestedAt || '',
+        requestedBy: control.requestedBy || '',
+        reason: control.reason || '',
+        targetWorkerId: control.targetWorkerId || '',
+        targetPid: control.targetPid || 0
+      }
+    });
+    console.log(`[agent-worker] ${laneLabel} deploy drain requested; lane will pause without claiming deploy work.`);
   }
 
   return true;
@@ -507,13 +547,33 @@ async function writeWorkerDrainControl({
   return control;
 }
 
+async function writeWorkerDeployDrainControl({
+  reason = 'worker startup deploy drain'
+} = {}) {
+  const control = {
+    mode: 'deploy_drain',
+    requestedAt: new Date().toISOString(),
+    requestedBy: `${WORKER_ID}:control`,
+    targetWorkerId: WORKER_ID,
+    targetPid: process.pid,
+    reason
+  };
+
+  await fsp.mkdir(WORK_ROOT, { recursive: true });
+  await fsp.writeFile(WORKER_CONTROL_FILE, `${JSON.stringify(control, null, 2)}\n`, 'utf8');
+  return control;
+}
+
 async function ensureStartupWorkerControl() {
   if (RUN_ONCE) {
     return null;
   }
 
   const existingControl = readWorkerControlFile();
-  if (existingControl?.mode === 'drain' && isWorkerControlTargetedHere(existingControl)) {
+  if (
+    (existingControl?.mode === 'drain' || existingControl?.mode === 'deploy_drain')
+    && isWorkerControlTargetedHere(existingControl)
+  ) {
     return existingControl;
   }
 
@@ -525,6 +585,17 @@ async function ensureStartupWorkerControl() {
       control
     });
     console.log('[agent-worker] Startup drain is enabled; worker will exit before claiming new work unless AGENT_START_DRAINED=false.');
+    return control;
+  }
+
+  if (START_DEPLOY_DRAINED) {
+    const control = await writeWorkerDeployDrainControl({
+      reason: 'worker startup default deploy drain'
+    });
+    await writeWorkerDiagnostic('info', 'worker_startup_deploy_drain_requested', {
+      control
+    });
+    console.log('[agent-worker] Startup deploy drain is enabled; code lanes will run while deploy claiming stays paused unless AGENT_START_DEPLOY_DRAINED=false or worker:resume is used.');
     return control;
   }
 
@@ -4016,6 +4087,10 @@ async function runLane({
       if (!RUN_ONCE && await shouldStopLaneForDrain(laneLabel)) {
         return 'drained';
       }
+      if (!RUN_ONCE && await shouldPauseLaneForDeployDrain(lane, laneLabel)) {
+        await sleep(idlePollMs);
+        continue;
+      }
 
       const didWork = await runIteration({
         lane: laneLabel,
@@ -4226,6 +4301,9 @@ function runSelfTest() {
   if (process.env.AGENT_START_DRAINED == null) {
     assertSelfTestEqual(START_DRAINED, false, 'startup drain is disabled by default');
   }
+  if (process.env.AGENT_START_DEPLOY_DRAINED == null) {
+    assertSelfTestEqual(START_DEPLOY_DRAINED, true, 'startup deploy drain is enabled by default');
+  }
   assertSelfTestEqual(isWorkerControlTargetedHere({}), true, 'untargeted worker control applies');
   assertSelfTestEqual(
     isWorkerControlTargetedHere({ targetWorkerId: WORKER_ID, targetPid: process.pid }),
@@ -4359,6 +4437,7 @@ console.log('[agent-worker] Starting Vibe Theft Auto Codex worker.', {
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   startDrained: START_DRAINED,
+  startDeployDrained: START_DEPLOY_DRAINED,
   workerLogRoot: WORKER_LOG_ROOT,
   workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
@@ -4387,6 +4466,7 @@ await writeWorkerDiagnostic('info', 'worker_started', {
   staleActiveTaskAfterMs: STALE_ACTIVE_TASK_AFTER_MS,
   taskHeartbeatMs: TASK_HEARTBEAT_MS,
   startDrained: START_DRAINED,
+  startDeployDrained: START_DEPLOY_DRAINED,
   workerLogRoot: WORKER_LOG_ROOT,
   workerControlFile: WORKER_CONTROL_FILE,
   workerLogRetentionDays: WORKER_LOG_RETENTION_DAYS,
