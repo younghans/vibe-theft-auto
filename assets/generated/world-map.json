@@ -1,13 +1,13 @@
 {
   "image": "/assets/generated/world-map.webp",
   "bounds": {
-    "minX": -156,
-    "maxX": 170,
-    "minZ": -265.5,
-    "maxZ": 223.5
+    "minX": -128,
+    "maxX": 156,
+    "minZ": -192,
+    "maxZ": 234
   },
   "width": 1024,
   "height": 1536,
-  "capturedAt": "2026-05-19T05:18:56.808Z",
-  "worldKey": "staging"
+  "capturedAt": "2026-05-20T00:52:25.177Z",
+  "worldKey": "primary"
 }
