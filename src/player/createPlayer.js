@@ -58,6 +58,7 @@ const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
 const PLAYER_CAR_MODEL_SCALE = 0.75;
 const PLAYER_CAR_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
+const PLAYER_SKATEBOARD_REST_Y = 0.1;
 const PLAYER_CAR_ASSET_URLS = Object.freeze({
   [CAR_DEALER_ITEM_IDS.fiatDuna]: assets.vehicles.fiatDuna,
   [CAR_DEALER_ITEM_IDS.toyotaAe86]: assets.vehicles.toyotaAe86
@@ -415,7 +416,7 @@ function createPlayerTaskArrow(material) {
 
 function createPlayerSkateboardVisual() {
   const group = createSkateboardModel({ namePrefix: 'Player', visible: false });
-  group.position.y = 0.1;
+  group.position.y = PLAYER_SKATEBOARD_REST_Y;
   return group;
 }
 
@@ -1955,7 +1956,7 @@ export async function createPlayer(library, {
     return setSkateboardState(skateboardStateScratch);
   }
 
-  function updateSkateboardVisual(deltaSeconds) {
+  function updateSkateboardVisual(deltaSeconds, moving = false) {
     const active = Boolean((skateboardOwned || activeVehicleItemId) && skateboardSkating && aliveState && !ragdoll.isActive());
     const activeCar = Boolean(active && activeVehicleItemId);
     if (activeCar) {
@@ -1982,8 +1983,15 @@ export async function createPlayer(library, {
       return;
     }
 
+    if (!moving) {
+      skateboard.position.y = PLAYER_SKATEBOARD_REST_Y;
+      skateboard.rotation.x = 0;
+      skateboard.rotation.z = 0;
+      return;
+    }
+
     skateboardMotion += deltaSeconds * 12;
-    skateboard.position.y = 0.1 + (Math.sin(skateboardMotion * 2.4) * 0.018);
+    skateboard.position.y = PLAYER_SKATEBOARD_REST_Y + (Math.sin(skateboardMotion * 2.4) * 0.018);
     skateboard.rotation.x = Math.sin(skateboardMotion * 1.6) * 0.035;
     skateboard.rotation.z = Math.sin(skateboardMotion * 1.9) * 0.045;
     for (const child of skateboard.children) {
@@ -2081,7 +2089,7 @@ export async function createPlayer(library, {
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
-    updateSkateboardVisual(deltaSeconds);
+    updateSkateboardVisual(deltaSeconds, moving);
     ragdoll.update(deltaSeconds);
     ragdoll.applyToSkeleton();
     const activeAimPose = activeAimItemId ? getMergedAimPose(activeAimItemId) : null;

@@ -4437,6 +4437,13 @@ function validateBartenderFunction() {
     'Game client should toggle Shift transport mode for skateboards and selected cars even while stationary, with the correct speed multiplier when moving'
   );
   assert(
+    /function updateSkateboardVisual\(deltaSeconds,\s*moving = false\)/.test(playerSource)
+      && /updateSkateboardVisual\(deltaSeconds,\s*moving\)/.test(playerSource)
+      && /if \(!moving\)\s*\{\s*skateboard\.position\.y\s*=\s*PLAYER_SKATEBOARD_REST_Y;\s*skateboard\.rotation\.x\s*=\s*0;\s*skateboard\.rotation\.z\s*=\s*0;\s*return;\s*\}/s.test(playerSource)
+      && /skateboard\.position\.y\s*=\s*PLAYER_SKATEBOARD_REST_Y \+ \(Math\.sin\(skateboardMotion \* 2\.4\) \* 0\.018\)/.test(playerSource),
+    'Player skateboard visual should hold a still pose while transport is active but the player is not moving, and only wobble while moving'
+  );
+  assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
       && /vehicleItemId:\s*'string'/.test(serverSource)
       && /ownedVehicleItemIds:\s*'string'/.test(serverSource)
