@@ -248,6 +248,30 @@ function getTrafficRouteCarColor(itemId = '', index = 0) {
   return TRAFFIC_ROUTE_COLORS[((colorIndex % TRAFFIC_ROUTE_COLORS.length) + TRAFFIC_ROUTE_COLORS.length) % TRAFFIC_ROUTE_COLORS.length];
 }
 
+function getTrafficRouteMapDimensions(image = null) {
+  const imageWidth = Number(image?.width);
+  const imageHeight = Number(image?.height);
+  if (Number.isFinite(imageWidth) && imageWidth > 0 && Number.isFinite(imageHeight) && imageHeight > 0) {
+    const ratio = imageWidth / imageHeight;
+    if (ratio >= 1) {
+      return {
+        width: TRAFFIC_ROUTE_MAP_WIDTH,
+        height: Math.max(1, Math.round(TRAFFIC_ROUTE_MAP_WIDTH / ratio))
+      };
+    }
+
+    return {
+      width: Math.max(1, Math.round(TRAFFIC_ROUTE_MAP_HEIGHT * ratio)),
+      height: TRAFFIC_ROUTE_MAP_HEIGHT
+    };
+  }
+
+  return {
+    width: TRAFFIC_ROUTE_MAP_WIDTH,
+    height: TRAFFIC_ROUTE_MAP_HEIGHT
+  };
+}
+
 function createTrafficRoutePointFromNode(node) {
   return node
     ? {
@@ -370,6 +394,7 @@ export class WorldBuilder {
     this.builderPreviewRenderer = null;
     this.builderPreviewRendererPromise = null;
     this.trafficRouteMapRequest = null;
+    this.trafficRouteMapLastRefreshAt = 0;
 
     this.previewRoot = new THREE.Group();
     this.previewRoot.visible = false;
@@ -673,16 +698,20 @@ export class WorldBuilder {
   getTrafficRoutesViewModel() {
     const graph = this.getTrafficRouteGraph();
     const image = this.getWorldMapImage?.() ?? null;
+    const dimensions = getTrafficRouteMapDimensions(image);
     const routes = this.worldState.getPassiveTrafficRoutes();
     const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
-    const activeItemId = PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.activeTrafficRouteCarItemId)
+    const draftItemId = PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.trafficRouteDraft?.itemId)
+      ? this.state.trafficRouteDraft.itemId
+      : '';
+    const activeItemId = draftItemId || (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.activeTrafficRouteCarItemId)
       ? this.state.activeTrafficRouteCarItemId
-      : (PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] ?? '');
+      : (PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] ?? ''));
     this.state.activeTrafficRouteCarItemId = activeItemId;
 
     return {
-      width: TRAFFIC_ROUTE_MAP_WIDTH,
-      height: TRAFFIC_ROUTE_MAP_HEIGHT,
+      width: dimensions.width,
+      height: dimensions.height,
       bounds: this.getTrafficRouteMapBounds(graph, image),
       image,
       roads: graph.activeNodes.map((node) => ({
@@ -713,7 +742,8 @@ export class WorldBuilder {
       draft: this.state.trafficRouteDraft
         ? {
             ...this.state.trafficRouteDraft,
-            color: getTrafficRouteCarColor(this.state.trafficRouteDraft.itemId)
+            color: getTrafficRouteCarColor(this.state.trafficRouteDraft.itemId),
+            drawing: this.state.trafficRouteDrawing
           }
         : null,
       activeItemId,
@@ -821,13 +851,23 @@ export class WorldBuilder {
     }
   }
 
-  requestTrafficRouteMapImage() {
-    if (this.getWorldMapImage?.() || !this.requestWorldMapImage || this.trafficRouteMapRequest) {
+  requestTrafficRouteMapImage({ force = false } = {}) {
+    const shouldForce = force === true;
+    if (!this.requestWorldMapImage || this.trafficRouteMapRequest) {
+      return;
+    }
+    if (!shouldForce && this.getWorldMapImage?.()) {
       return;
     }
 
+    const now = Date.now();
+    if (shouldForce && now - this.trafficRouteMapLastRefreshAt < 4000) {
+      return;
+    }
+    this.trafficRouteMapLastRefreshAt = now;
+
     this.trafficRouteMapRequest = Promise.resolve()
-      .then(() => this.requestWorldMapImage())
+      .then(() => this.requestWorldMapImage({ force: shouldForce }))
       .finally(() => {
         this.trafficRouteMapRequest = null;
         if (this.state.enabled && isTrafficRoutesCategoryId(this.state.activeCategoryId)) {
@@ -1315,6 +1355,9 @@ export class WorldBuilder {
     }
 
     this.updateBuilderHud({ syncPreviews: nextEnabled });
+    if (nextEnabled && isTrafficRoutesCategoryId(this.state.activeCategoryId)) {
+      this.requestTrafficRouteMapImage({ force: true });
+    }
 
     if (nextEnabled) {
       this.resolveHoverState();
@@ -1338,12 +1381,13 @@ export class WorldBuilder {
       return;
     }
 
+    const previousCategoryId = this.state.activeCategoryId;
     this.state.activeCategoryId = categoryId;
     this.state.activeItemIndex = this.getVisibleCategoryEntries(categoryId)[0]?.index ?? 0;
     this.syncActivePropScaleDefault();
     this.updateBuilderHud({ syncPreviews: true });
     if (isTrafficRoutesCategoryId(categoryId)) {
-      this.requestTrafficRouteMapImage();
+      this.requestTrafficRouteMapImage({ force: previousCategoryId !== categoryId });
     }
     void this.syncPreviewToState(true);
   }
@@ -1594,6 +1638,8 @@ export class WorldBuilder {
       ?? PASSIVE_TRAFFIC_CAR_ITEM_IDS[0];
     if (!this.state.trafficRouteDraft) {
       this.beginTrafficRouteFromCar(itemId, point);
+    } else if (PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(this.state.trafficRouteDraft.itemId)) {
+      this.state.activeTrafficRouteCarItemId = this.state.trafficRouteDraft.itemId;
     }
     this.state.trafficRouteDrawing = Boolean(this.state.trafficRouteDraft && !this.state.trafficRouteDraft.closed);
     this.continueTrafficRouteDrawing(point);

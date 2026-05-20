@@ -2607,10 +2607,11 @@ export class Game {
 
     const metadataEndpoint = this.getWorldMapImageMetadataEndpoint();
     if (
-      (!this.worldMapImage && !this.worldMapImageRequest)
+      force
+      || (!this.worldMapImage && !this.worldMapImageRequest)
       || (metadataEndpoint && this.worldMapImageMetadataUrl !== metadataEndpoint)
     ) {
-      void this.loadWorldMapImageMetadata();
+      void this.loadWorldMapImageMetadata({ force });
     }
 
     const now = performance.now();
@@ -14372,7 +14373,7 @@ export class Game {
         hud: this.hud,
         worldTransport: this.npcService,
         getWorldMapImage: () => this.worldMapImage,
-        requestWorldMapImage: () => this.loadWorldMapImageMetadata(),
+        requestWorldMapImage: (options) => this.loadWorldMapImageMetadata(options),
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;

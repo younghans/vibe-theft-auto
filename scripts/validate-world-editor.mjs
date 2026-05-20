@@ -819,6 +819,8 @@ function validatePassiveTraffic() {
   const hudSource = readRepoText('src/ui/Hud.js');
   const worldBuilderSource = readRepoText('src/world/WorldBuilder.js');
   const worldEditAdapterSource = readRepoText('src/world/createWorldEditAdapter.js');
+  const gameSource = readRepoText('src/game/Game.js');
+  const styleSource = readRepoText('styles.css');
   assert(
     worldBuilderSource.includes("id: 'traffic-routes'")
       && worldBuilderSource.includes('beginTrafficRouteFromCar')
@@ -826,6 +828,27 @@ function validatePassiveTraffic() {
       && hudSource.includes('data-builder-traffic-map')
       && hudSource.includes('application/x-vta-traffic-car'),
     'World builder should expose a Traffic Routes tab with map drawing and draggable passive car icons'
+  );
+  assert(
+    worldBuilderSource.includes('getTrafficRouteMapDimensions')
+      && worldBuilderSource.includes('requestTrafficRouteMapImage({ force: true })')
+      && worldBuilderSource.includes('requestWorldMapImage({ force: shouldForce })')
+      && gameSource.includes('loadWorldMapImageMetadata({ force })')
+      && gameSource.includes('requestWorldMapImage: (options) => this.loadWorldMapImageMetadata(options)'),
+    'Phone map and traffic route editor should refresh the latest captured map image when opened'
+  );
+  assert(
+    hudSource.includes('--traffic-route-map-aspect')
+      && hudSource.includes('hud__traffic-route-end')
+      && styleSource.includes('aspect-ratio: var(--traffic-route-map-aspect')
+      && styleSource.includes('.hud__traffic-route-path .hud__traffic-route-end'),
+    'Traffic route editor should render the captured phone map without squashing it and mark unfinished route endpoints'
+  );
+  assert(
+    /draftItemId[\s\S]*activeItemId = draftItemId/.test(worldBuilderSource)
+      && /beginTrafficRouteDrawing\(point = null\)[\s\S]*activeTrafficRouteCarItemId = this\.state\.trafficRouteDraft\.itemId[\s\S]*continueTrafficRouteDrawing\(point\)/.test(worldBuilderSource)
+      && /finishTrafficRouteDrawing\(point = null\)[\s\S]*this\.state\.trafficRouteDrawing = false[\s\S]*this\.updateBuilderHud\(\)/.test(worldBuilderSource),
+    'Traffic route editor should keep unfinished drafts selected and resumable after pointer-up'
   );
   assert(
     worldEditAdapterSource.includes('updatePassiveTrafficRoutes')

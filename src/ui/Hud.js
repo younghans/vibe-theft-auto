@@ -8303,10 +8303,14 @@ export class Hud {
       `;
     }).join('');
     const draftPoints = draft ? makePointList(draft.points) : '';
+    const draftFirst = draft?.points?.[0] ?? null;
+    const draftLast = draft?.points?.[draft.points.length - 1] ?? null;
     const draftMarkup = draftPoints
       ? `
-        <g class="hud__traffic-route-path hud__traffic-route-path--draft">
+        <g class="hud__traffic-route-path hud__traffic-route-path--draft${draft.drawing ? ' is-drawing' : ''}">
           <polyline points="${draftPoints}" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></polyline>
+          ${draftFirst ? `<circle class="hud__traffic-route-start" cx="${toX(draftFirst.x).toFixed(1)}" cy="${toY(draftFirst.z).toFixed(1)}" r="5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
+          ${draftLast && !draft.closed ? `<circle class="hud__traffic-route-end" cx="${toX(draftLast.x).toFixed(1)}" cy="${toY(draftLast.z).toFixed(1)}" r="6.5" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></circle>` : ''}
         </g>
       `
       : '';
@@ -8357,6 +8361,7 @@ export class Hud {
           data-max-x="${canProject ? maxX : 1}"
           data-min-z="${canProject ? minZ : -1}"
           data-max-z="${canProject ? maxZ : 1}"
+          style="--traffic-route-map-aspect:${width} / ${height};--traffic-route-map-width:${width}px;--traffic-route-map-height:${height}px"
         >
           <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Traffic route map">
             <rect class="hud__traffic-route-map-bg" width="${width}" height="${height}" rx="8"></rect>

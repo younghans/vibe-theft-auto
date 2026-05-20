@@ -6496,9 +6496,9 @@ body.is-admin-prompt-resizing * {
 
 .hud__traffic-route-map {
   position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  max-height: min(54vh, 560px);
+  width: min(100%, var(--traffic-route-map-width, 560px));
+  aspect-ratio: var(--traffic-route-map-aspect, 1 / 1);
+  margin: 0 auto;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -6540,6 +6540,16 @@ body.is-admin-prompt-resizing * {
   fill: var(--traffic-route-color, #f2c871);
   stroke: rgba(4, 8, 13, 0.82);
   stroke-width: 2;
+}
+
+.hud__traffic-route-path .hud__traffic-route-end {
+  fill: rgba(6, 12, 19, 0.82);
+  stroke: var(--traffic-route-color, #f2c871);
+  stroke-width: 3;
+}
+
+.hud__traffic-route-path.is-drawing .hud__traffic-route-end {
+  filter: drop-shadow(0 0 5px var(--traffic-route-color, #f2c871));
 }
 
 .hud__traffic-route-path:not(.is-active) polyline {
