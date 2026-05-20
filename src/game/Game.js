@@ -3724,6 +3724,11 @@ export class Game {
     const hoveredPlacement = this.worldBuilder?.getHoveredPlacement?.();
     const activeStockMarketSnapshot = this.getActiveStockMarketSnapshot(localPlayerState);
     const selectedStock = activeStockMarketSnapshot?.stocks?.find?.((stock) => stock.symbol === this.stockMarketSelectedSymbol) ?? null;
+    const includeVibeHeroStoredCharts = Boolean(
+      this.vibeHero
+      || context.contextType === 'vibe_hero'
+      || context.contextType === 'vibe_hero_chart_editor'
+    );
     const snapshot = {
       url: window.location.href,
       buildVersion: this.currentBuildCommitSha,
@@ -3771,6 +3776,9 @@ export class Game {
             resultDetail: this.vibeHero.resultDetail ?? ''
           }
         : null,
+      vibeHeroStoredEditorCharts: includeVibeHeroStoredCharts
+        ? this.getVibeHeroStoredEditorChartsSnapshot()
+        : [],
       schoolMicrogame: this.schoolMicrogame
         ? {
             gameId: this.schoolMicrogame.round?.gameId ?? '',
@@ -9993,7 +10001,7 @@ export class Game {
   }
 
   loadVibeHeroStoredEditorChart(song = null) {
-    if (!song?.id || !this.isLocalAdmin()) {
+    if (!song?.id) {
       return null;
     }
 
@@ -10030,6 +10038,23 @@ export class Game {
       });
     }
     return serialized;
+  }
+
+  getVibeHeroStoredEditorChartsSnapshot() {
+    const storedCharts = [];
+    for (const song of listVibeHeroSongs()) {
+      const chart = this.loadVibeHeroStoredEditorChart(song);
+      if (!chart?.length) {
+        continue;
+      }
+      storedCharts.push({
+        songId: song.id,
+        title: song.title,
+        noteCount: chart.length,
+        chart: this.serializeVibeHeroEditorChart(chart)
+      });
+    }
+    return storedCharts;
   }
 
   saveVibeHeroEditorChart(game = this.vibeHero, { force = false } = {}) {
@@ -10069,7 +10094,7 @@ export class Game {
     const baseSong = getVibeHeroSong(normalizedSongId) ?? getVibeHeroSong(VIBE_HERO_DEFAULT_SONG_ID);
     const editing = Boolean(editorMode && this.isLocalAdmin());
     const sourceChart = this.normalizeVibeHeroEditorChart(baseSong?.chart ?? []);
-    const storedChart = editing ? this.loadVibeHeroStoredEditorChart(baseSong) : null;
+    const storedChart = this.loadVibeHeroStoredEditorChart(baseSong);
     const activeChart = storedChart ?? sourceChart;
     const song = baseSong
       ? {
@@ -10080,7 +10105,7 @@ export class Game {
       : null;
     const songs = [];
     for (const entry of listVibeHeroSongs()) {
-      const storedEntryChart = editing ? this.loadVibeHeroStoredEditorChart(entry) : null;
+      const storedEntryChart = this.loadVibeHeroStoredEditorChart(entry);
       songs.push({
         id: entry.id,
         title: entry.title,

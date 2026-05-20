@@ -2313,7 +2313,9 @@ function validateVibeHero() {
   assert(gameSource.includes('recordedKeys') && gameSource.includes('mergedChart'), 'Vibe Hero chart editor should avoid preserving exact duplicates when merging recorded notes');
   assert(gameSource.includes('VIBE_HERO_EDITOR_STORAGE_PREFIX'), 'Vibe Hero chart editor should persist edited charts locally for admins');
   assert(gameSource.includes('entry.chartEdited === true'), 'Vibe Hero public song list should preserve shipped edited-chart metadata without requiring admin local storage');
-  assert(gameSource.includes('const storedChart = editing ? this.loadVibeHeroStoredEditorChart(baseSong) : null'), 'Vibe Hero normal play should use the compiled main edited chart instead of admin-only stored charts');
+  assert(gameSource.includes('const storedChart = this.loadVibeHeroStoredEditorChart(baseSong)') && gameSource.includes('const storedEntryChart = this.loadVibeHeroStoredEditorChart(entry)'), 'Vibe Hero normal play should promote saved editor charts instead of falling back to the original chart outside editor mode');
+  assert(!gameSource.includes('if (!song?.id || !this.isLocalAdmin())'), 'Saved Vibe Hero editor charts should be loadable outside editor mode once present in local storage');
+  assert(gameSource.includes('vibeHeroStoredEditorCharts: includeVibeHeroStoredCharts') && gameSource.includes('this.getVibeHeroStoredEditorChartsSnapshot()'), 'Admin task snapshots should include exact saved Vibe Hero editor chart payloads for source promotion');
   assert(hudSource.includes('editor-select') && hudSource.includes('data-vibe-hero-action="editor:record"'), 'Vibe Hero HUD should render admin chart editor controls');
   assert(!hudSource.includes('| Edited'), 'Vibe Hero song select should not show edited-chart text to players');
   assert(hudSource.includes('hud__vibe-hero-fret') && styleSource.includes('.hud__vibe-hero-fret'), 'Vibe Hero HUD should render oval timing frets above the lane number buttons');
