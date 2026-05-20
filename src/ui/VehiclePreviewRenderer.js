@@ -6,6 +6,7 @@ import {
   normalizePlayerVehicleItemId
 } from '../shared/carDealer.js';
 import { SKATEBOARD_ITEM_ID } from '../shared/skateboard.js';
+import { createSkateboardModel } from '../shared/skateboardModel.js';
 import { centerObjectOnXZAndSnapToGround, fitObjectToFootprint } from '../shared/threeModelBounds.js';
 import { assets } from '../world/assetManifest.js';
 
@@ -92,60 +93,7 @@ function centerAndGroundVehicle(root, itemId = '') {
 }
 
 function createSkateboardPreviewModel() {
-  const group = new THREE.Group();
-  group.name = 'VehiclePreviewSkateboard';
-
-  const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(1.18, 0.12, 2.28),
-    new THREE.MeshStandardMaterial({
-      color: 0x3aa686,
-      roughness: 0.62,
-      metalness: 0.05
-    })
-  );
-  deck.name = 'VehiclePreviewSkateboardDeck';
-  deck.position.y = 0.12;
-  group.add(deck);
-
-  const grip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.92, 0.028, 1.86),
-    new THREE.MeshStandardMaterial({
-      color: 0x14191f,
-      roughness: 0.84,
-      metalness: 0.02
-    })
-  );
-  grip.name = 'VehiclePreviewSkateboardGrip';
-  grip.position.y = 0.198;
-  group.add(grip);
-
-  const truckMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb9c3c8,
-    roughness: 0.4,
-    metalness: 0.55
-  });
-  const wheelMaterial = new THREE.MeshStandardMaterial({
-    color: 0x171b20,
-    roughness: 0.68,
-    metalness: 0.06
-  });
-  for (const z of [-0.76, 0.76]) {
-    const truck = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.08, 0.12), truckMaterial);
-    truck.name = z < 0 ? 'VehiclePreviewSkateboardTruckBack' : 'VehiclePreviewSkateboardTruckFront';
-    truck.position.set(0, 0.035, z);
-    group.add(truck);
-
-    for (const x of [-0.58, 0.58]) {
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.24, 14), wheelMaterial);
-      wheel.name = `VehiclePreviewSkateboardWheel_${x < 0 ? 'L' : 'R'}_${z < 0 ? 'B' : 'F'}`;
-      wheel.rotation.z = Math.PI / 2;
-      wheel.position.set(x, -0.04, z);
-      group.add(wheel);
-    }
-  }
-
-  group.scale.setScalar(1.22);
-  return group;
+  return createSkateboardModel({ namePrefix: 'VehiclePreview', scale: 1.22 });
 }
 
 async function instantiateVehicle(library, itemId = '', yaw = BASE_VEHICLE_YAW) {

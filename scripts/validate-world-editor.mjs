@@ -69,6 +69,10 @@ import {
 } from '../src/shared/carDealer.js';
 import { snapObjectToGround } from '../src/shared/threeModelBounds.js';
 import {
+  SKATEBOARD_MODEL_DIMENSIONS,
+  createSkateboardModel
+} from '../src/shared/skateboardModel.js';
+import {
   MARTHA_ITEM_IDS,
   addPlayerMarthaItem,
   consumePlayerMarthaItem,
@@ -2982,8 +2986,43 @@ function validateBartenderFunction() {
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const vehiclePreviewSource = readFileSync(new URL('../src/ui/VehiclePreviewRenderer.js', import.meta.url), 'utf8');
   const playerSource = readFileSync(new URL('../src/player/createPlayer.js', import.meta.url), 'utf8');
+  const skateboardModelSource = readFileSync(new URL('../src/shared/skateboardModel.js', import.meta.url), 'utf8');
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
+
+  const skateboardModel = createSkateboardModel({ namePrefix: 'Validation' });
+  skateboardModel.updateWorldMatrix(true, true);
+  const skateboardDeck = skateboardModel.getObjectByName('ValidationSkateboardDeck');
+  const skateboardGrip = skateboardModel.getObjectByName('ValidationSkateboardGrip');
+  const skateboardDeckSize = new Box3().setFromObject(skateboardDeck).getSize(new Vector3());
+  const skateboardModelSize = new Box3().setFromObject(skateboardModel).getSize(new Vector3());
+  const skateboardWheels = skateboardModel.children.filter((child) => /^ValidationSkateboardWheel_[LR]_[BF]$/.test(child.name));
+  const skateboardHubs = skateboardModel.children.filter((child) => /^ValidationSkateboardWheelHub_[LR]_[BF]$/.test(child.name));
+  const skateboardBolts = skateboardModel.children.filter((child) => /^ValidationSkateboardBolt_/.test(child.name));
+  assert(
+    skateboardDeck?.geometry?.type === 'ExtrudeGeometry'
+      && skateboardGrip?.geometry?.type === 'ShapeGeometry'
+      && skateboardDeckSize.x <= 0.78
+      && skateboardDeckSize.z >= 2.35
+      && skateboardDeckSize.x / skateboardDeckSize.z < 0.34
+      && SKATEBOARD_MODEL_DIMENSIONS.deckWidth === 0.72,
+    'Skateboard model should use a skinny rounded deck with inset grip tape instead of a wide box deck'
+  );
+  assert(
+    skateboardModel.getObjectByName('ValidationSkateboardNoseStripe')
+      && skateboardModel.getObjectByName('ValidationSkateboardTailStripe')
+      && skateboardBolts.length === 8,
+    'Skateboard model should include top-side stripe and bolt details'
+  );
+  assert(
+    skateboardModel.getObjectByName('ValidationSkateboardTruckFront')
+      && skateboardModel.getObjectByName('ValidationSkateboardTruckBack')
+      && skateboardWheels.length === 4
+      && skateboardHubs.length === 4
+      && skateboardModelSize.x > skateboardDeckSize.x
+      && skateboardModelSize.x <= 1.26,
+    'Skateboard model should keep slim trucks with four outboard wheels and visible hubs'
+  );
   assert(
     /\.hud__interaction\.is-world-anchored\s*\{[^}]*bottom:\s*auto/s.test(styles),
     'Bartender interaction menu should support anchored in-world placement'
@@ -3289,8 +3328,15 @@ function validateBartenderFunction() {
       && /LIVE_VEHICLE_ROTATION_SPEED\s*=\s*1\.65/.test(vehiclePreviewSource)
       && /getVehicleModelGroundNodeNameParts/.test(vehiclePreviewSource)
       && /createSkateboardPreviewModel/.test(vehiclePreviewSource)
+      && /createSkateboardModel/.test(vehiclePreviewSource)
       && /library\.instantiate\(definition\.assetUrl\)/.test(vehiclePreviewSource),
     'Vehicle preview renderer should load real footprint-normalized grounded forward-facing rotating car GLB models and procedurally render the skateboard'
+  );
+  assert(
+    /ExtrudeGeometry/.test(skateboardModelSource)
+      && /bevelEnabled:\s*true/.test(skateboardModelSource)
+      && /WheelHub/.test(skateboardModelSource),
+    'Shared skateboard model should keep rounded deck geometry and visible wheel hub detail'
   );
   assert(
     /this\.syncActiveMarthaMenu\(marthaInteraction\);/.test(gameSource) && /buyMarthaItem/.test(gameSource),
@@ -3340,9 +3386,8 @@ function validateBartenderFunction() {
     'Vibe Radio mini player should sit to the right of the permanent car badge'
   );
   assert(
-    /PlayerSkateboard/.test(playerSource)
-      && /PlayerSkateboardDeck/.test(playerSource)
-      && /PlayerSkateboardWheel_/.test(playerSource)
+    /createSkateboardModel/.test(playerSource)
+      && /namePrefix:\s*'Player'/.test(playerSource)
       && /PlayerVehicleRoot/.test(playerSource)
       && /PLAYER_CAR_MODEL_SCALE\s*=\s*0\.75/.test(playerSource)
       && /PLAYER_CAR_MODEL_FOOTPRINT\s*=\s*Object\.freeze\(\[6\.5,\s*12\]\)/.test(playerSource)
@@ -3350,7 +3395,7 @@ function validateBartenderFunction() {
       && /getVehicleModelGroundNodeNameParts/.test(playerSource)
       && /centerAndGroundVehicleModel\(object,\s*normalizedItemId\)/.test(playerSource)
       && /character\.visible\s*=\s*false/.test(playerSource),
-    'Player avatar should render the legacy skateboard and replace the character with a footprint-normalized grounded 0.75x selected car while car-driving'
+    'Player avatar should render the procedural skateboard and replace the character with a footprint-normalized grounded 0.75x selected car while car-driving'
   );
   assert(
     /SKATEBOARD_LOWER_BODY_STILL_BONES\s*=\s*Object\.freeze\(\[\.\.\.LOWER_BODY_LOCOMOTION_BONES\]\)/.test(playerSource)
