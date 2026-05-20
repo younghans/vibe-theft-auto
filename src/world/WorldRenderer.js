@@ -32,6 +32,7 @@ import {
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
+  clampPassiveTrafficTurnYaw,
   clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
   getPassiveTrafficDriveCommand,
@@ -39,6 +40,7 @@ import {
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
+  getPassiveTrafficTurnYawRange,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficTSplitNode,
   isPassiveTrafficPositionInsideRoadNode
@@ -1901,6 +1903,8 @@ export class WorldRenderer {
       turnWaypointIndex: 0,
       turnWaypointQueue: [],
       turnWaypointCursor: 0,
+      turnStartYaw: null,
+      turnEndYaw: null,
       stuckSeconds: 0,
       lastPosition: new THREE.Vector3()
     };
@@ -2265,6 +2269,11 @@ export class WorldRenderer {
     car.turnStopSatisfied = false;
     car.turnWaypointQueue.length = 0;
     car.turnWaypointCursor = 0;
+    const turnYawRange = shouldScriptThroughRouteNode
+      ? getPassiveTrafficTurnYawRange(currentNode, routeNode, finalNode)
+      : null;
+    car.turnStartYaw = turnYawRange?.startYaw ?? null;
+    car.turnEndYaw = turnYawRange?.endYaw ?? null;
     getPassiveTrafficLanePosition(
       shouldScriptThroughRouteNode ? routeNode : currentNode,
       finalNode,
@@ -2352,6 +2361,8 @@ export class WorldRenderer {
     car.routeAdvanceCount = 1;
     car.turnWaypointActive = false;
     car.turnWaypointQueue.length = 0;
+    car.turnStartYaw = null;
+    car.turnEndYaw = null;
     car.turnStopSeconds = 0;
     car.turnStopWaypointIndex = -1;
     car.turnStopSatisfied = false;
@@ -2477,8 +2488,27 @@ export class WorldRenderer {
         const stepDuration = step / moveSpeed;
         remainingTime -= stepDuration;
 
-        const targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        let targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        if (
+          car.turnWaypointActive
+          && (
+            car.driveCommand === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+            || car.driveCommand === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+          )
+          && Number.isFinite(car.turnStartYaw)
+          && Number.isFinite(car.turnEndYaw)
+        ) {
+          targetYaw = clampPassiveTrafficTurnYaw(car.turnStartYaw, car.turnEndYaw, targetYaw);
+          car.yaw = clampPassiveTrafficTurnYaw(car.turnStartYaw, car.turnEndYaw, car.yaw);
+        }
         car.yaw = dampAngleRadians(car.yaw, targetYaw, PASSIVE_TRAFFIC_TURN_RESPONSE, stepDuration);
+        if (
+          car.turnWaypointActive
+          && Number.isFinite(car.turnStartYaw)
+          && Number.isFinite(car.turnEndYaw)
+        ) {
+          car.yaw = clampPassiveTrafficTurnYaw(car.turnStartYaw, car.turnEndYaw, car.yaw);
+        }
         car.object.rotation.y = car.yaw;
 
         if (step < distance) {

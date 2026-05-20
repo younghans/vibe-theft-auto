@@ -132,9 +132,11 @@ import {
   PASSIVE_TRAFFIC_CAR_SCALE,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_LANE_OFFSET,
+  PASSIVE_TRAFFIC_MAX_TURN_RADIANS,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
+  clampPassiveTrafficTurnYaw,
   clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
   getPassiveTrafficDriveCommand,
@@ -143,6 +145,7 @@ import {
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficRoadExits,
+  getPassiveTrafficTurnYawRange,
   getPassiveTrafficTurnLaneWaypoints,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode
@@ -967,6 +970,39 @@ function assertTurnWaypointsStayOnRoad(turnCandidate, turnWaypoints) {
   assert(touchesIntersection, 'Passive traffic 90-degree turns should arc through the intersection street tile before exiting');
 }
 
+function assertTurnSteeringStaysWithinQuarterTurn(previousNode, currentNode, nextNode, turnWaypoints) {
+  const yawRange = getPassiveTrafficTurnYawRange(previousNode, currentNode, nextNode);
+  assert(yawRange, 'Passive traffic 90-degree turns should expose a bounded yaw range');
+  assert(
+    angleDelta(yawRange.startYaw, yawRange.endYaw) <= PASSIVE_TRAFFIC_MAX_TURN_RADIANS + 0.001,
+    'Passive traffic turn yaw range should be capped at 90 degrees'
+  );
+
+  const turnDirection = Math.atan2(
+    Math.sin(yawRange.endYaw - yawRange.startYaw),
+    Math.cos(yawRange.endYaw - yawRange.startYaw)
+  ) >= 0 ? 1 : -1;
+  const oversizedYaw = yawRange.startYaw + (turnDirection * (PASSIVE_TRAFFIC_MAX_TURN_RADIANS + (Math.PI / 3)));
+  assert(
+    angleDelta(
+      clampPassiveTrafficTurnYaw(yawRange.startYaw, yawRange.endYaw, oversizedYaw),
+      yawRange.endYaw
+    ) < 0.001,
+    'Passive traffic steering should clamp over-rotated turn targets to the 90-degree exit heading'
+  );
+
+  let previousPoint = getPassiveTrafficLanePositionAtNode(previousNode, currentNode, new Vector3());
+  for (const waypoint of turnWaypoints) {
+    const targetYaw = Math.atan2(waypoint.x - previousPoint.x, waypoint.z - previousPoint.z);
+    const clampedYaw = clampPassiveTrafficTurnYaw(yawRange.startYaw, yawRange.endYaw, targetYaw);
+    assert(
+      angleDelta(targetYaw, clampedYaw) < 0.01,
+      'Passive traffic turn waypoints should not ask steering outside the capped 90-degree turn arc'
+    );
+    previousPoint = waypoint;
+  }
+}
+
 function assertDealershipShowroomCars(layout, layoutLabel, carDealershipItem) {
   const dealershipPlacement = findPlacementByItemId(layout.tiles, 'car_dealership_building');
   assert(dealershipPlacement, `${layoutLabel} should include a Car Dealership tile for showroom cars`);
@@ -1250,6 +1286,11 @@ function validatePassiveTraffic() {
   const rightZ = deltaX / length;
   const laneDot = ((lanePosition.x - toNode.x) * rightX) + ((lanePosition.z - toNode.z) * rightZ);
   assert(Math.abs(laneDot - PASSIVE_TRAFFIC_LANE_OFFSET) < 0.001, 'Passive traffic lane targets should stay on the right side of travel');
+  assert(
+    PASSIVE_TRAFFIC_LANE_OFFSET > 0
+      && PASSIVE_TRAFFIC_LANE_OFFSET < BUILDER_TILE_SIZE * 0.2,
+    'Passive traffic default lane offset should sit slightly left of the outer road line while staying in the right lane'
+  );
   const leftDot = ((lanePosition.x - toNode.x) * (deltaZ / length)) + ((lanePosition.z - toNode.z) * (-deltaX / length));
   assert(leftDot < 0, 'Passive traffic should not use the driver-left lane normal');
   assert(
@@ -1347,6 +1388,12 @@ function validatePassiveTraffic() {
       && !rightCornerScript.shouldStopAtEntry
       && rightCornerScript.waypoints.length >= 10,
     'Passive traffic should use a non-stopping right-turn script for Road Corner tiles'
+  );
+  assertTurnSteeringStaysWithinQuarterTurn(
+    rightCornerSouth,
+    rightCornerNode,
+    rightCornerEast,
+    rightCornerScript.waypoints
   );
 
   const routeState = new WorldState();
@@ -1491,6 +1538,8 @@ function validatePassiveTraffic() {
       && /turnWaypointActive/.test(worldRendererSource)
       && /turnWaypointQueue/.test(worldRendererSource)
       && /driveCommand/.test(worldRendererSource)
+      && /turnStartYaw/.test(worldRendererSource)
+      && /clampPassiveTrafficTurnYaw/.test(worldRendererSource)
       && /visitedNodeIndices/.test(worldRendererSource)
       && /stuckSeconds/.test(worldRendererSource)
       && /clampPassiveTrafficPositionToRoadNodes/.test(worldRendererSource)

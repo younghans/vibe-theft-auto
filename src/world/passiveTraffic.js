@@ -12,7 +12,8 @@ export const PASSIVE_TRAFFIC_CAR_ITEM_IDS = Object.freeze([
 
 export const PASSIVE_TRAFFIC_CAR_SCALE = 0.68;
 export const PASSIVE_TRAFFIC_SPEED = BUILDER_TILE_SIZE;
-export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.22;
+export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.18;
+export const PASSIVE_TRAFFIC_MAX_TURN_RADIANS = Math.PI / 2;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
 export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({
   STRAIGHT: 'straight',
@@ -63,6 +64,10 @@ const TURN_CONTROL_A_SCRATCH = new THREE.Vector3();
 const TURN_CONTROL_B_SCRATCH = new THREE.Vector3();
 const TURN_ENTRY_LANE_SCRATCH = new THREE.Vector3();
 const TURN_EXIT_LANE_SCRATCH = new THREE.Vector3();
+
+function normalizeAngleRadians(angle) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
 
 function roadNodeKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
@@ -447,6 +452,13 @@ export function getPassiveTrafficRoadStep(fromNode, toNode) {
   return { x: deltaX, z: deltaZ };
 }
 
+export function getPassiveTrafficNodeYaw(fromNode, toNode) {
+  return Math.atan2(
+    (toNode?.x ?? 0) - (fromNode?.x ?? 0),
+    (toNode?.z ?? 0) - (fromNode?.z ?? 0)
+  );
+}
+
 export function clampPassiveTrafficPositionToRoadNode(node, position, target = new THREE.Vector3()) {
   const centerX = node?.x ?? 0;
   const centerZ = node?.z ?? 0;
@@ -575,6 +587,40 @@ export function getPassiveTrafficDriveCommand(previousNode, currentNode, nextNod
     : PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT;
 }
 
+export function clampPassiveTrafficTurnYaw(startYaw, endYaw, targetYaw) {
+  if (![startYaw, endYaw, targetYaw].every(Number.isFinite)) {
+    return Number.isFinite(targetYaw) ? targetYaw : 0;
+  }
+
+  const turnDelta = normalizeAngleRadians(endYaw - startYaw);
+  const turnDirection = turnDelta >= 0 ? 1 : -1;
+  const turnArc = Math.min(PASSIVE_TRAFFIC_MAX_TURN_RADIANS, Math.abs(turnDelta));
+  if (turnArc <= 0.0001) {
+    return normalizeAngleRadians(startYaw);
+  }
+
+  const targetDelta = normalizeAngleRadians(targetYaw - startYaw) * turnDirection;
+  const clampedDelta = Math.max(0, Math.min(turnArc, targetDelta));
+  return normalizeAngleRadians(startYaw + (turnDirection * clampedDelta));
+}
+
+export function getPassiveTrafficTurnYawRange(previousNode, currentNode, nextNode) {
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  if (
+    command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+  ) {
+    return null;
+  }
+
+  const startYaw = getPassiveTrafficNodeYaw(previousNode, currentNode);
+  const rawEndYaw = getPassiveTrafficNodeYaw(currentNode, nextNode);
+  return {
+    startYaw,
+    endYaw: clampPassiveTrafficTurnYaw(startYaw, rawEndYaw, rawEndYaw)
+  };
+}
+
 function getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextNode) {
   if (!previousNode || !currentNode || !nextNode) {
     return [];
@@ -656,7 +702,13 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
     outgoingRightZ,
     TURN_END_SCRATCH
   );
-  const controlDistance = BUILDER_TILE_SIZE * 0.42;
+  const controlDistance = Math.max(
+    0.001,
+    Math.min(
+      BUILDER_TILE_SIZE * 0.42,
+      PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE - Math.abs(PASSIVE_TRAFFIC_LANE_OFFSET)
+    )
+  );
   const controlA = TURN_CONTROL_A_SCRATCH.set(
     start.x + (incomingX * controlDistance),
     0,
