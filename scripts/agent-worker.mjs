@@ -69,6 +69,7 @@ const CODE_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_CODE_CONCURRENCY', 2);
 const REQUESTED_DEPLOY_CONCURRENCY = getNonNegativeIntegerEnv('AGENT_DEPLOY_CONCURRENCY', 1);
 const DEPLOY_CONCURRENCY = DEPLOY_ENABLED ? Math.min(REQUESTED_DEPLOY_CONCURRENCY, 1) : 0;
 const DEPLOY_REBASE_REPAIR_ATTEMPTS = getNonNegativeIntegerEnv('AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS', 2);
+const DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS = getPositiveIntegerEnv('AGENT_DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS', 2);
 const WORKER_LOG_RETENTION_DAYS = getNonNegativeIntegerEnv('AGENT_WORKER_LOG_RETENTION_DAYS', 21);
 const API_REQUEST_RETRY_ATTEMPTS = getPositiveIntegerEnv('AGENT_API_RETRY_ATTEMPTS', 6);
 const API_REQUEST_RETRY_DELAY_MS = getPositiveIntegerEnv('AGENT_API_RETRY_DELAY_MS', 3000);
@@ -1542,6 +1543,11 @@ async function git(args = [], options = {}) {
 function isRetryableNetworkError(error) {
   const text = String(error?.stack || error?.message || error || '');
   return /connection was reset|recv failure|failed to connect|could not resolve host|early eof|rpc failed|http\/2 stream|timeout|timed out|tls connection|network/i.test(text);
+}
+
+function isNonFastForwardPushError(error) {
+  const text = String(error?.stack || error?.message || error || '');
+  return /non-fast-forward|fetch first|remote contains work that you do not have locally|updates were rejected because the remote contains work/i.test(text);
 }
 
 function isMissingRemoteRefError(error) {
@@ -3531,11 +3537,7 @@ async function pushWorktreeToMain(task, worktreePath) {
   }
 }
 
-async function deployTask(task, worktreePath) {
-  if (!DEPLOY_ENABLED) {
-    throw new Error('Deployment is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
-  }
-
+async function prepareCheckedDeploy(task, worktreePath) {
   const deployRefs = await prepareDeployCommit(task, worktreePath);
   const changedFiles = normalizeChangedFiles(deployRefs.changedFiles);
   const recordedTargets = normalizeDeployTargets(task.deployTargets);
@@ -3572,7 +3574,48 @@ async function deployTask(task, worktreePath) {
         : 'Task branch head verified; checks passed and deploy is continuing.'
     });
   }
-  await pushWorktreeToMain(task, worktreePath);
+
+  return {
+    deployRefs,
+    changedFiles,
+    deployTargets
+  };
+}
+
+async function pushPreparedDeployToMain(task, worktreePath, deployState) {
+  let currentDeployState = deployState;
+  for (let attempt = 1; attempt <= DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS; attempt += 1) {
+    try {
+      await pushWorktreeToMain(task, worktreePath);
+      return currentDeployState;
+    } catch (error) {
+      if (attempt >= DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS || !isNonFastForwardPushError(error)) {
+        throw error;
+      }
+
+      await appendLog(task.id, `origin/${GIT_BASE_BRANCH} advanced while pushing main; refetching, rebasing, rechecking, and retrying deploy push (${attempt + 1}/${DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS}).`, {
+        level: 'warn',
+        data: {
+          attempt,
+          maxAttempts: DEPLOY_MAIN_PUSH_REBASE_ATTEMPTS,
+          error: truncateText(error?.message || String(error), 1200)
+        }
+      });
+      currentDeployState = await prepareCheckedDeploy(task, worktreePath);
+    }
+  }
+
+  return currentDeployState;
+}
+
+async function deployTask(task, worktreePath) {
+  if (!DEPLOY_ENABLED) {
+    throw new Error('Deployment is disabled. Set DEPLOY_ENABLED=true or AUTO_DEPLOY=true on the worker.');
+  }
+
+  let deployState = await prepareCheckedDeploy(task, worktreePath);
+  deployState = await pushPreparedDeployToMain(task, worktreePath, deployState);
+  const { deployRefs, changedFiles, deployTargets } = deployState;
   if (deployRefs.rebased) {
     await appendLog(task.id, `Pushed ${GIT_BASE_BRANCH} before refreshing the task branch so production deploy hooks see the deploy commit first.`);
     await pushRebasedTaskBranch(task, worktreePath);

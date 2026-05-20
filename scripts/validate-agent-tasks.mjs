@@ -49,6 +49,8 @@ try {
   assert.match(agentWorkerSource, /only non-placement seed metadata changed/, 'Worker should not fail deploys for non-placement world-layout metadata changes.');
   assert.match(agentWorkerSource, /retryTransientCommand\(task\.id, 'git fetch pushed main'/, 'Worker should retry transient post-push main fetch failures.');
   assert.match(agentWorkerSource, /continuing deploy from the pushed worktree commit/, 'Worker should not stop backend deploy after a transient post-push fetch failure.');
+  assert.match(agentWorkerSource, /isNonFastForwardPushError/, 'Worker should detect non-fast-forward deploy push races.');
+  assert.match(agentWorkerSource, /advanced while pushing main; refetching, rebasing, rechecking, and retrying deploy push/, 'Worker should recover when origin/main advances during a deploy push.');
   assert.equal(
     packageJson.scripts['worker:prod:bg'],
     'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-agent-worker-prod-detached.ps1',
