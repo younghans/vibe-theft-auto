@@ -26,13 +26,18 @@ import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_CAR_SCALE,
+  PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_MIN_ROAD_NODES,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
+  clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
+  getPassiveTrafficDriveCommand,
+  getPassiveTrafficDriveScript,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
-  getPassiveTrafficTurnLaneWaypoints
+  isPassiveTrafficJunctionNode,
+  isPassiveTrafficPositionInsideRoadNode
 } from './passiveTraffic.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
@@ -92,7 +97,9 @@ const PASSIVE_TRAFFIC_TURN_STOP_STEP_SECONDS = 0.06;
 const PASSIVE_TRAFFIC_SPEED_FACTORS = Object.freeze([0.94, 1, 1.06]);
 const PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT = 14;
 const PASSIVE_TRAFFIC_POSITION_EPSILON = 0.08;
-const PASSIVE_TRAFFIC_INTERSECTION_ITEM_PATTERN = /(?:road_cross|road_junction|road_tsplit)/;
+const PASSIVE_TRAFFIC_STUCK_SECONDS = 1.15;
+const PASSIVE_TRAFFIC_STUCK_DISTANCE = 0.018;
+const PASSIVE_TRAFFIC_REVERSE_SPEED_FACTOR = 0.48;
 
 function getCellKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
@@ -117,45 +124,21 @@ function passiveTrafficTieBreak(nodeIndex, carIndex) {
   return x - Math.floor(x);
 }
 
-function getPassiveTrafficNodeStep(fromNode, toNode) {
-  const deltaX = (toNode?.cellX ?? 0) - (fromNode?.cellX ?? 0);
-  const deltaZ = (toNode?.cellZ ?? 0) - (fromNode?.cellZ ?? 0);
-  return {
-    x: Math.sign(deltaX),
-    z: Math.sign(deltaZ)
-  };
-}
-
 function isPassiveTrafficIntersectionNode(node) {
-  return Boolean(
-    node
-    && (
-      (node.neighbors?.length ?? 0) >= 3
-      || PASSIVE_TRAFFIC_INTERSECTION_ITEM_PATTERN.test(String(node.itemId ?? ''))
-    )
-  );
+  return isPassiveTrafficJunctionNode(node);
 }
 
 function isPassiveTrafficTurningThroughNode(previousNode, currentNode, nextNode) {
-  if (!previousNode || !currentNode || !nextNode) {
-    return false;
-  }
-
-  const incoming = getPassiveTrafficNodeStep(previousNode, currentNode);
-  const outgoing = getPassiveTrafficNodeStep(currentNode, nextNode);
-  if (
-    (incoming.x === 0 && incoming.z === 0)
-    || (outgoing.x === 0 && outgoing.z === 0)
-  ) {
-    return false;
-  }
-
-  return ((incoming.x * outgoing.x) + (incoming.z * outgoing.z)) < 1;
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  return command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+    || command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT;
 }
 
 function shouldPassiveTrafficStopForTurn(previousNode, currentNode, nextNode) {
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
   return isPassiveTrafficIntersectionNode(currentNode)
-    && isPassiveTrafficTurningThroughNode(previousNode, currentNode, nextNode);
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
 }
 
 function worldToCellCoord(value) {
@@ -1620,15 +1603,22 @@ export class WorldRenderer {
       routeDestinationIndex: null,
       routeAdvanceCount: 1,
       turnThroughNodeIndex: null,
+      visitedNodeIndices: new Set(),
       speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
       currentSpeed: 0,
       yaw: object.rotation.y,
+      driveCommand: PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT,
       turnStopSeconds: 0,
+      turnStopWaypointIndex: -1,
+      turnStopSatisfied: false,
       turnWaypointActive: false,
-      turnWaypointQueue: []
+      turnWaypointIndex: 0,
+      turnWaypointQueue: [],
+      stuckSeconds: 0,
+      lastPosition: new THREE.Vector3()
     };
 
-    this.markPassiveTrafficNodeVisited(startIndex);
+    this.markPassiveTrafficNodeVisited(startIndex, car);
     this.assignPassiveTrafficRoute(car);
     if (car.targetNodeIndex === null) {
       return null;
@@ -1643,16 +1633,18 @@ export class WorldRenderer {
       (targetNode?.z ?? currentNode.z) - currentNode.z
     );
     object.rotation.y = car.yaw;
+    car.lastPosition.copy(object.position);
     return car;
   }
 
-  markPassiveTrafficNodeVisited(nodeIndex) {
+  markPassiveTrafficNodeVisited(nodeIndex, car = null) {
     this.passiveTrafficVisitCounter += 1;
     this.passiveTrafficNodeVisits.set(
       nodeIndex,
       (this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0) + 1
     );
     this.passiveTrafficNodeVisitOrder.set(nodeIndex, this.passiveTrafficVisitCounter);
+    car?.visitedNodeIndices?.add(nodeIndex);
   }
 
   getPassiveTrafficActiveNeighbors(nodeIndex) {
@@ -1711,14 +1703,18 @@ export class WorldRenderer {
       desiredSpeed *= approachRatio;
     }
 
+    if (car.driveCommand === PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE) {
+      desiredSpeed *= PASSIVE_TRAFFIC_REVERSE_SPEED_FACTOR;
+    }
+
     return desiredSpeed;
   }
 
-  choosePassiveTrafficDestination(car) {
+  getPassiveTrafficDestinationCandidates(car) {
     const graph = this.passiveTrafficGraph;
     const currentNode = graph?.nodes?.[car.currentNodeIndex];
     if (!graph || !currentNode) {
-      return null;
+      return [];
     }
 
     const activeDestinations = new Set(this.passiveTrafficCars
@@ -1733,9 +1729,11 @@ export class WorldRenderer {
         const node = graph.nodes[nodeIndex];
         const visitCount = this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0;
         const lastVisitOrder = this.passiveTrafficNodeVisitOrder.get(nodeIndex) ?? -100000;
+        const carVisited = car.visitedNodeIndices?.has(nodeIndex) ? 1 : 0;
         const distance = Math.abs(node.cellX - currentNode.cellX) + Math.abs(node.cellZ - currentNode.cellZ);
         return {
           nodeIndex,
+          carVisited,
           visitCount,
           lastVisitOrder,
           distance,
@@ -1744,7 +1742,8 @@ export class WorldRenderer {
         };
       })
       .sort((a, b) => (
-        (a.visitCount - b.visitCount)
+        (a.carVisited - b.carVisited)
+        || (a.visitCount - b.visitCount)
         || (a.activeDestination - b.activeDestination)
         || (a.lastVisitOrder - b.lastVisitOrder)
         || (b.distance - a.distance)
@@ -1753,17 +1752,54 @@ export class WorldRenderer {
 
     const candidatePool = candidates.slice(0, PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT);
     if (!candidatePool.length) {
-      return null;
+      return [];
     }
 
     candidatePool.sort((a, b) => (
       (b.distance - a.distance)
+      || (a.carVisited - b.carVisited)
       || (a.visitCount - b.visitCount)
       || (a.activeDestination - b.activeDestination)
       || (a.lastVisitOrder - b.lastVisitOrder)
       || (a.tieBreak - b.tieBreak)
     ));
-    return candidatePool[0].nodeIndex;
+    return candidatePool.map((candidate) => candidate.nodeIndex);
+  }
+
+  choosePassiveTrafficDestination(car) {
+    return this.getPassiveTrafficDestinationCandidates(car)[0] ?? null;
+  }
+
+  isPassiveTrafficImmediateReverse(car, nextNodeIndex) {
+    if (car.previousNodeIndex === null || car.previousNodeIndex === undefined || nextNodeIndex !== car.previousNodeIndex) {
+      return false;
+    }
+
+    return this.getPassiveTrafficActiveNeighbors(car.currentNodeIndex)
+      .some((neighborIndex) => neighborIndex !== car.previousNodeIndex);
+  }
+
+  choosePassiveTrafficFallbackNeighbor(car) {
+    const graph = this.passiveTrafficGraph;
+    const neighbors = this.getPassiveTrafficActiveNeighbors(car.currentNodeIndex);
+    if (!graph || !neighbors.length) {
+      return null;
+    }
+
+    return neighbors
+      .map((nodeIndex) => ({
+        nodeIndex,
+        immediateReverse: this.isPassiveTrafficImmediateReverse(car, nodeIndex) ? 1 : 0,
+        carVisited: car.visitedNodeIndices?.has(nodeIndex) ? 1 : 0,
+        visitCount: this.passiveTrafficNodeVisits.get(nodeIndex) ?? 0,
+        tieBreak: passiveTrafficTieBreak(nodeIndex, car.carIndex)
+      }))
+      .sort((a, b) => (
+        (a.immediateReverse - b.immediateReverse)
+        || (a.carVisited - b.carVisited)
+        || (a.visitCount - b.visitCount)
+        || (a.tieBreak - b.tieBreak)
+      ))[0]?.nodeIndex ?? null;
   }
 
   assignPassiveTrafficRoute(car) {
@@ -1772,19 +1808,35 @@ export class WorldRenderer {
       return false;
     }
 
-    const destinationIndex = this.choosePassiveTrafficDestination(car);
-    const route = destinationIndex !== null
-      ? findPassiveTrafficPath(graph, car.currentNodeIndex, destinationIndex)
-      : [];
-    if (route.length >= 2) {
+    const destinationCandidates = this.getPassiveTrafficDestinationCandidates(car);
+    let reverseRoute = null;
+    let reverseDestinationIndex = null;
+    for (const destinationIndex of destinationCandidates) {
+      const route = findPassiveTrafficPath(graph, car.currentNodeIndex, destinationIndex);
+      if (route.length < 2) {
+        continue;
+      }
+
+      if (this.isPassiveTrafficImmediateReverse(car, route[1])) {
+        reverseRoute ??= route;
+        reverseDestinationIndex ??= destinationIndex;
+        continue;
+      }
+
       car.route = route;
       car.routeCursor = 1;
       car.routeDestinationIndex = destinationIndex;
       return this.advancePassiveTrafficTarget(car);
     }
 
-    const neighbors = this.getPassiveTrafficActiveNeighbors(car.currentNodeIndex);
-    const fallback = neighbors.find((nodeIndex) => nodeIndex !== car.previousNodeIndex) ?? neighbors[0] ?? null;
+    if (reverseRoute?.length >= 2) {
+      car.route = reverseRoute;
+      car.routeCursor = 1;
+      car.routeDestinationIndex = reverseDestinationIndex;
+      return this.advancePassiveTrafficTarget(car);
+    }
+
+    const fallback = this.choosePassiveTrafficFallbackNeighbor(car);
     if (fallback === null) {
       car.targetNodeIndex = null;
       return false;
@@ -1823,10 +1875,22 @@ export class WorldRenderer {
     }
 
     const nextRouteNodeIndex = car.route?.[car.routeCursor + 1] ?? null;
-    const shouldTurnThroughRouteNode = nextRouteNodeIndex !== null
-      && graph.activeNodeSet.has(nextRouteNodeIndex)
-      && this.isPassiveTrafficTurn(car.currentNodeIndex, routeNodeIndex, nextRouteNodeIndex);
-    const finalNodeIndex = shouldTurnThroughRouteNode ? nextRouteNodeIndex : routeNodeIndex;
+    const canScriptThroughRouteNode = nextRouteNodeIndex !== null
+      && graph.activeNodeSet.has(nextRouteNodeIndex);
+    const routeScript = canScriptThroughRouteNode
+      ? getPassiveTrafficDriveScript(currentNode, routeNode, graph.nodes[nextRouteNodeIndex])
+      : null;
+    const shouldScriptThroughRouteNode = Boolean(
+      routeScript
+      && (
+        routeScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+        || routeScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+        || routeScript.shouldStopAtEntry
+      )
+      && routeScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
+      && routeScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP
+    );
+    const finalNodeIndex = shouldScriptThroughRouteNode ? nextRouteNodeIndex : routeNodeIndex;
     const finalNode = graph.nodes[finalNodeIndex];
     if (!finalNode) {
       car.targetNodeIndex = null;
@@ -1834,26 +1898,33 @@ export class WorldRenderer {
     }
 
     car.targetNodeIndex = finalNodeIndex;
-    car.routeAdvanceCount = shouldTurnThroughRouteNode ? 2 : 1;
-    car.turnThroughNodeIndex = shouldTurnThroughRouteNode ? routeNodeIndex : null;
+    car.routeAdvanceCount = shouldScriptThroughRouteNode ? 2 : 1;
+    car.turnThroughNodeIndex = shouldScriptThroughRouteNode ? routeNodeIndex : null;
+    car.driveCommand = shouldScriptThroughRouteNode
+      ? routeScript.command
+      : getPassiveTrafficDriveCommand(
+        graph.nodes?.[car.previousNodeIndex],
+        currentNode,
+        finalNode
+      );
     car.turnWaypointActive = false;
+    car.turnWaypointIndex = 0;
+    car.turnStopWaypointIndex = -1;
+    car.turnStopSatisfied = false;
     car.turnWaypointQueue.length = 0;
     getPassiveTrafficLanePosition(
-      shouldTurnThroughRouteNode ? routeNode : currentNode,
+      shouldScriptThroughRouteNode ? routeNode : currentNode,
       finalNode,
       car.finalTargetPosition
     );
     car.finalTargetPosition.y = this.getSurfaceHeightAtPosition(car.finalTargetPosition.x, car.finalTargetPosition.z);
 
-    if (shouldTurnThroughRouteNode) {
-      car.turnWaypointQueue = getPassiveTrafficTurnLaneWaypoints(
-        currentNode,
-        routeNode,
-        finalNode
-      ).map((waypoint) => {
+    if (shouldScriptThroughRouteNode) {
+      car.turnWaypointQueue = routeScript.waypoints.map((waypoint) => {
         waypoint.y = this.getSurfaceHeightAtPosition(waypoint.x, waypoint.z);
         return waypoint;
       });
+      car.turnStopWaypointIndex = routeScript.stopWaypointIndex;
       const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
       if (nextTurnWaypoint) {
         car.targetPosition.copy(nextTurnWaypoint);
@@ -1863,15 +1934,89 @@ export class WorldRenderer {
         car.targetPosition.y = this.getSurfaceHeightAtPosition(car.targetPosition.x, car.targetPosition.z);
         car.turnWaypointActive = true;
       }
-      if (this.shouldPassiveTrafficStopForTurn(car.currentNodeIndex, routeNodeIndex, finalNodeIndex)) {
-        car.turnStopSeconds = Math.max(car.turnStopSeconds, this.getPassiveTrafficTurnStopSeconds(car));
-        car.currentSpeed = 0;
-      }
     } else {
       car.targetPosition.copy(car.finalTargetPosition);
     }
 
     return true;
+  }
+
+  getPassiveTrafficCarRoadNodes(car) {
+    const graph = this.passiveTrafficGraph;
+    if (!graph || !car) {
+      return [];
+    }
+
+    return [
+      graph.nodes?.[car.currentNodeIndex],
+      graph.nodes?.[car.turnThroughNodeIndex],
+      graph.nodes?.[car.targetNodeIndex],
+      graph.nodes?.[car.previousNodeIndex]
+    ].filter(Boolean);
+  }
+
+  keepPassiveTrafficCarOnRoad(car) {
+    const roadNodes = this.getPassiveTrafficCarRoadNodes(car);
+    if (!roadNodes.length) {
+      return;
+    }
+
+    if (roadNodes.some((node) => isPassiveTrafficPositionInsideRoadNode(node, car.object.position))) {
+      return;
+    }
+
+    clampPassiveTrafficPositionToRoadNodes(roadNodes, car.object.position, car.object.position);
+    car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
+  }
+
+  recoverPassiveTrafficIfStuck(car) {
+    const graph = this.passiveTrafficGraph;
+    if (!graph || !car) {
+      return false;
+    }
+
+    const currentNode = graph.nodes?.[car.currentNodeIndex];
+    if (!currentNode) {
+      return false;
+    }
+
+    const reverseNeighbor = this.getPassiveTrafficActiveNeighbors(car.currentNodeIndex)
+      .find((nodeIndex) => nodeIndex === car.previousNodeIndex)
+      ?? this.choosePassiveTrafficFallbackNeighbor(car);
+    if (reverseNeighbor === null || reverseNeighbor === undefined) {
+      car.targetNodeIndex = null;
+      return false;
+    }
+
+    car.route = [car.currentNodeIndex, reverseNeighbor];
+    car.routeCursor = 1;
+    car.routeDestinationIndex = reverseNeighbor;
+    car.targetNodeIndex = null;
+    car.turnThroughNodeIndex = null;
+    car.routeAdvanceCount = 1;
+    car.turnWaypointActive = false;
+    car.turnWaypointQueue.length = 0;
+    car.turnStopSeconds = 0;
+    car.turnStopWaypointIndex = -1;
+    car.turnStopSatisfied = false;
+    car.stuckSeconds = 0;
+    return this.advancePassiveTrafficTarget(car);
+  }
+
+  updatePassiveTrafficStuckState(car, deltaSeconds, movedDistance) {
+    if (!car || car.targetNodeIndex === null || car.turnStopSeconds > 0) {
+      return;
+    }
+
+    if (movedDistance <= PASSIVE_TRAFFIC_STUCK_DISTANCE && car.currentSpeed > car.speed * 0.2) {
+      car.stuckSeconds += deltaSeconds;
+    } else {
+      car.stuckSeconds = Math.max(0, car.stuckSeconds - (deltaSeconds * 2));
+    }
+
+    if (car.stuckSeconds >= PASSIVE_TRAFFIC_STUCK_SECONDS) {
+      this.recoverPassiveTrafficIfStuck(car);
+    }
   }
 
   updatePassiveTraffic(deltaSeconds) {
@@ -1885,6 +2030,8 @@ export class WorldRenderer {
     }
 
     for (const car of this.passiveTrafficCars) {
+      const startX = car.object.position.x;
+      const startZ = car.object.position.z;
       let remainingTime = dt;
       let guard = 0;
 
@@ -1910,9 +2057,21 @@ export class WorldRenderer {
         const distance = toTarget.length();
         if (distance <= PASSIVE_TRAFFIC_POSITION_EPSILON) {
           car.object.position.copy(car.targetPosition);
+          this.keepPassiveTrafficCarOnRoad(car);
           if (car.turnWaypointActive) {
+            if (
+              car.turnWaypointIndex === car.turnStopWaypointIndex
+              && !car.turnStopSatisfied
+            ) {
+              car.turnStopSatisfied = true;
+              car.turnStopSeconds = Math.max(car.turnStopSeconds, this.getPassiveTrafficTurnStopSeconds(car));
+              car.currentSpeed = 0;
+              break;
+            }
+
             const nextTurnWaypoint = car.turnWaypointQueue.shift() ?? null;
             if (nextTurnWaypoint) {
+              car.turnWaypointIndex += 1;
               car.targetPosition.copy(nextTurnWaypoint);
               continue;
             }
@@ -1926,7 +2085,7 @@ export class WorldRenderer {
           const throughNodeIndex = car.turnThroughNodeIndex;
           const routeAdvanceCount = Math.max(1, car.routeAdvanceCount ?? 1);
           if (throughNodeIndex !== null && throughNodeIndex !== undefined && throughNodeIndex !== car.currentNodeIndex) {
-            this.markPassiveTrafficNodeVisited(throughNodeIndex);
+            this.markPassiveTrafficNodeVisited(throughNodeIndex, car);
           }
           car.previousNodeIndex = throughNodeIndex ?? car.currentNodeIndex;
           car.currentNodeIndex = arrivedNodeIndex;
@@ -1937,7 +2096,7 @@ export class WorldRenderer {
           if (car.routeCursor >= car.route.length) {
             car.routeDestinationIndex = null;
           }
-          this.markPassiveTrafficNodeVisited(car.currentNodeIndex);
+          this.markPassiveTrafficNodeVisited(car.currentNodeIndex, car);
           continue;
         }
 
@@ -1952,6 +2111,7 @@ export class WorldRenderer {
         toTarget.multiplyScalar(1 / distance);
         this.passiveTrafficTargetScratch.copy(toTarget).multiplyScalar(step);
         car.object.position.add(this.passiveTrafficTargetScratch);
+        this.keepPassiveTrafficCarOnRoad(car);
         car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
         const stepDuration = step / moveSpeed;
         remainingTime -= stepDuration;
@@ -1964,6 +2124,10 @@ export class WorldRenderer {
           break;
         }
       }
+
+      const movedDistance = Math.hypot(car.object.position.x - startX, car.object.position.z - startZ);
+      this.updatePassiveTrafficStuckState(car, dt, movedDistance);
+      car.lastPosition.copy(car.object.position);
     }
   }
 

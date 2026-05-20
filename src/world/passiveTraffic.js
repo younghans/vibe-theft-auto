@@ -13,6 +13,13 @@ export const PASSIVE_TRAFFIC_CAR_SCALE = 0.68;
 export const PASSIVE_TRAFFIC_SPEED = BUILDER_TILE_SIZE;
 export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.22;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
+export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({
+  STRAIGHT: 'straight',
+  TURN_LEFT: 'turn_left',
+  TURN_RIGHT: 'turn_right',
+  REVERSE: 'reverse',
+  STOP: 'stop'
+});
 
 const CARDINAL_DIRECTIONS = Object.freeze([
   Object.freeze({ x: 1, z: 0 }),
@@ -45,9 +52,10 @@ const ROAD_TSPLIT_EXITS = Object.freeze([
   ROAD_EXIT_DIRECTIONS.east,
   ROAD_EXIT_DIRECTIONS.west
 ]);
-const PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES = Object.freeze([0.16, 0.3, 0.44, 0.58, 0.72, 0.86, 1]);
+const PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES = Object.freeze([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]);
 const PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE = BUILDER_TILE_SIZE * 0.5;
 const PASSIVE_TRAFFIC_ROAD_TILE_EDGE_INSET = BUILDER_TILE_SIZE * 0.015;
+const PASSIVE_TRAFFIC_JUNCTION_ITEM_PATTERN = /(?:road_cross|road_junction|road_tsplit)/;
 
 function roadNodeKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
@@ -343,13 +351,13 @@ export function getPassiveTrafficLanePosition(fromNode, toNode, target = new THR
   );
 }
 
-function getRoadStep(fromNode, toNode) {
+export function getPassiveTrafficRoadStep(fromNode, toNode) {
   const deltaX = Math.sign((toNode?.cellX ?? 0) - (fromNode?.cellX ?? 0));
   const deltaZ = Math.sign((toNode?.cellZ ?? 0) - (fromNode?.cellZ ?? 0));
   return { x: deltaX, z: deltaZ };
 }
 
-function clampPassiveTrafficPositionToRoadNode(node, position, target = new THREE.Vector3()) {
+export function clampPassiveTrafficPositionToRoadNode(node, position, target = new THREE.Vector3()) {
   const centerX = node?.x ?? 0;
   const centerZ = node?.z ?? 0;
   const limit = Math.max(0, PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE - PASSIVE_TRAFFIC_ROAD_TILE_EDGE_INSET);
@@ -359,6 +367,31 @@ function clampPassiveTrafficPositionToRoadNode(node, position, target = new THRE
     Math.min(centerZ + limit, Math.max(centerZ - limit, position?.z ?? centerZ))
   );
   return target;
+}
+
+export function clampPassiveTrafficPositionToRoadNodes(nodes, position, target = new THREE.Vector3()) {
+  const roadNodes = (nodes ?? []).filter(Boolean);
+  if (!roadNodes.length) {
+    target.copy?.(position);
+    return target;
+  }
+
+  let bestNode = roadNodes[0];
+  let bestPosition = clampPassiveTrafficPositionToRoadNode(bestNode, position, new THREE.Vector3());
+  let bestDistanceSq = bestPosition.distanceToSquared(position);
+
+  for (let index = 1; index < roadNodes.length; index += 1) {
+    const candidateNode = roadNodes[index];
+    const candidatePosition = clampPassiveTrafficPositionToRoadNode(candidateNode, position, new THREE.Vector3());
+    const candidateDistanceSq = candidatePosition.distanceToSquared(position);
+    if (candidateDistanceSq < bestDistanceSq) {
+      bestNode = candidateNode;
+      bestPosition = candidatePosition;
+      bestDistanceSq = candidateDistanceSq;
+    }
+  }
+
+  return clampPassiveTrafficPositionToRoadNode(bestNode, bestPosition, target);
 }
 
 export function isPassiveTrafficPositionInsideRoadNode(node, position, inset = 0) {
@@ -387,13 +420,122 @@ function setCubicBezierPoint(start, controlA, controlB, end, time, target) {
   return target;
 }
 
+function pushDistinctPassiveTrafficWaypoint(waypoints, waypoint) {
+  if (!waypoint) {
+    return;
+  }
+
+  const previous = waypoints[waypoints.length - 1] ?? null;
+  if (!previous || previous.distanceToSquared(waypoint) > 0.0001) {
+    waypoints.push(waypoint);
+  }
+}
+
+function getPassiveTrafficEdgeLanePosition(currentNode, travelDirection, edgeDirection, target = new THREE.Vector3()) {
+  return setPassiveTrafficLanePositionAtPoint(
+    currentNode,
+    currentNode.x + (edgeDirection.x * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    currentNode.z + (edgeDirection.z * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
+    travelDirection.x,
+    travelDirection.z,
+    target
+  );
+}
+
+export function isPassiveTrafficJunctionNode(node) {
+  return Boolean(
+    node
+    && (
+      (node.neighbors?.length ?? 0) >= 3
+      || PASSIVE_TRAFFIC_JUNCTION_ITEM_PATTERN.test(String(node.itemId ?? node.assetName ?? ''))
+    )
+  );
+}
+
+export function getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode) {
+  if (!previousNode || !currentNode || !nextNode) {
+    return PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT;
+  }
+
+  const incoming = getPassiveTrafficRoadStep(previousNode, currentNode);
+  const outgoing = getPassiveTrafficRoadStep(currentNode, nextNode);
+  if (
+    (Math.abs(incoming.x) + Math.abs(incoming.z) !== 1)
+    || (Math.abs(outgoing.x) + Math.abs(outgoing.z) !== 1)
+  ) {
+    return PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
+  }
+
+  const dot = (incoming.x * outgoing.x) + (incoming.z * outgoing.z);
+  if (dot > 0) {
+    return PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT;
+  }
+  if (dot < 0) {
+    return PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE;
+  }
+
+  const turn = (incoming.x * outgoing.z) - (incoming.z * outgoing.x);
+  return turn > 0
+    ? PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+    : PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT;
+}
+
+function getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextNode) {
+  if (!previousNode || !currentNode || !nextNode) {
+    return [];
+  }
+
+  const incoming = getPassiveTrafficRoadStep(previousNode, currentNode);
+  const outgoing = getPassiveTrafficRoadStep(currentNode, nextNode);
+  if (
+    (Math.abs(incoming.x) + Math.abs(incoming.z) !== 1)
+    || (Math.abs(outgoing.x) + Math.abs(outgoing.z) !== 1)
+    || ((incoming.x * outgoing.x) + (incoming.z * outgoing.z)) !== 1
+  ) {
+    return [];
+  }
+
+  const waypoints = [];
+  pushDistinctPassiveTrafficWaypoint(
+    waypoints,
+    getPassiveTrafficEdgeLanePosition(
+      currentNode,
+      incoming,
+      { x: -incoming.x, z: -incoming.z },
+      new THREE.Vector3()
+    )
+  );
+  pushDistinctPassiveTrafficWaypoint(
+    waypoints,
+    getPassiveTrafficEdgeLanePosition(
+      currentNode,
+      outgoing,
+      outgoing,
+      new THREE.Vector3()
+    )
+  );
+  pushDistinctPassiveTrafficWaypoint(
+    waypoints,
+    getPassiveTrafficLanePosition(currentNode, nextNode, new THREE.Vector3())
+  );
+  return waypoints;
+}
+
 export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode) {
   if (!previousNode || !currentNode || !nextNode) {
     return [];
   }
 
-  const incoming = getRoadStep(previousNode, currentNode);
-  const outgoing = getRoadStep(currentNode, nextNode);
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  if (
+    command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+  ) {
+    return [];
+  }
+
+  const incoming = getPassiveTrafficRoadStep(previousNode, currentNode);
+  const outgoing = getPassiveTrafficRoadStep(currentNode, nextNode);
   if (
     (Math.abs(incoming.x) + Math.abs(incoming.z) !== 1)
     || (Math.abs(outgoing.x) + Math.abs(outgoing.z) !== 1)
@@ -402,20 +544,16 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
     return [];
   }
 
-  const start = setPassiveTrafficLanePositionAtPoint(
+  const start = getPassiveTrafficEdgeLanePosition(
     currentNode,
-    currentNode.x - (incoming.x * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
-    currentNode.z - (incoming.z * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
-    incoming.x,
-    incoming.z,
+    incoming,
+    { x: -incoming.x, z: -incoming.z },
     new THREE.Vector3()
   );
-  const end = setPassiveTrafficLanePositionAtPoint(
+  const end = getPassiveTrafficEdgeLanePosition(
     currentNode,
-    currentNode.x + (outgoing.x * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
-    currentNode.z + (outgoing.z * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
-    outgoing.x,
-    outgoing.z,
+    outgoing,
+    outgoing,
     new THREE.Vector3()
   );
   const controlDistance = BUILDER_TILE_SIZE * 0.42;
@@ -436,22 +574,42 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
   const exitLane = getPassiveTrafficLanePosition(currentNode, nextNode, new THREE.Vector3());
   const waypoints = [];
   if (entryLane.distanceTo(start) > 0.001) {
-    waypoints.push(start.clone());
+    pushDistinctPassiveTrafficWaypoint(waypoints, start.clone());
   }
 
   for (const time of PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES) {
-    waypoints.push(clampPassiveTrafficPositionToRoadNode(
-      currentNode,
-      setCubicBezierPoint(start, controlA, controlB, end, time, new THREE.Vector3()),
-      new THREE.Vector3()
-    ));
+    pushDistinctPassiveTrafficWaypoint(
+      waypoints,
+      clampPassiveTrafficPositionToRoadNode(
+        currentNode,
+        setCubicBezierPoint(start, controlA, controlB, end, time, new THREE.Vector3()),
+        new THREE.Vector3()
+      )
+    );
   }
 
   if (waypoints[waypoints.length - 1]?.distanceTo(exitLane) > 0.001) {
-    waypoints.push(exitLane);
+    pushDistinctPassiveTrafficWaypoint(waypoints, exitLane);
   }
 
   return waypoints;
+}
+
+export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode) {
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  const shouldStopAtEntry = isPassiveTrafficJunctionNode(currentNode)
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
+    && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
+  const waypoints = command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT
+    ? getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextNode)
+    : getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode);
+
+  return {
+    command,
+    waypoints,
+    shouldStopAtEntry,
+    stopWaypointIndex: shouldStopAtEntry && waypoints.length ? 0 : -1
+  };
 }
 
 export function findPassiveTrafficPath(graph, startIndex, goalIndex) {

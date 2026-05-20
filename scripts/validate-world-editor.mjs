@@ -129,14 +129,19 @@ import { assets } from '../src/world/assetManifest.js';
 import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_CAR_SCALE,
+  PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_LANE_OFFSET,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
+  clampPassiveTrafficPositionToRoadNodes,
   findPassiveTrafficPath,
+  getPassiveTrafficDriveCommand,
+  getPassiveTrafficDriveScript,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRoadExits,
   getPassiveTrafficTurnLaneWaypoints,
+  isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode
 } from '../src/world/passiveTraffic.js';
 import {
@@ -619,6 +624,87 @@ function validatePassiveTraffic() {
     'Passive traffic should hold a straight center-of-lane line across consecutive straight road tiles'
   );
 
+  const straightJunctionGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_junction_north', itemId: 'road_straight', cell: [0, -1], rotationQuarterTurns: 0 },
+    { id: 'traffic_junction_center', itemId: 'road_junction', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_junction_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 }
+  ]);
+  const straightJunctionNorth = straightJunctionGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === -1);
+  const straightJunctionCenter = straightJunctionGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0);
+  const straightJunctionSouth = straightJunctionGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 1);
+  const straightJunctionScript = getPassiveTrafficDriveScript(straightJunctionNorth, straightJunctionCenter, straightJunctionSouth);
+  assert(
+    getPassiveTrafficDriveCommand(straightJunctionNorth, straightJunctionCenter, straightJunctionSouth) === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT,
+    'Passive traffic should script straight-through junction driving as a straight command'
+  );
+  assert(isPassiveTrafficJunctionNode(straightJunctionCenter), 'Passive traffic should recognize Road Junction tiles as junction nodes');
+  assert(
+    straightJunctionScript.shouldStopAtEntry
+      && straightJunctionScript.stopWaypointIndex === 0
+      && straightJunctionScript.waypoints.length >= 3,
+    'Passive traffic should stop briefly at the entry edge before traversing a Road Junction tile'
+  );
+  assert(
+    Math.abs(straightJunctionScript.waypoints[0].z - straightJunctionCenter.z) > BUILDER_TILE_SIZE * 0.4
+      && isPassiveTrafficPositionInsideRoadNode(straightJunctionCenter, straightJunctionScript.waypoints[0]),
+    'Passive traffic junction stop waypoint should be at the road tile edge, not the tile center'
+  );
+
+  const rightCornerGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_right_turn_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_right_turn_corner', itemId: 'road_corner', cell: [0, 0], rotationQuarterTurns: 1 },
+    { id: 'traffic_right_turn_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const rightCornerSouth = rightCornerGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 1);
+  const rightCornerNode = rightCornerGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0);
+  const rightCornerEast = rightCornerGraph.nodes.find((node) => node.cellX === 1 && node.cellZ === 0);
+  const rightCornerScript = getPassiveTrafficDriveScript(rightCornerSouth, rightCornerNode, rightCornerEast);
+  assert(
+    rightCornerScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+      && !rightCornerScript.shouldStopAtEntry
+      && rightCornerScript.waypoints.length >= 10,
+    'Passive traffic should use a non-stopping right-turn script for Road Corner tiles'
+  );
+
+  const leftCurvedCornerGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_left_turn_north', itemId: 'road_straight', cell: [0, -1], rotationQuarterTurns: 0 },
+    { id: 'traffic_left_turn_corner', itemId: 'road_corner_curved', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_left_turn_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const leftCurvedCornerNorth = leftCurvedCornerGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === -1);
+  const leftCurvedCornerNode = leftCurvedCornerGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0);
+  const leftCurvedCornerEast = leftCurvedCornerGraph.nodes.find((node) => node.cellX === 1 && node.cellZ === 0);
+  const leftCurvedCornerScript = getPassiveTrafficDriveScript(leftCurvedCornerNorth, leftCurvedCornerNode, leftCurvedCornerEast);
+  assert(
+    leftCurvedCornerScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+      && !leftCurvedCornerScript.shouldStopAtEntry
+      && leftCurvedCornerScript.waypoints.every((waypoint) => (
+        isPassiveTrafficPositionInsideRoadNode(leftCurvedCornerNode, waypoint)
+        || isPassiveTrafficPositionInsideRoadNode(leftCurvedCornerEast, waypoint)
+      )),
+    'Passive traffic should use a bounded left-turn script for Road Corner Curved tiles'
+  );
+
+  assert(
+    getPassiveTrafficDriveCommand(straightJunctionNorth, straightJunctionCenter, straightJunctionNorth) === PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE,
+    'Passive traffic should classify a U-turn as reverse instead of a normal turn'
+  );
+  assert(
+    getPassiveTrafficTurnLaneWaypoints(straightJunctionNorth, straightJunctionCenter, straightJunctionNorth).length === 0,
+    'Passive traffic should not run the 90-degree turn script for reverse recovery'
+  );
+  assert(
+    isPassiveTrafficPositionInsideRoadNode(
+      straightJunctionCenter,
+      clampPassiveTrafficPositionToRoadNodes(
+        [straightJunctionCenter],
+        new Vector3(straightJunctionCenter.x + BUILDER_TILE_SIZE * 2, 0, straightJunctionCenter.z + BUILDER_TILE_SIZE * 2),
+        new Vector3()
+      )
+    ),
+    'Passive traffic should clamp recovery positions back inside the mapped road tile'
+  );
+
   const turnCandidate = trafficGraph.activeNodes
     .map((node) => {
       for (const incomingIndex of node.neighbors) {
@@ -683,8 +769,13 @@ function validatePassiveTraffic() {
       && /updatePassiveTraffic/.test(worldRendererSource)
       && /PASSIVE_TRAFFIC_CAR_SCALE/.test(worldRendererSource)
       && /turnStopSeconds/.test(worldRendererSource)
+      && /turnStopWaypointIndex/.test(worldRendererSource)
       && /turnWaypointActive/.test(worldRendererSource)
       && /turnWaypointQueue/.test(worldRendererSource)
+      && /driveCommand/.test(worldRendererSource)
+      && /visitedNodeIndices/.test(worldRendererSource)
+      && /stuckSeconds/.test(worldRendererSource)
+      && /clampPassiveTrafficPositionToRoadNodes/.test(worldRendererSource)
       && /routeAdvanceCount/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling'
