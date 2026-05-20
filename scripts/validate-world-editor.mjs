@@ -1712,8 +1712,16 @@ function validateFootprintSupport() {
     'World renderer should make occluding building exteriors fully transparent'
   );
   assert(
-    /PerspectiveCamera\(55,\s*window\.innerWidth \/ window\.innerHeight,\s*0\.5,\s*400\)/.test(mainGameSource),
+    /PerspectiveCamera\(DEFAULT_CAMERA_FOV,\s*window\.innerWidth \/ window\.innerHeight,\s*0\.5,\s*400\)/.test(mainGameSource),
     'Main game camera should use a tighter near plane so shallow building detail remains depth-stable'
+  );
+  assert(
+    /startInteractionCameraFocus\(interaction[\s\S]*updateInteractionCameraFocus\(\{ snap \}\)/.test(mainGameSource)
+      && /openStockMarket\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'stock-market' \}/.test(mainGameSource)
+      && /closeStockMarket\(\)\s*\{[\s\S]*clearInteractionCameraFocus\('stock-market'\)/.test(mainGameSource)
+      && /openBlackjack\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'blackjack' \}/.test(mainGameSource)
+      && /openSchoolMicrogame\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'school-microgame' \}/.test(mainGameSource),
+    'NPC and prop function interactions should route through the cutscene-style interaction camera'
   );
   assert(
     /cloneGarageDoorDefinition/.test(worldRendererSource),

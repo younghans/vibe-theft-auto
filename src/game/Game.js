@@ -213,9 +213,22 @@ import {
 } from '../shared/vibeRadio.js';
 import { getNpcModelVoice } from '../shared/npcVoice.js';
 
+const DEFAULT_CAMERA_FOV = 55;
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+const INTERACTION_CAMERA_FOV = 42;
+const INTERACTION_CAMERA_SMOOTHING = 0.12;
+const INTERACTION_CAMERA_FOV_SMOOTHING = 0.18;
+const INTERACTION_CAMERA_RETURN_FOV_SMOOTHING = 0.12;
+const INTERACTION_CAMERA_SHOULDER_DISTANCE = 2.75;
+const INTERACTION_CAMERA_SHOULDER_OFFSET = 0.7;
+const INTERACTION_CAMERA_HEIGHT = 2.65;
+const INTERACTION_CAMERA_PLAYER_LOOK_HEIGHT = 2.15;
+const INTERACTION_CAMERA_NPC_LOOK_HEIGHT = 2.5;
+const INTERACTION_CAMERA_OBJECT_LOOK_HEIGHT = 1.45;
+const INTERACTION_CAMERA_MIN_MS = 900;
+const INTERACTION_CAMERA_TRANSIENT_MS = 1250;
 function createCameraMovementForward(cameraOffset) {
   const forward = new THREE.Vector3(
     cameraOffset.x - CAMERA_LOOK_OFFSET.x,
@@ -1162,7 +1175,7 @@ export class Game {
     this.scene.background = new THREE.Color(0x7da6c8);
     this.scene.fog = new THREE.Fog(0x7da6c8, WORLD_FOG_NEAR, WORLD_FOG_FAR);
 
-    this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.5, 400);
+    this.camera = new THREE.PerspectiveCamera(DEFAULT_CAMERA_FOV, window.innerWidth / window.innerHeight, 0.5, 400);
     this.camera.position.copy(CAMERA_OFFSET);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1430,6 +1443,7 @@ export class Game {
     this.stockMarketRequestInFlight = false;
     this.stockMarketRefreshAt = 0;
     this.activeInteractionMenu = null;
+    this.activeInteractionCamera = null;
     this.bartenderRequestInFlight = false;
     this.pawnShopRequestInFlight = false;
     this.carDealerRequestInFlight = false;
@@ -1581,6 +1595,11 @@ export class Game {
     this.cameraTargetPosition = new THREE.Vector3();
     this.cameraLookTarget = new THREE.Vector3();
     this.damageCameraSide = new THREE.Vector3();
+    this.interactionCameraBaseTarget = new THREE.Vector3();
+    this.interactionCameraLookTarget = new THREE.Vector3();
+    this.interactionCameraPlayerLookTarget = new THREE.Vector3();
+    this.interactionCameraForward = new THREE.Vector3(0, 0, 1);
+    this.interactionCameraRight = new THREE.Vector3(1, 0, 0);
     this.cameraOcclusionPreservePlacementIds = [];
     this.cameraOcclusionOptions = {
       preserveInteriorNodePlacementIds: this.cameraOcclusionPreservePlacementIds
@@ -7058,6 +7077,10 @@ export class Game {
       return;
     }
 
+    this.startInteractionCameraFocus(interaction, {
+      kind: 'delivery-quest',
+      persistent: false
+    });
     this.deliveryQuestRequestInFlight = true;
     try {
       const service = this.npcService;
@@ -7084,6 +7107,7 @@ export class Game {
       this.hud.showToast('Delivery request failed.');
     } finally {
       this.deliveryQuestRequestInFlight = false;
+      this.clearInteractionCameraFocus('delivery-quest', { afterMinimum: true });
     }
   }
 
@@ -7168,6 +7192,10 @@ export class Game {
       return;
     }
 
+    this.startInteractionCameraFocus(interaction, {
+      kind: 'gym-check-in',
+      persistent: false
+    });
     this.gymMembershipRequestInFlight = true;
     try {
       const result = await this.npcService?.buyGymMembership?.(interaction.npcId);
@@ -7183,6 +7211,7 @@ export class Game {
       this.hud.showToast('Gym membership request failed.');
     } finally {
       this.gymMembershipRequestInFlight = false;
+      this.clearInteractionCameraFocus('gym-check-in', { afterMinimum: true });
     }
   }
 
@@ -7400,6 +7429,7 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.startInteractionCameraFocus(interaction, { kind: 'stock-market' });
     this.stockMarketNpcId = npcId;
     this.stockMarketRefreshAt = 0;
     this.hud.setStockMarketState({
@@ -7414,6 +7444,7 @@ export class Game {
   }
 
   closeStockMarket() {
+    this.clearInteractionCameraFocus('stock-market');
     this.hud.setStockMarketState({
       visible: false,
       market: this.stockMarketSnapshot,
@@ -7738,10 +7769,13 @@ export class Game {
 
     menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Bartender');
     menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    menu.interaction = activeInteraction;
+    this.refreshInteractionCameraFocus(activeInteraction, { kind: 'bartender' });
     this.hud.setInteractionMenuAnchor(menu.anchor);
   }
 
   closeInteractionMenu() {
+    this.clearInteractionCameraFocus(this.activeInteractionMenu?.kind ?? '');
     this.activeInteractionMenu = null;
     this.carDealerPreviewSyncRequestId += 1;
     this.hud.hideInteractionMenu();
@@ -7808,8 +7842,10 @@ export class Game {
       kind: 'bartender',
       npcId,
       npcName: String(interaction?.npc?.name ?? 'Bartender'),
-      anchor: this.getBartenderMenuAnchor(interaction)
+      anchor: this.getBartenderMenuAnchor(interaction),
+      interaction
     };
+    this.startInteractionCameraFocus(interaction, { kind: 'bartender' });
     this.renderBartenderMenu();
   }
 
@@ -7963,6 +7999,8 @@ export class Game {
 
     menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Pawn Shop');
     menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    menu.interaction = activeInteraction;
+    this.refreshInteractionCameraFocus(activeInteraction, { kind: 'pawn-shop' });
     this.hud.setInteractionMenuAnchor(menu.anchor);
   }
 
@@ -8013,8 +8051,10 @@ export class Game {
       kind: 'pawn-shop',
       npcId,
       npcName: String(interaction?.npc?.name ?? 'Pawn Shop'),
-      anchor: this.getBartenderMenuAnchor(interaction)
+      anchor: this.getBartenderMenuAnchor(interaction),
+      interaction
     };
+    this.startInteractionCameraFocus(interaction, { kind: 'pawn-shop' });
     this.renderPawnShopMenu();
   }
 
@@ -8149,6 +8189,8 @@ export class Game {
 
     menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Car Dealer');
     menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    menu.interaction = activeInteraction;
+    this.refreshInteractionCameraFocus(activeInteraction, { kind: 'car-dealer' });
     this.hud.setInteractionMenuAnchor(menu.anchor);
   }
 
@@ -8210,8 +8252,10 @@ export class Game {
       kind: 'car-dealer',
       npcId,
       npcName: String(interaction?.npc?.name ?? 'Car Dealer'),
-      anchor: this.getBartenderMenuAnchor(interaction)
+      anchor: this.getBartenderMenuAnchor(interaction),
+      interaction
     };
+    this.startInteractionCameraFocus(interaction, { kind: 'car-dealer' });
     this.renderCarDealerMenu();
   }
 
@@ -8367,6 +8411,8 @@ export class Game {
 
     menu.npcName = String(activeInteraction?.npc?.name ?? menu.npcName ?? 'Martha');
     menu.anchor = this.getBartenderMenuAnchor(activeInteraction);
+    menu.interaction = activeInteraction;
+    this.refreshInteractionCameraFocus(activeInteraction, { kind: 'martha' });
     this.hud.setInteractionMenuAnchor(menu.anchor);
   }
 
@@ -8411,8 +8457,10 @@ export class Game {
       kind: 'martha',
       npcId,
       npcName: String(interaction?.npc?.name ?? 'Martha'),
-      anchor: this.getBartenderMenuAnchor(interaction)
+      anchor: this.getBartenderMenuAnchor(interaction),
+      interaction
     };
+    this.startInteractionCameraFocus(interaction, { kind: 'martha' });
     this.renderMarthaMenu();
   }
 
@@ -8857,6 +8905,7 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.startInteractionCameraFocus(interaction, { kind: 'blackjack' });
     this.blackjackPreviewMode = false;
     this.blackjackPreviewSession = null;
     this.blackjackNpcId = npcId;
@@ -8872,6 +8921,7 @@ export class Game {
   }
 
   closeBlackjack() {
+    this.clearInteractionCameraFocus('blackjack');
     const closingPreview = this.blackjackPreviewMode;
     this.blackjackPreviewMode = false;
     this.blackjackPreviewSession = null;
@@ -9141,6 +9191,7 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.startInteractionCameraFocus(interaction, { kind: 'vibe-hero' });
     this.stopVibeHeroAudio();
     this.vibeHero = this.createVibeHeroState(this.vibeHeroSelectedSongId, { editorMode: editing });
     if (editing) {
@@ -9163,6 +9214,7 @@ export class Game {
   }
 
   closeVibeHero() {
+    this.clearInteractionCameraFocus('vibe-hero');
     this.saveVibeHeroEditorChart(this.vibeHero);
     this.stopVibeHeroAudio();
     this.vibeHero = this.vibeHero
@@ -10353,6 +10405,10 @@ export class Game {
       return false;
     }
 
+    this.startInteractionCameraFocus(interactable, {
+      kind: 'police-garage',
+      persistent: false
+    });
     const open = !this.isPoliceGarageOpen(placementId);
     if (open) {
       this.openPoliceGaragePlacementIds.add(placementId);
@@ -10383,6 +10439,7 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.startInteractionCameraFocus(interaction, { kind: 'office-job' });
     this.officeJobPlacementId = String(interaction?.placementId ?? '').trim();
     this.schoolMicrogameNpcId = '';
     this.schoolMicrogameNpcName = interaction?.label ?? job.roleLabel ?? 'Office Station';
@@ -10468,6 +10525,7 @@ export class Game {
     this.closePhoneMenu();
     const placementId = String(interaction?.placementId ?? this.officeJobPlacementId ?? '').trim();
     this.officeJobPlacementId = placementId;
+    this.startInteractionCameraFocus(interaction ?? this.currentInteractable, { kind: 'office-job' });
     this.schoolMicrogameSessionActive = false;
     this.schoolMicrogameNpcId = '';
     this.schoolMicrogameNpcName = 'Office Computer';
@@ -10922,6 +10980,7 @@ export class Game {
     }
 
     this.closePhoneMenu();
+    this.startInteractionCameraFocus(interaction, { kind: 'school-microgame' });
     this.schoolMicrogameNpcId = npcId;
     this.schoolMicrogameNpcName = String(interaction?.npc?.name ?? 'Teacher');
     this.schoolMicrogameNpcModelId = String(interaction?.npc?.modelId ?? this.schoolMicrogameNpcModelId ?? 'martha');
@@ -11089,6 +11148,8 @@ export class Game {
   }
 
   closeSchoolMicrogame() {
+    this.clearInteractionCameraFocus('school-microgame');
+    this.clearInteractionCameraFocus('office-job');
     this.schoolMicrogameSessionActive = false;
     this.schoolMicrogameHoldActive = false;
     this.schoolMicrogameRequestInFlight = false;
@@ -17210,6 +17271,7 @@ export class Game {
       this.player?.setAimingState(false);
       this.player?.setSkateboardState?.({ skating: false });
       this.updateBuilderCamera();
+      this.clearInteractionCameraFocus();
       this.currentInteractable = null;
       this.hud.setPrompt(null);
     } else {
@@ -17241,7 +17303,7 @@ export class Game {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen || this.carSelectorVisible) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen || this.carSelectorVisible) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
       const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
@@ -17300,7 +17362,7 @@ export class Game {
           }
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !adminPromptOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -17339,7 +17401,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
+        if (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           const now = performance.now();
@@ -17408,7 +17470,237 @@ export class Game {
     this.input.endFrame();
   }
 
+  updateCameraFov(targetFov = DEFAULT_CAMERA_FOV, { snap = false, smoothing = INTERACTION_CAMERA_RETURN_FOV_SMOOTHING } = {}) {
+    if (!this.camera) {
+      return;
+    }
+
+    const nextFov = THREE.MathUtils.clamp(Number(targetFov) || DEFAULT_CAMERA_FOV, 25, DEFAULT_CAMERA_FOV);
+    const previousFov = this.camera.fov;
+    this.camera.fov = snap
+      ? nextFov
+      : THREE.MathUtils.lerp(previousFov, nextFov, smoothing);
+    if (Math.abs(this.camera.fov - previousFov) > 0.01) {
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  getInteractionCameraKey(kind = '', interaction = null) {
+    const normalizedKind = String(kind || interaction?.kind || 'interaction').trim() || 'interaction';
+    const targetId = String(
+      interaction?.npcId
+      || interaction?.placementId
+      || interaction?.itemId
+      || interaction?.gameId
+      || interaction?.label
+      || ''
+    ).trim();
+    return targetId ? `${normalizedKind}:${targetId}` : normalizedKind;
+  }
+
+  getInteractionCameraBaseTarget(interaction = null, target = this.interactionCameraBaseTarget) {
+    if (!interaction || !target) {
+      return null;
+    }
+
+    const npcId = String(interaction.npcId || interaction.placementId || '').trim();
+    const npcState = interaction.kind !== 'world' && npcId
+      ? this.npcServiceState.npcs.get(npcId)
+      : null;
+    const npcX = Number(npcState?.x ?? npcState?.position?.[0]);
+    const npcZ = Number(npcState?.z ?? npcState?.position?.[1]);
+    if (Number.isFinite(npcX) && Number.isFinite(npcZ)) {
+      target.set(npcX, this.getActiveGroundHeightAt({ x: npcX, z: npcZ }), npcZ);
+      return target;
+    }
+
+    const source = interaction.originPosition?.isVector3
+      ? interaction.originPosition
+      : interaction.position?.isVector3
+        ? interaction.position
+        : interaction.approachPosition?.isVector3
+          ? interaction.approachPosition
+          : null;
+    if (!source) {
+      return null;
+    }
+
+    target.copy(source);
+    if (!Number.isFinite(target.y)) {
+      target.y = this.getActiveGroundHeightAt(target);
+    }
+    return target;
+  }
+
+  getInteractionCameraLookHeight(interaction = null) {
+    const kind = String(interaction?.kind ?? '');
+    return (
+      kind === 'npc'
+      || kind.includes('delivery')
+      || kind.includes('gym-check-in')
+      || kind.includes('stock-market')
+      || kind.includes('blackjack')
+      || kind.includes('school')
+      || kind.includes('bartender')
+      || kind.includes('pawn-shop')
+      || kind.includes('car-dealer')
+      || kind.includes('martha')
+    )
+      ? INTERACTION_CAMERA_NPC_LOOK_HEIGHT
+      : INTERACTION_CAMERA_OBJECT_LOOK_HEIGHT;
+  }
+
+  getInteractionCameraLookTarget(interaction = null, target = this.interactionCameraLookTarget) {
+    const baseTarget = this.getInteractionCameraBaseTarget(interaction, target);
+    if (!baseTarget) {
+      return null;
+    }
+
+    baseTarget.y += this.getInteractionCameraLookHeight(interaction);
+    return baseTarget;
+  }
+
+  facePlayerTowardInteraction(interaction = null) {
+    if (!this.player) {
+      return false;
+    }
+
+    const target = this.getInteractionCameraBaseTarget(interaction, this.interactionCameraBaseTarget);
+    if (!target) {
+      return false;
+    }
+
+    const dx = target.x - this.player.position.x;
+    const dz = target.z - this.player.position.z;
+    if ((dx * dx) + (dz * dz) <= 0.0001) {
+      return false;
+    }
+
+    const rotationY = Math.atan2(dx, dz);
+    this.player.setFacing(rotationY);
+    this.player.setAimRotation(rotationY);
+    this.currentAimDirection.set(Math.sin(rotationY), 0, Math.cos(rotationY)).normalize();
+    return true;
+  }
+
+  startInteractionCameraFocus(interaction = null, {
+    kind = '',
+    persistent = true,
+    durationMs = INTERACTION_CAMERA_TRANSIENT_MS,
+    minimumMs = INTERACTION_CAMERA_MIN_MS
+  } = {}) {
+    if (!this.player || !interaction) {
+      return false;
+    }
+
+    const now = performance.now();
+    const normalizedKind = String(kind || interaction.kind || 'interaction').trim() || 'interaction';
+    this.activeInteractionCamera = {
+      kind: normalizedKind,
+      key: this.getInteractionCameraKey(normalizedKind, interaction),
+      interaction,
+      persistent: Boolean(persistent),
+      minUntil: now + Math.max(0, Number(minimumMs) || 0),
+      releaseAt: persistent
+        ? Number.POSITIVE_INFINITY
+        : now + Math.max(Number(durationMs) || 0, Number(minimumMs) || 0)
+    };
+    this.facePlayerTowardInteraction(interaction);
+    return true;
+  }
+
+  refreshInteractionCameraFocus(interaction = null, { kind = '' } = {}) {
+    const activeCamera = this.activeInteractionCamera;
+    if (!activeCamera || !interaction) {
+      return false;
+    }
+
+    const normalizedKind = String(kind || interaction.kind || '').trim();
+    if (normalizedKind && activeCamera.kind !== normalizedKind) {
+      return false;
+    }
+
+    activeCamera.interaction = interaction;
+    activeCamera.key = this.getInteractionCameraKey(activeCamera.kind, interaction);
+    return true;
+  }
+
+  clearInteractionCameraFocus(kindOrKey = '', { afterMinimum = false } = {}) {
+    const activeCamera = this.activeInteractionCamera;
+    if (!activeCamera) {
+      return false;
+    }
+
+    const normalized = String(kindOrKey ?? '').trim();
+    if (normalized && activeCamera.kind !== normalized && activeCamera.key !== normalized) {
+      return false;
+    }
+
+    const now = performance.now();
+    if (afterMinimum && now < activeCamera.minUntil) {
+      activeCamera.persistent = false;
+      activeCamera.releaseAt = activeCamera.minUntil;
+    } else {
+      this.activeInteractionCamera = null;
+    }
+    return true;
+  }
+
+  updateInteractionCameraFocus({ snap = false } = {}) {
+    const activeCamera = this.activeInteractionCamera;
+    if (!activeCamera || !this.player) {
+      return false;
+    }
+
+    const now = performance.now();
+    if (!activeCamera.persistent && now >= activeCamera.releaseAt) {
+      this.activeInteractionCamera = null;
+      return false;
+    }
+
+    const lookTarget = this.getInteractionCameraLookTarget(activeCamera.interaction, this.interactionCameraLookTarget);
+    if (!lookTarget) {
+      this.activeInteractionCamera = null;
+      return false;
+    }
+
+    const playerLookTarget = this.interactionCameraPlayerLookTarget
+      .copy(this.player.position);
+    playerLookTarget.y += INTERACTION_CAMERA_PLAYER_LOOK_HEIGHT;
+
+    const forward = this.interactionCameraForward.copy(lookTarget).sub(playerLookTarget);
+    forward.y = 0;
+    if (forward.lengthSq() <= 0.0001) {
+      forward.set(Math.sin(this.player.object.rotation.y), 0, Math.cos(this.player.object.rotation.y));
+    }
+    forward.normalize();
+
+    const right = this.interactionCameraRight.set(forward.z, 0, -forward.x).normalize();
+    const targetPosition = this.cameraTargetPosition.copy(playerLookTarget)
+      .addScaledVector(forward, -INTERACTION_CAMERA_SHOULDER_DISTANCE)
+      .addScaledVector(right, INTERACTION_CAMERA_SHOULDER_OFFSET);
+    targetPosition.y = this.player.position.y + INTERACTION_CAMERA_HEIGHT;
+    const minimumCameraY = Math.min(lookTarget.y + 0.35, this.player.position.y + INTERACTION_CAMERA_HEIGHT + 0.5);
+    targetPosition.y = Math.max(targetPosition.y, minimumCameraY);
+
+    if (snap) {
+      this.camera.position.copy(targetPosition);
+    } else {
+      this.camera.position.lerp(targetPosition, INTERACTION_CAMERA_SMOOTHING);
+    }
+    this.camera.lookAt(lookTarget);
+    this.updateCameraFov(INTERACTION_CAMERA_FOV, {
+      snap,
+      smoothing: INTERACTION_CAMERA_FOV_SMOOTHING
+    });
+    return true;
+  }
+
   updateCamera(aimDirection = this.currentAimDirection, isAiming = false, { snap = false } = {}) {
+    if (this.updateInteractionCameraFocus({ snap })) {
+      return;
+    }
+
     const zoomLevel = this.getCameraZoomLevel();
     const cameraOffset = this.cameraOffsetScratch
       .copy(isAiming ? AIM_CAMERA_OFFSET : CAMERA_OFFSET)
@@ -17437,6 +17729,10 @@ export class Game {
       this.camera.position.lerp(targetPosition, isAiming ? 0.14 : 0.08);
     }
     this.camera.lookAt(lookTarget);
+    this.updateCameraFov(DEFAULT_CAMERA_FOV, {
+      snap,
+      smoothing: INTERACTION_CAMERA_RETURN_FOV_SMOOTHING
+    });
   }
 
   triggerDamageCameraFeedback(direction = null) {
@@ -17797,6 +18093,10 @@ export class Game {
       return;
     }
 
+    this.startInteractionCameraFocus(nearest, {
+      kind: 'world-prop',
+      persistent: false
+    });
     this.hud.showToast(nearest.actionText);
   }
 
