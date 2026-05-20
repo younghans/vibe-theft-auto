@@ -5482,36 +5482,24 @@ body.is-admin-prompt-resizing * {
   inset: 0;
   display: grid;
   place-items: center;
-}
-
-.hud__car-selector-select {
-  justify-self: center;
-  min-width: 180px;
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 8px;
-  border: 1px solid rgba(242, 200, 113, 0.72);
-  background: rgba(242, 200, 113, 0.18);
-  color: #fff2c8;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   font: inherit;
-  font-size: 13px;
-  font-weight: 850;
-  letter-spacing: 0;
   cursor: pointer;
   pointer-events: auto;
-  transition: border-color 140ms ease, background 140ms ease, color 140ms ease, opacity 140ms ease, transform 140ms ease;
+  appearance: none;
 }
 
-.hud__car-selector-select:hover {
-  border-color: rgba(255, 228, 159, 0.92);
-  background: rgba(242, 200, 113, 0.26);
-  transform: translateY(-1px);
+.hud__car-stage-preview:focus-visible {
+  outline: 2px solid rgba(255, 228, 159, 0.92);
+  outline-offset: -8px;
+  border-radius: 18px;
 }
 
-.hud__car-selector-select:disabled {
-  opacity: 0.54;
+.hud__car-stage-preview:disabled {
   cursor: default;
-  transform: none;
 }
 
 .hud__vehicle-stage-canvas,

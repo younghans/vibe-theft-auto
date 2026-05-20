@@ -4306,7 +4306,7 @@ function validateBartenderFunction() {
       && /selectPlayerVehicle/.test(gameSource)
       && /focusCarSelectorVehicle/.test(gameSource)
       && /getPlayerOwnedVehicleMenuItems/.test(gameSource),
-    'Game client should expose a preview-then-select owned-car selector'
+    'Game client should expose a click-to-select owned-car selector'
   );
   assert(
     /SKATEBOARD_ITEM_ID/.test(gameSource)
@@ -4364,9 +4364,13 @@ function validateBartenderFunction() {
   assert(
     /data-bound-item-vehicle[\s\S]*aria-haspopup="dialog"/.test(hudSource)
       && /data-car-selector/.test(hudSource)
-      && /data-car-selector-select/.test(hudSource)
+      && /data-car-selector-preview/.test(hudSource)
+      && /onFocusCar\?\.\(itemId\)/.test(hudSource)
+      && /onSelectCar\?\.\(itemId\)/.test(hudSource)
+      && !/data-car-selector-select/.test(hudSource)
+      && !/\.hud__car-selector-select/.test(styles)
       && /\.hud__car-selector/.test(styles),
-    'HUD car badge should open an owned-car selector menu with an explicit Select button'
+    'HUD car badge should open an owned-car selector menu where clicking a vehicle selects it without a separate Select button'
   );
   assert(
     /data-bound-item-vehicle[\s\S]*\$\{getVehicleBadgeMarkup\(\)\}/.test(hudSource)
@@ -4382,7 +4386,7 @@ function validateBartenderFunction() {
       && /vehicleSelect:/.test(gameSource)
       && !/getCarSelectorVehicleMarkup/.test(hudSource)
       && !/hud__car-selector-vehicle/.test(styles),
-    'Vehicle selector and dealer shop should expose 3D model preview mounts and explicit owned-car selection actions'
+    'Vehicle selector and dealer shop should expose 3D model preview mounts and click-to-select owned-car entries'
   );
   assert(
     /\.hud__vibe-radio-widget\s*\{[\s\S]*left:\s*calc\(230px \+ var\(--safe-left\)\)/.test(styles)

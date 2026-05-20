@@ -4060,8 +4060,8 @@ function getCarSelectorCardMarkup(entry = {}) {
       type="button"
       data-car-item-id="${escapeHtml(entry.id ?? '')}"
       style="--car-accent:${escapeHtml(entry.accent ?? '#d85b4d')}"
-      aria-pressed="${entry.selected ? 'true' : 'false'}"
-      aria-label="Preview ${escapeHtml(entry.label ?? 'vehicle')}"
+      aria-pressed="${entry.active ? 'true' : 'false'}"
+      aria-label="Select ${escapeHtml(entry.label ?? 'vehicle')}"
     >
       <span class="hud__character-card-frame hud__car-card-frame">
         <span class="hud__car-card-preview" data-car-preview-card="${escapeHtml(entry.id ?? '')}">
@@ -4266,7 +4266,6 @@ export class Hud {
     this.carSelectorPreview = this.overlay.querySelector('[data-car-selector-preview]');
     this.carSelectorPrev = this.overlay.querySelector('[data-car-selector-prev]');
     this.carSelectorNext = this.overlay.querySelector('[data-car-selector-next]');
-    this.carSelectorSelect = this.overlay.querySelector('[data-car-selector-select]');
     this.carSelectorGrid = this.overlay.querySelector('[data-car-selector-grid]');
     this.drunknessRoot = this.overlay.querySelector('[data-drunkness-root]');
     this.drunknessFill = this.overlay.querySelector('[data-drunkness-fill]');
@@ -5266,14 +5265,13 @@ export class Hud {
           </button>
           <div class="hud__character-stage hud__car-stage">
             <div class="hud__character-stage-glow"></div>
-            <div class="hud__car-stage-preview" data-car-selector-preview></div>
+            <button class="hud__car-stage-preview" type="button" data-car-selector-preview aria-label="Select previewed vehicle" title="Select previewed vehicle"></button>
           </div>
           <button class="hud__character-nav" type="button" data-car-selector-next aria-label="Next vehicle" title="Next vehicle">
             <span aria-hidden="true">&#8250;</span>
           </button>
         </div>
         <div class="hud__character-selection-status" data-car-selector-status>Currently selected</div>
-        <button class="hud__car-selector-select" type="button" data-car-selector-select disabled>Select</button>
         <div class="hud__character-grid hud__car-grid" data-car-selector-grid></div>
       </section>
       <section class="hud__shader-debug" data-shader-debug hidden>
@@ -7104,7 +7102,7 @@ export class Hud {
       onCycleCar?.(1);
     });
 
-    this.carSelectorSelect?.addEventListener('click', (event) => {
+    this.carSelectorPreview?.addEventListener('click', (event) => {
       if (!this.isElementInteractive(this.carSelectorRoot)) {
         return;
       }
@@ -7129,7 +7127,11 @@ export class Hud {
 
       event.preventDefault();
       event.stopPropagation();
-      onFocusCar?.(button.dataset.carItemId ?? '');
+      const itemId = button.dataset.carItemId ?? '';
+      const focused = onFocusCar?.(itemId);
+      if (focused !== false) {
+        onSelectCar?.(itemId);
+      }
     });
   }
 
@@ -11716,10 +11718,12 @@ export class Hud {
       this.carSelectorStatus.textContent = statusText;
     }
 
-    if (this.carSelectorSelect) {
+    if (this.carSelectorPreview) {
+      const selectedLabel = selectedEntry?.label ?? 'vehicle';
       const selectedIsActive = Boolean(selectedEntry && activeEntry && selectedEntry.id === activeEntry.id);
-      this.carSelectorSelect.textContent = selectedIsActive ? 'Selected' : `Select ${selectedEntry?.label ?? 'Vehicle'}`;
-      this.carSelectorSelect.disabled = Boolean(loading || !selectedEntry || selectedIsActive);
+      this.carSelectorPreview.disabled = Boolean(loading || !selectedEntry);
+      this.carSelectorPreview.title = selectedIsActive ? `${selectedLabel} selected` : `Select ${selectedLabel}`;
+      this.carSelectorPreview.setAttribute('aria-label', selectedIsActive ? `${selectedLabel} selected` : `Select ${selectedLabel}`);
     }
 
     if (this.carSelectorPreview && !selectedEntry) {
@@ -11745,7 +11749,7 @@ export class Hud {
       const active = button.dataset.carItemId === activeId;
       button.classList.toggle('is-selected', selected);
       button.classList.toggle('is-active-vehicle', active);
-      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
       button.disabled = Boolean(loading);
     }
 
