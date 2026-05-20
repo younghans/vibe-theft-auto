@@ -10269,7 +10269,7 @@ export class Hud {
       : 'Skateboard';
     this.boundItemsRoot.hidden = !visible;
     this.boundVehicleRoot.hidden = !visible;
-    this.boundVehicleRoot.classList.toggle('is-active', hasSkateboard && skating === true);
+    this.boundVehicleRoot.classList.toggle('is-active', visible && skating === true);
     this.boundVehicleRoot.dataset.vehicleItemId = hasVehicle ? String(vehicleItemId ?? '') : '';
     if (this.boundVehicleSkateboardIcon) {
       this.boundVehicleSkateboardIcon.hidden = hasVehicle;
@@ -10282,7 +10282,7 @@ export class Hud {
     }
     this.boundVehicleRoot.setAttribute(
       'aria-label',
-      visible && hasSkateboard && skating === true ? `${label} active` : `${label} owned`
+      visible && skating === true ? `${label} active` : `${label} owned`
     );
     this.boundVehicleRoot.setAttribute('aria-haspopup', visible ? 'dialog' : 'false');
     this.boundVehicleRoot.setAttribute('title', 'Choose vehicle');

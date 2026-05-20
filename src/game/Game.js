@@ -1259,6 +1259,7 @@ export class Game {
     this.carSelectorVisible = false;
     this.carSelectorFocusedItemId = '';
     this.carSelectorRequestInFlight = false;
+    this.transportRideToggled = false;
     this.characterPreviewRenderer = null;
     this.characterPreviewRendererPromise = null;
     this.vehiclePreviewRenderer = null;
@@ -17841,16 +17842,18 @@ export class Game {
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
       const activeCarOwned = isPlayerVehicleOwner(localPlayerState);
       const transportOwned = skateboardOwned || activeCarOwned;
-      const skatingInputHeld = Boolean(
-        transportOwned
-        && playerInput !== ZERO_INPUT
-        && this.input.isActionPressed('skate')
-      );
+      const transportInputEnabled = Boolean(transportOwned && playerInput !== ZERO_INPUT);
+      if (!transportOwned) {
+        this.transportRideToggled = false;
+      } else if (transportInputEnabled && this.input.consumeAction('skate')) {
+        this.transportRideToggled = !this.transportRideToggled;
+      }
+      const transportRidingActive = Boolean(transportInputEnabled && this.transportRideToggled);
       const vehicleSpeedScale = activeCarOwned ? CAR_VEHICLE_SPEED_MULTIPLIER : SKATEBOARD_SPEED_MULTIPLIER;
       const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
         ? AIM_CAMERA_MOVEMENT_FORWARD
         : CAMERA_MOVEMENT_FORWARD;
-      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: skatingInputHeld, vehicleItemId, vehicleLabel });
+      this.hud.setPlayerBoundItemsState({ skateboardOwned, skating: transportRidingActive, vehicleItemId, vehicleLabel });
       const workoutActive = this.updateActiveWorkout(deltaSeconds, {
         localAlive,
         colliders: activeColliders,
@@ -17888,7 +17891,7 @@ export class Game {
           {
             skateboardOwned: transportOwned,
             vehicleItemId,
-            skating: skatingInputHeld,
+            skating: transportRidingActive,
             speedScale: vehicleSpeedScale,
             movementCameraForward
           }

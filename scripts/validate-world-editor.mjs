@@ -3600,13 +3600,17 @@ function validateBartenderFunction() {
     'Skating should apply the static full-body stance after upper-body overlays every active skating frame'
   );
   assert(
-    /this\.input\.isActionPressed\('skate'\)/.test(gameSource)
+    /this\.transportRideToggled\s*=\s*false/.test(gameSource)
+      && /this\.input\.consumeAction\('skate'\)/.test(gameSource)
+      && /this\.transportRideToggled\s*=\s*!this\.transportRideToggled/.test(gameSource)
+      && /const transportRidingActive = Boolean\(transportInputEnabled && this\.transportRideToggled\)/.test(gameSource)
       && /CAR_VEHICLE_SPEED_MULTIPLIER/.test(gameSource)
       && /vehicleSpeedScale/.test(gameSource)
       && !/skateboardMovementInput/.test(gameSource)
+      && /classList\.toggle\('is-active', visible && skating === true\)/.test(hudSource)
       && /wantsTransportVisible/.test(playerSource)
       && /const active = Boolean\(\(skateboardOwned \|\| activeVehicleItemId\) && skateboardSkating && aliveState/.test(playerSource),
-    'Game client should use Shift transport input to show the skateboard or selected car even while stationary, with the correct speed multiplier when moving'
+    'Game client should toggle Shift transport mode for skateboards and selected cars even while stationary, with the correct speed multiplier when moving'
   );
   assert(
     /skateboardOwned:\s*'boolean'/.test(serverSource)
