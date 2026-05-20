@@ -3,11 +3,13 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  AGENT_STATE_TABLE,
   readPostgresAgentTaskThread,
   readPostgresAgentTaskThreadSummaries,
   readPostgresAgentState,
   shouldUsePostgresAgentState,
-  withPostgresAgentState
+  withPostgresAgentState,
+  withPostgresAgentStateTransaction
 } from './agentJsonStateStore.js';
 
 const AGENT_TASKS_FILE_PATH_CONFIGURED = Boolean(process.env.AGENT_TASKS_FILE_PATH);
@@ -537,6 +539,108 @@ function addTaskLog(task, message, { level = 'info', data = null, at = Date.now(
   ]);
 }
 
+function getPostgresTaskNumberExpression(field) {
+  return `COALESCE(NULLIF(task->>'${field}', '')::numeric, 0)`;
+}
+
+const POSTGRES_TASK_CREATED_AT_SQL = getPostgresTaskNumberExpression('createdAt');
+const POSTGRES_DEPLOY_REFERENCE_AT_SQL = `COALESCE(
+  NULLIF(${getPostgresTaskNumberExpression('workerHeartbeatAt')}, 0),
+  NULLIF(${getPostgresTaskNumberExpression('deployStartedAt')}, 0),
+  NULLIF(${getPostgresTaskNumberExpression('claimedAt')}, 0),
+  NULLIF(${getPostgresTaskNumberExpression('updatedAt')}, 0),
+  0
+)`;
+const POSTGRES_SCOPE_FILTER_SQL = `($2::boolean = false OR COALESCE(NULLIF(task->>'scope', ''), '${AGENT_TASK_DEFAULT_SCOPE}') = $3)`;
+const POSTGRES_DEPLOY_STALE_SQL = `(
+  ${POSTGRES_DEPLOY_REFERENCE_AT_SQL} > 0
+  AND $4::numeric - ${POSTGRES_DEPLOY_REFERENCE_AT_SQL} >= $5::numeric
+)`;
+
+async function ensurePostgresTaskStateLocked(client) {
+  await client.query(
+    `INSERT INTO ${AGENT_STATE_TABLE} (state_key, payload)
+     VALUES ($1, $2::jsonb)
+     ON CONFLICT (state_key) DO NOTHING`,
+    [AGENT_TASKS_STATE_KEY, JSON.stringify(createEmptyState())]
+  );
+
+  await client.query(
+    `SELECT state_key FROM ${AGENT_STATE_TABLE} WHERE state_key = $1 FOR UPDATE`,
+    [AGENT_TASKS_STATE_KEY]
+  );
+}
+
+async function readPostgresTaskById(client, id) {
+  const result = await client.query(`
+    SELECT raw.task, raw.ordinality
+    FROM ${AGENT_STATE_TABLE} state
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state.payload->'tasks', '[]'::jsonb))
+      WITH ORDINALITY AS raw(task, ordinality)
+    WHERE state.state_key = $1
+      AND raw.task->>'id' = $2
+    LIMIT 1
+  `, [AGENT_TASKS_STATE_KEY, id]);
+
+  return result.rows[0] ?? null;
+}
+
+async function writePostgresTaskAtIndex(client, ordinality, task) {
+  const index = Number(ordinality);
+  if (!Number.isFinite(index) || index <= 0) {
+    throw new Error('Could not update agent task: invalid Postgres JSON index.');
+  }
+
+  const normalizedTask = normalizeTask(task);
+  await client.query(
+    `UPDATE ${AGENT_STATE_TABLE}
+     SET payload = jsonb_set(payload, $2::text[], $3::jsonb, false),
+         updated_at = NOW()
+     WHERE state_key = $1`,
+    [
+      AGENT_TASKS_STATE_KEY,
+      ['tasks', String(index - 1)],
+      JSON.stringify(normalizedTask)
+    ]
+  );
+
+  return normalizedTask;
+}
+
+async function withPostgresTaskById(taskId, mutator, {
+  write = true,
+  staleActiveAfterMs = 0
+} = {}) {
+  const id = normalizeTaskId(taskId);
+  if (!id) {
+    return null;
+  }
+
+  return withPostgresAgentStateTransaction(async (client) => {
+    await ensurePostgresTaskStateLocked(client);
+    const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+    if (staleActiveMs > 0) {
+      await failStaleActivePostgresAgentTasks(client, {
+        now: Date.now(),
+        staleActiveAfterMs: staleActiveMs
+      });
+    }
+
+    const row = await readPostgresTaskById(client, id);
+    if (!row) {
+      return null;
+    }
+
+    const task = normalizeTask(row.task);
+    const result = await mutator(task);
+    if (write && result) {
+      await writePostgresTaskAtIndex(client, row.ordinality, task);
+    }
+
+    return result;
+  });
+}
+
 function getStaleActiveMs(value) {
   return Math.max(0, Number(value) || 0);
 }
@@ -549,6 +653,45 @@ function getStaleDeployReferenceAt(task = {}) {
 function isDeployTaskStale(task = {}, now = Date.now(), staleDeployingMs = 0) {
   const referenceAt = getStaleDeployReferenceAt(task);
   return referenceAt > 0 && now - referenceAt >= staleDeployingMs;
+}
+
+function failStaleActiveTask(task, {
+  now = Date.now(),
+  staleActiveAfterMs = 0
+} = {}) {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  if (staleActiveMs <= 0 || !WORKER_HEARTBEAT_ACTIVE_STATUSES.has(String(task.status ?? ''))) {
+    return null;
+  }
+
+  const heartbeatAt = Number(task.workerHeartbeatAt || 0);
+  if (heartbeatAt <= 0 || now - heartbeatAt < staleActiveMs) {
+    return null;
+  }
+
+  const previousStatus = String(task.status ?? '');
+  const staleMs = now - heartbeatAt;
+  task.status = 'failed';
+  task.workCompletedAt = Number(task.workCompletedAt) > 0 ? task.workCompletedAt : now;
+  task.updatedAt = now;
+  task.workerHeartbeatStatus = 'expired';
+  task.error = truncateText(
+    `Worker heartbeat expired while task was ${previousStatus || 'active'}. Last heartbeat was ${Math.round(staleMs / 1000)} seconds ago.`,
+    AGENT_TASK_ERROR_MAX_LENGTH
+  );
+  task.summary = truncateText('Worker stopped sending heartbeats before completing the task.', AGENT_TASK_SUMMARY_MAX_LENGTH);
+  addTaskLog(task, 'Worker heartbeat expired; marking task failed.', {
+    level: 'error',
+    at: now,
+    data: {
+      previousStatus,
+      claimedBy: task.claimedBy ?? '',
+      workerHeartbeatAt: heartbeatAt,
+      staleActiveAfterMs: staleActiveMs,
+      staleMs
+    }
+  });
+  return task;
 }
 
 function failStaleActiveTasks(state, {
@@ -571,37 +714,273 @@ function failStaleActiveTasks(state, {
       continue;
     }
 
-    const heartbeatAt = Number(task.workerHeartbeatAt || 0);
-    if (heartbeatAt <= 0 || now - heartbeatAt < staleActiveMs) {
-      continue;
+    const failedTask = failStaleActiveTask(task, { now, staleActiveAfterMs: staleActiveMs });
+    if (failedTask) {
+      failedTasks.push(failedTask);
     }
-
-    const previousStatus = String(task.status ?? '');
-    const staleMs = now - heartbeatAt;
-    task.status = 'failed';
-    task.workCompletedAt = Number(task.workCompletedAt) > 0 ? task.workCompletedAt : now;
-    task.updatedAt = now;
-    task.workerHeartbeatStatus = 'expired';
-    task.error = truncateText(
-      `Worker heartbeat expired while task was ${previousStatus || 'active'}. Last heartbeat was ${Math.round(staleMs / 1000)} seconds ago.`,
-      AGENT_TASK_ERROR_MAX_LENGTH
-    );
-    task.summary = truncateText('Worker stopped sending heartbeats before completing the task.', AGENT_TASK_SUMMARY_MAX_LENGTH);
-    addTaskLog(task, 'Worker heartbeat expired; marking task failed.', {
-      level: 'error',
-      at: now,
-      data: {
-        previousStatus,
-        claimedBy: task.claimedBy ?? '',
-        workerHeartbeatAt: heartbeatAt,
-        staleActiveAfterMs: staleActiveMs,
-        staleMs
-      }
-    });
-    failedTasks.push(task);
   }
 
   return failedTasks;
+}
+
+async function failStaleActivePostgresAgentTasks(client, {
+  now = Date.now(),
+  staleActiveAfterMs = 0,
+  scope = '',
+  shouldFilterScope = false
+} = {}) {
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  if (staleActiveMs <= 0) {
+    return [];
+  }
+
+  const result = await client.query(`
+    SELECT raw.task, raw.ordinality
+    FROM ${AGENT_STATE_TABLE} state
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state.payload->'tasks', '[]'::jsonb))
+      WITH ORDINALITY AS raw(task, ordinality)
+    WHERE state.state_key = $1
+      AND ($2::boolean = false OR COALESCE(NULLIF(raw.task->>'scope', ''), '${AGENT_TASK_DEFAULT_SCOPE}') = $3)
+      AND raw.task->>'status' = ANY($4::text[])
+      AND ${getPostgresTaskNumberExpression('workerHeartbeatAt')} > 0
+      AND $5::numeric - ${getPostgresTaskNumberExpression('workerHeartbeatAt')} >= $6::numeric
+    ORDER BY ${POSTGRES_TASK_CREATED_AT_SQL} ASC
+  `, [
+    AGENT_TASKS_STATE_KEY,
+    Boolean(shouldFilterScope),
+    normalizeScope(scope),
+    [...WORKER_HEARTBEAT_ACTIVE_STATUSES],
+    now,
+    staleActiveMs
+  ]);
+
+  const failedTasks = [];
+  for (const row of result.rows) {
+    const task = normalizeTask(row.task);
+    const failedTask = failStaleActiveTask(task, { now, staleActiveAfterMs: staleActiveMs });
+    if (!failedTask) {
+      continue;
+    }
+
+    const writtenTask = await writePostgresTaskAtIndex(client, row.ordinality, failedTask);
+    failedTasks.push(writtenTask);
+  }
+
+  return failedTasks;
+}
+
+async function selectPostgresAgentTask(client, whereSql, params = []) {
+  const result = await client.query(`
+    SELECT raw.task, raw.ordinality, ${POSTGRES_DEPLOY_REFERENCE_AT_SQL} AS "deployReferenceAt"
+    FROM ${AGENT_STATE_TABLE} state
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state.payload->'tasks', '[]'::jsonb))
+      WITH ORDINALITY AS raw(task, ordinality)
+    WHERE state.state_key = $1
+      AND ${POSTGRES_SCOPE_FILTER_SQL}
+      AND $4::numeric IS NOT NULL
+      AND $5::numeric >= 0
+      AND ${whereSql}
+    ORDER BY ${POSTGRES_TASK_CREATED_AT_SQL} ASC
+    LIMIT 1
+  `, params);
+
+  return result.rows[0] ?? null;
+}
+
+async function hasActivePostgresDeployTask(client, params = []) {
+  const result = await client.query(`
+    SELECT true AS active
+    FROM ${AGENT_STATE_TABLE} state
+    CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state.payload->'tasks', '[]'::jsonb))
+      WITH ORDINALITY AS raw(task, ordinality)
+    WHERE state.state_key = $1
+      AND ${POSTGRES_SCOPE_FILTER_SQL}
+      AND (
+        raw.task->>'status' = 'rolling_back'
+        OR (
+          raw.task->>'status' = 'deploying'
+          AND ($5::numeric <= 0 OR NOT ${POSTGRES_DEPLOY_STALE_SQL})
+        )
+      )
+    LIMIT 1
+  `, params);
+
+  return result.rows.length > 0;
+}
+
+async function claimNextPostgresAgentTask({
+  workerId = '',
+  scope = '',
+  deployEnabled = true,
+  codeEnabled = true,
+  staleDeployingAfterMs = 0,
+  staleActiveAfterMs = 0,
+  workerHeartbeatEnabled = false
+} = {}) {
+  const normalizedScope = normalizeScope(scope);
+  const shouldFilterScope = String(scope ?? '').trim() !== '';
+  const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
+  const canClaimDeployActions = deployEnabled !== false;
+  const canClaimCodeActions = codeEnabled !== false;
+  const staleDeployingMs = Math.max(0, Number(staleDeployingAfterMs) || 0);
+  const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  const shouldRecordHeartbeat = workerHeartbeatEnabled === true;
+  const now = Date.now();
+  const baseParams = [
+    AGENT_TASKS_STATE_KEY,
+    shouldFilterScope,
+    normalizedScope,
+    now,
+    staleDeployingMs
+  ];
+
+  return withPostgresAgentStateTransaction(async (client) => {
+    await ensurePostgresTaskStateLocked(client);
+    await failStaleActivePostgresAgentTasks(client, {
+      now,
+      staleActiveAfterMs: staleActiveMs,
+      scope: normalizedScope,
+      shouldFilterScope
+    });
+
+    let claim = null;
+    if (canClaimDeployActions) {
+      if (staleDeployingMs > 0) {
+        const staleDeployingRow = await selectPostgresAgentTask(client, `
+          raw.task->>'status' = 'deploying'
+          AND NULLIF(BTRIM(COALESCE(raw.task->>'commitSha', '')), '') IS NOT NULL
+          AND ${POSTGRES_DEPLOY_STALE_SQL}
+        `, baseParams);
+
+        if (staleDeployingRow) {
+          const staleReferenceAt = Number(staleDeployingRow.deployReferenceAt || 0);
+          const task = normalizeTask(staleDeployingRow.task);
+          task.claimedBy = normalizedWorkerId;
+          task.claimedAt = now;
+          if (shouldRecordHeartbeat) {
+            task.workerHeartbeatAt = now;
+            task.workerHeartbeatStatus = 'reconciling_deploy';
+          }
+          task.updatedAt = now;
+          addTaskLog(task, 'Worker claimed stale deploy reconciliation.', {
+            level: 'warn',
+            data: {
+              workerId: normalizedWorkerId,
+              staleDeployingAfterMs: staleDeployingMs,
+              staleReferenceAt
+            }
+          });
+          claim = {
+            action: 'reconcile_deploy',
+            ordinality: staleDeployingRow.ordinality,
+            task
+          };
+        }
+      }
+
+      const activeDeployTaskExists = claim
+        ? true
+        : await hasActivePostgresDeployTask(client, baseParams);
+
+      if (!claim && !activeDeployTaskExists) {
+        const rollbackRow = await selectPostgresAgentTask(client, `
+          raw.task->>'status' = 'deployed'
+          AND ${getPostgresTaskNumberExpression('rollbackApprovedAt')} > 0
+          AND ${getPostgresTaskNumberExpression('rollbackStartedAt')} = 0
+        `, baseParams);
+
+        if (rollbackRow) {
+          const task = normalizeTask(rollbackRow.task);
+          task.status = 'rolling_back';
+          task.claimedBy = normalizedWorkerId;
+          task.claimedAt = now;
+          if (shouldRecordHeartbeat) {
+            task.workerHeartbeatAt = now;
+            task.workerHeartbeatStatus = 'rolling_back';
+          }
+          task.rollbackStartedAt = now;
+          task.updatedAt = now;
+          addTaskLog(task, 'Worker claimed rollback approval.', {
+            data: { workerId: normalizedWorkerId }
+          });
+          claim = {
+            action: 'rollback',
+            ordinality: rollbackRow.ordinality,
+            task
+          };
+        }
+
+        if (!claim) {
+          const deployRow = await selectPostgresAgentTask(client, `
+            raw.task->>'status' = 'ready_for_review'
+            AND ${getPostgresTaskNumberExpression('deployApprovedAt')} > 0
+            AND ${getPostgresTaskNumberExpression('deployStartedAt')} = 0
+          `, baseParams);
+
+          if (deployRow) {
+            const task = normalizeTask(deployRow.task);
+            task.status = 'deploying';
+            task.claimedBy = normalizedWorkerId;
+            task.claimedAt = now;
+            if (shouldRecordHeartbeat) {
+              task.workerHeartbeatAt = now;
+              task.workerHeartbeatStatus = 'deploying';
+            }
+            task.deployStartedAt = now;
+            task.updatedAt = now;
+            addTaskLog(task, 'Worker claimed deploy approval.', {
+              data: { workerId: normalizedWorkerId }
+            });
+            claim = {
+              action: 'deploy',
+              ordinality: deployRow.ordinality,
+              task
+            };
+          }
+        }
+      }
+    }
+
+    if (!claim && canClaimCodeActions) {
+      const queuedRow = await selectPostgresAgentTask(client, `
+        raw.task->>'status' = 'queued'
+      `, baseParams);
+
+      if (queuedRow) {
+        const task = normalizeTask(queuedRow.task);
+        task.status = 'claimed';
+        task.claimedBy = normalizedWorkerId;
+        task.claimedAt = now;
+        if (shouldRecordHeartbeat) {
+          task.workerHeartbeatAt = now;
+          task.workerHeartbeatStatus = 'claimed';
+        }
+        task.workStartedAt = now;
+        task.updatedAt = now;
+        addTaskLog(task, 'Worker claimed task.', {
+          data: { workerId: normalizedWorkerId }
+        });
+        claim = {
+          action: 'code_change',
+          ordinality: queuedRow.ordinality,
+          task
+        };
+      }
+    }
+
+    if (!claim) {
+      return {
+        action: '',
+        task: null
+      };
+    }
+
+    const task = await writePostgresTaskAtIndex(client, claim.ordinality, claim.task);
+    return {
+      action: claim.action,
+      task
+    };
+  });
 }
 
 export async function listAgentTasks({
@@ -644,7 +1023,7 @@ export async function listAgentTaskThreads({
   const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
   if (compact && staleActiveMs <= 0 && shouldUseTaskPostgresState(filePath)) {
     return readPostgresAgentTaskThreadSummaries(AGENT_TASKS_STATE_KEY, {
-      fallbackState: await readTaskFileState(filePath),
+      fallbackState: createEmptyState(),
       scope,
       gameId,
       limit: safeLimit,
@@ -682,6 +1061,13 @@ export async function getAgentTask(taskId, {
   }
 
   const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => task, {
+      staleActiveAfterMs: staleActiveMs,
+      write: false
+    });
+  }
+
   return withTaskStore((state) => {
     failStaleActiveTasks(state, {
       now: Date.now(),
@@ -707,7 +1093,7 @@ export async function getAgentTaskThread(taskId, {
   const staleActiveMs = getStaleActiveMs(staleActiveAfterMs);
   if (compact && staleActiveMs <= 0 && shouldUseTaskPostgresState(filePath)) {
     return readPostgresAgentTaskThread(AGENT_TASKS_STATE_KEY, {
-      fallbackState: await readTaskFileState(filePath),
+      fallbackState: createEmptyState(),
       taskId: id
     });
   }
@@ -832,6 +1218,18 @@ export async function claimNextAgentTask({
   workerHeartbeatEnabled = false,
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
+  if (shouldUseTaskPostgresState(filePath)) {
+    return claimNextPostgresAgentTask({
+      workerId,
+      scope,
+      deployEnabled,
+      codeEnabled,
+      staleDeployingAfterMs,
+      staleActiveAfterMs,
+      workerHeartbeatEnabled
+    });
+  }
+
   const normalizedScope = normalizeScope(scope);
   const shouldFilterScope = String(scope ?? '').trim() !== '';
   const normalizedWorkerId = String(workerId ?? '').trim() || 'agent-worker';
@@ -1004,6 +1402,63 @@ export async function claimNextAgentTask({
   }, { filePath });
 }
 
+function applyAgentTaskUpdates(task, updates = {}, now = Date.now()) {
+  for (const [key, value] of Object.entries(updates ?? {})) {
+    if (!MUTABLE_TASK_FIELDS.has(key)) {
+      continue;
+    }
+
+    if (key === 'status') {
+      const previousStatus = task.status;
+      const status = normalizeStatus(value);
+      if (!status) {
+        throw new Error(`Invalid task status: ${String(value)}`);
+      }
+      task.status = status;
+      if (['claimed', 'preparing', 'coding', 'testing'].includes(status) && Number(task.workStartedAt) <= 0) {
+        task.workStartedAt = now;
+      }
+      if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
+        task.workCompletedAt = now;
+      }
+      if (
+        status === 'ready_for_review'
+        && previousStatus === 'failed'
+        && Number(task.deployStartedAt) > 0
+      ) {
+        task.deployApprovedAt = 0;
+        task.deployApprovedBy = '';
+        task.deployStartedAt = 0;
+        task.claimedBy = '';
+        task.claimedAt = 0;
+        task.workerHeartbeatAt = 0;
+        task.workerHeartbeatStatus = '';
+        addTaskLog(task, 'Failed deploy reset to ready for review; stale deploy approval cleared.', {
+          level: 'warn',
+          data: { previousStatus }
+        });
+      }
+    } else if (['claimedAt', 'workerHeartbeatAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
+      task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
+    } else if (key === 'changedFiles') {
+      task.changedFiles = normalizeStringList(value);
+    } else if (key === 'deployTargets') {
+      task.deployTargets = normalizeDeployTargets(value);
+    } else if (key === 'error') {
+      task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
+    } else if (['summary', 'agentMessage', 'deployLog', 'rollbackLog'].includes(key)) {
+      task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
+    } else if (key === 'workerHeartbeatStatus') {
+      task.workerHeartbeatStatus = String(value ?? '').trim().slice(0, 120);
+    } else {
+      task[key] = String(value ?? '');
+    }
+  }
+
+  task.updatedAt = now;
+  return task;
+}
+
 export async function updateAgentTask(taskId, updates = {}, {
   filePath = AGENT_TASKS_FILE_PATH
 } = {}) {
@@ -1012,67 +1467,17 @@ export async function updateAgentTask(taskId, updates = {}, {
     throw new Error('Task id is required.');
   }
 
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => applyAgentTaskUpdates(task, updates));
+  }
+
   return withTaskStore((state) => {
     const task = state.tasks.find((entry) => entry.id === id);
     if (!task) {
       return null;
     }
 
-    const now = Date.now();
-    for (const [key, value] of Object.entries(updates ?? {})) {
-      if (!MUTABLE_TASK_FIELDS.has(key)) {
-        continue;
-      }
-
-      if (key === 'status') {
-        const previousStatus = task.status;
-        const status = normalizeStatus(value);
-        if (!status) {
-          throw new Error(`Invalid task status: ${String(value)}`);
-        }
-        task.status = status;
-        if (['claimed', 'preparing', 'coding', 'testing'].includes(status) && Number(task.workStartedAt) <= 0) {
-          task.workStartedAt = now;
-        }
-        if (status === 'ready_for_review' && Number(task.workCompletedAt) <= 0) {
-          task.workCompletedAt = now;
-        }
-        if (
-          status === 'ready_for_review'
-          && previousStatus === 'failed'
-          && Number(task.deployStartedAt) > 0
-        ) {
-          task.deployApprovedAt = 0;
-          task.deployApprovedBy = '';
-          task.deployStartedAt = 0;
-          task.claimedBy = '';
-          task.claimedAt = 0;
-          task.workerHeartbeatAt = 0;
-          task.workerHeartbeatStatus = '';
-          addTaskLog(task, 'Failed deploy reset to ready for review; stale deploy approval cleared.', {
-            level: 'warn',
-            data: { previousStatus }
-          });
-        }
-      } else if (['claimedAt', 'workerHeartbeatAt', 'workStartedAt', 'workCompletedAt', 'deployStartedAt', 'deployedAt', 'rollbackStartedAt', 'rolledBackAt'].includes(key)) {
-        task[key] = Number.isFinite(Number(value)) ? Number(value) : 0;
-      } else if (key === 'changedFiles') {
-        task.changedFiles = normalizeStringList(value);
-      } else if (key === 'deployTargets') {
-        task.deployTargets = normalizeDeployTargets(value);
-      } else if (key === 'error') {
-        task.error = truncateText(value, AGENT_TASK_ERROR_MAX_LENGTH);
-      } else if (['summary', 'agentMessage', 'deployLog', 'rollbackLog'].includes(key)) {
-        task[key] = truncateText(value, AGENT_TASK_SUMMARY_MAX_LENGTH);
-      } else if (key === 'workerHeartbeatStatus') {
-        task.workerHeartbeatStatus = String(value ?? '').trim().slice(0, 120);
-      } else {
-        task[key] = String(value ?? '');
-      }
-    }
-
-    task.updatedAt = now;
-    return task;
+    return applyAgentTaskUpdates(task, updates);
   }, { filePath });
 }
 
@@ -1082,6 +1487,18 @@ export async function appendAgentTaskLog(taskId, entry = {}, {
   const id = normalizeTaskId(taskId);
   if (!id) {
     throw new Error('Task id is required.');
+  }
+
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => {
+      addTaskLog(task, entry.message ?? '', {
+        level: entry.level ?? 'info',
+        data: entry.data ?? null,
+        at: entry.at
+      });
+      task.updatedAt = Date.now();
+      return task;
+    });
   }
 
   return withTaskStore((state) => {
@@ -1108,6 +1525,22 @@ export async function cancelAgentTask(taskId, {
   const id = normalizeTaskId(taskId);
   if (!id) {
     throw new Error('Task id is required.');
+  }
+
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => {
+      if (terminalStatuses.has(task.status)) {
+        return task;
+      }
+
+      task.status = 'cancelled';
+      task.updatedAt = Date.now();
+      addTaskLog(task, 'Task cancelled by admin.', {
+        level: 'warn',
+        data: { cancelledBy }
+      });
+      return task;
+    });
   }
 
   return withTaskStore((state) => {
@@ -1139,6 +1572,23 @@ export async function approveAgentTaskDeploy(taskId, {
     throw new Error('Task id is required.');
   }
 
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => {
+      if (task.status !== 'ready_for_review') {
+        throw new Error('Only ready-for-review tasks can be approved for deploy.');
+      }
+
+      const now = Date.now();
+      task.deployApprovedAt = now;
+      task.deployApprovedBy = String(approvedBy ?? '');
+      task.updatedAt = now;
+      addTaskLog(task, 'Admin approved production deploy.', {
+        data: { approvedBy }
+      });
+      return task;
+    });
+  }
+
   return withTaskStore((state) => {
     const task = state.tasks.find((candidate) => candidate.id === id);
     if (!task) {
@@ -1167,6 +1617,27 @@ export async function approveAgentTaskRollback(taskId, {
   const id = normalizeTaskId(taskId);
   if (!id) {
     throw new Error('Task id is required.');
+  }
+
+  if (shouldUseTaskPostgresState(filePath)) {
+    return withPostgresTaskById(id, (task) => {
+      if (task.status !== 'deployed') {
+        throw new Error('Only deployed tasks can be approved for rollback.');
+      }
+
+      if (Number(task.rollbackApprovedAt) > 0) {
+        return task;
+      }
+
+      task.rollbackApprovedAt = Date.now();
+      task.rollbackApprovedBy = String(approvedBy ?? '');
+      task.updatedAt = Date.now();
+      addTaskLog(task, 'Admin approved rollback.', {
+        level: 'warn',
+        data: { approvedBy }
+      });
+      return task;
+    });
   }
 
   return withTaskStore((state) => {

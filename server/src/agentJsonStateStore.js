@@ -3,7 +3,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const AGENT_STATE_TABLE = 'agent_json_state';
+export const AGENT_STATE_TABLE = 'agent_json_state';
 
 let agentStatePool = null;
 let agentStateInitialized = false;
@@ -142,6 +142,23 @@ export async function withPostgresAgentState(stateKey, fallbackState, mutator, {
     );
     await client.query('COMMIT');
     return mutationResult;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function withPostgresAgentStateTransaction(operation) {
+  const pool = getAgentStatePool();
+  const client = await pool.connect();
+  try {
+    await ensureAgentStateTable(client);
+    await client.query('BEGIN');
+    const result = await operation(client);
+    await client.query('COMMIT');
+    return result;
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
