@@ -25,7 +25,7 @@ import {
 import { getWorldPersistenceInfo } from './src/worldPersistence.js';
 import { getPlayerSnapshotsInfo } from './src/playerSnapshots.js';
 import { getPlayerAccounts, getPlayerAccountsInfo } from './src/playerAccounts.js';
-import { verifySupabaseAccessToken } from './src/supabaseAuth.js';
+import { getSupabaseAuthInfo, verifySupabaseAccessToken } from './src/supabaseAuth.js';
 import { getStockMarketPersistenceInfo } from './src/stockMarketPersistence.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -536,6 +536,7 @@ const server = defineServer({
       const playerSnapshots = getPlayerSnapshotsInfo();
       const playerAccounts = getPlayerAccountsInfo();
       const stockMarketPersistence = getStockMarketPersistenceInfo();
+      const supabaseAuth = getSupabaseAuthInfo();
       res.json({
         ok: true,
         service: 'vibe-theft-auto-colyseus',
@@ -549,6 +550,7 @@ const server = defineServer({
         playerSnapshotPersistenceMode: playerSnapshots.mode,
         playerSnapshotTtlMs: playerSnapshots.ttlMs,
         playerAccountPersistenceMode: playerAccounts.mode,
+        supabaseAuthConfigured: supabaseAuth.configured,
         worldBackupsEnabled: Boolean(persistence.backups?.enabled),
         worldBackupIntervalMs: persistence.backups?.intervalMs ?? null,
         worldBackupRecentDays: persistence.backups?.recentDays ?? null,

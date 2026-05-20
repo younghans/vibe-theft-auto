@@ -16,6 +16,8 @@
    - `WORLD_KEY=primary`
    - `WORLD_LAYOUT_SEED_PATH=server/data/world-layout.json`
    - `PLAYER_SNAPSHOT_TTL_MS=1800000` to keep restart/deploy player restores available for 30 minutes
+   - `VTA_SUPABASE_URL` for Supabase Auth token verification
+   - `VTA_SUPABASE_PUBLISHABLE_KEY` for Supabase Auth token verification
    - `COLYSEUS_PUBLIC_ADDRESS=your-backend-domain.example/2567` only when Colyseus support recommends an explicit public room address
    - `OPENAI_API_KEY`
    - `OPENAI_NPC_MODEL=gpt-5.4-mini`
@@ -45,7 +47,7 @@
 
 ## 4. Smoke test
 
-1. Check `/health` on the Colyseus backend hostname and verify it reports `persistenceMode: "postgres"`.
+1. Check `/health` on the Colyseus backend hostname and verify it reports `persistenceMode: "postgres"` and `supabaseAuthConfigured: true`.
 2. Join the `world` room through the Vercel frontend.
 3. Make a world edit.
 4. Redeploy the backend and confirm the edit persists.
@@ -53,6 +55,7 @@
 ## Notes
 
 - The production deployment expects `DATABASE_URL`.
+- Signed-in player joins require `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` on Colyseus Cloud. If these are missing, Google sign-in can succeed on the frontend while the Colyseus room join fails with `Authentication failed`.
 - Colyseus Cloud Git integration deploys every push to its configured branch. If
   Vercel also deploys from `main`, that means frontend-only agent tasks still
   restart the game server. For smoother player sessions, disable automatic

@@ -50,6 +50,7 @@
     "validate:all": "npm run validate && npm run validate:movement && npm run validate:phone-apps && npm run validate:skills && npm run validate:npc-dialogue && npm run validate:agent-tasks && npm run validate:world-backups && npm run validate:blackjack && npm run validate:computer-activity && npm run validate:portraits && npm run validate:mixamo",
     "validate:movement": "node scripts/validate-movement-transport.mjs",
     "validate:phone-apps": "node scripts/validate-phone-apps.mjs",
+    "validate:auth-rollout": "node scripts/validate-auth-rollout.mjs",
     "validate:skills": "node scripts/validate-skills.mjs",
     "validate:npc-dialogue": "node scripts/validate-npc-dialogue.mjs",
     "validate:agent-tasks": "node scripts/validate-agent-tasks.mjs",

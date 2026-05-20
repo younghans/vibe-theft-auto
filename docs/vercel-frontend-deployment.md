@@ -26,6 +26,8 @@ Set this Vercel environment variable for Production and Preview:
 
 ```text
 VTA_SERVER_URL=wss://<colyseus-backend-host>
+VTA_SUPABASE_URL=https://<project-ref>.supabase.co
+VTA_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 ```
 
 Use a backend-only hostname, not the public frontend hostname. The current backend hostname is `us-atl-06d422c8.vibetheftauto.xyz`, so set:
@@ -35,6 +37,12 @@ VTA_SERVER_URL=wss://us-atl-06d422c8.vibetheftauto.xyz
 ```
 
 Do not copy backend secrets such as `DATABASE_URL`, `OPENAI_API_KEY`, or `AGENT_WORKER_TOKENS` into Vercel unless a future frontend-only feature explicitly needs a public value. Those remain on Colyseus Cloud.
+
+After changing auth or deploy environment variables, run:
+
+```text
+npm run validate:auth-rollout
+```
 
 ## DNS cutover
 

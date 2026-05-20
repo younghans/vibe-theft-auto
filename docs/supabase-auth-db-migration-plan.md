@@ -300,6 +300,17 @@ Notes:
 
 ## Phase 7: Rollout
 
+Goal: prove production auth, saves, and admin authorization work end to end.
+
+Status: in progress on 2026-05-19.
+
+Notes:
+
+- Production Vercel must include `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` so the browser can initialize Supabase Auth.
+- Production Colyseus must include `VTA_SUPABASE_URL` and `VTA_SUPABASE_PUBLISHABLE_KEY` so signed-in room joins can verify Supabase access tokens.
+- Backend `/health` reports `supabaseAuthConfigured`.
+- `npm run validate:auth-rollout` verifies the public frontend runtime config, backend Supabase auth configuration, Postgres persistence modes, and admin route rejection behavior.
+
 1. Deploy Supabase DB migration.
 2. Deploy backend with dual support: guest snapshots and authenticated saves.
 3. Deploy frontend auth UI.
