@@ -4213,6 +4213,7 @@ export class Hud {
     this.builderEnabled = false;
     this.builderPanelWidth = BUILDER_PANEL_DEFAULT_WIDTH;
     this.builderMissionDragIndex = null;
+    this.builderTrafficDrawPointerId = null;
     this.activeBuilderResizePointerId = null;
     this.builderResizeRightEdge = 0;
     this.builderNpcEditorVisible = false;
@@ -6807,6 +6808,45 @@ export class Hud {
     }, { passive: true });
   }
 
+  getBuilderTrafficRouteMapMetrics(map) {
+    if (!map) {
+      return null;
+    }
+
+    const rect = map.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const minX = Number(map.getAttribute('data-min-x'));
+    const maxX = Number(map.getAttribute('data-max-x'));
+    const minZ = Number(map.getAttribute('data-min-z'));
+    const maxZ = Number(map.getAttribute('data-max-z'));
+    if (![minX, maxX, minZ, maxZ].every(Number.isFinite) || maxX <= minX || maxZ <= minZ) {
+      return null;
+    }
+
+    return { rect, minX, maxX, minZ, maxZ };
+  }
+
+  getBuilderTrafficRouteWorldPoint(event, metrics = null) {
+    const target = event.target instanceof Element
+      ? event.target
+      : event.target?.parentElement ?? null;
+    const resolvedMetrics = metrics ?? this.getBuilderTrafficRouteMapMetrics(target?.closest('[data-builder-traffic-map]'));
+    if (!resolvedMetrics) {
+      return null;
+    }
+
+    const { rect, minX, maxX, minZ, maxZ } = resolvedMetrics;
+    const ratioX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const ratioY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    return {
+      x: minX + ((maxX - minX) * ratioX),
+      z: minZ + ((maxZ - minZ) * ratioY)
+    };
+  }
+
   bindBuilderEvents({
     onToggleBuildMode,
     onSelectCategory,
@@ -6851,7 +6891,14 @@ export class Hud {
     onMissionSequenceTextChange,
     onMissionSequencerTabChange,
     onMissionSequencePromptInput,
-    onMissionSequencePromptSubmit
+    onMissionSequencePromptSubmit,
+    onTrafficRouteCarDrop,
+    onTrafficRouteDrawStart,
+    onTrafficRouteDrawMove,
+    onTrafficRouteDrawEnd,
+    onTrafficRouteClearDraft,
+    onTrafficRouteDelete,
+    onTrafficRouteSelectCar
   }) {
     this.modeToggle.addEventListener('click', () => {
       onToggleBuildMode();
@@ -6893,6 +6940,33 @@ export class Hud {
       onSelectTile(Number(button.dataset.builderIndex));
     });
 
+    this.builderTiles.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      if (!target || !this.isElementInteractive(this.builderRoot)) {
+        return;
+      }
+
+      const action = target.closest('[data-builder-traffic-action]');
+      if (action) {
+        const actionId = action.getAttribute('data-builder-traffic-action') ?? '';
+        if (actionId === 'clear-draft') {
+          onTrafficRouteClearDraft?.();
+          return;
+        }
+        if (actionId === 'delete-route') {
+          onTrafficRouteDelete?.(action.getAttribute('data-builder-traffic-car') ?? '');
+          return;
+        }
+      }
+
+      const car = target.closest('[data-builder-traffic-car]');
+      if (car) {
+        onTrafficRouteSelectCar?.(car.getAttribute('data-builder-traffic-car') ?? '');
+      }
+    });
+
     this.builderTiles.addEventListener('dragstart', (event) => {
       if (!this.isElementInteractive(this.builderRoot)) {
         event.preventDefault();
@@ -6902,6 +6976,18 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
+      const trafficCar = target?.closest('[data-builder-traffic-car]');
+      if (trafficCar) {
+        const itemId = trafficCar.getAttribute('data-builder-traffic-car') ?? '';
+        event.dataTransfer?.setData('application/x-vta-traffic-car', itemId);
+        event.dataTransfer?.setData('text/plain', itemId);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'copy';
+        }
+        onTrafficRouteSelectCar?.(itemId);
+        return;
+      }
+
       if (target?.closest('input, select, textarea, button, summary, details')) {
         event.preventDefault();
         return;
@@ -6930,6 +7016,15 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
+      const trafficMap = target?.closest('[data-builder-traffic-map]');
+      if (trafficMap) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'copy';
+        }
+        return;
+      }
+
       const row = target?.closest('[data-builder-mission-index]');
       if (!row) {
         return;
@@ -6964,6 +7059,21 @@ export class Hud {
       const target = event.target instanceof Element
         ? event.target
         : event.target?.parentElement ?? null;
+      const trafficMap = target?.closest('[data-builder-traffic-map]');
+      if (trafficMap) {
+        event.preventDefault();
+        const itemId = String(
+          event.dataTransfer?.getData('application/x-vta-traffic-car')
+          || event.dataTransfer?.getData('text/plain')
+          || ''
+        ).trim();
+        const point = this.getBuilderTrafficRouteWorldPoint(event);
+        if (itemId && point) {
+          onTrafficRouteCarDrop?.(itemId, point);
+        }
+        return;
+      }
+
       const row = target?.closest('[data-builder-mission-index]');
       if (!row) {
         return;
@@ -6990,6 +7100,57 @@ export class Hud {
     this.builderTiles.addEventListener('dragend', () => {
       this.clearMissionSequencerDragClasses();
       this.builderMissionDragIndex = null;
+    });
+
+    this.builderTiles.addEventListener('pointerdown', (event) => {
+      if (!this.isElementInteractive(this.builderRoot) || event.button !== 0) {
+        return;
+      }
+
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const metrics = this.getBuilderTrafficRouteMapMetrics(target?.closest('[data-builder-traffic-map]'));
+      const point = this.getBuilderTrafficRouteWorldPoint(event, metrics);
+      if (!point) {
+        return;
+      }
+
+      event.preventDefault();
+      this.builderTrafficDrawPointerId = event.pointerId;
+      event.target?.setPointerCapture?.(event.pointerId);
+      onTrafficRouteDrawStart?.(point);
+
+      const handleWindowPointerMove = (moveEvent) => {
+        if (this.builderTrafficDrawPointerId !== moveEvent.pointerId) {
+          return;
+        }
+        const movePoint = this.getBuilderTrafficRouteWorldPoint(moveEvent, metrics);
+        if (movePoint) {
+          moveEvent.preventDefault();
+          onTrafficRouteDrawMove?.(movePoint);
+        }
+      };
+      const handleWindowPointerEnd = (endEvent) => {
+        if (this.builderTrafficDrawPointerId !== endEvent.pointerId) {
+          return;
+        }
+        const endPoint = this.getBuilderTrafficRouteWorldPoint(endEvent, metrics);
+        this.builderTrafficDrawPointerId = null;
+        window.removeEventListener('pointermove', handleWindowPointerMove);
+        window.removeEventListener('pointerup', handleWindowPointerEnd);
+        window.removeEventListener('pointercancel', handleWindowPointerEnd);
+        try {
+          event.target?.releasePointerCapture?.(event.pointerId);
+        } catch {}
+        if (endPoint) {
+          endEvent.preventDefault();
+          onTrafficRouteDrawEnd?.(endPoint);
+        }
+      };
+      window.addEventListener('pointermove', handleWindowPointerMove, { passive: false });
+      window.addEventListener('pointerup', handleWindowPointerEnd, { passive: false });
+      window.addEventListener('pointercancel', handleWindowPointerEnd, { passive: false });
     });
 
     const handleMissionSequenceRuleChange = (event) => {
@@ -8110,6 +8271,121 @@ export class Hud {
     `;
   }
 
+  getBuilderTrafficRoutesMarkup(trafficRoutes = {}) {
+    const width = Math.max(1, Number(trafficRoutes.width) || 560);
+    const height = Math.max(1, Number(trafficRoutes.height) || 560);
+    const bounds = trafficRoutes.bounds ?? {};
+    const minX = Number(bounds.minX);
+    const maxX = Number(bounds.maxX);
+    const minZ = Number(bounds.minZ);
+    const maxZ = Number(bounds.maxZ);
+    const spanX = Math.max(1, maxX - minX);
+    const spanZ = Math.max(1, maxZ - minZ);
+    const canProject = [minX, maxX, minZ, maxZ].every(Number.isFinite) && spanX > 0 && spanZ > 0;
+    const toX = (x) => canProject ? ((Number(x) - minX) / spanX) * width : width * 0.5;
+    const toY = (z) => canProject ? ((Number(z) - minZ) / spanZ) * height : height * 0.5;
+    const image = trafficRoutes.image ?? null;
+    const activeItemId = String(trafficRoutes.activeItemId ?? '');
+    const routes = Array.isArray(trafficRoutes.routes) ? trafficRoutes.routes : [];
+    const cars = Array.isArray(trafficRoutes.cars) ? trafficRoutes.cars : [];
+    const draft = trafficRoutes.draft ?? null;
+    const routeByItemId = new Map(routes.map((route) => [route.itemId, route]));
+    const makePointList = (points = []) => points
+      .map((point) => {
+        const x = Number(point?.x);
+        const z = Number(point?.z);
+        return Number.isFinite(x) && Number.isFinite(z)
+          ? `${toX(x).toFixed(1)},${toY(z).toFixed(1)}`
+          : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+    const routeMarkup = routes.map((route) => {
+      const points = makePointList(route.points);
+      if (!points) {
+        return '';
+      }
+      const first = route.points?.[0] ?? null;
+      const color = escapeHtml(route.color ?? '#f2c871');
+      return `
+        <g class="hud__traffic-route-path${route.active ? ' is-active' : ''}">
+          <polyline points="${points}" style="--traffic-route-color:${color}"></polyline>
+          ${first ? `<circle cx="${toX(first.x).toFixed(1)}" cy="${toY(first.z).toFixed(1)}" r="5" style="--traffic-route-color:${color}"></circle>` : ''}
+        </g>
+      `;
+    }).join('');
+    const draftPoints = draft ? makePointList(draft.points) : '';
+    const draftMarkup = draftPoints
+      ? `
+        <g class="hud__traffic-route-path hud__traffic-route-path--draft">
+          <polyline points="${draftPoints}" style="--traffic-route-color:${escapeHtml(draft.color ?? '#ffffff')}"></polyline>
+        </g>
+      `
+      : '';
+    const roadMarkup = (trafficRoutes.roads ?? []).map((road) => {
+      const x = Number(road.x);
+      const z = Number(road.z);
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return '';
+      }
+      return `<circle class="hud__traffic-route-road-node" cx="${toX(x).toFixed(1)}" cy="${toY(z).toFixed(1)}" r="2.3"></circle>`;
+    }).join('');
+    const imageMarkup = image?.src
+      ? `<image class="hud__traffic-route-map-image" href="${escapeHtml(image.src)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none"></image>`
+      : '';
+    const activeRoute = routeByItemId.get(activeItemId);
+    const carMarkup = cars.map((car) => {
+      const preview = this.builderPreviewImages.get(car.previewId) ?? '';
+      const imageSrc = preview || (car.previewMode === 'static' ? car.previewImageSrc : '');
+      return `
+        <button
+          class="hud__traffic-route-car${car.active ? ' is-active' : ''}${car.hasRoute ? ' has-route' : ''}"
+          type="button"
+          draggable="true"
+          data-builder-traffic-car="${escapeHtml(car.itemId)}"
+          style="--traffic-car-accent:${escapeHtml(car.color ?? '#f2c871')}"
+          title="${escapeHtml(car.label ?? 'Passive car')}"
+        >
+          <span class="hud__traffic-route-car-thumb" data-builder-preview="${escapeHtml(car.previewId)}">
+            ${imageSrc
+              ? `<img class="hud__builder-thumb-image" src="${imageSrc}" alt="${escapeHtml(car.label ?? '')}" loading="lazy" />`
+              : `<span class="hud__builder-thumb-placeholder">${escapeHtml(getBuilderPlaceholder(car.label ?? ''))}</span>`}
+          </span>
+          <span class="hud__traffic-route-car-label">${escapeHtml(car.label ?? '')}</span>
+        </button>
+      `;
+    }).join('');
+
+    return `
+      <section class="hud__builder-section hud__traffic-routes" data-builder-traffic-routes>
+        <div class="hud__builder-section-header">
+          <p class="hud__builder-section-title">Traffic Routes</p>
+          <span class="hud__builder-section-count">${Number(trafficRoutes.roadCount ?? 0)} roads</span>
+        </div>
+        <div
+          class="hud__traffic-route-map"
+          data-builder-traffic-map
+          data-min-x="${canProject ? minX : -1}"
+          data-max-x="${canProject ? maxX : 1}"
+          data-min-z="${canProject ? minZ : -1}"
+          data-max-z="${canProject ? maxZ : 1}"
+        >
+          <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Traffic route map">
+            <rect class="hud__traffic-route-map-bg" width="${width}" height="${height}" rx="8"></rect>
+            ${imageMarkup}
+            <g class="hud__traffic-route-roads">${roadMarkup}</g>
+            <g class="hud__traffic-route-lines">${routeMarkup}${draftMarkup}</g>
+          </svg>
+        </div>
+        <div class="hud__traffic-route-actions">
+          ${draft ? '<button class="hud__builder-action" type="button" data-builder-traffic-action="clear-draft">Clear Draft</button>' : ''}
+          ${activeRoute ? `<button class="hud__builder-action hud__builder-action--danger" type="button" data-builder-traffic-action="delete-route" data-builder-traffic-car="${escapeHtml(activeItemId)}">Clear Route</button>` : ''}
+        </div>
+        <div class="hud__traffic-route-cars">${carMarkup}</div>
+      </section>
+    `;
+  }
+
   setBuilderState({
     available = false,
     enabled,
@@ -8117,7 +8393,8 @@ export class Hud {
     groupTabs = [],
     sections = [],
     propSizeControl = null,
-    missionSequencer = null
+    missionSequencer = null,
+    trafficRoutes = null
   }) {
     this.builderAvailable = available;
     this.builderEnabled = enabled;
@@ -8138,7 +8415,7 @@ export class Hud {
       </button>
     `).join('');
 
-    this.builderGroups.hidden = Boolean(missionSequencer) || groupTabs.length === 0;
+    this.builderGroups.hidden = Boolean(missionSequencer || trafficRoutes) || groupTabs.length === 0;
     this.builderGroups.innerHTML = groupTabs.map((group) => `
         <button
           class="hud__builder-subchip${group.active ? ' is-active' : ''}"
@@ -8172,6 +8449,11 @@ export class Hud {
 
     if (missionSequencer) {
       this.builderTiles.innerHTML = this.getBuilderMissionSequencerMarkup(missionSequencer);
+      return;
+    }
+
+    if (trafficRoutes) {
+      this.builderTiles.innerHTML = this.getBuilderTrafficRoutesMarkup(trafficRoutes);
       return;
     }
 

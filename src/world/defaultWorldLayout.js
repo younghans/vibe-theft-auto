@@ -537,5 +537,6 @@ export const defaultWorldLayout = Object.freeze({
   props: defaultProps,
   npcs: defaultNpcs,
   missionSequence: createDefaultMissionSequence(),
-  npcModelVoices: createDefaultNpcModelVoiceMap()
+  npcModelVoices: createDefaultNpcModelVoiceMap(),
+  passiveTrafficRoutes: []
 });

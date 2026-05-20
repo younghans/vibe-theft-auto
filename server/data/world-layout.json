@@ -1921,5 +1921,6 @@
       "active": true,
       "pawnShopOwnerEnabled": true
     }
-  ]
+  ],
+  "passiveTrafficRoutes": []
 }

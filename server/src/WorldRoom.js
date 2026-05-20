@@ -4183,6 +4183,13 @@ export class WorldRoom extends Room {
           missionSequence
         }, previousLayout);
       }
+      case 'updatePassiveTrafficRoutes': {
+        const passiveTrafficRoutes = this.worldState.updatePassiveTrafficRoutes(payload.passiveTrafficRoutes);
+        return this.commitWorldPatch({
+          type: 'updatePassiveTrafficRoutes',
+          passiveTrafficRoutes
+        }, previousLayout);
+      }
       case 'updateNpcModelVoice': {
         const { modelId, voice } = this.sanitizeNpcModelVoiceUpdate(payload);
         const updatedVoice = this.worldState.updateNpcModelVoice(modelId, voice);

@@ -88,6 +88,10 @@ function toTransportPayload(edit) {
       return {
         missionSequence: edit.missionSequence
       };
+    case 'updatePassiveTrafficRoutes':
+      return {
+        passiveTrafficRoutes: edit.passiveTrafficRoutes
+      };
     case 'updateNpcModelVoice':
       return {
         modelId: edit.modelId,
@@ -215,6 +219,10 @@ async function applyLocalEdit(edit, worldState, worldRenderer) {
     }
     case 'updateMissionSequence':
       worldState.updateMissionSequence(edit.missionSequence);
+      return successResult(null);
+    case 'updatePassiveTrafficRoutes':
+      worldState.updatePassiveTrafficRoutes(edit.passiveTrafficRoutes);
+      worldRenderer.setPassiveTrafficRoutes?.(worldState.getPassiveTrafficRoutes());
       return successResult(null);
     case 'updateNpcModelVoice': {
       const model = getNpcModelById(edit.modelId);

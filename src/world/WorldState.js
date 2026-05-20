@@ -25,6 +25,9 @@ import {
   getNpcModelVoice,
   updateNpcModelVoiceMap
 } from '../shared/npcVoice.js';
+import {
+  clonePassiveTrafficRoutes
+} from '../shared/passiveTrafficRoutes.js';
 import { getTileOccupiedCells } from '../shared/tileFootprint.js';
 import { getBuilderItemById } from './builderCatalog.js';
 import { cloneInteractableDefinition } from './interactableMetadata.js';
@@ -202,6 +205,7 @@ export class WorldState {
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes();
   }
 
   clear() {
@@ -213,6 +217,7 @@ export class WorldState {
     this.placementSequence = 0;
     this.missionSequence = cloneMissionSequence();
     this.npcModelVoices = cloneNpcModelVoiceMap();
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes();
   }
 
   getPlacement(id) {
@@ -237,6 +242,10 @@ export class WorldState {
     return cloneNpcModelVoiceMap(this.npcModelVoices);
   }
 
+  getPassiveTrafficRoutes() {
+    return clonePassiveTrafficRoutes(this.passiveTrafficRoutes);
+  }
+
   getNpcModelVoice(modelId = '') {
     return getNpcModelVoice(this.npcModelVoices, modelId);
   }
@@ -251,6 +260,11 @@ export class WorldState {
     return this.getNpcModelVoice(modelId);
   }
 
+  updatePassiveTrafficRoutes(routes = []) {
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes(routes);
+    return this.getPassiveTrafficRoutes();
+  }
+
   getPlacementAtCell(cellX, cellZ) {
     const placementId = this.tileCells.get(this.getCellKey(cellX, cellZ));
     return placementId ? (this.tilePlacements.get(placementId) ?? null) : null;
@@ -260,6 +274,7 @@ export class WorldState {
     this.clear();
     this.missionSequence = cloneMissionSequence(layout.missionSequence);
     this.npcModelVoices = cloneNpcModelVoiceMap(layout.npcModelVoices);
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes(layout.passiveTrafficRoutes);
 
     for (const entry of layout.tiles ?? []) {
       const item = getBuilderItemById(entry.itemId);
@@ -671,7 +686,8 @@ export class WorldState {
       props,
       npcs,
       missionSequence: cloneMissionSequence(this.missionSequence),
-      npcModelVoices: this.getNpcModelVoices()
+      npcModelVoices: this.getNpcModelVoices(),
+      passiveTrafficRoutes: this.getPassiveTrafficRoutes()
     };
   }
 

@@ -61,6 +61,10 @@ function roadNodeKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
 }
 
+export function getPassiveTrafficRoadNodeKey(cellX, cellZ) {
+  return roadNodeKey(Math.round(Number(cellX) || 0), Math.round(Number(cellZ) || 0));
+}
+
 function normalizeRoadAssetName(item) {
   return String(item?.assetName ?? item?.id ?? '').toLowerCase();
 }
@@ -240,6 +244,7 @@ function normalizePlacementList(source) {
 export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemById) {
   const placements = normalizePlacementList(source);
   const nodeByKey = new Map();
+  const nodeIndexByKey = new Map();
   const nodes = [];
 
   for (const placement of placements) {
@@ -269,6 +274,7 @@ export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemByI
       node.index = nodes.length;
       nodes.push(node);
       nodeByKey.set(key, node);
+      nodeIndexByKey.set(key, node.index);
     }
   }
 
@@ -294,6 +300,7 @@ export function buildPassiveTrafficRoadGraph(source, getItem = getBuilderItemByI
     activeNodes,
     activeNodeIndices,
     activeNodeSet,
+    nodeIndexByKey,
     activeComponents,
     components,
     signature: createGraphSignature(nodes, activeNodeIndices)
@@ -648,4 +655,59 @@ export function findPassiveTrafficPath(graph, startIndex, goalIndex) {
   }
 
   return [];
+}
+
+function getPassiveTrafficRoutePointNodeIndex(graph, point = null) {
+  if (!graph?.activeNodeSet || !point) {
+    return null;
+  }
+
+  const cellX = Number(point.cellX ?? point.cell?.[0]);
+  const cellZ = Number(point.cellZ ?? point.cell?.[1]);
+  if (Number.isFinite(cellX) && Number.isFinite(cellZ)) {
+    const index = graph.nodeIndexByKey?.get?.(getPassiveTrafficRoadNodeKey(cellX, cellZ));
+    if (graph.activeNodeSet.has(index)) {
+      return index;
+    }
+  }
+
+  const x = Number(point.x ?? point.position?.[0]);
+  const z = Number(point.z ?? point.position?.[1]);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    return null;
+  }
+
+  let bestIndex = null;
+  let bestDistanceSq = Infinity;
+  for (const nodeIndex of graph.activeNodeIndices ?? []) {
+    const node = graph.nodes?.[nodeIndex];
+    if (!node) {
+      continue;
+    }
+    const distanceSq = ((node.x - x) * (node.x - x)) + ((node.z - z) * (node.z - z));
+    if (distanceSq < bestDistanceSq) {
+      bestIndex = nodeIndex;
+      bestDistanceSq = distanceSq;
+    }
+  }
+  return bestIndex;
+}
+
+export function getPassiveTrafficRouteNodeIndices(graph, route = null) {
+  const indices = [];
+  for (const point of Array.isArray(route?.points) ? route.points : []) {
+    const nodeIndex = getPassiveTrafficRoutePointNodeIndex(graph, point);
+    if (nodeIndex === null || nodeIndex === undefined) {
+      continue;
+    }
+    if (indices[indices.length - 1] !== nodeIndex) {
+      indices.push(nodeIndex);
+    }
+  }
+
+  if (indices.length > 1 && indices[0] === indices[indices.length - 1]) {
+    indices.pop();
+  }
+
+  return indices.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES ? indices : [];
 }

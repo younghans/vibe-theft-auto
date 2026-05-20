@@ -3888,6 +3888,7 @@ export class Game {
 
       await this.loadWorldMapImageMetadata({ force: true });
       this.refreshPhoneMapHud(this.getLocalPlayerState(), { force: true });
+      this.worldBuilder?.updateBuilderHud?.();
       const sizeKb = Math.max(1, Math.round(Number(result.bytes ?? 0) / 1024));
       this.hud.showToast(`Phone map captured (${sizeKb} KB).`);
     } catch (error) {
@@ -14345,6 +14346,8 @@ export class Game {
         library: this.library,
         hud: this.hud,
         worldTransport: this.npcService,
+        getWorldMapImage: () => this.worldMapImage,
+        requestWorldMapImage: () => this.loadWorldMapImageMetadata(),
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;

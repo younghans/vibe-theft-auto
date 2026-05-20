@@ -9,6 +9,7 @@ import {
   rotateFootprintOffset as rotateLocalOffset
 } from '../shared/tileFootprint.js';
 import { getPlacementScale } from '../shared/placementScale.js';
+import { clonePassiveTrafficRoutes } from '../shared/passiveTrafficRoutes.js';
 import { rotationQuarterTurnsToRadians as toRotationY } from '../shared/numberMath.js';
 import { assets } from './assetManifest.js';
 import { BUILDER_TILE_SIZE, getBuilderItemById } from './builderCatalog.js';
@@ -36,6 +37,7 @@ import {
   getPassiveTrafficDriveScript,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficRouteNodeIndices,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode
 } from './passiveTraffic.js';
@@ -122,6 +124,16 @@ function dampNumber(current, target, lambda, deltaSeconds) {
 function passiveTrafficTieBreak(nodeIndex, carIndex) {
   const x = Math.sin(((nodeIndex + 1) * 12.9898) + ((carIndex + 1) * 78.233)) * 43758.5453;
   return x - Math.floor(x);
+}
+
+function createPassiveTrafficRouteSignature(routes = []) {
+  return clonePassiveTrafficRoutes(routes)
+    .map((route) => [
+      route.itemId,
+      route.points.map((point) => `${point.cellX ?? ''}:${point.cellZ ?? ''}:${point.x ?? ''}:${point.z ?? ''}`).join(';')
+    ].join('='))
+    .sort()
+    .join('|');
 }
 
 function isPassiveTrafficIntersectionNode(node) {
@@ -1125,6 +1137,8 @@ export class WorldRenderer {
     this.passiveTrafficCars = [];
     this.passiveTrafficGraph = null;
     this.passiveTrafficSignature = '';
+    this.passiveTrafficRoutes = [];
+    this.passiveTrafficRoutesByItemId = new Map();
     this.passiveTrafficVisitCounter = 0;
     this.passiveTrafficNodeVisits = new Map();
     this.passiveTrafficNodeVisitOrder = new Map();
@@ -1161,6 +1175,10 @@ export class WorldRenderer {
 
   async syncFromState(worldState) {
     this.clear();
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes(worldState?.getPassiveTrafficRoutes?.() ?? []);
+    this.passiveTrafficRoutesByItemId = new Map(
+      this.passiveTrafficRoutes.map((route) => [route.itemId, route])
+    );
     const placements = [...worldState.getPlacements()];
     await this.preloadPlacementAssets(placements);
 
@@ -1499,6 +1517,15 @@ export class WorldRenderer {
     this.passiveTrafficNodeVisitOrder.clear();
   }
 
+  setPassiveTrafficRoutes(routes = []) {
+    this.passiveTrafficRoutes = clonePassiveTrafficRoutes(routes);
+    this.passiveTrafficRoutesByItemId = new Map(
+      this.passiveTrafficRoutes.map((route) => [route.itemId, route])
+    );
+    this.passiveTrafficSignature = '';
+    this.refreshPassiveTraffic();
+  }
+
   refreshPassiveTraffic() {
     if (this.passiveTrafficRefreshSuspended) {
       return;
@@ -1506,7 +1533,8 @@ export class WorldRenderer {
 
     const graph = buildPassiveTrafficRoadGraph(this.renderedPlacements);
     const hasTrafficRoads = graph.activeNodeIndices.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES;
-    const nextSignature = hasTrafficRoads ? graph.signature : '';
+    const routeSignature = createPassiveTrafficRouteSignature(this.passiveTrafficRoutes);
+    const nextSignature = hasTrafficRoads ? `${graph.signature}|routes:${routeSignature}` : '';
     if (
       nextSignature === this.passiveTrafficSignature
       && this.passiveTrafficCars.length === PASSIVE_TRAFFIC_CAR_ITEM_IDS.length
@@ -1577,18 +1605,41 @@ export class WorldRenderer {
     }
   }
 
+  getPassiveTrafficCustomRouteNodeIndices(itemId, graph = this.passiveTrafficGraph) {
+    const route = this.passiveTrafficRoutesByItemId.get(itemId);
+    if (!route || !graph) {
+      return [];
+    }
+
+    const nodeIndices = getPassiveTrafficRouteNodeIndices(graph, route);
+    if (nodeIndices.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      return [];
+    }
+
+    const componentIndex = graph.nodes?.[nodeIndices[0]]?.componentIndex;
+    if (componentIndex === undefined) {
+      return [];
+    }
+
+    return nodeIndices.every((nodeIndex) => graph.nodes?.[nodeIndex]?.componentIndex === componentIndex)
+      ? nodeIndices
+      : [];
+  }
+
   createPassiveTrafficCarState(object, itemId, carIndex, graph) {
     const activeNodeIndices = graph?.activeNodeIndices ?? [];
     if (activeNodeIndices.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
       return null;
     }
 
+    const customRouteNodeIndices = this.getPassiveTrafficCustomRouteNodeIndices(itemId, graph);
     const activeComponents = graph.activeComponents?.length ? graph.activeComponents : [activeNodeIndices];
     const startComponent = activeComponents[carIndex % activeComponents.length] ?? activeNodeIndices;
     const componentCarSlot = Math.floor(carIndex / Math.max(1, activeComponents.length));
     const componentCarCount = Math.max(1, Math.ceil(PASSIVE_TRAFFIC_CAR_ITEM_IDS.length / Math.max(1, activeComponents.length)));
     const startOffset = (componentCarSlot + 0.18) / componentCarCount;
-    const startIndex = startComponent[Math.floor(startOffset * startComponent.length) % startComponent.length];
+    const startIndex = customRouteNodeIndices[0]
+      ?? startComponent[Math.floor(startOffset * startComponent.length) % startComponent.length];
     const car = {
       itemId,
       carIndex,
@@ -1602,6 +1653,8 @@ export class WorldRenderer {
       finalTargetPosition: new THREE.Vector3(),
       routeDestinationIndex: null,
       routeAdvanceCount: 1,
+      customRouteNodeIndices,
+      customRouteCursor: 0,
       turnThroughNodeIndex: null,
       visitedNodeIndices: new Set(),
       speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
@@ -1802,10 +1855,53 @@ export class WorldRenderer {
       ))[0]?.nodeIndex ?? null;
   }
 
+  assignPassiveTrafficCustomRoute(car) {
+    const graph = this.passiveTrafficGraph;
+    const routeNodes = car?.customRouteNodeIndices ?? [];
+    if (!graph || routeNodes.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      return false;
+    }
+
+    let cursor = Number.isInteger(car.customRouteCursor) ? car.customRouteCursor : 0;
+    if (routeNodes[cursor] !== car.currentNodeIndex) {
+      cursor = routeNodes.findIndex((nodeIndex) => nodeIndex === car.currentNodeIndex);
+      if (cursor < 0) {
+        cursor = 0;
+      }
+    }
+
+    for (let offset = 1; offset <= routeNodes.length; offset += 1) {
+      const destinationCursor = (cursor + offset) % routeNodes.length;
+      const destinationIndex = routeNodes[destinationCursor];
+      if (destinationIndex === car.currentNodeIndex || !graph.activeNodeSet.has(destinationIndex)) {
+        continue;
+      }
+
+      const route = findPassiveTrafficPath(graph, car.currentNodeIndex, destinationIndex);
+      if (route.length < 2) {
+        continue;
+      }
+
+      car.route = route;
+      car.routeCursor = 1;
+      car.routeDestinationIndex = destinationIndex;
+      car.customRouteCursor = destinationCursor;
+      return this.advancePassiveTrafficTarget(car);
+    }
+
+    return false;
+  }
+
   assignPassiveTrafficRoute(car) {
     const graph = this.passiveTrafficGraph;
     if (!graph || !car) {
       return false;
+    }
+
+    if ((car.customRouteNodeIndices?.length ?? 0) >= PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      if (this.assignPassiveTrafficCustomRoute(car)) {
+        return true;
+      }
     }
 
     const destinationCandidates = this.getPassiveTrafficDestinationCandidates(car);

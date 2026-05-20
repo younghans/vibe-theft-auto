@@ -1027,6 +1027,14 @@ export class NpcServiceMock {
         this.emit();
         return { ok: true };
       }
+      case 'updatePassiveTrafficRoutes': {
+        const passiveTrafficRoutes = this.worldState.updatePassiveTrafficRoutes(payload.passiveTrafficRoutes);
+        this.emitWorldPatch({
+          type: 'updatePassiveTrafficRoutes',
+          passiveTrafficRoutes
+        });
+        return { ok: true };
+      }
       case 'updateNpcModelVoice': {
         const model = getNpcModelById(payload.modelId);
         if (!model) {

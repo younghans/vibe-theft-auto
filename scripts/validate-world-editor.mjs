@@ -139,6 +139,7 @@ import {
   getPassiveTrafficDriveScript,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficRoadExits,
   getPassiveTrafficTurnLaneWaypoints,
   isPassiveTrafficJunctionNode,
@@ -501,11 +502,11 @@ function assertVehicleModelGrounding() {
 
 function validatePassiveTraffic() {
   assert(
-    PASSIVE_TRAFFIC_CAR_ITEM_IDS.length === 3
+    PASSIVE_TRAFFIC_CAR_ITEM_IDS.length >= 3
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[0] === 'car_sedan'
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[1] === 'car_stationwagon'
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[2] === 'car_taxi',
-    'Passive traffic should create exactly the Sedan, Station wagon, and Taxi cars'
+    'Passive traffic should expose the current Sedan, Station wagon, and Taxi cars first while allowing future passive cars'
   );
   for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
     const item = getBuilderItemById(itemId);
@@ -666,6 +667,38 @@ function validatePassiveTraffic() {
     'Passive traffic should use a non-stopping right-turn script for Road Corner tiles'
   );
 
+  const routeState = new WorldState();
+  routeState.loadLayout({
+    tiles: [
+      { id: 'route_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+      { id: 'route_corner', itemId: 'road_corner', cell: [0, 0], rotationQuarterTurns: 1 },
+      { id: 'route_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+    ],
+    passiveTrafficRoutes: [
+      {
+        itemId: 'car_sedan',
+        points: [
+          { cellX: 0, cellZ: 1, x: 0, z: BUILDER_TILE_SIZE },
+          { cellX: 0, cellZ: 0, x: 0, z: 0 },
+          { cellX: 1, cellZ: 0, x: BUILDER_TILE_SIZE, z: 0 },
+          { cellX: 0, cellZ: 1, x: 0, z: BUILDER_TILE_SIZE }
+        ]
+      }
+    ]
+  });
+  const serializedRoutes = routeState.serializeLayout().passiveTrafficRoutes;
+  assert(
+    serializedRoutes.length === 1
+      && serializedRoutes[0].itemId === 'car_sedan'
+      && serializedRoutes[0].closed === true
+      && serializedRoutes[0].points.length === 4,
+    'World state should persist closed passive traffic routes by passive car item id'
+  );
+  assert(
+    getPassiveTrafficRouteNodeIndices(rightCornerGraph, serializedRoutes[0]).length === 3,
+    'Passive traffic should resolve saved route points onto road graph nodes for route-following cars'
+  );
+
   const leftCurvedCornerGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_left_turn_north', itemId: 'road_straight', cell: [0, -1], rotationQuarterTurns: 0 },
     { id: 'traffic_left_turn_corner', itemId: 'road_corner_curved', cell: [0, 0], rotationQuarterTurns: 0 },
@@ -777,8 +810,28 @@ function validatePassiveTraffic() {
       && /stuckSeconds/.test(worldRendererSource)
       && /clampPassiveTrafficPositionToRoadNodes/.test(worldRendererSource)
       && /routeAdvanceCount/.test(worldRendererSource)
+      && /setPassiveTrafficRoutes/.test(worldRendererSource)
+      && /customRouteNodeIndices/.test(worldRendererSource)
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling'
+  );
+
+  const hudSource = readRepoText('src/ui/Hud.js');
+  const worldBuilderSource = readRepoText('src/world/WorldBuilder.js');
+  const worldEditAdapterSource = readRepoText('src/world/createWorldEditAdapter.js');
+  assert(
+    worldBuilderSource.includes("id: 'traffic-routes'")
+      && worldBuilderSource.includes('beginTrafficRouteFromCar')
+      && worldBuilderSource.includes('findPassiveTrafficPath')
+      && hudSource.includes('data-builder-traffic-map')
+      && hudSource.includes('application/x-vta-traffic-car'),
+    'World builder should expose a Traffic Routes tab with map drawing and draggable passive car icons'
+  );
+  assert(
+    worldEditAdapterSource.includes('updatePassiveTrafficRoutes')
+      && readRepoText('server/src/WorldRoom.js').includes('updatePassiveTrafficRoutes')
+      && readRepoText('src/npc/NpcServiceMock.js').includes('updatePassiveTrafficRoutes'),
+    'Traffic routes should persist through local and multiplayer world edit transports'
   );
 }
 
