@@ -26,7 +26,8 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeOut: 0.05,
     playbackRate: 4.2,
     cancelOnMove: false,
-    upperBodyOnly: true
+    upperBodyOnly: true,
+    lowerBodyOverlay: true
   },
   [PUNCH_HOOK_EMOTE_ID]: {
     label: 'Right Hook',
@@ -36,7 +37,8 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeOut: 0.06,
     playbackRate: 3.6,
     cancelOnMove: false,
-    upperBodyOnly: true
+    upperBodyOnly: true,
+    lowerBodyOverlay: true
   },
   waving: {
     label: 'Waving',

@@ -65,6 +65,9 @@ const PLAYER_RADIUS = 1.4;
 const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
 const PUNCH_LUNGE_EMOTE_IDS = new Set([PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID]);
+const PUNCH_STANCE_TURN_MS = 330;
+const PUNCH_LOWER_BODY_OVERLAY_MS = 420;
+const PUNCH_LOWER_BODY_OVERLAY_WEIGHT = 0.92;
 const PLAYER_CAR_MODEL_SCALE = 0.75;
 const PLAYER_CAR_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
 const PLAYER_SKATEBOARD_REST_Y = 0.1;
@@ -693,6 +696,7 @@ export async function createPlayer(library, {
   const deliveryCarryAction = mixer.clipAction(deliveryCarryUpperBodyClip);
   const hitReactionActions = new Map();
   const emoteActions = new Map();
+  const emoteLowerBodyActions = new Map();
   const emoteLoadPromises = new Map();
   const emoteConfigOverrides = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
@@ -990,6 +994,14 @@ export async function createPlayer(library, {
     return emoteActions.get(emoteId) ?? null;
   }
 
+  function getLoadedEmoteLowerBodyAction(emoteId) {
+    if (emoteId === LIMP_EMOTE_ID) {
+      return null;
+    }
+
+    return emoteLowerBodyActions.get(emoteId) ?? null;
+  }
+
   function ensureEmoteAction(emoteId) {
     const loadedAction = getLoadedEmoteAction(emoteId);
     if (loadedAction) {
@@ -1014,6 +1026,20 @@ export async function createPlayer(library, {
                 clip = punchUpperBodyClip;
               } else {
                 clip = createBoneFilteredClip(sourceClip, UPPER_BODY_EMOTE_BONES, `${clipName}_UpperBody`);
+              }
+              if (emoteConfig?.lowerBodyOverlay) {
+                const lowerBodySourceClip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+                const lowerBodyClip = createBoneFilteredClip(
+                  lowerBodySourceClip,
+                  LOWER_BODY_LOCOMOTION_BONES,
+                  `${clipName}_LowerBodyOverlay`
+                );
+                const lowerBodyAction = mixer.clipAction(lowerBodyClip);
+                lowerBodyAction.enabled = true;
+                lowerBodyAction.clampWhenFinished = true;
+                lowerBodyAction.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
+                lowerBodyAction.setEffectiveWeight(0);
+                emoteLowerBodyActions.set(emoteId, lowerBodyAction);
               }
             } else {
               clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
@@ -1043,6 +1069,7 @@ export async function createPlayer(library, {
 
     const action = getLoadedEmoteAction(activeEmoteId);
     action?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
+    getLoadedEmoteLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     activeEmoteId = null;
     activeEmoteConfig = null;
     activeEmoteStartedAt = 0;
@@ -2090,6 +2117,27 @@ export async function createPlayer(library, {
     const baseAnimationWeight = hitReactionActive ? HIT_REACTION_BASE_ANIMATION_WEIGHT : 1;
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
+    const punchEmoteActive = PUNCH_LUNGE_EMOTE_IDS.has(activeEmoteId);
+    const punchElapsedMs = punchEmoteActive
+      ? Math.max(0, Date.now() - activeEmoteStartedAt)
+      : Infinity;
+    const punchStanceActive = punchEmoteActive && punchElapsedMs < PUNCH_STANCE_TURN_MS;
+    const punchStanceProgress = punchStanceActive
+      ? THREE.MathUtils.clamp(punchElapsedMs / PUNCH_STANCE_TURN_MS, 0, 1)
+      : 1;
+    const punchStanceWeight = punchStanceActive ? 1 - smooth01(punchStanceProgress) : 0;
+    const activePunchLowerBodyAction = punchEmoteActive
+      ? getLoadedEmoteLowerBodyAction(activeEmoteId)
+      : null;
+    const punchLowerBodyProgress = punchEmoteActive
+      ? THREE.MathUtils.clamp(punchElapsedMs / PUNCH_LOWER_BODY_OVERLAY_MS, 0, 1)
+      : 1;
+    const punchLowerBodyFade = punchLowerBodyProgress < 0.72
+      ? 1
+      : 1 - smooth01((punchLowerBodyProgress - 0.72) / 0.28);
+    const punchLowerBodyWeight = activePunchLowerBodyAction && !moving && !ragdoll.isActive()
+      ? PUNCH_LOWER_BODY_OVERLAY_WEIGHT * punchLowerBodyFade
+      : 0;
     const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
     const wantsDeliveryCarry = Boolean(
       deliveryPackageActive
@@ -2121,7 +2169,7 @@ export async function createPlayer(library, {
     walkWeight = THREE.MathUtils.damp(walkWeight, locomotionEnabled && moving && !runLocomotionActive ? 1 : 0, smoothing, deltaSeconds);
     fastRunWeight = THREE.MathUtils.damp(fastRunWeight, locomotionEnabled && moving && runLocomotionActive ? 1 : 0, smoothing, deltaSeconds);
     const fullBodyLocomotionWeight = upperBodyOverlayActive ? 0 : 1;
-    const lowerBodyLocomotionWeight = upperBodyOverlayActive ? 1 : 0;
+    const lowerBodyLocomotionWeight = upperBodyOverlayActive ? Math.max(0, 1 - punchLowerBodyWeight) : 0;
     idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
     walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
     fastRunAction.setEffectiveWeight(fastRunWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
@@ -2140,6 +2188,15 @@ export async function createPlayer(library, {
     walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     drunkIdleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     drunkWalkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
+    for (const [emoteId, action] of emoteLowerBodyActions) {
+      if (emoteId !== activeEmoteId) {
+        action.setEffectiveWeight(0);
+        continue;
+      }
+
+      action.setEffectiveWeight(punchLowerBodyWeight * baseAnimationWeight);
+      action.setEffectiveTimeScale(activeEmoteConfig?.playbackRate ?? 1);
+    }
     deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight * baseAnimationWeight);
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
@@ -2154,6 +2211,10 @@ export async function createPlayer(library, {
     const wantsUpperBodyLook = aliveState && (!activeEmoteId || upperBodyOverlayActive) && !isLimpTransitioning();
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
+    if (punchStanceWeight > 0.0001) {
+      const turnSmoothing = 1 - Math.exp(-24 * punchStanceWeight * deltaSeconds);
+      anchor.rotation.y = dampAngle(anchor.rotation.y, aimRotationY, turnSmoothing);
+    }
     applyUpperBodyPose();
     applyHeldItemReloadMotion(activeAimItemId, reloadProfile);
     applyReloadArmIk(activeAimItemId, reloadProfile);
@@ -2546,6 +2607,7 @@ export async function createPlayer(library, {
 
           if (activeEmoteId && activeEmoteId !== emoteId) {
             getLoadedEmoteAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
+            getLoadedEmoteLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
           }
 
           activeEmoteId = emoteId;
@@ -2566,6 +2628,17 @@ export async function createPlayer(library, {
           applyEmoteStartOffset(action, emoteConfig, activeEmoteStartedAt);
           action.fadeIn(emoteConfig.fadeIn ?? EMOTE_FADE_IN);
           action.play();
+          const lowerBodyAction = getLoadedEmoteLowerBodyAction(emoteId);
+          if (lowerBodyAction) {
+            lowerBodyAction.reset();
+            lowerBodyAction.enabled = true;
+            lowerBodyAction.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
+            lowerBodyAction.clampWhenFinished = !emoteConfig.loop;
+            lowerBodyAction.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
+            lowerBodyAction.setEffectiveWeight(0);
+            applyEmoteStartOffset(lowerBodyAction, emoteConfig, activeEmoteStartedAt);
+            lowerBodyAction.play();
+          }
         })
         .catch((error) => {
           console.error('[Player] Failed to load emote clip.', {
