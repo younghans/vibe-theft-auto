@@ -439,6 +439,13 @@ Only one worker run can be active in a thread at a time. Follow-ups are allowed 
 
 For manual deploy approval from the game, keep `AGENT_API_BASE` pointed at the Colyseus backend host, not the Vercel frontend host. The worker first fetches the latest `main`. If the approved task branch is behind `main`, it attempts to rebase the task commit onto the current `main`, reruns checks, pushes `main` so production deploy hooks see the deploy commit first, and then refreshes the task branch. If the rebase conflicts, the worker can ask Codex to repair the deploy rebase up to `AGENT_DEPLOY_REBASE_REPAIR_ATTEMPTS` times, defaulting to 2. If the rebase repair or rebuilt task checks still fail, deployment stops before touching `main`; failed deploy tasks remain failed and need a new follow-up or manual fix instead of a retry approval.
 
+If a deploy changes seed world placements, the worker verifies those placements
+against the persisted Colyseus world before marking the task deployed. Missing
+added seed placements now log a warning and continue the code deploy by default,
+because the live world may need a separate admin edit or world-data migration.
+Set `AGENT_WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL=true` to restore strict blocking
+behavior for operators who want missing placements to fail deploy approval.
+
 For local development workers, keep `DEPLOY_ENABLED=false` and `AUTO_DEPLOY=false`. Those workers still claim and run prompt coding tasks, but they do not claim approved deploy or rollback actions. To test a ready task locally, check out the pushed `agent/task-...` branch or create a local git worktree for that branch and run the dev server there.
 
 After that safety pass, the worker deploys only the inferred runtime targets:

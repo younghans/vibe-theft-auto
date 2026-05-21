@@ -60,6 +60,7 @@ const FRONTEND_VERIFY_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_TIMEOU
 const FRONTEND_VERIFY_POLL_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_POLL_MS', 10 * 1000);
 const FRONTEND_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('FRONTEND_VERIFY_REQUEST_TIMEOUT_MS', 20 * 1000);
 const WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS = getPositiveIntegerEnv('AGENT_WORLD_LAYOUT_VERIFY_REQUEST_TIMEOUT_MS', 15 * 1000);
+const WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL = getBooleanEnv('AGENT_WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL', false);
 const CODEX_REASONING_EFFORT = String(process.env.CODEX_REASONING_EFFORT || 'xhigh').trim() || 'xhigh';
 const CODEX_SERVICE_TIER = String(process.env.CODEX_SERVICE_TIER || 'fast').trim() || 'fast';
 const STALE_DEPLOY_RECONCILE_AFTER_MS = getPositiveIntegerEnv('AGENT_DEPLOY_RECONCILE_AFTER_MS', 6 * 60 * 1000);
@@ -2967,11 +2968,32 @@ async function verifyLiveWorldLayoutChanges(task, worktreePath, {
       const summary = formatPlacementSummary(missing[index]);
       formatted = formatted ? `${formatted}; ${summary}` : summary;
     }
-    throw new Error(
-      `${actionLabel} live world layout verification failed: ${missing.length} of ${placements.length} changed seed placements `
+    const message = `${actionLabel} live world layout verification warning: ${missing.length} of ${placements.length} changed seed placements `
       + `are not present in the persisted Colyseus world. Missing: ${formatted}. `
-      + 'Apply a world-data migration or admin edit before marking this task deployed.'
-    );
+      + 'Code deploy will continue; apply a world-data migration or admin edit as a placement follow-up.';
+    if (WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL) {
+      throw new Error(message);
+    }
+
+    await appendLog(task.id, message, {
+      level: 'warn',
+      data: {
+        changedWorldFiles,
+        checkedPlacementCount: placements.length,
+        missingPlacementCount: missing.length,
+        missingPlacements: missing.slice(0, 20).map((entry) => ({
+          id: getPlacementId(entry),
+          itemId: getPlacementItemId(entry),
+          layer: entry.layer,
+          position: getPlacementPosition(entry),
+          cell: getPlacementCell(entry),
+          summary: formatPlacementSummary(entry)
+        }))
+      }
+    });
+    return {
+      output: `${message} Set AGENT_WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL=true to restore strict deploy blocking.`
+    };
   }
 
   const message = `Live world layout verified ${placements.length} changed seed placement${placements.length === 1 ? '' : 's'} in Colyseus.`;

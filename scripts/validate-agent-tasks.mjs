@@ -47,6 +47,8 @@ try {
   assert.match(agentWorkerSource, /\$includeDetachedLocalHelpers -and \$isNew -and \$isTaskRelated/, 'Worker cleanup should only kill detached helpers related to the current task.');
   assert.match(agentWorkerSource, /removedPlacementCount/, 'Worker live world verification should distinguish removed placements from non-placement metadata.');
   assert.match(agentWorkerSource, /only non-placement seed metadata changed/, 'Worker should not fail deploys for non-placement world-layout metadata changes.');
+  assert.match(agentWorkerSource, /AGENT_WORLD_LAYOUT_MISSING_PLACEMENTS_FAIL/, 'Worker should allow strict live placement checks to be restored by env var.');
+  assert.match(agentWorkerSource, /placement follow-up/, 'Worker should warn instead of failing when seed placements are missing from persisted live world state.');
   assert.match(agentWorkerSource, /retryTransientCommand\(task\.id, 'git fetch pushed main'/, 'Worker should retry transient post-push main fetch failures.');
   assert.match(agentWorkerSource, /continuing deploy from the pushed worktree commit/, 'Worker should not stop backend deploy after a transient post-push fetch failure.');
   assert.match(agentWorkerSource, /isNonFastForwardPushError/, 'Worker should detect non-fast-forward deploy push races.');
