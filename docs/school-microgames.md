@@ -5,8 +5,10 @@ School microgames are quick HUD popups launched from school NPCs. They are desig
 Current school games:
 
 - Pop Quiz Panic
+- Geography Globe
 - Teacher Is Looking
 - Memory Card Flip
+- Sketch Guessr
 
 School NPC interactions start a random game immediately. There is no start button: the HUD shows a `3`, `2`, `1` countdown before the first round and before every following round. After each round resolves, the next random school game continues automatically until the player closes the school HUD.
 
@@ -39,5 +41,15 @@ The player flips two cards at a time, remembers the revealed labels, and clears 
 - Duration: 45 seconds
 - Inputs: click or tap cards
 - Win condition: match every pair
+- Fail condition: timeout
+- Reward hook: Intelligence XP
+
+## Sketch Guessr
+
+The player watches a premade black and white object sketch draw itself, types the object name, and submits a guess before the early bell. The drawing would naturally finish about five seconds after the guessing window, so timeouts and correct guesses both fast-forward the remaining strokes before revealing the answer.
+
+- Duration: 7 seconds to guess, 12 seconds natural draw length
+- Inputs: keyboard text input plus Guess button
+- Win condition: submit the matching object name or alias
 - Fail condition: timeout
 - Reward hook: Intelligence XP

@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   SCHOOL_MICROGAME_IDS,
+  createSchoolSketchGuessrRound,
   createSchoolPopQuizQuestions,
   getSchoolMicrogameReward,
+  isSchoolSketchGuessAnswer,
+  listSchoolSketchGuessrSketches,
   listSchoolMicrogames
 } from '../src/shared/schoolMicrogames.js';
 import {
@@ -197,9 +200,10 @@ assert.deepEqual(
     SCHOOL_MICROGAME_IDS.popQuizPanic,
     SCHOOL_MICROGAME_IDS.geographyGlobe,
     SCHOOL_MICROGAME_IDS.teacherIsLooking,
-    SCHOOL_MICROGAME_IDS.memoryMatch
+    SCHOOL_MICROGAME_IDS.memoryMatch,
+    SCHOOL_MICROGAME_IDS.sketchGuessr
   ],
-  'school microgame roster includes quiz, geography, teacher, and memory card flip'
+  'school microgame roster includes quiz, geography, teacher, memory card flip, and sketch guessr'
 );
 for (const game of activeSchoolGames) {
   const reward = getSchoolMicrogameReward(game.id);
@@ -207,6 +211,31 @@ for (const game of activeSchoolGames) {
   assert.equal(reward.skill, SKILL_IDS.intelligence, `${game.id} should award Intelligence XP`);
   assert.ok(reward.xp > 0, `${game.id} should award positive Intelligence XP`);
 }
+
+const sketchDefinitions = listSchoolSketchGuessrSketches();
+assert.equal(sketchDefinitions.length, 20, 'sketch guessr should ship with exactly 20 premade sketches');
+for (const sketch of sketchDefinitions) {
+  assert.ok(sketch.id, 'each sketch should have an id');
+  assert.ok(sketch.label, `${sketch.id} should have a visible answer label`);
+  assert.ok(Array.isArray(sketch.strokes) && sketch.strokes.length >= 4, `${sketch.id} should have multiple drawn strokes`);
+}
+const sketchRound = createSchoolSketchGuessrRound({
+  rng: () => 0
+});
+assert.ok(sketchRound.sketch?.strokes?.length >= 4, 'sketch guessr rounds include drawable stroke data');
+assert.ok(
+  sketchRound.drawDurationMs - sketchRound.guessDurationMs >= 4500,
+  'sketch guessr guessing should end roughly five seconds before the natural drawing finish'
+);
+assert.ok(
+  isSchoolSketchGuessAnswer(sketchRound.sketch, sketchRound.sketch.label),
+  'sketch guessr accepts the exact object name'
+);
+assert.match(gameSource, /submitSchoolSketchGuess/, 'game handles typed sketch guesses');
+assert.match(gameSource, /startSchoolSketchGuessrReveal/, 'game fast-forwards sketch drawings before resolving');
+assert.match(hudSource, /data-school-sketch-guess-form/, 'HUD renders a sketch guess input form');
+assert.match(hudSource, /data-school-sketch-stroke/, 'HUD renders sketch stroke paths');
+assert.match(stylesSource, /hud__school-sketch-paper/, 'sketch guessr has dedicated paper styling');
 
 assert.ok(SCHOOL_GEOGRAPHY_TARGET_COUNTRIES.length >= 190, 'geography target pool should cover nearly every country');
 const geographyCountry = createSchoolGeographyCountry({

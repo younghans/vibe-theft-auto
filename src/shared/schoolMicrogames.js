@@ -15,6 +15,8 @@ export const SCHOOL_MICROGAME_IDS = Object.freeze({
   teacherIsLooking: 'teacher-is-looking',
   memoryMatch: 'memory-match',
   memoryCards: 'memory-match',
+  sketchGuessr: 'sketch-guessr',
+  sketch: 'sketch-guessr',
   dodgeChalk: 'dodge-the-chalk',
   dodgeTheChalk: 'dodge-the-chalk',
   sortBackpack: 'sort-the-backpack',
@@ -29,6 +31,9 @@ export const SCHOOL_MICROGAME_ALL_ID = 'all';
 export const SCHOOL_MICROGAME_DEFAULT_REWARD_XP = 8;
 export const SCHOOL_MICROGAME_DEFAULT_REWARD_MONEY = 0;
 export const SCHOOL_POP_QUIZ_ROUND_COUNT = 3;
+export const SCHOOL_SKETCH_GUESSR_GUESS_DURATION_MS = 7000;
+export const SCHOOL_SKETCH_GUESSR_DRAW_DURATION_MS = 12000;
+export const SCHOOL_SKETCH_GUESSR_REVEAL_MS = 1250;
 
 const QUESTION_BANK = Object.freeze([
   Object.freeze({ question: 'What is 9 x 7?', answers: Object.freeze(['54', '63', '72']), correctIndex: 1 }),
@@ -222,6 +227,262 @@ const MEMORY_MATCH_PAIRS = Object.freeze([
   Object.freeze({ pairId: 'tech', icon: 'CODE', label: 'Tech', accent: '#8ef7e1' })
 ]);
 
+function freezeSketch(sketch) {
+  return Object.freeze({
+    id: sketch.id,
+    label: sketch.label,
+    aliases: Object.freeze(cloneArray(sketch.aliases)),
+    viewBox: sketch.viewBox ?? '0 0 100 100',
+    strokes: Object.freeze(sketch.strokes.map((stroke) => Object.freeze({
+      d: stroke.d,
+      width: stroke.width ?? 4
+    })))
+  });
+}
+
+const SCHOOL_SKETCH_GUESSR_SKETCHES = Object.freeze([
+  freezeSketch({
+    id: 'cat',
+    label: 'Cat',
+    aliases: ['kitty', 'kitten'],
+    strokes: [
+      { d: 'M30 52 C28 36 38 25 50 25 C62 25 72 36 70 52 C68 66 58 74 50 74 C42 74 32 66 30 52' },
+      { d: 'M35 34 L31 18 L43 28 M65 34 L69 18 L57 28' },
+      { d: 'M41 48 L45 48 M55 48 L59 48', width: 5 },
+      { d: 'M50 54 L47 58 M50 54 L53 58 M47 58 C49 61 51 61 53 58' },
+      { d: 'M24 52 L40 54 M24 60 L40 58 M60 54 L76 52 M60 58 L76 60' }
+    ]
+  }),
+  freezeSketch({
+    id: 'dog',
+    label: 'Dog',
+    aliases: ['puppy'],
+    strokes: [
+      { d: 'M30 50 C30 35 39 27 51 27 C64 27 72 36 72 50 C72 64 62 73 50 73 C38 73 30 64 30 50' },
+      { d: 'M33 37 C24 37 20 45 23 58 C29 56 32 49 33 37 M67 37 C76 37 80 45 77 58 C71 56 68 49 67 37' },
+      { d: 'M40 47 L44 47 M57 47 L61 47', width: 5 },
+      { d: 'M45 55 C46 51 54 51 55 55 C55 61 45 61 45 55' },
+      { d: 'M50 59 C49 64 52 67 56 64 M50 59 C49 64 46 67 42 64' }
+    ]
+  }),
+  freezeSketch({
+    id: 'apple',
+    label: 'Apple',
+    aliases: ['fruit'],
+    strokes: [
+      { d: 'M50 31 C42 24 28 31 27 48 C26 66 39 80 50 74 C61 80 74 66 73 48 C72 31 58 24 50 31' },
+      { d: 'M50 31 C51 24 54 18 60 15' },
+      { d: 'M58 20 C66 17 72 20 76 27 C67 29 61 27 58 20' },
+      { d: 'M38 43 C35 51 37 61 44 67' },
+      { d: 'M58 32 C62 30 67 32 70 36' }
+    ]
+  }),
+  freezeSketch({
+    id: 'banana',
+    label: 'Banana',
+    aliases: ['plantain'],
+    strokes: [
+      { d: 'M21 45 C40 75 70 77 86 46 C69 60 44 58 28 36' },
+      { d: 'M28 36 C43 47 66 48 86 46' },
+      { d: 'M20 43 C17 40 17 36 22 34 L28 36' },
+      { d: 'M86 46 C91 45 93 49 90 53 C87 53 85 51 84 49' },
+      { d: 'M39 55 C50 62 65 61 77 53' }
+    ]
+  }),
+  freezeSketch({
+    id: 'car',
+    label: 'Car',
+    aliases: ['auto', 'vehicle'],
+    strokes: [
+      { d: 'M17 61 L23 45 C26 38 33 35 42 35 L58 35 C67 35 74 39 78 47 L84 61 Z' },
+      { d: 'M35 36 L29 50 L70 50 L61 36' },
+      { d: 'M25 61 C25 54 36 54 36 61 C36 68 25 68 25 61 M64 61 C64 54 75 54 75 61 C75 68 64 68 64 61' },
+      { d: 'M18 61 L84 61' },
+      { d: 'M43 36 L43 50 M58 36 L58 50' }
+    ]
+  }),
+  freezeSketch({
+    id: 'house',
+    label: 'House',
+    aliases: ['home'],
+    strokes: [
+      { d: 'M20 48 L50 22 L80 48' },
+      { d: 'M27 46 L27 78 L73 78 L73 46' },
+      { d: 'M43 78 L43 58 L57 58 L57 78' },
+      { d: 'M33 54 L43 54 L43 64 L33 64 Z M58 54 L68 54 L68 64 L58 64 Z' },
+      { d: 'M62 30 L62 21 L70 21 L70 37' }
+    ]
+  }),
+  freezeSketch({
+    id: 'tree',
+    label: 'Tree',
+    aliases: ['oak'],
+    strokes: [
+      { d: 'M45 80 L45 55 M55 80 L55 55 M43 80 L57 80' },
+      { d: 'M50 57 C35 60 23 50 28 38 C19 31 28 17 42 23 C47 10 64 12 67 26 C80 26 84 43 72 51 C68 61 57 63 50 57' },
+      { d: 'M50 55 L39 42 M50 55 L61 41' },
+      { d: 'M36 32 C43 27 51 28 56 34' },
+      { d: 'M58 25 C64 31 64 39 59 46' }
+    ]
+  }),
+  freezeSketch({
+    id: 'fish',
+    label: 'Fish',
+    aliases: ['goldfish'],
+    strokes: [
+      { d: 'M22 51 C36 32 63 32 77 51 C63 70 36 70 22 51' },
+      { d: 'M77 51 L91 39 L91 63 Z' },
+      { d: 'M37 51 C42 45 42 57 37 51' },
+      { d: 'M55 39 L48 30 M55 63 L48 72' },
+      { d: 'M28 51 C31 48 31 54 28 51' }
+    ]
+  }),
+  freezeSketch({
+    id: 'star',
+    label: 'Star',
+    aliases: ['stars'],
+    strokes: [
+      { d: 'M50 14 L60 39 L87 39 L65 55 L74 82 L50 66 L26 82 L35 55 L13 39 L40 39 Z' },
+      { d: 'M50 14 L50 66' },
+      { d: 'M13 39 L65 55' },
+      { d: 'M87 39 L35 55' },
+      { d: 'M26 82 L60 39 M74 82 L40 39' }
+    ]
+  }),
+  freezeSketch({
+    id: 'flower',
+    label: 'Flower',
+    aliases: ['daisy'],
+    strokes: [
+      { d: 'M50 46 C42 36 47 26 50 26 C53 26 58 36 50 46' },
+      { d: 'M50 46 C60 38 70 43 70 46 C70 49 60 54 50 46' },
+      { d: 'M50 46 C58 56 53 66 50 66 C47 66 42 56 50 46' },
+      { d: 'M50 46 C40 54 30 49 30 46 C30 43 40 38 50 46' },
+      { d: 'M44 46 C44 38 56 38 56 46 C56 54 44 54 44 46 M50 54 L50 84 M50 68 C41 65 35 68 31 75 M50 69 C60 64 67 67 71 74' }
+    ]
+  }),
+  freezeSketch({
+    id: 'cup',
+    label: 'Cup',
+    aliases: ['mug', 'coffee'],
+    strokes: [
+      { d: 'M28 38 L33 77 C34 83 66 83 67 77 L72 38 Z' },
+      { d: 'M72 46 C88 44 88 66 70 64' },
+      { d: 'M35 38 C42 42 58 42 65 38' },
+      { d: 'M40 27 C36 22 45 19 41 14 M51 27 C47 22 56 19 52 14 M62 27 C58 22 67 19 63 14' },
+      { d: 'M35 78 C43 82 57 82 65 78' }
+    ]
+  }),
+  freezeSketch({
+    id: 'book',
+    label: 'Book',
+    aliases: ['notebook'],
+    strokes: [
+      { d: 'M18 25 C31 19 42 22 50 29 C58 22 69 19 82 25 L82 76 C69 70 58 72 50 80 C42 72 31 70 18 76 Z' },
+      { d: 'M50 29 L50 80' },
+      { d: 'M25 35 C34 32 42 34 47 39 M25 46 C35 43 42 45 47 50 M25 57 C35 54 42 56 47 61' },
+      { d: 'M55 39 C61 34 69 32 77 35 M55 50 C61 45 69 43 77 46 M55 61 C61 56 69 54 77 57' },
+      { d: 'M18 25 L18 76 M82 25 L82 76' }
+    ]
+  }),
+  freezeSketch({
+    id: 'chair',
+    label: 'Chair',
+    aliases: ['seat'],
+    strokes: [
+      { d: 'M34 20 L66 20 L66 49 L34 49 Z' },
+      { d: 'M27 51 L73 51 L69 62 L31 62 Z' },
+      { d: 'M34 62 L30 82 M66 62 L70 82' },
+      { d: 'M38 49 L38 62 M62 49 L62 62' },
+      { d: 'M39 31 L61 31 M39 40 L61 40' }
+    ]
+  }),
+  freezeSketch({
+    id: 'umbrella',
+    label: 'Umbrella',
+    aliases: ['parasol'],
+    strokes: [
+      { d: 'M16 53 C25 25 75 25 84 53 Z' },
+      { d: 'M16 53 C24 46 33 46 41 53 C47 46 53 46 59 53 C67 46 76 46 84 53' },
+      { d: 'M50 53 L50 78' },
+      { d: 'M50 78 C50 88 35 88 36 78' },
+      { d: 'M50 31 L41 53 M50 31 L59 53 M50 31 L25 53 M50 31 L75 53' }
+    ]
+  }),
+  freezeSketch({
+    id: 'guitar',
+    label: 'Guitar',
+    aliases: ['instrument'],
+    strokes: [
+      { d: 'M38 63 C26 67 20 55 28 47 C20 35 34 27 43 38 C49 32 59 35 60 45 C72 46 75 61 63 66 C61 78 44 78 38 63' },
+      { d: 'M56 39 L79 16' },
+      { d: 'M74 13 L87 26 M78 10 L90 22' },
+      { d: 'M42 50 C42 43 53 43 53 50 C53 57 42 57 42 50' },
+      { d: 'M50 44 L82 18 M53 48 L85 22 M47 41 L79 15' }
+    ]
+  }),
+  freezeSketch({
+    id: 'pizza',
+    label: 'Pizza',
+    aliases: ['slice'],
+    strokes: [
+      { d: 'M25 24 C43 16 61 16 78 24 L50 86 Z' },
+      { d: 'M25 24 C41 34 61 34 78 24' },
+      { d: 'M44 42 C44 37 52 37 52 42 C52 47 44 47 44 42 M57 58 C57 53 65 53 65 58 C65 63 57 63 57 58 M40 65 C40 61 47 61 47 65 C47 69 40 69 40 65' },
+      { d: 'M50 86 L53 70 M50 86 L44 70' },
+      { d: 'M34 31 C42 35 57 35 69 30' }
+    ]
+  }),
+  freezeSketch({
+    id: 'clock',
+    label: 'Clock',
+    aliases: ['watch'],
+    strokes: [
+      { d: 'M50 15 C31 15 16 31 16 50 C16 69 31 85 50 85 C69 85 84 69 84 50 C84 31 69 15 50 15' },
+      { d: 'M50 50 L50 29 M50 50 L64 59' },
+      { d: 'M50 20 L50 26 M50 74 L50 80 M20 50 L26 50 M74 50 L80 50' },
+      { d: 'M31 31 L35 35 M69 31 L65 35 M31 69 L35 65 M69 69 L65 65' },
+      { d: 'M47 50 C47 46 53 46 53 50 C53 54 47 54 47 50' }
+    ]
+  }),
+  freezeSketch({
+    id: 'key',
+    label: 'Key',
+    aliases: ['keys'],
+    strokes: [
+      { d: 'M24 50 C24 39 41 39 41 50 C41 61 24 61 24 50' },
+      { d: 'M41 50 L83 50' },
+      { d: 'M67 50 L67 62 L75 62 L75 55 L83 55' },
+      { d: 'M29 50 C29 46 36 46 36 50 C36 54 29 54 29 50' },
+      { d: 'M43 46 L43 54' }
+    ]
+  }),
+  freezeSketch({
+    id: 'shoe',
+    label: 'Shoe',
+    aliases: ['sneaker', 'shoes'],
+    strokes: [
+      { d: 'M22 63 C35 63 42 57 47 45 C55 56 68 62 82 62 C88 62 90 72 82 75 L27 75 C18 74 16 66 22 63' },
+      { d: 'M26 75 L84 75' },
+      { d: 'M45 46 L57 46 M48 51 L61 51 M52 56 L65 56' },
+      { d: 'M33 62 C39 60 44 55 47 45' },
+      { d: 'M72 62 C77 63 82 65 85 69' }
+    ]
+  }),
+  freezeSketch({
+    id: 'boat',
+    label: 'Boat',
+    aliases: ['sailboat', 'ship'],
+    strokes: [
+      { d: 'M25 64 L79 64 L68 78 L36 78 Z' },
+      { d: 'M48 63 L48 23' },
+      { d: 'M50 27 L76 58 L50 58 Z' },
+      { d: 'M46 32 L25 58 L46 58 Z' },
+      { d: 'M19 83 C27 78 35 88 43 83 C51 78 59 88 67 83 C75 78 83 88 91 83' }
+    ]
+  })
+]);
+
 const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: SCHOOL_MICROGAME_IDS.popQuizPanic,
@@ -295,6 +556,25 @@ const SCHOOL_MICROGAME_DEFINITIONS = Object.freeze([
     secondaryAccent: '#ffcf56',
     icon: 'MEM',
     skill: 'intelligence'
+  }),
+  Object.freeze({
+    id: SCHOOL_MICROGAME_IDS.sketchGuessr,
+    title: 'Sketch Guessr',
+    shortTitle: 'Sketch',
+    subtitle: 'Guess the object before the sketch finishes.',
+    description: 'Watch the black and white sketch draw itself, then type the object before the last lines appear.',
+    eyebrow: 'Art Class',
+    prompt: 'Type the object before the drawing finishes',
+    overheadText: 'E for sketch guessr',
+    durationMs: SCHOOL_SKETCH_GUESSR_GUESS_DURATION_MS,
+    rewardXp: 14,
+    rewardMoney: 0,
+    accent: '#f8fafc',
+    accent2: '#38d3ff',
+    secondaryAccent: '#38d3ff',
+    icon: 'ART',
+    skill: 'intelligence',
+    instructions: 'Type the object name and press Enter or Guess.'
   })
 ]);
 
@@ -333,6 +613,14 @@ SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-card-flip', SCHOOL_MICROGAME_IDS.memory
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-card-game', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-game', SCHOOL_MICROGAME_IDS.memoryMatch);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('memory-cards', SCHOOL_MICROGAME_IDS.memoryMatch);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('art', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('drawing', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('draw', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('pictionary', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('sketch-guess', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('sketch-guesser', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('skribbl', SCHOOL_MICROGAME_IDS.sketchGuessr);
+SCHOOL_MICROGAME_ALIAS_BY_ID.set('skribblio', SCHOOL_MICROGAME_IDS.sketchGuessr);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school', SCHOOL_MICROGAME_DEFAULT_ID);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school-microgame', SCHOOL_MICROGAME_DEFAULT_ID);
 SCHOOL_MICROGAME_ALIAS_BY_ID.set('school-microgames', SCHOOL_MICROGAME_ALL_ID);
@@ -435,6 +723,68 @@ export function createSchoolMemoryMatchCards({ rng = Math.random } = {}) {
     });
   }
   return cards;
+}
+
+function cloneSchoolSketchGuessrSketch(sketch) {
+  const strokes = [];
+  for (const stroke of Array.isArray(sketch?.strokes) ? sketch.strokes : []) {
+    strokes.push({
+      d: stroke.d,
+      width: stroke.width ?? 4
+    });
+  }
+
+  return {
+    id: sketch?.id ?? '',
+    label: sketch?.label ?? '',
+    aliases: cloneArray(sketch?.aliases ?? []),
+    viewBox: sketch?.viewBox ?? '0 0 100 100',
+    strokes
+  };
+}
+
+export function listSchoolSketchGuessrSketches() {
+  return SCHOOL_SKETCH_GUESSR_SKETCHES;
+}
+
+export function normalizeSchoolSketchGuess(value = '') {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+export function isSchoolSketchGuessAnswer(sketch = null, guess = '') {
+  const normalizedGuess = normalizeSchoolSketchGuess(guess);
+  if (!normalizedGuess) {
+    return false;
+  }
+
+  const candidates = [sketch?.label, ...(Array.isArray(sketch?.aliases) ? sketch.aliases : [])];
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizeSchoolSketchGuess(candidate);
+    if (!normalizedCandidate) {
+      continue;
+    }
+    if (normalizedGuess === normalizedCandidate || normalizedGuess === `${normalizedCandidate}s`) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function createSchoolSketchGuessrRound({ rng = Math.random } = {}) {
+  const sketch = cloneSchoolSketchGuessrSketch(
+    choose(SCHOOL_SKETCH_GUESSR_SKETCHES, rng) ?? SCHOOL_SKETCH_GUESSR_SKETCHES[0]
+  );
+  return {
+    sketch,
+    answerLength: normalizeSchoolSketchGuess(sketch.label).length,
+    drawDurationMs: SCHOOL_SKETCH_GUESSR_DRAW_DURATION_MS,
+    guessDurationMs: SCHOOL_SKETCH_GUESSR_GUESS_DURATION_MS,
+    revealMs: SCHOOL_SKETCH_GUESSR_REVEAL_MS
+  };
 }
 
 export function listSchoolMicrogames() {
@@ -577,6 +927,13 @@ export function buildSchoolMicrogameRound(gameId = '', { rng = Math.random, now 
       cards,
       gridSize: 4,
       pairCount: cards.length / 2
+    };
+  }
+
+  if (definition.id === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+    return {
+      ...base,
+      ...createSchoolSketchGuessrRound({ rng })
     };
   }
 

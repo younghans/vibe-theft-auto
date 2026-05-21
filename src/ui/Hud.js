@@ -1017,6 +1017,12 @@ function getSchoolMicrogameStatusText(game = null) {
     ) {
       return game.data.revealSuccess === true ? 'Nice job!' : 'Answer';
     }
+    if (
+      game?.round?.gameId === SCHOOL_MICROGAME_IDS.sketchGuessr
+      && game?.data?.revealActive === true
+    ) {
+      return game.data.revealSuccess === true ? 'Correct' : 'Answer';
+    }
     return `${formatMicrogameSeconds(game?.remainingMs)} seconds`;
   }
   if (phase === 'success') {
@@ -1046,6 +1052,12 @@ function createSchoolProgressMarkup(value = 0, label = 'Progress') {
       <span class="hud__school-meter-fill" style="--meter:${percent.toFixed(2)}%"></span>
     </div>
   `;
+}
+
+function getSchoolSketchStrokeProgress(progress = 0, index = 0, count = 1) {
+  const safeCount = Math.max(1, Math.floor(Number(count) || 1));
+  const paddedProgress = Math.max(0, Math.min(1, Number(progress) || 0)) * safeCount;
+  return Math.max(0, Math.min(1, paddedProgress - Math.max(0, Math.floor(Number(index) || 0))));
 }
 
 function createSchoolTimerMarkup(game = null) {
@@ -2312,6 +2324,17 @@ function getSchoolMicrogameBodyRenderKey(game = null, error = '') {
       String(data.matchBurstSeq ?? 0),
       String(Boolean(data.completing))
     );
+  } else if (gameId === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+    const sketch = round.sketch ?? {};
+    base.push(
+      String(sketch.id ?? sketch.label ?? ''),
+      String(Number(data.guessSeq ?? 0) || 0),
+      String(data.lastGuess ?? ''),
+      String(Number(data.wrongGuesses ?? 0) || 0),
+      String(Boolean(data.revealActive)),
+      String(Boolean(data.revealSuccess)),
+      String(data.revealAnswer ?? '')
+    );
   } else if (gameId === SCHOOL_MICROGAME_IDS.dodgeChalk) {
     const chalkSignatureParts = [];
     for (const chalk of data.chalks ?? []) {
@@ -2955,6 +2978,87 @@ function createMemoryMatchMarkup(game = null) {
   `;
 }
 
+function createSketchGuessrMarkup(game = null) {
+  const round = game?.round ?? {};
+  const data = game?.data ?? {};
+  const sketch = round.sketch ?? {};
+  const strokes = Array.isArray(sketch.strokes) ? sketch.strokes : [];
+  const progress = Math.max(0, Math.min(1, Number(data.sketchProgress ?? 0) || 0));
+  const revealActive = data.revealActive === true;
+  const revealSuccess = data.revealSuccess === true;
+  const answer = revealActive ? String(data.revealAnswer || sketch.label || '') : '';
+  const answerLength = Math.max(1, Math.min(18, Math.floor(Number(round.answerLength ?? String(sketch.label ?? '').length) || 1)));
+  const clue = Array.from({ length: answerLength }, () => '_').join(' ');
+  const wrongGuesses = Math.max(0, Math.floor(Number(data.wrongGuesses ?? 0) || 0));
+  const lastGuess = String(data.lastGuess ?? '').trim();
+  const stageLabel = revealActive
+    ? (revealSuccess ? 'Correct guess' : 'Answer revealed')
+    : 'Sketch in progress';
+  const strokeCount = Math.max(1, strokes.length);
+  let strokeMarkup = '';
+  for (let index = 0; index < strokes.length; index += 1) {
+    const stroke = strokes[index];
+    const strokeProgress = getSchoolSketchStrokeProgress(progress, index, strokeCount);
+    strokeMarkup += `
+      <path
+        class="hud__school-sketch-line"
+        data-school-sketch-stroke="${escapeHtml(String(index))}"
+        d="${escapeHtml(stroke.d ?? '')}"
+        pathLength="1"
+        style="stroke-width:${Math.max(1, Number(stroke.width ?? 4) || 4).toFixed(1)}; stroke-dasharray:1; stroke-dashoffset:${(1 - strokeProgress).toFixed(3)}"
+      />
+    `;
+  }
+
+  return `
+    <div class="hud__school-sketch${revealActive ? ' is-revealing' : ''}${revealSuccess ? ' is-correct' : ''}" style="--sketch-progress:${(progress * 100).toFixed(2)}%">
+      <div class="hud__school-sketch-stage" aria-label="${escapeHtml(stageLabel)}">
+        <div class="hud__school-sketch-paper">
+          <svg class="hud__school-sketch-svg" viewBox="${escapeHtml(sketch.viewBox ?? '0 0 100 100')}" role="img" aria-label="Black and white object sketch">
+            ${strokeMarkup}
+          </svg>
+          <span class="hud__school-sketch-pencil" aria-hidden="true"></span>
+          <div class="hud__school-sketch-reveal" data-school-sketch-reveal aria-hidden="${revealActive ? 'false' : 'true'}">
+            <span>${revealSuccess ? 'Correct' : 'It was'}</span>
+            <strong data-school-sketch-answer>${escapeHtml(answer)}</strong>
+          </div>
+        </div>
+        <div class="hud__school-sketch-progress" aria-label="Drawing progress">
+          <span class="hud__school-sketch-progress-fill" data-school-sketch-progress-fill style="--sketch-progress:${(progress * 100).toFixed(2)}%"></span>
+        </div>
+      </div>
+      <div class="hud__school-sketch-panel">
+        <div class="hud__school-sketch-clue">
+          <span>Object</span>
+          <strong data-school-sketch-clue>${revealActive ? escapeHtml(answer) : escapeHtml(clue)}</strong>
+        </div>
+        ${revealActive ? `
+          <div class="hud__school-sketch-locked">
+            <span>${revealSuccess ? 'Correct guess' : 'Answer revealed'}</span>
+            <strong>${escapeHtml(answer)}</strong>
+          </div>
+        ` : `
+          <form class="hud__school-sketch-form" data-school-sketch-guess-form autocomplete="off">
+            <input
+              class="hud__school-sketch-input"
+              data-school-sketch-guess-input
+              name="guess"
+              maxlength="32"
+              placeholder="type object name"
+              value="${escapeHtml(String(data.guessText ?? ''))}"
+            />
+            <button class="hud__school-action is-primary hud__school-sketch-submit" type="submit">Guess</button>
+          </form>
+        `}
+        <div class="hud__school-score-strip">
+          <span data-school-sketch-wrong>${escapeHtml(String(wrongGuesses))} misses</span>
+          <span data-school-sketch-last>${escapeHtml(lastGuess ? `Last: ${lastGuess}` : 'Guess before the final lines')}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function createDodgeChalkMarkup(game = null) {
   const data = game?.data ?? {};
   const lanes = Array.isArray(game?.round?.lanes) ? game.round.lanes : ['Left', 'Center', 'Right'];
@@ -3367,6 +3471,8 @@ function createSchoolMicrogamePlayMarkup(game = null) {
       return createTeacherLookingMarkup(game);
     case SCHOOL_MICROGAME_IDS.memoryMatch:
       return createMemoryMatchMarkup(game);
+    case SCHOOL_MICROGAME_IDS.sketchGuessr:
+      return createSketchGuessrMarkup(game);
     case SCHOOL_MICROGAME_IDS.dodgeChalk:
       return createDodgeChalkMarkup(game);
     case SCHOOL_MICROGAME_IDS.sortBackpack:
@@ -3572,6 +3678,78 @@ function updateSchoolGeographyLiveMarkup(root = null, game = null) {
   }
 }
 
+function updateSchoolSketchGuessrLiveMarkup(root = null, game = null) {
+  const task = root?.querySelector?.('.hud__school-sketch');
+  if (!task || game?.phase !== 'playing') {
+    return;
+  }
+
+  const data = game.data ?? {};
+  const sketch = game.round?.sketch ?? {};
+  const strokes = Array.isArray(sketch.strokes) ? sketch.strokes : [];
+  const progress = Math.max(0, Math.min(1, Number(data.sketchProgress ?? 0) || 0));
+  const revealActive = data.revealActive === true;
+  const revealSuccess = data.revealSuccess === true;
+  const answer = revealActive ? String(data.revealAnswer || sketch.label || '') : '';
+  const wrongGuesses = Math.max(0, Math.floor(Number(data.wrongGuesses ?? 0) || 0));
+  const lastGuess = String(data.lastGuess ?? '').trim();
+  const strokeCount = Math.max(1, strokes.length);
+
+  task.style.setProperty('--sketch-progress', `${(progress * 100).toFixed(3)}%`);
+  task.classList.toggle('is-revealing', revealActive);
+  task.classList.toggle('is-correct', revealSuccess);
+
+  for (const path of task.querySelectorAll('[data-school-sketch-stroke]')) {
+    if (!(path instanceof SVGPathElement)) {
+      continue;
+    }
+    const index = Math.max(0, Math.floor(Number(path.getAttribute('data-school-sketch-stroke') ?? 0) || 0));
+    const strokeProgress = getSchoolSketchStrokeProgress(progress, index, strokeCount);
+    path.style.strokeDashoffset = (1 - strokeProgress).toFixed(4);
+  }
+
+  const progressFill = task.querySelector('[data-school-sketch-progress-fill]');
+  if (progressFill instanceof HTMLElement) {
+    progressFill.style.setProperty('--sketch-progress', `${(progress * 100).toFixed(3)}%`);
+  }
+
+  const reveal = task.querySelector('[data-school-sketch-reveal]');
+  if (reveal) {
+    reveal.setAttribute('aria-hidden', revealActive ? 'false' : 'true');
+  }
+
+  const answerNode = task.querySelector('[data-school-sketch-answer]');
+  if (answerNode) {
+    answerNode.textContent = answer;
+  }
+
+  const clueNode = task.querySelector('[data-school-sketch-clue]');
+  if (clueNode && revealActive) {
+    clueNode.textContent = answer;
+  }
+
+  const wrongLabel = task.querySelector('[data-school-sketch-wrong]');
+  if (wrongLabel) {
+    wrongLabel.textContent = `${wrongGuesses} misses`;
+  }
+
+  const lastLabel = task.querySelector('[data-school-sketch-last]');
+  if (lastLabel) {
+    lastLabel.textContent = revealActive
+      ? (revealSuccess ? 'Correct' : 'Answer revealed')
+      : (lastGuess ? `Last: ${lastGuess}` : 'Guess before the final lines');
+  }
+
+  const input = task.querySelector('[data-school-sketch-guess-input]');
+  if (input instanceof HTMLInputElement) {
+    input.disabled = revealActive;
+  }
+  const submit = task.querySelector('.hud__school-sketch-submit');
+  if (submit instanceof HTMLButtonElement) {
+    submit.disabled = revealActive;
+  }
+}
+
 function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
   if (!root || game?.phase !== 'playing') {
     return;
@@ -3579,6 +3757,11 @@ function updateSchoolMicrogameLiveMarkup(root = null, game = null) {
 
   if (String(game.round?.gameId ?? '') === SCHOOL_MICROGAME_IDS.geographyGlobe) {
     updateSchoolGeographyLiveMarkup(root, game);
+    return;
+  }
+
+  if (String(game.round?.gameId ?? '') === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+    updateSchoolSketchGuessrLiveMarkup(root, game);
     return;
   }
 
@@ -8596,6 +8779,25 @@ export class Hud {
       onAction?.(actionTarget.getAttribute('data-school-microgame-action') ?? '');
     });
 
+    this.schoolMicrogameRoot?.addEventListener('submit', (event) => {
+      const target = event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement ?? null;
+      const form = target?.closest('[data-school-sketch-guess-form]');
+      if (!form) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const input = form.querySelector('[data-school-sketch-guess-input]');
+      const guess = input instanceof HTMLInputElement ? input.value : '';
+      if (input instanceof HTMLInputElement) {
+        input.value = '';
+      }
+      onAction?.(`sketch:guess:${encodeURIComponent(guess)}`);
+    });
+
     let holdPointerActive = false;
 
     this.schoolMicrogameRoot?.addEventListener('pointerdown', (event) => {
@@ -10833,6 +11035,29 @@ export class Hud {
     }, 0);
   }
 
+  focusSchoolSketchGuess(game = this.schoolMicrogameState.game) {
+    if (
+      game?.phase !== 'playing'
+      || game?.round?.gameId !== SCHOOL_MICROGAME_IDS.sketchGuessr
+      || game?.data?.revealActive === true
+    ) {
+      return;
+    }
+
+    const input = this.schoolMicrogameBody?.querySelector('[data-school-sketch-guess-input]');
+    if (!(input instanceof HTMLInputElement) || document.activeElement === input || input.disabled) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (!this.schoolMicrogameVisible || input.disabled || document.activeElement === input) {
+        return;
+      }
+      input.focus?.({ preventScroll: true });
+      input.select?.();
+    }, 0);
+  }
+
   renderSchoolMicrogame() {
     if (!this.schoolMicrogameRoot) {
       return;
@@ -10888,6 +11113,7 @@ export class Hud {
     updateSchoolMicrogameLiveMarkup(this.schoolMicrogameBody, game);
     if (bodyRendered) {
       this.focusSchoolGeographyChoice(game);
+      this.focusSchoolSketchGuess(game);
     }
 
     if (this.schoolMicrogameMessage) {

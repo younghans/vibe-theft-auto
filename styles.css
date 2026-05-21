@@ -11506,6 +11506,7 @@ body.is-admin-prompt-resizing * {
 .hud__school-teacher,
 .hud__school-geography,
 .hud__school-memory,
+.hud__school-sketch,
 .hud__school-dodge,
 .hud__school-sort,
 .hud__school-bell,
@@ -12967,6 +12968,251 @@ body.is-admin-prompt-resizing * {
     opacity: 0;
     transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y))) scale(1.35);
   }
+}
+
+.hud__school-sketch {
+  grid-template-columns: minmax(320px, 1.15fr) minmax(240px, 0.85fr);
+  align-items: stretch;
+}
+
+.hud__school-sketch-stage,
+.hud__school-sketch-panel {
+  min-width: 0;
+}
+
+.hud__school-sketch-stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 14px;
+  gap: 10px;
+}
+
+.hud__school-sketch-paper {
+  position: relative;
+  min-height: 330px;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.045) 1px, transparent 1px) 0 0 / 18px 18px,
+    linear-gradient(180deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px) 0 0 / 18px 18px,
+    #f7f2e6;
+  box-shadow:
+    inset 0 0 0 8px rgba(255, 255, 255, 0.38),
+    0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+.hud__school-sketch-paper::before,
+.hud__school-sketch-paper::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+}
+
+.hud__school-sketch-paper::before {
+  top: 24%;
+}
+
+.hud__school-sketch-paper::after {
+  top: 68%;
+}
+
+.hud__school-sketch-svg {
+  position: absolute;
+  inset: 7%;
+  display: block;
+  width: 86%;
+  height: 86%;
+  overflow: visible;
+}
+
+.hud__school-sketch-line {
+  fill: none;
+  stroke: #111827;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  transition: stroke-dashoffset 80ms linear;
+}
+
+.hud__school-sketch-pencil {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 82px;
+  height: 12px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, #111827 0 9px, #f2c94c 9px 62px, #f47c60 62px 74px, #f7d8b7 74px 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+  transform: rotate(-14deg);
+}
+
+.hud__school-sketch-pencil::after {
+  content: '';
+  position: absolute;
+  right: -8px;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 10px solid #111827;
+}
+
+.hud__school-sketch-reveal {
+  position: absolute;
+  inset: auto 18px 18px 18px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #111827;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+}
+
+.hud__school-sketch.is-revealing .hud__school-sketch-reveal {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hud__school-sketch-reveal span {
+  color: rgba(17, 24, 39, 0.58);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-sketch-reveal strong {
+  min-width: 0;
+  font-size: 22px;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.hud__school-sketch-progress {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hud__school-sketch-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--sketch-progress, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f8fafc, #38d3ff);
+  box-shadow: 0 0 16px rgba(56, 211, 255, 0.38);
+  transition: width 80ms linear;
+}
+
+.hud__school-sketch-panel {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(248, 250, 252, 0.14), transparent 34%),
+    rgba(5, 10, 16, 0.48);
+}
+
+.hud__school-sketch-clue {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.hud__school-sketch-clue span {
+  color: rgba(255, 246, 222, 0.58);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-sketch-clue strong {
+  color: #fff8dd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
+
+.hud__school-sketch-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+
+.hud__school-sketch-locked {
+  display: grid;
+  gap: 7px;
+  min-height: 52px;
+  align-content: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(56, 211, 255, 0.32);
+  border-radius: 8px;
+  background: rgba(56, 211, 255, 0.12);
+}
+
+.hud__school-sketch-locked span {
+  color: rgba(221, 249, 255, 0.7);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.hud__school-sketch-locked strong {
+  color: #f8fafc;
+  font-size: 20px;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.hud__school-sketch-input {
+  min-width: 0;
+  height: 52px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 900;
+  outline: none;
+  text-transform: lowercase;
+}
+
+.hud__school-sketch-input:focus {
+  border-color: rgba(56, 211, 255, 0.82);
+  box-shadow: 0 0 0 3px rgba(56, 211, 255, 0.22);
+}
+
+.hud__school-sketch-input:disabled {
+  opacity: 0.62;
+}
+
+.hud__school-sketch-submit {
+  min-width: 96px;
 }
 
 .hud__school-dual-actions {
@@ -17641,6 +17887,7 @@ canvas {
   .hud__school-teacher,
   .hud__school-geography,
   .hud__school-memory,
+  .hud__school-sketch,
   .hud__school-dodge,
   .hud__school-sort,
   .hud__school-bell,
@@ -17653,6 +17900,19 @@ canvas {
 
   .hud__school-geography {
     grid-template-columns: 1fr;
+  }
+
+  .hud__school-sketch {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__school-sketch-paper {
+    min-height: 260px;
+  }
+
+  .hud__school-sketch-panel {
+    gap: 10px;
+    padding: 12px;
   }
 
   .hud__school-geo-stage {
@@ -18524,6 +18784,7 @@ canvas {
   .hud__school-teacher,
   .hud__school-geography,
   .hud__school-memory,
+  .hud__school-sketch,
   .hud__school-dodge,
   .hud__school-sort,
   .hud__school-bell,
@@ -18536,6 +18797,32 @@ canvas {
 
   .hud__school-geography {
     grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1fr);
+  }
+
+  .hud__school-sketch {
+    grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.8fr);
+  }
+
+  .hud__school-sketch-paper {
+    min-height: 154px;
+  }
+
+  .hud__school-sketch-panel {
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .hud__school-sketch-clue {
+    padding: 9px;
+  }
+
+  .hud__school-sketch-clue strong {
+    font-size: 18px;
+  }
+
+  .hud__school-sketch-input {
+    height: 40px;
+    font-size: 14px;
   }
 
   .hud__school-geo-stage {
@@ -18916,6 +19203,9 @@ canvas {
   .hud__school-combo-digit,
   .hud__school-geo-fallback-globe,
   .hud__school-geo-fallback-pin,
+  .hud__school-sketch-line,
+  .hud__school-sketch-progress-fill,
+  .hud__school-sketch-reveal,
   .hud__school-teacher-figure,
   .hud__school-student-pencil,
   .hud__school-teacher-status {

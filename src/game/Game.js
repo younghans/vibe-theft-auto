@@ -193,8 +193,10 @@ import {
   SCHOOL_POP_QUIZ_ROUND_COUNT,
   createSchoolMemoryMatchCards,
   createSchoolPopQuizQuestions,
+  createSchoolSketchGuessrRound,
   getSchoolMicrogameDefinition,
   getSchoolMicrogamePromptRadius,
+  isSchoolSketchGuessAnswer,
   isSchoolMicrogameNpc,
   listSchoolMicrogames,
   normalizeSchoolMicrogameId
@@ -13212,6 +13214,26 @@ export class Game {
       data.lastFlipEndsAt = 0;
       data.completing = false;
       data.completeAt = 0;
+    } else if (definition.id === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+      const sketchRound = createSchoolSketchGuessrRound({ rng: () => this.schoolRandom() });
+      round.sketch = sketchRound.sketch;
+      round.answerLength = sketchRound.answerLength;
+      round.drawDurationMs = sketchRound.drawDurationMs;
+      round.guessDurationMs = sketchRound.guessDurationMs;
+      round.revealMs = sketchRound.revealMs;
+      data.sketchProgress = 0;
+      data.guessText = '';
+      data.lastGuess = '';
+      data.wrongGuesses = 0;
+      data.guessSeq = 0;
+      data.revealActive = false;
+      data.revealSuccess = false;
+      data.revealStartedAt = 0;
+      data.revealEndsAt = 0;
+      data.revealStartProgress = 0;
+      data.revealAnswer = '';
+      data.revealResultTitle = '';
+      data.revealResultDetail = '';
     } else if (definition.id === SCHOOL_MICROGAME_IDS.dodgeChalk) {
       round.lanes = ['Left', 'Center', 'Right'];
       data.playerLane = 1;
@@ -13426,6 +13448,20 @@ export class Game {
       this.schoolMicrogame.data.lastFlipEndsAt = 0;
       this.schoolMicrogame.data.completing = false;
       this.schoolMicrogame.data.completeAt = 0;
+    } else if (this.schoolMicrogame.round?.gameId === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+      this.schoolMicrogame.data.sketchProgress = 0;
+      this.schoolMicrogame.data.guessText = '';
+      this.schoolMicrogame.data.lastGuess = '';
+      this.schoolMicrogame.data.wrongGuesses = 0;
+      this.schoolMicrogame.data.guessSeq = 0;
+      this.schoolMicrogame.data.revealActive = false;
+      this.schoolMicrogame.data.revealSuccess = false;
+      this.schoolMicrogame.data.revealStartedAt = 0;
+      this.schoolMicrogame.data.revealEndsAt = 0;
+      this.schoolMicrogame.data.revealStartProgress = 0;
+      this.schoolMicrogame.data.revealAnswer = '';
+      this.schoolMicrogame.data.revealResultTitle = '';
+      this.schoolMicrogame.data.revealResultDetail = '';
     } else if (this.isOfficeJanitorTrashTossGame(this.schoolMicrogame)) {
       this.applyJanitorTrashTossRoundDetails(this.schoolMicrogame.round);
       this.schoolMicrogame.round.requiredThrows = OFFICE_JANITOR_REQUIRED_THROWS;
@@ -14166,6 +14202,154 @@ export class Game {
     this.syncSchoolMicrogameHud();
   }
 
+  getSchoolSketchAnswerLabel(game = this.schoolMicrogame) {
+    return String(game?.round?.sketch?.label ?? 'the object').trim() || 'the object';
+  }
+
+  isSchoolSketchGuessrRevealActive(game = this.schoolMicrogame) {
+    return Boolean(
+      game?.phase === 'playing'
+      && game.round?.gameId === SCHOOL_MICROGAME_IDS.sketchGuessr
+      && game.data?.revealActive === true
+    );
+  }
+
+  startSchoolSketchGuessrReveal({
+    success = false,
+    resultTitle = '',
+    resultDetail = ''
+  } = {}) {
+    const game = this.schoolMicrogame;
+    if (
+      !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.sketchGuessr
+      || game.phase !== 'playing'
+      || game.data?.revealActive === true
+    ) {
+      return;
+    }
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const answer = this.getSchoolSketchAnswerLabel(game);
+    const drawDuration = Math.max(
+      1,
+      Number(game.round?.drawDurationMs ?? ((game.round?.durationMs ?? 7000) + 5000)) || 12000
+    );
+    const elapsed = Math.max(0, now - (Number(game.startedAt ?? now) || now));
+    const naturalProgress = elapsed / drawDuration;
+    const currentProgress = THREE.MathUtils.clamp(
+      Number.isFinite(Number(game.data?.sketchProgress))
+        ? Number(game.data.sketchProgress)
+        : naturalProgress,
+      0,
+      0.995
+    );
+    const revealMs = Math.max(450, Number(game.round?.revealMs ?? 1250) || 1250);
+    const title = resultTitle || (success ? 'Guessed It' : 'Out Of Time');
+    const detail = resultDetail || (success ? `It was ${answer}.` : `The sketch was ${answer}.`);
+
+    game.data.guessText = '';
+    game.data.revealActive = true;
+    game.data.revealSuccess = Boolean(success);
+    game.data.revealStartedAt = now;
+    game.data.revealEndsAt = now + revealMs;
+    game.data.revealStartProgress = currentProgress;
+    game.data.revealAnswer = answer;
+    game.data.revealResultTitle = title;
+    game.data.revealResultDetail = detail;
+    game.data.sketchProgress = currentProgress;
+    game.endsAt = game.data.revealEndsAt;
+    game.remainingMs = revealMs;
+    game.message = success ? 'Correct. Finishing the sketch.' : `It was ${answer}. Finishing the sketch.`;
+
+    if (success) {
+      this.playTaskCompleteSound();
+      this.hud.playTaskConfetti();
+    } else {
+      this.playSoundEffect(this.playingCardSound);
+    }
+    this.syncSchoolMicrogameHud();
+  }
+
+  updateSchoolSketchGuessrState(game = this.schoolMicrogame, now = performance.now()) {
+    if (!game || game.round?.gameId !== SCHOOL_MICROGAME_IDS.sketchGuessr || game.phase !== 'playing') {
+      return false;
+    }
+
+    if (game.data?.revealActive === true) {
+      const revealEndsAt = Number(game.data.revealEndsAt ?? 0) || now;
+      const revealStartedAt = Number(game.data.revealStartedAt ?? now) || now;
+      const revealDuration = Math.max(1, revealEndsAt - revealStartedAt);
+      const revealT = THREE.MathUtils.clamp((now - revealStartedAt) / revealDuration, 0, 1);
+      const eased = 1 - ((1 - revealT) * (1 - revealT) * (1 - revealT));
+      const startProgress = THREE.MathUtils.clamp(Number(game.data.revealStartProgress ?? 0) || 0, 0, 1);
+      game.data.sketchProgress = THREE.MathUtils.clamp(startProgress + ((1 - startProgress) * eased), 0, 1);
+      game.endsAt = Math.max(Number(game.endsAt ?? revealEndsAt) || revealEndsAt, revealEndsAt);
+      game.remainingMs = Math.max(0, revealEndsAt - now);
+
+      if (now < revealEndsAt) {
+        return true;
+      }
+
+      const revealSuccess = game.data.revealSuccess === true;
+      const title = game.data.revealResultTitle || (revealSuccess ? 'Guessed It' : 'Out Of Time');
+      const detail = game.data.revealResultDetail || `The sketch was ${this.getSchoolSketchAnswerLabel(game)}.`;
+      game.data.sketchProgress = 1;
+      game.data.revealActive = false;
+      void this.finishSchoolMicrogame(revealSuccess, title, detail, {
+        playSuccessSound: false,
+        playFailureSound: false
+      });
+      return true;
+    }
+
+    const drawDuration = Math.max(
+      1,
+      Number(game.round?.drawDurationMs ?? ((game.round?.durationMs ?? 7000) + 5000)) || 12000
+    );
+    const elapsed = Math.max(0, now - (Number(game.startedAt ?? now) || now));
+    game.data.sketchProgress = THREE.MathUtils.clamp(elapsed / drawDuration, 0, 0.995);
+    return false;
+  }
+
+  submitSchoolSketchGuess(guess = '') {
+    const game = this.schoolMicrogame;
+    if (
+      !game
+      || game.round?.gameId !== SCHOOL_MICROGAME_IDS.sketchGuessr
+      || game.phase !== 'playing'
+      || game.data?.revealActive === true
+    ) {
+      return;
+    }
+
+    const cleanGuess = String(guess ?? '').trim().slice(0, 32);
+    if (!cleanGuess) {
+      game.message = 'Type a guess first.';
+      this.syncSchoolMicrogameHud();
+      return;
+    }
+
+    game.data.lastGuess = cleanGuess;
+    game.data.guessText = cleanGuess;
+    game.data.guessSeq = Math.max(0, Math.floor(Number(game.data.guessSeq ?? 0) || 0)) + 1;
+
+    if (isSchoolSketchGuessAnswer(game.round?.sketch, cleanGuess)) {
+      this.startSchoolSketchGuessrReveal({
+        success: true,
+        resultTitle: 'Guessed It',
+        resultDetail: `You called ${this.getSchoolSketchAnswerLabel(game)} before the final lines.`
+      });
+      return;
+    }
+
+    game.data.wrongGuesses = Math.max(0, Math.floor(Number(game.data.wrongGuesses ?? 0) || 0)) + 1;
+    game.data.guessText = '';
+    game.message = 'Not it. Keep watching the lines.';
+    this.playSoundEffect(this.playingCardSound);
+    this.syncSchoolMicrogameHud();
+  }
+
   finishOfficeJob(success = false, title = '', detail = '') {
     return this.finishSchoolMicrogame(success, title, detail);
   }
@@ -14304,6 +14488,17 @@ export class Game {
 
     if (gameId === SCHOOL_MICROGAME_IDS.memoryMatch && action.startsWith('memory:flip:')) {
       this.handleMemoryMatchFlip(action.slice('memory:flip:'.length));
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.sketchGuessr && action.startsWith('sketch:guess:')) {
+      let guess = action.slice('sketch:guess:'.length);
+      try {
+        guess = decodeURIComponent(guess);
+      } catch {
+        guess = '';
+      }
+      this.submitSchoolSketchGuess(guess);
       return;
     }
 
@@ -14768,7 +14963,7 @@ export class Game {
     this.schoolMicrogameLastTickAt = now;
     game.remainingMs = Math.max(0, Number(game.endsAt ?? now) - now);
 
-    if (!this.isSchoolGeographyRevealActive(game)) {
+    if (!this.isSchoolGeographyRevealActive(game) && !this.isSchoolSketchGuessrRevealActive(game)) {
       this.handleSchoolMicrogameKeyboardInput();
     }
     this.updatePlayingSchoolMicrogame(dt, now);
@@ -14777,7 +14972,7 @@ export class Game {
       return;
     }
 
-    if (this.isSchoolGeographyRevealActive(game)) {
+    if (this.isSchoolGeographyRevealActive(game) || this.isSchoolSketchGuessrRevealActive(game)) {
       this.syncSchoolMicrogameHud();
       return;
     }
@@ -14811,6 +15006,12 @@ export class Game {
           success: false,
           resultTitle: 'Missed Country',
           resultDetail: `The pinpoint was ${game.round?.country?.name ?? 'the target country'}.`
+        });
+      } else if (gameId === SCHOOL_MICROGAME_IDS.sketchGuessr) {
+        this.startSchoolSketchGuessrReveal({
+          success: false,
+          resultTitle: 'Out Of Time',
+          resultDetail: `The sketch was ${this.getSchoolSketchAnswerLabel(game)}.`
         });
       } else {
         void this.finishSchoolMicrogame(false, 'Out Of Time', 'The bell does not negotiate.');
@@ -15285,6 +15486,10 @@ export class Game {
     }
 
     if (gameId === SCHOOL_MICROGAME_IDS.geographyGlobe && this.updateSchoolGeographyRevealState(game, now)) {
+      return;
+    }
+
+    if (gameId === SCHOOL_MICROGAME_IDS.sketchGuessr && this.updateSchoolSketchGuessrState(game, now)) {
       return;
     }
 
