@@ -8,6 +8,7 @@ import {
   PUNCH_HITBOX_RADIUS,
   PUNCH_HIT_DELAY_MS,
   PUNCH_HIT_ORIGIN_FORWARD_OFFSET,
+  PUNCH_HIT_REACTIONS,
   PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
@@ -276,6 +277,10 @@ function removeFirstArrayEntry(values) {
   }
   values.length -= 1;
   return entry;
+}
+
+function getRandomPunchHitReaction() {
+  return PUNCH_HIT_REACTIONS[Math.floor(Math.random() * PUNCH_HIT_REACTIONS.length)] ?? '';
 }
 
 function recordAdminJoinDiagnostic(diagnostic = {}) {
@@ -3747,6 +3752,7 @@ export class WorldRoom extends Room {
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
+        hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
     }
@@ -4159,6 +4165,7 @@ export class WorldRoom extends Room {
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
+        hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
     }

@@ -17,6 +17,8 @@ import {
 } from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import {
+  HIT_REACTION_HEAD,
+  HIT_REACTION_STOMACH,
   PUNCH_LUNGE_BACKSWING_DISTANCE,
   PUNCH_LUNGE_DISTANCE,
   PUNCH_LUNGE_PEAK_MS,
@@ -33,6 +35,21 @@ const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
 const BARBELL_BASE_AXIS = new THREE.Vector3(1, 0, 0);
 const NPC_PUNCH_PLAYBACK_RATE = 4.2;
+const HIT_REACTION_CLIP_BY_ID = Object.freeze({
+  [HIT_REACTION_HEAD]: 'headHit',
+  [HIT_REACTION_STOMACH]: 'stomachHit'
+});
+const HIT_REACTION_PLAYBACK_RATE_BY_ID = Object.freeze({
+  [HIT_REACTION_HEAD]: 3.25,
+  [HIT_REACTION_STOMACH]: 2.95
+});
+const HIT_REACTION_FADE_IN = 0.015;
+const HIT_REACTION_FADE_OUT = 0.12;
+const HIT_REACTION_BASE_ANIMATION_WEIGHT = 0.045;
+const HIT_REACTION_SUPPRESS_BASE_MS = 420;
+const HIT_REACTION_MOVEMENT_LOCK_MS = 180;
+const HIT_REACTION_MOVEMENT_RECOVER_MS = 440;
+const HIT_REACTION_TURN_LOCK_MS = 210;
 const NPC_FOCUS_MIN_DISTANCE = 0.18;
 const NPC_FOCUS_MIN_DISTANCE_SQ = NPC_FOCUS_MIN_DISTANCE * NPC_FOCUS_MIN_DISTANCE;
 const NPC_MOVING_ANIMATION_DISTANCE_SQ = 0.12 * 0.12;
@@ -45,6 +62,13 @@ const FOOT_PLANT_BONE_NAMES = Object.freeze([
 const NPC_GROUNDED_ANIMATIONS = new Set(['snatch']);
 
 function createNpcAnimationClip(root, clipName) {
+  return createInPlaceClip(
+    createTargetFilteredClip(getMixamoClip(clipName), root, `${clipName}_NpcRigSafe`),
+    MIXAMO_BONES.hips
+  );
+}
+
+function createNpcHitReactionClip(root, clipName) {
   return createInPlaceClip(
     createTargetFilteredClip(getMixamoClip(clipName), root, `${clipName}_NpcRigSafe`),
     MIXAMO_BONES.hips
@@ -223,8 +247,15 @@ export class NpcActor {
     this.activeAnimation = 'idle';
     this.ragdoll = null;
     this.punchVisualStartedAt = -Infinity;
+    this.hitReactionActions = new Map();
+    this.activeHitReactionAction = null;
+    this.hitReactionSuppressUntilMs = -Infinity;
+    this.hitReactionMovementLockUntilMs = -Infinity;
+    this.hitReactionMovementRecoverUntilMs = -Infinity;
+    this.hitReactionTurnLockUntilMs = -Infinity;
     this.damageFeedbackStartedAt = -Infinity;
     this.damageFeedbackEndsAt = -Infinity;
+    this.damageFeedbackStrength = 1;
     this.damageDirection = new THREE.Vector3(0, 0, 1);
     this.selected = false;
     this.focusTarget = null;
@@ -302,8 +333,22 @@ export class NpcActor {
         ['punch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.punching))],
         ['snatch', this.mixer.clipAction(createNpcAnimationClip(this.character, assets.playerAnimationSet.snatch))]
       ]);
-      for (const key of this.animationActions.keys()) {
-        const action = this.animationActions.get(key);
+      for (const [reactionId, clipName] of Object.entries(HIT_REACTION_CLIP_BY_ID)) {
+        const action = this.mixer.clipAction(createNpcHitReactionClip(this.character, clipName));
+        action.enabled = true;
+        action.clampWhenFinished = true;
+        action.setLoop(THREE.LoopOnce, 1);
+        action.setEffectiveWeight(0);
+        action.setEffectiveTimeScale(HIT_REACTION_PLAYBACK_RATE_BY_ID[reactionId] ?? 4);
+        this.hitReactionActions.set(reactionId, action);
+      }
+      this.mixer.addEventListener('finished', (event) => {
+        if (this.activeHitReactionAction && this.activeHitReactionAction === event.action) {
+          event.action.fadeOut(HIT_REACTION_FADE_OUT);
+          this.activeHitReactionAction = null;
+        }
+      });
+      for (const [key, action] of this.animationActions.entries()) {
         action.enabled = true;
         action.setLoop(
           key === 'punch'
@@ -587,9 +632,42 @@ export class NpcActor {
     }
   }
 
-  triggerDamageFeedback({ direction = null } = {}) {
+  triggerHitReaction(reactionId = '') {
+    if (this.runtimeState.alive === false || this.ragdoll?.isActive?.() || !HIT_REACTION_CLIP_BY_ID[reactionId]) {
+      return false;
+    }
+
+    const action = this.hitReactionActions?.get?.(reactionId);
+    if (!action) {
+      return false;
+    }
+
+    if (this.activeHitReactionAction && this.activeHitReactionAction !== action) {
+      this.activeHitReactionAction.fadeOut(0.035);
+    }
+
+    this.activeHitReactionAction = action;
+    const now = performance.now();
+    this.hitReactionSuppressUntilMs = now + HIT_REACTION_SUPPRESS_BASE_MS;
+    this.hitReactionMovementLockUntilMs = now + HIT_REACTION_MOVEMENT_LOCK_MS;
+    this.hitReactionMovementRecoverUntilMs = now + HIT_REACTION_MOVEMENT_RECOVER_MS;
+    this.hitReactionTurnLockUntilMs = now + HIT_REACTION_TURN_LOCK_MS;
+    action.reset();
+    action.enabled = true;
+    action.clampWhenFinished = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.setEffectiveTimeScale(HIT_REACTION_PLAYBACK_RATE_BY_ID[reactionId] ?? 4);
+    action.setEffectiveWeight(1);
+    action.fadeIn(HIT_REACTION_FADE_IN);
+    action.play();
+    return true;
+  }
+
+  triggerDamageFeedback({ direction = null, hitReaction = '', strength = 1 } = {}) {
     this.damageFeedbackStartedAt = performance.now();
     this.damageFeedbackEndsAt = this.damageFeedbackStartedAt + DAMAGE_FEEDBACK_DURATION_MS;
+    this.damageFeedbackStrength = THREE.MathUtils.clamp(Number(strength) || 1, 0.6, 1.8);
+    this.triggerHitReaction(hitReaction);
 
     if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
       this.damageDirection.set(direction.x, 0, direction.z);
@@ -653,6 +731,25 @@ export class NpcActor {
   }
 
   update(deltaSeconds) {
+    const now = performance.now();
+    const reactionCommitActive = this.runtimeState.alive !== false
+      && this.ragdoll?.isActive?.() !== true
+      && now < this.hitReactionMovementRecoverUntilMs;
+    const movementLocked = reactionCommitActive && now < this.hitReactionMovementLockUntilMs;
+    const movementRecovering = reactionCommitActive && !movementLocked;
+    const movementRecoverProgress = movementRecovering
+      ? smooth01((now - this.hitReactionMovementLockUntilMs) / Math.max(1, this.hitReactionMovementRecoverUntilMs - this.hitReactionMovementLockUntilMs))
+      : 1;
+    const movementResponseScale = movementLocked
+      ? 0
+      : movementRecovering
+        ? THREE.MathUtils.lerp(0.18, 1, movementRecoverProgress)
+        : 1;
+    const turnResponseScale = now < this.hitReactionTurnLockUntilMs
+      && this.runtimeState.alive !== false
+      && this.ragdoll?.isActive?.() !== true
+        ? 0
+        : movementResponseScale;
     const targetX = this.runtimeState.x ?? this.anchor.position.x;
     const targetZ = this.runtimeState.z ?? this.anchor.position.z;
     let targetRotationY = this.runtimeState.rotationY ?? this.anchor.rotation.y;
@@ -668,16 +765,19 @@ export class NpcActor {
         targetRotationY = Math.atan2(focusDeltaX, focusDeltaZ);
       }
     }
-    const lerp = 1 - Math.exp(-deltaSeconds * 10);
+    const lerp = 1 - Math.exp(-deltaSeconds * 10 * movementResponseScale);
     this.anchor.position.x = THREE.MathUtils.lerp(this.anchor.position.x, targetX, lerp);
     this.anchor.position.z = THREE.MathUtils.lerp(this.anchor.position.z, targetZ, lerp);
     const deltaYaw = Math.atan2(
       Math.sin(targetRotationY - this.anchor.rotation.y),
       Math.cos(targetRotationY - this.anchor.rotation.y)
     );
-    this.anchor.rotation.y += deltaYaw * lerp;
+    const turnLerp = 1 - Math.exp(-deltaSeconds * 10 * turnResponseScale);
+    this.anchor.rotation.y += deltaYaw * turnLerp;
     this.anchor.visible = this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden;
-    const now = performance.now();
+    const hitReactionActive = now < this.hitReactionSuppressUntilMs
+      && this.runtimeState.alive !== false
+      && this.ragdoll?.isActive?.() !== true;
     const damageLifetime = Math.max(1, this.damageFeedbackEndsAt - this.damageFeedbackStartedAt);
     const damageProgress = THREE.MathUtils.clamp((now - this.damageFeedbackStartedAt) / damageLifetime, 0, 1);
     const damageActive = damageProgress < 1;
@@ -686,13 +786,17 @@ export class NpcActor {
     const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
     const damageSideX = -this.damageDirection.z;
     const damageSideZ = this.damageDirection.x;
-    const damageJolt = damageEnvelope * 0.18;
-    const damageShimmy = damageWave * damageEnvelope * 0.09;
+    const damageJolt = damageEnvelope * 0.18 * this.damageFeedbackStrength;
+    const damageShimmy = damageWave * damageEnvelope * 0.09 * this.damageFeedbackStrength;
+    const damageLift = damagePulse * 0.12 * Math.min(1.35, this.damageFeedbackStrength);
     const damageFlashAmount = damageActive
       ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
       : 0;
 
     this.syncAnimationState();
+    this.animationActions?.get(this.activeAnimation)?.setEffectiveWeight(
+      hitReactionActive ? HIT_REACTION_BASE_ANIMATION_WEIGHT : 1
+    );
     this.mixer?.update(deltaSeconds);
     this.ragdoll?.update(deltaSeconds);
     this.ragdoll?.applyToSkeleton();
@@ -703,13 +807,13 @@ export class NpcActor {
 
     this.visual.position.set(
       (this.damageDirection.x * damageJolt) + (damageSideX * damageShimmy),
-      (damagePulse * 0.12) - footPlantGroundingOffsetY,
+      damageLift - footPlantGroundingOffsetY,
       (this.damageDirection.z * damageJolt) + (damageSideZ * damageShimmy) + jabLungeOffset
     );
     this.visual.rotation.set(
-      -(this.damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
+      -(this.damageDirection.z * damageEnvelope * 0.12 * this.damageFeedbackStrength) + (damageWave * 0.025),
       damageWave * damageEnvelope * 0.025,
-      (this.damageDirection.x * damageEnvelope * 0.14)
+      (this.damageDirection.x * damageEnvelope * 0.14 * this.damageFeedbackStrength)
         + (damageWave * 0.045)
     );
 

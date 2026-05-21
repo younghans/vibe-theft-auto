@@ -104,6 +104,7 @@ const NPC_CORE_ANIMATION_CLIPS = Object.freeze([
   assets.playerAnimationSet.fastRun,
   assets.playerAnimationSet.fightingIdle,
   assets.playerAnimationSet.punching,
+  ...assets.playerAnimationSet.hitReactions,
   assets.playerAnimationSet.snatch
 ]);
 const PASSIVE_TRAFFIC_TURN_RESPONSE = 8.5;

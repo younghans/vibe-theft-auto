@@ -34,6 +34,8 @@ import { EMOTES_BY_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import {
+  HIT_REACTION_HEAD,
+  HIT_REACTION_STOMACH,
   PUNCH_LUNGE_BACKSWING_DISTANCE,
   PUNCH_LUNGE_DISTANCE,
   PUNCH_LUNGE_PEAK_MS,
@@ -77,6 +79,18 @@ const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
 const DAMAGE_BURST_COLOR = new THREE.Color(0xffd6cd);
 const DELIVERY_CARRY_CLIP_NAME = 'carrying';
+const HIT_REACTION_CLIP_BY_ID = Object.freeze({
+  [HIT_REACTION_HEAD]: 'headHit',
+  [HIT_REACTION_STOMACH]: 'stomachHit'
+});
+const HIT_REACTION_PLAYBACK_RATE_BY_ID = Object.freeze({
+  [HIT_REACTION_HEAD]: 4.6,
+  [HIT_REACTION_STOMACH]: 3.8
+});
+const HIT_REACTION_FADE_IN = 0.015;
+const HIT_REACTION_FADE_OUT = 0.11;
+const HIT_REACTION_BASE_ANIMATION_WEIGHT = 0.16;
+const HIT_REACTION_SUPPRESS_BASE_MS = 260;
 
 const UPPER_BODY_ROOT_BONE = 'spine';
 
@@ -618,6 +632,9 @@ export async function createPlayer(library, {
   if (punchClipName) {
     clipNamesToPreload.add(punchClipName);
   }
+  for (const clipName of assets.playerAnimationSet.hitReactions ?? []) {
+    clipNamesToPreload.add(clipName);
+  }
 
   await preloadMixamoClips(clipNamesToPreload);
 
@@ -665,6 +682,7 @@ export async function createPlayer(library, {
   const drunkIdleLowerBodyAction = mixer.clipAction(drunkIdleLowerBodyClip);
   const drunkWalkLowerBodyAction = mixer.clipAction(drunkWalkLowerBodyClip);
   const deliveryCarryAction = mixer.clipAction(deliveryCarryUpperBodyClip);
+  const hitReactionActions = new Map();
   const emoteActions = new Map();
   const emoteLoadPromises = new Map();
   const emoteConfigOverrides = new Map();
@@ -701,6 +719,17 @@ export async function createPlayer(library, {
   deliveryCarryAction.setLoop(THREE.LoopRepeat, Infinity);
   deliveryCarryAction.setEffectiveWeight(0);
   deliveryCarryAction.play();
+  for (const [reactionId, clipName] of Object.entries(HIT_REACTION_CLIP_BY_ID)) {
+    const sourceClip = createRigSafeClip(getMixamoClip(clipName), `${clipName}_RigSafe`);
+    const reactionClip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
+    const action = mixer.clipAction(reactionClip);
+    action.enabled = true;
+    action.clampWhenFinished = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.setEffectiveWeight(0);
+    action.setEffectiveTimeScale(HIT_REACTION_PLAYBACK_RATE_BY_ID[reactionId] ?? 4);
+    hitReactionActions.set(reactionId, action);
+  }
 
   hideUnusedMeshes(character);
   const characterScale = normalizeCharacter(character);
@@ -908,6 +937,9 @@ export async function createPlayer(library, {
   };
   let damageFeedbackStartedAt = -Infinity;
   let damageFeedbackEndsAt = -Infinity;
+  let damageFeedbackStrength = 1;
+  let activeHitReactionAction = null;
+  let hitReactionSuppressUntilMs = -Infinity;
   const damageDirection = new THREE.Vector3(0, 0, 1);
   const indicatorBaseColor = new THREE.Color(indicatorColor);
 
@@ -1035,7 +1067,38 @@ export async function createPlayer(library, {
     if (activeEmoteId && getLoadedEmoteAction(activeEmoteId) === event.action) {
       stopActiveEmote();
     }
+    if (activeHitReactionAction && activeHitReactionAction === event.action) {
+      event.action.fadeOut(HIT_REACTION_FADE_OUT);
+      activeHitReactionAction = null;
+    }
   });
+
+  function triggerHitReaction(reactionId = '') {
+    if (!aliveState || ragdoll.isActive() || !HIT_REACTION_CLIP_BY_ID[reactionId]) {
+      return false;
+    }
+
+    const action = hitReactionActions.get(reactionId);
+    if (!action) {
+      return false;
+    }
+
+    if (activeHitReactionAction && activeHitReactionAction !== action) {
+      activeHitReactionAction.fadeOut(0.035);
+    }
+
+    activeHitReactionAction = action;
+    hitReactionSuppressUntilMs = performance.now() + HIT_REACTION_SUPPRESS_BASE_MS;
+    action.reset();
+    action.enabled = true;
+    action.clampWhenFinished = true;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.setEffectiveTimeScale(HIT_REACTION_PLAYBACK_RATE_BY_ID[reactionId] ?? 4);
+    action.setEffectiveWeight(1);
+    action.fadeIn(HIT_REACTION_FADE_IN);
+    action.play();
+    return true;
+  }
 
   function getSlotMotionRoot(slot) {
     return equipmentMotionRoots[slot] ?? null;
@@ -2011,6 +2074,9 @@ export async function createPlayer(library, {
   }
 
   function updateAnimationState(deltaSeconds, moving, groundHeight = 0, options = {}) {
+    const now = performance.now();
+    const hitReactionActive = now < hitReactionSuppressUntilMs && aliveState && !ragdoll.isActive();
+    const baseAnimationWeight = hitReactionActive ? HIT_REACTION_BASE_ANIMATION_WEIGHT : 1;
     const activeAimItemId = getActiveHeldItemId(ATTACHMENT_SLOTS.handRight) || desiredWeaponId;
     const upperBodyOnlyEmoteActive = Boolean(activeEmoteConfig?.upperBodyOnly);
     const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
@@ -2045,15 +2111,15 @@ export async function createPlayer(library, {
     fastRunWeight = THREE.MathUtils.damp(fastRunWeight, locomotionEnabled && moving && runLocomotionActive ? 1 : 0, smoothing, deltaSeconds);
     const fullBodyLocomotionWeight = upperBodyOverlayActive ? 0 : 1;
     const lowerBodyLocomotionWeight = upperBodyOverlayActive ? 1 : 0;
-    idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
-    walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
-    fastRunAction.setEffectiveWeight(fastRunWeight * fullBodyLocomotionWeight * soberLocomotionWeight);
-    drunkIdleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
-    drunkWalkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * drunkLocomotionWeight);
-    idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * soberLocomotionWeight);
-    walkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * soberLocomotionWeight);
-    drunkIdleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight);
-    drunkWalkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight);
+    idleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
+    walkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
+    fastRunAction.setEffectiveWeight(fastRunWeight * fullBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
+    drunkIdleAction.setEffectiveWeight(idleWeight * fullBodyLocomotionWeight * drunkLocomotionWeight * baseAnimationWeight);
+    drunkWalkAction.setEffectiveWeight(walkWeight * fullBodyLocomotionWeight * drunkLocomotionWeight * baseAnimationWeight);
+    idleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
+    walkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * soberLocomotionWeight * baseAnimationWeight);
+    drunkIdleLowerBodyAction.setEffectiveWeight(idleWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight * baseAnimationWeight);
+    drunkWalkLowerBodyAction.setEffectiveWeight(walkWeight * lowerBodyLocomotionWeight * drunkLocomotionWeight * baseAnimationWeight);
     idleAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     walkAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     fastRunAction.setEffectiveTimeScale(locomotionEnabled && moving && runLocomotionActive ? locomotionPlaybackRate : 0.35);
@@ -2063,7 +2129,7 @@ export async function createPlayer(library, {
     walkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
     drunkIdleLowerBodyAction.setEffectiveTimeScale(locomotionEnabled ? 1 : 0);
     drunkWalkLowerBodyAction.setEffectiveTimeScale(locomotionEnabled && moving ? 1 : 0.35);
-    deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight);
+    deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight * baseAnimationWeight);
     deliveryCarryAction.setEffectiveTimeScale(deliveryPackageActive ? 1 : 0.8);
     mixer.update(deltaSeconds);
     anchor.position.y = groundHeight;
@@ -2082,7 +2148,6 @@ export async function createPlayer(library, {
     applyReloadArmIk(activeAimItemId, reloadProfile);
     applySkateboardStaticBodyPose(deltaSeconds, skateboardPoseActive);
     recoilAmount = THREE.MathUtils.damp(recoilAmount, 0, wantsAimPose ? 22 : 18, deltaSeconds);
-    const now = performance.now();
     const damageLifetime = Math.max(1, damageFeedbackEndsAt - damageFeedbackStartedAt);
     const damageProgress = THREE.MathUtils.clamp((now - damageFeedbackStartedAt) / damageLifetime, 0, 1);
     const damageActive = damageProgress < 1;
@@ -2091,8 +2156,9 @@ export async function createPlayer(library, {
     const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
       const damageSideX = -damageDirection.z;
       const damageSideZ = damageDirection.x;
-    const damageJolt = damageEnvelope * 0.18;
-    const damageShimmy = damageWave * damageEnvelope * 0.09;
+    const damageJolt = damageEnvelope * 0.18 * damageFeedbackStrength;
+    const damageShimmy = damageWave * damageEnvelope * 0.09 * damageFeedbackStrength;
+      const damageLift = damagePulse * 0.12 * Math.min(1.35, damageFeedbackStrength);
       const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
       const jabLungeOffset = activeEmoteId === PUNCH_EMOTE_ID
         ? getJabLungeOffset(Date.now() - activeEmoteStartedAt)
@@ -2106,13 +2172,13 @@ export async function createPlayer(library, {
 
       visual.position.set(
         (damageDirection.x * damageJolt) + (damageSideX * damageShimmy) + jabLungeLocalX,
-        (recoilAmount * 0.03) + (damagePulse * 0.12) - footPlantGroundingOffsetY,
+        (recoilAmount * 0.03) + damageLift - footPlantGroundingOffsetY,
         (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy) + jabLungeLocalZ
       );
     visual.rotation.set(
-      (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12) + (damageWave * 0.025),
+      (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12 * damageFeedbackStrength) + (damageWave * 0.025),
       damageWave * damageEnvelope * 0.025,
-      (recoilAmount * 0.015) + (damageDirection.x * damageEnvelope * 0.14) + (damageWave * 0.045)
+      (recoilAmount * 0.015) + (damageDirection.x * damageEnvelope * 0.14 * damageFeedbackStrength) + (damageWave * 0.045)
     );
 
     indicatorRing.material.color.copy(indicatorBaseColor).lerp(DAMAGE_FLASH_COLOR, damageFlashAmount * 0.85);
@@ -2244,9 +2310,11 @@ export async function createPlayer(library, {
     }
   }
 
-  function triggerDamageFeedback({ direction = null } = {}) {
+  function triggerDamageFeedback({ direction = null, hitReaction = '', strength = 1 } = {}) {
     damageFeedbackStartedAt = performance.now();
     damageFeedbackEndsAt = damageFeedbackStartedAt + DAMAGE_FEEDBACK_DURATION_MS;
+    damageFeedbackStrength = THREE.MathUtils.clamp(Number(strength) || 1, 0.6, 1.8);
+    triggerHitReaction(hitReaction);
 
     if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
       damageDirection.set(direction.x, 0, direction.z);

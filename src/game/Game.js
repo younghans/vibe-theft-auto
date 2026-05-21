@@ -19354,7 +19354,11 @@ export class Game {
                 damageDirection.normalize();
               }
 
-              targetAvatar?.triggerDamageFeedback?.({ direction: damageDirection });
+              targetAvatar?.triggerDamageFeedback?.({
+                direction: damageDirection,
+                hitReaction: event.attackType === 'punch' ? event.hitReaction : '',
+                strength: event.attackType === 'punch' ? 1.45 : 1
+              });
               if (event.targetId === this.npcServiceState.sessionId) {
                 this.triggerDamageCameraFeedback(damageDirection);
               }
@@ -19374,7 +19378,11 @@ export class Game {
               } else {
                 damageDirection.normalize();
               }
-              this.worldBuilder?.triggerNpcDamageFeedback(event.targetId, { direction: damageDirection });
+              this.worldBuilder?.triggerNpcDamageFeedback(event.targetId, {
+                direction: damageDirection,
+                hitReaction: event.attackType === 'punch' ? event.hitReaction : '',
+                strength: event.attackType === 'punch' ? 1.45 : 1
+              });
             };
 
             if (delayMs > 0) {

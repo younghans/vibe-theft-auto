@@ -6,6 +6,7 @@ import {
   PUNCH_HITBOX_RADIUS,
   PUNCH_HIT_DELAY_MS,
   PUNCH_HIT_ORIGIN_FORWARD_OFFSET,
+  PUNCH_HIT_REACTIONS,
   PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
   PICKUP_RESPAWN_MS,
@@ -215,6 +216,10 @@ const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const MOCK_STOCK_MARKET_STORAGE_KEY = 'vta.mockStockMarket';
 const MOCK_STOCK_PORTFOLIOS_STORAGE_KEY = 'vta.mockStockPortfolios';
+
+function getRandomPunchHitReaction() {
+  return PUNCH_HIT_REACTIONS[Math.floor(Math.random() * PUNCH_HIT_REACTIONS.length)] ?? '';
+}
 
 function makeTranscriptEntry(id, speaker, author, text) {
   return {
@@ -1547,6 +1552,7 @@ export class NpcServiceMock {
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
+        hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
     }
@@ -3576,6 +3582,7 @@ export class NpcServiceMock {
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
+        hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
     }

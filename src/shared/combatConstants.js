@@ -20,6 +20,12 @@ export const PUNCH_LUNGE_PEAK_MS = 115;
 export const PUNCH_LUNGE_RECOVER_MS = 260;
 export const PUNCH_HIT_ORIGIN_FORWARD_OFFSET = PUNCH_LUNGE_DISTANCE * 0.75;
 export const PUNCH_HITBOX_RADIUS = 0.35;
+export const HIT_REACTION_HEAD = 'headHit';
+export const HIT_REACTION_STOMACH = 'stomachHit';
+export const PUNCH_HIT_REACTIONS = Object.freeze([
+  HIT_REACTION_HEAD,
+  HIT_REACTION_STOMACH
+]);
 export const WEAPON_CLIP_SIZE = 12;
 export const WEAPON_RESERVE_CAP = 36;
 export const WEAPON_DAMAGE = 20;
