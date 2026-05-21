@@ -1913,6 +1913,7 @@ function validateCustomTileCatalogItems() {
     const glbJson = readGlbJson(relativePath);
     const profileNode = getGlbNodeByName(glbJson, profileNodeName);
     const crossNodes = getGlbNodesByName(glbJson, 'hospital_cross_symbol');
+    const glassDoorNode = getGlbNodeByName(glbJson, 'hospital_glass_front_door');
     assert(profileNode, `${label} GLB should expose the form-fitting profile node`);
     assertClose(getGlbNodeLocalScale(profileNode)[1], 1.7, `${label} profile should stretch vertically by 1.7x`);
     assert(crossNodes.length >= 2, `${label} GLB should keep separate hospital cross symbol nodes`);
@@ -1922,6 +1923,13 @@ function validateCustomTileCatalogItems() {
       assertClose(crossScale[1], 1 / 1.7, `${label} cross symbol should compensate the profile height stretch`);
       assertClose(crossScale[2], 1 / 0.93, `${label} cross symbol should compensate the profile depth scale`);
     }
+    assert(glassDoorNode, `${label} GLB should include the decorative glass front door node`);
+    assert(getGlbNodeByName(glbJson, 'hospital_glass_front_door_panel_left'), `${label} GLB should include the left glass door panel`);
+    assert(getGlbNodeByName(glbJson, 'hospital_glass_front_door_panel_right'), `${label} GLB should include the right glass door panel`);
+    assert(
+      countGlbTransparentPrimitivesUnderNode(glbJson, 'hospital_glass_front_door') >= 2,
+      `${label} GLB should keep both front door panels visibly transparent`
+    );
   };
 
   assert(hospital, 'Hospital tile should exist');

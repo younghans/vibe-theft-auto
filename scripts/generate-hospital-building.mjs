@@ -53,11 +53,33 @@ function createMaterial(color) {
   });
 }
 
-function createBox(size, position, material) {
+function createGlassMaterial(color, opacity = 0.46, name = '') {
+  const material = new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.16,
+    metalness: 0.04,
+    transmission: 0.32,
+    thickness: 0.12,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    envMapIntensity: 0.7
+  });
+  material.name = name;
+  return material;
+}
+
+function createBox(size, position, material, {
+  name = '',
+  castShadow = true,
+  receiveShadow = true
+} = {}) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+  mesh.name = name;
   mesh.position.set(...position);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = castShadow;
+  mesh.receiveShadow = receiveShadow;
   return mesh;
 }
 
@@ -183,6 +205,58 @@ function addFrontWindowDetailColumn(group, {
   }
 }
 
+function addGlassFrontDoor(group, {
+  centerX,
+  centerY,
+  z,
+  panelWidth,
+  panelHeight,
+  gap,
+  glassMaterial,
+  frameMaterial,
+  handleMaterial
+}) {
+  const door = new THREE.Group();
+  door.name = 'hospital_glass_front_door';
+  const frame = 0.14;
+  const depth = 0.22;
+  const panelDepth = 0.08;
+  const totalWidth = (panelWidth * 2) + gap;
+  const leftPanelX = centerX - ((panelWidth + gap) * 0.5);
+  const rightPanelX = centerX + ((panelWidth + gap) * 0.5);
+  const sideFrameOffset = (totalWidth * 0.5) + (frame * 0.5);
+  const topBottomOffset = (panelHeight * 0.5) + (frame * 0.5);
+  const handleInset = (gap * 0.5) + 0.1;
+
+  door.add(createBox(
+    [totalWidth + (frame * 2.2), panelHeight + (frame * 2.2), 0.08],
+    [centerX, centerY, z - 0.08],
+    frameMaterial,
+    { name: 'hospital_glass_front_door_backplate' }
+  ));
+  door.add(createBox(
+    [panelWidth, panelHeight, panelDepth],
+    [leftPanelX, centerY, z + 0.04],
+    glassMaterial,
+    { name: 'hospital_glass_front_door_panel_left', castShadow: false }
+  ));
+  door.add(createBox(
+    [panelWidth, panelHeight, panelDepth],
+    [rightPanelX, centerY, z + 0.04],
+    glassMaterial,
+    { name: 'hospital_glass_front_door_panel_right', castShadow: false }
+  ));
+  door.add(createBox([frame, panelHeight + (frame * 2), depth], [centerX - sideFrameOffset, centerY, z], frameMaterial));
+  door.add(createBox([frame, panelHeight + (frame * 2), depth], [centerX + sideFrameOffset, centerY, z], frameMaterial));
+  door.add(createBox([totalWidth + (frame * 2), frame, depth], [centerX, centerY + topBottomOffset, z], frameMaterial));
+  door.add(createBox([totalWidth + (frame * 2), frame, depth], [centerX, centerY - topBottomOffset, z], frameMaterial));
+  door.add(createBox([frame, panelHeight + frame, depth], [centerX, centerY, z + 0.02], frameMaterial));
+  door.add(createBox([0.08, 0.58, 0.08], [centerX - handleInset, centerY - 0.02, z + 0.16], handleMaterial));
+  door.add(createBox([0.08, 0.58, 0.08], [centerX + handleInset, centerY - 0.02, z + 0.16], handleMaterial));
+
+  group.add(door);
+}
+
 function addParapetRect(group, {
   centerX,
   centerY,
@@ -232,6 +306,7 @@ function createHospitalMaterials() {
     glass: createMaterial(0x6e9db1),
     glassDark: createMaterial(0x405e6d),
     glassLite: createMaterial(0x8bb5c4),
+    glassDoor: createGlassMaterial(0x9ed8e8, 0.48, 'hospital_glass_front_door_material'),
     door: createMaterial(0x26343f),
     accent: createMaterial(0xf5f3ef),
     pad: createMaterial(0xbcc3cb),
@@ -260,8 +335,6 @@ function buildHospital() {
     { size: [5.25, 0.12, 2.0], position: [0, 3.28, 4.9], material: materials.accent },
     { size: [0.22, 2.32, 0.22], position: [-2.1, 1.7, 4.94], material: materials.accent },
     { size: [0.22, 2.32, 0.22], position: [2.1, 1.7, 4.94], material: materials.accent },
-    { size: [1.12, 2.02, 0.18], position: [-0.78, 1.22, 5.18], material: materials.door },
-    { size: [1.12, 2.02, 0.18], position: [0.78, 1.22, 5.18], material: materials.door },
     { size: [9.12, 0.2, 0.22], position: [0.1, 4.75, 3.24], material: materials.trim },
     { size: [9.12, 0.18, 0.22], position: [0.1, 2.55, 3.24], material: materials.trimDark },
     { size: [6.08, 0.18, 0.22], position: [-1.65, 12.65, 0.88], material: materials.trim },
@@ -297,6 +370,17 @@ function buildHospital() {
   ]);
 
   addCross(hospital, [3.75, 3.16, 4.98], materials.trim, materials.accent);
+  addGlassFrontDoor(hospital, {
+    centerX: 0,
+    centerY: 1.22,
+    z: 5.18,
+    panelWidth: 1.1,
+    panelHeight: 2.04,
+    gap: 0.34,
+    glassMaterial: materials.glassDoor,
+    frameMaterial: materials.door,
+    handleMaterial: materials.accent
+  });
 
   addParapetRect(hospital, {
     centerX: 0.1,
@@ -607,8 +691,6 @@ function buildWideHospital() {
     { size: [5.5, 0.22, 2.18], position: [-8.3, 2.76, 4.82], material: materials.trim },
     { size: [0.22, 2.28, 0.22], position: [-1.05, 1.75, 4.98], material: materials.accent },
     { size: [0.22, 2.28, 0.22], position: [4.05, 1.75, 4.98], material: materials.accent },
-    { size: [1.22, 2.02, 0.18], position: [0.15, 1.2, 5.18], material: materials.door },
-    { size: [1.22, 2.02, 0.18], position: [2.3, 1.2, 5.18], material: materials.door },
     { size: [8.6, 0.2, 0.22], position: [1.15, 4.86, 3.24], material: materials.trim },
     { size: [8.6, 0.18, 0.22], position: [1.15, 2.62, 3.24], material: materials.trimDark },
     { size: [6.2, 0.18, 0.22], position: [-7.4, 12.32, 0.9], material: materials.trim },
@@ -667,6 +749,18 @@ function buildWideHospital() {
     parapetHeight: 0.18,
     thickness: 0.16,
     material: materials.accent
+  });
+
+  addGlassFrontDoor(hospital, {
+    centerX: 1.45,
+    centerY: 1.2,
+    z: 5.18,
+    panelWidth: 1.22,
+    panelHeight: 2.04,
+    gap: 0.16,
+    glassMaterial: materials.glassDoor,
+    frameMaterial: materials.door,
+    handleMaterial: materials.accent
   });
 
   addCross(hospital, [1.55, 3.18, 4.98], materials.trim, materials.accent);
