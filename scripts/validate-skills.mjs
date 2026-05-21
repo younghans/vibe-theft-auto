@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   SCHOOL_MICROGAME_IDS,
+  SCHOOL_SKETCH_GUESSR_DRAW_DURATION_MS,
+  SCHOOL_SKETCH_GUESSR_GUESS_DURATION_MS,
   createSchoolSketchGuessrRound,
   createSchoolPopQuizQuestions,
   getSchoolMicrogameReward,
@@ -239,6 +241,8 @@ const sketchRound = createSchoolSketchGuessrRound({
   rng: () => 0
 });
 assert.ok(sketchRound.sketch?.strokes?.length >= 4, 'sketch guessr rounds include drawable stroke data');
+assert.equal(SCHOOL_SKETCH_GUESSR_GUESS_DURATION_MS, 14000, 'sketch guessr should give 14 seconds to guess');
+assert.equal(SCHOOL_SKETCH_GUESSR_DRAW_DURATION_MS, 19000, 'sketch guessr natural drawing should finish about five seconds after the doubled timer');
 assert.ok(
   sketchRound.drawDurationMs - sketchRound.guessDurationMs >= 4500,
   'sketch guessr guessing should end roughly five seconds before the natural drawing finish'
@@ -250,8 +254,14 @@ assert.ok(
 assert.match(gameSource, /submitSchoolSketchGuess/, 'game handles typed sketch guesses');
 assert.match(gameSource, /startSchoolSketchGuessrReveal/, 'game fast-forwards sketch drawings before resolving');
 assert.match(hudSource, /data-school-sketch-guess-form/, 'HUD renders a sketch guess input form');
+assert.match(hudSource, /placeholder="type your guess"/, 'sketch guessr input prompts the player to type their guess');
 assert.match(hudSource, /data-school-sketch-stroke/, 'HUD renders sketch stroke paths');
 assert.match(stylesSource, /hud__school-sketch-paper/, 'sketch guessr has dedicated paper styling');
+assert.match(
+  stylesSource,
+  /\.hud__school-sketch-form\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s,
+  'sketch guessr guess button should sit on a row under the input'
+);
 
 assert.ok(SCHOOL_GEOGRAPHY_TARGET_COUNTRIES.length >= 190, 'geography target pool should cover nearly every country');
 const geographyCountry = createSchoolGeographyCountry({

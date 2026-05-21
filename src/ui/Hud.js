@@ -3150,7 +3150,7 @@ function createSketchGuessrMarkup(game = null) {
               data-school-sketch-guess-input
               name="guess"
               maxlength="32"
-              placeholder="type object name"
+              placeholder="type your guess"
               value="${escapeHtml(String(data.guessText ?? ''))}"
             />
             <button class="hud__school-action is-primary hud__school-sketch-submit" type="submit">Guess</button>

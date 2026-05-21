@@ -13196,7 +13196,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__school-sketch-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
 }
 
@@ -13251,6 +13251,7 @@ body.is-admin-prompt-resizing * {
 
 .hud__school-sketch-submit {
   min-width: 96px;
+  width: 100%;
 }
 
 .hud__school-dual-actions {
