@@ -5281,6 +5281,14 @@ function validateBartenderFunction() {
     'Mock NPC service should match server police hostility triggers'
   );
   assert(
+    npcSimulationSource.includes('clearNpcHostilityForPlayer')
+      && npcSimulationSource.includes('npc.lastAttackerId !== targetPlayerId')
+      && npcSimulationSource.includes("reason = 'player-death'")
+      && serverSource.includes("this.clearNpcHostilityForPlayer(victimId, { reason: 'player-death' });")
+      && mockNpcServiceSource.includes("this.clearNpcHostilityForPlayer(playerId, { reason: 'player-death' });"),
+    'Player death should clear active NPC hostility before hospital respawn'
+  );
+  assert(
     /resolvePassiveTrafficShot/.test(serverSource)
       && /handlePoliceCarShot/.test(serverSource)
       && /createPoliceCarResponseNpcDefinition/.test(serverSource)

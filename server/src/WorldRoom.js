@@ -4079,6 +4079,7 @@ export class WorldRoom extends Room {
     player.emoteActive = true;
     player.emoteStartedAt = Date.now();
     player.emoteSeq += 1;
+    this.clearNpcHostilityForPlayer(victimId, { reason: 'player-death' });
     this.dropWeaponPickup(player);
     player.equippedWeaponId = '';
     player.ownedWeaponIds = '';

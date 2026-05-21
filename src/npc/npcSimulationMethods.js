@@ -239,6 +239,44 @@ export const npcSimulationMethods = {
     });
   },
 
+  clearNpcHostilityForPlayer(playerId = '', {
+    reason = 'player-death'
+  } = {}) {
+    const targetPlayerId = typeof playerId === 'string' ? playerId : '';
+    if (!targetPlayerId) {
+      return 0;
+    }
+
+    let clearedCount = 0;
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
+      const definition = this.getNpcDefinition(npcId);
+      if (
+        !npc
+        || !definition
+        || npc.lastAttackerId !== targetPlayerId
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.dead
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+      ) {
+        continue;
+      }
+
+      const wasActivelyHostile = npc.mode === NPC_RUNTIME_MODES.combat || npc.mode === NPC_RUNTIME_MODES.flee;
+      if (wasActivelyHostile) {
+        this.resetNpcRuntimeState(npcId, { restartFromSpawn: false, reason });
+      } else {
+        npc.lastAttackerId = '';
+        this.clearNpcPath(npcId);
+      }
+
+      this.syncNpcDerivedState?.(npc);
+      clearedCount += 1;
+    }
+
+    return clearedCount;
+  },
+
   finishNpcRespawn(npcId, npc, definition, now = Date.now()) {
     if (!npc || !definition) {
       return false;

@@ -3570,6 +3570,7 @@ export class NpcServiceMock {
     player.emoteActive = true;
     player.emoteStartedAt = Date.now();
     player.emoteSeq += 1;
+    this.clearNpcHostilityForPlayer(playerId, { reason: 'player-death' });
 
     if (killerId && killerId !== playerId) {
       const killer = this.state.players.get(killerId);
