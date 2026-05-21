@@ -561,7 +561,8 @@ function buildPoliceOfficerCharacter(root) {
     humanPants: createMaterial('policeOfficerGameRigPantUnderlay', COLORS.pants, 0.86, 0.02),
     humanBoots: createMaterial('policeOfficerGameRigBootUnderlay', COLORS.boot, 0.82, 0.04),
     black: createMaterial('policeOfficerBlackDetails', COLORS.black, 0.7, 0.05),
-    boot: createMaterial('policeOfficerChunkyBoots', COLORS.boot, 0.82, 0.04),
+    boot: createMaterial('policeOfficerFlatShoes', COLORS.boot, 0.82, 0.04),
+    shoeSole: createMaterial('policeOfficerFlatShoeSoles', COLORS.black, 0.76, 0.05),
     belt: createMaterial('policeOfficerUtilityBelt', COLORS.belt, 0.64, 0.06),
     beltPouch: createMaterial('policeOfficerBeltPouches', COLORS.beltPouch, 0.72, 0.04),
     gold: createMaterial('policeOfficerGoldBadge', COLORS.gold, 0.46, 0.22),
@@ -603,9 +604,9 @@ function buildPoliceOfficerCharacter(root) {
     deepenZ: 1.1
   }));
   addPiece('humanBoots', createReferenceLimbGeometry(sourceMesh, REFERENCE_LIMB_BONES.boots, {
-    inflate: 0.026,
-    widenX: 1.2,
-    deepenZ: 1.12
+    inflate: 0.014,
+    widenX: 1.08,
+    deepenZ: 1.04
   }));
 
   addPiece('pants', createRigidCapsule(bones.hips, getBoneIndex('mixamorigHips'), 0.2, 0.24, 3, 10, {
@@ -789,13 +790,21 @@ function buildPoliceOfficerCharacter(root) {
       offset: [localOutset * 0.75, -0.01, 0.0],
       scale: [0.98, 1.0, 0.88]
     }));
-    addPiece('boot', createRigidSphere(foot, getBoneIndex(`mixamorig${sideName}Foot`), 0.108, 8, 6, {
-      position: [localOutset * 0.5, 0.04, 0.045],
-      scale: [1.48, 0.82, 1.5]
+    addPiece('boot', createRigidBox(foot, getBoneIndex(`mixamorig${sideName}Foot`), [0.172, 0.07, 0.205], {
+      position: [localOutset * 0.45, 0.045, 0.026],
+      rotation: [-0.9, 0, 0]
     }));
-    addPiece('boot', createRigidSphere(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), 0.108, 8, 6, {
-      position: [localOutset * 0.5, 0.028, 0.05],
-      scale: [1.5, 0.66, 1.66]
+    addPiece('boot', createRigidBox(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), [0.178, 0.056, 0.2], {
+      position: [localOutset * 0.45, 0.082, 0.034],
+      rotation: [-Math.PI / 2, 0, 0]
+    }));
+    addPiece('shoeSole', createRigidBox(foot, getBoneIndex(`mixamorig${sideName}Foot`), [0.19, 0.022, 0.24], {
+      position: [localOutset * 0.45, 0.08, 0],
+      rotation: [-0.9, 0, 0]
+    }));
+    addPiece('shoeSole', createRigidBox(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), [0.19, 0.02, 0.225], {
+      position: [localOutset * 0.45, 0.085, 0.014],
+      rotation: [-Math.PI / 2, 0, 0]
     }));
     addPiece('uniformDark', createRigidBox(leg, getBoneIndex(`mixamorig${sideName}Leg`), [0.024, 0.21, 0.02], {
       position: [sign * 0.045, 0.12, 0.082],

@@ -565,12 +565,13 @@ function getSkinnedPoseBounds(scene, matcher) {
   return glbBoundsHasFiniteExtents(bounds) ? bounds : null;
 }
 
-async function validatePoliceOfficerStationaryArmPose() {
+async function validatePoliceOfficerStationaryPose() {
   const scene = await loadValidationGlbScene('assets/runtime/mixamo/characters/policeOfficer.glb');
   const idleClip = createValidationInPlaceClip(readValidationAnimationClip('assets/mixamo/animations/idle.json'));
   const mixer = new AnimationMixer(scene);
   const action = mixer.clipAction(idleClip);
   const policeArmMeshPattern = /^PoliceOfficer_(?:uniform|uniformJoint|skin|skinLight|humanSleeves|humanHands)$/;
+  const policeShoeMeshPattern = /^PoliceOfficer_(?:boot|shoeSole|humanBoots)$/;
   const minHandClearance = 0.045;
   action.play();
 
@@ -596,8 +597,12 @@ async function validatePoliceOfficerStationaryArmPose() {
       policeArmMeshPattern.test(meshName)
       && /^mixamorigRight(?:ForeArm|Hand)$/.test(boneName)
     ));
+    const shoeBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      policeShoeMeshPattern.test(meshName)
+      && /^mixamorig(?:Left|Right)(?:Foot|ToeBase)$/.test(boneName)
+    ));
 
-    assert(torsoBounds && leftHandBounds && rightHandBounds && leftLowerArmBounds && rightLowerArmBounds, 'Police Officer idle pose validation should resolve torso, hand, and forearm bounds');
+    assert(torsoBounds && leftHandBounds && rightHandBounds && leftLowerArmBounds && rightLowerArmBounds && shoeBounds, 'Police Officer idle pose validation should resolve torso, hand, forearm, and shoe bounds');
     assert(
       leftHandBounds.max.x > torsoBounds.max.x + minHandClearance
         && leftLowerArmBounds.max.x > torsoBounds.max.x + minHandClearance,
@@ -607,6 +612,15 @@ async function validatePoliceOfficerStationaryArmPose() {
       rightHandBounds.min.x < torsoBounds.min.x - minHandClearance
         && rightLowerArmBounds.min.x < torsoBounds.min.x - minHandClearance,
       `Police Officer idle pose at ${sampleTimeSeconds}s should keep the right arm visibly outside the torso silhouette`
+    );
+    assert(
+      shoeBounds.max.y - shoeBounds.min.y <= 0.16
+        && shoeBounds.max.z - shoeBounds.min.z >= 0.34,
+      `Police Officer idle pose at ${sampleTimeSeconds}s should keep shoes flat and normally proportioned`
+    );
+    assert(
+      shoeBounds.min.y > -0.06 && shoeBounds.min.y < 0.025,
+      `Police Officer idle pose at ${sampleTimeSeconds}s should keep flat shoes grounded`
     );
   }
 }
@@ -5200,6 +5214,8 @@ function validateBartenderFunction() {
     policeOfficerGlbJson,
     getGlbNodeByName(policeOfficerGlbJson, 'PoliceOfficer_humanBoots')
   );
+  const policeOfficerFlatShoeBounds = getGlbNodePositionBounds(policeOfficerGlbJson, 'PoliceOfficer_boot');
+  const policeOfficerFlatSoleBounds = getGlbNodePositionBounds(policeOfficerGlbJson, 'PoliceOfficer_shoeSole');
   const policeOfficerPortraitStats = statSync(new URL('../assets/mixamo/portraits/police_officer.png', import.meta.url));
   assert(policeOfficerModel?.label === 'Police Officer', 'NPC catalog should include the Police Officer model');
   assert(policeOfficerModel?.height === 4.8, 'Police Officer should stay scaled like the other human NPC models');
@@ -5213,6 +5229,8 @@ function validateBartenderFunction() {
   assert(policeOfficerNodeNames.has('PoliceOfficer_pantsJoint'), 'Police Officer GLB should include hip and knee geometry that grounds the legs under the body');
   assert(policeOfficerNodeNames.has('PoliceOfficer_humanPants'), 'Police Officer GLB should include game-rig pant underlay geometry so legs follow the human NPC shape');
   assert(policeOfficerNodeNames.has('PoliceOfficer_humanBoots'), 'Police Officer GLB should include game-rig boot underlay geometry so feet are attached to the legs');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_boot'), 'Police Officer GLB should include flat shoe upper geometry');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_shoeSole'), 'Police Officer GLB should include thin shoe sole geometry');
   assert(policeOfficerNodeNames.has('PoliceOfficer_gold'), 'Police Officer GLB should include gold badge details');
   assert(policeOfficerNodeNames.has('PoliceOfficer_belt'), 'Police Officer GLB should include a utility belt');
   assert(policeOfficerNodeNames.has('mixamorigHead'), 'Police Officer GLB should preserve the Mixamo head bone');
@@ -5225,6 +5243,8 @@ function validateBartenderFunction() {
       && policeOfficerMaterialNames.has('policeOfficerGameRigHandUnderlay')
       && policeOfficerMaterialNames.has('policeOfficerGameRigPantUnderlay')
       && policeOfficerMaterialNames.has('policeOfficerGameRigBootUnderlay')
+      && policeOfficerMaterialNames.has('policeOfficerFlatShoes')
+      && policeOfficerMaterialNames.has('policeOfficerFlatShoeSoles')
       && policeOfficerMaterialNames.has('policeOfficerGoldBadge')
       && policeOfficerMaterialNames.has('policeOfficerGoofyEyes'),
     'Police Officer GLB should use named cartoon police materials'
@@ -5236,6 +5256,15 @@ function validateBartenderFunction() {
   assert(
     policeOfficerHumanBootBounds && policeOfficerHumanBootBounds.minY < -0.8,
     'Police Officer GLB should keep boot underlay geometry grounded in Mixamo bind space once placed'
+  );
+  assert(
+    policeOfficerFlatShoeBounds.max[1] - policeOfficerFlatShoeBounds.min[1] <= 0.16
+      && policeOfficerFlatShoeBounds.max[2] - policeOfficerFlatShoeBounds.min[2] >= 0.32,
+    'Police Officer GLB should use low, flat shoe uppers instead of rounded boot blobs'
+  );
+  assert(
+    policeOfficerFlatSoleBounds.max[1] - policeOfficerFlatSoleBounds.min[1] <= 0.075,
+    'Police Officer GLB should use thin flat shoe soles'
   );
   assert(isPoliceOfficerNpc(policeNpc), 'Normalized police NPCs should preserve policeOfficerEnabled');
   assert(
@@ -5723,7 +5752,7 @@ async function main() {
   validateMissionSequencer();
   validateBartenderFunction();
   validatePlayerSchemaFieldBudget();
-  await validatePoliceOfficerStationaryArmPose();
+  await validatePoliceOfficerStationaryPose();
   await validateBuildCity();
   console.log('World editor validation passed.');
 }
