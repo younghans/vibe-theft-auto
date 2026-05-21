@@ -221,6 +221,8 @@ const WINDOW_TRIM_DEPTH = 0.08;
 const WINDOW_TRIM_THICKNESS = 0.12;
 const WINDOW_FACE_GAP = 0.035;
 const WINDOW_LIP_DEPTH = 0.16;
+const PIXEL_TEXT_LAYER_GAP = 0.025;
+const PIXEL_TEXT_SHADOW_DEPTH = 0.08;
 
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
@@ -287,14 +289,23 @@ function addPixelText(group, text, {
 }
 
 function addSignText(group, text, options) {
+  const faceDepth = Math.max(0.01, Number(options.depth) || 0.01);
+  const shadowDepth = Math.max(0.01, Math.min(faceDepth * 0.55, PIXEL_TEXT_SHADOW_DEPTH));
+  const shadowZ = options.z - ((faceDepth + shadowDepth) * 0.5) - PIXEL_TEXT_LAYER_GAP;
   addPixelText(group, text, {
     ...options,
     centerX: options.centerX + 0.08,
     y: options.y - 0.1,
-    z: options.z - 0.1,
+    z: shadowZ,
+    depth: shadowDepth,
     material: options.shadowMaterial
   });
   addPixelText(group, text, options);
+}
+
+function getRaisedPixelTextZ(panelZ, panelDepth, faceDepth) {
+  const shadowDepth = Math.max(0.01, Math.min(faceDepth * 0.55, PIXEL_TEXT_SHADOW_DEPTH));
+  return panelZ + (panelDepth * 0.5) + shadowDepth + (faceDepth * 0.5) + (PIXEL_TEXT_LAYER_GAP * 2);
 }
 
 function addSignPanel(group, {
@@ -1015,7 +1026,7 @@ function addSchoolDetails(groups, materials) {
   addSignText(groups.exterior, 'SCHOOL', {
     centerX: 0,
     y: 6.34,
-    z: 11.24,
+    z: getRaisedPixelTextZ(10.98, 0.42, 0.18),
     pixelSize: 0.26,
     depth: 0.18,
     material: materials.signFace,
@@ -1090,7 +1101,7 @@ function addBarDetails(groups, materials) {
   addSignText(groups.exterior, 'BAR', {
     centerX: 0,
     y: 5.74,
-    z: 11.34,
+    z: getRaisedPixelTextZ(10.98, 0.48, 0.26),
     pixelSize: 0.48,
     depth: 0.26,
     material: materials.signFace,
@@ -1288,7 +1299,7 @@ function addModernBankGlassFacade(groups, materials) {
   addSignText(groups.exterior, 'BANK', {
     centerX: 0,
     y: 7.42,
-    z: 11.38,
+    z: getRaisedPixelTextZ(11.2, 0.28, 0.18),
     pixelSize: 0.29,
     depth: 0.18,
     material: bankMaterials.signLetter,
@@ -1405,7 +1416,7 @@ function addCasinoDetails(groups, materials) {
   addSignText(groups.exterior, 'CASINO', {
     centerX: 0,
     y: 5.92,
-    z: 11.34,
+    z: getRaisedPixelTextZ(11.02, 0.5, 0.24),
     pixelSize: 0.34,
     depth: 0.24,
     material: materials.signFace,
@@ -1764,7 +1775,7 @@ function addOfficesDetails(groups, materials) {
   addSignText(groups.exterior, 'OFFICES', {
     centerX: 0,
     y: 6.98,
-    z: 11.26,
+    z: getRaisedPixelTextZ(11.02, 0.38, 0.18),
     pixelSize: 0.22,
     depth: 0.18,
     material: materials.signFace,

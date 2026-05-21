@@ -66,6 +66,7 @@ const WINDOW_TRIM_DEPTH = 0.08;
 const WINDOW_TRIM_THICKNESS = 0.12;
 const WINDOW_FACE_GAP = 0.035;
 const WINDOW_LIP_DEPTH = 0.16;
+const BAR_LETTER_LAYER_GAP = 0.04;
 
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
@@ -206,12 +207,13 @@ function addBarLetters(group, centerX, y, z, materials) {
   const faceMaterial = materials.signAccent;
   const shadowMaterial = materials.signShadow;
   const faceDepth = 0.72;
-  const shadowDepth = 0.4;
+  const shadowDepth = 0.18;
+  const shadowZ = z - ((faceDepth + shadowDepth) * 0.5) - BAR_LETTER_LAYER_GAP;
 
   function addPart(size, position, rotation = [0, 0, 0]) {
     group.add(createBox(
       [size[0] * 1.14, size[1] * 1.14, shadowDepth],
-      [position[0] + 0.08, position[1] - 0.14, z - 0.24],
+      [position[0] + 0.08, position[1] - 0.14, shadowZ],
       shadowMaterial,
       rotation
     ));
@@ -429,7 +431,7 @@ function buildBar() {
   bar.add(createBox([0.28, 4.18, 0.26], [-8.0, 5.18, 3.46], materials.trim));
   bar.add(createBox([0.28, 4.18, 0.26], [8.0, 5.18, 3.46], materials.trim));
 
-  addBarLetters(bar, 0, 5.48, 3.72, materials);
+  addBarLetters(bar, 0, 5.48, 4.01, materials);
   addBeerMug(bar, [0, 14.0, -0.52], materials);
   addBarrel(bar, [-9.0, 1.1, 4.1], materials);
   addBarrel(bar, [8.95, 1.1, 4.1], materials);

@@ -3131,6 +3131,32 @@ function validateFootprintSupport() {
     /PerspectiveCamera\(DEFAULT_CAMERA_FOV,\s*window\.innerWidth \/ window\.innerHeight,\s*0\.5,\s*400\)/.test(mainGameSource),
     'Main game camera should use a tighter near plane so shallow building detail remains depth-stable'
   );
+  const districtBuildingGeneratorSource = findSourceEntry(
+    stableWindowGeneratorSources,
+    'scripts/generate-district-buildings.mjs'
+  )?.source ?? '';
+  const wideBarGeneratorSource = findSourceEntry(
+    stableWindowGeneratorSources,
+    'scripts/generate-bar-building.mjs'
+  )?.source ?? '';
+  assert(
+    districtBuildingGeneratorSource.includes('const PIXEL_TEXT_LAYER_GAP = 0.025;')
+      && districtBuildingGeneratorSource.includes('const PIXEL_TEXT_SHADOW_DEPTH = 0.08;')
+      && districtBuildingGeneratorSource.includes('const shadowZ = options.z - ((faceDepth + shadowDepth) * 0.5) - PIXEL_TEXT_LAYER_GAP;')
+      && [
+        'z: getRaisedPixelTextZ(10.98, 0.42, 0.18)',
+        'z: getRaisedPixelTextZ(10.98, 0.48, 0.26)',
+        'z: getRaisedPixelTextZ(11.02, 0.5, 0.24)'
+      ].every((fragment) => districtBuildingGeneratorSource.includes(fragment)),
+    'School, bar, and casino sign pixel layers should be separated from their panels and shadows'
+  );
+  assert(
+    wideBarGeneratorSource.includes('const BAR_LETTER_LAYER_GAP = 0.04;')
+      && wideBarGeneratorSource.includes('const shadowDepth = 0.18;')
+      && wideBarGeneratorSource.includes('const shadowZ = z - ((faceDepth + shadowDepth) * 0.5) - BAR_LETTER_LAYER_GAP;')
+      && wideBarGeneratorSource.includes('addBarLetters(bar, 0, 5.48, 4.01, materials);'),
+    'Wide bar sign letter layers should be separated to avoid top-edge flicker'
+  );
   assert(
     /startInteractionCameraFocus\(interaction[\s\S]*updateInteractionCameraFocus\((?:\{\s*snap(?:,\s*now)?\s*\}|focusOptions)\)/.test(mainGameSource)
       && /openStockMarket\(interaction[\s\S]*startInteractionCameraFocus\(interaction,\s*\{ kind: 'stock-market' \}/.test(mainGameSource)
