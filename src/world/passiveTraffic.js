@@ -35,6 +35,7 @@ export const PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS = 0.95;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR = 0.38;
 export const PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID = 'car_police';
 export const PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID = 'police_tank';
+export const PASSIVE_TRAFFIC_POLICE_CAR_LAW_RADIUS = 32;
 export const PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS = 10;
 export const PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH = 5.6;
 export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({
@@ -44,6 +45,17 @@ export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({
   REVERSE: 'reverse',
   STOP: 'stop'
 });
+
+export function getPassiveTrafficPoliceCarLawRadius(car = null) {
+  if (car?.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID) {
+    return 0;
+  }
+
+  const radius = Number(car?.lawRadius);
+  return Number.isFinite(radius)
+    ? Math.max(4, Math.min(120, radius))
+    : PASSIVE_TRAFFIC_POLICE_CAR_LAW_RADIUS;
+}
 
 const CARDINAL_DIRECTIONS = Object.freeze([
   Object.freeze({ x: 1, z: 0 }),

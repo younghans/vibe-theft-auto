@@ -28,6 +28,7 @@ import {
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
+  getPassiveTrafficPoliceCarLawRadius,
   isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode,
@@ -263,6 +264,7 @@ export class PassiveTrafficSimulation {
       routeAdvanceCount: 1,
       customRouteNodeIndices,
       customRouteCursor: 0,
+      lawRadius: getPassiveTrafficPoliceCarLawRadius({ itemId }),
       turnThroughNodeIndex: null,
       visitedNodeIndices: new Set(),
       speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
@@ -419,6 +421,7 @@ export class PassiveTrafficSimulation {
     car.routeDestinationIndex = route[route.length - 1] ?? targetNodeIndex;
     car.customRouteNodeIndices = [];
     car.customRouteCursor = 0;
+    car.lawRadius = getPassiveTrafficPoliceCarLawRadius({ itemId: normalizedItemId });
     car.turnThroughNodeIndex = null;
     car.visitedNodeIndices = new Set();
     car.speed = PASSIVE_TRAFFIC_SPEED * Math.max(0.2, Number(speedMultiplier) || 1);
@@ -467,6 +470,98 @@ export class PassiveTrafficSimulation {
     this.cars.push(car);
     this.sequence += 1;
     return this.getCarSnapshot(car);
+  }
+
+  isWantedResponseCar(carOrId = null) {
+    const car = typeof carOrId === 'string'
+      ? this.getCarById(carOrId)
+      : carOrId;
+    return Boolean(car?.responseCar);
+  }
+
+  retargetWantedResponseCar(carId = '', targetPosition = null) {
+    const graph = this.graph;
+    const car = this.getCarById(carId);
+    if (
+      !graph
+      || !car?.responseCar
+      || car.responseArrived
+      || car.responseRemove
+      || this.isCarSinking(car)
+    ) {
+      return false;
+    }
+
+    const targetNodeIndex = this.findNearestRoadNodeIndex(
+      targetPosition,
+      graph.nodes?.[car.currentNodeIndex]?.componentIndex ?? null
+    ) ?? this.findNearestRoadNodeIndex(targetPosition);
+    if (targetNodeIndex === null || targetNodeIndex === car.routeDestinationIndex) {
+      return false;
+    }
+    if ((car.turnThroughNodeIndex !== null && car.turnThroughNodeIndex !== undefined) || car.turnWaypointActive) {
+      return false;
+    }
+
+    const canPreserveActiveSegment = car.targetNodeIndex !== null
+      && car.targetNodeIndex !== undefined
+      && graph.activeNodeSet.has(car.targetNodeIndex);
+    const anchorNodeIndex = canPreserveActiveSegment ? car.targetNodeIndex : car.currentNodeIndex;
+    const anchorNode = graph.nodes?.[anchorNodeIndex];
+    if (!anchorNode) {
+      return false;
+    }
+
+    let routeTail = findPassiveTrafficPath(graph, anchorNodeIndex, targetNodeIndex);
+    if (routeTail.length < 2) {
+      if (anchorNodeIndex === targetNodeIndex) {
+        routeTail = [anchorNodeIndex];
+      } else {
+        const fallbackNeighbor = anchorNode.neighbors
+          ?.find((nodeIndex) => graph.activeNodeSet.has(nodeIndex))
+          ?? null;
+        routeTail = fallbackNeighbor === null ? [anchorNodeIndex] : [anchorNodeIndex, fallbackNeighbor];
+      }
+    }
+
+    if (canPreserveActiveSegment) {
+      car.route = [car.currentNodeIndex, ...routeTail];
+      car.routeCursor = 1;
+      car.routeDestinationIndex = targetNodeIndex;
+      this.sequence += 1;
+      return true;
+    }
+
+    if (routeTail.length < 2) {
+      car.route = routeTail;
+      car.routeCursor = routeTail.length;
+      car.routeDestinationIndex = targetNodeIndex;
+      car.responseArrived = true;
+      car.currentSpeed = 0;
+      car.targetNodeIndex = null;
+      car.turnThroughNodeIndex = null;
+      this.sequence += 1;
+      return true;
+    }
+
+    car.route = routeTail;
+    car.routeCursor = 1;
+    car.routeDestinationIndex = targetNodeIndex;
+    car.targetNodeIndex = null;
+    car.turnThroughNodeIndex = null;
+    car.routeAdvanceCount = 1;
+    car.turnStopSeconds = 0;
+    car.turnStopWaypointIndex = -1;
+    car.turnStopSatisfied = false;
+    car.turnWaypointActive = false;
+    car.turnWaypointIndex = 0;
+    car.turnWaypointQueue.length = 0;
+    car.turnWaypointCursor = 0;
+    car.turnStartYaw = null;
+    car.turnEndYaw = null;
+    const changed = this.advanceTarget(car);
+    this.sequence += 1;
+    return changed;
   }
 
   collectArrivedWantedResponseCars() {
@@ -1361,6 +1456,7 @@ export class PassiveTrafficSimulation {
       rotationY: quantizeRotation(car.yaw),
       speed: quantizeNumber(car.currentSpeed, 3),
       active: !this.isCarDisabled(car) && !this.isCarSinking(car),
+      lawRadius: quantizeNumber(car.lawRadius, 2),
       currentNodeIndex: Math.max(-1, Math.floor(Number(car.currentNodeIndex) || 0)),
       targetNodeIndex: car.targetNodeIndex === null || car.targetNodeIndex === undefined
         ? -1

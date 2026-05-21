@@ -258,6 +258,7 @@ import { PassiveTrafficSimulation } from '../../src/world/passiveTrafficSimulati
 import {
   PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
   PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID,
+  getPassiveTrafficPoliceCarLawRadius,
   rayPassiveTrafficHitboxIntersectionDistance
 } from '../../src/world/passiveTraffic.js';
 import {
@@ -670,6 +671,7 @@ const PassiveTrafficCarState = schema({
   rotationY: 'number',
   speed: 'number',
   active: 'boolean',
+  lawRadius: 'number',
   currentNodeIndex: 'number',
   targetNodeIndex: 'number',
   seq: 'number'
@@ -3527,6 +3529,7 @@ export class WorldRoom extends Room {
     const now = Date.now();
     const deltaSeconds = Math.max(0, Math.min(0.25, (now - this.lastPassiveTrafficSimulationAt) / 1000));
     this.lastPassiveTrafficSimulationAt = now;
+    this.updateWantedResponseUnitTargets();
     this.passiveTrafficSimulation.update(deltaSeconds);
     this.processWantedResponseCarArrivals(now);
     this.publishPassiveTrafficSnapshots(this.passiveTrafficSimulation.getSnapshots());
@@ -3551,6 +3554,7 @@ export class WorldRoom extends Room {
       car.rotationY = Number(snapshot.rotationY) || 0;
       car.speed = Number(snapshot.speed) || 0;
       car.active = snapshot.active !== false;
+      car.lawRadius = Number(snapshot.lawRadius) || 0;
       car.currentNodeIndex = Math.floor(Number(snapshot.currentNodeIndex) || 0);
       car.targetNodeIndex = Math.floor(Number(snapshot.targetNodeIndex) || 0);
       car.seq = Math.max(0, Math.floor(Number(snapshot.seq) || 0));
@@ -3935,6 +3939,26 @@ export class WorldRoom extends Room {
     return count;
   }
 
+  updateWantedResponseUnitTargets() {
+    let changed = false;
+    for (const unit of this.wantedResponseUnits.values()) {
+      if (!unit?.carId || unit.dismissed || unit.delivered) {
+        continue;
+      }
+
+      const player = this.state.players.get(unit.ownerSessionId);
+      if (!player || player.alive === false || normalizeWantedStars(player.wantedStars) <= 0) {
+        continue;
+      }
+
+      changed = this.passiveTrafficSimulation.retargetWantedResponseCar(
+        unit.carId,
+        { x: player.x, z: player.z }
+      ) || changed;
+    }
+    return changed;
+  }
+
   syncWantedResponseUnitsForPlayer(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
     if (!player || player.alive === false) {
       return false;
@@ -4029,6 +4053,29 @@ export class WorldRoom extends Room {
         return true;
       }
     }
+    return this.isPlayerInsideAnyPassivePoliceCarLawRadius(player);
+  }
+
+  isPlayerInsideAnyPassivePoliceCarLawRadius(player) {
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    for (const car of this.state.passiveTraffic.values()) {
+      if (
+        !car
+        || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+        || car.active === false
+        || this.passiveTrafficSimulation.isWantedResponseCar(car.id)
+      ) {
+        continue;
+      }
+
+      const lawRadius = getPassiveTrafficPoliceCarLawRadius(car);
+      if (distanceSquared2D(car.x, car.z, player.x, player.z) <= lawRadius * lawRadius) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -4108,6 +4155,7 @@ export class WorldRoom extends Room {
     let changed = this.pruneWantedResponseUnits();
     for (const [playerId, player] of this.state.players.entries()) {
       changed = this.triggerWantedPoliceHostilityForPlayer(playerId, player, now) || changed;
+      changed = this.triggerPassivePoliceCarStarDetectionForPlayer(playerId, player, now) || changed;
       changed = this.updateWantedEvasion(playerId, player, now) || changed;
       changed = this.syncWantedResponseUnitsForPlayer(playerId, player, now) || changed;
     }
@@ -4712,14 +4760,44 @@ export class WorldRoom extends Room {
   }
 
   handlePoliceCarShot(carId = '', shooterSessionId = '', now = Date.now()) {
+    return this.deployPassivePoliceCarOfficers(carId, shooterSessionId, now);
+  }
+
+  deployPassivePoliceCarOfficers(carId = '', suspectSessionId = '', now = Date.now()) {
     const disabledCar = this.passiveTrafficSimulation.disablePoliceCar(carId);
     if (!disabledCar) {
       return false;
     }
 
-    this.spawnPoliceCarResponseOfficers(disabledCar, shooterSessionId, now);
+    this.spawnPoliceCarResponseOfficers(disabledCar, suspectSessionId, now);
     this.publishPassiveTrafficSnapshots(this.passiveTrafficSimulation.getSnapshots());
     return true;
+  }
+
+  triggerPassivePoliceCarStarDetectionForPlayer(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
+    if (!player || player.alive === false || normalizeWantedStars(player.wantedStars) <= 0) {
+      return false;
+    }
+
+    let changed = false;
+    for (const car of this.state.passiveTraffic.values()) {
+      if (
+        !car
+        || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+        || car.active === false
+        || this.passiveTrafficSimulation.isWantedResponseCar(car.id)
+      ) {
+        continue;
+      }
+
+      const lawRadius = getPassiveTrafficPoliceCarLawRadius(car);
+      if (distanceSquared2D(car.x, car.z, player.x, player.z) > lawRadius * lawRadius) {
+        continue;
+      }
+
+      changed = this.deployPassivePoliceCarOfficers(car.id, playerId, now) || changed;
+    }
+    return changed;
   }
 
   resolveShot(shooterSessionId, player, aim, origin = player) {

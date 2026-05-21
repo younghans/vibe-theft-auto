@@ -2182,6 +2182,7 @@ export class WorldRenderer {
         rotationY: Number(state.rotationY) || 0,
         speed: Number(state.speed) || 0,
         active: state.active !== false,
+        lawRadius: Number(state.lawRadius) || 0,
         currentNodeIndex: Math.floor(Number(state.currentNodeIndex) || 0),
         targetNodeIndex: Math.floor(Number(state.targetNodeIndex) || 0),
         seq: Math.max(0, Math.floor(Number(state.seq) || 0))
