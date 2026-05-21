@@ -6751,7 +6751,7 @@ export class Game {
   }
 
   getFirstPersonMovementForward(target = this.firstPersonMovementForward) {
-    return this.getFirstPersonHorizontalDirection(target);
+    return this.getFirstPersonHorizontalDirection(target).multiplyScalar(-1);
   }
 
   requestFirstPersonPointerLock() {

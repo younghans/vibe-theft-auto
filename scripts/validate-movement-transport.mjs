@@ -45,6 +45,24 @@ const diagonalComponent = 1 / Math.sqrt(2);
 assertNearlyEqual(projectedForwardRight.x, diagonalComponent, 'diagonal movement should preserve normalized X travel');
 assertNearlyEqual(projectedForwardRight.z, -diagonalComponent, 'diagonal movement should preserve normalized Z travel');
 
+const firstPersonLookForward = new THREE.Vector3(0, 0, 1);
+const firstPersonMovementCameraForward = firstPersonLookForward.clone().multiplyScalar(-1);
+const projectedFirstPersonForward = projectMoveOnCamera(
+  shiftedCamera,
+  { x: 0, z: -1 },
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  new THREE.Vector3(),
+  firstPersonMovementCameraForward
+);
+assertNearlyEqual(projectedFirstPersonForward.x, firstPersonLookForward.x, 'first-person W should follow the look direction on X');
+assertNearlyEqual(projectedFirstPersonForward.z, firstPersonLookForward.z, 'first-person W should follow the look direction on Z');
+assert.match(
+  gameSource,
+  /getFirstPersonMovementForward\(target = this\.firstPersonMovementForward\)\s*{\s*return this\.getFirstPersonHorizontalDirection\(target\)\.multiplyScalar\(-1\);/,
+  'first-person movement should pass camera-back direction so W moves along the look direction'
+);
+
 assert.match(worldRoomSource, /transformSeq:\s*'number'/, 'server player transform schema should sync transform sequence numbers');
 assert.match(worldRoomSource, /fields:\s*\[[^\]]*'transformSeq'/, 'transform state section should include transformSeq');
 assert.match(worldRoomSource, /function normalizeTransformSeq/, 'server should normalize transform sequence values in one place');
