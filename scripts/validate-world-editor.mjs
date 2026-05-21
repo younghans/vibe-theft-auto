@@ -158,6 +158,8 @@ import {
   PASSIVE_TRAFFIC_MAX_TURN_RADIANS,
   PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
   PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
+  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
@@ -177,9 +179,16 @@ import {
   isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode,
-  passiveTrafficHitboxesOverlap
+  passiveTrafficHitboxesOverlap,
+  rayPassiveTrafficHitboxIntersectionDistance
 } from '../src/world/passiveTraffic.js';
 import { PassiveTrafficSimulation } from '../src/world/passiveTrafficSimulation.js';
+import {
+  POLICE_CAR_RESPONSE_OFFICER_COUNT,
+  createPoliceCarResponseNpcDefinition,
+  createPoliceCarResponseNpcPlacement,
+  getPoliceCarResponseOfficerSpawnSpecs
+} from '../src/npc/policeCarResponse.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_IDS,
@@ -1320,6 +1329,8 @@ function validatePassiveTraffic() {
   );
   assert(PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE === 20, 'Passive traffic should take 20 health when it runs over the player');
   assert(PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS === 1.5, 'Passive traffic player hit stun should immobilize the player for 1.5 seconds');
+  assert(PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID === 'car_police', 'Passive traffic police response should target the routeable Car Police passive car');
+  assert(PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS === 10, 'Shot police cars should sink and respawn after 10 seconds');
   assert(
     PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS > 0
       && PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS > 0,
@@ -1344,6 +1355,56 @@ function validatePassiveTraffic() {
   assert(
     !passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * 3, z: 0 }, 0),
     'Passive traffic car hitboxes should not overlap when passive cars are safely side-by-side'
+  );
+  assert(
+    rayPassiveTrafficHitboxIntersectionDistance(
+      { x: 0, z: -12 },
+      { x: 0, z: 1 },
+      40,
+      { x: 0, z: 0 },
+      0
+    ) != null,
+    'Passive traffic should expose ray hit detection so weapon shots can strike police cars'
+  );
+  assert(
+    rayPassiveTrafficHitboxIntersectionDistance(
+      { x: PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH + 4, z: -12 },
+      { x: 0, z: 1 },
+      40,
+      { x: 0, z: 0 },
+      0
+    ) == null,
+    'Passive traffic shot hitboxes should ignore shots that pass safely beside the car'
+  );
+  const policeOfficerSpawns = getPoliceCarResponseOfficerSpawnSpecs({
+    id: 'passive_traffic_3_car_police_default',
+    itemId: 'car_police',
+    x: 10,
+    z: 20,
+    rotationY: 0
+  });
+  assert(
+    policeOfficerSpawns.length === POLICE_CAR_RESPONSE_OFFICER_COUNT
+      && policeOfficerSpawns.some((spawn) => spawn.side === 'driver')
+      && policeOfficerSpawns.some((spawn) => spawn.side === 'passenger'),
+    'Police car response should spawn one officer on the driver side and one on the passenger side'
+  );
+  const responseNpc = createPoliceCarResponseNpcDefinition({
+    npcId: 'npc_police_car_response_test_driver_1',
+    spawn: policeOfficerSpawns[0],
+    stationPlacementId: 'police_station_test'
+  });
+  const responsePlacement = createPoliceCarResponseNpcPlacement(responseNpc);
+  assert(
+    responseNpc?.policeCarResponse === true
+      && responseNpc.policeOfficerEnabled === true
+      && responseNpc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
+      && responseNpc.combat?.weaponId === WEAPON_IDS.pistol
+      && responseNpc.routine?.steps?.[0]?.type === 'enterHideAtPlacement'
+      && responseNpc.routine?.steps?.[0]?.targetPlacementId === 'police_station_test'
+      && responsePlacement?.layer === 'npc'
+      && responsePlacement.modelId === 'policeOfficer',
+    'Police car response officers should be temporary armed police NPCs that return through the police station garage target'
   );
 
   const directionKey = (direction) => `${direction.x}:${direction.z}`;
@@ -1879,12 +1940,17 @@ function validatePassiveTraffic() {
       && worldRoomSource.includes('passiveTraffic: {')
       && worldRoomSource.includes('updatePassiveTrafficSimulation')
       && worldRoomSource.includes('publishPassiveTrafficSnapshots')
+      && worldRoomSource.includes('handlePoliceCarShot')
+      && worldRoomSource.includes('spawnPoliceCarResponseOfficers')
+      && passiveTrafficSimulationSource.includes('disablePoliceCar')
+      && passiveTrafficSimulationSource.includes('PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS')
       && worldRendererSource.includes('setPassiveTrafficServerState')
       && worldRendererSource.includes('passiveTrafficServerActive')
+      && worldRendererSource.includes('serverActive')
       && worldBuilderSource.includes('setPassiveTrafficServerState')
       && gameSource.includes('state.passiveTraffic')
       && colyseusServiceSource.includes('clonePassiveTrafficCarState'),
-    'Passive traffic cars should be server-authored through Colyseus state and rendered from the shared server snapshots'
+    'Passive traffic cars should be server-authored through Colyseus state, support shot police-car response, and render shared server snapshots'
   );
   assert(
     worldBuilderSource.includes("id: 'traffic-routes'")
@@ -5011,6 +5077,16 @@ function validateBartenderFunction() {
       && /triggerPoliceHostilityForPlayer[\s\S]*'punch'/.test(mockNpcServiceSource)
       && /triggerPoliceHostilityForPlayer[\s\S]*'player-kill'/.test(mockNpcServiceSource),
     'Mock NPC service should match server police hostility triggers'
+  );
+  assert(
+    /resolvePassiveTrafficShot/.test(serverSource)
+      && /handlePoliceCarShot/.test(serverSource)
+      && /createPoliceCarResponseNpcDefinition/.test(serverSource)
+      && /cleanupPoliceCarResponseNpcs/.test(serverSource)
+      && /resolvePassiveTrafficShot/.test(mockNpcServiceSource)
+      && /handlePoliceCarShot/.test(mockNpcServiceSource)
+      && /PassiveTrafficSimulation/.test(mockNpcServiceSource),
+    'Server and mock combat should turn police-car shots into temporary aggro police response NPCs'
   );
   assert(
     /lawRadiusIndicator/.test(npcActorSource)

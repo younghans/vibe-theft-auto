@@ -10,6 +10,9 @@ import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_MIN_ROAD_NODES,
+  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS,
+  PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
@@ -157,6 +160,7 @@ export class PassiveTrafficSimulation {
     this.destinationCandidateNodeIndices = [];
     this.activeNeighbors = [];
     this.sequence = 0;
+    this.elapsedSeconds = 0;
   }
 
   syncRouteLookups() {
@@ -183,6 +187,7 @@ export class PassiveTrafficSimulation {
     this.nodeVisits.clear();
     this.nodeVisitOrder.clear();
     this.sequence += 1;
+    this.elapsedSeconds = 0;
 
     if (!hasTrafficRoads) {
       return this.getSnapshots();
@@ -274,6 +279,9 @@ export class PassiveTrafficSimulation {
       collisionReverseSeconds: 0,
       collisionStopSeconds: 0,
       collisionCooldownSeconds: 0,
+      disabledStartedSeconds: 0,
+      disabledUntilSeconds: 0,
+      disabledStartY: 0,
       lastPosition: new THREE.Vector3()
     };
 
@@ -293,6 +301,76 @@ export class PassiveTrafficSimulation {
     );
     car.lastPosition.copy(car.position);
     return car;
+  }
+
+  getCarById(carId = '') {
+    const normalizedId = String(carId || '');
+    if (!normalizedId) {
+      return null;
+    }
+
+    return this.cars.find((car) => car?.id === normalizedId) ?? null;
+  }
+
+  isCarDisabled(carOrId = null) {
+    const car = typeof carOrId === 'string'
+      ? this.getCarById(carOrId)
+      : carOrId;
+    return Boolean(car && (car.disabledUntilSeconds ?? 0) > this.elapsedSeconds);
+  }
+
+  disablePoliceCar(carId = '') {
+    const car = this.getCarById(carId);
+    if (!car || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID || this.isCarDisabled(car)) {
+      return null;
+    }
+
+    car.disabledStartedSeconds = this.elapsedSeconds;
+    car.disabledUntilSeconds = this.elapsedSeconds + PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS;
+    car.disabledStartY = car.position.y;
+    car.currentSpeed = 0;
+    car.collisionReverseSeconds = 0;
+    car.collisionStopSeconds = 0;
+    car.collisionCooldownSeconds = PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS;
+    car.turnStopSeconds = 0;
+    this.sequence += 1;
+    return this.getCarSnapshot(car);
+  }
+
+  respawnCar(car) {
+    const carIndex = this.cars.indexOf(car);
+    if (carIndex < 0) {
+      return false;
+    }
+
+    const replacement = this.createCarState(car.itemId, car.carIndex, car.routeId);
+    if (!replacement) {
+      return false;
+    }
+
+    replacement.id = car.id;
+    this.cars[carIndex] = replacement;
+    this.sequence += 1;
+    return true;
+  }
+
+  updateDisabledCar(car) {
+    if (!car || (car.disabledUntilSeconds ?? 0) <= 0) {
+      return false;
+    }
+
+    if (this.elapsedSeconds >= car.disabledUntilSeconds) {
+      this.respawnCar(car);
+      return true;
+    }
+
+    const duration = Math.max(0.1, PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS);
+    const progress = Math.max(0, Math.min(1, (this.elapsedSeconds - car.disabledStartedSeconds) / duration));
+    const easedProgress = progress * progress * (3 - (2 * progress));
+    car.currentSpeed = 0;
+    car.position.y = car.disabledStartY - (PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH * easedProgress);
+    car.lastPosition.copy(car.position);
+    return true;
   }
 
   markNodeVisited(nodeIndex, car = null) {
@@ -839,7 +917,7 @@ export class PassiveTrafficSimulation {
 
     for (let aIndex = 0; aIndex < this.cars.length - 1; aIndex += 1) {
       const a = this.cars[aIndex];
-      if (!a?.position) {
+      if (!a?.position || this.isCarDisabled(a)) {
         continue;
       }
 
@@ -847,6 +925,7 @@ export class PassiveTrafficSimulation {
         const b = this.cars[bIndex];
         if (
           !b?.position
+          || this.isCarDisabled(b)
           || (a.collisionCooldownSeconds ?? 0) > 0
           || (b.collisionCooldownSeconds ?? 0) > 0
         ) {
@@ -877,8 +956,14 @@ export class PassiveTrafficSimulation {
     if (dt <= 0) {
       return this.getSnapshots();
     }
+    this.elapsedSeconds += dt;
 
-    for (const car of this.cars) {
+    for (let carIndex = 0; carIndex < this.cars.length; carIndex += 1) {
+      const car = this.cars[carIndex];
+      if (this.updateDisabledCar(car)) {
+        continue;
+      }
+
       this.updateCollisionTimers(car, dt);
       const startX = car.position.x;
       const startZ = car.position.z;
@@ -1017,8 +1102,8 @@ export class PassiveTrafficSimulation {
     return this.getSnapshots();
   }
 
-  getSnapshots() {
-    return this.cars.map((car) => ({
+  getCarSnapshot(car) {
+    return {
       id: car.id,
       itemId: car.itemId,
       routeId: car.routeId,
@@ -1028,11 +1113,16 @@ export class PassiveTrafficSimulation {
       z: quantizePosition(car.position.z),
       rotationY: quantizeRotation(car.yaw),
       speed: quantizeNumber(car.currentSpeed, 3),
+      active: !this.isCarDisabled(car),
       currentNodeIndex: Math.max(-1, Math.floor(Number(car.currentNodeIndex) || 0)),
       targetNodeIndex: car.targetNodeIndex === null || car.targetNodeIndex === undefined
         ? -1
         : Math.max(-1, Math.floor(Number(car.targetNodeIndex) || 0)),
       seq: this.sequence
-    }));
+    };
+  }
+
+  getSnapshots() {
+    return this.cars.map((car) => this.getCarSnapshot(car));
   }
 }

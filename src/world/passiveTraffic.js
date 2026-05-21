@@ -25,6 +25,9 @@ export const PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS = 0.36;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS = 0.48;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS = 0.95;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR = 0.38;
+export const PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID = 'car_police';
+export const PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS = 10;
+export const PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH = 5.6;
 export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({
   STRAIGHT: 'straight',
   TURN_LEFT: 'turn_left',
@@ -127,6 +130,68 @@ export function isPointInsidePassiveTrafficHitbox(carPosition, carYaw = 0, point
   const radius = Math.max(0, Number(pointRadius) || 0);
   return Math.abs(localX) <= (PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * scale) + radius
     && Math.abs(localZ) <= (PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * scale) + radius;
+}
+
+export function rayPassiveTrafficHitboxIntersectionDistance(
+  origin,
+  direction,
+  maxDistance,
+  carPosition,
+  carYaw = 0,
+  padding = 0,
+  hitboxScale = 1
+) {
+  if (!origin || !direction || !carPosition) {
+    return null;
+  }
+
+  const distanceCap = Math.max(0, Number(maxDistance) || 0);
+  if (distanceCap <= 0) {
+    return null;
+  }
+
+  const directionLength = Math.hypot(Number(direction.x) || 0, Number(direction.z) || 0);
+  if (!Number.isFinite(directionLength) || directionLength <= 0.0001) {
+    return null;
+  }
+
+  const axes = getPassiveTrafficHitboxAxes(carYaw);
+  const scale = normalizePassiveTrafficHitboxScale(hitboxScale);
+  const halfWidth = (PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * scale) + Math.max(0, Number(padding) || 0);
+  const halfLength = (PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * scale) + Math.max(0, Number(padding) || 0);
+  const dx = getTrafficPointX(origin) - getTrafficPointX(carPosition);
+  const dz = getTrafficPointZ(origin) - getTrafficPointZ(carPosition);
+  const localOriginX = (dx * axes.rightX) + (dz * axes.rightZ);
+  const localOriginZ = (dx * axes.forwardX) + (dz * axes.forwardZ);
+  const unitDirectionX = (Number(direction.x) || 0) / directionLength;
+  const unitDirectionZ = (Number(direction.z) || 0) / directionLength;
+  const localDirectionX = (unitDirectionX * axes.rightX) + (unitDirectionZ * axes.rightZ);
+  const localDirectionZ = (unitDirectionX * axes.forwardX) + (unitDirectionZ * axes.forwardZ);
+  let near = 0;
+  let far = distanceCap;
+  const axesToCheck = [
+    [localOriginX, localDirectionX, halfWidth],
+    [localOriginZ, localDirectionZ, halfLength]
+  ];
+
+  for (const [localOrigin, localDirection, halfExtent] of axesToCheck) {
+    if (Math.abs(localDirection) <= 0.000001) {
+      if (Math.abs(localOrigin) > halfExtent) {
+        return null;
+      }
+      continue;
+    }
+
+    const t1 = (-halfExtent - localOrigin) / localDirection;
+    const t2 = (halfExtent - localOrigin) / localDirection;
+    near = Math.max(near, Math.min(t1, t2));
+    far = Math.min(far, Math.max(t1, t2));
+    if (near > far) {
+      return null;
+    }
+  }
+
+  return near >= 0 && near <= distanceCap ? near : null;
 }
 
 export function passiveTrafficHitboxesOverlap(

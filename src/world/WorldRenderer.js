@@ -2180,6 +2180,7 @@ export class WorldRenderer {
         z: Number(state.z) || 0,
         rotationY: Number(state.rotationY) || 0,
         speed: Number(state.speed) || 0,
+        active: state.active !== false,
         currentNodeIndex: Math.floor(Number(state.currentNodeIndex) || 0),
         targetNodeIndex: Math.floor(Number(state.targetNodeIndex) || 0),
         seq: Math.max(0, Math.floor(Number(state.seq) || 0))
@@ -2429,6 +2430,7 @@ export class WorldRenderer {
       serverTargetYaw: object.rotation.y,
       serverStateSeq: -1,
       serverStateInitialized: false,
+      serverActive: true,
       lastPosition: new THREE.Vector3()
     };
 
@@ -3055,7 +3057,10 @@ export class WorldRenderer {
     }
 
     for (const car of this.passiveTrafficCars) {
-      if (!car?.object) {
+      if (!car?.object || car.serverActive === false) {
+        if (car) {
+          car.playerCollisionActive = false;
+        }
         continue;
       }
 
@@ -3134,7 +3139,10 @@ export class WorldRenderer {
         continue;
       }
 
-      const targetY = this.getSurfaceHeightAtPosition(state.x, state.z);
+      const stateY = Number(state.y);
+      const targetY = Number.isFinite(stateY)
+        ? stateY
+        : this.getSurfaceHeightAtPosition(state.x, state.z);
       this.passiveTrafficTargetScratch.set(state.x, targetY, state.z);
       if (!car.serverTargetPosition) {
         car.serverTargetPosition = new THREE.Vector3();
@@ -3164,6 +3172,7 @@ export class WorldRenderer {
       }
 
       car.currentSpeed = state.speed;
+      car.serverActive = state.active !== false;
       car.currentNodeIndex = state.currentNodeIndex;
       car.targetNodeIndex = state.targetNodeIndex >= 0 ? state.targetNodeIndex : null;
       car.lastPosition.copy(car.object.position);

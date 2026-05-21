@@ -281,6 +281,7 @@ function clonePassiveTrafficCarState(car) {
     z: car.z ?? 0,
     rotationY: car.rotationY ?? 0,
     speed: car.speed ?? 0,
+    active: car.active !== false,
     currentNodeIndex: car.currentNodeIndex ?? -1,
     targetNodeIndex: car.targetNodeIndex ?? -1,
     seq: car.seq ?? 0

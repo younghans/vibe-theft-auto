@@ -173,6 +173,7 @@ import {
 import { normalizeVibeHeroSongId } from '../shared/vibeHero.js';
 import {
   cloneNpcBehavior,
+  NPC_DEFAULT_CALM_MS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -213,9 +214,25 @@ import {
 } from '../shared/placementScale.js';
 import { getNpcModelById } from './npcCatalog.js';
 import { buildNpcRouteGraph } from './npcRouteGraph.js';
+import {
+  getPlacementApproachPoint,
+  getPlacementWorldOrigin
+} from './npcTargeting.js';
 import { WorldState } from '../world/WorldState.js';
 import { defaultWorldLayout } from '../world/defaultWorldLayout.js';
 import { getBuilderItemById } from '../world/builderCatalog.js';
+import { PassiveTrafficSimulation } from '../world/passiveTrafficSimulation.js';
+import {
+  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  rayPassiveTrafficHitboxIntersectionDistance
+} from '../world/passiveTraffic.js';
+import {
+  POLICE_CAR_RESPONSE_DEAD_DESPAWN_MS,
+  createPoliceCarResponseNpcDefinition,
+  createPoliceCarResponseNpcId,
+  createPoliceCarResponseNpcPlacement,
+  getPoliceCarResponseOfficerSpawnSpecs
+} from './policeCarResponse.js';
 
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
@@ -546,6 +563,8 @@ export class NpcServiceMock {
     this.combatListeners = new Set();
     this.definitions = new Map();
     this.npcRuntimeMeta = new Map();
+    this.policeCarResponseNpcs = new Map();
+    this.policeCarResponseSequence = 0;
     this.transcripts = new Map();
     this.playerAliases = new Map();
     this.cooldowns = new Map();
@@ -576,6 +595,8 @@ export class NpcServiceMock {
     this.playerAliasSequence = 0;
     this.npcRouteGraph = null;
     this.lastNpcSimulationAt = Date.now();
+    this.passiveTrafficSimulation = new PassiveTrafficSimulation();
+    this.lastPassiveTrafficSimulationAt = Date.now();
     this.gymDoorBlockers = [];
     this.gymDoorBlockersRevision = -1;
     this.playerId = typeof playerId === 'string' && playerId.trim() ? playerId.trim() : 'local-player';
@@ -607,9 +628,13 @@ export class NpcServiceMock {
     });
     this.seedCombatPickups();
     this.syncNpcStateFromWorld();
+    this.resetPassiveTrafficSimulation();
     this.combatTick = window.setInterval(() => {
       this.updateCombatTimers();
     }, 100);
+    this.passiveTrafficTick = window.setInterval(() => {
+      this.updatePassiveTrafficSimulation();
+    }, 50);
   }
 
   subscribe(listener) {
@@ -893,6 +918,9 @@ export class NpcServiceMock {
       if (nextIds.has(npcId)) {
         continue;
       }
+      if (this.policeCarResponseNpcs.has(npcId)) {
+        continue;
+      }
 
       this.definitions.delete(npcId);
       this.state.npcs.delete(npcId);
@@ -900,6 +928,7 @@ export class NpcServiceMock {
       this.transcripts.delete(npcId);
     }
 
+    this.syncPoliceCarResponseNpcDefinitions();
     this.npcRouteGraph = buildNpcRouteGraph(this.worldState);
   }
 
@@ -907,14 +936,267 @@ export class NpcServiceMock {
     npc.position = [npc.x, npc.z];
   }
 
-  finalizeNpcSimulationTick(_now) {}
+  finalizeNpcSimulationTick(now) {
+    return this.cleanupPoliceCarResponseNpcs(now);
+  }
+
+  resetPassiveTrafficSimulation() {
+    this.lastPassiveTrafficSimulationAt = Date.now();
+    const snapshots = this.passiveTrafficSimulation.reset(
+      this.worldState,
+      this.worldState.getPassiveTrafficRoutes()
+    );
+    this.publishPassiveTrafficSnapshots(snapshots);
+  }
+
+  updatePassiveTrafficSimulation() {
+    const now = Date.now();
+    const deltaSeconds = Math.max(0, Math.min(0.25, (now - this.lastPassiveTrafficSimulationAt) / 1000));
+    this.lastPassiveTrafficSimulationAt = now;
+    const snapshots = this.passiveTrafficSimulation.update(deltaSeconds);
+    this.publishPassiveTrafficSnapshots(snapshots);
+    this.emit();
+  }
+
+  publishPassiveTrafficSnapshots(snapshots = []) {
+    const nextIds = new Set();
+    for (const snapshot of snapshots) {
+      if (!snapshot?.id) {
+        continue;
+      }
+
+      nextIds.add(snapshot.id);
+      this.state.passiveTraffic.set(snapshot.id, {
+        id: snapshot.id,
+        itemId: snapshot.itemId || '',
+        routeId: snapshot.routeId || '',
+        carIndex: Math.max(0, Math.floor(Number(snapshot.carIndex) || 0)),
+        x: Number(snapshot.x) || 0,
+        y: Number(snapshot.y) || 0,
+        z: Number(snapshot.z) || 0,
+        rotationY: Number(snapshot.rotationY) || 0,
+        speed: Number(snapshot.speed) || 0,
+        active: snapshot.active !== false,
+        currentNodeIndex: Math.floor(Number(snapshot.currentNodeIndex) || 0),
+        targetNodeIndex: Math.floor(Number(snapshot.targetNodeIndex) || 0),
+        seq: Math.max(0, Math.floor(Number(snapshot.seq) || 0))
+      });
+    }
+
+    for (const id of [...this.state.passiveTraffic.keys()]) {
+      if (!nextIds.has(id)) {
+        this.state.passiveTraffic.delete(id);
+      }
+    }
+  }
+
+  getWorldLayoutWithPoliceCarResponseNpcs() {
+    const layout = cloneLayout(this.worldState.serializeLayout());
+    for (const [npcId, response] of this.policeCarResponseNpcs) {
+      const definition = response?.definition ?? this.definitions.get(npcId);
+      const npc = this.state.npcs.get(npcId);
+      if (!definition || !npc || npc.mode === NPC_RUNTIME_MODES.hidden) {
+        continue;
+      }
+
+      const placement = createPoliceCarResponseNpcPlacement(definition, npc);
+      if (placement) {
+        layout.npcs.push(placement);
+      }
+    }
+    return layout;
+  }
+
+  syncPoliceCarResponseNpcDefinitions() {
+    for (const [npcId, response] of this.policeCarResponseNpcs) {
+      if (!response?.definition || !this.state.npcs.has(npcId)) {
+        continue;
+      }
+
+      this.definitions.set(npcId, response.definition);
+      if (!this.npcRuntimeMeta.has(npcId)) {
+        this.npcRuntimeMeta.set(npcId, createNpcRuntimeMeta());
+      }
+      if (!this.transcripts.has(npcId)) {
+        this.transcripts.set(npcId, []);
+      }
+    }
+  }
+
+  findNearestPoliceStationPlacementId(position = null) {
+    let nearestPlacementId = '';
+    let nearestDistanceSq = Number.POSITIVE_INFINITY;
+    this.worldState.forEachPlacement((placement) => {
+      const item = getBuilderItemById(placement?.itemId);
+      if (!placement || item?.id !== 'police_station_building') {
+        return;
+      }
+
+      const approach = getPlacementApproachPoint(placement, item) ?? getPlacementWorldOrigin(placement, item);
+      if (!approach) {
+        return;
+      }
+
+      const distanceSq = position
+        ? distanceSquared2D(position.x, position.z, approach.x, approach.z)
+        : 0;
+      if (distanceSq < nearestDistanceSq) {
+        nearestDistanceSq = distanceSq;
+        nearestPlacementId = placement.id;
+      }
+    });
+    return nearestPlacementId;
+  }
+
+  createPoliceCarResponseNpcState(definition, spawn, attackerId = '', now = Date.now()) {
+    const rotationY = Number.isFinite(spawn?.rotationY)
+      ? quantizeRotation(spawn.rotationY)
+      : quantizeRotation(toRotationY(definition.spawnRotationQuarterTurns ?? 0));
+    const npc = {
+      id: definition.id,
+      modelId: definition.modelId,
+      name: definition.name,
+      x: quantizePosition(spawn?.x ?? definition.spawnPosition?.[0] ?? 0),
+      z: quantizePosition(spawn?.z ?? definition.spawnPosition?.[1] ?? 0),
+      rotationY,
+      rotationQuarterTurns: quantizeRotationQuarterTurnsFromRotationY(rotationY),
+      interactRadius: definition.interactRadius,
+      policeOfficerEnabled: true,
+      lawRadius: definition.lawRadius,
+      deliveryQuestEnabled: false,
+      gymCheckInEnabled: false,
+      rentCollectorEnabled: false,
+      stockMarketEnabled: false,
+      bartenderEnabled: false,
+      pawnShopOwnerEnabled: false,
+      carDealerEnabled: false,
+      marthaEnabled: false,
+      blackjackDealerEnabled: false,
+      schoolMicrogameEnabled: false,
+      schoolMicrogameId: SCHOOL_MICROGAME_ALL_ID,
+      health: NPC_DEFAULT_MAX_HEALTH,
+      maxHealth: NPC_DEFAULT_MAX_HEALTH,
+      alive: true,
+      respawnAt: 0,
+      active: true,
+      mode: NPC_RUNTIME_MODES.combat,
+      currentStepIndex: 0,
+      targetPlacementId: '',
+      weaponId: definition.combat?.weaponId ?? WEAPON_IDS.pistol,
+      lastAttackerId: attackerId,
+      hiddenUntil: 0,
+      activity: '',
+      lastDamagedAt: 0,
+      busy: false,
+      chatStatus: 'idle',
+      chatText: '',
+      chatStartedAt: 0,
+      chatSeq: 0
+    };
+    this.syncNpcDerivedState(npc);
+    const meta = createNpcRuntimeMeta();
+    meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+    meta.lastCombatAt = now;
+    meta.combatAnchor = {
+      x: npc.x,
+      z: npc.z
+    };
+    this.npcRuntimeMeta.set(npc.id, meta);
+    return npc;
+  }
+
+  spawnPoliceCarResponseOfficers(carSnapshot, shooterSessionId = '', now = Date.now()) {
+    const stationPlacementId = this.findNearestPoliceStationPlacementId(carSnapshot);
+    if (!stationPlacementId) {
+      return 0;
+    }
+
+    let spawnedCount = 0;
+    for (const spawn of getPoliceCarResponseOfficerSpawnSpecs(carSnapshot)) {
+      const npcId = createPoliceCarResponseNpcId(carSnapshot.id, spawn.side, ++this.policeCarResponseSequence);
+      const definition = createPoliceCarResponseNpcDefinition({
+        npcId,
+        spawn,
+        stationPlacementId
+      });
+      if (!definition) {
+        continue;
+      }
+
+      const npc = this.createPoliceCarResponseNpcState(definition, spawn, shooterSessionId, now);
+      this.definitions.set(npcId, definition);
+      this.state.npcs.set(npcId, npc);
+      this.transcripts.set(npcId, []);
+      this.policeCarResponseNpcs.set(npcId, {
+        npcId,
+        carId: carSnapshot.id,
+        definition,
+        stationPlacementId,
+        deadDespawnAt: 0
+      });
+      const placement = createPoliceCarResponseNpcPlacement(definition, npc);
+      if (placement) {
+        this.emitWorldPatch({
+          type: 'upsertPlacement',
+          placement,
+          replacedPlacementId: null
+        });
+      }
+      spawnedCount += 1;
+    }
+
+    return spawnedCount;
+  }
+
+  removePoliceCarResponseNpc(npcId = '') {
+    if (!npcId || !this.policeCarResponseNpcs.has(npcId)) {
+      return false;
+    }
+
+    this.policeCarResponseNpcs.delete(npcId);
+    this.definitions.delete(npcId);
+    this.state.npcs.delete(npcId);
+    this.npcRuntimeMeta.delete(npcId);
+    this.transcripts.delete(npcId);
+    this.emitWorldPatch({
+      type: 'deletePlacement',
+      placementId: npcId
+    });
+    return true;
+  }
+
+  cleanupPoliceCarResponseNpcs(now = Date.now()) {
+    let changed = false;
+    for (const [npcId, response] of [...this.policeCarResponseNpcs]) {
+      const npc = this.state.npcs.get(npcId);
+      if (!npc || !this.definitions.has(npcId)) {
+        changed = this.removePoliceCarResponseNpc(npcId) || changed;
+        continue;
+      }
+
+      if (npc.mode === NPC_RUNTIME_MODES.hidden) {
+        changed = this.removePoliceCarResponseNpc(npcId) || changed;
+        continue;
+      }
+
+      if (npc.alive === false || npc.mode === NPC_RUNTIME_MODES.dead) {
+        if (!response.deadDespawnAt) {
+          response.deadDespawnAt = now + POLICE_CAR_RESPONSE_DEAD_DESPAWN_MS;
+          changed = true;
+        } else if (now >= response.deadDespawnAt) {
+          changed = this.removePoliceCarResponseNpc(npcId) || changed;
+        }
+      }
+    }
+    return changed;
+  }
 
   emitNpcCombatEvent(event) {
     this.emitCombatEvent(event);
   }
 
   async getWorldLayout() {
-    return cloneLayout(this.worldState.serializeLayout());
+    return this.getWorldLayoutWithPoliceCarResponseNpcs();
   }
 
   async editWorld(op, payload = {}) {
@@ -940,6 +1222,8 @@ export class NpcServiceMock {
           replacedPlacementIds: result.replacedPlacementIds ?? [],
           replacedPlacementId: result.replacedPlacementId
         });
+        this.resetPassiveTrafficSimulation();
+        this.emit();
         return { ok: true, placementId: result.placement.id };
       }
       case 'placeProp': {
@@ -1022,6 +1306,9 @@ export class NpcServiceMock {
           this.syncNpcStateFromWorld();
           this.resetNpcRuntimeState(placement.id, { restartFromSpawn: true });
           this.emit();
+        } else if (placement.layer === 'tile') {
+          this.resetPassiveTrafficSimulation();
+          this.emit();
         } else if (this.syncCombatPickupsFromWorld()) {
           this.emit();
         }
@@ -1044,6 +1331,9 @@ export class NpcServiceMock {
           this.syncNpcStateFromWorld();
           this.resetNpcRuntimeState(result.placement.id, { restartFromSpawn: true });
           this.emit();
+        } else if (previousPlacement?.layer === 'tile' || result.placement.layer === 'tile') {
+          this.resetPassiveTrafficSimulation();
+          this.emit();
         } else if (this.syncCombatPickupsFromWorld()) {
           this.emit();
         }
@@ -1064,6 +1354,9 @@ export class NpcServiceMock {
 
         if (placement.layer === 'npc') {
           this.syncNpcStateFromWorld();
+          this.emit();
+        } else if (placement.layer === 'tile') {
+          this.resetPassiveTrafficSimulation();
           this.emit();
         } else if (this.syncCombatPickupsFromWorld()) {
           this.emit();
@@ -1159,6 +1452,8 @@ export class NpcServiceMock {
           type: 'updatePassiveTrafficRoutes',
           passiveTrafficRoutes
         });
+        this.resetPassiveTrafficSimulation();
+        this.emit();
         return { ok: true };
       }
       case 'updateNpcModelVoice': {
@@ -1528,6 +1823,10 @@ export class NpcServiceMock {
 
     if (shot.kind === 'npc' && shot.targetId) {
       this.applyDamageToNpc(shot.targetId, WEAPON_DAMAGE, this.state.sessionId, now);
+    }
+
+    if (shot.kind === 'passiveTraffic' && shot.targetId) {
+      this.handlePoliceCarShot(shot.targetId, this.state.sessionId, now);
     }
 
     if (player.ammoInClip <= 0 && player.reserveAmmo > 0) {
@@ -3376,6 +3675,17 @@ export class NpcServiceMock {
       };
     }, { collisionKey: 'blocksShots' });
 
+    const passiveTrafficHit = this.resolvePassiveTrafficShot(origin, aim, nearestDistance);
+    if (passiveTrafficHit && passiveTrafficHit.distance < nearestDistance) {
+      nearestDistance = passiveTrafficHit.distance;
+      result = {
+        kind: 'passiveTraffic',
+        hitX: origin.x + aim.x * passiveTrafficHit.distance,
+        hitZ: origin.z + aim.z * passiveTrafficHit.distance,
+        targetId: passiveTrafficHit.carId
+      };
+    }
+
     for (const id of this.state.players.keys()) {
       const target = this.state.players.get(id);
       if (id === ignorePlayerId || target.alive === false) {
@@ -3438,6 +3748,49 @@ export class NpcServiceMock {
     }
 
     return result;
+  }
+
+  resolvePassiveTrafficShot(origin, aim, maxDistance) {
+    let nearest = null;
+    for (const car of this.state.passiveTraffic.values()) {
+      if (
+        !car
+        || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+        || car.active === false
+        || this.passiveTrafficSimulation.isCarDisabled(car.id)
+      ) {
+        continue;
+      }
+
+      const hitDistance = rayPassiveTrafficHitboxIntersectionDistance(
+        origin,
+        aim,
+        maxDistance,
+        { x: car.x, z: car.z },
+        car.rotationY,
+        0.12
+      );
+      if (hitDistance == null || hitDistance >= maxDistance || (nearest && hitDistance >= nearest.distance)) {
+        continue;
+      }
+
+      nearest = {
+        carId: car.id,
+        distance: hitDistance
+      };
+    }
+    return nearest;
+  }
+
+  handlePoliceCarShot(carId = '', shooterSessionId = '', now = Date.now()) {
+    const disabledCar = this.passiveTrafficSimulation.disablePoliceCar(carId);
+    if (!disabledCar) {
+      return false;
+    }
+
+    this.spawnPoliceCarResponseOfficers(disabledCar, shooterSessionId, now);
+    this.publishPassiveTrafficSnapshots(this.passiveTrafficSimulation.getSnapshots());
+    return true;
   }
 
   resolveShot(playerId, player, aim, origin = player) {
@@ -3731,6 +4084,7 @@ export class NpcServiceMock {
     this.combatListeners.clear();
     this.playerRuntimeMeta.clear();
     window.clearInterval(this.combatTick);
+    window.clearInterval(this.passiveTrafficTick);
   }
 
   updatePlayerHealthRegen(sessionId, player, now, deltaMs) {

@@ -891,6 +891,9 @@ export const npcSimulationMethods = {
     const target = this.getNpcTargetOption(step.targetPlacementId);
     const meta = this.getNpcRuntimeMeta(npcId);
     const targetAnchor = target?.approachPosition ?? this.getNpcSpawnPoint(definition);
+    const responseRoutineMoveOptions = definition?.policeCarResponse === true
+      ? { speed: getNpcRunSpeed(definition?.speed) }
+      : undefined;
 
     if (!target && step.targetPlacementId) {
       this.logNpcDebugEvent?.(npcId, 'missing-target-skip-step', {
@@ -912,7 +915,7 @@ export const npcSimulationMethods = {
         now,
         { placementId: npc.targetPlacementId }
       );
-      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
+      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs, responseRoutineMoveOptions);
       npc.activity = '';
       if (arrived) {
         this.beginNpcIdlePause(npcId, now);
@@ -934,7 +937,7 @@ export const npcSimulationMethods = {
         now,
         { placementId: npc.targetPlacementId }
       );
-      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs);
+      const arrived = this.moveNpcAlongPath(npcId, npc, targetAnchor, deltaMs, responseRoutineMoveOptions);
       npc.activity = '';
       if (arrived) {
         this.beginNpcIdlePause(npcId, now);
@@ -1268,7 +1271,7 @@ export const npcSimulationMethods = {
       changed = changed || before !== after;
     }
 
-    this.finalizeNpcSimulationTick?.(now);
+    changed = this.finalizeNpcSimulationTick?.(now) || changed;
     return changed;
   },
 
