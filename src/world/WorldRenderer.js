@@ -2658,6 +2658,8 @@ export class WorldRenderer {
     const targetPosition = target?.position ?? target;
     const targetAlive = target?.alive !== false;
     const targetRadius = Number.isFinite(target?.radius) ? Math.max(0, target.radius) : 0;
+    const targetTransportKind = String(target?.transportKind ?? '');
+    const targetYaw = Number.isFinite(target?.yaw) ? target.yaw : 0;
     if (!targetPosition || !targetAlive || !this.onPassiveTrafficPlayerCollision) {
       for (const car of this.passiveTrafficCars) {
         car.playerCollisionActive = false;
@@ -2670,12 +2672,14 @@ export class WorldRenderer {
         continue;
       }
 
-      const overlapping = isPointInsidePassiveTrafficHitbox(
-        car.object.position,
-        car.yaw,
-        targetPosition,
-        targetRadius
-      );
+      const overlapping = targetTransportKind === 'car'
+        ? passiveTrafficHitboxesOverlap(car.object.position, car.yaw, targetPosition, targetYaw)
+        : isPointInsidePassiveTrafficHitbox(
+          car.object.position,
+          car.yaw,
+          targetPosition,
+          targetRadius
+        );
       if (!overlapping) {
         car.playerCollisionActive = false;
         continue;
@@ -2692,7 +2696,7 @@ export class WorldRenderer {
         routeId: car.routeId,
         damage: PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
         stunSeconds: PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
-        transportKind: String(target.transportKind ?? ''),
+        transportKind: targetTransportKind,
         carPosition: {
           x: car.object.position.x,
           y: car.object.position.y,

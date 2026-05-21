@@ -17,6 +17,7 @@ export const PASSIVE_TRAFFIC_MAX_TURN_RADIANS = Math.PI / 2;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
 export const PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH = 2.35;
 export const PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH = 4.35;
+export const PASSIVE_TRAFFIC_CAR_COLLISION_HITBOX_SCALE = 0.9;
 export const PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE = 20;
 export const PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS = 1.5;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS = 0.36;
@@ -98,29 +99,43 @@ function getPassiveTrafficHitboxAxes(yaw = 0) {
   };
 }
 
-function passiveTrafficHitboxProjectionExtent(axes, axisX, axisZ, padding = 0) {
-  const halfWidth = PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH + Math.max(0, Number(padding) || 0);
-  const halfLength = PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH + Math.max(0, Number(padding) || 0);
+function normalizePassiveTrafficHitboxScale(hitboxScale = 1) {
+  const numeric = Number(hitboxScale);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+}
+
+function passiveTrafficHitboxProjectionExtent(axes, axisX, axisZ, padding = 0, hitboxScale = 1) {
+  const scale = normalizePassiveTrafficHitboxScale(hitboxScale);
+  const halfWidth = (PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * scale) + Math.max(0, Number(padding) || 0);
+  const halfLength = (PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * scale) + Math.max(0, Number(padding) || 0);
   return (halfWidth * Math.abs((axisX * axes.rightX) + (axisZ * axes.rightZ)))
     + (halfLength * Math.abs((axisX * axes.forwardX) + (axisZ * axes.forwardZ)));
 }
 
-export function isPointInsidePassiveTrafficHitbox(carPosition, carYaw = 0, point, pointRadius = 0) {
+export function isPointInsidePassiveTrafficHitbox(carPosition, carYaw = 0, point, pointRadius = 0, hitboxScale = 1) {
   if (!carPosition || !point) {
     return false;
   }
 
   const axes = getPassiveTrafficHitboxAxes(carYaw);
+  const scale = normalizePassiveTrafficHitboxScale(hitboxScale);
   const dx = getTrafficPointX(point) - getTrafficPointX(carPosition);
   const dz = getTrafficPointZ(point) - getTrafficPointZ(carPosition);
   const localX = (dx * axes.rightX) + (dz * axes.rightZ);
   const localZ = (dx * axes.forwardX) + (dz * axes.forwardZ);
   const radius = Math.max(0, Number(pointRadius) || 0);
-  return Math.abs(localX) <= PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH + radius
-    && Math.abs(localZ) <= PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH + radius;
+  return Math.abs(localX) <= (PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * scale) + radius
+    && Math.abs(localZ) <= (PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * scale) + radius;
 }
 
-export function passiveTrafficHitboxesOverlap(aPosition, aYaw = 0, bPosition, bYaw = 0, padding = 0) {
+export function passiveTrafficHitboxesOverlap(
+  aPosition,
+  aYaw = 0,
+  bPosition,
+  bYaw = 0,
+  padding = 0,
+  hitboxScale = PASSIVE_TRAFFIC_CAR_COLLISION_HITBOX_SCALE
+) {
   if (!aPosition || !bPosition) {
     return false;
   }
@@ -138,8 +153,8 @@ export function passiveTrafficHitboxesOverlap(aPosition, aYaw = 0, bPosition, bY
 
   for (const [axisX, axisZ] of testAxes) {
     const centerDistance = Math.abs((dx * axisX) + (dz * axisZ));
-    const allowedDistance = passiveTrafficHitboxProjectionExtent(aAxes, axisX, axisZ, padding)
-      + passiveTrafficHitboxProjectionExtent(bAxes, axisX, axisZ, padding);
+    const allowedDistance = passiveTrafficHitboxProjectionExtent(aAxes, axisX, axisZ, padding, hitboxScale)
+      + passiveTrafficHitboxProjectionExtent(bAxes, axisX, axisZ, padding, hitboxScale);
     if (centerDistance > allowedDistance) {
       return false;
     }

@@ -716,7 +716,6 @@ const RENT_INTRO_STAND_UP_EMOTE_ID = STAND_UP_EMOTE_ID;
 const RENT_INTRO_STAND_UP_CLIP_NAME = 'standUp';
 const PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS = 360;
 const PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE = 10;
-const PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_RADIUS = PLAYER_RADIUS + 1.55;
 const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_SIDE_CLEARANCE = 4.65;
 const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_EXTRA_SIDE_CLEARANCE = 6.15;
 const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_FORWARD_CLEARANCE = 1.25;
@@ -2920,7 +2919,8 @@ export class Game {
     const usingSkateboard = Boolean(localPlayerState.skating === true && !usingCar && isPlayerSkateboardOwner(localPlayerState));
     return {
       position: this.player.position,
-      radius: usingCar ? PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_RADIUS : PLAYER_RADIUS,
+      radius: PLAYER_RADIUS,
+      yaw: Number.isFinite(this.player.object?.rotation?.y) ? this.player.object.rotation.y : 0,
       alive: true,
       transportKind: usingCar ? 'car' : (usingSkateboard ? 'skateboard' : '')
     };

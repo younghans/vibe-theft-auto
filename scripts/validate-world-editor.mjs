@@ -141,6 +141,7 @@ import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_HITBOX_SCALE,
   PASSIVE_TRAFFIC_CAR_SCALE,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH,
@@ -1175,6 +1176,7 @@ function validatePassiveTraffic() {
   assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.68, 'Passive traffic cars should render at 0.85x their previous passive size');
   assert(PASSIVE_TRAFFIC_CAR_SCALE < VEHICLE_PROP_PLACEMENT_SCALE, 'Passive traffic cars should no longer render larger than player-owned vehicle props');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
+  assert(PASSIVE_TRAFFIC_CAR_COLLISION_HITBOX_SCALE === 0.9, 'Passive traffic car-on-car collision hitboxes should be 10% more forgiving');
   assert(
     PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH > 2
       && PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH < 2.6
@@ -1200,6 +1202,10 @@ function validatePassiveTraffic() {
   assert(
     passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: 0, z: PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * 1.6 }, 0),
     'Passive traffic car hitboxes should overlap when passive cars nose into each other'
+  );
+  assert(
+    !passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: 0, z: PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * 1.9 }, 0),
+    'Passive traffic car hitboxes should leave about 10% more nose-to-nose clearance'
   );
   assert(
     !passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * 3, z: 0 }, 0),
@@ -1701,7 +1707,8 @@ function validatePassiveTraffic() {
       && /passiveTrafficHitboxesOverlap/.test(worldRendererSource)
       && /updatePassiveTrafficPlayerCollisions/.test(worldRendererSource)
       && /onPassiveTrafficPlayerCollision/.test(worldRendererSource)
-      && /transportKind: String\(target\.transportKind/.test(worldRendererSource)
+      && /targetTransportKind/.test(worldRendererSource)
+      && /transportKind: targetTransportKind/.test(worldRendererSource)
       && /carYaw: car\.yaw/.test(worldRendererSource)
       && /collisionReverseSeconds/.test(worldRendererSource)
       && /collisionStopSeconds/.test(worldRendererSource)
@@ -1755,10 +1762,13 @@ function validatePassiveTraffic() {
       && gameSource.includes('playPassiveTrafficCartoonCrashSound')
       && gameSource.includes('PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE = 10')
       && gameSource.includes('PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_POPUP_TEXT')
+      && gameSource.includes('yaw: Number.isFinite(this.player.object?.rotation?.y)')
       && gameSource.includes('startPassiveTrafficCarCrashCutscene')
       && gameSource.includes('resolvePassiveTrafficCarCrashRecoveryPosition')
       && gameSource.includes('passiveTrafficPlayerStunUntil')
       && gameSource.includes('applyPassiveTrafficHit')
+      && worldRendererSource.includes("targetTransportKind === 'car'")
+      && worldRendererSource.includes('passiveTrafficHitboxesOverlap(car.object.position, car.yaw, targetPosition, targetYaw)')
       && styleSource.includes('.hud.is-rent-cutscene-active .hud__toast')
       && readRepoText('src/npc/NpcServiceMock.js').includes('position = null')
       && readRepoText('src/npc/NpcServiceColyseus.js').includes("player:passiveTrafficHit")
