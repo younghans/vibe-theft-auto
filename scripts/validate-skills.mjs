@@ -225,6 +225,16 @@ assert.ok(
   ['hat', 'lamp', 'pencil'].every((id) => sketchDefinitions.some((sketch) => sketch.id === id)),
   'sketch guessr should include the three added simple noun drawings'
 );
+const hatSketch = sketchDefinitions.find((sketch) => sketch.id === 'hat');
+const hatPaths = (hatSketch?.strokes ?? []).map((stroke) => stroke.d).join(' ');
+assert.ok(hatSketch?.strokes?.length >= 8, 'hat sketch should include crown, brim, band, and panel detail strokes');
+assert.match(hatPaths, /C86 76 74 74 64 67/, 'hat sketch should include a clear baseball cap brim');
+assert.match(hatPaths, /M49 29 C47 39 48 50 51 61/, 'hat sketch should include cap panel seams');
+const pencilSketch = sketchDefinitions.find((sketch) => sketch.id === 'pencil');
+const pencilPaths = (pencilSketch?.strokes ?? []).map((stroke) => stroke.d).join(' ');
+assert.ok(pencilSketch?.strokes?.length >= 9, 'pencil sketch should include eraser, ferrule, body, wood, and graphite detail strokes');
+assert.match(pencilPaths, /M12 40 L20 40 L20 60 L12 60 Z/, 'pencil sketch should include a separate eraser');
+assert.match(pencilPaths, /M68 40 L78 50 L68 60/, 'pencil sketch should include a sharpened wood tip');
 const sketchRound = createSchoolSketchGuessrRound({
   rng: () => 0
 });
