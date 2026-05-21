@@ -147,6 +147,7 @@ import {
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH,
   PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH,
+  PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF,
   PASSIVE_TRAFFIC_LANE_OFFSET,
   PASSIVE_TRAFFIC_MAX_TURN_RADIANS,
   PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
@@ -1421,13 +1422,15 @@ function validatePassiveTraffic() {
   assert(
     straightJunctionScript.shouldStopAtEntry
       && straightJunctionScript.stopWaypointIndex === 0
-      && straightJunctionScript.waypoints.length >= 3,
-    'Passive traffic should stop briefly at the entry edge before traversing a Road Junction tile'
+      && straightJunctionScript.waypoints.length >= 4,
+    'Passive traffic should stop briefly before traversing a Road Junction tile'
   );
   assert(
-    Math.abs(straightJunctionScript.waypoints[0].z - straightJunctionCenter.z) > BUILDER_TILE_SIZE * 0.4
-      && isPassiveTrafficPositionInsideRoadNode(straightJunctionCenter, straightJunctionScript.waypoints[0]),
-    'Passive traffic junction stop waypoint should be at the road tile edge, not the tile center'
+    isPassiveTrafficPositionInsideRoadNode(straightJunctionNorth, straightJunctionScript.waypoints[0])
+      && isPassiveTrafficPositionInsideRoadNode(straightJunctionCenter, straightJunctionScript.waypoints[1])
+      && straightJunctionScript.waypoints[1].distanceTo(straightJunctionScript.waypoints[0]) > PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF
+      && straightJunctionScript.waypoints[1].distanceTo(straightJunctionScript.waypoints[0]) < PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF + (BUILDER_TILE_SIZE * 0.03),
+    'Passive traffic junction stop waypoint should sit a few feet before the intersection entry edge'
   );
 
   const roadCrossTurnGraph = buildPassiveTrafficRoadGraph([
@@ -1502,6 +1505,11 @@ function validatePassiveTraffic() {
       && turningTSplitScript.shouldStopAtEntry
       && turningTSplitScript.stopWaypointIndex === 0,
     'Passive traffic should still stop at a Road T Split tile before turning'
+  );
+  assert(
+    isPassiveTrafficPositionInsideRoadNode(turningTSplitNorth, turningTSplitScript.waypoints[0])
+      && isPassiveTrafficPositionInsideRoadNode(turningTSplitCenter, turningTSplitScript.waypoints[1]),
+    'Passive traffic should stage turning T Split stops before entering the intersection'
   );
 
   const rightCornerGraph = buildPassiveTrafficRoadGraph([
@@ -1713,6 +1721,9 @@ function validatePassiveTraffic() {
       && /carYaw: car\.yaw/.test(worldRendererSource)
       && /collisionReverseSeconds/.test(worldRendererSource)
       && /collisionStopSeconds/.test(worldRendererSource)
+      && /PASSIVE_TRAFFIC_SERVER_RENDER_RESPONSE/.test(worldRendererSource)
+      && /serverTargetPosition/.test(worldRendererSource)
+      && /applyPassiveTrafficServerState\(deltaSeconds/.test(worldRendererSource)
       && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),

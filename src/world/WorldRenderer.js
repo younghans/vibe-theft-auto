@@ -136,6 +136,8 @@ const PASSIVE_TRAFFIC_POSITION_EPSILON = 0.08;
 const PASSIVE_TRAFFIC_STUCK_SECONDS = 1.15;
 const PASSIVE_TRAFFIC_STUCK_DISTANCE = 0.018;
 const PASSIVE_TRAFFIC_REVERSE_SPEED_FACTOR = 0.48;
+const PASSIVE_TRAFFIC_SERVER_RENDER_RESPONSE = 18;
+const PASSIVE_TRAFFIC_SERVER_SNAP_DISTANCE = BUILDER_TILE_SIZE * 0.75;
 
 function getCellKey(cellX, cellZ) {
   return `${cellX}:${cellZ}`;
@@ -2294,7 +2296,7 @@ export class WorldRenderer {
       this.passiveTrafficRoot.add(car.object);
     }
     if (this.passiveTrafficServerActive) {
-      this.applyPassiveTrafficServerState();
+      this.applyPassiveTrafficServerState(0, { snap: true });
     }
   }
 
@@ -2372,6 +2374,10 @@ export class WorldRenderer {
       collisionStopSeconds: 0,
       collisionCooldownSeconds: 0,
       playerCollisionActive: false,
+      serverTargetPosition: new THREE.Vector3(),
+      serverTargetYaw: object.rotation.y,
+      serverStateSeq: -1,
+      serverStateInitialized: false,
       lastPosition: new THREE.Vector3()
     };
 
@@ -3059,10 +3065,17 @@ export class WorldRenderer {
     return null;
   }
 
-  applyPassiveTrafficServerState() {
+  applyPassiveTrafficServerState(deltaSeconds = 0, options = {}) {
     if (!this.passiveTrafficServerActive) {
       return;
     }
+
+    const snapAll = Boolean(options.snap);
+    const dt = Math.max(0, Math.min(0.12, Number(deltaSeconds) || 0));
+    const renderAlpha = snapAll || dt <= 0
+      ? 0
+      : 1 - Math.exp(-PASSIVE_TRAFFIC_SERVER_RENDER_RESPONSE * dt);
+    const snapDistanceSq = PASSIVE_TRAFFIC_SERVER_SNAP_DISTANCE * PASSIVE_TRAFFIC_SERVER_SNAP_DISTANCE;
 
     for (const car of this.passiveTrafficCars) {
       const state = this.getPassiveTrafficServerStateForCar(car);
@@ -3070,10 +3083,35 @@ export class WorldRenderer {
         continue;
       }
 
-      car.object.position.set(state.x, state.y, state.z);
-      car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
-      car.object.rotation.y = state.rotationY;
-      car.yaw = state.rotationY;
+      const targetY = this.getSurfaceHeightAtPosition(state.x, state.z);
+      this.passiveTrafficTargetScratch.set(state.x, targetY, state.z);
+      if (!car.serverTargetPosition) {
+        car.serverTargetPosition = new THREE.Vector3();
+      }
+      const targetChanged = car.serverStateSeq !== state.seq
+        || car.serverTargetPosition.distanceToSquared(this.passiveTrafficTargetScratch) > 0.001 * 0.001
+        || Math.abs(normalizeAngleRadians((car.serverTargetYaw ?? 0) - state.rotationY)) > 0.001;
+      if (targetChanged) {
+        car.serverTargetPosition.copy(this.passiveTrafficTargetScratch);
+        car.serverTargetYaw = state.rotationY;
+        car.serverStateSeq = state.seq;
+      }
+
+      const shouldSnap = snapAll
+        || !car.serverStateInitialized
+        || car.object.position.distanceToSquared(car.serverTargetPosition) > snapDistanceSq;
+      if (shouldSnap) {
+        car.object.position.copy(car.serverTargetPosition);
+        car.yaw = car.serverTargetYaw;
+        car.object.rotation.y = car.yaw;
+        car.serverStateInitialized = true;
+      } else if (renderAlpha > 0) {
+        car.object.position.lerp(car.serverTargetPosition, renderAlpha);
+        car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
+        car.yaw = dampAngleRadians(car.yaw, car.serverTargetYaw, PASSIVE_TRAFFIC_SERVER_RENDER_RESPONSE, dt);
+        car.object.rotation.y = car.yaw;
+      }
+
       car.currentSpeed = state.speed;
       car.currentNodeIndex = state.currentNodeIndex;
       car.targetNodeIndex = state.targetNodeIndex >= 0 ? state.targetNodeIndex : null;
@@ -3087,7 +3125,7 @@ export class WorldRenderer {
     }
 
     if (this.passiveTrafficServerActive) {
-      this.applyPassiveTrafficServerState();
+      this.applyPassiveTrafficServerState(deltaSeconds);
       this.updatePassiveTrafficPlayerCollisions();
       return;
     }

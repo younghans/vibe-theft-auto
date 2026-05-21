@@ -13,6 +13,7 @@ export const PASSIVE_TRAFFIC_CAR_ITEM_IDS = Object.freeze([
 export const PASSIVE_TRAFFIC_CAR_SCALE = 0.68;
 export const PASSIVE_TRAFFIC_SPEED = BUILDER_TILE_SIZE;
 export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.165;
+export const PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF = BUILDER_TILE_SIZE * 0.22;
 export const PASSIVE_TRAFFIC_MAX_TURN_RADIANS = Math.PI / 2;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
 export const PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH = 2.35;
@@ -645,6 +646,27 @@ function getPassiveTrafficEdgeLanePosition(currentNode, travelDirection, edgeDir
   );
 }
 
+function getPassiveTrafficIntersectionStopLanePosition(previousNode, currentNode, target = new THREE.Vector3()) {
+  const incoming = getPassiveTrafficRoadStep(previousNode, currentNode);
+  if ((Math.abs(incoming.x) + Math.abs(incoming.z)) !== 1) {
+    return getPassiveTrafficEdgeLanePosition(
+      currentNode,
+      incoming,
+      { x: -incoming.x, z: -incoming.z },
+      target
+    );
+  }
+
+  return setPassiveTrafficLanePositionAtPoint(
+    previousNode,
+    currentNode.x - (incoming.x * (PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE + PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF)),
+    currentNode.z - (incoming.z * (PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE + PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF)),
+    -incoming.z,
+    incoming.x,
+    target
+  );
+}
+
 export function isPassiveTrafficJunctionNode(node) {
   return Boolean(
     node
@@ -910,6 +932,12 @@ export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode
   const waypoints = command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT
     ? getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextNode)
     : getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode);
+  if (shouldStopAtEntry && waypoints.length) {
+    const stopWaypoint = getPassiveTrafficIntersectionStopLanePosition(previousNode, currentNode, new THREE.Vector3());
+    if (waypoints[0].distanceToSquared(stopWaypoint) > 0.001 * 0.001) {
+      waypoints.unshift(stopWaypoint);
+    }
+  }
 
   return {
     command,
