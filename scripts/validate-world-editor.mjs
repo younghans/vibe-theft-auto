@@ -4603,12 +4603,16 @@ function validateBartenderFunction() {
   assert(policeOfficerModel?.portraitFileName === 'police_officer.png', 'Police Officer should expose a static NPC portrait');
   assert(policeOfficerPortraitStats.isFile() && policeOfficerPortraitStats.size > 1000, 'Police Officer portrait PNG should be generated');
   assert(policeOfficerNodeNames.has('PoliceOfficer_uniform'), 'Police Officer GLB should include a skinned navy uniform mesh');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_uniformJoint'), 'Police Officer GLB should include connected sleeve geometry at the shoulders and elbows');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_pantsJoint'), 'Police Officer GLB should include hip and knee geometry that grounds the legs under the body');
   assert(policeOfficerNodeNames.has('PoliceOfficer_gold'), 'Police Officer GLB should include gold badge details');
   assert(policeOfficerNodeNames.has('PoliceOfficer_belt'), 'Police Officer GLB should include a utility belt');
   assert(policeOfficerNodeNames.has('mixamorigHead'), 'Police Officer GLB should preserve the Mixamo head bone');
   assert(policeOfficerNodeNames.has('mixamorigRightHand'), 'Police Officer GLB should preserve Mixamo hand bones for weapons');
   assert(
     policeOfficerMaterialNames.has('policeOfficerNavyUniform')
+      && policeOfficerMaterialNames.has('policeOfficerConnectedSleeves')
+      && policeOfficerMaterialNames.has('policeOfficerGroundedPantStructure')
       && policeOfficerMaterialNames.has('policeOfficerGoldBadge')
       && policeOfficerMaterialNames.has('policeOfficerGoofyEyes'),
     'Police Officer GLB should use named cartoon police materials'

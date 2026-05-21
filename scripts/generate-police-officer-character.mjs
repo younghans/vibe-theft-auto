@@ -407,7 +407,9 @@ function buildPoliceOfficerCharacter(root) {
     uniform: createMaterial('policeOfficerNavyUniform', COLORS.uniform, 0.8, 0.02),
     uniformLight: createMaterial('policeOfficerLightBluePanels', COLORS.uniformLight, 0.78, 0.02),
     uniformDark: createMaterial('policeOfficerDarkUniformTrim', COLORS.uniformDark, 0.84, 0.02),
+    uniformJoint: createMaterial('policeOfficerConnectedSleeves', COLORS.uniform, 0.82, 0.02),
     pants: createMaterial('policeOfficerNavyPants', COLORS.pants, 0.86, 0.02),
+    pantsJoint: createMaterial('policeOfficerGroundedPantStructure', COLORS.pants, 0.86, 0.02),
     black: createMaterial('policeOfficerBlackDetails', COLORS.black, 0.7, 0.05),
     boot: createMaterial('policeOfficerChunkyBoots', COLORS.boot, 0.82, 0.04),
     belt: createMaterial('policeOfficerUtilityBelt', COLORS.belt, 0.64, 0.06),
@@ -508,34 +510,58 @@ function buildPoliceOfficerCharacter(root) {
     scale: [1.05, 0.85, 0.95]
   }));
   addPiece('uniform', createRigidSphere(bones.rightShoulder, getBoneIndex('mixamorigRightShoulder'), 0.08, 8, 6, {
-    position: [0, 0.055, 0],
-    scale: [1.25, 1.05, 1.08]
+    position: [0, 0.045, 0],
+    scale: [1.55, 1.18, 1.18]
   }));
   addPiece('uniform', createRigidSphere(bones.leftShoulder, getBoneIndex('mixamorigLeftShoulder'), 0.08, 8, 6, {
-    position: [0, 0.055, 0],
-    scale: [1.25, 1.05, 1.08]
+    position: [0, 0.045, 0],
+    scale: [1.55, 1.18, 1.18]
   }));
-  addPiece('uniform', createRigidSegment(bones.rightArm, bones.rightForeArm, getBoneIndex('mixamorigRightArm'), 0.105, 0.09, {
-    offset: [0, 0.02, 0.0],
-    scale: [0.88, 1.02, 0.78]
+  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.105, 8, 6, {
+    position: [-0.26, 0.075, 0.01],
+    scale: [0.95, 0.78, 0.82]
   }));
-  addPiece('uniform', createRigidSegment(bones.leftArm, bones.leftForeArm, getBoneIndex('mixamorigLeftArm'), 0.105, 0.09, {
-    offset: [0, 0.02, 0.0],
-    scale: [0.88, 1.02, 0.78]
+  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.105, 8, 6, {
+    position: [0.26, 0.075, 0.01],
+    scale: [0.95, 0.78, 0.82]
   }));
-  addPiece('skin', createRigidSegment(bones.rightForeArm, bones.rightHand, getBoneIndex('mixamorigRightForeArm'), 0.09, 0.078, {
-    offset: [0, 0.0, 0.0],
-    scale: [0.88, 0.95, 0.74]
+  addPiece('uniformJoint', createRigidSegment(bones.rightShoulder, bones.rightArm, getBoneIndex('mixamorigRightShoulder'), 0.16, 0.13, {
+    offset: [0, -0.004, 0.006],
+    scale: [1.0, 1.16, 0.88]
   }));
-  addPiece('skin', createRigidSegment(bones.leftForeArm, bones.leftHand, getBoneIndex('mixamorigLeftForeArm'), 0.09, 0.078, {
-    offset: [0, 0.0, 0.0],
-    scale: [0.88, 0.95, 0.74]
+  addPiece('uniformJoint', createRigidSegment(bones.leftShoulder, bones.leftArm, getBoneIndex('mixamorigLeftShoulder'), 0.16, 0.13, {
+    offset: [0, -0.004, 0.006],
+    scale: [1.0, 1.16, 0.88]
   }));
-  addPiece('skinLight', createRigidSphere(bones.rightHand, getBoneIndex('mixamorigRightHand'), 0.065, 8, 6, {
+  addPiece('uniform', createRigidSegment(bones.rightArm, bones.rightForeArm, getBoneIndex('mixamorigRightArm'), 0.14, 0.12, {
+    offset: [0, -0.015, 0.0],
+    scale: [0.95, 1.0, 0.86]
+  }));
+  addPiece('uniform', createRigidSegment(bones.leftArm, bones.leftForeArm, getBoneIndex('mixamorigLeftArm'), 0.14, 0.12, {
+    offset: [0, -0.015, 0.0],
+    scale: [0.95, 1.0, 0.86]
+  }));
+  addPiece('uniformJoint', createRigidSphere(bones.rightForeArm, getBoneIndex('mixamorigRightForeArm'), 0.078, 8, 6, {
+    position: [0, -0.012, 0.0],
+    scale: [1.15, 0.9, 1.0]
+  }));
+  addPiece('uniformJoint', createRigidSphere(bones.leftForeArm, getBoneIndex('mixamorigLeftForeArm'), 0.078, 8, 6, {
+    position: [0, -0.012, 0.0],
+    scale: [1.15, 0.9, 1.0]
+  }));
+  addPiece('skin', createRigidSegment(bones.rightForeArm, bones.rightHand, getBoneIndex('mixamorigRightForeArm'), 0.12, 0.105, {
+    offset: [0, -0.01, 0.0],
+    scale: [0.92, 0.96, 0.82]
+  }));
+  addPiece('skin', createRigidSegment(bones.leftForeArm, bones.leftHand, getBoneIndex('mixamorigLeftForeArm'), 0.12, 0.105, {
+    offset: [0, -0.01, 0.0],
+    scale: [0.92, 0.96, 0.82]
+  }));
+  addPiece('skinLight', createRigidSphere(bones.rightHand, getBoneIndex('mixamorigRightHand'), 0.075, 8, 6, {
     position: [0, 0.035, 0.02],
     scale: [1.05, 0.84, 1.0]
   }));
-  addPiece('skinLight', createRigidSphere(bones.leftHand, getBoneIndex('mixamorigLeftHand'), 0.065, 8, 6, {
+  addPiece('skinLight', createRigidSphere(bones.leftHand, getBoneIndex('mixamorigLeftHand'), 0.075, 8, 6, {
     position: [0, 0.035, 0.02],
     scale: [1.05, 0.84, 1.0]
   }));
@@ -554,28 +580,38 @@ function buildPoliceOfficerCharacter(root) {
     const foot = bones[`${side}Foot`];
     const toe = bones[`${side}Toe`];
     const sign = side === 'right' ? -1 : 1;
-    addPiece('pants', createRigidSphere(upLeg, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}UpLeg`), 0.095, 8, 6, {
-      position: [0, 0.035, 0.01],
-      scale: [1.05, 0.9, 0.95]
+    const localOutset = side === 'right' ? 0.026 : -0.026;
+    const sideName = side === 'right' ? 'Right' : 'Left';
+    addPiece('pantsJoint', createRigidSegment(bones.hips, upLeg, getBoneIndex('mixamorigHips'), 0.15, 0.13, {
+      offset: [0, -0.006, 0.006],
+      scale: [1.06, 1.08, 0.92]
     }));
-    addPiece('pants', createRigidSegment(upLeg, leg, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}UpLeg`), 0.105, 0.09, {
-      offset: [0, 0, 0.01],
-      scale: [0.92, 1.04, 0.82]
+    addPiece('pants', createRigidSphere(upLeg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.125, 8, 6, {
+      position: [localOutset * 0.55, 0.026, 0.012],
+      scale: [1.12, 0.95, 1.0]
     }));
-    addPiece('pants', createRigidSegment(leg, foot, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}Leg`), 0.095, 0.08, {
-      offset: [0, 0, 0.0],
-      scale: [0.88, 1.02, 0.78]
+    addPiece('pants', createRigidSegment(upLeg, leg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.165, 0.135, {
+      offset: [localOutset, -0.02, 0.012],
+      scale: [0.96, 1.0, 0.88]
     }));
-    addPiece('boot', createRigidSphere(foot, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}Foot`), 0.07, 8, 6, {
-      position: [0, 0.045, 0.045],
-      scale: [1.16, 0.78, 1.38]
+    addPiece('pantsJoint', createRigidSphere(leg, getBoneIndex(`mixamorig${sideName}Leg`), 0.105, 8, 6, {
+      position: [localOutset * 0.75, -0.006, 0.006],
+      scale: [1.06, 0.86, 0.96]
     }));
-    addPiece('boot', createRigidSphere(toe, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}ToeBase`), 0.07, 8, 6, {
-      position: [0, 0.03, 0.05],
-      scale: [1.2, 0.62, 1.52]
+    addPiece('pants', createRigidSegment(leg, foot, getBoneIndex(`mixamorig${sideName}Leg`), 0.145, 0.12, {
+      offset: [localOutset * 0.75, -0.01, 0.0],
+      scale: [0.94, 1.0, 0.86]
     }));
-    addPiece('uniformDark', createRigidBox(leg, getBoneIndex(`mixamorig${side === 'right' ? 'Right' : 'Left'}Leg`), [0.022, 0.19, 0.018], {
-      position: [sign * 0.035, 0.12, 0.078],
+    addPiece('boot', createRigidSphere(foot, getBoneIndex(`mixamorig${sideName}Foot`), 0.085, 8, 6, {
+      position: [localOutset * 0.5, 0.04, 0.045],
+      scale: [1.32, 0.8, 1.42]
+    }));
+    addPiece('boot', createRigidSphere(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), 0.085, 8, 6, {
+      position: [localOutset * 0.5, 0.028, 0.05],
+      scale: [1.34, 0.64, 1.58]
+    }));
+    addPiece('uniformDark', createRigidBox(leg, getBoneIndex(`mixamorig${sideName}Leg`), [0.024, 0.21, 0.02], {
+      position: [sign * 0.045, 0.12, 0.082],
       rotation: [0.08, 0, 0]
     }));
   }
