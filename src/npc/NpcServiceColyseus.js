@@ -1264,10 +1264,10 @@ export class NpcServiceColyseus {
           localPlayer.rotationY = quantize(crashRotationY, 3);
           localPlayer.aimRotationY = localPlayer.rotationY;
         }
-        localPlayer.skating = false;
         localPlayer.transformSeq = normalizeTransformSeq(localPlayer.transformSeq) + 1;
         this.lastTransformSeq = Math.max(this.lastTransformSeq, localPlayer.transformSeq);
       }
+      localPlayer.skating = false;
       if (localPlayer.health <= 0) {
         localPlayer.alive = false;
       }

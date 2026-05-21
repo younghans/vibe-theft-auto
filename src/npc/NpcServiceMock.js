@@ -1953,7 +1953,6 @@ export class NpcServiceMock {
         player.rotationY = quantizeRotation(crashRotationY);
         player.aimRotationY = player.rotationY;
       }
-      player.skating = false;
       player.transformSeq = ++this.lastTransformSeq;
       const meta = this.getPlayerRuntimeMeta(this.state.sessionId);
       meta.x = player.x;
@@ -1961,6 +1960,7 @@ export class NpcServiceMock {
       meta.acceptedAt = now;
       meta.lastTransformSeq = player.transformSeq;
     }
+    player.skating = false;
     this.getPlayerRuntimeMeta(this.state.sessionId).healthRegenCarryMs = 0;
     if (player.health <= 0) {
       this.handlePlayerDeath(this.state.sessionId, '');
