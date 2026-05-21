@@ -4722,6 +4722,12 @@ function validateBartenderFunction() {
     'NPC rendering should expose a visible law-radius circle for police officers'
   );
   assert(
+    /getLawRadiusRenderDefinition/.test(npcActorSource)
+      && /this\.setPoliceOfficerEnabled\(isPoliceOfficerNpc\(lawRadiusDefinition\)\)/.test(npcActorSource)
+      && /this\.lawRadiusIndicator\.visible\s*=\s*this\.policeOfficerEnabled/.test(npcActorSource),
+    'NPC rendering should keep police law-radius circles visible without depending on nearby player runtime range'
+  );
+  assert(
     /data-builder-npc-police-officer/.test(hudSource)
       && /data-builder-npc-law-radius/.test(hudSource)
       && /onNpcPoliceOfficerChange/.test(worldBuilderSource)

@@ -177,6 +177,25 @@ function createPickProxy(collider) {
   return pickProxy;
 }
 
+function hasOwnProperty(object, key) {
+  return object != null && Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function getLawRadiusRenderDefinition(definition = {}, state = {}) {
+  return {
+    ...definition,
+    policeOfficerEnabled: hasOwnProperty(state, 'policeOfficerEnabled')
+      ? state.policeOfficerEnabled
+      : definition?.policeOfficerEnabled,
+    lawRadius: hasOwnProperty(state, 'lawRadius')
+      ? state.lawRadius
+      : definition?.lawRadius,
+    combat: hasOwnProperty(state, 'combat')
+      ? state.combat
+      : definition?.combat
+  };
+}
+
 function cloneColor(color) {
   return color?.isColor ? color.clone() : null;
 }
@@ -565,10 +584,7 @@ export class NpcActor {
   }
 
   syncLawRadiusVisibility() {
-    const isVisible = this.runtimeState.alive !== false
-      && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead
-      && this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden;
-    this.lawRadiusIndicator.visible = this.policeOfficerEnabled && isVisible;
+    this.lawRadiusIndicator.visible = this.policeOfficerEnabled;
   }
 
   setFocusTarget(target = null) {
@@ -609,8 +625,9 @@ export class NpcActor {
     this.anchor.position.y = groundY;
     this.setBusy(Boolean(state.busy));
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
-    this.setPoliceOfficerEnabled(isPoliceOfficerNpc(state));
-    this.setLawRadius(state.lawRadius);
+    const lawRadiusDefinition = getLawRadiusRenderDefinition(this.definition, state);
+    this.setPoliceOfficerEnabled(isPoliceOfficerNpc(lawRadiusDefinition));
+    this.setLawRadius(lawRadiusDefinition.lawRadius);
     this.syncInteractRadiusVisibility();
     this.syncLawRadiusVisibility();
 
