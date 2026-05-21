@@ -258,6 +258,32 @@ function getGlbNodeByName(json, nodeName) {
   return null;
 }
 
+function getGlbNodePositionBounds(json, nodeName) {
+  const node = getGlbNodeByName(json, nodeName);
+  assert(node?.mesh !== undefined, `${nodeName} should exist as a GLB mesh node`);
+  const mesh = json.meshes?.[node.mesh];
+  assert(mesh, `${nodeName} should reference a GLB mesh`);
+
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const primitive of mesh.primitives ?? []) {
+    const positionAccessorIndex = primitive.attributes?.POSITION;
+    const accessor = json.accessors?.[positionAccessorIndex];
+    assert(accessor?.min?.length >= 3 && accessor?.max?.length >= 3, `${nodeName} should expose POSITION bounds`);
+    for (let axis = 0; axis < 3; axis += 1) {
+      min[axis] = Math.min(min[axis], accessor.min[axis]);
+      max[axis] = Math.max(max[axis], accessor.max[axis]);
+    }
+  }
+
+  assert(
+    min.every(Number.isFinite) && max.every(Number.isFinite),
+    `${nodeName} should have finite GLB mesh bounds`
+  );
+
+  return { min, max };
+}
+
 function getGlbMaterialNames(json) {
   const materialNames = new Set();
   for (const material of json.materials ?? []) {
@@ -3289,6 +3315,39 @@ function validateFootprintSupport() {
       ].every((fragment) => districtBuildingGeneratorSource.includes(fragment)),
     'School, bar, and casino sign pixel layers should be separated from their panels and shadows'
   );
+  assert(
+    districtBuildingGeneratorSource.includes('const ROOF_CAP_INSET_GAP = 0.04;')
+      && districtBuildingGeneratorSource.includes('const DISTRICT_ROOF_INSET = 0.36 + ROOF_CAP_INSET_GAP;')
+      && districtBuildingGeneratorSource.includes('const clampedRoofInset = Math.max(0, Math.min(width * 0.49, depth * 0.49, Number(roofInset) || 0));')
+      && districtBuildingGeneratorSource.includes('const sideWallEndInset = clampedRoofInset > 0 ? wallThickness : 0;')
+      && districtBuildingGeneratorSource.includes('const sideWallDepth = Math.max(0.08, depth - (sideWallEndInset * 2));')
+      && [
+        /wallHeight:\s*7\.8,\s*roofInset:\s*DISTRICT_ROOF_INSET,/,
+        /wallHeight:\s*7\.3,\s*roofInset:\s*DISTRICT_ROOF_INSET,/,
+        /wallHeight:\s*7\.5,\s*roofInset:\s*DISTRICT_ROOF_INSET,/
+      ].every((pattern) => pattern.test(districtBuildingGeneratorSource)),
+    'School, bar, and casino roof caps should be inset from wall caps to avoid top-edge z-fighting'
+  );
+  for (const key of ['school', 'bar', 'casino']) {
+    const glbJson = readGlbJson(`assets/vibe_theft_auto_custom/models/${key}-building.glb`);
+    const roofBounds = getGlbNodePositionBounds(glbJson, `${key}_cutaway_roof_0`);
+    const leftWallBounds = getGlbNodePositionBounds(glbJson, `${key}_hull_wall_left_merged_0`);
+    const rightWallBounds = getGlbNodePositionBounds(glbJson, `${key}_hull_wall_right_merged_0`);
+    assert(
+      roofBounds.min[0] > -10.5
+        && roofBounds.max[0] < 10.5
+        && roofBounds.min[2] > -9.75
+        && roofBounds.max[2] < 10.45,
+      `${key} roof cap should be inset from the wall footprint in the generated GLB`
+    );
+    assert(
+      leftWallBounds.min[2] > -9.8
+        && leftWallBounds.max[2] < 10.5
+        && rightWallBounds.min[2] > -9.8
+        && rightWallBounds.max[2] < 10.5,
+      `${key} side wall caps should end before front/back wall caps in the generated GLB`
+    );
+  }
   assert(
     wideBarGeneratorSource.includes('const BAR_LETTER_LAYER_GAP = 0.04;')
       && wideBarGeneratorSource.includes('const shadowDepth = 0.18;')

@@ -223,6 +223,8 @@ const WINDOW_FACE_GAP = 0.035;
 const WINDOW_LIP_DEPTH = 0.16;
 const PIXEL_TEXT_LAYER_GAP = 0.025;
 const PIXEL_TEXT_SHADOW_DEPTH = 0.08;
+const ROOF_CAP_INSET_GAP = 0.04;
+const DISTRICT_ROOF_INSET = 0.36 + ROOF_CAP_INSET_GAP;
 
 function createCylinder(radiusTop, radiusBottom, height, segments, position, material, rotation = [0, 0, 0]) {
   return createMesh(
@@ -358,13 +360,20 @@ function addShellBlock(group, {
   doorwayHeight = 0,
   doorwayOffset = 0,
   wallGroups = null,
-  sideWallOpenings = null
+  sideWallOpenings = null,
+  roofInset = 0
 }) {
   const targetRoofGroup = roofGroup ?? group;
   const getWallGroup = (side) => wallGroups?.[side] ?? group;
   const halfWidth = width * 0.5;
   const halfHeight = height * 0.5;
   const halfDepth = depth * 0.5;
+  const clampedRoofInset = Math.max(0, Math.min(width * 0.49, depth * 0.49, Number(roofInset) || 0));
+  const roofWidth = Math.max(0.08, width - (clampedRoofInset * 2));
+  const roofDepth = Math.max(0.08, depth - (clampedRoofInset * 2));
+  const sideWallEndInset = clampedRoofInset > 0 ? wallThickness : 0;
+  const sideWallDepth = Math.max(0.08, depth - (sideWallEndInset * 2));
+  const sideHalfDepth = sideWallDepth * 0.5;
   const clampedDoorwayHeight = Math.max(0, Math.min(height - 0.2, doorwayHeight));
   const clampedDoorwayWidth = Math.max(0, Math.min(width - (wallThickness * 2) - 0.2, doorwayWidth));
   const doorwayCenterX = THREE.MathUtils.clamp(
@@ -424,11 +433,11 @@ function addShellBlock(group, {
     const wallX = centerX + ((side === 'left' ? -1 : 1) * (halfWidth - (wallThickness * 0.5)));
 
     if (!openings.length) {
-      wallGroup.add(createBox([wallThickness, height, depth], [wallX, centerY, centerZ], material));
+      wallGroup.add(createBox([wallThickness, height, sideWallDepth], [wallX, centerY, centerZ], material));
       return;
     }
 
-    const zCuts = [-halfDepth, halfDepth];
+    const zCuts = [-sideHalfDepth, sideHalfDepth];
     const clampedOpenings = [];
     for (const opening of openings) {
       const openingHalfDepth = Math.max(0, Number(opening.width ?? 0) * 0.5);
@@ -439,8 +448,8 @@ function addShellBlock(group, {
 
       const localCenterZ = Number(opening.centerZ ?? 0) - centerZ;
       const localCenterY = Number(opening.centerY ?? centerY) - centerY;
-      const minZ = Math.max(-halfDepth, localCenterZ - openingHalfDepth);
-      const maxZ = Math.min(halfDepth, localCenterZ + openingHalfDepth);
+      const minZ = Math.max(-sideHalfDepth, localCenterZ - openingHalfDepth);
+      const maxZ = Math.min(sideHalfDepth, localCenterZ + openingHalfDepth);
       const minY = Math.max(-halfHeight, localCenterY - openingHalfHeight);
       const maxY = Math.min(halfHeight, localCenterY + openingHalfHeight);
       if (maxZ - minZ <= 0.04 || maxY - minY <= 0.04) {
@@ -507,7 +516,7 @@ function addShellBlock(group, {
   addSideWall('right');
   if (includeRoof && roofThickness > 0) {
     targetRoofGroup.add(createBox(
-      [width, roofThickness, depth],
+      [roofWidth, roofThickness, roofDepth],
       [centerX, centerY + halfHeight - (roofThickness * 0.5), centerZ],
       roofMaterial
     ));
@@ -898,6 +907,7 @@ function addCommonBuildingShell(groups, materials, options = {}) {
     : wallHeight;
   const upperWallHeight = Math.max(0, wallHeight - cutawayWallHeight);
   const splitWallForCutaway = upperWallHeight > 0.05;
+  const roofInset = Math.max(0, Number(options.roofInset ?? 0) || 0);
   addBoxes(groups.foundation, [
     { size: [22.8, 0.62, 22.6], position: [0, 0.31, 0], material: materials.slab },
     { size: [18.8, 0.16, 2.6], position: [0, 0.68, 10.0], material: materials.pavement },
@@ -936,7 +946,8 @@ function addCommonBuildingShell(groups, materials, options = {}) {
       right: groups.shellRight,
       front: groups.shellFront
     },
-    sideWallOpenings: options.sideWallOpenings
+    sideWallOpenings: options.sideWallOpenings,
+    roofInset
   });
 
   if (splitWallForCutaway) {
@@ -950,7 +961,8 @@ function addCommonBuildingShell(groups, materials, options = {}) {
       depth: 20.9,
       material: materials.facade,
       roofGroup: groups.roof,
-      roofMaterial: materials.roof
+      roofMaterial: materials.roof,
+      roofInset
     });
   }
 
@@ -964,7 +976,8 @@ function addCommonBuildingShell(groups, materials, options = {}) {
     depth: upper.depth ?? 8.4,
     material: materials.facadeAlt,
     roofGroup: groups.roof,
-    roofMaterial: materials.roof
+    roofMaterial: materials.roof,
+    roofInset
   });
 
   addParapetRect(groups.roof, {
@@ -1983,6 +1996,7 @@ const BUILDINGS = Object.freeze([
     },
     shell: {
       wallHeight: 7.8,
+      roofInset: DISTRICT_ROOF_INSET,
       upper: { centerY: 10.18, centerZ: -3.2, width: 13.8, height: 4.4, depth: 7.6 }
     },
     decorate: addSchoolDetails
@@ -2007,6 +2021,7 @@ const BUILDINGS = Object.freeze([
     },
     shell: {
       wallHeight: 7.3,
+      roofInset: DISTRICT_ROOF_INSET,
       upper: { centerY: 9.78, centerZ: -2.7, width: 12.6, height: 4.3, depth: 7.4 }
     },
     decorate: addBarDetails
@@ -2062,6 +2077,7 @@ const BUILDINGS = Object.freeze([
     },
     shell: {
       wallHeight: 7.5,
+      roofInset: DISTRICT_ROOF_INSET,
       upper: { centerY: 9.98, centerZ: -2.8, width: 14.2, height: 4.4, depth: 7.8 }
     },
     decorate: addCasinoDetails
