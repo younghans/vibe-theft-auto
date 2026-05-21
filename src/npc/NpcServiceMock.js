@@ -2303,7 +2303,6 @@ export class NpcServiceMock {
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
-    this.triggerPoliceHostilityForPlayer(this.state.sessionId, player, 'punch', now);
     this.emit();
 
     setTimeout(() => {
@@ -2322,6 +2321,7 @@ export class NpcServiceMock {
     const now = Date.now();
     const hit = this.resolvePunch(sessionId, player, aim);
     if (hit.kind !== 'miss') {
+      this.triggerPoliceHostilityForPlayer(sessionId, player, 'punch', now);
       this.emitCombatEvent({
         type: 'impact',
         shooterType: 'player',

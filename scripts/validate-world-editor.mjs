@@ -5056,6 +5056,15 @@ function validateBartenderFunction() {
   const mockNpcServiceSource = readFileSync(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
   const worldBuilderSource = readFileSync(new URL('../src/world/WorldBuilder.js', import.meta.url), 'utf8');
   const worldEditAdapterSource = readFileSync(new URL('../src/world/createWorldEditAdapter.js', import.meta.url), 'utf8');
+  const getCombatSourceSection = (source, startNeedle, endNeedle) => {
+    const startIndex = source.indexOf(startNeedle);
+    const endIndex = startIndex >= 0 ? source.indexOf(endNeedle, startIndex) : -1;
+    return startIndex >= 0 && endIndex > startIndex ? source.slice(startIndex, endIndex) : '';
+  };
+  const serverPunchRequestSource = getCombatSourceSection(serverSource, '\n  handlePunchRequest(client', '\n  resolvePlayerPunchImpact(');
+  const serverPunchImpactSource = getCombatSourceSection(serverSource, '\n  resolvePlayerPunchImpact(', '\n  handlePlayerDeath(');
+  const mockPunchRequestSource = getCombatSourceSection(mockNpcServiceSource, '\n  punch(aimDirection', '\n  resolvePlayerPunchImpact(');
+  const mockPunchImpactSource = getCombatSourceSection(mockNpcServiceSource, '\n  resolvePlayerPunchImpact(', '\n  reloadWeapon()');
 
   const skateboardModel = createSkateboardModel({ namePrefix: 'Validation' });
   skateboardModel.updateWorldMatrix(true, true);
@@ -5453,6 +5462,16 @@ function validateBartenderFunction() {
       && /triggerPoliceHostilityForPlayer[\s\S]*'punch'/.test(mockNpcServiceSource)
       && /triggerPoliceHostilityForPlayer[\s\S]*'player-kill'/.test(mockNpcServiceSource),
     'Mock NPC service should match server police hostility triggers'
+  );
+  assert(
+    !serverPunchRequestSource.includes('triggerPoliceHostilityForPlayer')
+      && /if \(hit\.kind !== 'miss'\) \{[\s\S]*triggerPoliceHostilityForPlayer\(sessionId,\s*player,\s*'punch'/.test(serverPunchImpactSource),
+    'Server punch handling should only treat a player punch as a law violation after it actually hits something'
+  );
+  assert(
+    !mockPunchRequestSource.includes('triggerPoliceHostilityForPlayer')
+      && /if \(hit\.kind !== 'miss'\) \{[\s\S]*triggerPoliceHostilityForPlayer\(sessionId,\s*player,\s*'punch'/.test(mockPunchImpactSource),
+    'Mock punch handling should only treat a player punch as a law violation after it actually hits something'
   );
   assert(
     npcSimulationSource.includes('clearNpcHostilityForPlayer')

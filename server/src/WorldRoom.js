@@ -4472,7 +4472,6 @@ export class WorldRoom extends Room {
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq += 1;
-    this.triggerPoliceHostilityForPlayer(client.sessionId, player, 'punch', now);
     this.queuePlayerSnapshotSave(client.sessionId);
 
     const clientPunchAt = Number.isFinite(message.clientPunchAt) ? Math.max(0, Math.floor(message.clientPunchAt)) : now;
@@ -4490,6 +4489,7 @@ export class WorldRoom extends Room {
     const now = Date.now();
     const hit = this.resolvePunch(sessionId, player, aim);
     if (hit.kind !== 'miss') {
+      this.triggerPoliceHostilityForPlayer(sessionId, player, 'punch', now);
       this.broadcastCombatEvent({
         type: 'impact',
         shooterId: sessionId,
