@@ -1977,6 +1977,7 @@ export class Game {
     this.adminPromptLoading = false;
     this.adminPromptLoadingVisible = false;
     this.adminPromptSubmitting = false;
+    this.adminPromptPendingAction = null;
     this.adminPromptError = '';
     this.adminPromptRefreshAt = 0;
     this.adminPromptRequest = null;
@@ -4345,6 +4346,7 @@ export class Game {
         submitting: false,
         error: '',
         hasMoreThreads: false,
+        pendingAction: null,
         contextLabel: context.contextLabel
       });
       return;
@@ -4361,8 +4363,94 @@ export class Game {
       error: this.adminPromptError,
       autoDeployAvailable: this.isAdminPromptAutoDeployAvailable(),
       hasMoreThreads: this.adminPromptHasMoreThreads,
+      pendingAction: this.adminPromptPendingAction,
       contextLabel: context.contextLabel
     });
+  }
+
+  isAdminPromptActionPending(action = '', taskId = '') {
+    const pending = this.adminPromptPendingAction;
+    if (!pending || pending.action !== String(action ?? '').trim()) {
+      return false;
+    }
+
+    const normalizedTaskId = String(taskId ?? '').trim();
+    return !normalizedTaskId || pending.taskId === normalizedTaskId;
+  }
+
+  hasAdminPromptPendingAction() {
+    return Boolean(this.adminPromptPendingAction?.action);
+  }
+
+  setAdminPromptPendingAction(action = '', taskId = '') {
+    const normalizedAction = String(action ?? '').trim();
+    const normalizedTaskId = String(taskId ?? '').trim();
+    this.adminPromptPendingAction = normalizedAction
+      ? { action: normalizedAction, taskId: normalizedTaskId }
+      : null;
+    this.refreshAdminPromptHud();
+  }
+
+  clearAdminPromptPendingAction(action = '', taskId = '') {
+    if (!this.isAdminPromptActionPending(action, taskId)) {
+      return;
+    }
+
+    this.adminPromptPendingAction = null;
+    this.refreshAdminPromptHud();
+  }
+
+  mergeAdminPromptTask(task = null) {
+    if (!task?.id) {
+      return;
+    }
+
+    const normalizedTask = copyOwnEnumerableProperties(task);
+    let taskMerged = false;
+    for (let index = 0; index < this.adminPromptTasks.length; index += 1) {
+      if (this.adminPromptTasks[index]?.id !== normalizedTask.id) {
+        continue;
+      }
+
+      this.adminPromptTasks[index] = {
+        ...copyOwnEnumerableProperties(this.adminPromptTasks[index]),
+        ...normalizedTask
+      };
+      taskMerged = true;
+      break;
+    }
+    if (!taskMerged) {
+      this.adminPromptTasks.unshift(normalizedTask);
+    }
+
+    const threadId = String(normalizedTask.threadId || normalizedTask.id || '').trim();
+    if (!threadId) {
+      return;
+    }
+
+    const threadTasks = this.adminPromptThreadTasks.get(threadId);
+    if (!Array.isArray(threadTasks)) {
+      return;
+    }
+
+    let threadTaskMerged = false;
+    const mergedThreadTasks = [];
+    for (let index = 0; index < threadTasks.length; index += 1) {
+      const threadTask = threadTasks[index];
+      if (threadTask?.id === normalizedTask.id) {
+        mergedThreadTasks.push({
+          ...copyOwnEnumerableProperties(threadTask),
+          ...normalizedTask
+        });
+        threadTaskMerged = true;
+      } else {
+        mergedThreadTasks.push(threadTask);
+      }
+    }
+    if (!threadTaskMerged) {
+      mergedThreadTasks.push(normalizedTask);
+    }
+    this.adminPromptThreadTasks.set(threadId, mergedThreadTasks);
   }
 
   getAdminPromptVectorSnapshot(vector = null) {
@@ -4771,7 +4859,7 @@ export class Game {
       this.hud.showToast('Prompt is admin only.');
       return;
     }
-    if (this.adminPromptSubmitting) {
+    if (this.adminPromptSubmitting || this.hasAdminPromptPendingAction()) {
       return;
     }
 
@@ -4788,7 +4876,7 @@ export class Game {
     const context = this.getAdminPromptContext();
     this.adminPromptSubmitting = true;
     this.adminPromptError = '';
-    this.refreshAdminPromptHud();
+    this.setAdminPromptPendingAction('submit');
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(), {
         method: 'POST',
@@ -4812,15 +4900,17 @@ export class Game {
       this.adminPromptOpen = true;
       this.adminPromptActiveTab = 'threads';
       this.adminPromptSelectedTaskId = result.task?.id ?? '';
+      this.mergeAdminPromptTask(result.task);
       this.hud.clearAdminPromptText();
       this.hud.showToast('Codex task queued.');
+      this.refreshAdminPromptHud();
       await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Submit failed.', error);
       this.adminPromptError = error?.message ?? 'Codex task submit failed.';
     } finally {
       this.adminPromptSubmitting = false;
-      this.refreshAdminPromptHud();
+      this.clearAdminPromptPendingAction('submit');
     }
   }
 
@@ -4829,7 +4919,7 @@ export class Game {
     if (!id || !this.canUseAdminPrompt()) {
       return;
     }
-    if (this.adminPromptSubmitting) {
+    if (this.adminPromptSubmitting || this.hasAdminPromptPendingAction()) {
       return;
     }
 
@@ -4846,7 +4936,7 @@ export class Game {
     const context = this.getAdminPromptContext();
     this.adminPromptSubmitting = true;
     this.adminPromptError = '';
-    this.refreshAdminPromptHud();
+    this.setAdminPromptPendingAction('followup', id);
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/followups`), {
         method: 'POST',
@@ -4869,14 +4959,16 @@ export class Game {
 
       this.adminPromptActiveTab = 'threads';
       this.adminPromptSelectedTaskId = result.task?.id ?? id;
+      this.mergeAdminPromptTask(result.task);
       this.hud.showToast('Follow-up queued.');
+      this.refreshAdminPromptHud();
       await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Follow-up failed.', error);
       this.adminPromptError = error?.message ?? 'Prompt follow-up failed.';
     } finally {
       this.adminPromptSubmitting = false;
-      this.refreshAdminPromptHud();
+      this.clearAdminPromptPendingAction('followup', id);
     }
   }
 
@@ -4885,7 +4977,12 @@ export class Game {
     if (!id || !this.canUseAdminPrompt()) {
       return;
     }
+    if (this.hasAdminPromptPendingAction()) {
+      return;
+    }
 
+    this.adminPromptError = '';
+    this.setAdminPromptPendingAction('cancel-task', id);
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/cancel`), {
         method: 'POST',
@@ -4898,11 +4995,15 @@ export class Game {
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not cancel Codex task.');
       }
+      this.mergeAdminPromptTask(result.task);
+      this.refreshAdminPromptHud();
       await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Cancel failed.', error);
       this.adminPromptError = error?.message ?? 'Codex task cancel failed.';
       this.refreshAdminPromptHud();
+    } finally {
+      this.clearAdminPromptPendingAction('cancel-task', id);
     }
   }
 
@@ -4911,7 +5012,12 @@ export class Game {
     if (!id || !this.canUseAdminPrompt()) {
       return;
     }
+    if (this.hasAdminPromptPendingAction()) {
+      return;
+    }
 
+    this.adminPromptError = '';
+    this.setAdminPromptPendingAction('approve-deploy', id);
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/approve-deploy`), {
         method: 'POST',
@@ -4924,12 +5030,16 @@ export class Game {
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not approve deploy.');
       }
+      this.mergeAdminPromptTask(result.task);
       this.hud.showToast('Deploy approved for worker.');
+      this.refreshAdminPromptHud();
       await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Deploy approval failed.', error);
       this.adminPromptError = error?.message ?? 'Codex deploy approval failed.';
       this.refreshAdminPromptHud();
+    } finally {
+      this.clearAdminPromptPendingAction('approve-deploy', id);
     }
   }
 
@@ -4938,7 +5048,12 @@ export class Game {
     if (!id || !this.canUseAdminPrompt()) {
       return;
     }
+    if (this.hasAdminPromptPendingAction()) {
+      return;
+    }
 
+    this.adminPromptError = '';
+    this.setAdminPromptPendingAction('rollback', id);
     try {
       const response = await fetch(this.getAdminAgentTasksEndpoint(`${encodeURIComponent(id)}/rollback`), {
         method: 'POST',
@@ -4951,12 +5066,16 @@ export class Game {
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || 'Could not approve rollback.');
       }
+      this.mergeAdminPromptTask(result.task);
       this.hud.showToast('Rollback approved for worker.');
+      this.refreshAdminPromptHud();
       await this.refreshAdminPromptTasks({ force: true });
     } catch (error) {
       console.warn('[AgentTasks] Rollback approval failed.', error);
       this.adminPromptError = error?.message ?? 'Codex rollback approval failed.';
       this.refreshAdminPromptHud();
+    } finally {
+      this.clearAdminPromptPendingAction('rollback', id);
     }
   }
 

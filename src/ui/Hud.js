@@ -1559,6 +1559,74 @@ const AGENT_TASK_CODE_WORK_STATUSES = new Set([
 const ADMIN_PROMPT_THREAD_LIST_LIMIT = 10;
 const AGENT_TASK_WORKER_OFFLINE_AFTER_MS = 150 * 1000;
 
+function normalizeAdminPromptPendingAction(value = null) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const action = String(value.action ?? '').trim();
+  const taskId = String(value.taskId ?? '').trim();
+  if (!action) {
+    return null;
+  }
+
+  return { action, taskId };
+}
+
+function isAdminPromptPendingAction(pendingAction = null, action = '', taskId = '') {
+  const pending = normalizeAdminPromptPendingAction(pendingAction);
+  if (!pending || pending.action !== String(action ?? '').trim()) {
+    return false;
+  }
+
+  const normalizedTaskId = String(taskId ?? '').trim();
+  return !normalizedTaskId || pending.taskId === normalizedTaskId;
+}
+
+function getAdminPromptPendingStatusText(pendingAction = null) {
+  const pending = normalizeAdminPromptPendingAction(pendingAction);
+  if (!pending) {
+    return '';
+  }
+
+  if (pending.action === 'approve-deploy') {
+    return 'Approving deploy...';
+  }
+  if (pending.action === 'rollback') {
+    return 'Queueing rollback...';
+  }
+  if (pending.action === 'cancel-task') {
+    return 'Cancelling task...';
+  }
+  if (pending.action === 'followup') {
+    return 'Sending follow-up...';
+  }
+  if (pending.action === 'submit') {
+    return 'Submitting task...';
+  }
+  return 'Working...';
+}
+
+function createAdminPromptActionButton({
+  action = '',
+  label = '',
+  pendingLabel = '',
+  pending = false,
+  danger = false,
+  disabled = false,
+  type = 'button'
+} = {}) {
+  const isPending = Boolean(pending);
+  const className = `hud__admin-prompt-small${danger ? ' hud__admin-prompt-small--danger' : ''}${isPending ? ' is-pending' : ''}`;
+  const safeType = type === 'submit' ? 'submit' : 'button';
+  const buttonAction = action ? ` data-admin-prompt-action="${escapeHtml(action)}"` : '';
+  const disabledAttr = disabled || isPending ? ' disabled' : '';
+  const pendingAttr = isPending ? ' aria-busy="true" data-admin-prompt-action-pending="true"' : '';
+  const buttonLabel = isPending ? (pendingLabel || label) : label;
+  const spinner = isPending ? '<span class="hud__admin-prompt-spinner" aria-hidden="true"></span>' : '';
+  return `<button class="${escapeHtml(className)}" type="${safeType}"${buttonAction}${disabledAttr}${pendingAttr}>${spinner}<span>${escapeHtml(buttonLabel)}</span></button>`;
+}
+
 function isAgentTaskDeployQueued(task = {}) {
   return String(task?.status ?? '') === 'ready_for_review'
     && Number(task?.deployApprovedAt ?? 0) > 0
@@ -2102,13 +2170,16 @@ function createAgentTaskThreadMessageMarkup(threadTasks = []) {
   return markup;
 }
 
-function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
+function createAgentTaskDetailMarkup(task = null, threadTasks = [], {
+  pendingAction = null
+} = {}) {
   if (!task) {
     return '<div class="hud__admin-prompt-empty">Select a thread to inspect it.</div>';
   }
 
   const safeThreadTasks = threadTasks.length ? threadTasks : [task];
   const latestTask = getAgentThreadLatestTask(safeThreadTasks) ?? task;
+  const latestTaskId = String(latestTask.id ?? '').trim();
   const status = String(latestTask.status ?? 'queued');
   const branch = String(latestTask.branch ?? '').trim();
   const commitSha = String(latestTask.commitSha ?? '').trim();
@@ -2116,9 +2187,19 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
   const canApproveDeploy = status === 'ready_for_review' && !deployApproved;
   const canCancel = status === 'queued' || status === 'claimed' || status === 'preparing';
   const canRollback = status === 'deployed' && Number(latestTask.rollbackApprovedAt ?? 0) <= 0;
+  const approveDeployPending = isAdminPromptPendingAction(pendingAction, 'approve-deploy', latestTaskId);
+  const cancelPending = isAdminPromptPendingAction(pendingAction, 'cancel-task', latestTaskId);
+  const rollbackPending = isAdminPromptPendingAction(pendingAction, 'rollback', latestTaskId);
+  const followupPending = isAdminPromptPendingAction(pendingAction, 'followup', latestTaskId);
+  const actionPending = approveDeployPending || cancelPending || rollbackPending || followupPending;
   const rollbackApproved = Number(latestTask.rollbackApprovedAt ?? 0) > 0 && status !== 'rolled_back';
   const rollbackCommitSha = String(latestTask.rollbackCommitSha ?? '').trim();
-  const threadBusy = isAgentThreadBusy(safeThreadTasks);
+  const threadBusy = isAgentThreadBusy(safeThreadTasks) || actionPending;
+  const followupPlaceholder = followupPending
+    ? 'Sending follow-up...'
+    : threadBusy
+      ? 'Worker is active...'
+      : 'Continue this thread...';
   const deployTargets = [];
   if (Array.isArray(latestTask.deployTargets)) {
     for (let index = 0; index < latestTask.deployTargets.length; index += 1) {
@@ -2167,13 +2248,38 @@ function createAgentTaskDetailMarkup(task = null, threadTasks = []) {
         ${createAgentTaskThreadMessageMarkup(safeThreadTasks)}
       </div>
       <div class="hud__admin-prompt-detail-actions">
-        ${canApproveDeploy ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="approve-deploy">Approve Deploy</button>' : ''}
-        ${canRollback ? '<button class="hud__admin-prompt-small hud__admin-prompt-small--danger" type="button" data-admin-prompt-action="rollback">Rollback</button>' : ''}
-        ${canCancel ? '<button class="hud__admin-prompt-small" type="button" data-admin-prompt-action="cancel-task">Cancel</button>' : ''}
+        ${canApproveDeploy || approveDeployPending ? createAdminPromptActionButton({
+          action: 'approve-deploy',
+          label: 'Approve Deploy',
+          pendingLabel: 'Approving...',
+          pending: approveDeployPending,
+          disabled: actionPending && !approveDeployPending
+        }) : ''}
+        ${canRollback || rollbackPending ? createAdminPromptActionButton({
+          action: 'rollback',
+          label: 'Rollback',
+          pendingLabel: 'Queueing...',
+          pending: rollbackPending,
+          danger: true,
+          disabled: actionPending && !rollbackPending
+        }) : ''}
+        ${canCancel || cancelPending ? createAdminPromptActionButton({
+          action: 'cancel-task',
+          label: 'Cancel',
+          pendingLabel: 'Cancelling...',
+          pending: cancelPending,
+          disabled: actionPending && !cancelPending
+        }) : ''}
       </div>
       <form class="hud__admin-prompt-followup" data-admin-prompt-followup-form>
-        <textarea class="hud__admin-prompt-followup-input" data-admin-prompt-followup-prompt maxlength="6000" rows="3" placeholder="${threadBusy ? 'Worker is active...' : 'Continue this thread...'}" ${threadBusy ? 'disabled' : ''}></textarea>
-        <button class="hud__admin-prompt-small" type="submit" ${threadBusy ? 'disabled' : ''}>Send Follow-up</button>
+        <textarea class="hud__admin-prompt-followup-input" data-admin-prompt-followup-prompt maxlength="6000" rows="3" placeholder="${escapeHtml(followupPlaceholder)}" ${threadBusy ? 'disabled' : ''}></textarea>
+        ${createAdminPromptActionButton({
+          label: 'Send Follow-up',
+          pendingLabel: 'Sending...',
+          pending: followupPending,
+          disabled: threadBusy,
+          type: 'submit'
+        })}
       </form>
     </article>
   `;
@@ -4807,7 +4913,8 @@ export class Hud {
       error: '',
       autoDeployAvailable: false,
       hasMoreThreads: false,
-      contextLabel: 'Game'
+      contextLabel: 'Game',
+      pendingAction: null
     };
     this.adminPromptLayout = null;
     this.adminPromptLayoutCustomized = false;
@@ -7019,6 +7126,9 @@ export class Hud {
 
       event.preventDefault();
       event.stopPropagation();
+      if (actionTarget instanceof HTMLButtonElement && actionTarget.disabled) {
+        return;
+      }
       const action = actionTarget.getAttribute('data-admin-prompt-action') ?? '';
       if (action === 'close') {
         onClose?.();
@@ -10510,7 +10620,8 @@ export class Hud {
     error = this.adminPromptState.error,
     autoDeployAvailable = this.adminPromptState.autoDeployAvailable,
     hasMoreThreads = this.adminPromptState.hasMoreThreads,
-    contextLabel = this.adminPromptState.contextLabel
+    contextLabel = this.adminPromptState.contextLabel,
+    pendingAction = this.adminPromptState.pendingAction
   } = {}) {
     const safeTasks = Array.isArray(tasks) ? tasks : [];
     const safeActiveTab = getAdminPromptTabId(activeTab);
@@ -10555,7 +10666,8 @@ export class Hud {
       error: String(error ?? ''),
       autoDeployAvailable: Boolean(autoDeployAvailable),
       hasMoreThreads: Boolean(hasMoreThreads),
-      contextLabel: String(contextLabel ?? 'Game')
+      contextLabel: String(contextLabel ?? 'Game'),
+      pendingAction: normalizeAdminPromptPendingAction(pendingAction)
     };
     this.renderAdminPromptPanel();
     this.syncAdminPromptDurationTimer();
@@ -10772,11 +10884,13 @@ export class Hud {
       error,
       autoDeployAvailable,
       hasMoreThreads,
-      contextLabel
+      contextLabel,
+      pendingAction
     } = this.adminPromptState;
+    const pendingStatusText = getAdminPromptPendingStatusText(pendingAction);
     this.adminPromptRoot.hidden = !available || !open;
     this.adminPromptRoot.classList.toggle('is-visible', Boolean(available && open));
-    this.adminPromptRoot.classList.toggle('is-loading', loading || submitting);
+    this.adminPromptRoot.classList.toggle('is-loading', loading || submitting || Boolean(pendingAction));
     if (!open || activeTab === 'new') {
       this.lastAdminPromptSelectedThreadId = '';
       this.lastAdminPromptBottomScrollSignature = '';
@@ -10790,11 +10904,14 @@ export class Hud {
       this.adminPromptToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
     }
     if (this.adminPromptRefresh) {
-      this.adminPromptRefresh.disabled = loading || submitting;
+      this.adminPromptRefresh.disabled = loading || submitting || Boolean(pendingAction);
     }
     if (this.adminPromptSubmit) {
-      this.adminPromptSubmit.disabled = submitting;
-      this.adminPromptSubmit.textContent = submitting ? 'Submitting' : 'Submit';
+      this.adminPromptSubmit.disabled = submitting || Boolean(pendingAction);
+      this.adminPromptSubmit.toggleAttribute('aria-busy', submitting);
+      this.adminPromptSubmit.innerHTML = submitting
+        ? '<span class="hud__admin-prompt-spinner" aria-hidden="true"></span><span>Submitting...</span>'
+        : 'Submit';
     }
     if (this.adminPromptAutoOption) {
       this.adminPromptAutoOption.hidden = !autoDeployAvailable;
@@ -10807,13 +10924,15 @@ export class Hud {
       const threadCount = filterAdminPromptTasksForTab(tasks).length;
       this.adminPromptStatus.textContent = error
         ? error
-        : submitting
-          ? 'Submitting task...'
-          : loading
-            ? 'Refreshing tasks...'
-            : threadCount
-              ? `${threadCount} prompt thread${threadCount === 1 ? '' : 's'}`
-              : 'Codex worker ready';
+        : pendingStatusText
+          ? pendingStatusText
+          : submitting
+            ? 'Submitting task...'
+            : loading
+              ? 'Refreshing tasks...'
+              : threadCount
+                ? `${threadCount} prompt thread${threadCount === 1 ? '' : 's'}`
+                : 'Codex worker ready';
       this.adminPromptStatus.classList.toggle('is-error', Boolean(error));
     }
     if (this.adminPromptContext) {
@@ -10882,6 +11001,7 @@ export class Hud {
       durationTick,
       threadLimit: this.adminPromptThreadLimit,
       hasMoreThreads,
+      pendingAction,
       tasks: taskSignatureRows
     });
     if (this.adminPromptTasks && taskListSignature !== this.lastAdminPromptTaskListSignature) {
@@ -10963,7 +11083,8 @@ export class Hud {
         changedFilesLength: Array.isArray(selectedTask?.changedFiles) ? selectedTask.changedFiles.length : 0,
         summary: selectedTask?.summary ?? '',
         error: selectedTask?.error ?? '',
-        prompt: selectedTask?.prompt ?? ''
+        prompt: selectedTask?.prompt ?? '',
+        pendingAction
       });
       const bottomScrollSignature = JSON.stringify({
         threadId: selectedThreadId,
@@ -10992,7 +11113,8 @@ export class Hud {
       this.lastAdminPromptDetailSignature = detailSignature;
       this.adminPromptDetail.innerHTML = createAgentTaskDetailMarkup(
         selectedTask,
-        selectedThreadTasks
+        selectedThreadTasks,
+        { pendingAction }
       );
       if (shouldScrollToBottom) {
         this.scrollAdminPromptThreadToBottom();

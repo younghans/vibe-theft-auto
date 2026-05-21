@@ -9994,6 +9994,10 @@ body.is-admin-prompt-resizing * {
 
 .hud__admin-prompt-submit,
 .hud__admin-prompt-small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   min-height: 36px;
   padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -10004,9 +10008,12 @@ body.is-admin-prompt-resizing * {
   font: inherit;
   font-size: 13px;
   font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .hud__admin-prompt-submit {
+  min-width: 96px;
   background: linear-gradient(180deg, #75e3c1, #59b9ff);
   color: #111820;
 }
@@ -10021,6 +10028,17 @@ body.is-admin-prompt-resizing * {
 .hud__admin-prompt-small:disabled {
   opacity: 0.52;
   cursor: default;
+}
+
+.hud__admin-prompt-small.is-pending {
+  opacity: 0.78;
+}
+
+.hud__admin-prompt-submit .hud__admin-prompt-spinner,
+.hud__admin-prompt-small .hud__admin-prompt-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
 }
 
 .hud__admin-prompt-form-row {
@@ -10315,6 +10333,10 @@ body.is-admin-prompt-resizing * {
   gap: 8px;
 }
 
+.hud__admin-prompt-detail-actions .hud__admin-prompt-small {
+  min-width: 112px;
+}
+
 .hud__admin-prompt-bubble header {
   align-items: center;
   justify-content: space-between;
@@ -10411,6 +10433,10 @@ body.is-admin-prompt-resizing * {
   );
 }
 
+.hud__admin-prompt-followup .hud__admin-prompt-small {
+  min-width: 136px;
+}
+
 .hud__admin-prompt-followup-input {
   min-height: 58px;
   flex: 1 1 auto;
@@ -10459,6 +10485,18 @@ body.is-admin-prompt-resizing * {
   color: rgba(244, 238, 226, 0.56);
   font-size: 12px;
   font-weight: 800;
+}
+
+@container (max-width: 560px) {
+  .hud__admin-prompt-followup {
+    display: grid;
+  }
+
+  .hud__admin-prompt-detail-actions .hud__admin-prompt-small,
+  .hud__admin-prompt-followup .hud__admin-prompt-small {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .hud__school-ready,
