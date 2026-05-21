@@ -76,6 +76,8 @@ const EMOTE_FADE_IN = 0.12;
 const EMOTE_FADE_OUT = 0.18;
 const LIMP_EMOTE_ID = 'limp';
 const DAMAGE_FEEDBACK_DURATION_MS = 380;
+const DAMAGE_STAGGER_DISTANCE_PER_STRENGTH = 0.38;
+const DAMAGE_STAGGER_TURN_PER_STRENGTH = 0.34;
 const DAMAGE_FLASH_COLOR = new THREE.Color(0xff5b73);
 const DAMAGE_EMISSIVE_COLOR = new THREE.Color(0xff3154);
 const DAMAGE_RING_COLOR = new THREE.Color(0xff7b88);
@@ -2163,30 +2165,36 @@ export async function createPlayer(library, {
     const damageEnvelope = damageActive ? Math.pow(1 - damageProgress, 1.25) : 0;
     const damageWave = damageActive ? Math.sin(damageProgress * Math.PI * 3.4) : 0;
     const damagePulse = damageActive ? Math.sin(damageProgress * Math.PI) : 0;
-      const damageSideX = -damageDirection.z;
-      const damageSideZ = damageDirection.x;
+    const damageSideX = -damageDirection.z;
+    const damageSideZ = damageDirection.x;
     const damageJolt = damageEnvelope * 0.18 * damageFeedbackStrength;
     const damageShimmy = damageWave * damageEnvelope * 0.09 * damageFeedbackStrength;
-      const damageLift = damagePulse * 0.12 * Math.min(1.35, damageFeedbackStrength);
-      const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
-      const jabLungeOffset = PUNCH_LUNGE_EMOTE_IDS.has(activeEmoteId)
-        ? getJabLungeOffset(Date.now() - activeEmoteStartedAt, activePunchLungeBonus)
-        : 0;
-      const jabLungeLocalYaw = normalizeAngle(aimRotationY - anchor.rotation.y);
-      const jabLungeLocalX = Math.sin(jabLungeLocalYaw) * jabLungeOffset;
-      const jabLungeLocalZ = Math.cos(jabLungeLocalYaw) * jabLungeOffset;
-      const damageFlashAmount = damageActive
-        ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
-        : 0;
+    const damageStaggerScale = Math.max(0, damageFeedbackStrength - 1);
+    const damageStagger = damageEnvelope * damageStaggerScale * DAMAGE_STAGGER_DISTANCE_PER_STRENGTH;
+    const damageYaw = damageActive
+      ? normalizeAngle(Math.atan2(damageDirection.x, damageDirection.z) - anchor.rotation.y)
+      : 0;
+    const damageTurn = THREE.MathUtils.clamp(damageYaw, -1.1, 1.1) * damageEnvelope * damageStaggerScale * DAMAGE_STAGGER_TURN_PER_STRENGTH;
+    const damageLift = damagePulse * 0.12 * Math.min(1.35, damageFeedbackStrength);
+    const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
+    const jabLungeOffset = PUNCH_LUNGE_EMOTE_IDS.has(activeEmoteId)
+      ? getJabLungeOffset(Date.now() - activeEmoteStartedAt, activePunchLungeBonus)
+      : 0;
+    const jabLungeLocalYaw = normalizeAngle(aimRotationY - anchor.rotation.y);
+    const jabLungeLocalX = Math.sin(jabLungeLocalYaw) * jabLungeOffset;
+    const jabLungeLocalZ = Math.cos(jabLungeLocalYaw) * jabLungeOffset;
+    const damageFlashAmount = damageActive
+      ? Math.min(1, (damageEnvelope * 0.72) + (Math.abs(damageWave) * 0.2))
+      : 0;
 
-      visual.position.set(
-        (damageDirection.x * damageJolt) + (damageSideX * damageShimmy) + jabLungeLocalX,
-        (recoilAmount * 0.03) + damageLift - footPlantGroundingOffsetY,
-        (damageDirection.z * damageJolt) + (damageSideZ * damageShimmy) + jabLungeLocalZ
-      );
+    visual.position.set(
+      (damageDirection.x * (damageJolt + damageStagger)) + (damageSideX * damageShimmy) + jabLungeLocalX,
+      (recoilAmount * 0.03) + damageLift - footPlantGroundingOffsetY,
+      (damageDirection.z * (damageJolt + damageStagger)) + (damageSideZ * damageShimmy) + jabLungeLocalZ
+    );
     visual.rotation.set(
       (-recoilAmount * 0.08) - (damageDirection.z * damageEnvelope * 0.12 * damageFeedbackStrength) + (damageWave * 0.025),
-      damageWave * damageEnvelope * 0.025,
+      damageTurn + (damageWave * damageEnvelope * 0.025),
       (recoilAmount * 0.015) + (damageDirection.x * damageEnvelope * 0.14 * damageFeedbackStrength) + (damageWave * 0.045)
     );
 
