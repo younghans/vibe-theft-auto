@@ -26,6 +26,8 @@ import {
 } from '../shared/combatConstants.js';
 import {
   PLAYER_RESPAWN_COST,
+  findDrJoeRespawnNpc,
+  getRandomDrJoeRespawnLine,
   getHospitalRespawnPoint
 } from '../shared/respawnRules.js';
 import { getCombatPickupSpawnDefinitions } from '../shared/combatPickupDefinitions.js';
@@ -3191,6 +3193,22 @@ export class NpcServiceMock {
     return getHospitalRespawnPoint(this.worldState, getBuilderItemById);
   }
 
+  playDrJoeRespawnLine(spawn) {
+    const npc = findDrJoeRespawnNpc(this.state.npcs, spawn);
+    if (!npc) {
+      return '';
+    }
+
+    const line = getRandomDrJoeRespawnLine();
+    npc.busy = false;
+    this.setNpcChatPhase(npc, 'done', line, { bumpSeq: true });
+    this.appendTranscript(
+      npc.id,
+      makeTranscriptEntry(`local_${++this.sequence}`, 'npc', npc.name, line)
+    );
+    return line;
+  }
+
   finishRespawn(sessionId, player) {
     const spawn = this.chooseHospitalRespawnPoint();
     player.x = quantizePosition(spawn.x);
@@ -3222,11 +3240,14 @@ export class NpcServiceMock {
     player.emoteStartedAt = 0;
     player.emoteSeq += 1;
     player.money = Math.trunc(Number(player.money ?? 0) || 0) - PLAYER_RESPAWN_COST;
+    const drJoeLine = this.playDrJoeRespawnLine(spawn);
     this.emitCombatEvent({
       type: 'respawn',
       playerId: sessionId,
       x: player.x,
-      z: player.z
+      z: player.z,
+      rotationY: player.rotationY,
+      drJoeLine
     });
   }
 

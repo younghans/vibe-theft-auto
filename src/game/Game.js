@@ -2987,21 +2987,25 @@ export class Game {
     return fallback.clone();
   }
 
-  startPassiveTrafficCarCrashCutscene() {
+  startPlayerRecoveryCutscene({ seqPrefix = 'player-recovery', facing = undefined } = {}) {
     if (!this.player || this.rentIntroCutscene) {
       return false;
     }
 
     const now = performance.now();
-    const facing = Number.isFinite(this.player.object?.rotation?.y)
-      ? this.player.object.rotation.y
-      : 0;
+    const recoveryFacing = Number.isFinite(facing)
+      ? facing
+      : (
+          Number.isFinite(this.player.object?.rotation?.y)
+            ? this.player.object.rotation.y
+            : 0
+        );
     this.rentIntroCutscene = {
-      seq: `passive-traffic-car-crash:${Math.round(now)}`,
+      seq: `${seqPrefix}:${Math.round(now)}`,
       npcId: '',
       startedAt: now,
       endsAt: now + RENT_INTRO_CUTSCENE_TOTAL_MS,
-      facing,
+      facing: recoveryFacing,
       standUpPlayed: false,
       playerVisibleBefore: this.player.object?.visible !== false
     };
@@ -3012,6 +3016,18 @@ export class Game {
     this.updateRentIntroCutsceneCamera(0);
     this.hud.setRentIntroCutsceneState({ visible: true, blink: 1 });
     return true;
+  }
+
+  startPassiveTrafficCarCrashCutscene() {
+    return this.startPlayerRecoveryCutscene({
+      seqPrefix: 'passive-traffic-car-crash'
+    });
+  }
+
+  startRespawnRecoveryCutscene() {
+    return this.startPlayerRecoveryCutscene({
+      seqPrefix: 'player-respawn'
+    });
   }
 
   getPassiveTrafficPlayerCollisionTarget() {
@@ -7596,6 +7612,35 @@ export class Game {
     this.currentAimMode = false;
     this.player.setAimingState(false);
     this.updateCamera(this.currentAimDirection, false, { snap: true });
+  }
+
+  syncLocalRespawnFacing(localPlayerState = null) {
+    if (!this.player) {
+      return;
+    }
+
+    const rotationY = Number.isFinite(localPlayerState?.rotationY)
+      ? localPlayerState.rotationY
+      : (
+          Number.isFinite(localPlayerState?.aimRotationY)
+            ? localPlayerState.aimRotationY
+            : this.player.object.rotation.y
+        );
+
+    this.player.setFacing(rotationY);
+    this.player.setAimRotation(rotationY);
+    this.currentAimDirection.set(Math.sin(rotationY), 0, Math.cos(rotationY));
+    if (this.currentAimDirection.lengthSq() <= 0.0001) {
+      this.currentAimDirection.set(0, 0, 1);
+    } else {
+      this.currentAimDirection.normalize();
+    }
+    this.currentAimMode = false;
+    this.player.setAimingState(false);
+    if (this.firstPersonModeActive) {
+      this.firstPersonYaw = normalizeAngleRadians(rotationY);
+      this.firstPersonPitch = 0;
+    }
   }
 
   resetLocalPlayerKinematics(position = this.player?.position ?? null, now = performance.now()) {
@@ -19479,7 +19524,8 @@ export class Game {
       this.closeQuickChat();
       this.playSoundEffect(this.rentChaChingSound);
       this.hud.showToast('Respawned.');
-      this.updateCamera(this.currentAimDirection, false, { snap: true });
+      this.syncLocalRespawnFacing(localPlayerState);
+      this.startRespawnRecoveryCutscene();
     }
 
     if (!this.localStateInitialized || respawned || died) {

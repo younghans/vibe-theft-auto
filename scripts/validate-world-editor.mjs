@@ -111,6 +111,12 @@ import {
   resolveRentIntroPlan
 } from '../src/shared/rentIntro.js';
 import {
+  DR_JOE_RESPAWN_LINES,
+  findDrJoeRespawnNpc,
+  getHospitalRespawnPoint,
+  isDrJoeNpc
+} from '../src/shared/respawnRules.js';
+import {
   applyMarthaNpcBaseStyle,
   createMarthaNpcAdornment,
   shouldApplyMarthaNpcAdornment
@@ -2190,6 +2196,7 @@ function validateCustomPropCatalogItems() {
   const hudSource = readFileSync(new URL('../src/ui/Hud.js', import.meta.url), 'utf8');
   const worldBuilderSource = readFileSync(new URL('../src/world/WorldBuilder.js', import.meta.url), 'utf8');
   const worldStateSource = readFileSync(new URL('../src/world/WorldState.js', import.meta.url), 'utf8');
+  const worldRoomSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
 
   const portal = VIBE_JAM_PORTAL_INTERACTABLE.portal;
   const portalSpawnOffset = portal.spawnLocalOffset ?? [0, 0];
@@ -2722,6 +2729,45 @@ function validateCustomPropCatalogItems() {
     gameSource.match(/const\s+RENT_INTRO_CUTSCENE_NPC_DISTANCE\s*=\s*([0-9.]+);/)?.[1]
   );
   assert(rentIntroNpcDistance >= 2.4, 'Rent intro landlord staging should leave first-person breathing room');
+  const defaultHospitalTile = defaultWorldLayout.tiles.find((placement) => placement.itemId === 'hospital_building_wide');
+  const defaultHospitalItem = getBuilderItemById(defaultHospitalTile?.itemId);
+  const defaultHospitalRespawn = getHospitalRespawnPoint(defaultWorldLayout.tiles, getBuilderItemById);
+  const defaultHospitalCenter = getTileCenterWorldPosition(
+    defaultHospitalItem,
+    defaultHospitalTile?.cell?.[0],
+    defaultHospitalTile?.cell?.[1],
+    defaultHospitalTile?.rotationQuarterTurns
+  );
+  const respawnFacingX = Math.sin(defaultHospitalRespawn.rotationY);
+  const respawnFacingZ = Math.cos(defaultHospitalRespawn.rotationY);
+  const hospitalDirection = new Vector3(
+    defaultHospitalCenter.x - defaultHospitalRespawn.x,
+    0,
+    defaultHospitalCenter.z - defaultHospitalRespawn.z
+  ).normalize();
+  assert(
+    (respawnFacingX * hospitalDirection.x) + (respawnFacingZ * hospitalDirection.z) > 0.99,
+    'Hospital respawn should point the player directly at the hospital frontage'
+  );
+  const defaultDrJoe = findDrJoeRespawnNpc(defaultWorldLayout.npcs, defaultHospitalRespawn);
+  assert(isDrJoeNpc(defaultDrJoe), 'Default world should seed Dr. Joe next to the hospital respawn');
+  assert(
+    DR_JOE_RESPAWN_LINES.length >= 4
+      && DR_JOE_RESPAWN_LINES.every((line) => /health|breathe|hydration|head|hands|sleep|circulation|recovery/i.test(line)),
+    'Dr. Joe respawn lines should be varied and health-educational'
+  );
+  assert(
+    gameSource.includes('startRespawnRecoveryCutscene')
+      && gameSource.includes('syncLocalRespawnFacing(localPlayerState)')
+      && gameSource.includes("seqPrefix: 'player-respawn'"),
+    'Client respawns should reuse the blink and stand-up recovery cutscene while honoring the hospital-facing rotation'
+  );
+  assert(
+    worldRoomSource.includes('playDrJoeRespawnLine')
+      && worldRoomSource.includes('findDrJoeRespawnNpc(this.state.npcs, spawn)')
+      && readRepoText('src/npc/NpcServiceMock.js').includes('playDrJoeRespawnLine'),
+    'Server and local mock respawns should make nearby Dr. Joe say a random health tip'
+  );
 
   const instrumentCluster = getBuilderItemById('instrument_cluster');
   assert(instrumentCluster, 'Instrument cluster prop should exist');

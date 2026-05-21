@@ -62,6 +62,7 @@ const BUILDING_PLANS = [
   { cell: [1, 4], itemId: 'police_station_building', angle: Math.PI, label: 'Police Station', action: 'The garage door works, but the bay is secured for future updates.' },
   { cell: [2, 4], itemId: 'building_e', angle: Math.PI, label: 'Taxi dispatch', action: 'Taxi missions can route through this office.' },
   { cell: [4, 4], itemId: 'building_b', angle: -Math.PI / 2, label: 'Pool hall', action: 'Mini-games can anchor this corner later.' },
+  { cell: [3, 5], itemId: 'hospital_building_wide', angle: 0, label: 'Hospital', action: 'The front desk is ready for respawns.' },
   { cell: [2, 2], itemId: 'building_h', angle: Math.PI, label: 'Downtown apartments', action: 'Interiors will open up in a later milestone.' },
   { cell: [-2, -2], itemId: 'building_c', angle: 0, label: 'Quick cash loans', action: 'This slot is ready for shady finance interactions.' }
 ];
@@ -281,6 +282,15 @@ const NPC_PLANS = [
     prompt: 'You are Roth, the pawn shop owner in Vibe Theft Auto. Keep answers short, guarded, and transactional. You sell cigarettes for twenty bucks and pistols for fifty.',
     interactRadius: 5.4,
     pawnShopOwnerEnabled: true
+  },
+  {
+    id: 'npc_dr_joe',
+    modelId: 'lewis',
+    position: [44.8, 84.5],
+    angle: Math.PI,
+    name: 'Dr. Joe',
+    prompt: 'You are Dr. Joe, the hospital doctor in Vibe Theft Auto. Keep answers short, practical, and health-focused without sounding too serious.',
+    interactRadius: 5.6
   }
 ];
 

@@ -31,6 +31,8 @@ import {
 } from '../../src/shared/combatConstants.js';
 import {
   PLAYER_RESPAWN_COST,
+  findDrJoeRespawnNpc,
+  getRandomDrJoeRespawnLine,
   getHospitalRespawnPoint
 } from '../../src/shared/respawnRules.js';
 import { getCombatPickupSpawnDefinitions } from '../../src/shared/combatPickupDefinitions.js';
@@ -1852,6 +1854,19 @@ export class WorldRoom extends Room {
     return getHospitalRespawnPoint(this.worldState, getBuilderItemById);
   }
 
+  playDrJoeRespawnLine(spawn) {
+    const npc = findDrJoeRespawnNpc(this.state.npcs, spawn);
+    if (!npc) {
+      return '';
+    }
+
+    const line = getRandomDrJoeRespawnLine();
+    npc.busy = false;
+    this.setNpcChatPhase(npc, 'done', line, { bumpSeq: true });
+    this.appendNpcReplyTranscript(npc, line);
+    return line;
+  }
+
   getPlayerMeta(sessionId) {
     if (!this.playerPositionMeta.has(sessionId)) {
       const player = this.state.players.get(sessionId);
@@ -3577,11 +3592,14 @@ export class WorldRoom extends Room {
     meta.lastPunchComboStep = 0;
     meta.lastShotAt = 0;
     meta.healthRegenCarryMs = 0;
+    const drJoeLine = this.playDrJoeRespawnLine(spawn);
     this.broadcastCombatEvent({
       type: 'respawn',
       playerId: sessionId,
       x: player.x,
-      z: player.z
+      z: player.z,
+      rotationY: player.rotationY,
+      drJoeLine
     });
     this.queuePlayerSnapshotSave(sessionId);
   }
