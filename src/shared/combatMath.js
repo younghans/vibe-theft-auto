@@ -27,6 +27,37 @@ export function normalizeAimVector(x, z) {
   };
 }
 
+export function rollHitChance(hitChance, random = Math.random) {
+  const chance = Math.max(0, Math.min(1, Number(hitChance)));
+  return random() <= chance;
+}
+
+export function rotateAimVector(aim, angleRad) {
+  const angle = Number(angleRad);
+  if (!Number.isFinite(angle) || Math.abs(angle) <= 0.0001) {
+    return normalizeAimVector(aim?.x ?? 0, aim?.z ?? 1);
+  }
+
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return normalizeAimVector(
+    ((aim?.x ?? 0) * cos) - ((aim?.z ?? 1) * sin),
+    ((aim?.x ?? 0) * sin) + ((aim?.z ?? 1) * cos)
+  );
+}
+
+export function applyRandomAimSpread(aim, {
+  minAngleRad = 0,
+  maxAngleRad = minAngleRad,
+  random = Math.random
+} = {}) {
+  const minAngle = Math.max(0, Number(minAngleRad) || 0);
+  const maxAngle = Math.max(minAngle, Number(maxAngleRad) || minAngle);
+  const spread = minAngle + ((maxAngle - minAngle) * random());
+  const direction = random() < 0.5 ? -1 : 1;
+  return rotateAimVector(aim, spread * direction);
+}
+
 export function clampToWorldBounds(x, z) {
   return {
     x: Math.min(WORLD_HALF_EXTENT, Math.max(-WORLD_HALF_EXTENT, Number.isFinite(x) ? x : 0)),

@@ -3,7 +3,11 @@ import {
   DROPPED_PICKUP_DESPAWN_MS,
   HIT_REACTION_HEAD,
   NPC_PUNCH_DAMAGE,
+  NPC_PUNCH_HIT_CHANCE,
   NPC_WEAPON_DAMAGE,
+  NPC_WEAPON_HIT_CHANCE,
+  NPC_WEAPON_MISS_MAX_ANGLE_RAD,
+  NPC_WEAPON_MISS_MIN_ANGLE_RAD,
   PICKUP_INTERACT_RADIUS,
   PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_HITBOX_RADIUS,
@@ -185,13 +189,15 @@ import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../play
 import {
   chooseFarthestSpawnPoint,
   chooseAimAssistTarget,
+  applyRandomAimSpread,
   capsuleCircleIntersection,
   clampToWorldBounds,
   distance2D,
   distanceSquared2D,
   normalizeAimVector,
   rayCircleIntersectionDistance,
-  rayRectIntersectionDistance
+  rayRectIntersectionDistance,
+  rollHitChance
 } from '../shared/combatMath.js';
 import {
   PUNCH_COMBO_HOOK_STEP,
@@ -3974,13 +3980,19 @@ export class NpcServiceMock {
 
   performNpcShot(npcId, npc, targetPosition, now = Date.now()) {
     const aim = normalizeAimVector(targetPosition.x - npc.x, targetPosition.z - npc.z);
+    const shotAim = rollHitChance(NPC_WEAPON_HIT_CHANCE)
+      ? aim
+      : applyRandomAimSpread(aim, {
+          minAngleRad: NPC_WEAPON_MISS_MIN_ANGLE_RAD,
+          maxAngleRad: NPC_WEAPON_MISS_MAX_ANGLE_RAD
+        });
     const shotOrigin = {
       x: npc.x + aim.x * NPC_SHOT_ORIGIN_FORWARD_OFFSET,
       z: npc.z + aim.z * NPC_SHOT_ORIGIN_FORWARD_OFFSET
     };
     npc.rotationY = quantizeRotation(Math.atan2(aim.x, aim.z));
     npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
-    const shot = this.resolveShotFromNpc(npcId, npc, aim, shotOrigin);
+    const shot = this.resolveShotFromNpc(npcId, npc, shotAim, shotOrigin);
 
     this.emitCombatEvent({
       type: 'shot',
@@ -4038,6 +4050,10 @@ export class NpcServiceMock {
     }
 
     const now = Date.now();
+    if (!rollHitChance(NPC_PUNCH_HIT_CHANCE)) {
+      return;
+    }
+
     const hit = this.resolvePunchFromNpc(npcId, { x: npc.x, z: npc.z }, aim);
 
     if (hit.kind !== 'miss') {
