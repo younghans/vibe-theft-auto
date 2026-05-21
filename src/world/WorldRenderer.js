@@ -60,6 +60,7 @@ import {
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+const STATIC_INSTANCE_BATCH_MIN_COUNT = 2;
 const NON_SHADOW_CASTING_TILE_IDS = new Set([
   'lot_base',
   'basketball_court_half'
@@ -410,6 +411,11 @@ function shouldWorldItemCastShadow(item) {
   }
 
   return true;
+}
+
+function isLocalWorldDebugHost() {
+  const hostname = globalThis.location?.hostname ?? '';
+  return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
 function isInlineInteriorMode(mode = '') {
@@ -802,6 +808,15 @@ function extractPlacementId(node) {
   return null;
 }
 
+function getInstancedPlacementId(intersection) {
+  const object = intersection?.object;
+  if (!object?.isInstancedMesh || !Number.isInteger(intersection.instanceId)) {
+    return null;
+  }
+
+  return object.userData?.instancePlacementIds?.[intersection.instanceId] ?? null;
+}
+
 function isNodeVisibleWithinRoot(node, root) {
   let current = node;
   while (current) {
@@ -1120,6 +1135,50 @@ function getVisibleObjectBounds(root, bounds, nodeBounds) {
   return boxHasFiniteExtents(bounds) ? bounds : null;
 }
 
+function collectRenderableMeshes(root, target = []) {
+  target.length = 0;
+  root?.updateWorldMatrix?.(true, true);
+  root?.traverse?.((node) => {
+    if (!node.isMesh || node.isSkinnedMesh || !node.geometry || !node.material) {
+      return;
+    }
+    target.push(node);
+  });
+  return target;
+}
+
+function getMaterialSignature(material) {
+  if (Array.isArray(material)) {
+    return material.map((entry) => entry?.uuid ?? '').join(',');
+  }
+  return material?.uuid ?? '';
+}
+
+function getRenderedVisualBatchSignature(rendered, target = []) {
+  const meshes = collectRenderableMeshes(rendered?.object, target);
+  if (!meshes.length) {
+    return '';
+  }
+
+  return meshes
+    .map((mesh) => [
+      mesh.geometry?.uuid ?? '',
+      getMaterialSignature(mesh.material),
+      mesh.castShadow ? 'c1' : 'c0',
+      mesh.receiveShadow ? 'r1' : 'r0'
+    ].join(':'))
+    .join('|');
+}
+
+function getRenderedPlacementBaseVisible(rendered) {
+  return Boolean(
+    rendered
+    && !rendered.hidden
+    && !rendered.visualHidden
+    && !rendered.workoutHidden
+  );
+}
+
 const PARK_WALL_COLLIDER_CELL_SIZE = 1;
 const PARK_WALL_COLLIDER_MIN_Y = 1.1;
 const PARK_WALL_COLLIDER_MAX_Y = 4.2;
@@ -1318,10 +1377,13 @@ export class WorldRenderer {
 
     this.tileRoot = new THREE.Group();
     this.propRoot = new THREE.Group();
+    this.staticInstanceRoot = new THREE.Group();
+    this.staticInstanceRoot.name = 'StaticInstanceRoot';
     this.passiveTrafficRoot = new THREE.Group();
     this.passiveTrafficRoot.name = 'PassiveTrafficRoot';
     this.scene.add(this.tileRoot);
     this.scene.add(this.propRoot);
+    this.scene.add(this.staticInstanceRoot);
     this.scene.add(this.passiveTrafficRoot);
 
     this.npcDebugRoot = new THREE.Group();
@@ -1335,6 +1397,19 @@ export class WorldRenderer {
     this.updatingRenderedPlacements = new Set();
     this.interactableIndicatorRenderedPlacements = new Set();
     this.visibleInteractableIndicatorCount = 0;
+    this.staticInstanceBatches = new Map();
+    this.staticInstanceBatchedPlacementIds = new Set();
+    this.staticInstancedPropPickTargets = [];
+    this.staticVisualBatchingSuspended = false;
+    this.staticVisualBatchesDirty = false;
+    this.staticVisualBatchMeshScratch = [];
+    this.staticVisualBatchGroupScratch = new Map();
+    this.staticVisualBatchStats = {
+      batchCount: 0,
+      instancedMeshCount: 0,
+      placementCount: 0
+    };
+    this.staticVisualBatchStatsSignature = '';
     this.interactablePlacementIds = new Set();
     this.actorPlacementIds = new Set();
     this.staticColliderEntries = new Map();
@@ -1422,13 +1497,16 @@ export class WorldRenderer {
     await this.preloadPlacementAssets(placements);
 
     this.passiveTrafficRefreshSuspended = true;
+    this.staticVisualBatchingSuspended = true;
     try {
       for (const placement of placements) {
         await this.addPlacement(placement);
       }
     } finally {
       this.passiveTrafficRefreshSuspended = false;
+      this.staticVisualBatchingSuspended = false;
     }
+    this.refreshStaticVisualBatches();
     this.refreshPassiveTraffic();
   }
 
@@ -1443,7 +1521,196 @@ export class WorldRenderer {
     }
   }
 
+  isStaticVisualBatchEligible(rendered) {
+    return Boolean(
+      rendered
+      && rendered.object
+      && !rendered.actor
+      && rendered.item?.asset
+      && !rendered.item?.underlayTileId
+      && !isCameraOccludingBuildingItem(rendered.item)
+      && !rendered.interactableIndicator
+      && !this.interactablePlacementIds.has(rendered.id)
+      && !rendered.object?.userData?.onWorldUpdate
+      && !rendered.cameraOcclusionMaterialState
+      && !rendered.shadowOverrides
+      && getRenderedPlacementBaseVisible(rendered)
+      && !(rendered.hiddenNodeNames?.size)
+      && !(rendered.fadedNodeNames?.size)
+      && !(rendered.visibleNodeNames?.size)
+    );
+  }
+
+  requestStaticVisualBatchRefresh() {
+    this.staticVisualBatchesDirty = true;
+    if (!this.staticVisualBatchingSuspended) {
+      this.refreshStaticVisualBatches();
+    }
+  }
+
+  clearStaticVisualBatches({ restorePlacementObjects = true } = {}) {
+    for (const batch of this.staticInstanceBatches.values()) {
+      batch.root?.parent?.remove(batch.root);
+      for (const mesh of batch.instancedMeshes ?? []) {
+        mesh.dispose?.();
+      }
+    }
+
+    this.staticInstanceBatches.clear();
+    this.staticInstancedPropPickTargets.length = 0;
+    this.staticInstanceRoot.clear();
+    if (restorePlacementObjects) {
+      for (const placementId of this.staticInstanceBatchedPlacementIds) {
+        const rendered = this.renderedPlacements.get(placementId);
+        if (!rendered?.object) {
+          continue;
+        }
+        rendered.staticInstanceBatchKey = '';
+        rendered.object.visible = getRenderedPlacementBaseVisible(rendered);
+      }
+    }
+    this.staticInstanceBatchedPlacementIds.clear();
+    this.staticVisualBatchStats.batchCount = 0;
+    this.staticVisualBatchStats.instancedMeshCount = 0;
+    this.staticVisualBatchStats.placementCount = 0;
+  }
+
+  createStaticVisualBatch(batchKey, entries) {
+    const template = entries[0];
+    const templateMeshes = collectRenderableMeshes(template.object, []);
+    if (!templateMeshes.length) {
+      return null;
+    }
+
+    const batchRoot = new THREE.Group();
+    batchRoot.name = `StaticBatch:${template.layer}:${template.item.id}`;
+    batchRoot.visible = true;
+    const instancedMeshes = [];
+    const placementIds = entries.map((entry) => entry.id);
+
+    for (let meshIndex = 0; meshIndex < templateMeshes.length; meshIndex += 1) {
+      const templateMesh = templateMeshes[meshIndex];
+      const instancedMesh = new THREE.InstancedMesh(
+        templateMesh.geometry,
+        templateMesh.material,
+        entries.length
+      );
+      instancedMesh.name = `${batchRoot.name}:mesh:${meshIndex}`;
+      instancedMesh.castShadow = templateMesh.castShadow;
+      instancedMesh.receiveShadow = templateMesh.receiveShadow;
+      instancedMesh.renderOrder = templateMesh.renderOrder;
+      instancedMesh.frustumCulled = false;
+      instancedMesh.matrixAutoUpdate = false;
+      instancedMesh.layers.mask = templateMesh.layers.mask;
+      instancedMesh.userData.staticVisualBatch = true;
+      instancedMesh.userData.instancePlacementIds = placementIds;
+
+      for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+        const rendered = entries[entryIndex];
+        const meshes = collectRenderableMeshes(rendered.object, this.staticVisualBatchMeshScratch);
+        const sourceMesh = meshes[meshIndex];
+        if (!sourceMesh) {
+          continue;
+        }
+        instancedMesh.setMatrixAt(entryIndex, sourceMesh.matrixWorld);
+      }
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      batchRoot.add(instancedMesh);
+      instancedMeshes.push(instancedMesh);
+      if (template.layer === 'prop') {
+        this.staticInstancedPropPickTargets.push(instancedMesh);
+      }
+    }
+
+    this.staticInstanceRoot.add(batchRoot);
+    for (const rendered of entries) {
+      rendered.staticInstanceBatchKey = batchKey;
+      rendered.object.visible = false;
+      this.staticInstanceBatchedPlacementIds.add(rendered.id);
+    }
+
+    return {
+      key: batchKey,
+      root: batchRoot,
+      placementIds,
+      instancedMeshes
+    };
+  }
+
+  refreshStaticVisualBatches() {
+    if (this.staticVisualBatchingSuspended) {
+      this.staticVisualBatchesDirty = true;
+      return;
+    }
+
+    this.staticVisualBatchesDirty = false;
+    this.clearStaticVisualBatches();
+    const groups = this.staticVisualBatchGroupScratch;
+    groups.clear();
+
+    for (const rendered of this.renderedPlacements.values()) {
+      if (!this.isStaticVisualBatchEligible(rendered)) {
+        continue;
+      }
+
+      const signature = getRenderedVisualBatchSignature(rendered, this.staticVisualBatchMeshScratch);
+      if (!signature) {
+        continue;
+      }
+
+      const key = `${rendered.layer}:${rendered.item.id}:${signature}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = [];
+        groups.set(key, group);
+      }
+      group.push(rendered);
+    }
+
+    for (const [key, entries] of groups) {
+      if (entries.length < STATIC_INSTANCE_BATCH_MIN_COUNT) {
+        continue;
+      }
+
+      const batch = this.createStaticVisualBatch(key, entries);
+      if (!batch) {
+        continue;
+      }
+      this.staticInstanceBatches.set(key, batch);
+      this.staticVisualBatchStats.batchCount += 1;
+      this.staticVisualBatchStats.instancedMeshCount += batch.instancedMeshes.length;
+      this.staticVisualBatchStats.placementCount += batch.placementIds.length;
+    }
+
+    groups.clear();
+    this.reportStaticVisualBatchStats();
+  }
+
+  getStaticVisualBatchStats() {
+    return {
+      batchCount: this.staticVisualBatchStats.batchCount,
+      instancedMeshCount: this.staticVisualBatchStats.instancedMeshCount,
+      placementCount: this.staticVisualBatchStats.placementCount
+    };
+  }
+
+  reportStaticVisualBatchStats() {
+    if (!isLocalWorldDebugHost()) {
+      return;
+    }
+
+    const stats = this.getStaticVisualBatchStats();
+    const signature = `${stats.batchCount}:${stats.instancedMeshCount}:${stats.placementCount}`;
+    if (signature === this.staticVisualBatchStatsSignature) {
+      return;
+    }
+
+    this.staticVisualBatchStatsSignature = signature;
+    console.info('[WorldRenderer] Static visual batching refreshed.', stats);
+  }
+
   clear() {
+    this.clearStaticVisualBatches({ restorePlacementObjects: false });
     this.clearCameraOcclusion();
     this.clearPassiveTraffic();
     for (const rendered of this.cameraOcclusionRenderedPlacements) {
@@ -1466,6 +1733,7 @@ export class WorldRenderer {
     this.surfaceHeightIndexDirty = true;
     this.tileRoot.clear();
     this.propRoot.clear();
+    this.staticInstanceRoot.clear();
     this.passiveTrafficRoot.clear();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
@@ -1626,6 +1894,7 @@ export class WorldRenderer {
       cameraOcclusionBounds: actor ? null : new THREE.Box3(),
       cameraOcclusionBoundsDirty: true,
       cameraOcclusionMaterialState: null,
+      staticInstanceBatchKey: '',
       actor,
       hidden: false,
       visualHidden: false,
@@ -1665,6 +1934,7 @@ export class WorldRenderer {
     } else {
       this.propRoot.add(object);
     }
+    this.requestStaticVisualBatchRefresh();
 
     this.refreshWorkoutPlacementState();
     if (placement.layer === 'tile') {
@@ -3285,6 +3555,7 @@ export class WorldRenderer {
     }
 
     this.syncPlacementInteractableIndicator(rendered);
+    this.requestStaticVisualBatchRefresh();
 
     if (placement.layer === 'tile') {
       this.markSurfaceHeightIndexDirty();
@@ -3307,6 +3578,7 @@ export class WorldRenderer {
       this.markStaticCollidersDirty();
     }
     this.applyPlacementVisibility(rendered);
+    this.requestStaticVisualBatchRefresh();
   }
 
   setPlacementVisualHidden(id, hidden) {
@@ -3317,6 +3589,7 @@ export class WorldRenderer {
 
     rendered.visualHidden = Boolean(hidden);
     this.applyPlacementVisibility(rendered);
+    this.requestStaticVisualBatchRefresh();
   }
 
   setPlacementHiddenNodeNames(id, nodeNames = []) {
@@ -3406,6 +3679,7 @@ export class WorldRenderer {
     rendered.visibleNodeNames = nextVisibleNodeNames;
     rendered.shadowOverrides = nextShadowOverrides;
     this.applyPlacementVisibility(rendered);
+    this.requestStaticVisualBatchRefresh();
   }
 
   removePlacement(id) {
@@ -3430,6 +3704,7 @@ export class WorldRenderer {
       this.markSurfaceHeightIndexDirty();
       this.refreshPassiveTraffic();
     }
+    this.requestStaticVisualBatchRefresh();
     this.refreshWorkoutPlacementState();
     this.refreshNpcRoutinePreview();
     this.refreshNpcDebugGizmos();
@@ -3724,7 +3999,7 @@ export class WorldRenderer {
       restoreNodeFadeMaterials(rendered);
     }
 
-    rendered.object.visible = visible;
+    rendered.object.visible = visible && !rendered.staticInstanceBatchKey;
     rendered.object.traverse((node) => {
       const nodeHidden = nodeNameMatches(node, rendered.hiddenNodeNames)
         || (
@@ -3930,6 +4205,7 @@ export class WorldRenderer {
     }
     this.tileRoot.visible = nextVisible;
     this.propRoot.visible = nextVisible;
+    this.staticInstanceRoot.visible = nextVisible;
     this.npcDebugRoot.visible = nextVisible && this.npcDebugVisible;
     this.npcRoutineRoot.visible = nextVisible && this.npcRoutineVisible;
   }
@@ -3938,7 +4214,12 @@ export class WorldRenderer {
     const pickTargets = [];
 
     for (const rendered of this.renderedPlacements.values()) {
-      if (rendered.hidden || rendered.visualHidden || rendered.placement?.layer === 'tile') {
+      if (
+        rendered.hidden
+        || rendered.visualHidden
+        || rendered.staticInstanceBatchKey
+        || rendered.placement?.layer === 'tile'
+      ) {
         continue;
       }
 
@@ -3951,6 +4232,11 @@ export class WorldRenderer {
         pickTargets.push(rendered.object);
       }
     }
+    for (const instancedMesh of this.staticInstancedPropPickTargets) {
+      if (this.staticInstanceRoot.visible && instancedMesh.visible && instancedMesh.parent?.visible !== false) {
+        pickTargets.push(instancedMesh);
+      }
+    }
 
     if (!pickTargets.length) {
       return null;
@@ -3958,7 +4244,17 @@ export class WorldRenderer {
 
     this.raycaster.setFromCamera(pointer, camera);
     const intersections = this.raycaster.intersectObjects(pickTargets, true);
-    return intersections.length ? extractPlacementId(intersections[0].object) : null;
+    for (const intersection of intersections) {
+      const instancedPlacementId = getInstancedPlacementId(intersection);
+      if (instancedPlacementId) {
+        return instancedPlacementId;
+      }
+      const placementId = extractPlacementId(intersection.object);
+      if (placementId) {
+        return placementId;
+      }
+    }
+    return null;
   }
 
   getPlacementBounds(id) {

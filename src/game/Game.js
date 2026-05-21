@@ -17227,6 +17227,7 @@ export class Game {
           this.gymDoorBlockersDirty = true;
         }
       });
+      this.registerPerformanceDebugTools();
       this.refreshZoomHud();
 
       this.npcService.subscribe((state) => {
@@ -17458,6 +17459,23 @@ export class Game {
     globalThis.openBlackjackHud = () => globalThis.__stickRpgMinigameDebug.openBlackjack();
     globalThis.openSchoolMicrogameHud = (...args) => globalThis.__stickRpgMinigameDebug.openSchool(...args);
     this.maybeOpenRequestedDebugMinigame();
+  }
+
+  registerPerformanceDebugTools() {
+    if (!isLocalDebugHost()) {
+      return;
+    }
+
+    globalThis.__stickRpgPerfDebug = {
+      worldBatches: () => this.worldBuilder?.worldRenderer?.getStaticVisualBatchStats?.() ?? null,
+      rendererInfo: () => ({
+        pixelRatio: this.renderer?.getPixelRatio?.() ?? null,
+        render: { ...(this.renderer?.info?.render ?? {}) },
+        memory: { ...(this.renderer?.info?.memory ?? {}) },
+        programs: this.renderer?.info?.programs?.length ?? null
+      }),
+      frameSummary: () => ({ ...this.getMovementFrameSummary({ force: true }) })
+    };
   }
 
   registerHeldItemDebugTools() {
