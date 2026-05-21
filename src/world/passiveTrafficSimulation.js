@@ -44,7 +44,7 @@ const PASSIVE_TRAFFIC_SEDAN_TURN_SPEED_FACTOR = 0.46;
 const PASSIVE_TRAFFIC_TURN_APPROACH_DISTANCE = BUILDER_TILE_SIZE * 0.55;
 const PASSIVE_TRAFFIC_TURN_STOP_SECONDS = 0.38;
 const PASSIVE_TRAFFIC_TURN_STOP_STEP_SECONDS = 0.06;
-const PASSIVE_TRAFFIC_SPEED_FACTORS = Object.freeze([0.94, 1, 1.06]);
+const PASSIVE_TRAFFIC_TURN_STOP_STAGGER_COUNT = 3;
 const PASSIVE_TRAFFIC_DESTINATION_CANDIDATE_COUNT = 14;
 const PASSIVE_TRAFFIC_POSITION_EPSILON = 0.08;
 const PASSIVE_TRAFFIC_STUCK_SECONDS = 1.15;
@@ -267,7 +267,7 @@ export class PassiveTrafficSimulation {
       lawRadius: getPassiveTrafficPoliceCarLawRadius({ itemId }),
       turnThroughNodeIndex: null,
       visitedNodeIndices: new Set(),
-      speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
+      speed: PASSIVE_TRAFFIC_SPEED,
       currentSpeed: 0,
       yaw: 0,
       driveCommand: PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT,
@@ -740,7 +740,7 @@ export class PassiveTrafficSimulation {
 
   getTurnStopSeconds(car) {
     return PASSIVE_TRAFFIC_TURN_STOP_SECONDS
-      + ((car.carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length) * PASSIVE_TRAFFIC_TURN_STOP_STEP_SECONDS);
+      + ((car.carIndex % PASSIVE_TRAFFIC_TURN_STOP_STAGGER_COUNT) * PASSIVE_TRAFFIC_TURN_STOP_STEP_SECONDS);
   }
 
   getDesiredSpeed(car, distanceToTarget) {

@@ -2075,6 +2075,14 @@ function validatePassiveTraffic() {
       && initialServerTrafficA.length >= PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length,
     'Server passive traffic simulation should spawn the shared passive car set from the route graph'
   );
+  const defaultPassiveCarSpeeds = serverTrafficSimulationA.cars
+    .filter((car) => PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.includes(car.itemId) && car.responseCar !== true)
+    .map((car) => car.speed);
+  assert(
+    defaultPassiveCarSpeeds.length >= PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length
+      && defaultPassiveCarSpeeds.every((speed) => speed === PASSIVE_TRAFFIC_SPEED),
+    'Default passive traffic cars should all share the exact same base speed'
+  );
   for (let index = 0; index < 16; index += 1) {
     serverTrafficSimulationA.update(0.05);
     serverTrafficSimulationB.update(0.05);
