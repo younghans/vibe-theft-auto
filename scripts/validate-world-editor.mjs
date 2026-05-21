@@ -190,6 +190,7 @@ import {
   PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
   PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
   PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  PASSIVE_TRAFFIC_POLICE_CAR_LAW_RADIUS,
   PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS,
   PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID,
   PASSIVE_TRAFFIC_SPEED,
@@ -202,6 +203,7 @@ import {
   getPassiveTrafficDriveScript,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficPoliceCarLawRadius,
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficRoadExits,
   getPassiveTrafficTurnLaneWaypointsFromPosition,
@@ -1591,6 +1593,11 @@ function validatePassiveTraffic() {
   assert(PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE === 20, 'Passive traffic should take 20 health when it runs over the player');
   assert(PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS === 1.5, 'Passive traffic player hit stun should immobilize the player for 1.5 seconds');
   assert(PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID === 'car_police', 'Passive traffic police response should target the routeable Car Police passive car');
+  assert(PASSIVE_TRAFFIC_POLICE_CAR_LAW_RADIUS === 32, 'Passive police cars should default to a 32-unit law radius');
+  assert(
+    getPassiveTrafficPoliceCarLawRadius({ itemId: PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID }) === PASSIVE_TRAFFIC_POLICE_CAR_LAW_RADIUS,
+    'Passive police car law radius helper should apply the default 32-unit radius'
+  );
   assert(PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS === 10, 'Shot police cars should sink and respawn after 10 seconds');
   assert(
     PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS > 0
@@ -2204,6 +2211,18 @@ function validatePassiveTraffic() {
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),
     'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling, hitboxes, and route-aware async car loads'
+  );
+  assert(
+    /createPassiveTrafficLawRadiusIndicator/.test(worldRendererSource)
+      && /new THREE\.RingGeometry\(0\.992,\s*1,\s*160\)/.test(worldRendererSource)
+      && /normalizePassiveTrafficLawRadius/.test(worldRendererSource)
+      && /getPassiveTrafficPoliceCarLawRadius/.test(worldRendererSource)
+      && /lawRadiusIndicator:\s*createPassiveTrafficLawRadiusIndicator\(\)/.test(worldRendererSource)
+      && /this\.passiveTrafficRoot\.add\(car\.lawRadiusIndicator\)/.test(worldRendererSource)
+      && /syncPassiveTrafficLawRadiusIndicator/.test(worldRendererSource)
+      && /car\.lawRadiusIndicator\.position\.set\(\s*car\.object\.position\.x,\s*car\.object\.position\.y \+ 0\.07,\s*car\.object\.position\.z\s*\)/.test(worldRendererSource)
+      && /car\.lawRadiusIndicator\.visible = radius > 0 && car\.responseCar !== true/.test(worldRendererSource),
+    'World renderer should show a permanent NPC-style law-radius circle that follows passive police traffic cars'
   );
 
   const hudSource = readRepoText('src/ui/Hud.js');

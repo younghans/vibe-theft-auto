@@ -53,6 +53,7 @@ import {
   getPassiveTrafficForwardVector,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
+  getPassiveTrafficPoliceCarLawRadius,
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
@@ -163,6 +164,33 @@ function dampAngleRadians(current, target, lambda, deltaSeconds) {
 function dampNumber(current, target, lambda, deltaSeconds) {
   const lerp = 1 - Math.exp(-Math.max(0, lambda) * Math.max(0, deltaSeconds));
   return current + ((target - current) * lerp);
+}
+
+function createPassiveTrafficLawRadiusIndicator() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.992, 1, 160),
+    new THREE.MeshBasicMaterial({
+      color: 0x4aa8ff,
+      transparent: true,
+      opacity: 0.38,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.07;
+  ring.renderOrder = 3;
+  ring.visible = false;
+  ring.raycast = () => {};
+  return ring;
+}
+
+function normalizePassiveTrafficLawRadius(itemId, lawRadius = undefined) {
+  const radius = Number(lawRadius);
+  return Number.isFinite(radius) && radius > 0
+    ? getPassiveTrafficPoliceCarLawRadius({ itemId, lawRadius: radius })
+    : getPassiveTrafficPoliceCarLawRadius({ itemId });
 }
 
 function passiveTrafficTieBreak(nodeIndex, carIndex) {
@@ -2182,7 +2210,7 @@ export class WorldRenderer {
         rotationY: Number(state.rotationY) || 0,
         speed: Number(state.speed) || 0,
         active: state.active !== false,
-        lawRadius: Number(state.lawRadius) || 0,
+        lawRadius: normalizePassiveTrafficLawRadius(itemId, state.lawRadius),
         responseCar: state.responseCar === true,
         responseOwnerSessionId: state.responseOwnerSessionId || '',
         responseUnitKind: state.responseUnitKind || '',
@@ -2358,6 +2386,10 @@ export class WorldRenderer {
     }
     for (const car of this.passiveTrafficCars) {
       this.passiveTrafficRoot.add(car.object);
+      if (car.lawRadiusIndicator) {
+        this.passiveTrafficRoot.add(car.lawRadiusIndicator);
+        this.syncPassiveTrafficLawRadiusIndicator(car);
+      }
     }
     if (this.passiveTrafficServerActive) {
       this.applyPassiveTrafficServerState(0, { snap: true });
@@ -2418,6 +2450,8 @@ export class WorldRenderer {
       routeAdvanceCount: 1,
       customRouteNodeIndices,
       customRouteCursor: 0,
+      lawRadius: normalizePassiveTrafficLawRadius(itemId),
+      lawRadiusIndicator: createPassiveTrafficLawRadiusIndicator(),
       turnThroughNodeIndex: null,
       visitedNodeIndices: new Set(),
       speed: PASSIVE_TRAFFIC_SPEED * (PASSIVE_TRAFFIC_SPEED_FACTORS[carIndex % PASSIVE_TRAFFIC_SPEED_FACTORS.length] ?? 1),
@@ -2462,7 +2496,24 @@ export class WorldRenderer {
     );
     object.rotation.y = car.yaw;
     car.lastPosition.copy(object.position);
+    this.syncPassiveTrafficLawRadiusIndicator(car);
     return car;
+  }
+
+  syncPassiveTrafficLawRadiusIndicator(car) {
+    if (!car?.lawRadiusIndicator || !car?.object) {
+      return;
+    }
+
+    const radius = normalizePassiveTrafficLawRadius(car.itemId, car.lawRadius);
+    car.lawRadius = radius;
+    car.lawRadiusIndicator.visible = radius > 0 && car.responseCar !== true;
+    car.lawRadiusIndicator.scale.setScalar(Math.max(1, radius));
+    car.lawRadiusIndicator.position.set(
+      car.object.position.x,
+      car.object.position.y + 0.07,
+      car.object.position.z
+    );
   }
 
   markPassiveTrafficNodeVisited(nodeIndex, car = null) {
@@ -3185,12 +3236,14 @@ export class WorldRenderer {
 
       car.currentSpeed = state.speed;
       car.serverActive = state.active !== false;
+      car.lawRadius = normalizePassiveTrafficLawRadius(state.itemId, state.lawRadius);
       car.responseCar = state.responseCar === true;
       car.responseOwnerSessionId = state.responseOwnerSessionId || '';
       car.responseUnitKind = state.responseUnitKind || '';
       car.currentNodeIndex = state.currentNodeIndex;
       car.targetNodeIndex = state.targetNodeIndex >= 0 ? state.targetNodeIndex : null;
       car.lastPosition.copy(car.object.position);
+      this.syncPassiveTrafficLawRadiusIndicator(car);
     }
   }
 
@@ -3342,6 +3395,7 @@ export class WorldRenderer {
 
       const movedDistance = Math.hypot(car.object.position.x - startX, car.object.position.z - startZ);
       this.updatePassiveTrafficStuckState(car, dt, movedDistance);
+      this.syncPassiveTrafficLawRadiusIndicator(car);
       car.lastPosition.copy(car.object.position);
     }
 
