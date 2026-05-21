@@ -518,6 +518,10 @@ const IMPACT_EFFECT_LIFETIME_MS = 140;
 const MUZZLE_FLASH_LIFETIME_MS = 95;
 const DAMAGE_CAMERA_KICK_MS = 260;
 const PROJECTILE_TRAIL_LENGTH = 1.9;
+const PROJECTILE_EFFECT_POOL_LIMIT = 24;
+const MUZZLE_FLASH_EFFECT_POOL_LIMIT = 16;
+const IMPACT_EFFECT_POOL_LIMIT = 24;
+const SOUND_EFFECT_DEFAULT_POOL_SIZE = 4;
 const EFFECT_UP = new THREE.Vector3(0, 1, 0);
 const BARBELL_BASE_AXIS = new THREE.Vector3(1, 0, 0);
 const HIP_FIRE_AIM_LEAD_MS = 90;
@@ -1399,10 +1403,6 @@ function addValuesToSet(target, values = []) {
   return target;
 }
 
-function cloneVector3Like(point = { x: 0, y: 0, z: 0 }) {
-  return new THREE.Vector3(point.x ?? 0, point.y ?? 0, point.z ?? 0);
-}
-
 function cloneOffset(offset = [0, 0]) {
   return [
     Number(offset?.[0]) || 0,
@@ -1626,6 +1626,12 @@ export class Game {
     this.desiredPickupIds = new Set();
     this.pickupIdsToRemove = [];
     this.combatEffects = [];
+    this.projectileEffectPool = [];
+    this.muzzleFlashEffectPool = [];
+    this.impactEffectPools = {
+      player: [],
+      world: []
+    };
     this.muzzleFlashDirection = new THREE.Vector3();
     this.muzzleFlashLocalDirection = new THREE.Vector3();
     this.muzzleFlashParentQuaternion = new THREE.Quaternion();
@@ -2025,7 +2031,7 @@ export class Game {
     this.pickupVisualSyncRequested = false;
     this.deferredMuzzleFlashWarmupId = 0;
     this.pistolCockSound = this.createSoundEffect(assets.combat.pistolCock, { volume: 0.35 });
-    this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5 });
+    this.pistolShotSound = this.createSoundEffect(assets.combat.pistolShot, { volume: 0.5, maxVoices: 6 });
     this.punchImpactSounds = this.createSoundEffectPool(assets.combat.punchImpacts, { volume: 0.62 });
     this.punchWhiffSounds = this.createSoundEffectPool(assets.combat.punchWhiffs, { volume: 0.34 });
     this.rentChaChingSound = this.createSoundEffect(assets.audio?.chaChing, { volume: 0.75 });
@@ -2518,6 +2524,38 @@ export class Game {
         new THREE.BoxGeometry(0.028, 0.48, 0.028),
         new THREE.BoxGeometry(0.024, 0.38, 0.024)
       ],
+      tracerMaterialTemplate: new THREE.LineBasicMaterial({
+        color: 0xf6d87f,
+        transparent: true,
+        opacity: 0.92
+      }),
+      impactWorldGeometry: new THREE.SphereGeometry(0.18, 10, 10),
+      impactWorldMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xf2c871,
+        transparent: true,
+        opacity: 0.9
+      }),
+      impactPlayerCoreGeometry: new THREE.SphereGeometry(0.16, 12, 12),
+      impactPlayerCoreMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xff8f7a,
+        transparent: true,
+        opacity: 0.92
+      }),
+      impactPlayerSparkGeometry: new THREE.OctahedronGeometry(0.23, 0),
+      impactPlayerSparkMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xffddd5,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false
+      }),
+      impactPlayerRingGeometry: new THREE.RingGeometry(0.12, 0.28, 28),
+      impactPlayerRingMaterialTemplate: new THREE.MeshBasicMaterial({
+        color: 0xff6d80,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      }),
       sparkOffsets: [
         Object.freeze({ x: 0.12, y: 0.22, z: 0.04, zRot: 0.42 }),
         Object.freeze({ x: -0.1, y: 0.18, z: -0.05, zRot: -0.55 }),
@@ -2551,7 +2589,7 @@ export class Game {
     this.muzzleFlashPrewarmed = true;
   }
 
-  createSoundEffect(url, { volume = 1 } = {}) {
+  createSoundEffect(url, { volume = 1, maxVoices = SOUND_EFFECT_DEFAULT_POOL_SIZE } = {}) {
     if (!url) {
       return null;
     }
@@ -2559,7 +2597,10 @@ export class Game {
     return {
       url,
       volume: THREE.MathUtils.clamp(volume, 0, 1),
-      template: null
+      template: null,
+      voices: [],
+      voiceCursor: 0,
+      maxVoices: Math.max(1, Math.floor(Number(maxVoices) || SOUND_EFFECT_DEFAULT_POOL_SIZE))
     };
   }
 
@@ -2593,6 +2634,41 @@ export class Game {
     return soundEffect.template;
   }
 
+  getSoundEffectVoice(soundEffect) {
+    const template = this.getSoundEffectTemplate(soundEffect);
+    if (!template) {
+      return null;
+    }
+
+    const voices = Array.isArray(soundEffect.voices)
+      ? soundEffect.voices
+      : (soundEffect.voices = []);
+    const maxVoices = Math.max(1, Math.floor(Number(soundEffect.maxVoices) || SOUND_EFFECT_DEFAULT_POOL_SIZE));
+    let sound = null;
+    if (voices.length < maxVoices) {
+      sound = template.cloneNode();
+      sound.preload = 'auto';
+      sound.load?.();
+      voices.push(sound);
+    } else {
+      const cursor = Math.max(0, Math.floor(Number(soundEffect.voiceCursor) || 0)) % voices.length;
+      sound = voices[cursor] ?? null;
+    }
+
+    soundEffect.voiceCursor = (Math.max(0, Math.floor(Number(soundEffect.voiceCursor) || 0)) + 1) % maxVoices;
+    if (!sound) {
+      return null;
+    }
+
+    try {
+      sound.pause();
+      sound.currentTime = 0;
+    } catch {
+      // Some browsers restrict media seeking before enough data has loaded.
+    }
+    return sound;
+  }
+
   playSoundEffect(
     soundEffect,
     {
@@ -2603,12 +2679,10 @@ export class Game {
     } = {}
   ) {
     const play = () => {
-      const template = this.getSoundEffectTemplate(soundEffect);
-      if (!template) {
+      const sound = this.getSoundEffectVoice(soundEffect);
+      if (!sound) {
         return;
       }
-
-      const sound = template.cloneNode();
       const rate = THREE.MathUtils.clamp(Number(playbackRate) || 1, 0.25, 4);
       const shouldPreservePitch = preservePitch !== false;
       try {
@@ -3156,6 +3230,9 @@ export class Game {
     ]) {
       if (soundEffect?.template) {
         soundEffect.template.volume = this.getEffectiveSoundVolume(soundEffect);
+      }
+      for (const voice of soundEffect?.voices ?? []) {
+        voice.volume = this.getEffectiveSoundVolume(soundEffect);
       }
     }
     if (this.vibeHeroAudioMaster) {
@@ -19373,6 +19450,235 @@ export class Game {
     return { origin, point, delayMs };
   }
 
+  createProjectileEffectInstance() {
+    const trailPositions = new Float32Array(6);
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const material = this.muzzleFlashResources.tracerMaterialTemplate.clone();
+    const trail = new THREE.Line(trailGeometry, material);
+    trail.frustumCulled = false;
+    trail.visible = false;
+    return {
+      type: 'projectile',
+      object: trail,
+      trail,
+      trailGeometry,
+      trailPositions,
+      material,
+      startX: 0,
+      startY: 0,
+      startZ: 0,
+      directionX: 0,
+      directionY: 0,
+      directionZ: 1,
+      distance: 0,
+      startedAt: 0,
+      expiresAt: 0
+    };
+  }
+
+  acquireProjectileEffect() {
+    return this.projectileEffectPool.pop() ?? this.createProjectileEffectInstance();
+  }
+
+  createImpactEffectInstance(kind = 'world') {
+    const impactKind = kind === 'player' ? 'player' : 'world';
+    const resources = this.muzzleFlashResources;
+    if (impactKind === 'player') {
+      const group = new THREE.Group();
+      const core = new THREE.Mesh(
+        resources.impactPlayerCoreGeometry,
+        resources.impactPlayerCoreMaterialTemplate.clone()
+      );
+      const spark = new THREE.Mesh(
+        resources.impactPlayerSparkGeometry,
+        resources.impactPlayerSparkMaterialTemplate.clone()
+      );
+      const ring = new THREE.Mesh(
+        resources.impactPlayerRingGeometry,
+        resources.impactPlayerRingMaterialTemplate.clone()
+      );
+      ring.rotation.x = Math.PI / 2;
+      group.add(core);
+      group.add(spark);
+      group.add(ring);
+      group.visible = false;
+      return {
+        type: 'impact',
+        impactKind,
+        object: group,
+        core,
+        spark,
+        ring,
+        startAt: 0,
+        expiresAt: 0
+      };
+    }
+
+    const object = new THREE.Mesh(
+      resources.impactWorldGeometry,
+      resources.impactWorldMaterialTemplate.clone()
+    );
+    object.visible = false;
+    return {
+      type: 'impact',
+      impactKind,
+      object,
+      material: object.material,
+      startAt: 0,
+      expiresAt: 0
+    };
+  }
+
+  acquireImpactEffect(kind = 'world') {
+    const impactKind = kind === 'player' ? 'player' : 'world';
+    const pool = this.impactEffectPools[impactKind];
+    return pool.pop() ?? this.createImpactEffectInstance(impactKind);
+  }
+
+  createMuzzleFlashEffectInstance() {
+    const resources = this.muzzleFlashResources;
+    const flashGroup = new THREE.Group();
+    flashGroup.visible = false;
+    const flashMaterial = resources.flashMaterialTemplate.clone();
+    const flareMaterial = resources.flareMaterialTemplate.clone();
+    const emberMaterial = resources.emberMaterialTemplate.clone();
+
+    const core = new THREE.Mesh(resources.coreGeometry, flashMaterial);
+    const plume = new THREE.Mesh(resources.plumeGeometry, flareMaterial);
+    const bloom = new THREE.Mesh(resources.bloomGeometry, flareMaterial.clone());
+    const emberShell = new THREE.Mesh(resources.emberShellGeometry, emberMaterial);
+    const shockRing = new THREE.Mesh(resources.shockRingGeometry, flareMaterial.clone());
+    const sideFlareA = new THREE.Mesh(resources.sideFlareAGeometry, flareMaterial.clone());
+    const sideFlareB = new THREE.Mesh(resources.sideFlareBGeometry, emberMaterial.clone());
+
+    const sparks = new Array(resources.sparkGeometries.length);
+    for (let index = 0; index < resources.sparkGeometries.length; index += 1) {
+      sparks[index] = new THREE.Mesh(
+        resources.sparkGeometries[index],
+        resources.sparkMaterialTemplate.clone()
+      );
+    }
+
+    const light = new THREE.PointLight(0xff7a24, 2.4, 5.3, 2);
+    flashGroup.add(core);
+    flashGroup.add(plume);
+    flashGroup.add(bloom);
+    flashGroup.add(emberShell);
+    flashGroup.add(shockRing);
+    flashGroup.add(sideFlareA);
+    flashGroup.add(sideFlareB);
+    for (let index = 0; index < sparks.length; index += 1) {
+      flashGroup.add(sparks[index]);
+    }
+    flashGroup.add(light);
+
+    const effect = {
+      type: 'muzzleFlash',
+      object: flashGroup,
+      core,
+      plume,
+      bloom,
+      emberShell,
+      shockRing,
+      sideFlareA,
+      sideFlareB,
+      sparks,
+      sparkOffsets: resources.sparkOffsets,
+      light,
+      startedAt: 0,
+      expiresAt: 0
+    };
+    this.resetMuzzleFlashEffect(effect);
+    return effect;
+  }
+
+  acquireMuzzleFlashEffect() {
+    return this.muzzleFlashEffectPool.pop() ?? this.createMuzzleFlashEffectInstance();
+  }
+
+  resetMuzzleFlashEffect(effect) {
+    if (!effect) {
+      return;
+    }
+
+    effect.object.visible = true;
+    effect.object.scale.setScalar(1);
+    effect.core.scale.setScalar(1);
+    effect.plume.position.y = 0.3;
+    effect.plume.scale.setScalar(1);
+    effect.bloom.position.y = 0.12;
+    effect.bloom.scale.set(0.95, 0.54, 0.95);
+    effect.emberShell.position.y = 0.08;
+    effect.emberShell.scale.set(1.08, 0.42, 1.08);
+    effect.shockRing.position.y = 0.12;
+    effect.shockRing.rotation.set(Math.PI / 2, 0, 0);
+    effect.shockRing.scale.setScalar(1);
+    effect.sideFlareA.position.set(0.08, 0.2, 0.02);
+    effect.sideFlareA.rotation.set(0, 0, 0.68);
+    effect.sideFlareA.scale.setScalar(1);
+    effect.sideFlareB.position.set(-0.075, 0.18, -0.03);
+    effect.sideFlareB.rotation.set(0, 0, -0.78);
+    effect.sideFlareB.scale.setScalar(1);
+    for (let index = 0; index < effect.sparks.length; index += 1) {
+      const spark = effect.sparks[index];
+      const offset = effect.sparkOffsets[index];
+      spark.position.set(offset.x, offset.y, offset.z);
+      spark.rotation.set(0, 0, offset.zRot);
+      spark.scale.setScalar(1);
+      spark.material.opacity = 0.95;
+    }
+    effect.core.material.opacity = 0.98;
+    effect.bloom.material.opacity = 0.72;
+    effect.emberShell.material.opacity = 0.62;
+    effect.shockRing.material.opacity = 0.66;
+    effect.sideFlareA.material.opacity = 0.74;
+    effect.sideFlareB.material.opacity = 0.55;
+    effect.plume.material.opacity = 0.88;
+    effect.light.position.y = 0.18;
+    effect.light.intensity = 2.4;
+  }
+
+  disposeCombatEffect(effect) {
+    if (effect?.type === 'muzzleFlash' || effect?.type === 'impact') {
+      disposeObjectMaterials(effect.object);
+      return;
+    }
+
+    disposeObjectResources(effect?.object);
+  }
+
+  releaseCombatEffect(effect) {
+    effect?.object?.parent?.remove(effect.object);
+    if (effect?.trail && effect.trail !== effect.object) {
+      effect.trail.parent?.remove(effect.trail);
+    }
+    if (effect?.object) {
+      effect.object.visible = false;
+    }
+
+    if (effect?.type === 'projectile') {
+      if (this.projectileEffectPool.length < PROJECTILE_EFFECT_POOL_LIMIT) {
+        this.projectileEffectPool.push(effect);
+        return;
+      }
+    } else if (effect?.type === 'muzzleFlash') {
+      if (this.muzzleFlashEffectPool.length < MUZZLE_FLASH_EFFECT_POOL_LIMIT) {
+        this.muzzleFlashEffectPool.push(effect);
+        return;
+      }
+    } else if (effect?.type === 'impact') {
+      const impactKind = effect.impactKind === 'player' ? 'player' : 'world';
+      const pool = this.impactEffectPools[impactKind];
+      if (pool.length < IMPACT_EFFECT_POOL_LIMIT) {
+        pool.push(effect);
+        return;
+      }
+    }
+
+    this.disposeCombatEffect(effect);
+  }
+
   createTracerEffect(start, end) {
     const deltaX = end.x - start.x;
     const deltaY = end.y - start.y;
@@ -19383,125 +19689,63 @@ export class Game {
     }
 
     const inverseDistance = 1 / distance;
-    const directionX = deltaX * inverseDistance;
-    const directionY = deltaY * inverseDistance;
-    const directionZ = deltaZ * inverseDistance;
-    const trailMaterial = new THREE.MeshBasicMaterial({
-      color: 0xf6d87f,
-      transparent: true,
-      opacity: 0.92
-    });
-    const trailPositions = new Float32Array(6);
-    trailPositions[0] = start.x;
-    trailPositions[1] = start.y;
-    trailPositions[2] = start.z;
-    trailPositions[3] = start.x;
-    trailPositions[4] = start.y;
-    trailPositions[5] = start.z;
-    const trailGeometry = new THREE.BufferGeometry();
-    trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-    const trail = new THREE.Line(
-      trailGeometry,
-      trailMaterial
-    );
-    trail.frustumCulled = false;
-    this.scene.add(trail);
+    const effect = this.acquireProjectileEffect();
+    const positions = effect.trailPositions;
+    positions[0] = start.x;
+    positions[1] = start.y;
+    positions[2] = start.z;
+    positions[3] = start.x;
+    positions[4] = start.y;
+    positions[5] = start.z;
+    effect.trailGeometry.attributes.position.needsUpdate = true;
+    effect.material.opacity = 0.92;
+    effect.object.visible = true;
+    effect.startX = start.x;
+    effect.startY = start.y;
+    effect.startZ = start.z;
+    effect.directionX = deltaX * inverseDistance;
+    effect.directionY = deltaY * inverseDistance;
+    effect.directionZ = deltaZ * inverseDistance;
+    effect.distance = distance;
     const durationMs = THREE.MathUtils.clamp(
       (distance / PROJECTILE_VISUAL_SPEED) * 1000,
       PROJECTILE_MIN_LIFETIME_MS,
       PROJECTILE_MAX_LIFETIME_MS
     );
     const now = performance.now();
-    this.combatEffects.push({
-      type: 'projectile',
-      object: trail,
-      trail,
-      trailGeometry,
-      trailPositions,
-      material: trailMaterial,
-      startX: start.x,
-      startY: start.y,
-      startZ: start.z,
-      directionX,
-      directionY,
-      directionZ,
-      distance,
-      startedAt: now,
-      expiresAt: now + durationMs
-    });
+    effect.startedAt = now;
+    effect.expiresAt = now + durationMs;
+    this.scene.add(effect.object);
+    this.combatEffects.push(effect);
   }
 
   createImpactEffect(position, kind = 'world', delayMs = 0) {
     const now = performance.now();
-    let object = null;
-
-    if (kind === 'player') {
-      const group = new THREE.Group();
-      const core = new THREE.Mesh(
-        new THREE.SphereGeometry(0.16, 12, 12),
-        new THREE.MeshBasicMaterial({
-          color: 0xff8f7a,
-          transparent: true,
-          opacity: 0.92
-        })
-      );
-      const spark = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.23, 0),
-        new THREE.MeshBasicMaterial({
-          color: 0xffddd5,
-          transparent: true,
-          opacity: 0.85,
-          depthWrite: false
-        })
-      );
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.12, 0.28, 28),
-        new THREE.MeshBasicMaterial({
-          color: 0xff6d80,
-          transparent: true,
-          opacity: 0.8,
-          side: THREE.DoubleSide,
-          depthWrite: false
-        })
-      );
-      ring.rotation.x = Math.PI / 2;
-      group.add(core);
-      group.add(spark);
-      group.add(ring);
-      group.position.copy(position);
-      group.visible = delayMs <= 0;
-      object = group;
-      this.scene.add(group);
-      this.combatEffects.push({
-        type: 'impact',
-        object: group,
-        core,
-        spark,
-        ring,
-        startAt: now + delayMs,
-        expiresAt: now + delayMs + IMPACT_EFFECT_LIFETIME_MS
-      });
-      return;
-    }
-
-    object = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 10, 10),
-      new THREE.MeshBasicMaterial({
-        color: 0xf2c871,
-        transparent: true,
-        opacity: 0.9
-      })
-    );
+    const impactKind = kind === 'player' ? 'player' : 'world';
+    const effect = this.acquireImpactEffect(impactKind);
+    const object = effect.object;
+    object.parent?.remove(object);
     object.position.copy(position);
+    object.scale.setScalar(1);
     object.visible = delayMs <= 0;
+    if (impactKind === 'player') {
+      effect.core.scale.setScalar(1);
+      effect.core.material.opacity = 0.92;
+      effect.spark.position.set(0, 0, 0);
+      effect.spark.rotation.set(0, 0, 0);
+      effect.spark.scale.setScalar(1);
+      effect.spark.material.opacity = 0.85;
+      effect.ring.position.set(0, 0, 0);
+      effect.ring.rotation.set(Math.PI / 2, 0, 0);
+      effect.ring.scale.setScalar(1);
+      effect.ring.material.opacity = 0.8;
+    } else {
+      effect.material.opacity = 0.9;
+    }
+    effect.startAt = now + delayMs;
+    effect.expiresAt = now + delayMs + IMPACT_EFFECT_LIFETIME_MS;
     this.scene.add(object);
-    this.combatEffects.push({
-      type: 'impact',
-      object,
-      material: object.material,
-      startAt: now + delayMs,
-      expiresAt: now + delayMs + IMPACT_EFFECT_LIFETIME_MS
-    });
+    this.combatEffects.push(effect);
   }
 
   createMuzzleFlashEffect(avatar, start, end) {
@@ -19512,7 +19756,10 @@ export class Game {
       direction.normalize();
     }
 
-    const flashGroup = new THREE.Group();
+    const effect = this.acquireMuzzleFlashEffect();
+    const flashGroup = effect.object;
+    flashGroup.parent?.remove(flashGroup);
+    this.resetMuzzleFlashEffect(effect);
     const attachmentNode = avatar?.getAttachmentPointNode?.('muzzle') ?? null;
     if (attachmentNode) {
       const parentWorldQuaternion = attachmentNode.getWorldQuaternion(this.muzzleFlashParentQuaternion);
@@ -19526,85 +19773,10 @@ export class Game {
       this.scene.add(flashGroup);
     }
 
-    const resources = this.muzzleFlashResources;
-    const flashMaterial = resources.flashMaterialTemplate.clone();
-    const flareMaterial = resources.flareMaterialTemplate.clone();
-    const emberMaterial = resources.emberMaterialTemplate.clone();
-
-    const core = new THREE.Mesh(resources.coreGeometry, flashMaterial);
-    const plume = new THREE.Mesh(resources.plumeGeometry, flareMaterial);
-    plume.position.y = 0.3;
-    const bloom = new THREE.Mesh(resources.bloomGeometry, flareMaterial.clone());
-    bloom.position.y = 0.12;
-    bloom.scale.set(0.95, 0.54, 0.95);
-    const emberShell = new THREE.Mesh(resources.emberShellGeometry, emberMaterial);
-    emberShell.position.y = 0.08;
-    emberShell.scale.set(1.08, 0.42, 1.08);
-    const shockRing = new THREE.Mesh(
-      resources.shockRingGeometry,
-      flareMaterial.clone()
-    );
-    shockRing.position.y = 0.12;
-    shockRing.rotation.x = Math.PI / 2;
-    const sideFlareA = new THREE.Mesh(
-      resources.sideFlareAGeometry,
-      flareMaterial.clone()
-    );
-    sideFlareA.position.set(0.08, 0.2, 0.02);
-    sideFlareA.rotation.z = 0.68;
-    const sideFlareB = new THREE.Mesh(
-      resources.sideFlareBGeometry,
-      emberMaterial.clone()
-    );
-    sideFlareB.position.set(-0.075, 0.18, -0.03);
-    sideFlareB.rotation.z = -0.78;
-
-    const sparks = new Array(resources.sparkGeometries.length);
-    for (let index = 0; index < resources.sparkGeometries.length; index += 1) {
-      const geometry = resources.sparkGeometries[index];
-      const spark = new THREE.Mesh(geometry, resources.sparkMaterialTemplate.clone());
-      const offset = resources.sparkOffsets[index];
-      spark.position.set(offset.x, offset.y, offset.z);
-      spark.rotation.z = offset.zRot;
-      sparks[index] = spark;
-    }
-
-    const light = new THREE.PointLight(0xff7a24, 2.4, 5.3, 2);
-    light.position.y = 0.18;
-
-    flashGroup.add(core);
-    flashGroup.add(plume);
-    flashGroup.add(bloom);
-    flashGroup.add(emberShell);
-    flashGroup.add(shockRing);
-    flashGroup.add(sideFlareA);
-    flashGroup.add(sideFlareB);
-    for (let index = 0; index < sparks.length; index += 1) {
-      flashGroup.add(sparks[index]);
-    }
-    flashGroup.add(light);
     const now = performance.now();
-    const sparkOffsets = new Array(resources.sparkOffsets.length);
-    for (let index = 0; index < resources.sparkOffsets.length; index += 1) {
-      sparkOffsets[index] = cloneVector3Like(resources.sparkOffsets[index]);
-    }
-    this.combatEffects.push({
-      type: 'muzzleFlash',
-      object: flashGroup,
-      sharedGeometry: true,
-      core,
-      plume,
-      bloom,
-      emberShell,
-      shockRing,
-      sideFlareA,
-      sideFlareB,
-      sparks,
-      sparkOffsets,
-      light,
-      startedAt: now,
-      expiresAt: now + MUZZLE_FLASH_LIFETIME_MS
-    });
+    effect.startedAt = now;
+    effect.expiresAt = now + MUZZLE_FLASH_LIFETIME_MS;
+    this.combatEffects.push(effect);
   }
 
   updateCombatEffects(now = performance.now()) {
@@ -19612,18 +19784,7 @@ export class Game {
     for (let readIndex = 0; readIndex < this.combatEffects.length; readIndex += 1) {
       const effect = this.combatEffects[readIndex];
       if (now >= effect.expiresAt) {
-        effect.object.parent?.remove(effect.object);
-        if (effect.trail) {
-          effect.trail.parent?.remove(effect.trail);
-        }
-        if (effect.sharedGeometry) {
-          disposeObjectMaterials(effect.object);
-        } else {
-          disposeObjectResources(effect.object);
-        }
-        effect.trailGeometry?.dispose?.();
-        disposeMaterial(effect.material);
-        disposeMaterial(effect.secondaryMaterial);
+        this.releaseCombatEffect(effect);
         continue;
       }
 
