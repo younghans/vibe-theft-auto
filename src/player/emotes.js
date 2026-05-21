@@ -11,6 +11,7 @@ export const EMOTE_SLOTS = Object.freeze([
 
 export const PUNCH_EMOTE_ID = 'punching';
 export const STAND_UP_EMOTE_ID = 'standUp';
+export const PUNCH_HOOK_EMOTE_ID = 'punchHook';
 export const TYPING_EMOTE_ID = 'typing';
 export const TEXTING_EMOTE_ID = 'texting';
 export const DRINKING_EMOTE_ID = 'drinking';
@@ -24,6 +25,16 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeIn: 0.015,
     fadeOut: 0.05,
     playbackRate: 4.2,
+    cancelOnMove: false,
+    upperBodyOnly: true
+  },
+  [PUNCH_HOOK_EMOTE_ID]: {
+    label: 'Right Hook',
+    clipName: 'rightHook',
+    loop: false,
+    fadeIn: 0.015,
+    fadeOut: 0.06,
+    playbackRate: 3.6,
     cancelOnMove: false,
     upperBodyOnly: true
   },

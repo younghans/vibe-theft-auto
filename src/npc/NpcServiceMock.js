@@ -2,6 +2,7 @@ import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
+  PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_DAMAGE,
   PUNCH_HITBOX_RADIUS,
   PUNCH_HIT_DELAY_MS,
@@ -174,7 +175,7 @@ import {
   normalizeNpcBehavior,
   shouldResetNpcRuntimeForBehaviorUpdate
 } from './npcBehavior.js';
-import { PUNCH_EMOTE_ID, STAND_UP_EMOTE_ID } from '../player/emotes.js';
+import { PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, STAND_UP_EMOTE_ID } from '../player/emotes.js';
 import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMethods.js';
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
@@ -188,6 +189,13 @@ import {
   rayCircleIntersectionDistance,
   rayRectIntersectionDistance
 } from '../shared/combatMath.js';
+import {
+  PUNCH_COMBO_HOOK_STEP,
+  getPunchComboDamage,
+  getPunchComboHitDelayMs,
+  normalizePunchComboStep,
+  resolvePunchComboStep
+} from '../shared/punchCombo.js';
 import {
   quantizePosition,
   quantizeRotation,
@@ -438,6 +446,7 @@ function createDefaultPlayerState(overrides = {}) {
     skillAwardAt: 0,
     selectedMissionId: MISSION_IDS.makeMoney,
     lastPunchAt: 0,
+    lastPunchComboStep: 0,
     lastShotAt: 0,
     characterId: DEFAULT_PLAYABLE_CHARACTER_ID,
     isAdmin: false,
@@ -1510,20 +1519,29 @@ export class NpcServiceMock {
     return true;
   }
 
-  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now()) {
+  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now(), { comboStep = 1 } = {}) {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
       return false;
     }
 
     const now = Date.now();
-    if ((now - (player.lastPunchAt ?? 0)) < PUNCH_INTERVAL_MS) {
+    const elapsedSinceLastPunch = now - (player.lastPunchAt ?? 0);
+    if (elapsedSinceLastPunch < PUNCH_COMBO_MIN_INTERVAL_MS) {
       return false;
     }
 
     const aim = normalizeAimVector(aimDirection.x, aimDirection.z);
+    const resolvedComboStep = resolvePunchComboStep({
+      requestedStep: normalizePunchComboStep(comboStep),
+      lastStep: player.lastPunchComboStep ?? 0,
+      elapsedMs: elapsedSinceLastPunch
+    });
     player.lastPunchAt = now;
-    player.emoteId = PUNCH_EMOTE_ID;
+    player.lastPunchComboStep = resolvedComboStep;
+    player.emoteId = resolvedComboStep === PUNCH_COMBO_HOOK_STEP
+      ? PUNCH_HOOK_EMOTE_ID
+      : PUNCH_EMOTE_ID;
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
@@ -1531,13 +1549,13 @@ export class NpcServiceMock {
     this.emit();
 
     setTimeout(() => {
-      this.resolvePlayerPunchImpact(this.state.sessionId, aim, clientPunchAt);
-    }, PUNCH_HIT_DELAY_MS);
+      this.resolvePlayerPunchImpact(this.state.sessionId, aim, clientPunchAt, resolvedComboStep);
+    }, getPunchComboHitDelayMs(resolvedComboStep));
 
     return true;
   }
 
-  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now()) {
+  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now(), comboStep = 1) {
     const player = this.state.players.get(sessionId);
     if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
       return;
@@ -1556,6 +1574,7 @@ export class NpcServiceMock {
         x: hit.hitX,
         z: hit.hitZ,
         assisted: hit.assisted === true,
+        comboStep: normalizePunchComboStep(comboStep),
         hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
@@ -1564,7 +1583,7 @@ export class NpcServiceMock {
     if (hit.kind === 'player' && hit.targetId) {
       const target = this.state.players.get(hit.targetId);
       if (target?.alive !== false) {
-        target.health = Math.max(0, target.health - PUNCH_DAMAGE);
+        target.health = Math.max(0, target.health - getPunchComboDamage(comboStep));
         target.lastDamagedAt = now;
         if (target.health <= 0) {
           this.handlePlayerDeath(hit.targetId, sessionId);
@@ -1573,7 +1592,7 @@ export class NpcServiceMock {
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
-      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, sessionId, now);
+      this.applyDamageToNpc(hit.targetId, getPunchComboDamage(comboStep), sessionId, now);
     }
 
     this.emit();
@@ -3180,6 +3199,7 @@ export class NpcServiceMock {
     player.lastDamagedAt = 0;
     player.workoutPlacementId = '';
     player.lastPunchAt = 0;
+    player.lastPunchComboStep = 0;
     player.lastShotAt = 0;
     this.getPlayerRuntimeMeta(sessionId).healthRegenCarryMs = 0;
     player.emoteId = '';

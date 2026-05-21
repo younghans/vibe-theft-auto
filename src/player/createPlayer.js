@@ -30,7 +30,7 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import {
@@ -64,6 +64,7 @@ const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
 const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
+const PUNCH_LUNGE_EMOTE_IDS = new Set([PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID]);
 const PLAYER_CAR_MODEL_SCALE = 0.75;
 const PLAYER_CAR_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
 const PLAYER_SKATEBOARD_REST_Y = 0.1;
@@ -631,9 +632,12 @@ export async function createPlayer(library, {
     characterDefinition.drunkWalkClip,
     DELIVERY_CARRY_CLIP_NAME
   ]);
-  const punchClipName = characterDefinition.emotes?.[PUNCH_EMOTE_ID];
-  if (punchClipName) {
-    clipNamesToPreload.add(punchClipName);
+  const leadPunchClipName = characterDefinition.emotes?.[PUNCH_EMOTE_ID];
+  for (const punchEmoteId of PUNCH_LUNGE_EMOTE_IDS) {
+    const punchClipName = characterDefinition.emotes?.[punchEmoteId];
+    if (punchClipName) {
+      clipNamesToPreload.add(punchClipName);
+    }
   }
   for (const clipName of assets.playerAnimationSet.hitReactions ?? []) {
     clipNamesToPreload.add(clipName);
@@ -663,11 +667,11 @@ export async function createPlayer(library, {
   const walkLowerBodyClip = createBoneFilteredClip(walkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.walkClip}_LowerBody`);
   const drunkIdleLowerBodyClip = createBoneFilteredClip(drunkIdleClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkIdleClip}_LowerBody`);
   const drunkWalkLowerBodyClip = createBoneFilteredClip(drunkWalkClip, LOWER_BODY_LOCOMOTION_BONES, `${characterDefinition.drunkWalkClip}_LowerBody`);
-  const punchSourceClip = punchClipName
-    ? createRigSafeClip(getMixamoClip(punchClipName), `${punchClipName}_RigSafe`)
+  const punchSourceClip = leadPunchClipName
+    ? createRigSafeClip(getMixamoClip(leadPunchClipName), `${leadPunchClipName}_RigSafe`)
     : null;
   const punchUpperBodyClip = punchSourceClip
-    ? createBoneFilteredClip(punchSourceClip, UPPER_BODY_EMOTE_BONES, `${punchClipName}_UpperBody`)
+    ? createBoneFilteredClip(punchSourceClip, UPPER_BODY_EMOTE_BONES, `${leadPunchClipName}_UpperBody`)
     : null;
   const deliveryCarryUpperBodyClip = createBoneFilteredClip(
     createRigSafeClip(getMixamoClip(DELIVERY_CARRY_CLIP_NAME), `${DELIVERY_CARRY_CLIP_NAME}_RigSafe`),
@@ -2165,7 +2169,7 @@ export async function createPlayer(library, {
     const damageShimmy = damageWave * damageEnvelope * 0.09 * damageFeedbackStrength;
       const damageLift = damagePulse * 0.12 * Math.min(1.35, damageFeedbackStrength);
       const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
-      const jabLungeOffset = activeEmoteId === PUNCH_EMOTE_ID
+      const jabLungeOffset = PUNCH_LUNGE_EMOTE_IDS.has(activeEmoteId)
         ? getJabLungeOffset(Date.now() - activeEmoteStartedAt, activePunchLungeBonus)
         : 0;
       const jabLungeLocalYaw = normalizeAngle(aimRotationY - anchor.rotation.y);
@@ -2539,7 +2543,7 @@ export async function createPlayer(library, {
           activeEmoteId = emoteId;
           activeEmoteConfig = emoteConfig;
           activeEmoteStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
-          activePunchLungeBonus = emoteId === PUNCH_EMOTE_ID
+          activePunchLungeBonus = PUNCH_LUNGE_EMOTE_IDS.has(emoteId)
             ? THREE.MathUtils.clamp(Number(punchLungeBonus) || 0, 0, PUNCH_ASSISTED_LUNGE_BONUS)
             : 0;
           if (trackSync) {

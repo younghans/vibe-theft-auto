@@ -1,7 +1,8 @@
-import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
+import { PUNCH_COMBO_MIN_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
 import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
 import { quantizeNumber as quantize } from '../shared/numberMath.js';
 import { STAND_UP_EMOTE_ID } from '../player/emotes.js';
+import { normalizePunchComboStep } from '../shared/punchCombo.js';
 import {
   getDefaultPropPlacementScale,
   normalizePropPlacementScale
@@ -443,6 +444,7 @@ export class NpcServiceColyseus {
     this.lastBuilderPresenceSignature = '';
     this.lastFireSentAt = 0;
     this.lastPunchSentAt = 0;
+    this.lastPunchComboStep = 0;
   }
 
   async connect() {
@@ -1200,7 +1202,7 @@ export class NpcServiceColyseus {
     return true;
   }
 
-  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now()) {
+  punch(aimDirection = { x: 0, z: 1 }, clientPunchAt = Date.now(), { comboStep = 1 } = {}) {
     if (!this.canSendRoomMessage()) {
       return false;
     }
@@ -1210,14 +1212,17 @@ export class NpcServiceColyseus {
     if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
       return false;
     }
-    if ((now - this.lastPunchSentAt) < PUNCH_INTERVAL_MS) {
+    if ((now - this.lastPunchSentAt) < PUNCH_COMBO_MIN_INTERVAL_MS) {
       return false;
     }
 
+    const normalizedComboStep = normalizePunchComboStep(comboStep);
     this.lastPunchSentAt = now;
+    this.lastPunchComboStep = normalizedComboStep;
     this.room?.send('combat:punchRequest', {
       aimX: quantize(aimDirection.x, 4),
       aimZ: quantize(aimDirection.z, 4),
+      comboStep: normalizedComboStep,
       clientPunchAt: Number.isFinite(clientPunchAt) ? Math.max(0, Math.floor(clientPunchAt)) : now
     });
     return true;
@@ -1323,6 +1328,7 @@ export class NpcServiceColyseus {
     this.failPendingRequests('The multiplayer connection was closed.');
     this.lastFireSentAt = 0;
     this.lastPunchSentAt = 0;
+    this.lastPunchComboStep = 0;
     if (this.room) {
       this.room.leave();
       this.room = null;

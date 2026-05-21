@@ -4,6 +4,7 @@ import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   PICKUP_INTERACT_RADIUS,
+  PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_DAMAGE,
   PUNCH_HITBOX_RADIUS,
   PUNCH_HIT_DELAY_MS,
@@ -197,6 +198,13 @@ import {
   rayRectIntersectionDistance
 } from '../../src/shared/combatMath.js';
 import {
+  PUNCH_COMBO_HOOK_STEP,
+  getPunchComboDamage,
+  getPunchComboHitDelayMs,
+  normalizePunchComboStep,
+  resolvePunchComboStep
+} from '../../src/shared/punchCombo.js';
+import {
   normalizeRotationQuarterTurns,
   quantizePosition,
   quantizeRotation,
@@ -224,7 +232,7 @@ import {
   getPlacementWorldOrigin,
   isBuildingPlacement
 } from '../../src/npc/npcTargeting.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID, STAND_UP_EMOTE_ID } from '../../src/player/emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, STAND_UP_EMOTE_ID } from '../../src/player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -1519,6 +1527,7 @@ export class WorldRoom extends Room {
       acceptedAt: Date.now(),
       lastTransformSeq: player.transformSeq,
       lastPunchAt: 0,
+      lastPunchComboStep: 0,
       lastShotAt: 0,
       healthRegenCarryMs: 0,
       agilityDistanceCarry: 0
@@ -1835,6 +1844,7 @@ export class WorldRoom extends Room {
         acceptedAt: Date.now(),
         lastTransformSeq: player?.transformSeq ?? 0,
         lastPunchAt: 0,
+        lastPunchComboStep: 0,
         lastShotAt: 0,
         healthRegenCarryMs: 0,
         agilityDistanceCarry: 0
@@ -3547,6 +3557,7 @@ export class WorldRoom extends Room {
     meta.lastTransformSeq = normalizeTransformSeq(meta.lastTransformSeq ?? player.transformSeq ?? 0);
     player.transformSeq = meta.lastTransformSeq;
     meta.lastPunchAt = 0;
+    meta.lastPunchComboStep = 0;
     meta.lastShotAt = 0;
     meta.healthRegenCarryMs = 0;
     this.broadcastCombatEvent({
@@ -3718,13 +3729,22 @@ export class WorldRoom extends Room {
 
     const meta = this.getPlayerMeta(client.sessionId);
     const now = Date.now();
-    if ((now - (meta.lastPunchAt ?? 0)) < PUNCH_INTERVAL_MS) {
+    const elapsedSinceLastPunch = now - (meta.lastPunchAt ?? 0);
+    if (elapsedSinceLastPunch < PUNCH_COMBO_MIN_INTERVAL_MS) {
       return;
     }
 
     const aim = normalizeAimVector(Number(message.aimX), Number(message.aimZ));
+    const comboStep = resolvePunchComboStep({
+      requestedStep: normalizePunchComboStep(message.comboStep),
+      lastStep: meta.lastPunchComboStep ?? 0,
+      elapsedMs: elapsedSinceLastPunch
+    });
     meta.lastPunchAt = now;
-    player.emoteId = PUNCH_EMOTE_ID;
+    meta.lastPunchComboStep = comboStep;
+    player.emoteId = comboStep === PUNCH_COMBO_HOOK_STEP
+      ? PUNCH_HOOK_EMOTE_ID
+      : PUNCH_EMOTE_ID;
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq += 1;
@@ -3733,11 +3753,11 @@ export class WorldRoom extends Room {
 
     const clientPunchAt = Number.isFinite(message.clientPunchAt) ? Math.max(0, Math.floor(message.clientPunchAt)) : now;
     setTimeout(() => {
-      this.resolvePlayerPunchImpact(client.sessionId, aim, clientPunchAt);
-    }, PUNCH_HIT_DELAY_MS);
+      this.resolvePlayerPunchImpact(client.sessionId, aim, clientPunchAt, comboStep);
+    }, getPunchComboHitDelayMs(comboStep));
   }
 
-  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now()) {
+  resolvePlayerPunchImpact(sessionId, aim, clientPunchAt = Date.now(), comboStep = 1) {
     const player = this.state.players.get(sessionId);
     if (!player || player.alive === false || player.equippedWeaponId || player.isReloading) {
       return;
@@ -3756,6 +3776,7 @@ export class WorldRoom extends Room {
         x: hit.hitX,
         z: hit.hitZ,
         assisted: hit.assisted === true,
+        comboStep: normalizePunchComboStep(comboStep),
         hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
@@ -3764,7 +3785,7 @@ export class WorldRoom extends Room {
     if (hit.kind === 'player' && hit.targetId) {
       const target = this.state.players.get(hit.targetId);
       if (target?.alive !== false) {
-        target.health = Math.max(0, target.health - PUNCH_DAMAGE);
+        target.health = Math.max(0, target.health - getPunchComboDamage(comboStep));
         target.lastDamagedAt = now;
         if (target.health <= 0) {
           this.handlePlayerDeath(hit.targetId, sessionId);
@@ -3774,7 +3795,7 @@ export class WorldRoom extends Room {
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
-      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, sessionId, now);
+      this.applyDamageToNpc(hit.targetId, getPunchComboDamage(comboStep), sessionId, now);
     }
     this.queuePlayerSnapshotSave(sessionId);
   }

@@ -83,7 +83,7 @@ import {
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { isPointInsidePassiveTrafficHitbox } from '../world/passiveTraffic.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -95,12 +95,14 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_RADIUS,
   PUNCH_ASSISTED_LUNGE_BONUS,
+  PUNCH_COMBO_WINDOW_MS,
   PUNCH_HITBOX_RADIUS,
   PUNCH_RANGE,
   PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
   PUNCH_TARGET_ASSIST_RANGE_BONUS
 } from '../shared/combatConstants.js';
 import { chooseAimAssistTarget } from '../shared/combatMath.js';
+import { PUNCH_COMBO_HOOK_STEP, resolvePunchComboStep } from '../shared/punchCombo.js';
 import {
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -1991,6 +1993,8 @@ export class Game {
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastLocalEquippedWeaponId = '';
+    this.lastLocalPunchAt = -Infinity;
+    this.lastLocalPunchComboStep = 0;
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
     this.bootCriticalReady = false;
@@ -3237,20 +3241,36 @@ export class Game {
   }
 
   punchLocal(aimDirection) {
+    const now = Date.now();
     const punchLungeBonus = this.getPunchLungeAssist(aimDirection);
+    const comboStep = resolvePunchComboStep({
+      requestedStep: PUNCH_COMBO_HOOK_STEP,
+      lastStep: this.lastLocalPunchComboStep,
+      elapsedMs: now - this.lastLocalPunchAt
+    });
     const didPunch = this.npcService?.punch?.(
       { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
-      Date.now()
+      now,
+      { comboStep }
     ) === true;
 
     if (didPunch) {
-      this.player?.playEmote(PUNCH_EMOTE_ID, { punchLungeBonus });
+      this.lastLocalPunchAt = now;
+      this.lastLocalPunchComboStep = comboStep;
+      const punchEmoteId = comboStep === PUNCH_COMBO_HOOK_STEP
+        ? PUNCH_HOOK_EMOTE_ID
+        : PUNCH_EMOTE_ID;
+      this.player?.playEmote(punchEmoteId, { punchLungeBonus });
       this.playRandomSoundEffect(this.punchWhiffSounds, {
         volumeScale: 0.9,
         playbackRateMin: 0.94,
         playbackRateMax: 1.08,
         preservePitch: false
       });
+    }
+
+    if (!didPunch && (now - this.lastLocalPunchAt) > PUNCH_COMBO_WINDOW_MS) {
+      this.lastLocalPunchComboStep = 0;
     }
 
     return didPunch;
