@@ -5265,6 +5265,7 @@ body.is-admin-prompt-resizing * {
 .hud__mode-toggle,
 .hud__aim-debug-toggle,
 .hud__shader-debug-toggle,
+.hud__first-person-toggle,
 .hud__map-capture-toggle {
   position: static;
   display: inline-flex;
@@ -5312,6 +5313,7 @@ body.is-admin-prompt-resizing * {
 .hud__mode-toggle:hover,
 .hud__aim-debug-toggle:hover,
 .hud__shader-debug-toggle:hover,
+.hud__first-person-toggle:hover,
 .hud__map-capture-toggle:hover {
   border-color: rgba(242, 200, 113, 0.55);
   background: rgba(242, 200, 113, 0.12);
@@ -5322,16 +5324,24 @@ body.is-admin-prompt-resizing * {
 .hud__mode-toggle.is-active,
 .hud__aim-debug-toggle.is-active,
 .hud__shader-debug-toggle.is-active,
+.hud__first-person-toggle.is-active,
 .hud__map-capture-toggle.is-active {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #f8d98d;
 }
 
+.hud__first-person-toggle.is-locked {
+  border-color: rgba(157, 232, 255, 0.72);
+  background: rgba(96, 198, 235, 0.16);
+  color: #d8f4ff;
+}
+
 .hud__character-selector-toggle svg,
 .hud__mode-toggle svg,
 .hud__aim-debug-toggle svg,
 .hud__shader-debug-toggle svg,
+.hud__first-person-toggle svg,
 .hud__map-capture-toggle svg {
   width: 20px;
   height: 20px;
@@ -15620,6 +15630,49 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__hitmarker.is-visible {
+  opacity: 1;
+}
+
+.hud__first-person-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 80ms ease;
+  pointer-events: none;
+  z-index: 13;
+}
+
+.hud__first-person-crosshair::before,
+.hud__first-person-crosshair::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 999px;
+  background: rgba(255, 247, 222, 0.94);
+  box-shadow: 0 0 5px rgba(12, 18, 24, 0.72);
+  transform: translate(-50%, -50%);
+}
+
+.hud__first-person-crosshair::before {
+  width: 18px;
+  height: 2px;
+  background:
+    linear-gradient(90deg, rgba(255, 247, 222, 0.94) 0 37%, transparent 37% 63%, rgba(255, 247, 222, 0.94) 63% 100%);
+}
+
+.hud__first-person-crosshair::after {
+  width: 2px;
+  height: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 222, 0.94) 0 37%, transparent 37% 63%, rgba(255, 247, 222, 0.94) 63% 100%);
+}
+
+.hud__first-person-crosshair.is-visible {
   opacity: 1;
 }
 

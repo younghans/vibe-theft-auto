@@ -4278,6 +4278,8 @@ export class Hud {
     this.shaderDebugIntensityValue = this.overlay.querySelector('[data-shader-debug-intensity-value]');
     this.shaderDebugIntensityReset = this.overlay.querySelector('[data-shader-debug-intensity-reset]');
     this.shaderDebugList = this.overlay.querySelector('[data-shader-debug-list]');
+    this.firstPersonToggle = this.overlay.querySelector('[data-first-person-toggle]');
+    this.firstPersonCrosshair = this.overlay.querySelector('[data-first-person-crosshair]');
     this.mapCaptureToggle = this.overlay.querySelector('[data-map-capture-toggle]');
     this.adminPositionRoot = this.overlay.querySelector('[data-admin-position]');
     this.adminPositionValue = this.overlay.querySelector('[data-admin-position-value]');
@@ -5138,6 +5140,24 @@ export class Hud {
               </svg>
             </button>
             <button
+              class="hud__first-person-toggle"
+              type="button"
+              data-first-person-toggle
+              aria-label="Toggle first person mode"
+              aria-pressed="false"
+              title="Enter first person mode"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6z" />
+                <circle cx="12" cy="12" r="3.2" />
+                <path d="M12 2.8v2.1" />
+                <path d="M12 19.1v2.1" />
+                <path d="M4.2 4.2l1.5 1.5" />
+                <path d="M18.3 18.3l1.5 1.5" />
+              </svg>
+            </button>
+            <button
               class="hud__admin-prompt-toggle"
               type="button"
               data-admin-prompt-toggle
@@ -5869,6 +5889,7 @@ export class Hud {
         <p class="hud__respawn-detail" data-respawn-detail></p>
       </section>
       <div class="hud__hitmarker" data-hitmarker></div>
+      <div class="hud__first-person-crosshair" data-first-person-crosshair aria-hidden="true"></div>
       <section class="hud__emote-menu" data-emote-menu>
         <div class="hud__emote-wheel" data-emote-wheel>
           <div class="hud__emote-selection" data-emote-selection></div>
@@ -6731,6 +6752,18 @@ export class Hud {
       event.preventDefault();
       event.stopPropagation();
       onResetIntensity();
+    });
+  }
+
+  bindFirstPersonModeEvents({ onToggle } = {}) {
+    this.firstPersonToggle?.addEventListener('pointerdown', (event) => {
+      event.stopPropagation();
+    });
+
+    this.firstPersonToggle?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle?.();
     });
   }
 
@@ -11681,6 +11714,31 @@ export class Hud {
     const label = busy ? 'Capturing phone map image' : 'Capture phone map image';
     this.mapCaptureToggle.setAttribute('aria-label', label);
     this.mapCaptureToggle.setAttribute('title', label);
+  }
+
+  setFirstPersonModeState({
+    available = false,
+    enabled = false,
+    pointerLocked = false
+  } = {}) {
+    if (!this.firstPersonToggle) {
+      return;
+    }
+
+    const active = Boolean(available && enabled);
+    this.firstPersonToggle.hidden = !available;
+    this.firstPersonToggle.classList.toggle('is-active', active);
+    this.firstPersonToggle.classList.toggle('is-locked', active && pointerLocked);
+    this.firstPersonToggle.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const label = active
+      ? (pointerLocked ? 'Exit first person mode' : 'Click game view to lock mouse')
+      : 'Enter first person mode';
+    this.firstPersonToggle.setAttribute('aria-label', label);
+    this.firstPersonToggle.setAttribute('title', label);
+  }
+
+  setFirstPersonCrosshairVisible(visible = false) {
+    this.firstPersonCrosshair?.classList.toggle('is-visible', Boolean(visible));
   }
 
   setCharacterSelectorPreviewCanvas(node) {

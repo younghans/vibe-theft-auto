@@ -223,6 +223,10 @@ const DEFAULT_CAMERA_FOV = 55;
 const CAMERA_OFFSET = new THREE.Vector3(0, 26, 18);
 const CAMERA_LOOK_OFFSET = new THREE.Vector3(0, 3, 0);
 const AIM_CAMERA_OFFSET = new THREE.Vector3(0, 27.1, 18.9);
+const FIRST_PERSON_CAMERA_HEIGHT = 3.55;
+const FIRST_PERSON_MOUSE_SENSITIVITY = 0.0022;
+const FIRST_PERSON_MIN_PITCH = THREE.MathUtils.degToRad(-82);
+const FIRST_PERSON_MAX_PITCH = THREE.MathUtils.degToRad(82);
 const INTERACTION_CAMERA_FOV = 42;
 const INTERACTION_CAMERA_SMOOTHING = 0.12;
 const INTERACTION_CAMERA_FOV_SMOOTHING = 0.18;
@@ -667,6 +671,11 @@ const ADMIN_PROMPT_TASK_REFRESH_MS = 5000;
 const RELEASE_VERSION_ENDPOINT = '/version.json';
 const RELEASE_VERSION_CHECK_MS = 45000;
 const RELEASE_RELOAD_DELAY_MS = 8000;
+
+function normalizeAngleRadians(angle = 0) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
 const PHONE_CHARACTER_PREVIEW_PROFILE = Object.freeze({
   fitHeightFraction: 0.96,
   fitWidthFraction: 0.96,
@@ -1526,6 +1535,14 @@ export class Game {
     this.renderer.domElement.addEventListener('contextmenu', (event) => {
       event.preventDefault();
     });
+    this.renderer.domElement.addEventListener('pointerdown', (event) => {
+      this.handleFirstPersonCanvasPointerDown(event);
+    }, { capture: true });
+    this.renderer.domElement.addEventListener('mousedown', (event) => {
+      this.handleFirstPersonCanvasPointerDown(event);
+    }, { capture: true });
+    document.addEventListener('pointerlockchange', () => this.handleFirstPersonPointerLockChange());
+    document.addEventListener('mousemove', (event) => this.handleFirstPersonMouseMove(event));
 
     this.hud = new Hud(this.root);
     this.authService = createSupabaseAuthService();
@@ -1723,6 +1740,15 @@ export class Game {
     this.muzzleFlashResources = this.createMuzzleFlashResources();
     this.muzzleFlashPrewarmed = false;
     this.currentAimMode = false;
+    this.firstPersonModeActive = false;
+    this.firstPersonPointerLocked = false;
+    this.firstPersonYaw = 0;
+    this.firstPersonPitch = 0;
+    this.firstPersonDirection = new THREE.Vector3(0, 0, 1);
+    this.firstPersonMovementForward = new THREE.Vector3(0, 0, 1);
+    this.firstPersonLookTarget = new THREE.Vector3();
+    this.lastFirstPersonModeHudSignature = '';
+    this.lastFirstPersonCrosshairVisible = false;
     this.nextPunchEmoteId = PUNCH_EMOTE_ID;
     this.pendingHipFireShot = null;
     this.hotbarItemOrder = readStoredHotbarItemOrder();
@@ -2258,6 +2284,9 @@ export class Game {
       onSetIntensity: (intensity) => this.setVibeShaderIntensity(intensity),
       onResetIntensity: () => this.resetVibeShaderIntensity()
     });
+    this.hud.bindFirstPersonModeEvents({
+      onToggle: () => this.toggleFirstPersonMode()
+    });
     this.hud.bindMapCaptureEvents({
       onCapture: () => void this.captureAndSaveWorldMap()
     });
@@ -2285,6 +2314,7 @@ export class Game {
     this.refreshZoomHud();
     this.refreshCarSelectorHud();
     this.refreshCharacterSelectorHud();
+    this.refreshFirstPersonModeHud();
     this.setVibeShaderPreset(DEFAULT_VIBE_SHADER_PRESET_ID, { announce: false });
     this.hud.setLoadingProgress(0);
     void this.loadWorldMapImageMetadata();
@@ -6606,6 +6636,7 @@ export class Game {
       this.setCharacterSelectorVisible(false);
       this.setShaderDebugMenuVisible(false);
       this.setAimPoseDebugVisible(false);
+      this.setFirstPersonModeActive(false, { announce: false, requestLock: false });
       this.worldBuilder.setFocusFromWorldPosition(this.player?.position);
     }
     void this.worldBuilder.setEnabled(nextEnabled);
@@ -6640,6 +6671,292 @@ export class Game {
     return this.isLocalAdmin();
   }
 
+  canUseFirstPersonMode() {
+    return this.isLocalAdmin();
+  }
+
+  isFirstPersonPointerLockActive() {
+    return document.pointerLockElement === this.renderer?.domElement;
+  }
+
+  isFirstPersonMouseBlocked() {
+    return Boolean(
+      !this.firstPersonModeActive
+      || !this.canUseFirstPersonMode()
+      || this.worldBuilder?.enabled
+      || this.isRentIntroCutsceneActive()
+      || this.hud.isQuickChatOpen()
+      || this.hud.isAdminPromptOpen()
+      || this.hud.isPhoneOpen()
+      || this.hud.isStockMarketOpen()
+      || this.hud.isBlackjackOpen()
+      || this.hud.isSchoolMicrogameOpen()
+      || this.hud.isVibeHeroOpen()
+      || this.hud.isInteractionMenuOpen()
+      || this.emoteMenuOpen
+      || this.characterSelectorVisible
+      || this.carSelectorVisible
+      || this.shaderDebugMenuVisible
+      || this.aimPoseDebugVisible
+      || this.getLocalPlayerState()?.alive === false
+    );
+  }
+
+  canCaptureFirstPersonMouse() {
+    return Boolean(
+      this.firstPersonModeActive
+      && this.canUseFirstPersonMode()
+      && this.player
+      && !this.isFirstPersonMouseBlocked()
+      && document.hasFocus?.() !== false
+      && this.renderer?.domElement?.requestPointerLock
+    );
+  }
+
+  syncFirstPersonLookFromPlayer() {
+    const sourceDirection = this.currentAimDirection;
+    if (sourceDirection?.lengthSq?.() > 0.000001) {
+      this.firstPersonYaw = Math.atan2(sourceDirection.x, sourceDirection.z);
+    } else {
+      this.firstPersonYaw = this.player?.object?.rotation?.y ?? 0;
+    }
+    this.firstPersonYaw = normalizeAngleRadians(this.firstPersonYaw);
+    this.firstPersonPitch = THREE.MathUtils.clamp(
+      Number(this.firstPersonPitch) || 0,
+      FIRST_PERSON_MIN_PITCH,
+      FIRST_PERSON_MAX_PITCH
+    );
+  }
+
+  getFirstPersonHorizontalDirection(target = this.firstPersonDirection) {
+    target.set(Math.sin(this.firstPersonYaw), 0, Math.cos(this.firstPersonYaw));
+    if (target.lengthSq() <= 0.000001) {
+      target.set(0, 0, 1);
+    }
+    return target.normalize();
+  }
+
+  getFirstPersonLookDirection(target = this.firstPersonDirection) {
+    const pitchCos = Math.cos(this.firstPersonPitch);
+    target.set(
+      Math.sin(this.firstPersonYaw) * pitchCos,
+      Math.sin(this.firstPersonPitch),
+      Math.cos(this.firstPersonYaw) * pitchCos
+    );
+    if (target.lengthSq() <= 0.000001) {
+      target.set(0, 0, 1);
+    }
+    return target.normalize();
+  }
+
+  getFirstPersonMovementForward(target = this.firstPersonMovementForward) {
+    return this.getFirstPersonHorizontalDirection(target);
+  }
+
+  requestFirstPersonPointerLock() {
+    if (!this.canCaptureFirstPersonMouse() || this.isFirstPersonPointerLockActive()) {
+      return false;
+    }
+
+    try {
+      const request = this.renderer.domElement.requestPointerLock();
+      if (request?.catch) {
+        request.catch(() => {});
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  releaseFirstPersonPointerLock() {
+    if (!this.isFirstPersonPointerLockActive()) {
+      return false;
+    }
+
+    try {
+      document.exitPointerLock?.();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  handleFirstPersonCanvasPointerDown(event) {
+    if (!this.firstPersonModeActive || this.isFirstPersonPointerLockActive()) {
+      return;
+    }
+
+    if (!this.canCaptureFirstPersonMouse()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.input?.releaseAllInputs?.();
+    this.requestFirstPersonPointerLock();
+  }
+
+  handleFirstPersonPointerLockChange() {
+    const locked = this.isFirstPersonPointerLockActive();
+    if (this.firstPersonPointerLocked === locked) {
+      return;
+    }
+
+    this.firstPersonPointerLocked = locked;
+    if (!locked) {
+      this.input?.releaseAllInputs?.();
+    }
+    this.refreshFirstPersonModeHud();
+  }
+
+  handleFirstPersonMouseMove(event) {
+    if (!this.firstPersonModeActive || !this.isFirstPersonPointerLockActive()) {
+      return;
+    }
+
+    const movementX = Number(event.movementX) || 0;
+    const movementY = Number(event.movementY) || 0;
+    if (movementX === 0 && movementY === 0) {
+      return;
+    }
+
+    this.firstPersonYaw = normalizeAngleRadians(
+      this.firstPersonYaw - (movementX * FIRST_PERSON_MOUSE_SENSITIVITY)
+    );
+    this.firstPersonPitch = THREE.MathUtils.clamp(
+      this.firstPersonPitch - (movementY * FIRST_PERSON_MOUSE_SENSITIVITY),
+      FIRST_PERSON_MIN_PITCH,
+      FIRST_PERSON_MAX_PITCH
+    );
+  }
+
+  setFirstPersonPlayerHidden(hidden = this.firstPersonModeActive) {
+    if (!this.player?.object || this.isRentIntroCutsceneActive()) {
+      return;
+    }
+
+    this.player.object.visible = !hidden;
+  }
+
+  closeMenusForFirstPersonMode() {
+    this.closeQuickChat();
+    this.closePhoneMenu();
+    this.closeInteractionMenu();
+    this.closeStockMarket();
+    this.closeBlackjack();
+    this.closeVibeHero();
+    this.closeSchoolMicrogame();
+    this.setAdminPromptOpen(false);
+    this.setCarSelectorVisible(false);
+    this.setCharacterSelectorVisible(false);
+    this.setShaderDebugMenuVisible(false);
+    this.setAimPoseDebugVisible(false);
+  }
+
+  setFirstPersonModeActive(active, { announce = true, requestLock = true } = {}) {
+    const nextActive = Boolean(active);
+    if (nextActive && !this.canUseFirstPersonMode()) {
+      this.hud.showToast('First person mode is admin only.');
+      this.firstPersonModeActive = false;
+      this.releaseFirstPersonPointerLock();
+      this.setFirstPersonPlayerHidden(false);
+      this.refreshFirstPersonModeHud();
+      this.refreshFirstPersonCrosshairHud();
+      return false;
+    }
+
+    if (nextActive === this.firstPersonModeActive) {
+      if (nextActive && requestLock) {
+        this.requestFirstPersonPointerLock();
+      }
+      this.refreshFirstPersonModeHud();
+      return this.firstPersonModeActive;
+    }
+
+    this.firstPersonModeActive = nextActive;
+    if (nextActive) {
+      if (this.worldBuilder?.enabled) {
+        void this.worldBuilder.setEnabled(false);
+      }
+      this.closeMenusForFirstPersonMode();
+      this.syncFirstPersonLookFromPlayer();
+      this.setFirstPersonPlayerHidden(true);
+      if (requestLock) {
+        this.requestFirstPersonPointerLock();
+      }
+    } else {
+      this.releaseFirstPersonPointerLock();
+      this.setFirstPersonPlayerHidden(false);
+      this.firstPersonPitch = 0;
+      if (this.player) {
+        this.updateCamera(this.currentAimDirection, false, { snap: true });
+      }
+    }
+
+    this.refreshFirstPersonModeHud();
+    this.refreshFirstPersonCrosshairHud();
+    if (announce) {
+      this.hud.showToast(nextActive ? 'First person mode enabled.' : 'First person mode disabled.');
+    }
+    return this.firstPersonModeActive;
+  }
+
+  toggleFirstPersonMode() {
+    return this.setFirstPersonModeActive(!this.firstPersonModeActive);
+  }
+
+  updateFirstPersonPointerLockAvailability() {
+    if (!this.firstPersonModeActive) {
+      return;
+    }
+
+    if (!this.canUseFirstPersonMode()) {
+      this.setFirstPersonModeActive(false, { announce: false, requestLock: false });
+      return;
+    }
+
+    if (this.isFirstPersonMouseBlocked()) {
+      this.releaseFirstPersonPointerLock();
+    }
+    this.refreshFirstPersonModeHud();
+  }
+
+  refreshFirstPersonModeHud() {
+    const available = this.canUseFirstPersonMode();
+    const enabled = Boolean(this.firstPersonModeActive && available);
+    const pointerLocked = this.isFirstPersonPointerLockActive();
+    const signature = `${Number(available)}:${Number(enabled)}:${Number(pointerLocked)}`;
+    if (signature === this.lastFirstPersonModeHudSignature) {
+      return;
+    }
+
+    this.lastFirstPersonModeHudSignature = signature;
+    this.hud.setFirstPersonModeState({
+      available,
+      enabled,
+      pointerLocked
+    });
+  }
+
+  refreshFirstPersonCrosshairHud(localPlayerState = this.getLocalPlayerState()) {
+    const visible = Boolean(
+      this.firstPersonModeActive
+      && this.canUseFirstPersonMode()
+      && this.currentAimMode
+      && localPlayerState?.alive !== false
+      && localPlayerState?.equippedWeaponId
+      && !this.getSelectedHotbarDrinkItemId()
+      && !this.getSelectedHotbarConsumableItemId()
+    );
+    if (visible === this.lastFirstPersonCrosshairVisible) {
+      return;
+    }
+
+    this.lastFirstPersonCrosshairVisible = visible;
+    this.hud.setFirstPersonCrosshairVisible(visible);
+  }
+
   syncAdminAccess() {
     const isAdmin = this.isLocalAdmin();
     void this.worldBuilder?.setCanEdit(isAdmin);
@@ -6658,8 +6975,14 @@ export class Game {
       this.shaderDebugMenuVisible = false;
     }
 
+    if (!this.canUseFirstPersonMode()) {
+      this.setFirstPersonModeActive(false, { announce: false, requestLock: false });
+    }
+
     this.refreshAimPoseDebugHud();
     this.refreshShaderDebugHud();
+    this.refreshFirstPersonModeHud();
+    this.refreshFirstPersonCrosshairHud();
     this.refreshAdminPositionHud();
     this.refreshMapCaptureHud();
     this.refreshAdminPromptHud();
@@ -18503,6 +18826,10 @@ export class Game {
   }
 
   getAimDirection(target = this.aimDirectionScratch) {
+    if (this.firstPersonModeActive && this.canUseFirstPersonMode()) {
+      return this.getFirstPersonHorizontalDirection(target);
+    }
+
     const aimInputVector = this.input.getAimVector();
     if (aimInputVector) {
       const aimDirection = this.projectInputVectorOnCamera(aimInputVector, target);
@@ -19944,6 +20271,7 @@ export class Game {
     ) {
       this.togglePhoneMenu();
     }
+    this.updateFirstPersonPointerLockAvailability();
 
     if (!rentIntroCutsceneActiveAtFrameStart) {
       this.handleCameraZoomInput(localPlayerState);
@@ -20026,9 +20354,13 @@ export class Game {
       }
       const transportRidingActive = Boolean(transportInputEnabled && this.transportRideToggled);
       const vehicleSpeedScale = activeCarOwned ? CAR_VEHICLE_SPEED_MULTIPLIER : SKATEBOARD_SPEED_MULTIPLIER;
-      const movementCameraForward = armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
-        ? AIM_CAMERA_MOVEMENT_FORWARD
-        : CAMERA_MOVEMENT_FORWARD;
+      const movementCameraForward = this.firstPersonModeActive && this.canUseFirstPersonMode()
+        ? this.getFirstPersonMovementForward(this.firstPersonMovementForward)
+        : (
+            armed && playerInput !== ZERO_INPUT && this.input.isActionPressed('aim')
+              ? AIM_CAMERA_MOVEMENT_FORWARD
+              : CAMERA_MOVEMENT_FORWARD
+          );
       const boundItemsHudState = this.playerBoundItemsHudState;
       boundItemsHudState.skateboardOwned = skateboardOwned;
       boundItemsHudState.skating = transportRidingActive;
@@ -20085,6 +20417,9 @@ export class Game {
           groundHeight,
           this.playerUpdateOptions
         );
+        if (this.firstPersonModeActive && this.canUseFirstPersonMode()) {
+          this.player.setFacing(this.firstPersonYaw);
+        }
         this.syncInlineShellState();
         const combatInputEnabled = localAlive && !passiveTrafficStunned && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
@@ -20174,6 +20509,8 @@ export class Game {
       this.hud.setHitMarkerVisible(hitMarkerVisible);
       this.lastHudHitMarkerVisible = hitMarkerVisible;
     }
+    this.refreshFirstPersonCrosshairHud(localPlayerState);
+    this.updateFirstPersonPointerLockAvailability();
     const npcSpeechAnchors = this.getNpcSpeechAnchorsForHud();
     const visibleOverheadHealthBarIds = this.updateOverheadHealthBars(npcSpeechAnchors);
     this.updateSpeechBubbles(visibleOverheadHealthBarIds, npcSpeechAnchors);
@@ -20454,7 +20791,46 @@ export class Game {
     return true;
   }
 
+  updateFirstPersonCamera(options = null) {
+    if (!this.player) {
+      return;
+    }
+
+    const snap = options?.snap === true;
+    const now = Number.isFinite(options?.now) ? options.now : performance.now();
+    const targetPosition = this.cameraTargetPosition.copy(this.player.position);
+    targetPosition.y += FIRST_PERSON_CAMERA_HEIGHT;
+    const lookDirection = this.getFirstPersonLookDirection(this.firstPersonDirection);
+    const lookTarget = this.firstPersonLookTarget.copy(targetPosition).add(lookDirection);
+
+    if (now < this.damageCameraKickEndsAt) {
+      const lifetime = Math.max(1, this.damageCameraKickEndsAt - this.damageCameraKickStartedAt);
+      const progress = THREE.MathUtils.clamp((now - this.damageCameraKickStartedAt) / lifetime, 0, 1);
+      const envelope = Math.pow(1 - progress, 1.35);
+      const wave = Math.sin(progress * Math.PI * 3.2);
+      const side = this.damageCameraSide.set(-this.damageCameraDirection.z, 0, this.damageCameraDirection.x);
+      targetPosition.addScaledVector(this.damageCameraDirection, envelope * 0.18);
+      targetPosition.addScaledVector(side, wave * envelope * 0.12);
+      targetPosition.y += Math.sin(progress * Math.PI) * envelope * 0.08;
+      lookTarget.addScaledVector(this.damageCameraDirection, envelope * 0.08);
+      lookTarget.addScaledVector(side, wave * envelope * -0.06);
+    }
+
+    this.camera.position.copy(targetPosition);
+    this.camera.lookAt(lookTarget);
+    this.setFirstPersonPlayerHidden(true);
+    const fovOptions = this.cameraFovOptions;
+    fovOptions.snap = snap;
+    fovOptions.smoothing = INTERACTION_CAMERA_RETURN_FOV_SMOOTHING;
+    this.updateCameraFov(DEFAULT_CAMERA_FOV, fovOptions);
+  }
+
   updateCamera(aimDirection = this.currentAimDirection, isAiming = false, options = null) {
+    if (this.firstPersonModeActive && this.canUseFirstPersonMode()) {
+      this.updateFirstPersonCamera(options);
+      return;
+    }
+
     const snap = options?.snap === true;
     const now = Number.isFinite(options?.now) ? options.now : performance.now();
     const focusOptions = this.interactionCameraFocusOptions;
@@ -20603,7 +20979,7 @@ export class Game {
       return;
     }
 
-    if (!this.player || this.worldBuilder.enabled || this.currentInterior?.scene) {
+    if (!this.player || this.worldBuilder.enabled || this.currentInterior?.scene || this.firstPersonModeActive) {
       this.worldBuilder.clearCameraOcclusion();
       this.setLocalPlayerCameraOcclusionRenderActive(false);
       return;
