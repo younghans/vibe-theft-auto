@@ -57,6 +57,7 @@ export const NPC_DEFAULT_INTERACT_RADIUS = 10;
 export const NPC_DEFAULT_LAW_RADIUS = 32;
 export const NPC_DEFAULT_WANDER_RADIUS = 7;
 export const NPC_DEFAULT_AGGRO_RADIUS = 16;
+export const NPC_DEFAULT_POLICE_AGGRO_RADIUS = NPC_DEFAULT_LAW_RADIUS;
 export const NPC_DEFAULT_LEASH_RADIUS = 24;
 export const NPC_DEFAULT_IDLE_MIN_MS = 900;
 export const NPC_DEFAULT_IDLE_MAX_MS = 2200;
@@ -283,9 +284,12 @@ export function createDefaultNpcRoutine(overrides = {}) {
 }
 
 export function createDefaultNpcCombat(overrides = {}) {
+  const defaultAggroRadius = overrides?.archetype === NPC_COMBAT_ARCHETYPES.police
+    ? NPC_DEFAULT_POLICE_AGGRO_RADIUS
+    : NPC_DEFAULT_AGGRO_RADIUS;
   return {
     archetype: NPC_COMBAT_ARCHETYPES.passive,
-    aggroRadius: NPC_DEFAULT_AGGRO_RADIUS,
+    aggroRadius: defaultAggroRadius,
     leashRadius: NPC_DEFAULT_LEASH_RADIUS,
     weaponId: '',
     ...overrides
@@ -419,7 +423,9 @@ export function shouldResetNpcRuntimeForBehaviorUpdate(previousNpc = null, nextN
   return true;
 }
 
-export function normalizeNpcCombat(combat = null) {
+export function normalizeNpcCombat(combat = null, {
+  aggroRadiusFallback = NPC_DEFAULT_AGGRO_RADIUS
+} = {}) {
   const draft = combat && typeof combat === 'object'
     ? combat
     : {};
@@ -431,9 +437,13 @@ export function normalizeNpcCombat(combat = null) {
   const archetype = NPC_COMBAT_ARCHETYPE_SET.has(requestedArchetype)
     ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
+  const effectiveAggroRadiusFallback = archetype === NPC_COMBAT_ARCHETYPES.police
+    && aggroRadiusFallback === NPC_DEFAULT_AGGRO_RADIUS
+    ? NPC_DEFAULT_POLICE_AGGRO_RADIUS
+    : aggroRadiusFallback;
   return {
     archetype,
-    aggroRadius: quantizeNumber(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }), 2),
+    aggroRadius: quantizeNumber(clampPositiveNumber(draft.aggroRadius, effectiveAggroRadiusFallback, { min: 2, max: 80 }), 2),
     leashRadius: quantizeNumber(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }), 2),
     weaponId: normalizeWeaponId(draft.weaponId, '')
   };
@@ -487,7 +497,9 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
 
   const policeOfficerEnabled = normalizePoliceOfficerEnabled(npc.policeOfficerEnabled)
     || npc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police;
-  let combat = normalizeNpcCombat(npc.combat);
+  let combat = normalizeNpcCombat(npc.combat, {
+    aggroRadiusFallback: policeOfficerEnabled ? NPC_DEFAULT_POLICE_AGGRO_RADIUS : NPC_DEFAULT_AGGRO_RADIUS
+  });
   if (policeOfficerEnabled && combat.archetype !== NPC_COMBAT_ARCHETYPES.police) {
     combat = normalizeNpcCombat({
       ...combat,

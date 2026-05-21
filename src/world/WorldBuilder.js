@@ -6,8 +6,10 @@ import {
   createDefaultNpcRoutine,
   createDefaultNpcRoutineStep,
   NPC_COMBAT_ARCHETYPES,
+  NPC_DEFAULT_AGGRO_RADIUS,
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_LAW_RADIUS,
+  NPC_DEFAULT_POLICE_AGGRO_RADIUS,
   getNpcLawRadius,
   isPoliceOfficerNpc,
   listNpcCombatArchetypes,
@@ -95,6 +97,13 @@ const TRAFFIC_ROUTE_COLORS = Object.freeze([
   '#f06aa6'
 ]);
 const EMPTY_MAP = new Map();
+
+function getPoliceAggroRadiusForCombat(combat = null) {
+  const radius = Number(combat?.aggroRadius);
+  return Number.isFinite(radius) && radius !== NPC_DEFAULT_AGGRO_RADIUS
+    ? radius
+    : NPC_DEFAULT_POLICE_AGGRO_RADIUS;
+}
 
 function clonePreviewMaterial(material, opacity = 0.86) {
   const next = material.clone();
@@ -2872,7 +2881,7 @@ export class WorldBuilder {
         combat: policeOfficerEnabled
           ? {
               archetype: NPC_COMBAT_ARCHETYPES.police,
-              aggroRadius: 28,
+              aggroRadius: NPC_DEFAULT_POLICE_AGGRO_RADIUS,
               leashRadius: 44,
               weaponId: WEAPON_IDS.pistol
             }
@@ -4092,6 +4101,7 @@ export class WorldBuilder {
       combat: {
         ...combat,
         archetype: nextEnabled ? NPC_COMBAT_ARCHETYPES.police : NPC_COMBAT_ARCHETYPES.passive,
+        aggroRadius: nextEnabled ? getPoliceAggroRadiusForCombat(combat) : combat.aggroRadius,
         weaponId: nextEnabled ? (combat.weaponId || '') : ''
       }
     });
@@ -4199,6 +4209,7 @@ export class WorldBuilder {
       await this.updateSelectedNpc({
         combat: {
           ...nextCombat,
+          aggroRadius: policeOfficerEnabled ? getPoliceAggroRadiusForCombat(nextCombat) : nextCombat.aggroRadius,
           weaponId: nextCombat.weaponId || ''
         },
         policeOfficerEnabled,

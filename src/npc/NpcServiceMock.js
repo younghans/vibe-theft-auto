@@ -1549,6 +1549,7 @@ export class NpcServiceMock {
   updateWantedSystems(now = Date.now()) {
     let changed = this.pruneWantedResponseUnits();
     for (const [playerId, player] of this.state.players.entries()) {
+      changed = this.triggerWantedPoliceHostilityForPlayer(playerId, player, now) || changed;
       changed = this.updateWantedEvasion(playerId, player, now) || changed;
       changed = this.syncWantedResponseUnitsForPlayer(playerId, player, now) || changed;
     }

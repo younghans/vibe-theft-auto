@@ -1815,7 +1815,7 @@
       "lawRadius": 32,
       "combat": {
         "archetype": "police",
-        "aggroRadius": 28,
+        "aggroRadius": 32,
         "leashRadius": 44,
         "weaponId": "pistol"
       },

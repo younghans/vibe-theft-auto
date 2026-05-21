@@ -7,6 +7,7 @@ import {
   WEAPON_RANGE
 } from '../shared/combatConstants.js';
 import { tickHealthRegen } from '../shared/combatRegen.js';
+import { normalizeWantedStars } from '../shared/wantedSystem.js';
 import {
   normalizeRotationQuarterTurns,
   quantizePosition,
@@ -1323,6 +1324,60 @@ export const npcSimulationMethods = {
       witnessed: changed,
       now
     });
+
+    return changed;
+  },
+
+  triggerWantedPoliceHostilityForPlayer(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
+    if (!player || player.alive === false || normalizeWantedStars(player.wantedStars) <= 0) {
+      return false;
+    }
+
+    let changed = false;
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
+      const definition = this.getNpcDefinition(npcId);
+      if (
+        !npc
+        || !definition
+        || !isPoliceOfficerNpc(definition)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const lawRadius = getNpcLawRadius(definition);
+      if (distanceSquared2D(npc.x, npc.z, player.x, player.z) > lawRadius * lawRadius) {
+        continue;
+      }
+
+      if (npc.mode === NPC_RUNTIME_MODES.combat && npc.lastAttackerId === playerId) {
+        continue;
+      }
+
+      const meta = this.getNpcRuntimeMeta(npcId);
+      meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+      meta.lastCombatAt = now;
+      meta.combatAnchor = {
+        x: quantizePosition(npc.x),
+        z: quantizePosition(npc.z)
+      };
+      this.clearNpcPath(npcId);
+      this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.combat, {
+        lastAttackerId: playerId,
+        activity: ''
+      });
+      this.logNpcDebugEvent?.(npcId, 'wanted-law-radius-hostility', {
+        playerId,
+        wantedStars: normalizeWantedStars(player.wantedStars),
+        lawRadius,
+        playerX: quantizePosition(player.x),
+        playerZ: quantizePosition(player.z)
+      });
+      changed = true;
+    }
 
     return changed;
   },

@@ -2,6 +2,7 @@ import {
   NPC_COMBAT_ARCHETYPES,
   NPC_DEFAULT_INTERACT_RADIUS,
   NPC_DEFAULT_LAW_RADIUS,
+  NPC_DEFAULT_POLICE_AGGRO_RADIUS,
   NPC_SPEED_TIERS,
   NPC_STEP_TYPES,
   normalizeNpcBehavior
@@ -103,7 +104,7 @@ export function createPoliceCarResponseNpcDefinition({
     },
     combat: {
       archetype: NPC_COMBAT_ARCHETYPES.police,
-      aggroRadius: 80,
+      aggroRadius: NPC_DEFAULT_POLICE_AGGRO_RADIUS,
       leashRadius: 54,
       weaponId: WEAPON_IDS.pistol
     },
