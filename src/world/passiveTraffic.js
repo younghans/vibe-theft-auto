@@ -22,6 +22,7 @@ export const PASSIVE_TRAFFIC_SPEED = BUILDER_TILE_SIZE;
 export const PASSIVE_TRAFFIC_LANE_OFFSET = BUILDER_TILE_SIZE * 0.165;
 export const PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF = BUILDER_TILE_SIZE * 0.22;
 export const PASSIVE_TRAFFIC_MAX_TURN_RADIANS = Math.PI / 2;
+export const PASSIVE_TRAFFIC_LEFT_CORNER_TURN_CONTROL_DISTANCE = BUILDER_TILE_SIZE * 0.56;
 export const PASSIVE_TRAFFIC_MIN_ROAD_NODES = 2;
 export const PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH = 2.35;
 export const PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH = 4.35;
@@ -755,6 +756,11 @@ export function isPassiveTrafficTSplitNode(node) {
   return roadName.includes('road_tsplit');
 }
 
+export function isPassiveTrafficCornerNode(node) {
+  const roadName = `${node?.itemId ?? ''} ${node?.assetName ?? ''}`.toLowerCase();
+  return roadName.includes('road_corner');
+}
+
 export function isPassiveTrafficCrosswalkNode(node) {
   return PASSIVE_TRAFFIC_CROSSWALK_ITEM_PATTERN.test(String(`${node?.itemId ?? ''} ${node?.assetName ?? ''}`).toLowerCase());
 }
@@ -886,6 +892,7 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
   const incomingRightZ = incomingX;
   const outgoingRightX = -outgoingZ;
   const outgoingRightZ = outgoingX;
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
   const start = setPassiveTrafficLanePositionAtPoint(
     currentNode,
     currentNode.x - (incomingX * PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE),
@@ -902,13 +909,16 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
     outgoingRightZ,
     TURN_END_SCRATCH
   );
-  const controlDistance = Math.max(
+  const defaultControlDistance = Math.max(
     0.001,
     Math.min(
       BUILDER_TILE_SIZE * 0.42,
       PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE - Math.abs(PASSIVE_TRAFFIC_LANE_OFFSET)
     )
   );
+  const controlDistance = command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT && isPassiveTrafficCornerNode(currentNode)
+    ? PASSIVE_TRAFFIC_LEFT_CORNER_TURN_CONTROL_DISTANCE
+    : defaultControlDistance;
   const controlA = TURN_CONTROL_A_SCRATCH.set(
     start.x + (incomingX * controlDistance),
     0,

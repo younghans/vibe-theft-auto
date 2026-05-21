@@ -164,6 +164,7 @@ import {
   INSTRUMENT_CLUSTER_FOOTPRINT,
   MARTHAS_GRILLE_BUILDING_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
+  POLICE_TANK_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   SIDEWALK_PROP_FOOTPRINT,
   STONE_PATH_PROP_FOOTPRINT,
@@ -178,16 +179,19 @@ import {
   PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_HITBOX_SCALE,
   PASSIVE_TRAFFIC_CAR_SCALE,
+  PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH,
   PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH,
   PASSIVE_TRAFFIC_INTERSECTION_STOP_BACKOFF,
   PASSIVE_TRAFFIC_LANE_OFFSET,
+  PASSIVE_TRAFFIC_LEFT_CORNER_TURN_CONTROL_DISTANCE,
   PASSIVE_TRAFFIC_MAX_TURN_RADIANS,
   PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
   PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
   PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
   PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS,
+  PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
@@ -1553,11 +1557,26 @@ function validatePassiveTraffic() {
       && PASSIVE_TRAFFIC_CAR_ITEM_IDS[3] === 'car_police',
     'Passive traffic should expose Sedan, Station wagon, Taxi, and Car Police as routeable passive cars'
   );
+  assert(
+    PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length === 4
+      && PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.every((itemId) => PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(itemId)),
+    'Passive traffic default cars should stay limited to the four standard route cars'
+  );
   for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
     const item = getBuilderItemById(itemId);
     assert(item?.layer === 'prop' && item.groupId === 'vehicles', `Passive traffic car ${itemId} should resolve to a vehicle prop`);
+  }
+  for (const itemId of PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS) {
+    const item = getBuilderItemById(itemId);
     assert(item.size?.[0] === 6.5 && item.size?.[1] === 12, `Passive traffic car ${itemId} should use the standard vehicle prop footprint`);
   }
+  const policeTankItem = getBuilderItemById(PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID);
+  assert(
+    policeTankItem?.size?.[0] === POLICE_TANK_FOOTPRINT[0]
+      && policeTankItem?.size?.[1] === POLICE_TANK_FOOTPRINT[1]
+      && !PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.includes(PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID),
+    'Passive traffic should allow the special police tank ID without treating it as a standard default route car'
+  );
   assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.68, 'Passive traffic cars should render at 0.85x their previous passive size');
   assert(PASSIVE_TRAFFIC_CAR_SCALE < VEHICLE_PROP_PLACEMENT_SCALE, 'Passive traffic cars should no longer render larger than player-owned vehicle props');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
@@ -2046,7 +2065,7 @@ function validatePassiveTraffic() {
   const initialServerTrafficB = serverTrafficSimulationB.reset(routeState, routeState.getPassiveTrafficRoutes());
   assert(
     initialServerTrafficA.length === initialServerTrafficB.length
-      && initialServerTrafficA.length >= PASSIVE_TRAFFIC_CAR_ITEM_IDS.length,
+      && initialServerTrafficA.length >= PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length,
     'Server passive traffic simulation should spawn the shared passive car set from the route graph'
   );
   for (let index = 0; index < 16; index += 1) {
@@ -2067,14 +2086,36 @@ function validatePassiveTraffic() {
   const leftCurvedCornerNode = leftCurvedCornerGraph.nodes.find((node) => node.cellX === 0 && node.cellZ === 0);
   const leftCurvedCornerEast = leftCurvedCornerGraph.nodes.find((node) => node.cellX === 1 && node.cellZ === 0);
   const leftCurvedCornerScript = getPassiveTrafficDriveScript(leftCurvedCornerNorth, leftCurvedCornerNode, leftCurvedCornerEast);
+  const leftCurvedCornerMidpoint = leftCurvedCornerScript.waypoints[Math.floor((leftCurvedCornerScript.waypoints.length - 1) * 0.5)];
+  const defaultTurnControlDistance = Math.max(
+    0.001,
+    Math.min(BUILDER_TILE_SIZE * 0.42, (BUILDER_TILE_SIZE * 0.5) - Math.abs(PASSIVE_TRAFFIC_LANE_OFFSET))
+  );
   assert(
     leftCurvedCornerScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
       && !leftCurvedCornerScript.shouldStopAtEntry
+      && leftCurvedCornerScript.waypoints.length >= 10
       && leftCurvedCornerScript.waypoints.every((waypoint) => (
         isPassiveTrafficPositionInsideRoadNode(leftCurvedCornerNode, waypoint)
         || isPassiveTrafficPositionInsideRoadNode(leftCurvedCornerEast, waypoint)
       )),
     'Passive traffic should use a bounded left-turn script for Road Corner Curved tiles'
+  );
+  assert(
+    PASSIVE_TRAFFIC_LEFT_CORNER_TURN_CONTROL_DISTANCE > defaultTurnControlDistance
+      && leftCurvedCornerMidpoint.x < leftCurvedCornerNode.x
+      && leftCurvedCornerMidpoint.z > leftCurvedCornerNode.z
+      && leftCurvedCornerScript.waypoints.every((waypoint) => (
+        waypoint.x <= leftCurvedCornerNode.x + 0.001
+        || waypoint.z >= leftCurvedCornerNode.z - 0.001
+      )),
+    'Passive traffic left turns through corner tiles should bend crisply around the lane instead of crossing the median quadrant'
+  );
+  assertTurnSteeringStaysWithinQuarterTurn(
+    leftCurvedCornerNorth,
+    leftCurvedCornerNode,
+    leftCurvedCornerEast,
+    leftCurvedCornerScript.waypoints
   );
 
   assert(
