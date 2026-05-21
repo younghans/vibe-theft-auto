@@ -213,12 +213,18 @@ for (const game of activeSchoolGames) {
 }
 
 const sketchDefinitions = listSchoolSketchGuessrSketches();
-assert.equal(sketchDefinitions.length, 20, 'sketch guessr should ship with exactly 20 premade sketches');
+assert.equal(sketchDefinitions.length, 23, 'sketch guessr should ship with 23 premade sketches');
 for (const sketch of sketchDefinitions) {
   assert.ok(sketch.id, 'each sketch should have an id');
   assert.ok(sketch.label, `${sketch.id} should have a visible answer label`);
   assert.ok(Array.isArray(sketch.strokes) && sketch.strokes.length >= 4, `${sketch.id} should have multiple drawn strokes`);
 }
+const shoeSketch = sketchDefinitions.find((sketch) => sketch.id === 'shoe');
+assert.ok(shoeSketch?.strokes?.length >= 8, 'shoe sketch should include sneaker detail strokes');
+assert.ok(
+  ['hat', 'lamp', 'pencil'].every((id) => sketchDefinitions.some((sketch) => sketch.id === id)),
+  'sketch guessr should include the three added simple noun drawings'
+);
 const sketchRound = createSchoolSketchGuessrRound({
   rng: () => 0
 });

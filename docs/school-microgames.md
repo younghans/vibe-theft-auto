@@ -46,7 +46,7 @@ The player flips two cards at a time, remembers the revealed labels, and clears 
 
 ## Sketch Guessr
 
-The player watches a premade black and white object sketch draw itself, types the object name, and submits a guess before the early bell. The drawing would naturally finish about five seconds after the guessing window, so timeouts and correct guesses both fast-forward the remaining strokes before revealing the answer.
+The player watches one of 23 premade black and white object sketches draw itself, types the object name, and submits a guess before the early bell. The drawing would naturally finish about five seconds after the guessing window, so timeouts and correct guesses both fast-forward the remaining strokes before revealing the answer.
 
 - Duration: 7 seconds to guess, 12 seconds natural draw length
 - Inputs: keyboard text input plus Guess button
