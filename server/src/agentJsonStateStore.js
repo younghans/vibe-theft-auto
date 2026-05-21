@@ -1,5 +1,6 @@
 import path from 'node:path';
 import pg from 'pg';
+import { getDatabasePoolConfig } from './databasePoolConfig.js';
 
 const { Pool } = pg;
 
@@ -13,23 +14,6 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
-function getDatabaseSslConfig(connectionString) {
-  try {
-    const sslMode = new URL(connectionString).searchParams.get('sslmode')?.trim().toLowerCase();
-    if (!sslMode || sslMode === 'disable') {
-      return null;
-    }
-
-    if (sslMode === 'no-verify' || sslMode === 'require') {
-      return { rejectUnauthorized: false };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
 function getAgentStatePool() {
   if (!agentStatePool) {
     const connectionString = String(process.env.DATABASE_URL ?? '').trim();
@@ -37,10 +21,7 @@ function getAgentStatePool() {
       throw new Error('DATABASE_URL is required for Postgres-backed agent state.');
     }
 
-    agentStatePool = new Pool({
-      connectionString,
-      ssl: getDatabaseSslConfig(connectionString) ?? undefined
-    });
+    agentStatePool = new Pool(getDatabasePoolConfig(connectionString));
   }
 
   return agentStatePool;

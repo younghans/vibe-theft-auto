@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { getDatabasePoolConfig } from './databasePoolConfig.js';
 import { logServer, logServerError } from './logger.js';
 
 const { Pool } = pg;
@@ -23,23 +24,6 @@ function getWorldKey() {
 function getPlayerSnapshotTtlMs() {
   const value = Number(process.env.PLAYER_SNAPSHOT_TTL_MS);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_PLAYER_SNAPSHOT_TTL_MS;
-}
-
-function getDatabaseSslConfig(connectionString) {
-  try {
-    const sslMode = new URL(connectionString).searchParams.get('sslmode')?.trim().toLowerCase();
-    if (!sslMode || sslMode === 'disable') {
-      return null;
-    }
-
-    if (sslMode === 'no-verify' || sslMode === 'require') {
-      return { rejectUnauthorized: false };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function cloneJson(value) {
@@ -229,10 +213,7 @@ class PostgresPlayerSnapshotStore {
     worldKey = getWorldKey()
   }) {
     this.worldKey = worldKey;
-    this.pool = new Pool({
-      connectionString,
-      ssl: getDatabaseSslConfig(connectionString) ?? undefined
-    });
+    this.pool = new Pool(getDatabasePoolConfig(connectionString));
     this.initialized = false;
   }
 

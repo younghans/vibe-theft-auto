@@ -7,6 +7,7 @@ import {
   createInitialStockMarketState,
   normalizeStockMarketSnapshot
 } from '../../src/shared/stockMarket.js';
+import { getDatabasePoolConfig } from './databasePoolConfig.js';
 import { logServer } from './logger.js';
 
 const { Pool } = pg;
@@ -19,23 +20,6 @@ let stockMarketPersistenceManager = null;
 function getWorldKey() {
   const configuredKey = String(process.env.WORLD_KEY ?? DEFAULT_WORLD_KEY).trim();
   return configuredKey || DEFAULT_WORLD_KEY;
-}
-
-function getDatabaseSslConfig(connectionString) {
-  try {
-    const sslMode = new URL(connectionString).searchParams.get('sslmode')?.trim().toLowerCase();
-    if (!sslMode || sslMode === 'disable') {
-      return null;
-    }
-
-    if (sslMode === 'no-verify' || sslMode === 'require') {
-      return { rejectUnauthorized: false };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function cloneJson(value) {
@@ -173,10 +157,7 @@ class PostgresStockMarketStore {
     worldKey = getWorldKey()
   }) {
     this.worldKey = worldKey;
-    this.pool = new Pool({
-      connectionString,
-      ssl: getDatabaseSslConfig(connectionString) ?? undefined
-    });
+    this.pool = new Pool(getDatabasePoolConfig(connectionString));
     this.initialized = false;
   }
 

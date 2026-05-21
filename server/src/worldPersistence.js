@@ -10,6 +10,7 @@ import { cloneNpcModelVoiceMap } from '../../src/shared/npcVoice.js';
 import { clonePassiveTrafficRoutes } from '../../src/shared/passiveTrafficRoutes.js';
 import { BUILDER_TILE_SIZE } from '../../src/shared/worldConstants.js';
 import { rotateFootprintOffset } from '../../src/shared/tileFootprint.js';
+import { getDatabasePoolConfig } from './databasePoolConfig.js';
 import { logServer } from './logger.js';
 
 const { Pool } = pg;
@@ -323,23 +324,6 @@ async function writeLayoutFile(layoutUrl, layout) {
   await fsp.rename(tempPath, destinationPath);
 }
 
-function getDatabaseSslConfig(connectionString) {
-  try {
-    const sslMode = new URL(connectionString).searchParams.get('sslmode')?.trim().toLowerCase();
-    if (!sslMode || sslMode === 'disable') {
-      return null;
-    }
-
-    if (sslMode === 'no-verify' || sslMode === 'require') {
-      return { rejectUnauthorized: false };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
 class FileWorldPersistenceStore {
   constructor({
     runtimeUrl = getConfiguredRuntimeLayoutUrl(),
@@ -533,10 +517,7 @@ class PostgresWorldPersistenceStore {
   }) {
     this.worldKey = worldKey;
     this.backupConfig = getWorldBackupConfig(this.worldKey);
-    this.pool = new Pool({
-      connectionString,
-      ssl: getDatabaseSslConfig(connectionString) ?? undefined
-    });
+    this.pool = new Pool(getDatabasePoolConfig(connectionString));
     this.initialized = false;
   }
 

@@ -1,5 +1,6 @@
 import process from 'node:process';
 import pg from 'pg';
+import { getDatabasePoolConfig } from './databasePoolConfig.js';
 import { logServer, logServerError } from './logger.js';
 
 const { Pool } = pg;
@@ -39,23 +40,6 @@ function getAccountSaveMaxBytes() {
   return Number.isFinite(value) && value >= 4096
     ? Math.floor(value)
     : DEFAULT_ACCOUNT_SAVE_MAX_BYTES;
-}
-
-function getDatabaseSslConfig(connectionString) {
-  try {
-    const sslMode = new URL(connectionString).searchParams.get('sslmode')?.trim().toLowerCase();
-    if (!sslMode || sslMode === 'disable') {
-      return null;
-    }
-
-    if (sslMode === 'no-verify' || sslMode === 'require') {
-      return { rejectUnauthorized: false };
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function cloneJson(value) {
@@ -326,10 +310,7 @@ class PostgresPlayerAccountStore {
     worldKey = getWorldKey()
   }) {
     this.worldKey = worldKey;
-    this.pool = new Pool({
-      connectionString,
-      ssl: getDatabaseSslConfig(connectionString) ?? undefined
-    });
+    this.pool = new Pool(getDatabasePoolConfig(connectionString));
     this.initialized = false;
   }
 

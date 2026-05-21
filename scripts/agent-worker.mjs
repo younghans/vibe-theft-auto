@@ -157,7 +157,7 @@ function isRetryableApiError(error) {
       text = text ? `${text}\n${value}` : String(value);
     }
   }
-  return /bad gateway|cloudflare|connection reset|database|eai_again|econnreset|enotfound|etimedout|fetch failed|gateway|network|origin|postgres|render\.com|socket|timeout|timed out/i.test(text);
+  return /bad gateway|cloudflare|connection reset|database|eai_again|econnreset|emaxconnsession|enotfound|etimedout|fetch failed|gateway|max clients|network|origin|pgbouncer|pool_size|postgres|render\.com|socket|supavisor|timeout|timed out|too many clients/i.test(text);
 }
 
 function truncateText(value = '', maxLength = 6000) {
@@ -1288,6 +1288,30 @@ async function updateTaskBestEffort(taskId, updates = {}, {
   }
 }
 
+async function updateTaskOrSavePending(taskId, updates = {}, {
+  phase = 'task update',
+  reason = ''
+} = {}) {
+  try {
+    return await updateTask(taskId, updates);
+  } catch (error) {
+    if (!isRetryableApiError(error)) {
+      throw error;
+    }
+
+    await savePendingTaskUpdate(taskId, updates, {
+      reason: reason || `${phase} failed after task-side work completed`
+    });
+    await writeWorkerDiagnostic('warn', 'task_update_deferred', {
+      taskId,
+      phase,
+      updates,
+      error: getErrorDiagnostic(error)
+    });
+    return null;
+  }
+}
+
 async function updateTaskHeartbeat(taskId, status = 'active') {
   return updateTask(taskId, {
     workerHeartbeatAt: Date.now(),
@@ -1429,6 +1453,36 @@ async function recordDeployment(payload = {}) {
     method: 'PATCH',
     body: payload
   });
+}
+
+async function recordDeploymentBestEffort(payload = {}, {
+  phase = 'deployment record'
+} = {}) {
+  try {
+    return await recordDeployment(payload);
+  } catch (error) {
+    if (!isRetryableApiError(error)) {
+      throw error;
+    }
+
+    const taskId = String(payload?.taskId ?? '').trim();
+    await writeWorkerDiagnostic('warn', 'deployment_record_deferred_by_api_outage', {
+      taskId,
+      phase,
+      payload,
+      error: getErrorDiagnostic(error)
+    });
+    if (taskId) {
+      await appendLog(taskId, 'Deployment state update deferred because the admin API/database pool was temporarily unavailable.', {
+        level: 'warn',
+        data: {
+          phase,
+          error: truncateText(error?.message || String(error), 1200)
+        }
+      });
+    }
+    return null;
+  }
 }
 
 async function recordTaskFailure(task = {}, phase = 'task', error = null, details = {}) {
@@ -3344,15 +3398,17 @@ async function reconcileStaleDeployTask(task) {
       results
     }
   });
-  await recordDeployment({
+  await recordDeploymentBestEffort({
     action: 'deploy',
     taskId: task.id,
     previousCommitSha: task.previousDeployCommitSha || '',
     currentCommitSha: liveCommitSha,
     deployUrl,
     deployTargets: targets
+  }, {
+    phase: 'reconcile deploy'
   });
-  await updateTask(task.id, {
+  await updateTaskOrSavePending(task.id, {
     status: 'deployed',
     newDeployCommitSha: expectedCommitSha,
     deployedAt: Date.now(),
@@ -3360,6 +3416,9 @@ async function reconcileStaleDeployTask(task) {
     deployUrl,
     deployLog: truncateText(`${message}\n\n${output}`, 10000),
     summary: `${message} ${summarizeDeployResult('Deployment', targets)}`
+  }, {
+    phase: 'reconcile deploy status',
+    reason: 'reconciled deploy status update failed after live deployment verification'
   });
 }
 
@@ -3695,15 +3754,17 @@ async function deployTask(task, worktreePath) {
     expectedCommitSha: deployRefs.newDeployCommitSha,
     actionLabel: 'Deployment'
   });
-  await recordDeployment({
+  await recordDeploymentBestEffort({
     action: 'deploy',
     taskId: task.id,
     previousCommitSha: deployRefs.previousDeployCommitSha,
     currentCommitSha: deployRefs.newDeployCommitSha,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     deployTargets
+  }, {
+    phase: 'deploy'
   });
-  await updateTask(task.id, {
+  await updateTaskOrSavePending(task.id, {
     status: 'deployed',
     previousDeployCommitSha: deployRefs.previousDeployCommitSha,
     newDeployCommitSha: deployRefs.newDeployCommitSha,
@@ -3714,6 +3775,9 @@ async function deployTask(task, worktreePath) {
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     deployLog: truncateText(deployResult.output, 10000),
     summary: summarizeDeployResult('Deployment', deployTargets)
+  }, {
+    phase: 'deploy status',
+    reason: 'deploy status update failed after main push and runtime verification'
   });
 }
 
@@ -3763,7 +3827,7 @@ async function rollbackTask(task, worktreePath) {
     expectedCommitSha: rollbackCommitSha,
     actionLabel: 'Rollback deploy'
   });
-  await recordDeployment({
+  await recordDeploymentBestEffort({
     action: 'rollback',
     taskId: task.id,
     previousCommitSha: previousDeployCommitSha,
@@ -3771,8 +3835,10 @@ async function rollbackTask(task, worktreePath) {
     rollbackCommitSha,
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     deployTargets
+  }, {
+    phase: 'rollback'
   });
-  await updateTask(task.id, {
+  await updateTaskOrSavePending(task.id, {
     status: 'rolled_back',
     rolledBackAt: Date.now(),
     rollbackCommitSha,
@@ -3780,6 +3846,9 @@ async function rollbackTask(task, worktreePath) {
     deployUrl: deployResult.deployUrl || task.deployUrl || '',
     rollbackLog: truncateText(deployResult.output, 10000),
     summary: summarizeDeployResult('Rollback deploy', deployTargets)
+  }, {
+    phase: 'rollback status',
+    reason: 'rollback status update failed after main push and runtime verification'
   });
 }
 
