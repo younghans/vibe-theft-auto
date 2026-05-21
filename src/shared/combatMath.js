@@ -347,3 +347,82 @@ export function rayRectIntersectionDistance(originX, originZ, dirX, dirZ, maxDis
 
   return tMin >= 0 && tMin <= maxDistance ? tMin : null;
 }
+
+export function segmentRectIntersectionDistance(originX, originZ, targetX, targetZ, rect, {
+  minDistance = 0,
+  targetPadding = 0
+} = {}) {
+  if (!rect) {
+    return null;
+  }
+
+  const dx = targetX - originX;
+  const dz = targetZ - originZ;
+  const distance = Math.hypot(dx, dz);
+  if (!Number.isFinite(distance) || distance <= 0.0001) {
+    return null;
+  }
+
+  const dirX = dx / distance;
+  const dirZ = dz / distance;
+  const rotation = (rect.rotationQuarterTurns ?? 0) * (Math.PI / 2);
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const localOriginX = ((originX - rect.x) * cos) - ((originZ - rect.z) * sin);
+  const localOriginZ = ((originX - rect.x) * sin) + ((originZ - rect.z) * cos);
+  const localDirX = (dirX * cos) - (dirZ * sin);
+  const localDirZ = (dirX * sin) + (dirZ * cos);
+
+  let tMin = 0;
+  let tMax = distance;
+
+  if (Math.abs(localDirX) < 0.000001) {
+    if (localOriginX < -rect.halfWidth || localOriginX > rect.halfWidth) {
+      return null;
+    }
+  } else {
+    const invDirection = 1 / localDirX;
+    let nextMin = (-rect.halfWidth - localOriginX) * invDirection;
+    let nextMax = (rect.halfWidth - localOriginX) * invDirection;
+    if (nextMin > nextMax) {
+      [nextMin, nextMax] = [nextMax, nextMin];
+    }
+    tMin = Math.max(tMin, nextMin);
+    tMax = Math.min(tMax, nextMax);
+    if (tMin > tMax) {
+      return null;
+    }
+  }
+
+  if (Math.abs(localDirZ) < 0.000001) {
+    if (localOriginZ < -rect.halfDepth || localOriginZ > rect.halfDepth) {
+      return null;
+    }
+  } else {
+    const invDirection = 1 / localDirZ;
+    let nextMin = (-rect.halfDepth - localOriginZ) * invDirection;
+    let nextMax = (rect.halfDepth - localOriginZ) * invDirection;
+    if (nextMin > nextMax) {
+      [nextMin, nextMax] = [nextMax, nextMin];
+    }
+    tMin = Math.max(tMin, nextMin);
+    tMax = Math.min(tMax, nextMax);
+    if (tMin > tMax) {
+      return null;
+    }
+  }
+
+  const safeMinDistance = Math.max(0, Number(minDistance) || 0);
+  const safeTargetPadding = Math.max(0, Number(targetPadding) || 0);
+  const maxBlockingDistance = Math.max(0, distance - safeTargetPadding);
+  const hitDistance = tMin > safeMinDistance ? tMin : tMax > safeMinDistance ? tMax : null;
+  if (hitDistance == null) {
+    return null;
+  }
+
+  if (hitDistance <= safeMinDistance || hitDistance >= maxBlockingDistance) {
+    return null;
+  }
+
+  return hitDistance;
+}

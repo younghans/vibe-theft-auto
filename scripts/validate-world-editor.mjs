@@ -6,7 +6,7 @@ import {
   COMBAT_PICKUP_PROP_ITEM_IDS,
   getCombatPickupSpawnDefinitions
 } from '../src/shared/combatPickupDefinitions.js';
-import { placementToCollisionRects } from '../src/shared/combatMath.js';
+import { placementToCollisionRects, segmentRectIntersectionDistance } from '../src/shared/combatMath.js';
 import {
   getDefaultPropPlacementScale,
   getPlacementScale,
@@ -4695,6 +4695,36 @@ function validateBartenderFunction() {
   assert(getNpcLawRadius(policeNpc) === NPC_DEFAULT_LAW_RADIUS, 'Police NPCs should default to the standard law radius');
   assert(getNpcLawRadius(customRadiusPoliceNpc) === 48, 'Police NPC law radius should be configurable');
   assert(
+    segmentRectIntersectionDistance(-4, 0, 4, 0, {
+      x: 0,
+      z: 0,
+      halfWidth: 1,
+      halfDepth: 1,
+      rotationQuarterTurns: 0
+    }) === 3,
+    'Segment collision helper should identify impermeable blockers between police and hostile actions'
+  );
+  assert(
+    segmentRectIntersectionDistance(-4, 0, -2, 0, {
+      x: 0,
+      z: 0,
+      halfWidth: 1,
+      halfDepth: 1,
+      rotationQuarterTurns: 0
+    }) == null,
+    'Segment collision helper should ignore blockers beyond the police sight target'
+  );
+  assert(
+    segmentRectIntersectionDistance(0, 0, 4, 0, {
+      x: 0,
+      z: 0,
+      halfWidth: 1,
+      halfDepth: 1,
+      rotationQuarterTurns: 0
+    }) === 1,
+    'Segment collision helper should treat exiting an obstruction as blocked sight'
+  );
+  assert(
     allNpcsHaveFlag(defaultWorldLayout.npcs, 'policeOfficerEnabled')
       && allNpcsHaveFlag(defaultWorldLayout.npcs, 'lawRadius'),
     'Default NPC layout should serialize police settings for world-builder compatibility'
@@ -4714,8 +4744,10 @@ function validateBartenderFunction() {
   assert(
     /triggerPoliceHostilityForPlayer/.test(npcSimulationSource)
       && /lawRadius/.test(npcSimulationSource)
+      && /hasUnobstructedLawSight/.test(npcSimulationSource)
+      && /collisionKey:\s*'blocksShots'/.test(npcSimulationSource)
       && /'npc-kill'/.test(npcSimulationSource),
-    'NPC simulation should escalate police hostility for hostile player actions inside law radius'
+    'NPC simulation should escalate police hostility only for hostile player actions inside unobstructed law radius'
   );
   assert(
     /triggerPoliceHostilityForPlayer[\s\S]*'shot-fired'/.test(serverSource)
@@ -4740,8 +4772,11 @@ function validateBartenderFunction() {
   assert(
     /getLawRadiusRenderDefinition/.test(npcActorSource)
       && /this\.setPoliceOfficerEnabled\(isPoliceOfficerNpc\(lawRadiusDefinition\)\)/.test(npcActorSource)
-      && /this\.lawRadiusIndicator\.visible\s*=\s*this\.policeOfficerEnabled/.test(npcActorSource),
-    'NPC rendering should keep police law-radius circles visible without depending on nearby player runtime range'
+      && /setLawRadiusVisible/.test(npcActorSource)
+      && /this\.lawRadiusIndicator\.visible\s*=\s*this\.policeOfficerEnabled\s*&&\s*this\.lawRadiusVisible/.test(npcActorSource)
+      && /segmentRectIntersectionDistance/.test(worldRendererSource)
+      && /hasUnobstructedLawSight/.test(worldRendererSource),
+    'NPC rendering should make police law-radius circle visibility contingent on unobstructed local-player sight'
   );
   assert(
     /data-builder-npc-police-officer/.test(hudSource)

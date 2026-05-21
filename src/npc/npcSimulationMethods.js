@@ -39,6 +39,7 @@ import {
   collectNpcTargetOptions,
   resolveNpcTargetOption
 } from './npcTargeting.js';
+import { segmentRectIntersectionDistance } from '../shared/combatMath.js';
 
 const NPC_REPATH_MS = 900;
 const NPC_SHOT_INTERVAL_MS = WEAPON_FIRE_INTERVAL_MS * 2;
@@ -49,11 +50,34 @@ const NPC_HOME_RETURN_STOP_DISTANCE = 0.55;
 const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
+const NPC_LAW_SIGHT_BLOCKER_GRACE_DISTANCE = 0.05;
 
 function distanceSquared2D(ax, az, bx, bz) {
   const dx = ax - bx;
   const dz = az - bz;
   return (dx * dx) + (dz * dz);
+}
+
+function hasUnobstructedLawSight(worldState, originX, originZ, targetX, targetZ) {
+  if (!worldState?.forEachPlacementCollisionRect) {
+    return true;
+  }
+
+  let blocked = false;
+  worldState.forEachPlacementCollisionRect(({ rect }) => {
+    if (blocked) {
+      return;
+    }
+
+    const hitDistance = segmentRectIntersectionDistance(originX, originZ, targetX, targetZ, rect, {
+      minDistance: NPC_LAW_SIGHT_BLOCKER_GRACE_DISTANCE
+    });
+    if (hitDistance != null) {
+      blocked = true;
+    }
+  }, { collisionKey: 'blocksShots' });
+
+  return !blocked;
 }
 
 function clonePoint(point = null) {
@@ -1147,6 +1171,17 @@ export const npcSimulationMethods = {
 
       const lawRadius = getNpcLawRadius(definition);
       if (distanceSquared2D(npc.x, npc.z, sourceX, sourceZ) > lawRadius * lawRadius) {
+        continue;
+      }
+
+      if (!hasUnobstructedLawSight(this.worldState, npc.x, npc.z, sourceX, sourceZ)) {
+        this.logNpcDebugEvent?.(npcId, 'law-radius-obstructed', {
+          playerId,
+          reason,
+          lawRadius,
+          sourceX: quantizePosition(sourceX),
+          sourceZ: quantizePosition(sourceZ)
+        });
         continue;
       }
 

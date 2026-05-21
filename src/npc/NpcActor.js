@@ -264,6 +264,7 @@ export class NpcActor {
     this.busyIndicator.scale.setScalar(1.2);
     this.busyIndicator.position.y = 0.03;
     this.interactRadiusVisible = false;
+    this.lawRadiusVisible = false;
     this.policeOfficerEnabled = isPoliceOfficerNpc(definition);
 
     prepareNpcRenderObject(this.character, model);
@@ -578,13 +579,21 @@ export class NpcActor {
     this.syncLawRadiusVisibility();
   }
 
+  setLawRadiusVisible(visible) {
+    this.lawRadiusVisible = Boolean(visible);
+    this.syncLawRadiusVisibility();
+  }
+
   syncInteractRadiusVisibility() {
     const isInteractable = this.runtimeState.alive !== false && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead;
     this.interactRadiusIndicator.visible = this.interactRadiusVisible && isInteractable;
   }
 
   syncLawRadiusVisibility() {
-    this.lawRadiusIndicator.visible = this.policeOfficerEnabled;
+    const isVisibleRuntime = this.runtimeState.alive !== false
+      && this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden
+      && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead;
+    this.lawRadiusIndicator.visible = this.policeOfficerEnabled && this.lawRadiusVisible && isVisibleRuntime;
   }
 
   setFocusTarget(target = null) {

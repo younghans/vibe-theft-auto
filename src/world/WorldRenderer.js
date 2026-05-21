@@ -1,8 +1,14 @@
 import * as THREE from 'three';
 import { preloadMixamoClips } from '../animation/mixamoClips.js';
 import { NpcActor } from '../npc/NpcActor.js';
-import { NPC_RUNTIME_MODES, NPC_STEP_TYPES } from '../npc/npcBehavior.js';
+import {
+  NPC_RUNTIME_MODES,
+  NPC_STEP_TYPES,
+  getNpcLawRadius,
+  isPoliceOfficerNpc
+} from '../npc/npcBehavior.js';
 import { getNpcModelByItemId } from '../npc/npcCatalog.js';
+import { segmentRectIntersectionDistance } from '../shared/combatMath.js';
 import {
   getTileCenterWorldPosition,
   getTileOccupiedCells,
@@ -60,6 +66,7 @@ import {
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+const NPC_LAW_VISIBILITY_BLOCKER_GRACE_DISTANCE = 0.05;
 const STATIC_INSTANCE_BATCH_MIN_COUNT = 2;
 const NON_SHADOW_CASTING_TILE_IDS = new Set([
   'lot_base',
@@ -1832,6 +1839,28 @@ export class WorldRenderer {
     }
   }
 
+  hasUnobstructedLawSight(worldState, originX, originZ, targetX, targetZ) {
+    if (!worldState?.forEachPlacementCollisionRect) {
+      return true;
+    }
+
+    let blocked = false;
+    worldState.forEachPlacementCollisionRect(({ rect }) => {
+      if (blocked) {
+        return;
+      }
+
+      const hitDistance = segmentRectIntersectionDistance(originX, originZ, targetX, targetZ, rect, {
+        minDistance: NPC_LAW_VISIBILITY_BLOCKER_GRACE_DISTANCE
+      });
+      if (hitDistance != null) {
+        blocked = true;
+      }
+    }, { collisionKey: 'blocksShots' });
+
+    return !blocked;
+  }
+
   syncNpcInteractRadiusIndicators(worldState, playerPosition = null) {
     for (const placementId of this.actorPlacementIds) {
       const rendered = this.renderedPlacements.get(placementId);
@@ -1850,6 +1879,28 @@ export class WorldRenderer {
       );
 
       rendered.actor.setInteractRadiusVisible(this.npcInteractRadiusVisible || withinRadius);
+
+      const lawRadius = getNpcLawRadius(placement?.npc);
+      const lawDistanceSq = (dx * dx) + (dz * dz);
+      const hasVisibleLawRadius = Boolean(
+        placement?.layer === 'npc'
+        && isPoliceOfficerNpc(placement.npc)
+        && (
+          this.npcInteractRadiusVisible
+          || (
+            playerPosition
+            && lawDistanceSq <= lawRadius * lawRadius
+            && this.hasUnobstructedLawSight(
+              worldState,
+              rendered.object.position.x ?? 0,
+              rendered.object.position.z ?? 0,
+              playerPosition.x,
+              playerPosition.z
+            )
+          )
+        )
+      );
+      rendered.actor.setLawRadiusVisible(hasVisibleLawRadius);
     }
   }
 
