@@ -1550,7 +1550,7 @@ export class NpcServiceMock {
     this.startReload(player);
   }
 
-  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID } = {}) {
+  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID, position = null, rotationY = undefined } = {}) {
     const player = this.state.players.get(this.state.sessionId);
     if (!player || player.alive === false) {
       return { ok: false, error: 'Player is not active.' };
@@ -1568,6 +1568,27 @@ export class NpcServiceMock {
     player.emoteActive = player.emoteId === STAND_UP_EMOTE_ID;
     player.emoteStartedAt = player.emoteActive ? now : 0;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
+    const crashX = Number(position?.x);
+    const crashZ = Number(position?.z);
+    if (Number.isFinite(crashX) && Number.isFinite(crashZ)) {
+      const clamped = clampToWorldBounds(crashX, crashZ);
+      const crashY = Number(position?.y);
+      const crashRotationY = Number(rotationY);
+      player.x = clamped.x;
+      player.y = Number.isFinite(crashY) ? quantizePosition(crashY) : player.y;
+      player.z = clamped.z;
+      if (Number.isFinite(crashRotationY)) {
+        player.rotationY = quantizeRotation(crashRotationY);
+        player.aimRotationY = player.rotationY;
+      }
+      player.skating = false;
+      player.transformSeq = ++this.lastTransformSeq;
+      const meta = this.getPlayerRuntimeMeta(this.state.sessionId);
+      meta.x = player.x;
+      meta.z = player.z;
+      meta.acceptedAt = now;
+      meta.lastTransformSeq = player.transformSeq;
+    }
     this.getPlayerRuntimeMeta(this.state.sessionId).healthRegenCarryMs = 0;
     if (player.health <= 0) {
       this.handlePlayerDeath(this.state.sessionId, '');

@@ -81,6 +81,7 @@ import {
   createOlympicBarbellVisual
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
+import { isPointInsidePassiveTrafficHitbox } from '../world/passiveTraffic.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
@@ -705,6 +706,13 @@ const RENT_INTRO_CUTSCENE_NPC_DISTANCE = 2.75;
 const RENT_INTRO_STAND_UP_EMOTE_ID = STAND_UP_EMOTE_ID;
 const RENT_INTRO_STAND_UP_CLIP_NAME = 'standUp';
 const PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS = 360;
+const PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE = 10;
+const PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_RADIUS = PLAYER_RADIUS + 1.55;
+const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_SIDE_CLEARANCE = 4.65;
+const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_EXTRA_SIDE_CLEARANCE = 6.15;
+const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_FORWARD_CLEARANCE = 1.25;
+const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_HITBOX_PADDING = 0.45;
+const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_POPUP_TEXT = 'Car crash...';
 const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
@@ -1942,6 +1950,9 @@ export class Game {
     this.passiveTrafficPlayerStunUntil = -Infinity;
     this.passiveTrafficPlayerHitCooldownUntil = -Infinity;
     this.passiveTrafficCrashDirection = new THREE.Vector3(0, 0, 1);
+    this.passiveTrafficCrashSide = new THREE.Vector3(1, 0, 0);
+    this.passiveTrafficCrashCandidate = new THREE.Vector3();
+    this.passiveTrafficCrashToPlayer = new THREE.Vector3();
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastLocalEquippedWeaponId = '';
@@ -2621,17 +2632,299 @@ export class Game {
     thud.stop(now + 0.25);
   }
 
-  getPassiveTrafficPlayerCollisionTarget() {
-    const localPlayerState = this.getLocalPlayerState();
-    if (!this.player || !localPlayerState || localPlayerState.alive === false || this.worldBuilder?.enabled) {
+  playPassiveTrafficCartoonCrashSound() {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      this.playSoundEffect(this.playingCardSound, {
+        playbackRate: 1.85,
+        preservePitch: false,
+        volumeScale: 1.1
+      });
+      this.playSoundEffect(this.playingCardSound, {
+        playbackRate: 0.72,
+        preservePitch: false,
+        volumeScale: 0.72,
+        delayMs: 95
+      });
+      return;
+    }
+
+    const resumePromise = context.resume?.();
+    if (resumePromise?.catch) {
+      void resumePromise.catch(() => {});
+    }
+
+    const now = context.currentTime;
+    const masterVolume = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+    const makeGain = (peak, attackAt, releaseAt) => {
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * masterVolume), now + attackAt);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseAt);
+      gain.connect(context.destination);
+      return gain;
+    };
+
+    const bonk = context.createOscillator();
+    bonk.type = 'square';
+    bonk.frequency.setValueAtTime(740, now);
+    bonk.frequency.exponentialRampToValueAtTime(118, now + 0.19);
+    bonk.connect(makeGain(0.12, 0.01, 0.24));
+    bonk.start(now);
+    bonk.stop(now + 0.25);
+
+    const sproing = context.createOscillator();
+    sproing.type = 'sine';
+    sproing.frequency.setValueAtTime(170, now + 0.08);
+    sproing.frequency.exponentialRampToValueAtTime(420, now + 0.18);
+    sproing.frequency.exponentialRampToValueAtTime(260, now + 0.34);
+    sproing.connect(makeGain(0.1, 0.1, 0.42));
+    sproing.start(now + 0.08);
+    sproing.stop(now + 0.43);
+
+    const sampleRate = context.sampleRate;
+    const duration = 0.16;
+    const buffer = context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) {
+      const progress = index / data.length;
+      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - progress, 3);
+    }
+    const burst = context.createBufferSource();
+    burst.buffer = buffer;
+    const burstFilter = context.createBiquadFilter();
+    burstFilter.type = 'highpass';
+    burstFilter.frequency.setValueAtTime(1250, now);
+    burst.connect(burstFilter);
+    burstFilter.connect(makeGain(0.055, 0.005, duration));
+    burst.start(now);
+    burst.stop(now + duration);
+  }
+
+  isLocalPlayerUsingCarTransport(localPlayerState = this.getLocalPlayerState()) {
+    return Boolean(localPlayerState?.skating === true && getPlayerVehicleItemId(localPlayerState));
+  }
+
+  doesPassiveTrafficRecoveryPositionHitCollider(candidate, radius = PLAYER_RADIUS) {
+    if (!candidate) {
+      return true;
+    }
+
+    const colliders = this.getActiveColliders();
+    for (let index = 0; index < colliders.length; index += 1) {
+      const collider = colliders[index];
+      if (!collider || collider.blocksMovement === false) {
+        continue;
+      }
+
+      if (collider.type === 'cylinder') {
+        const combinedRadius = radius + Math.max(0, Number(collider.radius) || 0);
+        const dx = candidate.x - (Number(collider.x) || 0);
+        const dz = candidate.z - (Number(collider.z) || 0);
+        if ((dx * dx) + (dz * dz) < combinedRadius * combinedRadius) {
+          return true;
+        }
+        continue;
+      }
+
+      const box = collider.box ?? collider;
+      if (
+        box?.min
+        && box?.max
+        && candidate.x > box.min.x - radius
+        && candidate.x < box.max.x + radius
+        && candidate.z > box.min.z - radius
+        && candidate.z < box.max.z + radius
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  clampPassiveTrafficRecoveryPosition(candidate) {
+    if (!candidate) {
       return null;
     }
 
+    const bounds = this.getActiveSceneBounds();
+    if (Number.isFinite(bounds?.min?.x) && Number.isFinite(bounds?.max?.x)) {
+      candidate.x = THREE.MathUtils.clamp(candidate.x, bounds.min.x + PLAYER_RADIUS, bounds.max.x - PLAYER_RADIUS);
+    }
+    if (Number.isFinite(bounds?.min?.z) && Number.isFinite(bounds?.max?.z)) {
+      candidate.z = THREE.MathUtils.clamp(candidate.z, bounds.min.z + PLAYER_RADIUS, bounds.max.z - PLAYER_RADIUS);
+    }
+    candidate.y = this.getActiveGroundHeightAt(candidate);
+    return candidate;
+  }
+
+  isPassiveTrafficRecoveryPositionClear(candidate, event = {}, carYaw = 0) {
+    if (!candidate) {
+      return false;
+    }
+
+    if (
+      event.carPosition
+      && isPointInsidePassiveTrafficHitbox(
+        event.carPosition,
+        carYaw,
+        candidate,
+        PLAYER_RADIUS + PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_HITBOX_PADDING
+      )
+    ) {
+      return false;
+    }
+
+    return !this.doesPassiveTrafficRecoveryPositionHitCollider(candidate, PLAYER_RADIUS);
+  }
+
+  resolvePassiveTrafficCarCrashRecoveryPosition(event = {}, direction = this.passiveTrafficCrashDirection) {
+    if (!this.player) {
+      return null;
+    }
+
+    const forward = this.passiveTrafficCrashDirection.copy(direction);
+    forward.y = 0;
+    if (forward.lengthSq() <= 0.0001) {
+      forward.set(Math.sin(this.player.object.rotation.y), 0, Math.cos(this.player.object.rotation.y));
+    }
+    forward.normalize();
+
+    const side = this.passiveTrafficCrashSide.set(forward.z, 0, -forward.x);
+    if (side.lengthSq() <= 0.0001) {
+      side.set(1, 0, 0);
+    } else {
+      side.normalize();
+    }
+
+    const carPosition = event.carPosition;
+    const toPlayer = this.passiveTrafficCrashToPlayer;
+    if (carPosition) {
+      toPlayer.set(
+        this.player.position.x - (Number(carPosition.x) || 0),
+        0,
+        this.player.position.z - (Number(carPosition.z) || 0)
+      );
+    } else {
+      toPlayer.set(0, 0, 0);
+    }
+    const preferredSideSign = toPlayer.dot(side) >= 0 ? 1 : -1;
+    const carYaw = Number.isFinite(event.carYaw)
+      ? event.carYaw
+      : Math.atan2(forward.x, forward.z);
+    const sideSigns = [preferredSideSign, -preferredSideSign];
+    const sideDistances = [
+      PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_SIDE_CLEARANCE,
+      PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_EXTRA_SIDE_CLEARANCE
+    ];
+    const forwardOffsets = [
+      0,
+      -PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_FORWARD_CLEARANCE,
+      PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_FORWARD_CLEARANCE
+    ];
+
+    for (const sideSign of sideSigns) {
+      for (const sideDistance of sideDistances) {
+        for (const forwardOffset of forwardOffsets) {
+          const candidate = this.passiveTrafficCrashCandidate
+            .copy(this.player.position)
+            .addScaledVector(side, sideSign * sideDistance)
+            .addScaledVector(forward, forwardOffset);
+          this.clampPassiveTrafficRecoveryPosition(candidate);
+          if (this.isPassiveTrafficRecoveryPositionClear(candidate, event, carYaw)) {
+            return candidate.clone();
+          }
+        }
+      }
+    }
+
+    const fallback = this.passiveTrafficCrashCandidate
+      .copy(this.player.position)
+      .addScaledVector(side, preferredSideSign * PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_EXTRA_SIDE_CLEARANCE);
+    this.clampPassiveTrafficRecoveryPosition(fallback);
+    return fallback.clone();
+  }
+
+  startPassiveTrafficCarCrashCutscene() {
+    if (!this.player || this.rentIntroCutscene) {
+      return false;
+    }
+
+    const now = performance.now();
+    const facing = Number.isFinite(this.player.object?.rotation?.y)
+      ? this.player.object.rotation.y
+      : 0;
+    this.rentIntroCutscene = {
+      seq: `passive-traffic-car-crash:${Math.round(now)}`,
+      npcId: '',
+      startedAt: now,
+      endsAt: now + RENT_INTRO_CUTSCENE_TOTAL_MS,
+      facing,
+      standUpPlayed: false,
+      playerVisibleBefore: this.player.object?.visible !== false
+    };
+    void preloadMixamoClips([RENT_INTRO_STAND_UP_CLIP_NAME]);
+    this.player.object.visible = false;
+    this.player.setAimingState(false);
+    this.clearPendingHipFireShot();
+    this.updateRentIntroCutsceneCamera(0);
+    this.hud.setRentIntroCutsceneState({ visible: true, blink: 1 });
+    return true;
+  }
+
+  getPassiveTrafficPlayerCollisionTarget() {
+    const localPlayerState = this.getLocalPlayerState();
+    if (
+      !this.player
+      || !localPlayerState
+      || localPlayerState.alive === false
+      || this.worldBuilder?.enabled
+      || this.isRentIntroCutsceneActive()
+    ) {
+      return null;
+    }
+
+    const usingCar = this.isLocalPlayerUsingCarTransport(localPlayerState);
+    const usingSkateboard = Boolean(localPlayerState.skating === true && !usingCar && isPlayerSkateboardOwner(localPlayerState));
     return {
       position: this.player.position,
-      radius: PLAYER_RADIUS,
-      alive: true
+      radius: usingCar ? PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_RADIUS : PLAYER_RADIUS,
+      alive: true,
+      transportKind: usingCar ? 'car' : (usingSkateboard ? 'skateboard' : '')
     };
+  }
+
+  handlePassiveTrafficPlayerCarCollision(event = {}, direction = this.passiveTrafficCrashDirection, now = performance.now(), localPlayerState = this.getLocalPlayerState()) {
+    const recoveryPosition = this.resolvePassiveTrafficCarCrashRecoveryPosition(event, direction);
+    const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
+    const transportOwned = isPlayerSkateboardOwner(localPlayerState) || Boolean(vehicleItemId);
+    this.transportRideToggled = false;
+    this.setLocalPlayerSkateboardState(transportOwned, false, vehicleItemId);
+
+    if (recoveryPosition) {
+      this.player.position.copy(recoveryPosition);
+      this.resetLocalPlayerKinematics(this.player.position, now);
+    }
+
+    this.player.triggerDamageFeedback?.({ direction });
+    this.triggerDamageCameraFeedback(direction);
+    this.playPassiveTrafficCartoonCrashSound();
+    this.hud.showToast(PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_POPUP_TEXT);
+    this.startPassiveTrafficCarCrashCutscene();
+
+    void this.npcService?.applyPassiveTrafficHit?.({
+      damage: PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE,
+      emoteId: '',
+      position: recoveryPosition
+        ? {
+          x: recoveryPosition.x,
+          y: recoveryPosition.y,
+          z: recoveryPosition.z
+        }
+        : undefined,
+      rotationY: this.player.object.rotation.y
+    });
   }
 
   handlePassiveTrafficPlayerCollision(event = {}) {
@@ -2646,14 +2939,6 @@ export class Game {
     }
     this.passiveTrafficPlayerHitCooldownUntil = now + PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS;
 
-    const damage = Math.max(0, Math.floor(Number(event.damage) || 0));
-    const stunMs = Math.max(0, Number(event.stunSeconds) || 0) * 1000;
-    this.passiveTrafficPlayerStunUntil = Math.max(this.passiveTrafficPlayerStunUntil, now + stunMs);
-    this.player.playEmote?.(STAND_UP_EMOTE_ID, {
-      startedAtMs: Date.now(),
-      trackSync: true
-    });
-
     const direction = this.passiveTrafficCrashDirection.set(
       Number(event.direction?.x ?? 0) || 0,
       0,
@@ -2663,6 +2948,19 @@ export class Game {
       direction.set(Math.sin(this.player.object.rotation.y), 0, Math.cos(this.player.object.rotation.y));
     }
     direction.normalize();
+    if (event.transportKind === 'car' || this.isLocalPlayerUsingCarTransport(localPlayerState)) {
+      this.handlePassiveTrafficPlayerCarCollision(event, direction, now, localPlayerState);
+      return;
+    }
+
+    const damage = Math.max(0, Math.floor(Number(event.damage) || 0));
+    const stunMs = Math.max(0, Number(event.stunSeconds) || 0) * 1000;
+    this.passiveTrafficPlayerStunUntil = Math.max(this.passiveTrafficPlayerStunUntil, now + stunMs);
+    this.player.playEmote?.(STAND_UP_EMOTE_ID, {
+      startedAtMs: Date.now(),
+      trackSync: true
+    });
+
     this.player.triggerDamageFeedback?.({ direction });
     this.triggerDamageCameraFeedback(direction);
     this.playPassiveTrafficCrashSound();

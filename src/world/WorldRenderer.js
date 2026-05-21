@@ -2595,11 +2595,13 @@ export class WorldRenderer {
         routeId: car.routeId,
         damage: PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
         stunSeconds: PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
+        transportKind: String(target.transportKind ?? ''),
         carPosition: {
           x: car.object.position.x,
           y: car.object.position.y,
           z: car.object.position.z
         },
+        carYaw: car.yaw,
         direction: {
           x: forward.x,
           z: forward.z

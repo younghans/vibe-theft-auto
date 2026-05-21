@@ -1682,6 +1682,8 @@ function validatePassiveTraffic() {
       && /passiveTrafficHitboxesOverlap/.test(worldRendererSource)
       && /updatePassiveTrafficPlayerCollisions/.test(worldRendererSource)
       && /onPassiveTrafficPlayerCollision/.test(worldRendererSource)
+      && /transportKind: String\(target\.transportKind/.test(worldRendererSource)
+      && /carYaw: car\.yaw/.test(worldRendererSource)
       && /collisionReverseSeconds/.test(worldRendererSource)
       && /collisionStopSeconds/.test(worldRendererSource)
       && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
@@ -1714,12 +1716,18 @@ function validatePassiveTraffic() {
       && worldBuilderSource.includes('onPassiveTrafficPlayerCollision')
       && gameSource.includes('handlePassiveTrafficPlayerCollision')
       && gameSource.includes('playPassiveTrafficCrashSound')
+      && gameSource.includes('playPassiveTrafficCartoonCrashSound')
+      && gameSource.includes('PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE = 10')
+      && gameSource.includes('PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_POPUP_TEXT')
+      && gameSource.includes('startPassiveTrafficCarCrashCutscene')
+      && gameSource.includes('resolvePassiveTrafficCarCrashRecoveryPosition')
       && gameSource.includes('passiveTrafficPlayerStunUntil')
       && gameSource.includes('applyPassiveTrafficHit')
-      && readRepoText('src/npc/NpcServiceMock.js').includes('applyPassiveTrafficHit')
+      && styleSource.includes('.hud.is-rent-cutscene-active .hud__toast')
+      && readRepoText('src/npc/NpcServiceMock.js').includes('position = null')
       && readRepoText('src/npc/NpcServiceColyseus.js').includes("player:passiveTrafficHit")
-      && readRepoText('server/src/WorldRoom.js').includes('handlePassiveTrafficHit'),
-    'Passive traffic player collisions should damage, stun, play the stand-up emote, and round-trip through local and server health state'
+      && readRepoText('server/src/WorldRoom.js').includes('message.position ?? message'),
+    'Passive traffic player collisions should preserve skateboard hits, handle car crashes with a cartoon popup/cutscene, and round-trip health plus recovery position through local and server state'
   );
   assert(
     worldBuilderSource.includes('getTrafficRouteMapDimensions')

@@ -1200,7 +1200,7 @@ export class NpcServiceColyseus {
     this.room?.send('combat:reloadRequest', {});
   }
 
-  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID } = {}) {
+  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID, position = null, rotationY = undefined } = {}) {
     const hitDamage = Math.max(0, Math.floor(Number(damage) || 0));
     if (hitDamage <= 0) {
       return Promise.resolve({ ok: true });
@@ -1215,15 +1215,47 @@ export class NpcServiceColyseus {
       localPlayer.emoteActive = localPlayer.emoteId === STAND_UP_EMOTE_ID;
       localPlayer.emoteStartedAt = localPlayer.emoteActive ? now : 0;
       localPlayer.emoteSeq = (Number(localPlayer.emoteSeq) || 0) + 1;
+      const crashX = Number(position?.x);
+      const crashZ = Number(position?.z);
+      if (Number.isFinite(crashX) && Number.isFinite(crashZ)) {
+        const crashY = Number(position?.y);
+        const crashRotationY = Number(rotationY);
+        localPlayer.x = quantize(crashX);
+        localPlayer.y = Number.isFinite(crashY) ? quantize(crashY) : localPlayer.y;
+        localPlayer.z = quantize(crashZ);
+        if (Number.isFinite(crashRotationY)) {
+          localPlayer.rotationY = quantize(crashRotationY, 3);
+          localPlayer.aimRotationY = localPlayer.rotationY;
+        }
+        localPlayer.skating = false;
+        localPlayer.transformSeq = normalizeTransformSeq(localPlayer.transformSeq) + 1;
+        this.lastTransformSeq = Math.max(this.lastTransformSeq, localPlayer.transformSeq);
+      }
       if (localPlayer.health <= 0) {
         localPlayer.alive = false;
       }
     }
 
-    return this.rpc('player:passiveTrafficHit', {
+    const payload = {
       damage: hitDamage,
       emoteId
-    });
+    };
+    const payloadX = Number(position?.x);
+    const payloadZ = Number(position?.z);
+    if (Number.isFinite(payloadX) && Number.isFinite(payloadZ)) {
+      const payloadY = Number(position?.y);
+      payload.position = {
+        x: payloadX,
+        y: Number.isFinite(payloadY) ? payloadY : 0,
+        z: payloadZ
+      };
+    }
+    const payloadRotationY = Number(rotationY);
+    if (Number.isFinite(payloadRotationY)) {
+      payload.rotationY = payloadRotationY;
+    }
+
+    return this.rpc('player:passiveTrafficHit', payload);
   }
 
   async claimWorkoutPlacement(placementId = '') {

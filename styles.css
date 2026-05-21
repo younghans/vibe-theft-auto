@@ -5645,6 +5645,10 @@ body.is-admin-prompt-resizing * {
   transform: translateX(0);
 }
 
+.hud.is-rent-cutscene-active .hud__toast {
+  z-index: 46;
+}
+
 .hud__job-lock-alert {
   position: fixed;
   left: 50%;

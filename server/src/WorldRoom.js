@@ -1977,6 +1977,27 @@ export class WorldRoom extends Room {
     player.emoteActive = player.emoteId === STAND_UP_EMOTE_ID;
     player.emoteStartedAt = player.emoteActive ? now : 0;
     player.emoteSeq += 1;
+    const crashPosition = message.position ?? message;
+    const crashX = Number(crashPosition?.x);
+    const crashZ = Number(crashPosition?.z);
+    if (Number.isFinite(crashX) && Number.isFinite(crashZ)) {
+      const clamped = clampToWorldBounds(crashX, crashZ);
+      const crashY = Number(crashPosition?.y);
+      const crashRotationY = Number(message.rotationY);
+      player.x = quantizePosition(clamped.x);
+      player.y = Number.isFinite(crashY) ? quantizePosition(crashY) : player.y;
+      player.z = quantizePosition(clamped.z);
+      if (Number.isFinite(crashRotationY)) {
+        player.rotationY = quantizeRotation(crashRotationY);
+        player.aimRotationY = player.rotationY;
+      }
+      const meta = this.getPlayerMeta(client.sessionId);
+      meta.x = player.x;
+      meta.z = player.z;
+      meta.acceptedAt = now;
+      meta.lastTransformSeq = normalizeTransformSeq(meta.lastTransformSeq ?? player.transformSeq ?? 0) + 1;
+      player.transformSeq = meta.lastTransformSeq;
+    }
     player.skating = false;
     this.getPlayerMeta(client.sessionId).healthRegenCarryMs = 0;
     if (player.health <= 0) {
