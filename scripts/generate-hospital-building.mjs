@@ -92,8 +92,8 @@ function createCylinder(radiusTop, radiusBottom, height, segments, position, mat
 }
 
 function addBoxes(group, specs) {
-  for (const { size, position, material } of specs) {
-    group.add(createBox(size, position, material));
+  for (const { size, position, material, ...options } of specs) {
+    group.add(createBox(size, position, material, options));
   }
 }
 
@@ -353,7 +353,7 @@ function buildHospital() {
     { size: [0.88, 0.6, 0.88], position: [3.98, 7.5, -1.02], material: materials.concreteDark },
     { size: [0.72, 0.62, 0.72], position: [-3.65, 14.5, -2.2], material: materials.concreteDark },
     { size: [0.4, 1.28, 0.4], position: [-3.65, 15.3, -2.2], material: materials.trimDark },
-    { size: [0.9, 1.95, 0.2], position: [3.56, 1.75, 4.88], material: materials.glassDark },
+    { size: [0.9, 1.95, 0.2], position: [3.56, 1.75, 5.14], material: materials.glassDark, name: 'hospital_front_entry_window' },
     { size: [0.32, 0.1, 1.1], position: [2.92, 0.78, 3.78], material: materials.trim },
     { size: [0.32, 0.1, 1.1], position: [4.28, 0.78, 3.78], material: materials.trim },
     { size: [6.7, 0.09, 0.34], position: [-1.65, 5.4, 1.1], material: materials.accent },
@@ -373,7 +373,7 @@ function buildHospital() {
   addGlassFrontDoor(hospital, {
     centerX: 0,
     centerY: 1.22,
-    z: 5.18,
+    z: 5.56,
     panelWidth: 1.1,
     panelHeight: 2.04,
     gap: 0.34,
@@ -710,7 +710,7 @@ function buildWideHospital() {
     { size: [0.88, 0.6, 0.88], position: [8.55, 8.9, -0.95], material: materials.concreteDark },
     { size: [0.42, 0.82, 0.42], position: [9.9, 9.15, -0.55], material: materials.trimDark },
     { size: [0.74, 1.2, 0.74], position: [6.2, 6.9, -2.55], material: materials.concreteDark },
-    { size: [0.96, 1.95, 0.2], position: [-7.15, 1.72, 4.92], material: materials.glassDark },
+    { size: [0.96, 1.95, 0.2], position: [-7.15, 1.72, 5.5], material: materials.glassDark, name: 'hospital_wide_front_entry_window' },
     { size: [5.6, 0.09, 0.34], position: [-7.4, 5.58, 1.08], material: materials.accent },
     { size: [5.6, 0.09, 0.34], position: [-7.4, 7.65, 1.08], material: materials.accent },
     { size: [5.6, 0.09, 0.34], position: [-7.4, 11.82, 1.08], material: materials.accent },
@@ -754,7 +754,7 @@ function buildWideHospital() {
   addGlassFrontDoor(hospital, {
     centerX: 1.45,
     centerY: 1.2,
-    z: 5.18,
+    z: 5.56,
     panelWidth: 1.22,
     panelHeight: 2.04,
     gap: 0.16,

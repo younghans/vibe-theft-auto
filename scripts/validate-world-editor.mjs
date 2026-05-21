@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from 'node:fs';
-import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Scene, Vector3 } from 'three';
+import { Box3, BoxGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, Quaternion, Scene, Vector3 } from 'three';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { PLAYER_RADIUS, WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
 import {
@@ -345,6 +345,106 @@ function getGlbNodeYBounds(json, node) {
     minY: translationY + (minY * scaleY),
     maxY: translationY + (maxY * scaleY)
   };
+}
+
+function glbBoundsHasFiniteExtents(bounds) {
+  return Boolean(
+    bounds
+    && Number.isFinite(bounds.min?.x)
+    && Number.isFinite(bounds.min?.y)
+    && Number.isFinite(bounds.min?.z)
+    && Number.isFinite(bounds.max?.x)
+    && Number.isFinite(bounds.max?.y)
+    && Number.isFinite(bounds.max?.z)
+  );
+}
+
+function getGlbNodeLocalMatrix(node) {
+  const matrix = new Matrix4();
+  if (Array.isArray(node?.matrix) && node.matrix.length === 16) {
+    return matrix.fromArray(node.matrix);
+  }
+
+  const translation = new Vector3(
+    Number(node?.translation?.[0] ?? 0),
+    Number(node?.translation?.[1] ?? 0),
+    Number(node?.translation?.[2] ?? 0)
+  );
+  const rotation = Array.isArray(node?.rotation) && node.rotation.length === 4
+    ? new Quaternion(
+      Number(node.rotation[0] ?? 0),
+      Number(node.rotation[1] ?? 0),
+      Number(node.rotation[2] ?? 0),
+      Number(node.rotation[3] ?? 1)
+    )
+    : new Quaternion();
+  const scale = new Vector3(
+    Number(node?.scale?.[0] ?? 1),
+    Number(node?.scale?.[1] ?? 1),
+    Number(node?.scale?.[2] ?? 1)
+  );
+  return matrix.compose(translation, rotation, scale);
+}
+
+function unionGlbNodeSubtreeBounds(json, nodeIndex, parentMatrix, targetBounds) {
+  const node = json.nodes?.[nodeIndex];
+  if (!node) {
+    return;
+  }
+
+  const worldMatrix = new Matrix4().multiplyMatrices(parentMatrix, getGlbNodeLocalMatrix(node));
+  const mesh = Number.isInteger(node.mesh) ? json.meshes?.[node.mesh] : null;
+  for (const primitive of mesh?.primitives ?? []) {
+    const positionAccessorIndex = primitive.attributes?.POSITION;
+    const positionAccessor = Number.isInteger(positionAccessorIndex)
+      ? json.accessors?.[positionAccessorIndex]
+      : null;
+    if (!Array.isArray(positionAccessor?.min) || !Array.isArray(positionAccessor?.max)) {
+      continue;
+    }
+
+    targetBounds.union(
+      new Box3(
+        new Vector3(...positionAccessor.min),
+        new Vector3(...positionAccessor.max)
+      ).applyMatrix4(worldMatrix)
+    );
+  }
+
+  for (const childIndex of node.children ?? []) {
+    unionGlbNodeSubtreeBounds(json, childIndex, worldMatrix, targetBounds);
+  }
+}
+
+function getGlbNodeWorldBoundsByName(json, nodeName) {
+  const bounds = new Box3().makeEmpty();
+  const identity = new Matrix4();
+  const defaultScene = Number.isInteger(json.scene) ? json.scenes?.[json.scene] : json.scenes?.[0];
+  const rootNodeIndexes = defaultScene?.nodes?.length
+    ? defaultScene.nodes
+    : (json.nodes ?? []).map((_, index) => index);
+
+  const visit = (nodeIndex, parentMatrix) => {
+    const node = json.nodes?.[nodeIndex];
+    if (!node) {
+      return;
+    }
+
+    const worldMatrix = new Matrix4().multiplyMatrices(parentMatrix, getGlbNodeLocalMatrix(node));
+    if (node.name === nodeName) {
+      unionGlbNodeSubtreeBounds(json, nodeIndex, parentMatrix, bounds);
+    }
+
+    for (const childIndex of node.children ?? []) {
+      visit(childIndex, worldMatrix);
+    }
+  };
+
+  for (const rootNodeIndex of rootNodeIndexes) {
+    visit(rootNodeIndex, identity);
+  }
+
+  return glbBoundsHasFiniteExtents(bounds) ? bounds : null;
 }
 
 function getGlbNodePatternYBounds(json, pattern) {
@@ -1920,13 +2020,26 @@ function validateCustomTileCatalogItems() {
   const assertClose = (actual, expected, message) => {
     assert(Math.abs(Number(actual) - expected) < 0.001, message);
   };
-  const assertHospitalGlbProfile = (relativePath, profileNodeName, label) => {
+  const assertHospitalGlbProfile = (relativePath, profileNodeName, label, {
+    doorFacadeFrontZ,
+    entryWindowNodeName,
+    entryWindowFacadeFrontZ
+  }) => {
     const glbJson = readGlbJson(relativePath);
     const profileNode = getGlbNodeByName(glbJson, profileNodeName);
     const crossNodes = getGlbNodesByName(glbJson, 'hospital_cross_symbol');
     const glassDoorNode = getGlbNodeByName(glbJson, 'hospital_glass_front_door');
     assert(profileNode, `${label} GLB should expose the form-fitting profile node`);
     assertClose(getGlbNodeLocalScale(profileNode)[1], 1.7, `${label} profile should stretch vertically by 1.7x`);
+    const profileScaleZ = getGlbNodeLocalScale(profileNode)[2];
+    const assertNodeSitsInFrontOfFacade = (nodeName, facadeFrontZ, message) => {
+      const bounds = getGlbNodeWorldBoundsByName(glbJson, nodeName);
+      assert(bounds, `${label} GLB should expose bounds for ${nodeName}`);
+      assert(
+        bounds.min.z > (facadeFrontZ * profileScaleZ) + 0.004,
+        `${label} ${message}`
+      );
+    };
     assert(crossNodes.length >= 2, `${label} GLB should keep separate hospital cross symbol nodes`);
     for (const crossNode of crossNodes) {
       const crossScale = getGlbNodeLocalScale(crossNode);
@@ -1941,6 +2054,22 @@ function validateCustomTileCatalogItems() {
       countGlbTransparentPrimitivesUnderNode(glbJson, 'hospital_glass_front_door') >= 2,
       `${label} GLB should keep both front door panels visibly transparent`
     );
+    assertNodeSitsInFrontOfFacade(
+      'hospital_glass_front_door_panel_left',
+      doorFacadeFrontZ,
+      'left front door panel should sit in front of the opaque entrance facade'
+    );
+    assertNodeSitsInFrontOfFacade(
+      'hospital_glass_front_door_panel_right',
+      doorFacadeFrontZ,
+      'right front door panel should sit in front of the opaque entrance facade'
+    );
+    assert(getGlbNodeByName(glbJson, entryWindowNodeName), `${label} GLB should include the front entry window node`);
+    assertNodeSitsInFrontOfFacade(
+      entryWindowNodeName,
+      entryWindowFacadeFrontZ,
+      'front entry window should sit in front of the opaque entrance facade'
+    );
   };
 
   assert(hospital, 'Hospital tile should exist');
@@ -1954,12 +2083,22 @@ function validateCustomTileCatalogItems() {
   assertHospitalGlbProfile(
     'assets/vibe_theft_auto_custom/models/hospital-building.glb',
     'hospital_building_form_fit',
-    'Hospital'
+    'Hospital',
+    {
+      doorFacadeFrontZ: 5.43,
+      entryWindowNodeName: 'hospital_front_entry_window',
+      entryWindowFacadeFrontZ: 5
+    }
   );
   assertHospitalGlbProfile(
     'assets/vibe_theft_auto_custom/models/hospital-building-wide.glb',
     'hospital_building_wide_form_fit',
-    'Wide hospital'
+    'Wide hospital',
+    {
+      doorFacadeFrontZ: 5.395,
+      entryWindowNodeName: 'hospital_wide_front_entry_window',
+      entryWindowFacadeFrontZ: 5.37
+    }
   );
 
   const hospitalCollisionRects = placementToCollisionRects(
