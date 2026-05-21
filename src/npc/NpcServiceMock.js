@@ -2,14 +2,14 @@ import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
   HIT_REACTION_HEAD,
+  NPC_PUNCH_DAMAGE,
+  NPC_WEAPON_DAMAGE,
   PICKUP_INTERACT_RADIUS,
   PUNCH_COMBO_MIN_INTERVAL_MS,
-  PUNCH_DAMAGE,
   PUNCH_HITBOX_RADIUS,
   PUNCH_HIT_DELAY_MS,
   PUNCH_HIT_ORIGIN_FORWARD_OFFSET,
   PUNCH_HIT_REACTIONS,
-  PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
   PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
   PUNCH_TARGET_ASSIST_RANGE_BONUS,
@@ -238,15 +238,7 @@ const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
 const SHOT_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 1.5;
 const PUNCH_WORLD_BLOCKER_GRACE_DISTANCE = PLAYER_RADIUS * 0.55;
-const NPC_REPATH_MS = 900;
-const NPC_SHOT_INTERVAL_MS = WEAPON_FIRE_INTERVAL_MS * 2;
-const NPC_PUNCH_INTERVAL_MS = PUNCH_INTERVAL_MS * 2;
-const NPC_COMBAT_REACH_BUFFER = 1.2;
-const NPC_TARGET_STOP_DISTANCE = 0.7;
 const NPC_SHOT_ORIGIN_FORWARD_OFFSET = PLAYER_RADIUS * 1.15;
-const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
-const NPC_PATH_TURN_BLEND_MAX = 0.26;
-const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const MOCK_STOCK_MARKET_STORAGE_KEY = 'vta.mockStockMarket';
 const MOCK_STOCK_PORTFOLIOS_STORAGE_KEY = 'vta.mockStockPortfolios';
 
@@ -4017,7 +4009,7 @@ export class NpcServiceMock {
     if (shot.kind === 'player' && shot.targetId) {
       const target = this.state.players.get(shot.targetId);
       if (target?.alive !== false) {
-        target.health = Math.max(0, target.health - WEAPON_DAMAGE);
+        target.health = Math.max(0, target.health - NPC_WEAPON_DAMAGE);
         target.lastDamagedAt = now;
         if (target.health <= 0) {
           this.handlePlayerDeath(shot.targetId, npcId);
@@ -4026,7 +4018,7 @@ export class NpcServiceMock {
     }
 
     if (shot.kind === 'npc' && shot.targetId) {
-      this.applyDamageToNpc(shot.targetId, WEAPON_DAMAGE, npcId, now);
+      this.applyDamageToNpc(shot.targetId, NPC_WEAPON_DAMAGE, npcId, now);
     }
   }
 
@@ -4066,7 +4058,7 @@ export class NpcServiceMock {
     if (hit.kind === 'player' && hit.targetId) {
       const target = this.state.players.get(hit.targetId);
       if (target?.alive !== false) {
-        target.health = Math.max(0, target.health - PUNCH_DAMAGE);
+        target.health = Math.max(0, target.health - NPC_PUNCH_DAMAGE);
         target.lastDamagedAt = now;
         if (target.health <= 0) {
           this.handlePlayerDeath(hit.targetId, npcId);
@@ -4075,7 +4067,7 @@ export class NpcServiceMock {
     }
 
     if (hit.kind === 'npc' && hit.targetId) {
-      this.applyDamageToNpc(hit.targetId, PUNCH_DAMAGE, npcId, now);
+      this.applyDamageToNpc(hit.targetId, NPC_PUNCH_DAMAGE, npcId, now);
     }
   }
 

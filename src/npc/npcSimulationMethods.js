@@ -1,7 +1,7 @@
 import {
-  PUNCH_INTERVAL_MS,
+  NPC_PUNCH_INTERVAL_MS,
+  NPC_SHOT_INTERVAL_MS,
   PUNCH_RANGE,
-  WEAPON_FIRE_INTERVAL_MS,
   WEAPON_IDS,
   WEAPON_RANGE
 } from '../shared/combatConstants.js';
@@ -25,6 +25,7 @@ import {
   NPC_DEFAULT_WANDER_IDLE_MIN_MS,
   NPC_RUNTIME_MODES,
   NPC_STEP_TYPES,
+  getNpcAggroRunSpeed,
   getNpcLawRadius,
   getNpcUsePlacementDurationMs,
   getNpcRunSpeed,
@@ -42,8 +43,6 @@ import {
 import { segmentRectIntersectionDistance } from '../shared/combatMath.js';
 
 const NPC_REPATH_MS = 900;
-const NPC_SHOT_INTERVAL_MS = WEAPON_FIRE_INTERVAL_MS * 2;
-const NPC_PUNCH_INTERVAL_MS = PUNCH_INTERVAL_MS * 2;
 const NPC_COMBAT_REACH_BUFFER = 1.2;
 const NPC_TARGET_STOP_DISTANCE = 0.7;
 const NPC_HOME_RETURN_STOP_DISTANCE = 0.55;
@@ -1139,7 +1138,7 @@ export const npcSimulationMethods = {
 
     meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
     npc.activity = '';
-    const runSpeed = getNpcRunSpeed(definition?.speed);
+    const runSpeed = getNpcAggroRunSpeed(definition?.speed);
     if (combat.weaponId === WEAPON_IDS.pistol) {
       const shootRange = WEAPON_RANGE * 0.72;
       if (distanceToThreatSq <= shootRange * shootRange && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {

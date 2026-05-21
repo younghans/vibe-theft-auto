@@ -3,7 +3,21 @@ import { AnimationClip, AnimationMixer, Box3, BoxGeometry, Group, Matrix4, Mesh,
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
-import { PLAYER_RADIUS, WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
+import {
+  NPC_PUNCH_DAMAGE,
+  NPC_PUNCH_INTERVAL_MS,
+  NPC_SHOT_INTERVAL_MS,
+  NPC_WEAPON_DAMAGE,
+  PLAYER_MAX_HEALTH,
+  PLAYER_RADIUS,
+  PUNCH_DAMAGE,
+  PUNCH_INTERVAL_MS,
+  WEAPON_CLIP_SIZE,
+  WEAPON_DAMAGE,
+  WEAPON_FIRE_INTERVAL_MS,
+  WEAPON_IDS,
+  WEAPON_RESERVE_CAP
+} from '../src/shared/combatConstants.js';
 import {
   COMBAT_PICKUP_PROP_ITEM_IDS,
   getCombatPickupSpawnDefinitions
@@ -101,8 +115,15 @@ import {
 import { VIBE_HERO_EDITED_CHART_ROWS } from '../src/shared/vibeHeroEditedCharts.js';
 import {
   NPC_COMBAT_ARCHETYPES,
+  NPC_AGGRO_FAST_RUN_SPEED,
+  NPC_AGGRO_SLOW_RUN_SPEED,
+  NPC_FAST_RUN_SPEED,
   NPC_DEFAULT_LAW_RADIUS,
+  NPC_SLOW_RUN_SPEED,
+  NPC_SPEED_TIERS,
+  getNpcAggroRunSpeed,
   getNpcLawRadius,
+  getNpcRunSpeed,
   isPoliceOfficerNpc,
   normalizeNpcBehavior
 } from '../src/npc/npcBehavior.js';
@@ -5222,6 +5243,27 @@ function validateBartenderFunction() {
       && policeNpc.combat?.weaponId === WEAPON_IDS.pistol,
     'Police NPCs should normalize into the police combat archetype with a pistol fallback'
   );
+  const npcPistolTimeToKillMs = (Math.ceil(PLAYER_MAX_HEALTH / NPC_WEAPON_DAMAGE) - 1) * NPC_SHOT_INTERVAL_MS;
+  assert(
+    NPC_WEAPON_DAMAGE < WEAPON_DAMAGE
+      && NPC_SHOT_INTERVAL_MS >= WEAPON_FIRE_INTERVAL_MS * 5
+      && npcPistolTimeToKillMs >= 3000
+      && npcPistolTimeToKillMs <= 5000,
+    'Aggro NPC pistol damage and fire cadence should give a full-health player roughly 3-5 seconds to react'
+  );
+  assert(
+    NPC_PUNCH_DAMAGE < PUNCH_DAMAGE
+      && NPC_PUNCH_INTERVAL_MS > PUNCH_INTERVAL_MS * 2,
+    'Aggro NPC punches should be weaker and less frequent than player punches'
+  );
+  assert(
+    NPC_AGGRO_SLOW_RUN_SPEED < NPC_SLOW_RUN_SPEED
+      && NPC_AGGRO_FAST_RUN_SPEED < NPC_FAST_RUN_SPEED
+      && getNpcAggroRunSpeed(NPC_SPEED_TIERS.slow) === NPC_AGGRO_SLOW_RUN_SPEED
+      && getNpcAggroRunSpeed(NPC_SPEED_TIERS.fast) === NPC_AGGRO_FAST_RUN_SPEED
+      && getNpcAggroRunSpeed(NPC_SPEED_TIERS.fast) < getNpcRunSpeed(NPC_SPEED_TIERS.slow),
+    'Aggro NPC chase speed should stay much slower than the previous run-speed tiers'
+  );
   assert(getNpcLawRadius(policeNpc) === NPC_DEFAULT_LAW_RADIUS, 'Police NPCs should default to the standard law radius');
   assert(getNpcLawRadius(customRadiusPoliceNpc) === 48, 'Police NPC law radius should be configurable');
   assert(
@@ -5276,8 +5318,10 @@ function validateBartenderFunction() {
       && /lawRadius/.test(npcSimulationSource)
       && /hasUnobstructedLawSight/.test(npcSimulationSource)
       && /collisionKey:\s*'blocksShots'/.test(npcSimulationSource)
+      && /getNpcAggroRunSpeed/.test(npcSimulationSource)
+      && /NPC_SHOT_INTERVAL_MS/.test(npcSimulationSource)
       && /'npc-kill'/.test(npcSimulationSource),
-    'NPC simulation should escalate police hostility only for hostile player actions inside unobstructed law radius'
+    'NPC simulation should escalate police hostility inside unobstructed law radius and use slower aggro combat pacing'
   );
   assert(
     /triggerPoliceHostilityForPlayer[\s\S]*'shot-fired'/.test(serverSource)

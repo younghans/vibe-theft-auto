@@ -66,6 +66,8 @@ export const NPC_DEFAULT_RESPAWN_DELAY_MS = 15000;
 export const NPC_DEFAULT_SPEED_TIER = NPC_SPEED_TIERS.slow;
 export const NPC_SLOW_RUN_SPEED = 8.8;
 export const NPC_FAST_RUN_SPEED = 15;
+export const NPC_AGGRO_SLOW_RUN_SPEED = 5.2;
+export const NPC_AGGRO_FAST_RUN_SPEED = 6.4;
 export const NPC_ACTIVITY_MIN_DURATIONS_MS = Object.freeze({
   snatch: 5435
 });
@@ -143,6 +145,12 @@ export function getNpcRunSpeed(speedTier = NPC_DEFAULT_SPEED_TIER) {
   return normalizeNpcSpeedTier(speedTier) === NPC_SPEED_TIERS.fast
     ? NPC_FAST_RUN_SPEED
     : NPC_SLOW_RUN_SPEED;
+}
+
+export function getNpcAggroRunSpeed(speedTier = NPC_DEFAULT_SPEED_TIER) {
+  return normalizeNpcSpeedTier(speedTier) === NPC_SPEED_TIERS.fast
+    ? NPC_AGGRO_FAST_RUN_SPEED
+    : NPC_AGGRO_SLOW_RUN_SPEED;
 }
 
 export function normalizeNpcLawRadius(value, fallback = NPC_DEFAULT_LAW_RADIUS) {
