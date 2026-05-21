@@ -82,7 +82,7 @@ import {
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_ALT_EMOTE_ID, PUNCH_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -702,8 +702,9 @@ const RENT_INTRO_CUTSCENE_FIRST_PERSON_MS = 3300;
 const RENT_INTRO_CUTSCENE_GET_UP_START_MS = 3150;
 const RENT_INTRO_CUTSCENE_CAMERA_BLEND_MS = 760;
 const RENT_INTRO_CUTSCENE_NPC_DISTANCE = 2.75;
-const RENT_INTRO_STAND_UP_EMOTE_ID = 'standUp';
+const RENT_INTRO_STAND_UP_EMOTE_ID = STAND_UP_EMOTE_ID;
 const RENT_INTRO_STAND_UP_CLIP_NAME = 'standUp';
+const PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS = 360;
 const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
@@ -1938,6 +1939,9 @@ export class Game {
     this.damageCameraKickStartedAt = -Infinity;
     this.damageCameraKickEndsAt = -Infinity;
     this.damageCameraDirection = new THREE.Vector3(0, 0, 1);
+    this.passiveTrafficPlayerStunUntil = -Infinity;
+    this.passiveTrafficPlayerHitCooldownUntil = -Infinity;
+    this.passiveTrafficCrashDirection = new THREE.Vector3(0, 0, 1);
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastLocalEquippedWeaponId = '';
@@ -2559,6 +2563,116 @@ export class Game {
     }
 
     play();
+  }
+
+  playPassiveTrafficCrashSound() {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      this.playSoundEffect(this.playingCardSound, {
+        playbackRate: 0.48,
+        preservePitch: false,
+        volumeScale: 1.15
+      });
+      return;
+    }
+
+    const resumePromise = context.resume?.();
+    if (resumePromise?.catch) {
+      void resumePromise.catch(() => {});
+    }
+    const now = context.currentTime;
+    const duration = 0.34;
+    const masterVolume = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+    const sampleRate = context.sampleRate;
+    const buffer = context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) {
+      const progress = index / data.length;
+      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - progress, 2.1);
+    }
+
+    const noise = context.createBufferSource();
+    noise.buffer = buffer;
+    const crunch = context.createBiquadFilter();
+    crunch.type = 'bandpass';
+    crunch.frequency.setValueAtTime(780, now);
+    crunch.Q.setValueAtTime(0.7, now);
+    const noiseGain = context.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, now);
+    noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.17 * masterVolume), now + 0.018);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    noise.connect(crunch);
+    crunch.connect(noiseGain);
+    noiseGain.connect(context.destination);
+    noise.start(now);
+    noise.stop(now + duration);
+
+    const thud = context.createOscillator();
+    thud.type = 'triangle';
+    thud.frequency.setValueAtTime(92, now);
+    thud.frequency.exponentialRampToValueAtTime(42, now + 0.18);
+    const thudGain = context.createGain();
+    thudGain.gain.setValueAtTime(0.0001, now);
+    thudGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, 0.12 * masterVolume), now + 0.012);
+    thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+    thud.connect(thudGain);
+    thudGain.connect(context.destination);
+    thud.start(now);
+    thud.stop(now + 0.25);
+  }
+
+  getPassiveTrafficPlayerCollisionTarget() {
+    const localPlayerState = this.getLocalPlayerState();
+    if (!this.player || !localPlayerState || localPlayerState.alive === false || this.worldBuilder?.enabled) {
+      return null;
+    }
+
+    return {
+      position: this.player.position,
+      radius: PLAYER_RADIUS,
+      alive: true
+    };
+  }
+
+  handlePassiveTrafficPlayerCollision(event = {}) {
+    const localPlayerState = this.getLocalPlayerState();
+    if (!this.player || !localPlayerState || localPlayerState.alive === false) {
+      return;
+    }
+
+    const now = performance.now();
+    if (now < this.passiveTrafficPlayerHitCooldownUntil) {
+      return;
+    }
+    this.passiveTrafficPlayerHitCooldownUntil = now + PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS;
+
+    const damage = Math.max(0, Math.floor(Number(event.damage) || 0));
+    const stunMs = Math.max(0, Number(event.stunSeconds) || 0) * 1000;
+    this.passiveTrafficPlayerStunUntil = Math.max(this.passiveTrafficPlayerStunUntil, now + stunMs);
+    this.player.playEmote?.(STAND_UP_EMOTE_ID, {
+      startedAtMs: Date.now(),
+      trackSync: true
+    });
+
+    const direction = this.passiveTrafficCrashDirection.set(
+      Number(event.direction?.x ?? 0) || 0,
+      0,
+      Number(event.direction?.z ?? 0) || 0
+    );
+    if (direction.lengthSq() <= 0.0001) {
+      direction.set(Math.sin(this.player.object.rotation.y), 0, Math.cos(this.player.object.rotation.y));
+    }
+    direction.normalize();
+    this.player.triggerDamageFeedback?.({ direction });
+    this.triggerDamageCameraFeedback(direction);
+    this.playPassiveTrafficCrashSound();
+
+    if (damage > 0) {
+      void this.npcService?.applyPassiveTrafficHit?.({
+        damage,
+        emoteId: STAND_UP_EMOTE_ID
+      });
+    }
   }
 
   playOfficeJobLockError() {
@@ -15812,6 +15926,8 @@ export class Game {
         getWorldMapImage: () => this.worldMapImage,
         isWorldMapImageFresh: (image) => this.isWorldMapImageFreshForCurrentLayout(image),
         requestWorldMapImage: (options) => this.ensureFreshWorldMapImage(options),
+        getPassiveTrafficPlayerCollisionTarget: () => this.getPassiveTrafficPlayerCollisionTarget(),
+        onPassiveTrafficPlayerCollision: (event) => this.handlePassiveTrafficPlayerCollision(event),
         onToggleBuildMode: () => this.toggleBuildMode(),
         onLayoutChanged: (layout) => {
           this.currentLayout = layout;
@@ -19571,6 +19687,7 @@ export class Game {
     } else {
       const rentIntroCutsceneActive = this.isRentIntroCutsceneActive();
       const localAlive = localPlayerState?.alive !== false;
+      const passiveTrafficStunned = localAlive && frameNow < this.passiveTrafficPlayerStunUntil;
       const stockMarketOpen = this.hud.isStockMarketOpen();
       const blackjackOpen = this.hud.isBlackjackOpen();
       const schoolMicrogameOpen = this.hud.isSchoolMicrogameOpen();
@@ -19582,7 +19699,7 @@ export class Game {
       const selectedConsumableItemId = this.getSelectedHotbarConsumableItemId();
       const consumableSelected = Boolean(selectedDrinkItemId || selectedConsumableItemId);
       const armed = Boolean(localAlive && localPlayerState?.equippedWeaponId && !consumableSelected);
-      const canCursorAim = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen && !this.carSelectorVisible;
+      const canCursorAim = localAlive && !passiveTrafficStunned && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen && !this.carSelectorVisible;
       const activeColliders = this.getActiveColliders();
       const groundHeight = this.getActiveGroundHeightAt(this.player.position);
       const activeSceneBounds = this.getActiveSceneBounds();
@@ -19597,7 +19714,7 @@ export class Game {
         const isLimp = this.player.toggleLimp();
         this.hud.showToast(isLimp ? 'Limbo mode engaged.' : 'Back on your feet.');
       }
-      const playerInput = (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen || this.carSelectorVisible) ? ZERO_INPUT : this.input;
+      const playerInput = (!localAlive || passiveTrafficStunned || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen || this.carSelectorVisible) ? ZERO_INPUT : this.input;
       const skateboardOwned = isPlayerSkateboardOwner(localPlayerState);
       const vehicleItemId = getPlayerVehicleItemId(localPlayerState);
       const vehicleLabel = getPlayerVehicleMenuItem(localPlayerState)?.label ?? '';
@@ -19671,7 +19788,7 @@ export class Game {
           this.playerUpdateOptions
         );
         this.syncInlineShellState();
-        const combatInputEnabled = localAlive && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
+        const combatInputEnabled = localAlive && !passiveTrafficStunned && !rentIntroCutsceneActive && !emoteMenuActive && !this.hud.isQuickChatOpen() && !stockMarketOpen && !blackjackOpen && !schoolMicrogameOpen && !vibeHeroOpen && !interactionMenuOpen && !adminPromptOpen && !phoneOpen;
         const primaryFirePressed = combatInputEnabled && this.input.consumeAction('fire');
         const primaryFireHeld = combatInputEnabled && this.input.isActionPressed('fire');
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
@@ -19710,7 +19827,7 @@ export class Game {
             this.punchLocal(aimDirection);
           }
         }
-        if (!localAlive || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen) {
+        if (!localAlive || passiveTrafficStunned || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
         } else if (this.pendingHipFireShot) {
           this.player.setAimingState(aimingMode || frameNow < this.pendingHipFireShot.releaseAt);
@@ -19743,7 +19860,7 @@ export class Game {
       );
       this.updateNpcInteractRadiusIndicators();
 
-      if (workoutActive || rentIntroCutsceneActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
+      if (workoutActive || passiveTrafficStunned || rentIntroCutsceneActive || localAlive === false || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || adminPromptOpen || phoneOpen) {
         this.currentInteractable = null;
         this.hud.setPrompt(null);
       } else {

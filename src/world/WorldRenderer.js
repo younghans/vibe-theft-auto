@@ -26,9 +26,15 @@ import {
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR,
+  PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS,
   PASSIVE_TRAFFIC_CAR_SCALE,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_MIN_ROAD_NODES,
+  PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
+  PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
@@ -37,15 +43,18 @@ import {
   findPassiveTrafficPath,
   getPassiveTrafficDriveCommand,
   getPassiveTrafficDriveScript,
+  getPassiveTrafficForwardVector,
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
+  isPointInsidePassiveTrafficHitbox,
   isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficTSplitNode,
-  isPassiveTrafficPositionInsideRoadNode
+  isPassiveTrafficPositionInsideRoadNode,
+  passiveTrafficHitboxesOverlap
 } from './passiveTraffic.js';
 
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
@@ -1228,10 +1237,22 @@ function applyRenderedPlacementScale(rendered, placement) {
 }
 
 export class WorldRenderer {
-  constructor({ scene, camera, library }) {
+  constructor({
+    scene,
+    camera,
+    library,
+    getPassiveTrafficPlayerCollisionTarget = null,
+    onPassiveTrafficPlayerCollision = null
+  }) {
     this.scene = scene;
     this.camera = camera;
     this.library = library;
+    this.getPassiveTrafficPlayerCollisionTarget = typeof getPassiveTrafficPlayerCollisionTarget === 'function'
+      ? getPassiveTrafficPlayerCollisionTarget
+      : null;
+    this.onPassiveTrafficPlayerCollision = typeof onPassiveTrafficPlayerCollision === 'function'
+      ? onPassiveTrafficPlayerCollision
+      : null;
     this.raycaster = new THREE.Raycaster();
     this.cameraOcclusionRaycaster = new THREE.Raycaster();
     this.cameraOcclusionTarget = new THREE.Vector3();
@@ -1304,6 +1325,7 @@ export class WorldRenderer {
     this.passiveTrafficNodeVisitOrder = new Map();
     this.passiveTrafficScratch = new THREE.Vector3();
     this.passiveTrafficTargetScratch = new THREE.Vector3();
+    this.passiveTrafficForwardScratch = { x: 0, z: 1 };
     this.passiveTrafficActiveDestinations = new Set();
     this.passiveTrafficDestinationCandidates = [];
     this.passiveTrafficDestinationCandidatePool = [];
@@ -1919,6 +1941,10 @@ export class WorldRenderer {
       turnStartYaw: null,
       turnEndYaw: null,
       stuckSeconds: 0,
+      collisionReverseSeconds: 0,
+      collisionStopSeconds: 0,
+      collisionCooldownSeconds: 0,
+      playerCollisionActive: false,
       lastPosition: new THREE.Vector3()
     };
 
@@ -2419,6 +2445,169 @@ export class WorldRenderer {
     }
   }
 
+  updatePassiveTrafficCollisionTimers(car, deltaSeconds) {
+    car.collisionCooldownSeconds = Math.max(0, (car.collisionCooldownSeconds ?? 0) - deltaSeconds);
+  }
+
+  updatePassiveTrafficCollisionYield(car, remainingTime) {
+    if (!car || remainingTime <= 0) {
+      return 0;
+    }
+
+    if ((car.collisionReverseSeconds ?? 0) > 0) {
+      const reverseSeconds = Math.min(remainingTime, car.collisionReverseSeconds);
+      car.collisionReverseSeconds = Math.max(0, car.collisionReverseSeconds - reverseSeconds);
+      const reverseDistance = car.speed * PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR * reverseSeconds;
+      const forward = getPassiveTrafficForwardVector(car.yaw, this.passiveTrafficForwardScratch);
+      car.object.position.x -= forward.x * reverseDistance;
+      car.object.position.z -= forward.z * reverseDistance;
+      this.keepPassiveTrafficCarOnRoad(car);
+      car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
+      car.currentSpeed = dampNumber(car.currentSpeed, 0, PASSIVE_TRAFFIC_BRAKE_RESPONSE, reverseSeconds);
+      car.stuckSeconds = 0;
+      if (car.collisionReverseSeconds <= 0) {
+        car.collisionStopSeconds = Math.max(car.collisionStopSeconds ?? 0, PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS);
+      }
+      return reverseSeconds;
+    }
+
+    if ((car.collisionStopSeconds ?? 0) > 0) {
+      const stopSeconds = Math.min(remainingTime, car.collisionStopSeconds);
+      car.collisionStopSeconds = Math.max(0, car.collisionStopSeconds - stopSeconds);
+      car.currentSpeed = dampNumber(car.currentSpeed, 0, PASSIVE_TRAFFIC_BRAKE_RESPONSE, stopSeconds);
+      car.stuckSeconds = 0;
+      return stopSeconds;
+    }
+
+    return 0;
+  }
+
+  choosePassiveTrafficCollisionYieldCar(a, b) {
+    const aForward = getPassiveTrafficForwardVector(a.yaw, { x: 0, z: 1 });
+    const bForward = getPassiveTrafficForwardVector(b.yaw, { x: 0, z: 1 });
+    const dx = b.object.position.x - a.object.position.x;
+    const dz = b.object.position.z - a.object.position.z;
+    const bAheadOfA = (dx * aForward.x) + (dz * aForward.z);
+    const aAheadOfB = ((-dx) * bForward.x) + ((-dz) * bForward.z);
+
+    if (bAheadOfA > 0.2 && aAheadOfB <= 0.2) {
+      return a;
+    }
+    if (aAheadOfB > 0.2 && bAheadOfA <= 0.2) {
+      return b;
+    }
+
+    if ((a.currentSpeed ?? 0) < (b.currentSpeed ?? 0) - 0.05) {
+      return a;
+    }
+    if ((b.currentSpeed ?? 0) < (a.currentSpeed ?? 0) - 0.05) {
+      return b;
+    }
+
+    return (a.carIndex ?? 0) > (b.carIndex ?? 0) ? a : b;
+  }
+
+  triggerPassiveTrafficCarCollisionYield(car) {
+    if (!car) {
+      return;
+    }
+
+    car.collisionReverseSeconds = Math.max(car.collisionReverseSeconds ?? 0, PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS);
+    car.collisionStopSeconds = Math.max(car.collisionStopSeconds ?? 0, PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS);
+    car.collisionCooldownSeconds = Math.max(car.collisionCooldownSeconds ?? 0, PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS);
+    car.turnStopSeconds = 0;
+    car.currentSpeed = 0;
+    car.stuckSeconds = 0;
+  }
+
+  updatePassiveTrafficCarCollisions() {
+    if (this.passiveTrafficCars.length < 2) {
+      return;
+    }
+
+    for (let aIndex = 0; aIndex < this.passiveTrafficCars.length - 1; aIndex += 1) {
+      const a = this.passiveTrafficCars[aIndex];
+      if (!a?.object) {
+        continue;
+      }
+
+      for (let bIndex = aIndex + 1; bIndex < this.passiveTrafficCars.length; bIndex += 1) {
+        const b = this.passiveTrafficCars[bIndex];
+        if (
+          !b?.object
+          || (a.collisionCooldownSeconds ?? 0) > 0
+          || (b.collisionCooldownSeconds ?? 0) > 0
+        ) {
+          continue;
+        }
+
+        if (!passiveTrafficHitboxesOverlap(a.object.position, a.yaw, b.object.position, b.yaw, 0.08)) {
+          continue;
+        }
+
+        const yieldCar = this.choosePassiveTrafficCollisionYieldCar(a, b);
+        const continueCar = yieldCar === a ? b : a;
+        this.triggerPassiveTrafficCarCollisionYield(yieldCar);
+        continueCar.collisionCooldownSeconds = Math.max(
+          continueCar.collisionCooldownSeconds ?? 0,
+          PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS
+        );
+      }
+    }
+  }
+
+  updatePassiveTrafficPlayerCollisions() {
+    const target = this.getPassiveTrafficPlayerCollisionTarget?.() ?? null;
+    const targetPosition = target?.position ?? target;
+    const targetAlive = target?.alive !== false;
+    const targetRadius = Number.isFinite(target?.radius) ? Math.max(0, target.radius) : 0;
+    if (!targetPosition || !targetAlive || !this.onPassiveTrafficPlayerCollision) {
+      for (const car of this.passiveTrafficCars) {
+        car.playerCollisionActive = false;
+      }
+      return;
+    }
+
+    for (const car of this.passiveTrafficCars) {
+      if (!car?.object) {
+        continue;
+      }
+
+      const overlapping = isPointInsidePassiveTrafficHitbox(
+        car.object.position,
+        car.yaw,
+        targetPosition,
+        targetRadius
+      );
+      if (!overlapping) {
+        car.playerCollisionActive = false;
+        continue;
+      }
+      if (car.playerCollisionActive) {
+        continue;
+      }
+
+      car.playerCollisionActive = true;
+      const forward = getPassiveTrafficForwardVector(car.yaw, { x: 0, z: 1 });
+      this.onPassiveTrafficPlayerCollision({
+        carIndex: car.carIndex,
+        itemId: car.itemId,
+        routeId: car.routeId,
+        damage: PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
+        stunSeconds: PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
+        carPosition: {
+          x: car.object.position.x,
+          y: car.object.position.y,
+          z: car.object.position.z
+        },
+        direction: {
+          x: forward.x,
+          z: forward.z
+        }
+      });
+    }
+  }
+
   updatePassiveTraffic(deltaSeconds) {
     if (!this.passiveTrafficCars.length || !this.passiveTrafficGraph) {
       return;
@@ -2430,6 +2619,7 @@ export class WorldRenderer {
     }
 
     for (const car of this.passiveTrafficCars) {
+      this.updatePassiveTrafficCollisionTimers(car, dt);
       const startX = car.object.position.x;
       const startZ = car.object.position.z;
       let remainingTime = dt;
@@ -2437,6 +2627,15 @@ export class WorldRenderer {
 
       while (remainingTime > 0.0001 && guard < 6) {
         guard += 1;
+        const collisionYieldSeconds = this.updatePassiveTrafficCollisionYield(car, remainingTime);
+        if (collisionYieldSeconds > 0) {
+          remainingTime -= collisionYieldSeconds;
+          if ((car.collisionReverseSeconds ?? 0) > 0 || (car.collisionStopSeconds ?? 0) > 0) {
+            break;
+          }
+          continue;
+        }
+
         if (car.turnStopSeconds > 0) {
           car.turnStopSeconds = Math.max(0, car.turnStopSeconds - remainingTime);
           car.currentSpeed = dampNumber(car.currentSpeed, 0, PASSIVE_TRAFFIC_BRAKE_RESPONSE, remainingTime);
@@ -2553,6 +2752,9 @@ export class WorldRenderer {
       this.updatePassiveTrafficStuckState(car, dt, movedDistance);
       car.lastPosition.copy(car.object.position);
     }
+
+    this.updatePassiveTrafficCarCollisions();
+    this.updatePassiveTrafficPlayerCollisions();
   }
 
   update(deltaSeconds, now = performance.now()) {

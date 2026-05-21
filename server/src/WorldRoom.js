@@ -216,7 +216,7 @@ import {
   getPlacementWorldOrigin,
   isBuildingPlacement
 } from '../../src/npc/npcTargeting.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID } from '../../src/player/emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, STAND_UP_EMOTE_ID } from '../../src/player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -1059,6 +1059,10 @@ export class WorldRoom extends Room {
 
     this.onMessage('player:setCharacter', (client, message) => {
       this.updatePlayerCharacter(client, message);
+    });
+
+    this.onMessage('player:passiveTrafficHit', (client, message) => {
+      void this.handleRpc(client, message.requestId, () => this.handlePassiveTrafficHit(client, message));
     });
 
     this.onMessage('mission:select', (client, message) => {
@@ -1953,6 +1957,35 @@ export class WorldRoom extends Room {
 
     player.characterId = sanitizeCharacterId(message?.characterId);
     this.queuePlayerSnapshotSave(client.sessionId);
+  }
+
+  handlePassiveTrafficHit(client, message = {}) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'Player is not active.' };
+    }
+
+    const damage = Math.max(0, Math.min(PLAYER_MAX_HEALTH, Math.floor(Number(message.damage) || 0)));
+    if (damage <= 0) {
+      return { ok: true, health: player.health, alive: player.alive !== false };
+    }
+
+    const now = Date.now();
+    player.health = Math.max(0, player.health - damage);
+    player.lastDamagedAt = now;
+    player.emoteId = message.emoteId === STAND_UP_EMOTE_ID ? STAND_UP_EMOTE_ID : '';
+    player.emoteActive = player.emoteId === STAND_UP_EMOTE_ID;
+    player.emoteStartedAt = player.emoteActive ? now : 0;
+    player.emoteSeq += 1;
+    player.skating = false;
+    this.getPlayerMeta(client.sessionId).healthRegenCarryMs = 0;
+    if (player.health <= 0) {
+      this.handlePlayerDeath(client.sessionId, '');
+    } else {
+      this.queuePlayerSnapshotSave(client.sessionId);
+    }
+
+    return { ok: true, health: player.health, alive: player.alive !== false };
   }
 
   normalizePlayerSelectedMission(player) {

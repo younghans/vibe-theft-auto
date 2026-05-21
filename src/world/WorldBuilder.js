@@ -390,7 +390,9 @@ export class WorldBuilder {
     worldTransport,
     getWorldMapImage,
     isWorldMapImageFresh,
-    requestWorldMapImage
+    requestWorldMapImage,
+    getPassiveTrafficPlayerCollisionTarget,
+    onPassiveTrafficPlayerCollision
   }) {
     this.scene = scene;
     this.camera = camera;
@@ -442,7 +444,13 @@ export class WorldBuilder {
     this.activeBuildingEditorPlacementId = null;
     this.worldState = new WorldState();
     this.npcDebugState = new Map();
-    this.worldRenderer = new WorldRenderer({ scene, camera, library });
+    this.worldRenderer = new WorldRenderer({
+      scene,
+      camera,
+      library,
+      getPassiveTrafficPlayerCollisionTarget,
+      onPassiveTrafficPlayerCollision
+    });
     this.worldEditAdapter = createWorldEditAdapter({
       transport: this.worldTransport,
       worldState: this.worldState,

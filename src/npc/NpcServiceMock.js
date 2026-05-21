@@ -168,7 +168,7 @@ import {
   normalizeNpcBehavior,
   shouldResetNpcRuntimeForBehaviorUpdate
 } from './npcBehavior.js';
-import { PUNCH_EMOTE_ID } from '../player/emotes.js';
+import { PUNCH_EMOTE_ID, STAND_UP_EMOTE_ID } from '../player/emotes.js';
 import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMethods.js';
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
@@ -1548,6 +1548,33 @@ export class NpcServiceMock {
       return;
     }
     this.startReload(player);
+  }
+
+  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID } = {}) {
+    const player = this.state.players.get(this.state.sessionId);
+    if (!player || player.alive === false) {
+      return { ok: false, error: 'Player is not active.' };
+    }
+
+    const now = Date.now();
+    const hitDamage = Math.max(0, Math.floor(Number(damage) || 0));
+    if (hitDamage <= 0) {
+      return { ok: true, health: player.health, alive: player.alive !== false };
+    }
+
+    player.health = Math.max(0, player.health - hitDamage);
+    player.lastDamagedAt = now;
+    player.emoteId = emoteId === STAND_UP_EMOTE_ID ? STAND_UP_EMOTE_ID : '';
+    player.emoteActive = player.emoteId === STAND_UP_EMOTE_ID;
+    player.emoteStartedAt = player.emoteActive ? now : 0;
+    player.emoteSeq = (player.emoteSeq ?? 0) + 1;
+    this.getPlayerRuntimeMeta(this.state.sessionId).healthRegenCarryMs = 0;
+    if (player.health <= 0) {
+      this.handlePlayerDeath(this.state.sessionId, '');
+    }
+
+    this.emit();
+    return { ok: true, health: player.health, alive: player.alive !== false };
   }
 
   getDeliveryQuestPayload(player) {

@@ -1,6 +1,7 @@
 import { PUNCH_INTERVAL_MS, WEAPON_FIRE_INTERVAL_MS } from '../shared/combatConstants.js';
 import { DELIVERY_QUEST_STATUS } from '../shared/deliveryQuest.js';
 import { quantizeNumber as quantize } from '../shared/numberMath.js';
+import { STAND_UP_EMOTE_ID } from '../player/emotes.js';
 import {
   getDefaultPropPlacementScale,
   normalizePropPlacementScale
@@ -1197,6 +1198,32 @@ export class NpcServiceColyseus {
     }
 
     this.room?.send('combat:reloadRequest', {});
+  }
+
+  applyPassiveTrafficHit({ damage = 20, emoteId = STAND_UP_EMOTE_ID } = {}) {
+    const hitDamage = Math.max(0, Math.floor(Number(damage) || 0));
+    if (hitDamage <= 0) {
+      return Promise.resolve({ ok: true });
+    }
+
+    const localPlayer = this.state.players.get(this.state.sessionId);
+    if (localPlayer && localPlayer.alive !== false) {
+      const now = Date.now();
+      localPlayer.health = Math.max(0, (Number(localPlayer.health) || 0) - hitDamage);
+      localPlayer.lastDamagedAt = now;
+      localPlayer.emoteId = emoteId === STAND_UP_EMOTE_ID ? STAND_UP_EMOTE_ID : '';
+      localPlayer.emoteActive = localPlayer.emoteId === STAND_UP_EMOTE_ID;
+      localPlayer.emoteStartedAt = localPlayer.emoteActive ? now : 0;
+      localPlayer.emoteSeq = (Number(localPlayer.emoteSeq) || 0) + 1;
+      if (localPlayer.health <= 0) {
+        localPlayer.alive = false;
+      }
+    }
+
+    return this.rpc('player:passiveTrafficHit', {
+      damage: hitDamage,
+      emoteId
+    });
   }
 
   async claimWorkoutPlacement(placementId = '') {

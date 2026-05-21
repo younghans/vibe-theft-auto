@@ -139,10 +139,16 @@ import { defaultWorldLayout } from '../src/world/defaultWorldLayout.js';
 import { assets } from '../src/world/assetManifest.js';
 import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS,
+  PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS,
   PASSIVE_TRAFFIC_CAR_SCALE,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
+  PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH,
+  PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH,
   PASSIVE_TRAFFIC_LANE_OFFSET,
   PASSIVE_TRAFFIC_MAX_TURN_RADIANS,
+  PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE,
+  PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS,
   PASSIVE_TRAFFIC_SPEED,
   buildPassiveTrafficRoadGraph,
   buildPassiveTrafficRouteLookahead,
@@ -158,9 +164,11 @@ import {
   getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
   getPassiveTrafficTurnLaneWaypoints,
+  isPointInsidePassiveTrafficHitbox,
   isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
-  isPassiveTrafficPositionInsideRoadNode
+  isPassiveTrafficPositionInsideRoadNode,
+  passiveTrafficHitboxesOverlap
 } from '../src/world/passiveTraffic.js';
 import {
   ATTACHMENT_SLOTS,
@@ -1136,6 +1144,36 @@ function validatePassiveTraffic() {
   assert(PASSIVE_TRAFFIC_CAR_SCALE === 0.68, 'Passive traffic cars should render at 0.85x their previous passive size');
   assert(PASSIVE_TRAFFIC_CAR_SCALE < VEHICLE_PROP_PLACEMENT_SCALE, 'Passive traffic cars should no longer render larger than player-owned vehicle props');
   assert(PASSIVE_TRAFFIC_SPEED === BUILDER_TILE_SIZE, 'Passive traffic should drive at roughly player walking speed');
+  assert(
+    PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH > 2
+      && PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH < 2.6
+      && PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH > 4
+      && PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH < 4.7,
+    'Passive traffic car hitboxes should match the scaled vehicle footprint closely'
+  );
+  assert(PASSIVE_TRAFFIC_PLAYER_COLLISION_DAMAGE === 20, 'Passive traffic should take 20 health when it runs over the player');
+  assert(PASSIVE_TRAFFIC_PLAYER_STUN_SECONDS === 1.5, 'Passive traffic player hit stun should immobilize the player for 1.5 seconds');
+  assert(
+    PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS > 0
+      && PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS > 0,
+    'Passive car collisions should make one car reverse and pause before continuing'
+  );
+  assert(
+    isPointInsidePassiveTrafficHitbox({ x: 0, z: 0 }, 0, { x: 0.5, z: PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH - 0.2 }, 0.1),
+    'Passive traffic player collision should detect a player inside the front of the car hitbox'
+  );
+  assert(
+    !isPointInsidePassiveTrafficHitbox({ x: 0, z: 0 }, 0, { x: PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH + 2, z: 0 }, 0.1),
+    'Passive traffic player collision should ignore players outside the side of the car hitbox'
+  );
+  assert(
+    passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: 0, z: PASSIVE_TRAFFIC_HITBOX_HALF_LENGTH * 1.6 }, 0),
+    'Passive traffic car hitboxes should overlap when passive cars nose into each other'
+  );
+  assert(
+    !passiveTrafficHitboxesOverlap({ x: 0, z: 0 }, 0, { x: PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH * 3, z: 0 }, 0),
+    'Passive traffic car hitboxes should not overlap when passive cars are safely side-by-side'
+  );
 
   const directionKey = (direction) => `${direction.x}:${direction.z}`;
   const assertRoadExits = (itemId, rotationQuarterTurns, expectedDirections) => {
@@ -1610,10 +1648,16 @@ function validatePassiveTraffic() {
       && /isPassiveTrafficCrosswalkNode/.test(worldRendererSource)
       && /shouldScriptLeavingCurrentNode/.test(worldRendererSource)
       && /getPassiveTrafficTurnLaneWaypointsFromPosition/.test(worldRendererSource)
+      && /updatePassiveTrafficCarCollisions/.test(worldRendererSource)
+      && /passiveTrafficHitboxesOverlap/.test(worldRendererSource)
+      && /updatePassiveTrafficPlayerCollisions/.test(worldRendererSource)
+      && /onPassiveTrafficPlayerCollision/.test(worldRendererSource)
+      && /collisionReverseSeconds/.test(worldRendererSource)
+      && /collisionStopSeconds/.test(worldRendererSource)
       && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),
-    'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling and keep route-aware async car loads alive'
+    'World renderer should mount and update passive traffic cars with bounded intersection stop-and-turn handling, hitboxes, and route-aware async car loads'
   );
 
   const hudSource = readRepoText('src/ui/Hud.js');
@@ -1634,6 +1678,18 @@ function validatePassiveTraffic() {
       && hudSource.includes('data-builder-traffic-route')
       && hudSource.includes('application/x-vta-traffic-car'),
     'World builder should expose a Traffic Routes tab with map drawing, a route list, and draggable add-new passive car icons'
+  );
+  assert(
+    worldBuilderSource.includes('getPassiveTrafficPlayerCollisionTarget')
+      && worldBuilderSource.includes('onPassiveTrafficPlayerCollision')
+      && gameSource.includes('handlePassiveTrafficPlayerCollision')
+      && gameSource.includes('playPassiveTrafficCrashSound')
+      && gameSource.includes('passiveTrafficPlayerStunUntil')
+      && gameSource.includes('applyPassiveTrafficHit')
+      && readRepoText('src/npc/NpcServiceMock.js').includes('applyPassiveTrafficHit')
+      && readRepoText('src/npc/NpcServiceColyseus.js').includes("player:passiveTrafficHit")
+      && readRepoText('server/src/WorldRoom.js').includes('handlePassiveTrafficHit'),
+    'Passive traffic player collisions should damage, stun, play the stand-up emote, and round-trip through local and server health state'
   );
   assert(
     worldBuilderSource.includes('getTrafficRouteMapDimensions')

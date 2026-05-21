@@ -11,6 +11,7 @@ export const EMOTE_SLOTS = Object.freeze([
 
 export const PUNCH_EMOTE_ID = 'punching';
 export const PUNCH_ALT_EMOTE_ID = 'punchingMirrored';
+export const STAND_UP_EMOTE_ID = 'standUp';
 export const TYPING_EMOTE_ID = 'typing';
 export const TEXTING_EMOTE_ID = 'texting';
 export const DRINKING_EMOTE_ID = 'drinking';
@@ -64,7 +65,7 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeOut: 0.22,
     playbackRate: 1
   },
-  standUp: {
+  [STAND_UP_EMOTE_ID]: {
     label: 'Stand Up',
     clipName: 'standUp',
     loop: false,
