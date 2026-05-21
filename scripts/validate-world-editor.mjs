@@ -170,6 +170,7 @@ import {
   isPassiveTrafficPositionInsideRoadNode,
   passiveTrafficHitboxesOverlap
 } from '../src/world/passiveTraffic.js';
+import { PassiveTrafficSimulation } from '../src/world/passiveTrafficSimulation.js';
 import {
   ATTACHMENT_SLOTS,
   HELD_ITEM_IDS,
@@ -1589,6 +1590,24 @@ function validatePassiveTraffic() {
     'Custom passive traffic route lookahead should preserve curved right-turn navigation'
   );
 
+  const serverTrafficSimulationA = new PassiveTrafficSimulation();
+  const serverTrafficSimulationB = new PassiveTrafficSimulation();
+  const initialServerTrafficA = serverTrafficSimulationA.reset(routeState, routeState.getPassiveTrafficRoutes());
+  const initialServerTrafficB = serverTrafficSimulationB.reset(routeState, routeState.getPassiveTrafficRoutes());
+  assert(
+    initialServerTrafficA.length === initialServerTrafficB.length
+      && initialServerTrafficA.length >= PASSIVE_TRAFFIC_CAR_ITEM_IDS.length,
+    'Server passive traffic simulation should spawn the shared passive car set from the route graph'
+  );
+  for (let index = 0; index < 16; index += 1) {
+    serverTrafficSimulationA.update(0.05);
+    serverTrafficSimulationB.update(0.05);
+  }
+  assert(
+    JSON.stringify(serverTrafficSimulationA.getSnapshots()) === JSON.stringify(serverTrafficSimulationB.getSnapshots()),
+    'Server passive traffic simulation should be deterministic so every player receives the same passive cars'
+  );
+
   const leftCurvedCornerGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_left_turn_north', itemId: 'road_straight', cell: [0, -1], rotationQuarterTurns: 0 },
     { id: 'traffic_left_turn_corner', itemId: 'road_corner_curved', cell: [0, 0], rotationQuarterTurns: 0 },
@@ -1696,9 +1715,26 @@ function validatePassiveTraffic() {
   const worldBuilderSource = readRepoText('src/world/WorldBuilder.js');
   const worldEditAdapterSource = readRepoText('src/world/createWorldEditAdapter.js');
   const gameSource = readRepoText('src/game/Game.js');
+  const passiveTrafficSimulationSource = readRepoText('src/world/passiveTrafficSimulation.js');
+  const worldRoomSource = readRepoText('server/src/WorldRoom.js');
+  const colyseusServiceSource = readRepoText('src/npc/NpcServiceColyseus.js');
   const appConfigSource = readRepoText('server/app.config.js');
   const devServerSource = readRepoText('scripts/dev-server.mjs');
   const styleSource = readRepoText('styles.css');
+  assert(
+    passiveTrafficSimulationSource.includes('export class PassiveTrafficSimulation')
+      && passiveTrafficSimulationSource.includes('createPassiveTrafficCarSpecs')
+      && worldRoomSource.includes('PassiveTrafficCarState')
+      && worldRoomSource.includes('passiveTraffic: {')
+      && worldRoomSource.includes('updatePassiveTrafficSimulation')
+      && worldRoomSource.includes('publishPassiveTrafficSnapshots')
+      && worldRendererSource.includes('setPassiveTrafficServerState')
+      && worldRendererSource.includes('passiveTrafficServerActive')
+      && worldBuilderSource.includes('setPassiveTrafficServerState')
+      && gameSource.includes('state.passiveTraffic')
+      && colyseusServiceSource.includes('clonePassiveTrafficCarState'),
+    'Passive traffic cars should be server-authored through Colyseus state and rendered from the shared server snapshots'
+  );
   assert(
     worldBuilderSource.includes("id: 'traffic-routes'")
       && worldBuilderSource.includes('beginTrafficRouteFromCar')

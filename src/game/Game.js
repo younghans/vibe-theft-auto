@@ -1713,7 +1713,8 @@ export class Game {
       builders: new Map(),
       npcs: new Map(),
       npcDebug: new Map(),
-      pickups: new Map()
+      pickups: new Map(),
+      passiveTraffic: new Map()
     };
     this.npcRuntimeRenderState = new Map();
     this.npcRuntimeRenderIdsToRemove = [];
@@ -16568,6 +16569,7 @@ export class Game {
         this.registerHeldItemDebugTools();
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
+        this.worldBuilder?.setPassiveTrafficServerState(state.passiveTraffic);
         if (this.bootCriticalReady) {
           this.requestDeferredSceneSync({
             pickups: true,

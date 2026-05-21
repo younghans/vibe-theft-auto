@@ -1147,6 +1147,10 @@ export class WorldBuilder {
     this.updateBuilderNpcEditor();
   }
 
+  setPassiveTrafficServerState(passiveTrafficState = EMPTY_MAP) {
+    this.worldRenderer.setPassiveTrafficServerState(passiveTrafficState);
+  }
+
   triggerNpcDamageFeedback(npcId, options = {}) {
     this.worldRenderer.triggerNpcDamageFeedback(npcId, options);
   }

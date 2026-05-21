@@ -224,6 +224,7 @@ import {
 } from '../../src/player/playableCharacterCatalog.js';
 import { getBuilderItemById } from '../../src/world/builderCatalog.js';
 import { WorldState } from '../../src/world/WorldState.js';
+import { PassiveTrafficSimulation } from '../../src/world/passiveTrafficSimulation.js';
 import { NpcChatEngine } from './NpcChatEngine.js';
 import { isNpcDebugEnabled, logNpcDebug, logServer, logServerError } from './logger.js';
 import { getWorldPersistence } from './worldPersistence.js';
@@ -239,6 +240,7 @@ const NPC_NAME_MAX_LENGTH = 40;
 const NPC_PROMPT_MAX_LENGTH = 1600;
 const NPC_STREAM_THROTTLE_MS = 80;
 const COMBAT_TICK_MS = 100;
+const PASSIVE_TRAFFIC_TICK_MS = 50;
 const LIMP_EMOTE_ID = 'limp';
 const SHOT_BLOCKER_EPSILON = PLAYER_RADIUS * 0.9;
 const SHOT_ORIGIN_MAX_OFFSET = PLAYER_RADIUS * 2.4;
@@ -573,6 +575,21 @@ const PickupState = schema({
   despawnAt: 'number'
 });
 
+const PassiveTrafficCarState = schema({
+  id: 'string',
+  itemId: 'string',
+  routeId: 'string',
+  carIndex: 'number',
+  x: 'number',
+  y: 'number',
+  z: 'number',
+  rotationY: 'number',
+  speed: 'number',
+  currentNodeIndex: 'number',
+  targetNodeIndex: 'number',
+  seq: 'number'
+});
+
 const BuilderPresenceState = schema({
   active: 'boolean',
   itemId: 'string',
@@ -645,6 +662,10 @@ const WorldRoomState = schema({
   },
   pickups: {
     map: PickupState,
+    default: new MapSchema()
+  },
+  passiveTraffic: {
+    map: PassiveTrafficCarState,
     default: new MapSchema()
   }
 });
@@ -1032,13 +1053,19 @@ export class WorldRoom extends Room {
     this.lastNpcDebugPayloadSignature = '';
     this.gymDoorBlockers = [];
     this.gymDoorBlockersRevision = -1;
+    this.passiveTrafficSimulation = new PassiveTrafficSimulation();
+    this.lastPassiveTrafficSimulationAt = Date.now();
 
     this.worldState.loadLayout(this.worldPersistence.getInitialLayout());
     this.syncNpcDefinitionsFromWorld();
     this.seedCombatPickups();
+    this.resetPassiveTrafficSimulation();
     this.clock.setInterval(() => {
       this.updateCombatTimers();
     }, COMBAT_TICK_MS);
+    this.clock.setInterval(() => {
+      this.updatePassiveTrafficSimulation();
+    }, PASSIVE_TRAFFIC_TICK_MS);
     this.clock.setInterval(() => {
       void this.flushDirtyPlayerSnapshots();
     }, PLAYER_SNAPSHOT_AUTOSAVE_MS);
@@ -3376,6 +3403,54 @@ export class WorldRoom extends Room {
     return { placementId: player.workoutPlacementId || '' };
   }
 
+  resetPassiveTrafficSimulation() {
+    this.lastPassiveTrafficSimulationAt = Date.now();
+    const snapshots = this.passiveTrafficSimulation.reset(
+      this.worldState,
+      this.worldState.getPassiveTrafficRoutes()
+    );
+    this.publishPassiveTrafficSnapshots(snapshots);
+  }
+
+  updatePassiveTrafficSimulation() {
+    const now = Date.now();
+    const deltaSeconds = Math.max(0, Math.min(0.25, (now - this.lastPassiveTrafficSimulationAt) / 1000));
+    this.lastPassiveTrafficSimulationAt = now;
+    const snapshots = this.passiveTrafficSimulation.update(deltaSeconds);
+    this.publishPassiveTrafficSnapshots(snapshots);
+  }
+
+  publishPassiveTrafficSnapshots(snapshots = []) {
+    const nextIds = new Set();
+    for (const snapshot of snapshots) {
+      if (!snapshot?.id) {
+        continue;
+      }
+
+      nextIds.add(snapshot.id);
+      const car = this.state.passiveTraffic.get(snapshot.id) ?? new PassiveTrafficCarState();
+      car.id = snapshot.id;
+      car.itemId = snapshot.itemId || '';
+      car.routeId = snapshot.routeId || '';
+      car.carIndex = Math.max(0, Math.floor(Number(snapshot.carIndex) || 0));
+      car.x = Number(snapshot.x) || 0;
+      car.y = Number(snapshot.y) || 0;
+      car.z = Number(snapshot.z) || 0;
+      car.rotationY = Number(snapshot.rotationY) || 0;
+      car.speed = Number(snapshot.speed) || 0;
+      car.currentNodeIndex = Math.floor(Number(snapshot.currentNodeIndex) || 0);
+      car.targetNodeIndex = Math.floor(Number(snapshot.targetNodeIndex) || 0);
+      car.seq = Math.max(0, Math.floor(Number(snapshot.seq) || 0));
+      this.state.passiveTraffic.set(snapshot.id, car);
+    }
+
+    for (const id of [...this.state.passiveTraffic.keys()]) {
+      if (!nextIds.has(id)) {
+        this.state.passiveTraffic.delete(id);
+      }
+    }
+  }
+
   updateCombatTimers() {
     const now = Date.now();
     const deltaMs = Math.max(16, now - this.lastNpcSimulationAt);
@@ -4070,6 +4145,12 @@ export class WorldRoom extends Room {
     this.broadcast('combat:event', event);
   }
 
+  doesWorldPatchAffectPassiveTraffic(patch = {}) {
+    return patch.type === 'updatePassiveTrafficRoutes'
+      || patch.type === 'deletePlacement'
+      || (patch.type === 'upsertPlacement' && patch.placement?.layer === 'tile');
+  }
+
   updatePlayerHealthRegen(sessionId, player, now, deltaMs) {
     if (!player || player.alive === false) {
       return false;
@@ -4124,6 +4205,7 @@ export class WorldRoom extends Room {
 
   async commitWorldPatch(patch, previousLayout) {
     const nextLayout = this.worldState.serializeLayout();
+    const affectsPassiveTraffic = this.doesWorldPatchAffectPassiveTraffic(patch);
 
     try {
       await this.worldPersistence.save(nextLayout);
@@ -4131,10 +4213,16 @@ export class WorldRoom extends Room {
       this.worldState.loadLayout(previousLayout);
       this.syncNpcDefinitionsFromWorld();
       this.syncCombatPickupsFromWorld();
+      if (affectsPassiveTraffic) {
+        this.resetPassiveTrafficSimulation();
+      }
       throw error;
     }
 
     this.syncCombatPickupsFromWorld();
+    if (affectsPassiveTraffic) {
+      this.resetPassiveTrafficSimulation();
+    }
     this.broadcast('world:patch', patch);
     return {
       placementId: patch.placement?.id ?? patch.placementId ?? null

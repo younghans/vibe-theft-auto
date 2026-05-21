@@ -523,7 +523,8 @@ export class NpcServiceMock {
       builders: new Map(),
       npcs: new Map(),
       npcDebug: new Map(),
-      pickups: new Map()
+      pickups: new Map(),
+      passiveTraffic: new Map()
     };
     this.stockMarket = readMockStockMarket() ?? createInitialStockMarketState(Date.now());
     this.stockPortfolios = new Map();
@@ -625,12 +626,19 @@ export class NpcServiceMock {
       pickups.set(id, clonePickupState(pickup));
     }
 
+    const passiveTraffic = new Map();
+    for (const id of this.state.passiveTraffic.keys()) {
+      const car = this.state.passiveTraffic.get(id);
+      passiveTraffic.set(id, clonePlainObject(car));
+    }
+
     const snapshot = clonePlainObject(this.state);
     snapshot.players = players;
     snapshot.builders = builders;
     snapshot.npcs = npcs;
     snapshot.npcDebug = npcDebug;
     snapshot.pickups = pickups;
+    snapshot.passiveTraffic = passiveTraffic;
     return snapshot;
   }
 

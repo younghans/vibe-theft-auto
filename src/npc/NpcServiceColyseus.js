@@ -269,6 +269,23 @@ function clonePickupState(pickup) {
   };
 }
 
+function clonePassiveTrafficCarState(car) {
+  return {
+    id: car.id || '',
+    itemId: car.itemId || '',
+    routeId: car.routeId || '',
+    carIndex: car.carIndex ?? 0,
+    x: car.x ?? 0,
+    y: car.y ?? 0,
+    z: car.z ?? 0,
+    rotationY: car.rotationY ?? 0,
+    speed: car.speed ?? 0,
+    currentNodeIndex: car.currentNodeIndex ?? -1,
+    targetNodeIndex: car.targetNodeIndex ?? -1,
+    seq: car.seq ?? 0
+  };
+}
+
 function angleDifference(a, b) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
@@ -402,7 +419,8 @@ export class NpcServiceColyseus {
       builders: new Map(),
       npcs: new Map(),
       npcDebug: new Map(),
-      pickups: new Map()
+      pickups: new Map(),
+      passiveTraffic: new Map()
     };
     this.lastTransformSentAt = 0;
     this.lastTransform = null;
@@ -505,10 +523,16 @@ export class NpcServiceColyseus {
         nextPickups.set(id, clonePickupState(pickup));
       });
 
+      const nextPassiveTraffic = new Map();
+      forEachSchemaMapEntry(state.passiveTraffic, (id, car) => {
+        nextPassiveTraffic.set(id, clonePassiveTrafficCarState(car));
+      });
+
       this.state.players = nextPlayers;
       this.state.builders = nextBuilders;
       this.state.npcs = nextNpcs;
       this.state.pickups = nextPickups;
+      this.state.passiveTraffic = nextPassiveTraffic;
       this.state.connectedPlayerCount = Number.isFinite(Number(state.connectedPlayerCount))
         ? Math.max(0, Math.floor(Number(state.connectedPlayerCount)))
         : nextPlayers.size;
@@ -808,12 +832,19 @@ export class NpcServiceColyseus {
       pickups.set(id, clonePlainObject(pickup));
     }
 
+    const passiveTraffic = new Map();
+    for (const id of this.state.passiveTraffic.keys()) {
+      const car = this.state.passiveTraffic.get(id);
+      passiveTraffic.set(id, clonePassiveTrafficCarState(car));
+    }
+
     const snapshot = clonePlainObject(this.state);
     snapshot.players = players;
     snapshot.builders = builders;
     snapshot.npcs = npcs;
     snapshot.npcDebug = npcDebug;
     snapshot.pickups = pickups;
+    snapshot.passiveTraffic = passiveTraffic;
     return snapshot;
   }
 

@@ -1334,6 +1334,9 @@ export class WorldRenderer {
     this.passiveTrafficActiveNeighbors = [];
     this.passiveTrafficRefreshSuspended = false;
     this.passiveTrafficLoadRequestId = 0;
+    this.passiveTrafficServerStates = new Map();
+    this.passiveTrafficServerActive = false;
+    this.passiveTrafficServerSpecSignature = '';
     this.npcInteractRadiusVisible = false;
     this.npcDebugVisible = false;
     this.npcRoutineVisible = false;
@@ -1773,6 +1776,93 @@ export class WorldRenderer {
     this.passiveTrafficNodeVisitOrder.clear();
   }
 
+  normalizePassiveTrafficServerStates(passiveTrafficState = EMPTY_MAP) {
+    const nextStates = new Map();
+    const appendState = (id, state) => {
+      if (!state) {
+        return;
+      }
+      const normalizedId = String(state.id || id || '');
+      const itemId = String(state.itemId || '');
+      if (!normalizedId || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(itemId)) {
+        return;
+      }
+      nextStates.set(normalizedId, {
+        id: normalizedId,
+        itemId,
+        routeId: String(state.routeId || ''),
+        carIndex: Math.max(0, Math.floor(Number(state.carIndex) || 0)),
+        x: Number(state.x) || 0,
+        y: Number(state.y) || 0,
+        z: Number(state.z) || 0,
+        rotationY: Number(state.rotationY) || 0,
+        speed: Number(state.speed) || 0,
+        currentNodeIndex: Math.floor(Number(state.currentNodeIndex) || 0),
+        targetNodeIndex: Math.floor(Number(state.targetNodeIndex) || 0),
+        seq: Math.max(0, Math.floor(Number(state.seq) || 0))
+      });
+    };
+
+    if (passiveTrafficState instanceof Map) {
+      for (const [id, state] of passiveTrafficState) {
+        appendState(id, state);
+      }
+      return nextStates;
+    }
+
+    if (passiveTrafficState && typeof passiveTrafficState === 'object') {
+      for (const id in passiveTrafficState) {
+        if (Object.hasOwn(passiveTrafficState, id)) {
+          appendState(id, passiveTrafficState[id]);
+        }
+      }
+    }
+
+    return nextStates;
+  }
+
+  createPassiveTrafficServerSpecSignature(states = this.passiveTrafficServerStates) {
+    return [...states.values()]
+      .map((state) => `${state.carIndex}:${state.id}:${state.itemId}:${state.routeId}`)
+      .sort()
+      .join('|');
+  }
+
+  getPassiveTrafficCarSpecs() {
+    if (this.passiveTrafficServerActive) {
+      return [...this.passiveTrafficServerStates.values()]
+        .sort((a, b) => (a.carIndex - b.carIndex) || a.id.localeCompare(b.id))
+        .map((state) => ({
+          id: state.id,
+          itemId: state.itemId,
+          routeId: state.routeId,
+          route: null
+        }));
+    }
+
+    return createPassiveTrafficCarSpecs(this.passiveTrafficRoutes);
+  }
+
+  setPassiveTrafficServerState(passiveTrafficState = EMPTY_MAP) {
+    const nextStates = this.normalizePassiveTrafficServerStates(passiveTrafficState);
+    const nextActive = nextStates.size > 0;
+    const nextSpecSignature = this.createPassiveTrafficServerSpecSignature(nextStates);
+    const shouldRefresh = nextActive !== this.passiveTrafficServerActive
+      || nextSpecSignature !== this.passiveTrafficServerSpecSignature;
+
+    this.passiveTrafficServerStates = nextStates;
+    this.passiveTrafficServerActive = nextActive;
+    this.passiveTrafficServerSpecSignature = nextSpecSignature;
+
+    if (shouldRefresh) {
+      this.passiveTrafficSignature = '';
+      this.refreshPassiveTraffic();
+    }
+    if (this.passiveTrafficServerActive) {
+      this.applyPassiveTrafficServerState();
+    }
+  }
+
   setPassiveTrafficRoutes(routes = []) {
     this.passiveTrafficRoutes = clonePassiveTrafficRoutes(routes);
     this.syncPassiveTrafficRouteLookups();
@@ -1788,8 +1878,11 @@ export class WorldRenderer {
     const graph = buildPassiveTrafficRoadGraph(this.renderedPlacements);
     const hasTrafficRoads = graph.activeNodeIndices.length >= PASSIVE_TRAFFIC_MIN_ROAD_NODES;
     const routeSignature = createPassiveTrafficRouteSignature(this.passiveTrafficRoutes);
-    const carSpecs = createPassiveTrafficCarSpecs(this.passiveTrafficRoutes);
-    const nextSignature = hasTrafficRoads ? `${graph.signature}|routes:${routeSignature}` : '';
+    const carSpecs = this.getPassiveTrafficCarSpecs();
+    const carSignature = this.passiveTrafficServerActive
+      ? `server:${this.passiveTrafficServerSpecSignature}`
+      : `local:${carSpecs.map((spec, index) => `${index}:${spec.itemId}:${spec.routeId}`).join('|')}`;
+    const nextSignature = hasTrafficRoads ? `${graph.signature}|routes:${routeSignature}|cars:${carSignature}` : '';
     if (
       nextSignature === this.passiveTrafficSignature
       && this.passiveTrafficCars.length === carSpecs.length
@@ -1842,7 +1935,7 @@ export class WorldRenderer {
       carPromises.push((async () => {
         try {
           const object = await this.createPassiveTrafficObject(itemId, carIndex, spec.routeId);
-          return object ? this.createPassiveTrafficCarState(object, itemId, carIndex, graph, spec.routeId) : null;
+          return object ? this.createPassiveTrafficCarState(object, itemId, carIndex, graph, spec.routeId, spec.id ?? '') : null;
         } catch (error) {
           console.warn('[WorldRenderer] Failed to create passive traffic car.', {
             itemId,
@@ -1870,6 +1963,9 @@ export class WorldRenderer {
     for (const car of this.passiveTrafficCars) {
       this.passiveTrafficRoot.add(car.object);
     }
+    if (this.passiveTrafficServerActive) {
+      this.applyPassiveTrafficServerState();
+    }
   }
 
   getPassiveTrafficCustomRouteNodeIndices(itemId, routeId = '', graph = this.passiveTrafficGraph) {
@@ -1895,7 +1991,7 @@ export class WorldRenderer {
       : [];
   }
 
-  createPassiveTrafficCarState(object, itemId, carIndex, graph, routeId = '') {
+  createPassiveTrafficCarState(object, itemId, carIndex, graph, routeId = '', serverStateId = '') {
     const activeNodeIndices = graph?.activeNodeIndices ?? [];
     if (activeNodeIndices.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
       return null;
@@ -1912,6 +2008,7 @@ export class WorldRenderer {
     const car = {
       itemId,
       routeId,
+      serverStateId,
       carIndex,
       object,
       currentNodeIndex: startIndex,
@@ -2610,8 +2707,54 @@ export class WorldRenderer {
     }
   }
 
+  getPassiveTrafficServerStateForCar(car) {
+    if (!this.passiveTrafficServerActive || !car) {
+      return null;
+    }
+
+    if (car.serverStateId && this.passiveTrafficServerStates.has(car.serverStateId)) {
+      return this.passiveTrafficServerStates.get(car.serverStateId);
+    }
+
+    for (const state of this.passiveTrafficServerStates.values()) {
+      if (state.carIndex === car.carIndex && state.itemId === car.itemId && state.routeId === car.routeId) {
+        return state;
+      }
+    }
+
+    return null;
+  }
+
+  applyPassiveTrafficServerState() {
+    if (!this.passiveTrafficServerActive) {
+      return;
+    }
+
+    for (const car of this.passiveTrafficCars) {
+      const state = this.getPassiveTrafficServerStateForCar(car);
+      if (!state || !car?.object) {
+        continue;
+      }
+
+      car.object.position.set(state.x, state.y, state.z);
+      car.object.position.y = this.getSurfaceHeightAtPosition(car.object.position.x, car.object.position.z);
+      car.object.rotation.y = state.rotationY;
+      car.yaw = state.rotationY;
+      car.currentSpeed = state.speed;
+      car.currentNodeIndex = state.currentNodeIndex;
+      car.targetNodeIndex = state.targetNodeIndex >= 0 ? state.targetNodeIndex : null;
+      car.lastPosition.copy(car.object.position);
+    }
+  }
+
   updatePassiveTraffic(deltaSeconds) {
     if (!this.passiveTrafficCars.length || !this.passiveTrafficGraph) {
+      return;
+    }
+
+    if (this.passiveTrafficServerActive) {
+      this.applyPassiveTrafficServerState();
+      this.updatePassiveTrafficPlayerCollisions();
       return;
     }
 
