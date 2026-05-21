@@ -152,8 +152,10 @@ import {
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
   getPassiveTrafficRoadExits,
+  getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
   getPassiveTrafficTurnLaneWaypoints,
+  isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficPositionInsideRoadNode
 } from '../src/world/passiveTraffic.js';
@@ -1349,6 +1351,48 @@ function validatePassiveTraffic() {
     'Passive traffic junction stop waypoint should be at the road tile edge, not the tile center'
   );
 
+  const roadCrossTurnGraph = buildPassiveTrafficRoadGraph([
+    { id: 'traffic_cross_south', itemId: 'road_straight', cell: [0, 1], rotationQuarterTurns: 0 },
+    { id: 'traffic_cross_center', itemId: 'road_cross', cell: [0, 0], rotationQuarterTurns: 0 },
+    { id: 'traffic_cross_east', itemId: 'road_straight', cell: [1, 0], rotationQuarterTurns: 1 }
+  ]);
+  const roadCrossSouth = findTrafficNode(roadCrossTurnGraph, 0, 1);
+  const roadCrossCenter = findTrafficNode(roadCrossTurnGraph, 0, 0);
+  const roadCrossEast = findTrafficNode(roadCrossTurnGraph, 1, 0);
+  const roadCrossTurnScript = getPassiveTrafficDriveScript(roadCrossSouth, roadCrossCenter, roadCrossEast);
+  assert(
+    isPassiveTrafficJunctionNode(roadCrossCenter)
+      && isPassiveTrafficCrosswalkNode(roadCrossCenter),
+    'Passive traffic should recognize Road Cross tiles as crosswalk intersections'
+  );
+  assert(
+    roadCrossTurnScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+      && !roadCrossTurnScript.shouldStopAtEntry
+      && roadCrossTurnScript.stopWaypointIndex === -1
+      && roadCrossTurnScript.waypoints.length >= 10,
+    'Passive traffic should turn smoothly through Road Cross crosswalk tiles without stopping'
+  );
+  assertTurnSteeringStaysWithinQuarterTurn(
+    roadCrossSouth,
+    roadCrossCenter,
+    roadCrossEast,
+    roadCrossTurnScript.waypoints
+  );
+  const roadCrossDeparturePosition = getPassiveTrafficLanePosition(roadCrossSouth, roadCrossCenter, new Vector3());
+  const roadCrossDepartureWaypoints = getPassiveTrafficTurnLaneWaypointsFromPosition(
+    roadCrossSouth,
+    roadCrossCenter,
+    roadCrossEast,
+    roadCrossDeparturePosition,
+    []
+  );
+  assert(
+    roadCrossDepartureWaypoints.length > 0
+      && roadCrossDepartureWaypoints.length < roadCrossTurnScript.waypoints.length
+      && roadCrossDepartureWaypoints[0].distanceTo(roadCrossDeparturePosition) < roadCrossTurnScript.waypoints[0].distanceTo(roadCrossDeparturePosition),
+    'Passive traffic should trim departure turn waypoints so first-segment turns continue forward smoothly instead of pivoting back to the entry edge'
+  );
+
   const straightTSplitGraph = buildPassiveTrafficRoadGraph([
     { id: 'traffic_tsplit_west', itemId: 'road_straight', cell: [-1, 0], rotationQuarterTurns: 1 },
     { id: 'traffic_tsplit_center', itemId: 'road_tsplit', cell: [0, 0], rotationQuarterTurns: 0 },
@@ -1560,6 +1604,9 @@ function validatePassiveTraffic() {
       && /shouldPassiveTrafficStopForTurn/.test(worldRendererSource)
       && /PASSIVE_TRAFFIC_SEDAN_TURN_SPEED_FACTOR/.test(worldRendererSource)
       && /getPassiveTrafficTurnSpeedFactor\(car\)/.test(worldRendererSource)
+      && /isPassiveTrafficCrosswalkNode/.test(worldRendererSource)
+      && /shouldScriptLeavingCurrentNode/.test(worldRendererSource)
+      && /getPassiveTrafficTurnLaneWaypointsFromPosition/.test(worldRendererSource)
       && /createPassiveTrafficCars\(requestId,\s*graph,\s*nextSignature,\s*carSpecs\)/.test(worldRendererSource)
       && /async createPassiveTrafficCars\(requestId,\s*graph,\s*expectedSignature/.test(worldRendererSource)
       && /expectedSignature !== this\.passiveTrafficSignature/.test(worldRendererSource),

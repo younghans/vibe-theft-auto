@@ -58,6 +58,7 @@ const PASSIVE_TRAFFIC_TURN_WAYPOINT_TIMES = Object.freeze([0.1, 0.2, 0.3, 0.4, 0
 const PASSIVE_TRAFFIC_ROAD_TILE_HALF_SIZE = BUILDER_TILE_SIZE * 0.5;
 const PASSIVE_TRAFFIC_ROAD_TILE_EDGE_INSET = BUILDER_TILE_SIZE * 0.015;
 const PASSIVE_TRAFFIC_JUNCTION_ITEM_PATTERN = /(?:road_cross|road_junction|road_tsplit)/;
+const PASSIVE_TRAFFIC_CROSSWALK_ITEM_PATTERN = /(?:road_cross|road_straight_crossing)/;
 const TURN_START_SCRATCH = new THREE.Vector3();
 const TURN_END_SCRATCH = new THREE.Vector3();
 const TURN_CONTROL_A_SCRATCH = new THREE.Vector3();
@@ -559,6 +560,10 @@ export function isPassiveTrafficTSplitNode(node) {
   return roadName.includes('road_tsplit');
 }
 
+export function isPassiveTrafficCrosswalkNode(node) {
+  return PASSIVE_TRAFFIC_CROSSWALK_ITEM_PATTERN.test(String(`${node?.itemId ?? ''} ${node?.assetName ?? ''}`).toLowerCase());
+}
+
 export function getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode) {
   if (!previousNode || !currentNode || !nextNode) {
     return PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT;
@@ -757,12 +762,51 @@ export function getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, ne
   return output;
 }
 
-export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode) {
+export function getPassiveTrafficTurnLaneWaypointsFromPosition(previousNode, currentNode, nextNode, position, output = []) {
+  const waypoints = getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode, output);
+  if (!position || waypoints.length <= 1) {
+    return waypoints;
+  }
+
+  let closestIndex = 0;
+  let closestDistanceSq = waypoints[0].distanceToSquared(position);
+  for (let index = 1; index < waypoints.length; index += 1) {
+    const distanceSq = waypoints[index].distanceToSquared(position);
+    if (distanceSq < closestDistanceSq) {
+      closestIndex = index;
+      closestDistanceSq = distanceSq;
+    }
+  }
+
+  const startIndex = Math.min(waypoints.length, closestIndex + 1);
+  if (startIndex <= 0) {
+    return waypoints;
+  }
+
+  let writeIndex = 0;
+  for (let readIndex = startIndex; readIndex < waypoints.length; readIndex += 1) {
+    if (waypoints[readIndex].distanceToSquared(position) <= 0.001 * 0.001) {
+      continue;
+    }
+    waypoints[writeIndex].copy(waypoints[readIndex]);
+    writeIndex += 1;
+  }
+  waypoints.length = writeIndex;
+  return waypoints;
+}
+
+export function shouldPassiveTrafficStopAtEntry(previousNode, currentNode, nextNode) {
   const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
-  const shouldStopAtEntry = isPassiveTrafficJunctionNode(currentNode)
+  return isPassiveTrafficJunctionNode(currentNode)
+    && !isPassiveTrafficCrosswalkNode(currentNode)
     && (!isPassiveTrafficTSplitNode(currentNode) || command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT)
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
+}
+
+export function getPassiveTrafficDriveScript(previousNode, currentNode, nextNode) {
+  const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
+  const shouldStopAtEntry = shouldPassiveTrafficStopAtEntry(previousNode, currentNode, nextNode);
   const waypoints = command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT
     ? getPassiveTrafficStraightLaneWaypoints(previousNode, currentNode, nextNode)
     : getPassiveTrafficTurnLaneWaypoints(previousNode, currentNode, nextNode);

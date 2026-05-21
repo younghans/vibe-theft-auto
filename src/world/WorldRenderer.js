@@ -40,7 +40,9 @@ import {
   getPassiveTrafficLanePosition,
   getPassiveTrafficLanePositionAtNode,
   getPassiveTrafficRouteNodeIndices,
+  getPassiveTrafficTurnLaneWaypointsFromPosition,
   getPassiveTrafficTurnYawRange,
+  isPassiveTrafficCrosswalkNode,
   isPassiveTrafficJunctionNode,
   isPassiveTrafficTSplitNode,
   isPassiveTrafficPositionInsideRoadNode
@@ -195,6 +197,7 @@ function isPassiveTrafficTurningThroughNode(previousNode, currentNode, nextNode)
 function shouldPassiveTrafficStopForTurn(previousNode, currentNode, nextNode) {
   const command = getPassiveTrafficDriveCommand(previousNode, currentNode, nextNode);
   return isPassiveTrafficIntersectionNode(currentNode)
+    && !isPassiveTrafficCrosswalkNode(currentNode)
     && (!isPassiveTrafficTSplitNode(currentNode) || command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STRAIGHT)
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
     && command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP;
@@ -2240,6 +2243,19 @@ export class WorldRenderer {
       return false;
     }
 
+    const previousNode = graph.nodes?.[car.previousNodeIndex] ?? null;
+    const departureScript = previousNode
+      ? getPassiveTrafficDriveScript(previousNode, currentNode, routeNode)
+      : null;
+    const shouldScriptLeavingCurrentNode = Boolean(
+      departureScript
+      && (
+        departureScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
+        || departureScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
+      )
+      && departureScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
+      && departureScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP
+    );
     const nextRouteNodeIndex = car.route?.[car.routeCursor + 1] ?? null;
     const canScriptThroughRouteNode = nextRouteNodeIndex !== null
       && graph.activeNodeSet.has(nextRouteNodeIndex);
@@ -2247,7 +2263,8 @@ export class WorldRenderer {
       ? getPassiveTrafficDriveScript(currentNode, routeNode, graph.nodes[nextRouteNodeIndex])
       : null;
     const shouldScriptThroughRouteNode = Boolean(
-      routeScript
+      !shouldScriptLeavingCurrentNode
+      && routeScript
       && (
         routeScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_LEFT
         || routeScript.command === PASSIVE_TRAFFIC_DRIVE_COMMANDS.TURN_RIGHT
@@ -2256,6 +2273,7 @@ export class WorldRenderer {
       && routeScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.REVERSE
       && routeScript.command !== PASSIVE_TRAFFIC_DRIVE_COMMANDS.STOP
     );
+    const activeDriveScript = shouldScriptLeavingCurrentNode ? departureScript : routeScript;
     const finalNodeIndex = shouldScriptThroughRouteNode ? nextRouteNodeIndex : routeNodeIndex;
     const finalNode = graph.nodes[finalNodeIndex];
     if (!finalNode) {
@@ -2266,10 +2284,10 @@ export class WorldRenderer {
     car.targetNodeIndex = finalNodeIndex;
     car.routeAdvanceCount = shouldScriptThroughRouteNode ? 2 : 1;
     car.turnThroughNodeIndex = shouldScriptThroughRouteNode ? routeNodeIndex : null;
-    car.driveCommand = shouldScriptThroughRouteNode
-      ? routeScript.command
+    car.driveCommand = (shouldScriptLeavingCurrentNode || shouldScriptThroughRouteNode)
+      ? activeDriveScript.command
       : getPassiveTrafficDriveCommand(
-        graph.nodes?.[car.previousNodeIndex],
+        previousNode,
         currentNode,
         finalNode
       );
@@ -2279,9 +2297,11 @@ export class WorldRenderer {
     car.turnStopSatisfied = false;
     car.turnWaypointQueue.length = 0;
     car.turnWaypointCursor = 0;
-    const turnYawRange = shouldScriptThroughRouteNode
-      ? getPassiveTrafficTurnYawRange(currentNode, routeNode, finalNode)
-      : null;
+    const turnYawRange = shouldScriptLeavingCurrentNode
+      ? getPassiveTrafficTurnYawRange(previousNode, currentNode, finalNode)
+      : (shouldScriptThroughRouteNode
+        ? getPassiveTrafficTurnYawRange(currentNode, routeNode, finalNode)
+        : null);
     car.turnStartYaw = turnYawRange?.startYaw ?? null;
     car.turnEndYaw = turnYawRange?.endYaw ?? null;
     getPassiveTrafficLanePosition(
@@ -2291,12 +2311,15 @@ export class WorldRenderer {
     );
     car.finalTargetPosition.y = this.getSurfaceHeightAtPosition(car.finalTargetPosition.x, car.finalTargetPosition.z);
 
-    if (shouldScriptThroughRouteNode) {
-      for (const waypoint of routeScript.waypoints) {
+    if (shouldScriptLeavingCurrentNode || shouldScriptThroughRouteNode) {
+      const turnWaypoints = shouldScriptLeavingCurrentNode
+        ? getPassiveTrafficTurnLaneWaypointsFromPosition(previousNode, currentNode, finalNode, car.object.position)
+        : activeDriveScript.waypoints;
+      for (const waypoint of turnWaypoints) {
         waypoint.y = this.getSurfaceHeightAtPosition(waypoint.x, waypoint.z);
         car.turnWaypointQueue.push(waypoint);
       }
-      car.turnStopWaypointIndex = routeScript.stopWaypointIndex;
+      car.turnStopWaypointIndex = shouldScriptThroughRouteNode ? activeDriveScript.stopWaypointIndex : -1;
       const nextTurnWaypoint = car.turnWaypointCursor < car.turnWaypointQueue.length
         ? car.turnWaypointQueue[car.turnWaypointCursor]
         : null;
