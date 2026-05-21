@@ -2758,6 +2758,8 @@ export function createBankTellerCounterVisual() {
   root.name = 'BankTellerCounter';
   root.userData.footprint = copyFootprint(BANK_TELLER_COUNTER_FOOTPRINT);
   root.userData.bankTellerCounterProp = true;
+  root.userData.blocksMovement = true;
+  root.userData.blocksShots = true;
 
   const materials = createBankFurnitureMaterials();
   root.add(createBox('bankTellerCounterBase', [9.0, 1.22, 1.16], [0, 0.61, 0], materials.white));

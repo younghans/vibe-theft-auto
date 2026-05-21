@@ -346,7 +346,8 @@ function addShellBlock(group, {
   doorwayWidth = 0,
   doorwayHeight = 0,
   doorwayOffset = 0,
-  wallGroups = null
+  wallGroups = null,
+  sideWallOpenings = null
 }) {
   const targetRoofGroup = roofGroup ?? group;
   const getWallGroup = (side) => wallGroups?.[side] ?? group;
@@ -406,16 +407,93 @@ function addShellBlock(group, {
 
   addFrontOrBackWall('back');
   addFrontOrBackWall('front');
-  getWallGroup('left').add(createBox(
-    [wallThickness, height, depth],
-    [centerX - halfWidth + (wallThickness * 0.5), centerY, centerZ],
-    material
-  ));
-  getWallGroup('right').add(createBox(
-    [wallThickness, height, depth],
-    [centerX + halfWidth - (wallThickness * 0.5), centerY, centerZ],
-    material
-  ));
+  const addSideWall = (side) => {
+    const wallGroup = getWallGroup(side);
+    const openings = Array.isArray(sideWallOpenings?.[side]) ? sideWallOpenings[side] : [];
+    const wallX = centerX + ((side === 'left' ? -1 : 1) * (halfWidth - (wallThickness * 0.5)));
+
+    if (!openings.length) {
+      wallGroup.add(createBox([wallThickness, height, depth], [wallX, centerY, centerZ], material));
+      return;
+    }
+
+    const zCuts = [-halfDepth, halfDepth];
+    const clampedOpenings = [];
+    for (const opening of openings) {
+      const openingHalfDepth = Math.max(0, Number(opening.width ?? 0) * 0.5);
+      const openingHalfHeight = Math.max(0, Number(opening.height ?? 0) * 0.5);
+      if (openingHalfDepth <= 0.04 || openingHalfHeight <= 0.04) {
+        continue;
+      }
+
+      const localCenterZ = Number(opening.centerZ ?? 0) - centerZ;
+      const localCenterY = Number(opening.centerY ?? centerY) - centerY;
+      const minZ = Math.max(-halfDepth, localCenterZ - openingHalfDepth);
+      const maxZ = Math.min(halfDepth, localCenterZ + openingHalfDepth);
+      const minY = Math.max(-halfHeight, localCenterY - openingHalfHeight);
+      const maxY = Math.min(halfHeight, localCenterY + openingHalfHeight);
+      if (maxZ - minZ <= 0.04 || maxY - minY <= 0.04) {
+        continue;
+      }
+
+      clampedOpenings.push({ minZ, maxZ, minY, maxY });
+      zCuts.push(minZ, maxZ);
+    }
+
+    zCuts.sort((a, b) => a - b);
+    const uniqueZCuts = [];
+    for (const cut of zCuts) {
+      if (!uniqueZCuts.length || Math.abs(cut - uniqueZCuts[uniqueZCuts.length - 1]) > 0.01) {
+        uniqueZCuts.push(cut);
+      }
+    }
+
+    for (let index = 0; index < uniqueZCuts.length - 1; index += 1) {
+      const minZ = uniqueZCuts[index];
+      const maxZ = uniqueZCuts[index + 1];
+      const segmentDepth = maxZ - minZ;
+      if (segmentDepth <= 0.04) {
+        continue;
+      }
+
+      const segmentCenterZ = (minZ + maxZ) * 0.5;
+      const blockedYSpans = [];
+      for (const opening of clampedOpenings) {
+        if (opening.maxZ <= minZ + 0.01 || opening.minZ >= maxZ - 0.01) {
+          continue;
+        }
+        blockedYSpans.push([opening.minY, opening.maxY]);
+      }
+      blockedYSpans.sort((a, b) => a[0] - b[0]);
+
+      const freeYSpans = [];
+      let cursorY = -halfHeight;
+      for (const [blockedMinY, blockedMaxY] of blockedYSpans) {
+        if (blockedMinY > cursorY + 0.04) {
+          freeYSpans.push([cursorY, blockedMinY]);
+        }
+        cursorY = Math.max(cursorY, blockedMaxY);
+      }
+      if (cursorY < halfHeight - 0.04) {
+        freeYSpans.push([cursorY, halfHeight]);
+      }
+
+      for (const [minY, maxY] of freeYSpans) {
+        const segmentHeight = maxY - minY;
+        if (segmentHeight <= 0.04) {
+          continue;
+        }
+        wallGroup.add(createBox(
+          [wallThickness, segmentHeight, segmentDepth],
+          [wallX, centerY + ((minY + maxY) * 0.5), centerZ + segmentCenterZ],
+          material
+        ));
+      }
+    }
+  };
+
+  addSideWall('left');
+  addSideWall('right');
   if (includeRoof && roofThickness > 0) {
     targetRoofGroup.add(createBox(
       [width, roofThickness, depth],
@@ -846,7 +924,8 @@ function addCommonBuildingShell(groups, materials, options = {}) {
       left: groups.shellLeft,
       right: groups.shellRight,
       front: groups.shellFront
-    }
+    },
+    sideWallOpenings: options.sideWallOpenings
   });
 
   if (splitWallForCutaway) {
@@ -1072,6 +1151,34 @@ const BANK_ROOF_UNIT_Y = BANK_UPPER_TOP_Y + 0.26;
 const BANK_FRONT_DOOR_CLEAR_HALF_WIDTH = 3.74;
 const BANK_FRONT_DOOR_GLASS_CLEAR_TOP_Y = 4.42;
 const BANK_FRONT_GLASS_Z = 11.12;
+const BANK_LOBBY_SIDE_WINDOW_Y = 5.28;
+const BANK_LOBBY_SIDE_WINDOW_WIDTH = 2.38;
+const BANK_LOBBY_SIDE_WINDOW_HEIGHT = 2.62;
+const BANK_LOBBY_SIDE_WINDOW_ZS = Object.freeze([-7.25, -2.42, 2.42, 7.25]);
+const BANK_LOBBY_SIDE_WINDOW_OPENINGS = Object.freeze(
+  BANK_LOBBY_SIDE_WINDOW_ZS.map((centerZ) => Object.freeze({
+    centerY: BANK_LOBBY_SIDE_WINDOW_Y,
+    centerZ,
+    width: BANK_LOBBY_SIDE_WINDOW_WIDTH + 0.62,
+    height: BANK_LOBBY_SIDE_WINDOW_HEIGHT + 0.6
+  }))
+);
+
+function overlapsBankLobbySideWindow(z, y, width, height) {
+  const halfWidth = width * 0.5;
+  const halfHeight = height * 0.5;
+  for (const opening of BANK_LOBBY_SIDE_WINDOW_OPENINGS) {
+    const openingHalfWidth = opening.width * 0.5;
+    const openingHalfHeight = opening.height * 0.5;
+    if (
+      Math.abs(z - opening.centerZ) < halfWidth + openingHalfWidth
+      && Math.abs(y - opening.centerY) < halfHeight + openingHalfHeight
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function createBankFurnitureMaterials(materials) {
   return {
@@ -1128,40 +1235,7 @@ function addBankLobbyTable(group, materials, position = [0, 0, 0]) {
 }
 
 function addBankDetails(groups, materials) {
-  const bankInteriorMaterials = createBankFurnitureMaterials(materials);
-
   addModernBankGlassFacade(groups, materials);
-
-  addBankTellerCounter(groups.interior, bankInteriorMaterials, [0, 0, -5.45]);
-  for (const [x, z, rotationY] of [
-    [-5.1, 3.45, Math.PI],
-    [-3.55, 3.45, Math.PI],
-    [3.55, 3.45, Math.PI],
-    [5.1, 3.45, Math.PI],
-    [-5.1, 5.25, 0],
-    [-3.55, 5.25, 0],
-    [3.55, 5.25, 0],
-    [5.1, 5.25, 0]
-  ]) {
-    addBankSittingChair(groups.interior, bankInteriorMaterials, [x, 0, z], rotationY);
-  }
-  for (const [x, z] of [[-4.32, 4.35], [4.32, 4.35]]) {
-    addBankLobbyTable(groups.interior, bankInteriorMaterials, [x, 0, z]);
-  }
-  addBoxes(groups.interior, [
-    { size: [3.2, 3.2, 0.42], position: [8.3, 2.42, -8.7], material: materials.metalDark }
-  ]);
-  groups.interior.add(createCylinder(1.32, 1.32, 0.28, 24, [8.3, 2.42, -8.42], materials.metal, [Math.PI * 0.5, 0, 0]));
-  groups.interior.add(createCylinder(0.48, 0.48, 0.34, 18, [8.3, 2.42, -8.2], materials.signShadow, [Math.PI * 0.5, 0, 0]));
-  for (const x of [-5.8, -1.9, 1.9, 5.8]) {
-    groups.interior.add(createCylinder(0.08, 0.08, 1.02, 8, [x, 1.2, 0.0], materials.metalDark));
-    groups.interior.add(createCylinder(0.08, 0.08, 1.02, 8, [x, 1.2, 2.4], materials.metalDark));
-    groups.interior.add(createBox([3.3, 0.08, 0.08], [x + 1.7, 1.7, 0.0], materials.accent));
-    groups.interior.add(createBox([3.3, 0.08, 0.08], [x + 1.7, 1.7, 2.4], materials.accent));
-  }
-  for (const x of [-6.2, -2.0, 2.0]) {
-    addDesk(groups.interior, [x, 0, -7.8], materials, 0);
-  }
 }
 
 function addBankFrontGlassPanel(group, material, {
@@ -1199,7 +1273,6 @@ function addModernBankGlassFacade(groups, materials) {
   const lowerFrontRows = [5.18, 7.14, 9.1, 11.06, 13.02, 14.98];
   const sideWindowRows = [2.62, 4.74, 6.86, 8.98, 11.1, 13.22, 17.86, 19.78, 21.7, 23.42];
   const backWindowRows = [3.02, 5.14, 7.26, 9.38, 11.5, 13.62, 17.86, 19.78, 21.7, 23.42];
-  const bankLobbySideWindowZs = [-6.7, 6.7];
 
   addBoxes(groups.exterior, [
     { size: [21.6, 0.34, 0.36], position: [0, 16.04, 10.98], material: bankMaterials.mullion },
@@ -1272,6 +1345,9 @@ function addModernBankGlassFacade(groups, materials) {
   for (const sideX of [-10.98, 10.98]) {
     for (const y of sideWindowRows) {
       for (const z of [-7.3, -4.55, -1.8, 0.95, 3.7, 6.45]) {
+        if (overlapsBankLobbySideWindow(z, y, 1.46, 1.2)) {
+          continue;
+        }
         addDetailedSideWindow(groups.exterior, {
           x: sideX,
           y,
@@ -1287,13 +1363,14 @@ function addModernBankGlassFacade(groups, materials) {
     }
   }
   for (const sideX of [-11.16, 11.16]) {
-    for (const z of bankLobbySideWindowZs) {
-      addDetailedSideWindow(groups.exterior, {
+    const sideWindowGroup = sideX < 0 ? groups.shellLeft : groups.shellRight;
+    for (const z of BANK_LOBBY_SIDE_WINDOW_ZS) {
+      addDetailedSideWindow(sideWindowGroup, {
         x: sideX,
-        y: 3.35,
+        y: BANK_LOBBY_SIDE_WINDOW_Y,
         z,
-        width: 2.45,
-        height: 2.35,
+        width: BANK_LOBBY_SIDE_WINDOW_WIDTH,
+        height: BANK_LOBBY_SIDE_WINDOW_HEIGHT,
         glassMaterial: bankMaterials.glassDeep,
         frameMaterial: bankMaterials.mullion,
         sillMaterial: bankMaterials.mullionLight,
@@ -1945,6 +2022,10 @@ const BUILDINGS = Object.freeze([
         { position: [-5.4, BANK_ROOF_UNIT_Y, -4.1], rotationY: 0.24 },
         { position: [5.2, BANK_ROOF_UNIT_Y, -2.3], rotationY: -0.18 }
       ],
+      sideWallOpenings: {
+        left: BANK_LOBBY_SIDE_WINDOW_OPENINGS,
+        right: BANK_LOBBY_SIDE_WINDOW_OPENINGS
+      },
       upper: { centerY: BANK_UPPER_CENTER_Y, centerZ: 0.35, width: 21.7, height: BANK_UPPER_HEIGHT, depth: 20.9 }
     },
     decorate: addBankDetails

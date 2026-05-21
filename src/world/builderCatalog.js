@@ -845,7 +845,9 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
     group: 'bank',
     size: BANK_TELLER_COUNTER_FOOTPRINT,
     collision: true,
-    padding: 0.18,
+    blocksMovement: true,
+    blocksShots: true,
+    padding: 0.28,
     createVisual: createBankTellerCounterVisual
   },
   {

@@ -509,6 +509,36 @@ function getGlbNodesByName(json, nodeName) {
   return matchingNodes;
 }
 
+function countGlbTransparentPrimitivesUnderNode(json, nodeName) {
+  const stack = [];
+  for (let index = 0; index < (json.nodes ?? []).length; index += 1) {
+    if (json.nodes[index]?.name === nodeName) {
+      stack.push(index);
+    }
+  }
+
+  let count = 0;
+  while (stack.length) {
+    const nodeIndex = stack.pop();
+    const node = json.nodes?.[nodeIndex];
+    for (const childIndex of node?.children ?? []) {
+      stack.push(childIndex);
+    }
+
+    const mesh = Number.isInteger(node?.mesh) ? json.meshes?.[node.mesh] : null;
+    for (const primitive of mesh?.primitives ?? []) {
+      const material = Number.isInteger(primitive?.material) ? json.materials?.[primitive.material] : null;
+      const colorFactor = material?.pbrMetallicRoughness?.baseColorFactor ?? [];
+      const alpha = Number(colorFactor[3] ?? 1);
+      if (material?.alphaMode === 'BLEND' && alpha < 1) {
+        count += 1;
+      }
+    }
+  }
+
+  return count;
+}
+
 function getMaxCollisionRectY(rects) {
   let maxY = -Infinity;
   for (const rect of rects ?? []) {
@@ -2004,9 +2034,11 @@ function validateCustomPropCatalogItems() {
       collision: true,
       blocksMovement: true,
       blocksShots: true,
+      padding: 0.28,
       requiredParts: ['bankTellerCounterBase', 'bankTellerCounterTop', 'bankTellerCounterPrivacyWall'],
       whitePart: 'bankTellerCounterBase',
-      minHeight: 1.9
+      minHeight: 1.9,
+      visualMovementBlocker: true
     },
     {
       id: 'bank_sitting_chair',
@@ -2042,6 +2074,25 @@ function validateCustomPropCatalogItems() {
     assert(item.collision === definition.collision, `${definition.label} collision flag should match its intended use`);
     assert(item.blocksMovement === definition.blocksMovement, `${definition.label} movement blocking should match its intended use`);
     assert(item.blocksShots === definition.blocksShots, `${definition.label} shot blocking should match its intended use`);
+    if (typeof definition.padding === 'number') {
+      assert(item.padding === definition.padding, `${definition.label} should reserve extra collision padding`);
+    }
+    const propTestPlacement = {
+      id: `validate-${definition.id}`,
+      itemId: definition.id,
+      layer: 'prop',
+      position: [0, 0],
+      rotationY: 0,
+      scale: 1
+    };
+    assert(
+      (placementToCollisionRects(propTestPlacement, item, { collisionKey: 'blocksMovement' }).length > 0) === definition.blocksMovement,
+      `${definition.label} should resolve movement collision from its catalog definition`
+    );
+    assert(
+      (placementToCollisionRects(propTestPlacement, item, { collisionKey: 'blocksShots' }).length > 0) === definition.blocksShots,
+      `${definition.label} should resolve shot collision from its catalog definition`
+    );
     assert(
       Math.abs(item.size[0] - definition.size[0]) < 0.001
         && Math.abs(item.size[1] - definition.size[1]) < 0.001,
@@ -2051,6 +2102,10 @@ function validateCustomPropCatalogItems() {
     const visual = item.createVisual();
     assert(visual.userData.footprint?.[0] === definition.size[0], `${definition.label} visual should expose footprint width metadata`);
     assert(visual.userData.footprint?.[1] === definition.size[1], `${definition.label} visual should expose footprint depth metadata`);
+    if (definition.visualMovementBlocker) {
+      assert(visual.userData.blocksMovement === true, `${definition.label} visual should mark itself as movement-blocking metadata`);
+      assert(visual.userData.blocksShots === true, `${definition.label} visual should mark itself as shot-blocking metadata`);
+    }
     for (const partName of definition.requiredParts) {
       assert(visual.getObjectByName(partName), `${definition.label} visual should include ${partName}`);
     }
@@ -3076,15 +3131,15 @@ function validateFootprintSupport() {
   );
   assert(
     /addModernBankGlassFacade\(groups,\s*materials\);/.test(bankDetailsSource)
-      && /addBoxes\(groups\.interior/.test(bankDetailsSource),
-    'Bank generator should replace only the exterior facade before preserving the existing interior detail block'
+      && !/groups\.interior/.test(bankDetailsSource),
+    'Bank generator should remove bank interior props while keeping the exterior facade pass'
   );
   assert(
-    /addBankTellerCounter\(groups\.interior,\s*bankInteriorMaterials,\s*\[0,\s*0,\s*-5\.45\]\)/.test(bankDetailsSource)
-      && /addBankSittingChair\(groups\.interior,\s*bankInteriorMaterials/.test(bankDetailsSource)
-      && /addBankLobbyTable\(groups\.interior,\s*bankInteriorMaterials/.test(bankDetailsSource)
-      && /createBankFurnitureMaterials\(materials\)/.test(bankDetailsSource),
-    'Bank generator should add the white teller counter, sitting chairs, and lobby tables to the interior'
+    !/addBankTellerCounter\(groups\.interior/.test(bankDetailsSource)
+      && !/addBankSittingChair\(groups\.interior/.test(bankDetailsSource)
+      && !/addBankLobbyTable\(groups\.interior/.test(bankDetailsSource)
+      && !/addDesk\(groups\.interior/.test(bankDetailsSource),
+    'Bank generator should not embed teller counters, chairs, tables, desks, or other clutter inside the bank GLB'
   );
   assert(
     /createGlassMaterial\(0xc7f3fb,\s*0\.38\)/.test(bankFacadeSource)
@@ -3094,11 +3149,19 @@ function validateFootprintSupport() {
     'Bank exterior generator should use multi-floor transparent glass on the front, sides, and back'
   );
   assert(
-    /const bankLobbySideWindowZs = \[-6\.7,\s*6\.7\]/.test(bankFacadeSource)
+    /const BANK_LOBBY_SIDE_WINDOW_Y = 5\.28;/.test(districtBuildingSource)
+      && /const BANK_LOBBY_SIDE_WINDOW_ZS = Object\.freeze\(\[-7\.25,\s*-2\.42,\s*2\.42,\s*7\.25\]\);/.test(districtBuildingSource)
+      && /sideWallOpenings:\s*\{[\s\S]*left:\s*BANK_LOBBY_SIDE_WINDOW_OPENINGS,[\s\S]*right:\s*BANK_LOBBY_SIDE_WINDOW_OPENINGS[\s\S]*\}/.test(districtBuildingSource)
+      && /sideWallOpenings = null/.test(districtBuildingSource)
+      && /uniqueZCuts/.test(districtBuildingSource)
+      && /overlapsBankLobbySideWindow\(z,\s*y,\s*1\.46,\s*1\.2\)/.test(bankFacadeSource)
       && /for \(const sideX of \[-11\.16,\s*11\.16\]\)/.test(bankFacadeSource)
-      && /height:\s*2\.35/.test(bankFacadeSource)
+      && /const sideWindowGroup = sideX < 0 \? groups\.shellLeft : groups\.shellRight;/.test(bankFacadeSource)
+      && /for \(const z of BANK_LOBBY_SIDE_WINDOW_ZS\)/.test(bankFacadeSource)
+      && /y:\s*BANK_LOBBY_SIDE_WINDOW_Y/.test(bankFacadeSource)
+      && /height:\s*BANK_LOBBY_SIDE_WINDOW_HEIGHT/.test(bankFacadeSource)
       && /mullions:\s*1/.test(bankFacadeSource),
-    'Bank exterior generator should add two prominent transparent lobby windows on each side'
+    'Bank exterior generator should cut real wall openings and add eight raised transparent side windows'
   );
   assert(
     /const BANK_WALL_HEIGHT = 15\.6;/.test(districtBuildingSource)
@@ -3133,6 +3196,11 @@ function validateFootprintSupport() {
   assert(
     countBankTransparentGlassMaterials(bankGlbJson.materials) >= 2,
     'Bank GLB should include transparent modern glass materials in the generated exterior asset'
+  );
+  assert(
+    countGlbTransparentPrimitivesUnderNode(bankGlbJson, 'bank_hull_wall_left') >= 1
+      && countGlbTransparentPrimitivesUnderNode(bankGlbJson, 'bank_hull_wall_right') >= 1,
+    'Bank GLB should keep raised transparent side-window glass under the visible side-wall nodes for interior and exterior views'
   );
   assert(
     /visibleNodeNames/.test(worldRendererSource),
