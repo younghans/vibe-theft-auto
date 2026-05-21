@@ -143,6 +143,14 @@ const BONE_SPACE_MATRIX = new THREE.Matrix4();
 const LOCAL_SCALE = new THREE.Vector3(1, 1, 1);
 const PART_SCALE = new THREE.Vector3(1, 1, 1);
 const PRIMITIVE_UP = new THREE.Vector3(0, 1, 0);
+const REFERENCE_LIMB_BIND_OFFSET = new THREE.Vector3(0, 0.828, 0);
+
+const REFERENCE_LIMB_BONES = Object.freeze({
+  sleeves: /(?:Shoulder|Arm)/,
+  hands: /mixamorig(?:Right|Left)Hand$/,
+  pants: /(?:Hips|UpLeg|mixamorig(?:Right|Left)Leg$)/,
+  boots: /(?:Foot|Toe)/
+});
 
 function getArrayBuffer(buffer) {
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -254,6 +262,128 @@ function createRigidSegment(bone, childBone, boneIndex, width, depth, options = 
     rotation: options.rotation ?? [0, 0, 0],
     scale: options.scale ?? [width / Math.max(width, depth), 1, depth / Math.max(width, depth)]
   });
+}
+
+function getAttributeComponent(attribute, vertexIndex, componentIndex) {
+  switch (componentIndex) {
+    case 0:
+      return attribute.getX(vertexIndex);
+    case 1:
+      return attribute.getY(vertexIndex);
+    case 2:
+      return attribute.getZ(vertexIndex);
+    case 3:
+      return attribute.getW(vertexIndex);
+    default:
+      return 0;
+  }
+}
+
+function getDominantBoneName(skinIndex, skinWeight, boneNames, vertexIndex) {
+  let dominantBoneIndex = skinIndex.getX(vertexIndex);
+  let dominantWeight = skinWeight.getX(vertexIndex);
+
+  for (let componentIndex = 1; componentIndex < 4; componentIndex += 1) {
+    const weight = getAttributeComponent(skinWeight, vertexIndex, componentIndex);
+    if (weight > dominantWeight) {
+      dominantWeight = weight;
+      dominantBoneIndex = getAttributeComponent(skinIndex, vertexIndex, componentIndex);
+    }
+  }
+
+  return boneNames[dominantBoneIndex] ?? '';
+}
+
+function createReferenceLimbGeometry(sourceMesh, boneMatcher, {
+  bindOffset = REFERENCE_LIMB_BIND_OFFSET,
+  inflate = 0.018,
+  widenX = 1.06,
+  deepenZ = 1.04
+} = {}) {
+  const sourceGeometry = sourceMesh.geometry;
+  const sourceIndex = sourceGeometry.index;
+  const position = sourceGeometry.getAttribute('position');
+  const normal = sourceGeometry.getAttribute('normal');
+  const skinIndex = sourceGeometry.getAttribute('skinIndex');
+  const skinWeight = sourceGeometry.getAttribute('skinWeight');
+
+  if (!sourceIndex || !position || !skinIndex || !skinWeight) {
+    return null;
+  }
+
+  const boneNames = sourceMesh.skeleton.bones.map((bone) => bone?.name ?? '');
+  const positions = [];
+  const normals = [];
+  const skinIndices = [];
+  const skinWeights = [];
+  const indices = [];
+  const indexBySourceVertex = new Map();
+
+  const addSourceVertex = (vertexIndex) => {
+    const existingIndex = indexBySourceVertex.get(vertexIndex);
+    if (existingIndex !== undefined) {
+      return existingIndex;
+    }
+
+    const nx = normal ? normal.getX(vertexIndex) : 0;
+    const ny = normal ? normal.getY(vertexIndex) : 0;
+    const nz = normal ? normal.getZ(vertexIndex) : 0;
+    const sourceX = position.getX(vertexIndex);
+    const sourceZ = position.getZ(vertexIndex);
+    const nextIndex = positions.length / 3;
+
+    positions.push(
+      (sourceX * widenX) + bindOffset.x + (nx * inflate),
+      position.getY(vertexIndex) + bindOffset.y + (ny * inflate),
+      (sourceZ * deepenZ) + bindOffset.z + (nz * inflate)
+    );
+    normals.push(nx, ny, nz);
+    skinIndices.push(
+      skinIndex.getX(vertexIndex),
+      skinIndex.getY(vertexIndex),
+      skinIndex.getZ(vertexIndex),
+      skinIndex.getW(vertexIndex)
+    );
+    skinWeights.push(
+      skinWeight.getX(vertexIndex),
+      skinWeight.getY(vertexIndex),
+      skinWeight.getZ(vertexIndex),
+      skinWeight.getW(vertexIndex)
+    );
+    indexBySourceVertex.set(vertexIndex, nextIndex);
+    return nextIndex;
+  };
+
+  for (let triangleIndex = 0; triangleIndex < sourceIndex.count; triangleIndex += 3) {
+    const vertexIndices = [
+      sourceIndex.getX(triangleIndex),
+      sourceIndex.getX(triangleIndex + 1),
+      sourceIndex.getX(triangleIndex + 2)
+    ];
+    const usesTargetBone = vertexIndices.some((vertexIndex) => (
+      boneMatcher.test(getDominantBoneName(skinIndex, skinWeight, boneNames, vertexIndex))
+    ));
+
+    if (!usesTargetBone) {
+      continue;
+    }
+
+    for (const vertexIndex of vertexIndices) {
+      indices.push(addSourceVertex(vertexIndex));
+    }
+  }
+
+  if (positions.length === 0) {
+    return null;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setIndex(indices);
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
+  return geometry;
 }
 
 function createMergedSkinnedMesh(geometries, material, name, skeleton, bindMatrix) {
@@ -408,8 +538,12 @@ function buildPoliceOfficerCharacter(root) {
     uniformLight: createMaterial('policeOfficerLightBluePanels', COLORS.uniformLight, 0.78, 0.02),
     uniformDark: createMaterial('policeOfficerDarkUniformTrim', COLORS.uniformDark, 0.84, 0.02),
     uniformJoint: createMaterial('policeOfficerConnectedSleeves', COLORS.uniform, 0.82, 0.02),
+    humanSleeves: createMaterial('policeOfficerGameRigSleeveUnderlay', COLORS.uniform, 0.8, 0.02),
     pants: createMaterial('policeOfficerNavyPants', COLORS.pants, 0.86, 0.02),
     pantsJoint: createMaterial('policeOfficerGroundedPantStructure', COLORS.pants, 0.86, 0.02),
+    humanHands: createMaterial('policeOfficerGameRigHandUnderlay', COLORS.skinLight, 0.74, 0.01),
+    humanPants: createMaterial('policeOfficerGameRigPantUnderlay', COLORS.pants, 0.86, 0.02),
+    humanBoots: createMaterial('policeOfficerGameRigBootUnderlay', COLORS.boot, 0.82, 0.04),
     black: createMaterial('policeOfficerBlackDetails', COLORS.black, 0.7, 0.05),
     boot: createMaterial('policeOfficerChunkyBoots', COLORS.boot, 0.82, 0.04),
     belt: createMaterial('policeOfficerUtilityBelt', COLORS.belt, 0.64, 0.06),
@@ -437,9 +571,30 @@ function buildPoliceOfficerCharacter(root) {
     }
   };
 
-  addPiece('pants', createRigidCapsule(bones.hips, getBoneIndex('mixamorigHips'), 0.18, 0.22, 3, 10, {
+  addPiece('humanSleeves', createReferenceLimbGeometry(sourceMesh, REFERENCE_LIMB_BONES.sleeves, {
+    inflate: 0.024,
+    widenX: 1.08,
+    deepenZ: 1.08
+  }));
+  addPiece('humanHands', createReferenceLimbGeometry(sourceMesh, REFERENCE_LIMB_BONES.hands, {
+    inflate: 0.014,
+    widenX: 1.04,
+    deepenZ: 1.02
+  }));
+  addPiece('humanPants', createReferenceLimbGeometry(sourceMesh, REFERENCE_LIMB_BONES.pants, {
+    inflate: 0.03,
+    widenX: 1.18,
+    deepenZ: 1.1
+  }));
+  addPiece('humanBoots', createReferenceLimbGeometry(sourceMesh, REFERENCE_LIMB_BONES.boots, {
+    inflate: 0.026,
+    widenX: 1.2,
+    deepenZ: 1.12
+  }));
+
+  addPiece('pants', createRigidCapsule(bones.hips, getBoneIndex('mixamorigHips'), 0.2, 0.24, 3, 10, {
     position: [0, 0.04, 0.01],
-    scale: [1.28, 0.9, 0.86]
+    scale: [1.42, 0.92, 0.9]
   }));
   addPiece('belt', createRigidCylinder(bones.hips, getBoneIndex('mixamorigHips'), 0.24, 0.25, 0.09, 14, {
     position: [0, 0.135, 0.012],
@@ -509,61 +664,69 @@ function buildPoliceOfficerCharacter(root) {
     position: [0, 0.02, 0.01],
     scale: [1.05, 0.85, 0.95]
   }));
-  addPiece('uniform', createRigidSphere(bones.rightShoulder, getBoneIndex('mixamorigRightShoulder'), 0.08, 8, 6, {
+  addPiece('uniform', createRigidSphere(bones.rightShoulder, getBoneIndex('mixamorigRightShoulder'), 0.095, 8, 6, {
     position: [0, 0.045, 0],
-    scale: [1.55, 1.18, 1.18]
+    scale: [1.72, 1.22, 1.22]
   }));
-  addPiece('uniform', createRigidSphere(bones.leftShoulder, getBoneIndex('mixamorigLeftShoulder'), 0.08, 8, 6, {
+  addPiece('uniform', createRigidSphere(bones.leftShoulder, getBoneIndex('mixamorigLeftShoulder'), 0.095, 8, 6, {
     position: [0, 0.045, 0],
-    scale: [1.55, 1.18, 1.18]
+    scale: [1.72, 1.22, 1.22]
   }));
-  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.105, 8, 6, {
-    position: [-0.26, 0.075, 0.01],
-    scale: [0.95, 0.78, 0.82]
+  addPiece('uniformJoint', createRigidBox(bones.spineUpper, getBoneIndex('mixamorigSpine2'), [0.17, 0.18, 0.16], {
+    position: [-0.31, 0.054, 0.002],
+    rotation: [0, 0, -0.1]
   }));
-  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.105, 8, 6, {
-    position: [0.26, 0.075, 0.01],
-    scale: [0.95, 0.78, 0.82]
+  addPiece('uniformJoint', createRigidBox(bones.spineUpper, getBoneIndex('mixamorigSpine2'), [0.17, 0.18, 0.16], {
+    position: [0.31, 0.054, 0.002],
+    rotation: [0, 0, 0.1]
   }));
-  addPiece('uniformJoint', createRigidSegment(bones.rightShoulder, bones.rightArm, getBoneIndex('mixamorigRightShoulder'), 0.16, 0.13, {
+  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.13, 8, 6, {
+    position: [-0.29, 0.075, 0.006],
+    scale: [1.05, 0.86, 0.9]
+  }));
+  addPiece('uniformJoint', createRigidSphere(bones.spineUpper, getBoneIndex('mixamorigSpine2'), 0.13, 8, 6, {
+    position: [0.29, 0.075, 0.006],
+    scale: [1.05, 0.86, 0.9]
+  }));
+  addPiece('uniformJoint', createRigidSegment(bones.rightShoulder, bones.rightArm, getBoneIndex('mixamorigRightShoulder'), 0.2, 0.16, {
     offset: [0, -0.004, 0.006],
-    scale: [1.0, 1.16, 0.88]
+    scale: [1.04, 1.2, 0.92]
   }));
-  addPiece('uniformJoint', createRigidSegment(bones.leftShoulder, bones.leftArm, getBoneIndex('mixamorigLeftShoulder'), 0.16, 0.13, {
+  addPiece('uniformJoint', createRigidSegment(bones.leftShoulder, bones.leftArm, getBoneIndex('mixamorigLeftShoulder'), 0.2, 0.16, {
     offset: [0, -0.004, 0.006],
-    scale: [1.0, 1.16, 0.88]
+    scale: [1.04, 1.2, 0.92]
   }));
-  addPiece('uniform', createRigidSegment(bones.rightArm, bones.rightForeArm, getBoneIndex('mixamorigRightArm'), 0.14, 0.12, {
+  addPiece('uniform', createRigidSegment(bones.rightArm, bones.rightForeArm, getBoneIndex('mixamorigRightArm'), 0.18, 0.145, {
     offset: [0, -0.015, 0.0],
-    scale: [0.95, 1.0, 0.86]
+    scale: [1.0, 1.0, 0.9]
   }));
-  addPiece('uniform', createRigidSegment(bones.leftArm, bones.leftForeArm, getBoneIndex('mixamorigLeftArm'), 0.14, 0.12, {
+  addPiece('uniform', createRigidSegment(bones.leftArm, bones.leftForeArm, getBoneIndex('mixamorigLeftArm'), 0.18, 0.145, {
     offset: [0, -0.015, 0.0],
-    scale: [0.95, 1.0, 0.86]
+    scale: [1.0, 1.0, 0.9]
   }));
-  addPiece('uniformJoint', createRigidSphere(bones.rightForeArm, getBoneIndex('mixamorigRightForeArm'), 0.078, 8, 6, {
+  addPiece('uniformJoint', createRigidSphere(bones.rightForeArm, getBoneIndex('mixamorigRightForeArm'), 0.096, 8, 6, {
     position: [0, -0.012, 0.0],
-    scale: [1.15, 0.9, 1.0]
+    scale: [1.16, 0.92, 1.04]
   }));
-  addPiece('uniformJoint', createRigidSphere(bones.leftForeArm, getBoneIndex('mixamorigLeftForeArm'), 0.078, 8, 6, {
+  addPiece('uniformJoint', createRigidSphere(bones.leftForeArm, getBoneIndex('mixamorigLeftForeArm'), 0.096, 8, 6, {
     position: [0, -0.012, 0.0],
-    scale: [1.15, 0.9, 1.0]
+    scale: [1.16, 0.92, 1.04]
   }));
-  addPiece('skin', createRigidSegment(bones.rightForeArm, bones.rightHand, getBoneIndex('mixamorigRightForeArm'), 0.12, 0.105, {
+  addPiece('skin', createRigidSegment(bones.rightForeArm, bones.rightHand, getBoneIndex('mixamorigRightForeArm'), 0.14, 0.12, {
     offset: [0, -0.01, 0.0],
-    scale: [0.92, 0.96, 0.82]
+    scale: [0.94, 0.96, 0.84]
   }));
-  addPiece('skin', createRigidSegment(bones.leftForeArm, bones.leftHand, getBoneIndex('mixamorigLeftForeArm'), 0.12, 0.105, {
+  addPiece('skin', createRigidSegment(bones.leftForeArm, bones.leftHand, getBoneIndex('mixamorigLeftForeArm'), 0.14, 0.12, {
     offset: [0, -0.01, 0.0],
-    scale: [0.92, 0.96, 0.82]
+    scale: [0.94, 0.96, 0.84]
   }));
-  addPiece('skinLight', createRigidSphere(bones.rightHand, getBoneIndex('mixamorigRightHand'), 0.075, 8, 6, {
+  addPiece('skinLight', createRigidSphere(bones.rightHand, getBoneIndex('mixamorigRightHand'), 0.09, 8, 6, {
     position: [0, 0.035, 0.02],
-    scale: [1.05, 0.84, 1.0]
+    scale: [1.08, 0.86, 1.02]
   }));
-  addPiece('skinLight', createRigidSphere(bones.leftHand, getBoneIndex('mixamorigLeftHand'), 0.075, 8, 6, {
+  addPiece('skinLight', createRigidSphere(bones.leftHand, getBoneIndex('mixamorigLeftHand'), 0.09, 8, 6, {
     position: [0, 0.035, 0.02],
-    scale: [1.05, 0.84, 1.0]
+    scale: [1.08, 0.86, 1.02]
   }));
   addPiece('gold', createRigidCylinder(bones.rightShoulder, getBoneIndex('mixamorigRightShoulder'), 0.025, 0.025, 0.012, 5, {
     position: [0, 0.09, 0.085],
@@ -582,33 +745,37 @@ function buildPoliceOfficerCharacter(root) {
     const sign = side === 'right' ? -1 : 1;
     const localOutset = side === 'right' ? 0.026 : -0.026;
     const sideName = side === 'right' ? 'Right' : 'Left';
-    addPiece('pantsJoint', createRigidSegment(bones.hips, upLeg, getBoneIndex('mixamorigHips'), 0.15, 0.13, {
+    addPiece('pantsJoint', createRigidSphere(upLeg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.15, 8, 6, {
+      position: [localOutset * 0.75, 0.05, 0.008],
+      scale: [1.28, 0.86, 1.02]
+    }));
+    addPiece('pantsJoint', createRigidSegment(bones.hips, upLeg, getBoneIndex('mixamorigHips'), 0.2, 0.165, {
       offset: [0, -0.006, 0.006],
-      scale: [1.06, 1.08, 0.92]
+      scale: [1.1, 1.12, 0.96]
     }));
-    addPiece('pants', createRigidSphere(upLeg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.125, 8, 6, {
+    addPiece('pants', createRigidSphere(upLeg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.155, 8, 6, {
       position: [localOutset * 0.55, 0.026, 0.012],
-      scale: [1.12, 0.95, 1.0]
+      scale: [1.18, 0.98, 1.04]
     }));
-    addPiece('pants', createRigidSegment(upLeg, leg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.165, 0.135, {
+    addPiece('pants', createRigidSegment(upLeg, leg, getBoneIndex(`mixamorig${sideName}UpLeg`), 0.215, 0.165, {
       offset: [localOutset, -0.02, 0.012],
-      scale: [0.96, 1.0, 0.88]
+      scale: [1.0, 1.0, 0.9]
     }));
-    addPiece('pantsJoint', createRigidSphere(leg, getBoneIndex(`mixamorig${sideName}Leg`), 0.105, 8, 6, {
+    addPiece('pantsJoint', createRigidSphere(leg, getBoneIndex(`mixamorig${sideName}Leg`), 0.13, 8, 6, {
       position: [localOutset * 0.75, -0.006, 0.006],
-      scale: [1.06, 0.86, 0.96]
+      scale: [1.14, 0.9, 1.0]
     }));
-    addPiece('pants', createRigidSegment(leg, foot, getBoneIndex(`mixamorig${sideName}Leg`), 0.145, 0.12, {
+    addPiece('pants', createRigidSegment(leg, foot, getBoneIndex(`mixamorig${sideName}Leg`), 0.18, 0.14, {
       offset: [localOutset * 0.75, -0.01, 0.0],
-      scale: [0.94, 1.0, 0.86]
+      scale: [0.98, 1.0, 0.88]
     }));
-    addPiece('boot', createRigidSphere(foot, getBoneIndex(`mixamorig${sideName}Foot`), 0.085, 8, 6, {
+    addPiece('boot', createRigidSphere(foot, getBoneIndex(`mixamorig${sideName}Foot`), 0.108, 8, 6, {
       position: [localOutset * 0.5, 0.04, 0.045],
-      scale: [1.32, 0.8, 1.42]
+      scale: [1.48, 0.82, 1.5]
     }));
-    addPiece('boot', createRigidSphere(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), 0.085, 8, 6, {
+    addPiece('boot', createRigidSphere(toe, getBoneIndex(`mixamorig${sideName}ToeBase`), 0.108, 8, 6, {
       position: [localOutset * 0.5, 0.028, 0.05],
-      scale: [1.34, 0.64, 1.58]
+      scale: [1.5, 0.66, 1.66]
     }));
     addPiece('uniformDark', createRigidBox(leg, getBoneIndex(`mixamorig${sideName}Leg`), [0.024, 0.21, 0.02], {
       position: [sign * 0.045, 0.12, 0.082],

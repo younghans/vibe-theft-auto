@@ -4649,7 +4649,11 @@ function validateBartenderFunction() {
   assert(policeOfficerPortraitStats.isFile() && policeOfficerPortraitStats.size > 1000, 'Police Officer portrait PNG should be generated');
   assert(policeOfficerNodeNames.has('PoliceOfficer_uniform'), 'Police Officer GLB should include a skinned navy uniform mesh');
   assert(policeOfficerNodeNames.has('PoliceOfficer_uniformJoint'), 'Police Officer GLB should include connected sleeve geometry at the shoulders and elbows');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_humanSleeves'), 'Police Officer GLB should include game-rig sleeve underlay geometry so arms stay human-shaped and connected');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_humanHands'), 'Police Officer GLB should include game-rig hand underlay geometry so forearms connect cleanly to hands');
   assert(policeOfficerNodeNames.has('PoliceOfficer_pantsJoint'), 'Police Officer GLB should include hip and knee geometry that grounds the legs under the body');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_humanPants'), 'Police Officer GLB should include game-rig pant underlay geometry so legs follow the human NPC shape');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_humanBoots'), 'Police Officer GLB should include game-rig boot underlay geometry so feet are attached to the legs');
   assert(policeOfficerNodeNames.has('PoliceOfficer_gold'), 'Police Officer GLB should include gold badge details');
   assert(policeOfficerNodeNames.has('PoliceOfficer_belt'), 'Police Officer GLB should include a utility belt');
   assert(policeOfficerNodeNames.has('mixamorigHead'), 'Police Officer GLB should preserve the Mixamo head bone');
@@ -4658,6 +4662,10 @@ function validateBartenderFunction() {
     policeOfficerMaterialNames.has('policeOfficerNavyUniform')
       && policeOfficerMaterialNames.has('policeOfficerConnectedSleeves')
       && policeOfficerMaterialNames.has('policeOfficerGroundedPantStructure')
+      && policeOfficerMaterialNames.has('policeOfficerGameRigSleeveUnderlay')
+      && policeOfficerMaterialNames.has('policeOfficerGameRigHandUnderlay')
+      && policeOfficerMaterialNames.has('policeOfficerGameRigPantUnderlay')
+      && policeOfficerMaterialNames.has('policeOfficerGameRigBootUnderlay')
       && policeOfficerMaterialNames.has('policeOfficerGoldBadge')
       && policeOfficerMaterialNames.has('policeOfficerGoofyEyes'),
     'Police Officer GLB should use named cartoon police materials'
