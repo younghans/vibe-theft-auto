@@ -3,6 +3,7 @@ import { MapSchema, schema } from '@colyseus/schema';
 import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
+  HIT_REACTION_HEAD,
   PICKUP_INTERACT_RADIUS,
   PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_DAMAGE,
@@ -199,8 +200,10 @@ import {
 } from '../../src/shared/combatMath.js';
 import {
   PUNCH_COMBO_HOOK_STEP,
+  PUNCH_COMBO_UPPERCUT_STEP,
   getPunchComboDamage,
   getPunchComboHitDelayMs,
+  isPunchUppercutComboStep,
   normalizePunchComboStep,
   resolvePunchComboStep
 } from '../../src/shared/punchCombo.js';
@@ -232,7 +235,7 @@ import {
   getPlacementWorldOrigin,
   isBuildingPlacement
 } from '../../src/npc/npcTargeting.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, STAND_UP_EMOTE_ID } from '../../src/player/emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID, STAND_UP_EMOTE_ID } from '../../src/player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -290,8 +293,22 @@ function removeFirstArrayEntry(values) {
   return entry;
 }
 
-function getRandomPunchHitReaction() {
+function getRandomPunchHitReaction(comboStep = 1) {
+  if (isPunchUppercutComboStep(comboStep)) {
+    return HIT_REACTION_HEAD;
+  }
   return PUNCH_HIT_REACTIONS[Math.floor(Math.random() * PUNCH_HIT_REACTIONS.length)] ?? '';
+}
+
+function getPunchComboEmoteId(comboStep = 1) {
+  const normalizedStep = normalizePunchComboStep(comboStep);
+  if (normalizedStep === PUNCH_COMBO_UPPERCUT_STEP) {
+    return PUNCH_UPPERCUT_EMOTE_ID;
+  }
+  if (normalizedStep === PUNCH_COMBO_HOOK_STEP) {
+    return PUNCH_HOOK_EMOTE_ID;
+  }
+  return PUNCH_EMOTE_ID;
 }
 
 function recordAdminJoinDiagnostic(diagnostic = {}) {
@@ -3742,9 +3759,7 @@ export class WorldRoom extends Room {
     });
     meta.lastPunchAt = now;
     meta.lastPunchComboStep = comboStep;
-    player.emoteId = comboStep === PUNCH_COMBO_HOOK_STEP
-      ? PUNCH_HOOK_EMOTE_ID
-      : PUNCH_EMOTE_ID;
+    player.emoteId = getPunchComboEmoteId(comboStep);
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq += 1;
@@ -3777,7 +3792,7 @@ export class WorldRoom extends Room {
         z: hit.hitZ,
         assisted: hit.assisted === true,
         comboStep: normalizePunchComboStep(comboStep),
-        hitReaction: getRandomPunchHitReaction(),
+        hitReaction: getRandomPunchHitReaction(comboStep),
         clientPunchAt
       });
     }

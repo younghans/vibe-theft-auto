@@ -83,7 +83,7 @@ import {
 import { WorldBuilder } from '../world/WorldBuilder.js';
 import { isPointInsidePassiveTrafficHitbox } from '../world/passiveTraffic.js';
 import { createPlayer } from '../player/createPlayer.js';
-import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
+import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
   DEFAULT_PLAYABLE_CHARACTER_ID,
   getPlayableCharacterById,
@@ -96,7 +96,6 @@ import {
   PLAYER_RADIUS,
   PUNCH_ASSISTED_LUNGE_BONUS,
   PUNCH_COMBO_BUFFER_MS,
-  PUNCH_COMBO_HOOK_RELEASE_MS,
   PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_COMBO_WINDOW_MS,
   PUNCH_HITBOX_RADIUS,
@@ -108,7 +107,10 @@ import { chooseAimAssistTarget } from '../shared/combatMath.js';
 import {
   PUNCH_COMBO_HOOK_STEP,
   PUNCH_COMBO_JAB_STEP,
+  PUNCH_COMBO_UPPERCUT_STEP,
+  getNextPunchComboStep,
   getPunchComboImpactStrength,
+  getPunchComboReleaseDelayMs,
   normalizePunchComboStep,
   resolvePunchComboStep
 } from '../shared/punchCombo.js';
@@ -3267,10 +3269,28 @@ export class Game {
     this.bufferedPunch = null;
   }
 
-  queueBufferedHookPunch(aimDirection, now = Date.now()) {
+  getPunchEmoteIdForComboStep(comboStep) {
+    const normalizedStep = normalizePunchComboStep(comboStep);
+    if (normalizedStep === PUNCH_COMBO_UPPERCUT_STEP) {
+      return PUNCH_UPPERCUT_EMOTE_ID;
+    }
+    if (normalizedStep === PUNCH_COMBO_HOOK_STEP) {
+      return PUNCH_HOOK_EMOTE_ID;
+    }
+    return PUNCH_EMOTE_ID;
+  }
+
+  queueBufferedPunch(aimDirection, comboStep = PUNCH_COMBO_JAB_STEP, now = Date.now()) {
     const elapsedSinceLastPunch = now - this.lastLocalPunchAt;
+    const normalizedStep = normalizePunchComboStep(comboStep);
+    const resolvedStep = resolvePunchComboStep({
+      requestedStep: normalizedStep,
+      lastStep: this.lastLocalPunchComboStep,
+      elapsedMs: elapsedSinceLastPunch
+    });
     if (
-      this.lastLocalPunchComboStep !== PUNCH_COMBO_JAB_STEP
+      normalizedStep === PUNCH_COMBO_JAB_STEP
+      || resolvedStep !== normalizedStep
       || !Number.isFinite(elapsedSinceLastPunch)
       || elapsedSinceLastPunch < 0
       || elapsedSinceLastPunch > PUNCH_COMBO_WINDOW_MS
@@ -3278,7 +3298,7 @@ export class Game {
       return false;
     }
 
-    const releaseDelayMs = Math.max(PUNCH_COMBO_MIN_INTERVAL_MS, PUNCH_COMBO_HOOK_RELEASE_MS);
+    const releaseDelayMs = Math.max(PUNCH_COMBO_MIN_INTERVAL_MS, getPunchComboReleaseDelayMs(normalizedStep));
     const releaseAt = this.lastLocalPunchAt + releaseDelayMs;
     const expiresAt = Math.min(
       this.lastLocalPunchAt + PUNCH_COMBO_WINDOW_MS,
@@ -3288,6 +3308,7 @@ export class Game {
     this.bufferedPunch = {
       aimX: aim.x,
       aimZ: aim.z,
+      comboStep: normalizedStep,
       releaseAt,
       expiresAt
     };
@@ -3303,7 +3324,11 @@ export class Game {
     if (
       now > bufferedPunch.expiresAt
       || (now - this.lastLocalPunchAt) > PUNCH_COMBO_WINDOW_MS
-      || this.lastLocalPunchComboStep !== PUNCH_COMBO_JAB_STEP
+      || resolvePunchComboStep({
+        requestedStep: bufferedPunch.comboStep,
+        lastStep: this.lastLocalPunchComboStep,
+        elapsedMs: now - this.lastLocalPunchAt
+      }) !== bufferedPunch.comboStep
     ) {
       this.clearBufferedPunch();
       return false;
@@ -3317,17 +3342,22 @@ export class Game {
       ? this.normalizePunchAimPayload(aimDirection)
       : { x: bufferedPunch.aimX, z: bufferedPunch.aimZ };
     this.clearBufferedPunch();
-    return this.punchLocal(aim, { allowBuffer: false });
+    return this.punchLocal(aim, { allowBuffer: false, requestedStep: bufferedPunch.comboStep });
   }
 
-  punchLocal(aimDirection, { allowBuffer = true } = {}) {
+  punchLocal(aimDirection, { allowBuffer = true, requestedStep = null } = {}) {
     const now = Date.now();
     const aim = this.normalizePunchAimPayload(aimDirection);
     const punchLungeBonus = this.getPunchLungeAssist(aim);
+    const elapsedSinceLastPunch = now - this.lastLocalPunchAt;
+    const nextRequestedStep = requestedStep ?? getNextPunchComboStep(
+      this.lastLocalPunchComboStep,
+      elapsedSinceLastPunch
+    );
     const comboStep = resolvePunchComboStep({
-      requestedStep: PUNCH_COMBO_HOOK_STEP,
+      requestedStep: nextRequestedStep,
       lastStep: this.lastLocalPunchComboStep,
-      elapsedMs: now - this.lastLocalPunchAt
+      elapsedMs: elapsedSinceLastPunch
     });
     const didPunch = this.npcService?.punch?.(
       aim,
@@ -3339,20 +3369,18 @@ export class Game {
       this.clearBufferedPunch();
       this.lastLocalPunchAt = now;
       this.lastLocalPunchComboStep = comboStep;
-      const punchEmoteId = comboStep === PUNCH_COMBO_HOOK_STEP
-        ? PUNCH_HOOK_EMOTE_ID
-        : PUNCH_EMOTE_ID;
+      const punchEmoteId = this.getPunchEmoteIdForComboStep(comboStep);
       this.player?.playEmote(punchEmoteId, { punchLungeBonus });
       this.playRandomSoundEffect(this.punchWhiffSounds, {
         volumeScale: 0.9,
-        playbackRateMin: 0.94,
-        playbackRateMax: 1.08,
+        playbackRateMin: comboStep === PUNCH_COMBO_UPPERCUT_STEP ? 0.84 : 0.94,
+        playbackRateMax: comboStep === PUNCH_COMBO_UPPERCUT_STEP ? 0.98 : 1.08,
         preservePitch: false
       });
     }
 
-    if (!didPunch && allowBuffer && comboStep === PUNCH_COMBO_HOOK_STEP) {
-      this.queueBufferedHookPunch(aim, now);
+    if (!didPunch && allowBuffer && comboStep !== PUNCH_COMBO_JAB_STEP) {
+      this.queueBufferedPunch(aim, comboStep, now);
     }
 
     if (!didPunch && (now - this.lastLocalPunchAt) > PUNCH_COMBO_WINDOW_MS) {
@@ -19515,6 +19543,7 @@ export class Game {
           const punchComboStep = event.attackType === 'punch'
             ? normalizePunchComboStep(event.comboStep)
             : PUNCH_COMBO_JAB_STEP;
+          const punchIsFinisher = event.attackType === 'punch' && punchComboStep === PUNCH_COMBO_UPPERCUT_STEP;
           const punchIsHook = event.attackType === 'punch' && punchComboStep === PUNCH_COMBO_HOOK_STEP;
           const punchImpactStrength = event.attackType === 'punch'
             ? getPunchComboImpactStrength(punchComboStep)
@@ -19522,9 +19551,9 @@ export class Game {
           this.createImpactEffect(point, event.kind, delayMs);
           if (event.attackType === 'punch' && (event.kind === 'player' || event.kind === 'npc')) {
             this.playRandomSoundEffect(this.punchImpactSounds, {
-              volumeScale: (event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72) * (punchIsHook ? 1.12 : 1),
-              playbackRateMin: punchIsHook ? 0.84 : 0.96,
-              playbackRateMax: punchIsHook ? 0.96 : 1.07,
+              volumeScale: (event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72) * (punchIsFinisher ? 1.2 : punchIsHook ? 1.12 : 1),
+              playbackRateMin: punchIsFinisher ? 0.78 : punchIsHook ? 0.84 : 0.96,
+              playbackRateMax: punchIsFinisher ? 0.9 : punchIsHook ? 0.96 : 1.07,
               preservePitch: false,
               delayMs
             });
@@ -19550,7 +19579,7 @@ export class Game {
                 strength: punchImpactStrength
               });
               if (event.targetId === this.npcServiceState.sessionId) {
-                this.triggerDamageCameraFeedback(damageDirection, { strength: punchIsHook ? 1.18 : 1 });
+                this.triggerDamageCameraFeedback(damageDirection, { strength: punchIsFinisher ? 1.32 : punchIsHook ? 1.18 : 1 });
               }
             };
 
@@ -19585,7 +19614,9 @@ export class Game {
         if ((event.kind === 'player' || event.kind === 'npc') && event.shooterId === this.npcServiceState.sessionId) {
           const hitMarkerMs = event.attackType === 'punch' && normalizePunchComboStep(event.comboStep) === PUNCH_COMBO_HOOK_STEP
             ? 160
-            : 120;
+            : event.attackType === 'punch' && normalizePunchComboStep(event.comboStep) === PUNCH_COMBO_UPPERCUT_STEP
+              ? 190
+              : 120;
           this.hitMarkerUntil = performance.now() + hitMarkerMs;
         }
         break;

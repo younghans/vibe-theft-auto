@@ -30,7 +30,7 @@ import {
   mergeAttachmentTransform,
   prepareHeldItemModel
 } from '../shared/heldItemDefinitions.js';
-import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
+import { EMOTES_BY_ID, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID, TEXTING_EMOTE_ID } from './emotes.js';
 import { createRagdollController } from './ragdollController.js';
 import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import {
@@ -64,7 +64,7 @@ const PLAYER_SPEED = 15;
 const PLAYER_RADIUS = 1.4;
 const PLAYER_MOVEMENT_MAX_SUBSTEP_SECONDS = 1 / 60;
 const PLAYER_TURN_RESPONSE = 12;
-const PUNCH_LUNGE_EMOTE_IDS = new Set([PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID]);
+const PUNCH_LUNGE_EMOTE_IDS = new Set([PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID]);
 const PUNCH_STANCE_TURN_MS = 330;
 const PUNCH_LOWER_BODY_OVERLAY_MS = 420;
 const PUNCH_LOWER_BODY_OVERLAY_WEIGHT = 0.92;

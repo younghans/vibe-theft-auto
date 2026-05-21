@@ -1,6 +1,7 @@
 import {
   COMBAT_RESPAWN_POINTS,
   DROPPED_PICKUP_DESPAWN_MS,
+  HIT_REACTION_HEAD,
   PICKUP_INTERACT_RADIUS,
   PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_DAMAGE,
@@ -175,7 +176,7 @@ import {
   normalizeNpcBehavior,
   shouldResetNpcRuntimeForBehaviorUpdate
 } from './npcBehavior.js';
-import { PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, STAND_UP_EMOTE_ID } from '../player/emotes.js';
+import { PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID, STAND_UP_EMOTE_ID } from '../player/emotes.js';
 import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMethods.js';
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
@@ -191,8 +192,10 @@ import {
 } from '../shared/combatMath.js';
 import {
   PUNCH_COMBO_HOOK_STEP,
+  PUNCH_COMBO_UPPERCUT_STEP,
   getPunchComboDamage,
   getPunchComboHitDelayMs,
+  isPunchUppercutComboStep,
   normalizePunchComboStep,
   resolvePunchComboStep
 } from '../shared/punchCombo.js';
@@ -228,8 +231,22 @@ const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const MOCK_STOCK_MARKET_STORAGE_KEY = 'vta.mockStockMarket';
 const MOCK_STOCK_PORTFOLIOS_STORAGE_KEY = 'vta.mockStockPortfolios';
 
-function getRandomPunchHitReaction() {
+function getRandomPunchHitReaction(comboStep = 1) {
+  if (isPunchUppercutComboStep(comboStep)) {
+    return HIT_REACTION_HEAD;
+  }
   return PUNCH_HIT_REACTIONS[Math.floor(Math.random() * PUNCH_HIT_REACTIONS.length)] ?? '';
+}
+
+function getPunchComboEmoteId(comboStep = 1) {
+  const normalizedStep = normalizePunchComboStep(comboStep);
+  if (normalizedStep === PUNCH_COMBO_UPPERCUT_STEP) {
+    return PUNCH_UPPERCUT_EMOTE_ID;
+  }
+  if (normalizedStep === PUNCH_COMBO_HOOK_STEP) {
+    return PUNCH_HOOK_EMOTE_ID;
+  }
+  return PUNCH_EMOTE_ID;
 }
 
 function makeTranscriptEntry(id, speaker, author, text) {
@@ -1539,9 +1556,7 @@ export class NpcServiceMock {
     });
     player.lastPunchAt = now;
     player.lastPunchComboStep = resolvedComboStep;
-    player.emoteId = resolvedComboStep === PUNCH_COMBO_HOOK_STEP
-      ? PUNCH_HOOK_EMOTE_ID
-      : PUNCH_EMOTE_ID;
+    player.emoteId = getPunchComboEmoteId(resolvedComboStep);
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
@@ -1575,7 +1590,7 @@ export class NpcServiceMock {
         z: hit.hitZ,
         assisted: hit.assisted === true,
         comboStep: normalizePunchComboStep(comboStep),
-        hitReaction: getRandomPunchHitReaction(),
+        hitReaction: getRandomPunchHitReaction(comboStep),
         clientPunchAt
       });
     }

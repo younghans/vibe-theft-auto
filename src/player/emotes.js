@@ -12,6 +12,7 @@ export const EMOTE_SLOTS = Object.freeze([
 export const PUNCH_EMOTE_ID = 'punching';
 export const STAND_UP_EMOTE_ID = 'standUp';
 export const PUNCH_HOOK_EMOTE_ID = 'punchHook';
+export const PUNCH_UPPERCUT_EMOTE_ID = 'punchUppercut';
 export const TYPING_EMOTE_ID = 'typing';
 export const TEXTING_EMOTE_ID = 'texting';
 export const DRINKING_EMOTE_ID = 'drinking';
@@ -36,6 +37,17 @@ export const EMOTES_BY_ID = Object.freeze({
     fadeIn: 0.015,
     fadeOut: 0.06,
     playbackRate: 3.6,
+    cancelOnMove: false,
+    upperBodyOnly: true,
+    lowerBodyOverlay: true
+  },
+  [PUNCH_UPPERCUT_EMOTE_ID]: {
+    label: 'Uppercut',
+    clipName: 'uppercut',
+    loop: false,
+    fadeIn: 0.015,
+    fadeOut: 0.08,
+    playbackRate: 3.8,
     cancelOnMove: false,
     upperBodyOnly: true,
     lowerBodyOverlay: true
