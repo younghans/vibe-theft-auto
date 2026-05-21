@@ -68,6 +68,9 @@ const PUNCH_LUNGE_EMOTE_IDS = new Set([PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNC
 const PUNCH_STANCE_TURN_MS = 330;
 const PUNCH_LOWER_BODY_OVERLAY_MS = 420;
 const PUNCH_LOWER_BODY_OVERLAY_WEIGHT = 0.92;
+const PUNCH_MOVING_LOWER_BODY_OVERLAY_WEIGHT = 0.34;
+const PUNCH_MOVING_SPEED_SCALE = 0.88;
+const PUNCH_MOVING_STANCE_TURN_MULTIPLIER = 1.35;
 const PLAYER_CAR_MODEL_SCALE = 0.75;
 const PLAYER_CAR_MODEL_FOOTPRINT = Object.freeze([6.5, 12]);
 const PLAYER_SKATEBOARD_REST_Y = 0.1;
@@ -191,6 +194,13 @@ const LOWER_BODY_LOCOMOTION_BONES = Object.freeze([
   'mixamorigRightLeg',
   'mixamorigRightFoot',
   'mixamorigRightToeBase'
+]);
+const MOVING_PUNCH_LOWER_BODY_OVERLAY_BONES = Object.freeze([
+  MIXAMO_BONES.hips,
+  'mixamorigLeftUpLeg',
+  'mixamorigLeftLeg',
+  'mixamorigRightUpLeg',
+  'mixamorigRightLeg'
 ]);
 const SKATEBOARD_SIDEWAYS_FOOT_YAW = Math.PI / 2;
 const SKATEBOARD_LOWER_BODY_TURN_YAW = Math.PI / 2;
@@ -697,6 +707,7 @@ export async function createPlayer(library, {
   const hitReactionActions = new Map();
   const emoteActions = new Map();
   const emoteLowerBodyActions = new Map();
+  const emoteMovingLowerBodyActions = new Map();
   const emoteLoadPromises = new Map();
   const emoteConfigOverrides = new Map();
   const skeletonHelper = new THREE.SkeletonHelper(character);
@@ -1002,6 +1013,14 @@ export async function createPlayer(library, {
     return emoteLowerBodyActions.get(emoteId) ?? null;
   }
 
+  function getLoadedEmoteMovingLowerBodyAction(emoteId) {
+    if (emoteId === LIMP_EMOTE_ID) {
+      return null;
+    }
+
+    return emoteMovingLowerBodyActions.get(emoteId) ?? null;
+  }
+
   function ensureEmoteAction(emoteId) {
     const loadedAction = getLoadedEmoteAction(emoteId);
     if (loadedAction) {
@@ -1040,6 +1059,18 @@ export async function createPlayer(library, {
                 lowerBodyAction.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
                 lowerBodyAction.setEffectiveWeight(0);
                 emoteLowerBodyActions.set(emoteId, lowerBodyAction);
+
+                const movingLowerBodyClip = createBoneFilteredClip(
+                  lowerBodySourceClip,
+                  MOVING_PUNCH_LOWER_BODY_OVERLAY_BONES,
+                  `${clipName}_MovingLowerBodyOverlay`
+                );
+                const movingLowerBodyAction = mixer.clipAction(movingLowerBodyClip);
+                movingLowerBodyAction.enabled = true;
+                movingLowerBodyAction.clampWhenFinished = true;
+                movingLowerBodyAction.setLoop(emoteConfig?.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig?.loop ? Infinity : 1);
+                movingLowerBodyAction.setEffectiveWeight(0);
+                emoteMovingLowerBodyActions.set(emoteId, movingLowerBodyAction);
               }
             } else {
               clip = createInPlaceClip(sourceClip, MIXAMO_BONES.hips);
@@ -1070,6 +1101,7 @@ export async function createPlayer(library, {
     const action = getLoadedEmoteAction(activeEmoteId);
     action?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     getLoadedEmoteLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
+    getLoadedEmoteMovingLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
     activeEmoteId = null;
     activeEmoteConfig = null;
     activeEmoteStartedAt = 0;
@@ -2129,15 +2161,22 @@ export async function createPlayer(library, {
     const activePunchLowerBodyAction = punchEmoteActive
       ? getLoadedEmoteLowerBodyAction(activeEmoteId)
       : null;
+    const activePunchMovingLowerBodyAction = punchEmoteActive
+      ? getLoadedEmoteMovingLowerBodyAction(activeEmoteId)
+      : null;
     const punchLowerBodyProgress = punchEmoteActive
       ? THREE.MathUtils.clamp(punchElapsedMs / PUNCH_LOWER_BODY_OVERLAY_MS, 0, 1)
       : 1;
     const punchLowerBodyFade = punchLowerBodyProgress < 0.72
       ? 1
       : 1 - smooth01((punchLowerBodyProgress - 0.72) / 0.28);
-    const punchLowerBodyWeight = activePunchLowerBodyAction && !moving && !ragdoll.isActive()
+    const stationaryPunchLowerBodyWeight = activePunchLowerBodyAction && !moving && !ragdoll.isActive()
       ? PUNCH_LOWER_BODY_OVERLAY_WEIGHT * punchLowerBodyFade
       : 0;
+    const movingPunchLowerBodyWeight = activePunchMovingLowerBodyAction && moving && !ragdoll.isActive()
+      ? PUNCH_MOVING_LOWER_BODY_OVERLAY_WEIGHT * punchLowerBodyFade
+      : 0;
+    const punchLowerBodyWeight = Math.max(stationaryPunchLowerBodyWeight, movingPunchLowerBodyWeight);
     const skateboardPoseActive = Boolean(skateboardOwned && !activeVehicleItemId && skateboardSkating && aliveState && !ragdoll.isActive());
     const wantsDeliveryCarry = Boolean(
       deliveryPackageActive
@@ -2194,7 +2233,16 @@ export async function createPlayer(library, {
         continue;
       }
 
-      action.setEffectiveWeight(punchLowerBodyWeight * baseAnimationWeight);
+      action.setEffectiveWeight(stationaryPunchLowerBodyWeight * baseAnimationWeight);
+      action.setEffectiveTimeScale(activeEmoteConfig?.playbackRate ?? 1);
+    }
+    for (const [emoteId, action] of emoteMovingLowerBodyActions) {
+      if (emoteId !== activeEmoteId) {
+        action.setEffectiveWeight(0);
+        continue;
+      }
+
+      action.setEffectiveWeight(movingPunchLowerBodyWeight * baseAnimationWeight);
       action.setEffectiveTimeScale(activeEmoteConfig?.playbackRate ?? 1);
     }
     deliveryCarryAction.setEffectiveWeight(deliveryCarryWeight * baseAnimationWeight);
@@ -2212,7 +2260,8 @@ export async function createPlayer(library, {
     aimPoseWeight = THREE.MathUtils.damp(aimPoseWeight, wantsAimPose ? 1 : 0, 14, deltaSeconds);
     upperBodyLookWeight = THREE.MathUtils.damp(upperBodyLookWeight, wantsUpperBodyLook ? 1 : 0, 14, deltaSeconds);
     if (punchStanceWeight > 0.0001) {
-      const turnSmoothing = 1 - Math.exp(-24 * punchStanceWeight * deltaSeconds);
+      const turnResponse = moving ? 24 * PUNCH_MOVING_STANCE_TURN_MULTIPLIER : 24;
+      const turnSmoothing = 1 - Math.exp(-turnResponse * punchStanceWeight * deltaSeconds);
       anchor.rotation.y = dampAngle(anchor.rotation.y, aimRotationY, turnSmoothing);
     }
     applyUpperBodyPose();
@@ -2608,6 +2657,7 @@ export async function createPlayer(library, {
           if (activeEmoteId && activeEmoteId !== emoteId) {
             getLoadedEmoteAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
             getLoadedEmoteLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
+            getLoadedEmoteMovingLowerBodyAction(activeEmoteId)?.fadeOut(activeEmoteConfig?.fadeOut ?? EMOTE_FADE_OUT);
           }
 
           activeEmoteId = emoteId;
@@ -2638,6 +2688,17 @@ export async function createPlayer(library, {
             lowerBodyAction.setEffectiveWeight(0);
             applyEmoteStartOffset(lowerBodyAction, emoteConfig, activeEmoteStartedAt);
             lowerBodyAction.play();
+          }
+          const movingLowerBodyAction = getLoadedEmoteMovingLowerBodyAction(emoteId);
+          if (movingLowerBodyAction) {
+            movingLowerBodyAction.reset();
+            movingLowerBodyAction.enabled = true;
+            movingLowerBodyAction.setLoop(emoteConfig.loop ? THREE.LoopRepeat : THREE.LoopOnce, emoteConfig.loop ? Infinity : 1);
+            movingLowerBodyAction.clampWhenFinished = !emoteConfig.loop;
+            movingLowerBodyAction.setEffectiveTimeScale(emoteConfig.playbackRate ?? 1);
+            movingLowerBodyAction.setEffectiveWeight(0);
+            applyEmoteStartOffset(movingLowerBodyAction, emoteConfig, activeEmoteStartedAt);
+            movingLowerBodyAction.play();
           }
         })
         .catch((error) => {
@@ -2905,6 +2966,8 @@ export async function createPlayer(library, {
       }
 
       const moving = (wantsToMove || stationaryRun) && !ragdoll.isActive();
+      const movingPunchSlowdownActive = moving && PUNCH_LUNGE_EMOTE_IDS.has(activeEmoteId);
+      const movementAttackSpeedScale = movingPunchSlowdownActive ? PUNCH_MOVING_SPEED_SCALE : 1;
       const movement = moving
         ? (
             wantsToMove
@@ -2918,7 +2981,7 @@ export async function createPlayer(library, {
       setSkateboardState(skateboardStateScratch);
 
       if (moving && wantsToMove) {
-        moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds, movementSpeedScale);
+        moveWithWorldVector(movement, deltaSeconds, colliders, cityBounds, movementSpeedScale * movementAttackSpeedScale);
       }
 
       animationOptionsScratch.locomotionMode = stationaryRun ? 'run' : options.locomotionMode;
