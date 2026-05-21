@@ -5195,6 +5195,19 @@ function validateBartenderFunction() {
     position: [0, 0],
     rotationQuarterTurns: 0
   });
+  const armedPoliceNpc = normalizeNpcBehavior({
+    modelId: 'policeOfficer',
+    name: 'Armed Police Officer',
+    policeOfficerEnabled: true,
+    combat: {
+      archetype: NPC_COMBAT_ARCHETYPES.police,
+      weaponId: WEAPON_IDS.pistol
+    },
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
   const customRadiusPoliceNpc = normalizeNpcBehavior({
     modelId: 'policeOfficer',
     name: 'Police Officer',
@@ -5274,10 +5287,15 @@ function validateBartenderFunction() {
   assert(isPoliceOfficerNpc(policeNpc), 'Normalized police NPCs should preserve policeOfficerEnabled');
   assert(
     policeNpc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
-      && policeNpc.combat?.weaponId === WEAPON_IDS.pistol,
-    'Police NPCs should normalize into the police combat archetype with a pistol fallback'
+      && policeNpc.combat?.weaponId === '',
+    'Police NPCs should normalize into the police combat archetype without implicitly enabling a pistol'
   );
-  const npcPistolTimeToKillMs = (Math.ceil(PLAYER_MAX_HEALTH / NPC_WEAPON_DAMAGE) - 1) * NPC_SHOT_INTERVAL_MS;
+  assert(
+    armedPoliceNpc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
+      && armedPoliceNpc.combat?.weaponId === WEAPON_IDS.pistol,
+    'Police NPCs should keep pistol combat only when the pistol weapon is explicitly enabled'
+  );
+  const npcPistolTimeToKillMs = 400 + ((Math.ceil(PLAYER_MAX_HEALTH / NPC_WEAPON_DAMAGE) - 1) * NPC_SHOT_INTERVAL_MS);
   assert(
     NPC_WEAPON_DAMAGE === 9
       && NPC_WEAPON_DAMAGE < WEAPON_DAMAGE
@@ -5371,6 +5389,15 @@ function validateBartenderFunction() {
       && /NPC_PUNCH_HIT_CHANCE/.test(serverSource)
       && /'npc-kill'/.test(npcSimulationSource),
     'NPC simulation should escalate police hostility inside unobstructed law radius and use slower, fallible aggro combat pacing'
+  );
+  assert(
+    /NPC_POLICE_SHOOT_STAND_STILL_MS\s*=\s*400/.test(npcSimulationSource)
+      && /combatStandStartedAt/.test(npcSimulationSource)
+      && /snapToTarget:\s*false/.test(npcSimulationSource)
+      && /NPC_MELEE_MIN_DISTANCE/.test(npcSimulationSource)
+      && /weaponId:\s*npc\.weaponId\s*\|\|\s*WEAPON_IDS\.pistol/.test(serverSource) === false
+      && /weaponId:\s*npc\.weaponId\s*\|\|\s*WEAPON_IDS\.pistol/.test(mockNpcServiceSource) === false,
+    'NPC simulation should gate pistol use by configured weapon, keep NPC ammo unlimited, require police to stand before shooting, and avoid melee target clipping'
   );
   assert(
     /triggerPoliceHostilityForPlayer[\s\S]*'shot-fired'/.test(serverSource)

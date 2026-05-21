@@ -1,6 +1,7 @@
 import {
   NPC_PUNCH_INTERVAL_MS,
   NPC_SHOT_INTERVAL_MS,
+  PLAYER_RADIUS,
   PUNCH_RANGE,
   WEAPON_IDS,
   WEAPON_RANGE
@@ -50,6 +51,11 @@ const NPC_PATH_TURN_LOOKAHEAD_DISTANCE = 3.6;
 const NPC_PATH_TURN_BLEND_MAX = 0.26;
 const NPC_PATH_TURN_MIN_ANGLE_DOT = 0.92;
 const NPC_LAW_SIGHT_BLOCKER_GRACE_DISTANCE = 0.05;
+const NPC_POLICE_SHOOT_STAND_STILL_MS = 400;
+const NPC_PISTOL_SHOOT_RANGE = WEAPON_RANGE * 0.72;
+const NPC_PISTOL_STOP_DISTANCE = WEAPON_RANGE * 0.35;
+const NPC_MELEE_STOP_DISTANCE = PUNCH_RANGE * 0.72;
+const NPC_MELEE_MIN_DISTANCE = PLAYER_RADIUS * 1.45;
 
 function distanceSquared2D(ax, az, bx, bz) {
   const dx = ax - bx;
@@ -116,6 +122,29 @@ function cloneDebugPath(points = []) {
   return path;
 }
 
+function separateNpcFromCombatTarget(npc, targetPosition, minDistance = NPC_MELEE_MIN_DISTANCE) {
+  if (!npc || !targetPosition) {
+    return false;
+  }
+
+  const offsetX = npc.x - targetPosition.x;
+  const offsetZ = npc.z - targetPosition.z;
+  const distance = Math.hypot(offsetX, offsetZ);
+  if (!Number.isFinite(distance) || distance >= minDistance) {
+    return false;
+  }
+
+  const awayX = distance > 0.0001
+    ? offsetX / distance
+    : -Math.sin(Number(npc.rotationY) || 0);
+  const awayZ = distance > 0.0001
+    ? offsetZ / distance
+    : -Math.cos(Number(npc.rotationY) || 0);
+  npc.x = quantizePosition(targetPosition.x + (awayX * minDistance));
+  npc.z = quantizePosition(targetPosition.z + (awayZ * minDistance));
+  return true;
+}
+
 function getNpcInteractionRadius(npc) {
   return Math.max(
     1.5,
@@ -144,6 +173,7 @@ export function createNpcRuntimeMeta(overrides = {}) {
     calmEndsAt: 0,
     lastAttackAt: 0,
     lastCombatAt: 0,
+    combatStandStartedAt: 0,
     healthRegenCarryMs: 0,
     wanderPoint: null,
     combatAnchor: null,
@@ -211,6 +241,7 @@ export const npcSimulationMethods = {
     meta.calmEndsAt = 0;
     meta.lastAttackAt = 0;
     meta.lastCombatAt = 0;
+    meta.combatStandStartedAt = 0;
     meta.healthRegenCarryMs = 0;
     meta.wanderPoint = null;
     meta.combatAnchor = null;
@@ -606,11 +637,15 @@ export const npcSimulationMethods = {
     lastAttackerId = npc.lastAttackerId || ''
   } = {}) {
     const previousMode = npc.mode;
+    const previousAttackerId = npc.lastAttackerId || '';
     npc.mode = mode;
     npc.targetPlacementId = targetPlacementId;
     npc.activity = activity;
     npc.hiddenUntil = Math.max(0, Math.floor(hiddenUntil));
     npc.lastAttackerId = lastAttackerId;
+    if (previousMode !== mode || previousAttackerId !== lastAttackerId) {
+      this.getNpcRuntimeMeta(npcId).combatStandStartedAt = 0;
+    }
     if (mode !== NPC_RUNTIME_MODES.hidden) {
       npc.hiddenUntil = 0;
     }
@@ -665,7 +700,8 @@ export const npcSimulationMethods = {
 
   moveNpcAlongPath(npcId, npc, targetPosition, deltaMs, {
     stopDistance = NPC_TARGET_STOP_DISTANCE,
-    speed = NPC_DEFAULT_MOVE_SPEED
+    speed = NPC_DEFAULT_MOVE_SPEED,
+    snapToTarget = true
   } = {}) {
     const meta = this.getNpcRuntimeMeta(npcId);
     const path = meta.path ?? [];
@@ -703,13 +739,17 @@ export const npcSimulationMethods = {
     const toTargetX = steeringTarget.x - npc.x;
     const toTargetZ = steeringTarget.z - npc.z;
     const distanceSq = (toTargetX * toTargetX) + (toTargetZ * toTargetZ);
+    const isFinalTarget = meta.pathIndex >= path.length;
     if (distanceSq <= stopDistance * stopDistance) {
-      npc.x = quantizePosition(nextPoint.x);
-      npc.z = quantizePosition(nextPoint.z);
+      if (snapToTarget || !isFinalTarget) {
+        npc.x = quantizePosition(nextPoint.x);
+        npc.z = quantizePosition(nextPoint.z);
+      }
     } else {
       const distance = Math.sqrt(distanceSq);
       const maxStep = Math.max(0.1, speed) * (deltaMs / 1000);
-      const step = Math.min(distance, maxStep);
+      const arrivalDistance = !snapToTarget && isFinalTarget ? stopDistance : 0;
+      const step = Math.min(Math.max(0, distance - arrivalDistance), maxStep);
       npc.x = quantizePosition(npc.x + (toTargetX / distance) * step);
       npc.z = quantizePosition(npc.z + (toTargetZ / distance) * step);
       npc.rotationY = quantizeRotation(Math.atan2(toTargetX, toTargetZ));
@@ -1104,7 +1144,7 @@ export const npcSimulationMethods = {
     }
 
     const threatPosition = { x: targetPlayer.x, z: targetPlayer.z };
-    const distanceToThreatSq = distanceSquared2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
+    let distanceToThreatSq = distanceSquared2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
     const distanceFromHomeSq = distanceSquared2D(npc.x, npc.z, leashAnchor.x, leashAnchor.z);
 
     if (combat.archetype === NPC_COMBAT_ARCHETYPES.passive) {
@@ -1138,13 +1178,18 @@ export const npcSimulationMethods = {
 
     meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
     npc.activity = '';
+    if (npc.weaponId !== (combat.weaponId || '')) {
+      npc.weaponId = combat.weaponId || '';
+    }
     const runSpeed = getNpcAggroRunSpeed(definition?.speed);
     if (combat.weaponId === WEAPON_IDS.pistol) {
-      const shootRange = WEAPON_RANGE * 0.72;
-      if (distanceToThreatSq <= shootRange * shootRange && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
-        this.performNpcShot(npcId, npc, threatPosition, now);
-        meta.lastAttackAt = now;
-      } else {
+      const isPoliceCombat = combat.archetype === NPC_COMBAT_ARCHETYPES.police || isPoliceOfficerNpc(definition);
+      const shootRange = NPC_PISTOL_SHOOT_RANGE;
+      const stopDistance = NPC_PISTOL_STOP_DISTANCE;
+      const shouldCloseDistance = distanceToThreatSq > stopDistance * stopDistance
+        && (isPoliceCombat || (now - meta.lastAttackAt) < NPC_SHOT_INTERVAL_MS);
+      if (distanceToThreatSq > shootRange * shootRange || shouldCloseDistance) {
+        meta.combatStandStartedAt = 0;
         this.ensureNpcPathToPosition(
           npcId,
           { x: npc.x, z: npc.z },
@@ -1153,13 +1198,36 @@ export const npcSimulationMethods = {
           now
         );
         this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
-          stopDistance: WEAPON_RANGE * 0.35,
-          speed: runSpeed
+          stopDistance,
+          speed: runSpeed,
+          snapToTarget: false
         });
+        return true;
+      }
+
+      this.clearNpcPath(npcId);
+      this.faceNpcTowardPosition(npc, threatPosition);
+      if (!meta.combatStandStartedAt) {
+        meta.combatStandStartedAt = now;
+      }
+
+      const stoodStillLongEnough = !isPoliceCombat
+        || (now - meta.combatStandStartedAt) >= NPC_POLICE_SHOOT_STAND_STILL_MS;
+      if (stoodStillLongEnough && (now - meta.lastAttackAt) >= NPC_SHOT_INTERVAL_MS) {
+        this.performNpcShot(npcId, npc, threatPosition, now);
+        meta.lastAttackAt = now;
       }
       return true;
     }
 
+    meta.combatStandStartedAt = 0;
+    if (distanceToThreatSq < NPC_MELEE_MIN_DISTANCE * NPC_MELEE_MIN_DISTANCE) {
+      if (separateNpcFromCombatTarget(npc, threatPosition)) {
+        this.clearNpcPath(npcId);
+        this.syncNpcDerivedState?.(npc);
+        distanceToThreatSq = distanceSquared2D(npc.x, npc.z, threatPosition.x, threatPosition.z);
+      }
+    }
     const punchReach = PUNCH_RANGE + NPC_COMBAT_REACH_BUFFER;
     if (distanceToThreatSq <= punchReach * punchReach && (now - meta.lastAttackAt) >= NPC_PUNCH_INTERVAL_MS) {
       this.performNpcPunch(npcId, npc, threatPosition, now);
@@ -1176,8 +1244,9 @@ export const npcSimulationMethods = {
       now
     );
     this.moveNpcAlongPath(npcId, npc, threatPosition, deltaMs, {
-      stopDistance: PUNCH_RANGE * 0.72,
-      speed: runSpeed
+      stopDistance: NPC_MELEE_STOP_DISTANCE,
+      speed: runSpeed,
+      snapToTarget: false
     });
     return true;
   },

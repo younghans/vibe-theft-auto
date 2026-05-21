@@ -4092,7 +4092,7 @@ export class WorldBuilder {
       combat: {
         ...combat,
         archetype: nextEnabled ? NPC_COMBAT_ARCHETYPES.police : NPC_COMBAT_ARCHETYPES.passive,
-        weaponId: nextEnabled ? (combat.weaponId || WEAPON_IDS.pistol) : ''
+        weaponId: nextEnabled ? (combat.weaponId || '') : ''
       }
     });
   }
@@ -4199,7 +4199,7 @@ export class WorldBuilder {
       await this.updateSelectedNpc({
         combat: {
           ...nextCombat,
-          weaponId: policeOfficerEnabled ? (nextCombat.weaponId || WEAPON_IDS.pistol) : nextCombat.weaponId
+          weaponId: nextCombat.weaponId || ''
         },
         policeOfficerEnabled,
         lawRadius: getNpcLawRadius(this.getNpcDraft(placement))

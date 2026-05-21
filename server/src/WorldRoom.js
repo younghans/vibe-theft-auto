@@ -3611,7 +3611,7 @@ export class WorldRoom extends Room {
     npc.mode = NPC_RUNTIME_MODES.combat;
     npc.currentStepIndex = 0;
     npc.targetPlacementId = '';
-    npc.weaponId = definition.combat?.weaponId ?? WEAPON_IDS.pistol;
+    npc.weaponId = definition.combat?.weaponId ?? '';
     npc.lastAttackerId = attackerId;
     npc.hiddenUntil = 0;
     npc.activity = '';
@@ -4507,7 +4507,7 @@ export class WorldRoom extends Room {
       type: 'shot',
       shooterType: 'npc',
       shooterId: npcId,
-      weaponId: npc.weaponId || WEAPON_IDS.pistol,
+      weaponId: npc.weaponId || '',
       fromX: shotOrigin.x,
       fromZ: shotOrigin.z,
       toX: shot.hitX,

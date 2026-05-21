@@ -431,16 +431,11 @@ export function normalizeNpcCombat(combat = null) {
   const archetype = NPC_COMBAT_ARCHETYPE_SET.has(requestedArchetype)
     ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
-  const defaultWeaponId = archetype === NPC_COMBAT_ARCHETYPES.hostile
-    || archetype === NPC_COMBAT_ARCHETYPES.police
-    ? WEAPON_IDS.pistol
-    : '';
-
   return {
     archetype,
     aggroRadius: quantizeNumber(clampPositiveNumber(draft.aggroRadius, NPC_DEFAULT_AGGRO_RADIUS, { min: 2, max: 80 }), 2),
     leashRadius: quantizeNumber(clampPositiveNumber(draft.leashRadius, NPC_DEFAULT_LEASH_RADIUS, { min: 0, max: 120 }), 2),
-    weaponId: normalizeWeaponId(draft.weaponId, defaultWeaponId)
+    weaponId: normalizeWeaponId(draft.weaponId, '')
   };
 }
 
@@ -493,11 +488,10 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
   const policeOfficerEnabled = normalizePoliceOfficerEnabled(npc.policeOfficerEnabled)
     || npc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police;
   let combat = normalizeNpcCombat(npc.combat);
-  if (policeOfficerEnabled && (combat.archetype !== NPC_COMBAT_ARCHETYPES.police || !combat.weaponId)) {
+  if (policeOfficerEnabled && combat.archetype !== NPC_COMBAT_ARCHETYPES.police) {
     combat = normalizeNpcCombat({
       ...combat,
-      archetype: NPC_COMBAT_ARCHETYPES.police,
-      weaponId: combat.weaponId || WEAPON_IDS.pistol
+      archetype: NPC_COMBAT_ARCHETYPES.police
     });
   }
 
