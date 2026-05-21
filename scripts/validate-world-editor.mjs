@@ -4522,6 +4522,11 @@ function validateBartenderFunction() {
     'HUD interaction menu should accept a world anchor'
   );
   assert(
+    /const LEFT_DOCKED_INTERACTION_VARIANTS = new Set\(\[[\s\S]*'bartender'[\s\S]*'pawn-shop'[\s\S]*'martha'[\s\S]*'car-dealer'[\s\S]*\]\);/.test(hudSource)
+      && /isLeftDockedInteractionVariant\(this\.interactionRoot\?\.dataset\?\.interactionVariant\)[\s\S]*\|\| !Number\.isFinite\(screenX\)/.test(hudSource),
+    'Shop interaction menus should stay docked to the left HUD side instead of following world anchors'
+  );
+  assert(
     /getNearestBartenderInteractable\((?:\{\s*npcId = ''[\s\S]*?worldBuilderInteractables = this\.getWorldBuilderInteractables\(\)[\s\S]*?\} = \{\}|options = null\)[\s\S]*?options\?\.npcId)/.test(gameSource),
     'Bartender proximity lookup should support the active NPC id'
   );

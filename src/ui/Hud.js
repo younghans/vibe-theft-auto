@@ -62,6 +62,12 @@ const OFFICE_MANAGER_COFFEE_TARGET_END = 84;
 const INTERACTION_MENU_VIEWPORT_PADDING = 12;
 const INTERACTION_MENU_ANCHOR_GAP = 14;
 const INTERACTION_MENU_ANCHOR_SIDE_GAP = 18;
+const LEFT_DOCKED_INTERACTION_VARIANTS = new Set([
+  'bartender',
+  'pawn-shop',
+  'martha',
+  'car-dealer'
+]);
 const RESPAWN_DEATH_LINES = Object.freeze([
   'You tried your best.',
   'Hope you have health insurance.',
@@ -82,6 +88,10 @@ function clampPanelPosition(value, min, max) {
   }
 
   return Math.min(Math.max(value, min), max);
+}
+
+function isLeftDockedInteractionVariant(variant = '') {
+  return LEFT_DOCKED_INTERACTION_VARIANTS.has(String(variant ?? ''));
 }
 
 function getRespawnDeathLine(deaths = 0) {
@@ -10098,7 +10108,11 @@ export class Hud {
   setInteractionMenuAnchor(anchor = null) {
     const screenX = Number(anchor?.screenX);
     const screenY = Number(anchor?.screenY);
-    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+    if (
+      isLeftDockedInteractionVariant(this.interactionRoot?.dataset?.interactionVariant)
+      || !Number.isFinite(screenX)
+      || !Number.isFinite(screenY)
+    ) {
       this.interactionRoot.classList.remove('is-world-anchored');
       this.interactionRoot.style.removeProperty('left');
       this.interactionRoot.style.removeProperty('right');
