@@ -3,7 +3,9 @@ import {
   PUNCH_DAMAGE,
   PUNCH_HIT_DELAY_MS,
   PUNCH_HOOK_DAMAGE,
-  PUNCH_HOOK_HIT_DELAY_MS
+  PUNCH_HOOK_HIT_DELAY_MS,
+  PUNCH_HOOK_IMPACT_STRENGTH,
+  PUNCH_JAB_IMPACT_STRENGTH
 } from './combatConstants.js';
 
 export const PUNCH_COMBO_JAB_STEP = 1;
@@ -31,13 +33,23 @@ export function resolvePunchComboStep({
 }
 
 export function getPunchComboDamage(comboStep) {
-  return normalizePunchComboStep(comboStep) === PUNCH_COMBO_HOOK_STEP
+  return isPunchHookComboStep(comboStep)
     ? PUNCH_HOOK_DAMAGE
     : PUNCH_DAMAGE;
 }
 
 export function getPunchComboHitDelayMs(comboStep) {
-  return normalizePunchComboStep(comboStep) === PUNCH_COMBO_HOOK_STEP
+  return isPunchHookComboStep(comboStep)
     ? PUNCH_HOOK_HIT_DELAY_MS
     : PUNCH_HIT_DELAY_MS;
+}
+
+export function getPunchComboImpactStrength(comboStep) {
+  return isPunchHookComboStep(comboStep)
+    ? PUNCH_HOOK_IMPACT_STRENGTH
+    : PUNCH_JAB_IMPACT_STRENGTH;
+}
+
+export function isPunchHookComboStep(comboStep) {
+  return normalizePunchComboStep(comboStep) === PUNCH_COMBO_HOOK_STEP;
 }

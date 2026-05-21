@@ -95,6 +95,9 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_RADIUS,
   PUNCH_ASSISTED_LUNGE_BONUS,
+  PUNCH_COMBO_BUFFER_MS,
+  PUNCH_COMBO_HOOK_RELEASE_MS,
+  PUNCH_COMBO_MIN_INTERVAL_MS,
   PUNCH_COMBO_WINDOW_MS,
   PUNCH_HITBOX_RADIUS,
   PUNCH_RANGE,
@@ -102,7 +105,13 @@ import {
   PUNCH_TARGET_ASSIST_RANGE_BONUS
 } from '../shared/combatConstants.js';
 import { chooseAimAssistTarget } from '../shared/combatMath.js';
-import { PUNCH_COMBO_HOOK_STEP, resolvePunchComboStep } from '../shared/punchCombo.js';
+import {
+  PUNCH_COMBO_HOOK_STEP,
+  PUNCH_COMBO_JAB_STEP,
+  getPunchComboImpactStrength,
+  normalizePunchComboStep,
+  resolvePunchComboStep
+} from '../shared/punchCombo.js';
 import {
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -1990,11 +1999,13 @@ export class Game {
     this.passiveTrafficCrashSide = new THREE.Vector3(1, 0, 0);
     this.passiveTrafficCrashCandidate = new THREE.Vector3();
     this.passiveTrafficCrashToPlayer = new THREE.Vector3();
+    this.damageCameraKickStrength = 1;
     this.localStateInitialized = false;
     this.lastLocalAlive = true;
     this.lastLocalEquippedWeaponId = '';
     this.lastLocalPunchAt = -Infinity;
     this.lastLocalPunchComboStep = 0;
+    this.bufferedPunch = null;
     this.lastHudHitMarkerVisible = false;
     this.hitMarkerUntil = 0;
     this.bootCriticalReady = false;
@@ -3240,21 +3251,92 @@ export class Game {
     return PUNCH_ASSISTED_LUNGE_BONUS * THREE.MathUtils.lerp(0.45, 1, reachPressure);
   }
 
-  punchLocal(aimDirection) {
+  normalizePunchAimPayload(aimDirection) {
+    const fallback = this.currentAimDirection ?? { x: 0, z: 1 };
+    const x = Number.isFinite(Number(aimDirection?.x)) ? Number(aimDirection.x) : Number(fallback.x) || 0;
+    const z = Number.isFinite(Number(aimDirection?.z)) ? Number(aimDirection.z) : Number(fallback.z) || 1;
+    const length = Math.hypot(x, z);
+    if (length <= 0.0001) {
+      return { x: 0, z: 1 };
+    }
+
+    return { x: x / length, z: z / length };
+  }
+
+  clearBufferedPunch() {
+    this.bufferedPunch = null;
+  }
+
+  queueBufferedHookPunch(aimDirection, now = Date.now()) {
+    const elapsedSinceLastPunch = now - this.lastLocalPunchAt;
+    if (
+      this.lastLocalPunchComboStep !== PUNCH_COMBO_JAB_STEP
+      || !Number.isFinite(elapsedSinceLastPunch)
+      || elapsedSinceLastPunch < 0
+      || elapsedSinceLastPunch > PUNCH_COMBO_WINDOW_MS
+    ) {
+      return false;
+    }
+
+    const releaseDelayMs = Math.max(PUNCH_COMBO_MIN_INTERVAL_MS, PUNCH_COMBO_HOOK_RELEASE_MS);
+    const releaseAt = this.lastLocalPunchAt + releaseDelayMs;
+    const expiresAt = Math.min(
+      this.lastLocalPunchAt + PUNCH_COMBO_WINDOW_MS,
+      Math.max(now, releaseAt) + PUNCH_COMBO_BUFFER_MS
+    );
+    const aim = this.normalizePunchAimPayload(aimDirection);
+    this.bufferedPunch = {
+      aimX: aim.x,
+      aimZ: aim.z,
+      releaseAt,
+      expiresAt
+    };
+    return true;
+  }
+
+  processBufferedPunch(aimDirection, now = Date.now()) {
+    if (!this.bufferedPunch) {
+      return false;
+    }
+
+    const bufferedPunch = this.bufferedPunch;
+    if (
+      now > bufferedPunch.expiresAt
+      || (now - this.lastLocalPunchAt) > PUNCH_COMBO_WINDOW_MS
+      || this.lastLocalPunchComboStep !== PUNCH_COMBO_JAB_STEP
+    ) {
+      this.clearBufferedPunch();
+      return false;
+    }
+
+    if (now < bufferedPunch.releaseAt) {
+      return false;
+    }
+
+    const aim = aimDirection
+      ? this.normalizePunchAimPayload(aimDirection)
+      : { x: bufferedPunch.aimX, z: bufferedPunch.aimZ };
+    this.clearBufferedPunch();
+    return this.punchLocal(aim, { allowBuffer: false });
+  }
+
+  punchLocal(aimDirection, { allowBuffer = true } = {}) {
     const now = Date.now();
-    const punchLungeBonus = this.getPunchLungeAssist(aimDirection);
+    const aim = this.normalizePunchAimPayload(aimDirection);
+    const punchLungeBonus = this.getPunchLungeAssist(aim);
     const comboStep = resolvePunchComboStep({
       requestedStep: PUNCH_COMBO_HOOK_STEP,
       lastStep: this.lastLocalPunchComboStep,
       elapsedMs: now - this.lastLocalPunchAt
     });
     const didPunch = this.npcService?.punch?.(
-      { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
+      aim,
       now,
       { comboStep }
     ) === true;
 
     if (didPunch) {
+      this.clearBufferedPunch();
       this.lastLocalPunchAt = now;
       this.lastLocalPunchComboStep = comboStep;
       const punchEmoteId = comboStep === PUNCH_COMBO_HOOK_STEP
@@ -3269,8 +3351,13 @@ export class Game {
       });
     }
 
+    if (!didPunch && allowBuffer && comboStep === PUNCH_COMBO_HOOK_STEP) {
+      this.queueBufferedHookPunch(aim, now);
+    }
+
     if (!didPunch && (now - this.lastLocalPunchAt) > PUNCH_COMBO_WINDOW_MS) {
       this.lastLocalPunchComboStep = 0;
+      this.clearBufferedPunch();
     }
 
     return didPunch;
@@ -19425,12 +19512,19 @@ export class Game {
       case 'impact':
         {
           const { origin, point, delayMs } = this.getImpactEffectSpec(event);
+          const punchComboStep = event.attackType === 'punch'
+            ? normalizePunchComboStep(event.comboStep)
+            : PUNCH_COMBO_JAB_STEP;
+          const punchIsHook = event.attackType === 'punch' && punchComboStep === PUNCH_COMBO_HOOK_STEP;
+          const punchImpactStrength = event.attackType === 'punch'
+            ? getPunchComboImpactStrength(punchComboStep)
+            : 1;
           this.createImpactEffect(point, event.kind, delayMs);
           if (event.attackType === 'punch' && (event.kind === 'player' || event.kind === 'npc')) {
             this.playRandomSoundEffect(this.punchImpactSounds, {
-              volumeScale: event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72,
-              playbackRateMin: 0.96,
-              playbackRateMax: 1.07,
+              volumeScale: (event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72) * (punchIsHook ? 1.12 : 1),
+              playbackRateMin: punchIsHook ? 0.84 : 0.96,
+              playbackRateMax: punchIsHook ? 0.96 : 1.07,
               preservePitch: false,
               delayMs
             });
@@ -19453,10 +19547,10 @@ export class Game {
               targetAvatar?.triggerDamageFeedback?.({
                 direction: damageDirection,
                 hitReaction: event.attackType === 'punch' ? event.hitReaction : '',
-                strength: event.attackType === 'punch' ? 1.45 : 1
+                strength: punchImpactStrength
               });
               if (event.targetId === this.npcServiceState.sessionId) {
-                this.triggerDamageCameraFeedback(damageDirection);
+                this.triggerDamageCameraFeedback(damageDirection, { strength: punchIsHook ? 1.18 : 1 });
               }
             };
 
@@ -19477,7 +19571,7 @@ export class Game {
               this.worldBuilder?.triggerNpcDamageFeedback(event.targetId, {
                 direction: damageDirection,
                 hitReaction: event.attackType === 'punch' ? event.hitReaction : '',
-                strength: event.attackType === 'punch' ? 1.45 : 1
+                strength: punchImpactStrength
               });
             };
 
@@ -19489,7 +19583,10 @@ export class Game {
           }
         }
         if ((event.kind === 'player' || event.kind === 'npc') && event.shooterId === this.npcServiceState.sessionId) {
-          this.hitMarkerUntil = performance.now() + 120;
+          const hitMarkerMs = event.attackType === 'punch' && normalizePunchComboStep(event.comboStep) === PUNCH_COMBO_HOOK_STEP
+            ? 160
+            : 120;
+          this.hitMarkerUntil = performance.now() + hitMarkerMs;
         }
         break;
       case 'pickup':
@@ -20458,6 +20555,7 @@ export class Game {
       this.suspendInlineShellForBuilder();
       this.worldBuilder.syncInteriorPlacementPreview();
       this.clearPendingHipFireShot();
+      this.clearBufferedPunch();
       this.currentAimMode = false;
       this.player?.setAimingState(false);
       this.setLocalPlayerSkateboardState(undefined, false, undefined);
@@ -20534,6 +20632,7 @@ export class Game {
 
       if (workoutActive) {
         this.clearPendingHipFireShot();
+        this.clearBufferedPunch();
         this.currentAimMode = false;
         this.setLocalPlayerSkateboardState(transportOwned, false, vehicleItemId);
         const facing = this.player.object.rotation.y;
@@ -20582,6 +20681,7 @@ export class Game {
         const secondaryAimHeld = combatInputEnabled && this.input.isActionPressed('aim');
         if (consumableSelected) {
           this.clearPendingHipFireShot();
+          this.clearBufferedPunch();
           aimingMode = false;
           this.currentAimMode = false;
           this.player.setAimingState(false);
@@ -20593,6 +20693,7 @@ export class Game {
             }
           }
         } else if (armed) {
+          this.clearBufferedPunch();
           aimingMode = secondaryAimHeld;
           this.currentAimMode = aimingMode;
           this.player.setAimingState(aimingMode || hipFirePoseActive);
@@ -20610,12 +20711,14 @@ export class Game {
           this.clearPendingHipFireShot();
           this.currentAimMode = false;
           this.player.setAimingState(false);
+          this.processBufferedPunch(aimDirection);
           if (primaryFirePressed) {
             this.punchLocal(aimDirection);
           }
         }
         if (!localAlive || passiveTrafficStunned || rentIntroCutsceneActive || emoteMenuActive || this.hud.isQuickChatOpen() || stockMarketOpen || blackjackOpen || schoolMicrogameOpen || vibeHeroOpen || interactionMenuOpen || adminPromptOpen || phoneOpen) {
           this.clearPendingHipFireShot();
+          this.clearBufferedPunch();
         } else if (this.pendingHipFireShot) {
           this.player.setAimingState(aimingMode || frameNow < this.pendingHipFireShot.releaseAt);
           this.player.setAimRotation(Math.atan2(this.pendingHipFireShot.direction.x, this.pendingHipFireShot.direction.z));
@@ -21002,17 +21105,18 @@ export class Game {
     const lookTarget = this.cameraLookTarget.copy(this.player.position).add(CAMERA_LOOK_OFFSET);
 
     if (now < this.damageCameraKickEndsAt) {
+      const kickStrength = THREE.MathUtils.clamp(Number(this.damageCameraKickStrength) || 1, 0.6, 1.35);
       const lifetime = Math.max(1, this.damageCameraKickEndsAt - this.damageCameraKickStartedAt);
       const progress = THREE.MathUtils.clamp((now - this.damageCameraKickStartedAt) / lifetime, 0, 1);
       const envelope = Math.pow(1 - progress, 1.35);
       const wave = Math.sin(progress * Math.PI * 3.2);
       const side = this.damageCameraSide.set(-this.damageCameraDirection.z, 0, this.damageCameraDirection.x);
-      targetPosition.addScaledVector(this.damageCameraDirection, envelope * 0.72);
-      targetPosition.addScaledVector(side, wave * envelope * 0.26);
-      targetPosition.y += Math.sin(progress * Math.PI) * envelope * 0.38;
-      lookTarget.addScaledVector(this.damageCameraDirection, envelope * 0.16);
-      lookTarget.addScaledVector(side, wave * envelope * -0.14);
-      lookTarget.y += envelope * 0.12;
+      targetPosition.addScaledVector(this.damageCameraDirection, envelope * 0.72 * kickStrength);
+      targetPosition.addScaledVector(side, wave * envelope * 0.26 * kickStrength);
+      targetPosition.y += Math.sin(progress * Math.PI) * envelope * 0.38 * kickStrength;
+      lookTarget.addScaledVector(this.damageCameraDirection, envelope * 0.16 * kickStrength);
+      lookTarget.addScaledVector(side, wave * envelope * -0.14 * kickStrength);
+      lookTarget.y += envelope * 0.12 * kickStrength;
     }
 
     if (snap) {
@@ -21027,9 +21131,10 @@ export class Game {
     this.updateCameraFov(DEFAULT_CAMERA_FOV, fovOptions);
   }
 
-  triggerDamageCameraFeedback(direction = null) {
+  triggerDamageCameraFeedback(direction = null, { strength = 1 } = {}) {
     this.damageCameraKickStartedAt = performance.now();
     this.damageCameraKickEndsAt = this.damageCameraKickStartedAt + DAMAGE_CAMERA_KICK_MS;
+    this.damageCameraKickStrength = THREE.MathUtils.clamp(Number(strength) || 1, 0.6, 1.35);
     if (direction && Number.isFinite(direction.x) && Number.isFinite(direction.z)) {
       this.damageCameraDirection.set(direction.x, 0, direction.z);
     } else {
