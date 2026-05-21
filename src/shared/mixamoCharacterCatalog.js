@@ -30,6 +30,14 @@ const TALL_NPC_PROFILE = Object.freeze({
   colliderRadius: 1.45
 });
 
+const STOCKY_NPC_PROFILE = Object.freeze({
+  height: 4.8,
+  footprint: Object.freeze([4, 4]),
+  interactionOffset: 2.5,
+  interactionRadius: 4.6,
+  colliderRadius: 1.55
+});
+
 function toSnakeCase(value) {
   return String(value ?? '')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -155,6 +163,11 @@ export const MIXAMO_CHARACTER_DEFINITIONS = Object.freeze([
     subtitle: 'Tactical Unit',
     npcLabel: 'SWAT',
     npcProfile: BOT_NPC_PROFILE
+  }),
+  createImportedCharacter('policeOfficer', 'Police Officer', 'Police Officer.fbx', {
+    subtitle: 'Goofy Lawman',
+    npcLabel: 'Police Officer',
+    npcProfile: STOCKY_NPC_PROFILE
   }),
   createImportedCharacter('zombiegirlWKurniawan', 'Zombiegirl W Kurniawan', 'Zombiegirl W Kurniawan.fbx', {
     subtitle: 'Undead Local'

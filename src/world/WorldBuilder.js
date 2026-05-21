@@ -78,6 +78,7 @@ const BUILDER_TRAFFIC_ROUTES_CATEGORY = Object.freeze({
   label: 'Traffic Routes',
   items: []
 });
+const POLICE_DEFAULT_MODEL_IDS = new Set(['policeOfficer', 'swat']);
 const BUILDER_TAB_CATEGORIES = Object.freeze([
   ...BUILDER_CATEGORIES,
   BUILDER_TRAFFIC_ROUTES_CATEGORY,
@@ -2854,7 +2855,7 @@ export class WorldBuilder {
   }
 
   async placeNpc(item) {
-    const policeOfficerEnabled = item.modelId === 'swat';
+    const policeOfficerEnabled = POLICE_DEFAULT_MODEL_IDS.has(item.modelId);
     const result = await this.worldEditAdapter.edit({
       op: 'placeNpc',
       item,

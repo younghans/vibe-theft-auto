@@ -104,6 +104,7 @@ import {
   isPoliceOfficerNpc,
   normalizeNpcBehavior
 } from '../src/npc/npcBehavior.js';
+import { getNpcModelById } from '../src/npc/npcCatalog.js';
 import {
   RENT_INTRO_LINE,
   isRentIntroCollector,
@@ -4571,7 +4572,7 @@ function validateBartenderFunction() {
   );
 
   const policeNpc = normalizeNpcBehavior({
-    modelId: 'swat',
+    modelId: 'policeOfficer',
     name: 'Police Officer',
     policeOfficerEnabled: true,
     spawnPosition: [0, 0]
@@ -4580,7 +4581,7 @@ function validateBartenderFunction() {
     rotationQuarterTurns: 0
   });
   const customRadiusPoliceNpc = normalizeNpcBehavior({
-    modelId: 'swat',
+    modelId: 'policeOfficer',
     name: 'Police Officer',
     policeOfficerEnabled: true,
     lawRadius: 48,
@@ -4591,6 +4592,27 @@ function validateBartenderFunction() {
   });
   const savedWorldLayout = JSON.parse(readRepoText('server/data/world-layout.json'));
   const savedPoliceChief = findNpcById(savedWorldLayout.npcs, 'placement_164');
+  const policeOfficerModel = getNpcModelById('policeOfficer');
+  const policeOfficerGlbJson = readGlbJson('assets/runtime/mixamo/characters/policeOfficer.glb');
+  const policeOfficerNodeNames = getGlbNodeNameSet(policeOfficerGlbJson);
+  const policeOfficerMaterialNames = getGlbMaterialNames(policeOfficerGlbJson);
+  const policeOfficerPortraitStats = statSync(new URL('../assets/mixamo/portraits/police_officer.png', import.meta.url));
+  assert(policeOfficerModel?.label === 'Police Officer', 'NPC catalog should include the Police Officer model');
+  assert(policeOfficerModel?.height === 4.8, 'Police Officer should stay scaled like the other human NPC models');
+  assert(policeOfficerModel?.footprint?.[0] === 4 && policeOfficerModel?.footprint?.[1] === 4, 'Police Officer should use a stocky cartoon footprint');
+  assert(policeOfficerModel?.portraitFileName === 'police_officer.png', 'Police Officer should expose a static NPC portrait');
+  assert(policeOfficerPortraitStats.isFile() && policeOfficerPortraitStats.size > 1000, 'Police Officer portrait PNG should be generated');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_uniform'), 'Police Officer GLB should include a skinned navy uniform mesh');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_gold'), 'Police Officer GLB should include gold badge details');
+  assert(policeOfficerNodeNames.has('PoliceOfficer_belt'), 'Police Officer GLB should include a utility belt');
+  assert(policeOfficerNodeNames.has('mixamorigHead'), 'Police Officer GLB should preserve the Mixamo head bone');
+  assert(policeOfficerNodeNames.has('mixamorigRightHand'), 'Police Officer GLB should preserve Mixamo hand bones for weapons');
+  assert(
+    policeOfficerMaterialNames.has('policeOfficerNavyUniform')
+      && policeOfficerMaterialNames.has('policeOfficerGoldBadge')
+      && policeOfficerMaterialNames.has('policeOfficerGoofyEyes'),
+    'Police Officer GLB should use named cartoon police materials'
+  );
   assert(isPoliceOfficerNpc(policeNpc), 'Normalized police NPCs should preserve policeOfficerEnabled');
   assert(
     policeNpc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
@@ -4605,10 +4627,11 @@ function validateBartenderFunction() {
     'Default NPC layout should serialize police settings for world-builder compatibility'
   );
   assert(
-    savedPoliceChief?.policeOfficerEnabled === true
+    savedPoliceChief?.modelId === 'policeOfficer'
+      && savedPoliceChief?.policeOfficerEnabled === true
       && savedPoliceChief?.lawRadius === NPC_DEFAULT_LAW_RADIUS
       && savedPoliceChief?.combat?.archetype === NPC_COMBAT_ARCHETYPES.police,
-    'Fallback saved world layout should seed Gary as a police officer with a visible law radius'
+    'Fallback saved world layout should seed Gary with the Police Officer model and a visible law radius'
   );
   assert(
     /police:\s*'police'/.test(npcBehaviorSource)
@@ -4645,9 +4668,10 @@ function validateBartenderFunction() {
     /data-builder-npc-police-officer/.test(hudSource)
       && /data-builder-npc-law-radius/.test(hudSource)
       && /onNpcPoliceOfficerChange/.test(worldBuilderSource)
+      && /policeOfficer/.test(worldBuilderSource)
       && /NPC_COMBAT_ARCHETYPES\.police/.test(worldBuilderSource)
       && /combat:\s*edit\.npc\.combat/.test(worldEditAdapterSource),
-    'World builder should expose police officer settings and transport the police combat profile'
+    'World builder should expose police officer settings and auto-place police model NPCs with the police combat profile'
   );
 
   const cigarettes = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes);

@@ -45,6 +45,7 @@
     "generate:district-buildings": "node scripts/generate-district-buildings.mjs",
     "generate:gym-building": "node scripts/generate-gym-building.mjs",
     "generate:gym-building-large": "node scripts/generate-gym-building-large.mjs",
+    "generate:police-officer": "node scripts/generate-police-officer-character.mjs",
     "generate:police-station": "node scripts/generate-police-station-building.mjs",
     "generate:police-vehicle": "node scripts/generate-low-poly-police-vehicle.mjs",
     "inspect:buildings": "node scripts/inspect-building-assets.mjs",

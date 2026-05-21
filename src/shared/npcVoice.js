@@ -215,6 +215,14 @@ const NPC_MODEL_VOICE_DEFAULTS = Object.freeze({
     waveform: 'square',
     volume: 0.67
   }),
+  policeOfficer: Object.freeze({
+    basePitchHz: 225,
+    pitchVariance: 0.12,
+    charactersPerSecond: 26,
+    formantRatio: 2.05,
+    waveform: 'square',
+    volume: 0.62
+  }),
   zombiegirlWKurniawan: Object.freeze({
     basePitchHz: 235,
     pitchVariance: 0.27,
