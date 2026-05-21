@@ -1161,6 +1161,10 @@ export class WorldBuilder {
     this.worldRenderer.setPassiveTrafficServerState(passiveTrafficState);
   }
 
+  getPassiveTrafficCars() {
+    return this.worldRenderer.getPassiveTrafficCars();
+  }
+
   triggerNpcDamageFeedback(npcId, options = {}) {
     this.worldRenderer.triggerNpcDamageFeedback(npcId, options);
   }

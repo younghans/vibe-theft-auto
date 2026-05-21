@@ -1457,6 +1457,9 @@ export class PassiveTrafficSimulation {
       speed: quantizeNumber(car.currentSpeed, 3),
       active: !this.isCarDisabled(car) && !this.isCarSinking(car),
       lawRadius: quantizeNumber(car.lawRadius, 2),
+      responseCar: Boolean(car.responseCar),
+      responseOwnerSessionId: car.responseOwnerSessionId || '',
+      responseUnitKind: car.responseUnitKind || '',
       currentNodeIndex: Math.max(-1, Math.floor(Number(car.currentNodeIndex) || 0)),
       targetNodeIndex: car.targetNodeIndex === null || car.targetNodeIndex === undefined
         ? -1

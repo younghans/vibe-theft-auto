@@ -289,6 +289,10 @@ function clonePassiveTrafficCarState(car) {
     rotationY: car.rotationY ?? 0,
     speed: car.speed ?? 0,
     active: car.active !== false,
+    lawRadius: car.lawRadius ?? 0,
+    responseCar: car.responseCar === true,
+    responseOwnerSessionId: car.responseOwnerSessionId || '',
+    responseUnitKind: car.responseUnitKind || '',
     currentNodeIndex: car.currentNodeIndex ?? -1,
     targetNodeIndex: car.targetNodeIndex ?? -1,
     seq: car.seq ?? 0

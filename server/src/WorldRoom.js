@@ -672,6 +672,9 @@ const PassiveTrafficCarState = schema({
   speed: 'number',
   active: 'boolean',
   lawRadius: 'number',
+  responseCar: 'boolean',
+  responseOwnerSessionId: 'string',
+  responseUnitKind: 'string',
   currentNodeIndex: 'number',
   targetNodeIndex: 'number',
   seq: 'number'
@@ -3555,6 +3558,9 @@ export class WorldRoom extends Room {
       car.speed = Number(snapshot.speed) || 0;
       car.active = snapshot.active !== false;
       car.lawRadius = Number(snapshot.lawRadius) || 0;
+      car.responseCar = snapshot.responseCar === true;
+      car.responseOwnerSessionId = snapshot.responseOwnerSessionId || '';
+      car.responseUnitKind = snapshot.responseUnitKind || '';
       car.currentNodeIndex = Math.floor(Number(snapshot.currentNodeIndex) || 0);
       car.targetNodeIndex = Math.floor(Number(snapshot.targetNodeIndex) || 0);
       car.seq = Math.max(0, Math.floor(Number(snapshot.seq) || 0));

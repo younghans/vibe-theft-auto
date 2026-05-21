@@ -2183,6 +2183,9 @@ export class WorldRenderer {
         speed: Number(state.speed) || 0,
         active: state.active !== false,
         lawRadius: Number(state.lawRadius) || 0,
+        responseCar: state.responseCar === true,
+        responseOwnerSessionId: state.responseOwnerSessionId || '',
+        responseUnitKind: state.responseUnitKind || '',
         currentNodeIndex: Math.floor(Number(state.currentNodeIndex) || 0),
         targetNodeIndex: Math.floor(Number(state.targetNodeIndex) || 0),
         seq: Math.max(0, Math.floor(Number(state.seq) || 0))
@@ -2222,7 +2225,10 @@ export class WorldRenderer {
           id: state.id,
           itemId: state.itemId,
           routeId: state.routeId,
-          route: null
+          route: null,
+          responseCar: state.responseCar === true,
+          responseOwnerSessionId: state.responseOwnerSessionId || '',
+          responseUnitKind: state.responseUnitKind || ''
         }));
     }
 
@@ -2247,6 +2253,10 @@ export class WorldRenderer {
     if (this.passiveTrafficServerActive) {
       this.applyPassiveTrafficServerState();
     }
+  }
+
+  getPassiveTrafficCars() {
+    return this.passiveTrafficCars;
   }
 
   setPassiveTrafficRoutes(routes = []) {
@@ -3175,6 +3185,9 @@ export class WorldRenderer {
 
       car.currentSpeed = state.speed;
       car.serverActive = state.active !== false;
+      car.responseCar = state.responseCar === true;
+      car.responseOwnerSessionId = state.responseOwnerSessionId || '';
+      car.responseUnitKind = state.responseUnitKind || '';
       car.currentNodeIndex = state.currentNodeIndex;
       car.targetNodeIndex = state.targetNodeIndex >= 0 ? state.targetNodeIndex : null;
       car.lastPosition.copy(car.object.position);

@@ -81,6 +81,9 @@ import {
   createOlympicBarbellVisual
 } from '../world/proceduralProps.js';
 import { WorldBuilder } from '../world/WorldBuilder.js';
+import {
+  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+} from '../world/passiveTraffic.js';
 import { createPlayer } from '../player/createPlayer.js';
 import { DRINKING_EMOTE_ID, EMOTE_SLOTS, PUNCH_EMOTE_ID, PUNCH_HOOK_EMOTE_ID, PUNCH_UPPERCUT_EMOTE_ID, SMOKING_EMOTE_ID, STAND_UP_EMOTE_ID, TEXTING_EMOTE_ID } from '../player/emotes.js';
 import {
@@ -745,6 +748,11 @@ const RENT_INTRO_STAND_UP_CLIP_NAME = 'standUp';
 const PASSIVE_TRAFFIC_PLAYER_HIT_COOLDOWN_MS = 360;
 const PASSIVE_TRAFFIC_PLAYER_CAR_COLLISION_DAMAGE = 10;
 const PASSIVE_TRAFFIC_PLAYER_CAR_CRASH_POPUP_TEXT = 'Car crash...';
+const POLICE_SIREN_WHOOP_SUPPRESS_MS = 260;
+const POLICE_SIREN_CONTINUOUS_NEAR_DISTANCE = 8;
+const POLICE_SIREN_CONTINUOUS_FAR_DISTANCE = 92;
+const POLICE_SIREN_CONTINUOUS_MAX_GAIN = 0.14;
+const POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN = 0.0001;
 const OVERHEAD_HEALTH_BAR_BUBBLE_OFFSET_PX = 18;
 const CAMERA_OCCLUDED_PLAYER_RENDER_ORDER = 90;
 const PORTAL_EXIT_REARM_PADDING = PLAYER_RADIUS + 0.75;
@@ -1949,6 +1957,12 @@ export class Game {
     this.vibeHeroAudioNodes = [];
     this.vibeHeroAudioElement = null;
     this.vibeHeroAudioPreloads = new Map();
+    this.passivePoliceCarSirenState = new Map();
+    this.lastPoliceSirenWhoopAt = -Infinity;
+    this.lastLocalWantedSirenSessionId = '';
+    this.lastLocalWantedSirenStars = null;
+    this.policeContinuousSirens = new Map();
+    this.policeContinuousSirenScratch = new THREE.Vector3();
     this.vibeRadioTracks = createDefaultVibeRadioTracks();
     this.vibeRadioAudio = new Audio();
     this.vibeRadioAudio.preload = 'metadata';
@@ -2838,6 +2852,346 @@ export class Game {
     burstFilter.connect(makeGain(0.055, 0.005, duration));
     burst.start(now);
     burst.stop(now + duration);
+  }
+
+  getPoliceSirenVolumeScaleForPosition(position = null) {
+    const localPosition = this.player?.position ?? this.getLocalPlayerState();
+    if (!position || !localPosition) {
+      return 0.85;
+    }
+
+    const sourceX = Number(position.x ?? 0) || 0;
+    const sourceZ = Number(position.z ?? 0) || 0;
+    const localX = Number(localPosition.x ?? 0) || 0;
+    const localZ = Number(localPosition.z ?? 0) || 0;
+    const distance = Math.hypot(sourceX - localX, sourceZ - localZ);
+    const range = Math.max(1, POLICE_SIREN_CONTINUOUS_FAR_DISTANCE - POLICE_SIREN_CONTINUOUS_NEAR_DISTANCE);
+    const proximity = THREE.MathUtils.clamp(
+      1 - ((distance - POLICE_SIREN_CONTINUOUS_NEAR_DISTANCE) / range),
+      0,
+      1
+    );
+    return THREE.MathUtils.clamp(0.28 + (Math.pow(proximity, 1.35) * 0.95), 0.24, 1.18);
+  }
+
+  playPoliceSirenWhoop({
+    volumeScale = 1,
+    delayMs = 0,
+    suppress = true
+  } = {}) {
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const scheduledMs = nowMs + Math.max(0, Number(delayMs) || 0);
+    if (suppress && scheduledMs - Number(this.lastPoliceSirenWhoopAt ?? -Infinity) < POLICE_SIREN_WHOOP_SUPPRESS_MS) {
+      return;
+    }
+    this.lastPoliceSirenWhoopAt = scheduledMs;
+
+    const play = () => {
+      const context = this.getVibeHeroAudioContext();
+      if (!context) {
+        this.playSoundEffect(this.playingCardSound, {
+          playbackRate: 0.72,
+          preservePitch: false,
+          volumeScale: 0.8 * volumeScale
+        });
+        this.playSoundEffect(this.playingCardSound, {
+          playbackRate: 1.18,
+          preservePitch: false,
+          volumeScale: 0.62 * volumeScale,
+          delayMs: 125
+        });
+        return;
+      }
+
+      const resumePromise = context.resume?.();
+      if (resumePromise?.catch) {
+        void resumePromise.catch(() => {});
+      }
+
+      const masterVolume = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+      const basePeak = THREE.MathUtils.clamp(0.145 * masterVolume * (Number(volumeScale) || 1), 0.0001, 0.22);
+      const now = context.currentTime;
+      const scheduleWhoop = (startAt) => {
+        const tone = context.createOscillator();
+        const bite = context.createOscillator();
+        const toneGain = context.createGain();
+        const biteGain = context.createGain();
+        const filter = context.createBiquadFilter();
+        const gain = context.createGain();
+        const endAt = startAt + 0.31;
+
+        tone.type = 'sawtooth';
+        bite.type = 'square';
+        tone.frequency.setValueAtTime(420, startAt);
+        tone.frequency.exponentialRampToValueAtTime(830, startAt + 0.17);
+        tone.frequency.exponentialRampToValueAtTime(520, endAt);
+        bite.frequency.setValueAtTime(620, startAt);
+        bite.frequency.exponentialRampToValueAtTime(1120, startAt + 0.17);
+        bite.frequency.exponentialRampToValueAtTime(760, endAt);
+        toneGain.gain.setValueAtTime(0.78, startAt);
+        biteGain.gain.setValueAtTime(0.18, startAt);
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(880, startAt);
+        filter.Q.setValueAtTime(1.9, startAt);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(basePeak, startAt + 0.025);
+        gain.gain.setTargetAtTime(basePeak * 0.72, startAt + 0.12, 0.045);
+        gain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+
+        tone.connect(toneGain);
+        bite.connect(biteGain);
+        toneGain.connect(filter);
+        biteGain.connect(filter);
+        filter.connect(gain);
+        gain.connect(context.destination);
+        tone.start(startAt);
+        bite.start(startAt);
+        tone.stop(endAt + 0.025);
+        bite.stop(endAt + 0.025);
+        tone.onended = () => {
+          for (const node of [tone, bite, toneGain, biteGain, filter, gain]) {
+            try {
+              node.disconnect();
+            } catch {
+              // Already disconnected.
+            }
+          }
+        };
+      };
+
+      scheduleWhoop(now);
+      scheduleWhoop(now + 0.36);
+    };
+
+    const safeDelayMs = Math.max(0, Number(delayMs) || 0);
+    if (safeDelayMs > 0 && typeof window !== 'undefined') {
+      window.setTimeout(play, safeDelayMs);
+      return;
+    }
+    play();
+  }
+
+  syncWantedStarSiren(localPlayerState = this.getLocalPlayerState()) {
+    const sessionId = String(this.npcServiceState?.sessionId ?? '');
+    const wantedStars = THREE.MathUtils.clamp(
+      Math.floor(Number(localPlayerState?.wantedStars ?? 0) || 0),
+      0,
+      5
+    );
+    if (this.lastLocalWantedSirenSessionId !== sessionId) {
+      this.lastLocalWantedSirenSessionId = sessionId;
+      this.lastLocalWantedSirenStars = wantedStars;
+      return;
+    }
+
+    const previousStars = this.lastLocalWantedSirenStars;
+    if (Number.isFinite(previousStars) && wantedStars > previousStars) {
+      this.playPoliceSirenWhoop({ volumeScale: 1.08 });
+    }
+    this.lastLocalWantedSirenStars = wantedStars;
+  }
+
+  syncPassivePoliceCarSirenTriggers(passiveTrafficState = this.npcServiceState?.passiveTraffic) {
+    const nextState = new Map();
+    const appendCar = (id, car) => {
+      if (!car) {
+        return;
+      }
+      const normalizedId = String(car.id || id || '');
+      if (!normalizedId || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID || car.responseCar === true) {
+        return;
+      }
+
+      const active = car.active !== false;
+      const previous = this.passivePoliceCarSirenState.get(normalizedId);
+      if (previous?.active === true && !active) {
+        this.playPoliceSirenWhoop({
+          volumeScale: this.getPoliceSirenVolumeScaleForPosition(car)
+        });
+      }
+      nextState.set(normalizedId, { active });
+    };
+
+    if (passiveTrafficState instanceof Map) {
+      for (const [id, car] of passiveTrafficState) {
+        appendCar(id, car);
+      }
+    } else if (passiveTrafficState && typeof passiveTrafficState === 'object') {
+      for (const id in passiveTrafficState) {
+        if (Object.hasOwn(passiveTrafficState, id)) {
+          appendCar(id, passiveTrafficState[id]);
+        }
+      }
+    }
+
+    this.passivePoliceCarSirenState = nextState;
+  }
+
+  createPoliceContinuousSiren(carId = '') {
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      return null;
+    }
+
+    const resumePromise = context.resume?.();
+    if (resumePromise?.catch) {
+      void resumePromise.catch(() => {});
+    }
+
+    const oscillator = context.createOscillator();
+    const upperOscillator = context.createOscillator();
+    const upperGain = context.createGain();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+
+    oscillator.type = 'sawtooth';
+    upperOscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(520, context.currentTime);
+    upperOscillator.frequency.setValueAtTime(790, context.currentTime);
+    upperGain.gain.setValueAtTime(0.12, context.currentTime);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(960, context.currentTime);
+    filter.Q.setValueAtTime(2.5, context.currentTime);
+    gain.gain.setValueAtTime(POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN, context.currentTime);
+
+    oscillator.connect(filter);
+    upperOscillator.connect(upperGain);
+    upperGain.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    upperOscillator.start();
+
+    return {
+      carId,
+      oscillator,
+      upperOscillator,
+      upperGain,
+      filter,
+      gain,
+      phaseOffset: Math.random() * Math.PI * 2
+    };
+  }
+
+  stopPoliceContinuousSiren(carId = '') {
+    const siren = this.policeContinuousSirens.get(carId);
+    if (!siren) {
+      return;
+    }
+
+    this.policeContinuousSirens.delete(carId);
+    const context = this.vibeHeroAudioContext;
+    const now = context?.currentTime ?? 0;
+    try {
+      siren.gain.gain.cancelScheduledValues(now);
+      siren.gain.gain.setTargetAtTime(POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN, now, 0.045);
+    } catch {
+      // Ignore stale audio params.
+    }
+    const stopAt = now + 0.22;
+    for (const node of [siren.oscillator, siren.upperOscillator]) {
+      try {
+        node.stop(stopAt);
+      } catch {
+        // Already stopped.
+      }
+    }
+    const disconnect = () => {
+      for (const node of [siren.oscillator, siren.upperOscillator, siren.upperGain, siren.filter, siren.gain]) {
+        try {
+          node.disconnect();
+        } catch {
+          // Already disconnected.
+        }
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.setTimeout(disconnect, 280);
+    } else {
+      disconnect();
+    }
+  }
+
+  updatePoliceContinuousSirens(deltaSeconds = 0, nowMs = performance.now(), localPlayerState = this.getLocalPlayerState()) {
+    const trafficCars = this.worldBuilder?.getPassiveTrafficCars?.() ?? [];
+    const activeWantedPoliceCars = trafficCars.filter((car) => (
+      car?.itemId === PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+      && car.responseCar === true
+      && car.serverActive !== false
+      && car.object?.parent
+    ));
+
+    if (!activeWantedPoliceCars.length || !localPlayerState || localPlayerState.alive === false) {
+      for (const carId of [...this.policeContinuousSirens.keys()]) {
+        this.stopPoliceContinuousSiren(carId);
+      }
+      return;
+    }
+
+    const context = this.getVibeHeroAudioContext();
+    if (!context) {
+      return;
+    }
+    const resumePromise = context.resume?.();
+    if (resumePromise?.catch) {
+      void resumePromise.catch(() => {});
+    }
+
+    const usedCarIds = new Set();
+    const localPosition = this.player?.position ?? localPlayerState;
+    const localX = Number(localPosition?.x ?? 0) || 0;
+    const localZ = Number(localPosition?.z ?? 0) || 0;
+    const masterVolume = THREE.MathUtils.clamp(Number(this.gameSettings?.masterVolume ?? 1), 0, 1);
+    const audioNow = context.currentTime;
+    const distanceRange = Math.max(1, POLICE_SIREN_CONTINUOUS_FAR_DISTANCE - POLICE_SIREN_CONTINUOUS_NEAR_DISTANCE);
+
+    for (const car of activeWantedPoliceCars) {
+      const carId = String(car.serverStateId || car.id || car.object?.uuid || '');
+      if (!carId) {
+        continue;
+      }
+
+      usedCarIds.add(carId);
+      let siren = this.policeContinuousSirens.get(carId);
+      if (!siren) {
+        siren = this.createPoliceContinuousSiren(carId);
+        if (!siren) {
+          continue;
+        }
+        this.policeContinuousSirens.set(carId, siren);
+      }
+
+      const position = car.object?.position ?? this.policeContinuousSirenScratch.set(car.x ?? 0, 0, car.z ?? 0);
+      const distance = Math.hypot((Number(position.x) || 0) - localX, (Number(position.z) || 0) - localZ);
+      const proximity = THREE.MathUtils.clamp(
+        1 - ((distance - POLICE_SIREN_CONTINUOUS_NEAR_DISTANCE) / distanceRange),
+        0,
+        1
+      );
+      const targetGain = proximity <= 0
+        ? POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN
+        : THREE.MathUtils.clamp(
+          (0.01 + (Math.pow(proximity, 1.45) * POLICE_SIREN_CONTINUOUS_MAX_GAIN)) * masterVolume,
+          POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN,
+          POLICE_SIREN_CONTINUOUS_MAX_GAIN
+        );
+      const sweep = (Math.sin((nowMs * 0.0062) + siren.phaseOffset) + 1) * 0.5;
+      const frequency = 470 + (sweep * 430);
+      try {
+        siren.gain.gain.setTargetAtTime(targetGain, audioNow, 0.09);
+        siren.oscillator.frequency.setTargetAtTime(frequency, audioNow, 0.08);
+        siren.upperOscillator.frequency.setTargetAtTime(frequency * 1.48, audioNow, 0.08);
+        siren.filter.frequency.setTargetAtTime(780 + (sweep * 520), audioNow, 0.1);
+      } catch {
+        // Ignore stale audio params; the next frame will recreate the siren if needed.
+      }
+    }
+
+    for (const carId of [...this.policeContinuousSirens.keys()]) {
+      if (!usedCarIds.has(carId)) {
+        this.stopPoliceContinuousSiren(carId);
+      }
+    }
   }
 
   isLocalPlayerUsingCarTransport(localPlayerState = this.getLocalPlayerState()) {
@@ -17129,6 +17483,7 @@ export class Game {
         this.applyNpcRuntimeState();
         this.worldBuilder?.setRemoteBuilders(state.builders, state.sessionId);
         this.worldBuilder?.setPassiveTrafficServerState(state.passiveTraffic);
+        this.syncPassivePoliceCarSirenTriggers(state.passiveTraffic);
         if (this.bootCriticalReady) {
           this.requestDeferredSceneSync({
             pickups: true,
@@ -19351,6 +19706,7 @@ export class Game {
     combatHudState.deaths = localPlayerState.deaths ?? 0;
     combatHudState.armed = Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId() && !this.getSelectedHotbarConsumableItemId());
     this.hud.setCombatState(combatHudState);
+    this.syncWantedStarSiren(localPlayerState);
     const wantedHudState = this.wantedHudState;
     wantedHudState.stars = localPlayerState.wantedStars ?? 0;
     wantedHudState.evading = localPlayerState.wantedEvading === true;
@@ -19965,6 +20321,14 @@ export class Game {
             ? getPunchComboImpactStrength(punchComboStep)
             : 1;
           this.createImpactEffect(point, event.kind, delayMs);
+          if (event.kind === 'passiveTraffic' && event.shooterId === this.npcServiceState.sessionId) {
+            const policeCar = this.npcServiceState.passiveTraffic?.get?.(event.targetId) ?? null;
+            if (!policeCar || policeCar.itemId === PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID) {
+              this.playPoliceSirenWhoop({
+                volumeScale: this.getPoliceSirenVolumeScaleForPosition(policeCar ?? point)
+              });
+            }
+          }
           if (event.attackType === 'punch' && (event.kind === 'player' || event.kind === 'npc')) {
             this.playRandomSoundEffect(this.punchImpactSounds, {
               volumeScale: (event.shooterId === this.npcServiceState.sessionId ? 1 : 0.72) * (punchIsFinisher ? 1.2 : punchIsHook ? 1.12 : 1),
@@ -21000,6 +21364,7 @@ export class Game {
     }
 
     this.worldBuilder.update(deltaSeconds, this.input, frameNow);
+    this.updatePoliceContinuousSirens(deltaSeconds, frameNow, localPlayerState);
     this.worldBuilderInteractablesFrame = -1;
     this.activeInteractablesFrame = -1;
 

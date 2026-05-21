@@ -1002,6 +1002,9 @@ export class NpcServiceMock {
         speed: Number(snapshot.speed) || 0,
         active: snapshot.active !== false,
         lawRadius: Number(snapshot.lawRadius) || 0,
+        responseCar: snapshot.responseCar === true,
+        responseOwnerSessionId: snapshot.responseOwnerSessionId || '',
+        responseUnitKind: snapshot.responseUnitKind || '',
         currentNodeIndex: Math.floor(Number(snapshot.currentNodeIndex) || 0),
         targetNodeIndex: Math.floor(Number(snapshot.targetNodeIndex) || 0),
         seq: Math.max(0, Math.floor(Number(snapshot.seq) || 0))
