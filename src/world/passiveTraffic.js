@@ -7,6 +7,13 @@ export const PASSIVE_TRAFFIC_CAR_ITEM_IDS = Object.freeze([
   'car_sedan',
   'car_stationwagon',
   'car_taxi',
+  'car_police',
+  'police_tank'
+]);
+export const PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS = Object.freeze([
+  'car_sedan',
+  'car_stationwagon',
+  'car_taxi',
   'car_police'
 ]);
 
@@ -26,6 +33,7 @@ export const PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS = 0.48;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS = 0.95;
 export const PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR = 0.38;
 export const PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID = 'car_police';
+export const PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID = 'police_tank';
 export const PASSIVE_TRAFFIC_POLICE_CAR_RESPAWN_SECONDS = 10;
 export const PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH = 5.6;
 export const PASSIVE_TRAFFIC_DRIVE_COMMANDS = Object.freeze({

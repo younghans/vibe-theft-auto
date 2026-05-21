@@ -2073,6 +2073,12 @@ export class Game {
       deaths: 0,
       armed: false
     };
+    this.wantedHudState = {
+      stars: 0,
+      evading: false,
+      evasionStartedAt: 0,
+      evasionEndsAt: 0
+    };
     this.mobileControlsHudState = {
       visible: true,
       armed: false,
@@ -19345,6 +19351,12 @@ export class Game {
     combatHudState.deaths = localPlayerState.deaths ?? 0;
     combatHudState.armed = Boolean(localPlayerState.equippedWeaponId && !this.getSelectedHotbarDrinkItemId() && !this.getSelectedHotbarConsumableItemId());
     this.hud.setCombatState(combatHudState);
+    const wantedHudState = this.wantedHudState;
+    wantedHudState.stars = localPlayerState.wantedStars ?? 0;
+    wantedHudState.evading = localPlayerState.wantedEvading === true;
+    wantedHudState.evasionStartedAt = localPlayerState.wantedEvasionStartedAt ?? 0;
+    wantedHudState.evasionEndsAt = localPlayerState.wantedEvasionEndsAt ?? 0;
+    this.hud.setWantedState(wantedHudState);
     this.syncTaskHud(localPlayerState);
     this.syncSkillProgress(localPlayerState);
     if (this.phoneMenuVisible) {
@@ -20054,6 +20066,11 @@ export class Game {
           this.worldBuilder?.triggerNpcDamageFeedback(event.victimId);
         } else if (event.victimId === this.npcServiceState.sessionId) {
           this.hud.showToast('You are down.');
+        }
+        break;
+      case 'wanted-evaded':
+        if (event.playerId === this.npcServiceState.sessionId) {
+          this.hud.showToast('Successfully evaded.');
         }
         break;
       case 'respawn':

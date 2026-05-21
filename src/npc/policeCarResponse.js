@@ -14,7 +14,8 @@ import {
 } from '../shared/numberMath.js';
 import {
   PASSIVE_TRAFFIC_HITBOX_HALF_WIDTH,
-  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID
+  PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID
 } from '../world/passiveTraffic.js';
 
 export const POLICE_CAR_RESPONSE_NPC_PREFIX = 'npc_police_car_response_';
@@ -39,7 +40,7 @@ export function createPoliceCarResponseNpcId(carId = '', side = 'driver', sequen
 }
 
 export function getPoliceCarResponseOfficerSpawnSpecs(car = null) {
-  if (!car || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID) {
+  if (!car || (car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID && car.itemId !== PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID)) {
     return [];
   }
 

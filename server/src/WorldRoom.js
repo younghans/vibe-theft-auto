@@ -233,6 +233,8 @@ import {
   NPC_DEFAULT_LAW_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
+  getNpcLawRadius,
+  isPoliceOfficerNpc,
   normalizeNpcBehavior,
   shouldResetNpcRuntimeForBehaviorUpdate
 } from '../../src/npc/npcBehavior.js';
@@ -255,8 +257,19 @@ import { WorldState } from '../../src/world/WorldState.js';
 import { PassiveTrafficSimulation } from '../../src/world/passiveTrafficSimulation.js';
 import {
   PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+  PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID,
   rayPassiveTrafficHitboxIntersectionDistance
 } from '../../src/world/passiveTraffic.js';
+import {
+  WANTED_CRIME_REASONS,
+  WANTED_EVASION_MS,
+  WANTED_RESPONSE_POLICE_CAR_SPEED_MULTIPLIER,
+  WANTED_RESPONSE_TANK_SPEED_MULTIPLIER,
+  getWantedResponseUnitCounts,
+  getWantedStarsForCrimeReason,
+  getWantedStarsForPoliceKills,
+  normalizeWantedStars
+} from '../../src/shared/wantedSystem.js';
 import {
   POLICE_CAR_RESPONSE_DEAD_DESPAWN_MS,
   createPoliceCarResponseNpcDefinition,
@@ -452,6 +465,15 @@ const PlayerSkillState = schema({
   skillAwardAt: 'number'
 });
 
+const PlayerWantedState = schema({
+  wantedStars: 'number',
+  wantedPoliceKills: 'number',
+  wantedSeq: 'number',
+  wantedEvasionStartedAt: 'number',
+  wantedEvasionEndsAt: 'number',
+  wantedEvading: 'boolean'
+});
+
 const PlayerProfileState = schema({
   selectedMissionId: 'string',
   characterId: 'string'
@@ -470,6 +492,7 @@ const PlayerState = schema({
   deliveryQuest: PlayerDeliveryQuestState,
   activity: PlayerActivityState,
   skills: PlayerSkillState,
+  wanted: PlayerWantedState,
   profile: PlayerProfileState
 });
 
@@ -576,6 +599,18 @@ const PLAYER_STATE_SECTIONS = [
       'skillAwardOldLevel',
       'skillAwardNewLevel',
       'skillAwardAt'
+    ]
+  },
+  {
+    section: 'wanted',
+    type: PlayerWantedState,
+    fields: [
+      'wantedStars',
+      'wantedPoliceKills',
+      'wantedSeq',
+      'wantedEvasionStartedAt',
+      'wantedEvasionEndsAt',
+      'wantedEvading'
     ]
   },
   {
@@ -1079,6 +1114,8 @@ export class WorldRoom extends Room {
     this.npcRuntimeMeta = new Map();
     this.policeCarResponseNpcs = new Map();
     this.policeCarResponseSequence = 0;
+    this.wantedResponseUnits = new Map();
+    this.wantedResponseSequence = 0;
     this.transcripts = new Map();
     this.playerAliases = new Map();
     this.cooldowns = new Map();
@@ -1540,6 +1577,12 @@ export class WorldRoom extends Room {
     player.skillAwardOldLevel = 1;
     player.skillAwardNewLevel = 1;
     player.skillAwardAt = 0;
+    player.wantedStars = 0;
+    player.wantedPoliceKills = 0;
+    player.wantedSeq = 0;
+    player.wantedEvasionStartedAt = 0;
+    player.wantedEvasionEndsAt = 0;
+    player.wantedEvading = false;
     player.selectedMissionId = resolveSelectedMissionId(player, player.selectedMissionId, this.worldState.getMissionSequence());
     player.characterId = DEFAULT_PLAYABLE_CHARACTER_ID;
     player.isAdmin = isAdmin;
@@ -1668,6 +1711,7 @@ export class WorldRoom extends Room {
   removePlayerSession(sessionId = '') {
     const playerSnapshotId = this.getPlayerSnapshotId(sessionId);
     const saveTarget = this.getPlayerSaveTarget(sessionId);
+    this.resetWantedForPlayer(sessionId, 'player-left');
     this.state.players.delete(sessionId);
     this.state.builders.delete(sessionId);
     this.playerAliases.delete(sessionId);
@@ -3483,8 +3527,9 @@ export class WorldRoom extends Room {
     const now = Date.now();
     const deltaSeconds = Math.max(0, Math.min(0.25, (now - this.lastPassiveTrafficSimulationAt) / 1000));
     this.lastPassiveTrafficSimulationAt = now;
-    const snapshots = this.passiveTrafficSimulation.update(deltaSeconds);
-    this.publishPassiveTrafficSnapshots(snapshots);
+    this.passiveTrafficSimulation.update(deltaSeconds);
+    this.processWantedResponseCarArrivals(now);
+    this.publishPassiveTrafficSnapshots(this.passiveTrafficSimulation.getSnapshots());
   }
 
   publishPassiveTrafficSnapshots(snapshots = []) {
@@ -3633,7 +3678,7 @@ export class WorldRoom extends Room {
     return npc;
   }
 
-  spawnPoliceCarResponseOfficers(carSnapshot, shooterSessionId = '', now = Date.now()) {
+  spawnPoliceCarResponseOfficers(carSnapshot, shooterSessionId = '', now = Date.now(), options = {}) {
     const stationPlacementId = this.findNearestPoliceStationPlacementId(carSnapshot);
     if (!stationPlacementId) {
       return 0;
@@ -3661,8 +3706,12 @@ export class WorldRoom extends Room {
         carId: carSnapshot.id,
         definition,
         stationPlacementId,
+        wantedResponseUnitId: options.unitId ?? '',
         deadDespawnAt: 0
       });
+      if (Array.isArray(options.spawnedNpcIds)) {
+        options.spawnedNpcIds.push(npcId);
+      }
       const placement = createPoliceCarResponseNpcPlacement(definition, npc);
       if (placement) {
         this.broadcast('world:patch', {
@@ -3721,6 +3770,375 @@ export class WorldRoom extends Room {
           changed = this.removePoliceCarResponseNpc(npcId) || changed;
         }
       }
+    }
+    return changed;
+  }
+
+  bumpWantedSeq(player) {
+    if (!player) {
+      return;
+    }
+    player.wantedSeq = Math.max(0, Math.floor(Number(player.wantedSeq ?? 0) || 0)) + 1;
+  }
+
+  setPlayerWantedStars(sessionId = '', player = this.state.players.get(sessionId), stars = 0, {
+    resetPoliceKills = false,
+    clearEvasion = true
+  } = {}) {
+    if (!player) {
+      return false;
+    }
+
+    const nextStars = normalizeWantedStars(stars);
+    const previousStars = normalizeWantedStars(player.wantedStars);
+    let changed = false;
+    if (previousStars !== nextStars) {
+      player.wantedStars = nextStars;
+      changed = true;
+    }
+    if (resetPoliceKills && player.wantedPoliceKills !== 0) {
+      player.wantedPoliceKills = 0;
+      changed = true;
+    }
+    if (clearEvasion && (
+      player.wantedEvading
+      || player.wantedEvasionStartedAt
+      || player.wantedEvasionEndsAt
+    )) {
+      player.wantedEvading = false;
+      player.wantedEvasionStartedAt = 0;
+      player.wantedEvasionEndsAt = 0;
+      changed = true;
+    }
+
+    if (changed) {
+      this.bumpWantedSeq(player);
+      this.queuePlayerSnapshotSave(sessionId);
+    }
+    return changed;
+  }
+
+  getNearestPoliceStationGaragePosition(position = null) {
+    let nearest = null;
+    let nearestDistanceSq = Number.POSITIVE_INFINITY;
+    this.worldState.forEachPlacement((placement) => {
+      const item = getBuilderItemById(placement?.itemId);
+      if (!placement || item?.id !== 'police_station_building') {
+        return;
+      }
+
+      const approach = getPlacementApproachPoint(placement, item) ?? getPlacementWorldOrigin(placement, item);
+      if (!approach) {
+        return;
+      }
+
+      const distanceSq = position
+        ? distanceSquared2D(position.x, position.z, approach.x, approach.z)
+        : 0;
+      if (distanceSq < nearestDistanceSq) {
+        nearestDistanceSq = distanceSq;
+        nearest = {
+          placementId: placement.id,
+          position: approach
+        };
+      }
+    });
+    return nearest;
+  }
+
+  createWantedResponseUnit(playerId = '', kind = 'police-car', now = Date.now()) {
+    const player = this.state.players.get(playerId);
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    const station = this.getNearestPoliceStationGaragePosition(player);
+    if (!station?.position) {
+      return false;
+    }
+
+    const sequence = ++this.wantedResponseSequence;
+    const unitId = `wanted_response_${sequence}`;
+    const isTank = kind === 'tank';
+    const itemId = isTank ? PASSIVE_TRAFFIC_POLICE_TANK_ITEM_ID : PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID;
+    const carId = `${unitId}_${isTank ? 'tank' : 'car'}`;
+    const carSnapshot = this.passiveTrafficSimulation.createWantedResponseCar({
+      id: carId,
+      itemId,
+      ownerSessionId: playerId,
+      unitId,
+      unitKind: kind,
+      sourcePosition: station.position,
+      targetPosition: { x: player.x, z: player.z },
+      carIndex: 1000 + sequence,
+      speedMultiplier: isTank
+        ? WANTED_RESPONSE_TANK_SPEED_MULTIPLIER
+        : WANTED_RESPONSE_POLICE_CAR_SPEED_MULTIPLIER
+    });
+    if (!carSnapshot) {
+      return false;
+    }
+
+    this.wantedResponseUnits.set(unitId, {
+      unitId,
+      ownerSessionId: playerId,
+      kind,
+      carId,
+      officerIds: [],
+      stationPlacementId: station.placementId,
+      delivered: false,
+      dismissed: false,
+      createdAt: now
+    });
+    return true;
+  }
+
+  getWantedUnitActive(unit) {
+    if (!unit) {
+      return false;
+    }
+
+    if (unit.carId && this.passiveTrafficSimulation.getCarById(unit.carId)) {
+      return true;
+    }
+
+    for (const npcId of unit.officerIds ?? []) {
+      if (this.state.npcs.has(npcId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  pruneWantedResponseUnits() {
+    let changed = false;
+    for (const [unitId, unit] of [...this.wantedResponseUnits]) {
+      if (this.getWantedUnitActive(unit)) {
+        continue;
+      }
+      this.wantedResponseUnits.delete(unitId);
+      changed = true;
+    }
+    return changed;
+  }
+
+  countWantedResponseUnits(playerId = '', kind = 'police-car') {
+    let count = 0;
+    for (const unit of this.wantedResponseUnits.values()) {
+      if (unit.ownerSessionId !== playerId || unit.kind !== kind || unit.dismissed) {
+        continue;
+      }
+      if (this.getWantedUnitActive(unit)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  syncWantedResponseUnitsForPlayer(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    const desired = getWantedResponseUnitCounts(player.wantedStars);
+    let changed = false;
+    while (this.countWantedResponseUnits(playerId, 'police-car') < desired.policeCars) {
+      if (!this.createWantedResponseUnit(playerId, 'police-car', now)) {
+        break;
+      }
+      changed = true;
+    }
+    while (this.countWantedResponseUnits(playerId, 'tank') < desired.tanks) {
+      if (!this.createWantedResponseUnit(playerId, 'tank', now)) {
+        break;
+      }
+      changed = true;
+    }
+    return changed;
+  }
+
+  dismissWantedResponseUnitsForPlayer(playerId = '') {
+    let changed = this.passiveTrafficSimulation.sinkWantedResponseCarsForOwner(playerId);
+    for (const unit of this.wantedResponseUnits.values()) {
+      if (unit.ownerSessionId !== playerId) {
+        continue;
+      }
+      unit.dismissed = true;
+      for (const npcId of unit.officerIds ?? []) {
+        const npc = this.state.npcs.get(npcId);
+        if (!npc || npc.alive === false || npc.mode === NPC_RUNTIME_MODES.hidden || npc.mode === NPC_RUNTIME_MODES.dead) {
+          continue;
+        }
+        this.resetNpcRuntimeState(npcId, { restartFromSpawn: false, reason: 'wanted-dismissed' });
+        this.syncNpcDerivedState?.(npc);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  processWantedResponseCarArrivals(now = Date.now()) {
+    let changed = false;
+    for (const arrived of this.passiveTrafficSimulation.collectArrivedWantedResponseCars()) {
+      const unit = this.wantedResponseUnits.get(arrived.unitId);
+      if (!unit) {
+        this.passiveTrafficSimulation.sinkWantedResponseCar(arrived.id);
+        changed = true;
+        continue;
+      }
+
+      if (
+        unit.kind !== 'tank'
+        && !unit.dismissed
+        && normalizeWantedStars(this.state.players.get(unit.ownerSessionId)?.wantedStars) >= 3
+      ) {
+        const officerIds = [];
+        this.spawnPoliceCarResponseOfficers(arrived, unit.ownerSessionId, now, {
+          unitId: unit.unitId,
+          spawnedNpcIds: officerIds
+        });
+        unit.officerIds = officerIds;
+        unit.delivered = true;
+      }
+      this.passiveTrafficSimulation.sinkWantedResponseCar(arrived.id);
+      changed = true;
+    }
+    return changed;
+  }
+
+  isPlayerInsideAnyPoliceLawRadius(player) {
+    if (!player || player.alive === false) {
+      return false;
+    }
+
+    for (const [npcId, npc] of this.state.npcs.entries()) {
+      const definition = this.getNpcDefinition(npcId);
+      if (
+        !npc
+        || !definition
+        || !isPoliceOfficerNpc(definition)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const lawRadius = getNpcLawRadius(definition);
+      if (distanceSquared2D(npc.x, npc.z, player.x, player.z) <= lawRadius * lawRadius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  evadeWantedPlayer(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
+    if (!player || normalizeWantedStars(player.wantedStars) <= 0) {
+      return false;
+    }
+
+    this.setPlayerWantedStars(playerId, player, 0, {
+      resetPoliceKills: true,
+      clearEvasion: true
+    });
+    this.clearNpcHostilityForPlayer(playerId, { reason: 'wanted-evaded' });
+    this.dismissWantedResponseUnitsForPlayer(playerId);
+    this.broadcastCombatEvent({
+      type: 'wanted-evaded',
+      playerId,
+      x: player.x,
+      z: player.z,
+      evadedAt: now
+    });
+    return true;
+  }
+
+  resetWantedForPlayer(playerId = '', reason = 'reset') {
+    const player = this.state.players.get(playerId);
+    if (!player) {
+      return false;
+    }
+
+    const hadWanted = normalizeWantedStars(player.wantedStars) > 0
+      || player.wantedPoliceKills > 0
+      || player.wantedEvading;
+    this.setPlayerWantedStars(playerId, player, 0, {
+      resetPoliceKills: true,
+      clearEvasion: true
+    });
+    this.dismissWantedResponseUnitsForPlayer(playerId);
+    if (hadWanted) {
+      this.clearNpcHostilityForPlayer(playerId, { reason });
+    }
+    return hadWanted;
+  }
+
+  updateWantedEvasion(playerId = '', player = this.state.players.get(playerId), now = Date.now()) {
+    if (!player || normalizeWantedStars(player.wantedStars) <= 0 || player.alive === false) {
+      return false;
+    }
+
+    if (this.isPlayerInsideAnyPoliceLawRadius(player)) {
+      if (!player.wantedEvading && !player.wantedEvasionStartedAt && !player.wantedEvasionEndsAt) {
+        return false;
+      }
+      player.wantedEvading = false;
+      player.wantedEvasionStartedAt = 0;
+      player.wantedEvasionEndsAt = 0;
+      this.bumpWantedSeq(player);
+      return true;
+    }
+
+    if (!player.wantedEvading) {
+      player.wantedEvading = true;
+      player.wantedEvasionStartedAt = now;
+      player.wantedEvasionEndsAt = now + WANTED_EVASION_MS;
+      this.bumpWantedSeq(player);
+      return true;
+    }
+
+    if (player.wantedEvasionEndsAt && now >= player.wantedEvasionEndsAt) {
+      return this.evadeWantedPlayer(playerId, player, now);
+    }
+
+    return false;
+  }
+
+  updateWantedSystems(now = Date.now()) {
+    let changed = this.pruneWantedResponseUnits();
+    for (const [playerId, player] of this.state.players.entries()) {
+      changed = this.updateWantedEvasion(playerId, player, now) || changed;
+      changed = this.syncWantedResponseUnitsForPlayer(playerId, player, now) || changed;
+    }
+    return changed;
+  }
+
+  recordPlayerLawViolation(playerId = '', {
+    reason = WANTED_CRIME_REASONS.hostileAction,
+    witnessed = false,
+    now = Date.now()
+  } = {}) {
+    const player = this.state.players.get(playerId);
+    if (!player || player.alive === false || !witnessed) {
+      return false;
+    }
+
+    const previousStars = normalizeWantedStars(player.wantedStars);
+    let nextStars = Math.max(previousStars, getWantedStarsForCrimeReason(reason));
+    if (reason === WANTED_CRIME_REASONS.policeKill) {
+      if (previousStars >= 3) {
+        player.wantedPoliceKills = Math.max(0, Math.floor(Number(player.wantedPoliceKills ?? 0) || 0)) + 1;
+      } else {
+        player.wantedPoliceKills = 0;
+      }
+      nextStars = Math.max(nextStars, getWantedStarsForPoliceKills(nextStars, player.wantedPoliceKills));
+    }
+
+    const changed = this.setPlayerWantedStars(playerId, player, nextStars, {
+      clearEvasion: true
+    });
+    if (changed) {
+      this.syncWantedResponseUnitsForPlayer(playerId, player, now);
     }
     return changed;
   }
@@ -4078,6 +4496,7 @@ export class WorldRoom extends Room {
     player.emoteStartedAt = Date.now();
     player.emoteSeq += 1;
     this.clearNpcHostilityForPlayer(victimId, { reason: 'player-death' });
+    this.resetWantedForPlayer(victimId, 'player-death');
     this.dropWeaponPickup(player);
     player.equippedWeaponId = '';
     player.ownedWeaponIds = '';
@@ -4088,7 +4507,7 @@ export class WorldRoom extends Room {
       const killer = this.state.players.get(killerId);
       if (killer) {
         killer.kills += 1;
-        this.triggerPoliceHostilityForPlayer(killerId, killer, 'player-kill', Date.now());
+        this.triggerPoliceHostilityForPlayer(killerId, { x: player.x, z: player.z }, 'player-kill', Date.now());
       }
     }
 
@@ -5365,9 +5784,10 @@ export class WorldRoom extends Room {
   syncNpcDerivedState(_npc) {}
 
   finalizeNpcSimulationTick(now) {
-    const changed = this.cleanupPoliceCarResponseNpcs(now);
+    const cleanupChanged = this.cleanupPoliceCarResponseNpcs(now);
+    const wantedChanged = this.updateWantedSystems(now);
     this.broadcastNpcDebugSnapshot(now);
-    return changed;
+    return cleanupChanged || wantedChanged;
   }
 
   emitNpcCombatEvent(event) {

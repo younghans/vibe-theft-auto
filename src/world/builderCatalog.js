@@ -53,6 +53,7 @@ import {
   createOfficeManagerShiftCoffeeStationVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
+  createPoliceTankVisual,
   createRealEstateOfficeBuildingVisual,
   createSidewalkPropVisual,
   createStandingDeskComputerVisual,
@@ -72,6 +73,7 @@ import {
   OFFICE_MANAGER_SHIFT_COFFEE_STATION_FOOTPRINT,
   OLYMPIC_BARBELL_FOOTPRINT,
   PISTOL_PICKUP_SPAWN_FOOTPRINT,
+  POLICE_TANK_FOOTPRINT,
   REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT,
   SIDEWALK_PROP_FOOTPRINT,
   STANDING_DESK_COMPUTER_FOOTPRINT,
@@ -704,6 +706,16 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
   { assetName: 'trash_B', group: 'storage' },
   { id: 'car_hatchback', assetName: 'car_hatchback', group: 'vehicles' },
   { id: 'car_police', assetName: 'car_police', group: 'vehicles' },
+  {
+    id: 'police_tank',
+    assetName: 'police_tank',
+    aliases: ['tank', 'police tank', 'armored police tank'],
+    label: 'Police Tank',
+    asset: null,
+    group: 'vehicles',
+    size: POLICE_TANK_FOOTPRINT,
+    createVisual: createPoliceTankVisual
+  },
   {
     id: 'car_original_low_poly_police_vehicle',
     assetName: 'car_original_low_poly_police_vehicle',

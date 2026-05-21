@@ -101,6 +101,7 @@ function clonePlayerState(player) {
   const activity = player?.activity ?? player ?? {};
   const skills = player?.skills ?? player ?? {};
   const profile = player?.profile ?? player ?? {};
+  const wanted = player?.wanted ?? player ?? {};
 
   return {
     x: transform.x ?? player?.x ?? 0,
@@ -131,6 +132,12 @@ function clonePlayerState(player) {
     reloadEndsAt: combat.reloadEndsAt ?? player?.reloadEndsAt ?? 0,
     kills: combat.kills ?? player?.kills ?? 0,
     deaths: combat.deaths ?? player?.deaths ?? 0,
+    wantedStars: wanted.wantedStars ?? player?.wantedStars ?? 0,
+    wantedPoliceKills: wanted.wantedPoliceKills ?? player?.wantedPoliceKills ?? 0,
+    wantedSeq: wanted.wantedSeq ?? player?.wantedSeq ?? 0,
+    wantedEvasionStartedAt: wanted.wantedEvasionStartedAt ?? player?.wantedEvasionStartedAt ?? 0,
+    wantedEvasionEndsAt: wanted.wantedEvasionEndsAt ?? player?.wantedEvasionEndsAt ?? 0,
+    wantedEvading: Boolean(wanted.wantedEvading ?? player?.wantedEvading),
     money: inventory.money ?? player?.money ?? 0,
     beerCount: inventory.beerCount ?? player?.beerCount ?? 0,
     shotCount: inventory.shotCount ?? player?.shotCount ?? 0,

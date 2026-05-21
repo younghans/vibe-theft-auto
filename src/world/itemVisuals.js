@@ -24,6 +24,7 @@ import {
   createOfficeManagerShiftCoffeeStationVisual,
   createPawnShopBuildingVisual,
   createPistolPickupSpawnVisual,
+  createPoliceTankVisual,
   createRealEstateOfficeBuildingVisual,
   createSidewalkPropVisual,
   createStandingDeskComputerVisual,
@@ -116,6 +117,8 @@ export async function instantiateItemVisual(library, item) {
   } else if (item?.id === COMBAT_PICKUP_PROP_ITEM_IDS.pistol || item?.assetName === COMBAT_PICKUP_PROP_ITEM_IDS.pistol) {
     // Procedural props can lose function fields when copied through plain-object workflows.
     primaryObject = createPistolPickupSpawnVisual();
+  } else if (item?.id === 'police_tank' || item?.assetName === 'police_tank') {
+    primaryObject = createPoliceTankVisual();
   } else if (typeof item?.asset === 'string' && item.asset) {
     primaryObject = await library.instantiate(item.asset);
   } else {

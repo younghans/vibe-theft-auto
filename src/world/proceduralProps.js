@@ -41,6 +41,7 @@ export const PISTOL_PICKUP_SPAWN_FOOTPRINT = Object.freeze([2.8, 2.8]);
 export const SIDEWALK_PROP_FOOTPRINT = Object.freeze([7.2, 3.0]);
 export const STONE_PATH_PROP_FOOTPRINT = Object.freeze([6.4, 3.2]);
 export const DIRT_PATH_PROP_FOOTPRINT = Object.freeze([6.4, 3.2]);
+export const POLICE_TANK_FOOTPRINT = Object.freeze([7.4, 9.6]);
 export const MARTHAS_GRILLE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 export const REAL_ESTATE_OFFICE_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82, BUILDER_TILE_SIZE * 0.82]);
 export const CAR_DEALERSHIP_BUILDING_FOOTPRINT = Object.freeze([BUILDER_TILE_SIZE * 0.82 * 2, BUILDER_TILE_SIZE * 0.82 * 2]);
@@ -281,6 +282,36 @@ export function createDirtPathPropVisual() {
   const dirtMaterial = createFlatGroundMaterial(0xd9bd73, 0.98, 0.0, -1);
 
   root.add(createGroundPlane('dirtPathSurface', width, depth, 0, 0, dirtMaterial));
+  return root;
+}
+
+export function createPoliceTankVisual() {
+  const root = new THREE.Group();
+  root.name = 'PoliceTank';
+
+  const hullMaterial = createMaterial(0x202a31, 0.62, 0.18);
+  const sideMaterial = createMaterial(0x11181d, 0.72, 0.2);
+  const armorMaterial = createMaterial(0x33424a, 0.58, 0.22);
+  const trimMaterial = createMaterial(0xd8edf4, 0.45, 0.18);
+  const glassMaterial = createMaterial(0x6db1c6, 0.34, 0.08);
+  const redMaterial = createMaterial(0xe44d4d, 0.42, 0.1);
+  const blueMaterial = createMaterial(0x3c86ff, 0.42, 0.1);
+
+  root.add(createBox('police_tank_left_tread', [2.0, 0.9, 7.8], [-2.25, 0.55, 0], sideMaterial));
+  root.add(createBox('police_tank_right_tread', [2.0, 0.9, 7.8], [2.25, 0.55, 0], sideMaterial));
+  root.add(createBox('police_tank_hull', [5.7, 1.35, 7.0], [0, 1.25, -0.1], hullMaterial));
+  root.add(createBox('police_tank_front_armor', [4.8, 0.9, 1.35], [0, 1.55, 3.52], armorMaterial, {
+    rotation: [-0.22, 0, 0]
+  }));
+  root.add(createBox('police_tank_turret', [3.4, 1.1, 2.8], [0, 2.32, -0.45], armorMaterial));
+  root.add(createBox('police_tank_barrel', [0.48, 0.48, 4.4], [0, 2.32, 2.75], armorMaterial));
+  root.add(createBox('police_tank_windshield', [1.55, 0.42, 0.08], [0, 2.14, 1.02], glassMaterial));
+  root.add(createBox('police_tank_light_red', [0.62, 0.18, 0.28], [-0.48, 2.94, 0.78], redMaterial));
+  root.add(createBox('police_tank_light_blue', [0.62, 0.18, 0.28], [0.48, 2.94, 0.78], blueMaterial));
+  root.add(createBox('police_tank_left_door_mark', [0.08, 0.62, 1.7], [-2.9, 1.48, 0.1], trimMaterial));
+  root.add(createBox('police_tank_right_door_mark', [0.08, 0.62, 1.7], [2.9, 1.48, 0.1], trimMaterial));
+  root.add(createBox('police_tank_roof_mark', [1.9, 0.08, 0.72], [0, 2.92, -0.72], trimMaterial));
+
   return root;
 }
 

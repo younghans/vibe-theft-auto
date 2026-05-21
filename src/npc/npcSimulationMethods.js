@@ -882,6 +882,7 @@ export const npcSimulationMethods = {
     const changed = npc.rotationY !== nextRotationY;
     npc.rotationY = nextRotationY;
     npc.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(npc.rotationY);
+
     return changed;
   },
 
@@ -1316,6 +1317,13 @@ export const npcSimulationMethods = {
       changed = true;
     }
 
+    this.recordPlayerLawViolation?.(playerId, {
+      reason,
+      sourcePosition: { x: sourceX, z: sourceZ },
+      witnessed: changed,
+      now
+    });
+
     return changed;
   },
 
@@ -1453,7 +1461,21 @@ export const npcSimulationMethods = {
     this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead, { lastAttackerId: killerId });
     this.syncNpcDerivedState?.(npc);
     if (killerId && this.state.players.has(killerId)) {
-      this.triggerPoliceHostilityForPlayer(killerId, this.state.players.get(killerId), 'npc-kill', now);
+      const deathReason = isPoliceOfficerNpc(definition) ? 'police-kill' : 'npc-kill';
+      const witnessedByOtherOfficer = this.triggerPoliceHostilityForPlayer(
+        killerId,
+        { x: npc.x, z: npc.z },
+        deathReason,
+        now
+      );
+      if (deathReason === 'police-kill' && !witnessedByOtherOfficer) {
+        this.recordPlayerLawViolation?.(killerId, {
+          reason: deathReason,
+          sourcePosition: { x: npc.x, z: npc.z },
+          witnessed: true,
+          now
+        });
+      }
     }
     this.emitNpcCombatEvent?.({
       type: 'death',

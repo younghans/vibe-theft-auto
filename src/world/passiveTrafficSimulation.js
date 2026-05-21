@@ -8,6 +8,7 @@ import {
   PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR,
   PASSIVE_TRAFFIC_CAR_COLLISION_STOP_SECONDS,
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_DRIVE_COMMANDS,
   PASSIVE_TRAFFIC_MIN_ROAD_NODES,
   PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
@@ -48,6 +49,8 @@ const PASSIVE_TRAFFIC_POSITION_EPSILON = 0.08;
 const PASSIVE_TRAFFIC_STUCK_SECONDS = 1.15;
 const PASSIVE_TRAFFIC_STUCK_DISTANCE = 0.018;
 const PASSIVE_TRAFFIC_REVERSE_SPEED_FACTOR = 0.48;
+const WANTED_RESPONSE_ROUTE_ID = 'wanted_response';
+const WANTED_RESPONSE_CAR_SINK_SECONDS = 2.4;
 
 function normalizeAngleRadians(angle) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -110,7 +113,7 @@ export function createPassiveTrafficCarSpecs(routes = []) {
   const assignedRouteIds = new Set();
   const specs = [];
 
-  for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
+  for (const itemId of PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS) {
     const route = normalizedRoutes.find((entry) => entry.itemId === itemId && !assignedRouteIds.has(entry.id)) ?? null;
     if (route) {
       assignedRouteIds.add(route.id);
@@ -123,7 +126,7 @@ export function createPassiveTrafficCarSpecs(routes = []) {
   }
 
   for (const route of normalizedRoutes) {
-    if (assignedRouteIds.has(route.id) || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(route.itemId)) {
+    if (assignedRouteIds.has(route.id) || !PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.includes(route.itemId)) {
       continue;
     }
     assignedRouteIds.add(route.id);
@@ -239,7 +242,7 @@ export class PassiveTrafficSimulation {
     const activeComponents = graph.activeComponents?.length ? graph.activeComponents : [activeNodeIndices];
     const startComponent = activeComponents[carIndex % activeComponents.length] ?? activeNodeIndices;
     const componentCarSlot = Math.floor(carIndex / Math.max(1, activeComponents.length));
-    const componentCarCount = Math.max(1, Math.ceil(PASSIVE_TRAFFIC_CAR_ITEM_IDS.length / Math.max(1, activeComponents.length)));
+    const componentCarCount = Math.max(1, Math.ceil(PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length / Math.max(1, activeComponents.length)));
     const startOffset = (componentCarSlot + 0.18) / componentCarCount;
     const startIndex = customRouteNodeIndices[0]
       ?? startComponent[Math.floor(startOffset * startComponent.length) % startComponent.length];
@@ -319,6 +322,200 @@ export class PassiveTrafficSimulation {
     return Boolean(car && (car.disabledUntilSeconds ?? 0) > this.elapsedSeconds);
   }
 
+  isCarSinking(carOrId = null) {
+    const car = typeof carOrId === 'string'
+      ? this.getCarById(carOrId)
+      : carOrId;
+    return Boolean(car && (car.responseSinkUntilSeconds ?? 0) > this.elapsedSeconds);
+  }
+
+  findNearestRoadNodeIndex(position = null, preferredComponentIndex = null) {
+    const graph = this.graph;
+    const activeNodeIndices = graph?.activeNodeIndices ?? [];
+    if (!position || activeNodeIndices.length < PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
+      return null;
+    }
+
+    const sourceX = Number(position.x);
+    const sourceZ = Number(position.z);
+    if (!Number.isFinite(sourceX) || !Number.isFinite(sourceZ)) {
+      return null;
+    }
+
+    let nearestIndex = null;
+    let nearestDistanceSq = Number.POSITIVE_INFINITY;
+    for (const nodeIndex of activeNodeIndices) {
+      const node = graph.nodes?.[nodeIndex];
+      if (!node || (preferredComponentIndex !== null && node.componentIndex !== preferredComponentIndex)) {
+        continue;
+      }
+
+      const distanceSq = ((node.x - sourceX) * (node.x - sourceX)) + ((node.z - sourceZ) * (node.z - sourceZ));
+      if (distanceSq < nearestDistanceSq) {
+        nearestIndex = nodeIndex;
+        nearestDistanceSq = distanceSq;
+      }
+    }
+
+    return nearestIndex;
+  }
+
+  createWantedResponseCar({
+    id = '',
+    itemId = PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID,
+    ownerSessionId = '',
+    unitId = '',
+    unitKind = 'police-car',
+    sourcePosition = null,
+    targetPosition = null,
+    carIndex = 0,
+    speedMultiplier = 1
+  } = {}) {
+    const graph = this.graph;
+    const normalizedId = String(id || '').trim();
+    const normalizedItemId = String(itemId || PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID);
+    if (
+      !normalizedId
+      || !graph
+      || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(normalizedItemId)
+      || this.getCarById(normalizedId)
+    ) {
+      return null;
+    }
+
+    const startNodeIndex = this.findNearestRoadNodeIndex(sourcePosition);
+    if (startNodeIndex === null) {
+      return null;
+    }
+    const startNode = graph.nodes?.[startNodeIndex];
+    const targetNodeIndex = this.findNearestRoadNodeIndex(targetPosition, startNode?.componentIndex ?? null)
+      ?? this.findNearestRoadNodeIndex(targetPosition);
+    if (targetNodeIndex === null) {
+      return null;
+    }
+
+    let route = findPassiveTrafficPath(graph, startNodeIndex, targetNodeIndex);
+    if (route.length < 2) {
+      const fallbackNeighbor = graph.nodes?.[startNodeIndex]?.neighbors
+        ?.find((nodeIndex) => graph.activeNodeSet.has(nodeIndex))
+        ?? null;
+      route = fallbackNeighbor === null ? [startNodeIndex] : [startNodeIndex, fallbackNeighbor];
+    }
+
+    const car = this.createCarState(normalizedItemId, carIndex, WANTED_RESPONSE_ROUTE_ID);
+    if (!car) {
+      return null;
+    }
+
+    car.id = normalizedId;
+    car.itemId = normalizedItemId;
+    car.routeId = WANTED_RESPONSE_ROUTE_ID;
+    car.carIndex = Math.max(0, Math.floor(Number(carIndex) || 0));
+    car.currentNodeIndex = startNodeIndex;
+    car.previousNodeIndex = null;
+    car.targetNodeIndex = null;
+    car.route = route;
+    car.routeCursor = 1;
+    car.routeDestinationIndex = route[route.length - 1] ?? targetNodeIndex;
+    car.customRouteNodeIndices = [];
+    car.customRouteCursor = 0;
+    car.turnThroughNodeIndex = null;
+    car.visitedNodeIndices = new Set();
+    car.speed = PASSIVE_TRAFFIC_SPEED * Math.max(0.2, Number(speedMultiplier) || 1);
+    car.currentSpeed = 0;
+    car.turnStopSeconds = 0;
+    car.turnStopWaypointIndex = -1;
+    car.turnStopSatisfied = false;
+    car.turnWaypointActive = false;
+    car.turnWaypointIndex = 0;
+    car.turnWaypointQueue.length = 0;
+    car.turnWaypointCursor = 0;
+    car.turnStartYaw = null;
+    car.turnEndYaw = null;
+    car.stuckSeconds = 0;
+    car.collisionReverseSeconds = 0;
+    car.collisionStopSeconds = 0;
+    car.collisionCooldownSeconds = 0;
+    car.disabledStartedSeconds = 0;
+    car.disabledUntilSeconds = 0;
+    car.disabledStartY = 0;
+    car.responseCar = true;
+    car.responseOwnerSessionId = String(ownerSessionId || '');
+    car.responseUnitId = String(unitId || normalizedId);
+    car.responseUnitKind = String(unitKind || 'police-car');
+    car.responseArrived = false;
+    car.responseArrivalReported = false;
+    car.responseSinkStartedSeconds = 0;
+    car.responseSinkUntilSeconds = 0;
+    car.responseSinkStartY = 0;
+    car.responseRemove = false;
+
+    this.markNodeVisited(startNodeIndex, car);
+    if (!this.advanceTarget(car)) {
+      return null;
+    }
+
+    const currentNode = graph.nodes[startNodeIndex];
+    const nextNode = graph.nodes[car.turnThroughNodeIndex ?? car.targetNodeIndex] ?? graph.nodes[route[1]] ?? currentNode;
+    getPassiveTrafficLanePositionAtNode(currentNode, nextNode, car.position);
+    car.position.y = this.getSurfaceHeightAtPosition(car.position.x, car.position.z);
+    car.yaw = Math.atan2(
+      (nextNode?.x ?? currentNode.x) - currentNode.x,
+      (nextNode?.z ?? currentNode.z) - currentNode.z
+    );
+    car.lastPosition.copy(car.position);
+    this.cars.push(car);
+    this.sequence += 1;
+    return this.getCarSnapshot(car);
+  }
+
+  collectArrivedWantedResponseCars() {
+    const arrived = [];
+    for (const car of this.cars) {
+      if (!car?.responseCar || !car.responseArrived || car.responseArrivalReported || this.isCarSinking(car)) {
+        continue;
+      }
+      car.responseArrivalReported = true;
+      arrived.push({
+        ...this.getCarSnapshot(car),
+        ownerSessionId: car.responseOwnerSessionId || '',
+        unitId: car.responseUnitId || car.id,
+        unitKind: car.responseUnitKind || 'police-car'
+      });
+    }
+    return arrived;
+  }
+
+  sinkWantedResponseCar(carId = '') {
+    const car = this.getCarById(carId);
+    if (!car?.responseCar || car.responseRemove) {
+      return false;
+    }
+
+    car.responseSinkStartedSeconds = this.elapsedSeconds;
+    car.responseSinkUntilSeconds = this.elapsedSeconds + WANTED_RESPONSE_CAR_SINK_SECONDS;
+    car.responseSinkStartY = car.position.y;
+    car.currentSpeed = 0;
+    car.collisionReverseSeconds = 0;
+    car.collisionStopSeconds = 0;
+    car.collisionCooldownSeconds = WANTED_RESPONSE_CAR_SINK_SECONDS;
+    car.turnStopSeconds = 0;
+    this.sequence += 1;
+    return true;
+  }
+
+  sinkWantedResponseCarsForOwner(ownerSessionId = '') {
+    let changed = false;
+    const normalizedOwner = String(ownerSessionId || '');
+    for (const car of this.cars) {
+      if (!car?.responseCar || car.responseOwnerSessionId !== normalizedOwner) {
+        continue;
+      }
+      changed = this.sinkWantedResponseCar(car.id) || changed;
+    }
+    return changed;
+  }
+
   disablePoliceCar(carId = '') {
     const car = this.getCarById(carId);
     if (!car || car.itemId !== PASSIVE_TRAFFIC_POLICE_CAR_ITEM_ID || this.isCarDisabled(car)) {
@@ -371,6 +568,34 @@ export class PassiveTrafficSimulation {
     car.position.y = car.disabledStartY - (PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH * easedProgress);
     car.lastPosition.copy(car.position);
     return true;
+  }
+
+  updateWantedResponseCarLifecycle(car) {
+    if (!car?.responseCar) {
+      return false;
+    }
+
+    if ((car.responseSinkUntilSeconds ?? 0) > 0) {
+      if (this.elapsedSeconds >= car.responseSinkUntilSeconds) {
+        car.responseRemove = true;
+        return true;
+      }
+
+      const duration = Math.max(0.1, WANTED_RESPONSE_CAR_SINK_SECONDS);
+      const progress = Math.max(0, Math.min(1, (this.elapsedSeconds - car.responseSinkStartedSeconds) / duration));
+      const easedProgress = progress * progress * (3 - (2 * progress));
+      car.currentSpeed = 0;
+      car.position.y = car.responseSinkStartY - (PASSIVE_TRAFFIC_POLICE_CAR_SINK_DEPTH * easedProgress);
+      car.lastPosition.copy(car.position);
+      return true;
+    }
+
+    if (car.responseArrived) {
+      car.currentSpeed = 0;
+      return true;
+    }
+
+    return false;
   }
 
   markNodeVisited(nodeIndex, car = null) {
@@ -587,6 +812,13 @@ export class PassiveTrafficSimulation {
       return false;
     }
 
+    if (car.responseCar && car.routeCursor >= (car.route?.length ?? 0)) {
+      car.responseArrived = true;
+      car.currentSpeed = 0;
+      car.targetNodeIndex = null;
+      return false;
+    }
+
     if ((car.customRouteNodeIndices?.length ?? 0) >= PASSIVE_TRAFFIC_MIN_ROAD_NODES) {
       if (this.assignCustomRoute(car)) {
         return true;
@@ -644,6 +876,12 @@ export class PassiveTrafficSimulation {
     }
 
     if (car.routeCursor >= car.route.length) {
+      if (car.responseCar) {
+        car.responseArrived = true;
+        car.currentSpeed = 0;
+        car.targetNodeIndex = null;
+        return false;
+      }
       return this.assignRoute(car);
     }
 
@@ -917,7 +1155,7 @@ export class PassiveTrafficSimulation {
 
     for (let aIndex = 0; aIndex < this.cars.length - 1; aIndex += 1) {
       const a = this.cars[aIndex];
-      if (!a?.position || this.isCarDisabled(a)) {
+      if (!a?.position || this.isCarDisabled(a) || this.isCarSinking(a) || a.responseArrived) {
         continue;
       }
 
@@ -926,6 +1164,8 @@ export class PassiveTrafficSimulation {
         if (
           !b?.position
           || this.isCarDisabled(b)
+          || this.isCarSinking(b)
+          || b.responseArrived
           || (a.collisionCooldownSeconds ?? 0) > 0
           || (b.collisionCooldownSeconds ?? 0) > 0
         ) {
@@ -960,6 +1200,10 @@ export class PassiveTrafficSimulation {
 
     for (let carIndex = 0; carIndex < this.cars.length; carIndex += 1) {
       const car = this.cars[carIndex];
+      if (this.updateWantedResponseCarLifecycle(car)) {
+        continue;
+      }
+
       if (this.updateDisabledCar(car)) {
         continue;
       }
@@ -1098,6 +1342,9 @@ export class PassiveTrafficSimulation {
     }
 
     this.updateCarCollisions();
+    if (this.cars.some((car) => car?.responseRemove)) {
+      this.cars = this.cars.filter((car) => !car?.responseRemove);
+    }
     this.sequence += 1;
     return this.getSnapshots();
   }
@@ -1113,7 +1360,7 @@ export class PassiveTrafficSimulation {
       z: quantizePosition(car.position.z),
       rotationY: quantizeRotation(car.yaw),
       speed: quantizeNumber(car.currentSpeed, 3),
-      active: !this.isCarDisabled(car),
+      active: !this.isCarDisabled(car) && !this.isCarSinking(car),
       currentNodeIndex: Math.max(-1, Math.floor(Number(car.currentNodeIndex) || 0)),
       targetNodeIndex: car.targetNodeIndex === null || car.targetNodeIndex === undefined
         ? -1

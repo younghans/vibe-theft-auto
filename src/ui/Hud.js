@@ -22,6 +22,11 @@ import {
   VIBE_HERO_LANE_COUNT,
   VIBE_HERO_NOTE_TRAVEL_MS
 } from '../shared/vibeHero.js';
+import {
+  WANTED_EVASION_BAR_VISIBLE_MS,
+  WANTED_MAX_STARS,
+  normalizeWantedStars
+} from '../shared/wantedSystem.js';
 import { getAgentTaskPromptTitle } from '../shared/agentTaskSummary.js';
 import { NpcSpeechPlayback } from './NpcSpeechPlayback.js';
 
@@ -4588,6 +4593,11 @@ export class Hud {
     this.combatHealthTrail = this.overlay.querySelector('[data-combat-health-trail]');
     this.combatHealthFill = this.overlay.querySelector('[data-combat-health-fill]');
     this.combatHealthBurst = this.overlay.querySelector('[data-combat-health-burst]');
+    this.wantedRoot = this.overlay.querySelector('[data-wanted-root]');
+    this.wantedStars = this.overlay.querySelector('[data-wanted-stars]');
+    this.wantedEvasion = this.overlay.querySelector('[data-wanted-evasion]');
+    this.wantedEvasionFill = this.overlay.querySelector('[data-wanted-evasion-fill]');
+    this.wantedEvasionLabel = this.overlay.querySelector('[data-wanted-evasion-label]');
     this.ammoRoot = this.overlay.querySelector('[data-ammo-root]');
     this.ammoBullets = this.overlay.querySelector('[data-ammo-bullets]');
     this.ammoReserveValue = this.overlay.querySelector('[data-ammo-reserve-value]');
@@ -4855,6 +4865,7 @@ export class Hud {
     this.lastPromptText = null;
     this.lastMoneySignature = '';
     this.lastCombatSignature = '';
+    this.lastWantedSignature = '';
     this.lastDrunknessSignature = '';
     this.lastDrunknessLevel = -1;
     this.lastTaskSignature = '';
@@ -5292,6 +5303,15 @@ export class Hud {
           <div class="hud__combat-meter-trail" data-combat-health-trail></div>
           <div class="hud__combat-meter-fill" data-combat-health-fill></div>
           <div class="hud__combat-meter-burst" data-combat-health-burst></div>
+        </div>
+      </section>
+      <section class="hud__wanted" data-wanted-root aria-label="Wanted level" aria-live="polite" hidden>
+        <div class="hud__wanted-stars" data-wanted-stars></div>
+        <div class="hud__wanted-evasion" data-wanted-evasion hidden>
+          <div class="hud__wanted-evasion-track" aria-hidden="true">
+            <div class="hud__wanted-evasion-fill" data-wanted-evasion-fill></div>
+          </div>
+          <span class="hud__wanted-evasion-label" data-wanted-evasion-label>Evading</span>
         </div>
       </section>
       <section class="hud__ammo" data-ammo-root role="group" aria-label="Pistol ammo" hidden>
@@ -11756,6 +11776,69 @@ export class Hud {
     }
 
     this.respawnText.classList.remove('is-visible');
+  }
+
+  setWantedState({
+    stars = 0,
+    evading = false,
+    evasionStartedAt = 0,
+    evasionEndsAt = 0
+  } = {}) {
+    if (!this.wantedRoot || !this.wantedStars) {
+      return;
+    }
+
+    const nextStars = normalizeWantedStars(stars);
+    if (nextStars <= 0) {
+      if (this.lastWantedSignature === 'hidden') {
+        return;
+      }
+      this.lastWantedSignature = 'hidden';
+      this.lastWantedStarCount = 0;
+      this.wantedRoot.hidden = true;
+      this.overlay?.classList.remove('is-wanted-active');
+      if (this.wantedEvasion) {
+        this.wantedEvasion.hidden = true;
+      }
+      return;
+    }
+
+    const endsAt = Math.max(0, Number(evasionEndsAt) || 0);
+    const startedAt = Math.max(0, Number(evasionStartedAt) || 0);
+    const remainingMs = Math.max(0, endsAt - Date.now());
+    const showEvasion = Boolean(evading && startedAt && endsAt && remainingMs > 0 && remainingMs <= WANTED_EVASION_BAR_VISIBLE_MS);
+    const evasionSeconds = showEvasion ? Math.max(1, Math.ceil(remainingMs / 1000)) : 0;
+    const evasionPercent = showEvasion
+      ? Math.max(0, Math.min(100, Math.round((1 - (remainingMs / WANTED_EVASION_BAR_VISIBLE_MS)) * 100)))
+      : 0;
+    const signature = `${nextStars}:${showEvasion ? evasionSeconds : 0}:${evasionPercent}`;
+    if (signature === this.lastWantedSignature && this.wantedRoot.hidden === false) {
+      return;
+    }
+    this.lastWantedSignature = signature;
+
+    if (this.lastWantedStarCount !== nextStars) {
+      let markup = '';
+      for (let index = 0; index < WANTED_MAX_STARS; index += 1) {
+        markup += `<span class="hud__wanted-star${index < nextStars ? ' is-filled' : ''}" aria-hidden="true">&#9733;</span>`;
+      }
+      this.wantedStars.innerHTML = markup;
+      this.lastWantedStarCount = nextStars;
+    }
+
+    this.wantedRoot.hidden = false;
+    this.overlay?.classList.add('is-wanted-active');
+    this.wantedRoot.setAttribute('aria-label', `Wanted level: ${nextStars} ${nextStars === 1 ? 'star' : 'stars'}`);
+    this.wantedRoot.title = `Wanted level: ${nextStars}/${WANTED_MAX_STARS}`;
+    if (this.wantedEvasion) {
+      this.wantedEvasion.hidden = !showEvasion;
+    }
+    if (this.wantedEvasionFill) {
+      this.wantedEvasionFill.style.width = `${evasionPercent}%`;
+    }
+    if (this.wantedEvasionLabel) {
+      this.wantedEvasionLabel.textContent = showEvasion ? `Evading ${evasionSeconds}s` : 'Evading';
+    }
   }
 
   setHitMarkerVisible(visible) {

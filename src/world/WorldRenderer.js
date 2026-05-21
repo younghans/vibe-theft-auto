@@ -32,6 +32,7 @@ import {
 import { instantiateItemVisual, prepareItemVisual } from './itemVisuals.js';
 import {
   PASSIVE_TRAFFIC_CAR_ITEM_IDS,
+  PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_COOLDOWN_SECONDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SECONDS,
   PASSIVE_TRAFFIC_CAR_COLLISION_REVERSE_SPEED_FACTOR,
@@ -185,7 +186,7 @@ function createPassiveTrafficCarSpecs(routes = []) {
   const assignedRouteIds = new Set();
   const specs = [];
 
-  for (const itemId of PASSIVE_TRAFFIC_CAR_ITEM_IDS) {
+  for (const itemId of PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS) {
     const route = normalizedRoutes.find((entry) => entry.itemId === itemId && !assignedRouteIds.has(entry.id)) ?? null;
     if (route) {
       assignedRouteIds.add(route.id);
@@ -198,7 +199,7 @@ function createPassiveTrafficCarSpecs(routes = []) {
   }
 
   for (const route of normalizedRoutes) {
-    if (assignedRouteIds.has(route.id) || !PASSIVE_TRAFFIC_CAR_ITEM_IDS.includes(route.itemId)) {
+    if (assignedRouteIds.has(route.id) || !PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.includes(route.itemId)) {
       continue;
     }
     assignedRouteIds.add(route.id);
@@ -2385,7 +2386,7 @@ export class WorldRenderer {
     const activeComponents = graph.activeComponents?.length ? graph.activeComponents : [activeNodeIndices];
     const startComponent = activeComponents[carIndex % activeComponents.length] ?? activeNodeIndices;
     const componentCarSlot = Math.floor(carIndex / Math.max(1, activeComponents.length));
-    const componentCarCount = Math.max(1, Math.ceil(PASSIVE_TRAFFIC_CAR_ITEM_IDS.length / Math.max(1, activeComponents.length)));
+    const componentCarCount = Math.max(1, Math.ceil(PASSIVE_TRAFFIC_DEFAULT_CAR_ITEM_IDS.length / Math.max(1, activeComponents.length)));
     const startOffset = (componentCarSlot + 0.18) / componentCarCount;
     const startIndex = customRouteNodeIndices[0]
       ?? startComponent[Math.floor(startOffset * startComponent.length) % startComponent.length];
