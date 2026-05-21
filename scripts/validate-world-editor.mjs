@@ -1,5 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
-import { Box3, BoxGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, Quaternion, Scene, Vector3 } from 'three';
+import { AnimationClip, AnimationMixer, Box3, BoxGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, Quaternion, Scene, Vector3 } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { BUILDER_TILE_SIZE } from '../src/shared/worldConstants.js';
 import { PLAYER_RADIUS, WEAPON_CLIP_SIZE, WEAPON_IDS, WEAPON_RESERVE_CAP } from '../src/shared/combatConstants.js';
 import {
@@ -234,6 +236,37 @@ function assert(condition, message) {
   }
 }
 
+function getArrayBuffer(buffer) {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+function createValidationWindowMock() {
+  return {
+    URL: {
+      createObjectURL() {
+        return 'blob:mock';
+      },
+      revokeObjectURL() {}
+    }
+  };
+}
+
+function createValidationDocumentMock() {
+  return {
+    createElementNS() {
+      return {
+        setAttribute() {},
+        addEventListener() {},
+        removeEventListener() {},
+        style: {},
+        src: '',
+        width: 0,
+        height: 0
+      };
+    }
+  };
+}
+
 function readGlbJson(relativePath) {
   const buffer = readFileSync(new URL(`../${relativePath}`, import.meta.url));
   assert(buffer.toString('ascii', 0, 4) === 'glTF', `${relativePath} should be a GLB file`);
@@ -386,6 +419,175 @@ function getGlbNodeYBounds(json, node) {
     minY: translationY + (minY * scaleY),
     maxY: translationY + (maxY * scaleY)
   };
+}
+
+async function loadValidationGlbScene(relativePath) {
+  const bytes = readFileSync(new URL(`../${relativePath}`, import.meta.url));
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  const hadSelf = Object.prototype.hasOwnProperty.call(globalThis, 'self');
+  const previousSelf = globalThis.self;
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, 'window');
+  const previousWindow = globalThis.window;
+  const hadDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+  const previousDocument = globalThis.document;
+  const hadImage = Object.prototype.hasOwnProperty.call(globalThis, 'Image');
+  const previousImage = globalThis.Image;
+  globalThis.self = globalThis.self ?? globalThis;
+  globalThis.window = globalThis.window ?? createValidationWindowMock();
+  globalThis.document = globalThis.document ?? createValidationDocumentMock();
+  globalThis.Image = globalThis.Image ?? class {};
+  try {
+    const gltf = await loader.parseAsync(getArrayBuffer(bytes), '');
+    return gltf.scene;
+  } finally {
+    if (hadSelf) {
+      globalThis.self = previousSelf;
+    } else {
+      delete globalThis.self;
+    }
+    if (hadWindow) {
+      globalThis.window = previousWindow;
+    } else {
+      delete globalThis.window;
+    }
+    if (hadDocument) {
+      globalThis.document = previousDocument;
+    } else {
+      delete globalThis.document;
+    }
+    if (hadImage) {
+      globalThis.Image = previousImage;
+    } else {
+      delete globalThis.Image;
+    }
+  }
+}
+
+function readValidationAnimationClip(relativePath) {
+  return AnimationClip.parse(JSON.parse(readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8')));
+}
+
+function createValidationInPlaceClip(clip, rootBoneName = 'mixamorigHips') {
+  const rootPositionTrackName = `${rootBoneName}.position`;
+  return new AnimationClip(
+    `${clip.name}_ValidationInPlace`,
+    clip.duration,
+    clip.tracks
+      .filter((track) => track.name !== rootPositionTrackName)
+      .map((track) => track.clone())
+  );
+}
+
+function getSkinnedAttributeComponent(attribute, vertexIndex, componentIndex) {
+  switch (componentIndex) {
+    case 0:
+      return attribute.getX(vertexIndex);
+    case 1:
+      return attribute.getY(vertexIndex);
+    case 2:
+      return attribute.getZ(vertexIndex);
+    case 3:
+      return attribute.getW(vertexIndex);
+    default:
+      return 0;
+  }
+}
+
+function getDominantSkinnedBoneName(mesh, vertexIndex) {
+  const skinIndex = mesh.geometry?.getAttribute?.('skinIndex');
+  const skinWeight = mesh.geometry?.getAttribute?.('skinWeight');
+  if (!skinIndex || !skinWeight || !mesh.skeleton?.bones?.length) {
+    return '';
+  }
+
+  let dominantBoneIndex = skinIndex.getX(vertexIndex);
+  let dominantWeight = skinWeight.getX(vertexIndex);
+  for (let componentIndex = 1; componentIndex < 4; componentIndex += 1) {
+    const weight = getSkinnedAttributeComponent(skinWeight, vertexIndex, componentIndex);
+    if (weight > dominantWeight) {
+      dominantWeight = weight;
+      dominantBoneIndex = getSkinnedAttributeComponent(skinIndex, vertexIndex, componentIndex);
+    }
+  }
+
+  return mesh.skeleton.bones[dominantBoneIndex]?.name ?? '';
+}
+
+function getSkinnedPoseBounds(scene, matcher) {
+  const bounds = new Box3().makeEmpty();
+  const vertexPosition = new Vector3();
+  scene.updateMatrixWorld(true);
+  scene.traverse((node) => {
+    if (!node?.isSkinnedMesh || typeof node.applyBoneTransform !== 'function') {
+      return;
+    }
+
+    const position = node.geometry?.getAttribute?.('position');
+    if (!position) {
+      return;
+    }
+
+    for (let vertexIndex = 0; vertexIndex < position.count; vertexIndex += 1) {
+      const boneName = getDominantSkinnedBoneName(node, vertexIndex);
+      if (!matcher(node.name ?? '', boneName)) {
+        continue;
+      }
+
+      vertexPosition.fromBufferAttribute(position, vertexIndex);
+      node.applyBoneTransform(vertexIndex, vertexPosition);
+      vertexPosition.applyMatrix4(node.matrixWorld);
+      bounds.expandByPoint(vertexPosition);
+    }
+  });
+
+  return glbBoundsHasFiniteExtents(bounds) ? bounds : null;
+}
+
+async function validatePoliceOfficerStationaryArmPose() {
+  const scene = await loadValidationGlbScene('assets/runtime/mixamo/characters/policeOfficer.glb');
+  const idleClip = createValidationInPlaceClip(readValidationAnimationClip('assets/mixamo/animations/idle.json'));
+  const mixer = new AnimationMixer(scene);
+  const action = mixer.clipAction(idleClip);
+  const policeArmMeshPattern = /^PoliceOfficer_(?:uniform|uniformJoint|skin|skinLight|humanSleeves|humanHands)$/;
+  const minHandClearance = 0.045;
+  action.play();
+
+  for (const sampleTimeSeconds of [0, 2]) {
+    mixer.setTime(sampleTimeSeconds);
+    const torsoBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      meshName === 'PoliceOfficer_uniform'
+      && /^mixamorig(?:Hips|Spine|Spine1|Spine2)$/.test(boneName)
+    ));
+    const leftHandBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      /^(?:PoliceOfficer_skinLight|PoliceOfficer_humanHands)$/.test(meshName)
+      && boneName === 'mixamorigLeftHand'
+    ));
+    const rightHandBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      /^(?:PoliceOfficer_skinLight|PoliceOfficer_humanHands)$/.test(meshName)
+      && boneName === 'mixamorigRightHand'
+    ));
+    const leftLowerArmBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      policeArmMeshPattern.test(meshName)
+      && /^mixamorigLeft(?:ForeArm|Hand)$/.test(boneName)
+    ));
+    const rightLowerArmBounds = getSkinnedPoseBounds(scene, (meshName, boneName) => (
+      policeArmMeshPattern.test(meshName)
+      && /^mixamorigRight(?:ForeArm|Hand)$/.test(boneName)
+    ));
+
+    assert(torsoBounds && leftHandBounds && rightHandBounds && leftLowerArmBounds && rightLowerArmBounds, 'Police Officer idle pose validation should resolve torso, hand, and forearm bounds');
+    assert(
+      leftHandBounds.max.x > torsoBounds.max.x + minHandClearance
+        && leftLowerArmBounds.max.x > torsoBounds.max.x + minHandClearance,
+      `Police Officer idle pose at ${sampleTimeSeconds}s should keep the left arm visibly outside the torso silhouette`
+    );
+    assert(
+      rightHandBounds.min.x < torsoBounds.min.x - minHandClearance
+        && rightLowerArmBounds.min.x < torsoBounds.min.x - minHandClearance,
+      `Police Officer idle pose at ${sampleTimeSeconds}s should keep the right arm visibly outside the torso silhouette`
+    );
+  }
 }
 
 function glbBoundsHasFiniteExtents(bounds) {
@@ -5456,6 +5658,7 @@ async function main() {
   validateMissionSequencer();
   validateBartenderFunction();
   validatePlayerSchemaFieldBudget();
+  await validatePoliceOfficerStationaryArmPose();
   await validateBuildCity();
   console.log('World editor validation passed.');
 }
