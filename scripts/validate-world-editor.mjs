@@ -5084,6 +5084,7 @@ function validateBartenderFunction() {
   const serverPunchImpactSource = getCombatSourceSection(serverSource, '\n  resolvePlayerPunchImpact(', '\n  handlePlayerDeath(');
   const mockPunchRequestSource = getCombatSourceSection(mockNpcServiceSource, '\n  punch(aimDirection', '\n  resolvePlayerPunchImpact(');
   const mockPunchImpactSource = getCombatSourceSection(mockNpcServiceSource, '\n  resolvePlayerPunchImpact(', '\n  reloadWeapon()');
+  const policeContinuousSirenSource = getCombatSourceSection(gameSource, '\n  getPoliceSirenLoopBuffer()', '\n  isLocalPlayerUsingCarTransport(');
 
   const skateboardModel = createSkateboardModel({ namePrefix: 'Validation' });
   skateboardModel.updateWorldMatrix(true, true);
@@ -5304,6 +5305,15 @@ function validateBartenderFunction() {
   const policeOfficerFlatShoeBounds = getGlbNodePositionBounds(policeOfficerGlbJson, 'PoliceOfficer_boot');
   const policeOfficerFlatSoleBounds = getGlbNodePositionBounds(policeOfficerGlbJson, 'PoliceOfficer_shoeSole');
   const policeOfficerPortraitStats = statSync(new URL('../assets/mixamo/portraits/police_officer.png', import.meta.url));
+  const policeSirenLoopUrl = assets.audio?.policeSirenLoop ?? '';
+  assert(/police-siren-loop\.mp3$/u.test(policeSirenLoopUrl), 'Police siren loop audio should be registered in the asset manifest');
+  const policeSirenLoopAudio = readFileSync(new URL(policeSirenLoopUrl));
+  const policeSirenLoopHasId3Header = policeSirenLoopAudio.subarray(0, 3).toString('ascii') === 'ID3';
+  const policeSirenLoopHasFrameSync = policeSirenLoopAudio[0] === 0xff && (policeSirenLoopAudio[1] & 0xe0) === 0xe0;
+  assert(
+    policeSirenLoopAudio.length > 1024 && (policeSirenLoopHasId3Header || policeSirenLoopHasFrameSync),
+    'Police siren loop audio should be a non-empty MP3 file'
+  );
   assert(policeOfficerModel?.label === 'Police Officer', 'NPC catalog should include the Police Officer model');
   assert(policeOfficerModel?.height === 4.8, 'Police Officer should stay scaled like the other human NPC models');
   assert(policeOfficerModel?.footprint?.[0] === 4 && policeOfficerModel?.footprint?.[1] === 4, 'Police Officer should use a stocky cartoon footprint');
@@ -5509,6 +5519,15 @@ function validateBartenderFunction() {
       && /handlePoliceCarShot/.test(mockNpcServiceSource)
       && /PassiveTrafficSimulation/.test(mockNpcServiceSource),
     'Server and mock combat should turn police-car shots into temporary aggro police response NPCs'
+  );
+  assert(
+    /fetch\(audioUrl\)[\s\S]*decodeAudioData/.test(policeContinuousSirenSource)
+      && /source\.loop\s*=\s*true/.test(policeContinuousSirenSource)
+      && /source\.start\(0,\s*Math\.random\(\)/.test(policeContinuousSirenSource)
+      && /wantedStars\s*<=\s*0/.test(policeContinuousSirenSource)
+      && /this\.stopPoliceContinuousSiren\(carId\)/.test(policeContinuousSirenSource)
+      && !/createOscillator/.test(policeContinuousSirenSource),
+    'Wanted police cars should use the supplied MP3 as a seamless continuous siren loop until despawn or wanted clear'
   );
   assert(
     /lawRadiusIndicator/.test(npcActorSource)

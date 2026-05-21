@@ -1962,6 +1962,9 @@ export class Game {
     this.lastLocalWantedSirenSessionId = '';
     this.lastLocalWantedSirenStars = null;
     this.policeContinuousSirens = new Map();
+    this.policeSirenLoopBuffer = null;
+    this.policeSirenLoopBufferPromise = null;
+    this.policeSirenLoopLoadFailed = false;
     this.policeContinuousSirenScratch = new THREE.Vector3();
     this.vibeRadioTracks = createDefaultVibeRadioTracks();
     this.vibeRadioAudio = new Audio();
@@ -3027,6 +3030,41 @@ export class Game {
     this.passivePoliceCarSirenState = nextState;
   }
 
+  getPoliceSirenLoopBuffer() {
+    if (this.policeSirenLoopBuffer || this.policeSirenLoopLoadFailed) {
+      return this.policeSirenLoopBuffer;
+    }
+    if (this.policeSirenLoopBufferPromise) {
+      return null;
+    }
+
+    const context = this.getVibeHeroAudioContext();
+    const audioUrl = String(assets.audio?.policeSirenLoop ?? '').trim();
+    if (!context || !audioUrl || typeof fetch !== 'function') {
+      return null;
+    }
+
+    this.policeSirenLoopBufferPromise = fetch(audioUrl)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then((arrayBuffer) => context.decodeAudioData(arrayBuffer))
+      .then((buffer) => {
+        this.policeSirenLoopBuffer = buffer;
+        return buffer;
+      })
+      .catch((error) => {
+        this.policeSirenLoopLoadFailed = true;
+        console.warn('[Audio] Police siren loop failed to load.', error);
+        return null;
+      });
+
+    return null;
+  }
+
   createPoliceContinuousSiren(carId = '') {
     const context = this.getVibeHeroAudioContext();
     if (!context) {
@@ -3038,38 +3076,25 @@ export class Game {
       void resumePromise.catch(() => {});
     }
 
-    const oscillator = context.createOscillator();
-    const upperOscillator = context.createOscillator();
-    const upperGain = context.createGain();
-    const filter = context.createBiquadFilter();
-    const gain = context.createGain();
+    const buffer = this.policeSirenLoopBuffer ?? this.getPoliceSirenLoopBuffer();
+    if (!buffer) {
+      return null;
+    }
 
-    oscillator.type = 'sawtooth';
-    upperOscillator.type = 'square';
-    oscillator.frequency.setValueAtTime(520, context.currentTime);
-    upperOscillator.frequency.setValueAtTime(790, context.currentTime);
-    upperGain.gain.setValueAtTime(0.12, context.currentTime);
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(960, context.currentTime);
-    filter.Q.setValueAtTime(2.5, context.currentTime);
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.loop = true;
     gain.gain.setValueAtTime(POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN, context.currentTime);
 
-    oscillator.connect(filter);
-    upperOscillator.connect(upperGain);
-    upperGain.connect(filter);
-    filter.connect(gain);
+    source.connect(gain);
     gain.connect(context.destination);
-    oscillator.start();
-    upperOscillator.start();
+    source.start(0, Math.random() * Math.max(0.01, buffer.duration || 0.01));
 
     return {
       carId,
-      oscillator,
-      upperOscillator,
-      upperGain,
-      filter,
-      gain,
-      phaseOffset: Math.random() * Math.PI * 2
+      source,
+      gain
     };
   }
 
@@ -3089,15 +3114,13 @@ export class Game {
       // Ignore stale audio params.
     }
     const stopAt = now + 0.22;
-    for (const node of [siren.oscillator, siren.upperOscillator]) {
-      try {
-        node.stop(stopAt);
-      } catch {
-        // Already stopped.
-      }
+    try {
+      siren.source.stop(stopAt);
+    } catch {
+      // Already stopped.
     }
     const disconnect = () => {
-      for (const node of [siren.oscillator, siren.upperOscillator, siren.upperGain, siren.filter, siren.gain]) {
+      for (const node of [siren.source, siren.gain]) {
         try {
           node.disconnect();
         } catch {
@@ -3120,8 +3143,13 @@ export class Game {
       && car.serverActive !== false
       && car.object?.parent
     ));
+    const wantedStars = THREE.MathUtils.clamp(
+      Math.floor(Number(localPlayerState?.wantedStars ?? 0) || 0),
+      0,
+      5
+    );
 
-    if (!activeWantedPoliceCars.length || !localPlayerState || localPlayerState.alive === false) {
+    if (!activeWantedPoliceCars.length || !localPlayerState || localPlayerState.alive === false || wantedStars <= 0) {
       for (const carId of [...this.policeContinuousSirens.keys()]) {
         this.stopPoliceContinuousSiren(carId);
       }
@@ -3175,13 +3203,8 @@ export class Game {
           POLICE_SIREN_CONTINUOUS_MIN_AUDIBLE_GAIN,
           POLICE_SIREN_CONTINUOUS_MAX_GAIN
         );
-      const sweep = (Math.sin((nowMs * 0.0062) + siren.phaseOffset) + 1) * 0.5;
-      const frequency = 470 + (sweep * 430);
       try {
         siren.gain.gain.setTargetAtTime(targetGain, audioNow, 0.09);
-        siren.oscillator.frequency.setTargetAtTime(frequency, audioNow, 0.08);
-        siren.upperOscillator.frequency.setTargetAtTime(frequency * 1.48, audioNow, 0.08);
-        siren.filter.frequency.setTargetAtTime(780 + (sweep * 520), audioNow, 0.1);
       } catch {
         // Ignore stale audio params; the next frame will recreate the siren if needed.
       }

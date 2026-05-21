@@ -96,6 +96,7 @@ export const assets = {
     phoneUnlock: assetUrl('audio', 'phone_unlock.mp3'),
     phoneVibrate: assetUrl('audio', 'phone_vibrate.mp3'),
     playingCard: assetUrl('audio', 'playing_card.mp3'),
+    policeSirenLoop: assetUrl('audio', 'police-siren-loop.mp3'),
     typingOnKeyboard: assetUrl('audio', 'typing_on_keyboard.mp3'),
     vibeHero: {
       debussyArabesqueNo1: assetUrl('audio', 'vibe-hero', 'debussy-arabesque-no-1.mp3'),
