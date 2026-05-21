@@ -7386,6 +7386,8 @@ body.is-admin-prompt-resizing * {
 }
 
 .hud__interaction {
+  --interaction-accent-rgb: 242, 200, 113;
+  --interaction-secondary-rgb: 143, 218, 255;
   left: 24px;
   bottom: var(--hud-hotbar-clearance-bottom);
   width: min(360px, calc(100vw - 48px));
@@ -15895,6 +15897,62 @@ body.is-admin-prompt-resizing * {
   margin-top: 14px;
 }
 
+.hud__interaction[data-interaction-variant="bartender"] {
+  --interaction-accent-rgb: 242, 200, 113;
+  --interaction-secondary-rgb: 85, 199, 255;
+}
+
+.hud__interaction[data-interaction-variant="pawn-shop"] {
+  --interaction-accent-rgb: 116, 214, 165;
+  --interaction-secondary-rgb: 242, 160, 74;
+}
+
+.hud__interaction[data-interaction-variant="martha"] {
+  --interaction-accent-rgb: 229, 77, 94;
+  --interaction-secondary-rgb: 255, 213, 79;
+}
+
+.hud__interaction[data-interaction-variant="bartender"],
+.hud__interaction[data-interaction-variant="pawn-shop"],
+.hud__interaction[data-interaction-variant="martha"] {
+  width: min(430px, calc(100vw - 48px));
+  padding: 18px;
+  border-color: rgba(var(--interaction-accent-rgb), 0.62);
+  background:
+    linear-gradient(90deg, rgba(var(--interaction-accent-rgb), 0.2), rgba(var(--interaction-secondary-rgb), 0.12)),
+    linear-gradient(135deg, rgba(13, 19, 28, 0.96), rgba(6, 10, 16, 0.94));
+  backdrop-filter: blur(12px) saturate(1.16);
+  box-shadow:
+    0 24px 72px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(var(--interaction-secondary-rgb), 0.08);
+}
+
+.hud__interaction[data-interaction-variant="bartender"] .hud__eyebrow,
+.hud__interaction[data-interaction-variant="pawn-shop"] .hud__eyebrow,
+.hud__interaction[data-interaction-variant="martha"] .hud__eyebrow {
+  color: rgb(var(--interaction-accent-rgb));
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.hud__interaction[data-interaction-variant="bartender"] .hud__dialog-title,
+.hud__interaction[data-interaction-variant="pawn-shop"] .hud__dialog-title,
+.hud__interaction[data-interaction-variant="martha"] .hud__dialog-title {
+  color: #fff8e8;
+  font-weight: 900;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.44);
+}
+
+.hud__interaction[data-interaction-variant="bartender"] .hud__dialog-actions,
+.hud__interaction[data-interaction-variant="pawn-shop"] .hud__dialog-actions,
+.hud__interaction[data-interaction-variant="martha"] .hud__dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  margin-top: 16px;
+}
+
 .hud__dialog-button,
 .hud__chat-close,
 .hud__chat-send {
@@ -15913,11 +15971,81 @@ body.is-admin-prompt-resizing * {
   pointer-events: auto;
 }
 
+.hud__dialog-button {
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
 .hud__dialog-button.is-primary,
 .hud__chat-send {
   border-color: rgba(242, 200, 113, 0.72);
   background: rgba(242, 200, 113, 0.18);
   color: #fff2c8;
+}
+
+.hud__dialog-button--item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  justify-content: stretch;
+  min-width: 0;
+  min-height: 66px;
+  padding: 8px 13px 8px 8px;
+  text-align: left;
+  border-color: rgba(var(--interaction-accent-rgb), 0.34);
+  background:
+    linear-gradient(90deg, rgba(var(--interaction-accent-rgb), 0.18), rgba(var(--interaction-secondary-rgb), 0.1)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.045));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.hud__dialog-button--item.is-primary {
+  border-color: rgba(var(--interaction-accent-rgb), 0.76);
+  background:
+    linear-gradient(90deg, rgba(var(--interaction-accent-rgb), 0.32), rgba(var(--interaction-secondary-rgb), 0.14)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
+  color: #fff8dc;
+}
+
+.hud__dialog-button--item:hover:not(:disabled),
+.hud__dialog-button--item:focus-visible {
+  border-color: rgba(var(--interaction-accent-rgb), 0.9);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.hud__dialog-button-item-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--interaction-accent-rgb), 0.34);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    rgba(5, 8, 13, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 8px 18px rgba(0, 0, 0, 0.25);
+}
+
+.hud__dialog-button-item-icon .hud__hotbar-drink-icon,
+.hud__dialog-button-item-icon .hud__hotbar-cigarette-icon,
+.hud__dialog-button-item-icon .hud__hotbar-food-icon,
+.hud__dialog-button-item-icon .hud__hotbar-item-icon,
+.hud__dialog-button-item-icon .hud__bound-skateboard-icon {
+  filter: drop-shadow(0 7px 9px rgba(0, 0, 0, 0.34));
+}
+
+.hud__dialog-button-item-icon .hud__hotbar-item-icon {
+  width: 82%;
+  height: 82%;
 }
 
 .hud__interaction[data-interaction-variant="car-dealer"] {

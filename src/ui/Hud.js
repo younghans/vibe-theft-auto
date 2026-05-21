@@ -4042,6 +4042,30 @@ function getSkateboardBadgeMarkup() {
   `;
 }
 
+function getInteractionActionIconMarkup(iconId = '') {
+  switch (String(iconId ?? '').trim()) {
+    case 'beer':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'drinkBeer' });
+    case 'shot':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'drinkShot' });
+    case 'cigarettes':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'consumableCigarettes' });
+    case 'pistol':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'hotbarPistol' });
+    case 'skateboard':
+      return getSkateboardBadgeMarkup();
+    case 'burger':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'foodBurger' });
+    case 'glizzy':
+    case 'hotDog':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'foodGlizzy' });
+    case 'soda':
+      return getHotbarItemIconMarkup({ hotbarIconId: 'foodSoda' });
+    default:
+      return '';
+  }
+}
+
 function getVehicleBadgeMarkup() {
   return `
     <span class="hud__bound-vehicle-icon" aria-hidden="true">
@@ -4076,12 +4100,17 @@ function getCarSelectorCardMarkup(entry = {}) {
 
 function getInteractionActionMarkup(action = {}) {
   const hasVehiclePreview = Boolean(action.previewItemId);
+  const itemIconMarkup = getInteractionActionIconMarkup(action.iconId);
+  const hasItemIcon = Boolean(itemIconMarkup);
   const classNames = ['hud__dialog-button'];
   if (action.primary) {
     classNames.push('is-primary');
   }
   if (hasVehiclePreview) {
     classNames.push('hud__dialog-button--vehicle');
+  }
+  if (hasItemIcon && !hasVehiclePreview) {
+    classNames.push('hud__dialog-button--item');
   }
   const className = classNames.join(' ');
   const label = String(action.label ?? action.title ?? 'Action');
@@ -4096,6 +4125,17 @@ function getInteractionActionMarkup(action = {}) {
         ${action.state ? `<em>${escapeHtml(action.state)}</em>` : ''}
       </span>
     `
+    : hasItemIcon
+      ? `
+        <span class="hud__dialog-button-item-icon" aria-hidden="true">
+          ${itemIconMarkup}
+        </span>
+        <span class="hud__dialog-button-copy">
+          <strong>${escapeHtml(action.title ?? label)}</strong>
+          ${action.meta ? `<span>${escapeHtml(action.meta)}</span>` : ''}
+          ${action.state ? `<em>${escapeHtml(action.state)}</em>` : ''}
+        </span>
+      `
     : escapeHtml(label);
 
   return `

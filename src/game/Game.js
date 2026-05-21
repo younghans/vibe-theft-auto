@@ -8768,9 +8768,14 @@ export class Game {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const count = getPlayerDrinkCount(localPlayerState, item.id);
+      const shortAmount = Math.max(0, item.price - cash);
       actions.push({
         id: `bartender:${item.id}`,
         label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${count})`,
+        title: `Buy ${item.label}`,
+        meta: `${formatMoneyAmount(item.price)} - Inventory: ${count}`,
+        state: cash < item.price ? `${formatMoneyAmount(shortAmount)} short` : 'Ready to buy',
+        iconId: item.id,
         primary: item.id === 'beer',
         disabled: this.bartenderRequestInFlight || cash < item.price
       });
@@ -8788,7 +8793,8 @@ export class Game {
       title: menu.npcName || 'Bartender',
       subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${inventoryParts.join(', ')}.`,
       actions,
-      anchor: menu.anchor
+      anchor: menu.anchor,
+      variant: 'bartender'
     });
   }
 
@@ -8984,9 +8990,19 @@ export class Game {
       const count = item.kind === 'consumable'
         ? ` (${getPlayerPawnShopItemCount(localPlayerState, item.id)})`
         : '';
+      const inventoryCount = item.kind === 'consumable'
+        ? getPlayerPawnShopItemCount(localPlayerState, item.id)
+        : 0;
+      const shortAmount = Math.max(0, item.price - cash);
       actions.push({
         id: `pawnShop:${item.id}`,
         label: owned ? `${item.label} - Owned` : `Buy ${item.label} - ${formatMoneyAmount(item.price)}${count}`,
+        title: owned ? item.label : `Buy ${item.label}`,
+        meta: item.kind === 'consumable'
+          ? `${formatMoneyAmount(item.price)} - Inventory: ${inventoryCount}`
+          : `${formatMoneyAmount(item.price)} - ${item.kind === 'weapon' ? 'Weapon' : 'Permanent'}`,
+        state: owned ? 'Owned' : (cash < item.price ? `${formatMoneyAmount(shortAmount)} short` : 'Ready to buy'),
+        iconId: item.id,
         primary: item.id === 'cigarettes',
         disabled: this.pawnShopRequestInFlight || owned || cash < item.price
       });
@@ -9003,7 +9019,8 @@ export class Game {
       title: menu.npcName || 'Pawn Shop',
       subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Cigarettes: ${getPlayerPawnShopItemCount(localPlayerState, 'cigarettes')}.`,
       actions,
-      anchor: menu.anchor
+      anchor: menu.anchor,
+      variant: 'pawn-shop'
     });
   }
 
@@ -9404,9 +9421,14 @@ export class Game {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
       const count = getPlayerMarthaItemCount(localPlayerState, item.id);
+      const shortAmount = Math.max(0, item.price - cash);
       actions.push({
         id: `martha:${item.id}`,
         label: `Buy ${item.label} - ${formatMoneyAmount(item.price)} (${count})`,
+        title: `Buy ${item.label}`,
+        meta: `${formatMoneyAmount(item.price)} - Inventory: ${count}`,
+        state: cash < item.price ? `${formatMoneyAmount(shortAmount)} short` : `Restores ${item.restorePercent}% health`,
+        iconId: item.id,
         primary: item.id === 'burger',
         disabled: this.marthaRequestInFlight || cash < item.price
       });
@@ -9424,7 +9446,8 @@ export class Game {
       title: menu.npcName || 'Martha',
       subtitle: `${priceParts.join('. ')}. Cash ${formatMoneyAmount(cash)}. Inventory ${inventoryParts.join(', ')}.`,
       actions,
-      anchor: menu.anchor
+      anchor: menu.anchor,
+      variant: 'martha'
     });
   }
 
