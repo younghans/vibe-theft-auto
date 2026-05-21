@@ -90,7 +90,17 @@ import {
   listPlayableCharacters
 } from '../player/playableCharacterCatalog.js';
 import { createNpcService } from '../npc/createNpcService.js';
-import { PLAYER_MAX_HEALTH, PLAYER_RADIUS } from '../shared/combatConstants.js';
+import { getNpcModelById } from '../npc/npcCatalog.js';
+import {
+  PLAYER_MAX_HEALTH,
+  PLAYER_RADIUS,
+  PUNCH_ASSISTED_LUNGE_BONUS,
+  PUNCH_HITBOX_RADIUS,
+  PUNCH_RANGE,
+  PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
+  PUNCH_TARGET_ASSIST_RANGE_BONUS
+} from '../shared/combatConstants.js';
+import { chooseAimAssistTarget } from '../shared/combatMath.js';
 import {
   getDeliveryQuestTargetName,
   isDeliveryQuestActive,
@@ -3161,14 +3171,80 @@ export class Game {
     return didFire;
   }
 
+  getPunchLungeAssist(aimDirection = { x: 0, z: 1 }) {
+    const origin = this.player?.position;
+    if (!origin || !Number.isFinite(origin.x) || !Number.isFinite(origin.z)) {
+      return 0;
+    }
+
+    const aimLength = Math.hypot(Number(aimDirection?.x) || 0, Number(aimDirection?.z) || 0);
+    if (!Number.isFinite(aimLength) || aimLength <= 0.0001) {
+      return 0;
+    }
+
+    const aim = {
+      x: (Number(aimDirection.x) || 0) / aimLength,
+      z: (Number(aimDirection.z) || 0) / aimLength
+    };
+    const targets = [];
+
+    for (const [sessionId, target] of this.npcServiceState.players.entries()) {
+      if (sessionId === this.npcServiceState.sessionId || target?.alive === false) {
+        continue;
+      }
+
+      targets.push({
+        kind: 'player',
+        targetId: sessionId,
+        x: Number(target.x),
+        z: Number(target.z),
+        radius: PLAYER_RADIUS
+      });
+    }
+
+    for (const [npcId, target] of this.npcServiceState.npcs.entries()) {
+      if (target?.alive === false || target?.mode === 'hidden') {
+        continue;
+      }
+
+      const model = getNpcModelById(target.modelId);
+      targets.push({
+        kind: 'npc',
+        targetId: npcId,
+        x: Number(target.x),
+        z: Number(target.z),
+        radius: model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+      });
+    }
+
+    const assistedTarget = chooseAimAssistTarget(origin, aim, targets, {
+      maxDistance: PUNCH_RANGE,
+      maxAngleRad: PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
+      rangeBonus: PUNCH_TARGET_ASSIST_RANGE_BONUS,
+      capsuleRadius: PUNCH_HITBOX_RADIUS
+    });
+
+    if (!assistedTarget) {
+      return 0;
+    }
+
+    const reachPressure = THREE.MathUtils.clamp(
+      (assistedTarget.distance - (PUNCH_RANGE * 0.55)) / Math.max(0.001, PUNCH_RANGE * 0.45),
+      0,
+      1
+    );
+    return PUNCH_ASSISTED_LUNGE_BONUS * THREE.MathUtils.lerp(0.45, 1, reachPressure);
+  }
+
   punchLocal(aimDirection) {
+    const punchLungeBonus = this.getPunchLungeAssist(aimDirection);
     const didPunch = this.npcService?.punch?.(
       { x: aimDirection?.x ?? 0, z: aimDirection?.z ?? 0 },
       Date.now()
     ) === true;
 
     if (didPunch) {
-      this.player?.playEmote(PUNCH_EMOTE_ID);
+      this.player?.playEmote(PUNCH_EMOTE_ID, { punchLungeBonus });
       this.playRandomSoundEffect(this.punchWhiffSounds, {
         volumeScale: 0.9,
         playbackRateMin: 0.94,

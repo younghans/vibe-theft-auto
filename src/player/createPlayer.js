@@ -36,6 +36,7 @@ import { RAGDOLL_RECOVER_DURATION } from './ragdollRig.js';
 import {
   HIT_REACTION_HEAD,
   HIT_REACTION_STOMACH,
+  PUNCH_ASSISTED_LUNGE_BONUS,
   PUNCH_LUNGE_BACKSWING_DISTANCE,
   PUNCH_LUNGE_DISTANCE,
   PUNCH_LUNGE_PEAK_MS,
@@ -271,10 +272,12 @@ function applyEmoteStartOffset(action, emoteConfig, startedAtMs) {
     : Math.min(elapsedSeconds, duration);
 }
 
-function getJabLungeOffset(elapsedMs) {
+function getJabLungeOffset(elapsedMs, lungeBonus = 0) {
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= PUNCH_LUNGE_RECOVER_MS) {
     return 0;
   }
+
+  const lungeDistance = PUNCH_LUNGE_DISTANCE + THREE.MathUtils.clamp(Number(lungeBonus) || 0, 0, PUNCH_ASSISTED_LUNGE_BONUS);
 
   if (elapsedMs < PUNCH_LUNGE_WINDUP_MS) {
     return -PUNCH_LUNGE_BACKSWING_DISTANCE * smooth01(elapsedMs / PUNCH_LUNGE_WINDUP_MS);
@@ -282,11 +285,11 @@ function getJabLungeOffset(elapsedMs) {
 
   if (elapsedMs < PUNCH_LUNGE_PEAK_MS) {
     const progress = smooth01((elapsedMs - PUNCH_LUNGE_WINDUP_MS) / (PUNCH_LUNGE_PEAK_MS - PUNCH_LUNGE_WINDUP_MS));
-    return THREE.MathUtils.lerp(-PUNCH_LUNGE_BACKSWING_DISTANCE, PUNCH_LUNGE_DISTANCE, progress);
+    return THREE.MathUtils.lerp(-PUNCH_LUNGE_BACKSWING_DISTANCE, lungeDistance, progress);
   }
 
   const progress = smooth01((elapsedMs - PUNCH_LUNGE_PEAK_MS) / (PUNCH_LUNGE_RECOVER_MS - PUNCH_LUNGE_PEAK_MS));
-  return THREE.MathUtils.lerp(PUNCH_LUNGE_DISTANCE, 0, progress);
+  return THREE.MathUtils.lerp(lungeDistance, 0, progress);
 }
 
 function normalizeCharacter(root) {
@@ -787,6 +790,7 @@ export async function createPlayer(library, {
   let activeEmoteId = null;
   let activeEmoteConfig = null;
   let activeEmoteStartedAt = 0;
+  let activePunchLungeBonus = 0;
   let emoteSequence = 0;
   let emotePlaybackRequestId = 0;
   let lastRemoteEmoteActive = false;
@@ -1036,6 +1040,7 @@ export async function createPlayer(library, {
     activeEmoteId = null;
     activeEmoteConfig = null;
     activeEmoteStartedAt = 0;
+    activePunchLungeBonus = 0;
   }
 
   function setLimpActive(nextActive, { startedAtMs = Date.now(), trackSync = true } = {}) {
@@ -2161,7 +2166,7 @@ export async function createPlayer(library, {
       const damageLift = damagePulse * 0.12 * Math.min(1.35, damageFeedbackStrength);
       const footPlantGroundingOffsetY = getFootPlantGroundingOffset();
       const jabLungeOffset = activeEmoteId === PUNCH_EMOTE_ID
-        ? getJabLungeOffset(Date.now() - activeEmoteStartedAt)
+        ? getJabLungeOffset(Date.now() - activeEmoteStartedAt, activePunchLungeBonus)
         : 0;
       const jabLungeLocalYaw = normalizeAngle(aimRotationY - anchor.rotation.y);
       const jabLungeLocalX = Math.sin(jabLungeLocalYaw) * jabLungeOffset;
@@ -2501,7 +2506,7 @@ export async function createPlayer(library, {
       output.skating = skateboardSkating;
       return output;
     },
-    playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true } = {}) {
+    playEmote(emoteId, { startedAtMs = Date.now(), trackSync = true, punchLungeBonus = 0 } = {}) {
       if (emoteId === LIMP_EMOTE_ID) {
         return setLimpActive(true, { startedAtMs, trackSync });
       }
@@ -2534,6 +2539,9 @@ export async function createPlayer(library, {
           activeEmoteId = emoteId;
           activeEmoteConfig = emoteConfig;
           activeEmoteStartedAt = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+          activePunchLungeBonus = emoteId === PUNCH_EMOTE_ID
+            ? THREE.MathUtils.clamp(Number(punchLungeBonus) || 0, 0, PUNCH_ASSISTED_LUNGE_BONUS)
+            : 0;
           if (trackSync) {
             emoteSequence += 1;
           }

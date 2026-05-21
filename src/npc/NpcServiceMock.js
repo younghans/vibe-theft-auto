@@ -9,6 +9,8 @@ import {
   PUNCH_HIT_REACTIONS,
   PUNCH_INTERVAL_MS,
   PUNCH_RANGE,
+  PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
+  PUNCH_TARGET_ASSIST_RANGE_BONUS,
   PICKUP_RESPAWN_MS,
   PLAYER_MAX_HEALTH,
   PLAYER_RADIUS,
@@ -177,6 +179,7 @@ import { createNpcRuntimeMeta, npcSimulationMethods } from './npcSimulationMetho
 import { DEFAULT_PLAYABLE_CHARACTER_ID, getPlayableCharacterById } from '../player/playableCharacterCatalog.js';
 import {
   chooseFarthestSpawnPoint,
+  chooseAimAssistTarget,
   capsuleCircleIntersection,
   clampToWorldBounds,
   distance2D,
@@ -1552,6 +1555,7 @@ export class NpcServiceMock {
         targetId: hit.targetId ?? '',
         x: hit.hitX,
         z: hit.hitZ,
+        assisted: hit.assisted === true,
         hitReaction: getRandomPunchHitReaction(),
         clientPunchAt
       });
@@ -3392,6 +3396,49 @@ export class NpcServiceMock {
     });
   }
 
+  resolvePunchAimAssist(origin, aim, {
+    ignorePlayerId = '',
+    ignoreNpcId = ''
+  } = {}) {
+    const targets = [];
+
+    for (const [sessionId, target] of this.state.players.entries()) {
+      if (sessionId === ignorePlayerId || target.alive === false) {
+        continue;
+      }
+
+      targets.push({
+        kind: 'player',
+        targetId: sessionId,
+        x: target.x,
+        z: target.z,
+        radius: PLAYER_RADIUS
+      });
+    }
+
+    for (const [npcId, target] of this.state.npcs.entries()) {
+      if (npcId === ignoreNpcId || target.alive === false || target.mode === NPC_RUNTIME_MODES.hidden) {
+        continue;
+      }
+
+      const model = getNpcModelById(target.modelId);
+      targets.push({
+        kind: 'npc',
+        targetId: npcId,
+        x: target.x,
+        z: target.z,
+        radius: model?.collider?.radius ?? PLAYER_RADIUS * 0.9
+      });
+    }
+
+    return chooseAimAssistTarget(origin, aim, targets, {
+      maxDistance: PUNCH_RANGE,
+      maxAngleRad: PUNCH_TARGET_ASSIST_MAX_ANGLE_RAD,
+      rangeBonus: PUNCH_TARGET_ASSIST_RANGE_BONUS,
+      capsuleRadius: PUNCH_HITBOX_RADIUS
+    });
+  }
+
   resolveCombatPunch(origin, aim, maxDistance, {
     ignorePlayerId = '',
     ignoreNpcId = ''
@@ -3493,9 +3540,28 @@ export class NpcServiceMock {
   }
 
   resolvePunch(attackerId, player, aim) {
-    return this.resolveCombatPunch(player, aim, PUNCH_RANGE, {
+    const options = {
       ignorePlayerId: attackerId
-    });
+    };
+    const directHit = this.resolveCombatPunch(player, aim, PUNCH_RANGE, options);
+    if (directHit.kind !== 'miss') {
+      return directHit;
+    }
+
+    const assistedAim = this.resolvePunchAimAssist(player, aim, options);
+    if (!assistedAim) {
+      return directHit;
+    }
+
+    const assistedHit = this.resolveCombatPunch(player, assistedAim, PUNCH_RANGE, options);
+    if (assistedHit.kind === assistedAim.kind && assistedHit.targetId === assistedAim.targetId) {
+      return {
+        ...assistedHit,
+        assisted: true
+      };
+    }
+
+    return directHit;
   }
 
   resolvePunchFromNpc(npcId, npc, aim) {

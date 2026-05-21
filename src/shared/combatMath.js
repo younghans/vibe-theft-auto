@@ -223,6 +223,76 @@ export function capsuleCircleIntersection(originX, originZ, dirX, dirZ, maxDista
   };
 }
 
+export function chooseAimAssistTarget(origin, aim, targets = [], {
+  maxDistance = 0,
+  maxAngleRad = 0,
+  rangeBonus = 0,
+  capsuleRadius = 0
+} = {}) {
+  if (
+    !origin
+    || !aim
+    || !Number.isFinite(origin.x)
+    || !Number.isFinite(origin.z)
+    || !Number.isFinite(aim.x)
+    || !Number.isFinite(aim.z)
+    || !Number.isFinite(maxDistance)
+    || maxDistance <= 0
+    || !Number.isFinite(maxAngleRad)
+    || maxAngleRad <= 0
+  ) {
+    return null;
+  }
+
+  const minDot = Math.cos(maxAngleRad);
+  let best = null;
+
+  for (const target of targets ?? []) {
+    const targetX = Number(target?.x);
+    const targetZ = Number(target?.z);
+    const radius = Math.max(0, Number(target?.radius) || 0);
+    const deltaX = targetX - origin.x;
+    const deltaZ = targetZ - origin.z;
+    const distance = Math.hypot(deltaX, deltaZ);
+    if (!Number.isFinite(distance) || distance <= 0.0001) {
+      continue;
+    }
+
+    const maxReach = maxDistance + Math.max(0, Number(rangeBonus) || 0) + radius + Math.max(0, Number(capsuleRadius) || 0);
+    if (distance > maxReach) {
+      continue;
+    }
+
+    const dirX = deltaX / distance;
+    const dirZ = deltaZ / distance;
+    const dot = (aim.x * dirX) + (aim.z * dirZ);
+    if (!Number.isFinite(dot) || dot < minDot) {
+      continue;
+    }
+
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+    const lateralDistance = Math.sin(angle) * distance;
+    const edgeDistance = Math.max(0, distance - radius);
+    const score = (angle / maxAngleRad * 2)
+      + (edgeDistance / Math.max(0.001, maxReach))
+      + (lateralDistance / Math.max(0.001, radius + Math.max(0, Number(capsuleRadius) || 0))) * 0.12;
+
+    if (!best || score < best.score) {
+      best = {
+        kind: target.kind ?? '',
+        targetId: target.targetId ?? '',
+        x: dirX,
+        z: dirZ,
+        angle,
+        distance,
+        score
+      };
+    }
+  }
+
+  return best;
+}
+
 export function rayRectIntersectionDistance(originX, originZ, dirX, dirZ, maxDistance, rect) {
   if (!rect) {
     return null;
