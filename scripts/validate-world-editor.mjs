@@ -121,6 +121,9 @@ import { getInteriorTemplateById } from '../src/world/InteriorScene.js';
 import {
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_RIM_HEIGHT,
+  BANK_LOBBY_TABLE_FOOTPRINT,
+  BANK_SITTING_CHAIR_FOOTPRINT,
+  BANK_TELLER_COUNTER_FOOTPRINT,
   CAR_DEALERSHIP_BUILDING_FOOTPRINT,
   DIRT_PATH_PROP_FOOTPRINT,
   INSTRUMENT_CLUSTER_FOOTPRINT,
@@ -1937,6 +1940,77 @@ function validateCustomPropCatalogItems() {
     'World builder should support holding Caps Lock to identify hovered placements instead of placing the active prop'
   );
 
+  const bankFurnitureProps = [
+    {
+      id: 'bank_teller_counter',
+      label: 'Bank Teller Counter',
+      size: BANK_TELLER_COUNTER_FOOTPRINT,
+      collision: true,
+      blocksMovement: true,
+      blocksShots: true,
+      requiredParts: ['bankTellerCounterBase', 'bankTellerCounterTop', 'bankTellerCounterPrivacyWall'],
+      whitePart: 'bankTellerCounterBase',
+      minHeight: 1.9
+    },
+    {
+      id: 'bank_sitting_chair',
+      label: 'Bank Sitting Chair',
+      size: BANK_SITTING_CHAIR_FOOTPRINT,
+      collision: false,
+      blocksMovement: false,
+      blocksShots: false,
+      requiredParts: ['bankSittingChairSeat', 'bankSittingChairBack', 'bankSittingChairLeg'],
+      whitePart: 'bankSittingChairSeat',
+      minHeight: 1.35
+    },
+    {
+      id: 'bank_lobby_table',
+      label: 'Bank Lobby Table',
+      size: BANK_LOBBY_TABLE_FOOTPRINT,
+      collision: true,
+      blocksMovement: true,
+      blocksShots: true,
+      requiredParts: ['bankLobbyTableTop', 'bankLobbyTablePedestal', 'bankLobbyTableBase'],
+      whitePart: 'bankLobbyTableTop',
+      minHeight: 0.82
+    }
+  ];
+  for (const definition of bankFurnitureProps) {
+    const item = getBuilderItemById(definition.id);
+    assert(item, `${definition.label} builder prop should exist`);
+    assert(getBuilderItemById(definition.label) === item, `${definition.label} should resolve from its display label`);
+    assert(item.layer === 'prop', `${definition.label} should be a prop catalog item`);
+    assert(item.groupId === 'bank', `${definition.label} should be grouped under Bank props`);
+    assert(item.asset === null, `${definition.label} should use a procedural visual`);
+    assert(typeof item.createVisual === 'function', `${definition.label} should define a procedural visual`);
+    assert(item.collision === definition.collision, `${definition.label} collision flag should match its intended use`);
+    assert(item.blocksMovement === definition.blocksMovement, `${definition.label} movement blocking should match its intended use`);
+    assert(item.blocksShots === definition.blocksShots, `${definition.label} shot blocking should match its intended use`);
+    assert(
+      Math.abs(item.size[0] - definition.size[0]) < 0.001
+        && Math.abs(item.size[1] - definition.size[1]) < 0.001,
+      `${definition.label} should use its procedural footprint`
+    );
+
+    const visual = item.createVisual();
+    assert(visual.userData.footprint?.[0] === definition.size[0], `${definition.label} visual should expose footprint width metadata`);
+    assert(visual.userData.footprint?.[1] === definition.size[1], `${definition.label} visual should expose footprint depth metadata`);
+    for (const partName of definition.requiredParts) {
+      assert(visual.getObjectByName(partName), `${definition.label} visual should include ${partName}`);
+    }
+    const whitePart = visual.getObjectByName(definition.whitePart);
+    assert(
+      whitePart?.material?.color?.getHex() === 0xf7f8f3 || whitePart?.material?.color?.getHex() === 0xfffff8,
+      `${definition.label} should render as white bank furniture`
+    );
+    const bounds = new Box3().setFromObject(visual);
+    const visualSize = bounds.getSize(new Vector3());
+    assert(bounds.min.y >= -0.001, `${definition.label} should sit on local ground`);
+    assert(visualSize.y >= definition.minHeight, `${definition.label} should have practical in-world height`);
+    assert(visualSize.x <= definition.size[0] + 0.001, `${definition.label} should stay inside its footprint width`);
+    assert(visualSize.z <= definition.size[1] + 0.001, `${definition.label} should stay inside its footprint depth`);
+  }
+
   const sidewalkItem = getBuilderItemById('sidewalk');
   const sidewalkSnap = findNearestAdjacentPropSnapPoint({
     point: { x: SIDEWALK_PROP_FOOTPRINT[0] - 0.2, z: 0.15 },
@@ -2950,11 +3024,25 @@ function validateFootprintSupport() {
     'Bank generator should replace only the exterior facade before preserving the existing interior detail block'
   );
   assert(
+    /addBankTellerCounter\(groups\.interior,\s*bankInteriorMaterials,\s*\[0,\s*0,\s*-5\.45\]\)/.test(bankDetailsSource)
+      && /addBankSittingChair\(groups\.interior,\s*bankInteriorMaterials/.test(bankDetailsSource)
+      && /addBankLobbyTable\(groups\.interior,\s*bankInteriorMaterials/.test(bankDetailsSource)
+      && /createBankFurnitureMaterials\(materials\)/.test(bankDetailsSource),
+    'Bank generator should add the white teller counter, sitting chairs, and lobby tables to the interior'
+  );
+  assert(
     /createGlassMaterial\(0xc7f3fb,\s*0\.38\)/.test(bankFacadeSource)
       && /createGlassMaterial\(0x9bd7e6,\s*0\.44\)/.test(bankFacadeSource)
       && /const lowerFrontRows = \[5\.18,\s*7\.14,\s*9\.1,\s*11\.06,\s*13\.02,\s*14\.98\]/.test(bankFacadeSource)
       && /17\.86,\s*19\.78,\s*21\.7,\s*23\.42/.test(bankFacadeSource),
     'Bank exterior generator should use multi-floor transparent glass on the front, sides, and back'
+  );
+  assert(
+    /const bankLobbySideWindowZs = \[-6\.7,\s*6\.7\]/.test(bankFacadeSource)
+      && /for \(const sideX of \[-11\.16,\s*11\.16\]\)/.test(bankFacadeSource)
+      && /height:\s*2\.35/.test(bankFacadeSource)
+      && /mullions:\s*1/.test(bankFacadeSource),
+    'Bank exterior generator should add two prominent transparent lobby windows on each side'
   );
   assert(
     /const BANK_WALL_HEIGHT = 15\.6;/.test(districtBuildingSource)

@@ -1073,15 +1073,82 @@ const BANK_FRONT_DOOR_CLEAR_HALF_WIDTH = 3.74;
 const BANK_FRONT_DOOR_GLASS_CLEAR_TOP_Y = 4.42;
 const BANK_FRONT_GLASS_Z = 11.12;
 
+function createBankFurnitureMaterials(materials) {
+  return {
+    ...materials,
+    bankWhite: createMaterial(0xf7f8f3, 0.48, 0.08),
+    bankWhiteWarm: createMaterial(0xfffff8, 0.42, 0.08),
+    bankWhiteShadow: createMaterial(0xd8dedc, 0.66, 0.04),
+    bankInk: createMaterial(0x23313a, 0.58, 0.12)
+  };
+}
+
+function addBankTellerCounter(group, materials, position = [0, 0, 0], rotationY = 0) {
+  const counter = new THREE.Group();
+  counter.position.set(...position);
+  counter.rotation.y = rotationY;
+  counter.add(createBox([9.0, 1.22, 1.16], [0, 0.61, 0], materials.bankWhite));
+  counter.add(createBox([9.28, 0.24, 1.42], [0, 1.34, 0], materials.bankWhiteWarm));
+  counter.add(createBox([8.5, 0.58, 0.12], [0, 0.98, 0.66], materials.bankWhiteShadow));
+  counter.add(createBox([8.75, 0.16, 0.1], [0, 0.13, 0.68], materials.metalDark));
+  counter.add(createBox([8.45, 0.1, 0.34], [0, 1.58, -0.36], materials.bankWhite));
+  counter.add(createBox([8.7, 0.44, 0.12], [0, 1.78, -0.62], materials.bankWhiteWarm));
+  for (const x of [-3.15, 0, 3.15]) {
+    counter.add(createBox([1.25, 0.1, 0.035], [x, 1.5, 0.73], materials.bankInk));
+    counter.add(createBox([1.48, 0.08, 0.06], [x, 1.7, 0.72], materials.accent));
+  }
+  for (const x of [-4.44, 4.44]) {
+    counter.add(createBox([0.18, 1.18, 1.36], [x, 0.76, 0], materials.bankWhiteShadow));
+  }
+  group.add(counter);
+}
+
+function addBankSittingChair(group, materials, position = [0, 0, 0], rotationY = 0) {
+  const chair = new THREE.Group();
+  chair.position.set(...position);
+  chair.rotation.y = rotationY;
+  chair.add(createBox([0.78, 0.14, 0.74], [0, 0.55, 0], materials.bankWhite));
+  chair.add(createBox([0.66, 0.06, 0.58], [0, 0.655, 0.03], materials.bankWhiteWarm));
+  chair.add(createBox([0.78, 0.84, 0.12], [0, 1.0, -0.34], materials.bankWhite));
+  chair.add(createBox([0.86, 0.08, 0.16], [0, 1.44, -0.34], materials.bankWhiteShadow));
+  for (const [x, z] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.24], [0.28, 0.24]]) {
+    chair.add(createBox([0.08, 0.5, 0.08], [x, 0.26, z], materials.metal));
+  }
+  group.add(chair);
+}
+
+function addBankLobbyTable(group, materials, position = [0, 0, 0]) {
+  const table = new THREE.Group();
+  table.position.set(...position);
+  table.add(createCylinder(0.82, 0.82, 0.16, 22, [0, 0.78, 0], materials.bankWhiteWarm));
+  table.add(createCylinder(0.14, 0.18, 0.7, 12, [0, 0.4, 0], materials.metal));
+  table.add(createCylinder(0.52, 0.52, 0.1, 18, [0, 0.06, 0], materials.metalDark));
+  table.add(createBox([0.46, 0.08, 0.28], [0.24, 0.91, -0.18], materials.accent, [0, -0.2, 0]));
+  group.add(table);
+}
+
 function addBankDetails(groups, materials) {
+  const bankInteriorMaterials = createBankFurnitureMaterials(materials);
+
   addModernBankGlassFacade(groups, materials);
 
+  addBankTellerCounter(groups.interior, bankInteriorMaterials, [0, 0, -5.45]);
+  for (const [x, z, rotationY] of [
+    [-5.1, 3.45, Math.PI],
+    [-3.55, 3.45, Math.PI],
+    [3.55, 3.45, Math.PI],
+    [5.1, 3.45, Math.PI],
+    [-5.1, 5.25, 0],
+    [-3.55, 5.25, 0],
+    [3.55, 5.25, 0],
+    [5.1, 5.25, 0]
+  ]) {
+    addBankSittingChair(groups.interior, bankInteriorMaterials, [x, 0, z], rotationY);
+  }
+  for (const [x, z] of [[-4.32, 4.35], [4.32, 4.35]]) {
+    addBankLobbyTable(groups.interior, bankInteriorMaterials, [x, 0, z]);
+  }
   addBoxes(groups.interior, [
-    { size: [15.4, 1.25, 1.2], position: [0, 1.18, -5.4], material: materials.trimDark },
-    { size: [15.6, 0.28, 1.42], position: [0, 1.96, -5.4], material: materials.trim },
-    { size: [0.18, 2.0, 1.0], position: [-5.0, 2.3, -5.0], material: materials.glassLite },
-    { size: [0.18, 2.0, 1.0], position: [0, 2.3, -5.0], material: materials.glassLite },
-    { size: [0.18, 2.0, 1.0], position: [5.0, 2.3, -5.0], material: materials.glassLite },
     { size: [3.2, 3.2, 0.42], position: [8.3, 2.42, -8.7], material: materials.metalDark }
   ]);
   groups.interior.add(createCylinder(1.32, 1.32, 0.28, 24, [8.3, 2.42, -8.42], materials.metal, [Math.PI * 0.5, 0, 0]));
@@ -1132,6 +1199,7 @@ function addModernBankGlassFacade(groups, materials) {
   const lowerFrontRows = [5.18, 7.14, 9.1, 11.06, 13.02, 14.98];
   const sideWindowRows = [2.62, 4.74, 6.86, 8.98, 11.1, 13.22, 17.86, 19.78, 21.7, 23.42];
   const backWindowRows = [3.02, 5.14, 7.26, 9.38, 11.5, 13.62, 17.86, 19.78, 21.7, 23.42];
+  const bankLobbySideWindowZs = [-6.7, 6.7];
 
   addBoxes(groups.exterior, [
     { size: [21.6, 0.34, 0.36], position: [0, 16.04, 10.98], material: bankMaterials.mullion },
@@ -1216,6 +1284,21 @@ function addModernBankGlassFacade(groups, materials) {
           mullions: 0
         });
       }
+    }
+  }
+  for (const sideX of [-11.16, 11.16]) {
+    for (const z of bankLobbySideWindowZs) {
+      addDetailedSideWindow(groups.exterior, {
+        x: sideX,
+        y: 3.35,
+        z,
+        width: 2.45,
+        height: 2.35,
+        glassMaterial: bankMaterials.glassDeep,
+        frameMaterial: bankMaterials.mullion,
+        sillMaterial: bankMaterials.mullionLight,
+        mullions: 1
+      });
     }
   }
 

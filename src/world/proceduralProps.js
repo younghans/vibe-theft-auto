@@ -20,6 +20,9 @@ export const STANDING_DESK_COMPUTER_FOOTPRINT = Object.freeze([4.4, 3]);
 export const OFFICE_LOBBY_CHAIR_FOOTPRINT = Object.freeze([1.05, 1.05]);
 export const OFFICE_LOBBY_TABLE_FOOTPRINT = Object.freeze([3.15, 1.35]);
 export const OFFICE_LOBBY_SIDE_TABLE_FOOTPRINT = Object.freeze([1.35, 1.15]);
+export const BANK_TELLER_COUNTER_FOOTPRINT = Object.freeze([9.35, 1.75]);
+export const BANK_SITTING_CHAIR_FOOTPRINT = Object.freeze([1.05, 1.05]);
+export const BANK_LOBBY_TABLE_FOOTPRINT = Object.freeze([1.85, 1.85]);
 export const OFFICE_CUBICLE_WORKSTATION_FOOTPRINT = Object.freeze([3.15, 2.35]);
 export const OFFICE_JANITOR_SHIFT_CLOSET_FOOTPRINT = Object.freeze([
   OFFICE_INTERIOR_JANITOR_CLOSET_SIZE.width + 1.2,
@@ -2736,6 +2739,99 @@ function createOfficeFurnitureMaterials() {
     floorPad: createMaterial(0x2b3035, 0.9, 0.02),
     gold: createMaterial(0xd2aa44, 0.44, 0.18)
   };
+}
+
+function createBankFurnitureMaterials() {
+  return {
+    white: createMaterial(0xf7f8f3, 0.48, 0.08),
+    whiteWarm: createMaterial(0xfffff8, 0.42, 0.08),
+    whiteShadow: createMaterial(0xd8dedc, 0.66, 0.04),
+    metal: createMaterial(0xc9d1d2, 0.36, 0.34),
+    metalDark: createMaterial(0x56646a, 0.52, 0.24),
+    accent: createMaterial(0xd2aa44, 0.42, 0.18),
+    ink: createMaterial(0x23313a, 0.58, 0.12)
+  };
+}
+
+export function createBankTellerCounterVisual() {
+  const root = new THREE.Group();
+  root.name = 'BankTellerCounter';
+  root.userData.footprint = copyFootprint(BANK_TELLER_COUNTER_FOOTPRINT);
+  root.userData.bankTellerCounterProp = true;
+
+  const materials = createBankFurnitureMaterials();
+  root.add(createBox('bankTellerCounterBase', [9.0, 1.22, 1.16], [0, 0.61, 0], materials.white));
+  root.add(createBox('bankTellerCounterTop', [9.28, 0.24, 1.42], [0, 1.34, 0], materials.whiteWarm));
+  root.add(createBox('bankTellerCounterFrontArmor', [8.5, 0.58, 0.12], [0, 0.98, 0.66], materials.whiteShadow));
+  root.add(createBox('bankTellerCounterKickPlate', [8.75, 0.16, 0.1], [0, 0.13, 0.68], materials.metalDark));
+  root.add(createBox('bankTellerCounterBackWorktop', [8.45, 0.1, 0.34], [0, 1.58, -0.36], materials.white));
+  root.add(createBox('bankTellerCounterPrivacyWall', [8.7, 0.44, 0.12], [0, 1.78, -0.62], materials.whiteWarm));
+  for (const x of [-3.15, 0, 3.15]) {
+    root.add(createBox('bankTellerCounterTellerSlot', [1.25, 0.1, 0.035], [x, 1.5, 0.73], materials.ink, {
+      castShadow: false,
+      receiveShadow: false
+    }));
+    root.add(createBox('bankTellerCounterGoldTrim', [1.48, 0.08, 0.06], [x, 1.7, 0.72], materials.accent));
+  }
+  for (const x of [-4.44, 4.44]) {
+    root.add(createBox('bankTellerCounterSideCap', [0.18, 1.18, 1.36], [x, 0.76, 0], materials.whiteShadow));
+  }
+
+  return root;
+}
+
+export function createBankSittingChairVisual() {
+  const root = new THREE.Group();
+  root.name = 'BankSittingChair';
+  root.userData.footprint = copyFootprint(BANK_SITTING_CHAIR_FOOTPRINT);
+  root.userData.bankSittingChairProp = true;
+
+  const materials = createBankFurnitureMaterials();
+  root.add(createBox('bankSittingChairSeat', [0.78, 0.14, 0.74], [0, 0.55, 0], materials.white));
+  root.add(createBox('bankSittingChairCushion', [0.66, 0.06, 0.58], [0, 0.655, 0.03], materials.whiteWarm));
+  root.add(createBox('bankSittingChairBack', [0.78, 0.84, 0.12], [0, 1.0, -0.34], materials.white));
+  root.add(createBox('bankSittingChairBackCap', [0.86, 0.08, 0.16], [0, 1.44, -0.34], materials.whiteShadow));
+  for (const [legX, legZ] of [[-0.28, -0.22], [0.28, -0.22], [-0.28, 0.24], [0.28, 0.24]]) {
+    root.add(createBox('bankSittingChairLeg', [0.08, 0.5, 0.08], [legX, 0.26, legZ], materials.metal));
+  }
+
+  return root;
+}
+
+export function createBankLobbyTableVisual() {
+  const root = new THREE.Group();
+  root.name = 'BankLobbyTable';
+  root.userData.footprint = copyFootprint(BANK_LOBBY_TABLE_FOOTPRINT);
+  root.userData.bankLobbyTableProp = true;
+
+  const materials = createBankFurnitureMaterials();
+  const tabletop = createCylinder(0.82, 0.82, 0.16, 22, materials.whiteWarm);
+  tabletop.name = 'bankLobbyTableTop';
+  tabletop.position.set(0, 0.78, 0);
+  tabletop.castShadow = true;
+  tabletop.receiveShadow = true;
+  root.add(tabletop);
+
+  const pedestal = createCylinder(0.14, 0.18, 0.7, 12, materials.metal);
+  pedestal.name = 'bankLobbyTablePedestal';
+  pedestal.position.set(0, 0.4, 0);
+  pedestal.castShadow = true;
+  pedestal.receiveShadow = true;
+  root.add(pedestal);
+
+  const base = createCylinder(0.52, 0.52, 0.1, 18, materials.metalDark);
+  base.name = 'bankLobbyTableBase';
+  base.position.set(0, 0.06, 0);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  root.add(base);
+  root.add(createBox('bankLobbyTableStatementHolder', [0.46, 0.08, 0.28], [0.24, 0.91, -0.18], materials.accent, {
+    rotation: [0, -0.2, 0],
+    castShadow: true,
+    receiveShadow: true
+  }));
+
+  return root;
 }
 
 export function createOfficeLobbyChairVisual() {

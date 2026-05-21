@@ -27,8 +27,14 @@ import {
   BASKETBALL_HALF_COURT_TILE_FOOTPRINT,
   BASKETBALL_HALF_COURT_TILE_SURFACE_HEIGHT,
   BASKETBALL_HOOP_FOOTPRINT,
+  BANK_LOBBY_TABLE_FOOTPRINT,
+  BANK_SITTING_CHAIR_FOOTPRINT,
+  BANK_TELLER_COUNTER_FOOTPRINT,
   BLACKJACK_TABLE_FOOTPRINT,
   CASINO_SLOT_MACHINE_FOOTPRINT,
+  createBankLobbyTableVisual,
+  createBankSittingChairVisual,
+  createBankTellerCounterVisual,
   createBasketballHalfCourtTileVisual,
   createBasketballHoopVisual,
   createBlackjackTableVisual,
@@ -88,6 +94,7 @@ const TILE_GROUPS = Object.freeze({
 });
 
 const PROP_GROUPS = Object.freeze({
+  bank: 'Bank',
   street: 'Street',
   greenery: 'Greenery',
   combat: 'Combat',
@@ -828,6 +835,44 @@ const CITY_PROP_DEFINITIONS = Object.freeze([
       approachLocalOffset: [0, 1.2],
       approachRotationY: Math.PI
     }
+  },
+  {
+    id: 'bank_teller_counter',
+    assetName: 'bank_teller_counter',
+    aliases: ['bank counter', 'teller counter', 'white bank counter', 'bankteller counter', 'Bank Teller Counter'],
+    label: 'Bank Teller Counter',
+    asset: null,
+    group: 'bank',
+    size: BANK_TELLER_COUNTER_FOOTPRINT,
+    collision: true,
+    padding: 0.18,
+    createVisual: createBankTellerCounterVisual
+  },
+  {
+    id: 'bank_sitting_chair',
+    assetName: 'bank_sitting_chair',
+    aliases: ['bank chair', 'white bank chair', 'bank sitting chair', 'bank waiting chair', 'Bank Sitting Chair'],
+    label: 'Bank Sitting Chair',
+    asset: null,
+    group: 'bank',
+    size: BANK_SITTING_CHAIR_FOOTPRINT,
+    collision: false,
+    blocksMovement: false,
+    blocksShots: false,
+    padding: 0.08,
+    createVisual: createBankSittingChairVisual
+  },
+  {
+    id: 'bank_lobby_table',
+    assetName: 'bank_lobby_table',
+    aliases: ['bank table', 'white bank table', 'bank lobby table', 'bank waiting table', 'Bank Lobby Table'],
+    label: 'Bank Lobby Table',
+    asset: null,
+    group: 'bank',
+    size: BANK_LOBBY_TABLE_FOOTPRINT,
+    collision: true,
+    padding: 0.1,
+    createVisual: createBankLobbyTableVisual
   },
   {
     id: 'standing_desk_computer',
