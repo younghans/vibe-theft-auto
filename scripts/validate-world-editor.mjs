@@ -4641,6 +4641,14 @@ function validateBartenderFunction() {
   const policeOfficerGlbJson = readGlbJson('assets/runtime/mixamo/characters/policeOfficer.glb');
   const policeOfficerNodeNames = getGlbNodeNameSet(policeOfficerGlbJson);
   const policeOfficerMaterialNames = getGlbMaterialNames(policeOfficerGlbJson);
+  const policeOfficerSkinBounds = getGlbNodeYBounds(
+    policeOfficerGlbJson,
+    getGlbNodeByName(policeOfficerGlbJson, 'PoliceOfficer_skin')
+  );
+  const policeOfficerHumanBootBounds = getGlbNodeYBounds(
+    policeOfficerGlbJson,
+    getGlbNodeByName(policeOfficerGlbJson, 'PoliceOfficer_humanBoots')
+  );
   const policeOfficerPortraitStats = statSync(new URL('../assets/mixamo/portraits/police_officer.png', import.meta.url));
   assert(policeOfficerModel?.label === 'Police Officer', 'NPC catalog should include the Police Officer model');
   assert(policeOfficerModel?.height === 4.8, 'Police Officer should stay scaled like the other human NPC models');
@@ -4669,6 +4677,14 @@ function validateBartenderFunction() {
       && policeOfficerMaterialNames.has('policeOfficerGoldBadge')
       && policeOfficerMaterialNames.has('policeOfficerGoofyEyes'),
     'Police Officer GLB should use named cartoon police materials'
+  );
+  assert(
+    policeOfficerSkinBounds && policeOfficerSkinBounds.maxY < 1.25,
+    'Police Officer GLB should author the fixed skin geometry in Mixamo bind space so placement animation does not double-offset the model'
+  );
+  assert(
+    policeOfficerHumanBootBounds && policeOfficerHumanBootBounds.minY < -0.8,
+    'Police Officer GLB should keep boot underlay geometry grounded in Mixamo bind space once placed'
   );
   assert(isPoliceOfficerNpc(policeNpc), 'Normalized police NPCs should preserve policeOfficerEnabled');
   assert(

@@ -140,10 +140,12 @@ const LOCAL_ROTATION = new THREE.Euler();
 const LOCAL_QUATERNION = new THREE.Quaternion();
 const LOCAL_MATRIX = new THREE.Matrix4();
 const BONE_SPACE_MATRIX = new THREE.Matrix4();
+const REST_SKIN_MATRIX = new THREE.Matrix4();
+const BIND_SPACE_CORRECTION_MATRIX = new THREE.Matrix4();
 const LOCAL_SCALE = new THREE.Vector3(1, 1, 1);
 const PART_SCALE = new THREE.Vector3(1, 1, 1);
 const PRIMITIVE_UP = new THREE.Vector3(0, 1, 0);
-const REFERENCE_LIMB_BIND_OFFSET = new THREE.Vector3(0, 0.828, 0);
+const REFERENCE_LIMB_BIND_OFFSET = new THREE.Vector3(0, 0, 0);
 
 const REFERENCE_LIMB_BONES = Object.freeze({
   sleeves: /(?:Shoulder|Arm)/,
@@ -197,6 +199,7 @@ function finalizePartGeometry(geometry, bone, boneIndex, {
   );
   BONE_SPACE_MATRIX.multiplyMatrices(bone.matrixWorld, LOCAL_MATRIX);
   geometry.applyMatrix4(BONE_SPACE_MATRIX);
+  geometry.applyMatrix4(BIND_SPACE_CORRECTION_MATRIX);
   assignRigidSkinning(geometry, boneIndex);
   return geometry;
 }
@@ -404,6 +407,18 @@ function createMergedSkinnedMesh(geometries, material, name, skeleton, bindMatri
   return mesh;
 }
 
+function updateBindSpaceCorrectionMatrix(skeleton, boneIndex) {
+  const bone = skeleton.bones[boneIndex];
+  const boneInverse = skeleton.boneInverses[boneIndex];
+  if (!bone || !boneInverse) {
+    BIND_SPACE_CORRECTION_MATRIX.identity();
+    return;
+  }
+
+  REST_SKIN_MATRIX.multiplyMatrices(bone.matrixWorld, boneInverse);
+  BIND_SPACE_CORRECTION_MATRIX.copy(REST_SKIN_MATRIX).invert();
+}
+
 function createPixelTextPieces(text, bone, boneIndex, {
   center = [0, 0, 0],
   pixelSize = 0.018,
@@ -503,6 +518,7 @@ function buildPoliceOfficerCharacter(root) {
     }
     return bone;
   };
+  updateBindSpaceCorrectionMatrix(skeleton, getBoneIndex('mixamorigHips'));
 
   const bones = {
     hips: requireBone('mixamorigHips'),
