@@ -249,6 +249,9 @@ function buildMockNpcReply(definition = {}) {
   if (definition.schoolMicrogameEnabled) {
     return 'School challenge ready. Focus.';
   }
+  if (definition.policeOfficerEnabled) {
+    return 'Keep it clean inside the law circle.';
+  }
   if (definition.deliveryQuestEnabled) {
     return 'Package and payout. Quiet.';
   }
@@ -798,6 +801,8 @@ export class NpcServiceMock {
         rotationY: quantizeRotation(previous?.rotationY ?? toRotationY(spawnRotationQuarterTurns)),
         rotationQuarterTurns: previous?.rotationQuarterTurns ?? spawnRotationQuarterTurns,
         interactRadius: definition.interactRadius,
+        policeOfficerEnabled: definition.policeOfficerEnabled === true,
+        lawRadius: definition.lawRadius,
         deliveryQuestEnabled: definition.deliveryQuestEnabled === true,
         gymCheckInEnabled: definition.gymCheckInEnabled === true,
         rentCollectorEnabled: definition.rentCollectorEnabled === true,
@@ -930,6 +935,8 @@ export class NpcServiceMock {
             name: payload.name,
             prompt: payload.prompt,
             interactRadius: payload.interactRadius,
+            policeOfficerEnabled: payload.policeOfficerEnabled,
+            lawRadius: payload.lawRadius,
             speed: payload.speed,
             routine: payload.routine,
             combat: payload.combat,
@@ -1438,6 +1445,7 @@ export class NpcServiceMock {
     player.ammoInClip = Math.max(0, player.ammoInClip - 1);
 
     const shot = this.resolveShot(this.state.sessionId, player, aim, shotOrigin);
+    this.triggerPoliceHostilityForPlayer(this.state.sessionId, player, 'shot-fired', now);
     this.emitCombatEvent({
       type: 'shot',
       shooterType: 'player',
@@ -1499,6 +1507,7 @@ export class NpcServiceMock {
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq = (player.emoteSeq ?? 0) + 1;
+    this.triggerPoliceHostilityForPlayer(this.state.sessionId, player, 'punch', now);
 
     const hit = this.resolvePunch(this.state.sessionId, player, aim);
     if (hit.kind !== 'miss') {
@@ -3126,6 +3135,7 @@ export class NpcServiceMock {
       const killer = this.state.players.get(killerId);
       if (killer) {
         killer.kills += 1;
+        this.triggerPoliceHostilityForPlayer(killerId, killer, 'player-kill', Date.now());
       }
     }
 

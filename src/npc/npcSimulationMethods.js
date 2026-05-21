@@ -25,8 +25,10 @@ import {
   NPC_DEFAULT_WANDER_IDLE_MIN_MS,
   NPC_RUNTIME_MODES,
   NPC_STEP_TYPES,
+  getNpcLawRadius,
   getNpcUsePlacementDurationMs,
-  getNpcRunSpeed
+  getNpcRunSpeed,
+  isPoliceOfficerNpc
 } from './npcBehavior.js';
 import {
   buildNpcPathToPlacement,
@@ -1116,6 +1118,63 @@ export const npcSimulationMethods = {
     return true;
   },
 
+  triggerPoliceHostilityForPlayer(playerId = '', sourcePosition = null, reason = 'hostile-action', now = Date.now()) {
+    const player = this.state.players.get(playerId);
+    if (!player) {
+      return false;
+    }
+
+    const sourceX = Number.isFinite(Number(sourcePosition?.x)) ? Number(sourcePosition.x) : player.x;
+    const sourceZ = Number.isFinite(Number(sourcePosition?.z)) ? Number(sourcePosition.z) : player.z;
+    if (!Number.isFinite(sourceX) || !Number.isFinite(sourceZ)) {
+      return false;
+    }
+
+    let changed = false;
+    for (const npcId of this.state.npcs.keys()) {
+      const npc = this.state.npcs.get(npcId);
+      const definition = this.getNpcDefinition(npcId);
+      if (
+        !npc
+        || !definition
+        || !isPoliceOfficerNpc(definition)
+        || npc.alive === false
+        || npc.mode === NPC_RUNTIME_MODES.hidden
+        || npc.mode === NPC_RUNTIME_MODES.dead
+      ) {
+        continue;
+      }
+
+      const lawRadius = getNpcLawRadius(definition);
+      if (distanceSquared2D(npc.x, npc.z, sourceX, sourceZ) > lawRadius * lawRadius) {
+        continue;
+      }
+
+      const meta = this.getNpcRuntimeMeta(npcId);
+      meta.calmEndsAt = now + NPC_DEFAULT_CALM_MS;
+      meta.lastCombatAt = now;
+      meta.combatAnchor = {
+        x: quantizePosition(npc.x),
+        z: quantizePosition(npc.z)
+      };
+      this.clearNpcPath(npcId);
+      this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.combat, {
+        lastAttackerId: playerId,
+        activity: ''
+      });
+      this.logNpcDebugEvent?.(npcId, 'law-radius-hostility', {
+        playerId,
+        reason,
+        lawRadius,
+        sourceX: quantizePosition(sourceX),
+        sourceZ: quantizePosition(sourceZ)
+      });
+      changed = true;
+    }
+
+    return changed;
+  },
+
   updateNpcSimulation(now, deltaMs) {
     let changed = false;
 
@@ -1249,6 +1308,9 @@ export const npcSimulationMethods = {
     });
     this.setNpcMode(npcId, npc, NPC_RUNTIME_MODES.dead, { lastAttackerId: killerId });
     this.syncNpcDerivedState?.(npc);
+    if (killerId && this.state.players.has(killerId)) {
+      this.triggerPoliceHostilityForPlayer(killerId, this.state.players.get(killerId), 'npc-kill', now);
+    }
     this.emitNpcCombatEvent?.({
       type: 'death',
       victimId: npcId,

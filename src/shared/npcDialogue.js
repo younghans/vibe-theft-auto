@@ -8,7 +8,8 @@ const CAPABILITIES = Object.freeze([
   ['carDealerEnabled', 'car sales'],
   ['marthaEnabled', "Martha's Grille food"],
   ['blackjackDealerEnabled', 'blackjack'],
-  ['schoolMicrogameEnabled', 'school challenges']
+  ['schoolMicrogameEnabled', 'school challenges'],
+  ['policeOfficerEnabled', 'law enforcement']
 ]);
 
 const PROFILES = Object.freeze({
@@ -22,7 +23,7 @@ const PROFILES = Object.freeze({
   fixer: ['deliveryQuestEnabled', 'shady|fixer|delivery|package|quick cash', 'package and payout', 'Keep it quiet.'],
   android: ['', 'sketch|android|prototype|robot|game level', 'quest logic', 'Chaos logged.'],
   hustler: ['', 'maya|hustler|rumor|rumour|sarcastic', 'hustle lead', 'Timing beats noise.'],
-  officer: ['', 'gary|police|chief|cop|badge', 'straight answer', 'Facts, not theater.'],
+  officer: ['policeOfficerEnabled', 'gary|police|chief|cop|badge|law', 'law enforcement', 'Facts, not theater.'],
   dealer: ['blackjackDealerEnabled', 'blackjack|casino|cards|dealer', 'blackjack table', 'Cards answer cleanly.'],
   local: ['', '', 'local lead', 'Keep your head up.']
 });

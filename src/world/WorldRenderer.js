@@ -1712,6 +1712,9 @@ export class WorldRenderer {
         y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
         rotationQuarterTurns: placement.rotationQuarterTurns,
         interactRadius: placement.npc?.interactRadius ?? item.interactionRadius ?? model.interactionRadius,
+        policeOfficerEnabled: placement.npc?.policeOfficerEnabled === true,
+        lawRadius: placement.npc?.lawRadius,
+        combat: placement.npc?.combat,
         speed: placement.npc?.speed
       }
     });
@@ -2782,6 +2785,9 @@ export class WorldRenderer {
         y: this.getSurfaceHeightAtPosition(placement.position[0], placement.position[1]),
         rotationQuarterTurns: placement.rotationQuarterTurns,
         interactRadius: placement.npc?.interactRadius ?? rendered.item.interactionRadius,
+        policeOfficerEnabled: placement.npc?.policeOfficerEnabled === true,
+        lawRadius: placement.npc?.lawRadius,
+        combat: placement.npc?.combat,
         speed: placement.npc?.speed
       });
       const runtimeState = this.npcRuntimeState.get(placement.id);

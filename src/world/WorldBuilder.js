@@ -5,7 +5,11 @@ import {
   createDefaultNpcCombat,
   createDefaultNpcRoutine,
   createDefaultNpcRoutineStep,
+  NPC_COMBAT_ARCHETYPES,
   NPC_DEFAULT_INTERACT_RADIUS,
+  NPC_DEFAULT_LAW_RADIUS,
+  getNpcLawRadius,
+  isPoliceOfficerNpc,
   listNpcCombatArchetypes,
   listNpcStepTypes
 } from '../npc/npcBehavior.js';
@@ -569,6 +573,10 @@ export class WorldBuilder {
       onNpcPromptChange: (value) => void this.updateSelectedNpc({ prompt: value }),
       onNpcRadiusChange: (value) => void this.updateSelectedNpc({
         interactRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 1.5, 12) : undefined
+      }),
+      onNpcPoliceOfficerChange: (enabled) => void this.updateSelectedNpcPoliceOfficer(enabled),
+      onNpcLawRadiusChange: (value) => void this.updateSelectedNpc({
+        lawRadius: Number.isFinite(value) ? THREE.MathUtils.clamp(value, 4, 120) : undefined
       }),
       onNpcSpeedChange: (value) => void this.updateSelectedNpc({ speed: value }),
       onNpcRespawnDelayChange: (value) => void this.updateSelectedNpc({
@@ -2834,6 +2842,7 @@ export class WorldBuilder {
   }
 
   async placeNpc(item) {
+    const policeOfficerEnabled = item.modelId === 'swat';
     const result = await this.worldEditAdapter.edit({
       op: 'placeNpc',
       item,
@@ -2845,6 +2854,16 @@ export class WorldBuilder {
         name: item.label,
         prompt: `You are ${item.label}, an NPC in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.`,
         interactRadius: NPC_DEFAULT_INTERACT_RADIUS,
+        policeOfficerEnabled,
+        lawRadius: NPC_DEFAULT_LAW_RADIUS,
+        combat: policeOfficerEnabled
+          ? {
+              archetype: NPC_COMBAT_ARCHETYPES.police,
+              aggroRadius: 28,
+              leashRadius: 44,
+              weaponId: WEAPON_IDS.pistol
+            }
+          : undefined,
         gymCheckInEnabled: item.modelId === 'remy',
         rentCollectorEnabled: false,
         stockMarketEnabled: false,
@@ -3667,6 +3686,8 @@ export class WorldBuilder {
       name: npcDraft?.name ?? placement.npc.name,
       prompt: npcDraft?.prompt ?? placement.npc.prompt,
       interactRadius: npcDraft?.interactRadius ?? placement.npc.interactRadius,
+      policeOfficerEnabled: isPoliceOfficerNpc(npcDraft),
+      lawRadius: getNpcLawRadius(npcDraft ?? placement.npc),
       speed: npcDraft?.speed ?? placement.npc.speed ?? 'slow',
       respawnDelayMs: npcDraft?.respawnDelayMs ?? placement.npc.respawnDelayMs ?? 0,
       deliveryQuestEnabled: (npcDraft?.deliveryQuestEnabled ?? placement.npc.deliveryQuestEnabled) === true,
@@ -4044,6 +4065,25 @@ export class WorldBuilder {
     this.queueNpcUpdate(placement.id, nextChanges);
   }
 
+  async updateSelectedNpcPoliceOfficer(enabled) {
+    const placement = this.getSelectedPlacement();
+    if (!placement || placement.layer !== 'npc' || !placement.npc) {
+      return;
+    }
+
+    const combat = this.getNpcCombatDraft(placement);
+    const nextEnabled = enabled === true;
+    await this.updateSelectedNpc({
+      policeOfficerEnabled: nextEnabled,
+      lawRadius: getNpcLawRadius(this.getNpcDraft(placement)),
+      combat: {
+        ...combat,
+        archetype: nextEnabled ? NPC_COMBAT_ARCHETYPES.police : NPC_COMBAT_ARCHETYPES.passive,
+        weaponId: nextEnabled ? (combat.weaponId || WEAPON_IDS.pistol) : ''
+      }
+    });
+  }
+
   async addSelectedNpcRoutineStep(stepType) {
     const placement = this.getSelectedPlacement();
     if (!placement || placement.layer !== 'npc' || !placement.npc) {
@@ -4141,6 +4181,19 @@ export class WorldBuilder {
     const nextCombat = mergeNestedDraft(combat, {
       [field]: value
     });
+    if (field === 'archetype') {
+      const policeOfficerEnabled = value === NPC_COMBAT_ARCHETYPES.police;
+      await this.updateSelectedNpc({
+        combat: {
+          ...nextCombat,
+          weaponId: policeOfficerEnabled ? (nextCombat.weaponId || WEAPON_IDS.pistol) : nextCombat.weaponId
+        },
+        policeOfficerEnabled,
+        lawRadius: getNpcLawRadius(this.getNpcDraft(placement))
+      });
+      return;
+    }
+
     await this.updateSelectedNpc({ combat: nextCombat });
   }
 

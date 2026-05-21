@@ -29,7 +29,8 @@ export const NPC_STEP_TYPES = Object.freeze({
 
 export const NPC_COMBAT_ARCHETYPES = Object.freeze({
   passive: 'passive',
-  hostile: 'hostile'
+  hostile: 'hostile',
+  police: 'police'
 });
 
 export const NPC_SPEED_TIERS = Object.freeze({
@@ -53,6 +54,7 @@ export const NPC_DEFAULT_USE_DURATION_MS = 3500;
 export const NPC_DEFAULT_LOITER_DURATION_MS = 5000;
 export const NPC_DEFAULT_WANDER_DURATION_MS = 7000;
 export const NPC_DEFAULT_INTERACT_RADIUS = 10;
+export const NPC_DEFAULT_LAW_RADIUS = 32;
 export const NPC_DEFAULT_WANDER_RADIUS = 7;
 export const NPC_DEFAULT_AGGRO_RADIUS = 16;
 export const NPC_DEFAULT_LEASH_RADIUS = 24;
@@ -83,7 +85,8 @@ const NPC_SPEED_TIER_LIST = Object.freeze([
 const NPC_SPEED_TIER_SET = new Set(NPC_SPEED_TIER_LIST);
 const NPC_COMBAT_ARCHETYPE_LIST = Object.freeze([
   NPC_COMBAT_ARCHETYPES.passive,
-  NPC_COMBAT_ARCHETYPES.hostile
+  NPC_COMBAT_ARCHETYPES.hostile,
+  NPC_COMBAT_ARCHETYPES.police
 ]);
 const NPC_COMBAT_ARCHETYPE_SET = new Set(NPC_COMBAT_ARCHETYPE_LIST);
 const NON_RUNTIME_RESET_NPC_UPDATE_KEYS = new Set([
@@ -97,7 +100,8 @@ const NON_RUNTIME_RESET_NPC_UPDATE_KEYS = new Set([
   'marthaEnabled',
   'blackjackDealerEnabled',
   'schoolMicrogameEnabled',
-  'schoolMicrogameId'
+  'schoolMicrogameId',
+  'lawRadius'
 ]);
 
 function clampPositiveNumber(value, fallback, { min = 0, max = Number.POSITIVE_INFINITY } = {}) {
@@ -139,6 +143,25 @@ export function getNpcRunSpeed(speedTier = NPC_DEFAULT_SPEED_TIER) {
   return normalizeNpcSpeedTier(speedTier) === NPC_SPEED_TIERS.fast
     ? NPC_FAST_RUN_SPEED
     : NPC_SLOW_RUN_SPEED;
+}
+
+export function normalizeNpcLawRadius(value, fallback = NPC_DEFAULT_LAW_RADIUS) {
+  return quantizeNumber(clampPositiveNumber(value, fallback, { min: 4, max: 120 }), 2);
+}
+
+export function normalizePoliceOfficerEnabled(value) {
+  return value === true;
+}
+
+export function isPoliceOfficerNpc(npc = null) {
+  return Boolean(
+    npc?.policeOfficerEnabled === true
+    || npc?.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
+  );
+}
+
+export function getNpcLawRadius(npc = null) {
+  return normalizeNpcLawRadius(npc?.lawRadius, NPC_DEFAULT_LAW_RADIUS);
 }
 
 export function getNpcUsePlacementDurationMs(step = null, target = null) {
@@ -401,6 +424,7 @@ export function normalizeNpcCombat(combat = null) {
     ? requestedArchetype
     : NPC_COMBAT_ARCHETYPES.passive;
   const defaultWeaponId = archetype === NPC_COMBAT_ARCHETYPES.hostile
+    || archetype === NPC_COMBAT_ARCHETYPES.police
     ? WEAPON_IDS.pistol
     : '';
 
@@ -429,6 +453,8 @@ export function createDefaultNpcBehavior(overrides = {}) {
     blackjackDealerEnabled: false,
     schoolMicrogameEnabled: false,
     schoolMicrogameId: SCHOOL_MICROGAME_ALL_ID,
+    policeOfficerEnabled: false,
+    lawRadius: NPC_DEFAULT_LAW_RADIUS,
     ...overrides
   };
 }
@@ -456,11 +482,22 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
         quantizePosition(defaults.position?.[1] ?? 0)
       ];
 
+  const policeOfficerEnabled = normalizePoliceOfficerEnabled(npc.policeOfficerEnabled)
+    || npc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police;
+  let combat = normalizeNpcCombat(npc.combat);
+  if (policeOfficerEnabled && (combat.archetype !== NPC_COMBAT_ARCHETYPES.police || !combat.weaponId)) {
+    combat = normalizeNpcCombat({
+      ...combat,
+      archetype: NPC_COMBAT_ARCHETYPES.police,
+      weaponId: combat.weaponId || WEAPON_IDS.pistol
+    });
+  }
+
   return {
     ...npc,
     active: true,
     routine: normalizeNpcRoutine(npc.routine),
-    combat: normalizeNpcCombat(npc.combat),
+    combat,
     respawnDelayMs: Math.round(clampPositiveNumber(npc.respawnDelayMs, NPC_DEFAULT_RESPAWN_DELAY_MS, { min: 0, max: 600000 })),
     speed: normalizeNpcSpeedTier(npc.speed),
     deliveryQuestEnabled: normalizeDeliveryQuestEnabled(npc.deliveryQuestEnabled),
@@ -474,6 +511,8 @@ export function normalizeNpcBehavior(npc = {}, defaults = {}) {
     blackjackDealerEnabled: isBlackjackDealerNpc(npc),
     schoolMicrogameEnabled: isSchoolMicrogameNpc(npc),
     schoolMicrogameId: normalizeSchoolMicrogameNpcId(npc.schoolMicrogameId),
+    policeOfficerEnabled,
+    lawRadius: normalizeNpcLawRadius(npc.lawRadius),
     spawnPosition,
     spawnRotationQuarterTurns: normalizeRotationQuarterTurns(
       npc.spawnRotationQuarterTurns ?? defaults.rotationQuarterTurns ?? 0

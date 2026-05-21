@@ -5,6 +5,7 @@ import {
   getDefaultPropPlacementScale,
   normalizePropPlacementScale
 } from '../shared/placementScale.js';
+import { NPC_DEFAULT_LAW_RADIUS } from './npcBehavior.js';
 
 const PLAYER_TRANSFORM_SEND_INTERVAL_MS = 50;
 const PLAYER_TRANSFORM_MOVE_EPSILON = 0.08;
@@ -53,6 +54,8 @@ function cloneNpcState(npc) {
     rotationY: npc.rotationY ?? (npc.rotationQuarterTurns * (Math.PI / 2)),
     rotationQuarterTurns: npc.rotationQuarterTurns,
     interactRadius: npc.interactRadius,
+    policeOfficerEnabled: npc.policeOfficerEnabled === true,
+    lawRadius: npc.lawRadius ?? NPC_DEFAULT_LAW_RADIUS,
     deliveryQuestEnabled: npc.deliveryQuestEnabled === true,
     gymCheckInEnabled: npc.gymCheckInEnabled === true,
     rentCollectorEnabled: npc.rentCollectorEnabled === true,

@@ -202,6 +202,7 @@ import {
 import {
   cloneNpcBehavior,
   NPC_DEFAULT_INTERACT_RADIUS,
+  NPC_DEFAULT_LAW_RADIUS,
   NPC_DEFAULT_MAX_HEALTH,
   NPC_RUNTIME_MODES,
   normalizeNpcBehavior,
@@ -595,6 +596,8 @@ const NpcState = schema({
   rotationY: 'number',
   rotationQuarterTurns: 'number',
   interactRadius: 'number',
+  policeOfficerEnabled: 'boolean',
+  lawRadius: 'number',
   deliveryQuestEnabled: 'boolean',
   gymCheckInEnabled: 'boolean',
   rentCollectorEnabled: 'boolean',
@@ -698,6 +701,11 @@ function sanitizeCharacterId(characterId) {
 function clampNpcRadius(value) {
   const numeric = Number(value ?? 4.2);
   return Math.max(1.5, Math.min(12, Number.isFinite(numeric) ? numeric : 4.2));
+}
+
+function clampNpcLawRadius(value) {
+  const numeric = Number(value ?? NPC_DEFAULT_LAW_RADIUS);
+  return Math.max(4, Math.min(120, Number.isFinite(numeric) ? numeric : NPC_DEFAULT_LAW_RADIUS));
 }
 
 function defaultNpcPrompt(label) {
@@ -3514,6 +3522,7 @@ export class WorldRoom extends Room {
     player.ammoInClip = Math.max(0, player.ammoInClip - 1);
 
     const shot = this.resolveShot(client.sessionId, player, aim, shotOrigin);
+    this.triggerPoliceHostilityForPlayer(client.sessionId, player, 'shot-fired', now);
     this.broadcastCombatEvent({
       type: 'shot',
       shooterType: 'player',
@@ -3578,6 +3587,7 @@ export class WorldRoom extends Room {
     player.emoteActive = true;
     player.emoteStartedAt = now;
     player.emoteSeq += 1;
+    this.triggerPoliceHostilityForPlayer(client.sessionId, player, 'punch', now);
 
     const hit = this.resolvePunch(client.sessionId, player, aim);
     if (hit.kind !== 'miss') {
@@ -3641,6 +3651,7 @@ export class WorldRoom extends Room {
       const killer = this.state.players.get(killerId);
       if (killer) {
         killer.kills += 1;
+        this.triggerPoliceHostilityForPlayer(killerId, killer, 'player-kill', Date.now());
       }
     }
 
@@ -4375,6 +4386,8 @@ export class WorldRoom extends Room {
         name,
         prompt: String(message.prompt ?? defaultNpcPrompt(name)).slice(0, NPC_PROMPT_MAX_LENGTH),
         interactRadius: clampNpcRadius(message.interactRadius ?? NPC_DEFAULT_INTERACT_RADIUS),
+        policeOfficerEnabled: message.policeOfficerEnabled === true,
+        lawRadius: clampNpcLawRadius(message.lawRadius),
         speed: message.speed,
         respawnDelayMs: message.respawnDelayMs,
         deliveryQuestEnabled: message.deliveryQuestEnabled === true,
@@ -4415,6 +4428,14 @@ export class WorldRoom extends Room {
     }
     if (Object.hasOwn(message, 'interactRadius')) {
       updates.interactRadius = clampNpcRadius(message.interactRadius);
+      hasUpdates = true;
+    }
+    if (Object.hasOwn(message, 'policeOfficerEnabled')) {
+      updates.policeOfficerEnabled = message.policeOfficerEnabled === true;
+      hasUpdates = true;
+    }
+    if (Object.hasOwn(message, 'lawRadius')) {
+      updates.lawRadius = clampNpcLawRadius(message.lawRadius);
       hasUpdates = true;
     }
     if (Object.hasOwn(message, 'respawnDelayMs')) {
@@ -4627,6 +4648,8 @@ export class WorldRoom extends Room {
         : quantizeRotation(toRotationY(spawnRotationQuarterTurns));
       existing.rotationQuarterTurns = quantizeRotationQuarterTurnsFromRotationY(existing.rotationY);
       existing.interactRadius = clampNpcRadius(normalizedDefinition.interactRadius);
+      existing.policeOfficerEnabled = normalizedDefinition.policeOfficerEnabled === true;
+      existing.lawRadius = clampNpcLawRadius(normalizedDefinition.lawRadius);
       existing.deliveryQuestEnabled = normalizedDefinition.deliveryQuestEnabled === true;
       existing.gymCheckInEnabled = normalizedDefinition.gymCheckInEnabled === true;
       existing.rentCollectorEnabled = normalizedDefinition.rentCollectorEnabled === true;

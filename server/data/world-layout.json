@@ -1811,6 +1811,14 @@
       "name": "Gary",
       "prompt": "You are Gary,  police chief in Vibe Theft Auto. Stay in character, keep answers grounded in the city, and respond in short, flavorful lines.",
       "interactRadius": 10,
+      "policeOfficerEnabled": true,
+      "lawRadius": 32,
+      "combat": {
+        "archetype": "police",
+        "aggroRadius": 28,
+        "leashRadius": 44,
+        "weaponId": "pistol"
+      },
       "active": true
     },
     {

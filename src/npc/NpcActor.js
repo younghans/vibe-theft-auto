@@ -8,7 +8,13 @@ import {
 } from '../animation/humanoid.js';
 import { getMixamoClip } from '../animation/mixamoClips.js';
 import { createRagdollController } from '../player/ragdollController.js';
-import { NPC_RUNTIME_MODES, NPC_SPEED_TIERS, normalizeNpcSpeedTier } from './npcBehavior.js';
+import {
+  NPC_RUNTIME_MODES,
+  NPC_SPEED_TIERS,
+  getNpcLawRadius,
+  isPoliceOfficerNpc,
+  normalizeNpcSpeedTier
+} from './npcBehavior.js';
 import { assets } from '../world/assetManifest.js';
 import { createOlympicBarbellVisual } from '../world/proceduralProps.js';
 import { applyMarthaNpcBaseStyle, applyNpcCharacterAdornment, prepareNpcRenderObject } from './npcRenderUtils.js';
@@ -69,6 +75,26 @@ function createInteractRadiusIndicator() {
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.08;
   ring.renderOrder = 4;
+  ring.visible = false;
+  ring.raycast = () => {};
+  return ring;
+}
+
+function createLawRadiusIndicator() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.992, 1, 160),
+    new THREE.MeshBasicMaterial({
+      color: 0x4aa8ff,
+      transparent: true,
+      opacity: 0.38,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.07;
+  ring.renderOrder = 3;
   ring.visible = false;
   ring.raycast = () => {};
   return ring;
@@ -153,10 +179,12 @@ export class NpcActor {
     this.pickProxy = createPickProxy(model.pickCollider ?? model.collider);
     this.selectionIndicator = createIndicator(0xf2c871);
     this.busyIndicator = createIndicator(0xf6924c);
+    this.lawRadiusIndicator = createLawRadiusIndicator();
     this.interactRadiusIndicator = createInteractRadiusIndicator();
     this.busyIndicator.scale.setScalar(1.2);
     this.busyIndicator.position.y = 0.03;
     this.interactRadiusVisible = false;
+    this.policeOfficerEnabled = isPoliceOfficerNpc(definition);
 
     prepareNpcRenderObject(this.character, model);
     applyMarthaNpcBaseStyle(this.character, model, definition);
@@ -262,6 +290,7 @@ export class NpcActor {
     }
 
     this.anchor.add(this.pickProxy);
+    this.anchor.add(this.lawRadiusIndicator);
     this.anchor.add(this.interactRadiusIndicator);
     this.anchor.add(this.damageRipple);
     this.anchor.add(this.carriedBarbell);
@@ -407,6 +436,8 @@ export class NpcActor {
     this.runtimeState.z = definition.position[1];
     this.runtimeState.rotationY = this.anchor.rotation.y;
     this.setInteractRadius(definition.interactRadius ?? this.model.interactionRadius);
+    this.setPoliceOfficerEnabled(isPoliceOfficerNpc(definition));
+    this.setLawRadius(getNpcLawRadius(definition));
   }
 
   setSelected(selected) {
@@ -434,9 +465,26 @@ export class NpcActor {
     this.syncInteractRadiusVisibility();
   }
 
+  setLawRadius(radius) {
+    const nextRadius = getNpcLawRadius({ lawRadius: radius });
+    this.lawRadiusIndicator.scale.setScalar(nextRadius);
+  }
+
+  setPoliceOfficerEnabled(enabled) {
+    this.policeOfficerEnabled = enabled === true;
+    this.syncLawRadiusVisibility();
+  }
+
   syncInteractRadiusVisibility() {
     const isInteractable = this.runtimeState.alive !== false && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead;
     this.interactRadiusIndicator.visible = this.interactRadiusVisible && isInteractable;
+  }
+
+  syncLawRadiusVisibility() {
+    const isVisible = this.runtimeState.alive !== false
+      && this.runtimeState.mode !== NPC_RUNTIME_MODES.dead
+      && this.runtimeState.mode !== NPC_RUNTIME_MODES.hidden;
+    this.lawRadiusIndicator.visible = this.policeOfficerEnabled && isVisible;
   }
 
   setFocusTarget(target = null) {
@@ -477,7 +525,10 @@ export class NpcActor {
     this.anchor.position.y = groundY;
     this.setBusy(Boolean(state.busy));
     this.setInteractRadius(state.interactRadius ?? this.model.interactionRadius);
+    this.setPoliceOfficerEnabled(isPoliceOfficerNpc(state));
+    this.setLawRadius(state.lawRadius);
     this.syncInteractRadiusVisibility();
+    this.syncLawRadiusVisibility();
 
     if (state.snap === true) {
       this.anchor.position.x = this.runtimeState.x;

@@ -11,6 +11,7 @@ import {
 } from '../shared/numberMath.js';
 import { createDefaultMissionSequence } from '../shared/missions.js';
 import { createDefaultNpcModelVoiceMap } from '../shared/npcVoice.js';
+import { NPC_DEFAULT_LAW_RADIUS } from '../npc/npcBehavior.js';
 import {
   getTileCenterWorldPosition,
   getTileOccupiedCells,
@@ -575,6 +576,8 @@ function createNpcLayout(tiles, props) {
       blackjackDealerEnabled: plan.blackjackDealerEnabled === true,
       schoolMicrogameEnabled: plan.schoolMicrogameEnabled === true,
       schoolMicrogameId: plan.schoolMicrogameId ?? 'all',
+      policeOfficerEnabled: plan.policeOfficerEnabled === true,
+      lawRadius: plan.lawRadius ?? NPC_DEFAULT_LAW_RADIUS,
       ...(plan.combat ? { combat: plan.combat } : {}),
       ...(routine ? { routine } : {})
     });

@@ -4335,6 +4335,9 @@ export class Hud {
     this.builderNpcVoiceVolume = this.overlay.querySelector('[data-builder-npc-voice-volume]');
     this.builderNpcName = this.overlay.querySelector('[data-builder-npc-name]');
     this.builderNpcRadius = this.overlay.querySelector('[data-builder-npc-radius]');
+    this.builderNpcPoliceOfficer = this.overlay.querySelector('[data-builder-npc-police-officer]');
+    this.builderNpcLawRadiusField = this.overlay.querySelector('[data-builder-npc-law-radius-field]');
+    this.builderNpcLawRadius = this.overlay.querySelector('[data-builder-npc-law-radius]');
     this.builderNpcSpeed = this.overlay.querySelector('[data-builder-npc-speed]');
     this.builderNpcRespawnDelay = this.overlay.querySelector('[data-builder-npc-respawn-delay]');
     this.builderNpcDeliveryQuest = this.overlay.querySelector('[data-builder-npc-delivery-quest]');
@@ -5458,6 +5461,18 @@ export class Hud {
                 <label class="hud__field">
                   <span class="hud__field-label">Respawn Timer (ms)</span>
                   <input class="hud__field-control" type="number" min="0" max="600000" step="100" data-builder-npc-respawn-delay />
+                </label>
+              </div>
+              <label class="hud__field hud__checkbox-field">
+                <input class="hud__checkbox-control" type="checkbox" data-builder-npc-police-officer />
+                <span class="hud__checkbox-copy">
+                  <span class="hud__field-label hud__checkbox-title">Police Officer</span>
+                </span>
+              </label>
+              <div class="hud__builder-instance-metrics" data-builder-npc-law-radius-field hidden>
+                <label class="hud__field">
+                  <span class="hud__field-label">Law Radius</span>
+                  <input class="hud__field-control" type="number" min="4" max="120" step="0.5" data-builder-npc-law-radius />
                 </label>
               </div>
               <label class="hud__field hud__checkbox-field">
@@ -7348,6 +7363,8 @@ export class Hud {
     onNpcNameChange,
     onNpcPromptChange,
     onNpcRadiusChange,
+    onNpcPoliceOfficerChange,
+    onNpcLawRadiusChange,
     onNpcSpeedChange,
     onNpcRespawnDelayChange,
     onNpcDeliveryQuestChange,
@@ -7838,6 +7855,14 @@ export class Hud {
 
     this.builderNpcRadius.addEventListener('input', () => {
       onNpcRadiusChange(Number(this.builderNpcRadius.value));
+    });
+
+    this.builderNpcPoliceOfficer?.addEventListener('change', () => {
+      onNpcPoliceOfficerChange?.(this.builderNpcPoliceOfficer.checked === true);
+    });
+
+    this.builderNpcLawRadius?.addEventListener('input', () => {
+      onNpcLawRadiusChange?.(Number(this.builderNpcLawRadius.value));
     });
 
     this.builderNpcSpeed?.addEventListener('change', () => {
@@ -9306,6 +9331,18 @@ export class Hud {
     }
     setFieldValue(this.builderNpcName, editorState.name);
     setFieldValue(this.builderNpcRadius, String(editorState.interactRadius));
+    if (this.builderNpcPoliceOfficer && document.activeElement !== this.builderNpcPoliceOfficer) {
+      this.builderNpcPoliceOfficer.checked = editorState.policeOfficerEnabled === true;
+    }
+    setFieldValue(this.builderNpcLawRadius, String(editorState.lawRadius));
+    if (this.builderNpcLawRadiusField) {
+      const showLawRadius = editorState.policeOfficerEnabled === true
+        || editorState.combat?.archetype === 'police';
+      this.builderNpcLawRadiusField.hidden = !showLawRadius;
+      if (this.builderNpcLawRadius) {
+        this.builderNpcLawRadius.disabled = !showLawRadius;
+      }
+    }
     if (document.activeElement !== this.builderNpcSpeed && this.builderNpcSpeed) {
       this.builderNpcSpeed.value = editorState.speed ?? 'slow';
     }
@@ -9421,7 +9458,8 @@ export class Hud {
     setFieldValue(this.builderNpcCombatAggroRadius, String(editorState.combat.aggroRadius));
     setFieldValue(this.builderNpcCombatLeashRadius, String(editorState.combat.leashRadius));
     if (this.builderNpcCombatLeashField) {
-      const showHostileLeash = editorState.combat.archetype === 'hostile';
+      const showHostileLeash = editorState.combat.archetype === 'hostile'
+        || editorState.combat.archetype === 'police';
       this.builderNpcCombatLeashField.hidden = !showHostileLeash;
       if (this.builderNpcCombatLeashRadius) {
         this.builderNpcCombatLeashRadius.disabled = !showHostileLeash;

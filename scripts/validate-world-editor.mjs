@@ -97,7 +97,13 @@ import {
   listVibeHeroSongs
 } from '../src/shared/vibeHero.js';
 import { VIBE_HERO_EDITED_CHART_ROWS } from '../src/shared/vibeHeroEditedCharts.js';
-import { normalizeNpcBehavior } from '../src/npc/npcBehavior.js';
+import {
+  NPC_COMBAT_ARCHETYPES,
+  NPC_DEFAULT_LAW_RADIUS,
+  getNpcLawRadius,
+  isPoliceOfficerNpc,
+  normalizeNpcBehavior
+} from '../src/npc/npcBehavior.js';
 import {
   RENT_INTRO_LINE,
   isRentIntroCollector,
@@ -4079,6 +4085,12 @@ function validateBartenderFunction() {
   const skateboardModelSource = readFileSync(new URL('../src/shared/skateboardModel.js', import.meta.url), 'utf8');
   const serverSource = readFileSync(new URL('../server/src/WorldRoom.js', import.meta.url), 'utf8');
   const worldRendererSource = readFileSync(new URL('../src/world/WorldRenderer.js', import.meta.url), 'utf8');
+  const npcBehaviorSource = readFileSync(new URL('../src/npc/npcBehavior.js', import.meta.url), 'utf8');
+  const npcSimulationSource = readFileSync(new URL('../src/npc/npcSimulationMethods.js', import.meta.url), 'utf8');
+  const npcActorSource = readFileSync(new URL('../src/npc/NpcActor.js', import.meta.url), 'utf8');
+  const mockNpcServiceSource = readFileSync(new URL('../src/npc/NpcServiceMock.js', import.meta.url), 'utf8');
+  const worldBuilderSource = readFileSync(new URL('../src/world/WorldBuilder.js', import.meta.url), 'utf8');
+  const worldEditAdapterSource = readFileSync(new URL('../src/world/createWorldEditAdapter.js', import.meta.url), 'utf8');
 
   const skateboardModel = createSkateboardModel({ namePrefix: 'Validation' });
   skateboardModel.updateWorldMatrix(true, true);
@@ -4243,6 +4255,86 @@ function validateBartenderFunction() {
   assert(
     allNpcsHaveFlag(defaultWorldLayout.npcs, 'bartenderEnabled'),
     'Default NPC layout should serialize bartenderEnabled for world-builder compatibility'
+  );
+
+  const policeNpc = normalizeNpcBehavior({
+    modelId: 'swat',
+    name: 'Police Officer',
+    policeOfficerEnabled: true,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  const customRadiusPoliceNpc = normalizeNpcBehavior({
+    modelId: 'swat',
+    name: 'Police Officer',
+    policeOfficerEnabled: true,
+    lawRadius: 48,
+    spawnPosition: [0, 0]
+  }, {
+    position: [0, 0],
+    rotationQuarterTurns: 0
+  });
+  const savedWorldLayout = JSON.parse(readRepoText('server/data/world-layout.json'));
+  const savedPoliceChief = findNpcById(savedWorldLayout.npcs, 'placement_164');
+  assert(isPoliceOfficerNpc(policeNpc), 'Normalized police NPCs should preserve policeOfficerEnabled');
+  assert(
+    policeNpc.combat?.archetype === NPC_COMBAT_ARCHETYPES.police
+      && policeNpc.combat?.weaponId === WEAPON_IDS.pistol,
+    'Police NPCs should normalize into the police combat archetype with a pistol fallback'
+  );
+  assert(getNpcLawRadius(policeNpc) === NPC_DEFAULT_LAW_RADIUS, 'Police NPCs should default to the standard law radius');
+  assert(getNpcLawRadius(customRadiusPoliceNpc) === 48, 'Police NPC law radius should be configurable');
+  assert(
+    allNpcsHaveFlag(defaultWorldLayout.npcs, 'policeOfficerEnabled')
+      && allNpcsHaveFlag(defaultWorldLayout.npcs, 'lawRadius'),
+    'Default NPC layout should serialize police settings for world-builder compatibility'
+  );
+  assert(
+    savedPoliceChief?.policeOfficerEnabled === true
+      && savedPoliceChief?.lawRadius === NPC_DEFAULT_LAW_RADIUS
+      && savedPoliceChief?.combat?.archetype === NPC_COMBAT_ARCHETYPES.police,
+    'Fallback saved world layout should seed Gary as a police officer with a visible law radius'
+  );
+  assert(
+    /police:\s*'police'/.test(npcBehaviorSource)
+      && /NPC_DEFAULT_LAW_RADIUS\s*=\s*32/.test(npcBehaviorSource),
+    'NPC behavior should define a police combat archetype and default law radius'
+  );
+  assert(
+    /triggerPoliceHostilityForPlayer/.test(npcSimulationSource)
+      && /lawRadius/.test(npcSimulationSource)
+      && /'npc-kill'/.test(npcSimulationSource),
+    'NPC simulation should escalate police hostility for hostile player actions inside law radius'
+  );
+  assert(
+    /triggerPoliceHostilityForPlayer[\s\S]*'shot-fired'/.test(serverSource)
+      && /triggerPoliceHostilityForPlayer[\s\S]*'punch'/.test(serverSource)
+      && /triggerPoliceHostilityForPlayer[\s\S]*'player-kill'/.test(serverSource)
+      && /policeOfficerEnabled:\s*'boolean'/.test(serverSource)
+      && /lawRadius:\s*'number'/.test(serverSource),
+    'Server police NPC state should persist law settings and react to player shots, punches, and kills'
+  );
+  assert(
+    /triggerPoliceHostilityForPlayer[\s\S]*'shot-fired'/.test(mockNpcServiceSource)
+      && /triggerPoliceHostilityForPlayer[\s\S]*'punch'/.test(mockNpcServiceSource)
+      && /triggerPoliceHostilityForPlayer[\s\S]*'player-kill'/.test(mockNpcServiceSource),
+    'Mock NPC service should match server police hostility triggers'
+  );
+  assert(
+    /lawRadiusIndicator/.test(npcActorSource)
+      && /RingGeometry/.test(npcActorSource)
+      && /policeOfficerEnabled/.test(worldRendererSource),
+    'NPC rendering should expose a visible law-radius circle for police officers'
+  );
+  assert(
+    /data-builder-npc-police-officer/.test(hudSource)
+      && /data-builder-npc-law-radius/.test(hudSource)
+      && /onNpcPoliceOfficerChange/.test(worldBuilderSource)
+      && /NPC_COMBAT_ARCHETYPES\.police/.test(worldBuilderSource)
+      && /combat:\s*edit\.npc\.combat/.test(worldEditAdapterSource),
+    'World builder should expose police officer settings and transport the police combat profile'
   );
 
   const cigarettes = getPawnShopMenuItem(PAWN_SHOP_ITEM_IDS.cigarettes);
