@@ -60,6 +60,20 @@ import {
 const CAMERA_OCCLUDED_BUILDING_OPACITY = 0;
 const CAMERA_OCCLUSION_PLAYER_HEIGHTS = Object.freeze([1.2, 2.7, 4.1]);
 const CAMERA_OCCLUSION_TARGET_PADDING = 0.05;
+const NON_SHADOW_CASTING_TILE_IDS = new Set([
+  'lot_base',
+  'basketball_court_half'
+]);
+const NON_SHADOW_CASTING_TILE_ASSET_PREFIXES = Object.freeze([
+  'road_',
+  'park_road_',
+  'park_base'
+]);
+const NON_SHADOW_CASTING_PROP_IDS = new Set([
+  'sidewalk',
+  'stone_path',
+  'dirt_path'
+]);
 const SOLID_COLOR_BUILDING_ASSET_NAMES = new Set([
   'bar_building',
   'bar_building_wide',
@@ -282,12 +296,13 @@ function stabilizeSolidBuildingMaterials(root) {
 }
 
 function setShadowFlags(root, options = {}) {
+  const castShadow = options.castShadow !== false;
   const receiveShadow = options.receiveShadow !== false;
   root.traverse((node) => {
     if (node.isMesh) {
-      node.userData.defaultCastShadow = true;
+      node.userData.defaultCastShadow = castShadow;
       node.userData.defaultReceiveShadow = receiveShadow;
-      node.castShadow = true;
+      node.castShadow = castShadow;
       node.receiveShadow = receiveShadow;
     }
   });
@@ -310,8 +325,10 @@ function applyShadowOverridesToNode(node, rendered, visible) {
 async function createPlacementVisual(library, item) {
   const visual = await instantiateItemVisual(library, item);
   prepareItemVisual(visual, (object, part) => {
-    const stabilizeSolidColors = shouldStabilizeSolidBuildingColors(part?.item ?? item);
+    const partItem = part?.item ?? item;
+    const stabilizeSolidColors = shouldStabilizeSolidBuildingColors(partItem);
     setShadowFlags(object, {
+      castShadow: shouldWorldItemCastShadow(partItem),
       receiveShadow: !stabilizeSolidColors
     });
     if (stabilizeSolidColors) {
@@ -366,6 +383,33 @@ function isCameraOccludingBuildingItem(item) {
       || assetName.includes('_building')
     )
   );
+}
+
+function valueStartsWithAny(value = '', prefixes = []) {
+  for (const prefix of prefixes) {
+    if (value.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldWorldItemCastShadow(item) {
+  const itemId = String(item?.id ?? '').toLowerCase();
+  const assetName = String(item?.assetName ?? '').toLowerCase();
+  if (item?.layer === 'tile') {
+    return !(
+      NON_SHADOW_CASTING_TILE_IDS.has(itemId)
+      || assetName === 'base'
+      || valueStartsWithAny(assetName, NON_SHADOW_CASTING_TILE_ASSET_PREFIXES)
+    );
+  }
+
+  if (item?.layer === 'prop') {
+    return !NON_SHADOW_CASTING_PROP_IDS.has(itemId);
+  }
+
+  return true;
 }
 
 function isInlineInteriorMode(mode = '') {
@@ -1263,6 +1307,7 @@ export class WorldRenderer {
     this.cameraOcclusionBoundsHit = new THREE.Vector3();
     this.cameraOccludedPlacementIds = new Set();
     this.cameraOcclusionCandidates = [];
+    this.cameraOcclusionBoundedCandidates = [];
     this.cameraOcclusionRenderedPlacements = new Set();
     this.cameraOcclusionIdsToClear = [];
     this.nextCameraOccludedPlacementIds = new Set();
@@ -1289,6 +1334,7 @@ export class WorldRenderer {
     this.renderedPlacements = new Map();
     this.updatingRenderedPlacements = new Set();
     this.interactableIndicatorRenderedPlacements = new Set();
+    this.visibleInteractableIndicatorCount = 0;
     this.interactablePlacementIds = new Set();
     this.actorPlacementIds = new Set();
     this.staticColliderEntries = new Map();
@@ -1577,6 +1623,8 @@ export class WorldRenderer {
       object,
       baseObjectScale: object.scale.clone(),
       cameraOcclusionObject: actor ? null : visual.colliderObject,
+      cameraOcclusionBounds: actor ? null : new THREE.Box3(),
+      cameraOcclusionBoundsDirty: true,
       cameraOcclusionMaterialState: null,
       actor,
       hidden: false,
@@ -1709,6 +1757,7 @@ export class WorldRenderer {
   updateInteractableIndicatorVisibility(resolver = null) {
     const hasResolver = typeof resolver === 'function';
     const worldPosition = this.indicatorVisibilityPosition;
+    let visibleCount = 0;
 
     for (const rendered of this.interactableIndicatorRenderedPlacements) {
       let visible = !rendered.hidden && !rendered.visualHidden && !rendered.workoutHidden;
@@ -1722,7 +1771,17 @@ export class WorldRenderer {
         visible = resolver(rendered, worldPosition) !== false;
       }
       rendered.interactableIndicator.visible = visible;
+      if (visible) {
+        visibleCount += 1;
+      }
     }
+
+    this.visibleInteractableIndicatorCount = visibleCount;
+    return visibleCount;
+  }
+
+  hasVisibleInteractableIndicators() {
+    return this.visibleInteractableIndicatorCount > 0;
   }
 
   async createNpcActor(placement, item) {
@@ -2955,6 +3014,27 @@ export class WorldRenderer {
     return candidates;
   }
 
+  getRenderedCameraOcclusionBounds(rendered) {
+    if (!rendered?.cameraOcclusionObject || !rendered.cameraOcclusionBounds) {
+      return null;
+    }
+
+    if (
+      !rendered.cameraOcclusionBoundsDirty
+      && boxHasFiniteExtents(rendered.cameraOcclusionBounds)
+    ) {
+      return rendered.cameraOcclusionBounds;
+    }
+
+    const bounds = getVisibleObjectBounds(
+      rendered.cameraOcclusionObject,
+      rendered.cameraOcclusionBounds,
+      this.cameraOcclusionNodeBounds
+    );
+    rendered.cameraOcclusionBoundsDirty = false;
+    return bounds;
+  }
+
   setPlacementCameraOccluded(rendered, occluded, options = {}) {
     const nextOccluded = Boolean(occluded);
     if (!rendered?.cameraOcclusionObject) {
@@ -3088,6 +3168,17 @@ export class WorldRenderer {
       return this.clearCameraOcclusion();
     }
 
+    const boundedCandidates = this.cameraOcclusionBoundedCandidates;
+    boundedCandidates.length = 0;
+    for (const rendered of candidates) {
+      if (this.getRenderedCameraOcclusionBounds(rendered)) {
+        boundedCandidates.push(rendered);
+      }
+    }
+    if (!boundedCandidates.length) {
+      return this.clearCameraOcclusion();
+    }
+
     const nextOccludedPlacementIds = this.nextCameraOccludedPlacementIds;
     nextOccludedPlacementIds.clear();
     this.cameraOcclusionRaycaster.near = 0;
@@ -3104,16 +3195,12 @@ export class WorldRenderer {
       this.cameraOcclusionRaycaster.set(camera.position, this.cameraOcclusionDirection);
       this.cameraOcclusionRaycaster.far = Math.max(0, distance - CAMERA_OCCLUSION_TARGET_PADDING);
 
-      for (const rendered of candidates) {
+      for (const rendered of boundedCandidates) {
         if (nextOccludedPlacementIds.has(rendered.id)) {
           continue;
         }
 
-        const bounds = getVisibleObjectBounds(
-          rendered.cameraOcclusionObject,
-          this.cameraOcclusionBounds,
-          this.cameraOcclusionNodeBounds
-        );
+        const bounds = rendered.cameraOcclusionBounds;
         if (!bounds) {
           continue;
         }
@@ -3187,6 +3274,7 @@ export class WorldRenderer {
     if (!rendered.actor) {
       rendered.object.rotation.y = getPlacementRotationY(placement);
       applyRenderedPlacementScale(rendered, placement);
+      rendered.cameraOcclusionBoundsDirty = true;
     }
 
     if (rendered.actor) {
@@ -3309,6 +3397,7 @@ export class WorldRenderer {
     if (hiddenChanged || fadedChanged || visibleChanged) {
       restoreCameraOcclusionMaterials(rendered);
       this.cameraOccludedPlacementIds.delete(id);
+      rendered.cameraOcclusionBoundsDirty = true;
     }
 
     rendered.hiddenNodeNames = nextHiddenNodeNames;
@@ -3667,6 +3756,7 @@ export class WorldRenderer {
       }
       applyShadowOverridesToNode(node, rendered, nodeVisible);
     });
+    rendered.cameraOcclusionBoundsDirty = true;
     if (rendered.actor?.pickProxy) {
       rendered.actor.pickProxy.visible = visible;
     }

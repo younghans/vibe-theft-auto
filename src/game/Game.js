@@ -7739,10 +7739,27 @@ export class Game {
         this.renderer.render(this.scene, this.camera);
       }
 
-      this.renderInteractableIndicatorLayer();
+      if (this.shouldRenderInteractableIndicatorLayer()) {
+        this.renderInteractableIndicatorLayer();
+      }
     } finally {
       this.camera.layers.set(WORLD_RENDER_LAYER);
     }
+  }
+
+  shouldRenderInteractableIndicatorLayer() {
+    if (this.currentInterior?.scene || this.activeInlineShell?.scene) {
+      return true;
+    }
+
+    const worldRenderer = this.worldBuilder?.worldRenderer;
+    if (!worldRenderer) {
+      return false;
+    }
+
+    return typeof worldRenderer.hasVisibleInteractableIndicators === 'function'
+      ? worldRenderer.hasVisibleInteractableIndicators()
+      : true;
   }
 
   renderInteractableIndicatorLayer() {
